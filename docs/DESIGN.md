@@ -221,7 +221,7 @@ Enforcement (`src/server/trpc/trpc.ts`):
 
 Because the default is session-only, **new endpoints are token-inaccessible until they explicitly opt in**.
 
-OAuth access tokens are validated only at `POST /api/mcp` (not in the main tRPC/REST context), where the `mcp` scope and the RFC 8707 `resource`/audience binding are both enforced — a token minted for a different resource is rejected.
+OAuth access tokens are validated only at `POST /api/mcp` (not in the main tRPC/REST context), where the `mcp` scope and the RFC 8707 `resource`/audience binding are both enforced — a token minted for a different resource is rejected. `/api/mcp` also requires signup confirmation (ToS/Privacy/EU agreement) for both OAuth and API tokens, mirroring `confirmedProtectedProcedure` on the tRPC surface.
 
 The audience binding is enforced on both sides:
 

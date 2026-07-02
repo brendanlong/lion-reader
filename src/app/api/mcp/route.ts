@@ -21,6 +21,7 @@ import {
   ErrorCode,
 } from "@modelcontextprotocol/sdk/types.js";
 import { db } from "@/server/db";
+import type { User } from "@/server/db/schema";
 import { registerTools } from "@/server/mcp/tools";
 import { validateApiToken, API_TOKEN_SCOPES } from "@/server/auth/api-token";
 import { validateAccessToken } from "@/server/oauth/service";
@@ -33,8 +34,17 @@ import { logger } from "@/lib/logger";
 // ============================================================================
 
 type AuthSuccess = { success: true; userId: string };
-type AuthFailure = { success: false; reason: string };
+type AuthFailure = { success: false; reason: string; status?: 401 | 403 };
 type AuthResult = AuthSuccess | AuthFailure;
+
+/**
+ * Checks that the user completed the signup confirmation flow (ToS, Privacy,
+ * EU check) — the same requirement `confirmedMiddleware` enforces for the
+ * tRPC surface. Without this, MCP tokens would bypass signup confirmation.
+ */
+function isSignupConfirmed(user: User): boolean {
+  return !!(user.tosAgreedAt && user.privacyPolicyAgreedAt && user.notEuAgreedAt);
+}
 
 /**
  * Extract and validate token from request headers.
@@ -76,6 +86,12 @@ async function authenticateRequest(request: NextRequest): Promise<AuthResult> {
       });
       return { success: false, reason: "oauth_token_audience_mismatch" };
     }
+    if (!isSignupConfirmed(oauthToken.user)) {
+      logger.warn("MCP auth: user has not completed signup confirmation", {
+        userId: oauthToken.userId,
+      });
+      return { success: false, reason: "signup_confirmation_required", status: 403 };
+    }
     return { success: true, userId: oauthToken.userId };
   }
 
@@ -89,6 +105,12 @@ async function authenticateRequest(request: NextRequest): Promise<AuthResult> {
         scopes: apiTokenData.token.scopes,
       });
       return { success: false, reason: "api_token_missing_mcp_scope" };
+    }
+    if (!isSignupConfirmed(apiTokenData.user)) {
+      logger.warn("MCP auth: user has not completed signup confirmation", {
+        userId: apiTokenData.user.id,
+      });
+      return { success: false, reason: "signup_confirmation_required", status: 403 };
     }
     return { success: true, userId: apiTokenData.user.id };
   }
@@ -163,10 +185,11 @@ function createMcpServer(userId: string): Server {
 // Unauthorized Response
 // ============================================================================
 
-function unauthorizedResponse(reason: string): Response {
-  logger.warn("MCP auth unauthorized", { reason });
-  return new Response(JSON.stringify({ error: "Unauthorized" }), {
-    status: 401,
+function unauthorizedResponse(failure: AuthFailure): Response {
+  logger.warn("MCP auth unauthorized", { reason: failure.reason });
+  const status = failure.status ?? 401;
+  return new Response(JSON.stringify({ error: status === 403 ? "Forbidden" : "Unauthorized" }), {
+    status,
     headers: {
       "Content-Type": "application/json",
       "WWW-Authenticate": buildWwwAuthenticateHeader(),
@@ -186,7 +209,7 @@ async function handleMcpRequest(request: NextRequest): Promise<Response> {
   // Authenticate request
   const auth = await authenticateRequest(request);
   if (!auth.success) {
-    return unauthorizedResponse(auth.reason);
+    return unauthorizedResponse(auth);
   }
   const { userId } = auth;
 
@@ -254,7 +277,7 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   const auth = await authenticateRequest(request);
   if (!auth.success) {
-    return unauthorizedResponse(auth.reason);
+    return unauthorizedResponse(auth);
   }
   return new Response(null, { status: 405 });
 }
@@ -270,7 +293,7 @@ export async function GET(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   const auth = await authenticateRequest(request);
   if (!auth.success) {
-    return unauthorizedResponse(auth.reason);
+    return unauthorizedResponse(auth);
   }
   return new Response(null, { status: 405 });
 }
