@@ -8,7 +8,7 @@
 import { z } from "zod";
 
 import { logger } from "@/lib/logger";
-import { createTRPCRouter, expensivePublicProcedure } from "../trpc";
+import { createTRPCRouter, expensiveConfirmedProtectedProcedure } from "../trpc";
 import { errors } from "../errors";
 import { feedUrlSchema } from "../validation";
 import {
@@ -275,14 +275,15 @@ export const feedsRouter = createTRPCRouter({
    * 3. Parses the feed to get metadata and sample entries
    * 4. Returns the preview without saving anything to the database
    *
-   * This is a public procedure - no authentication required - but it triggers
-   * outbound fetches, so it uses the strict "expensive" rate limit to prevent
-   * anonymous users from using it as a scanning/amplification primitive.
+   * Requires a confirmed session: the only UI that calls this is the subscribe
+   * page, which is behind auth anyway, and it triggers outbound fetches — so
+   * anonymous access would be a free scanning/amplification primitive. Also
+   * uses the strict "expensive" rate limit.
    *
    * @param url - The feed URL (or HTML page with feed discovery)
    * @returns Feed preview with title, description, and sample entries
    */
-  preview: expensivePublicProcedure
+  preview: expensiveConfirmedProtectedProcedure
     .meta({
       openapi: {
         method: "GET",
@@ -392,14 +393,14 @@ export const feedsRouter = createTRPCRouter({
    * 4. Returns all discovered feeds with title, type, and URL
    * 5. Deduplicates by URL
    *
-   * This is a public procedure - no authentication required - but it fans out
-   * several outbound fetches, so it uses the strict "expensive" rate limit to
-   * prevent anonymous users from using it as a scanning/amplification primitive.
+   * Requires a confirmed session (see `preview` above) — this one fans out
+   * several outbound fetches, so it's the stronger scanning/amplification
+   * primitive. Also uses the strict "expensive" rate limit.
    *
    * @param url - The URL to discover feeds from
    * @returns Array of discovered feeds
    */
-  discover: expensivePublicProcedure
+  discover: expensiveConfirmedProtectedProcedure
     .meta({
       openapi: {
         method: "GET",
