@@ -21,8 +21,7 @@ import {
   type Feed,
   type OpmlImportFeedResult,
 } from "../db/schema";
-import { fetchFullContent } from "../services/full-content";
-import { withSanitizedEntryContent } from "../html/sanitize-entry";
+import { fetchFullContent, persistFullContentResult } from "../services/full-content";
 import { fetchFeed, type FetchFeedResult, type RedirectInfo } from "../feed/fetcher";
 import type { WebSubLinkHeaders } from "../feed/link-header";
 import { parseFeed } from "../feed/parser";
@@ -145,45 +144,18 @@ async function fetchFullContentForNewEntries(
   for (const entry of entriesWithUrls) {
     try {
       const result = await fetchFullContent(entry.url!);
-      const now = new Date();
+      // Persists the result (sanitized at write time so the user's first
+      // read is fast) or the fetch error onto the shared entry row.
+      const update = await persistFullContentResult(db, entry.id, result);
 
-      if (result.success) {
-        const fullContentForHash = result.contentCleaned ?? result.contentOriginal ?? "";
-        const fullContentHash = fullContentForHash
-          ? createHash("sha256").update(fullContentForHash, "utf8").digest("hex")
-          : null;
-
-        await db
-          .update(entries)
-          // Sanitize at write time so the user's first read is fast.
-          .set(
-            withSanitizedEntryContent({
-              fullContentOriginal: result.contentOriginal ?? null,
-              fullContentCleaned: result.contentCleaned ?? null,
-              fullContentHash,
-              fullContentFetchedAt: now,
-              fullContentError: null,
-              updatedAt: now,
-            })
-          )
-          .where(eq(entries.id, entry.id));
+      if (update) {
         fetched++;
-
         logger.debug("Fetched full content for entry", {
           entryId: entry.id,
           url: entry.url,
         });
       } else {
-        await db
-          .update(entries)
-          .set({
-            fullContentError: result.error ?? "Unknown error",
-            fullContentFetchedAt: now,
-            updatedAt: now,
-          })
-          .where(eq(entries.id, entry.id));
         failed++;
-
         logger.debug("Failed to fetch full content for entry", {
           entryId: entry.id,
           url: entry.url,

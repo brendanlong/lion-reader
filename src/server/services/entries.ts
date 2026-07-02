@@ -248,10 +248,11 @@ function encodeCursor(ts: string, entryId: string): string {
 // ============================================================================
 
 /**
- * Fields to select when fetching a full entry from visibleEntries + feeds + subscriptions.
- * Used by `getFullEntry` and the entries router to avoid duplicating the 20+ field list.
+ * Base select fields shared by every full-entry read (getEntry/getEntries and
+ * selectFullEntry). Selects the persisted sanitized content columns (plus
+ * their versions) so raw untrusted HTML never leaves the service layer.
  */
-export const fullEntrySelectFields = {
+const entryFullSelectFields = {
   id: visibleEntries.id,
   feedId: visibleEntries.feedId,
   type: visibleEntries.type,
@@ -274,6 +275,15 @@ export const fullEntrySelectFields = {
   feedTitle: feeds.title,
   feedUrl: feeds.url,
   unsubscribeUrl: visibleEntries.unsubscribeUrl,
+};
+
+/**
+ * Superset selected by `selectFullEntry` for the tRPC full-entry view: adds
+ * the full-content family, score-signal flags, and the subscription's
+ * fetchFullContent setting.
+ */
+const fullEntrySelectFields = {
+  ...entryFullSelectFields,
   fullContentOriginalSanitized: visibleEntries.fullContentOriginalSanitized,
   fullContentCleanedSanitized: visibleEntries.fullContentCleanedSanitized,
   fullContentSanitizedVersion: visibleEntries.fullContentSanitizedVersion,
@@ -304,7 +314,7 @@ export async function selectFullEntry(db: typeof dbType, userId: string, entryId
 }
 
 /**
- * Resolve an entry's sanitized content for display.
+ * Resolve one family of an entry's sanitized content for display.
  *
  * Entry bodies come from untrusted feeds and are rendered via
  * `dangerouslySetInnerHTML` (and served to external clients such as MCP,
@@ -313,11 +323,85 @@ export async function selectFullEntry(db: typeof dbType, userId: string, entryId
  * `@/server/html/sanitize-entry`), so the common case is a pure read of the
  * stored values. When the stored version doesn't match the current
  * `SANITIZER_VERSION` — pre-migration rows, or after the allow-list was
- * tightened — we re-sanitize from the raw columns and persist the result
- * (fire-and-forget) so subsequent reads are fast again.
+ * tightened — we re-sanitize from that family's raw columns and persist the
+ * result (fire-and-forget) so subsequent reads are fast again.
  *
  * The content (`content_*`) and full-content (`full_content_*`) families are
- * versioned independently because they are written at different times.
+ * versioned independently because they are written at different times, and are
+ * resolved independently so callers that only serve the content family
+ * (getEntry/getEntries) don't pay to fetch and re-sanitize full-content HTML
+ * they never return.
+ */
+async function resolveSanitizedFamily(
+  db: typeof dbType,
+  entryId: string,
+  family: "content" | "fullContent",
+  stored: {
+    originalSanitized: string | null;
+    cleanedSanitized: string | null;
+    version: number | null;
+  }
+): Promise<{ original: string | null; cleaned: string | null }> {
+  // Fast path: already sanitized at the current version.
+  if (stored.version === SANITIZER_VERSION) {
+    return { original: stored.originalSanitized, cleaned: stored.cleanedSanitized };
+  }
+
+  // Heal path: fetch this family's raw columns, sanitize, and persist so we
+  // don't pay this again.
+  const rawColumns =
+    family === "content"
+      ? { original: entries.contentOriginal, cleaned: entries.contentCleaned }
+      : { original: entries.fullContentOriginal, cleaned: entries.fullContentCleaned };
+  const [raw] = await db.select(rawColumns).from(entries).where(eq(entries.id, entryId)).limit(1);
+
+  const resolved = {
+    original: sanitizeEntryHtml(raw?.original ?? null),
+    cleaned: sanitizeEntryHtml(raw?.cleaned ?? null),
+  };
+
+  // Persist the healed columns (fire-and-forget). The UPDATE is gated on the
+  // family's version still being stale (`IS DISTINCT FROM`, which also matches
+  // NULL). This is a compare-and-swap: if a concurrent writer (e.g. a feed
+  // refresh via updateEntryContent, or a full-content fetch) has already
+  // stored fresh raw + sanitized + current version, our predicate is false and
+  // we skip — so a backfill computed from now-stale raw can never clobber
+  // newer content.
+  const versionColumn =
+    family === "content" ? entries.contentSanitizedVersion : entries.fullContentSanitizedVersion;
+  const healSet =
+    family === "content"
+      ? {
+          contentOriginalSanitized: resolved.original,
+          contentCleanedSanitized: resolved.cleaned,
+          contentSanitizedVersion: SANITIZER_VERSION,
+        }
+      : {
+          fullContentOriginalSanitized: resolved.original,
+          fullContentCleanedSanitized: resolved.cleaned,
+          fullContentSanitizedVersion: SANITIZER_VERSION,
+        };
+
+  // A failed backfill write must not fail the read.
+  void (async () => {
+    try {
+      await db
+        .update(entries)
+        .set(healSet)
+        .where(
+          and(eq(entries.id, entryId), sql`${versionColumn} IS DISTINCT FROM ${SANITIZER_VERSION}`)
+        );
+    } catch (err) {
+      logger.warn("Failed to persist re-sanitized entry content", { entryId, family, err });
+    }
+  })();
+
+  return resolved;
+}
+
+/**
+ * Resolve both sanitized content families (see resolveSanitizedFamily).
+ * Used by toFullEntry, which returns full-content fields.
  */
 async function resolveSanitizedContent(
   db: typeof dbType,
@@ -331,100 +415,25 @@ async function resolveSanitizedContent(
     fullContentSanitizedVersion: number | null;
   }
 ) {
-  const contentCurrent = stored.contentSanitizedVersion === SANITIZER_VERSION;
-  const fullContentCurrent = stored.fullContentSanitizedVersion === SANITIZER_VERSION;
+  const [content, fullContent] = await Promise.all([
+    resolveSanitizedFamily(db, entryId, "content", {
+      originalSanitized: stored.contentOriginalSanitized,
+      cleanedSanitized: stored.contentCleanedSanitized,
+      version: stored.contentSanitizedVersion,
+    }),
+    resolveSanitizedFamily(db, entryId, "fullContent", {
+      originalSanitized: stored.fullContentOriginalSanitized,
+      cleanedSanitized: stored.fullContentCleanedSanitized,
+      version: stored.fullContentSanitizedVersion,
+    }),
+  ]);
 
-  // Fast path: both families already sanitized at the current version.
-  if (contentCurrent && fullContentCurrent) {
-    return {
-      contentOriginal: stored.contentOriginalSanitized,
-      contentCleaned: stored.contentCleanedSanitized,
-      fullContentOriginal: stored.fullContentOriginalSanitized,
-      fullContentCleaned: stored.fullContentCleanedSanitized,
-    };
-  }
-
-  // Heal path: fetch the raw columns for whichever family is stale, sanitize,
-  // and persist so we don't pay this again.
-  const [raw] = await db
-    .select({
-      contentOriginal: entries.contentOriginal,
-      contentCleaned: entries.contentCleaned,
-      fullContentOriginal: entries.fullContentOriginal,
-      fullContentCleaned: entries.fullContentCleaned,
-    })
-    .from(entries)
-    .where(eq(entries.id, entryId))
-    .limit(1);
-
-  const resolved = {
-    contentOriginal: contentCurrent
-      ? stored.contentOriginalSanitized
-      : sanitizeEntryHtml(raw?.contentOriginal ?? null),
-    contentCleaned: contentCurrent
-      ? stored.contentCleanedSanitized
-      : sanitizeEntryHtml(raw?.contentCleaned ?? null),
-    fullContentOriginal: fullContentCurrent
-      ? stored.fullContentOriginalSanitized
-      : sanitizeEntryHtml(raw?.fullContentOriginal ?? null),
-    fullContentCleaned: fullContentCurrent
-      ? stored.fullContentCleanedSanitized
-      : sanitizeEntryHtml(raw?.fullContentCleaned ?? null),
+  return {
+    contentOriginal: content.original,
+    contentCleaned: content.cleaned,
+    fullContentOriginal: fullContent.original,
+    fullContentCleaned: fullContent.cleaned,
   };
-
-  // Persist the healed columns (fire-and-forget) so we don't pay this again.
-  // Each family is written in its own UPDATE gated on its version still being
-  // stale (`IS DISTINCT FROM`, which also matches NULL). This is a
-  // compare-and-swap: if a concurrent writer (e.g. a feed refresh via
-  // updateEntryContent, or a full-content fetch) has already stored fresh raw +
-  // sanitized + current version, our predicate is false and we skip — so a
-  // backfill computed from now-stale raw can never clobber newer content. The
-  // families are split because they version and change independently.
-  const heals: Promise<unknown>[] = [];
-  if (!contentCurrent) {
-    heals.push(
-      db
-        .update(entries)
-        .set({
-          contentOriginalSanitized: resolved.contentOriginal,
-          contentCleanedSanitized: resolved.contentCleaned,
-          contentSanitizedVersion: SANITIZER_VERSION,
-        })
-        .where(
-          and(
-            eq(entries.id, entryId),
-            sql`${entries.contentSanitizedVersion} IS DISTINCT FROM ${SANITIZER_VERSION}`
-          )
-        )
-    );
-  }
-  if (!fullContentCurrent) {
-    heals.push(
-      db
-        .update(entries)
-        .set({
-          fullContentOriginalSanitized: resolved.fullContentOriginal,
-          fullContentCleanedSanitized: resolved.fullContentCleaned,
-          fullContentSanitizedVersion: SANITIZER_VERSION,
-        })
-        .where(
-          and(
-            eq(entries.id, entryId),
-            sql`${entries.fullContentSanitizedVersion} IS DISTINCT FROM ${SANITIZER_VERSION}`
-          )
-        )
-    );
-  }
-  // A failed backfill write must not fail the read.
-  void (async () => {
-    try {
-      await Promise.all(heals);
-    } catch (err) {
-      logger.warn("Failed to persist re-sanitized entry content", { entryId, err });
-    }
-  })();
-
-  return resolved;
 }
 
 /**
@@ -722,65 +731,28 @@ async function searchEntries(
 }
 
 /**
- * Shared select fields for getEntry/getEntries. Selects the persisted
- * sanitized content columns (plus their versions) so the raw untrusted HTML
- * never leaves the service layer.
- */
-const entryFullSelectFields = {
-  id: visibleEntries.id,
-  feedId: visibleEntries.feedId,
-  type: visibleEntries.type,
-  url: visibleEntries.url,
-  title: visibleEntries.title,
-  author: visibleEntries.author,
-  contentOriginalSanitized: visibleEntries.contentOriginalSanitized,
-  contentCleanedSanitized: visibleEntries.contentCleanedSanitized,
-  contentSanitizedVersion: visibleEntries.contentSanitizedVersion,
-  fullContentOriginalSanitized: visibleEntries.fullContentOriginalSanitized,
-  fullContentCleanedSanitized: visibleEntries.fullContentCleanedSanitized,
-  fullContentSanitizedVersion: visibleEntries.fullContentSanitizedVersion,
-  summary: visibleEntries.summary,
-  publishedAt: visibleEntries.publishedAt,
-  fetchedAt: visibleEntries.fetchedAt,
-  updatedAt: visibleEntries.updatedAt,
-  read: visibleEntries.read,
-  starred: visibleEntries.starred,
-  subscriptionId: visibleEntries.subscriptionId,
-  siteName: visibleEntries.siteName,
-  feedTitle: feeds.title,
-  feedUrl: feeds.url,
-  unsubscribeUrl: visibleEntries.unsubscribeUrl,
-};
-
-/**
- * Maps a raw row to EntryFull, resolving sanitized content (with self-heal
- * for rows whose stored sanitized version is stale).
+ * Maps a raw row to EntryFull, resolving the sanitized content family (with
+ * self-heal for rows whose stored sanitized version is stale). EntryFull
+ * doesn't expose full-content fields, so that family is neither selected nor
+ * resolved here.
  */
 async function toEntryFull(
   db: typeof dbType,
   row: Awaited<ReturnType<typeof selectEntryFullRows>>[number]
 ): Promise<EntryFull> {
-  const content = await resolveSanitizedContent(db, row.id, row);
+  const { contentOriginalSanitized, contentCleanedSanitized, contentSanitizedVersion, ...rest } =
+    row;
+
+  const content = await resolveSanitizedFamily(db, row.id, "content", {
+    originalSanitized: contentOriginalSanitized,
+    cleanedSanitized: contentCleanedSanitized,
+    version: contentSanitizedVersion,
+  });
+
   return {
-    id: row.id,
-    subscriptionId: row.subscriptionId,
-    feedId: row.feedId,
-    type: row.type,
-    url: row.url,
-    title: row.title,
-    author: row.author,
-    contentOriginal: content.contentOriginal,
-    contentCleaned: content.contentCleaned,
-    summary: row.summary,
-    publishedAt: row.publishedAt,
-    fetchedAt: row.fetchedAt,
-    updatedAt: row.updatedAt,
-    read: row.read,
-    starred: row.starred,
-    feedTitle: row.feedTitle,
-    feedUrl: row.feedUrl,
-    siteName: row.siteName,
-    unsubscribeUrl: row.unsubscribeUrl,
+    ...rest,
+    contentOriginal: content.original,
+    contentCleaned: content.cleaned,
   };
 }
 

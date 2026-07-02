@@ -150,6 +150,58 @@ export async function fetchFullContent(url: string): Promise<FetchFullContentRes
 }
 
 /**
+ * Persist a fetchFullContent result onto an entry's full-content columns.
+ *
+ * This is the single write site for the full-content invariants — hash
+ * derivation for summary caching, sanitized-column stamping via
+ * withSanitizedEntryContent, and error persistence — shared by the
+ * user-initiated fetch (fetchAndStoreFullContent) and the background worker
+ * (fetchFullContentForEntries in jobs/handlers.ts).
+ *
+ * @returns the applied update (including the sanitized columns) on success,
+ *   or null when the fetch failed and only the error was persisted.
+ */
+export async function persistFullContentResult(
+  db: typeof dbType,
+  entryId: string,
+  result: FetchFullContentResult,
+  now: Date = new Date()
+) {
+  if (!result.success) {
+    await db
+      .update(entries)
+      .set({
+        fullContentError: result.error ?? "Unknown error",
+        fullContentFetchedAt: now,
+        updatedAt: now,
+      })
+      .where(eq(entries.id, entryId));
+    return null;
+  }
+
+  // Compute hash of full content for separate summary caching
+  const fullContentForHash = result.contentCleaned ?? result.contentOriginal ?? "";
+  const fullContentHash = fullContentForHash
+    ? createHash("sha256").update(fullContentForHash, "utf8").digest("hex")
+    : null;
+
+  // Sanitize the fetched full content once: stored in the *_sanitized columns
+  // so reads are fast. The raw page HTML / Readability output is untrusted
+  // and rendered via dangerouslySetInnerHTML, so it must not be served raw.
+  const fullContentUpdate = withSanitizedEntryContent({
+    fullContentOriginal: result.contentOriginal ?? null,
+    fullContentCleaned: result.contentCleaned ?? null,
+    fullContentHash,
+    fullContentFetchedAt: now,
+    fullContentError: null,
+    updatedAt: now,
+  });
+
+  await db.update(entries).set(fullContentUpdate).where(eq(entries.id, entryId));
+  return fullContentUpdate;
+}
+
+/**
  * Full entry shape returned by fetchAndStoreFullContent (the toFullEntry
  * output shape used by entries.get).
  */
@@ -189,39 +241,34 @@ export async function fetchAndStoreFullContent(
     throw errors.entryNotFound();
   }
 
-  const entry = await toFullEntry(db, rawEntry);
   const contentHash = rawEntry.contentHash;
 
-  // Check if entry has a URL to fetch
-  if (!entry.url) {
+  // Check if entry has a URL to fetch (before building the response entry —
+  // toFullEntry resolves sanitized content, which is wasted work here)
+  if (!rawEntry.url) {
     return {
       success: false,
       error: "Entry has no URL to fetch content from",
     };
   }
 
+  const entry = await toFullEntry(db, rawEntry);
+
   logger.info("Fetching full content for entry", {
     entryId: entry.id,
-    url: entry.url,
+    url: rawEntry.url,
   });
 
-  const result = await fetchFullContent(entry.url);
+  const result = await fetchFullContent(rawEntry.url);
+  const now = new Date();
+  // Persist onto the shared entry row (see note above); the update carries
+  // the sanitized columns so they can be served back to the client below.
+  const fullContentUpdate = await persistFullContentResult(db, entryId, result, now);
 
-  if (!result.success) {
-    // Persist the error on the shared entry row (see note above)
-    const now = new Date();
-    await db
-      .update(entries)
-      .set({
-        fullContentError: result.error ?? "Unknown error",
-        fullContentFetchedAt: now,
-        updatedAt: now,
-      })
-      .where(eq(entries.id, entryId));
-
+  if (!result.success || !fullContentUpdate) {
     logger.warn("Failed to fetch full content", {
       entryId: entry.id,
-      url: entry.url,
+      url: rawEntry.url,
       error: result.error,
     });
 
@@ -235,29 +282,6 @@ export async function fetchAndStoreFullContent(
       },
     };
   }
-
-  // Compute hash of full content for separate summary caching
-  const fullContentForHash = result.contentCleaned ?? result.contentOriginal ?? "";
-  const fullContentHash = fullContentForHash
-    ? createHash("sha256").update(fullContentForHash, "utf8").digest("hex")
-    : null;
-
-  // Sanitize the fetched full content once: stored in the *_sanitized
-  // columns so reads are fast, and reused below so the client renders
-  // sanitized HTML. The raw page HTML / Readability output is untrusted and
-  // is rendered via dangerouslySetInnerHTML, so it must not be returned raw.
-  const now = new Date();
-  const fullContentUpdate = withSanitizedEntryContent({
-    fullContentOriginal: result.contentOriginal ?? null,
-    fullContentCleaned: result.contentCleaned ?? null,
-    fullContentHash,
-    fullContentFetchedAt: now,
-    fullContentError: null,
-    updatedAt: now,
-  });
-
-  // Update entry with full content
-  await db.update(entries).set(fullContentUpdate).where(eq(entries.id, entryId));
 
   // Invalidate any existing narration content so it will be regenerated
   // using the full content next time narration is requested
@@ -280,7 +304,7 @@ export async function fetchAndStoreFullContent(
 
   logger.info("Successfully fetched full content for entry", {
     entryId: entry.id,
-    url: entry.url,
+    url: rawEntry.url,
     contentLength: result.contentCleaned?.length,
   });
 
