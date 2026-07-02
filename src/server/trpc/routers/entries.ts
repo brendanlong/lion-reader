@@ -11,7 +11,6 @@
 
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
-import { createHash } from "crypto";
 
 import {
   createTRPCRouter,
@@ -21,14 +20,12 @@ import {
 import { API_TOKEN_SCOPES } from "@/server/auth/api-token";
 import { errors } from "../errors";
 import { uuidSchema } from "../validation";
-import { entries, tags, narrationContent } from "@/server/db/schema";
-import { fetchFullContent as fetchFullContentFromUrl } from "@/server/services/full-content";
+import { tags } from "@/server/db/schema";
+import * as fullContentService from "@/server/services/full-content";
 import * as entriesService from "@/server/services/entries";
 import * as countsService from "@/server/services/counts";
 import { getSubscriptionFeedIds } from "@/server/services/entry-filters";
-import { withSanitizedEntryContent } from "@/server/html/sanitize-entry";
 import { publishEntryStateChanged } from "@/server/redis/pubsub";
-import { logger } from "@/lib/logger";
 
 // Endpoints exposed via the MCP tool surface; accessible to tokens with the `mcp` scope.
 const mcpProcedure = scopedProtectedProcedure(API_TOKEN_SCOPES.MCP);
@@ -634,120 +631,6 @@ export const entriesRouter = createTRPCRouter({
     )
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
-
-      // First, verify the entry exists and user has access
-      const rawEntry = await entriesService.selectFullEntry(ctx.db, userId, input.id);
-
-      if (!rawEntry) {
-        throw errors.entryNotFound();
-      }
-
-      const entry = {
-        ...(await entriesService.toFullEntry(ctx.db, rawEntry)),
-        contentHash: rawEntry.contentHash,
-      };
-
-      // Check if entry has a URL to fetch
-      if (!entry.url) {
-        return {
-          success: false,
-          error: "Entry has no URL to fetch content from",
-        };
-      }
-
-      // Fetch the full content
-      logger.info("Fetching full content for entry", {
-        entryId: entry.id,
-        url: entry.url,
-      });
-
-      const result = await fetchFullContentFromUrl(entry.url);
-
-      if (!result.success) {
-        // Update entry with error
-        await ctx.db
-          .update(entries)
-          .set({
-            fullContentError: result.error ?? "Unknown error",
-            fullContentFetchedAt: new Date(),
-            updatedAt: new Date(),
-          })
-          .where(eq(entries.id, input.id));
-
-        logger.warn("Failed to fetch full content", {
-          entryId: entry.id,
-          url: entry.url,
-          error: result.error,
-        });
-
-        return {
-          success: false,
-          error: result.error,
-          entry: {
-            ...entry,
-            fullContentError: result.error ?? "Unknown error",
-            fullContentFetchedAt: new Date(),
-          },
-        };
-      }
-
-      // Compute hash of full content for separate summary caching
-      const fullContentForHash = result.contentCleaned ?? result.contentOriginal ?? "";
-      const fullContentHash = fullContentForHash
-        ? createHash("sha256").update(fullContentForHash, "utf8").digest("hex")
-        : null;
-
-      // Sanitize the fetched full content once: stored in the *_sanitized
-      // columns so reads are fast, and reused below so the client renders
-      // sanitized HTML. The raw page HTML / Readability output is untrusted and
-      // is rendered via dangerouslySetInnerHTML, so it must not be returned raw.
-      const now = new Date();
-      const fullContentUpdate = withSanitizedEntryContent({
-        fullContentOriginal: result.contentOriginal ?? null,
-        fullContentCleaned: result.contentCleaned ?? null,
-        fullContentHash,
-        fullContentFetchedAt: now,
-        fullContentError: null,
-        updatedAt: now,
-      });
-
-      // Update entry with full content
-      await ctx.db.update(entries).set(fullContentUpdate).where(eq(entries.id, input.id));
-
-      // Invalidate any existing narration content so it will be regenerated
-      // using the full content next time narration is requested
-      if (entry.contentHash) {
-        await ctx.db
-          .update(narrationContent)
-          .set({
-            contentNarration: null,
-            generatedAt: null,
-            error: null,
-            errorAt: null,
-          })
-          .where(eq(narrationContent.contentHash, entry.contentHash));
-
-        logger.debug("Invalidated narration content for entry", {
-          entryId: entry.id,
-          contentHash: entry.contentHash,
-        });
-      }
-
-      logger.info("Successfully fetched full content for entry", {
-        entryId: entry.id,
-        url: entry.url,
-        contentLength: result.contentCleaned?.length,
-      });
-
-      return {
-        success: true,
-        entry: {
-          ...entry,
-          fullContentOriginal: fullContentUpdate.fullContentOriginalSanitized ?? null,
-          fullContentCleaned: fullContentUpdate.fullContentCleanedSanitized ?? null,
-          fullContentFetchedAt: now,
-          fullContentError: null,
-        },
-      };
+      return fullContentService.fetchAndStoreFullContent(ctx.db, userId, input.id);
     }),
 });
