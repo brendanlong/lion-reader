@@ -248,13 +248,16 @@ describe("WebSub Integration", () => {
       expect(updatedFeed.websubActive).toBe(false);
     });
 
-    it("confirms hub-initiated unsubscribe", async () => {
+    it("rejects unsubscribe verification we never requested", async () => {
       const feed = await createTestFeed();
       const topicUrl = "https://example.com/hub-initiated.xml";
       const { subscription: createdSub } = await createTestSubscription(feed.id, {
         topicUrl,
         state: "active",
-        // No unsubscribeRequestedAt - this is hub-initiated
+        // No unsubscribeRequestedAt - we never asked to unsubscribe. The
+        // callback URL (feedId) and topic URL are both discoverable, so
+        // confirming this would let anyone silently downgrade the feed from
+        // push to polling.
       });
 
       // Mark feed as WebSub active
@@ -268,20 +271,19 @@ describe("WebSub Integration", () => {
         leaseSeconds: null,
       });
 
-      expect(result.success).toBe(true);
-      expect(result.challenge).toBe(challenge);
+      expect(result.success).toBe(false);
+      expect(result.challenge).toBeUndefined();
 
-      // Verify subscription was marked as unsubscribed with note
+      // Verify subscription is untouched
       const [subscription] = await db
         .select()
         .from(websubSubscriptions)
         .where(eq(websubSubscriptions.id, createdSub.id));
-      expect(subscription.state).toBe("unsubscribed");
-      expect(subscription.lastError).toBe("Hub-initiated unsubscribe confirmed");
+      expect(subscription.state).toBe("active");
 
-      // Verify feed is no longer marked as WebSub active
+      // Verify feed is still marked as WebSub active
       const [updatedFeed] = await db.select().from(feeds).where(eq(feeds.id, feed.id)).limit(1);
-      expect(updatedFeed.websubActive).toBe(false);
+      expect(updatedFeed.websubActive).toBe(true);
     });
 
     it("rejects unsubscribe with topic mismatch", async () => {
