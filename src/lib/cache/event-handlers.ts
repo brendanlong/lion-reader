@@ -15,6 +15,7 @@ import {
 } from "./operations";
 import {
   insertEntryIntoListCaches,
+  restoreUnreadEntriesToListCaches,
   updateEntriesInListCache,
   updateEntryMetadataInCache,
 } from "./entry-cache";
@@ -116,6 +117,13 @@ export function handleSyncEvent(
         read: event.read,
         starred: event.starred,
       });
+
+      // An entry that became unread (here or on another device) belongs in
+      // unreadOnly caches that don't contain it (fetched while it was read);
+      // the in-place update above can't add rows.
+      if (!event.read) {
+        restoreUnreadEntriesToListCaches(queryClient, [event.entryId]);
+      }
 
       // Set all counts from the server directly — no delta estimation needed.
       setEntryRelatedCounts(utils, event.counts, queryClient);
