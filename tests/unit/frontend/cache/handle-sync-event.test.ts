@@ -460,6 +460,44 @@ describe("handleSyncEvent - entry_updated", () => {
 // ============================================================================
 
 describe("handleSyncEvent - entry_state_changed", () => {
+  it("restores an entry that became unread into unreadOnly caches missing it", () => {
+    // entry-3 is read in the seeded "All" cache. An unreadOnly cache fetched
+    // while it was read doesn't contain it; marking it unread (e.g. on
+    // another device) must insert it there, not just patch by ID.
+    queryClient.setQueryData(
+      [["entries", "list"], { input: { unreadOnly: true, limit: 25 }, type: "infinite" }],
+      {
+        pages: [
+          {
+            items: [DEFAULT_ENTRIES.find((e) => e.id === "entry-1")],
+            nextCursor: undefined,
+          },
+        ],
+        pageParams: [undefined],
+      }
+    );
+
+    handleSyncEvent(
+      mockUtils.utils,
+      queryClient,
+      createEntryStateChangedEvent({
+        entryId: "entry-3",
+        read: false,
+        starred: false,
+      })
+    );
+
+    const unreadList = queryClient.getQueryData<{
+      pages: Array<{ items: Array<{ id: string; read: boolean }> }>;
+    }>([["entries", "list"], { input: { unreadOnly: true, limit: 25 }, type: "infinite" }]);
+    const ids = unreadList?.pages.flatMap((p) => p.items.map((i) => i.id));
+    // Inserted in sorted position (entry-3 published 06-03 > entry-1 06-01)
+    expect(ids).toEqual(["entry-3", "entry-1"]);
+    // And the "All" cache still has exactly one copy, now unread
+    const copies = getEntriesFromQueryClient().filter((e) => e.id === "entry-3");
+    expect(copies.every((e) => e.read === false)).toBe(true);
+  });
+
   it("updates read status in entries.list", () => {
     handleSyncEvent(
       mockUtils.utils,

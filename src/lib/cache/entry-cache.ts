@@ -234,6 +234,39 @@ export function updateEntriesReadStatus(
   // Update entries in all cached list queries (if queryClient provided)
   if (queryClient) {
     updateEntriesInListCache(queryClient, entryIds, { read });
+
+    // An entry that just became unread belongs in unreadOnly caches that were
+    // fetched while it was read and so don't contain it (e.g. mark-unread in
+    // "Show All", then toggle back to "Unread only" — the toggle switches
+    // query keys without a refetch). The in-place update above can't add
+    // rows, so insert from another cache's copy of the entry.
+    if (!read) {
+      restoreUnreadEntriesToListCaches(queryClient, entryIds);
+    }
+  }
+}
+
+/**
+ * Inserts entries that just became unread into the cached lists that lack
+ * them (they were read when those caches were fetched, so the server omitted
+ * them from unreadOnly results). The entry's full row is taken from whichever
+ * list cache contains it; entries in no list cache are skipped — no cached
+ * view is missing them. Insertion is deduped and filter-targeted by
+ * insertEntryIntoListCaches, so caches that already show the entry are
+ * untouched.
+ *
+ * @param queryClient - React Query client for cache access
+ * @param entryIds - Entries that changed to unread
+ */
+export function restoreUnreadEntriesToListCaches(
+  queryClient: QueryClient,
+  entryIds: string[]
+): void {
+  for (const entryId of entryIds) {
+    const item = findEntryInListCache(queryClient, entryId);
+    if (item) {
+      insertEntryIntoListCaches(queryClient, { ...item, read: false });
+    }
   }
 }
 

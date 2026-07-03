@@ -13,6 +13,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import {
   insertEntryIntoListCaches,
+  restoreUnreadEntriesToListCaches,
   type EntryListItem,
   type EntryListFilters,
 } from "@/lib/cache/entry-cache";
@@ -373,5 +374,58 @@ describe("insertEntryIntoListCaches - filter targeting", () => {
     insertEntryIntoListCaches(queryClient, makeEntry());
 
     expect(listIds(unknownFilter)).toEqual(["entry-a"]);
+  });
+});
+
+// ============================================================================
+// restoreUnreadEntriesToListCaches
+// ============================================================================
+
+describe("restoreUnreadEntriesToListCaches", () => {
+  it("inserts an entry that became unread into unreadOnly caches that lack it", () => {
+    // Scenario: user switches to "Show All", marks a read entry unread, then
+    // switches back to "Unread only" — a query-key change with no refetch.
+    // The unreadOnly cache was fetched while the entry was read, so it's
+    // missing there even though it's unread now.
+    const readEntry = makeRow("entry-was-read", "2024-06-02T00:00:00Z", {
+      read: false, // already patched in place by updateEntriesInListCache
+      title: "Was read",
+      feedTitle: "Feed One",
+    });
+    seedList({}, [{ items: [makeRow("entry-c", "2024-06-03T00:00:00Z"), readEntry] }]);
+    seedList({ unreadOnly: true }, [
+      {
+        items: [
+          makeRow("entry-c", "2024-06-03T00:00:00Z"),
+          makeRow("entry-a", "2024-06-01T00:00:00Z"),
+        ],
+      },
+    ]);
+
+    restoreUnreadEntriesToListCaches(queryClient, ["entry-was-read"]);
+
+    // Inserted in sorted position in the unreadOnly cache...
+    expect(listIds({ unreadOnly: true })).toEqual(["entry-c", "entry-was-read", "entry-a"]);
+    // ...and the cache it was found in is untouched (dedupe)
+    expect(listIds({})).toEqual(["entry-c", "entry-was-read"]);
+  });
+
+  it("is a no-op for entries not present in any list cache", () => {
+    seedList({ unreadOnly: true }, [{ items: [makeRow("entry-a", "2024-06-01T00:00:00Z")] }]);
+
+    restoreUnreadEntriesToListCaches(queryClient, ["entry-unknown"]);
+
+    expect(listIds({ unreadOnly: true })).toEqual(["entry-a"]);
+  });
+
+  it("respects filter targeting when restoring (wrong-subscription caches untouched)", () => {
+    seedList({}, [{ items: [makeRow("entry-x", "2024-06-02T00:00:00Z")] }]);
+    seedList({ subscriptionId: "sub-2", unreadOnly: true }, [
+      { items: [makeRow("entry-a", "2024-06-01T00:00:00Z")] },
+    ]);
+
+    restoreUnreadEntriesToListCaches(queryClient, ["entry-x"]); // entry-x is sub-1
+
+    expect(listIds({ subscriptionId: "sub-2", unreadOnly: true })).toEqual(["entry-a"]);
   });
 });
