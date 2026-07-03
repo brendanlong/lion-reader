@@ -193,7 +193,15 @@ Each provider is enabled by setting its environment variables (client ID and sec
 2. Server hashes token, checks Redis cache
 3. Cache miss: query Postgres, fill cache (TTL: 5 minutes)
 4. Validate: not revoked, not expired
-5. Update `last_active_at` asynchronously
+5. Update `last_active_at` asynchronously (on both the session row and, throttled,
+   the denormalized `users.last_active_at` column)
+
+`users.last_active_at` is a denormalized copy of the most recent session activity.
+It exists so the admin "last active" view survives retention cleanup, which deletes
+expired sessions (see `runRetentionCleanup`); deriving activity from
+`MAX(sessions.last_active_at)` would blank out any user idle longer than the 30-day
+session lifetime. `updateLastActiveAt` refreshes it fire-and-forget, skipping the
+write when it was updated within the last minute to avoid write/index churn.
 
 ### Token Format
 

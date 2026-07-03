@@ -6,7 +6,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, isNull, sql, desc, asc, lt, gt, ilike, count, max } from "drizzle-orm";
+import { eq, and, isNull, sql, desc, asc, lt, gt, ilike, count } from "drizzle-orm";
 import crypto from "crypto";
 
 import { createTRPCRouter, adminProcedure } from "../trpc";
@@ -18,7 +18,6 @@ import {
   invites,
   jobs,
   oauthAccounts,
-  sessions,
   userEntries,
 } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
@@ -55,6 +54,17 @@ const paginationInput = z.object({
   cursor: z.string().uuid().optional(),
   limit: z.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT),
 });
+
+/**
+ * Sort options for the admin user list. Each sorts by a durable, indexable
+ * column on the users row so keyset (cursor) pagination stays correct:
+ * - `activity`: most recent activity first (last_active_at DESC NULLS LAST)
+ * - `created`:  newest accounts first (UUIDv7 id DESC)
+ * - `oldest`:   oldest accounts first (id ASC)
+ * - `email`:    email A→Z
+ */
+const USER_SORT = z.enum(["activity", "created", "oldest", "email"]);
+type UserSort = z.infer<typeof USER_SORT>;
 
 // ============================================================================
 // INVITE ENDPOINTS
@@ -498,10 +508,10 @@ const userEndpoints = {
   /**
    * List ALL users in the system.
    *
-   * Supports search by email (partial match, case-insensitive).
-   * Includes computed fields: OAuth providers, subscription count, entry count,
-   * scoring model stats, and total entry size estimate.
-   * Ordered by createdAt DESC (newest first).
+   * Supports search by email (partial match, case-insensitive) and a choice of
+   * sort orders (see USER_SORT). Includes computed fields: OAuth providers,
+   * subscription count, entry count, and last activity.
+   * Defaults to most-recent-activity first.
    */
   listUsers: adminProcedure
     .meta({
@@ -516,6 +526,7 @@ const userEndpoints = {
       paginationInput
         .extend({
           search: z.string().optional(),
+          sort: USER_SORT.default("activity"),
         })
         .optional()
     )
@@ -539,6 +550,7 @@ const userEndpoints = {
       const limit = input?.limit ?? DEFAULT_LIMIT;
       const cursor = input?.cursor;
       const search = input?.search;
+      const sort: UserSort = input?.sort ?? "activity";
 
       // Subquery: OAuth provider names as a JSON array
       const providersSq = ctx.db
@@ -562,26 +574,70 @@ const userEndpoints = {
         .from(userEntries)
         .where(eq(userEntries.userId, users.id));
 
-      // Subquery: most recent session activity (includes revoked sessions —
-      // a revoked session still indicates the user was active at that time)
-      const lastActiveAtSq = ctx.db
-        .select({ max: max(sessions.lastActiveAt).as("max") })
-        .from(sessions)
-        .where(eq(sessions.userId, users.id));
-
       const conditions = [];
-
-      // Cursor-based pagination: id < cursor (order by id DESC, since UUIDv7 is time-ordered)
-      if (cursor) {
-        conditions.push(lt(users.id, cursor));
-      }
 
       // Search by email
       if (search) {
         conditions.push(ilike(users.email, `%${search}%`));
       }
 
+      // Keyset (cursor) pagination. The cursor is a user id; the row it points
+      // at is looked up via subquery so we can compare against the sort column.
+      // Each branch mirrors its ORDER BY below.
+      if (cursor) {
+        const cursorActive = sql`(SELECT u2.last_active_at FROM users u2 WHERE u2.id = ${cursor})`;
+        const cursorEmail = sql`(SELECT u2.email FROM users u2 WHERE u2.id = ${cursor})`;
+        switch (sort) {
+          case "created":
+            conditions.push(lt(users.id, cursor));
+            break;
+          case "oldest":
+            conditions.push(gt(users.id, cursor));
+            break;
+          case "email":
+            conditions.push(
+              sql`(
+                ${users.email} > ${cursorEmail}
+                OR (${users.email} = ${cursorEmail} AND ${users.id} > ${cursor})
+              )`
+            );
+            break;
+          case "activity":
+            // ORDER BY last_active_at DESC NULLS LAST, id DESC. When the cursor
+            // row has activity, later rows have lower activity (or NULL), or the
+            // same activity with a lower id. When the cursor is already in the
+            // NULL tail, only lower-id NULL rows remain.
+            conditions.push(
+              sql`(
+                (
+                  ${cursorActive} IS NOT NULL
+                  AND (
+                    ${users.lastActiveAt} < ${cursorActive}
+                    OR ${users.lastActiveAt} IS NULL
+                    OR (${users.lastActiveAt} = ${cursorActive} AND ${users.id} < ${cursor})
+                  )
+                )
+                OR (
+                  ${cursorActive} IS NULL
+                  AND ${users.lastActiveAt} IS NULL
+                  AND ${users.id} < ${cursor}
+                )
+              )`
+            );
+            break;
+        }
+      }
+
       const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+      const orderBy =
+        sort === "created"
+          ? [desc(users.id)]
+          : sort === "oldest"
+            ? [asc(users.id)]
+            : sort === "email"
+              ? [asc(users.email), asc(users.id)]
+              : [sql`${users.lastActiveAt} DESC NULLS LAST`, desc(users.id)];
 
       const rows = await ctx.db
         .select({
@@ -591,11 +647,11 @@ const userEndpoints = {
           providers: sql<string[]>`(${providersSq})`.as("providers"),
           subscriptionCount: sql<number>`(${subscriptionCountSq})`.as("subscription_count"),
           entryCount: sql<number>`(${entryCountSq})`.as("entry_count"),
-          lastActiveAt: sql<Date | null>`(${lastActiveAtSq})`.as("last_active_at"),
+          lastActiveAt: users.lastActiveAt,
         })
         .from(users)
         .where(whereClause)
-        .orderBy(desc(users.id))
+        .orderBy(...orderBy)
         .limit(limit + 1);
 
       const hasMore = rows.length > limit;
@@ -668,14 +724,15 @@ const overviewEndpoints = {
         // Total users
         ctx.db.select({ count: count() }).from(users),
 
-        // Active users: single scan with conditional aggregation
+        // Active users: single scan over the denormalized users.last_active_at
+        // (durable across session retention cleanup, unlike a sessions scan).
         ctx.db
           .select({
-            active7d: sql<number>`COUNT(DISTINCT CASE WHEN ${sessions.lastActiveAt} > ${sevenDaysAgo} THEN ${sessions.userId} END)`,
-            active30d: sql<number>`COUNT(DISTINCT ${sessions.userId})`,
+            active7d: sql<number>`COUNT(*) FILTER (WHERE ${users.lastActiveAt} > ${sevenDaysAgo})`,
+            active30d: sql<number>`COUNT(*) FILTER (WHERE ${users.lastActiveAt} > ${thirtyDaysAgo})`,
           })
-          .from(sessions)
-          .where(gt(sessions.lastActiveAt, thirtyDaysAgo)),
+          .from(users)
+          .where(gt(users.lastActiveAt, thirtyDaysAgo)),
 
         // Feed stats: single scan for total and broken counts
         ctx.db

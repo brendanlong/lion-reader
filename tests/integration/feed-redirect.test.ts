@@ -76,6 +76,7 @@ function createAuthContext(userId: string): Context {
         passwordHash: "test-hash",
         inviteId: null,
         showSpam: false,
+        lastActiveAt: null,
         groqApiKey: null,
         anthropicApiKey: null,
         summarizationModel: null,

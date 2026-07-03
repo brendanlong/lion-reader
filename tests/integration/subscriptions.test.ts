@@ -62,6 +62,7 @@ function createAuthContext(userId: string): Context {
         passwordHash: "test-hash",
         inviteId: null,
         showSpam: false,
+        lastActiveAt: null,
         groqApiKey: null,
         anthropicApiKey: null,
         summarizationModel: null,
@@ -700,7 +701,11 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
         lastEntriesUpdatedAt: fetchTime,
       });
       for (let i = 0; i < count; i++) {
-        await createTestEntry(feedId, { guid: `${url}-${i}`, fetchedAt: fetchTime, lastSeenAt: fetchTime });
+        await createTestEntry(feedId, {
+          guid: `${url}-${i}`,
+          fetchedAt: fetchTime,
+          lastSeenAt: fetchTime,
+        });
       }
       return feedId;
     }
