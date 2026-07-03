@@ -390,6 +390,7 @@ async function processSuccessfulFetch(
     fetchedAt: now,
     previousLastEntriesUpdatedAt: feed.lastEntriesUpdatedAt,
     feedUrl: feed.url ?? undefined,
+    feedTitle: feedMetadata.title ?? feed.title,
   });
 
   // Fetch full content for new entries if any subscriber has fetchFullContent enabled

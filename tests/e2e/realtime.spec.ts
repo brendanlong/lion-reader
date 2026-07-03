@@ -134,6 +134,23 @@ function sidebarLinks(page: Page, taggedFeed: TestFeed) {
 }
 
 /**
+ * Builds the list-item payload publishNewEntry carries so clients can insert
+ * the entry into cached lists (mirrors what the feed worker publishes).
+ */
+function newEntryListData(entry: TestEntry, feed: TestFeed) {
+  return {
+    url: entry.url,
+    title: entry.title,
+    author: null,
+    summary: entry.summary,
+    publishedAt: entry.publishedAt.toISOString(),
+    fetchedAt: entry.fetchedAt.toISOString(),
+    siteName: null,
+    feedTitle: feed.title,
+  };
+}
+
+/**
  * Procedures that must never fire in response to a sync event — counts and
  * entry state are patched directly into the cache (the delta-update invariant
  * from src/FRONTEND_STATE.md).
@@ -170,7 +187,13 @@ test("new_entry event updates unread counts in all affected lists without refetc
     userId: user.id,
     title: "Realtime post",
   });
-  await publishNewEntry(taggedFeed.feedId, entry.id, entry.updatedAt, "web");
+  await publishNewEntry(
+    taggedFeed.feedId,
+    entry.id,
+    entry.updatedAt,
+    "web",
+    newEntryListData(entry, taggedFeed)
+  );
 
   // Affected lists update from the event's server-computed absolute counts...
   await expect(links.allItems).toContainText("(4)");
@@ -207,7 +230,13 @@ test("new_entry event updates a collapsed tag's unread count", async ({ page, ba
     userId: user.id,
     title: "Realtime post",
   });
-  await publishNewEntry(taggedFeed.feedId, entry.id, entry.updatedAt, "web");
+  await publishNewEntry(
+    taggedFeed.feedId,
+    entry.id,
+    entry.updatedAt,
+    "web",
+    newEntryListData(entry, taggedFeed)
+  );
 
   await expect(links.allItems).toContainText("(4)");
   // Intended behavior: the collapsed tag's badge should update too

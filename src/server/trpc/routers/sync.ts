@@ -227,13 +227,17 @@ export const syncRouter = createTRPCRouter({
             summary: entries.summary,
             url: entries.url,
             publishedAt: entries.publishedAt,
+            fetchedAt: entries.fetchedAt,
+            siteName: entries.siteName,
             createdAt: entries.createdAt,
             entryUpdatedAt: entries.updatedAt,
             read: userEntries.read,
             starred: userEntries.starred,
             userEntryUpdatedAt: userEntries.updatedAt,
             subscriptionId: subscriptions.id,
+            feedId: entries.feedId,
             feedType: feeds.type,
+            feedTitle: feeds.title,
             // Raw ISO string with µs precision for cursor/timestamp output
             maxUpdatedAtRaw: sql<string>`to_char(GREATEST(${entries.updatedAt}, ${userEntries.updatedAt}) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
           })
@@ -316,7 +320,11 @@ export const syncRouter = createTRPCRouter({
 
           if (entryMetadataChanged) {
             if (row.createdAt > entriesCursorDate) {
-              // New entry created after cursor - emit new_entry for count updates
+              // New entry created after cursor - emit new_entry for count and
+              // list updates. The entry payload mirrors the live SSE path so a
+              // catch-up sync inserts missed entries into cached lists too.
+              // A read/starred change since creation is delivered separately
+              // as an entry_state_changed event from the same row.
               allEvents.push({
                 type: "new_entry" as const,
                 subscriptionId: row.subscriptionId,
@@ -324,6 +332,17 @@ export const syncRouter = createTRPCRouter({
                 timestamp: row.maxUpdatedAtRaw,
                 updatedAt: row.maxUpdatedAtRaw,
                 feedType: row.feedType,
+                feedId: row.feedId,
+                entry: {
+                  url: row.url,
+                  title: row.title,
+                  author: row.author,
+                  summary: row.summary,
+                  publishedAt: row.publishedAt?.toISOString() ?? null,
+                  fetchedAt: row.fetchedAt.toISOString(),
+                  siteName: row.siteName,
+                  feedTitle: row.feedTitle,
+                },
                 ...(newEntryCounts && { counts: newEntryCounts }),
                 _sortTime: new Date(row.maxUpdatedAtRaw),
               });

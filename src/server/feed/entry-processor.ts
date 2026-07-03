@@ -19,6 +19,20 @@ import { withSanitizedEntryContent } from "../html/sanitize-entry";
 import { logger } from "@/lib/logger";
 
 /**
+ * List-item metadata carried on new_entry events (per-feed fields; feedTitle
+ * is added at publish time from the feed row).
+ */
+export interface NewEntryData {
+  url: string | null;
+  title: string | null;
+  author: string | null;
+  summary: string | null;
+  publishedAt: Date | null;
+  fetchedAt: Date;
+  siteName: string | null;
+}
+
+/**
  * Result of processing a single entry.
  */
 export interface ProcessedEntry {
@@ -35,6 +49,8 @@ export interface ProcessedEntry {
    * Present when isNew or isUpdated (unchanged entries aren't re-read).
    */
   updatedAt?: Date;
+  /** List-item metadata for the new_entry event. Present when isNew. */
+  newEntryData?: NewEntryData;
 }
 
 /**
@@ -65,6 +81,8 @@ export interface ProcessEntriesOptions {
   previousLastEntriesUpdatedAt?: Date | null;
   /** The URL of the feed (for feed-specific content cleaning) */
   feedUrl?: string;
+  /** The feed's title (feeds.title), carried on new_entry events for list display */
+  feedTitle?: string | null;
 }
 
 /**
@@ -285,6 +303,7 @@ export async function processEntry(
       isNew: true,
       isUpdated: false,
       updatedAt: entry.updatedAt,
+      newEntryData: toNewEntryData(entry),
     };
   }
 
@@ -315,6 +334,21 @@ export async function processEntry(
     guid,
     isNew: false,
     isUpdated: false,
+  };
+}
+
+/**
+ * Extracts the list-item metadata for new_entry events from an entry row.
+ */
+function toNewEntryData(entry: Entry): NewEntryData {
+  return {
+    url: entry.url,
+    title: entry.title,
+    author: entry.author,
+    summary: entry.summary,
+    publishedAt: entry.publishedAt,
+    fetchedAt: entry.fetchedAt,
+    siteName: entry.siteName,
   };
 }
 
@@ -369,6 +403,7 @@ async function processEntryWithCache(
       isNew: true,
       isUpdated: false,
       updatedAt: entry.updatedAt,
+      newEntryData: toNewEntryData(entry),
     };
   }
 
@@ -512,7 +547,7 @@ export async function processEntries(
   feed: ParsedFeed,
   options: ProcessEntriesOptions = {}
 ): Promise<ProcessEntriesResult> {
-  const { fetchedAt = new Date(), previousLastEntriesUpdatedAt, feedUrl } = options;
+  const { fetchedAt = new Date(), previousLastEntriesUpdatedAt, feedUrl, feedTitle } = options;
 
   // Derive GUIDs from all items first, so we only query for entries we need
   const guidsToCheck: string[] = [];
@@ -617,8 +652,18 @@ export async function processEntries(
     // next count-bearing event). Fire and forget — publishing failures must
     // not affect entry processing.
     for (const result of results) {
-      if (result.isNew && result.updatedAt) {
-        publishNewEntry(feedId, result.id, result.updatedAt, feedType).catch((err) => {
+      if (result.isNew && result.updatedAt && result.newEntryData) {
+        const data = result.newEntryData;
+        publishNewEntry(feedId, result.id, result.updatedAt, feedType, {
+          url: data.url,
+          title: data.title,
+          author: data.author,
+          summary: data.summary,
+          publishedAt: data.publishedAt?.toISOString() ?? null,
+          fetchedAt: data.fetchedAt.toISOString(),
+          siteName: data.siteName,
+          feedTitle: feedTitle ?? null,
+        }).catch((err) => {
           console.error("Failed to publish new_entry event:", err);
         });
       }

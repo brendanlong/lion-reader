@@ -20,7 +20,7 @@ import { extractTextFromHtml } from "@/server/http/html";
 import { sanitizeEntryHtml } from "@/server/html/sanitize";
 import { absolutizeUrls } from "@/server/feed/content-cleaner";
 import { cleanContentInWorker } from "@/server/worker-thread/pool";
-import { getOrCreateSavedFeed } from "@/server/feed/saved-feed";
+import { getOrCreateSavedFeed, SAVED_FEED_TITLE } from "@/server/feed/saved-feed";
 import { generateSummary } from "@/server/html/strip-html";
 import { withSanitizedEntryContent } from "@/server/html/sanitize-entry";
 import { logger } from "@/lib/logger";
@@ -287,7 +287,16 @@ async function insertSavedEntry(
     starred: false,
   });
 
-  await publishNewEntry(savedFeedId, entryId, now, "saved");
+  await publishNewEntry(savedFeedId, entryId, now, "saved", {
+    url: params.url,
+    title: params.title,
+    author: params.author,
+    summary: params.summary,
+    publishedAt: null,
+    fetchedAt: now.toISOString(),
+    siteName: params.siteName,
+    feedTitle: SAVED_FEED_TITLE,
+  });
 
   return {
     id: entryId,

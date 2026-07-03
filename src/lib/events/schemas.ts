@@ -30,6 +30,26 @@ export const entryMetadataSchema = z.object({
 });
 
 /**
+ * Entry list-item data for new_entry events. Carries everything (beyond the
+ * event's own entryId/subscriptionId/feedId/feedType/updatedAt) needed to
+ * insert the entry into cached entries.list pages without a refetch. Mirrors
+ * the per-feed fields of entryListItemSchema; a new entry is always
+ * read=false/starred=false, so per-user state isn't included.
+ */
+export const newEntryListDataSchema = z.object({
+  url: z.string().nullable(),
+  title: z.string().nullable(),
+  author: z.string().nullable(),
+  summary: z.string().nullable(),
+  publishedAt: z.string().nullable(),
+  fetchedAt: z.string(),
+  siteName: z.string().nullable(),
+  feedTitle: z.string().nullable(),
+});
+
+export type NewEntryListData = z.infer<typeof newEntryListDataSchema>;
+
+/**
  * Tag data included in tag events.
  */
 export const syncTagSchema = z.object({
@@ -116,6 +136,12 @@ export const newEntryEventSchema = z.object({
   // this field (deploy window) still parse; when absent, counts are left
   // untouched and self-heal on the next count-bearing event or refetch.
   counts: unreadCountsSchema.optional(),
+  // List-item data so the client can insert the entry into cached
+  // entries.list pages directly. Optional for the same deploy-window reason
+  // as counts; when absent, the entry appears on the next list refresh
+  // (navigation-triggered invalidation) instead of live.
+  feedId: z.string().optional(),
+  entry: newEntryListDataSchema.optional(),
 });
 
 export const entryUpdatedEventSchema = z.object({
