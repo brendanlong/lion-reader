@@ -123,18 +123,5 @@
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"
   },
-  "pnpm": {
-    "overrides": {
-      "trpc-to-openapi>h3": "^1.15.9",
-      "serialize-javascript": "^7.0.5",
-      "@modelcontextprotocol/sdk>hono": "^4.12.21",
-      "express-rate-limit>ip-address": "^10.1.1",
-      "@discordjs/ws>ws": "^8.20.1",
-      "knip>smol-toml": "^1.6.1",
-      "qs": "^6.15.2",
-      "postcss": "^8.5.10",
-      "fast-xml-parser": "^5.8.0"
-    }
-  },
   "packageManager": "pnpm@10.26.2+sha512.0e308ff2005fc7410366f154f625f6631ab2b16b1d2e70238444dd6ae9d630a8482d92a451144debc492416896ed16f7b114a86ec68b8404b2443869e68ffda6"
 }
