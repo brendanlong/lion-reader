@@ -12,6 +12,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { usePathname } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
@@ -30,6 +31,7 @@ interface SidebarProps {
 
 export function Sidebar({ onClose }: SidebarProps) {
   const queryClient = useQueryClient();
+  const pathname = usePathname();
   const { sidebarUnreadOnly, toggleSidebarUnreadOnly } = useSidebarUnreadOnly();
   const [unsubscribeTarget, setUnsubscribeTarget] = useState<{
     id: string;
@@ -68,13 +70,17 @@ export function Sidebar({ onClose }: SidebarProps) {
     },
   });
 
-  const handleNavigate = () => {
-    // Mark entry list queries as stale and refetch active ones.
-    // This ensures clicking the current page's link refreshes the list,
-    // while cross-page navigation also works (new query fetches on mount).
-    queryClient.invalidateQueries({
-      queryKey: [["entries", "list"]],
-    });
+  const handleNavigate = (href: string) => {
+    // Cross-list navigation is refreshed centrally by
+    // useEntryListRefreshOnNavigate (on pathname change), which this click
+    // can't trigger when the link points at the current page. Invalidate here
+    // so clicking the current list's link still acts as an explicit refresh,
+    // keeping same-list and between-list clicks feeling the same.
+    if (href === pathname) {
+      queryClient.invalidateQueries({
+        queryKey: [["entries", "list"]],
+      });
+    }
     onClose?.();
   };
 

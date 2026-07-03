@@ -16,6 +16,7 @@ import { UnifiedEntriesContent } from "@/components/entries/UnifiedEntriesConten
 import { UnifiedSettingsContent } from "@/components/settings/UnifiedSettingsContent";
 import { SubscribeContent } from "@/components/subscribe/SubscribeContent";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
+import { useEntryListRefreshOnNavigate } from "@/lib/hooks/useEntryListRefreshOnNavigate";
 
 /**
  * Loading skeleton for page transitions.
@@ -40,6 +41,10 @@ function PageSkeleton() {
  */
 function AppRouterContent() {
   const pathname = usePathname();
+
+  // Central navigation-triggered refresh for entry lists (must live in this
+  // always-mounted shell — see the hook's doc comment).
+  useEntryListRefreshOnNavigate();
 
   // Settings pages
   if (pathname.startsWith("/settings")) {

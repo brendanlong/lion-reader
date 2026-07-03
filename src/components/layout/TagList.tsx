@@ -18,7 +18,8 @@ import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { TagSubscriptionList } from "./TagSubscriptionList";
 
 interface TagListProps {
-  onNavigate: () => void;
+  /** Called with the link href when a tag/subscription link is clicked */
+  onNavigate: (href: string) => void;
   onEdit: (sub: {
     id: string;
     title: string;

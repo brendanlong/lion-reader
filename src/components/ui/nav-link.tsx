@@ -19,8 +19,8 @@ export interface NavLinkProps {
   children: ReactNode;
   /** Optional count element (renders as-is, typically from Suspense) */
   countElement?: ReactNode;
-  /** Called when link is clicked */
-  onClick?: () => void;
+  /** Called with the link href when the link is clicked */
+  onClick?: (href: string) => void;
   /** Called on mousedown with the link href (e.g., to prefetch data) */
   onPrefetch?: (href: string) => void;
   /** Additional class name */

@@ -14,7 +14,8 @@ import { NavLink } from "@/components/ui/nav-link";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 interface SidebarNavProps {
-  onNavigate: () => void;
+  /** Called with the link href when a nav link is clicked */
+  onNavigate: (href: string) => void;
   /** Called on mousedown with the link href (e.g., to prefetch data) */
   onPrefetch?: (href: string) => void;
 }
