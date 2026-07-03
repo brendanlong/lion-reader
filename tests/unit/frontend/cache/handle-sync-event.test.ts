@@ -4,8 +4,8 @@
  * Tests the full event → cache-state pipeline by calling handleSyncEvent()
  * with realistic pre-seeded cache state and asserting the resulting cache values.
  *
- * Uses a real QueryClient from @tanstack/react-query for infinite query operations,
- * combined with mock tRPC utils for the standard query cache.
+ * Uses a real QueryClient and real tRPC query utils (createRealTrpcUtils) so the
+ * cache helpers run against genuine React Query key hashing, not a fake.
  */
 
 import { describe, it, expect, beforeEach, type MockInstance } from "vitest";
@@ -1063,7 +1063,7 @@ describe("handleSyncEvent - subscription_deleted", () => {
     );
 
     // No invalidations should occur (the alreadyRemoved check returns true)
-    expect(invalidatedProcedures(invalidateSpy)).toHaveLength(0);
+    expect(invalidateSpy).not.toHaveBeenCalled();
   });
 });
 

@@ -110,6 +110,13 @@ describe("handleSubscriptionCreated", () => {
   });
 
   it("sets absolute counts directly when the event provides them", () => {
+    // Seed tags.list so the uncategorized write has a cache to update (the
+    // updater no-ops on an empty cache), letting us assert it actually happened.
+    setUtilsData(utils.tags.list, undefined, {
+      items: [],
+      uncategorized: { feedCount: 1, unreadCount: 0 },
+    });
+
     const subscription = createSubscription({ unreadCount: 3 });
     handleSubscriptionCreated(utils, subscription, undefined, {
       all: { unread: 21 },
@@ -126,6 +133,10 @@ describe("handleSubscriptionCreated", () => {
     expect(getUtilsData<{ unread: number }>(utils.entries.count, { starredOnly: true })).toEqual({
       unread: 1,
     });
+    expect(
+      getUtilsData<{ uncategorized: { unreadCount: number } }>(utils.tags.list)?.uncategorized
+        .unreadCount
+    ).toBe(6);
     const paths = invalidatedProcedures(invalidateSpy);
     expect(paths).not.toContain("entries.count");
     expect(paths).not.toContain("tags.list");
