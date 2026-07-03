@@ -825,7 +825,7 @@ export async function getEntries(
  * read_changed_at timestamp. This prevents stale updates from overwriting newer
  * state. Supports per-entry timestamps for offline sync.
  *
- * Sets the implicit score signal flags (see docs/features/entry-scoring.md):
+ * Sets the implicit signal flags (vestiges of the removed entry-scoring feature):
  * - `has_marked_unread` whenever marking unread
  * - `has_marked_read_on_list` when marking read with `fromList`
  *
@@ -1059,8 +1059,8 @@ export async function markAllEntriesRead(
  * Uses idempotent updates: only applies if changedAt is newer than the stored
  * starred_changed_at timestamp. This prevents stale updates from overwriting newer state.
  *
- * Sets the `has_starred` implicit score signal flag when starring (see
- * docs/features/entry-scoring.md).
+ * Sets the `has_starred` implicit signal flag when starring (a vestige of the
+ * removed entry-scoring feature).
  *
  * @param changedAt - When the user initiated the action. Defaults to now.
  */

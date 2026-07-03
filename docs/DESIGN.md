@@ -14,8 +14,6 @@
 10. [Observability](#observability)
 11. [Testing Strategy](#testing-strategy)
 
-For detailed feature designs, see the docs in `docs/features/`.
-
 ### Architecture Diagrams (D2)
 
 Visual architecture diagrams are available in `docs/diagrams/`:
@@ -142,8 +140,6 @@ Views simplify queries by abstracting the feeds/subscriptions join:
 - **user_feeds** - Subscriptions with feed metadata merged, using subscription ID as the primary key
 - **visible_entries** - Entries with visibility rules applied, including subscription context
 
-See `docs/features/subscription-centric-api.md` for design details.
-
 ### Key Design Decisions
 
 **Entry Visibility**: Visibility is enforced at query time by the `visible_entries` view, which requires a `user_entries` row to exist for the `(user, entry)` pair AND that the entry is either from an active subscription (`subscription.unsubscribed_at IS NULL`), is starred, or is a saved article (saved articles live in a per-user feed with no subscription row, so their `user_entries` row alone grants visibility). The predicate is fail-closed: a `user_entries` row whose entry matches no subscription is hidden unless starred/saved. The existence of the `user_entries` row is the durable record of visibility.
@@ -158,6 +154,8 @@ The older `entry.fetched_at >= subscription.subscribed_at` rule was a one-time b
 **Soft Deletes**: Subscriptions use `unsubscribed_at` for soft delete, allowing users to resubscribe and maintain their read state.
 
 **Content Change Detection**: Entries store a `content_hash` to detect when content changes on the source feed. Updated content overwrites the previous version.
+
+**Read/Star Idempotency**: `user_entries` carries per-field change timestamps (`read_changed_at`, `starred_changed_at`), and state mutations accept a `changedAt` and only apply when newer than the stored timestamp. This makes conflicting updates from multiple clients (tabs, MCP, offline sync replaying old actions) resolve to the newest user intent instead of last-write-wins.
 
 **UUIDv7 Ordering**: Since UUIDv7 is time-ordered, `ORDER BY id DESC` gives us reverse chronological order without needing a separate timestamp column for sorting.
 
@@ -252,7 +250,7 @@ Dynamic Client Registration (`/oauth/register`) is open per RFC 7591 but rate-li
    - 200 OK: parse feed, process entries
    - 301 Permanent Redirect: track, update URL after 7-day wait period (HTTP-to-HTTPS applied immediately)
    - 302/307 Temporary Redirect: follow without updating URL
-   - 429 Too Many Requests: respect `Retry-After`
+   - 429 Too Many Requests: treated as a failure with exponential backoff (`Retry-After` is parsed and logged, but not yet used for scheduling — see #954)
    - 4xx/5xx: increment failures, backoff
 5. Calculate `next_fetch_at` based on Cache-Control (10min with cache hint, 60min default min, 7day max)
 
@@ -264,7 +262,7 @@ Dynamic Client Registration (`/oauth/register`) is open per RFC 7591 but rate-li
 
 ### Respectful Fetching
 
-Lion Reader respects server Cache-Control headers, Retry-After directives, and HTTP 429 responses. Exponential backoff is applied for failed fetches.
+Lion Reader respects server Cache-Control headers and applies exponential backoff for failed fetches.
 
 ### SSRF Protection
 
@@ -318,8 +316,6 @@ The API uses **subscription ID as the primary user-facing identifier**. While fe
 - Entry filtering uses `subscriptionId`, not `feedId`
 - The `feeds` router is only used for pre-subscription operations (preview, discover)
 
-See `docs/features/subscription-centric-api.md` for full design.
-
 ### tRPC Router Structure
 
 Routers are organized by resource:
@@ -341,6 +337,16 @@ Routers are organized by resource:
 - `ingestAddresses` - Manage per-user newsletter ingest email addresses
 - `sync` - Cursor-based delta sync for offline clients
 - `admin` - Invite management (invite-only mode)
+
+### HTTP API Surfaces
+
+Besides the browser tRPC endpoint (`/api/trpc`), the same routers/services back several HTTP surfaces under `src/app/api/`:
+
+- **REST API** (`/api/v1/*`): generated from tRPC procedures' `openapi` meta via `trpc-to-openapi`; the OpenAPI 3.0 spec is served at `/api/openapi`. Includes the SSE stream at `/api/v1/events`.
+- **Google Reader API** (`/api/greader.php/*`): compatibility layer for Google Reader clients.
+- **Wallabag API** (`/api/wallabag/*`): compatibility layer for Wallabag read-it-later clients.
+- **MCP** (`/api/mcp`): see [MCP Server](#mcp-server).
+- **Webhooks** (`/api/webhooks/*`): Mailgun inbound email, WebSub hub callbacks.
 
 ### Pagination
 
@@ -438,8 +444,8 @@ Consequences:
 - `useParams()` doesn't update on `pushState`; dynamic params are parsed from the pathname
   by regex.
 
-See `docs/features/client-side-routing.md` for the full design rationale and the
-evaluation against native App Router navigation (issue #872).
+Native App Router navigation was evaluated and rejected in issue #872 (per-navigation
+RSC fetches defeat the SSE-fed cache).
 
 ### Route Structure
 
@@ -551,23 +557,25 @@ Remote clients connect to the deployed app's `POST /api/mcp` endpoint over Strea
 
 ## Plugin System
 
-Lion Reader has an extensible plugin system for integrating with external content sources.
+Lion Reader has an extensible plugin system (`src/server/plugins/`) that consolidates per-source custom parsing behind a capability-based interface, so adding a content source means writing one self-contained plugin instead of scattering URL checks across core modules. The code is the source of truth: `types.ts` (interfaces), `registry.ts` (hostname-indexed registry), `index.ts` (registration).
 
 ### Architecture
 
-Plugins are registered in `src/server/plugins/registry.ts` and declare capabilities:
+The registry indexes plugins by hostname for O(1) lookup, then calls the plugin's `matchUrl(url)`; `findWithCapability(url, capability)` returns the first plugin that matches AND declares the capability:
 
-- **`feed`** capability: Transform feed URLs, clean entry content (e.g., LessWrong GraphQL API)
-- **`savedArticle`** capability: Fetch and process content from URLs (e.g., Google Docs, ArXiv)
+- **`feed`** capability: transform page URLs to feed URLs, clean entry content, transform feed titles (e.g., LessWrong GraphQL API)
+- **`savedArticle`** capability: fetch full article content for read-it-later, optionally skipping Readability when the source returns clean HTML
+
+`matchUrl` must be selective, not "any URL on my hosts" — a plugin should only match URLs it can actually handle (e.g. LessWrong `/tag/...` pages must return `false` so the caller falls back to normal fetching).
 
 ### Available Plugins
 
-| Plugin          | Capabilities   | Description                                        |
-| --------------- | -------------- | -------------------------------------------------- |
-| **LessWrong**   | `feed`         | GraphQL API for posts/comments, user profile feeds |
-| **Google Docs** | `savedArticle` | Fetch Google Docs content via API                  |
-| **ArXiv**       | `savedArticle` | Fetch ArXiv paper content                          |
-| **GitHub**      | `savedArticle` | Fetch GitHub content                               |
+| Plugin          | Capabilities           | Description                                        |
+| --------------- | ---------------------- | -------------------------------------------------- |
+| **LessWrong**   | `feed`, `savedArticle` | GraphQL API for posts/comments, user profile feeds |
+| **Google Docs** | `savedArticle`         | Fetch Google Docs content via API                  |
+| **ArXiv**       | `savedArticle`         | Fetch ArXiv paper content                          |
+| **GitHub**      | `savedArticle`         | Fetch GitHub content                               |
 
 ---
 
