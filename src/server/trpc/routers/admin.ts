@@ -6,7 +6,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, isNull, sql, desc, asc, lt, gt, ilike, count } from "drizzle-orm";
+import { eq, and, isNull, sql, desc, asc, lt, gt, ilike, count, max } from "drizzle-orm";
 import crypto from "crypto";
 
 import { createTRPCRouter, adminProcedure } from "../trpc";
@@ -18,6 +18,8 @@ import {
   invites,
   jobs,
   oauthAccounts,
+  oauthAccessTokens,
+  apiTokens,
   userEntries,
 } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
@@ -541,6 +543,11 @@ const userEndpoints = {
             subscriptionCount: z.number(),
             entryCount: z.number(),
             lastActiveAt: z.date().nullable(),
+            // Most recent API-token / OAuth-MCP token use. Durable for
+            // long-lived API tokens (extension/integrations); for MCP OAuth
+            // access tokens it only reflects ~the last day, since those are
+            // short-lived and pruned by retention cleanup soon after expiry.
+            lastTokenUsedAt: z.date().nullable(),
           })
         ),
         nextCursor: z.string().optional(),
@@ -573,6 +580,19 @@ const userEndpoints = {
         .select({ count: count().as("count") })
         .from(userEntries)
         .where(eq(userEntries.userId, users.id));
+
+      // Subqueries: most recent token use, tracked separately from session
+      // activity. API tokens (extension/integrations) are long-lived so this is
+      // durable; OAuth access tokens (remote MCP) are short-lived and pruned by
+      // retention, so they only contribute usage from ~the last day.
+      const apiTokenLastUsedSq = ctx.db
+        .select({ max: max(apiTokens.lastUsedAt).as("max") })
+        .from(apiTokens)
+        .where(eq(apiTokens.userId, users.id));
+      const oauthTokenLastUsedSq = ctx.db
+        .select({ max: max(oauthAccessTokens.lastUsedAt).as("max") })
+        .from(oauthAccessTokens)
+        .where(eq(oauthAccessTokens.userId, users.id));
 
       const conditions = [];
 
@@ -648,6 +668,11 @@ const userEndpoints = {
           subscriptionCount: sql<number>`(${subscriptionCountSq})`.as("subscription_count"),
           entryCount: sql<number>`(${entryCountSq})`.as("entry_count"),
           lastActiveAt: users.lastActiveAt,
+          // GREATEST ignores NULLs, so this is the newer of the two, or NULL.
+          lastTokenUsedAt:
+            sql<Date | null>`GREATEST((${apiTokenLastUsedSq}), (${oauthTokenLastUsedSq}))`.as(
+              "last_token_used_at"
+            ),
         })
         .from(users)
         .where(whereClause)
@@ -667,6 +692,7 @@ const userEndpoints = {
           subscriptionCount: Number(row.subscriptionCount),
           entryCount: Number(row.entryCount),
           lastActiveAt: row.lastActiveAt ? new Date(row.lastActiveAt) : null,
+          lastTokenUsedAt: row.lastTokenUsedAt ? new Date(row.lastTokenUsedAt) : null,
         })),
         nextCursor,
       };

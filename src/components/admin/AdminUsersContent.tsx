@@ -90,6 +90,7 @@ interface User {
   email: string;
   createdAt: Date;
   lastActiveAt: Date | null;
+  lastTokenUsedAt: Date | null;
   providers: string[];
   subscriptionCount: number;
   entryCount: number;
@@ -119,6 +120,9 @@ function UserRow({ user }: { user: User }) {
       <div className="ui-text-xs flex flex-wrap gap-x-4 gap-y-1 text-zinc-500 dark:text-zinc-400">
         <span>Member since {formatDate(user.createdAt)}</span>
         <span>Last active: {user.lastActiveAt ? formatDate(user.lastActiveAt) : "Never"}</span>
+        <span>
+          Last API/MCP use: {user.lastTokenUsedAt ? formatDate(user.lastTokenUsedAt) : "Never"}
+        </span>
         <span>
           Subscriptions:{" "}
           <ClientLink

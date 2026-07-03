@@ -12,7 +12,15 @@ process.env.ADMIN_SECRET = "test-admin-secret";
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { eq, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { users, feeds, subscriptions, invites, jobs, sessions } from "../../src/server/db/schema";
+import {
+  users,
+  feeds,
+  subscriptions,
+  invites,
+  jobs,
+  sessions,
+  apiTokens,
+} from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
@@ -436,6 +444,45 @@ describe("Admin API", () => {
       expect(result.items).toHaveLength(1);
       expect(result.items[0].lastActiveAt).toBeInstanceOf(Date);
       expect(result.items[0].lastActiveAt!.getTime()).toBe(activeTime.getTime());
+    });
+
+    it("reports most recent token use separately from session activity", async () => {
+      const ctx = createAdminContext();
+      const caller = createCaller(ctx);
+
+      const userId = await createTestUser("token-user");
+
+      // Session activity and token use are independent signals.
+      const sessionTime = new Date("2026-04-01T00:00:00Z");
+      await db.update(users).set({ lastActiveAt: sessionTime }).where(eq(users.id, userId));
+
+      const tokenUsedTime = new Date("2026-05-20T00:00:00Z");
+      await db.insert(apiTokens).values({
+        id: generateUuidv7(),
+        userId,
+        tokenHash: `token-hash-${userId}`,
+        scopes: ["mcp"],
+        lastUsedAt: tokenUsedTime,
+      });
+
+      const result = await caller.admin.listUsers({ search: "token-user" });
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].lastActiveAt!.getTime()).toBe(sessionTime.getTime());
+      expect(result.items[0].lastTokenUsedAt).toBeInstanceOf(Date);
+      expect(result.items[0].lastTokenUsedAt!.getTime()).toBe(tokenUsedTime.getTime());
+    });
+
+    it("returns null token use for users who never used a token", async () => {
+      const ctx = createAdminContext();
+      const caller = createCaller(ctx);
+
+      await createTestUser("no-token-user");
+
+      const result = await caller.admin.listUsers({ search: "no-token-user" });
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].lastTokenUsedAt).toBeNull();
     });
 
     it("sorts by most recent activity by default, nulls last", async () => {
