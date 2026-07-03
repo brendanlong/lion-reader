@@ -13,12 +13,23 @@ The frontend uses React Query (via tRPC) for server state management with a hybr
 
 ### Cache Update Strategy
 
-| Update Type             | Strategy                   | Rationale                                       |
-| ----------------------- | -------------------------- | ----------------------------------------------- |
-| Subscription/tag counts | Direct update              | Instant sidebar updates without flicker         |
-| Entry lists             | Invalidation               | Too many filter combinations to update directly |
-| Single entry            | Direct update              | Keyed by ID, easy to target                     |
-| Subscription list       | Direct update (add/remove) | Full data available, avoids refetch             |
+| Update Type             | Strategy                   | Rationale                                                           |
+| ----------------------- | -------------------------- | ------------------------------------------------------------------- |
+| Subscription/tag counts | Direct update              | Instant sidebar updates without flicker                             |
+| Entry lists             | Direct update (in place)   | Read entries stay visible until navigation; new entries appear live |
+| Single entry            | Direct update              | Keyed by ID, easy to target                                         |
+| Subscription list       | Direct update (add/remove) | Full data available, avoids refetch                                 |
+
+Entry lists (`entries.list`, `staleTime: Infinity`) are never refetched on a
+timer or window focus. Mutations and SSE events patch them in place, and the
+single navigation-triggered refresh is `useEntryListRefreshOnNavigate`
+(mounted in `AppRouter`): on any pathname change it invalidates all
+`entries.list` queries — the active one refetches, inactive ones refetch on
+next mount. Because the open entry lives in the `?entry=` search param, moving
+between a list and an entry in it never changes the pathname and never
+refreshes the list (read entries stay visible under the reader). The sidebar
+additionally invalidates when a link matching the current pathname is clicked,
+so clicking the current list acts as an explicit refresh.
 
 ## Cache Helper Functions
 
@@ -26,10 +37,11 @@ Centralized helpers in `src/lib/cache/` ensure consistent updates across the cod
 
 ### Entry Cache (`entry-cache.ts`)
 
-| Function                   | Purpose                                               |
-| -------------------------- | ----------------------------------------------------- |
-| `updateEntriesReadStatus`  | Updates `entries.get` cache + `entries.list` in-place |
-| `updateEntryStarredStatus` | Updates `entries.get` cache + `entries.list` in-place |
+| Function                    | Purpose                                                          |
+| --------------------------- | ---------------------------------------------------------------- |
+| `updateEntriesReadStatus`   | Updates `entries.get` cache + `entries.list` in-place            |
+| `updateEntryStarredStatus`  | Updates `entries.get` cache + `entries.list` in-place            |
+| `insertEntryIntoListCaches` | Inserts a new entry into matching `entries.list` caches (sorted) |
 
 ### Count Cache (`count-cache.ts`)
 
@@ -162,17 +174,17 @@ Centralized helpers in `src/lib/cache/` ensure consistent updates across the cod
 
 The `useRealtimeUpdates` hook manages SSE connections and updates caches.
 
-**Key principle:** Direct cache updates where possible, invalidation only when necessary. `entries.list` is NOT invalidated for new entries - users see new entries when they navigate (sidebar counts update immediately).
+**Key principle:** Direct cache updates where possible, invalidation only when necessary. `entries.list` is NOT invalidated for new entries — the entry is inserted directly into matching list caches (sidebar counts update from the same event).
 
-| SSE Event              | Cache Updates                                                                                                                                                                                                                                                                                              |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `new_entry`            | Direct: sets absolute counts via `setEntryRelatedCounts` from server-provided `counts` (`subscriptions.list` unreadCount, `tags.list` unreadCount incl. collapsed/uncached tags — #892, `entries.count`). Idempotent, so a reconnect catch-up sync can't double-count. Does NOT invalidate `entries.list`. |
-| `entry_updated`        | Direct: `entries.get`, `entries.list` (metadata: title, author, summary, url, publishedAt). No invalidation - avoids race condition when viewing.                                                                                                                                                          |
-| `entry_state_changed`  | Direct: `entries.get`, `entries.list` (read, starred). Sets absolute counts via `setBulkCounts` from server-provided `counts`.                                                                                                                                                                             |
-| `subscription_created` | Structural: add to `subscriptions.list`. Counts: sets absolute counts via `setEntryRelatedCounts` from server `counts` (live path); the sync.events catch-up path omits `counts`, so the client invalidates `tags.list` + `entries.count` instead.                                                         |
-| `subscription_deleted` | Structural: remove from `subscriptions.list`. Counts: sets absolute counts from server `counts` (live path); sync.events omits them (former tags are gone server-side), so the client invalidates `tags.list` + `entries.count`. Always invalidates `entries.list`.                                        |
-| `import_progress`      | Invalidate: `imports.get({ id })`, `imports.list`                                                                                                                                                                                                                                                          |
-| `import_completed`     | Invalidate: `imports.get({ id })`, `imports.list`. Entry/subscription updates handled by individual events during import.                                                                                                                                                                                  |
+| SSE Event              | Cache Updates                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `new_entry`            | Direct: sets absolute counts via `setEntryRelatedCounts` from server-provided `counts` (`subscriptions.list` unreadCount, `tags.list` unreadCount incl. collapsed/uncached tags — #892, `entries.count`); inserts the event's `entry` list payload into matching `entries.list` caches via `insertEntryIntoListCaches` (sorted position; skips search/Recently Read caches and entries beyond the loaded pagination window). Idempotent (absolute counts, insert deduped by ID), so a reconnect catch-up sync can't double-apply. Does NOT invalidate `entries.list`. |
+| `entry_updated`        | Direct: `entries.get`, `entries.list` (metadata: title, author, summary, url, publishedAt). No invalidation - avoids race condition when viewing.                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `entry_state_changed`  | Direct: `entries.get`, `entries.list` (read, starred). Sets absolute counts via `setBulkCounts` from server-provided `counts`.                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `subscription_created` | Structural: add to `subscriptions.list`. Counts: sets absolute counts via `setEntryRelatedCounts` from server `counts` (live path); the sync.events catch-up path omits `counts`, so the client invalidates `tags.list` + `entries.count` instead.                                                                                                                                                                                                                                                                                                                    |
+| `subscription_deleted` | Structural: remove from `subscriptions.list`. Counts: sets absolute counts from server `counts` (live path); sync.events omits them (former tags are gone server-side), so the client invalidates `tags.list` + `entries.count`. Always invalidates `entries.list`.                                                                                                                                                                                                                                                                                                   |
+| `import_progress`      | Invalidate: `imports.get({ id })`, `imports.list`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `import_completed`     | Invalidate: `imports.get({ id })`, `imports.list`. Entry/subscription updates handled by individual events during import.                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
 ## Optimistic Updates
 
@@ -283,6 +295,7 @@ Returns the updated entry with score fields:
 | `src/lib/cache/entry-cache.ts`                     | Low-level entry cache update helpers                               |
 | `src/lib/cache/count-cache.ts`                     | Low-level subscription/tag count update helpers                    |
 | `src/lib/hooks/useEntryMutations.ts`               | Entry mutations with cache updates                                 |
+| `src/lib/hooks/useEntryListRefreshOnNavigate.ts`   | Navigation-triggered entry list invalidation (pathname change)     |
 | `src/lib/hooks/useRealtimeUpdates.ts`              | SSE/polling glue feeding the connection machine                    |
 | `src/lib/events/connection-state.ts`               | Pure connection state machine (reconnect/backoff/polling fallback) |
 | `src/lib/events/cursors.ts`                        | Pure sync-cursor bookkeeping                                       |
@@ -302,7 +315,10 @@ When adding cache updates, follow this decision tree:
    - No → Invalidate the query
 
 2. **What caches are affected?**
-   - Entry lists: Invalidate (too many filter combinations)
+   - Entry lists: Update in place via the `entry-cache.ts` helpers (update
+     read/starred/metadata, or `insertEntryIntoListCaches` for new entries).
+     Never trigger a refetch from an event — lists refresh on navigation
+     (`useEntryListRefreshOnNavigate`)
    - Unread counts (subscriptions, tags, entries.count): Set absolute server-provided
      counts via `setBulkCounts` / `setEntryRelatedCounts` (idempotent — preferred over
      deltas so duplicate SSE/sync delivery can't drift counts)
