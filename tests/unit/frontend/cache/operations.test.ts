@@ -1,16 +1,21 @@
 /**
  * Unit tests for cache operations.
  *
- * These tests document the behavior of cache operations without full mocking.
- * For more comprehensive testing, see the integration tests.
- *
- * Note: The cache operations call lower-level helpers that interact with
- * tRPC utils in complex ways. These tests focus on high-level behavior
- * that can be tested with the mock utils.
+ * These run the real cache operations against a real QueryClient and real tRPC
+ * query utils (see createRealTrpcUtils), asserting on the resulting cache state
+ * and on which queries were invalidated.
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
-import { createMockTrpcUtils } from "../../../utils/trpc-mock";
+import { describe, it, expect, beforeEach, type MockInstance } from "vitest";
+import { QueryClient } from "@tanstack/react-query";
+import {
+  createRealTrpcUtils,
+  spyOnInvalidate,
+  invalidatedProcedures,
+  getUtilsData,
+  setUtilsData,
+} from "../../../utils/cache-test-helpers";
+import type { TRPCClientUtils } from "@/lib/trpc/client";
 import {
   handleSubscriptionCreated,
   handleSubscriptionDeleted,
@@ -69,11 +74,15 @@ function getSubscriptionFromMap(id: string): { unreadCount: number } | undefined
 // ============================================================================
 
 describe("handleSubscriptionCreated", () => {
-  let mockUtils: ReturnType<typeof createMockTrpcUtils>;
+  let queryClient: QueryClient;
+  let utils: TRPCClientUtils;
+  let invalidateSpy: MockInstance;
 
   beforeEach(() => {
     _resetSubscriptionLookupMap();
-    mockUtils = createMockTrpcUtils();
+    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    utils = createRealTrpcUtils(queryClient);
+    invalidateSpy = spyOnInvalidate(queryClient);
   });
 
   function createSubscription(overrides: Partial<SubscriptionData> = {}): SubscriptionData {
@@ -95,14 +104,14 @@ describe("handleSubscriptionCreated", () => {
 
   it("adds subscription to lookup map", () => {
     const subscription = createSubscription();
-    handleSubscriptionCreated(mockUtils.utils, subscription);
+    handleSubscriptionCreated(utils, subscription);
 
     expect(getSubscriptionLookupMap().has("sub-1")).toBe(true);
   });
 
   it("sets absolute counts directly when the event provides them", () => {
     const subscription = createSubscription({ unreadCount: 3 });
-    handleSubscriptionCreated(mockUtils.utils, subscription, undefined, {
+    handleSubscriptionCreated(utils, subscription, undefined, {
       all: { unread: 21 },
       starred: { unread: 1 },
       saved: { unread: 1 },
@@ -111,38 +120,24 @@ describe("handleSubscriptionCreated", () => {
       uncategorized: { unread: 6 },
     });
 
-    // Counts are set directly (entries.count + tags.list uncategorized), not invalidated
-    expect(
-      mockUtils.operations.some(
-        (op) => op.type === "setData" && op.router === "entries" && op.procedure === "count"
-      )
-    ).toBe(true);
-    expect(
-      mockUtils.operations.some(
-        (op) => op.type === "setData" && op.router === "tags" && op.procedure === "list"
-      )
-    ).toBe(true);
-    // The count caches are set, not invalidated (the subscriptions.list refresh
+    // Counts are set directly, not invalidated (the subscriptions.list refresh
     // is a separate structural concern).
-    expect(
-      mockUtils.operations.some(
-        (op) =>
-          op.type === "invalidate" &&
-          ((op.router === "tags" && op.procedure === "list") ||
-            (op.router === "entries" && op.procedure === "count"))
-      )
-    ).toBe(false);
+    expect(getUtilsData<{ unread: number }>(utils.entries.count, {})).toEqual({ unread: 21 });
+    expect(getUtilsData<{ unread: number }>(utils.entries.count, { starredOnly: true })).toEqual({
+      unread: 1,
+    });
+    const paths = invalidatedProcedures(invalidateSpy);
+    expect(paths).not.toContain("entries.count");
+    expect(paths).not.toContain("tags.list");
   });
 
   it("invalidates the count caches when no counts are provided (sync catch-up)", () => {
     const subscription = createSubscription();
-    handleSubscriptionCreated(mockUtils.utils, subscription);
+    handleSubscriptionCreated(utils, subscription);
 
-    const invalidations = mockUtils.operations.filter((op) => op.type === "invalidate");
-    expect(invalidations.some((op) => op.router === "tags" && op.procedure === "list")).toBe(true);
-    expect(invalidations.some((op) => op.router === "entries" && op.procedure === "count")).toBe(
-      true
-    );
+    const paths = invalidatedProcedures(invalidateSpy);
+    expect(paths).toContain("tags.list");
+    expect(paths).toContain("entries.count");
   });
 
   it("adds subscription with tags to lookup map", () => {
@@ -152,7 +147,7 @@ describe("handleSubscriptionCreated", () => {
         { id: "tag-2", name: "Tech", color: null },
       ],
     });
-    handleSubscriptionCreated(mockUtils.utils, subscription);
+    handleSubscriptionCreated(utils, subscription);
 
     const cached = getSubscriptionLookupMap().get("sub-1");
     expect(cached).toBeDefined();
@@ -161,7 +156,7 @@ describe("handleSubscriptionCreated", () => {
 
   it("adds subscription with non-zero unread count", () => {
     const subscription = createSubscription({ unreadCount: 42 });
-    handleSubscriptionCreated(mockUtils.utils, subscription);
+    handleSubscriptionCreated(utils, subscription);
 
     expect(getSubscriptionFromMap("sub-1")?.unreadCount).toBe(42);
   });
@@ -171,7 +166,7 @@ describe("handleSubscriptionCreated", () => {
       type: "email",
       url: null,
     });
-    handleSubscriptionCreated(mockUtils.utils, subscription);
+    handleSubscriptionCreated(utils, subscription);
 
     expect(getSubscriptionLookupMap().has("sub-1")).toBe(true);
   });
@@ -181,7 +176,7 @@ describe("handleSubscriptionCreated", () => {
       type: "saved",
       url: null,
     });
-    handleSubscriptionCreated(mockUtils.utils, subscription);
+    handleSubscriptionCreated(utils, subscription);
 
     expect(getSubscriptionLookupMap().has("sub-1")).toBe(true);
   });
@@ -192,67 +187,65 @@ describe("handleSubscriptionCreated", () => {
       description: null,
       siteUrl: null,
     });
-    handleSubscriptionCreated(mockUtils.utils, subscription);
+    handleSubscriptionCreated(utils, subscription);
 
     // Should not throw
     expect(getSubscriptionLookupMap().has("sub-1")).toBe(true);
   });
 
   it("does not cause count inflation for duplicate events", () => {
-    mockUtils.setCache("entries", "count", {}, { unread: 10 });
+    setUtilsData(utils.entries.count, {}, { unread: 10 });
     const subscription = createSubscription({ unreadCount: 5 });
 
-    handleSubscriptionCreated(mockUtils.utils, subscription);
-    const countAfterFirst = (mockUtils.getCache("entries", "count", {}) as { unread: number })
-      .unread;
+    handleSubscriptionCreated(utils, subscription);
+    const countAfterFirst = getUtilsData<{ unread: number }>(utils.entries.count, {})?.unread;
 
-    handleSubscriptionCreated(mockUtils.utils, subscription);
-    const countAfterSecond = (mockUtils.getCache("entries", "count", {}) as { unread: number })
-      .unread;
+    handleSubscriptionCreated(utils, subscription);
+    const countAfterSecond = getUtilsData<{ unread: number }>(utils.entries.count, {})?.unread;
 
     expect(countAfterSecond).toBe(countAfterFirst);
   });
 });
 
 describe("handleSubscriptionDeleted", () => {
-  let mockUtils: ReturnType<typeof createMockTrpcUtils>;
+  let queryClient: QueryClient;
+  let utils: TRPCClientUtils;
+  let invalidateSpy: MockInstance;
 
   beforeEach(() => {
     _resetSubscriptionLookupMap();
-    mockUtils = createMockTrpcUtils();
+    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    utils = createRealTrpcUtils(queryClient);
+    invalidateSpy = spyOnInvalidate(queryClient);
   });
 
   it("removes subscription from lookup map", () => {
     seedSubscription({ id: "sub-1", unreadCount: 5, tags: [] });
 
-    handleSubscriptionDeleted(mockUtils.utils, "sub-1");
+    handleSubscriptionDeleted(utils, "sub-1");
 
     expect(getSubscriptionLookupMap().has("sub-1")).toBe(false);
   });
 
   it("invalidates entries.list cache", () => {
-    handleSubscriptionDeleted(mockUtils.utils, "sub-1");
+    handleSubscriptionDeleted(utils, "sub-1");
 
-    const invalidateOps = mockUtils.operations.filter(
-      (op) => op.type === "invalidate" && op.router === "entries" && op.procedure === "list"
+    expect(invalidatedProcedures(invalidateSpy).filter((p) => p === "entries.list")).toHaveLength(
+      1
     );
-    expect(invalidateOps.length).toBe(1);
   });
 
   it("invalidates tags.list cache when subscription not found", () => {
-    handleSubscriptionDeleted(mockUtils.utils, "sub-1");
+    handleSubscriptionDeleted(utils, "sub-1");
 
-    const invalidateOps = mockUtils.operations.filter(
-      (op) => op.type === "invalidate" && op.router === "tags" && op.procedure === "list"
-    );
-    expect(invalidateOps.length).toBe(1);
+    expect(invalidatedProcedures(invalidateSpy).filter((p) => p === "tags.list")).toHaveLength(1);
   });
 
   it("removes subscription from lookup map when present", () => {
     seedSubscription({ id: "sub-1", unreadCount: 5, tags: [] });
     seedSubscription({ id: "sub-2", unreadCount: 10, tags: [] });
 
-    handleSubscriptionDeleted(mockUtils.utils, "sub-1");
+    handleSubscriptionDeleted(utils, "sub-1");
 
     expect(getSubscriptionLookupMap().has("sub-1")).toBe(false);
     expect(getSubscriptionLookupMap().has("sub-2")).toBe(true);
@@ -262,14 +255,14 @@ describe("handleSubscriptionDeleted", () => {
     seedSubscription({ id: "sub-2", unreadCount: 10, tags: [] });
 
     // Should not throw
-    handleSubscriptionDeleted(mockUtils.utils, "sub-1");
+    handleSubscriptionDeleted(utils, "sub-1");
 
     expect(getSubscriptionLookupMap().has("sub-2")).toBe(true);
   });
 
   it("handles deletion when lookup map is empty", () => {
     // Should not throw
-    handleSubscriptionDeleted(mockUtils.utils, "sub-1");
+    handleSubscriptionDeleted(utils, "sub-1");
 
     expect(getSubscriptionLookupMap().size).toBe(0);
   });

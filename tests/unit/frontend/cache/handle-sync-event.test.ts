@@ -8,12 +8,18 @@
  * combined with mock tRPC utils for the standard query cache.
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, type MockInstance } from "vitest";
 import { handleSyncEvent } from "@/lib/cache/event-handlers";
 import { _resetSubscriptionLookupMap, getSubscriptionLookupMap } from "@/lib/cache/count-cache";
-import { createMockTrpcUtils } from "../../../utils/trpc-mock";
+import type { TRPCClientUtils } from "@/lib/trpc/client";
 import {
   createSeededQueryClient,
+  createRealTrpcUtils,
+  spyOnInvalidate,
+  invalidatedProcedures,
+  invalidatedQueries,
+  getUtilsData,
+  setUtilsData,
   seedCacheState,
   createNewEntryEvent,
   createEntryUpdatedEvent,
@@ -34,15 +40,17 @@ import type { QueryClient } from "@tanstack/react-query";
 // Test Setup
 // ============================================================================
 
-let mockUtils: ReturnType<typeof createMockTrpcUtils>;
+let utils: TRPCClientUtils;
 let queryClient: QueryClient;
+let invalidateSpy: MockInstance;
 
 beforeEach(() => {
   _resetSubscriptionLookupMap();
-  mockUtils = createMockTrpcUtils();
   queryClient = createSeededQueryClient();
-  seedCacheState(mockUtils);
-  mockUtils.clearOperations();
+  utils = createRealTrpcUtils(queryClient);
+  seedCacheState(utils);
+  // Spy after seeding so only the event-driven invalidations are recorded.
+  invalidateSpy = spyOnInvalidate(queryClient);
 });
 
 // ============================================================================
@@ -50,8 +58,8 @@ beforeEach(() => {
 // ============================================================================
 
 /**
- * Gets subscriptions from the subscription lookup map (primary source)
- * and falls back to the mock cache for backwards compatibility.
+ * Gets subscriptions from the subscription lookup map (the primary source read
+ * by count calculations and event handlers).
  */
 function getSubscriptionsList(): {
   items: Array<{
@@ -85,15 +93,15 @@ function getTagsList():
       uncategorized: { feedCount: number; unreadCount: number };
     }
   | undefined {
-  return mockUtils.getCache("tags", "list", undefined) as ReturnType<typeof getTagsList>;
+  return getUtilsData<ReturnType<typeof getTagsList>>(utils.tags.list);
 }
 
 function getEntriesCount(filters: Record<string, unknown> = {}): { unread: number } | undefined {
-  return mockUtils.getCache("entries", "count", filters) as ReturnType<typeof getEntriesCount>;
+  return getUtilsData<ReturnType<typeof getEntriesCount>>(utils.entries.count, filters);
 }
 
 function getEntryGet(id: string): { entry: Record<string, unknown> } | undefined {
-  return mockUtils.getCache("entries", "get", { id }) as ReturnType<typeof getEntryGet>;
+  return getUtilsData<ReturnType<typeof getEntryGet>>(utils.entries.get, { id });
 }
 
 function getEntriesFromQueryClient(): Array<Record<string, unknown>> {
@@ -125,7 +133,7 @@ describe("handleSyncEvent - new_entry", () => {
     // loaded into any cache, but the server-provided absolute counts include
     // the tag, so tags.list still updates.
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createNewEntryEvent({
         subscriptionId: "sub-uncached",
@@ -148,7 +156,7 @@ describe("handleSyncEvent - new_entry", () => {
 
   it("sets uncategorized count from event counts when subscription is not cached", () => {
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createNewEntryEvent({
         subscriptionId: "sub-uncached",
@@ -171,7 +179,7 @@ describe("handleSyncEvent - new_entry", () => {
 
   it("sets subscription, tag, and global counts for a tagged subscription", () => {
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createNewEntryEvent({
         subscriptionId: "sub-1",
@@ -197,7 +205,7 @@ describe("handleSyncEvent - new_entry", () => {
 
   it("leaves all counts untouched when the event omits counts (old-server event)", () => {
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createNewEntryEvent({
         subscriptionId: "sub-1",
@@ -216,7 +224,7 @@ describe("handleSyncEvent - new_entry", () => {
 
   it("sets saved count for a saved entry (null subscriptionId)", () => {
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createNewEntryEvent({
         subscriptionId: null,
@@ -241,7 +249,7 @@ describe("handleSyncEvent - new_entry", () => {
 
   it("preserves the cached saved count when a web entry's counts omit saved", () => {
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createNewEntryEvent({
         subscriptionId: "sub-1",
@@ -275,8 +283,8 @@ describe("handleSyncEvent - new_entry", () => {
       },
     });
 
-    handleSyncEvent(mockUtils.utils, queryClient, event);
-    handleSyncEvent(mockUtils.utils, queryClient, event);
+    handleSyncEvent(utils, queryClient, event);
+    handleSyncEvent(utils, queryClient, event);
 
     const subs = getSubscriptionsList();
     expect(subs?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(6); // not 7
@@ -289,7 +297,7 @@ describe("handleSyncEvent - new_entry", () => {
     const before = getEntriesFromQueryClient().length;
 
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createNewEntryEvent({
         entryId: "entry-live",
@@ -344,8 +352,8 @@ describe("handleSyncEvent - new_entry", () => {
       },
     });
 
-    handleSyncEvent(mockUtils.utils, queryClient, event);
-    handleSyncEvent(mockUtils.utils, queryClient, event);
+    handleSyncEvent(utils, queryClient, event);
+    handleSyncEvent(utils, queryClient, event);
 
     const copies = getEntriesFromQueryClient().filter((e) => e.id === "entry-live");
     expect(copies).toHaveLength(1);
@@ -355,7 +363,7 @@ describe("handleSyncEvent - new_entry", () => {
     const before = getEntriesFromQueryClient().length;
 
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createNewEntryEvent({ entryId: "entry-live", subscriptionId: "sub-1" })
     );
@@ -372,7 +380,7 @@ describe("handleSyncEvent - new_entry", () => {
 describe("handleSyncEvent - entry_updated", () => {
   it("updates metadata in entries.get cache", () => {
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createEntryUpdatedEvent({
         entryId: "entry-1",
@@ -396,7 +404,7 @@ describe("handleSyncEvent - entry_updated", () => {
 
   it("updates metadata in entries.list cache (QueryClient)", () => {
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createEntryUpdatedEvent({
         entryId: "entry-1",
@@ -420,7 +428,7 @@ describe("handleSyncEvent - entry_updated", () => {
 
   it("handles null publishedAt", () => {
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createEntryUpdatedEvent({
         entryId: "entry-1",
@@ -441,7 +449,7 @@ describe("handleSyncEvent - entry_updated", () => {
   it("does not crash for non-cached entry", () => {
     expect(() => {
       handleSyncEvent(
-        mockUtils.utils,
+        utils,
         queryClient,
         createEntryUpdatedEvent({
           entryId: "non-existent-entry",
@@ -478,7 +486,7 @@ describe("handleSyncEvent - entry_state_changed", () => {
     );
 
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createEntryStateChangedEvent({
         entryId: "entry-3",
@@ -500,7 +508,7 @@ describe("handleSyncEvent - entry_state_changed", () => {
 
   it("updates read status in entries.list", () => {
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createEntryStateChangedEvent({
         entryId: "entry-1",
@@ -516,7 +524,7 @@ describe("handleSyncEvent - entry_state_changed", () => {
 
   it("updates starred status in entries.list", () => {
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createEntryStateChangedEvent({
         entryId: "entry-2",
@@ -532,7 +540,7 @@ describe("handleSyncEvent - entry_state_changed", () => {
 
   it("updates entries.get for cached entry", () => {
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createEntryStateChangedEvent({
         entryId: "entry-1",
@@ -549,7 +557,7 @@ describe("handleSyncEvent - entry_state_changed", () => {
   it("decrements unread counts when entry marked read (with server counts)", () => {
     // entry-1 is unread, starred, in sub-1 (tag-1), type=web
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createEntryStateChangedEvent({
         entryId: "entry-1",
@@ -583,7 +591,7 @@ describe("handleSyncEvent - entry_state_changed", () => {
   it("increments unread counts when entry marked unread (with server counts)", () => {
     // entry-3 is read, not starred, in sub-2 (uncategorized), type=web
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createEntryStateChangedEvent({
         entryId: "entry-3",
@@ -615,7 +623,7 @@ describe("handleSyncEvent - entry_state_changed", () => {
   it("updates starred unread count when starred state changes on unread entry", () => {
     // entry-2 is unread, not starred, in sub-1
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createEntryStateChangedEvent({
         entryId: "entry-2",
@@ -638,7 +646,7 @@ describe("handleSyncEvent - entry_state_changed", () => {
   it("does not change counts when server-provided counts match cache (idempotent)", () => {
     // entry-1 is already unread+starred in cache — server provides same counts
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createEntryStateChangedEvent({
         entryId: "entry-1",
@@ -661,7 +669,7 @@ describe("handleSyncEvent - entry_state_changed", () => {
 
   it("sets counts from server even for non-cached entries", () => {
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createEntryStateChangedEvent({
         entryId: "non-existent-entry",
@@ -692,7 +700,7 @@ describe("handleSyncEvent - subscription_created", () => {
     // setting (the server only sends untagged created events, but the handler
     // applies whatever absolute counts it's given).
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createSubscriptionCreatedEvent({
         subscription: {
@@ -733,7 +741,7 @@ describe("handleSyncEvent - subscription_created", () => {
 
   it("sets uncategorized count from the event for an untagged subscription", () => {
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createSubscriptionCreatedEvent({
         subscription: {
@@ -778,8 +786,8 @@ describe("handleSyncEvent - subscription_created", () => {
       },
     });
 
-    handleSyncEvent(mockUtils.utils, queryClient, event);
-    handleSyncEvent(mockUtils.utils, queryClient, event);
+    handleSyncEvent(utils, queryClient, event);
+    handleSyncEvent(utils, queryClient, event);
 
     expect(getEntriesCount({})?.unread).toBe(25); // not doubled
     expect(getTagsList()?.items.find((t) => t.id === "tag-1")?.unreadCount).toBe(22);
@@ -787,7 +795,7 @@ describe("handleSyncEvent - subscription_created", () => {
 
   it("uses customTitle when provided", () => {
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createSubscriptionCreatedEvent({
         subscription: {
@@ -822,7 +830,7 @@ describe("handleSyncEvent - subscription_created", () => {
 describe("handleSyncEvent - subscription_updated", () => {
   it("updates tags on subscription", () => {
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createSubscriptionUpdatedEvent({
         subscriptionId: "sub-1",
@@ -838,7 +846,7 @@ describe("handleSyncEvent - subscription_updated", () => {
 
   it("sets customTitle when provided", () => {
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createSubscriptionUpdatedEvent({
         subscriptionId: "sub-1",
@@ -854,9 +862,8 @@ describe("handleSyncEvent - subscription_updated", () => {
 
   it("reverts to originalTitle when customTitle is cleared", () => {
     // First seed subscriptions.get with originalTitle
-    mockUtils.setCache(
-      "subscriptions",
-      "get",
+    setUtilsData(
+      utils.subscriptions.get,
       { id: "sub-1" },
       {
         ...DEFAULT_SUBSCRIPTIONS[0],
@@ -865,7 +872,7 @@ describe("handleSyncEvent - subscription_updated", () => {
     );
 
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createSubscriptionUpdatedEvent({
         subscriptionId: "sub-1",
@@ -880,14 +887,12 @@ describe("handleSyncEvent - subscription_updated", () => {
   });
 
   it("invalidates tags.list and subscriptions.list", () => {
-    mockUtils.clearOperations();
-    handleSyncEvent(mockUtils.utils, queryClient, createSubscriptionUpdatedEvent());
+    invalidateSpy.mockClear();
+    handleSyncEvent(utils, queryClient, createSubscriptionUpdatedEvent());
 
-    const invalidations = mockUtils.operations.filter((op) => op.type === "invalidate");
-    expect(invalidations.some((op) => op.router === "tags" && op.procedure === "list")).toBe(true);
-    expect(
-      invalidations.some((op) => op.router === "subscriptions" && op.procedure === "list")
-    ).toBe(true);
+    const paths = invalidatedProcedures(invalidateSpy);
+    expect(paths).toContain("tags.list");
+    expect(paths).toContain("subscriptions.list");
   });
 });
 
@@ -898,7 +903,7 @@ describe("handleSyncEvent - subscription_updated", () => {
 describe("handleSyncEvent - subscription_deleted", () => {
   it("removes the subscription and sets absolute counts from the event", () => {
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createSubscriptionDeletedEvent({
         subscriptionId: "sub-1",
@@ -922,7 +927,7 @@ describe("handleSyncEvent - subscription_deleted", () => {
 
   it("removes an uncategorized subscription and sets uncategorized count", () => {
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createSubscriptionDeletedEvent({
         subscriptionId: "sub-2", // sub-2 has no tags
@@ -946,9 +951,9 @@ describe("handleSyncEvent - subscription_deleted", () => {
   });
 
   it("invalidates the count caches when the event omits counts (sync catch-up)", () => {
-    mockUtils.clearOperations();
+    invalidateSpy.mockClear();
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createSubscriptionDeletedEvent({ subscriptionId: "sub-1" })
     );
@@ -956,17 +961,15 @@ describe("handleSyncEvent - subscription_deleted", () => {
     // Subscription removed structurally...
     expect(getSubscriptionsList()?.items.find((s) => s.id === "sub-1")).toBeUndefined();
     // ...and the count caches are invalidated rather than set (no counts to set).
-    const invalidations = mockUtils.operations.filter((op) => op.type === "invalidate");
-    expect(invalidations.some((op) => op.router === "tags" && op.procedure === "list")).toBe(true);
-    expect(invalidations.some((op) => op.router === "entries" && op.procedure === "count")).toBe(
-      true
-    );
+    const paths = invalidatedProcedures(invalidateSpy);
+    expect(paths).toContain("tags.list");
+    expect(paths).toContain("entries.count");
   });
 
   it("is a no-op when subscription already removed (optimistic update)", () => {
     // First remove it
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createSubscriptionDeletedEvent({
         subscriptionId: "sub-1",
@@ -977,7 +980,7 @@ describe("handleSyncEvent - subscription_deleted", () => {
 
     // Second delete should be a no-op (alreadyRemoved check)
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createSubscriptionDeletedEvent({
         subscriptionId: "sub-1",
@@ -1015,18 +1018,18 @@ describe("handleSyncEvent - subscription_deleted", () => {
     );
 
     // Seed tags/counts so we can verify targeted cleanup
-    mockUtils.setCache("tags", "list", undefined, {
+    setUtilsData(utils.tags.list, undefined, {
       items: [
         { id: "tag-1", name: "Tech", color: "#ff0000", feedCount: 3, unreadCount: 19 },
         { id: "tag-2", name: "Science", color: "#00ff00", feedCount: 1, unreadCount: 10 },
       ],
       uncategorized: { feedCount: 1, unreadCount: 3 },
     });
-    mockUtils.setCache("entries", "count", {}, { unread: 22 });
+    setUtilsData(utils.entries.count, {}, { unread: 22 });
 
-    mockUtils.clearOperations();
+    invalidateSpy.mockClear();
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createSubscriptionDeletedEvent({
         subscriptionId: "sub-preexisting",
@@ -1034,15 +1037,11 @@ describe("handleSyncEvent - subscription_deleted", () => {
     );
 
     // Should NOT be treated as "already removed" — it should be processed.
-    const invalidations = mockUtils.operations.filter((op) => op.type === "invalidate");
-    expect(invalidations.some((op) => op.router === "entries" && op.procedure === "list")).toBe(
-      true
-    );
+    const paths = invalidatedProcedures(invalidateSpy);
+    expect(paths).toContain("entries.list");
     // No counts on the event (sync path) → the count caches are invalidated.
-    expect(invalidations.some((op) => op.router === "tags" && op.procedure === "list")).toBe(true);
-    expect(invalidations.some((op) => op.router === "entries" && op.procedure === "count")).toBe(
-      true
-    );
+    expect(paths).toContain("tags.list");
+    expect(paths).toContain("entries.count");
 
     // The subscription is removed from the infinite-query cache.
     const remaining = queryClient.getQueryData<{
@@ -1054,9 +1053,9 @@ describe("handleSyncEvent - subscription_deleted", () => {
   it("is a no-op when subscription not in any cache (treated as already removed)", () => {
     // When the subscription is not in the lookup map or any infinite query,
     // the handler treats it as "already removed" and skips processing.
-    mockUtils.clearOperations();
+    invalidateSpy.mockClear();
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createSubscriptionDeletedEvent({
         subscriptionId: "sub-unknown",
@@ -1064,8 +1063,7 @@ describe("handleSyncEvent - subscription_deleted", () => {
     );
 
     // No invalidations should occur (the alreadyRemoved check returns true)
-    const invalidations = mockUtils.operations.filter((op) => op.type === "invalidate");
-    expect(invalidations).toHaveLength(0);
+    expect(invalidatedProcedures(invalidateSpy)).toHaveLength(0);
   });
 });
 
@@ -1076,7 +1074,7 @@ describe("handleSyncEvent - subscription_deleted", () => {
 describe("handleSyncEvent - tag_created", () => {
   it("adds new tag with zero counts", () => {
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createTagCreatedEvent({
         tag: { id: "tag-new", name: "New Tag", color: "#0000ff" },
@@ -1097,7 +1095,7 @@ describe("handleSyncEvent - tag_created", () => {
       tag: { id: "tag-1", name: "Tech Duplicate", color: "#ff0000" },
     });
 
-    handleSyncEvent(mockUtils.utils, queryClient, event);
+    handleSyncEvent(utils, queryClient, event);
 
     const tagsList = getTagsList();
     const techTags = tagsList?.items.filter((t) => t.id === "tag-1");
@@ -1114,7 +1112,7 @@ describe("handleSyncEvent - tag_created", () => {
 describe("handleSyncEvent - tag_updated", () => {
   it("updates name and color, preserves counts", () => {
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createTagUpdatedEvent({
         tag: { id: "tag-1", name: "Technology", color: "#ff00ff" },
@@ -1137,7 +1135,7 @@ describe("handleSyncEvent - tag_updated", () => {
 describe("handleSyncEvent - tag_deleted", () => {
   it("removes tag from tags.list", () => {
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createTagDeletedEvent({
         tagId: "tag-1",
@@ -1157,27 +1155,22 @@ describe("handleSyncEvent - tag_deleted", () => {
 
 describe("handleSyncEvent - import_progress", () => {
   it("invalidates imports.get and imports.list", () => {
-    mockUtils.clearOperations();
+    invalidateSpy.mockClear();
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createImportProgressEvent({
         importId: "import-1",
       })
     );
 
-    const invalidations = mockUtils.operations.filter((op) => op.type === "invalidate");
+    const invalidations = invalidatedQueries(invalidateSpy);
     expect(
       invalidations.some(
-        (op) =>
-          op.router === "imports" &&
-          op.procedure === "get" &&
-          JSON.stringify(op.input) === JSON.stringify({ id: "import-1" })
+        (q) => q.path === "imports.get" && (q.input as { id?: string })?.id === "import-1"
       )
     ).toBe(true);
-    expect(invalidations.some((op) => op.router === "imports" && op.procedure === "list")).toBe(
-      true
-    );
+    expect(invalidations.some((q) => q.path === "imports.list")).toBe(true);
   });
 });
 
@@ -1187,8 +1180,8 @@ describe("handleSyncEvent - import_progress", () => {
 
 describe("handleSyncEvent - import_completed", () => {
   it("invalidates imports.get and imports.list", () => {
-    mockUtils.clearOperations();
-    handleSyncEvent(mockUtils.utils, queryClient, {
+    invalidateSpy.mockClear();
+    handleSyncEvent(utils, queryClient, {
       type: "import_completed",
       importId: "import-2",
       imported: 10,
@@ -1199,18 +1192,13 @@ describe("handleSyncEvent - import_completed", () => {
       updatedAt: "2024-07-01T00:00:00.000Z",
     });
 
-    const invalidations = mockUtils.operations.filter((op) => op.type === "invalidate");
+    const invalidations = invalidatedQueries(invalidateSpy);
     expect(
       invalidations.some(
-        (op) =>
-          op.router === "imports" &&
-          op.procedure === "get" &&
-          JSON.stringify(op.input) === JSON.stringify({ id: "import-2" })
+        (q) => q.path === "imports.get" && (q.input as { id?: string })?.id === "import-2"
       )
     ).toBe(true);
-    expect(invalidations.some((op) => op.router === "imports" && op.procedure === "list")).toBe(
-      true
-    );
+    expect(invalidations.some((q) => q.path === "imports.list")).toBe(true);
   });
 });
 
@@ -1232,7 +1220,7 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
     // Tab B's cache: entry-1 is unread, starred, in sub-1 (tag-1)
     // Tab A marks entry-1 read → SSE delivers entry_state_changed with absolute counts
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createEntryStateChangedEvent({
         entryId: "entry-1",
@@ -1269,7 +1257,7 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
   it("Tab B decrements uncategorized count when Tab A marks an untagged entry read", () => {
     // Tab A marks an uncategorized entry read → SSE delivers absolute counts
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createEntryStateChangedEvent({
         entryId: "entry-uncat-unread",
@@ -1301,7 +1289,7 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
   it("Tab B increments counts when Tab A marks an entry unread", () => {
     // entry-3 is read, not starred, in sub-2 (uncategorized)
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createEntryStateChangedEvent({
         entryId: "entry-3",
@@ -1333,7 +1321,7 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
   it("Tab B updates starred count when Tab A stars an unread entry", () => {
     // entry-2 is unread, not starred, in sub-1
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createEntryStateChangedEvent({
         entryId: "entry-2",
@@ -1361,7 +1349,7 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
     // Star event for a web entry — server doesn't compute saved count,
     // so the event omits it. Saved count should be preserved.
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createEntryStateChangedEvent({
         entryId: "entry-2",
@@ -1386,7 +1374,7 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
   it("Tab B updates starred count when Tab A unstars an unread entry", () => {
     // entry-1 is unread, starred, in sub-1
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createEntryStateChangedEvent({
         entryId: "entry-1",
@@ -1428,9 +1416,8 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
         })),
       };
     });
-    mockUtils.setCache(
-      "entries",
-      "get",
+    setUtilsData(
+      utils.entries.get,
       { id: "entry-1" },
       {
         entry: { ...DEFAULT_ENTRIES[0], read: true },
@@ -1439,7 +1426,7 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
 
     // Now the SSE event arrives with read=true and absolute counts from server
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createEntryStateChangedEvent({
         entryId: "entry-1",
@@ -1464,7 +1451,7 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
     // entry-2: unread, not starred, in sub-1 (tag-1)
     // Tab A marks it read AND stars it at the same time
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createEntryStateChangedEvent({
         entryId: "entry-2",
@@ -1494,7 +1481,7 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
     // SSE event for an entry in neither entries.list NOR entries.get,
     // but the server provides absolute counts.
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createEntryStateChangedEvent({
         entryId: "entry-completely-unknown",
@@ -1525,7 +1512,7 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
   it("decrements saved unread count when Tab A marks a saved article read", () => {
     // entry-saved: type=saved, subscriptionId=null, unread, not starred
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createEntryStateChangedEvent({
         entryId: "entry-saved",
@@ -1560,7 +1547,7 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
   it("increments saved unread count when Tab A marks a saved article unread", () => {
     // First mark it read
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createEntryStateChangedEvent({
         entryId: "entry-saved",
@@ -1579,7 +1566,7 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
 
     // Now mark it unread again
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createEntryStateChangedEvent({
         entryId: "entry-saved",
@@ -1607,7 +1594,7 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
   it("decrements starred count when Tab A marks an orphaned starred entry read", () => {
     // entry-starred-orphan: type=web, subscriptionId=null, unread, starred
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createEntryStateChangedEvent({
         entryId: "entry-starred-orphan",
@@ -1636,7 +1623,7 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
   it("decrements both starred and All count when orphaned starred entry marked read", () => {
     // Verify the starred orphan entry affects starred unread but no subscription/tag counts
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createEntryStateChangedEvent({
         entryId: "entry-starred-orphan",
@@ -1674,7 +1661,7 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
     // entry-saved: type=saved, subscriptionId=null, unread, not starred
     // Server provides absolute counts
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createEntryStateChangedEvent({
         entryId: "entry-saved",
@@ -1704,7 +1691,7 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
 
     // entry-starred-orphan: type=web, subscriptionId=null, unread, starred
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createEntryStateChangedEvent({
         entryId: "entry-starred-orphan",
@@ -1734,7 +1721,7 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
 
     // entry-1: sub-1, web, unread, starred — only in entries.get
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createEntryStateChangedEvent({
         entryId: "entry-1",
@@ -1760,7 +1747,7 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
   it("handles multi-tag subscription correctly with server counts", () => {
     // Tab A marks an entry in sub-3 (tag-1 and tag-2) as read
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createEntryStateChangedEvent({
         entryId: "entry-multi-tag",
@@ -1800,7 +1787,7 @@ describe("handleSyncEvent - event sequences", () => {
   it("new_entry then entry_state_changed(read): count decrements back", () => {
     // New entry arrives - sub-1 unread goes from 5 to 6 (absolute server counts)
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createNewEntryEvent({
         subscriptionId: "sub-1",
@@ -1822,7 +1809,7 @@ describe("handleSyncEvent - event sequences", () => {
     // Then the entry is marked read via state_changed from another tab.
     // Server provides absolute counts that reflect the mark-read.
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createEntryStateChangedEvent({
         entryId: "new-entry-seq",
@@ -1846,7 +1833,7 @@ describe("handleSyncEvent - event sequences", () => {
   it("entry_state_changed(read) sets counts from server", () => {
     // entry-1 is unread+starred in sub-1 (tag-1) — server provides updated counts
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createEntryStateChangedEvent({
         entryId: "entry-1",
@@ -1870,7 +1857,7 @@ describe("handleSyncEvent - event sequences", () => {
   it("subscription_created then new_entry for it: counts correct from both", () => {
     // Create a new subscription
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createSubscriptionCreatedEvent({
         subscription: {
@@ -1903,7 +1890,7 @@ describe("handleSyncEvent - event sequences", () => {
     // Now a new entry arrives for that subscription. Its server-computed
     // absolute counts reflect the post-insert state.
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createNewEntryEvent({
         subscriptionId: "sub-seq",
@@ -1929,7 +1916,7 @@ describe("handleSyncEvent - event sequences", () => {
 
   it("subscription_created then subscription_deleted: clean slate", () => {
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createSubscriptionCreatedEvent({
         subscription: {
@@ -1961,7 +1948,7 @@ describe("handleSyncEvent - event sequences", () => {
     expect(getEntriesCount({})?.unread).toBe(23); // 18 + 5
 
     handleSyncEvent(
-      mockUtils.utils,
+      utils,
       queryClient,
       createSubscriptionDeletedEvent({
         subscriptionId: "sub-temp",
