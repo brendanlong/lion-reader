@@ -382,6 +382,12 @@ async function processSuccessfulFetch(
     syndication: parsedFeed.syndication,
   };
 
+  // Resolved feed title, falling back to the domain name. Must match what the
+  // feeds.title update below stores, so new_entry events carry the same title
+  // a later entries.list refetch would return.
+  const fallbackTitle = feed.url ? getDomainFromUrl(feed.url) : undefined;
+  const resolvedFeedTitle = feedMetadata.title || feed.title || fallbackTitle || null;
+
   // Process entries (create new, update changed, detect disappeared)
   // Pass previousLastEntriesUpdatedAt to detect entries that disappeared from the feed
   // Pass feedUrl for feed-specific content cleaning (e.g., LessWrong)
@@ -390,7 +396,7 @@ async function processSuccessfulFetch(
     fetchedAt: now,
     previousLastEntriesUpdatedAt: feed.lastEntriesUpdatedAt,
     feedUrl: feed.url ?? undefined,
-    feedTitle: feedMetadata.title ?? feed.title,
+    feedTitle: resolvedFeedTitle,
   });
 
   // Fetch full content for new entries if any subscriber has fetchFullContent enabled
@@ -411,8 +417,6 @@ async function processSuccessfulFetch(
   });
 
   // Update feed metadata including WebSub hub discovery
-  // Fall back to domain name if no title is available
-  const fallbackTitle = feed.url ? getDomainFromUrl(feed.url) : undefined;
 
   // Only update lastEntriesUpdatedAt when entries actually changed (new, updated, or disappeared)
   // This timestamp must match entries.lastSeenAt for entries currently in the feed
@@ -431,7 +435,7 @@ async function processSuccessfulFetch(
   await db
     .update(feeds)
     .set({
-      title: feedMetadata.title || feed.title || fallbackTitle,
+      title: resolvedFeedTitle,
       description: feedMetadata.description || feed.description,
       siteUrl: feedMetadata.siteUrl || feed.siteUrl,
       etag: cacheHeaders.etag ?? feed.etag,

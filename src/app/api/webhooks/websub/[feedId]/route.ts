@@ -172,6 +172,9 @@ export async function POST(
     const result = await processEntries(feedId, feed.type, parsedFeed, {
       fetchedAt: now,
       feedUrl: feed.url ?? undefined,
+      // Matches the feeds.title update below so new_entry events carry the
+      // same title a later entries.list refetch would return.
+      feedTitle: parsedFeed.title || feed.title,
     });
 
     // Update feed timestamps

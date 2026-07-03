@@ -17,6 +17,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { removeSubscriptionFromCaches, setEntryRelatedCounts } from "@/lib/cache/operations";
+import { refreshEntryLists } from "@/lib/hooks/useEntryListRefreshOnNavigate";
 import { buildEntriesListInputForRoute } from "@/lib/queries/entries-list-input";
 import { UnsubscribeDialog } from "@/components/feeds/UnsubscribeDialog";
 import { EditSubscriptionDialog } from "@/components/feeds/EditSubscriptionDialog";
@@ -73,13 +74,11 @@ export function Sidebar({ onClose }: SidebarProps) {
   const handleNavigate = (href: string) => {
     // Cross-list navigation is refreshed centrally by
     // useEntryListRefreshOnNavigate (on pathname change), which this click
-    // can't trigger when the link points at the current page. Invalidate here
+    // can't trigger when the link points at the current page. Refresh here
     // so clicking the current list's link still acts as an explicit refresh,
     // keeping same-list and between-list clicks feeling the same.
     if (href === pathname) {
-      queryClient.invalidateQueries({
-        queryKey: [["entries", "list"]],
-      });
+      void refreshEntryLists(queryClient);
     }
     onClose?.();
   };

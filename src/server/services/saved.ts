@@ -25,6 +25,7 @@ import { generateSummary } from "@/server/html/strip-html";
 import { withSanitizedEntryContent } from "@/server/html/sanitize-entry";
 import { logger } from "@/lib/logger";
 import { publishNewEntry, publishEntryUpdatedFromEntry } from "@/server/redis/pubsub";
+import { toNewEntryListData } from "@/lib/events/schemas";
 import { errors } from "@/server/trpc/errors";
 import { pluginRegistry } from "@/server/plugins";
 import {
@@ -287,16 +288,13 @@ async function insertSavedEntry(
     starred: false,
   });
 
-  await publishNewEntry(savedFeedId, entryId, now, "saved", {
-    url: params.url,
-    title: params.title,
-    author: params.author,
-    summary: params.summary,
-    publishedAt: null,
-    fetchedAt: now.toISOString(),
-    siteName: params.siteName,
-    feedTitle: SAVED_FEED_TITLE,
-  });
+  await publishNewEntry(
+    savedFeedId,
+    entryId,
+    now,
+    "saved",
+    toNewEntryListData(values, SAVED_FEED_TITLE)
+  );
 
   return {
     id: entryId,

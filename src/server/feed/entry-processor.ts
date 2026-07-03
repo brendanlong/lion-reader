@@ -12,25 +12,12 @@ import { db } from "../db";
 import { entries, type Entry, type NewEntry } from "../db/schema";
 import { generateUuidv7 } from "../../lib/uuidv7";
 import { publishNewEntry, publishEntryUpdatedFromEntry } from "../redis/pubsub";
+import { toNewEntryListData, type NewEntryListDataSource } from "@/lib/events/schemas";
 import { deriveEntryUrl, type ParsedEntry, type ParsedFeed } from "./types";
 import { cleanEntryContent } from "./content-utils";
 import { generateSummary } from "../html/strip-html";
 import { withSanitizedEntryContent } from "../html/sanitize-entry";
 import { logger } from "@/lib/logger";
-
-/**
- * List-item metadata carried on new_entry events (per-feed fields; feedTitle
- * is added at publish time from the feed row).
- */
-export interface NewEntryData {
-  url: string | null;
-  title: string | null;
-  author: string | null;
-  summary: string | null;
-  publishedAt: Date | null;
-  fetchedAt: Date;
-  siteName: string | null;
-}
 
 /**
  * Result of processing a single entry.
@@ -50,7 +37,7 @@ export interface ProcessedEntry {
    */
   updatedAt?: Date;
   /** List-item metadata for the new_entry event. Present when isNew. */
-  newEntryData?: NewEntryData;
+  newEntryData?: NewEntryListDataSource;
 }
 
 /**
@@ -340,7 +327,7 @@ export async function processEntry(
 /**
  * Extracts the list-item metadata for new_entry events from an entry row.
  */
-function toNewEntryData(entry: Entry): NewEntryData {
+function toNewEntryData(entry: Entry): NewEntryListDataSource {
   return {
     url: entry.url,
     title: entry.title,
@@ -653,17 +640,13 @@ export async function processEntries(
     // not affect entry processing.
     for (const result of results) {
       if (result.isNew && result.updatedAt && result.newEntryData) {
-        const data = result.newEntryData;
-        publishNewEntry(feedId, result.id, result.updatedAt, feedType, {
-          url: data.url,
-          title: data.title,
-          author: data.author,
-          summary: data.summary,
-          publishedAt: data.publishedAt?.toISOString() ?? null,
-          fetchedAt: data.fetchedAt.toISOString(),
-          siteName: data.siteName,
-          feedTitle: feedTitle ?? null,
-        }).catch((err) => {
+        publishNewEntry(
+          feedId,
+          result.id,
+          result.updatedAt,
+          feedType,
+          toNewEntryListData(result.newEntryData, feedTitle ?? null)
+        ).catch((err) => {
           console.error("Failed to publish new_entry event:", err);
         });
       }

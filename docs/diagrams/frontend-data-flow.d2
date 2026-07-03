@@ -156,9 +156,8 @@ hooks.useRealtimeUpdates -> client.cache_helpers: "subscription_created\nsubscri
   style.stroke: "#388e3c"
 }
 
-hooks.useRealtimeUpdates -> client.react_query: "invalidate (new_entry)" {
+hooks.useRealtimeUpdates -> client.cache_helpers: "insert entry + set counts\n(new_entry)" {
   style.stroke: "#388e3c"
-  style.stroke-dash: 3
 }
 
 client.cache_helpers -> client.react_query: "Direct cache updates" {

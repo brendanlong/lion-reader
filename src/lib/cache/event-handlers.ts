@@ -62,35 +62,28 @@ export function handleSyncEvent(
       // Insert the entry into cached lists so it appears live (deduped, so
       // SSE + catch-up double delivery is safe). Older servers omit the entry
       // payload during a deploy; the entry then appears on the next
-      // navigation-triggered list refresh instead. The affected-tags scope
-      // comes from the event counts; when those are absent too, tag and
-      // uncategorized caches are conservatively skipped and also self-heal on
-      // the next refresh.
+      // navigation-triggered list refresh instead. read/starred are set only
+      // by the catch-up sync path (the entry may have changed state on
+      // another device while this client was offline); the live path omits
+      // them because a brand-new entry is always unread/unstarred.
       if (event.entry && event.feedId) {
-        insertEntryIntoListCaches(
-          queryClient,
-          {
-            id: event.entryId,
-            subscriptionId: event.subscriptionId,
-            feedId: event.feedId,
-            type: event.feedType,
-            url: event.entry.url,
-            title: event.entry.title,
-            author: event.entry.author,
-            summary: event.entry.summary,
-            publishedAt: event.entry.publishedAt ? new Date(event.entry.publishedAt) : null,
-            fetchedAt: new Date(event.entry.fetchedAt),
-            updatedAt: new Date(event.updatedAt),
-            read: false,
-            starred: false,
-            feedTitle: event.entry.feedTitle,
-            siteName: event.entry.siteName,
-          },
-          {
-            tagIds: new Set((event.counts?.tags ?? []).map((tag) => tag.id)),
-            hasUncategorized: event.counts?.uncategorized !== undefined,
-          }
-        );
+        insertEntryIntoListCaches(queryClient, {
+          id: event.entryId,
+          subscriptionId: event.subscriptionId,
+          feedId: event.feedId,
+          type: event.feedType,
+          url: event.entry.url,
+          title: event.entry.title,
+          author: event.entry.author,
+          summary: event.entry.summary,
+          publishedAt: event.entry.publishedAt ? new Date(event.entry.publishedAt) : null,
+          fetchedAt: new Date(event.entry.fetchedAt),
+          updatedAt: new Date(event.updatedAt),
+          read: event.entry.read ?? false,
+          starred: event.entry.starred ?? false,
+          feedTitle: event.entry.feedTitle,
+          siteName: event.entry.siteName,
+        });
       }
       break;
 

@@ -23,7 +23,36 @@
 
 import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
+
+const ENTRIES_LIST_KEY = [["entries", "list"]];
+
+/**
+ * Marks all entry list queries stale and refetches the active ones.
+ *
+ * The single refresh routine shared by the navigation hook and the sidebar's
+ * same-route click, so the two sites can't drift:
+ *
+ * 1. Cancel in-flight fetches on inactive lists (e.g. a fetchNextPage the
+ *    user scrolled into just before navigating away). Letting one complete
+ *    would clear the staleness flag set below — React Query marks a query
+ *    fresh again whenever a fetch succeeds — silently dropping the refresh.
+ * 2. Invalidate everything except queries still fetching, which after step 1
+ *    can only be the active (arriving/current) list's own request; cancelling
+ *    and restarting a request that's already delivering fresh data would just
+ *    waste it.
+ */
+export async function refreshEntryLists(queryClient: QueryClient): Promise<void> {
+  await queryClient.cancelQueries({
+    queryKey: ENTRIES_LIST_KEY,
+    type: "inactive",
+    fetchStatus: "fetching",
+  });
+  await queryClient.invalidateQueries({
+    queryKey: ENTRIES_LIST_KEY,
+    predicate: (query) => query.state.fetchStatus !== "fetching",
+  });
+}
 
 export function useEntryListRefreshOnNavigate(): void {
   const pathname = usePathname();
@@ -33,15 +62,6 @@ export function useEntryListRefreshOnNavigate(): void {
   useEffect(() => {
     if (prevPathnameRef.current === pathname) return;
     prevPathnameRef.current = pathname;
-
-    // Mark all entry list queries stale; active ones refetch now, inactive
-    // ones refetch on next mount. Skip queries that are already fetching
-    // (e.g. the just-mounted query for the arriving route, which is loading
-    // or was marked stale by a previous navigation and is refetching) —
-    // invalidating those would cancel and restart their in-flight request.
-    queryClient.invalidateQueries({
-      queryKey: [["entries", "list"]],
-      predicate: (query) => query.state.fetchStatus !== "fetching",
-    });
+    void refreshEntryLists(queryClient);
   }, [pathname, queryClient]);
 }

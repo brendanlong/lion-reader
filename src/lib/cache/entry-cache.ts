@@ -13,6 +13,7 @@
 
 import type { QueryClient } from "@tanstack/react-query";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
+import { findCachedSubscription } from "./count-cache";
 
 /**
  * Entry data in list cache.
@@ -342,8 +343,11 @@ export function updateEntryMetadataInCache(
 
 /**
  * Entry data from the list (lightweight, no content).
+ *
+ * A type alias rather than an interface so it gets an implicit index
+ * signature and is directly assignable to CachedListEntry (no casts).
  */
-export interface EntryListItem {
+export type EntryListItem = {
   id: string;
   feedId: string;
   subscriptionId: string | null;
@@ -359,31 +363,56 @@ export interface EntryListItem {
   starred: boolean;
   feedTitle: string | null;
   siteName: string | null;
-}
+};
+
+/**
+ * The entries.list input keys insertEntryIntoListCaches knows how to honor.
+ * Caches whose input contains any other key are skipped (fail-safe: the entry
+ * appears on the next navigation-triggered refresh instead of live), so a
+ * future filter added to entries.list can't silently receive wrong inserts.
+ */
+const INSERT_SUPPORTED_FILTER_KEYS = new Set([
+  "subscriptionId",
+  "tagId",
+  "uncategorized",
+  "unreadOnly",
+  "starredOnly",
+  "sortOrder",
+  "sortBy",
+  "type",
+  "query",
+  "limit",
+  "cursor",
+  "direction",
+]);
 
 /**
  * Inserts a new entry into the cached entry lists it belongs to, in sorted
  * position, so it appears live without a refetch (new_entry SSE/sync events).
  *
  * Uses the same filter matching as updateEntriesInAffectedListCaches to skip
- * unrelated caches, plus:
- * - Skips caches whose membership/ordering can't be reproduced client-side
- *   (search results, Recently Read). Those pick the entry up on their next
- *   navigation-triggered refresh instead — same as before this helper existed.
- * - Skips the insert when the entry sorts beyond the loaded pagination window
- *   (it will arrive with the page that covers it).
+ * unrelated caches. Tag/uncategorized membership is derived from the cached
+ * subscription (the client's authority on which tags a subscription has —
+ * per-entry correct on both the live SSE and catch-up sync paths, unlike the
+ * event's counts, whose tag list is a batch-wide union on the catch-up path).
+ * When the subscription isn't cached, tag/uncategorized caches are
+ * conservatively skipped and pick the entry up on the next navigation refresh.
+ *
+ * Additional safeguards:
+ * - Skips caches whose membership/ordering can't be reproduced client-side:
+ *   search results, Recently Read, and any cache whose input has filter keys
+ *   this helper doesn't recognize (see INSERT_SUPPORTED_FILTER_KEYS).
+ * - Skips unreadOnly caches for already-read entries (catch-up sync can
+ *   deliver entries read on another device) and the insert when the entry
+ *   sorts beyond the loaded pagination window (it will arrive with the page
+ *   that covers it).
  * - Deduplicates by ID, so the same event delivered by both the live SSE
  *   stream and a reconnect catch-up sync inserts only once.
  *
  * @param queryClient - React Query client for cache access
  * @param entry - The new entry in entries.list item shape
- * @param scope - Affected tags and uncategorized flag (from event counts)
  */
-export function insertEntryIntoListCaches(
-  queryClient: QueryClient,
-  entry: EntryListItem,
-  scope: AffectedScope
-): void {
+export function insertEntryIntoListCaches(queryClient: QueryClient, entry: EntryListItem): void {
   const queries = queryClient.getQueriesData<InfiniteData>({
     queryKey: [["entries", "list"]],
   });
@@ -391,23 +420,46 @@ export function insertEntryIntoListCaches(
   const subscriptionIds = new Set(entry.subscriptionId ? [entry.subscriptionId] : []);
   const entryTypes = new Set([entry.type]);
 
+  // Tag/uncategorized scope from the cached subscription. When the
+  // subscription isn't cached the scope stays empty, so tag/uncategorized
+  // caches are skipped (conservative). Saved articles (subscriptionId null)
+  // belong to no tag or uncategorized list, so the empty scope is exact for
+  // them, not just conservative.
+  const subscription = entry.subscriptionId
+    ? findCachedSubscription(queryClient, entry.subscriptionId)
+    : undefined;
+  const scope: AffectedScope = subscription
+    ? {
+        tagIds: new Set(subscription.tags.map((tag) => tag.id)),
+        hasUncategorized: subscription.tags.length === 0,
+      }
+    : { tagIds: new Set(), hasUncategorized: false };
+
   for (const [queryKey, data] of queries) {
     if (!data?.pages?.length) continue;
 
     const keyMeta = queryKey[1] as TRPCQueryKey | undefined;
-    const filters: EntryListFilters = keyMeta?.input ?? {};
+    const input = (keyMeta?.input ?? {}) as EntryListFilters & Record<string, unknown>;
 
-    // Search results are relevance-ranked and Recently Read sorts by
-    // readChangedAt (which a new entry doesn't have) — can't insert correctly.
-    if (filters.query || filters.sortBy === "readChanged") continue;
-
-    // New entries are always unread and unstarred, so unreadOnly caches take
-    // them and starredOnly caches are skipped (hasStarred=false).
-    if (!shouldUpdateEntryListCache(filters, subscriptionIds, entryTypes, false, scope)) {
+    // Only insert into caches whose filters we fully understand. Search
+    // results are relevance-ranked and Recently Read sorts by readChangedAt
+    // (which a new entry doesn't have) — can't insert correctly.
+    const hasUnknownFilter = Object.keys(input).some(
+      (key) => input[key] !== undefined && !INSERT_SUPPORTED_FILTER_KEYS.has(key)
+    );
+    if (hasUnknownFilter || input.query || (input.sortBy && input.sortBy !== "published")) {
       continue;
     }
 
-    const updated = insertEntryIntoPages(data, entry, filters.sortOrder ?? "newest");
+    // Catch-up sync can deliver entries already read on another device;
+    // those don't belong in unread-only lists.
+    if (input.unreadOnly && entry.read) continue;
+
+    if (!shouldUpdateEntryListCache(input, subscriptionIds, entryTypes, entry.starred, scope)) {
+      continue;
+    }
+
+    const updated = insertEntryIntoPages(data, entry, input.sortOrder ?? "newest");
     if (updated) {
       queryClient.setQueryData(queryKey, updated);
     }
@@ -434,8 +486,12 @@ function insertEntryIntoPages(
     return undefined;
   }
 
-  const sortTime = (publishedAt: unknown, fetchedAt: unknown): number =>
-    new Date((publishedAt ?? fetchedAt) as string | number | Date).getTime();
+  // Cached values are usually already Date objects (tRPC's transformer);
+  // avoid allocating a new Date per comparison in that common case.
+  const sortTime = (publishedAt: unknown, fetchedAt: unknown): number => {
+    const value = publishedAt ?? fetchedAt;
+    return value instanceof Date ? value.getTime() : new Date(value as string | number).getTime();
+  };
   const entryTime = sortTime(entry.publishedAt, entry.fetchedAt);
 
   const belongsBefore = (other: CachedListEntry): boolean => {
@@ -452,11 +508,7 @@ function insertEntryIntoPages(
       i === pageIndex
         ? {
             ...page,
-            items: [
-              ...page.items.slice(0, itemIndex),
-              entry as unknown as CachedListEntry,
-              ...page.items.slice(itemIndex),
-            ],
+            items: [...page.items.slice(0, itemIndex), entry, ...page.items.slice(itemIndex)],
           }
         : page
     ),

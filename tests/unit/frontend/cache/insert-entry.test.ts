@@ -14,9 +14,9 @@ import { QueryClient } from "@tanstack/react-query";
 import {
   insertEntryIntoListCaches,
   type EntryListItem,
-  type AffectedScope,
   type EntryListFilters,
 } from "@/lib/cache/entry-cache";
+import { addSubscriptionToCache, _resetSubscriptionLookupMap } from "@/lib/cache/count-cache";
 
 // ============================================================================
 // Helpers
@@ -25,8 +25,29 @@ import {
 let queryClient: QueryClient;
 
 beforeEach(() => {
+  _resetSubscriptionLookupMap();
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 });
+
+/**
+ * Seeds the subscription lookup cache, which insertEntryIntoListCaches uses
+ * to derive an entry's tag/uncategorized membership.
+ */
+function seedSubscription(id: string, tags: Array<{ id: string; name: string }> = []): void {
+  addSubscriptionToCache({
+    id,
+    type: "web",
+    url: `https://example.com/${id}.xml`,
+    title: `Feed ${id}`,
+    originalTitle: `Feed ${id}`,
+    description: null,
+    siteUrl: null,
+    subscribedAt: new Date("2024-01-01T00:00:00Z"),
+    unreadCount: 0,
+    tags: tags.map((tag) => ({ ...tag, color: null })),
+    fetchFullContent: false,
+  });
+}
 
 function makeEntry(overrides: Partial<EntryListItem> = {}): EntryListItem {
   return {
@@ -85,8 +106,6 @@ function listIds(filters: EntryListFilters & { query?: string }): string[] {
   return data?.pages.flatMap((page) => page.items.map((item) => item.id as string)) ?? [];
 }
 
-const NO_SCOPE: AffectedScope = { tagIds: new Set(), hasUncategorized: false };
-
 // Rows newest-first, like a real "newest" list from the server
 const NEWEST_ROWS = [
   makeRow("entry-c", "2024-06-03T00:00:00Z"),
@@ -102,7 +121,7 @@ describe("insertEntryIntoListCaches - sorted insertion", () => {
   it("inserts a newest entry at the top of a newest-sorted list", () => {
     seedList({}, [{ items: NEWEST_ROWS }]);
 
-    insertEntryIntoListCaches(queryClient, makeEntry(), NO_SCOPE);
+    insertEntryIntoListCaches(queryClient, makeEntry());
 
     expect(listIds({})).toEqual(["entry-new", "entry-c", "entry-b", "entry-a"]);
   });
@@ -115,8 +134,7 @@ describe("insertEntryIntoListCaches - sorted insertion", () => {
       makeEntry({
         publishedAt: new Date("2024-06-01T12:00:00Z"),
         fetchedAt: new Date("2024-07-01T00:00:00Z"),
-      }),
-      NO_SCOPE
+      })
     );
 
     expect(listIds({})).toEqual(["entry-c", "entry-b", "entry-new", "entry-a"]);
@@ -127,8 +145,7 @@ describe("insertEntryIntoListCaches - sorted insertion", () => {
 
     insertEntryIntoListCaches(
       queryClient,
-      makeEntry({ publishedAt: null, fetchedAt: new Date("2024-07-01T00:00:00Z") }),
-      NO_SCOPE
+      makeEntry({ publishedAt: null, fetchedAt: new Date("2024-07-01T00:00:00Z") })
     );
 
     expect(listIds({})).toEqual(["entry-new", "entry-c", "entry-b", "entry-a"]);
@@ -145,8 +162,7 @@ describe("insertEntryIntoListCaches - sorted insertion", () => {
       makeEntry({
         publishedAt: new Date("2024-06-02T00:00:00Z"),
         fetchedAt: new Date("2024-06-02T00:00:00Z"),
-      }),
-      NO_SCOPE
+      })
     );
 
     const data = queryClient.getQueryData<{ pages: SeededPage[] }>([
@@ -169,8 +185,7 @@ describe("insertEntryIntoListCaches - sorted insertion", () => {
       makeEntry({
         publishedAt: new Date("2024-05-01T00:00:00Z"),
         fetchedAt: new Date("2024-05-01T00:00:00Z"),
-      }),
-      NO_SCOPE
+      })
     );
 
     expect(listIds({})).toEqual(["entry-c", "entry-b", "entry-a"]);
@@ -184,8 +199,7 @@ describe("insertEntryIntoListCaches - sorted insertion", () => {
       makeEntry({
         publishedAt: new Date("2024-05-01T00:00:00Z"),
         fetchedAt: new Date("2024-05-01T00:00:00Z"),
-      }),
-      NO_SCOPE
+      })
     );
 
     expect(listIds({})).toEqual(["entry-c", "entry-b", "entry-a", "entry-new"]);
@@ -194,7 +208,7 @@ describe("insertEntryIntoListCaches - sorted insertion", () => {
   it("inserts into an empty, fully-loaded list", () => {
     seedList({}, [{ items: [] }]);
 
-    insertEntryIntoListCaches(queryClient, makeEntry(), NO_SCOPE);
+    insertEntryIntoListCaches(queryClient, makeEntry());
 
     expect(listIds({})).toEqual(["entry-new"]);
   });
@@ -209,7 +223,7 @@ describe("insertEntryIntoListCaches - sorted insertion", () => {
       },
     ]);
 
-    insertEntryIntoListCaches(queryClient, makeEntry(), NO_SCOPE);
+    insertEntryIntoListCaches(queryClient, makeEntry());
 
     expect(listIds({ sortOrder: "oldest" })).toEqual(["entry-a", "entry-b", "entry-new"]);
   });
@@ -219,7 +233,7 @@ describe("insertEntryIntoListCaches - sorted insertion", () => {
       { items: [makeRow("entry-a", "2024-06-01T00:00:00Z")], nextCursor: "c1" },
     ]);
 
-    insertEntryIntoListCaches(queryClient, makeEntry(), NO_SCOPE);
+    insertEntryIntoListCaches(queryClient, makeEntry());
 
     expect(listIds({ sortOrder: "oldest" })).toEqual(["entry-a"]);
   });
@@ -228,8 +242,8 @@ describe("insertEntryIntoListCaches - sorted insertion", () => {
     // SSE and a reconnect catch-up sync can deliver the same new_entry event
     seedList({}, [{ items: NEWEST_ROWS }]);
 
-    insertEntryIntoListCaches(queryClient, makeEntry(), NO_SCOPE);
-    insertEntryIntoListCaches(queryClient, makeEntry(), NO_SCOPE);
+    insertEntryIntoListCaches(queryClient, makeEntry());
+    insertEntryIntoListCaches(queryClient, makeEntry());
 
     expect(listIds({})).toEqual(["entry-new", "entry-c", "entry-b", "entry-a"]);
   });
@@ -248,64 +262,86 @@ describe("insertEntryIntoListCaches - filter targeting", () => {
       { items: [makeRow("entry-x", "2024-06-01T00:00:00Z")] },
     ]);
 
-    insertEntryIntoListCaches(queryClient, makeEntry({ subscriptionId: "sub-1" }), NO_SCOPE);
+    insertEntryIntoListCaches(queryClient, makeEntry({ subscriptionId: "sub-1" }));
 
     expect(listIds({ subscriptionId: "sub-1" })).toEqual(["entry-new", "entry-a"]);
     expect(listIds({ subscriptionId: "sub-2" })).toEqual(["entry-x"]);
   });
 
-  it("inserts into tag lists only when the tag is in the affected scope", () => {
+  it("inserts into tag lists based on the cached subscription's tags", () => {
+    seedSubscription("sub-1", [{ id: "tag-1", name: "Tech" }]);
     seedList({ tagId: "tag-1" }, [{ items: [makeRow("entry-a", "2024-06-01T00:00:00Z")] }]);
     seedList({ tagId: "tag-2" }, [{ items: [makeRow("entry-x", "2024-06-01T00:00:00Z")] }]);
 
-    insertEntryIntoListCaches(queryClient, makeEntry(), {
-      tagIds: new Set(["tag-1"]),
-      hasUncategorized: false,
-    });
+    insertEntryIntoListCaches(queryClient, makeEntry({ subscriptionId: "sub-1" }));
 
     expect(listIds({ tagId: "tag-1" })).toEqual(["entry-new", "entry-a"]);
     expect(listIds({ tagId: "tag-2" })).toEqual(["entry-x"]);
   });
 
-  it("inserts into the uncategorized list only when scope says uncategorized", () => {
+  it("skips tag and uncategorized lists when the subscription is not cached", () => {
+    // Without the subscription's tags we can't tell which tag lists the entry
+    // belongs to — conservative skip; the entry arrives on the next refresh.
+    seedList({ tagId: "tag-1" }, [{ items: [makeRow("entry-a", "2024-06-01T00:00:00Z")] }]);
+    seedList({ uncategorized: true }, [{ items: [makeRow("entry-b", "2024-06-01T00:00:00Z")] }]);
+    seedList({}, [{ items: [makeRow("entry-c", "2024-06-01T00:00:00Z")] }]);
+
+    insertEntryIntoListCaches(queryClient, makeEntry({ subscriptionId: "sub-uncached" }));
+
+    expect(listIds({ tagId: "tag-1" })).toEqual(["entry-a"]);
+    expect(listIds({ uncategorized: true })).toEqual(["entry-b"]);
+    // The All list doesn't need tag scope and still gets the insert
+    expect(listIds({})).toEqual(["entry-new", "entry-c"]);
+  });
+
+  it("inserts into the uncategorized list only for untagged subscriptions", () => {
+    seedSubscription("sub-tagged", [{ id: "tag-1", name: "Tech" }]);
+    seedSubscription("sub-untagged");
     seedList({ uncategorized: true }, [{ items: [makeRow("entry-a", "2024-06-01T00:00:00Z")] }]);
 
-    insertEntryIntoListCaches(queryClient, makeEntry(), NO_SCOPE);
+    insertEntryIntoListCaches(queryClient, makeEntry({ subscriptionId: "sub-tagged" }));
     expect(listIds({ uncategorized: true })).toEqual(["entry-a"]);
 
-    insertEntryIntoListCaches(queryClient, makeEntry(), {
-      tagIds: new Set(),
-      hasUncategorized: true,
-    });
+    insertEntryIntoListCaches(queryClient, makeEntry({ subscriptionId: "sub-untagged" }));
     expect(listIds({ uncategorized: true })).toEqual(["entry-new", "entry-a"]);
   });
 
   it("skips starredOnly lists (new entries are never starred)", () => {
     seedList({ starredOnly: true }, [{ items: [makeRow("entry-a", "2024-06-01T00:00:00Z")] }]);
 
-    insertEntryIntoListCaches(queryClient, makeEntry(), NO_SCOPE);
+    insertEntryIntoListCaches(queryClient, makeEntry());
 
     expect(listIds({ starredOnly: true })).toEqual(["entry-a"]);
   });
 
-  it("inserts into unreadOnly lists (new entries are always unread)", () => {
+  it("inserts unread entries into unreadOnly lists, but not read ones", () => {
+    // Catch-up sync can deliver entries already read on another device
     seedList({ unreadOnly: true }, [{ items: [makeRow("entry-a", "2024-06-01T00:00:00Z")] }]);
 
-    insertEntryIntoListCaches(queryClient, makeEntry(), NO_SCOPE);
+    insertEntryIntoListCaches(queryClient, makeEntry({ id: "entry-read", read: true }));
+    expect(listIds({ unreadOnly: true })).toEqual(["entry-a"]);
 
+    insertEntryIntoListCaches(queryClient, makeEntry());
     expect(listIds({ unreadOnly: true })).toEqual(["entry-new", "entry-a"]);
+  });
+
+  it("inserts starred entries (catch-up sync) into starredOnly lists", () => {
+    seedList({ starredOnly: true }, [{ items: [makeRow("entry-a", "2024-06-01T00:00:00Z")] }]);
+
+    insertEntryIntoListCaches(queryClient, makeEntry({ starred: true }));
+
+    expect(listIds({ starredOnly: true })).toEqual(["entry-new", "entry-a"]);
   });
 
   it("respects the type filter (saved entry goes to the saved list, web does not)", () => {
     seedList({ type: "saved" }, [{ items: [makeRow("entry-a", "2024-06-01T00:00:00Z")] }]);
 
-    insertEntryIntoListCaches(queryClient, makeEntry({ type: "web" }), NO_SCOPE);
+    insertEntryIntoListCaches(queryClient, makeEntry({ type: "web" }));
     expect(listIds({ type: "saved" })).toEqual(["entry-a"]);
 
     insertEntryIntoListCaches(
       queryClient,
-      makeEntry({ id: "entry-saved-new", type: "saved", subscriptionId: null }),
-      NO_SCOPE
+      makeEntry({ id: "entry-saved-new", type: "saved", subscriptionId: null })
     );
     expect(listIds({ type: "saved" })).toEqual(["entry-saved-new", "entry-a"]);
   });
@@ -313,11 +349,7 @@ describe("insertEntryIntoListCaches - filter targeting", () => {
   it("inserts a saved entry (null subscriptionId) into the All list", () => {
     seedList({}, [{ items: [makeRow("entry-a", "2024-06-01T00:00:00Z")] }]);
 
-    insertEntryIntoListCaches(
-      queryClient,
-      makeEntry({ type: "saved", subscriptionId: null }),
-      NO_SCOPE
-    );
+    insertEntryIntoListCaches(queryClient, makeEntry({ type: "saved", subscriptionId: null }));
 
     expect(listIds({})).toEqual(["entry-new", "entry-a"]);
   });
@@ -326,9 +358,20 @@ describe("insertEntryIntoListCaches - filter targeting", () => {
     seedList({ query: "search terms" }, [{ items: [makeRow("entry-a", "2024-06-01T00:00:00Z")] }]);
     seedList({ sortBy: "readChanged" }, [{ items: [makeRow("entry-b", "2024-06-01T00:00:00Z")] }]);
 
-    insertEntryIntoListCaches(queryClient, makeEntry(), NO_SCOPE);
+    insertEntryIntoListCaches(queryClient, makeEntry());
 
     expect(listIds({ query: "search terms" })).toEqual(["entry-a"]);
     expect(listIds({ sortBy: "readChanged" })).toEqual(["entry-b"]);
+  });
+
+  it("skips caches whose input has filter keys it doesn't recognize", () => {
+    // Fail-safe for future entries.list filters: an unknown key means we
+    // can't reproduce the cache's membership rules client-side.
+    const unknownFilter = { excludeTypes: ["email"] } as unknown as EntryListFilters;
+    seedList(unknownFilter, [{ items: [makeRow("entry-a", "2024-06-01T00:00:00Z")] }]);
+
+    insertEntryIntoListCaches(queryClient, makeEntry());
+
+    expect(listIds(unknownFilter)).toEqual(["entry-a"]);
   });
 });
