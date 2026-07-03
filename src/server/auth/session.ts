@@ -10,7 +10,7 @@
  */
 
 import crypto from "crypto";
-import { eq, and, isNull, gt, lt, or } from "drizzle-orm";
+import { eq, and, isNull, gt, sql } from "drizzle-orm";
 import { db, type Database } from "@/server/db";
 import { sessions, users, type User, type Session } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
@@ -362,32 +362,32 @@ const USER_LAST_ACTIVE_REFRESH_MS = 60 * 1000;
 
 /**
  * Updates last_active_at for both the session and (throttled) the user row.
- * Done asynchronously to not block the request.
+ * Done asynchronously (fire-and-forget) so it never blocks the request.
  *
  * The user-row copy is denormalized so the admin "last active" view survives
  * session retention cleanup (expired sessions are deleted), rather than being
  * derived from MAX(sessions.last_active_at).
+ *
+ * This runs on every authenticated request, so it's a single round-trip via a
+ * writable CTE rather than two sequential statements. The session row is always
+ * touched; the user row is only touched when its timestamp is stale, so the
+ * common case is a no-op on the users table (no row write, no index churn) while
+ * still costing just one query.
  */
 async function updateLastActiveAt(sessionId: string, userId: string): Promise<void> {
   const now = new Date();
+  const staleCutoff = new Date(now.getTime() - USER_LAST_ACTIVE_REFRESH_MS);
   try {
-    await db.update(sessions).set({ lastActiveAt: now }).where(eq(sessions.id, sessionId));
+    await db.execute(sql`
+      WITH touched_session AS (
+        UPDATE ${sessions} SET last_active_at = ${now} WHERE id = ${sessionId}
+      )
+      UPDATE ${users} SET last_active_at = ${now}
+      WHERE id = ${userId}
+        AND (last_active_at IS NULL OR last_active_at < ${staleCutoff})
+    `);
   } catch (err) {
-    console.error("Failed to update session last_active_at:", err);
-  }
-  try {
-    const staleCutoff = new Date(now.getTime() - USER_LAST_ACTIVE_REFRESH_MS);
-    await db
-      .update(users)
-      .set({ lastActiveAt: now })
-      .where(
-        and(
-          eq(users.id, userId),
-          or(isNull(users.lastActiveAt), lt(users.lastActiveAt, staleCutoff))
-        )
-      );
-  } catch (err) {
-    console.error("Failed to update user last_active_at:", err);
+    console.error("Failed to update last_active_at:", err);
   }
 }
 
