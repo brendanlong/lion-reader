@@ -358,6 +358,125 @@ export interface EntryListItem {
   read: boolean;
   starred: boolean;
   feedTitle: string | null;
+  siteName: string | null;
+}
+
+/**
+ * Inserts a new entry into the cached entry lists it belongs to, in sorted
+ * position, so it appears live without a refetch (new_entry SSE/sync events).
+ *
+ * Uses the same filter matching as updateEntriesInAffectedListCaches to skip
+ * unrelated caches, plus:
+ * - Skips caches whose membership/ordering can't be reproduced client-side
+ *   (search results, Recently Read). Those pick the entry up on their next
+ *   navigation-triggered refresh instead — same as before this helper existed.
+ * - Skips the insert when the entry sorts beyond the loaded pagination window
+ *   (it will arrive with the page that covers it).
+ * - Deduplicates by ID, so the same event delivered by both the live SSE
+ *   stream and a reconnect catch-up sync inserts only once.
+ *
+ * @param queryClient - React Query client for cache access
+ * @param entry - The new entry in entries.list item shape
+ * @param scope - Affected tags and uncategorized flag (from event counts)
+ */
+export function insertEntryIntoListCaches(
+  queryClient: QueryClient,
+  entry: EntryListItem,
+  scope: AffectedScope
+): void {
+  const queries = queryClient.getQueriesData<InfiniteData>({
+    queryKey: [["entries", "list"]],
+  });
+
+  const subscriptionIds = new Set(entry.subscriptionId ? [entry.subscriptionId] : []);
+  const entryTypes = new Set([entry.type]);
+
+  for (const [queryKey, data] of queries) {
+    if (!data?.pages?.length) continue;
+
+    const keyMeta = queryKey[1] as TRPCQueryKey | undefined;
+    const filters: EntryListFilters = keyMeta?.input ?? {};
+
+    // Search results are relevance-ranked and Recently Read sorts by
+    // readChangedAt (which a new entry doesn't have) — can't insert correctly.
+    if (filters.query || filters.sortBy === "readChanged") continue;
+
+    // New entries are always unread and unstarred, so unreadOnly caches take
+    // them and starredOnly caches are skipped (hasStarred=false).
+    if (!shouldUpdateEntryListCache(filters, subscriptionIds, entryTypes, false, scope)) {
+      continue;
+    }
+
+    const updated = insertEntryIntoPages(data, entry, filters.sortOrder ?? "newest");
+    if (updated) {
+      queryClient.setQueryData(queryKey, updated);
+    }
+  }
+}
+
+/**
+ * Returns a copy of the infinite-query data with the entry inserted in sorted
+ * position, or undefined if no insert should happen (duplicate, or the entry
+ * sorts beyond the loaded pagination window).
+ *
+ * The sort mirrors the server's ORDER BY COALESCE(published_at, fetched_at),
+ * id (descending for "newest", ascending for "oldest"). Page boundaries don't
+ * matter for correctness — pages are rendered flattened and their stored
+ * cursors are unaffected by the insert.
+ */
+function insertEntryIntoPages(
+  data: InfiniteData,
+  entry: EntryListItem,
+  sortOrder: "newest" | "oldest"
+): InfiniteData | undefined {
+  // Dedupe by ID (idempotent under SSE + catch-up sync double delivery)
+  if (data.pages.some((page) => page.items.some((item) => item.id === entry.id))) {
+    return undefined;
+  }
+
+  const sortTime = (publishedAt: unknown, fetchedAt: unknown): number =>
+    new Date((publishedAt ?? fetchedAt) as string | number | Date).getTime();
+  const entryTime = sortTime(entry.publishedAt, entry.fetchedAt);
+
+  const belongsBefore = (other: CachedListEntry): boolean => {
+    const otherTime = sortTime(other.publishedAt, other.fetchedAt);
+    if (sortOrder === "newest") {
+      return entryTime > otherTime || (entryTime === otherTime && entry.id > other.id);
+    }
+    return entryTime < otherTime || (entryTime === otherTime && entry.id < other.id);
+  };
+
+  const insertAt = (pageIndex: number, itemIndex: number): InfiniteData => ({
+    ...data,
+    pages: data.pages.map((page, i) =>
+      i === pageIndex
+        ? {
+            ...page,
+            items: [
+              ...page.items.slice(0, itemIndex),
+              entry as unknown as CachedListEntry,
+              ...page.items.slice(itemIndex),
+            ],
+          }
+        : page
+    ),
+  });
+
+  for (let pageIndex = 0; pageIndex < data.pages.length; pageIndex++) {
+    const itemIndex = data.pages[pageIndex].items.findIndex(belongsBefore);
+    if (itemIndex !== -1) {
+      return insertAt(pageIndex, itemIndex);
+    }
+  }
+
+  // Sorts after everything loaded: append only if the list is fully loaded;
+  // otherwise the entry lives beyond the pagination window and will arrive
+  // with the page that covers it.
+  const lastPageIndex = data.pages.length - 1;
+  if (data.pages[lastPageIndex].nextCursor !== undefined) {
+    return undefined;
+  }
+  return insertAt(lastPageIndex, data.pages[lastPageIndex].items.length);
 }
 
 /**
@@ -401,7 +520,9 @@ export interface EntryListFilters {
   unreadOnly?: boolean;
   starredOnly?: boolean;
   sortOrder?: "newest" | "oldest";
+  sortBy?: "published" | "readChanged";
   type?: "web" | "email" | "saved";
+  query?: string;
 }
 
 /**

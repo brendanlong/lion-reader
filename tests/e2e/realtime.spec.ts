@@ -205,6 +205,41 @@ test("new_entry event updates unread counts in all affected lists without refetc
   expect(refetchProcedures(trpcCalls)).toEqual([]);
 });
 
+test("new_entry event inserts the entry at the top of the open list without refetching", async ({
+  page,
+  baseURL,
+}) => {
+  const { user, taggedFeed, trpcCalls } = await seedAndOpenAll(page, baseURL!, ({ taggedFeed }) =>
+    getFeedEventsChannel(taggedFeed.feedId)
+  );
+
+  trpcCalls.length = 0;
+
+  const db = getDb();
+  const entry = await createUnreadEntry(db, {
+    feedId: taggedFeed.feedId,
+    userId: user.id,
+    title: "Realtime post",
+  });
+  await publishNewEntry(
+    taggedFeed.feedId,
+    entry.id,
+    entry.updatedAt,
+    "web",
+    newEntryListData(entry, taggedFeed)
+  );
+
+  // The new entry appears in the open list, sorted first (it's the newest),
+  // purely from the SSE event's list payload — no entries.list refetch.
+  await expect(page.locator('[aria-label*="article: Realtime post"]')).toBeVisible();
+  await expect(page.locator('[aria-label*="article:"]').first()).toHaveAttribute(
+    "aria-label",
+    /Realtime post/
+  );
+
+  expect(refetchProcedures(trpcCalls)).toEqual([]);
+});
+
 // Regression test for #892: while a sidebar tag is collapsed (the default),
 // the subscription isn't in any cache, so a tag count can't be derived from
 // cached subscription data. The new_entry event carries the tag's absolute
