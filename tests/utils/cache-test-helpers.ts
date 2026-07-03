@@ -6,9 +6,14 @@
  */
 
 import { QueryClient } from "@tanstack/react-query";
-import { createMockTrpcUtils } from "./trpc-mock";
+import { vi, type MockInstance } from "vitest";
+import { createTRPCClient, httpLink } from "@trpc/client";
+import { createTRPCQueryUtils } from "@trpc/react-query";
+import superjson from "superjson";
 import { addSubscriptionToCache } from "@/lib/cache/count-cache";
 import type { SyncEvent } from "@/lib/events/schemas";
+import type { AppRouter } from "@/server/trpc/root";
+import type { TRPCClientUtils } from "@/lib/trpc/client";
 
 // ============================================================================
 // Types
@@ -271,10 +276,84 @@ export function createSeededQueryClient(entries: SeededEntry[] = DEFAULT_ENTRIES
 }
 
 /**
- * Seeds the mock tRPC utils cache with default subscription, tag, and entry count data.
+ * Builds a REAL tRPC query-utils object over a real QueryClient — the same
+ * `useUtils()` surface the app uses — so cache helpers exercise genuine React
+ * Query key hashing and structural sharing instead of a hand-rolled fake.
+ *
+ * `createTRPCQueryUtils` requires a vanilla client, but it is never exercised:
+ * only fetch/prefetch/ensureData hit the link, and cache unit tests call solely
+ * setData/getData/invalidate/cancel. The link throws so any accidental network
+ * call fails loudly instead of hanging.
+ */
+export function createRealTrpcUtils(queryClient: QueryClient): TRPCClientUtils {
+  const client = createTRPCClient<AppRouter>({
+    links: [
+      httpLink({
+        url: "http://cache-tests.invalid/trpc",
+        transformer: superjson,
+        fetch: () => {
+          throw new Error("Cache unit tests must not make tRPC network calls");
+        },
+      }),
+    ],
+  });
+  // createTRPCQueryUtils and useUtils expose the same setData/getData/invalidate
+  // surface over the same QueryClient; only the static brand differs.
+  return createTRPCQueryUtils<AppRouter>({ queryClient, client }) as unknown as TRPCClientUtils;
+}
+
+/** Spies on the QueryClient's invalidations so tests can assert what was invalidated. */
+export function spyOnInvalidate(queryClient: QueryClient): MockInstance {
+  return vi.spyOn(queryClient, "invalidateQueries");
+}
+
+export interface InvalidatedQuery {
+  /** tRPC procedure path, e.g. "tags.list". */
+  path: string;
+  /** The query input, when the invalidation targeted a specific input. */
+  input: unknown;
+}
+
+/**
+ * Reads the invalidations captured by {@link spyOnInvalidate}. Every invalidation
+ * (whether via `utils.x.y.invalidate()` or a direct `queryClient.invalidateQueries`)
+ * uses the tRPC key shape `[["router","procedure"], { input?, type? }]`.
+ */
+export function invalidatedQueries(spy: MockInstance): InvalidatedQuery[] {
+  return (spy.mock.calls as unknown[][])
+    .map((call) => {
+      const filters = call[0] as { queryKey?: unknown } | undefined;
+      const key = filters?.queryKey as [unknown, { input?: unknown }?] | undefined;
+      const path = Array.isArray(key?.[0]) ? (key![0] as string[]).join(".") : undefined;
+      return path ? { path, input: key?.[1]?.input } : undefined;
+    })
+    .filter((q): q is InvalidatedQuery => q !== undefined);
+}
+
+/** Convenience: the set of tRPC procedure paths that were invalidated. */
+export function invalidatedProcedures(spy: MockInstance): string[] {
+  return invalidatedQueries(spy).map((q) => q.path);
+}
+
+/**
+ * Writes a value into the real tRPC query cache. Test fixtures approximate the
+ * server output shape, so the value is cast at this single boundary rather than
+ * constructing full router-output types.
+ */
+export function setUtilsData(node: unknown, input: unknown, data: unknown): void {
+  (node as { setData: (i: unknown, d: unknown) => void }).setData(input, data);
+}
+
+/** Reads a value from the real tRPC query cache (typed by the caller). */
+export function getUtilsData<T>(node: unknown, input?: unknown): T | undefined {
+  return (node as { getData: (i?: unknown) => unknown }).getData(input) as T | undefined;
+}
+
+/**
+ * Seeds the tRPC utils cache with default subscription, tag, and entry count data.
  */
 export function seedCacheState(
-  mockUtils: ReturnType<typeof createMockTrpcUtils>,
+  utils: TRPCClientUtils,
   options: {
     subscriptions?: SeededSubscription[];
     tags?: SeededTag[];
@@ -297,26 +376,26 @@ export function seedCacheState(
     addSubscriptionToCache(sub);
   }
 
-  // Also seed the mock cache for tests that check subscriptions.list via mockUtils
-  mockUtils.setCache("subscriptions", "list", undefined, { items: subs });
+  // Also seed subscriptions.list for tests that read it via utils
+  setUtilsData(utils.subscriptions.list, undefined, { items: subs });
 
   // Seed tags.list
-  mockUtils.setCache("tags", "list", undefined, {
+  setUtilsData(utils.tags.list, undefined, {
     items: tagItems,
     uncategorized,
   });
 
   // Seed entries.count for various filters
-  mockUtils.setCache("entries", "count", {}, { unread: allUnread });
-  mockUtils.setCache("entries", "count", { starredOnly: true }, { unread: starredUnread });
-  mockUtils.setCache("entries", "count", { type: "saved" }, { unread: savedUnread });
+  setUtilsData(utils.entries.count, {}, { unread: allUnread });
+  setUtilsData(utils.entries.count, { starredOnly: true }, { unread: starredUnread });
+  setUtilsData(utils.entries.count, { type: "saved" }, { unread: savedUnread });
 
   // Seed individual entry caches (entries.get) — seed all entries by default
   // so tests can verify entries.get fallback behavior
   const entriesToSeed =
     options.entries ?? DEFAULT_ENTRIES.map((entry) => ({ id: entry.id, entry }));
   for (const { id, entry } of entriesToSeed) {
-    mockUtils.setCache("entries", "get", { id }, { entry });
+    setUtilsData(utils.entries.get, { id }, { entry });
   }
 }
 
