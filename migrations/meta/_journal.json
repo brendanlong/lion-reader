@@ -533,6 +533,13 @@
       "when": 1782950900000,
       "tag": "0076_redundant_indexes_and_invites_fk",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1782951000000,
+      "tag": "0077_users_last_active_at",
+      "breakpoints": true
     }
   ]
 }

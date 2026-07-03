@@ -65,31 +65,44 @@ export const invites = pgTable(
  * Users table - stores user accounts.
  * Primary key uses UUIDv7 for time-ordering and global uniqueness.
  */
-export const users = pgTable("users", {
-  id: uuid("id").primaryKey(),
-  email: citext("email").unique().notNull(),
-  emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
-  passwordHash: text("password_hash"), // null if OAuth-only (future)
-  inviteId: uuid("invite_id").references(() => invites.id, { onDelete: "set null" }),
+export const users = pgTable(
+  "users",
+  {
+    id: uuid("id").primaryKey(),
+    email: citext("email").unique().notNull(),
+    emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
+    passwordHash: text("password_hash"), // null if OAuth-only (future)
+    inviteId: uuid("invite_id").references(() => invites.id, { onDelete: "set null" }),
 
-  // Preferences
-  showSpam: boolean("show_spam").notNull().default(false), // Show spam entries from email feeds
+    // Preferences
+    showSpam: boolean("show_spam").notNull().default(false), // Show spam entries from email feeds
 
-  // User-configured API keys (override server defaults when set)
-  groqApiKey: text("groq_api_key"), // For narration LLM preprocessing
-  anthropicApiKey: text("anthropic_api_key"), // For AI summarization
-  summarizationModel: text("summarization_model"), // Anthropic model for summaries
-  summarizationMaxWords: integer("summarization_max_words"), // Override SUMMARIZATION_MAX_WORDS
-  summarizationPrompt: text("summarization_prompt"), // Custom summarization prompt
+    // User-configured API keys (override server defaults when set)
+    groqApiKey: text("groq_api_key"), // For narration LLM preprocessing
+    anthropicApiKey: text("anthropic_api_key"), // For AI summarization
+    summarizationModel: text("summarization_model"), // Anthropic model for summaries
+    summarizationMaxWords: integer("summarization_max_words"), // Override SUMMARIZATION_MAX_WORDS
+    summarizationPrompt: text("summarization_prompt"), // Custom summarization prompt
 
-  // Signup confirmation: each records when the user accepted the agreement
-  tosAgreedAt: timestamp("tos_agreed_at", { withTimezone: true }),
-  privacyPolicyAgreedAt: timestamp("privacy_policy_agreed_at", { withTimezone: true }),
-  notEuAgreedAt: timestamp("not_eu_agreed_at", { withTimezone: true }),
+    // Signup confirmation: each records when the user accepted the agreement
+    tosAgreedAt: timestamp("tos_agreed_at", { withTimezone: true }),
+    privacyPolicyAgreedAt: timestamp("privacy_policy_agreed_at", { withTimezone: true }),
+    notEuAgreedAt: timestamp("not_eu_agreed_at", { withTimezone: true }),
 
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+    // Denormalized most-recent activity timestamp (updated fire-and-forget on
+    // session validation, see updateLastActiveAt). Kept on the user row so the
+    // admin "last active" view survives session retention cleanup, which deletes
+    // expired sessions (the previous MAX(sessions.last_active_at) source).
+    lastActiveAt: timestamp("last_active_at", { withTimezone: true }),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // Supports the admin user list "most recent activity" sort + keyset cursor.
+    index("idx_users_last_active_at").on(table.lastActiveAt.desc().nullsLast(), table.id.desc()),
+  ]
+);
 
 /**
  * Sessions table - stores user sessions.

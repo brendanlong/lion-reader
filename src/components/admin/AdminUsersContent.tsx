@@ -24,6 +24,17 @@ import { SpinnerIcon, GoogleIcon, AppleIcon, DiscordIcon } from "@/components/ui
 const DEBOUNCE_MS = 300;
 const PAGE_SIZE = 50;
 
+// Sort options for the user list. Values must match the admin.listUsers `sort`
+// enum on the backend.
+type UserSort = "activity" | "created" | "oldest" | "email";
+
+const SORT_OPTIONS: { value: UserSort; label: string }[] = [
+  { value: "activity", label: "Most recent activity" },
+  { value: "created", label: "Newest" },
+  { value: "oldest", label: "Oldest" },
+  { value: "email", label: "Email (A–Z)" },
+];
+
 // ============================================================================
 // Helpers
 // ============================================================================
@@ -79,6 +90,7 @@ interface User {
   email: string;
   createdAt: Date;
   lastActiveAt: Date | null;
+  lastTokenUsedAt: Date | null;
   providers: string[];
   subscriptionCount: number;
   entryCount: number;
@@ -108,6 +120,9 @@ function UserRow({ user }: { user: User }) {
       <div className="ui-text-xs flex flex-wrap gap-x-4 gap-y-1 text-zinc-500 dark:text-zinc-400">
         <span>Member since {formatDate(user.createdAt)}</span>
         <span>Last active: {user.lastActiveAt ? formatDate(user.lastActiveAt) : "Never"}</span>
+        <span>
+          Last API/MCP use: {user.lastTokenUsedAt ? formatDate(user.lastTokenUsedAt) : "Never"}
+        </span>
         <span>
           Subscriptions:{" "}
           <ClientLink
@@ -150,6 +165,7 @@ export default function AdminUsersContent() {
 
   const [searchInput, setSearchInput] = useState(initialSearch);
   const [debouncedSearch, setDebouncedSearch] = useState(initialSearch);
+  const [sort, setSort] = useState<UserSort>("activity");
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
   // Debounce search input
@@ -165,6 +181,7 @@ export default function AdminUsersContent() {
     {
       limit: PAGE_SIZE,
       search: debouncedSearch || undefined,
+      sort,
     },
     {
       getNextPageParam: (lastPage) => lastPage.nextCursor,
@@ -214,14 +231,33 @@ export default function AdminUsersContent() {
         <h2 className="ui-text-lg font-semibold text-zinc-900 dark:text-zinc-50">Users</h2>
       </div>
 
-      {/* Search */}
-      <div className="mb-4">
-        <Input
-          id="user-search"
-          placeholder="Search by email..."
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-        />
+      {/* Search + sort */}
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="flex-1">
+          <Input
+            id="user-search"
+            placeholder="Search by email..."
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+          />
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <label htmlFor="user-sort" className="ui-text-sm text-zinc-600 dark:text-zinc-400">
+            Sort by
+          </label>
+          <select
+            id="user-sort"
+            value={sort}
+            onChange={(e) => setSort(e.target.value as UserSort)}
+            className="ui-text-sm block rounded-md border border-zinc-300 bg-white px-3 py-2 text-zinc-900 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+          >
+            {SORT_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {/* Users List */}

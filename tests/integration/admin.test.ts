@@ -12,7 +12,15 @@ process.env.ADMIN_SECRET = "test-admin-secret";
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { eq, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { users, feeds, subscriptions, invites, jobs, sessions } from "../../src/server/db/schema";
+import {
+  users,
+  feeds,
+  subscriptions,
+  invites,
+  jobs,
+  sessions,
+  apiTokens,
+} from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
@@ -393,28 +401,162 @@ describe("Admin API", () => {
       expect(result.items[0].email).toContain("findme-unique");
     });
 
-    it("returns lastActiveAt from sessions", async () => {
+    it("returns lastActiveAt from the denormalized user column", async () => {
       const ctx = createAdminContext();
       const caller = createCaller(ctx);
 
       const userId = await createTestUser("active-user");
 
-      // Create a session for this user
-      const sessionId = generateUuidv7();
-      const sessionTime = new Date("2026-03-15T12:00:00Z");
-      await db.insert(sessions).values({
-        id: sessionId,
-        userId,
-        tokenHash: `test-hash-${sessionId}`,
-        expiresAt: new Date("2027-01-01T00:00:00Z"),
-        lastActiveAt: sessionTime,
-      });
+      const activeTime = new Date("2026-03-15T12:00:00Z");
+      await db.update(users).set({ lastActiveAt: activeTime }).where(eq(users.id, userId));
 
       const result = await caller.admin.listUsers({ search: "active-user" });
 
       expect(result.items).toHaveLength(1);
       expect(result.items[0].lastActiveAt).toBeInstanceOf(Date);
+      expect(result.items[0].lastActiveAt!.getTime()).toBe(activeTime.getTime());
+    });
+
+    it("keeps lastActiveAt after the user's sessions are cleaned up", async () => {
+      // Regression: activity used to be derived from MAX(sessions.last_active_at),
+      // so retention cleanup deleting expired sessions blanked it out. It now
+      // lives on the user row and must survive with no sessions at all.
+      const ctx = createAdminContext();
+      const caller = createCaller(ctx);
+
+      const userId = await createTestUser("retained-user");
+      const activeTime = new Date("2026-02-01T09:00:00Z");
+      await db.update(users).set({ lastActiveAt: activeTime }).where(eq(users.id, userId));
+
+      // Create then delete a session, simulating retention cleanup.
+      const sessionId = generateUuidv7();
+      await db.insert(sessions).values({
+        id: sessionId,
+        userId,
+        tokenHash: `test-hash-${sessionId}`,
+        expiresAt: new Date("2026-03-03T09:00:00Z"),
+        lastActiveAt: activeTime,
+      });
+      await db.delete(sessions).where(eq(sessions.id, sessionId));
+
+      const result = await caller.admin.listUsers({ search: "retained-user" });
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].lastActiveAt).toBeInstanceOf(Date);
+      expect(result.items[0].lastActiveAt!.getTime()).toBe(activeTime.getTime());
+    });
+
+    it("reports most recent token use separately from session activity", async () => {
+      const ctx = createAdminContext();
+      const caller = createCaller(ctx);
+
+      const userId = await createTestUser("token-user");
+
+      // Session activity and token use are independent signals.
+      const sessionTime = new Date("2026-04-01T00:00:00Z");
+      await db.update(users).set({ lastActiveAt: sessionTime }).where(eq(users.id, userId));
+
+      const tokenUsedTime = new Date("2026-05-20T00:00:00Z");
+      await db.insert(apiTokens).values({
+        id: generateUuidv7(),
+        userId,
+        tokenHash: `token-hash-${userId}`,
+        scopes: ["mcp"],
+        lastUsedAt: tokenUsedTime,
+      });
+
+      const result = await caller.admin.listUsers({ search: "token-user" });
+
+      expect(result.items).toHaveLength(1);
       expect(result.items[0].lastActiveAt!.getTime()).toBe(sessionTime.getTime());
+      expect(result.items[0].lastTokenUsedAt).toBeInstanceOf(Date);
+      expect(result.items[0].lastTokenUsedAt!.getTime()).toBe(tokenUsedTime.getTime());
+    });
+
+    it("returns null token use for users who never used a token", async () => {
+      const ctx = createAdminContext();
+      const caller = createCaller(ctx);
+
+      await createTestUser("no-token-user");
+
+      const result = await caller.admin.listUsers({ search: "no-token-user" });
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].lastTokenUsedAt).toBeNull();
+    });
+
+    it("sorts by most recent activity by default, nulls last", async () => {
+      const ctx = createAdminContext();
+      const caller = createCaller(ctx);
+
+      const idNever = await createTestUser("sort-never");
+      const idOld = await createTestUser("sort-old");
+      const idRecent = await createTestUser("sort-recent");
+
+      await db
+        .update(users)
+        .set({ lastActiveAt: new Date("2026-01-01T00:00:00Z") })
+        .where(eq(users.id, idOld));
+      await db
+        .update(users)
+        .set({ lastActiveAt: new Date("2026-06-01T00:00:00Z") })
+        .where(eq(users.id, idRecent));
+      // idNever keeps a null lastActiveAt.
+
+      const result = await caller.admin.listUsers({ search: "sort-" });
+
+      const order = result.items.map((u) => u.id);
+      expect(order).toEqual([idRecent, idOld, idNever]);
+    });
+
+    it("sorts by email A→Z", async () => {
+      const ctx = createAdminContext();
+      const caller = createCaller(ctx);
+
+      // Emails are prefixed with the UUIDv7 id, so create then rewrite them to
+      // control alphabetical order independently of creation order.
+      const id1 = await createTestUser("email-sort");
+      const id2 = await createTestUser("email-sort");
+      await db.update(users).set({ email: "zzz-emailsort@test.com" }).where(eq(users.id, id1));
+      await db.update(users).set({ email: "aaa-emailsort@test.com" }).where(eq(users.id, id2));
+
+      const result = await caller.admin.listUsers({ search: "emailsort", sort: "email" });
+
+      expect(result.items.map((u) => u.id)).toEqual([id2, id1]);
+    });
+
+    it("paginates a sorted list without overlap", async () => {
+      const ctx = createAdminContext();
+      const caller = createCaller(ctx);
+
+      const ids: string[] = [];
+      for (let i = 0; i < 3; i++) {
+        const id = await createTestUser("activity-page");
+        ids.push(id);
+        await db
+          .update(users)
+          .set({ lastActiveAt: new Date(`2026-0${i + 1}-01T00:00:00Z`) })
+          .where(eq(users.id, id));
+      }
+
+      const page1 = await caller.admin.listUsers({ search: "activity-page", limit: 2 });
+      expect(page1.items).toHaveLength(2);
+      expect(page1.nextCursor).toBeDefined();
+
+      const page2 = await caller.admin.listUsers({
+        search: "activity-page",
+        limit: 2,
+        cursor: page1.nextCursor,
+      });
+
+      const page1Ids = new Set(page1.items.map((u) => u.id));
+      for (const user of page2.items) {
+        expect(page1Ids.has(user.id)).toBe(false);
+      }
+
+      // Most-recent first across both pages.
+      const combined = [...page1.items, ...page2.items].filter((u) => ids.includes(u.id));
+      expect(combined.map((u) => u.id)).toEqual([ids[2], ids[1], ids[0]]);
     });
 
     it("pagination works", async () => {

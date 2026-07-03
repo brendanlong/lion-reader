@@ -61,6 +61,7 @@ function buildSession(userId: string): NonNullable<Context["session"]> {
       passwordHash: "test-hash",
       inviteId: null,
       showSpam: false,
+      lastActiveAt: null,
       groqApiKey: null,
       anthropicApiKey: null,
       summarizationModel: null,

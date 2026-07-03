@@ -376,7 +376,8 @@ CREATE TABLE public.users (
     summarization_prompt text,
     tos_agreed_at timestamp with time zone,
     privacy_policy_agreed_at timestamp with time zone,
-    not_eu_agreed_at timestamp with time zone
+    not_eu_agreed_at timestamp with time zone,
+    last_active_at timestamp with time zone
 );
 
 CREATE VIEW public.visible_entries AS
@@ -679,6 +680,8 @@ CREATE INDEX idx_user_entries_starred ON public.user_entries USING btree (user_i
 CREATE INDEX idx_user_entries_unread ON public.user_entries USING btree (user_id) WHERE (read = false);
 
 CREATE INDEX idx_user_entries_updated_at ON public.user_entries USING btree (user_id, updated_at);
+
+CREATE INDEX idx_users_last_active_at ON public.users USING btree (last_active_at DESC NULLS LAST, id DESC);
 
 CREATE INDEX idx_websub_expiring ON public.websub_subscriptions USING btree (expires_at);
 
