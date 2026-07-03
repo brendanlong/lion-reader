@@ -19,7 +19,9 @@ WORKDIR /app
 FROM base AS deps
 
 # Copy package files
-COPY package.json pnpm-lock.yaml ./
+# pnpm-workspace.yaml holds our dependency overrides (security pins) and build
+# settings, so pnpm must see it here for --frozen-lockfile to resolve correctly.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 
 # Install all dependencies (including devDependencies for building)
 # Use --ignore-scripts because postinstall needs files not yet copied
