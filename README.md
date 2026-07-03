@@ -1,77 +1,58 @@
 # Lion Reader
 
-A modern, high-performance feed reader designed for scale.
-
-## Overview
-
-Lion Reader is a self-hosted feed reader that supports RSS and Atom feeds. It's designed for low hosting costs at small scale while being able to handle growth.
+A modern, high-performance feed reader designed for low hosting costs at small scale while being able to handle growth.
 
 ## Features
 
-- **Feed support** - RSS, Atom, and JSON Feed formats with auto-detection from HTML pages
+- **Feed support** - RSS, Atom, and JSON Feed with auto-detection from HTML pages
 - **Email subscriptions** - Subscribe to newsletters via custom ingest email addresses
 - **Real-time updates** - Server-Sent Events (SSE) and WebSub push support
-- **Smart polling** - Respects cache headers with exponential backoff for failed feeds
-- **Entry management** - Read/unread tracking, starring, folders/tags
-- **Saved articles** - Read-it-later functionality for any URL
-- **Audio narration** - Listen to articles with on-device text-to-speech
-- **Multi-user** - Per-user privacy (entries visible only after subscription)
+- **Smart polling** - Respects cache headers, with exponential backoff for failed feeds
+- **Entry management** - Read/unread tracking, starring, tags, full-text search
+- **Saved articles** - Read-it-later for any URL, with source plugins (LessWrong, Google Docs, ArXiv, GitHub)
+- **Full content fetching** - Optionally fetch complete article content from the source page
+- **Audio narration** - On-device text-to-speech
+- **AI summarization** - Optional article summaries
+- **Multi-user with privacy by default** - Entries are only visible if fetched after you subscribed
 - **Authentication** - Email/password and OAuth (Google, Apple, Discord)
 - **OPML import/export** - Migrate from other readers
-- **Keyboard shortcuts** - Vim-style navigation for power users
-- **Full-text search** - Search entries by title and content
-- **Full content fetching** - Optionally fetch complete article content from URLs
-- **REST API** - Public API for third-party clients
-- **MCP Server** - Expose feeds to AI assistants via Model Context Protocol
-- **Android app** - Native Android client in `android/`
-- **Rate limiting** and **error tracking** with Sentry
-
-### Planned Features
-
-- iOS app
-- Offline/PWA support
+- **Keyboard shortcuts** - Vim-style navigation
+- **PWA** - Installable app with offline support
+- **APIs** - REST API (OpenAPI spec at `/api/openapi`), Google Reader and Wallabag compatibility APIs, MCP server for AI assistants
+- **Observability** - Prometheus metrics, structured logging, Sentry error tracking
 
 ## Tech Stack
 
-- **Frontend**: Next.js 16 (App Router, React Server Components)
-- **Backend**: TypeScript, tRPC with REST API generation
+- **Frontend**: Next.js 16 (App Router), React Query via tRPC
+- **Backend**: TypeScript, tRPC (REST API generated via `trpc-to-openapi`)
 - **Database**: PostgreSQL 16 with Drizzle ORM
 - **Cache/Pubsub**: Redis 7
 - **Deployment**: Fly.io, Docker
-- **Observability**: Sentry for error tracking, structured logging
+- **Observability**: Sentry, Prometheus, structured logging
 
 ## Documentation
 
 - [Design Document](docs/DESIGN.md) - Architecture and key design decisions
-- [Deployment Guide](docs/features/DEPLOYMENT.md) - Production deployment to Fly.io
-- Feature design docs in `docs/features/` (audio narration, email subscriptions, etc.)
+- [Deployment Guide](docs/DEPLOYMENT.md) - Production deployment to Fly.io
 
 ## Development
 
 ### Prerequisites
 
-- Node.js 20+
+- Node.js 26+
 - pnpm
 - Docker and Docker Compose (for local Postgres and Redis)
 
 ### Setup
 
 ```bash
-# Clone the repository
-git clone https://github.com/your-org/lion-reader.git
-cd lion-reader
-
-# Install dependencies
 pnpm install
 
 # Copy environment variables
 cp .env.example .env
 
-# Start local services (Postgres 16 and Redis 7)
+# Start Postgres 16 and Redis 7
 docker compose up -d
-
-# Verify services are running
-docker compose ps
 
 # Run database migrations
 pnpm db:migrate
@@ -79,76 +60,36 @@ pnpm db:migrate
 # Seed the database with test data (optional)
 pnpm db:seed
 
-# Start development server
+# Start development server (app + worker)
 pnpm dev
 ```
 
-The app will be available at http://localhost:3000.
-
-### Local Services
-
-The development environment uses Docker Compose to run:
-
-| Service  | Port | Description                      |
-| -------- | ---- | -------------------------------- |
-| Postgres | 5432 | Primary database (PostgreSQL 16) |
-| Redis    | 6379 | Cache and pub/sub (Redis 7)      |
-
-**Connection URLs** (configured in `.env`):
+The app will be available at http://localhost:3000. Connection URLs are configured in `.env`:
 
 - Database: `postgresql://lionreader:lionreader@localhost:5432/lionreader`
 - Redis: `redis://localhost:6379`
 
-### Common Commands
-
-```bash
-# Start services in background
-docker compose up -d
-
-# View service logs
-docker compose logs -f
-
-# Stop services (preserves data)
-docker compose stop
-
-# Stop and remove containers (preserves volumes)
-docker compose down
-
-# Stop and remove everything including data
-docker compose down -v
-
-# Check service health
-docker compose ps
-```
-
 ### Testing
 
 ```bash
-# Unit tests (fast, no I/O)
-pnpm test:unit
-
-# Integration tests (requires Docker services)
-pnpm test:integration
-
-# Type checking
-pnpm typecheck
-
-# Linting
-pnpm lint
+pnpm typecheck         # Type checking
+pnpm lint              # Linting
+pnpm test:unit         # Unit tests (fast, no I/O)
+pnpm test:integration  # Integration tests (requires Docker services)
+pnpm test:e2e          # Playwright browser tests (requires Docker services)
 ```
+
+### Background Worker
+
+The worker fetches feeds on a schedule. It starts automatically with `pnpm dev` or `pnpm start`, polls for due jobs every 5 seconds, and processes up to 5 jobs concurrently.
 
 ### Profiling
 
-To profile performance, first create a production build:
+Build for production, then run with the flame profiler:
 
 ```bash
-# Build everything (or just build / build:worker for specific targets)
 NODE_ENV=production pnpm build:all
-```
 
-Then run with the flame profiler:
-
-```bash
 # Profile the worker
 NODE_ENV=production npx @platformatic/flame run --sourcemap-dirs=dist/ dist/worker.js
 
@@ -156,24 +97,9 @@ NODE_ENV=production npx @platformatic/flame run --sourcemap-dirs=dist/ dist/work
 NODE_ENV=production npx @platformatic/flame run --sourcemap-dirs=.next/ node_modules/next/dist/bin/next start
 ```
 
-This generates a flamegraph showing where time is spent. The `--sourcemap-dirs` flag enables source map support for readable stack traces.
-
-### Background Worker
-
-The background worker fetches feeds on a schedule. It starts automatically when you run `pnpm dev` or `pnpm start`. The worker:
-
-- Polls for due jobs every 5 seconds
-- Processes up to 3 feed fetches concurrently
-- Respects cache headers for efficient polling
-- Implements exponential backoff for failed feeds
-
-You can monitor worker activity in the server logs.
-
 ## User Registration
 
 By default, Lion Reader runs in invite-only mode. New users need an invite link to register.
-
-### Environment Variables
 
 | Variable                          | Default | Description                                                                                  |
 | --------------------------------- | ------- | -------------------------------------------------------------------------------------------- |
@@ -181,213 +107,52 @@ By default, Lion Reader runs in invite-only mode. New users need an invite link 
 | `ALLOWED_PUBLIC_SIGNUP_PROVIDERS` | none    | Subset allowed to sign up _without_ an invite. Empty = fully invite-only                     |
 | `ALLOWLIST_SECRET`                | -       | Secret for admin API (required whenever any provider is invite-only)                         |
 
-### Creating Invites
-
-When running in invite-only mode, use the admin API to create invite links:
+Manage invites through the admin API (each invite is single-use, valid for 7 days):
 
 ```bash
-# Create an invite (valid for 7 days)
+# Create an invite; response contains inviteUrl
 curl -X POST https://your-app/api/trpc/admin.createInvite \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $ALLOWLIST_SECRET" \
-  -d '{}'
+  -H "Authorization: Bearer $ALLOWLIST_SECRET" -d '{}'
 
-# Response: {"result":{"data":{"inviteUrl":"https://your-app/register?invite=..."}}}
-```
-
-Share the returned URL with the user. Each invite can only be used once.
-
-### Managing Invites
-
-```bash
-# List all invites with status (pending/used/expired)
+# List invites with status (pending/used/expired)
 curl -X POST https://your-app/api/trpc/admin.listInvites \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $ALLOWLIST_SECRET" \
-  -d '{}'
+  -H "Authorization: Bearer $ALLOWLIST_SECRET" -d '{}'
 
 # Revoke an unused invite
 curl -X POST https://your-app/api/trpc/admin.revokeInvite \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $ALLOWLIST_SECRET" \
-  -d '{"inviteId":"<uuid>"}'
+  -H "Authorization: Bearer $ALLOWLIST_SECRET" -d '{"inviteId":"<uuid>"}'
 ```
 
 ## Email Newsletter Subscriptions
 
-Lion Reader can receive email newsletters, allowing users to subscribe to newsletters using unique ingest email addresses (e.g., `abc123@ingest.yourdomain.com`).
+Users can create ingest email addresses (Settings → Email, max 5 per user) and use them to subscribe to newsletters. Each sender becomes a separate feed alongside RSS subscriptions. Unsubscribing uses RFC 2369/8058 List-Unsubscribe headers where available and blocks future emails from the sender.
 
-### How It Works
+Inbound email is delivered by [Mailgun](https://www.mailgun.com) receiving routes:
 
-1. Users create ingest addresses in Settings → Email Ingest (max 5 per user)
-2. Users subscribe to newsletters using their ingest address
-3. Incoming emails are forwarded via Cloudflare Email Workers to Lion Reader
-4. Newsletters appear as feeds alongside RSS subscriptions
+1. Point MX records for your ingest domain at Mailgun and verify the domain
+2. Create a Mailgun route that forwards matching messages to `https://your-app/api/webhooks/email/mailgun` (enable "Store and notify")
+3. Configure Lion Reader:
 
-### Setup Requirements
+| Variable                      | Default                 | Description                                                    |
+| ----------------------------- | ----------------------- | -------------------------------------------------------------- |
+| `INGEST_EMAIL_DOMAIN`         | `ingest.lionreader.com` | Domain for ingest email addresses                              |
+| `MAILGUN_WEBHOOK_SIGNING_KEY` | -                       | Mailgun webhook signing key (Sending → Webhooks); **required** |
 
-#### 1. Environment Variables
-
-| Variable               | Default                 | Description                                           |
-| ---------------------- | ----------------------- | ----------------------------------------------------- |
-| `INGEST_EMAIL_DOMAIN`  | `ingest.lionreader.com` | Domain for ingest email addresses                     |
-| `EMAIL_WEBHOOK_SECRET` | -                       | Secret for authenticating webhook requests (required) |
-
-```bash
-# Fly.io
-fly secrets set INGEST_EMAIL_DOMAIN="ingest.yourdomain.com"
-fly secrets set EMAIL_WEBHOOK_SECRET="$(openssl rand -base64 32)"
-```
-
-#### 2. DNS Configuration
-
-Configure MX records for your ingest domain to point to Cloudflare Email Workers:
-
-```
-ingest.yourdomain.com.  MX  10  route1.mx.cloudflare.net.
-ingest.yourdomain.com.  MX  20  route2.mx.cloudflare.net.
-ingest.yourdomain.com.  MX  30  route3.mx.cloudflare.net.
-```
-
-#### 3. Cloudflare Email Worker
-
-Create a Cloudflare Email Worker that parses incoming emails and forwards them to your Lion Reader instance. You'll need the `postal-mime` package to parse raw emails.
-
-**wrangler.toml:**
-
-```toml
-name = "lion-reader-email"
-main = "src/index.ts"
-compatibility_date = "2024-01-01"
-
-[vars]
-API_URL = "https://your-lion-reader-instance.com"
-
-# Set WEBHOOK_SECRET via: wrangler secret put WEBHOOK_SECRET
-```
-
-**package.json:**
-
-```json
-{
-  "dependencies": {
-    "postal-mime": "^2.0.0"
-  }
-}
-```
-
-**src/index.ts:**
-
-```typescript
-import PostalMime from "postal-mime";
-
-interface Env {
-  API_URL: string;
-  WEBHOOK_SECRET: string;
-}
-
-export default {
-  async email(message: ForwardableEmailMessage, env: Env, ctx: ExecutionContext): Promise<void> {
-    // Read and parse the raw email
-    const rawEmail = await new Response(message.raw).arrayBuffer();
-    const parser = new PostalMime();
-    const parsed = await parser.parse(rawEmail);
-
-    // Build payload for Lion Reader webhook
-    const payload = {
-      from: message.from,
-      to: message.to,
-      subject: parsed.subject || "",
-      headers: Object.fromEntries(parsed.headers.map((h) => [h.key, h.value])),
-      text: parsed.text,
-      html: parsed.html,
-      messageId: parsed.messageId,
-    };
-
-    // Forward to Lion Reader
-    await fetch(`${env.API_URL}/api/webhooks/email/cloudflare`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Webhook-Secret": env.WEBHOOK_SECRET,
-      },
-      body: JSON.stringify(payload),
-    });
-  },
-};
-```
-
-Set the `WEBHOOK_SECRET` using `wrangler secret put WEBHOOK_SECRET` and ensure it matches your `EMAIL_WEBHOOK_SECRET` environment variable in Lion Reader.
-
-### Features
-
-- **Auto-feed creation**: Each sender becomes a separate feed
-- **Spam filtering**: Cloudflare's spam scores are stored; spam hidden by default
-- **List-Unsubscribe**: Supports RFC 2369/8058 unsubscribe headers
-- **Blocked senders**: Unsubscribing blocks future emails from that sender
-
-See [Email Subscriptions Design](docs/features/email-subscriptions-design.md) for full architecture details.
+The webhook verifies Mailgun's HMAC-SHA256 signature; requests with invalid signatures are rejected.
 
 ## Production Deployment
 
-Lion Reader is configured for deployment to [Fly.io](https://fly.io). See the [Deployment Guide](docs/DEPLOYMENT.md) for detailed instructions.
+Lion Reader is configured for deployment to [Fly.io](https://fly.io) with three process groups (`app`, `worker`, `discord`), canary deploys, and migrations run automatically in the release command. See the [Deployment Guide](docs/DEPLOYMENT.md) for full provisioning instructions.
 
-Quick start:
+## APIs
 
-```bash
-# Install Fly CLI
-curl -L https://fly.io/install.sh | sh
-
-# Login and launch
-fly auth login
-fly launch --no-deploy
-
-# Provision database and Redis
-fly postgres create
-fly postgres attach <your-postgres-app>
-fly redis create
-
-# Deploy
-fly deploy
-```
-
-## API Documentation
-
-Lion Reader provides a REST API for third-party clients. Key endpoints:
-
-| Method | Endpoint                | Description                      |
-| ------ | ----------------------- | -------------------------------- |
-| POST   | `/v1/auth/register`     | Create account                   |
-| POST   | `/v1/auth/login`        | Login                            |
-| GET    | `/v1/subscriptions`     | List subscriptions               |
-| POST   | `/v1/subscriptions`     | Subscribe to feed                |
-| GET    | `/v1/entries`           | List entries                     |
-| POST   | `/v1/entries/mark-read` | Mark entries read                |
-| GET    | `/v1/events`            | SSE stream for real-time updates |
-
-See [MVP Specification](docs/MVP.md) for the complete API reference.
-
-## MCP Server
-
-Lion Reader provides an [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) server for AI assistant integration. This allows AI tools like Claude to read and manage your feeds.
-
-### Available Tools
-
-| Tool                 | Description                              |
-| -------------------- | ---------------------------------------- |
-| `list_entries`       | List entries with filters and pagination |
-| `search_entries`     | Full-text search across entries          |
-| `get_entry`          | Get entry with full content              |
-| `mark_entries_read`  | Mark entries read/unread                 |
-| `list_subscriptions` | List all subscriptions                   |
-
-### Running
-
-```bash
-pnpm mcp:serve
-```
-
-Configure your AI assistant to use stdio transport with this command.
+- **REST API**: `/api/v1/*`, generated from the tRPC procedures. The OpenAPI 3.0 spec is served at `/api/openapi` (usable with Swagger UI, Postman, etc.). Real-time updates via SSE at `/api/v1/events`.
+- **Google Reader compatibility**: `/api/greader.php/*` for Google Reader-protocol clients.
+- **Wallabag compatibility**: `/api/wallabag/*` for Wallabag read-it-later clients.
+- **MCP server**: `/api/mcp` (Streamable HTTP with OAuth 2.1 or scoped API tokens) and a local stdio transport via `pnpm mcp:serve`. See the [Design Document](docs/DESIGN.md#mcp-server) for the tool list and setup.
 
 ## License
 
