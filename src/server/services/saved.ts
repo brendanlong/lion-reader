@@ -20,11 +20,12 @@ import { extractTextFromHtml } from "@/server/http/html";
 import { sanitizeEntryHtml } from "@/server/html/sanitize";
 import { absolutizeUrls } from "@/server/feed/content-cleaner";
 import { cleanContentInWorker } from "@/server/worker-thread/pool";
-import { getOrCreateSavedFeed } from "@/server/feed/saved-feed";
+import { getOrCreateSavedFeed, SAVED_FEED_TITLE } from "@/server/feed/saved-feed";
 import { generateSummary } from "@/server/html/strip-html";
 import { withSanitizedEntryContent } from "@/server/html/sanitize-entry";
 import { logger } from "@/lib/logger";
 import { publishNewEntry, publishEntryUpdatedFromEntry } from "@/server/redis/pubsub";
+import { toNewEntryListData } from "@/lib/events/schemas";
 import { errors } from "@/server/trpc/errors";
 import { pluginRegistry } from "@/server/plugins";
 import {
@@ -287,7 +288,13 @@ async function insertSavedEntry(
     starred: false,
   });
 
-  await publishNewEntry(savedFeedId, entryId, now, "saved");
+  await publishNewEntry(
+    savedFeedId,
+    entryId,
+    now,
+    "saved",
+    toNewEntryListData(values, SAVED_FEED_TITLE)
+  );
 
   return {
     id: entryId,

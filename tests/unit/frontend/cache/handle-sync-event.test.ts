@@ -284,6 +284,85 @@ describe("handleSyncEvent - new_entry", () => {
     expect(tagsList?.items.find((t) => t.id === "tag-1")?.unreadCount).toBe(16); // not 17
     expect(getEntriesCount({})?.unread).toBe(19); // not 20
   });
+
+  it("inserts the entry into cached lists when the event carries list data", () => {
+    const before = getEntriesFromQueryClient().length;
+
+    handleSyncEvent(
+      mockUtils.utils,
+      queryClient,
+      createNewEntryEvent({
+        entryId: "entry-live",
+        subscriptionId: "sub-1",
+        feedId: "feed-1",
+        feedType: "web",
+        updatedAt: "2024-07-01T00:00:00.000Z",
+        entry: {
+          url: "https://example.com/live",
+          title: "Live Entry",
+          author: "Live Author",
+          summary: "Live summary",
+          publishedAt: "2024-07-01T00:00:00.000Z",
+          fetchedAt: "2024-07-01T00:00:00.000Z",
+          siteName: null,
+          feedTitle: "Feed One",
+        },
+      })
+    );
+
+    const inserted = findEntryInQueryClient("entry-live");
+    expect(getEntriesFromQueryClient()).toHaveLength(before + 1);
+    expect(inserted).toMatchObject({
+      id: "entry-live",
+      subscriptionId: "sub-1",
+      feedId: "feed-1",
+      type: "web",
+      title: "Live Entry",
+      feedTitle: "Feed One",
+      read: false,
+      starred: false,
+    });
+    // Date strings from the event become Date objects like a real list response
+    expect(inserted?.publishedAt).toBeInstanceOf(Date);
+    expect(inserted?.fetchedAt).toBeInstanceOf(Date);
+    expect(inserted?.updatedAt).toBeInstanceOf(Date);
+  });
+
+  it("is idempotent: applying the same list-data event twice inserts one row", () => {
+    const event = createNewEntryEvent({
+      entryId: "entry-live",
+      feedId: "feed-1",
+      entry: {
+        url: null,
+        title: "Live Entry",
+        author: null,
+        summary: null,
+        publishedAt: "2024-07-01T00:00:00.000Z",
+        fetchedAt: "2024-07-01T00:00:00.000Z",
+        siteName: null,
+        feedTitle: "Feed One",
+      },
+    });
+
+    handleSyncEvent(mockUtils.utils, queryClient, event);
+    handleSyncEvent(mockUtils.utils, queryClient, event);
+
+    const copies = getEntriesFromQueryClient().filter((e) => e.id === "entry-live");
+    expect(copies).toHaveLength(1);
+  });
+
+  it("leaves lists unchanged when the event has no list data (older server)", () => {
+    const before = getEntriesFromQueryClient().length;
+
+    handleSyncEvent(
+      mockUtils.utils,
+      queryClient,
+      createNewEntryEvent({ entryId: "entry-live", subscriptionId: "sub-1" })
+    );
+
+    expect(getEntriesFromQueryClient()).toHaveLength(before);
+    expect(findEntryInQueryClient("entry-live")).toBeUndefined();
+  });
 });
 
 // ============================================================================

@@ -154,6 +154,10 @@ export interface TestEntry {
   id: string;
   title: string;
   updatedAt: Date;
+  url: string;
+  summary: string;
+  publishedAt: Date;
+  fetchedAt: Date;
 }
 
 /** Creates an entry plus the user_entries row that makes it visible (unread). */
@@ -190,7 +194,15 @@ export async function createUnreadEntry(
     publishedOrFetchedAt: now,
   });
 
-  return { id, title, updatedAt: entry.updatedAt };
+  return {
+    id,
+    title,
+    updatedAt: entry.updatedAt,
+    url: entry.url ?? "",
+    summary: entry.summary ?? "",
+    publishedAt: now,
+    fetchedAt: now,
+  };
 }
 
 /** Marks an entry read directly in the database, returning the update timestamp. */

@@ -21,7 +21,8 @@ export interface SubscriptionItemProps {
     unreadCount: number;
   };
   isActive: boolean;
-  onClose: () => void;
+  /** Called with the link href when the subscription link is clicked */
+  onClose: (href: string) => void;
   onEdit: () => void;
   onUnsubscribe: () => void;
   /** Optional href override (e.g., for demo page query-param navigation) */

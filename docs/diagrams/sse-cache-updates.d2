@@ -68,8 +68,10 @@ redis: Redis Pub/Sub {
       Pattern: feed:{feedId}:events
 
       Events:
-      - new_entry (feedId, entryId, feedType?)
-      - entry_updated (feedId, entryId)
+      - new_entry (feedId, entryId, feedType,
+        entry list payload: title/author/summary/url/
+        publishedAt/fetchedAt/siteName/feedTitle)
+      - entry_updated (feedId, entryId, metadata)
     |
   }
 
@@ -202,8 +204,15 @@ cache-ops: Cache Operations {
       catch-up sync re-delivering the same new_entry
       can't double-count.
 
-      Does NOT invalidate entries.list
-      (entries appear on navigation)
+      Inserts the event's entry payload into matching
+      entries.list caches (insertEntryIntoListCaches):
+      sorted position, deduped by ID, tag/uncategorized
+      membership from the cached subscription. Skips
+      search/Recently Read caches and entries beyond
+      the loaded pagination window.
+
+      Does NOT invalidate entries.list — lists refresh
+      on navigation (useEntryListRefreshOnNavigate)
     |
   }
 
@@ -408,7 +417,7 @@ strategy-notes: Cache Strategy {
     style.fill: "#d9f99d"
     description: |
       Force refetch when necessary:
-      - Entry lists (too many filter combinations)
+      - Entry lists on navigation (pathname change)
       - Entry content on update
       - Import progress (complex state)
     |
@@ -418,10 +427,14 @@ strategy-notes: Cache Strategy {
     style.fill: "#d9f99d"
     description: |
       entries.list is NOT invalidated on new_entry:
-      - Too many filter combinations (sub, tag, unread, starred)
-      - User won't see new entries until navigation
-      - Unread counts still update (sidebar shows activity)
+      - The entry is inserted directly into matching
+        cached lists (appears live, no refetch)
+      - Unread counts update from the same event
       - Keeps scrolling smooth without flicker
+        (browser scroll anchoring for inserts above
+        the viewport)
+      - Lists refresh on navigation instead
+        (useEntryListRefreshOnNavigate)
     |
   }
 }

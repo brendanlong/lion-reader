@@ -19,7 +19,7 @@ import {
   tags,
   visibleEntries,
 } from "@/server/db/schema";
-import { syncTagSchema, serverSyncEventSchema } from "@/lib/events/schemas";
+import { syncTagSchema, serverSyncEventSchema, toNewEntryListData } from "@/lib/events/schemas";
 import type { Database } from "@/server/db";
 import { getBulkEntryRelatedCounts } from "@/server/services/counts";
 
@@ -227,13 +227,18 @@ export const syncRouter = createTRPCRouter({
             summary: entries.summary,
             url: entries.url,
             publishedAt: entries.publishedAt,
+            fetchedAt: entries.fetchedAt,
+            siteName: entries.siteName,
+            isSpam: entries.isSpam,
             createdAt: entries.createdAt,
             entryUpdatedAt: entries.updatedAt,
             read: userEntries.read,
             starred: userEntries.starred,
             userEntryUpdatedAt: userEntries.updatedAt,
             subscriptionId: subscriptions.id,
+            feedId: entries.feedId,
             feedType: feeds.type,
+            feedTitle: feeds.title,
             // Raw ISO string with µs precision for cursor/timestamp output
             maxUpdatedAtRaw: sql<string>`to_char(GREATEST(${entries.updatedAt}, ${userEntries.updatedAt}) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
           })
@@ -316,7 +321,14 @@ export const syncRouter = createTRPCRouter({
 
           if (entryMetadataChanged) {
             if (row.createdAt > entriesCursorDate) {
-              // New entry created after cursor - emit new_entry for count updates
+              // New entry created after cursor - emit new_entry for count and
+              // list updates. The entry payload mirrors the live SSE path so a
+              // catch-up sync inserts missed entries into cached lists too.
+              // Unlike the live path, the entry may already have been read or
+              // starred (on another device) since creation, so the payload
+              // carries the actual state. Spam entries get no payload — the
+              // default entries.list filters them, so a client-side insert
+              // would show a row the server never returns.
               allEvents.push({
                 type: "new_entry" as const,
                 subscriptionId: row.subscriptionId,
@@ -324,6 +336,15 @@ export const syncRouter = createTRPCRouter({
                 timestamp: row.maxUpdatedAtRaw,
                 updatedAt: row.maxUpdatedAtRaw,
                 feedType: row.feedType,
+                feedId: row.feedId,
+                ...(row.isSpam
+                  ? {}
+                  : {
+                      entry: toNewEntryListData(row, row.feedTitle, {
+                        read: row.read,
+                        starred: row.starred,
+                      }),
+                    }),
                 ...(newEntryCounts && { counts: newEntryCounts }),
                 _sortTime: new Date(row.maxUpdatedAtRaw),
               });

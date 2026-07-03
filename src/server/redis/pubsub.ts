@@ -13,10 +13,12 @@ import Redis from "ioredis";
 import { z } from "zod";
 import {
   entryMetadataSchema,
+  newEntryListDataSchema,
   syncTagSchema,
   subscriptionCreatedDataSchema,
   feedCreatedDataSchema,
   unreadCountsSchema,
+  type NewEntryListData,
 } from "@/lib/events/schemas";
 
 // ============================================================================
@@ -35,6 +37,10 @@ const feedEventSchema = z.discriminatedUnion("type", [
     timestamp: z.string(),
     updatedAt: z.string(),
     feedType: z.enum(["web", "email", "saved"]),
+    // List-item data forwarded to clients so they can insert the entry into
+    // cached lists. Optional so events published by a previous release (no
+    // entry data) still parse during a deploy window.
+    entry: newEntryListDataSchema.optional(),
   }),
   z.object({
     type: z.literal("entry_updated"),
@@ -262,13 +268,17 @@ async function publishFeedEvent(event: FeedEvent): Promise<number> {
  * @param entryId - The ID of the newly created entry
  * @param updatedAt - The database updated_at timestamp for cursor tracking
  * @param feedType - The feed type (web, email, or saved)
+ * @param entry - List-item data so clients can insert the entry into cached
+ *   lists. Pass undefined for entries the default entries.list would filter
+ *   out (spam) so clients only update counts and never insert a ghost row.
  * @returns The number of subscribers that received the message
  */
 export async function publishNewEntry(
   feedId: string,
   entryId: string,
   updatedAt: Date,
-  feedType: "web" | "email" | "saved"
+  feedType: "web" | "email" | "saved",
+  entry: NewEntryListData | undefined
 ): Promise<number> {
   const event: NewEntryEvent = {
     type: "new_entry",
@@ -277,6 +287,7 @@ export async function publishNewEntry(
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
     feedType,
+    ...(entry ? { entry } : {}),
   };
   return publishFeedEvent(event);
 }

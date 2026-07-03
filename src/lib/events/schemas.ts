@@ -30,6 +30,66 @@ export const entryMetadataSchema = z.object({
 });
 
 /**
+ * Entry list-item data for new_entry events. Carries everything (beyond the
+ * event's own entryId/subscriptionId/feedId/feedType/updatedAt) needed to
+ * insert the entry into cached entries.list pages without a refetch. Extends
+ * entryMetadataSchema (the entry_updated payload) with the extra list fields.
+ *
+ * `read`/`starred` are omitted on the live SSE path (a brand-new entry is
+ * always unread/unstarred) but set by the sync.events catch-up path, where the
+ * entry may have been read or starred on another device while this client was
+ * offline. Consumers must treat absence as false.
+ */
+export const newEntryListDataSchema = entryMetadataSchema.extend({
+  fetchedAt: z.string(),
+  siteName: z.string().nullable(),
+  feedTitle: z.string().nullable(),
+  read: z.boolean().optional(),
+  starred: z.boolean().optional(),
+});
+
+export type NewEntryListData = z.infer<typeof newEntryListDataSchema>;
+
+/**
+ * Entry-row fields toNewEntryListData reads. Matches both the drizzle Entry
+ * row shape and hand-built insert values (optional fields are coerced to
+ * null), so every publish site derives the payload from the row it already
+ * holds instead of hand-assembling it.
+ */
+export interface NewEntryListDataSource {
+  url?: string | null;
+  title?: string | null;
+  author?: string | null;
+  summary?: string | null;
+  publishedAt?: Date | null;
+  fetchedAt: Date;
+  siteName?: string | null;
+}
+
+/**
+ * Builds the new_entry list payload from an entry row. The single place that
+ * maps row fields (and Date → ISO string) for this event, shared by the feed
+ * worker, email ingestion, saved articles, and the sync.events catch-up path.
+ */
+export function toNewEntryListData(
+  entry: NewEntryListDataSource,
+  feedTitle: string | null,
+  state?: { read: boolean; starred: boolean }
+): NewEntryListData {
+  return {
+    url: entry.url ?? null,
+    title: entry.title ?? null,
+    author: entry.author ?? null,
+    summary: entry.summary ?? null,
+    publishedAt: entry.publishedAt?.toISOString() ?? null,
+    fetchedAt: entry.fetchedAt.toISOString(),
+    siteName: entry.siteName ?? null,
+    feedTitle,
+    ...(state ? { read: state.read, starred: state.starred } : {}),
+  };
+}
+
+/**
  * Tag data included in tag events.
  */
 export const syncTagSchema = z.object({
@@ -116,6 +176,12 @@ export const newEntryEventSchema = z.object({
   // this field (deploy window) still parse; when absent, counts are left
   // untouched and self-heal on the next count-bearing event or refetch.
   counts: unreadCountsSchema.optional(),
+  // List-item data so the client can insert the entry into cached
+  // entries.list pages directly. Optional for the same deploy-window reason
+  // as counts; when absent, the entry appears on the next list refresh
+  // (navigation-triggered invalidation) instead of live.
+  feedId: z.string().optional(),
+  entry: newEntryListDataSchema.optional(),
 });
 
 export const entryUpdatedEventSchema = z.object({

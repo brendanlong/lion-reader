@@ -10,6 +10,9 @@ import type { Database } from "../db";
 import { feeds } from "../db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 
+/** Title given to every per-user saved-articles feed. */
+export const SAVED_FEED_TITLE = "Saved Articles";
+
 /**
  * Gets or creates the user's saved articles feed.
  *
@@ -31,7 +34,7 @@ export async function getOrCreateSavedFeed(db: Database, userId: string): Promis
       id: feedId,
       type: "saved",
       userId,
-      title: "Saved Articles",
+      title: SAVED_FEED_TITLE,
       // URL-based fields are NULL for saved feeds
       url: null,
       emailSenderPattern: null,

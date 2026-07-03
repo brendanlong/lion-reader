@@ -374,7 +374,11 @@ export async function GET(req: Request): Promise<Response> {
                   timestamp: event.timestamp,
                   updatedAt: event.updatedAt,
                   feedType: event.feedType,
+                  feedId: event.feedId,
                   ...(counts ? { counts } : {}),
+                  // List-item data (absent from events published by a previous
+                  // release) lets the client insert the entry into cached lists.
+                  ...(event.entry ? { entry: event.entry } : {}),
                 })}\n\n`
               );
               trackSSEEventSent("new_entry");

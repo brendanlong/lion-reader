@@ -13,7 +13,11 @@ import {
   handleSubscriptionDeleted,
   setEntryRelatedCounts,
 } from "./operations";
-import { updateEntriesInListCache, updateEntryMetadataInCache } from "./entry-cache";
+import {
+  insertEntryIntoListCaches,
+  updateEntriesInListCache,
+  updateEntryMetadataInCache,
+} from "./entry-cache";
 import {
   applySyncTagChanges,
   removeSyncTags,
@@ -53,6 +57,33 @@ export function handleSyncEvent(
       // it self-heal on the next count-bearing event or refetch.
       if (event.counts) {
         setEntryRelatedCounts(utils, event.counts, queryClient);
+      }
+
+      // Insert the entry into cached lists so it appears live (deduped, so
+      // SSE + catch-up double delivery is safe). Older servers omit the entry
+      // payload during a deploy; the entry then appears on the next
+      // navigation-triggered list refresh instead. read/starred are set only
+      // by the catch-up sync path (the entry may have changed state on
+      // another device while this client was offline); the live path omits
+      // them because a brand-new entry is always unread/unstarred.
+      if (event.entry && event.feedId) {
+        insertEntryIntoListCaches(queryClient, {
+          id: event.entryId,
+          subscriptionId: event.subscriptionId,
+          feedId: event.feedId,
+          type: event.feedType,
+          url: event.entry.url,
+          title: event.entry.title,
+          author: event.entry.author,
+          summary: event.entry.summary,
+          publishedAt: event.entry.publishedAt ? new Date(event.entry.publishedAt) : null,
+          fetchedAt: new Date(event.entry.fetchedAt),
+          updatedAt: new Date(event.updatedAt),
+          read: event.entry.read ?? false,
+          starred: event.entry.starred ?? false,
+          feedTitle: event.entry.feedTitle,
+          siteName: event.entry.siteName,
+        });
       }
       break;
 

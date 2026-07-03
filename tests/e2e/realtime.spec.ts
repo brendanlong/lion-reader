@@ -134,6 +134,23 @@ function sidebarLinks(page: Page, taggedFeed: TestFeed) {
 }
 
 /**
+ * Builds the list-item payload publishNewEntry carries so clients can insert
+ * the entry into cached lists (mirrors what the feed worker publishes).
+ */
+function newEntryListData(entry: TestEntry, feed: TestFeed) {
+  return {
+    url: entry.url,
+    title: entry.title,
+    author: null,
+    summary: entry.summary,
+    publishedAt: entry.publishedAt.toISOString(),
+    fetchedAt: entry.fetchedAt.toISOString(),
+    siteName: null,
+    feedTitle: feed.title,
+  };
+}
+
+/**
  * Procedures that must never fire in response to a sync event — counts and
  * entry state are patched directly into the cache (the delta-update invariant
  * from src/FRONTEND_STATE.md).
@@ -170,7 +187,13 @@ test("new_entry event updates unread counts in all affected lists without refetc
     userId: user.id,
     title: "Realtime post",
   });
-  await publishNewEntry(taggedFeed.feedId, entry.id, entry.updatedAt, "web");
+  await publishNewEntry(
+    taggedFeed.feedId,
+    entry.id,
+    entry.updatedAt,
+    "web",
+    newEntryListData(entry, taggedFeed)
+  );
 
   // Affected lists update from the event's server-computed absolute counts...
   await expect(links.allItems).toContainText("(4)");
@@ -178,6 +201,41 @@ test("new_entry event updates unread counts in all affected lists without refetc
   await expect(links.subscriptionRow).toContainText("(3)");
   // ...while unaffected lists keep their counts
   await expect(links.uncategorized).toContainText("(1)");
+
+  expect(refetchProcedures(trpcCalls)).toEqual([]);
+});
+
+test("new_entry event inserts the entry at the top of the open list without refetching", async ({
+  page,
+  baseURL,
+}) => {
+  const { user, taggedFeed, trpcCalls } = await seedAndOpenAll(page, baseURL!, ({ taggedFeed }) =>
+    getFeedEventsChannel(taggedFeed.feedId)
+  );
+
+  trpcCalls.length = 0;
+
+  const db = getDb();
+  const entry = await createUnreadEntry(db, {
+    feedId: taggedFeed.feedId,
+    userId: user.id,
+    title: "Realtime post",
+  });
+  await publishNewEntry(
+    taggedFeed.feedId,
+    entry.id,
+    entry.updatedAt,
+    "web",
+    newEntryListData(entry, taggedFeed)
+  );
+
+  // The new entry appears in the open list, sorted first (it's the newest),
+  // purely from the SSE event's list payload — no entries.list refetch.
+  await expect(page.locator('[aria-label*="article: Realtime post"]')).toBeVisible();
+  await expect(page.locator('[aria-label*="article:"]').first()).toHaveAttribute(
+    "aria-label",
+    /Realtime post/
+  );
 
   expect(refetchProcedures(trpcCalls)).toEqual([]);
 });
@@ -207,7 +265,13 @@ test("new_entry event updates a collapsed tag's unread count", async ({ page, ba
     userId: user.id,
     title: "Realtime post",
   });
-  await publishNewEntry(taggedFeed.feedId, entry.id, entry.updatedAt, "web");
+  await publishNewEntry(
+    taggedFeed.feedId,
+    entry.id,
+    entry.updatedAt,
+    "web",
+    newEntryListData(entry, taggedFeed)
+  );
 
   await expect(links.allItems).toContainText("(4)");
   // Intended behavior: the collapsed tag's badge should update too

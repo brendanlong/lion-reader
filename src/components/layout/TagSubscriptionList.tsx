@@ -19,8 +19,8 @@ interface TagSubscriptionListProps {
   uncategorized?: boolean;
   /** Current pathname for active state */
   pathname: string;
-  /** Callback when sidebar should close (mobile) */
-  onClose: () => void;
+  /** Called with the link href when a subscription link is clicked (closes mobile sidebar) */
+  onClose: (href: string) => void;
   /** Callback to edit a subscription */
   onEdit: (sub: {
     id: string;
