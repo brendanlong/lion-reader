@@ -23,6 +23,13 @@ const PUBLIC_PATHS = [
   "/register",
   "/auth/oauth/callback",
   "/auth/oauth/complete",
+  // Root-level OAuth endpoint aliases for claude.ai (which synthesizes OAuth
+  // endpoints at the origin root — see src/app/authorize/route.ts). These handle
+  // their own auth; /token is POSTed server-to-server with no session cookie, so
+  // it must never be redirected to /login.
+  "/authorize",
+  "/token",
+  "/oauth/", // OAuth authorization/token/register + consent handle their own auth
   "/api/", // All API routes handle their own auth
   "/_next/", // Next.js static files
   "/extension/", // Extension pages handle their own auth
