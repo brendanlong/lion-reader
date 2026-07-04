@@ -12,5 +12,10 @@
  * We re-export the real handlers here so the flow completes at the root path.
  * `/oauth/authorize` remains for spec-compliant clients (mcp-remote, Inspector),
  * which correctly follow the advertised metadata.
+ *
+ * NOTE: route-segment config (`export const runtime`/`dynamic`/`maxDuration`/…)
+ * does NOT propagate through `export { … } from`. `/oauth/authorize` declares
+ * none today (its handlers are inherently dynamic — they read the request), so
+ * nothing is lost. If that changes, mirror the segment config here too.
  */
 export { GET, POST } from "@/app/oauth/authorize/route";

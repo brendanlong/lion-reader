@@ -65,8 +65,14 @@ export function proxy(request: NextRequest) {
   // ==========================================================================
   // HACK: claude.ai OAuth "root path" workaround — `/register` is METHOD-SPLIT.
   //
-  //   GET  /register  ->  the human signup PAGE (normal; app/(auth)/register)
-  //   POST /register  ->  rewritten to the OAuth DCR handler at /oauth/register
+  //   GET      /register  ->  the human signup PAGE (normal; app/(auth)/register)
+  //   POST     /register  ->  rewritten to the OAuth DCR handler at /oauth/register
+  //   OPTIONS  /register  ->  same rewrite, so an in-browser MCP client's CORS
+  //                           preflight for the DCR POST is answered (the DCR
+  //                           route exports an OPTIONS handler; the signup page
+  //                           does not). claude.ai itself is server-side and
+  //                           sends no preflight, but this keeps browser clients
+  //                           (MCP Inspector, playgrounds) working at the root.
   //
   // Why this exists: claude.ai's remote-MCP connector synthesizes OAuth
   // endpoints at the ORIGIN ROOT (/authorize, /token, /register) and ignores the
@@ -86,7 +92,7 @@ export function proxy(request: NextRequest) {
   //   https://github.com/anthropics/claude-ai-mcp/issues/341  (tracking bug)
   //   https://github.com/anthropics/claude-ai-mcp/issues/82   (root-path synthesis)
   // ==========================================================================
-  if (pathname === "/register" && request.method === "POST") {
+  if (pathname === "/register" && (request.method === "POST" || request.method === "OPTIONS")) {
     const dcrUrl = request.nextUrl.clone();
     dcrUrl.pathname = "/oauth/register";
     return NextResponse.rewrite(dcrUrl);
