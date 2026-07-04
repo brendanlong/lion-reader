@@ -59,7 +59,6 @@ export interface EntryArticleProps {
   /** Touch event handlers for swipe gestures */
   onTouchStart?: React.TouchEventHandler;
   onTouchEnd?: React.TouchEventHandler;
-  onTouchCancel?: React.TouchEventHandler;
 }
 
 export function EntryArticle({
@@ -85,7 +84,6 @@ export function EntryArticle({
   stickyControls,
   onTouchStart,
   onTouchEnd,
-  onTouchCancel,
 }: EntryArticleProps) {
   const displayFooterDomain = footerLinkDomain ?? (url ? getDomain(url) : "original site");
 
@@ -94,7 +92,6 @@ export function EntryArticle({
       className="mx-auto max-w-3xl px-4 py-6 sm:py-8"
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
-      onTouchCancel={onTouchCancel}
     >
       {/* Back button slot */}
       {backButton}
