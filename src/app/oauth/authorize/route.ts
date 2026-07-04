@@ -206,7 +206,11 @@ export async function GET(request: NextRequest) {
       state
     );
   }
-  const effectiveResource = resource ?? getResourceIdentifier();
+  // Any client-supplied resource has been validated as an alias of this server
+  // above, so bind the token to the canonical identifier in all cases. Newly
+  // minted tokens therefore never carry the legacy origin audience, which lets
+  // that accepted alias age out of circulation.
+  const effectiveResource = getResourceIdentifier();
 
   // Check if user is authenticated
   const sessionToken = getSessionToken(request);
@@ -351,7 +355,11 @@ export async function POST(request: NextRequest) {
       state
     );
   }
-  const effectiveResource = resource ?? getResourceIdentifier();
+  // Any client-supplied resource has been validated as an alias of this server
+  // above, so bind the token to the canonical identifier in all cases. Newly
+  // minted tokens therefore never carry the legacy origin audience, which lets
+  // that accepted alias age out of circulation.
+  const effectiveResource = getResourceIdentifier();
 
   // Handle user decision
   if (action === "deny") {

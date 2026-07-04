@@ -23,7 +23,14 @@ describe("OAuth resource identifiers", () => {
   });
 
   afterEach(() => {
-    process.env.NEXT_PUBLIC_APP_URL = original;
+    // Restore precisely: assigning `undefined` would coerce to the string
+    // "undefined" and pollute getIssuer() for later unit tests (files share one
+    // worker — fileParallelism is disabled).
+    if (original === undefined) {
+      delete process.env.NEXT_PUBLIC_APP_URL;
+    } else {
+      process.env.NEXT_PUBLIC_APP_URL = original;
+    }
   });
 
   it("uses the MCP endpoint URL as the canonical resource identifier", () => {

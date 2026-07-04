@@ -28,6 +28,7 @@ import {
   isValidRedirectUriFormat,
   OAUTH_SCOPES,
 } from "./utils";
+import { getResourceIdentifier } from "./config";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { fetchWithSsrfProtection } from "@/server/http/ssrf";
 import { readResponseBufferWithSizeLimit } from "@/server/http/fetch";
@@ -445,12 +446,17 @@ export async function rotateRefreshToken(
       .where(eq(oauthAccessTokens.id, oldRefreshToken.accessTokenId));
   }
 
-  // Create new tokens, preserving resource binding
+  // Re-bind the rotated token to the canonical resource identifier rather than
+  // carrying the old value forward. All accepted resources denote this same
+  // server (see getAcceptedResourceIdentifiers), so a grant chain minted against
+  // the legacy origin audience — or an even older null audience — migrates to
+  // the canonical identifier on its next refresh, letting the legacy alias age
+  // out entirely instead of self-perpetuating for the life of the grant.
   const newTokens = await createTokens({
     clientId: oldRefreshToken.clientId,
     userId: oldRefreshToken.userId,
     scopes: oldRefreshToken.scopes,
-    resource: oldRefreshToken.resource,
+    resource: getResourceIdentifier(),
   });
 
   // Link the rotation chain on the old token
