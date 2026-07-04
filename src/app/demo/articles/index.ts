@@ -13,6 +13,7 @@ import appearance from "./appearance";
 import textToSpeech from "./text-to-speech";
 import aiSummaries from "./ai-summaries";
 import keyboardShortcuts from "./keyboard-shortcuts";
+import performance from "./performance";
 
 // Organization & Search
 import tags from "./tags";
@@ -48,6 +49,7 @@ export const DEMO_ARTICLES: DemoArticle[] = [
   textToSpeech,
   aiSummaries,
   keyboardShortcuts,
+  performance,
   // Organization & Search
   tags,
   search,

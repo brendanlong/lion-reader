@@ -48,7 +48,8 @@ export const DEMO_TAGS: DemoTag[] = [
     id: "about",
     name: "About",
     color: "#10b981",
-    description: "Learn about Lion Reader — a modern, open-source feed reader you can self-host.",
+    description:
+      "Learn about Lion Reader — an AI-native, all-in-one reader for feeds, newsletters, and read-later. Open source and self-hostable.",
     subscriptionIds: ["lion-reader"],
   },
   {
@@ -75,13 +76,12 @@ const SUBSCRIPTION_CONFIG: Record<string, { title: string; tagId: string; descri
     title: "Reading Experience",
     tagId: "features",
     description:
-      "Full content fetching, customizable themes, text-to-speech narration, AI summaries, and keyboard shortcuts.",
+      "Full content fetching, customizable themes, text-to-speech narration, AI summaries, keyboard shortcuts, and obsessive performance.",
   },
   organization: {
     title: "Organization & Search",
     tagId: "features",
-    description:
-      "Tags, full-text search, ML-powered scoring, and OPML import/export for organizing your feeds.",
+    description: "Tags, full-text search, and OPML import/export for organizing your feeds.",
   },
   integrations: {
     title: "Integrations & Sync",
@@ -92,7 +92,8 @@ const SUBSCRIPTION_CONFIG: Record<string, { title: string; tagId: string; descri
   "lion-reader": {
     title: "Lion Reader",
     tagId: "about",
-    description: "A modern, fast, and open-source feed reader you can self-host.",
+    description:
+      "An AI-native, all-in-one reader for feeds, newsletters, and read-later — free, open source, and self-hostable.",
   },
 };
 

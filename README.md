@@ -1,18 +1,24 @@
 # Lion Reader
 
-A modern, high-performance feed reader designed for low hosting costs at small scale while being able to handle growth.
+An AI-native, all-in-one reader that unifies RSS/Atom/JSON feeds, email newsletters, and read-later into one fast, self-hostable app. Try the [interactive demo](https://lionreader.com/demo) — no signup required.
+
+## What makes it different
+
+- **AI-native, not AI-bolted-on** — Connect Claude and other assistants directly to your reader over the [Model Context Protocol (MCP)](docs/DESIGN.md#mcp-server) to list, search, save, star, and mark entries read on your behalf. On-demand article summaries via Claude (never auto-summarized), plus text-to-speech narration with synchronized paragraph highlighting.
+- **Everything in one place** — Feeds, email newsletters, and read-later side by side. Save any page via browser extensions, a bookmarklet, a Discord bot, your phone's share menu (PWA), the MCP/REST APIs, or Markdown/Word/HTML uploads — with enhanced extraction for arXiv, GitHub, Google Docs, and LessWrong.
+- **Obsessively fast** — Real-time updates are patched directly into the list you're reading (no refetch, no re-render jank), in-app navigation is served from cache with zero server round-trips, and the backend is tuned for sub-100ms page loads on cheap cloud hosts (sub-20ms on desktop hardware). See [Frontend State](src/FRONTEND_STATE.md) and [Design](docs/DESIGN.md#frontend-architecture).
+- **Free, open source, and self-hostable** — No ads, no data selling, no third-party analytics. Deploy with Docker; runs affordably at small scale and scales horizontally.
 
 ## Features
 
 - **Feed support** - RSS, Atom, and JSON Feed with auto-detection from HTML pages
 - **Email subscriptions** - Subscribe to newsletters via custom ingest email addresses
-- **Real-time updates** - Server-Sent Events (SSE) and WebSub push support
+- **Saved articles / read-later** - Save any URL (extensions, bookmarklet, Discord bot, PWA share, MCP/API, file upload), with source plugins for arXiv, GitHub, Google Docs, and LessWrong
+- **AI integration** - MCP server for AI assistants, on-demand Claude summaries, and text-to-speech narration with synced highlighting
+- **Real-time updates** - Server-Sent Events (SSE) patched directly into the cache, plus WebSub push support
 - **Smart polling** - Respects cache headers, with exponential backoff for failed feeds
 - **Entry management** - Read/unread tracking, starring, tags, full-text search
-- **Saved articles** - Read-it-later for any URL, with source plugins (LessWrong, Google Docs, ArXiv, GitHub)
 - **Full content fetching** - Optionally fetch complete article content from the source page
-- **Audio narration** - On-device text-to-speech
-- **AI summarization** - Optional article summaries
 - **Multi-user with privacy by default** - Entries are only visible if fetched after you subscribed
 - **Authentication** - Email/password and OAuth (Google, Apple, Discord)
 - **OPML import/export** - Migrate from other readers
