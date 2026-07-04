@@ -47,3 +47,53 @@ export function detectSwipeDirection(
   }
   return deltaX < 0 ? "left" : "right";
 }
+
+/**
+ * Tolerance (CSS px) for treating the visual viewport as flush against a layout
+ * viewport edge; absorbs sub-pixel rounding from pinch-zoom.
+ */
+const VIEWPORT_EDGE_EPSILON = 1;
+
+export type ViewportEdges = {
+  /** Visual viewport is at (or near) the left edge of the layout viewport. */
+  atLeftEdge: boolean;
+  /** Visual viewport is at (or near) the right edge of the layout viewport. */
+  atRightEdge: boolean;
+};
+
+/**
+ * Capture whether the (possibly pinch-zoomed) visual viewport is panned against
+ * the left/right edge of the layout viewport.
+ *
+ * When the page isn't zoomed the visual viewport fills the layout viewport, so
+ * both edges read true. Returns both-true when the visualViewport API is
+ * unavailable (SSR, older browsers), degrading to the un-zoomed default so
+ * navigation is never blocked.
+ */
+export function getViewportEdges(): ViewportEdges {
+  const vv = typeof window !== "undefined" ? window.visualViewport : null;
+  if (!vv || typeof document === "undefined") {
+    return { atLeftEdge: true, atRightEdge: true };
+  }
+  const layoutWidth = document.documentElement.clientWidth;
+  return {
+    atLeftEdge: vv.offsetLeft <= VIEWPORT_EDGE_EPSILON,
+    atRightEdge: vv.offsetLeft + vv.width >= layoutWidth - VIEWPORT_EDGE_EPSILON,
+  };
+}
+
+/**
+ * Whether a swipe in the given direction may navigate, given the viewport edge
+ * state captured when the gesture began.
+ *
+ * Swiping left advances to the next article, which only makes sense once the
+ * user has panned to the right edge of a zoomed article; swiping right (to the
+ * previous article) requires the left edge. When the article isn't zoomed both
+ * edges are true, so navigation is always allowed and behavior is unchanged.
+ */
+export function isSwipeNavigationAllowed(
+  direction: "left" | "right",
+  edges: ViewportEdges
+): boolean {
+  return direction === "left" ? edges.atRightEdge : edges.atLeftEdge;
+}
