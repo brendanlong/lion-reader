@@ -12,7 +12,7 @@ ALWAYS read the relevant documentation before working.
 ## Reference documentation
 
 - @docs/references/ - Reference docs for external tools. Consult before editing related configs.
-- @docs/DEPLOYMENT.md - Fly.io deployment/provisioning guide
+- docs/DEPLOYMENT.md - Fly.io deployment/provisioning guide
 
 ## Commands
 
@@ -43,7 +43,7 @@ For manual verification, use the Playwright MCP browser tools (`mcp__Playwright_
 
 ## UI Components
 
-See @src/components/CLAUDE.md for UI component guidelines, available components, and icons.
+See src/components/CLAUDE.md for UI component guidelines, available components, and icons.
 
 ## Git
 
