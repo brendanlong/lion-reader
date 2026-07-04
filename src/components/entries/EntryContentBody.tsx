@@ -291,11 +291,7 @@ export function EntryContentBody({
     narration.state.status,
   ]);
 
-  const {
-    onTouchStart: handleTouchStart,
-    onTouchEnd: handleTouchEnd,
-    onTouchCancel: handleTouchCancel,
-  } = useSwipeGesture({
+  const { onTouchStart: handleTouchStart, onTouchEnd: handleTouchEnd } = useSwipeGesture({
     onSwipeLeft: onSwipeNext,
     onSwipeRight: onSwipePrevious,
     enabled: Boolean(onSwipeNext || onSwipePrevious),
@@ -332,7 +328,6 @@ export function EntryContentBody({
       contentRef={contentRef}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
-      onTouchCancel={handleTouchCancel}
       backButton={
         onBack ? (
           <button
