@@ -26,7 +26,8 @@ import { registerTools, toMcpError } from "@/server/mcp/tools";
 import { validateApiToken, API_TOKEN_SCOPES } from "@/server/auth/api-token";
 import { validateAccessToken } from "@/server/oauth/service";
 import { OAUTH_SCOPES, isResourceForThisServer } from "@/server/oauth/utils";
-import { getProtectedResourceMetadata } from "@/server/oauth/config";
+import { getAcceptedResourceIdentifiers, getIssuer } from "@/server/oauth/config";
+import { withMcpCorsHeaders, mcpCorsPreflight } from "@/server/http/cors";
 import { logger } from "@/lib/logger";
 
 // ============================================================================
@@ -76,13 +77,15 @@ async function authenticateRequest(request: NextRequest): Promise<AuthResult> {
     // Enforce RFC 8707 audience binding: a token minted for a different resource
     // must not be accepted here. Newly issued tokens always carry a resource
     // (bound at authorization time); only legacy tokens issued before audience
-    // binding may have a null resource, which we still accept.
-    const expectedResource = getProtectedResourceMetadata().resource;
-    if (oauthToken.resource && !isResourceForThisServer(oauthToken.resource, expectedResource)) {
+    // binding may have a null resource, which we still accept. We accept either
+    // the canonical MCP-endpoint resource or the bare origin (the pre-2026-07
+    // canonical value) so tokens minted before the identifier change stay valid.
+    const acceptedResources = getAcceptedResourceIdentifiers();
+    if (oauthToken.resource && !isResourceForThisServer(oauthToken.resource, acceptedResources)) {
       logger.warn("MCP auth: OAuth token resource/audience mismatch", {
         userId: oauthToken.userId,
         tokenResource: oauthToken.resource,
-        expectedResource,
+        acceptedResources,
       });
       return { success: false, reason: "oauth_token_audience_mismatch" };
     }
@@ -121,11 +124,15 @@ async function authenticateRequest(request: NextRequest): Promise<AuthResult> {
 /**
  * Builds WWW-Authenticate header for 401 responses.
  * Includes resource_metadata URL and scope per MCP specification (RFC 9728 / RFC 6750).
+ *
+ * The metadata URL is derived from the issuer (origin), NOT the resource
+ * identifier: the resource identifier now includes the `/api/mcp` path, so
+ * concatenating it with the well-known path would produce an invalid URL.
  */
 function buildWwwAuthenticateHeader(): string {
-  const metadata = getProtectedResourceMetadata();
   const scopes = Object.values(OAUTH_SCOPES);
-  return `Bearer resource_metadata="${metadata.resource}/.well-known/oauth-protected-resource", scope="${scopes.join(" ")}"`;
+  const metadataUrl = `${getIssuer()}/.well-known/oauth-protected-resource`;
+  return `Bearer resource_metadata="${metadataUrl}", scope="${scopes.join(" ")}"`;
 }
 
 // ============================================================================
@@ -269,7 +276,14 @@ async function handleMcpRequest(request: NextRequest): Promise<Response> {
  * - notifications
  */
 export async function POST(request: NextRequest) {
-  return handleMcpRequest(request);
+  return withMcpCorsHeaders(await handleMcpRequest(request));
+}
+
+/**
+ * OPTIONS /api/mcp - CORS preflight for in-browser MCP clients.
+ */
+export function OPTIONS() {
+  return mcpCorsPreflight();
 }
 
 /**
@@ -283,9 +297,9 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   const auth = await authenticateRequest(request);
   if (!auth.success) {
-    return unauthorizedResponse(auth);
+    return withMcpCorsHeaders(unauthorizedResponse(auth));
   }
-  return new Response(null, { status: 405 });
+  return withMcpCorsHeaders(new Response(null, { status: 405 }));
 }
 
 /**
@@ -299,7 +313,7 @@ export async function GET(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   const auth = await authenticateRequest(request);
   if (!auth.success) {
-    return unauthorizedResponse(auth);
+    return withMcpCorsHeaders(unauthorizedResponse(auth));
   }
-  return new Response(null, { status: 405 });
+  return withMcpCorsHeaders(new Response(null, { status: 405 }));
 }

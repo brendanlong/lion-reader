@@ -255,14 +255,24 @@ function normalizeResource(value: string): string | null {
 }
 
 /**
- * Checks whether an RFC 8707 resource indicator refers to this server's
- * canonical resource identifier. Comparison ignores trailing slashes and is
+ * Checks whether an RFC 8707 resource indicator refers to one of this server's
+ * accepted resource identifiers. Comparison ignores trailing slashes and is
  * case-insensitive for scheme/host. Returns false for malformed resources.
+ *
+ * `canonical` may be a single identifier or a list (e.g. the current canonical
+ * resource plus legacy values kept for backward compatibility); the resource
+ * matches if it equals any of them.
  */
-export function isResourceForThisServer(resource: string, canonical: string): boolean {
+export function isResourceForThisServer(resource: string, canonical: string | string[]): boolean {
   const a = normalizeResource(resource);
-  const b = normalizeResource(canonical);
-  return a !== null && b !== null && a === b;
+  if (a === null) {
+    return false;
+  }
+  const candidates = Array.isArray(canonical) ? canonical : [canonical];
+  return candidates.some((c) => {
+    const b = normalizeResource(c);
+    return b !== null && a === b;
+  });
 }
 
 // ============================================================================

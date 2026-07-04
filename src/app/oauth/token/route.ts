@@ -26,12 +26,25 @@ import {
   createOAuthError,
 } from "@/server/oauth/utils";
 import { checkRouteRateLimit } from "@/server/rate-limit";
+import { withMcpCorsHeaders, mcpCorsPreflight } from "@/server/http/cors";
 
 /**
- * Token request via form data (standard OAuth)
+ * Token request via form data (standard OAuth).
+ * Wraps every response in CORS headers so in-browser MCP clients can read it.
  */
 export async function POST(request: NextRequest) {
-  const rateLimitResponse = await checkRouteRateLimit(request, "expensive", { json: true });
+  return withMcpCorsHeaders(await handleToken(request));
+}
+
+export function OPTIONS() {
+  return mcpCorsPreflight();
+}
+
+async function handleToken(request: NextRequest): Promise<Response> {
+  // Use the generous "oauth" bucket: token exchange runs server-to-server from
+  // MCP client proxies (shared egress), so it must not share the strict
+  // "expensive" per-IP bucket used by login/subscribe.
+  const rateLimitResponse = await checkRouteRateLimit(request, "oauth", { json: true });
   if (rateLimitResponse) return rateLimitResponse;
 
   logger.info("OAuth token request");

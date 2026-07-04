@@ -280,12 +280,34 @@ describe("getRateLimitKey", () => {
     expect(getRateLimitKey("user:abc123", "expensive")).toBe("rate_limit:expensive:user:abc123");
   });
 
+  it("generates a distinct oauth key (separate bucket from expensive)", () => {
+    expect(getRateLimitKey("ip:1.2.3.4", "oauth")).toBe("rate_limit:oauth:ip:1.2.3.4");
+    // OAuth traffic must not share a bucket with login/subscribe.
+    expect(getRateLimitKey("ip:1.2.3.4", "oauth")).not.toBe(
+      getRateLimitKey("ip:1.2.3.4", "expensive")
+    );
+  });
+
   it("generates key for IP address", () => {
     expect(getRateLimitKey("ip:192.168.1.1")).toBe("rate_limit:default:ip:192.168.1.1");
   });
 
   it("handles default type parameter", () => {
     expect(getRateLimitKey("test")).toBe("rate_limit:default:test");
+  });
+});
+
+describe("RATE_LIMIT_CONFIGS.oauth", () => {
+  it("is more generous than the expensive bucket", () => {
+    // MCP clients (e.g. claude.ai) re-run discovery/registration/token on every
+    // connect from a shared proxy egress; the OAuth bucket must tolerate more
+    // burst than the strict login/subscribe bucket or connects fail with a 429.
+    expect(RATE_LIMIT_CONFIGS.oauth.capacity).toBeGreaterThan(
+      RATE_LIMIT_CONFIGS.expensive.capacity
+    );
+    expect(RATE_LIMIT_CONFIGS.oauth.refillRate).toBeGreaterThan(
+      RATE_LIMIT_CONFIGS.expensive.refillRate
+    );
   });
 });
 

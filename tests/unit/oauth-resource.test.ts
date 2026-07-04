@@ -59,4 +59,28 @@ describe("isResourceForThisServer", () => {
     expect(isResourceForThisServer("", CANONICAL)).toBe(false);
     expect(isResourceForThisServer("/relative/path", CANONICAL)).toBe(false);
   });
+
+  describe("with a list of accepted identifiers", () => {
+    // The canonical resource is the MCP endpoint, but the bare origin is kept as
+    // an accepted audience for tokens minted before the identifier change.
+    const ACCEPTED = ["https://reader.example.com/api/mcp", "https://reader.example.com"];
+
+    it("matches the canonical MCP-endpoint identifier", () => {
+      expect(isResourceForThisServer("https://reader.example.com/api/mcp", ACCEPTED)).toBe(true);
+    });
+
+    it("matches the legacy origin identifier (backward compat)", () => {
+      expect(isResourceForThisServer("https://reader.example.com", ACCEPTED)).toBe(true);
+      expect(isResourceForThisServer("https://reader.example.com/", ACCEPTED)).toBe(true);
+    });
+
+    it("rejects a resource matching none of the accepted identifiers", () => {
+      expect(isResourceForThisServer("https://reader.example.com/other", ACCEPTED)).toBe(false);
+      expect(isResourceForThisServer("https://evil.example.com", ACCEPTED)).toBe(false);
+    });
+
+    it("rejects malformed resources against a list", () => {
+      expect(isResourceForThisServer("not-a-url", ACCEPTED)).toBe(false);
+    });
+  });
 });

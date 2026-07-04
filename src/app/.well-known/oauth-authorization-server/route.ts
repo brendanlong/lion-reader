@@ -9,16 +9,23 @@
 
 import { NextResponse } from "next/server";
 import { getAuthorizationServerMetadata } from "@/server/oauth/config";
+import { withMcpCorsHeaders, mcpCorsPreflight } from "@/server/http/cors";
 import { logger } from "@/lib/logger";
 
 export async function GET() {
   logger.info("OAuth authorization server metadata requested");
   const metadata = getAuthorizationServerMetadata();
 
-  return NextResponse.json(metadata, {
-    headers: {
-      "Content-Type": "application/json",
-      "Cache-Control": "public, max-age=3600", // Cache for 1 hour
-    },
-  });
+  return withMcpCorsHeaders(
+    NextResponse.json(metadata, {
+      headers: {
+        "Content-Type": "application/json",
+        "Cache-Control": "public, max-age=3600", // Cache for 1 hour
+      },
+    })
+  );
+}
+
+export function OPTIONS() {
+  return mcpCorsPreflight();
 }
