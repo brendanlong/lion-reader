@@ -81,5 +81,14 @@ export function useSwipeGesture({
     [enabled, onSwipeLeft, onSwipeRight]
   );
 
-  return { onTouchStart, onTouchEnd };
+  // Browsers frequently fire `touchcancel` (not `touchend`) when they hijack a
+  // gesture for pinch-zoom/scroll. Abandon any in-progress swipe and clear the
+  // multi-touch flag once all fingers lift, so it can't linger stale-true into
+  // the next gesture.
+  const onTouchCancel = useCallback((e: React.TouchEvent) => {
+    touchStartRef.current = null;
+    if (e.touches.length === 0) multiTouchRef.current = false;
+  }, []);
+
+  return { onTouchStart, onTouchEnd, onTouchCancel };
 }

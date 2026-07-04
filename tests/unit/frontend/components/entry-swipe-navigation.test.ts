@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it } from "vitest";
 import {
   detectSwipeDirection,
+  getViewportEdges,
   isSwipeNavigationAllowed,
   type ViewportEdges,
 } from "@/components/entries/EntryContentHelpers";
@@ -47,5 +49,71 @@ describe("isSwipeNavigationAllowed", () => {
   it("blocks navigation when panned to neither edge of a zoomed article", () => {
     expect(isSwipeNavigationAllowed("left", neither)).toBe(false);
     expect(isSwipeNavigationAllowed("right", neither)).toBe(false);
+  });
+});
+
+describe("getViewportEdges", () => {
+  const LAYOUT_WIDTH = 400;
+  const originalVisualViewport = Object.getOwnPropertyDescriptor(window, "visualViewport");
+
+  function setLayoutWidth(width: number) {
+    Object.defineProperty(document.documentElement, "clientWidth", {
+      configurable: true,
+      value: width,
+    });
+  }
+
+  function setVisualViewport(vv: Partial<VisualViewport> | null) {
+    Object.defineProperty(window, "visualViewport", {
+      configurable: true,
+      value: vv,
+    });
+  }
+
+  afterEach(() => {
+    if (originalVisualViewport) {
+      Object.defineProperty(window, "visualViewport", originalVisualViewport);
+    }
+    // Drop the clientWidth override so jsdom's default getter is restored.
+    delete (document.documentElement as unknown as { clientWidth?: number }).clientWidth;
+  });
+
+  it("reports both edges when the visualViewport API is unavailable", () => {
+    setVisualViewport(null);
+    expect(getViewportEdges()).toEqual({ atLeftEdge: true, atRightEdge: true });
+  });
+
+  it("reports both edges when not zoomed (viewport fills layout)", () => {
+    setLayoutWidth(LAYOUT_WIDTH);
+    setVisualViewport({ offsetLeft: 0, width: LAYOUT_WIDTH });
+    expect(getViewportEdges()).toEqual({ atLeftEdge: true, atRightEdge: true });
+  });
+
+  it("reports only the left edge when zoomed and panned fully left", () => {
+    setLayoutWidth(LAYOUT_WIDTH);
+    // Zoomed 2x: visual viewport is half as wide, panned to the left.
+    setVisualViewport({ offsetLeft: 0, width: 200 });
+    expect(getViewportEdges()).toEqual({ atLeftEdge: true, atRightEdge: false });
+  });
+
+  it("reports only the right edge when zoomed and panned fully right", () => {
+    setLayoutWidth(LAYOUT_WIDTH);
+    setVisualViewport({ offsetLeft: 200, width: 200 });
+    expect(getViewportEdges()).toEqual({ atLeftEdge: false, atRightEdge: true });
+  });
+
+  it("reports neither edge when zoomed and panned to the middle", () => {
+    setLayoutWidth(LAYOUT_WIDTH);
+    setVisualViewport({ offsetLeft: 100, width: 200 });
+    expect(getViewportEdges()).toEqual({
+      atLeftEdge: false,
+      atRightEdge: false,
+    });
+  });
+
+  it("treats sub-pixel offsets within the epsilon as flush against an edge", () => {
+    setLayoutWidth(LAYOUT_WIDTH);
+    setVisualViewport({ offsetLeft: 0.5, width: LAYOUT_WIDTH - 0.5 });
+    expect(getViewportEdges()).toEqual({ atLeftEdge: true, atRightEdge: true });
   });
 });
