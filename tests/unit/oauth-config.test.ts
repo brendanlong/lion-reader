@@ -13,6 +13,7 @@ import {
   getResourceIdentifier,
   getAcceptedResourceIdentifiers,
   getProtectedResourceMetadata,
+  getAuthorizationServerMetadata,
 } from "../../src/server/oauth/config";
 
 describe("OAuth resource identifiers", () => {
@@ -51,5 +52,23 @@ describe("OAuth resource identifiers", () => {
     ]);
     // Origin (legacy) must remain accepted so pre-change tokens keep working.
     expect(getAcceptedResourceIdentifiers()).toContain(getIssuer());
+  });
+
+  it("does NOT advertise Client ID Metadata Document support", () => {
+    // Advertising `client_id_metadata_document_supported` makes claude.ai prefer
+    // CIMD over Dynamic Client Registration; its CIMD setup fails inside the
+    // connector flow (it never calls /oauth/register or /oauth/authorize) and
+    // surfaces as "Couldn't register with the sign-in service". Omitting the flag
+    // drops clients to DCR, which works. Do not re-add without confirming
+    // claude.ai's CIMD flow actually completes.
+    const metadata = getAuthorizationServerMetadata();
+    expect("client_id_metadata_document_supported" in metadata).toBe(false);
+  });
+
+  it("advertises the endpoints and PKCE claude.ai requires for DCR", () => {
+    const metadata = getAuthorizationServerMetadata();
+    expect(metadata.registration_endpoint).toBe("https://reader.example.com/oauth/register");
+    expect(metadata.code_challenge_methods_supported).toEqual(["S256"]);
+    expect(metadata.token_endpoint_auth_methods_supported).toEqual(["none"]);
   });
 });
