@@ -1,11 +1,16 @@
 /**
  * Generate the social/OG preview image (public/social-preview.png) by
- * screenshotting scripts/social-preview.html at exactly 1200x630.
+ * screenshotting scripts/social-preview.html.
  *
  * The HTML is a stylized wireframe of the Lion Reader UI with the logo
  * overlaid (see that file). Rendering it with a real browser gives a
  * pixel-perfect, reproducible, easy-to-edit image instead of a hand-made
  * or AI-generated raster.
+ *
+ * Output is exactly 1200x630 (1.91:1), the standard Open Graph / Twitter card
+ * size that every platform targets. Rendering larger buys nothing here: the
+ * flat art + vector logo are already pixel-sharp at 1x, and platforms downscale
+ * and re-encode the image anyway.
  *
  * Usage: pnpm social-preview
  */
@@ -13,7 +18,7 @@ import { chromium } from "@playwright/test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 
-// Standard Open Graph / Twitter card dimensions (1.91:1).
+// Standard Open Graph / Twitter card size (1.91:1).
 const WIDTH = 1200;
 const HEIGHT = 630;
 
