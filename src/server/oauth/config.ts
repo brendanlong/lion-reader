@@ -53,8 +53,18 @@ export function getAuthorizationServerMetadata() {
     grant_types_supported: ["authorization_code", "refresh_token"],
     code_challenge_methods_supported: ["S256"],
     token_endpoint_auth_methods_supported: ["none"],
-    // MCP-specific: indicates support for Client ID Metadata Documents
-    client_id_metadata_document_supported: true,
+    // NB: we intentionally do NOT advertise `client_id_metadata_document_supported`.
+    // Clients pick their registration method by priority: pre-registered → CIMD →
+    // DCR. claude.ai treats CIMD (when advertised alongside `"none"` auth) as
+    // preferred and sets up the client entirely client-side (its own metadata-doc
+    // URL as client_id, no /oauth/register call). In practice that CIMD setup
+    // fails inside claude.ai's connector flow and it aborts *before* ever calling
+    // /oauth/authorize — observed in prod logs as discovery completing, then a
+    // silent ~3s gap, then "Couldn't register with the sign-in service" with no
+    // register/authorize request reaching us. Not advertising CIMD drops claude.ai
+    // (and other clients) to Dynamic Client Registration, which works. The
+    // server-side CIMD resolution in `resolveClient` is retained, so a client that
+    // explicitly presents a URL client_id still works.
   };
 }
 
