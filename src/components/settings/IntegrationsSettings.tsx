@@ -91,10 +91,8 @@ export function IntegrationsSettings() {
           <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">Claude.ai</h3>
           <div className="mt-2">
             <Alert variant="warning">
-              The claude.ai <strong>web</strong> connector currently can&rsquo;t complete the
-              connection due to a bug on claude.ai&rsquo;s side (it completes OAuth but
-              doesn&rsquo;t send the access token on the follow-up request). We&rsquo;ve reported it
-              to Anthropic &mdash; details and status in{" "}
+              The claude.ai <strong>web</strong> connector is currently broken due to a bug on
+              claude.ai&rsquo;s side. See{" "}
               <a
                 href="https://github.com/brendanlong/lion-reader/issues/986"
                 target="_blank"
@@ -103,8 +101,7 @@ export function IntegrationsSettings() {
               >
                 this issue
               </a>
-              . For now, please use <strong>Claude Code</strong> or <strong>Claude Desktop</strong>{" "}
-              (above/below) &mdash; those work today.
+              . The MCP server should work with other tools, including Claude Code.
             </Alert>
           </div>
           <ol className="ui-text-sm mt-2 list-inside list-decimal space-y-2 text-zinc-600 dark:text-zinc-400">
