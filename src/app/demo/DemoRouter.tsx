@@ -28,6 +28,7 @@ import {
 import { EntryArticle } from "@/components/entries/EntryArticle";
 import { SummaryCard } from "@/components/summarization/SummaryCard";
 import { AppearanceSettings } from "@/components/settings/AppearanceSettings";
+import { useEntryTextStyles } from "@/lib/appearance/AppearanceProvider";
 import { useSwipeGesture } from "@/lib/hooks/useSwipeGesture";
 import { SortToggle } from "@/components/entries/SortToggle";
 import { UnreadToggle } from "@/components/entries/UnreadToggle";
@@ -53,6 +54,9 @@ function DemoRouterContent() {
   const entryId = searchParams.get("entry");
   const demoState = useDemoState();
   const [showSummaryForEntry, setShowSummaryForEntry] = useState<string | null>(null);
+  // Apply the user's appearance settings (font, size, alignment) to demo
+  // article content, matching EntryContentBody in the real app.
+  const { className: textSizeClass, style: textStyle } = useEntryTextStyles();
 
   // Parse the pathname to determine the current view
   const { subscriptionId: subId, tagId } = extractParamsFromPathname(pathname, "/demo");
@@ -228,6 +232,8 @@ function DemoRouterContent() {
       <ScrollContainer key={selectedEntry.id} className="h-full overflow-y-auto">
         <EntryArticle
           {...getDemoEntryArticleProps(selectedEntry)}
+          textSizeClass={textSizeClass}
+          textStyle={textStyle}
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
           backButton={
