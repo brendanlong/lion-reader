@@ -25,7 +25,11 @@ import {
   OAUTH_ERRORS,
   createOAuthError,
 } from "@/server/oauth/utils";
-import { getIssuer, getProtectedResourceMetadata } from "@/server/oauth/config";
+import {
+  getIssuer,
+  getResourceIdentifier,
+  getAcceptedResourceIdentifiers,
+} from "@/server/oauth/config";
 import { checkRouteRateLimit } from "@/server/rate-limit";
 import { logger } from "@/lib/logger";
 
@@ -72,8 +76,9 @@ function buildSuccessRedirect(redirectUri: string, code: string, state?: string)
 
 export async function GET(request: NextRequest) {
   // Rate-limit by IP: this endpoint is unauthenticated and client resolution
-  // may trigger an outbound CIMD fetch for URL client_ids.
-  const rateLimited = await checkRouteRateLimit(request, "expensive");
+  // may trigger an outbound CIMD fetch for URL client_ids. Uses the generous
+  // "oauth" bucket (see /oauth/register).
+  const rateLimited = await checkRouteRateLimit(request, "oauth");
   if (rateLimited) {
     return rateLimited;
   }
@@ -190,8 +195,10 @@ export async function GET(request: NextRequest) {
   // A token issued here is only ever valid for this server's MCP endpoint, so a
   // client requesting a different resource is rejected. When omitted, we bind to
   // our canonical resource so every token is audience-restricted.
-  const canonicalResource = getProtectedResourceMetadata().resource;
-  if (resource !== undefined && !isResourceForThisServer(resource, canonicalResource)) {
+  if (
+    resource !== undefined &&
+    !isResourceForThisServer(resource, getAcceptedResourceIdentifiers())
+  ) {
     return buildErrorRedirect(
       redirectUri,
       OAUTH_ERRORS.INVALID_TARGET,
@@ -199,7 +206,7 @@ export async function GET(request: NextRequest) {
       state
     );
   }
-  const effectiveResource = resource ?? canonicalResource;
+  const effectiveResource = resource ?? getResourceIdentifier();
 
   // Check if user is authenticated
   const sessionToken = getSessionToken(request);
@@ -257,7 +264,7 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   // Rate-limit by IP (see GET handler).
-  const rateLimited = await checkRouteRateLimit(request, "expensive");
+  const rateLimited = await checkRouteRateLimit(request, "oauth");
   if (rateLimited) {
     return rateLimited;
   }
@@ -333,8 +340,10 @@ export async function POST(request: NextRequest) {
   }
 
   // Validate / bind the RFC 8707 resource indicator (see GET handler).
-  const canonicalResource = getProtectedResourceMetadata().resource;
-  if (resource !== undefined && !isResourceForThisServer(resource, canonicalResource)) {
+  if (
+    resource !== undefined &&
+    !isResourceForThisServer(resource, getAcceptedResourceIdentifiers())
+  ) {
     return buildErrorRedirect(
       redirectUri,
       OAUTH_ERRORS.INVALID_TARGET,
@@ -342,7 +351,7 @@ export async function POST(request: NextRequest) {
       state
     );
   }
-  const effectiveResource = resource ?? canonicalResource;
+  const effectiveResource = resource ?? getResourceIdentifier();
 
   // Handle user decision
   if (action === "deny") {

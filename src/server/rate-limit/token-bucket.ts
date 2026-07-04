@@ -49,10 +49,24 @@ export const RATE_LIMIT_CONFIGS = {
     capacity: 100,
     refillRate: 10, // 10 tokens per second
   },
-  /** Stricter limit for expensive operations (login, register, subscribe) */
+  /** Stricter limit for expensive operations (login, subscribe) */
   expensive: {
     capacity: 10,
     refillRate: 1, // 1 token per second
+  },
+  /**
+   * OAuth/MCP discovery + token + registration endpoints.
+   *
+   * These are hit server-to-server by MCP clients (e.g. claude.ai proxies from a
+   * shared egress range, and re-runs Dynamic Client Registration on every
+   * connect), so they must NOT share the strict per-IP "expensive" bucket used
+   * by login/subscribe: a shared proxy IP serving many users would trip a
+   * 10-token bucket and surface as "Couldn't register with the sign-in service".
+   * Still bounded to prevent anonymous client-registration spam.
+   */
+  oauth: {
+    capacity: 60,
+    refillRate: 6, // 6 tokens per second
   },
 } as const satisfies Record<string, RateLimitConfig>;
 

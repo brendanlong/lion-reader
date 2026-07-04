@@ -14,6 +14,28 @@ export function getIssuer(): string {
 }
 
 /**
+ * The canonical RFC 8707 resource identifier for our protected resource.
+ *
+ * Per the MCP authorization spec (2025-06-18) and RFC 9728, this MUST be the
+ * canonical URI of the MCP server itself — i.e. the `/api/mcp` endpoint, not the
+ * bare origin. Advertised as `resource` in the protected-resource metadata and
+ * bound into every access token's audience.
+ */
+export function getResourceIdentifier(): string {
+  return `${getIssuer()}/api/mcp`;
+}
+
+/**
+ * Resource identifiers accepted as audience for this server, most-canonical
+ * first. Includes the bare origin for backward compatibility: it was the
+ * canonical resource before 2026-07, so access tokens minted then carry the
+ * origin as their audience and must keep working until they expire.
+ */
+export function getAcceptedResourceIdentifiers(): string[] {
+  return [getResourceIdentifier(), getIssuer()];
+}
+
+/**
  * OAuth 2.0 Authorization Server Metadata (RFC 8414)
  * Used by /.well-known/oauth-authorization-server
  */
@@ -41,11 +63,9 @@ export function getAuthorizationServerMetadata() {
  * Used by /.well-known/oauth-protected-resource
  */
 export function getProtectedResourceMetadata() {
-  const issuer = getIssuer();
-
   return {
-    resource: issuer,
-    authorization_servers: [issuer],
+    resource: getResourceIdentifier(),
+    authorization_servers: [getIssuer()],
     scopes_supported: Object.values(OAUTH_SCOPES),
     bearer_methods_supported: ["header"],
   };

@@ -229,12 +229,16 @@ Because the default is session-only, **new endpoints are token-inaccessible unti
 
 OAuth access tokens are validated only at `POST /api/mcp` (not in the main tRPC/REST context), where the `mcp` scope and the RFC 8707 `resource`/audience binding are both enforced — a token minted for a different resource is rejected. `/api/mcp` also requires signup confirmation (ToS/Privacy/EU agreement) for both OAuth and API tokens, mirroring `confirmedProtectedProcedure` on the tRPC surface.
 
-The audience binding is enforced on both sides:
+The **canonical resource identifier** is the MCP endpoint URL — `${issuer}/api/mcp` (`getResourceIdentifier()`), not the bare origin — as required by the MCP authorization spec (2025-06-18) and RFC 9728, and it is what the protected-resource metadata advertises as `resource`. The `authorization_servers` entry remains the origin. The `WWW-Authenticate` `resource_metadata` URL is built from the **issuer** (`${issuer}/.well-known/oauth-protected-resource`), not by appending to the resource identifier, since the identifier now carries a path. For RFC 9728 clients that construct the path-inserted metadata URL, the same document is also served at `/.well-known/oauth-protected-resource/api/mcp`.
 
-- **Mint time** (`/oauth/authorize`): the requested `resource` is validated against this server's canonical resource identifier (`getProtectedResourceMetadata().resource`); a mismatch is rejected with `invalid_target`. When `resource` is omitted, it defaults to the canonical identifier so every issued token is audience-bound. Comparison (`isResourceForThisServer`) ignores trailing slashes and is case-insensitive for scheme/host.
-- **Use time** (`/api/mcp`): the token's stored `resource` must match the canonical identifier. Only legacy tokens issued before audience binding may have a null `resource`, which is still accepted (they expire within an hour).
+The audience binding is enforced on both sides, and both sides accept the **set** of identifiers in `getAcceptedResourceIdentifiers()` — the canonical `/api/mcp` URL plus the bare origin (the pre-2026-07 canonical value, kept so tokens minted before the change stay valid until they expire):
+
+- **Mint time** (`/oauth/authorize`): the requested `resource` is validated against the accepted identifiers; a mismatch is rejected with `invalid_target`. When `resource` is omitted, it defaults to the canonical `/api/mcp` identifier (`getResourceIdentifier()`) so every issued token is audience-bound. Comparison (`isResourceForThisServer`) ignores trailing slashes and is case-insensitive for scheme/host.
+- **Use time** (`/api/mcp`): the token's stored `resource` must match one of the accepted identifiers. Only legacy tokens issued before audience binding may have a null `resource`, which is still accepted (they expire within an hour).
 
 Dynamic Client Registration (`/oauth/register`) is open per RFC 7591 but rate-limited; it stores only the supported subset of requested scopes and rejects registration if none are recognized (it never falls back to "all scopes").
+
+The OAuth/MCP endpoints (`.well-known/*`, `/oauth/register`, `/oauth/token`, `/api/mcp`) use a dedicated, generous `oauth` rate-limit bucket rather than the strict per-IP `expensive` bucket used by login/subscribe. This is because MCP clients such as claude.ai proxy these requests **server-to-server from a shared egress range** and re-run discovery/registration on every connect; a strict shared-IP bucket would return `429` to legitimate connects, which claude.ai surfaces as "Couldn't register with the sign-in service." Those same endpoints also send CORS headers (and answer `OPTIONS` preflights, exposing `WWW-Authenticate`) so in-browser MCP clients (MCP Inspector, playgrounds) can reach them; claude.ai's own flow is server-side and does not depend on CORS.
 
 ---
 
