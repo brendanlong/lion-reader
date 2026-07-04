@@ -26,7 +26,10 @@ import { registerTools, toMcpError } from "@/server/mcp/tools";
 import { validateApiToken, API_TOKEN_SCOPES } from "@/server/auth/api-token";
 import { validateAccessToken } from "@/server/oauth/service";
 import { OAUTH_SCOPES, isResourceForThisServer } from "@/server/oauth/utils";
-import { getAcceptedResourceIdentifiers, getIssuer } from "@/server/oauth/config";
+import {
+  getAcceptedResourceIdentifiers,
+  getProtectedResourceMetadataUrl,
+} from "@/server/oauth/config";
 import { withMcpCorsHeaders, mcpCorsPreflight } from "@/server/http/cors";
 import { logger } from "@/lib/logger";
 
@@ -122,17 +125,18 @@ async function authenticateRequest(request: NextRequest): Promise<AuthResult> {
 }
 
 /**
- * Builds WWW-Authenticate header for 401 responses.
- * Includes resource_metadata URL and scope per MCP specification (RFC 9728 / RFC 6750).
+ * Builds WWW-Authenticate header for 401 responses (RFC 9728 / RFC 6750).
  *
- * The metadata URL is derived from the issuer (origin), NOT the resource
- * identifier: the resource identifier now includes the `/api/mcp` path, so
- * concatenating it with the well-known path would produce an invalid URL.
+ * `resource_metadata` points at the **path-inserted** protected-resource
+ * metadata URL (authoritative for our path-bearing resource — see
+ * getProtectedResourceMetadataUrl), matching what every known-working remote MCP
+ * server advertises. The `realm`/`error` shape also mirrors those servers. We do
+ * NOT include a `scope` parameter: working servers omit it, and ours would carry
+ * a colon/space value (`mcp saved:write`) that risks tripping strict parsers.
  */
 function buildWwwAuthenticateHeader(): string {
-  const scopes = Object.values(OAUTH_SCOPES);
-  const metadataUrl = `${getIssuer()}/.well-known/oauth-protected-resource`;
-  return `Bearer resource_metadata="${metadataUrl}", scope="${scopes.join(" ")}"`;
+  const metadataUrl = getProtectedResourceMetadataUrl();
+  return `Bearer realm="OAuth", resource_metadata="${metadataUrl}", error="invalid_token", error_description="Missing or invalid access token"`;
 }
 
 // ============================================================================

@@ -26,6 +26,24 @@ export function getResourceIdentifier(): string {
 }
 
 /**
+ * The canonical URL of the protected-resource metadata document (RFC 9728).
+ *
+ * Because our resource identifier has a path (`/api/mcp`), RFC 9728 §3.1 puts
+ * the metadata at the **path-inserted** location — `/.well-known/oauth-protected-
+ * resource` inserted *before* the resource's path — which is authoritative for a
+ * path-bearing resource. The root `/.well-known/oauth-protected-resource` is
+ * authoritative only for the bare-origin resource, so pointing clients there
+ * while the document declares a `/api/mcp` resource is an inconsistency that
+ * strict clients (claude.ai) reject, aborting discovery before registration.
+ * This is the URL every known-working remote MCP server (Linear, Sentry, Notion)
+ * advertises in its `WWW-Authenticate` `resource_metadata`.
+ */
+export function getProtectedResourceMetadataUrl(): string {
+  const resource = new URL(getResourceIdentifier());
+  return `${resource.origin}/.well-known/oauth-protected-resource${resource.pathname}`;
+}
+
+/**
  * Resource identifiers accepted as audience for this server, most-canonical
  * first. Includes the bare origin for backward compatibility: it was the
  * canonical resource before 2026-07, so access tokens minted then carry the

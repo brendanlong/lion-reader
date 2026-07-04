@@ -13,6 +13,7 @@ import {
   getResourceIdentifier,
   getAcceptedResourceIdentifiers,
   getProtectedResourceMetadata,
+  getProtectedResourceMetadataUrl,
   getAuthorizationServerMetadata,
 } from "../../src/server/oauth/config";
 
@@ -36,6 +37,15 @@ describe("OAuth resource identifiers", () => {
 
   it("uses the MCP endpoint URL as the canonical resource identifier", () => {
     expect(getResourceIdentifier()).toBe("https://reader.example.com/api/mcp");
+  });
+
+  it("points the protected-resource metadata URL at the path-inserted location", () => {
+    // RFC 9728 §3.1: for a resource with a path, the well-known segment is
+    // inserted BEFORE the path. Root would be authoritative only for the bare
+    // origin; a mismatch aborts discovery in strict clients (claude.ai).
+    expect(getProtectedResourceMetadataUrl()).toBe(
+      "https://reader.example.com/.well-known/oauth-protected-resource/api/mcp"
+    );
   });
 
   it("advertises the MCP endpoint (not the origin) as the protected resource", () => {
