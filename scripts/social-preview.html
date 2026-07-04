@@ -1,0 +1,405 @@
+<!doctype html>
+<!--
+  Source for the social/OG preview image (public/social-preview.png).
+
+  This is a stylized wireframe of the Lion Reader UI (not real text) rendered
+  in the app's dark theme, with the logo overlaid. It is screenshotted at
+  1200x630 by scripts/generate-social-preview.ts.
+
+  To update the preview: edit this file, then run `pnpm social-preview`.
+  Colors mirror the app's dark theme (zinc palette + red accent + amber star);
+  keep them in sync with src/app/globals.css / component classes if the theme
+  changes.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      :root {
+        /* App dark theme (zinc palette) */
+        --canvas: #09090b; /* zinc-950 - main content background */
+        --panel: #18181b; /* zinc-900 - sidebar, header, read cards */
+        --border: #27272a; /* zinc-800 */
+        --border-strong: #3f3f46; /* zinc-700 - unread card border */
+        --card-unread: #27272a; /* zinc-800 */
+        --card-read: #18181b; /* zinc-900 */
+
+        --accent: #f87171; /* red-400 - unread dot / selection */
+        --star: #fbbf24; /* amber-400 */
+
+        /* Skeleton bar shades */
+        --bar-bright: #e4e4e7; /* zinc-200 - unread title */
+        --bar-dim: #52525b; /* zinc-600 - read title */
+        --bar-meta: #3f3f46; /* zinc-700 - metadata */
+        --bar-body: #3f3f46; /* zinc-700 - summary line */
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 1200px;
+        height: 630px;
+        overflow: hidden;
+        background: var(--canvas);
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
+      }
+
+      .frame {
+        position: relative;
+        width: 1200px;
+        height: 630px;
+        background: var(--canvas);
+      }
+
+      /* ---- Header ---- */
+      .header {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 56px;
+        background: var(--panel);
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 12px;
+        padding: 0 20px;
+      }
+      .header .pill {
+        width: 64px;
+        height: 30px;
+        border-radius: 8px;
+        background: var(--border);
+      }
+      .header .pill.outline {
+        background: transparent;
+        border: 1px solid var(--border-strong);
+      }
+
+      /* ---- Sidebar ---- */
+      .sidebar {
+        position: absolute;
+        top: 56px;
+        left: 0;
+        bottom: 0;
+        width: 168px;
+        background: var(--panel);
+        border-right: 1px solid var(--border);
+        padding: 18px 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+      .nav-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .nav-row .icon {
+        width: 16px;
+        height: 16px;
+        border-radius: 4px;
+        flex: 0 0 auto;
+      }
+      .nav-row .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex: 0 0 auto;
+      }
+      .nav-row .chevron {
+        width: 10px;
+        height: 10px;
+        border-left: 2px solid var(--bar-meta);
+        border-bottom: 2px solid var(--bar-meta);
+        transform: rotate(-45deg);
+        flex: 0 0 auto;
+      }
+      .nav-row .label {
+        height: 8px;
+        border-radius: 4px;
+        background: var(--bar-meta);
+      }
+      .nav-row.active {
+        background: var(--card-unread);
+        border-radius: 8px;
+        padding: 8px 10px;
+        margin: -8px -6px;
+      }
+      .nav-row.active .icon {
+        background: var(--accent);
+      }
+      .nav-row.active .label {
+        background: var(--bar-bright);
+      }
+      .nav-row.indent {
+        padding-left: 26px;
+      }
+
+      /* Star icon (sidebar) */
+      .star {
+        width: 16px;
+        height: 16px;
+        flex: 0 0 auto;
+        color: var(--star);
+      }
+
+      /* ---- Entry list ---- */
+      .list {
+        position: absolute;
+        top: 56px;
+        left: 168px;
+        right: 0;
+        bottom: 0;
+        padding: 28px 40px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 16px;
+      }
+      .card {
+        width: 620px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: var(--card-read);
+        padding: 16px 18px;
+        display: flex;
+        gap: 14px;
+      }
+      .card.unread {
+        background: var(--card-unread);
+        border-color: var(--border-strong);
+      }
+      .card.selected {
+        background: var(--card-unread);
+        border-color: var(--accent);
+        box-shadow: 0 0 0 2px var(--accent);
+      }
+
+      /* Read/unread toggle circle */
+      .toggle {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        margin-top: 3px;
+        flex: 0 0 auto;
+      }
+      .card .toggle {
+        border: 2px solid var(--border-strong);
+      }
+      .card.unread .toggle,
+      .card.selected .toggle {
+        background: var(--accent);
+        border-color: var(--accent);
+      }
+
+      .card .body {
+        flex: 1 1 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        min-width: 0;
+      }
+      .card .title-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .card .title {
+        height: 12px;
+        border-radius: 6px;
+        background: var(--bar-dim);
+      }
+      .card.unread .title,
+      .card.selected .title {
+        background: var(--bar-bright);
+      }
+      .card .meta {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .card .meta .chip {
+        height: 8px;
+        border-radius: 4px;
+        background: var(--bar-meta);
+      }
+      .card .meta .sep {
+        width: 3px;
+        height: 3px;
+        border-radius: 50%;
+        background: var(--bar-meta);
+      }
+      .card .summary {
+        height: 8px;
+        border-radius: 4px;
+        background: var(--bar-body);
+      }
+      .card .card-star {
+        width: 16px;
+        height: 16px;
+        flex: 0 0 auto;
+        color: var(--star);
+      }
+
+      /* ---- Logo overlay ---- */
+      .logo {
+        position: absolute;
+        right: -6px;
+        bottom: -18px;
+        width: 348px;
+        height: 348px;
+        filter: drop-shadow(0 8px 28px rgba(0, 0, 0, 0.55));
+      }
+      .logo img {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="frame">
+      <!-- Header -->
+      <div class="header">
+        <div class="pill"></div>
+        <div class="pill outline"></div>
+      </div>
+
+      <!-- Sidebar -->
+      <div class="sidebar">
+        <div class="nav-row active">
+          <div class="icon"></div>
+          <div class="label" style="width: 92px"></div>
+        </div>
+        <div class="nav-row">
+          <svg class="star" viewBox="0 0 24 24" fill="currentColor">
+            <path
+              d="M12 2.5l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 17.8 6.2 20.9l1.1-6.5L2.6 9.8l6.5-.9L12 2.5z"
+            />
+          </svg>
+          <div class="label" style="width: 60px"></div>
+        </div>
+        <div class="nav-row">
+          <div class="chevron"></div>
+          <div class="dot" style="background: #4ade80"></div>
+          <div class="label" style="width: 70px"></div>
+        </div>
+        <div class="nav-row">
+          <div class="chevron" style="transform: rotate(45deg)"></div>
+          <div class="dot" style="background: #60a5fa"></div>
+          <div class="label" style="width: 64px"></div>
+        </div>
+        <div class="nav-row indent">
+          <div class="label" style="width: 78px"></div>
+        </div>
+        <div class="nav-row indent">
+          <div class="label" style="width: 66px"></div>
+        </div>
+        <div class="nav-row indent">
+          <div class="label" style="width: 74px"></div>
+        </div>
+      </div>
+
+      <!-- Entry list -->
+      <div class="list">
+        <div class="card unread">
+          <div class="toggle"></div>
+          <div class="body">
+            <div class="title-row">
+              <div class="title" style="width: 62%"></div>
+            </div>
+            <div class="meta">
+              <div class="chip" style="width: 84px"></div>
+              <div class="sep"></div>
+              <div class="chip" style="width: 52px"></div>
+            </div>
+            <div class="summary" style="width: 96%"></div>
+          </div>
+        </div>
+
+        <div class="card unread">
+          <div class="toggle"></div>
+          <div class="body">
+            <div class="title-row">
+              <div class="title" style="width: 54%"></div>
+              <svg class="card-star" viewBox="0 0 24 24" fill="currentColor">
+                <path
+                  d="M12 2.5l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 17.8 6.2 20.9l1.1-6.5L2.6 9.8l6.5-.9L12 2.5z"
+                />
+              </svg>
+            </div>
+            <div class="meta">
+              <div class="chip" style="width: 72px"></div>
+              <div class="sep"></div>
+              <div class="chip" style="width: 48px"></div>
+            </div>
+            <div class="summary" style="width: 90%"></div>
+          </div>
+        </div>
+
+        <div class="card selected">
+          <div class="toggle"></div>
+          <div class="body">
+            <div class="title-row">
+              <div class="title" style="width: 40%"></div>
+            </div>
+            <div class="meta">
+              <div class="chip" style="width: 78px"></div>
+              <div class="sep"></div>
+              <div class="chip" style="width: 44px"></div>
+            </div>
+            <div class="summary" style="width: 82%"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="toggle"></div>
+          <div class="body">
+            <div class="title-row">
+              <div class="title" style="width: 48%"></div>
+            </div>
+            <div class="meta">
+              <div class="chip" style="width: 66px"></div>
+              <div class="sep"></div>
+              <div class="chip" style="width: 50px"></div>
+            </div>
+            <div class="summary" style="width: 88%"></div>
+          </div>
+        </div>
+
+        <div class="card unread">
+          <div class="toggle"></div>
+          <div class="body">
+            <div class="title-row">
+              <div class="title" style="width: 58%"></div>
+            </div>
+            <div class="meta">
+              <div class="chip" style="width: 80px"></div>
+              <div class="sep"></div>
+              <div class="chip" style="width: 46px"></div>
+            </div>
+            <div class="summary" style="width: 70%"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Logo -->
+      <div class="logo">
+        <img src="../assets/logo-original.svg" alt="Lion Reader" />
+      </div>
+    </div>
+  </body>
+</html>
