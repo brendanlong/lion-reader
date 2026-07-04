@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/icon-button";
 import { EntryArticle } from "@/components/entries/EntryArticle";
 import { SummaryCard } from "@/components/summarization/SummaryCard";
+import { AppearanceSettings } from "@/components/settings/AppearanceSettings";
 import { useSwipeGesture } from "@/lib/hooks/useSwipeGesture";
 import { SortToggle } from "@/components/entries/SortToggle";
 import { UnreadToggle } from "@/components/entries/UnreadToggle";
@@ -332,6 +333,23 @@ function DemoRouterContent() {
                 </div>
               )}
             </>
+          }
+          afterContent={
+            selectedEntry.id === "appearance" && (
+              <div className="mt-8 border-t border-zinc-200 pt-8 dark:border-zinc-700">
+                <div className="mb-4">
+                  <h2 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">
+                    Try it yourself
+                  </h2>
+                  <p className="ui-text-sm mt-1 text-zinc-600 dark:text-zinc-400">
+                    These are the real appearance settings from the app. Switch to the dark theme to
+                    see the warm, low-blue-light palette, or adjust the fonts and text size &mdash;
+                    changes apply live to this article. Your choices are saved in this browser.
+                  </p>
+                </div>
+                <AppearanceSettings />
+              </div>
+            )
           }
         />
       </ScrollContainer>
