@@ -8,6 +8,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Alert } from "@/components/ui/alert";
 
 export function IntegrationsSettings() {
   const [copiedSection, setCopiedSection] = useState<string | null>(null);
@@ -88,6 +89,21 @@ export function IntegrationsSettings() {
         {/* Claude.ai */}
         <div className="mt-6 border-t border-zinc-200 pt-6 dark:border-zinc-700">
           <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">Claude.ai</h3>
+          <div className="mt-2">
+            <Alert variant="warning">
+              The claude.ai <strong>web</strong> connector is currently broken due to a bug on
+              claude.ai&rsquo;s side. See{" "}
+              <a
+                href="https://github.com/brendanlong/lion-reader/issues/986"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium underline"
+              >
+                this issue
+              </a>
+              . The MCP server should work with other tools, including Claude Code.
+            </Alert>
+          </div>
           <ol className="ui-text-sm mt-2 list-inside list-decimal space-y-2 text-zinc-600 dark:text-zinc-400">
             <li>Click your name in the bottom-left corner</li>
             <li>
