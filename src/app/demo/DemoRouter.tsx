@@ -27,6 +27,8 @@ import {
 } from "@/components/ui/icon-button";
 import { EntryArticle } from "@/components/entries/EntryArticle";
 import { SummaryCard } from "@/components/summarization/SummaryCard";
+import { AppearanceSettings } from "@/components/settings/AppearanceSettings";
+import { useEntryTextStyles } from "@/lib/appearance/AppearanceProvider";
 import { useSwipeGesture } from "@/lib/hooks/useSwipeGesture";
 import { SortToggle } from "@/components/entries/SortToggle";
 import { UnreadToggle } from "@/components/entries/UnreadToggle";
@@ -52,6 +54,9 @@ function DemoRouterContent() {
   const entryId = searchParams.get("entry");
   const demoState = useDemoState();
   const [showSummaryForEntry, setShowSummaryForEntry] = useState<string | null>(null);
+  // Apply the user's appearance settings (font, size, alignment) to demo
+  // article content, matching EntryContentBody in the real app.
+  const { className: textSizeClass, style: textStyle } = useEntryTextStyles();
 
   // Parse the pathname to determine the current view
   const { subscriptionId: subId, tagId } = extractParamsFromPathname(pathname, "/demo");
@@ -227,6 +232,8 @@ function DemoRouterContent() {
       <ScrollContainer key={selectedEntry.id} className="h-full overflow-y-auto">
         <EntryArticle
           {...getDemoEntryArticleProps(selectedEntry)}
+          textSizeClass={textSizeClass}
+          textStyle={textStyle}
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
           backButton={
@@ -332,6 +339,23 @@ function DemoRouterContent() {
                 </div>
               )}
             </>
+          }
+          afterContent={
+            selectedEntry.id === "appearance" && (
+              <div className="mt-8 border-t border-zinc-200 pt-8 dark:border-zinc-700">
+                <div className="mb-4">
+                  <h2 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">
+                    Try it yourself
+                  </h2>
+                  <p className="ui-text-sm mt-1 text-zinc-600 dark:text-zinc-400">
+                    These are the real appearance settings from the app. Switch to the dark theme to
+                    see the warm, low-blue-light palette, or adjust the fonts and text size &mdash;
+                    changes apply live to this article. Your choices are saved in this browser.
+                  </p>
+                </div>
+                <AppearanceSettings />
+              </div>
+            )
           }
         />
       </ScrollContainer>

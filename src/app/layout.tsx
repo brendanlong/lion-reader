@@ -135,14 +135,22 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    // Font variables live on <html> (not <body>) so the entry text-appearance
+    // custom properties, which are set on documentElement by the head script
+    // and useEntryTextStyles, can resolve nested var(--font-*) references.
+    // Setting them on <body> left --entry-font-family invalid at the html level,
+    // which broke font selection for entry content everywhere. next-themes only
+    // toggles the theme class on <html>, so these classes are preserved.
+    <html
+      lang="en"
+      suppressHydrationWarning
+      className={`${geistSans.variable} ${geistMono.variable} ${merriweather.variable} ${literata.variable} ${inter.variable} ${sourceSans.variable}`}
+    >
       <head>
         <script dangerouslySetInnerHTML={{ __html: textAppearanceScript }} />
         <script dangerouslySetInnerHTML={{ __html: swScript }} />
       </head>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} ${merriweather.variable} ${literata.variable} ${inter.variable} ${sourceSans.variable} antialiased`}
-      >
+      <body className="antialiased">
         <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>
