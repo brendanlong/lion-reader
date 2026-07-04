@@ -27,6 +27,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "prepare": "husky",
+    "social-preview": "tsx scripts/generate-social-preview.ts",
     "db:migrate": "dotenv -- tsx scripts/migrate.ts",
     "db:schema": "dotenv -- tsx scripts/dump-schema.ts",
     "db:seed": "dotenv -- tsx scripts/seed.ts",
