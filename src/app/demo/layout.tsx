@@ -11,7 +11,8 @@ import { DemoLayoutContent } from "./DemoLayoutContent";
 
 export const metadata: Metadata = {
   title: "Lion Reader",
-  description: "A modern, fast, and open-source feed reader you can self-host.",
+  description:
+    "An AI-native, all-in-one reader for RSS feeds, newsletters, and read-later — with MCP, summaries, and narration. Fast, open source, and self-hostable.",
 };
 
 export default function DemoLayout({ children }: { children: ReactNode }) {

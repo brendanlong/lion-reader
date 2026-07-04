@@ -7,25 +7,24 @@ const article: DemoArticle = {
   url: null,
   title: "Welcome to Lion Reader",
   author: null,
-  summary: "A modern, fast, and open-source feed reader. Explore the demo to see what it can do.",
+  summary:
+    "An AI-native, all-in-one reader for feeds, newsletters, and read-later. Explore the demo to see what it can do.",
   publishedAt: new Date(),
   starred: true,
-  summaryHtml: `<p><strong>Lion Reader</strong> is a self-hostable RSS reader that combines feeds, email newsletters, and saved articles in one interface. It features <strong>AI-powered summaries</strong> via Claude, text-to-speech narration, keyboard-first navigation, real-time updates, and <strong>MCP integration</strong> for connecting AI assistants. Self-hostable and open source with ML-powered article scoring.</p>`,
+  summaryHtml: `<p><strong>Lion Reader</strong> is an AI-native, self-hostable reader that unifies RSS/Atom/JSON feeds, email newsletters, and saved articles in one fast interface. It connects to AI assistants over <strong>MCP</strong>, generates on-demand <strong>summaries</strong> via Claude, and narrates articles with synchronized highlighting &mdash; all with real-time, jank-free updates. Free and open source.</p>`,
   contentHtml: `
-    <p>Lion Reader is a modern, self-hostable feed reader built for people who care about their reading experience. Whether you&rsquo;re following hundreds of feeds or just a handful, Lion Reader brings all your content together in one fast, elegant interface.</p>
+    <p>Lion Reader is a self-hostable feed reader for people who take their reading seriously. It brings your feeds, your newsletters, and everything you save for later into one fast, elegant interface &mdash; and it&rsquo;s built from the ground up to work with AI assistants.</p>
 
-    <p>This interactive demo shows the real Lion Reader UI &mdash; browse the sidebar to explore different features and see what makes this reader special. Everything you see here works exactly like the production app.</p>
+    <p>This interactive demo is the real Lion Reader UI. Browse the sidebar to explore each capability; everything here behaves exactly like the production app.</p>
 
-    <h3>Key Features</h3>
+    <h3>What makes it different</h3>
 
     <ul>
-      <li><strong>All your content in one place</strong> &mdash; Subscribe to RSS, Atom, and JSON feeds, receive email newsletters directly into your reader, and save articles from around the web for later reading.</li>
-      <li><strong>AI-powered reading</strong> &mdash; Get instant article summaries powered by Claude, listen to entries with high-quality text-to-speech narration, and let ML-powered scoring predict which articles you&rsquo;ll love.</li>
-      <li><strong>MCP integration</strong> &mdash; Connect AI assistants like Claude Desktop directly to your feeds via the Model Context Protocol. Let your AI help you search, organize, and manage your reading list.</li>
-      <li><strong>Keyboard-first design</strong> &mdash; Navigate your entire reading experience without touching your mouse. Every action has a keyboard shortcut.</li>
-      <li><strong>Real-time updates</strong> &mdash; New entries appear instantly via Server-Sent Events. No refreshing, no polling, just seamless updates as content arrives.</li>
-      <li><strong>Progressive Web App</strong> &mdash; Install Lion Reader on desktop or mobile for a native app experience. Share articles directly from your phone.</li>
-      <li><strong>Privacy-focused</strong> &mdash; Self-hostable and open source. No ads, no data selling, no third-party analytics. You control your data completely.</li>
+      <li><strong>AI-native, not AI-bolted-on</strong> &mdash; Connect Claude and other assistants directly to your reader over the <strong>Model Context Protocol (MCP)</strong> to search, organize, save, and triage on your behalf. Generate concise article <strong>summaries</strong> on demand (never auto-summarized behind your back), and listen to any article with <strong>text-to-speech narration and synchronized highlighting</strong>.</li>
+      <li><strong>Everything in one place</strong> &mdash; Subscribe to RSS, Atom, and JSON feeds; receive <strong>email newsletters</strong> at a private ingest address; and save any page for later with browser extensions, a bookmarklet, a Discord bot, your phone&rsquo;s share menu, or Markdown/Word uploads. Saving is extra-smart for arXiv, GitHub, Google Docs, and LessWrong.</li>
+      <li><strong>Obsessively fast</strong> &mdash; New entries show up in the list you&rsquo;re reading without a refresh and without disturbing your place, and moving around the app is instant &mdash; served straight from cache wherever possible, with nothing else reloading. See the <strong>Obsessive Performance</strong> article for how.</li>
+      <li><strong>All the essentials, done well</strong> &mdash; Full-content fetching, tags, full-text search, keyboard-first navigation, OPML import/export, an installable PWA, and clean modern styling with light and dark themes.</li>
+      <li><strong>Yours to own</strong> &mdash; Free and open source, straightforward to self-host with Docker. No ads, no data selling, no third-party analytics.</li>
     </ul>
 
     <h3>Explore the Demo</h3>
@@ -33,10 +32,10 @@ const article: DemoArticle = {
     <p>The sidebar is organized into sections that showcase different capabilities:</p>
 
     <ul>
-      <li><strong>Feed Types</strong> &mdash; See how Lion Reader handles RSS feeds, email newsletters, and saved articles</li>
-      <li><strong>Reading Experience</strong> &mdash; Explore full content fetching, AI summaries, text-to-speech, and keyboard navigation</li>
-      <li><strong>Organization &amp; Search</strong> &mdash; Learn about tags, full-text search, and OPML import/export</li>
-      <li><strong>Integrations &amp; Sync</strong> &mdash; Discover MCP integration, WebSub push, the PWA, and real-time updates</li>
+      <li><strong>Feed Types</strong> &mdash; RSS, Atom, and JSON feeds, email newsletters, and saved articles</li>
+      <li><strong>Reading Experience</strong> &mdash; Full-content fetching, AI summaries, text-to-speech, keyboard navigation, and performance</li>
+      <li><strong>Organization &amp; Search</strong> &mdash; Tags, full-text search, and OPML import/export</li>
+      <li><strong>Integrations &amp; Sync</strong> &mdash; MCP, WebSub push, the PWA, real-time updates, and compatibility APIs</li>
     </ul>
 
     <p>Ready to take control of your reading? Sign up to start using the full app, or <a href="https://github.com/brendanlong/lion-reader" target="_blank" rel="noopener noreferrer">check out the source code on GitHub</a> to self-host your own instance.</p>

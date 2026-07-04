@@ -34,9 +34,9 @@ const article: DemoArticle = {
       <li><strong>import_progress</strong> &mdash; Real-time status updates during OPML import</li>
     </ul>
 
-    <h3>Smart Cache Invalidation</h3>
+    <h3>Updates that stay out of your way</h3>
 
-    <p>When an SSE event arrives, Lion Reader triggers targeted React Query cache invalidations. This means the UI refreshes automatically without manual polling or full page reloads. Optimistic updates for actions like starring and marking entries read mean the UI updates instantly before the server confirms, then reconciles if something went wrong. The result is a responsive interface that feels immediate even on slower connections.</p>
+    <p>When an event arrives, new content shows up in your lists automatically &mdash; no page refresh, no clicking to reload. The key detail is <em>how</em>: instead of re-fetching and redrawing the whole list, Lion Reader updates just the data that changed. A new article is inserted at its correct spot by date, and read or starred changes are applied in place. So if you&rsquo;re partway down a list reading, your scroll position and the article in front of you stay put &mdash; updates never yank the page around underneath you. Your own actions (starring, marking read) apply instantly and reconcile automatically if two devices disagree.</p>
 
     <h3>Reliability and Fallbacks</h3>
 
