@@ -47,7 +47,6 @@ async function handleToken(request: NextRequest): Promise<Response> {
   const rateLimitResponse = await checkRouteRateLimit(request, "oauth", { json: true });
   if (rateLimitResponse) return rateLimitResponse;
 
-  logger.info("OAuth token request");
   // Parse form data or JSON body
   let body: Record<string, string>;
 
@@ -58,6 +57,7 @@ async function handleToken(request: NextRequest): Promise<Response> {
   } else if (contentType.includes("application/json")) {
     body = await request.json();
   } else {
+    logger.warn("OAuth token request: unsupported content type", { contentType });
     return NextResponse.json(
       createOAuthError(OAUTH_ERRORS.INVALID_REQUEST, "Unsupported content type"),
       { status: 400 }
@@ -65,6 +65,17 @@ async function handleToken(request: NextRequest): Promise<Response> {
   }
 
   const grantType = body.grant_type;
+
+  // Log what the client sent (no secrets) so token-exchange failures are
+  // debuggable — grant type + which required params are present.
+  logger.info("OAuth token request", {
+    grantType,
+    clientId: body.client_id,
+    hasCode: !!body.code,
+    hasCodeVerifier: !!body.code_verifier,
+    hasRedirectUri: !!body.redirect_uri,
+    hasRefreshToken: !!body.refresh_token,
+  });
 
   if (grantType === "authorization_code") {
     return handleAuthorizationCodeGrant(body);
@@ -192,6 +203,14 @@ async function handleAuthorizationCodeGrant(body: Record<string, string>) {
     clientId: client_id,
     userId: authCodeData.userId,
     scopes: authCodeData.scopes,
+    resource: authCodeData.resource,
+  });
+
+  logger.info("OAuth token issued", {
+    grantType: "authorization_code",
+    clientId: client_id,
+    userId: authCodeData.userId,
+    scope: tokens.scope,
     resource: authCodeData.resource,
   });
 

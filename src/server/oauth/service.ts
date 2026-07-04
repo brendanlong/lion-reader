@@ -29,6 +29,7 @@ import {
   OAUTH_SCOPES,
 } from "./utils";
 import { getResourceIdentifier } from "./config";
+import { logger } from "@/lib/logger";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { fetchWithSsrfProtection } from "@/server/http/ssrf";
 import { readResponseBufferWithSizeLimit } from "@/server/http/fetch";
@@ -272,6 +273,12 @@ export async function validateAndConsumeAuthCode(
     .returning();
 
   if (result.length === 0) {
+    // The atomic claim matched nothing: the code is unknown, already used,
+    // expired, or the client_id / redirect_uri don't match what was stored.
+    logger.warn("OAuth code exchange rejected: code claim failed", {
+      clientId,
+      redirectUri,
+    });
     return null;
   }
 
@@ -279,6 +286,7 @@ export async function validateAndConsumeAuthCode(
 
   // Validate PKCE
   if (!validatePkceS256(codeVerifier, authCode.codeChallenge)) {
+    logger.warn("OAuth code exchange rejected: PKCE verification failed", { clientId });
     return null;
   }
 
