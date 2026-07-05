@@ -7,7 +7,7 @@
 
 import { z } from "zod";
 import * as argon2 from "argon2";
-import { eq, and, or, gt, exists, isNotNull, sql } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 
 import {
   createTRPCRouter,
@@ -1216,43 +1216,51 @@ export const authRouter = createTRPCRouter({
       const { provider } = input;
       const userId = ctx.session.user.id;
 
-      // Atomic delete with safety check: only unlink if the user has a
-      // password OR has more than one linked OAuth account. A single
-      // statement avoids the TOCTOU race where concurrent requests could
-      // both pass a separate check-then-delete and lock the user out.
-      const deleted = await ctx.db
-        .delete(oauthAccounts)
-        .where(
-          and(
-            eq(oauthAccounts.userId, userId),
-            eq(oauthAccounts.provider, provider),
-            or(
-              exists(
-                ctx.db
-                  .select({ v: sql`1` })
-                  .from(users)
-                  .where(and(eq(users.id, userId), isNotNull(users.passwordHash)))
-              ),
-              gt(ctx.db.$count(oauthAccounts, eq(oauthAccounts.userId, userId)), 1)
-            )
-          )
-        )
-        .returning({ id: oauthAccounts.id });
+      await ctx.db.transaction(async (tx) => {
+        // Serialize concurrent unlinks for this user by taking a row lock
+        // on the user. Without it, two requests unlinking *different*
+        // providers (e.g. Google in one tab, Apple in another) target
+        // different oauth_accounts rows, so neither blocks the other. A
+        // single atomic DELETE with an embedded count check does not close
+        // this race either: under READ COMMITTED the count subquery reads a
+        // snapshot and takes no lock on the other provider's row, so both
+        // requests observe two linked accounts, both pass the check, and
+        // both delete — leaving the user with zero auth methods (#825).
+        await tx.execute(sql`SELECT 1 FROM ${users} WHERE ${users.id} = ${userId} FOR UPDATE`);
 
-      // If nothing was deleted and the account exists, it means the
-      // safety check prevented it (last auth method).
-      // If the account doesn't exist, treat as success (idempotent).
-      if (deleted.length === 0) {
-        const accountExists = await ctx.db
+        // Idempotent: unlinking an already-unlinked provider succeeds
+        // without error rather than 404-ing.
+        const account = await tx
           .select({ id: oauthAccounts.id })
           .from(oauthAccounts)
           .where(and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, provider)))
           .limit(1);
 
-        if (accountExists.length > 0) {
+        if (account.length === 0) {
+          return;
+        }
+
+        // Safety check: refuse to remove the user's only remaining auth
+        // method. The FOR UPDATE lock above guarantees this count and the
+        // delete below can't interleave with another unlink for this user.
+        const user = await tx
+          .select({ passwordHash: users.passwordHash })
+          .from(users)
+          .where(eq(users.id, userId))
+          .limit(1);
+
+        const hasPassword = !!user[0]?.passwordHash;
+        const linkedAccountsCount = await tx.$count(
+          oauthAccounts,
+          eq(oauthAccounts.userId, userId)
+        );
+
+        if (!hasPassword && linkedAccountsCount <= 1) {
           throw errors.cannotUnlinkOnlyAuth();
         }
-      }
+
+        await tx.delete(oauthAccounts).where(eq(oauthAccounts.id, account[0].id));
+      });
 
       return { success: true };
     }),
