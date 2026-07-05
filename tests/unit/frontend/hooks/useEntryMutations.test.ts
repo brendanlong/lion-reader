@@ -17,6 +17,7 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { act, cleanup, waitFor } from "@testing-library/react";
 import { toast } from "sonner";
+import { trpc } from "@/lib/trpc/client";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
 import type { BulkUnreadCounts, UnreadCounts } from "@/lib/cache/operations";
 import { renderHookWithTrpc } from "../../../utils/component-test-helpers";
@@ -61,12 +62,13 @@ describe("useEntryMutations markRead", () => {
       counts: bulkCounts(),
     }));
 
-    const { result, callsFor } = renderHookWithTrpc(() => useEntryMutations(), {
-      handlers: { "entries.markRead": (input) => markRead(input as never) },
-    });
+    const { result, callsFor } = renderHookWithTrpc(
+      () => ({ mutations: useEntryMutations(), utils: trpc.useUtils() }),
+      { handlers: { "entries.markRead": (input) => markRead(input as never) } }
+    );
 
     act(() => {
-      result.current.markRead(["e1", "e2"], true);
+      result.current.mutations.markRead(["e1", "e2"], true);
     });
 
     await waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(1));
@@ -80,26 +82,72 @@ describe("useEntryMutations markRead", () => {
     expect(input.entries[0].changedAt).toBeInstanceOf(Date);
   });
 
-  it("toggleRead sends the negation of the current read status for a single entry", async () => {
-    const { result, callsFor } = renderHookWithTrpc(() => useEntryMutations(), {
-      handlers: {
-        "entries.markRead": (input) => {
-          const typed = input as { entries: { id: string }[]; read: boolean };
-          return {
-            entries: typed.entries.map((e) => ({
-              id: e.id,
-              read: typed.read,
-              starred: false,
-              updatedAt: fixedDate,
-            })),
-            counts: bulkCounts(),
-          };
-        },
-      },
+  it("applies the server's absolute counts to the cache on success", async () => {
+    // Distinctive non-zero counts so a no-op/broken onSuccess (React Query
+    // swallows onSuccess throws) can't pass — the cache would stay undefined.
+    const counts = bulkCounts({
+      all: { unread: 5 },
+      starred: { unread: 3 },
+      saved: { unread: 2 },
     });
 
+    const { result, callsFor } = renderHookWithTrpc(
+      () => ({ mutations: useEntryMutations(), utils: trpc.useUtils() }),
+      {
+        handlers: {
+          "entries.markRead": (input) => {
+            const typed = input as { entries: { id: string }[]; read: boolean };
+            return {
+              entries: typed.entries.map((e) => ({
+                id: e.id,
+                read: typed.read,
+                starred: false,
+                updatedAt: fixedDate,
+              })),
+              counts,
+            };
+          },
+        },
+      }
+    );
+
     act(() => {
-      result.current.toggleRead("e1", false);
+      result.current.mutations.markRead(["e1"], true);
+    });
+
+    await waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(1));
+    await waitFor(() =>
+      expect(result.current.utils.entries.count.getData({})).toEqual({ unread: 5 })
+    );
+    expect(result.current.utils.entries.count.getData({ starredOnly: true })).toEqual({
+      unread: 3,
+    });
+    expect(result.current.utils.entries.count.getData({ type: "saved" })).toEqual({ unread: 2 });
+  });
+
+  it("toggleRead sends the negation of the current read status for a single entry", async () => {
+    const { result, callsFor } = renderHookWithTrpc(
+      () => ({ mutations: useEntryMutations(), utils: trpc.useUtils() }),
+      {
+        handlers: {
+          "entries.markRead": (input) => {
+            const typed = input as { entries: { id: string }[]; read: boolean };
+            return {
+              entries: typed.entries.map((e) => ({
+                id: e.id,
+                read: typed.read,
+                starred: false,
+                updatedAt: fixedDate,
+              })),
+              counts: bulkCounts(),
+            };
+          },
+        },
+      }
+    );
+
+    act(() => {
+      result.current.mutations.toggleRead("e1", false);
     });
 
     await waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(1));
@@ -167,21 +215,24 @@ describe("useEntryMutations markAllRead", () => {
 });
 
 describe("useEntryMutations star/unstar", () => {
-  it("star calls entries.setStarred with starred: true", async () => {
-    const { result, callsFor } = renderHookWithTrpc(() => useEntryMutations(), {
-      handlers: {
-        "entries.setStarred": (input) => {
-          const typed = input as { id: string; starred: boolean };
-          return {
-            entry: { id: typed.id, read: false, starred: typed.starred, updatedAt: fixedDate },
-            counts: singleCounts(),
-          };
+  it("star calls entries.setStarred with starred: true and applies counts on success", async () => {
+    const { result, callsFor } = renderHookWithTrpc(
+      () => ({ mutations: useEntryMutations(), utils: trpc.useUtils() }),
+      {
+        handlers: {
+          "entries.setStarred": (input) => {
+            const typed = input as { id: string; starred: boolean };
+            return {
+              entry: { id: typed.id, read: false, starred: typed.starred, updatedAt: fixedDate },
+              counts: singleCounts({ all: { unread: 4 }, starred: { unread: 7 } }),
+            };
+          },
         },
-      },
-    });
+      }
+    );
 
     act(() => {
-      result.current.star("e1");
+      result.current.mutations.star("e1");
     });
 
     await waitFor(() => expect(callsFor("entries.setStarred")).toHaveLength(1));
@@ -193,6 +244,14 @@ describe("useEntryMutations star/unstar", () => {
     expect(input).toEqual(
       expect.objectContaining({ id: "e1", starred: true, changedAt: expect.any(Date) })
     );
+
+    // onSuccess ran setCounts against the real cache with the server's numbers.
+    await waitFor(() =>
+      expect(result.current.utils.entries.count.getData({ starredOnly: true })).toEqual({
+        unread: 7,
+      })
+    );
+    expect(result.current.utils.entries.count.getData({})).toEqual({ unread: 4 });
   });
 
   it("toggleStar unstars an entry that is currently starred", async () => {
