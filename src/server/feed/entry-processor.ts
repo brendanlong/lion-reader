@@ -75,11 +75,18 @@ export interface ProcessEntriesOptions {
 /**
  * Generates a SHA-256 content hash for an entry.
  *
- * The hash covers every stored field that a feed can correct after publishing —
- * title, content, author, URL, and publication date — not just title+content.
- * `updateEntryContent` only runs when this hash changes (see `processEntry`), so
- * a field omitted here would never propagate: a feed fixing an entry's URL or
- * author without touching its text would otherwise be silently ignored.
+ * The hash covers title, content, author, and URL — the fields that
+ * `updateEntryContent` actually rewrites when the hash changes. Previously only
+ * title+content were hashed, so a feed correcting an entry's URL or author
+ * without touching its text was silently ignored (see `processEntry`, which only
+ * updates on a hash change).
+ *
+ * `pubDate` is deliberately NOT hashed: `updateEntryContent` never rewrites
+ * `published_at` because it is denormalized into `user_entries.published_or_fetched_at`
+ * (the frozen timeline sort key, see DESIGN.md), so propagating a date change on
+ * update would require a cross-table update over every subscriber row. Hashing
+ * `pubDate` would therefore only trigger updates that can't take effect. Future
+ * dates are instead clamped once at insert time (see `clampPublishedAt`).
  *
  * @param entry - The parsed entry from the feed
  * @returns Hexadecimal SHA-256 hash string
@@ -92,9 +99,8 @@ export function generateContentHash(entry: ParsedEntry): string {
   const content = entry.content ?? entry.summary ?? "";
   const author = entry.author ?? "";
   const url = deriveEntryUrl(entry) ?? "";
-  const publishedAt = entry.pubDate ? entry.pubDate.toISOString() : "";
 
-  const hashInput = [title, content, author, url, publishedAt].join("\n");
+  const hashInput = [title, content, author, url].join("\n");
 
   return createHash("sha256").update(hashInput, "utf8").digest("hex");
 }

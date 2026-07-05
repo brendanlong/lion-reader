@@ -128,7 +128,10 @@ describe("Entry Processor", () => {
       expect(generateContentHash(base)).not.toBe(generateContentHash(changed));
     });
 
-    it("changes when the publication date changes but text does not", () => {
+    it("does NOT change when only the publication date changes", () => {
+      // pubDate is intentionally excluded: updateEntryContent never rewrites
+      // published_at (it's the frozen denormalized timeline sort key), so hashing
+      // it would only trigger updates that can't take effect.
       const base: ParsedEntry = {
         title: "T",
         content: "C",
@@ -136,7 +139,7 @@ describe("Entry Processor", () => {
       };
       const changed: ParsedEntry = { ...base, pubDate: new Date("2024-02-01T00:00:00Z") };
 
-      expect(generateContentHash(base)).not.toBe(generateContentHash(changed));
+      expect(generateContentHash(base)).toBe(generateContentHash(changed));
     });
   });
 
