@@ -17,12 +17,13 @@
 
 import { clientLogin } from "@/server/google-reader/auth";
 import { parseFormData, errorResponse } from "@/server/google-reader/parse";
-import { checkRouteRateLimit } from "@/server/rate-limit";
+import { checkRouteRateLimit, checkAccountRouteRateLimit } from "@/server/rate-limit";
 import { extractClientInfo } from "@/server/http/client-ip";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request): Promise<Response> {
+  // Per-IP limit first (cheap, rejects floods before parsing).
   const rateLimitResponse = await checkRouteRateLimit(request, "expensive");
   if (rateLimitResponse) return rateLimitResponse;
 
@@ -33,6 +34,11 @@ export async function POST(request: Request): Promise<Response> {
   if (!email || !password) {
     return errorResponse("Error=BadAuthentication", 401);
   }
+
+  // Per-account limit: throttles distributed, IP-rotating brute-force against
+  // a single account, shared with the tRPC login and Wallabag paths.
+  const accountRateLimitResponse = await checkAccountRouteRateLimit(email);
+  if (accountRateLimitResponse) return accountRateLimitResponse;
 
   const { userAgent, ipAddress } = extractClientInfo(request.headers);
 

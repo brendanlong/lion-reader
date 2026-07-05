@@ -367,6 +367,8 @@ Cursor-based pagination everywhere:
 
 Token bucket via Redis, per-user. Different buckets for different operations (e.g., search is more limited than reads).
 
+**Password brute-force protection**: every password-accepting path is rate-limited two ways. A per-IP `expensive` bucket (10 burst, 1/sec) caps a single source, and a **shared per-account** `expensive` bucket keyed by normalized (trimmed/lower-cased) email caps total guesses against one account regardless of source IP — so a distributed, IP-rotating brute-force is throttled too. The account key is shared across the tRPC `auth.login` mutation, Google Reader `ClientLogin`, and the Wallabag password grant via `checkAccountRateLimit`/`checkAccountRouteRateLimit` in `src/server/rate-limit/`. The tRPC login consumes the account bucket _before_ the user lookup so attempts against non-existent accounts are throttled identically (no enumeration side channel). The OAuth 2.1 `/oauth/token` endpoint takes no password (only `authorization_code`/`refresh_token` grants), so it has no account key and uses the generous `oauth` bucket.
+
 ### Error Responses
 
 Errors use tRPC's standard error envelope, extended by the `errorFormatter` in
