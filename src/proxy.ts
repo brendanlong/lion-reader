@@ -18,7 +18,7 @@ import { NextResponse, type NextRequest } from "next/server";
  * These paths either handle their own auth or are public.
  */
 const PUBLIC_PATHS = [
-  "/", // Landing page
+  "/", // Landing page (exact match only — "/" is a prefix of everything, see isPublicPath)
   "/login",
   "/register",
   "/auth/oauth/callback",
@@ -30,26 +30,39 @@ const PUBLIC_PATHS = [
   "/authorize",
   "/token",
   "/oauth/", // OAuth authorization/token/register + consent handle their own auth
+  "/.well-known/", // OAuth/MCP discovery metadata (unauthenticated by spec)
   "/api/", // All API routes handle their own auth
   "/_next/", // Next.js static files
   "/extension/", // Extension pages handle their own auth
+  "/admin", // Admin uses a separate admin-session cookie, not the user "session" cookie
+  "/admin/", // Admin subpages (feeds, invites, overview, users)
+  "/demo", // Interactive demo (no auth required)
+  "/demo/", // Demo subpages (all, articles, highlights, subscription, tag)
+  "/save", // Bookmarklet save landing page (handles its own auth)
   "/favicon.ico",
   "/robots.txt",
   "/onnx/", // ONNX WASM files for TTS
   "/manifest.json", // PWA manifest
   "/sw.js", // Service worker
   "/privacy", // Privacy policy page
+  "/terms", // Terms of service page
   "/monitoring", // Sentry tunnel route
 ];
 
 /**
  * Check if the given pathname is a public path that doesn't require auth.
  */
-function isPublicPath(pathname: string): boolean {
+export function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some((publicPath) => {
     // Exact match for specific files/routes
     if (publicPath === pathname) {
       return true;
+    }
+    // The root landing page is exact-match only — "/" is a prefix of every path,
+    // so treating it as a directory prefix would make every route public and
+    // disable the auth gate entirely.
+    if (publicPath === "/") {
+      return false;
     }
     // Prefix match for directories (paths ending with /)
     if (publicPath.endsWith("/") && pathname.startsWith(publicPath)) {
