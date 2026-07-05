@@ -158,15 +158,15 @@ export const EntryListItem = memo(function EntryListItem({
             <button
               type="button"
               onClick={handleToggleRead}
-              className="group -m-[17px] flex items-center justify-center rounded-full p-[17px]"
+              className="group/toggle -m-[17px] flex items-center justify-center rounded-full p-[17px]"
               aria-label={read ? "Mark as unread" : "Mark as read"}
               title={read ? "Mark as unread" : "Mark as read"}
             >
               <span
                 className={`block h-2.5 w-2.5 rounded-full transition-colors ${
                   read
-                    ? "group-hover:border-accent group-hover:bg-accent-subtle border border-zinc-300 bg-transparent dark:border-zinc-600"
-                    : "bg-accent-muted group-hover:bg-accent dark:bg-accent dark:group-hover:bg-accent-hover"
+                    ? "group-hover/toggle:border-accent group-hover/toggle:bg-accent-subtle border border-zinc-300 bg-transparent dark:border-zinc-600"
+                    : "bg-accent-muted group-hover/toggle:bg-accent dark:bg-accent dark:group-hover/toggle:bg-accent-hover"
                 }`}
               />
             </button>
@@ -200,7 +200,9 @@ export const EntryListItem = memo(function EntryListItem({
               <button
                 type="button"
                 onClick={handleToggleStar}
-                className={`shrink-0 transition-colors ${
+                // 44px WCAG touch target: pad the 16px icon out to 44px and cancel
+                // the padding with an equal negative margin so layout is unchanged.
+                className={`-m-[14px] flex shrink-0 items-center justify-center rounded-full p-[14px] transition-colors ${
                   starred
                     ? "text-amber-500 hover:text-amber-600 dark:text-amber-400 dark:hover:text-amber-300"
                     : "text-zinc-300 opacity-0 group-hover:opacity-100 hover:text-amber-400 dark:text-zinc-600 dark:hover:text-amber-400"
