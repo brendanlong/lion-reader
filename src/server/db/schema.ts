@@ -918,6 +918,8 @@ export const entrySummaries = pgTable(
     summaryText: text("summary_text"), // null until generated
     modelId: text("model_id"), // e.g., "claude-sonnet-4-20250514"
     promptVersion: smallint("prompt_version").notNull().default(1), // for cache invalidation
+    maxWords: integer("max_words"), // user's max-words setting at generation time (null = unknown)
+    promptHash: text("prompt_hash"), // SHA256 of the effective prompt at generation time (null = unknown)
 
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     generatedAt: timestamp("generated_at", { withTimezone: true }), // when summary was generated

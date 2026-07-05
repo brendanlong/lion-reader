@@ -540,6 +540,13 @@
       "when": 1782951000000,
       "tag": "0077_users_last_active_at",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1782951100000,
+      "tag": "0078_entry_summaries_settings",
+      "breakpoints": true
     }
   ]
 }
