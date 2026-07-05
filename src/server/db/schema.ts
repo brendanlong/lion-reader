@@ -618,6 +618,8 @@ export const subscriptionFeeds = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     primaryKey({ columns: [table.subscriptionId, table.feedId] }),
@@ -980,6 +982,7 @@ export const blockedSenders = pgTable(
 
     senderEmail: text("sender_email").notNull(), // Normalized sender email (lowercased, plus codes stripped)
     blockedAt: timestamp("blocked_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 
     // Store unsubscribe info for potential retry
     listUnsubscribeMailto: text("list_unsubscribe_mailto"),
