@@ -38,6 +38,11 @@
     "test:integration": "pnpm db:migrate:test && pnpm db:schema:test && dotenv -o -e .env.test -- vitest run tests/integration",
     "test:e2e": "pnpm db:migrate:test && dotenv -o -e .env.test -- playwright test",
     "worker": "tsx scripts/worker.ts",
+    "services": "bash scripts/local-services.sh",
+    "db:migrate:local": "dotenv -o -e .env.test -e .env.local-services.test -- tsx scripts/migrate.ts",
+    "dev:local": "dotenv -o -e .env.local-services -- concurrently --kill-others --names worker,next \"pnpm dev:worker\" \"pnpm dev:next\"",
+    "test:integration:local": "pnpm db:migrate:local && dotenv -o -e .env.test -e .env.local-services.test -- vitest run tests/integration",
+    "test:e2e:local": "pnpm db:migrate:local && dotenv -o -e .env.test -e .env.local-services.test -- playwright test",
     "mcp:serve": "dotenv -- tsx src/server/mcp/bin.ts",
     "discord-bot": "dotenv -- tsx scripts/discord-bot.ts"
   },
