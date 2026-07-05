@@ -19,7 +19,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, fireEvent, within } from "@testing-library/react";
 import { Sidebar } from "@/components/layout/Sidebar";
-import { renderWithTrpc, type ProcedureHandlers } from "../../../utils/component-test-helpers";
+import {
+  renderWithTrpc,
+  stubMemoryLocalStorage,
+  type ProcedureHandlers,
+} from "../../../utils/component-test-helpers";
 
 vi.mock("sonner", () => ({
   toast: { error: vi.fn(), success: vi.fn() },
@@ -84,7 +88,7 @@ describe("Sidebar", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockPathname.mockReturnValue("/all");
-    localStorage.clear();
+    stubMemoryLocalStorage();
   });
 
   it("renders the nav counts and tag sections from queries", async () => {

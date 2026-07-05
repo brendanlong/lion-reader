@@ -18,7 +18,11 @@ import { screen } from "@testing-library/react";
 import { EntryContent } from "@/components/entries/EntryContent";
 import { AppearanceProvider } from "@/lib/appearance/AppearanceProvider";
 import { KeyboardShortcutsProvider } from "@/components/keyboard/KeyboardShortcutsProvider";
-import { renderWithTrpc, type ProcedureHandlers } from "../../../utils/component-test-helpers";
+import {
+  renderWithTrpc,
+  stubMemoryLocalStorage,
+  type ProcedureHandlers,
+} from "../../../utils/component-test-helpers";
 
 vi.mock("sonner", () => ({
   toast: { error: vi.fn(), success: vi.fn() },
@@ -97,7 +101,7 @@ function baseHandlers(overrides: ProcedureHandlers = {}): ProcedureHandlers {
 describe("EntryContent", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    localStorage.clear();
+    stubMemoryLocalStorage();
   });
 
   it("renders the entry title and content from entries.get", async () => {

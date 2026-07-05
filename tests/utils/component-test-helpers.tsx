@@ -23,8 +23,38 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TRPCClientError, type TRPCLink } from "@trpc/client";
 import { observable } from "@trpc/server/observable";
 import { render, type RenderResult } from "@testing-library/react";
+import { vi } from "vitest";
 import { trpc } from "@/lib/trpc/client";
 import type { AppRouter } from "@/server/trpc/root";
+
+/**
+ * Installs a fresh in-memory `localStorage` on the global via `vi.stubGlobal`.
+ *
+ * jsdom does not reliably expose a global `localStorage` across Node versions
+ * (it's absent under Node 26 in CI), and components under test read it directly
+ * (show-original preference, expanded tags, sidebar unread-only). Call this in
+ * `beforeEach` so every test gets a clean, always-defined store regardless of
+ * environment. Mirrors the mock in `useShowOriginalPreference.test.ts`.
+ */
+export function stubMemoryLocalStorage(): Storage {
+  const store = new Map<string, string>();
+  const mock: Storage = {
+    get length() {
+      return store.size;
+    },
+    clear: () => store.clear(),
+    getItem: (key) => (store.has(key) ? store.get(key)! : null),
+    key: (index) => Array.from(store.keys())[index] ?? null,
+    removeItem: (key) => {
+      store.delete(key);
+    },
+    setItem: (key, value) => {
+      store.set(key, String(value));
+    },
+  };
+  vi.stubGlobal("localStorage", mock);
+  return mock;
+}
 
 /**
  * A handler for a single tRPC procedure. Receives the procedure input and
