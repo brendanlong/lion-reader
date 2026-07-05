@@ -276,15 +276,24 @@ function UnifiedEntriesContentInner() {
     refetchOnWindowFocus: false,
   });
 
-  // Fetch subscription data for validation
+  // Fetch subscription data for validation. A genuinely missing subscription
+  // throws NOT_FOUND, which we render as a NotFoundCard below; any other error
+  // is transient and rethrown to the ErrorBoundary (retryable) instead of
+  // showing a misleading "not found" message.
   const subscriptionQuery = trpc.subscriptions.get.useQuery(
     { id: routeInfo.subscriptionId ?? "" },
-    { enabled: !!routeInfo.subscriptionId }
+    {
+      enabled: !!routeInfo.subscriptionId,
+      throwOnError: (error) => error.data?.code !== "NOT_FOUND",
+    }
   );
 
-  // Fetch tag data for validation and empty message customization
+  // Fetch tag data for validation and empty message customization. tags.list
+  // returns a list, so a missing tag is "loaded but absent" (handled below);
+  // real fetch errors surface to the ErrorBoundary.
   const tagsQuery = trpc.tags.list.useQuery(undefined, {
     enabled: !!routeInfo.tagId,
+    throwOnError: true,
   });
 
   // Update empty messages with actual tag name if available
@@ -373,8 +382,9 @@ function UnifiedEntriesContentInner() {
     return () => setOpenEntryId(previousEntryId);
   }, [previousEntryId, setOpenEntryId]);
 
-  // Show error if subscription query completed but subscription not found
-  if (routeInfo.subscriptionId && !subscriptionQuery.isLoading && !subscriptionQuery.data) {
+  // Show "not found" only for a genuine NOT_FOUND; transient errors are
+  // rethrown to the ErrorBoundary by throwOnError above.
+  if (routeInfo.subscriptionId && subscriptionQuery.error?.data?.code === "NOT_FOUND") {
     return (
       <NotFoundCard
         title="Subscription not found"
@@ -383,11 +393,12 @@ function UnifiedEntriesContentInner() {
     );
   }
 
-  // Show error if tag query completed but tag not found
+  // Show error if the tag list loaded but doesn't contain this tag. Fetch
+  // errors are handled by throwOnError above, not this branch.
   if (
     routeInfo.tagId &&
-    !tagsQuery.isLoading &&
-    !tagsQuery.data?.items.find((t) => t.id === routeInfo.tagId)
+    tagsQuery.data &&
+    !tagsQuery.data.items.find((t) => t.id === routeInfo.tagId)
   ) {
     return (
       <NotFoundCard title="Tag not found" message="The tag you're looking for doesn't exist." />
