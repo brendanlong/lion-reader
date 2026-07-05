@@ -53,7 +53,8 @@ CREATE TABLE public.blocked_senders (
     sender_email text NOT NULL,
     blocked_at timestamp with time zone DEFAULT now() NOT NULL,
     list_unsubscribe_mailto text,
-    unsubscribe_sent_at timestamp with time zone
+    unsubscribe_sent_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 CREATE TABLE public.entries (
@@ -295,7 +296,8 @@ CREATE TABLE public.sessions (
 CREATE TABLE public.subscription_feeds (
     subscription_id uuid NOT NULL,
     feed_id uuid NOT NULL,
-    user_id uuid NOT NULL
+    user_id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 CREATE TABLE public.subscription_tags (
