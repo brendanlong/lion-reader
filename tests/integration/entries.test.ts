@@ -683,6 +683,34 @@ describe("Entries", () => {
 
       expect(result.unread).toBe(2);
     });
+
+    it("does not double-count entries reachable through overlapping subscriptions", async () => {
+      // visible_entries emits one row per matching subscription_feeds row, so an
+      // entry reachable through two subscriptions to the same feed (redirect/
+      // merge history) appears twice. The unread count must dedupe by entry id
+      // so the sidebar badge stays consistent with the counts service.
+      const userId = await createTestUser();
+      const feedA = await createTestFeed("https://a.com/rss");
+      const feedB = await createTestFeed("https://b.com/rss");
+      const subId1 = await createTestSubscription(userId, feedA);
+      await createTestSubscription(userId, feedB);
+      // Extra subscription_feeds row: sub1 also covers feedB (merge history).
+      await db
+        .insert(subscriptionFeeds)
+        .values({ subscriptionId: subId1, feedId: feedB, userId })
+        .onConflictDoNothing();
+
+      const entryA = await createTestEntry(feedA, { title: "A" });
+      const entryB = await createTestEntry(feedB, { title: "B" });
+      await createUserEntry(userId, entryA, { read: false });
+      await createUserEntry(userId, entryB, { read: false }); // reachable via sub1 AND sub2
+
+      const caller = createCaller(createAuthContext(userId));
+      const result = await caller.entries.count({});
+
+      // Two distinct unread entries, not three.
+      expect(result.unread).toBe(2);
+    });
   });
 
   describe("markAllEntriesRead service", () => {
