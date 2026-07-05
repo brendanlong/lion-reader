@@ -173,11 +173,30 @@ export function getClientIdentifier(userId: string | null, headers: Headers): st
     return `user:${userId}`;
   }
 
-  // Fall back to IP address
+  // Fall back to IP address.
+  //
+  // Prefer Fly's `Fly-Client-IP` header: Fly's proxy sets it to the real client
+  // IP for HTTP services and clients cannot override it (Fly strips/replaces it).
+  const flyClientIp = headers.get("fly-client-ip");
+  if (flyClientIp) {
+    return `ip:${flyClientIp}`;
+  }
+
+  // Otherwise use the RIGHTMOST `x-forwarded-for` hop. Fly's proxy (like most load
+  // balancers) *appends* the real client IP rather than replacing the header, so a
+  // client that sends `X-Forwarded-For: 1.2.3.4` arrives as `1.2.3.4, <real-ip>`.
+  // Keying on the first (leftmost) entry would let an attacker rotate a spoofed
+  // value to get a fresh token bucket per fake IP and bypass every per-IP limit;
+  // the last entry is the one our trusted proxy added.
   const forwardedFor = headers.get("x-forwarded-for");
   if (forwardedFor) {
-    // Get the first IP in the chain (client IP)
-    return `ip:${forwardedFor.split(",")[0].trim()}`;
+    const hops = forwardedFor
+      .split(",")
+      .map((hop) => hop.trim())
+      .filter(Boolean);
+    if (hops.length > 0) {
+      return `ip:${hops[hops.length - 1]}`;
+    }
   }
 
   const realIp = headers.get("x-real-ip");
