@@ -15,6 +15,7 @@ import {
   type RateLimitConfig,
   type ConsumeResult,
 } from "../../src/server/rate-limit/token-bucket";
+import { getClientIdentifier } from "../../src/server/rate-limit";
 
 /**
  * Helper to create a bucket state with defaults.
@@ -308,6 +309,30 @@ describe("RATE_LIMIT_CONFIGS.oauth", () => {
     expect(RATE_LIMIT_CONFIGS.oauth.refillRate).toBeGreaterThan(
       RATE_LIMIT_CONFIGS.expensive.refillRate
     );
+  });
+});
+
+describe("getClientIdentifier", () => {
+  // The trusted IP precedence (Fly-Client-IP → rightmost x-forwarded-for hop →
+  // x-real-ip) is covered in client-ip.test.ts; these cover the identifier
+  // framing getClientIdentifier layers on top.
+  it("prefers the authenticated user ID over any IP header", () => {
+    const headers = new Headers({
+      "fly-client-ip": "9.9.9.9",
+      "x-forwarded-for": "1.2.3.4",
+      "x-real-ip": "5.6.7.8",
+    });
+    expect(getClientIdentifier("user-123", headers)).toBe("user:user-123");
+  });
+
+  it("keys unauthenticated requests on the trusted client IP, not the spoofable hop", () => {
+    // Rotating the spoofed leftmost hop must not yield a fresh rate-limit key.
+    const headers = new Headers({ "x-forwarded-for": "1.2.3.4, 203.0.113.7" });
+    expect(getClientIdentifier(null, headers)).toBe("ip:203.0.113.7");
+  });
+
+  it("returns ip:unknown when no trusted IP header is present", () => {
+    expect(getClientIdentifier(null, new Headers())).toBe("ip:unknown");
   });
 });
 

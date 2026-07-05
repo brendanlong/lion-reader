@@ -10,6 +10,7 @@
  */
 
 import { getRedisClient } from "@/server/redis";
+import { getClientIp } from "@/server/http/client-ip";
 import {
   type RateLimitType,
   type ConsumeResult,
@@ -173,19 +174,17 @@ export function getClientIdentifier(userId: string | null, headers: Headers): st
     return `user:${userId}`;
   }
 
-  // Fall back to IP address
-  const forwardedFor = headers.get("x-forwarded-for");
-  if (forwardedFor) {
-    // Get the first IP in the chain (client IP)
-    return `ip:${forwardedFor.split(",")[0].trim()}`;
+  // Fall back to the client IP, derived from the trusted precedence shared with
+  // session logging (Fly-Client-IP → rightmost x-forwarded-for hop → x-real-ip).
+  // Keying on the spoofable leftmost x-forwarded-for entry would let a client
+  // rotate a fake value to get a fresh token bucket per fake IP and bypass every
+  // per-IP limit; see getClientIp.
+  const clientIp = getClientIp(headers);
+  if (clientIp) {
+    return `ip:${clientIp}`;
   }
 
-  const realIp = headers.get("x-real-ip");
-  if (realIp) {
-    return `ip:${realIp}`;
-  }
-
-  // Fallback for local development
+  // Fallback for local development (no trusted proxy header present)
   return "ip:unknown";
 }
 
