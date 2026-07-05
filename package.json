@@ -67,7 +67,7 @@
     "concurrently": "^10.0.3",
     "discord.js": "^14.26.2",
     "drizzle-orm": "^0.45.2",
-    "fast-xml-parser": "^5.8.0",
+    "fast-xml-parser": "^5.9.3",
     "google-auth-library": "^10.6.2",
     "groq-sdk": "^1.2.1",
     "html-entities": "^2.6.0",
