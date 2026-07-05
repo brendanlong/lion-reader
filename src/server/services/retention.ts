@@ -7,12 +7,14 @@
  * so deletion only reclaims space and index bloat, never changes behavior.
  */
 
-import { and, eq, gt, isNull, lt, or } from "drizzle-orm";
+import { and, eq, gt, isNull, lt, notExists, or, sql } from "drizzle-orm";
 import type { Database } from "../db";
 import {
   jobs,
   oauthAccessTokens,
   oauthAuthorizationCodes,
+  oauthClients,
+  oauthConsentGrants,
   oauthRefreshTokens,
   sessions,
 } from "../db/schema";
@@ -40,6 +42,17 @@ const REVOKED_RETENTION_MS = 30 * DAY_MS;
 const PARKED_JOB_THRESHOLD_MS = 180 * DAY_MS;
 
 /**
+ * How long an orphaned Dynamic Client Registration (RFC 7591) client is retained
+ * before deletion. `/oauth/register` is open (no auth) and MCP clients such as
+ * claude.ai re-register on every connect, so most rows never complete an
+ * authorization; without cleanup they accumulate unbounded. A registration older
+ * than this with no live tokens and no active consent grant is dead — the client
+ * would have to re-register to be usable — so it's safe to remove. Kept generous
+ * so a client mid-onboarding (registered, not yet authorized) isn't reaped.
+ */
+const ORPHANED_CLIENT_RETENTION_MS = 30 * DAY_MS;
+
+/**
  * Row counts deleted by a cleanup run, keyed for job metadata/logging.
  */
 export interface RetentionCleanupResult {
@@ -47,17 +60,21 @@ export interface RetentionCleanupResult {
   oauthAuthorizationCodes: number;
   oauthAccessTokens: number;
   oauthRefreshTokens: number;
+  oauthClients: number;
   parkedJobs: number;
 }
 
 /**
- * Deletes expired/revoked credentials and parked one-time jobs.
+ * Deletes expired/revoked credentials, orphaned DCR clients, and parked
+ * one-time jobs.
  */
 export async function runRetentionCleanup(db: Database): Promise<RetentionCleanupResult> {
   const now = Date.now();
+  const nowDate = new Date(now);
   const expiryCutoff = new Date(now - EXPIRY_GRACE_MS);
   const revokedCutoff = new Date(now - REVOKED_RETENTION_MS);
   const parkedCutoff = new Date(now + PARKED_JOB_THRESHOLD_MS);
+  const orphanedClientCutoff = new Date(now - ORPHANED_CLIENT_RETENTION_MS);
 
   const expiredSessions = await db
     .delete(sessions)
@@ -100,11 +117,61 @@ export async function runRetentionCleanup(db: Database): Promise<RetentionCleanu
       )
     );
 
+  // Orphaned Dynamic Client Registration clients (issue #975): every row in
+  // oauth_clients comes from open /oauth/register (CIMD URL clients are resolved
+  // on the fly and never stored). Delete old registrations that never became
+  // usable — no live (non-revoked, unexpired) access or refresh token and no
+  // active consent grant. clientId is a plain text column (no FK), so an active
+  // client is protected by these NOT EXISTS checks, not by referential integrity;
+  // the liveness predicates match resolveClient/token validation exactly so we
+  // never remove a client a future request could still authenticate against.
+  const orphanedClients = await db.delete(oauthClients).where(
+    and(
+      lt(oauthClients.createdAt, orphanedClientCutoff),
+      notExists(
+        db
+          .select({ one: sql`1` })
+          .from(oauthAccessTokens)
+          .where(
+            and(
+              eq(oauthAccessTokens.clientId, oauthClients.clientId),
+              isNull(oauthAccessTokens.revokedAt),
+              gt(oauthAccessTokens.expiresAt, nowDate)
+            )
+          )
+      ),
+      notExists(
+        db
+          .select({ one: sql`1` })
+          .from(oauthRefreshTokens)
+          .where(
+            and(
+              eq(oauthRefreshTokens.clientId, oauthClients.clientId),
+              isNull(oauthRefreshTokens.revokedAt),
+              gt(oauthRefreshTokens.expiresAt, nowDate)
+            )
+          )
+      ),
+      notExists(
+        db
+          .select({ one: sql`1` })
+          .from(oauthConsentGrants)
+          .where(
+            and(
+              eq(oauthConsentGrants.clientId, oauthClients.clientId),
+              isNull(oauthConsentGrants.revokedAt)
+            )
+          )
+      )
+    )
+  );
+
   return {
     sessions: expiredSessions.rowCount ?? 0,
     oauthAuthorizationCodes: expiredAuthCodes.rowCount ?? 0,
     oauthAccessTokens: expiredAccessTokens.rowCount ?? 0,
     oauthRefreshTokens: expiredRefreshTokens.rowCount ?? 0,
+    oauthClients: orphanedClients.rowCount ?? 0,
     parkedJobs: parkedJobs.rowCount ?? 0,
   };
 }
