@@ -17,6 +17,7 @@ import {
   LESSWRONG_SHORTFORM_FRONTPAGE_FEED_URL,
 } from "@/server/feed/lesswrong";
 import { cleanLessWrongContent } from "@/server/feed/content-cleaner";
+import { HttpFetchError } from "@/server/http/fetch";
 import { logger } from "@/lib/logger";
 
 /**
@@ -143,6 +144,11 @@ export const lessWrongPlugin: UrlPlugin = {
             canonicalUrl: content.url || url.href,
           };
         } catch (error) {
+          // Let rate limit errors propagate - falling back to a normal fetch
+          // would hit the same rate limit on the same site
+          if (error instanceof HttpFetchError && error.isRateLimited()) {
+            throw error;
+          }
           logger.warn("Failed to fetch LessWrong saved article content", {
             url: url.href,
             error: error instanceof Error ? error.message : String(error),

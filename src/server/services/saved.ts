@@ -527,6 +527,16 @@ async function acquireArticleContent(
       if (isContentTooLargeError(error)) {
         throw error;
       }
+      // Rate limit errors should not fall back to a normal fetch — the same
+      // site would rate limit us again.
+      if (error instanceof HttpFetchError && error.isRateLimited()) {
+        logger.warn("Plugin fetch rate limited", {
+          url: params.url,
+          plugin: plugin.name,
+          status: error.status,
+        });
+        throw errors.upstreamRateLimited(params.url);
+      }
       logger.warn("Plugin fetch failed, falling back to normal fetch", {
         url: params.url,
         plugin: plugin.name,
@@ -599,8 +609,13 @@ async function acquireArticleContent(
     if (error instanceof ContentTooLargeError) {
       throw errors.contentTooLarge("Article", maxSize);
     }
-    if (error instanceof HttpFetchError && error.isBlocked()) {
-      throw errors.siteBlocked(fetchUrl, error.status);
+    if (error instanceof HttpFetchError) {
+      if (error.isRateLimited()) {
+        throw errors.upstreamRateLimited(fetchUrl);
+      }
+      if (error.isBlocked()) {
+        throw errors.siteBlocked(fetchUrl, error.status);
+      }
     }
     throw errors.savedArticleFetchError(
       fetchUrl,

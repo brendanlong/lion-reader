@@ -325,6 +325,9 @@ export async function fetchAndStoreFullContent(
  */
 function getErrorMessage(error: unknown): string {
   if (error instanceof HttpFetchError) {
+    if (error.isRateLimited()) {
+      return "Site is temporarily rate limiting requests";
+    }
     if (error.isBlocked()) {
       return "Site blocked the request";
     }
