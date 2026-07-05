@@ -6,8 +6,11 @@
  */
 
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import * as argon2 from "argon2";
 import { eq, and, or, gt, exists, isNotNull, sql } from "drizzle-orm";
+
+import { checkAccountRateLimit } from "@/server/rate-limit";
 
 import {
   createTRPCRouter,
@@ -268,6 +271,19 @@ export const authRouter = createTRPCRouter({
     )
     .mutation(async ({ ctx, input }) => {
       const { email, password } = input;
+
+      // Per-account limit (in addition to the per-IP `expensivePublicProcedure`
+      // middleware): throttles distributed, IP-rotating brute-force against a
+      // single account. Shared with the Google Reader and Wallabag password
+      // paths. Checked before the user lookup so attempts against non-existent
+      // accounts are throttled identically (no enumeration side channel).
+      const accountLimit = await checkAccountRateLimit(email);
+      if (!accountLimit.allowed) {
+        throw new TRPCError({
+          code: "TOO_MANY_REQUESTS",
+          message: `Rate limit exceeded. Please retry after ${accountLimit.retryAfterSeconds} seconds.`,
+        });
+      }
 
       // Find user by email
       const user = await ctx.db.select().from(users).where(eq(users.email, email)).limit(1);

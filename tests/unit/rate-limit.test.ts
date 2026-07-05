@@ -15,7 +15,7 @@ import {
   type RateLimitConfig,
   type ConsumeResult,
 } from "../../src/server/rate-limit/token-bucket";
-import { getClientIdentifier } from "../../src/server/rate-limit";
+import { getClientIdentifier, getAccountRateLimitIdentifier } from "../../src/server/rate-limit";
 
 /**
  * Helper to create a bucket state with defaults.
@@ -333,6 +333,19 @@ describe("getClientIdentifier", () => {
 
   it("returns ip:unknown when no trusted IP header is present", () => {
     expect(getClientIdentifier(null, new Headers())).toBe("ip:unknown");
+  });
+});
+
+describe("getAccountRateLimitIdentifier", () => {
+  it("namespaces the key under email: so it can't collide with ip:/user: keys", () => {
+    expect(getAccountRateLimitIdentifier("user@example.com")).toBe("email:user@example.com");
+  });
+
+  it("lower-cases and trims so case/whitespace variants share one bucket", () => {
+    // Otherwise an attacker could rotate casing to get a fresh bucket per guess.
+    const canonical = getAccountRateLimitIdentifier("user@example.com");
+    expect(getAccountRateLimitIdentifier("User@Example.COM")).toBe(canonical);
+    expect(getAccountRateLimitIdentifier("  user@example.com  ")).toBe(canonical);
   });
 });
 

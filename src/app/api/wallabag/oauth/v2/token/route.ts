@@ -24,11 +24,12 @@
 import { passwordGrant, refreshTokenGrant } from "@/server/wallabag/auth";
 import { parseBody } from "@/server/wallabag/parse";
 import { jsonResponse, errorResponse } from "@/server/wallabag/parse";
-import { checkRouteRateLimit } from "@/server/rate-limit";
+import { checkRouteRateLimit, checkAccountRouteRateLimit } from "@/server/rate-limit";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request): Promise<Response> {
+  // Per-IP limit first (cheap, rejects floods before parsing).
   const rateLimitResponse = await checkRouteRateLimit(request, "expensive", { json: true });
   if (rateLimitResponse) return rateLimitResponse;
 
@@ -44,6 +45,11 @@ export async function POST(request: Request): Promise<Response> {
     if (!username || !password) {
       return errorResponse("invalid_request", "username and password are required", 400);
     }
+
+    // Per-account limit: throttles distributed, IP-rotating brute-force against
+    // a single account, shared with the tRPC login and Google Reader paths.
+    const accountRateLimitResponse = await checkAccountRouteRateLimit(username, { json: true });
+    if (accountRateLimitResponse) return accountRateLimitResponse;
 
     const result = await passwordGrant(username, password, clientId);
     if (!result) {

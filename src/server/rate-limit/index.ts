@@ -161,6 +161,18 @@ export async function checkRateLimit(
 }
 
 /**
+ * Derives the rate-limit identifier for a per-account (email/username) password
+ * attempt. The email is trimmed and lower-cased so that case or whitespace
+ * variations can't be used to spread attempts across separate buckets.
+ *
+ * @param email - The email/username supplied in the login attempt
+ * @returns Identifier string (namespaced so it can't collide with ip:/user: keys)
+ */
+export function getAccountRateLimitIdentifier(email: string): string {
+  return `email:${email.trim().toLowerCase()}`;
+}
+
+/**
  * Extracts a client identifier from request headers.
  * Uses user ID if authenticated, otherwise falls back to IP address.
  *
@@ -189,6 +201,28 @@ export function getClientIdentifier(userId: string | null, headers: Headers): st
 }
 
 /**
+ * Builds a 429 response for a rejected rate-limit result.
+ */
+function buildRateLimitResponse(
+  result: ConsumeResult,
+  type: RateLimitType,
+  options: { json?: boolean }
+): Response {
+  const config = RATE_LIMIT_CONFIGS[type];
+  const rateLimitHeaders = getRateLimitHeaders(result, config);
+  const body = options.json
+    ? JSON.stringify({ error: "rate_limit_exceeded", error_description: "Rate limit exceeded" })
+    : "Rate limit exceeded";
+  return new Response(body, {
+    status: 429,
+    headers: {
+      ...rateLimitHeaders,
+      "Content-Type": options.json ? "application/json" : "text/plain",
+    },
+  });
+}
+
+/**
  * Checks rate limit for a route handler request and returns a 429 Response if exceeded.
  * Returns null if the request is allowed.
  *
@@ -203,22 +237,44 @@ export async function checkRouteRateLimit(
   options: { json?: boolean } = {}
 ): Promise<Response | null> {
   const identifier = getClientIdentifier(null, request.headers);
-  const config = RATE_LIMIT_CONFIGS[type];
   const result = await checkRateLimit(identifier, type);
 
   if (!result.allowed) {
-    const rateLimitHeaders = getRateLimitHeaders(result, config);
-    const body = options.json
-      ? JSON.stringify({ error: "rate_limit_exceeded", error_description: "Rate limit exceeded" })
-      : "Rate limit exceeded";
-    return new Response(body, {
-      status: 429,
-      headers: {
-        ...rateLimitHeaders,
-        "Content-Type": options.json ? "application/json" : "text/plain",
-      },
-    });
+    return buildRateLimitResponse(result, type, options);
   }
 
+  return null;
+}
+
+/**
+ * Checks the per-account rate limit for a password attempt, keyed by the
+ * normalized email/username using the strict "expensive" bucket.
+ *
+ * This complements the per-IP `checkRouteRateLimit` (and the
+ * `expensivePublicProcedure` middleware) that guard password-accepting
+ * endpoints: a per-IP limit alone does not stop a distributed, IP-rotating
+ * brute-force against a single account. Sharing this account key across every
+ * password path (tRPC login, Google Reader ClientLogin, Wallabag password
+ * grant) bounds total guesses per account regardless of source IP.
+ *
+ * Returns a ConsumeResult; callers turn a disallowed result into their
+ * transport-appropriate error (429 Response / TRPCError).
+ */
+export async function checkAccountRateLimit(email: string): Promise<ConsumeResult> {
+  return checkRateLimit(getAccountRateLimitIdentifier(email), "expensive");
+}
+
+/**
+ * Route-handler variant of {@link checkAccountRateLimit}: returns a 429 Response
+ * if the per-account limit is exceeded, or null if allowed.
+ */
+export async function checkAccountRouteRateLimit(
+  email: string,
+  options: { json?: boolean } = {}
+): Promise<Response | null> {
+  const result = await checkAccountRateLimit(email);
+  if (!result.allowed) {
+    return buildRateLimitResponse(result, "expensive", options);
+  }
   return null;
 }
