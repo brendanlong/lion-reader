@@ -259,12 +259,14 @@ export async function updateTag(
     throw errors.tagNotFound();
   }
 
-  // If name is being updated, check for duplicates
+  // If name is being updated, check for duplicates among *live* tags only.
+  // Soft-deleted (tombstoned) tags keep their name for sync tracking but must
+  // not block reusing it, matching the partial unique index (issue #952).
   if (params.name !== undefined && params.name !== existingTag[0].name) {
     const duplicateName = await db
       .select()
       .from(tags)
-      .where(and(eq(tags.userId, userId), eq(tags.name, params.name)))
+      .where(and(eq(tags.userId, userId), eq(tags.name, params.name), isNull(tags.deletedAt)))
       .limit(1);
 
     if (duplicateName.length > 0) {

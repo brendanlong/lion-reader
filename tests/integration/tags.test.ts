@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
   users,
@@ -546,6 +546,43 @@ describe("Tags API", () => {
       const result = await caller2.tags.create({ name: "Tech" });
 
       expect(result.tag.name).toBe("Tech");
+    });
+
+    it("allows recreating a tag whose name was soft-deleted (#952)", async () => {
+      const userId = await createTestUser();
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const first = await caller.tags.create({ name: "News" });
+      await caller.tags.delete({ id: first.tag.id });
+
+      // Re-creating "News" must succeed: the tombstoned row uses a partial
+      // unique index (deleted_at IS NULL) so it no longer blocks the name.
+      const second = await caller.tags.create({ name: "News" });
+      expect(second.tag.name).toBe("News");
+      expect(second.tag.id).not.toBe(first.tag.id);
+
+      // The live tag is the new one; the tombstone stays soft-deleted.
+      const live = await db
+        .select()
+        .from(tags)
+        .where(and(eq(tags.userId, userId), isNull(tags.deletedAt)));
+      expect(live).toHaveLength(1);
+      expect(live[0].id).toBe(second.tag.id);
+    });
+
+    it("allows renaming a tag onto a soft-deleted name (#952)", async () => {
+      const userId = await createTestUser();
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const deleted = await caller.tags.create({ name: "Archive" });
+      await caller.tags.delete({ id: deleted.tag.id });
+      const keep = await caller.tags.create({ name: "Inbox" });
+
+      // Renaming "Inbox" → "Archive" must not collide with the tombstone.
+      const renamed = await caller.tags.update({ id: keep.tag.id, name: "Archive" });
+      expect(renamed.tag.name).toBe("Archive");
     });
 
     it("rejects empty tag name", async () => {
