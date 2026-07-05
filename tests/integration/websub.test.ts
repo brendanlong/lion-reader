@@ -188,12 +188,16 @@ describe("WebSub Integration", () => {
       expect(subscription.lastChallengeAt).toBeInstanceOf(Date);
     });
 
-    it("handles verification without lease_seconds", async () => {
+    it("falls back to a default lease when the hub omits lease_seconds", async () => {
+      // A hub that verifies without hub.lease_seconds must still get a concrete
+      // expiresAt, otherwise the subscription never matches the renewal filter
+      // and stays "active" in our DB forever even after the hub drops it.
       const feed = await createTestFeed();
       const topicUrl = "https://example.com/feed-no-lease.xml";
       await createTestSubscription(feed.id, { topicUrl });
 
       const challenge = "test-challenge-no-lease";
+      const before = Date.now();
       const result = await handleVerificationChallenge(feed.id, {
         mode: "subscribe",
         topic: topicUrl,
@@ -207,8 +211,12 @@ describe("WebSub Integration", () => {
       const [subscription] = await db.select().from(websubSubscriptions).limit(1);
 
       expect(subscription.state).toBe("active");
-      expect(subscription.leaseSeconds).toBeNull();
-      expect(subscription.expiresAt).toBeNull();
+      // Default lease is 24 hours; expiresAt is stamped so renewal can keep it alive.
+      expect(subscription.leaseSeconds).toBe(24 * 60 * 60);
+      expect(subscription.expiresAt).toBeInstanceOf(Date);
+      const expiresMs = subscription.expiresAt!.getTime();
+      expect(expiresMs).toBeGreaterThanOrEqual(before + 24 * 60 * 60 * 1000);
+      expect(expiresMs).toBeLessThanOrEqual(Date.now() + 24 * 60 * 60 * 1000 + 5000);
     });
 
     it("confirms unsubscribe when we requested it", async () => {

@@ -24,6 +24,19 @@ import { logger } from "@/lib/logger";
 const HUB_REQUEST_TIMEOUT_MS = 10000;
 
 /**
+ * Default lease length (seconds) assumed when a hub verifies a subscription
+ * without sending `hub.lease_seconds`.
+ *
+ * The spec says hubs SHOULD send it, but some don't. Storing `expiresAt = null`
+ * would leave the subscription outside the `expiresAt < threshold` renewal
+ * filter forever, so we'd keep it "active" in our DB even after the hub silently
+ * dropped it. Stamping a concrete expiry means the renewal job re-verifies it on
+ * schedule and, if the hub has dropped us, marks it failed so polling takes over.
+ * One day matches our backup-poll cadence.
+ */
+const DEFAULT_LEASE_SECONDS = 24 * 60 * 60;
+
+/**
  * Private/local hostnames and IP ranges that can't receive WebSub callbacks.
  */
 const PRIVATE_HOSTNAMES = ["localhost", "127.0.0.1", "0.0.0.0", "::1"];
@@ -430,9 +443,12 @@ export async function handleVerificationChallenge(
     return handleUnsubscribeVerification(feedId, subscription, challenge);
   }
 
-  // Parse lease seconds (if provided)
-  const lease = leaseSeconds ? parseInt(leaseSeconds, 10) : null;
-  const expiresAt = lease ? new Date(Date.now() + lease * 1000) : null;
+  // Parse lease seconds. Hubs SHOULD send hub.lease_seconds but some don't; fall
+  // back to a default so expiresAt is always set and the subscription stays in
+  // the renewal filter's window (see DEFAULT_LEASE_SECONDS).
+  const parsedLease = leaseSeconds ? parseInt(leaseSeconds, 10) : NaN;
+  const lease = !isNaN(parsedLease) && parsedLease > 0 ? parsedLease : DEFAULT_LEASE_SECONDS;
+  const expiresAt = new Date(Date.now() + lease * 1000);
 
   // Update subscription to active
   await db

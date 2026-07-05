@@ -464,6 +464,59 @@ describe("calculateNextFetch", () => {
     });
   });
 
+  describe("with Retry-After", () => {
+    it("honors Retry-After as a floor when longer than the backoff", () => {
+      // 1 failure would normally back off 30 minutes; Retry-After asks for 2 hours.
+      const result = calculateNextFetch({
+        consecutiveFailures: 1,
+        retryAfterSeconds: 2 * 60 * 60,
+        now: fixedNow,
+        randomSource: noJitter,
+      });
+
+      expect(result.intervalSeconds).toBe(2 * 60 * 60);
+      expect(result.reason).toBe("failure_backoff");
+    });
+
+    it("keeps the exponential backoff when it exceeds Retry-After", () => {
+      // 3 failures back off 2 hours; a shorter Retry-After must not shrink it.
+      const result = calculateNextFetch({
+        consecutiveFailures: 3,
+        retryAfterSeconds: 60,
+        now: fixedNow,
+        randomSource: noJitter,
+      });
+
+      expect(result.intervalSeconds).toBe(2 * 60 * 60);
+      expect(result.reason).toBe("failure_backoff");
+    });
+
+    it("caps a very large Retry-After at the maximum interval", () => {
+      const result = calculateNextFetch({
+        consecutiveFailures: 1,
+        retryAfterSeconds: 30 * 24 * 60 * 60, // 30 days
+        now: fixedNow,
+        randomSource: noJitter,
+      });
+
+      expect(result.intervalSeconds).toBe(MAX_FETCH_INTERVAL_SECONDS);
+      expect(result.reason).toBe("failure_backoff");
+    });
+
+    it("ignores Retry-After on success (no failure to back off from)", () => {
+      const result = calculateNextFetch({
+        cacheControl: createCacheControl({ maxAge: 7200 }),
+        consecutiveFailures: 0,
+        retryAfterSeconds: 30 * 24 * 60 * 60,
+        now: fixedNow,
+        randomSource: noJitter,
+      });
+
+      expect(result.intervalSeconds).toBe(7200);
+      expect(result.reason).toBe("cache_control");
+    });
+  });
+
   describe("uses current time by default", () => {
     it("uses current time when now is not provided", () => {
       const before = new Date();

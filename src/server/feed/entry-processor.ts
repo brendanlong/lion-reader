@@ -74,20 +74,55 @@ export interface ProcessEntriesOptions {
 
 /**
  * Generates a SHA-256 content hash for an entry.
- * The hash is based on title and content to detect changes.
+ *
+ * The hash covers title, content, author, and URL — the fields that
+ * `updateEntryContent` actually rewrites when the hash changes. Previously only
+ * title+content were hashed, so a feed correcting an entry's URL or author
+ * without touching its text was silently ignored (see `processEntry`, which only
+ * updates on a hash change).
+ *
+ * `pubDate` is deliberately NOT hashed: `updateEntryContent` never rewrites
+ * `published_at` because it is denormalized into `user_entries.published_or_fetched_at`
+ * (the frozen timeline sort key, see DESIGN.md), so propagating a date change on
+ * update would require a cross-table update over every subscriber row. Hashing
+ * `pubDate` would therefore only trigger updates that can't take effect. Future
+ * dates are instead clamped once at insert time (see `clampPublishedAt`).
  *
  * @param entry - The parsed entry from the feed
  * @returns Hexadecimal SHA-256 hash string
  */
 export function generateContentHash(entry: ParsedEntry): string {
-  // Combine title and content for hashing
-  // Use empty strings for null/undefined values to ensure consistent hashing
+  // Use empty strings for null/undefined values to ensure consistent hashing.
+  // Use deriveEntryUrl so the hash tracks the URL we actually store (link, or a
+  // URL-shaped guid), matching updateEntryContent's write.
   const title = entry.title ?? "";
   const content = entry.content ?? entry.summary ?? "";
+  const author = entry.author ?? "";
+  const url = deriveEntryUrl(entry) ?? "";
 
-  const hashInput = `${title}\n${content}`;
+  const hashInput = [title, content, author, url].join("\n");
 
   return createHash("sha256").update(hashInput, "utf8").digest("hex");
+}
+
+/**
+ * Clamps an entry's publication date so it never sits in the future.
+ *
+ * Some feeds publish bogus future dates. Because the timeline sorts on
+ * `COALESCE(published_at, fetched_at)`, a future date would pin the entry to the
+ * top of the timeline indefinitely. We clamp anything after `fetchedAt` down to
+ * `fetchedAt` (the moment we first saw it), which is the most honest lower bound
+ * we have. Past dates and a missing date are left untouched.
+ *
+ * @param pubDate - The parsed publication date (may be undefined)
+ * @param fetchedAt - The time the entry was fetched
+ * @returns The clamped date, or null when no publication date was provided
+ */
+export function clampPublishedAt(pubDate: Date | undefined, fetchedAt: Date): Date | null {
+  if (!pubDate) {
+    return null;
+  }
+  return pubDate.getTime() > fetchedAt.getTime() ? fetchedAt : pubDate;
 }
 
 /**
@@ -194,7 +229,7 @@ export async function createEntry(
     contentOriginal: cleaningResult.contentOriginal,
     contentCleaned: cleaningResult.contentCleaned,
     summary: cleaningResult.summary,
-    publishedAt: parsedEntry.pubDate ?? null,
+    publishedAt: clampPublishedAt(parsedEntry.pubDate, fetchedAt),
     fetchedAt,
     lastSeenAt: isFetchedType ? fetchedAt : null,
     contentHash,
@@ -303,7 +338,11 @@ export async function processEntry(
     // subscribers' user_entries rows already exist for a previously-seen entry).
     // Fire and forget - we don't want publishing failures to affect entry processing
     publishEntryUpdatedFromEntry(feedId, entry).catch((err) => {
-      console.error("Failed to publish entry_updated event:", err);
+      logger.error("Failed to publish entry_updated event", {
+        feedId,
+        entryId: entry.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
     });
 
     return {
@@ -406,7 +445,11 @@ async function processEntryWithCache(
     // subscribers' user_entries rows already exist for a previously-seen entry).
     // Fire and forget - we don't want publishing failures to affect entry processing
     publishEntryUpdatedFromEntry(feedId, entry).catch((err) => {
-      console.error("Failed to publish entry_updated event:", err);
+      logger.error("Failed to publish entry_updated event", {
+        feedId,
+        entryId: entry.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
     });
 
     return {
@@ -591,7 +634,10 @@ export async function processEntries(
     } catch (error) {
       // Log error but continue processing other entries
       // Entry without valid GUID will be skipped
-      console.error("Failed to process entry:", error);
+      logger.error("Failed to process entry", {
+        feedId,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -647,7 +693,11 @@ export async function processEntries(
           feedType,
           toNewEntryListData(result.newEntryData, feedTitle ?? null)
         ).catch((err) => {
-          console.error("Failed to publish new_entry event:", err);
+          logger.error("Failed to publish new_entry event", {
+            feedId,
+            entryId: result.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
         });
       }
     }

@@ -121,6 +121,13 @@ export interface CalculateNextFetchOptions {
   /** Number of consecutive fetch failures */
   consecutiveFailures?: number;
   /**
+   * Server-requested retry delay in seconds, parsed from a `Retry-After` header
+   * (429 Too Many Requests or 5xx). When present alongside a failure, the next
+   * fetch waits at least this long: `max(retryAfterSeconds, exponentialBackoff)`.
+   * Ignored on success (there's no failure to back off from).
+   */
+  retryAfterSeconds?: number;
+  /**
    * Whether WebSub is active for this feed.
    * When true, uses a longer backup polling interval since WebSub
    * provides real-time push notifications.
@@ -233,6 +240,7 @@ export function calculateNextFetch(options: CalculateNextFetchOptions = {}): Nex
     cacheControl,
     feedHints,
     consecutiveFailures = 0,
+    retryAfterSeconds,
     websubActive = false,
     now = new Date(),
     randomSource = Math.random,
@@ -241,9 +249,16 @@ export function calculateNextFetch(options: CalculateNextFetchOptions = {}): Nex
   let intervalSeconds: number;
   let reason: NextFetchReason;
 
-  // 1. If there are failures, use exponential backoff
+  // 1. If there are failures, use exponential backoff. When the server sent a
+  // Retry-After, honor it as a floor so we never poll earlier than asked
+  // (capped at the max interval so we always check eventually).
   if (consecutiveFailures > 0) {
-    intervalSeconds = calculateFailureBackoff(consecutiveFailures);
+    const backoff = calculateFailureBackoff(consecutiveFailures);
+    if (retryAfterSeconds !== undefined && retryAfterSeconds > backoff) {
+      intervalSeconds = Math.min(retryAfterSeconds, MAX_FETCH_INTERVAL_SECONDS);
+    } else {
+      intervalSeconds = backoff;
+    }
     reason = "failure_backoff";
   } else {
     // 2. Determine base interval from hints (in priority order)

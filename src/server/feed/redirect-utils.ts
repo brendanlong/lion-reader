@@ -15,27 +15,40 @@ import type { RedirectInfo } from "./fetcher";
 export const REDIRECT_WAIT_PERIOD_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 /**
- * Finds the final URL from a permanent redirect chain.
- * Returns null if there are no permanent redirects or if the final URL
- * matches the original URL.
+ * Finds the URL that the original feed permanently moved to.
  *
- * @param redirects - The redirect chain from the fetch
+ * Walks the redirect chain from the start, following hops only while they are
+ * permanent (301/308). It stops at the first temporary hop, because a permanent
+ * migration is only justified when every hop from the original URL up to the
+ * target was itself permanent. For example, `302 A→B, 301 B→C` must NOT migrate
+ * A to C: A never permanently moved (its first hop is temporary), so C is only
+ * reachable via a hop the server told us not to cache.
+ *
+ * Returns null if the first hop is temporary (no permanent prefix) or if the
+ * resulting URL matches the original URL.
+ *
+ * @param redirects - The redirect chain from the fetch (in order from the origin)
  * @param originalUrl - The original feed URL we started with
- * @returns The final permanent redirect URL, or null if none
+ * @returns The permanent redirect target URL, or null if none applies
  */
 export function findPermanentRedirectUrl(
   redirects: RedirectInfo[],
   originalUrl: string
 ): string | null {
-  // Find all permanent redirects in the chain
-  const permanentRedirects = redirects.filter((r) => r.type === "permanent");
-
-  if (permanentRedirects.length === 0) {
-    return null;
+  // Walk from the start, following only while hops are permanent. The last
+  // permanent hop before the first temporary hop (or the end of the chain) is
+  // where the feed actually permanently moved to.
+  let finalUrl: string | null = null;
+  for (const redirect of redirects) {
+    if (redirect.type !== "permanent") {
+      break;
+    }
+    finalUrl = redirect.url;
   }
 
-  // The final URL is the last redirect's URL
-  const finalUrl = permanentRedirects[permanentRedirects.length - 1].url;
+  if (finalUrl === null) {
+    return null;
+  }
 
   // Don't consider it a redirect if we end up at the same URL
   if (finalUrl === originalUrl) {

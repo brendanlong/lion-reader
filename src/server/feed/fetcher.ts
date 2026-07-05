@@ -81,19 +81,6 @@ interface FetchNotModifiedResult {
 }
 
 /**
- * Result of a permanent redirect (301/308) - caller should update feed URL.
- */
-interface FetchPermanentRedirectResult {
-  status: "permanent_redirect";
-  /** HTTP status code (301 or 308) */
-  statusCode: 301 | 308;
-  /** New URL to use */
-  redirectUrl: string;
-  /** Full redirect chain */
-  redirects: RedirectInfo[];
-}
-
-/**
  * Result of a client error (4xx).
  */
 interface FetchClientErrorResult {
@@ -169,7 +156,6 @@ interface FetchContentTooLargeResult {
 export type FetchFeedResult =
   | FetchSuccessResult
   | FetchNotModifiedResult
-  | FetchPermanentRedirectResult
   | FetchClientErrorResult
   | FetchServerErrorResult
   | FetchRateLimitedResult
