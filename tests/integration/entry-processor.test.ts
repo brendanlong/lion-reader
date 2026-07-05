@@ -673,5 +673,68 @@ describe("Entry Processor", () => {
         handle!.close();
       }
     });
+
+    it("heals entries orphaned by an earlier crashed fetch (#952)", async () => {
+      // Regression test for the non-atomic fanout: if a fetch inserts an entry
+      // but the worker crashes before createUserEntriesForFeed, the entry exists
+      // with a matching content_hash. The old event-driven fanout only ran for
+      // isNew entries, so on the retry the orphan was isNew:false and never
+      // became visible. The state-driven fanout passes every current entry ID,
+      // so any later fetch with activity heals it.
+      const feed = await createTestFeed();
+
+      const userId = generateUuidv7();
+      await db.insert(users).values({
+        id: userId,
+        email: `heal-${userId}@test.com`,
+        passwordHash: "test-hash",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      await db.insert(subscriptions).values({
+        id: generateUuidv7(),
+        userId,
+        feedId: feed.id,
+        subscribedAt: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      // Simulate the crash: insert the entry directly (as a fetch would) but
+      // never fan out user_entries.
+      const orphanParsed: ParsedEntry = {
+        guid: "orphan-1",
+        title: "Orphan",
+        content: "Orphan content",
+      };
+      const orphan = await createEntry(
+        feed.id,
+        "web",
+        orphanParsed,
+        generateContentHash(orphanParsed),
+        new Date()
+      );
+
+      const before = await db.select().from(userEntries).where(eq(userEntries.userId, userId));
+      expect(before).toHaveLength(0);
+
+      // Next fetch: the orphan is unchanged, but a genuinely new entry arrives,
+      // so the feed has activity and the fanout runs over all current entries.
+      const parsedFeed: ParsedFeed = {
+        title: "Test Feed",
+        items: [orphanParsed, { guid: "new-1", title: "New", content: "New content" }],
+      };
+      const result = await processEntries(feed.id, feed.type, parsedFeed);
+      expect(result.newCount).toBe(1); // only new-1 counts as new
+
+      const after = await db
+        .select({ entryId: userEntries.entryId })
+        .from(userEntries)
+        .where(eq(userEntries.userId, userId));
+      const ids = after.map((r) => r.entryId);
+      // The previously-orphaned entry is now visible, alongside the new one.
+      expect(ids).toContain(orphan.id);
+      expect(ids).toHaveLength(2);
+    });
   });
 });

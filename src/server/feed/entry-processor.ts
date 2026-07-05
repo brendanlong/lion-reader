@@ -500,7 +500,10 @@ async function updateEntriesLastSeenAt(entryIds: string[], lastSeenAt: Date): Pr
  * Creates user_entries records for a feed's active subscribers.
  * This makes entries visible to all currently-subscribed users.
  *
- * Uses INSERT ... ON CONFLICT DO NOTHING for efficiency and idempotency.
+ * Uses INSERT ... ON CONFLICT DO NOTHING for efficiency and idempotency. Because
+ * it is idempotent and driven purely by the entry IDs passed in (not by whether
+ * an entry is "new"), callers can safely pass *every* entry in the current fetch
+ * to self-heal entries orphaned by an earlier crash — see `processEntries`.
  *
  * @param feedId - The feed's UUID
  * @param entryIds - Array of entry IDs to make visible
@@ -672,12 +675,25 @@ export async function processEntries(
     await updateEntriesLastSeenAt(allEntryIds, fetchedAt);
   }
 
-  // Create user_entries only for new entries
-  // Existing subscribers already have user_entries records for existing entries
-  // New subscribers get user_entries created at subscription time
-  if (newEntryIds.length > 0) {
-    await createUserEntriesForFeed(feedId, newEntryIds);
+  // Fan out user_entries for ALL entries in this fetch, not just the ones that
+  // are new *this* time. The fanout is idempotent (ON CONFLICT DO NOTHING), so
+  // re-processing an already-visible entry is a no-op — but making it
+  // state-driven (all current entry IDs) rather than event-driven (only isNew)
+  // means an entry that was inserted by a previous fetch which then crashed
+  // *before* fanning out gets healed on the next fetch that touches the feed.
+  // The old event-driven fanout lost such an entry permanently: on the retry it
+  // matches by content_hash and is reported isNew:false, so it would never be
+  // fanned out again and stayed invisible to every subscriber (issue #952).
+  //
+  // Runs whenever the feed changed (new/updated/disappeared). Unchanged polls
+  // skip it, so steady-state feeds pay nothing; a feed with any activity heals
+  // its orphans. Existing subscribers already have rows for existing entries;
+  // new subscribers get rows at subscription time.
+  if (hasChanges && allEntryIds.length > 0) {
+    await createUserEntriesForFeed(feedId, allEntryIds);
+  }
 
+  if (newEntryIds.length > 0) {
     // Publish new_entry events AFTER the user_entries fanout: the SSE endpoint
     // computes each connected subscriber's absolute unread counts from
     // visible_entries when the event arrives, so the rows must exist first or

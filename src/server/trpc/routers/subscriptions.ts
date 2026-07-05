@@ -511,7 +511,10 @@ export const subscriptionsRouter = createTRPCRouter({
       const { feed } = existing[0];
       const now = new Date();
 
-      // Handle email feed unsubscription
+      // Handle email feed unsubscription. The unsubscribe request and mailto
+      // lookup involve network/side-effecting work, so they run BEFORE the
+      // transaction — only the resulting blocked_senders row is written inside it.
+      let blockedSenderValues: typeof blockedSenders.$inferInsert | null = null;
       if (feed.type === "email" && feed.emailSenderPattern) {
         // 1. Attempt to send unsubscribe request
         const unsubscribeResult = await attemptUnsubscribe(feed.id);
@@ -527,46 +530,52 @@ export const subscriptionsRouter = createTRPCRouter({
         // 2. Get the mailto URL used for unsubscribe (for potential retry)
         const listUnsubscribeMailto = await getLatestUnsubscribeMailto(feed.id);
 
-        // 3. Add sender to blocked_senders table
-        await ctx.db
-          .insert(blockedSenders)
-          .values({
-            id: generateUuidv7(),
-            userId,
-            senderEmail: feed.emailSenderPattern,
-            blockedAt: now,
-            listUnsubscribeMailto,
-            unsubscribeSentAt: unsubscribeResult.sent ? now : null,
-          })
-          .onConflictDoNothing(); // Handle case where sender is already blocked
-
-        logger.info("Added sender to blocked list", {
+        blockedSenderValues = {
+          id: generateUuidv7(),
           userId,
           senderEmail: feed.emailSenderPattern,
-          unsubscribeSent: unsubscribeResult.sent,
-        });
+          blockedAt: now,
+          listUnsubscribeMailto,
+          unsubscribeSentAt: unsubscribeResult.sent ? now : null,
+        };
       }
 
-      // Capture the subscription's tags BEFORE removing the associations, so we
-      // can compute the affected tags' post-delete absolute counts (an empty
-      // list means the subscription was uncategorized).
-      const formerTagRows = await ctx.db
-        .select({ tagId: subscriptionTags.tagId })
-        .from(subscriptionTags)
-        .where(eq(subscriptionTags.subscriptionId, input.id));
-      const formerTagIds = formerTagRows.map((r) => r.tagId);
+      // Group the block + tag removal + soft-delete into one transaction so a
+      // crash can't half-apply the unsubscribe (e.g. tags removed but the
+      // subscription still active, or vice versa) (issue #952).
+      const formerTagIds = await ctx.db.transaction(async (tx) => {
+        // 3. Add sender to blocked_senders table (email feeds only)
+        if (blockedSenderValues) {
+          await tx.insert(blockedSenders).values(blockedSenderValues).onConflictDoNothing(); // Handle case where sender is already blocked
 
-      // Remove all tag associations so resubscribing starts fresh
-      await ctx.db.delete(subscriptionTags).where(eq(subscriptionTags.subscriptionId, input.id));
+          logger.info("Added sender to blocked list", {
+            userId,
+            senderEmail: feed.emailSenderPattern,
+          });
+        }
 
-      // Soft delete by setting unsubscribedAt
-      await ctx.db
-        .update(subscriptions)
-        .set({
-          unsubscribedAt: now,
-          updatedAt: now,
-        })
-        .where(eq(subscriptions.id, input.id));
+        // Capture the subscription's tags BEFORE removing the associations, so we
+        // can compute the affected tags' post-delete absolute counts (an empty
+        // list means the subscription was uncategorized).
+        const formerTagRows = await tx
+          .select({ tagId: subscriptionTags.tagId })
+          .from(subscriptionTags)
+          .where(eq(subscriptionTags.subscriptionId, input.id));
+
+        // Remove all tag associations so resubscribing starts fresh
+        await tx.delete(subscriptionTags).where(eq(subscriptionTags.subscriptionId, input.id));
+
+        // Soft delete by setting unsubscribedAt
+        await tx
+          .update(subscriptions)
+          .set({
+            unsubscribedAt: now,
+            updatedAt: now,
+          })
+          .where(eq(subscriptions.id, input.id));
+
+        return formerTagRows.map((r) => r.tagId);
+      });
 
       // Compute absolute counts for the affected lists AFTER the soft-delete so
       // they reflect the subscription's removal. The client sets these directly
@@ -856,14 +865,17 @@ export const subscriptionsRouter = createTRPCRouter({
       const now = new Date();
 
       if (input.tagIds.length === 0) {
-        // Delete all existing tags for the subscription
-        await ctx.db.delete(subscriptionTags).where(eq(subscriptionTags.subscriptionId, input.id));
+        // Clear tags atomically: the delete + updated_at bump must land together
+        // so a crash can't leave the associations half-removed (issue #952).
+        await ctx.db.transaction(async (tx) => {
+          await tx.delete(subscriptionTags).where(eq(subscriptionTags.subscriptionId, input.id));
 
-        // Update subscription's updated_at for sync cursor tracking
-        await ctx.db
-          .update(subscriptions)
-          .set({ updatedAt: now })
-          .where(eq(subscriptions.id, input.id));
+          // Update subscription's updated_at for sync cursor tracking
+          await tx
+            .update(subscriptions)
+            .set({ updatedAt: now })
+            .where(eq(subscriptions.id, input.id));
+        });
 
         // Publish SSE event with empty tags
         publishSubscriptionUpdated(
@@ -896,23 +908,28 @@ export const subscriptionsRouter = createTRPCRouter({
         throw errors.validation("One or more tag IDs are invalid or do not belong to you");
       }
 
-      // Delete all existing tags for the subscription
-      await ctx.db.delete(subscriptionTags).where(eq(subscriptionTags.subscriptionId, input.id));
+      // Replace tags atomically: delete-then-insert (+updated_at bump) must be
+      // one unit, or a crash/concurrent call between them could leave the
+      // subscription untagged or with a partial tag set (issue #952).
+      await ctx.db.transaction(async (tx) => {
+        // Delete all existing tags for the subscription
+        await tx.delete(subscriptionTags).where(eq(subscriptionTags.subscriptionId, input.id));
 
-      // Insert new subscription_tags entries
-      await ctx.db.insert(subscriptionTags).values(
-        input.tagIds.map((tagId) => ({
-          subscriptionId: input.id,
-          tagId,
-          createdAt: now,
-        }))
-      );
+        // Insert new subscription_tags entries
+        await tx.insert(subscriptionTags).values(
+          input.tagIds.map((tagId) => ({
+            subscriptionId: input.id,
+            tagId,
+            createdAt: now,
+          }))
+        );
 
-      // Update subscription's updated_at for sync cursor tracking
-      await ctx.db
-        .update(subscriptions)
-        .set({ updatedAt: now })
-        .where(eq(subscriptions.id, input.id));
+        // Update subscription's updated_at for sync cursor tracking
+        await tx
+          .update(subscriptions)
+          .set({ updatedAt: now })
+          .where(eq(subscriptions.id, input.id));
+      });
 
       // Publish SSE event with new tags
       const tagsList = userTags.map((t) => ({

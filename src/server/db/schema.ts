@@ -535,8 +535,12 @@ export const tags = pgTable(
     deletedAt: timestamp("deleted_at", { withTimezone: true }), // Soft delete for sync tracking
   },
   (table) => [
-    // Each user can only have one tag with a given name
-    unique("uq_tags_user_name").on(table.userId, table.name),
+    // Each user can only have one *live* tag with a given name. Partial on
+    // deleted_at IS NULL so a soft-deleted (tombstoned) tag doesn't block reusing
+    // its name — otherwise "News" → delete → "News" failed forever (issue #952).
+    uniqueIndex("uq_tags_user_name")
+      .on(table.userId, table.name)
+      .where(sql`deleted_at IS NULL`),
     // Index for listing tags by user
     // Index for sync queries
     index("idx_tags_updated_at").on(table.userId, table.updatedAt),
@@ -826,8 +830,10 @@ export const jobs = pgTable(
     // Index for polling: claim queries filter on type + next_run_at <= now
     // and order by next_run_at (restored by migration 0074)
     index("idx_jobs_polling").on(table.type, table.nextRunAt),
-    // Index for looking up feed jobs by feedId
-    index("idx_jobs_feed_id")
+    // One fetch_feed job per feed: makes ensureFeedJob's INSERT ... ON CONFLICT
+    // idempotent so concurrent subscribes can't create duplicate fetch jobs
+    // (issue #952). Also serves feedId lookups.
+    uniqueIndex("idx_jobs_feed_id")
       .on(sql`(${table.payload}->>'feedId')`)
       .where(sql`type = 'fetch_feed'`),
     // Enforce one row per singleton job type so claimSingletonJob's

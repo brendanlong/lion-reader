@@ -567,9 +567,6 @@ ALTER TABLE ONLY public.oauth_accounts
 ALTER TABLE ONLY public.subscriptions
     ADD CONSTRAINT uq_subscriptions_user_feed UNIQUE (user_id, feed_id);
 
-ALTER TABLE ONLY public.tags
-    ADD CONSTRAINT uq_tags_user_name UNIQUE (user_id, name);
-
 ALTER TABLE ONLY public.websub_subscriptions
     ADD CONSTRAINT uq_websub_subscriptions_feed_hub UNIQUE (feed_id, hub_url);
 
@@ -619,7 +616,7 @@ CREATE INDEX idx_ingest_addresses_user ON public.ingest_addresses USING btree (u
 
 CREATE INDEX idx_invites_expires ON public.invites USING btree (expires_at);
 
-CREATE INDEX idx_jobs_feed_id ON public.jobs USING btree (((payload ->> 'feedId'::text))) WHERE (type = 'fetch_feed'::text);
+CREATE UNIQUE INDEX idx_jobs_feed_id ON public.jobs USING btree (((payload ->> 'feedId'::text))) WHERE (type = 'fetch_feed'::text);
 
 CREATE INDEX idx_jobs_polling ON public.jobs USING btree (type, next_run_at);
 
@@ -694,6 +691,8 @@ CREATE INDEX idx_websub_feed ON public.websub_subscriptions USING btree (feed_id
 CREATE UNIQUE INDEX jobs_singleton_type_unique ON public.jobs USING btree (type) WHERE (type = ANY (ARRAY['renew_websub'::text, 'monitor_feed_health'::text, 'cleanup'::text]));
 
 CREATE UNIQUE INDEX uq_feeds_saved_user ON public.feeds USING btree (user_id) WHERE (type = 'saved'::public.feed_type);
+
+CREATE UNIQUE INDEX uq_tags_user_name ON public.tags USING btree (user_id, name) WHERE (deleted_at IS NULL);
 
 CREATE TRIGGER user_entries_fill_sort_key_trigger BEFORE INSERT ON public.user_entries FOR EACH ROW EXECUTE FUNCTION public.user_entries_fill_sort_key();
 

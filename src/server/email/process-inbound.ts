@@ -473,12 +473,22 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
 
   // Sanitize at write time so entries.get serves the email body without
   // re-running sanitize-html on every read.
-  await db.insert(entries).values(withSanitizedEntryContent(newEntry));
+  //
+  // The entry insert and the user_entries fanout MUST be atomic. Mailgun retries
+  // its webhook on any non-2xx/timeout, and step 7 above rejects a retry as a
+  // duplicate Message-ID. If the entry were inserted but the process crashed
+  // before creating the user_entries row, the retry would hit that duplicate
+  // check and return early — leaving the newsletter permanently invisible to the
+  // user (issue #952). Wrapping both writes in one transaction means a crash
+  // rolls back the entry too, so the retry re-inserts both cleanly.
+  await db.transaction(async (tx) => {
+    await tx.insert(entries).values(withSanitizedEntryContent(newEntry));
 
-  // Create user_entry to make it visible to the user
-  await db.insert(userEntries).values({
-    userId,
-    entryId,
+    // Create user_entry to make it visible to the user
+    await tx.insert(userEntries).values({
+      userId,
+      entryId,
+    });
   });
 
   logger.info("Email processed successfully", {

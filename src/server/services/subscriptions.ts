@@ -406,141 +406,193 @@ export async function createSubscription(
   // 2. Ensure background fetch job exists
   await ensureFeedJob(feedId);
 
-  // 3. Check subscription cap; if at cap, return existing or throw
+  // 3–6. Cap check + subscription upsert + subscription_feeds + user_entries
+  //       populate, all in ONE transaction. Previously these were separate
+  //       statements: a crash between them could leave an active subscription
+  //       with no subscription_feeds row (so its entries were unqueryable), and
+  //       the cap count → insert was check-then-act. The advisory lock
+  //       serializes concurrent subscribes for this user so two callers can't
+  //       both pass the cap check and both insert past the limit; it releases
+  //       automatically at commit/rollback (issue #952).
   const maxSubs = usageLimitsConfig.maxSubscriptionsPerUser;
-  const [{ activeCount }] = await db
-    .select({ activeCount: sql<number>`count(*)::int` })
-    .from(subscriptions)
-    .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
 
-  if (activeCount >= maxSubs) {
-    // Over cap — check if we're already subscribed to this specific feed
-    const [existingSub] = await db
-      .select({
-        id: subscriptions.id,
-        subscribedAt: subscriptions.subscribedAt,
-        customTitle: subscriptions.customTitle,
-        fetchFullContent: subscriptions.fetchFullContent,
-      })
+  type TxResult =
+    | {
+        kind: "alreadyActive";
+        subscriptionId: string;
+        subscribedAt: Date;
+        customTitle: string | null;
+        fetchFullContent: boolean;
+      }
+    | {
+        kind: "created";
+        subscriptionId: string;
+        subscribedAt: Date;
+        unreadCount: number;
+        customTitle: string | null;
+        fetchFullContent: boolean;
+      };
+
+  const txResult: TxResult = await db.transaction(async (tx) => {
+    // Serialize concurrent subscribes for this user (fixes the cap race).
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${userId}))`);
+
+    // 3. Check subscription cap; if at cap, return existing or throw
+    const [{ activeCount }] = await tx
+      .select({ activeCount: sql<number>`count(*)::int` })
       .from(subscriptions)
-      .where(
-        and(
-          eq(subscriptions.userId, userId),
-          eq(subscriptions.feedId, feedId),
-          isNull(subscriptions.unsubscribedAt)
-        )
-      )
-      .limit(1);
+      .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
 
-    if (existingSub) {
-      const viewResults = await buildSubscriptionBaseQuery(db, userId)
-        .where(eq(userFeeds.id, existingSub.id))
+    if (activeCount >= maxSubs) {
+      // Over cap — check if we're already subscribed to this specific feed
+      const [existingSub] = await tx
+        .select({
+          id: subscriptions.id,
+          subscribedAt: subscriptions.subscribedAt,
+          customTitle: subscriptions.customTitle,
+          fetchFullContent: subscriptions.fetchFullContent,
+        })
+        .from(subscriptions)
+        .where(
+          and(
+            eq(subscriptions.userId, userId),
+            eq(subscriptions.feedId, feedId),
+            isNull(subscriptions.unsubscribedAt)
+          )
+        )
+        .limit(1);
+
+      if (existingSub) {
+        return {
+          kind: "alreadyActive",
+          subscriptionId: existingSub.id,
+          subscribedAt: existingSub.subscribedAt,
+          customTitle: existingSub.customTitle,
+          fetchFullContent: existingSub.fetchFullContent,
+        };
+      }
+
+      throw errors.maxSubscriptionsReached(maxSubs);
+    }
+
+    // 4. Upsert subscription — insert new or reactivate soft-deleted
+    //    RETURNING tells us if the row was actually inserted/updated.
+    //    If the subscription is already active, the WHERE clause doesn't match,
+    //    so neither insert nor update happens and RETURNING returns nothing.
+    const newSubscriptionId = generateUuidv7();
+    const subscribedAt = new Date();
+
+    const upsertResult = await tx.execute<{
+      id: string;
+      subscribed_at: string;
+      custom_title: string | null;
+      fetch_full_content: boolean;
+    }>(sql`
+      INSERT INTO subscriptions (id, user_id, feed_id, subscribed_at, created_at, updated_at)
+      VALUES (${newSubscriptionId}, ${userId}, ${feedId}, ${subscribedAt}, ${subscribedAt}, ${subscribedAt})
+      ON CONFLICT (user_id, feed_id) DO UPDATE SET
+        unsubscribed_at = NULL,
+        subscribed_at = ${subscribedAt},
+        updated_at = ${subscribedAt}
+      WHERE subscriptions.unsubscribed_at IS NOT NULL
+      RETURNING id, subscribed_at, custom_title, fetch_full_content
+    `);
+
+    if (upsertResult.rows.length === 0) {
+      // Subscription was already active — idempotent return (unread computed below)
+      const [sub] = await tx
+        .select({
+          id: subscriptions.id,
+          subscribedAt: subscriptions.subscribedAt,
+          customTitle: subscriptions.customTitle,
+          fetchFullContent: subscriptions.fetchFullContent,
+        })
+        .from(subscriptions)
+        .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, feedId)))
         .limit(1);
 
       return {
-        subscriptionId: existingSub.id,
-        subscribedAt: existingSub.subscribedAt,
-        unreadCount: viewResults.length > 0 ? viewResults[0].unreadCount : 0,
-        alreadyActive: true,
-        customTitle: existingSub.customTitle,
-        fetchFullContent: existingSub.fetchFullContent,
-        feed: feedData,
+        kind: "alreadyActive",
+        subscriptionId: sub.id,
+        subscribedAt: sub.subscribedAt,
+        customTitle: sub.customTitle,
+        fetchFullContent: sub.fetchFullContent,
       };
     }
 
-    throw errors.maxSubscriptionsReached(maxSubs);
-  }
+    const upsertedRow = upsertResult.rows[0];
+    const subscriptionId = upsertedRow.id;
+    const customTitle = upsertedRow.custom_title;
+    const fetchFullContent = upsertedRow.fetch_full_content;
 
-  // 4. Upsert subscription — insert new or reactivate soft-deleted
-  //    RETURNING tells us if the row was actually inserted/updated.
-  //    If the subscription is already active, the WHERE clause doesn't match,
-  //    so neither insert nor update happens and RETURNING returns nothing.
-  const newSubscriptionId = generateUuidv7();
-  const subscribedAt = new Date();
+    // 5. Upsert subscription_feeds
+    await tx
+      .insert(subscriptionFeeds)
+      .values({ subscriptionId, feedId, userId })
+      .onConflictDoNothing();
 
-  const upsertResult = await db.execute<{
-    id: string;
-    subscribed_at: string;
-    custom_title: string | null;
-    fetch_full_content: boolean;
-  }>(sql`
-    INSERT INTO subscriptions (id, user_id, feed_id, subscribed_at, created_at, updated_at)
-    VALUES (${newSubscriptionId}, ${userId}, ${feedId}, ${subscribedAt}, ${subscribedAt}, ${subscribedAt})
-    ON CONFLICT (user_id, feed_id) DO UPDATE SET
-      unsubscribed_at = NULL,
-      subscribed_at = ${subscribedAt},
-      updated_at = ${subscribedAt}
-    WHERE subscriptions.unsubscribed_at IS NOT NULL
-    RETURNING id, subscribed_at, custom_title, fetch_full_content
-  `);
-
-  if (upsertResult.rows.length === 0) {
-    // Subscription was already active — idempotent return with real unread count
-    const [sub] = await db
-      .select({
-        id: subscriptions.id,
-        subscribedAt: subscriptions.subscribedAt,
-        customTitle: subscriptions.customTitle,
-        fetchFullContent: subscriptions.fetchFullContent,
-      })
-      .from(subscriptions)
-      .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, feedId)))
-      .limit(1);
-
-    const viewResults = await buildSubscriptionBaseQuery(db, userId)
-      .where(eq(userFeeds.id, sub.id))
-      .limit(1);
-
-    return {
-      subscriptionId: sub.id,
-      subscribedAt: sub.subscribedAt,
-      unreadCount: viewResults.length > 0 ? viewResults[0].unreadCount : 0,
-      alreadyActive: true,
-      customTitle: sub.customTitle,
-      fetchFullContent: sub.fetchFullContent,
-      feed: feedData,
-    };
-  }
-
-  const upsertedRow = upsertResult.rows[0];
-  const subscriptionId = upsertedRow.id;
-  const customTitle = upsertedRow.custom_title;
-  const fetchFullContent = upsertedRow.fetch_full_content;
-
-  // 5. Upsert subscription_feeds
-  await db
-    .insert(subscriptionFeeds)
-    .values({ subscriptionId, feedId, userId })
-    .onConflictDoNothing();
-
-  // 6. Populate user_entries using INSERT...SELECT and count unread
-  let unreadCount = 0;
-  if (feedRecord.lastEntriesUpdatedAt) {
-    await db.execute(sql`
+    // 6. Populate user_entries using INSERT...SELECT and count unread.
+    //    Re-read feeds.last_entries_updated_at inside the INSERT (via the JOIN)
+    //    rather than using the value captured in feedRecord earlier: a feed fetch
+    //    completing between that read and here bumps last_entries_updated_at, so
+    //    a stale captured value would match zero rows and the new subscriber
+    //    would see an empty feed until the next new entry (issue #952). The JOIN
+    //    reads the current value atomically within this statement.
+    await tx.execute(sql`
       INSERT INTO user_entries (user_id, entry_id, published_or_fetched_at)
       SELECT ${userId}, e.id, COALESCE(e.published_at, e.fetched_at)
       FROM entries e
+      JOIN feeds f ON f.id = e.feed_id
       WHERE e.feed_id = ${feedId}
-        AND e.last_seen_at = ${feedRecord.lastEntriesUpdatedAt}
+        AND f.last_entries_updated_at IS NOT NULL
+        AND e.last_seen_at = f.last_entries_updated_at
       ON CONFLICT DO NOTHING
     `);
 
     // Count unread entries (rowCount may be 0 for reactivations where entries already exist)
-    const [{ count }] = await db
+    const [{ count }] = await tx
       .select({ count: sql<number>`count(*)::int` })
       .from(userEntries)
       .innerJoin(entries, eq(entries.id, userEntries.entryId))
       .where(
         and(eq(userEntries.userId, userId), eq(entries.feedId, feedId), eq(userEntries.read, false))
       );
-    unreadCount = count;
 
-    logger.debug("Populated initial user entries via lastSeenAt", {
-      userId,
-      feedId,
-      entryCount: unreadCount,
-    });
+    return {
+      kind: "created",
+      subscriptionId,
+      subscribedAt,
+      unreadCount: count,
+      customTitle,
+      fetchFullContent,
+    };
+  });
+
+  // Idempotent already-active return: compute the real unread count from the
+  // view now that the transaction has committed.
+  if (txResult.kind === "alreadyActive") {
+    const viewResults = await buildSubscriptionBaseQuery(db, userId)
+      .where(eq(userFeeds.id, txResult.subscriptionId))
+      .limit(1);
+
+    return {
+      subscriptionId: txResult.subscriptionId,
+      subscribedAt: txResult.subscribedAt,
+      unreadCount: viewResults.length > 0 ? viewResults[0].unreadCount : 0,
+      alreadyActive: true,
+      customTitle: txResult.customTitle,
+      fetchFullContent: txResult.fetchFullContent,
+      feed: feedData,
+    };
   }
+
+  const { subscriptionId, subscribedAt, unreadCount, customTitle, fetchFullContent } = txResult;
+
+  logger.debug("Populated initial user entries via lastSeenAt", {
+    userId,
+    feedId,
+    entryCount: unreadCount,
+  });
 
   // 7. Compute absolute unread counts for the affected lists. A newly created
   // or reactivated subscription is untagged, so it only moves All Articles and

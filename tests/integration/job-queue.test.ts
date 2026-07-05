@@ -632,6 +632,33 @@ describe("Job Queue", () => {
       expect(job.id).toBe(allJobs[0].id);
     });
 
+    it("ensureFeedJob does not create duplicate jobs under concurrency (#952)", async () => {
+      const feedId = generateUuidv7();
+
+      // Fire several concurrent ensureFeedJob calls for the same feed. The
+      // partial unique index + ON CONFLICT must collapse these to a single row
+      // (the old UPDATE-then-INSERT could let several inserts win the race).
+      const results = await Promise.all(Array.from({ length: 8 }, () => ensureFeedJob(feedId)));
+
+      const allJobs = await listJobs({ type: "fetch_feed" });
+      expect(allJobs).toHaveLength(1);
+      // Every caller resolves to the one surviving row.
+      for (const job of results) {
+        expect(job.id).toBe(allJobs[0].id);
+      }
+    });
+
+    it("ensureFeedJob keeps an existing non-null next_run_at", async () => {
+      const feedId = generateUuidv7();
+      const scheduled = new Date(Date.now() + 3 * 60 * 60 * 1000);
+
+      await createJob({ type: "fetch_feed", payload: { feedId }, nextRunAt: scheduled });
+
+      // Re-ensuring should not disturb an already-scheduled next_run_at.
+      const job = await ensureFeedJob(feedId);
+      expect(job.nextRunAt!.getTime()).toBe(scheduled.getTime());
+    });
+
     it("updateFeedJobNextRun updates the next run time", async () => {
       const feedId = generateUuidv7();
       const originalTime = new Date(Date.now() + 60 * 60 * 1000);

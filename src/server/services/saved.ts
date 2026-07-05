@@ -243,13 +243,23 @@ interface InsertSavedEntryParams {
  *
  * Handles the shared boilerplate for both saveArticle and createUploadedArticle:
  * entry insert, user_entries insert, SSE publish, and SavedArticle construction.
+ *
+ * The entry and user_entries inserts run in one transaction so a crash can't
+ * leave an entry with no user_entries row (which would make it invisible).
+ *
+ * Returns null when the entry already exists — the entry insert uses
+ * `onConflictDoNothing` on `(feed_id, guid)`, so a concurrent duplicate save
+ * (e.g. a double-click) is idempotent instead of surfacing a raw unique-violation
+ * 500 (issue #952). The caller re-selects the existing article in that case.
+ * `createUploadedArticle` uses a random `uploaded:{uuid}` guid, so it never
+ * conflicts and always gets a row back.
  */
 async function insertSavedEntry(
   db: typeof dbType,
   userId: string,
   savedFeedId: string,
   params: InsertSavedEntryParams
-): Promise<SavedArticle> {
+): Promise<SavedArticle | null> {
   const now = new Date();
   const entryId = generateUuidv7();
 
@@ -279,14 +289,31 @@ async function insertSavedEntry(
     createdAt: now,
     updatedAt: now,
   });
-  await db.insert(entries).values(values);
+  const inserted = await db.transaction(async (tx) => {
+    const insertedRows = await tx
+      .insert(entries)
+      .values(values)
+      .onConflictDoNothing({ target: [entries.feedId, entries.guid] })
+      .returning({ id: entries.id });
 
-  await db.insert(userEntries).values({
-    userId,
-    entryId,
-    read: false,
-    starred: false,
+    // Conflict: another save already created this (feed_id, guid). Abort so the
+    // caller can return the existing article idempotently.
+    if (insertedRows.length === 0) {
+      return false;
+    }
+
+    await tx.insert(userEntries).values({
+      userId,
+      entryId,
+      read: false,
+      starred: false,
+    });
+    return true;
   });
+
+  if (!inserted) {
+    return null;
+  }
 
   await publishNewEntry(
     savedFeedId,
@@ -866,6 +893,43 @@ export async function saveArticle(
     contentHash,
   });
 
+  // A concurrent save (e.g. a double-click) already inserted this (feed_id,
+  // guid) between our existence check above and the insert. Return the existing
+  // article idempotently instead of surfacing a unique-violation 500 (#952).
+  if (!saved) {
+    const [row] = await db
+      .select({ entry: entries, userState: userEntries })
+      .from(entries)
+      .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
+      .where(
+        and(
+          eq(entries.feedId, savedFeedId),
+          eq(entries.guid, normalizedUrl),
+          eq(userEntries.userId, userId)
+        )
+      )
+      .limit(1);
+    if (!row) {
+      // Should not happen: the insert only aborts on an existing row.
+      throw new Error(`Saved article vanished after conflict: ${normalizedUrl}`);
+    }
+    const { entry, userState } = row;
+    return {
+      id: entry.id,
+      url: entry.url!,
+      title: entry.title,
+      siteName: entry.siteName,
+      author: entry.author,
+      imageUrl: entry.imageUrl,
+      contentCleaned: entry.contentCleanedSanitized ?? sanitizeEntryHtml(entry.contentCleaned),
+      excerpt: entry.summary,
+      read: userState.read,
+      starred: userState.starred,
+      savedAt: entry.fetchedAt,
+      outcome: "existing",
+    };
+  }
+
   logger.info("Saved article", {
     entryId: saved.id,
     url: normalizedUrl,
@@ -954,6 +1018,11 @@ export async function createUploadedArticle(
     imageUrl: null,
     contentHash,
   });
+
+  // The guid is a fresh random `uploaded:{uuid}`, so the insert can't conflict.
+  if (!saved) {
+    throw new Error("Uploaded article insert unexpectedly conflicted");
+  }
 
   logger.info("Created uploaded article", {
     entryId: saved.id,

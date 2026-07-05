@@ -418,28 +418,28 @@ export function getJobPayload<T extends JobType>(job: Job): JobPayloads[T] {
 export async function ensureFeedJob(feedId: string, nextRunAt?: Date): Promise<Job> {
   const now = new Date();
   const runAt = nextRunAt ?? now;
+  const id = generateUuidv7();
 
-  // Try to update existing job's next_run_at if it's null
+  // Single upsert keyed on the partial unique index idx_jobs_feed_id
+  // (one fetch_feed row per feedId). The previous UPDATE-then-INSERT was
+  // check-then-act: two concurrent subscribes to the same feed could both find
+  // no row and both insert, creating duplicate fetch jobs that then fetched the
+  // feed twice every cycle forever (issue #952). ON CONFLICT makes this atomic.
+  //
+  // On conflict we keep an existing non-null next_run_at (don't disturb a feed
+  // that's already scheduled/backing off) but fill it in if it was null —
+  // matching the previous COALESCE(next_run_at, runAt) behavior.
   const result = await db.execute<RawJobRow>(sql`
-    UPDATE ${jobs}
-    SET
-      next_run_at = COALESCE(next_run_at, ${runAt}),
+    INSERT INTO ${jobs} (id, type, payload, next_run_at, created_at, updated_at)
+    VALUES (${id}, 'fetch_feed', ${JSON.stringify({ feedId })}::jsonb, ${runAt}, ${now}, ${now})
+    ON CONFLICT ((payload->>'feedId')) WHERE type = 'fetch_feed'
+    DO UPDATE SET
+      next_run_at = COALESCE(${jobs.nextRunAt}, ${runAt}),
       updated_at = ${now}
-    WHERE type = 'fetch_feed'
-      AND payload->>'feedId' = ${feedId}
     RETURNING *
   `);
 
-  if (result.rows.length > 0) {
-    return rowToJob(result.rows[0]);
-  }
-
-  // No existing job, create new one
-  return createJob({
-    type: "fetch_feed",
-    payload: { feedId },
-    nextRunAt: runAt,
-  });
+  return rowToJob(result.rows[0]);
 }
 
 /**

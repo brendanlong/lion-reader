@@ -19,6 +19,7 @@ import { users, entries, userEntries, feeds } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
+import { saveArticle } from "../../src/server/services/saved";
 
 // ============================================================================
 // Test Helpers
@@ -1173,6 +1174,31 @@ describe("Saved Articles API", () => {
         expect(body).not.toContain("javascript:");
       }
       expect(fetched.entry.contentOriginal).toContain("Legitimate article body");
+    });
+  });
+
+  describe("saveArticle concurrency (#952)", () => {
+    it("returns idempotently when the same URL is saved concurrently", async () => {
+      const userId = await createTestUser();
+      const url = "https://example.com/concurrent-save";
+      const html = "<html><head><title>Concurrent</title></head><body>Body text here</body></html>";
+
+      // Two concurrent saves of the same URL can both pass the existence check
+      // before either inserts. The loser's INSERT hits uq_entries_feed_guid; it
+      // must resolve to the existing article, not throw a unique-violation 500.
+      const [a, b] = await Promise.all([
+        saveArticle(db, userId, { url, html, refetch: false }),
+        saveArticle(db, userId, { url, html, refetch: false }),
+      ]);
+
+      // Both resolve to the same saved article.
+      expect(a.id).toBe(b.id);
+      expect(new Set([a.outcome, b.outcome])).not.toContain(undefined);
+
+      // Exactly one entry row was created for this URL.
+      const rows = await db.select({ id: entries.id }).from(entries).where(eq(entries.guid, url));
+      expect(rows).toHaveLength(1);
+      expect(rows[0].id).toBe(a.id);
     });
   });
 });
