@@ -1,67 +1,24 @@
 /**
- * Next.js Proxy
+ * Next.js Proxy (middleware)
  *
- * Handles route protection and authentication redirects.
+ * The ONLY job of this proxy is the claude.ai OAuth workaround: rewriting
+ * POST/OPTIONS `/register` to the Dynamic Client Registration handler at
+ * `/oauth/register` (see the big comment in `proxy()`). The `config.matcher`
+ * below is scoped to `/register` so middleware doesn't run on any other request.
  *
- * This proxy checks for the presence of a session cookie on protected routes.
- * It performs a lightweight check (cookie existence only) - full validation happens
- * in tRPC/API routes.
- *
- * Unauthenticated users are redirected to the login page with the original path
- * preserved in a redirect parameter.
+ * Route authentication is intentionally NOT handled here. It lives in one place:
+ * the server-side layout guards — `src/app/(app)/layout.tsx` (via
+ * `isAuthenticated()`) and `src/app/complete-signup/layout.tsx` — which validate
+ * the real session (not just cookie presence) on every dynamic render, backed by
+ * per-request tRPC/API session checks. A cookie-presence check here would be a
+ * redundant *and weaker* second gate (it can't detect expired/revoked/forged
+ * cookies), so we don't duplicate it. See issue #984, where the previous
+ * proxy-level gate was found to be dead code.
  */
 
 import { NextResponse, type NextRequest } from "next/server";
 
-/**
- * Paths that don't require authentication.
- * These paths either handle their own auth or are public.
- */
-const PUBLIC_PATHS = [
-  "/", // Landing page
-  "/login",
-  "/register",
-  "/auth/oauth/callback",
-  "/auth/oauth/complete",
-  // Root-level OAuth endpoint aliases for claude.ai (which synthesizes OAuth
-  // endpoints at the origin root — see src/app/authorize/route.ts). These handle
-  // their own auth; /token is POSTed server-to-server with no session cookie, so
-  // it must never be redirected to /login.
-  "/authorize",
-  "/token",
-  "/oauth/", // OAuth authorization/token/register + consent handle their own auth
-  "/api/", // All API routes handle their own auth
-  "/_next/", // Next.js static files
-  "/extension/", // Extension pages handle their own auth
-  "/favicon.ico",
-  "/robots.txt",
-  "/onnx/", // ONNX WASM files for TTS
-  "/manifest.json", // PWA manifest
-  "/sw.js", // Service worker
-  "/privacy", // Privacy policy page
-  "/monitoring", // Sentry tunnel route
-];
-
-/**
- * Check if the given pathname is a public path that doesn't require auth.
- */
-function isPublicPath(pathname: string): boolean {
-  return PUBLIC_PATHS.some((publicPath) => {
-    // Exact match for specific files/routes
-    if (publicPath === pathname) {
-      return true;
-    }
-    // Prefix match for directories (paths ending with /)
-    if (publicPath.endsWith("/") && pathname.startsWith(publicPath)) {
-      return true;
-    }
-    return false;
-  });
-}
-
 export function proxy(request: NextRequest) {
-  const { pathname, search } = request.nextUrl;
-
   // ==========================================================================
   // HACK: claude.ai OAuth "root path" workaround — `/register` is METHOD-SPLIT.
   //
@@ -92,50 +49,26 @@ export function proxy(request: NextRequest) {
   //   https://github.com/anthropics/claude-ai-mcp/issues/341  (tracking bug)
   //   https://github.com/anthropics/claude-ai-mcp/issues/82   (root-path synthesis)
   // ==========================================================================
-  if (pathname === "/register" && (request.method === "POST" || request.method === "OPTIONS")) {
+  // The pathname guard is redundant with `config.matcher` today, but keeps the
+  // rewrite correct on its own if the matcher is ever widened.
+  if (
+    request.nextUrl.pathname === "/register" &&
+    (request.method === "POST" || request.method === "OPTIONS")
+  ) {
     const dcrUrl = request.nextUrl.clone();
     dcrUrl.pathname = "/oauth/register";
     return NextResponse.rewrite(dcrUrl);
   }
 
-  // Allow public paths without auth check
-  if (isPublicPath(pathname)) {
-    return NextResponse.next();
-  }
-
-  // Check for session cookie
-  const sessionCookie = request.cookies.get("session");
-
-  if (!sessionCookie?.value) {
-    // Build the redirect URL with the original path preserved
-    const loginUrl = request.nextUrl.clone();
-    loginUrl.pathname = "/login";
-    // Preserve the full pathname + search params in the redirect param
-    const redirectPath = search ? `${pathname}${search}` : pathname;
-    loginUrl.searchParams.set("redirect", redirectPath);
-    loginUrl.search = loginUrl.searchParams.toString();
-
-    return NextResponse.redirect(loginUrl);
-  }
-
-  // Session cookie exists, allow the request to proceed
-  // Full session validation happens in tRPC/API routes
+  // GET /register (and anything else) falls through to the normal route.
   return NextResponse.next();
 }
 
 /**
- * Matcher configuration to exclude static assets.
- * This improves performance by not running the proxy on files that
- * don't need auth checks.
+ * Only run this proxy on `/register` — its sole purpose is the method-split
+ * rewrite above. Everything else (auth included) is handled elsewhere, so there
+ * is no reason to invoke middleware on other requests.
  */
 export const config = {
-  matcher: [
-    /*
-     * Match all request paths except:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - Static files with common extensions
-     */
-    "/((?!_next/static|_next/image|.*\\.(?:ico|png|jpg|jpeg|gif|svg|webp|woff|woff2|ttf|otf|eot|css|js|map)$).*)",
-  ],
+  matcher: ["/register"],
 };
