@@ -109,6 +109,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@types/sanitize-html": "^2.16.1",
+    "@vitest/eslint-plugin": "^1.6.20",
     "dotenv-cli": "^11.0.0",
     "esbuild": "^0.28.1",
     "eslint": "^9.39.2",

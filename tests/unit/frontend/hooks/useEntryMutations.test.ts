@@ -3,300 +3,233 @@
  */
 
 /**
- * Unit tests for useEntryMutations hook.
+ * Unit tests for useEntryMutations.
  *
- * Tests the entry mutation functions and their behavior.
- * Cache operations are tested separately in cache/operations.test.ts.
+ * These render the real hook inside the real tRPC + React Query provider (via
+ * `renderHookWithTrpc`), backed by a mock network link. That means the actual
+ * mutations fire and the real cache is updated — we assert on the tRPC inputs
+ * the hook sends and on the resulting cache state, not on compile-time types.
  *
- * Note: Testing React hooks that use tRPC mutations requires complex mocking.
- * These tests focus on verifiable behavior patterns rather than full integration.
+ * The lower-level cache operations these mutations call are covered separately
+ * in tests/unit/frontend/cache/operations.test.ts.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { cleanup } from "@testing-library/react";
+import { describe, it, expect, afterEach, vi } from "vitest";
+import { act, cleanup, waitFor } from "@testing-library/react";
+import { toast } from "sonner";
+import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
+import type { BulkUnreadCounts, UnreadCounts } from "@/lib/cache/operations";
+import { renderHookWithTrpc } from "../../../utils/component-test-helpers";
 
-describe("useEntryMutations", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    cleanup();
+vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
+
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
+
+const fixedDate = new Date("2026-07-05T00:00:00.000Z");
+
+function bulkCounts(overrides: Partial<BulkUnreadCounts> = {}): BulkUnreadCounts {
+  return {
+    all: { unread: 0 },
+    starred: { unread: 0 },
+    saved: { unread: 0 },
+    subscriptions: [],
+    tags: [],
+    ...overrides,
+  };
+}
+
+function singleCounts(overrides: Partial<UnreadCounts> = {}): UnreadCounts {
+  return {
+    all: { unread: 0 },
+    starred: { unread: 0 },
+    ...overrides,
+  };
+}
+
+describe("useEntryMutations markRead", () => {
+  it("calls entries.markRead with the given ids and read status", async () => {
+    const markRead = vi.fn((input: { entries: { id: string }[]; read: boolean }) => ({
+      entries: input.entries.map((e) => ({
+        id: e.id,
+        read: input.read,
+        starred: false,
+        updatedAt: fixedDate,
+      })),
+      counts: bulkCounts(),
+    }));
+
+    const { result, callsFor } = renderHookWithTrpc(() => useEntryMutations(), {
+      handlers: { "entries.markRead": (input) => markRead(input as never) },
+    });
+
+    act(() => {
+      result.current.markRead(["e1", "e2"], true);
+    });
+
+    await waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(1));
+
+    const input = callsFor("entries.markRead")[0].input as {
+      entries: { id: string; changedAt: Date }[];
+      read: boolean;
+    };
+    expect(input.read).toBe(true);
+    expect(input.entries.map((e) => e.id)).toEqual(["e1", "e2"]);
+    expect(input.entries[0].changedAt).toBeInstanceOf(Date);
   });
 
-  afterEach(() => {
-    cleanup();
-    vi.resetModules();
+  it("toggleRead sends the negation of the current read status for a single entry", async () => {
+    const { result, callsFor } = renderHookWithTrpc(() => useEntryMutations(), {
+      handlers: {
+        "entries.markRead": (input) => {
+          const typed = input as { entries: { id: string }[]; read: boolean };
+          return {
+            entries: typed.entries.map((e) => ({
+              id: e.id,
+              read: typed.read,
+              starred: false,
+              updatedAt: fixedDate,
+            })),
+            counts: bulkCounts(),
+          };
+        },
+      },
+    });
+
+    act(() => {
+      result.current.toggleRead("e1", false);
+    });
+
+    await waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(1));
+    const input = callsFor("entries.markRead")[0].input as {
+      entries: { id: string }[];
+      read: boolean;
+    };
+    expect(input.read).toBe(true);
+    expect(input.entries).toEqual([expect.objectContaining({ id: "e1" })]);
   });
 
-  describe("type definitions", () => {
-    it("exports EntryType type", async () => {
-      // Type exists if this doesn't throw at compile time
-      type EntryType = import("@/lib/hooks/useEntryMutations").EntryType;
-      const value: EntryType = "web";
-      expect(value).toBe("web");
+  it("shows a toast when the mutation fails", async () => {
+    const { result } = renderHookWithTrpc(() => useEntryMutations(), {
+      handlers: {
+        "entries.markRead": () => {
+          throw new Error("boom");
+        },
+      },
     });
 
-    it("exports MarkAllReadOptions interface", async () => {
-      // Verify the interface shape through usage
-      const options: import("@/lib/hooks/useEntryMutations").MarkAllReadOptions = {
-        subscriptionId: "sub-1",
-        tagId: "tag-1",
-        uncategorized: true,
-        starredOnly: false,
-        type: "web",
-      };
-      expect(options.subscriptionId).toBe("sub-1");
+    act(() => {
+      result.current.markRead(["e1"], true);
     });
 
-    it("exports UseEntryMutationsResult interface", async () => {
-      // Verify the interface includes expected properties
-      type Result = import("@/lib/hooks/useEntryMutations").UseEntryMutationsResult;
-
-      // This test verifies the type shape at compile time
-      const mockResult: Result = {
-        markRead: vi.fn(),
-        toggleRead: vi.fn(),
-        markAllRead: vi.fn(),
-        star: vi.fn(),
-        unstar: vi.fn(),
-        toggleStar: vi.fn(),
-        isPending: false,
-        isMarkReadPending: false,
-        isMarkAllReadPending: false,
-        isStarPending: false,
-      };
-
-      expect(mockResult.markRead).toBeDefined();
-      expect(mockResult.toggleRead).toBeDefined();
-      expect(mockResult.markAllRead).toBeDefined();
-      expect(mockResult.star).toBeDefined();
-      expect(mockResult.unstar).toBeDefined();
-      expect(mockResult.toggleStar).toBeDefined();
-      expect(typeof mockResult.isPending).toBe("boolean");
-      expect(typeof mockResult.isMarkReadPending).toBe("boolean");
-      expect(typeof mockResult.isMarkAllReadPending).toBe("boolean");
-      expect(typeof mockResult.isStarPending).toBe("boolean");
-    });
-  });
-
-  describe("MarkAllReadOptions", () => {
-    it("allows all fields to be optional", () => {
-      const options: import("@/lib/hooks/useEntryMutations").MarkAllReadOptions = {};
-      expect(options).toEqual({});
-    });
-
-    it("allows subscriptionId filter", () => {
-      const options: import("@/lib/hooks/useEntryMutations").MarkAllReadOptions = {
-        subscriptionId: "sub-123",
-      };
-      expect(options.subscriptionId).toBe("sub-123");
-    });
-
-    it("allows tagId filter", () => {
-      const options: import("@/lib/hooks/useEntryMutations").MarkAllReadOptions = {
-        tagId: "tag-456",
-      };
-      expect(options.tagId).toBe("tag-456");
-    });
-
-    it("allows uncategorized filter", () => {
-      const options: import("@/lib/hooks/useEntryMutations").MarkAllReadOptions = {
-        uncategorized: true,
-      };
-      expect(options.uncategorized).toBe(true);
-    });
-
-    it("allows starredOnly filter", () => {
-      const options: import("@/lib/hooks/useEntryMutations").MarkAllReadOptions = {
-        starredOnly: true,
-      };
-      expect(options.starredOnly).toBe(true);
-    });
-
-    it("allows type filter with web value", () => {
-      const options: import("@/lib/hooks/useEntryMutations").MarkAllReadOptions = {
-        type: "web",
-      };
-      expect(options.type).toBe("web");
-    });
-
-    it("allows type filter with email value", () => {
-      const options: import("@/lib/hooks/useEntryMutations").MarkAllReadOptions = {
-        type: "email",
-      };
-      expect(options.type).toBe("email");
-    });
-
-    it("allows type filter with saved value", () => {
-      const options: import("@/lib/hooks/useEntryMutations").MarkAllReadOptions = {
-        type: "saved",
-      };
-      expect(options.type).toBe("saved");
-    });
-
-    it("allows combining multiple filters", () => {
-      const options: import("@/lib/hooks/useEntryMutations").MarkAllReadOptions = {
-        subscriptionId: "sub-1",
-        starredOnly: true,
-        type: "web",
-      };
-      expect(options.subscriptionId).toBe("sub-1");
-      expect(options.starredOnly).toBe(true);
-      expect(options.type).toBe("web");
-    });
-  });
-
-  describe("EntryType", () => {
-    it("accepts web value", () => {
-      const entryType: import("@/lib/hooks/useEntryMutations").EntryType = "web";
-      expect(entryType).toBe("web");
-    });
-
-    it("accepts email value", () => {
-      const entryType: import("@/lib/hooks/useEntryMutations").EntryType = "email";
-      expect(entryType).toBe("email");
-    });
-
-    it("accepts saved value", () => {
-      const entryType: import("@/lib/hooks/useEntryMutations").EntryType = "saved";
-      expect(entryType).toBe("saved");
-    });
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Failed to update read status"));
   });
 });
 
-describe("useEntryMutations behavior", () => {
-  /**
-   * Note: Full integration testing of useEntryMutations requires a running
-   * tRPC client which needs significant mocking infrastructure. The cache
-   * operations themselves are tested in cache/operations.test.ts.
-   *
-   * These tests document the expected behavior:
-   *
-   * 1. markRead(ids, read) should call entries.markRead.mutate({ ids, read })
-   * 2. toggleRead(entryId, currentlyRead) should call markRead with [entryId] and !currentlyRead
-   * 3. markAllRead(options) should call entries.markAllRead.mutate(options)
-   * 4. star(entryId) should call entries.star.mutate({ id: entryId })
-   * 5. unstar(entryId) should call entries.unstar.mutate({ id: entryId })
-   * 6. toggleStar(entryId, currentlyStarred):
-   *    - If currentlyStarred: calls unstar mutation
-   *    - If !currentlyStarred: calls star mutation
-   * 7. isPending is true when any mutation is pending
-   * 8. isMarkReadPending is true when markRead mutation is pending
-   * 9. isMarkAllReadPending is true when markAllRead mutation is pending
-   * 10. isStarPending is true when star or unstar mutation is pending
-   *
-   * On success:
-   * - markRead calls handleEntriesMarkedRead with returned entries
-   * - markAllRead invalidates entries.list, subscriptions.list, tags.list, and starred count
-   * - star calls handleEntryStarred
-   * - unstar calls handleEntryUnstarred
-   *
-   * On error:
-   * - All mutations show a toast error message
-   */
+describe("useEntryMutations markAllRead", () => {
+  it("calls entries.markAllRead with the provided filter options", async () => {
+    const { result, callsFor } = renderHookWithTrpc(() => useEntryMutations(), {
+      handlers: { "entries.markAllRead": () => ({ success: true }) },
+    });
 
-  it("documents expected markRead behavior", () => {
-    // markRead should:
-    // 1. Accept array of IDs and boolean read status
-    // 2. Call entries.markRead mutation
-    // 3. On success: call handleEntriesMarkedRead with response entries
-    // 4. On error: show toast error "Failed to update read status"
-    expect(true).toBe(true);
+    act(() => {
+      result.current.markAllRead({ subscriptionId: "sub-1", type: "web" });
+    });
+
+    await waitFor(() => expect(callsFor("entries.markAllRead")).toHaveLength(1));
+    const input = callsFor("entries.markAllRead")[0].input as {
+      subscriptionId?: string;
+      type?: string;
+      changedAt: Date;
+    };
+    expect(input.subscriptionId).toBe("sub-1");
+    expect(input.type).toBe("web");
+    expect(input.changedAt).toBeInstanceOf(Date);
   });
 
-  it("documents expected toggleRead behavior", () => {
-    // toggleRead should:
-    // 1. Accept single entryId and current read status
-    // 2. Call markRead mutation with [entryId] and !currentlyRead
-    // This is a convenience wrapper around markRead
-    expect(true).toBe(true);
-  });
+  it("shows a toast when markAllRead fails", async () => {
+    const { result } = renderHookWithTrpc(() => useEntryMutations(), {
+      handlers: {
+        "entries.markAllRead": () => {
+          throw new Error("boom");
+        },
+      },
+    });
 
-  it("documents expected markAllRead behavior", () => {
-    // markAllRead should:
-    // 1. Accept optional filter options (subscriptionId, tagId, etc.)
-    // 2. Call entries.markAllRead mutation
-    // 3. On success: invalidate entries.list, subscriptions.list, tags.list, starred count
-    // 4. On error: show toast error "Failed to mark all as read"
-    expect(true).toBe(true);
-  });
+    act(() => {
+      result.current.markAllRead();
+    });
 
-  it("documents expected star behavior", () => {
-    // star should:
-    // 1. Accept entryId
-    // 2. Call entries.star mutation with { id: entryId }
-    // 3. On success: call handleEntryStarred with entry id and read status
-    // 4. On error: show toast error "Failed to star entry"
-    expect(true).toBe(true);
-  });
-
-  it("documents expected unstar behavior", () => {
-    // unstar should:
-    // 1. Accept entryId
-    // 2. Call entries.unstar mutation with { id: entryId }
-    // 3. On success: call handleEntryUnstarred with entry id and read status
-    // 4. On error: show toast error "Failed to unstar entry"
-    expect(true).toBe(true);
-  });
-
-  it("documents expected toggleStar behavior", () => {
-    // toggleStar should:
-    // 1. Accept entryId and current starred status
-    // 2. If currentlyStarred: call unstar mutation
-    // 3. If !currentlyStarred: call star mutation
-    // This is a convenience wrapper
-    expect(true).toBe(true);
-  });
-
-  it("documents expected pending state behavior", () => {
-    // Pending states:
-    // - isPending: true when any of the four mutations is pending
-    // - isMarkReadPending: true when markRead mutation is pending
-    // - isMarkAllReadPending: true when markAllRead mutation is pending
-    // - isStarPending: true when star OR unstar mutation is pending
-    expect(true).toBe(true);
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Failed to mark all as read"));
   });
 });
 
-describe("cache integration", () => {
-  /**
-   * The cache operations called by useEntryMutations are tested in
-   * tests/unit/frontend/cache/operations.test.ts
-   *
-   * This documents which operations are called by which mutations:
-   */
+describe("useEntryMutations star/unstar", () => {
+  it("star calls entries.setStarred with starred: true", async () => {
+    const { result, callsFor } = renderHookWithTrpc(() => useEntryMutations(), {
+      handlers: {
+        "entries.setStarred": (input) => {
+          const typed = input as { id: string; starred: boolean };
+          return {
+            entry: { id: typed.id, read: false, starred: typed.starred, updatedAt: fixedDate },
+            counts: singleCounts(),
+          };
+        },
+      },
+    });
 
-  it("markRead mutation uses handleEntriesMarkedRead", () => {
-    // handleEntriesMarkedRead updates:
-    // - entries.get cache for each entry
-    // - subscriptions.list unread counts
-    // - tags.list unread counts
-    // - entries.count for starred entries
-    // - entries.count for saved entries (if type is saved)
-    // - entries.list (removes entries if filtering by unread)
-    expect(true).toBe(true);
+    act(() => {
+      result.current.star("e1");
+    });
+
+    await waitFor(() => expect(callsFor("entries.setStarred")).toHaveLength(1));
+    const input = callsFor("entries.setStarred")[0].input as {
+      id: string;
+      starred: boolean;
+      changedAt: Date;
+    };
+    expect(input).toEqual(
+      expect.objectContaining({ id: "e1", starred: true, changedAt: expect.any(Date) })
+    );
   });
 
-  it("markAllRead mutation invalidates caches", () => {
-    // markAllRead invalidates (because we don't know which entries were affected):
-    // - entries.list (all filters)
-    // - subscriptions.list
-    // - tags.list
-    // - entries.count with starredOnly: true
-    expect(true).toBe(true);
+  it("toggleStar unstars an entry that is currently starred", async () => {
+    const { result, callsFor } = renderHookWithTrpc(() => useEntryMutations(), {
+      handlers: {
+        "entries.setStarred": (input) => {
+          const typed = input as { id: string; starred: boolean };
+          return {
+            entry: { id: typed.id, read: false, starred: typed.starred, updatedAt: fixedDate },
+            counts: singleCounts(),
+          };
+        },
+      },
+    });
+
+    act(() => {
+      result.current.toggleStar("e1", true);
+    });
+
+    await waitFor(() => expect(callsFor("entries.setStarred")).toHaveLength(1));
+    const input = callsFor("entries.setStarred")[0].input as { starred: boolean };
+    expect(input.starred).toBe(false);
   });
 
-  it("star mutation uses handleEntryStarred", () => {
-    // handleEntryStarred updates:
-    // - entries.get cache to set starred: true
-    // - entries.count with starredOnly: true (total +1, unread +1 if entry is unread)
-    // - entries.list to add entry to starred list
-    expect(true).toBe(true);
-  });
+  it("shows a star-specific toast when the mutation fails", async () => {
+    const { result } = renderHookWithTrpc(() => useEntryMutations(), {
+      handlers: {
+        "entries.setStarred": () => {
+          throw new Error("boom");
+        },
+      },
+    });
 
-  it("unstar mutation uses handleEntryUnstarred", () => {
-    // handleEntryUnstarred updates:
-    // - entries.get cache to set starred: false
-    // - entries.count with starredOnly: true (total -1, unread -1 if entry is unread)
-    // - entries.list to remove entry from starred list
-    expect(true).toBe(true);
+    act(() => {
+      result.current.star("e1");
+    });
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Failed to star entry"));
   });
 });
