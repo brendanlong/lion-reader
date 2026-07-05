@@ -11,18 +11,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSession } from "@/server/auth/session";
 import { db } from "@/server/db";
+import { extractClientInfo } from "@/server/http/client-ip";
 
 // ============================================================================
 // Types
 // ============================================================================
-
-/**
- * Client information extracted from the request
- */
-export interface ClientInfo {
-  userAgent?: string;
-  ipAddress?: string;
-}
 
 /**
  * Error codes from processOAuthCallback that should redirect to login with an error.
@@ -49,23 +42,6 @@ const SIGNUP_ERROR_MAP: Record<SignupErrorCode, string> = {
 // ============================================================================
 // Helper Functions
 // ============================================================================
-
-/**
- * Extracts client information (user agent, IP address) from a request.
- * Used for session creation to track client details.
- *
- * @param request - The incoming request
- * @returns Client info object with userAgent and ipAddress
- */
-function extractClientInfo(request: NextRequest): ClientInfo {
-  const userAgent = request.headers.get("user-agent") ?? undefined;
-  const ipAddress =
-    request.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
-    request.headers.get("x-real-ip") ??
-    undefined;
-
-  return { userAgent, ipAddress };
-}
 
 /**
  * Extracts the error code from an error's cause, if present.
@@ -125,7 +101,7 @@ export async function createSessionResponse(
   appUrl: string,
   options?: { redirectStatus?: number; isNewUser?: boolean }
 ): Promise<NextResponse> {
-  const { userAgent, ipAddress } = extractClientInfo(request);
+  const { userAgent, ipAddress } = extractClientInfo(request.headers);
 
   // Create session
   const { token } = await createSession(db, {

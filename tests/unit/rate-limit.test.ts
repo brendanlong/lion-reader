@@ -313,6 +313,9 @@ describe("RATE_LIMIT_CONFIGS.oauth", () => {
 });
 
 describe("getClientIdentifier", () => {
+  // The trusted IP precedence (Fly-Client-IP → rightmost x-forwarded-for hop →
+  // x-real-ip) is covered in client-ip.test.ts; these cover the identifier
+  // framing getClientIdentifier layers on top.
   it("prefers the authenticated user ID over any IP header", () => {
     const headers = new Headers({
       "fly-client-ip": "9.9.9.9",
@@ -322,52 +325,13 @@ describe("getClientIdentifier", () => {
     expect(getClientIdentifier("user-123", headers)).toBe("user:user-123");
   });
 
-  it("prefers the trustworthy Fly-Client-IP header", () => {
-    const headers = new Headers({
-      "fly-client-ip": "9.9.9.9",
-      // Spoofed leftmost hop must be ignored in favor of Fly-Client-IP.
-      "x-forwarded-for": "1.2.3.4, 9.9.9.9",
-    });
-    expect(getClientIdentifier(null, headers)).toBe("ip:9.9.9.9");
-  });
-
-  it("uses the rightmost (LB-appended) x-forwarded-for hop, not the spoofable first one", () => {
-    // Fly appends the real client IP; a client-supplied leftmost value must not win.
+  it("keys unauthenticated requests on the trusted client IP, not the spoofable hop", () => {
+    // Rotating the spoofed leftmost hop must not yield a fresh rate-limit key.
     const headers = new Headers({ "x-forwarded-for": "1.2.3.4, 203.0.113.7" });
     expect(getClientIdentifier(null, headers)).toBe("ip:203.0.113.7");
   });
 
-  it("cannot be bypassed by rotating a spoofed leftmost x-forwarded-for value", () => {
-    const realClientHop = "203.0.113.7";
-    const a = getClientIdentifier(
-      null,
-      new Headers({ "x-forwarded-for": `1.1.1.1, ${realClientHop}` })
-    );
-    const b = getClientIdentifier(
-      null,
-      new Headers({ "x-forwarded-for": `2.2.2.2, ${realClientHop}` })
-    );
-    // Different spoofed prefixes still resolve to the same rate-limit key.
-    expect(a).toBe(b);
-    expect(a).toBe(`ip:${realClientHop}`);
-  });
-
-  it("handles a single-hop x-forwarded-for", () => {
-    const headers = new Headers({ "x-forwarded-for": "203.0.113.7" });
-    expect(getClientIdentifier(null, headers)).toBe("ip:203.0.113.7");
-  });
-
-  it("falls back to x-real-ip when no forwarded-for is present", () => {
-    const headers = new Headers({ "x-real-ip": "5.6.7.8" });
-    expect(getClientIdentifier(null, headers)).toBe("ip:5.6.7.8");
-  });
-
-  it("falls back to x-real-ip when x-forwarded-for is empty/whitespace", () => {
-    const headers = new Headers({ "x-forwarded-for": " , ", "x-real-ip": "5.6.7.8" });
-    expect(getClientIdentifier(null, headers)).toBe("ip:5.6.7.8");
-  });
-
-  it("returns ip:unknown when no IP headers are present", () => {
+  it("returns ip:unknown when no trusted IP header is present", () => {
     expect(getClientIdentifier(null, new Headers())).toBe("ip:unknown");
   });
 });

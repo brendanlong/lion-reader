@@ -21,6 +21,7 @@ import { users, oauthAccounts } from "@/server/db/schema";
 import { signupConfig, ALL_SIGNUP_PROVIDERS } from "@/server/config/env";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { createSession, revokeSessionByToken } from "@/server/auth/session";
+import { extractClientInfo } from "@/server/http/client-ip";
 import { getEnabledProviders } from "@/server/auth/oauth/config";
 import {
   createGoogleAuthUrl,
@@ -98,19 +99,6 @@ const loginInputSchema = z.object({
 // ============================================================================
 
 /**
- * Extract client info (user agent and IP address) from request headers.
- */
-function getClientInfo(headers: Headers): {
-  userAgent: string | undefined;
-  ipAddress: string | undefined;
-} {
-  const userAgent = headers.get("user-agent") ?? undefined;
-  const ipAddress =
-    headers.get("x-forwarded-for")?.split(",")[0].trim() ?? headers.get("x-real-ip") ?? undefined;
-  return { userAgent, ipAddress };
-}
-
-/**
  * Wrap an OAuth validation function with shared error handling.
  * Catches errors and rethrows as appropriate tRPC errors.
  */
@@ -141,7 +129,7 @@ async function handleOAuthCallback(
   sessionToken: string;
   isNewUser: boolean;
 }> {
-  const { userAgent, ipAddress } = getClientInfo(headers);
+  const { userAgent, ipAddress } = extractClientInfo(headers);
 
   const { token } = await createSession(db, {
     userId: oauthResult.userId,
@@ -212,7 +200,7 @@ export const authRouter = createTRPCRouter({
       // Hash the password with argon2
       const passwordHash = await argon2.hash(password);
 
-      const { userAgent, ipAddress } = getClientInfo(ctx.headers);
+      const { userAgent, ipAddress } = extractClientInfo(ctx.headers);
 
       // Create user and session in a transaction
       const result = await ctx.db.transaction(async (tx) => {
@@ -303,7 +291,7 @@ export const authRouter = createTRPCRouter({
         throw errors.invalidCredentials();
       }
 
-      const { userAgent, ipAddress } = getClientInfo(ctx.headers);
+      const { userAgent, ipAddress } = extractClientInfo(ctx.headers);
 
       // Create new session
       const { token } = await createSession(ctx.db, {

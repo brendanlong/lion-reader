@@ -18,6 +18,7 @@
 import { clientLogin } from "@/server/google-reader/auth";
 import { parseFormData, errorResponse } from "@/server/google-reader/parse";
 import { checkRouteRateLimit } from "@/server/rate-limit";
+import { extractClientInfo } from "@/server/http/client-ip";
 
 export const dynamic = "force-dynamic";
 
@@ -33,8 +34,7 @@ export async function POST(request: Request): Promise<Response> {
     return errorResponse("Error=BadAuthentication", 401);
   }
 
-  const userAgent = request.headers.get("user-agent") ?? undefined;
-  const ipAddress = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? undefined;
+  const { userAgent, ipAddress } = extractClientInfo(request.headers);
 
   const result = await clientLogin(email, password, userAgent, ipAddress);
 
