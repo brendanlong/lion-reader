@@ -6,6 +6,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { createHash } from "crypto";
 import { marked } from "marked";
 import { logger } from "@/lib/logger";
 import { sanitizeEntryHtml } from "@/server/html/sanitize";
@@ -42,7 +43,7 @@ const MAX_OUTPUT_TOKENS = 1024;
  * Gets the configured max words for summaries.
  * Priority: user setting > environment variable > default.
  */
-function getMaxWords(userMaxWords?: number | null): number {
+export function getMaxWords(userMaxWords?: number | null): number {
   if (userMaxWords && userMaxWords > 0) {
     return userMaxWords;
   }
@@ -104,6 +105,17 @@ function buildSummarizationPrompt(
     .replaceAll("{{content}}", content)
     .replaceAll("{{title}}", title)
     .replaceAll("{{maxWords}}", String(maxWords));
+}
+
+/**
+ * Hashes the effective summarization prompt so cached summaries can detect when
+ * the user changes their custom prompt (or clears it back to the default).
+ * Falls back to the default template when the user has no custom prompt, so a
+ * custom prompt that matches the default hashes the same as no custom prompt.
+ */
+export function hashPrompt(userPrompt?: string | null): string {
+  const template = userPrompt || DEFAULT_SUMMARIZATION_PROMPT;
+  return createHash("sha256").update(template, "utf8").digest("hex");
 }
 
 /**

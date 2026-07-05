@@ -109,7 +109,9 @@ CREATE TABLE public.entry_summaries (
     generated_at timestamp with time zone,
     error text,
     error_at timestamp with time zone,
-    user_id uuid
+    user_id uuid,
+    max_words integer,
+    prompt_hash text
 );
 
 CREATE TABLE public.feeds (

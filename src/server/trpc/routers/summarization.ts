@@ -19,6 +19,8 @@ import {
   prepareContentForSummarization,
   CURRENT_PROMPT_VERSION,
   getSummarizationModelId,
+  getMaxWords,
+  hashPrompt,
   listModels,
   DEFAULT_SUMMARIZATION_PROMPT,
 } from "@/server/services/summarization";
@@ -105,6 +107,29 @@ export const summarizationRouter = createTRPCRouter({
       const userMaxWords = ctx.session.user.summarizationMaxWords;
       const userPrompt = ctx.session.user.summarizationPrompt;
 
+      const currentModelId = getSummarizationModelId(userSummarizationModel);
+      const currentMaxWords = getMaxWords(userMaxWords);
+      const currentPromptHash = hashPrompt(userPrompt);
+
+      /**
+       * Whether the settings used to generate a cached summary differ from the
+       * user's current settings. `maxWords`/`promptHash` are only compared when
+       * present so summaries cached before these columns existed (null) aren't
+       * reported as stale. See #824.
+       */
+      const isSettingsChanged = (record: {
+        promptVersion: number;
+        modelId: string | null;
+        maxWords: number | null;
+        promptHash: string | null;
+      }): boolean => {
+        const promptVersionChanged = record.promptVersion !== CURRENT_PROMPT_VERSION;
+        const modelChanged = record.modelId !== null && record.modelId !== currentModelId;
+        const maxWordsChanged = record.maxWords !== null && record.maxWords !== currentMaxWords;
+        const promptChanged = record.promptHash !== null && record.promptHash !== currentPromptHash;
+        return promptVersionChanged || modelChanged || maxWordsChanged || promptChanged;
+      };
+
       // Fetch API key from DB on demand (not cached in session for security)
       const { anthropicApiKey: userAnthropicApiKey } = await getUserApiKeys(userId);
 
@@ -175,10 +200,6 @@ export const summarizationRouter = createTRPCRouter({
 
           const fullRecord = fullSummary[0];
           if (fullRecord?.summaryText) {
-            const currentModelId = getSummarizationModelId(userSummarizationModel);
-            const promptVersionChanged = fullRecord.promptVersion !== CURRENT_PROMPT_VERSION;
-            const modelChanged =
-              fullRecord.modelId !== null && fullRecord.modelId !== currentModelId;
             return {
               // Sanitize on read: summaries cached before server-side
               // sanitization existed may contain unsanitized HTML.
@@ -186,7 +207,7 @@ export const summarizationRouter = createTRPCRouter({
               cached: true,
               modelId: fullRecord.modelId || "unknown",
               generatedAt: fullRecord.generatedAt,
-              settingsChanged: promptVersionChanged || modelChanged,
+              settingsChanged: isSettingsChanged(fullRecord),
             };
           }
         }
@@ -205,15 +226,12 @@ export const summarizationRouter = createTRPCRouter({
 
         const feedRecord = feedSummary[0];
         if (feedRecord?.summaryText) {
-          const currentModelId = getSummarizationModelId(userSummarizationModel);
-          const promptVersionChanged = feedRecord.promptVersion !== CURRENT_PROMPT_VERSION;
-          const modelChanged = feedRecord.modelId !== null && feedRecord.modelId !== currentModelId;
           return {
             summary: sanitizeEntryHtml(feedRecord.summaryText) ?? "",
             cached: true,
             modelId: feedRecord.modelId || "unknown",
             generatedAt: feedRecord.generatedAt,
-            settingsChanged: promptVersionChanged || modelChanged,
+            settingsChanged: isSettingsChanged(feedRecord),
           };
         }
 
@@ -254,12 +272,11 @@ export const summarizationRouter = createTRPCRouter({
 
       const summaryRecord = summary[0];
 
-      // Check if settings have changed since this summary was generated
-      const currentModelId = getSummarizationModelId(userSummarizationModel);
+      // Check if settings have changed since this summary was generated.
+      // promptVersionChanged also gates cache reuse below (a built-in prompt
+      // bump invalidates the cache), so it stays a separate variable.
       const promptVersionChanged = summaryRecord.promptVersion !== CURRENT_PROMPT_VERSION;
-      const modelChanged =
-        summaryRecord.modelId !== null && summaryRecord.modelId !== currentModelId;
-      const settingsChanged = promptVersionChanged || modelChanged;
+      const settingsChanged = isSettingsChanged(summaryRecord);
 
       // Return cached summary if available and not stale (prompt version unchanged),
       // unless the user explicitly requested regeneration
@@ -302,6 +319,8 @@ export const summarizationRouter = createTRPCRouter({
             summaryText: result.summary,
             modelId: result.modelId,
             promptVersion: CURRENT_PROMPT_VERSION,
+            maxWords: currentMaxWords,
+            promptHash: currentPromptHash,
             generatedAt: new Date(),
             error: null,
             errorAt: null,
