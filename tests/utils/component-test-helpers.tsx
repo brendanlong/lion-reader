@@ -22,7 +22,12 @@ import type { ReactElement, ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TRPCClientError, type TRPCLink } from "@trpc/client";
 import { observable } from "@trpc/server/observable";
-import { render, type RenderResult } from "@testing-library/react";
+import {
+  render,
+  renderHook,
+  type RenderResult,
+  type RenderHookResult,
+} from "@testing-library/react";
 import { vi } from "vitest";
 import { trpc } from "@/lib/trpc/client";
 import type { AppRouter } from "@/server/trpc/root";
@@ -134,13 +139,17 @@ export interface RenderWithTrpcResult extends RenderResult {
 }
 
 /**
- * Renders `ui` inside a real tRPC + React Query provider whose network layer is
- * the mock link built from `options.handlers`.
+ * Builds the real tRPC + React Query provider wrapper whose network layer is the
+ * mock link resolving procedures from `options.handlers`. Shared by
+ * `renderWithTrpc` (components) and `renderHookWithTrpc` (hooks) so both exercise
+ * the same real client wiring.
  */
-export function renderWithTrpc(
-  ui: ReactElement,
-  options: RenderWithTrpcOptions = {}
-): RenderWithTrpcResult {
+function createTrpcWrapper(options: RenderWithTrpcOptions = {}): {
+  Wrapper: (props: { children: ReactNode }) => ReactElement;
+  queryClient: QueryClient;
+  calls: RecordedCall[];
+  callsFor: (path: string) => RecordedCall[];
+} {
   const handlers = options.handlers ?? {};
   const calls: RecordedCall[] = [];
 
@@ -162,12 +171,48 @@ export function renderWithTrpc(
     );
   }
 
-  const result = render(ui, { wrapper: Wrapper });
-
   return {
-    ...result,
+    Wrapper,
     queryClient,
     calls,
     callsFor: (path: string) => calls.filter((c) => c.path === path),
   };
+}
+
+/**
+ * Renders `ui` inside a real tRPC + React Query provider whose network layer is
+ * the mock link built from `options.handlers`.
+ */
+export function renderWithTrpc(
+  ui: ReactElement,
+  options: RenderWithTrpcOptions = {}
+): RenderWithTrpcResult {
+  const { Wrapper, queryClient, calls, callsFor } = createTrpcWrapper(options);
+  const result = render(ui, { wrapper: Wrapper });
+
+  return { ...result, queryClient, calls, callsFor };
+}
+
+export interface RenderHookWithTrpcResult<TResult> extends RenderHookResult<TResult, unknown> {
+  /** The QueryClient backing the render — inspect or seed its cache directly. */
+  queryClient: QueryClient;
+  /** Every tRPC operation the hook issued, in order. */
+  calls: RecordedCall[];
+  /** Convenience: the recorded calls for a given procedure path. */
+  callsFor: (path: string) => RecordedCall[];
+}
+
+/**
+ * Renders a hook inside the same real tRPC + React Query provider as
+ * `renderWithTrpc`, so hooks that call `trpc.useUtils()`/`useMutation` run
+ * against real client wiring with a mock network link.
+ */
+export function renderHookWithTrpc<TResult>(
+  hook: () => TResult,
+  options: RenderWithTrpcOptions = {}
+): RenderHookWithTrpcResult<TResult> {
+  const { Wrapper, queryClient, calls, callsFor } = createTrpcWrapper(options);
+  const result = renderHook(hook, { wrapper: Wrapper });
+
+  return { ...result, queryClient, calls, callsFor };
 }
