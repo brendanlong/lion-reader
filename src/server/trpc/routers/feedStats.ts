@@ -118,25 +118,26 @@ export const feedStatsRouter = createTRPCRouter({
         );
       }
 
-      // Total entry count subquery
-      const totalEntryCountSq = ctx.db
-        .select({ count: count().as("count") })
+      // Per-feed entry stats computed in a single pass via LEFT JOIN LATERAL.
+      // Using correlated scalar subqueries here caused Postgres to re-execute the
+      // entries scan for every reference (up to 4x per feed row); the lateral
+      // aggregates COUNT and MIN(fetched_at) once per feed instead (#830).
+      const entryStatsSq = ctx.db
+        .select({
+          totalCount: count().as("total_count"),
+          oldestFetchedAt: sql<Date | null>`MIN(${entries.fetchedAt})`.as("oldest_fetched_at"),
+        })
         .from(entries)
-        .where(eq(entries.feedId, feeds.id));
-
-      // Oldest entry timestamp subquery
-      const oldestEntryAtSq = ctx.db
-        .select({ minFetchedAt: sql`MIN(${entries.fetchedAt})`.as("min_fetched_at") })
-        .from(entries)
-        .where(eq(entries.feedId, feeds.id));
+        .where(eq(entries.feedId, feeds.id))
+        .as("entry_stats");
 
       // Entries per week: count / weeks since oldest entry
       const entriesPerWeekExpr = sql<number | null>`
         CASE
-          WHEN (${totalEntryCountSq}) = 0 THEN NULL
-          WHEN (${oldestEntryAtSq}) IS NULL THEN NULL
-          WHEN EXTRACT(EPOCH FROM (NOW() - (${oldestEntryAtSq}))) < 604800 THEN NULL
-          ELSE (${totalEntryCountSq})::float / (EXTRACT(EPOCH FROM (NOW() - (${oldestEntryAtSq}))) / 604800.0)
+          WHEN ${entryStatsSq.totalCount} = 0 THEN NULL
+          WHEN ${entryStatsSq.oldestFetchedAt} IS NULL THEN NULL
+          WHEN EXTRACT(EPOCH FROM (NOW() - ${entryStatsSq.oldestFetchedAt})) < 604800 THEN NULL
+          ELSE ${entryStatsSq.totalCount}::float / (EXTRACT(EPOCH FROM (NOW() - ${entryStatsSq.oldestFetchedAt})) / 604800.0)
         END
       `;
 
@@ -158,11 +159,12 @@ export const feedStatsRouter = createTRPCRouter({
           subscribedAt: subscriptions.subscribedAt,
           lastFetchEntryCount: feeds.lastFetchEntryCount,
           lastFetchSizeBytes: feeds.lastFetchSizeBytes,
-          totalEntryCount: sql<number>`(${totalEntryCountSq})`.as("total_entry_count"),
+          totalEntryCount: entryStatsSq.totalCount,
           entriesPerWeek: entriesPerWeekExpr.as("entries_per_week"),
         })
         .from(feeds)
         .innerJoin(subscriptions, eq(subscriptions.feedId, feeds.id))
+        .leftJoinLateral(entryStatsSq, sql`true`)
         .where(and(...conditions))
         .orderBy(
           sql`COALESCE(${subscriptions.customTitle}, ${feeds.title}, ${feeds.url}) ASC`,
