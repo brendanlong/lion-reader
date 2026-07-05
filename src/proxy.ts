@@ -37,7 +37,7 @@ const PUBLIC_PATHS = [
   "/admin", // Admin uses a separate admin-session cookie, not the user "session" cookie
   "/admin/", // Admin subpages (feeds, invites, overview, users)
   "/demo", // Interactive demo (no auth required)
-  "/demo/", // Demo subpages (all, articles, highlights, subscription, tag)
+  "/demo/", // Demo subpages (all, highlights, subscription, tag)
   "/save", // Bookmarklet save landing page (handles its own auth)
   "/favicon.ico",
   "/robots.txt",
