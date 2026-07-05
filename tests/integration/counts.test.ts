@@ -218,6 +218,87 @@ describe("Entry counts service", () => {
       expect(counts.starred).toEqual({ unread: 0 });
     });
 
+    it("does not double-count global unread for entries reachable through multiple subscriptions", async () => {
+      // Regression test: the global "All Articles" count previously scanned the
+      // visible_entries view with count(*), which emits an entry once per
+      // matching subscription_feeds row. entryIdB is reachable through both
+      // sub1 and sub2, so it was counted twice, inflating allUnread to 3 for
+      // what are really 2 distinct unread entries.
+      const userId = await createTestUser();
+      const { entryIdB } = await createOverlappingSubscriptions(userId);
+
+      const counts = await getEntryRelatedCounts(db, userId, entryIdB);
+
+      expect(counts.all).toEqual({ unread: 2 });
+    });
+
+    it("excludes unread entries from unsubscribed feeds from global counts", async () => {
+      // user_entries rows persist after unsubscribe (soft delete), but such
+      // entries are not visible unless starred/saved. The global count must
+      // exclude them.
+      const userId = await createTestUser();
+      const activeFeedId = await createTestFeed("https://active.com/rss");
+      await createTestSubscription(userId, activeFeedId);
+      const activeEntryId = await createTestEntry(activeFeedId, [userId]);
+
+      // A feed the user has unsubscribed from, with an unread (non-starred,
+      // non-saved) entry whose user_entries row still exists.
+      const goneFeedId = await createTestFeed("https://gone.com/rss");
+      const goneSubId = generateUuidv7();
+      await db.insert(subscriptions).values({
+        id: goneSubId,
+        userId,
+        feedId: goneFeedId,
+        subscribedAt: new Date(),
+        unsubscribedAt: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      await db
+        .insert(subscriptionFeeds)
+        .values({ subscriptionId: goneSubId, feedId: goneFeedId, userId })
+        .onConflictDoNothing();
+      await createTestEntry(goneFeedId, [userId]);
+
+      const counts = await getEntryRelatedCounts(db, userId, activeEntryId);
+
+      expect(counts.all).toEqual({ unread: 1 });
+    });
+
+    it("counts starred entries from unsubscribed feeds in global counts", async () => {
+      // Starred entries are always visible, even from a feed the user has
+      // unsubscribed from, so they must still count toward All Articles and
+      // Starred.
+      const userId = await createTestUser();
+      const goneFeedId = await createTestFeed("https://gone-starred.com/rss");
+      const goneSubId = generateUuidv7();
+      await db.insert(subscriptions).values({
+        id: goneSubId,
+        userId,
+        feedId: goneFeedId,
+        subscribedAt: new Date(),
+        unsubscribedAt: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      await db
+        .insert(subscriptionFeeds)
+        .values({ subscriptionId: goneSubId, feedId: goneFeedId, userId })
+        .onConflictDoNothing();
+      const starredEntryId = await createTestEntry(goneFeedId, []);
+      await db.insert(userEntries).values({
+        userId,
+        entryId: starredEntryId,
+        read: false,
+        starred: true,
+      });
+
+      const counts = await getEntryRelatedCounts(db, userId, starredEntryId);
+
+      expect(counts.all).toEqual({ unread: 1 });
+      expect(counts.starred).toEqual({ unread: 1 });
+    });
+
     it("does not count other users' unread entries in tag counts", async () => {
       const userId = await createTestUser("user-a");
       const otherUserId = await createTestUser("user-b");

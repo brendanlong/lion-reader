@@ -1154,9 +1154,14 @@ export async function countEntries(
   // Apply entry filter conditions (unreadOnly, starredOnly, type, excludeTypes, showSpam)
   conditions.push(...buildEntryFilterConditions(params));
 
+  // count(DISTINCT id), not count(*): visible_entries emits one row per matching
+  // subscription_feeds row, so an entry reachable through overlapping
+  // subscriptions (redirect/merge history) would be counted multiple times.
+  // This keeps the sidebar badge consistent with the counts.ts service, which
+  // dedupes the same way.
   const result = await db
     .select({
-      unread: sql<number>`count(*) FILTER (WHERE ${visibleEntries.read} = false)::int`,
+      unread: sql<number>`count(DISTINCT ${visibleEntries.id}) FILTER (WHERE ${visibleEntries.read} = false)::int`,
     })
     .from(visibleEntries)
     .where(and(...conditions));
@@ -1211,9 +1216,11 @@ export async function countTotalEntries(
 
   conditions.push(...buildEntryFilterConditions(params));
 
+  // count(DISTINCT id): dedupe entries reachable through overlapping
+  // subscription_feeds rows (see countEntries).
   const result = await db
     .select({
-      total: sql<number>`count(*)::int`,
+      total: sql<number>`count(DISTINCT ${visibleEntries.id})::int`,
     })
     .from(visibleEntries)
     .where(and(...conditions));

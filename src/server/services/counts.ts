@@ -105,10 +105,19 @@ export function toBulkUnreadCounts(counts: UnreadCounts): NewEntryUnreadCounts {
 /**
  * Global unread counts (all + starred + saved) for a user.
  *
- * read=false is in WHERE (not a FILTER aggregate) so the partial
- * idx_user_entries_unread index drives the scan instead of reading every
- * visible row. Every aggregate is a subset of unread, so this is exactly
- * equivalent to FILTER (WHERE NOT read) over all visible rows.
+ * `count(DISTINCT id)` — not `count(*)` — because `visible_entries` emits one
+ * row per matching `subscription_feeds` row, so an entry reachable through
+ * overlapping subscriptions (redirect/merge history) appears multiple times and
+ * a plain `count(*)` over-counts. DISTINCT dedupes by entry id, matching the
+ * per-tag/uncategorized counts below. Keeping the visibility rule in the view
+ * (rather than re-deriving it here) means it stays defined in exactly one place.
+ *
+ * `read = false` is in WHERE (not a FILTER predicate) so the partial
+ * `idx_user_entries_unread` index can drive the scan; every aggregate is then a
+ * subset of unread. An `EXPLAIN ANALYZE` on a heavy user (50k entries, 45k
+ * unread) confirmed the view's set-based hash joins run once in ~30ms — pushing
+ * the visibility check onto the base tables with a correlated `EXISTS` was ~25x
+ * slower (per-row subplan), so the view scan is the right shape here.
  */
 async function getGlobalUnreadCounts(
   db: typeof dbType,
@@ -116,9 +125,9 @@ async function getGlobalUnreadCounts(
 ): Promise<{ allUnread: number; starredUnread: number; savedUnread: number }> {
   const result = await db
     .select({
-      allUnread: sql<number>`count(*)::int`,
-      starredUnread: sql<number>`count(*) FILTER (WHERE ${visibleEntries.starred})::int`,
-      savedUnread: sql<number>`count(*) FILTER (WHERE ${visibleEntries.type} = 'saved')::int`,
+      allUnread: sql<number>`count(DISTINCT ${visibleEntries.id})::int`,
+      starredUnread: sql<number>`count(DISTINCT ${visibleEntries.id}) FILTER (WHERE ${visibleEntries.starred})::int`,
+      savedUnread: sql<number>`count(DISTINCT ${visibleEntries.id}) FILTER (WHERE ${visibleEntries.type} = 'saved')::int`,
     })
     .from(visibleEntries)
     .where(and(eq(visibleEntries.userId, userId), eq(visibleEntries.read, false)));
@@ -481,22 +490,23 @@ export async function getNewEntryRelatedCounts(
   entryType: "web" | "email" | "saved",
   subscriptionId: string | null
 ): Promise<UnreadCounts> {
-  // Query unread counts for global + starred + saved + subscription in one query.
-  // read=false in WHERE lets the partial idx_user_entries_unread index drive;
-  // every aggregate is a subset of unread, so the remaining FILTERs (starred,
-  // saved, this subscription) are equivalent to the previous AND NOT read form.
+  // Query unread counts for global + starred + saved + subscription in one
+  // scan. read=false in WHERE lets the partial idx_user_entries_unread index
+  // drive; every aggregate is then a subset of unread. count(DISTINCT id)
+  // dedupes entries reachable through overlapping subscription_feeds rows (see
+  // getGlobalUnreadCounts).
   const result = await db
     .select({
       // Global unread counts
-      allUnread: sql<number>`count(*)::int`,
+      allUnread: sql<number>`count(DISTINCT ${visibleEntries.id})::int`,
       // Starred unread counts
-      starredUnread: sql<number>`count(*) FILTER (WHERE ${visibleEntries.starred})::int`,
+      starredUnread: sql<number>`count(DISTINCT ${visibleEntries.id}) FILTER (WHERE ${visibleEntries.starred})::int`,
       // Saved unread counts
-      savedUnread: sql<number>`count(*) FILTER (WHERE ${visibleEntries.type} = 'saved')::int`,
+      savedUnread: sql<number>`count(DISTINCT ${visibleEntries.id}) FILTER (WHERE ${visibleEntries.type} = 'saved')::int`,
       // Subscription count (only computed if subscriptionId provided)
       subscriptionUnread:
         subscriptionId !== null
-          ? sql<number>`count(*) FILTER (WHERE ${visibleEntries.subscriptionId} = ${subscriptionId})::int`
+          ? sql<number>`count(DISTINCT ${visibleEntries.id}) FILTER (WHERE ${visibleEntries.subscriptionId} = ${subscriptionId})::int`
           : sql<number>`0`,
     })
     .from(visibleEntries)
@@ -557,16 +567,10 @@ export async function getSubscriptionDeletionCounts(
   userId: string,
   formerTagIds: string[]
 ): Promise<BulkUnreadCounts> {
-  const globalResult = await db
-    .select({
-      allUnread: sql<number>`count(*) FILTER (WHERE NOT ${visibleEntries.read})::int`,
-      starredUnread: sql<number>`count(*) FILTER (WHERE ${visibleEntries.starred} AND NOT ${visibleEntries.read})::int`,
-      savedUnread: sql<number>`count(*) FILTER (WHERE ${visibleEntries.type} = 'saved' AND NOT ${visibleEntries.read})::int`,
-    })
-    .from(visibleEntries)
-    .where(eq(visibleEntries.userId, userId));
-
-  const globalCounts = globalResult[0] ?? { allUnread: 0, starredUnread: 0, savedUnread: 0 };
+  // Reuse the shared global-count query (see getGlobalUnreadCounts). Must run
+  // AFTER the subscription is soft-deleted so its entries no longer count as
+  // visible.
+  const globalCounts = await getGlobalUnreadCounts(db, userId);
   const baseCounts: BulkUnreadCounts = {
     all: { unread: globalCounts.allUnread },
     starred: { unread: globalCounts.starredUnread },
