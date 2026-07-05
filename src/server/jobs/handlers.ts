@@ -366,8 +366,18 @@ async function processSuccessfulFetch(
   if (feed.url && feedTitle) {
     const transformTitle = getFeedPlugin(feed.url)?.capabilities.feed.transformFeedTitle;
     if (transformTitle) {
-      const firstAuthor = parsedFeed.items.find((item) => item.author)?.author ?? null;
-      feedTitle = transformTitle(feedTitle, new URL(feed.url), { firstAuthor });
+      // Isolate plugin failures: a throwing hook must not fail the whole fetch.
+      // Fall back to the untransformed title.
+      try {
+        const firstAuthor = parsedFeed.items.find((item) => item.author)?.author ?? null;
+        feedTitle = transformTitle(feedTitle, new URL(feed.url), { firstAuthor });
+      } catch (error) {
+        logger.warn("Plugin transformFeedTitle hook threw; using untransformed title", {
+          feedId: feed.id,
+          feedUrl: feed.url,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
   }
 
@@ -651,61 +661,11 @@ async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<
       };
     }
 
-    // Note: The fetcher follows all redirects and returns success/not_modified with the
-    // redirect chain included. The "permanent_redirect" type exists for API completeness
-    // but is not currently returned by the fetcher.
-    case "permanent_redirect": {
-      // Check if a feed already exists at the redirect URL
-      const [existingFeedAtRedirectUrl] = await db
-        .select()
-        .from(feeds)
-        .where(eq(feeds.url, result.redirectUrl))
-        .limit(1);
-
-      if (existingFeedAtRedirectUrl) {
-        // Feed exists at redirect URL - migrate subscriptions
-        await migrateSubscriptionsToExistingFeed(feed, existingFeedAtRedirectUrl);
-
-        logger.info("Migrated subscriptions due to redirect to existing feed", {
-          oldFeedId: feed.id,
-          oldUrl: feed.url,
-          newFeedId: existingFeedAtRedirectUrl.id,
-          newUrl: result.redirectUrl,
-        });
-
-        // The old feed's job will be disabled automatically when it has no subscribers
-        // Schedule far future - if any new subscribers somehow appear, we'll redirect again
-        return {
-          success: true,
-          nextRunAt: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000), // 30 days
-          metadata: {
-            redirected: true,
-            mergedIntoFeedId: existingFeedAtRedirectUrl.id,
-            newUrl: result.redirectUrl,
-          },
-        };
-      }
-
-      // No existing feed at redirect URL - update this feed's URL
-      await db
-        .update(feeds)
-        .set({
-          url: result.redirectUrl,
-          lastFetchedAt: now,
-          updatedAt: now,
-        })
-        .where(eq(feeds.id, feed.id));
-
-      // Schedule immediate retry with new URL
-      return {
-        success: true,
-        nextRunAt: now,
-        metadata: {
-          redirected: true,
-          newUrl: result.redirectUrl,
-        },
-      };
-    }
+    // Note: The fetcher follows all redirects itself and returns success/not_modified
+    // with the redirect chain included; permanent redirects are detected from that chain
+    // via findPermanentRedirectUrl and applied through the 7-day-wait logic in
+    // handlePermanentRedirect. There is deliberately no separate "permanent_redirect"
+    // fetch result — applying a redirect immediately here would contradict that wait.
 
     case "client_error": {
       if (result.permanent) {
@@ -787,7 +747,13 @@ async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<
             ? `Rate limited${result.retryAfter ? ` (retry after ${result.retryAfter}s)` : ""}`
             : result.message;
 
-      return handleTemporaryError(feed, errorMessage, now);
+      // 429 and 5xx may carry a Retry-After; honor it as a floor on the backoff.
+      const retryAfterSeconds =
+        result.status === "rate_limited" || result.status === "server_error"
+          ? result.retryAfter
+          : undefined;
+
+      return handleTemporaryError(feed, errorMessage, now, retryAfterSeconds);
     }
 
     default: {
@@ -799,16 +765,21 @@ async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<
 
 /**
  * Handles temporary errors by calculating backoff and updating the feed.
+ *
+ * @param retryAfterSeconds - Server-requested retry delay (Retry-After header),
+ *   honored as a floor on the exponential backoff when present.
  */
 async function handleTemporaryError(
   feed: Feed,
   errorMessage: string,
-  now: Date
+  now: Date,
+  retryAfterSeconds?: number
 ): Promise<JobHandlerResult> {
   const newFailureCount = (feed.consecutiveFailures ?? 0) + 1;
 
   const nextFetch = calculateNextFetch({
     consecutiveFailures: newFailureCount,
+    retryAfterSeconds,
     websubActive: feed.websubActive ?? false,
     now,
   });
@@ -1215,14 +1186,35 @@ export async function migrateSubscriptionsToExistingFeed(
 }
 
 /**
+ * How often the WebSub renewal job runs.
+ *
+ * This must be short relative to the shortest lease we want to keep alive: a
+ * lease can only be renewed on a run that falls within its renewal window, so a
+ * daily cadence silently lets sub-24h leases lapse until the next run. Running
+ * hourly keeps any lease down to ~1h alive.
+ */
+const WEBSUB_RENEWAL_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+
+/**
+ * How far ahead of expiry we renew, in hours.
+ *
+ * Kept just above the run interval so every lease is renewed on the run before
+ * it would expire, while long leases are left untouched until near their own
+ * expiry (no per-run re-subscribe spam).
+ */
+const WEBSUB_RENEWAL_THRESHOLD_HOURS = 2;
+
+/**
  * Handler for renew_websub jobs.
  * Renews WebSub subscriptions that are expiring soon.
  *
- * This job runs daily. It finds all active WebSub subscriptions expiring
- * within 24 hours and attempts to renew them.
+ * Runs hourly (see WEBSUB_RENEWAL_INTERVAL_MS) and renews active subscriptions
+ * expiring within WEBSUB_RENEWAL_THRESHOLD_HOURS. The frequent cadence + short
+ * threshold keeps short leases alive without re-subscribing long leases every
+ * run.
  *
  * @param _payload - The job payload (empty for this job type)
- * @returns Job handler result with next run time (24 hours from now)
+ * @returns Job handler result with next run time
  */
 export async function handleRenewWebsub(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -1230,7 +1222,7 @@ export async function handleRenewWebsub(
 ): Promise<JobHandlerResult> {
   logger.info("Starting WebSub subscription renewal check");
 
-  const result = await renewExpiringSubscriptions(24); // 24 hours before expiry
+  const result = await renewExpiringSubscriptions(WEBSUB_RENEWAL_THRESHOLD_HOURS);
 
   // Track renewal metrics
   for (let i = 0; i < result.renewed; i++) {
@@ -1246,8 +1238,8 @@ export async function handleRenewWebsub(
     });
   }
 
-  // Schedule next check for 24 hours from now
-  const nextRunAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  // Schedule the next check one interval out.
+  const nextRunAt = new Date(Date.now() + WEBSUB_RENEWAL_INTERVAL_MS);
 
   logger.debug("Scheduled next WebSub renewal check", {
     scheduledFor: nextRunAt.toISOString(),

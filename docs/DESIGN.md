@@ -257,7 +257,7 @@ The OAuth/MCP endpoints (`.well-known/*`, `/oauth/register`, `/oauth/token`, `/a
    - 200 OK: parse feed, process entries
    - 301 Permanent Redirect: track, update URL after 7-day wait period (HTTP-to-HTTPS applied immediately)
    - 302/307 Temporary Redirect: follow without updating URL
-   - 429 Too Many Requests: treated as a failure with exponential backoff (`Retry-After` is parsed and logged, but not yet used for scheduling — see #954)
+   - 429 Too Many Requests / 5xx: treated as a failure with exponential backoff; when a `Retry-After` header is present it is honored as a floor on the backoff (`max(retryAfterSeconds, backoff)`, capped at the 7-day max), so we never poll earlier than the server asked
    - 4xx/5xx: increment failures, backoff
 5. Calculate `next_fetch_at` based on Cache-Control (10min with cache hint, 60min default min, 7day max)
 

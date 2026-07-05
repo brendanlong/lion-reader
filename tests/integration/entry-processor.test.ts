@@ -13,6 +13,7 @@ import { createPubSubSubscription, getFeedEventsChannel } from "../../src/server
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import {
   generateContentHash,
+  clampPublishedAt,
   deriveGuid,
   generateEntrySummary,
   findEntryByGuid,
@@ -111,6 +112,49 @@ describe("Entry Processor", () => {
 
       const hash = generateContentHash(entry);
       expect(hash).toMatch(/^[a-f0-9]{64}$/);
+    });
+
+    it("changes when the author changes but text does not", () => {
+      const base: ParsedEntry = { title: "T", content: "C", author: "Alice" };
+      const changed: ParsedEntry = { ...base, author: "Bob" };
+
+      expect(generateContentHash(base)).not.toBe(generateContentHash(changed));
+    });
+
+    it("changes when the URL changes but text does not", () => {
+      const base: ParsedEntry = { title: "T", content: "C", link: "https://a.com/1" };
+      const changed: ParsedEntry = { ...base, link: "https://a.com/2" };
+
+      expect(generateContentHash(base)).not.toBe(generateContentHash(changed));
+    });
+
+    it("changes when the publication date changes but text does not", () => {
+      const base: ParsedEntry = {
+        title: "T",
+        content: "C",
+        pubDate: new Date("2024-01-01T00:00:00Z"),
+      };
+      const changed: ParsedEntry = { ...base, pubDate: new Date("2024-02-01T00:00:00Z") };
+
+      expect(generateContentHash(base)).not.toBe(generateContentHash(changed));
+    });
+  });
+
+  describe("clampPublishedAt", () => {
+    it("returns null when no date is provided", () => {
+      expect(clampPublishedAt(undefined, new Date())).toBeNull();
+    });
+
+    it("leaves past dates untouched", () => {
+      const pubDate = new Date("2024-01-15T12:00:00Z");
+      const fetchedAt = new Date("2024-06-01T00:00:00Z");
+      expect(clampPublishedAt(pubDate, fetchedAt)).toBe(pubDate);
+    });
+
+    it("clamps future dates down to fetchedAt", () => {
+      const fetchedAt = new Date("2024-06-01T00:00:00Z");
+      const pubDate = new Date("2030-01-01T00:00:00Z");
+      expect(clampPublishedAt(pubDate, fetchedAt)).toBe(fetchedAt);
     });
   });
 

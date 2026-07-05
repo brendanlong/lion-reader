@@ -27,14 +27,27 @@ describe("findPermanentRedirectUrl", () => {
     expect(result).toBe("https://newsite.com/feed.xml");
   });
 
-  it("returns the final permanent redirect URL from a chain", () => {
+  it("follows a run of permanent hops from the start", () => {
+    const redirects: RedirectInfo[] = [
+      { url: "https://site1.com/feed.xml", type: "permanent" },
+      { url: "https://site2.com/feed.xml", type: "permanent" },
+      { url: "https://final.com/feed.xml", type: "permanent" },
+    ];
+    const result = findPermanentRedirectUrl(redirects, "https://example.com/feed.xml");
+    expect(result).toBe("https://final.com/feed.xml");
+  });
+
+  it("stops at the first temporary hop, ignoring later permanent hops", () => {
+    // 301 A→site1, 302 site1→site2, 301 site2→final.
+    // A permanently moved to site1, but site1→final is only reachable via a
+    // temporary hop, so we must migrate to site1, not final.
     const redirects: RedirectInfo[] = [
       { url: "https://site1.com/feed.xml", type: "permanent" },
       { url: "https://site2.com/feed.xml", type: "temporary" },
       { url: "https://final.com/feed.xml", type: "permanent" },
     ];
     const result = findPermanentRedirectUrl(redirects, "https://example.com/feed.xml");
-    expect(result).toBe("https://final.com/feed.xml");
+    expect(result).toBe("https://site1.com/feed.xml");
   });
 
   it("returns null if permanent redirect leads back to original URL", () => {
@@ -43,22 +56,24 @@ describe("findPermanentRedirectUrl", () => {
     expect(result).toBeNull();
   });
 
-  it("handles mixed redirect chain with permanent at the end", () => {
+  it("returns null when the chain starts with a temporary hop", () => {
+    // The original URL never permanently moved (its first hop is temporary), so
+    // a later permanent hop must not trigger a migration.
     const redirects: RedirectInfo[] = [
       { url: "https://temp1.com/feed", type: "temporary" },
       { url: "https://temp2.com/feed", type: "temporary" },
       { url: "https://permanent.com/feed", type: "permanent" },
     ];
     const result = findPermanentRedirectUrl(redirects, "https://example.com/feed.xml");
-    expect(result).toBe("https://permanent.com/feed");
+    expect(result).toBeNull();
   });
 
-  it("ignores temporary redirects after permanent ones", () => {
+  it("ignores temporary redirects after a leading permanent one", () => {
     const redirects: RedirectInfo[] = [
       { url: "https://permanent.com/feed", type: "permanent" },
       { url: "https://temp.com/feed", type: "temporary" },
     ];
-    // The function finds all permanent redirects and returns the last one
+    // Follows the leading permanent hop, then stops at the temporary one.
     const result = findPermanentRedirectUrl(redirects, "https://example.com/feed.xml");
     expect(result).toBe("https://permanent.com/feed");
   });

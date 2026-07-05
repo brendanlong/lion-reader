@@ -9,6 +9,7 @@ import type { ParsedEntry } from "./types";
 import { absolutizeUrls } from "./content-cleaner";
 import { getFeedPlugin } from "@/server/plugins";
 import { generateSummary } from "../html/strip-html";
+import { logger } from "@/lib/logger";
 
 /**
  * Content processing result for an entry.
@@ -72,10 +73,20 @@ export function cleanEntryContent(
 
   const cleaner = getFeedPlugin(feedUrl)?.capabilities.feed.cleanEntryContent;
   if (cleaner) {
-    const cleaned = cleaner(absolutizedOriginal);
-    // Only set contentCleaned if cleaning actually changed something
-    if (cleaned !== absolutizedOriginal) {
-      contentCleaned = cleaned;
+    // Isolate plugin failures: a throwing cleaner must not fail the entry (or,
+    // since this runs per-entry, every entry of the feed). Fall back to the
+    // uncleaned-but-absolutized content.
+    try {
+      const cleaned = cleaner(absolutizedOriginal);
+      // Only set contentCleaned if cleaning actually changed something
+      if (cleaned !== absolutizedOriginal) {
+        contentCleaned = cleaned;
+      }
+    } catch (error) {
+      logger.warn("Plugin cleanEntryContent hook threw; using uncleaned content", {
+        feedUrl,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
