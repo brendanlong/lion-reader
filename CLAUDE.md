@@ -21,6 +21,39 @@ ALWAYS read the relevant documentation before working.
 - `pnpm test:integration` - Backend tests against real Postgres/Redis (docker-compose)
 - `pnpm test:e2e` - Playwright browser tests against a real app server (docker-compose)
 
+## Local Services (no Docker)
+
+If you can't run `docker compose` or reach the shared dev databases (common in
+sandboxed agent environments), **don't hand-roll Postgres**. Use `pnpm services`,
+which starts a throwaway Postgres + Redis from the native binaries on **random
+free ports**, runs migrations, and writes two gitignored env files
+(`.env.local-services`, `.env.local-services.test`). See `scripts/local-services.sh`.
+
+Run it as a **background task** so it's torn down when your session ends — on exit
+it stops both servers and deletes its temp dir + env files:
+
+```bash
+pnpm services            # run in the BACKGROUND; leave it running
+```
+
+Then, in the foreground, use the `*:local` variants (they layer the generated env
+file over `.env.test` so it wins, via `dotenv -o`):
+
+```bash
+pnpm test:integration:local      # integration tests against the local DBs
+pnpm test:e2e:local              # e2e tests against the local DBs
+pnpm db:migrate:local            # re-run migrations (e.g. after adding one)
+PORT=<random> pnpm dev:local     # dev app (web + worker) — open http://<host>:<PORT>
+```
+
+Notes:
+
+- `pnpm services` prints the chosen ports and a ready-to-copy `dev:local` command
+  with a random `PORT`. Pick a random port for the app too — this is a shared host.
+- `dev:local` runs only the web server + worker (no Discord bot). Unit tests
+  (`pnpm test:unit`) need no DB and are unaffected.
+- These env files are throwaway and auto-removed; never commit them.
+
 ## Code Quality
 
 - **Types**: Explicit types everywhere; use Zod for runtime validation
