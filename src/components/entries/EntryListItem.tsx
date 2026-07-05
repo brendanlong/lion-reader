@@ -153,17 +153,23 @@ export const EntryListItem = memo(function EntryListItem({
         {/* Read/Unread Indicator */}
         <div className="mt-1.5 shrink-0">
           {onToggleRead ? (
+            // 44px WCAG touch target: pad the small dot out to 44px and cancel
+            // the padding with an equal negative margin so layout is unchanged.
             <button
               type="button"
               onClick={handleToggleRead}
-              className={`block h-2.5 w-2.5 rounded-full transition-colors ${
-                read
-                  ? "hover:border-accent hover:bg-accent-subtle border border-zinc-300 bg-transparent dark:border-zinc-600"
-                  : "bg-accent-muted hover:bg-accent dark:bg-accent dark:hover:bg-accent-hover"
-              }`}
+              className="group -m-[17px] flex items-center justify-center rounded-full p-[17px]"
               aria-label={read ? "Mark as unread" : "Mark as read"}
               title={read ? "Mark as unread" : "Mark as read"}
-            />
+            >
+              <span
+                className={`block h-2.5 w-2.5 rounded-full transition-colors ${
+                  read
+                    ? "group-hover:border-accent group-hover:bg-accent-subtle border border-zinc-300 bg-transparent dark:border-zinc-600"
+                    : "bg-accent-muted group-hover:bg-accent dark:bg-accent dark:group-hover:bg-accent-hover"
+                }`}
+              />
+            </button>
           ) : (
             <span
               className={`block h-2.5 w-2.5 rounded-full ${

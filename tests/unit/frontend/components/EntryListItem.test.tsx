@@ -156,7 +156,8 @@ describe("EntryListItem", () => {
 
       const button = screen.getByRole("button", { name: "Mark as read" });
       expect(button).toBeInTheDocument();
-      expect(button).toHaveClass("bg-accent-muted");
+      // Color lives on the inner dot span; the button is the 44px touch target.
+      expect(button.querySelector("span")).toHaveClass("bg-accent-muted");
     });
 
     it("shows empty indicator for read entries", () => {
@@ -165,7 +166,8 @@ describe("EntryListItem", () => {
 
       const button = screen.getByRole("button", { name: "Mark as unread" });
       expect(button).toBeInTheDocument();
-      expect(button).toHaveClass("bg-transparent");
+      // Color lives on the inner dot span; the button is the 44px touch target.
+      expect(button.querySelector("span")).toHaveClass("bg-transparent");
     });
 
     it("applies different title styling for read vs unread", () => {
