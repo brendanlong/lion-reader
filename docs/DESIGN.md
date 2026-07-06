@@ -299,12 +299,12 @@ Blocked ranges cover loopback, RFC 1918 private, carrier-grade NAT, link-local (
 
 Per-feed channels for scalability - servers only receive events they care about:
 
-| Channel Pattern        | Events                                                                                                                                                                            |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `feed:{feedId}:events` | `new_entry`, `entry_updated`                                                                                                                                                      |
-| `user:{userId}:events` | `subscription_created`, `subscription_updated`, `subscription_deleted`, `entry_state_changed`, `tag_created`, `tag_updated`, `tag_deleted`, `import_progress`, `import_completed` |
+| Channel Pattern        | Events                                                                                                                                                                                                  |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `feed:{feedId}:events` | `new_entry`, `entry_updated`                                                                                                                                                                            |
+| `user:{userId}:events` | `subscription_created`, `subscription_updated`, `subscription_deleted`, `entry_state_changed`, `tag_created`, `tag_updated`, `tag_deleted`, `import_progress`, `import_completed`, `saved_feed_created` |
 
-When a user subscribes to a new feed, the SSE connection dynamically subscribes to that feed's channel.
+When a user subscribes to a new feed, the SSE connection dynamically subscribes to that feed's channel. `saved_feed_created` is a server-internal signal (not forwarded to the client): it fires when a user's saved-articles feed is first created so already-open connections subscribe to its channel and the first saved article broadcasts live rather than only after the next reconnect.
 
 ### Connection Efficiency
 
@@ -405,6 +405,7 @@ Business logic is extracted into reusable service functions in `src/server/servi
 | `entry-filters.ts` | `buildEntryFeedFilter`, `buildEntryFilterConditions`, `buildTaggedFeedIdsSubquery` - shared filter construction                                                                                    |
 | `narration.ts`     | Text-to-speech operations                                                                                                                                                                          |
 | `full-content.ts`  | `fetchFullContent`, `fetchAndStoreFullContent` - fetch, sanitize, and persist full article content                                                                                                 |
+| `entry-events.ts`  | `publishMarkReadStateChanges`, `publishStarredStateChange` - shared `entry_state_changed` publishing so tRPC and MCP mark-read/star stay in sync                                                   |
 | `summarization.ts` | AI-powered article summarization                                                                                                                                                                   |
 | `users.ts`         | `deleteUser` - account deletion                                                                                                                                                                    |
 | `retention.ts`     | `runRetentionCleanup` - data retention background job                                                                                                                                              |

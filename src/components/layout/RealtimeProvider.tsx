@@ -48,8 +48,7 @@ interface RealtimeProviderProps {
  * export default function AppLayout({ children }) {
  *   // Initial cursors - null values for fresh sync
  *   const initialCursors: SyncCursors = {
- *     entries: null, entryStates: null, subscriptions: null,
- *     removedSubscriptions: null, tags: null
+ *     entries: null, subscriptions: null, tags: null
  *   };
  *   return (
  *     <RealtimeProvider initialCursors={initialCursors}>

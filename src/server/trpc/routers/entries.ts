@@ -25,7 +25,10 @@ import * as fullContentService from "@/server/services/full-content";
 import * as entriesService from "@/server/services/entries";
 import * as countsService from "@/server/services/counts";
 import { getSubscriptionFeedIds } from "@/server/services/entry-filters";
-import { publishEntryStateChanged } from "@/server/redis/pubsub";
+import {
+  publishMarkReadStateChanges,
+  publishStarredStateChange,
+} from "@/server/services/entry-events";
 
 // Endpoints exposed via the MCP tool surface; accessible to tokens with the `mcp` scope.
 const mcpProcedure = scopedProtectedProcedure(API_TOKEN_SCOPES.MCP);
@@ -396,18 +399,7 @@ export const entriesRouter = createTRPCRouter({
       // Publish entry state change events for multi-tab/device sync.
       // Include absolute counts so other tabs can set them directly.
       // Fire and forget - don't block the response.
-      for (const entry of entriesResult) {
-        publishEntryStateChanged(
-          userId,
-          entry.id,
-          entry.read,
-          entry.starred,
-          entry.updatedAt,
-          counts
-        ).catch(() => {
-          // Ignore publish errors - SSE is best-effort
-        });
-      }
+      publishMarkReadStateChanges(userId, entriesResult, counts);
 
       return {
         success: true,
@@ -523,18 +515,8 @@ export const entriesRouter = createTRPCRouter({
       const counts = await countsService.getEntryRelatedCounts(ctx.db, userId, input.id);
 
       // Publish entry state change event for multi-tab/device sync.
-      // Normalize UnreadCounts to the same shape as BulkUnreadCounts for the event.
       // Fire and forget - don't block the response.
-      publishEntryStateChanged(userId, entry.id, entry.read, entry.starred, entry.updatedAt, {
-        all: counts.all,
-        starred: counts.starred,
-        ...(counts.saved ? { saved: counts.saved } : {}),
-        subscriptions: counts.subscription ? [counts.subscription] : [],
-        tags: counts.tags ?? [],
-        uncategorized: counts.uncategorized,
-      }).catch(() => {
-        // Ignore publish errors - SSE is best-effort
-      });
+      publishStarredStateChange(userId, entry, counts);
 
       return { entry, counts };
     }),

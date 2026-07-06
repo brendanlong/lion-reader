@@ -21,6 +21,10 @@ import * as countsService from "@/server/services/counts";
 import * as subscriptionsService from "@/server/services/subscriptions";
 import * as savedService from "@/server/services/saved";
 import * as tagsService from "@/server/services/tags";
+import {
+  publishMarkReadStateChanges,
+  publishStarredStateChange,
+} from "@/server/services/entry-events";
 
 // ============================================================================
 // Types
@@ -267,6 +271,11 @@ function buildTools(): Tool[] {
           params.read
         );
         const counts = await countsService.getBulkEntryRelatedCounts(db, userId, entries);
+
+        // Publish entry_state_changed for multi-tab/device sync, mirroring the
+        // tRPC entries.markRead mutation. Fire and forget.
+        publishMarkReadStateChanges(userId, entries, counts);
+
         return { entries, counts };
       },
     },
@@ -278,7 +287,19 @@ function buildTools(): Tool[] {
       inputSchema: toInputSchema(starEntriesArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(starEntriesArgs, args);
-        return entriesService.updateEntryStarred(db, userId, params.entryId, params.starred);
+        const entry = await entriesService.updateEntryStarred(
+          db,
+          userId,
+          params.entryId,
+          params.starred
+        );
+
+        // Publish entry_state_changed for multi-tab/device sync, mirroring the
+        // tRPC entries.setStarred mutation. Fire and forget.
+        const counts = await countsService.getEntryRelatedCounts(db, userId, params.entryId);
+        publishStarredStateChange(userId, entry, counts);
+
+        return entry;
       },
     },
 

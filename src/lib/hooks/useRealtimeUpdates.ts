@@ -73,11 +73,12 @@ export interface UseRealtimeUpdatesResult {
 }
 
 /**
- * Named SSE events forwarded to the shared sync-event handler.
- * "connected" is the initial cursor event from the server.
+ * Named SSE events forwarded to the shared sync-event handler. These are
+ * exactly the members of `syncEventSchema`; the connection state itself
+ * (open/error) is tracked via the EventSource's own onopen/onerror, not a
+ * data event.
  */
 const SSE_EVENT_NAMES = [
-  "connected",
   "new_entry",
   "entry_updated",
   "entry_state_changed",

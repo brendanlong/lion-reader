@@ -200,9 +200,27 @@ export async function GET(req: Request): Promise<Response> {
   // Get the user-specific events channel
   const userEventsChannel = getUserEventsChannel(userId);
 
+  // Holds the active connection's cleanup so the stream's cancel() callback can
+  // release Redis channels even when no abort event fires (some runtimes cancel
+  // the stream without aborting req.signal).
+  let cleanupRef: (() => void) | null = null;
+
   // Create readable stream for SSE
   const stream = new ReadableStream({
     start(controller) {
+      // If the request was already aborted before start() ran, the abort event
+      // fired before we could register a listener and will never fire again.
+      // Bail out before subscribing/incrementing so we don't leak the
+      // ref-counted Redis channels (or skew the connection gauge).
+      if (req.signal.aborted) {
+        try {
+          controller.close();
+        } catch {
+          // Controller may already be closed
+        }
+        return;
+      }
+
       const encoder = new TextEncoder();
       let subscription: PubSubSubscription | null = null;
       let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
@@ -235,6 +253,9 @@ export async function GET(req: Request): Promise<Response> {
         }
       }
 
+      // Expose cleanup to the stream's cancel() callback below.
+      cleanupRef = cleanup;
+
       /**
        * Sends data to the stream, handling any errors
        */
@@ -263,6 +284,25 @@ export async function GET(req: Request): Promise<Response> {
           console.error(`Failed to subscribe to feed channel ${feedId}:`, err);
           subscribedFeedChannels.delete(channel);
           feedSubscriptionMap.delete(feedId);
+        });
+      }
+
+      /**
+       * Subscribes to a saved feed's event channel. Saved feeds have no
+       * subscription row, so (unlike subscribeToFeed) no feedSubscriptionMap
+       * entry is added — feed events for it resolve to a null subscriptionId,
+       * matching how the saved feed is wired up at connect time.
+       */
+      function subscribeToSavedFeed(feedId: string): void {
+        if (isCleanedUp || !subscription) return;
+
+        const channel = getFeedEventsChannel(feedId);
+        if (subscribedFeedChannels.has(channel)) return;
+
+        subscribedFeedChannels.add(channel);
+        subscription.subscribe(channel).catch((err) => {
+          console.error(`Failed to subscribe to saved feed channel ${feedId}:`, err);
+          subscribedFeedChannels.delete(channel);
         });
       }
 
@@ -324,6 +364,14 @@ export async function GET(req: Request): Promise<Response> {
             subscribeToFeed(event.feedId, event.subscriptionId);
           } else if (event.type === "subscription_deleted") {
             unsubscribeFromFeed(event.feedId);
+          } else if (event.type === "saved_feed_created") {
+            // The saved feed was created after this connection opened; subscribe
+            // to its channel so the first saved article is delivered live.
+            // Saved feeds have no subscription (subscriptionId stays null), so we
+            // add the channel directly rather than via subscribeToFeed.
+            subscribeToSavedFeed(event.feedId);
+            // Server-internal signal — nothing for the client to handle.
+            return;
           }
 
           // All user events are forwarded to the client
@@ -456,14 +504,10 @@ export async function GET(req: Request): Promise<Response> {
         // Increment active SSE connections counter
         incrementSSEConnections();
 
-        // Send initial connected event with cursor for client sync tracking
-        const initialCursor = new Date().toISOString();
-        send(
-          `event: connected\nid: ${initialCursor}\ndata: ${JSON.stringify({ cursor: initialCursor })}\n\n`
-        );
-        trackSSEEventSent("connected");
-
-        // Send initial heartbeat to confirm connection
+        // Send an initial heartbeat to confirm the connection. (The client
+        // detects "connected" from the EventSource open event, and tracks sync
+        // cursors from the events themselves, so no separate cursor event is
+        // sent.)
         send(formatSSEHeartbeat());
         trackSSEEventSent("heartbeat");
       } catch (err) {
@@ -475,6 +519,12 @@ export async function GET(req: Request): Promise<Response> {
           // Controller may already be closed
         }
       }
+    },
+    cancel() {
+      // The consumer cancelled the stream (client disconnect). Release the
+      // ref-counted Redis channels immediately instead of waiting for the next
+      // heartbeat enqueue to fail (up to HEARTBEAT_INTERVAL_MS later).
+      cleanupRef?.();
     },
   });
 

@@ -1,13 +1,13 @@
 /**
  * useEntryMutations Hook
  *
- * Provides entry mutations (markRead, star, unstar, setScore) with optimistic updates.
+ * Provides entry mutations (markRead, star, unstar) with optimistic updates.
  * Consolidates mutation logic from page components.
  *
  * Uses optimistic updates for immediate UI feedback:
  * - Read/starred status updates appear instantly in the UI
  * - If the server request fails, changes are rolled back automatically
- * - Server response is used to update counts and scores after success
+ * - Server response is used to update counts after success
  *
  * Tracks pending mutations per entry with timestamp-based state merging:
  * - Multiple mutations can run in parallel for the same entry
@@ -29,12 +29,7 @@ import {
   applyOptimisticReadUpdate,
   applyOptimisticStarredUpdate,
 } from "@/lib/cache/operations";
-import {
-  updateEntriesReadStatus,
-  updateEntryStarredStatus,
-  updateEntriesInListCache,
-  updateEntriesInAffectedListCaches,
-} from "@/lib/cache/entry-cache";
+import { updateEntriesReadStatus, updateEntryStarredStatus } from "@/lib/cache/entry-cache";
 
 /**
  * Entry type for routing.
@@ -240,7 +235,13 @@ export function useEntryMutations(): UseEntryMutationsResult {
   };
 
   /**
-   * Apply winning state to cache if it's newer than current cache state.
+   * Apply winning state to both entries.get AND the entry lists, but only if
+   * it's newer than the current cache state.
+   *
+   * The list caches must go through this same guard: writing them
+   * unconditionally from each mutation's own response lets two rapid conflicting
+   * mutations that complete out of order leave the list at the older state even
+   * though entries.get resolved to the newer one.
    */
   const applyWinningStateToCache = (entryId: string, winningState: MutationResultState) => {
     // Get current cache state to compare timestamps
@@ -253,8 +254,9 @@ export function useEntryMutations(): UseEntryMutationsResult {
       return;
     }
 
-    // Update the cache with winning state
-    updateEntriesReadStatus(utils, [entryId], winningState.read);
+    // Update entries.get and every entry list (passing queryClient targets the
+    // list caches too).
+    updateEntriesReadStatus(utils, [entryId], winningState.read, queryClient);
     updateEntryStarredStatus(utils, entryId, winningState.starred, queryClient);
   };
 
@@ -296,22 +298,11 @@ export function useEntryMutations(): UseEntryMutationsResult {
         const { allComplete, winningState } = recordMutationResult(entry.id, result);
 
         if (allComplete && winningState) {
+          // Updates entries.get and the entry lists together, guarded by the
+          // winning-state timestamp (see applyWinningStateToCache).
           applyWinningStateToCache(entry.id, winningState);
         }
       }
-
-      // Update list caches with read status from server response
-      const scope = {
-        tagIds: new Set(data.counts.tags.map((t) => t.id)),
-        hasUncategorized: data.counts.uncategorized !== undefined,
-      };
-      // All entries in a markRead batch have the same read value
-      updateEntriesInAffectedListCaches(
-        queryClient,
-        data.entries,
-        { read: data.entries[0]?.read ?? false },
-        scope
-      );
 
       // Update counts (always apply, not dependent on timestamp)
       setBulkCounts(utils, data.counts, queryClient);
@@ -395,11 +386,10 @@ export function useEntryMutations(): UseEntryMutationsResult {
       const { allComplete, winningState } = recordMutationResult(data.entry.id, result);
 
       if (allComplete && winningState) {
+        // Updates entries.get and the entry lists together, guarded by the
+        // winning-state timestamp (see applyWinningStateToCache).
         applyWinningStateToCache(data.entry.id, winningState);
       }
-
-      // Update list cache with starred status
-      updateEntriesInListCache(queryClient, [data.entry.id], { starred: data.entry.starred });
 
       // Update counts (always apply)
       setCounts(utils, data.counts, queryClient);
