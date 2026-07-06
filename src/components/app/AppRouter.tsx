@@ -17,6 +17,7 @@ import { UnifiedSettingsContent } from "@/components/settings/UnifiedSettingsCon
 import { SubscribeContent } from "@/components/subscribe/SubscribeContent";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { useEntryListRefreshOnNavigate } from "@/lib/hooks/useEntryListRefreshOnNavigate";
+import { useEntryListScrollResetOnNavigate } from "@/lib/hooks/useEntryListScrollResetOnNavigate";
 
 /**
  * Loading skeleton for page transitions.
@@ -45,6 +46,10 @@ function AppRouterContent() {
   // Central navigation-triggered refresh for entry lists (must live in this
   // always-mounted shell — see the hook's doc comment).
   useEntryListRefreshOnNavigate();
+
+  // Reset the entry-list scroll to the top on list→list navigation (same
+  // always-mounted-shell requirement — see the hook's doc comment).
+  useEntryListScrollResetOnNavigate();
 
   // Settings pages
   if (pathname.startsWith("/settings")) {
