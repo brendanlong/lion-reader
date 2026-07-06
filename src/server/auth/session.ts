@@ -16,6 +16,15 @@ import { sessions, users, type User, type Session } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { getRedisClient } from "@/server/redis";
 import { decryptApiKey } from "@/lib/encryption";
+import { OAUTH_SCOPES } from "@/server/oauth/utils";
+
+/**
+ * Scopes a session may be restricted to. A scoped session is a fail-closed
+ * bearer credential (see {@link CreateSessionParams.scopes}); minting one with
+ * an unrecognized scope would create a credential that silently matches nothing
+ * everywhere, so we reject unknown scopes up front instead.
+ */
+const VALID_SESSION_SCOPES = new Set<string>(Object.values(OAUTH_SCOPES));
 
 // ============================================================================
 // Constants
@@ -32,9 +41,17 @@ const SESSION_DURATION_DAYS = 30;
 const SESSION_CACHE_TTL_SECONDS = 300;
 
 /**
- * Redis key prefix for session cache
+ * Redis key prefix for session cache.
+ *
+ * The version suffix (`v2`) namespaces the cached payload format. Bump it
+ * whenever a change to {@link CachedSession} is security-relevant — e.g. adding
+ * the `scopes` field — so old-format entries written by a previous release are
+ * never read by new code during a rolling deploy. A missing field would
+ * otherwise deserialize to a default (`scopes` → `null` → full access), which
+ * for a scoped session would be a fail-open. Old-format entries under the
+ * previous prefix are simply left to expire via TTL.
  */
-const SESSION_CACHE_PREFIX = "session:";
+const SESSION_CACHE_PREFIX = "session:v2:";
 
 // ============================================================================
 // Types
@@ -170,6 +187,13 @@ export async function createSession(
   params: CreateSessionParams
 ): Promise<CreateSessionResult> {
   const { userId, userAgent, ipAddress, scopes } = params;
+
+  if (scopes) {
+    const unknown = scopes.filter((scope) => !VALID_SESSION_SCOPES.has(scope));
+    if (unknown.length > 0) {
+      throw new Error(`Cannot create session with unknown scope(s): ${unknown.join(", ")}`);
+    }
+  }
 
   const sessionId = generateUuidv7();
   const { token, tokenHash } = generateSessionToken();

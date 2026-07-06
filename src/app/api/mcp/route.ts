@@ -21,8 +21,8 @@ import {
   ErrorCode,
 } from "@modelcontextprotocol/sdk/types.js";
 import { db } from "@/server/db";
-import type { User } from "@/server/db/schema";
 import { registerTools, toMcpError } from "@/server/mcp/tools";
+import { isSignupConfirmed } from "@/server/auth/confirmation";
 import { validateApiToken, API_TOKEN_SCOPES } from "@/server/auth/api-token";
 import { validateAccessToken } from "@/server/oauth/service";
 import { OAUTH_SCOPES, isResourceForThisServer } from "@/server/oauth/utils";
@@ -40,15 +40,6 @@ import { logger } from "@/lib/logger";
 type AuthSuccess = { success: true; userId: string };
 type AuthFailure = { success: false; reason: string; status?: 401 | 403 };
 type AuthResult = AuthSuccess | AuthFailure;
-
-/**
- * Checks that the user completed the signup confirmation flow (ToS, Privacy,
- * EU check) — the same requirement `confirmedMiddleware` enforces for the
- * tRPC surface. Without this, MCP tokens would bypass signup confirmation.
- */
-function isSignupConfirmed(user: User): boolean {
-  return !!(user.tosAgreedAt && user.privacyPolicyAgreedAt && user.notEuAgreedAt);
-}
 
 /**
  * Extract and validate token from request headers.

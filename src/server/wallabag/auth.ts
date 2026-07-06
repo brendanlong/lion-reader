@@ -20,6 +20,8 @@ import { db } from "@/server/db";
 import { users } from "@/server/db/schema";
 import { validateAccessToken, createTokens, rotateRefreshToken } from "@/server/oauth/service";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
+import { isSignupConfirmed } from "@/server/auth/confirmation";
+import type { User } from "@/server/db/schema";
 
 /**
  * Wallabag OAuth token response
@@ -108,7 +110,7 @@ export async function refreshTokenGrant(
  */
 async function authenticateRequest(
   request: Request
-): Promise<{ userId: string; email: string; scopes: string[] } | null> {
+): Promise<{ userId: string; email: string; scopes: string[]; user: User } | null> {
   const authHeader = request.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) {
     return null;
@@ -124,6 +126,7 @@ async function authenticateRequest(
     userId: tokenData.userId,
     email: tokenData.user.email,
     scopes: tokenData.scopes,
+    user: tokenData.user,
   };
 }
 
@@ -160,6 +163,20 @@ export async function requireAuth(
       JSON.stringify({
         error: "insufficient_scope",
         error_description: `This endpoint requires the ${OAUTH_SCOPES.READER_FULL_ACCESS} scope`,
+      }),
+      {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+  }
+  // Mirror confirmedProtectedProcedure / the MCP endpoint: a user who hasn't
+  // completed signup confirmation (ToS, Privacy, EU check) can't use the API.
+  if (!isSignupConfirmed(auth.user)) {
+    return new Response(
+      JSON.stringify({
+        error: "access_denied",
+        error_description: "Signup confirmation required",
       }),
       {
         status: 403,

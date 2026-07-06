@@ -92,6 +92,28 @@ describe("Wallabag requireAuth scope enforcement", () => {
     expect(result.status).toBe(403);
   });
 
+  it("rejects a reader:full-access token for an unconfirmed user with 403", async () => {
+    const id = generateUuidv7();
+    const email = `wallabag-unconfirmed-${id}@test.com`;
+    await db.insert(users).values({
+      id,
+      email,
+      passwordHash: "test-hash",
+      // No tos/privacy/EU agreement — signup not confirmed.
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    createdUserIds.push(id);
+
+    const token = await mintToken(id, [OAUTH_SCOPES.READER_FULL_ACCESS]);
+    const result = await requireAuth(bearerRequest(token));
+
+    expect(result).toBeInstanceOf(Response);
+    if (!(result instanceof Response)) throw new Error("unreachable");
+    expect(result.status).toBe(403);
+    expect(await result.json()).toMatchObject({ error: "access_denied" });
+  });
+
   it("returns 401 for a missing token", async () => {
     const result = await requireAuth(bearerRequest(null));
     expect(result).toBeInstanceOf(Response);
