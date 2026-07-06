@@ -214,7 +214,7 @@ function extractMetadata(html: string, url: string): PageMetadata {
  * Generates a SHA-256 content hash for saved article.
  * Used for narration deduplication.
  */
-export function generateContentHash(title: string | null, content: string | null): string {
+function generateContentHash(title: string | null, content: string | null): string {
   const titleStr = title ?? "";
   const contentStr = content ?? "";
   const hashInput = `${titleStr}\n${contentStr}`;

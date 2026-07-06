@@ -57,7 +57,7 @@ export interface Subscription {
  * Builds the base query for fetching subscriptions using the user_feeds view.
  * Includes unread counts and tags.
  */
-export function buildSubscriptionBaseQuery(db: typeof dbType, userId: string) {
+function buildSubscriptionBaseQuery(db: typeof dbType, userId: string) {
   // Subquery to get unread counts per subscription.
   // Counts through visible_entries (grouped by subscription_id) rather than by
   // entries.feed_id: a subscription can own entries under multiple feed_ids via
@@ -129,7 +129,7 @@ export type SubscriptionQueryRow = Awaited<ReturnType<typeof buildSubscriptionBa
 /**
  * Transforms a subscription query row into the output format.
  */
-export function formatSubscriptionRow(row: SubscriptionQueryRow): Subscription {
+function formatSubscriptionRow(row: SubscriptionQueryRow): Subscription {
   return {
     id: row.id,
     type: row.type,

@@ -129,14 +129,3 @@ export async function parseFeedInWorker(content: string): Promise<ParsedFeed> {
   const result = serializedParsedFeedSchema.parse(raw);
   return deserializeParsedFeed(result);
 }
-
-/**
- * Destroy the worker pool. Call during graceful shutdown.
- */
-export async function destroyWorkerPool(): Promise<void> {
-  if (pool) {
-    await pool.destroy();
-    pool = null;
-    logger.info("Worker thread pool destroyed");
-  }
-}

@@ -93,7 +93,7 @@ export function extractAuthToken(request: Request): string | null {
  * Validates a Google Reader request and returns the authenticated session.
  * Returns null if not authenticated.
  */
-export async function authenticateRequest(request: Request): Promise<SessionData | null> {
+async function authenticateRequest(request: Request): Promise<SessionData | null> {
   const token = extractAuthToken(request);
   if (!token) return null;
 

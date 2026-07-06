@@ -820,30 +820,6 @@ export function CheckCircleIcon({ className = "h-5 w-5" }: IconProps) {
 }
 
 /**
- * Double chevron up icon (for strong upvote)
- */
-export function DoubleChevronUpIcon({ className = "h-4 w-4" }: IconProps) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 9l7-7 7 7" />
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-    </svg>
-  );
-}
-
-/**
- * Double chevron down icon (for strong downvote)
- */
-export function DoubleChevronDownIcon({ className = "h-4 w-4" }: IconProps) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 15l-7 7-7-7" />
-    </svg>
-  );
-}
-
-/**
  * Key icon (for API tokens)
  */
 export function KeyIcon({ className = "h-4 w-4" }: IconProps) {

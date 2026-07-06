@@ -36,7 +36,7 @@ import {
  * - Voice quality varies by browser and OS
  * - Firefox has broken pause/resume (we cancel and restart instead)
  */
-export class BrowserTTSProvider implements TTSProvider {
+class BrowserTTSProvider implements TTSProvider {
   readonly id = "browser" as const;
   readonly name = "Browser Voices";
 

@@ -102,7 +102,7 @@ export async function refreshTokenGrant(
  * Validates a Wallabag API request using Bearer token.
  * Returns user data if authenticated.
  */
-export async function authenticateRequest(
+async function authenticateRequest(
   request: Request
 ): Promise<{ userId: string; email: string } | null> {
   const authHeader = request.headers.get("authorization");

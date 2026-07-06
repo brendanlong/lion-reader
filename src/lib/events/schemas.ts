@@ -162,7 +162,7 @@ const updatedAtWithFallback = z.string().optional();
 // Individual Event Schemas
 // ============================================================================
 
-export const newEntryEventSchema = z.object({
+const newEntryEventSchema = z.object({
   type: z.literal("new_entry"),
   subscriptionId: z.string().nullable(),
   entryId: z.string(),
@@ -184,7 +184,7 @@ export const newEntryEventSchema = z.object({
   entry: newEntryListDataSchema.optional(),
 });
 
-export const entryUpdatedEventSchema = z.object({
+const entryUpdatedEventSchema = z.object({
   type: z.literal("entry_updated"),
   subscriptionId: z.string().nullable(),
   entryId: z.string(),
@@ -193,7 +193,7 @@ export const entryUpdatedEventSchema = z.object({
   metadata: entryMetadataSchema,
 });
 
-export const entryStateChangedEventSchema = z.object({
+const entryStateChangedEventSchema = z.object({
   type: z.literal("entry_state_changed"),
   entryId: z.string(),
   read: z.boolean(),
@@ -205,7 +205,7 @@ export const entryStateChangedEventSchema = z.object({
   updatedAt: z.string(),
 });
 
-export const subscriptionCreatedEventSchema = z.object({
+const subscriptionCreatedEventSchema = z.object({
   type: z.literal("subscription_created"),
   subscriptionId: z.string(),
   feedId: z.string(),
@@ -220,7 +220,7 @@ export const subscriptionCreatedEventSchema = z.object({
   counts: unreadCountsSchema.optional(),
 });
 
-export const subscriptionDeletedEventSchema = z.object({
+const subscriptionDeletedEventSchema = z.object({
   type: z.literal("subscription_deleted"),
   subscriptionId: z.string(),
   timestamp: timestampWithDefault,
@@ -233,7 +233,7 @@ export const subscriptionDeletedEventSchema = z.object({
   counts: unreadCountsSchema.optional(),
 });
 
-export const subscriptionUpdatedEventSchema = z.object({
+const subscriptionUpdatedEventSchema = z.object({
   type: z.literal("subscription_updated"),
   subscriptionId: z.string(),
   tags: z.array(syncTagSchema),
@@ -242,28 +242,28 @@ export const subscriptionUpdatedEventSchema = z.object({
   updatedAt: z.string(),
 });
 
-export const tagCreatedEventSchema = z.object({
+const tagCreatedEventSchema = z.object({
   type: z.literal("tag_created"),
   tag: syncTagSchema,
   timestamp: timestampWithDefault,
   updatedAt: z.string(),
 });
 
-export const tagUpdatedEventSchema = z.object({
+const tagUpdatedEventSchema = z.object({
   type: z.literal("tag_updated"),
   tag: syncTagSchema,
   timestamp: timestampWithDefault,
   updatedAt: z.string(),
 });
 
-export const tagDeletedEventSchema = z.object({
+const tagDeletedEventSchema = z.object({
   type: z.literal("tag_deleted"),
   tagId: z.string(),
   timestamp: timestampWithDefault,
   updatedAt: z.string(),
 });
 
-export const importProgressEventSchema = z
+const importProgressEventSchema = z
   .object({
     type: z.literal("import_progress"),
     importId: z.string(),
@@ -281,7 +281,7 @@ export const importProgressEventSchema = z
     updatedAt: event.updatedAt ?? event.timestamp,
   }));
 
-export const importCompletedEventSchema = z
+const importCompletedEventSchema = z
   .object({
     type: z.literal("import_completed"),
     importId: z.string(),

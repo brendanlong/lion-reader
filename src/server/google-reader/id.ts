@@ -127,37 +127,6 @@ function uuidTimestampMatch(column: typeof entries.id | typeof subscriptions.id,
 }
 
 /**
- * Looks up a UUIDv7 entry ID from a Google Reader int64 ID.
- *
- * Strategy: Extract the 48-bit timestamp to narrow the query to entries
- * created in that millisecond, then match on random bits.
- */
-export async function int64ToUuid(db: typeof dbType, id: bigint): Promise<string | null> {
-  const timestampMs = extractTimestamp(id);
-  const randomBits = extractRandomBits(id);
-
-  // Find entries whose UUIDs fall in this timestamp range
-  // UUIDv7 IDs within the same millisecond will share the same first 12 hex chars
-  const tsHex = timestampMs.toString(16).padStart(12, "0");
-
-  const candidates = await db
-    .select({ id: entries.id })
-    .from(entries)
-    .where(uuidTimestampMatch(entries.id, tsHex))
-    .limit(100);
-
-  // Match on random bits
-  for (const candidate of candidates) {
-    const candidateInt64 = uuidToInt64(candidate.id);
-    if (extractRandomBits(candidateInt64) === randomBits) {
-      return candidate.id;
-    }
-  }
-
-  return null;
-}
-
-/**
  * Batch converts Google Reader int64 IDs to UUIDv7 entry IDs.
  *
  * Groups IDs by timestamp millisecond for efficient batch queries.
