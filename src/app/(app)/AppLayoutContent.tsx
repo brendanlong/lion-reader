@@ -102,7 +102,7 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
                   {/* Subscribe button */}
                   <ClientLink
                     href="/subscribe"
-                    className="ui-text-sm inline-flex min-h-[40px] items-center gap-1.5 rounded-md bg-zinc-800 px-3 font-medium text-white transition-colors hover:bg-zinc-700 active:bg-zinc-600 dark:bg-zinc-200 dark:text-zinc-900 dark:hover:bg-zinc-300 dark:active:bg-zinc-400"
+                    className="btn-primary ui-text-sm inline-flex min-h-[40px] items-center gap-1.5 rounded-md px-3 font-medium"
                   >
                     <PlusIcon className="h-4 w-4" />
                     <span className="hidden sm:inline">Subscribe</span>

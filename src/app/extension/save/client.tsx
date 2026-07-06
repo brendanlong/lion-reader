@@ -41,7 +41,7 @@ export function ExtensionSaveClient({ status, error, url, canRetry }: Props) {
           {canRetry && url && (
             <a
               href={`/extension/save?url=${encodeURIComponent(url)}`}
-              className="inline-block rounded-lg bg-zinc-800 px-4 py-2 text-white hover:opacity-90 dark:bg-zinc-200 dark:text-zinc-900"
+              className="btn-primary inline-block rounded-lg px-4 py-2"
             >
               Try Again
             </a>

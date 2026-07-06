@@ -150,6 +150,24 @@ body {
 }
 
 /* =================================
+   Primary Button Color Scheme
+
+   Single source of truth for the filled "primary" button/link color scheme
+   (background, text, hover/active, focus ring) in both light and dark mode.
+   Consumers add their own layout classes (size, padding, rounding). Used by
+   the shared <Button> primary variant and the primary link/anchor buttons
+   that can't use it (Subscribe, demo CTAs, OAuth consent, extension retry).
+
+   Kept intentionally less contrasty than pure zinc-900/zinc-50 so the button
+   doesn't glare in dark mode. Change the palette here to update every primary
+   button at once.
+   ================================= */
+
+@utility btn-primary {
+  @apply bg-zinc-800 text-white transition-colors hover:bg-zinc-700 focus:ring-zinc-700 active:bg-zinc-600 dark:bg-zinc-200 dark:text-zinc-900 dark:hover:bg-zinc-300 dark:focus:ring-zinc-400 dark:active:bg-zinc-400;
+}
+
+/* =================================
    Reader Prose Heading Hierarchy
 
    Scoped to the rendered article/summary content (`reader-prose`, applied

@@ -97,7 +97,7 @@ export function ConsentForm({
             type="submit"
             name="user_action"
             value="approve"
-            className="ui-text-sm flex-1 rounded-lg bg-zinc-800 px-4 py-2.5 font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-200 dark:text-zinc-900 dark:hover:bg-zinc-300"
+            className="btn-primary ui-text-sm flex-1 rounded-lg px-4 py-2.5 font-medium"
           >
             Authorize
           </button>
