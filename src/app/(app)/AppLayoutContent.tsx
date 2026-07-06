@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/icon-button";
 import { Toaster, toast } from "sonner";
 import { Sidebar } from "@/components/layout/Sidebar";
+import { FileUploadButton } from "@/components/saved/FileUploadButton";
 import { UserEmail } from "@/components/layout/UserEmail";
 import { RealtimeProvider } from "@/components/layout/RealtimeProvider";
 import { OfflineBanner } from "@/components/layout/OfflineBanner";
@@ -95,10 +96,13 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
               }
               headerRight={
                 <div className="flex items-center gap-2">
+                  {/* Upload button (save an article for later) */}
+                  <FileUploadButton />
+
                   {/* Subscribe button */}
                   <ClientLink
                     href="/subscribe"
-                    className="ui-text-sm inline-flex min-h-[40px] items-center gap-1.5 rounded-md bg-zinc-900 px-3 font-medium text-white transition-colors hover:bg-zinc-800 active:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200 dark:active:bg-zinc-300"
+                    className="ui-text-sm inline-flex min-h-[40px] items-center gap-1.5 rounded-md bg-zinc-800 px-3 font-medium text-white transition-colors hover:bg-zinc-700 active:bg-zinc-600 dark:bg-zinc-200 dark:text-zinc-900 dark:hover:bg-zinc-300 dark:active:bg-zinc-400"
                   >
                     <PlusIcon className="h-4 w-4" />
                     <span className="hidden sm:inline">Subscribe</span>

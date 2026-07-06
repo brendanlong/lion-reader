@@ -325,7 +325,7 @@ function DemoRouterContent() {
                   <div className="flex flex-col justify-center gap-3 sm:flex-row sm:items-center">
                     <Link
                       href="/register"
-                      className="ui-text-base inline-flex h-12 w-full items-center justify-center rounded-md bg-zinc-900 px-6 font-medium text-white transition-colors hover:bg-zinc-800 sm:w-auto dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                      className="ui-text-base inline-flex h-12 w-full items-center justify-center rounded-md bg-zinc-800 px-6 font-medium text-white transition-colors hover:bg-zinc-700 sm:w-auto dark:bg-zinc-200 dark:text-zinc-900 dark:hover:bg-zinc-300"
                     >
                       Sign Up
                     </Link>

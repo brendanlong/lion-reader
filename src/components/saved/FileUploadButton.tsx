@@ -177,12 +177,12 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
       <button
         type="button"
         onClick={handleOpen}
-        className={`inline-flex items-center justify-center rounded-md p-2 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 dark:focus:ring-zinc-400 ${className}`}
+        className={`ui-text-sm inline-flex min-h-[40px] items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-3 font-medium text-zinc-700 transition-colors hover:bg-zinc-50 focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none active:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:focus:ring-zinc-400 dark:active:bg-zinc-700 ${className}`}
         title="Upload file"
         aria-label="Upload file"
       >
-        <UploadIcon className="h-5 w-5" />
-        <span className="ui-text-sm ml-1.5 hidden sm:inline">Upload</span>
+        <UploadIcon className="h-4 w-4" />
+        <span className="hidden sm:inline">Upload</span>
       </button>
 
       {/* Upload Dialog */}
