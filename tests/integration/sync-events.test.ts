@@ -47,6 +47,7 @@ function createAuthContext(userId: string): Context {
         id: generateUuidv7(),
         userId,
         tokenHash: "test-hash",
+        scopes: null,
         userAgent: null,
         ipAddress: null,
         createdAt: now,

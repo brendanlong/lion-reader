@@ -63,6 +63,7 @@ interface CachedSession {
   revokedAt: string | null;
   createdAt: string;
   lastActiveAt: string;
+  scopes: string[] | null;
   userAgent: string | null;
   ipAddress: string | null;
   userCreatedAt: string;
@@ -130,6 +131,13 @@ export interface CreateSessionParams {
   userAgent?: string;
   /** IP address from request */
   ipAddress?: string;
+  /**
+   * Scopes to restrict this session to. Omit (undefined) for a normal
+   * full-access browser session. Pass an array to mint a restricted session
+   * (e.g. the Google Reader API passes ['reader:full-access']); such sessions
+   * are only usable by callers that opt into scoped sessions.
+   */
+  scopes?: string[];
 }
 
 /**
@@ -161,7 +169,7 @@ export async function createSession(
   dbOrTx: DbOrTx,
   params: CreateSessionParams
 ): Promise<CreateSessionResult> {
-  const { userId, userAgent, ipAddress } = params;
+  const { userId, userAgent, ipAddress, scopes } = params;
 
   const sessionId = generateUuidv7();
   const { token, tokenHash } = generateSessionToken();
@@ -172,6 +180,7 @@ export async function createSession(
     id: sessionId,
     userId,
     tokenHash,
+    scopes: scopes ?? null,
     userAgent,
     ipAddress,
     expiresAt,
@@ -205,6 +214,7 @@ function serializeForCache(data: SessionData): string {
     revokedAt: data.session.revokedAt?.toISOString() ?? null,
     createdAt: data.session.createdAt.toISOString(),
     lastActiveAt: data.session.lastActiveAt.toISOString(),
+    scopes: data.session.scopes,
     userAgent: data.session.userAgent,
     ipAddress: data.session.ipAddress,
     userCreatedAt: data.user.createdAt.toISOString(),
@@ -234,6 +244,7 @@ function deserializeFromCache(data: string): SessionData {
       id: cached.sessionId,
       userId: cached.userId,
       tokenHash: "", // Not needed after validation
+      scopes: cached.scopes ?? null,
       expiresAt: new Date(cached.expiresAt),
       revokedAt: cached.revokedAt ? new Date(cached.revokedAt) : null,
       createdAt: new Date(cached.createdAt),
@@ -269,11 +280,33 @@ function deserializeFromCache(data: string): SessionData {
 }
 
 /**
+ * Options for {@link validateSession}.
+ */
+export interface ValidateSessionOptions {
+  /**
+   * Accept restricted (scoped) sessions. Defaults to `false` — a fail-closed
+   * default so full-access consumers (tRPC context, RSC caller, SSE, OAuth
+   * authorize) automatically reject a scoped session (e.g. a Google Reader
+   * token) as if it were invalid. Only surfaces that understand scoped sessions
+   * (the Google Reader API) should pass `true`, and they must then check the
+   * returned `session.scopes` themselves.
+   */
+  allowScoped?: boolean;
+}
+
+/**
  * Validates a session token and returns the session with user data.
  * Uses Redis cache for fast lookups, falls back to database on cache miss.
  * Returns null if the token is invalid, expired, or revoked.
+ *
+ * By default a restricted (non-NULL `scopes`) session is treated as invalid —
+ * see {@link ValidateSessionOptions.allowScoped}.
  */
-export async function validateSession(token: string): Promise<SessionData | null> {
+export async function validateSession(
+  token: string,
+  options?: ValidateSessionOptions
+): Promise<SessionData | null> {
+  const allowScoped = options?.allowScoped ?? false;
   const tokenHash = hashToken(token);
   const cacheKey = getCacheKey(tokenHash);
   const redis = getRedisClient();
@@ -287,6 +320,10 @@ export async function validateSession(token: string): Promise<SessionData | null
 
         // Verify session is still valid (not expired, not revoked)
         if (data.session.expiresAt > new Date() && data.session.revokedAt === null) {
+          // Reject a restricted session for full-access use (fail closed).
+          if (data.session.scopes !== null && !allowScoped) {
+            return null;
+          }
           // Update last_active_at asynchronously (fire and forget)
           void updateLastActiveAt(data.session.id, data.session.userId);
           return data;
@@ -336,7 +373,8 @@ export async function validateSession(token: string): Promise<SessionData | null
     hasAnthropicApiKey: !!dbResult.user.anthropicApiKey,
   };
 
-  // Cache the result in Redis (if available)
+  // Cache the result in Redis (if available). We cache before applying the
+  // scoped-access policy so a later opt-in caller still benefits from the cache.
   if (redis) {
     try {
       await redis.setex(cacheKey, SESSION_CACHE_TTL_SECONDS, serializeForCache(sessionData));
@@ -344,6 +382,11 @@ export async function validateSession(token: string): Promise<SessionData | null
       // Redis error - continue without caching
       console.error("Failed to cache session:", err);
     }
+  }
+
+  // Reject a restricted session for full-access use (fail closed).
+  if (sessionData.session.scopes !== null && !allowScoped) {
+    return null;
   }
 
   // Update last_active_at asynchronously (fire and forget)

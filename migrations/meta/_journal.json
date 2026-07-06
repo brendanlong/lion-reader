@@ -568,6 +568,13 @@
       "when": 1782951400000,
       "tag": "0081_tags_partial_unique_name",
       "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1782951500000,
+      "tag": "0082_session_scopes",
+      "breakpoints": true
     }
   ]
 }

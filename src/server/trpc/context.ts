@@ -144,6 +144,10 @@ export async function createContext(opts: FetchCreateContextFnOptions): Promise<
         id: apiTokenData.token.id,
         userId: apiTokenData.user.id,
         tokenHash: "",
+        // Token scope enforcement uses `scopes` on the context (below), not this
+        // synthetic session; session.scopes is the scoped-*session* concept,
+        // which doesn't apply to API tokens.
+        scopes: null,
         expiresAt: apiTokenData.token.expiresAt ?? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
         revokedAt: null,
         createdAt: apiTokenData.token.createdAt,

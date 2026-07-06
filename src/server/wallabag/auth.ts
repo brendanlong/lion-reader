@@ -19,6 +19,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/server/db";
 import { users } from "@/server/db/schema";
 import { validateAccessToken, createTokens, rotateRefreshToken } from "@/server/oauth/service";
+import { OAUTH_SCOPES } from "@/server/oauth/utils";
 
 /**
  * Wallabag OAuth token response
@@ -61,11 +62,14 @@ export async function passwordGrant(
     return null;
   }
 
-  // Create OAuth tokens using existing infrastructure
+  // Create OAuth tokens using existing infrastructure. The Wallabag surface
+  // covers the full reader API (list/read/mutate/delete entries + tags), so it
+  // is granted reader:full-access rather than the narrow saved:write scope —
+  // and requireAuth enforces that scope on every endpoint (see below).
   const tokens = await createTokens({
     clientId,
     userId: foundUser.id,
-    scopes: ["saved:write"],
+    scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
   });
 
   return {
@@ -104,7 +108,7 @@ export async function refreshTokenGrant(
  */
 async function authenticateRequest(
   request: Request
-): Promise<{ userId: string; email: string } | null> {
+): Promise<{ userId: string; email: string; scopes: string[] } | null> {
   const authHeader = request.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) {
     return null;
@@ -119,13 +123,21 @@ async function authenticateRequest(
   return {
     userId: tokenData.userId,
     email: tokenData.user.email,
+    scopes: tokenData.scopes,
   };
 }
 
 /**
  * Validates a Wallabag API request and returns the user data.
  *
- * Returns a 401 `Response` if not authenticated — callers must forward it, e.g.
+ * Every Wallabag endpoint exposes the full reader surface (list/read/mutate/
+ * delete entries + tags), so all of them require the `reader:full-access`
+ * scope. A token that authenticates but lacks the scope (e.g. a `saved:write`
+ * save-only credential) is rejected with 403 — this is what prevents a narrow
+ * scope from being replayed for full library access.
+ *
+ * Returns a `Response` (401 unauthenticated / 403 insufficient scope) that
+ * callers must forward, e.g.
  * `const auth = await requireAuth(request); if (auth instanceof Response) return auth;`.
  * (We return rather than throw because Next.js App Router route handlers don't
  * convert a thrown `Response` into the HTTP response — it surfaces as a 500.)
@@ -143,5 +155,17 @@ export async function requireAuth(
       }
     );
   }
-  return auth;
+  if (!auth.scopes.includes(OAUTH_SCOPES.READER_FULL_ACCESS)) {
+    return new Response(
+      JSON.stringify({
+        error: "insufficient_scope",
+        error_description: `This endpoint requires the ${OAUTH_SCOPES.READER_FULL_ACCESS} scope`,
+      }),
+      {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+  }
+  return { userId: auth.userId, email: auth.email };
 }

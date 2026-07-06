@@ -285,6 +285,7 @@ CREATE TABLE public.sessions (
     id uuid NOT NULL,
     user_id uuid NOT NULL,
     token_hash text NOT NULL,
+    scopes text[],
     user_agent text,
     ip_address text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,

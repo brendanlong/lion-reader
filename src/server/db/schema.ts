@@ -117,6 +117,12 @@ export const sessions = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     tokenHash: text("token_hash").unique().notNull(), // SHA-256 of session token
 
+    // Scopes restricting this session. NULL = full access (a normal browser
+    // login). A non-NULL array marks a restricted session (e.g. the Google
+    // Reader compat API mints one with ['reader:full-access']); validateSession
+    // rejects such sessions for full-access use unless the caller opts in.
+    scopes: text("scopes").array(),
+
     userAgent: text("user_agent"),
     ipAddress: text("ip_address"),
 

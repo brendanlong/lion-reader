@@ -15,6 +15,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/server/db";
 import { users } from "@/server/db/schema";
 import { createSession, validateSession, type SessionData } from "@/server/auth/session";
+import { OAUTH_SCOPES } from "@/server/oauth/utils";
 
 /**
  * Authenticates a user with email/password and returns session credentials
@@ -53,11 +54,15 @@ export async function clientLogin(
     return null;
   }
 
-  // Create a session (reuses existing session infrastructure)
+  // Create a session (reuses existing session infrastructure), restricted to
+  // the reader surface. Unlike a browser login, a Google Reader token must not
+  // be replayable as a full-access session cookie (account settings, password,
+  // deletion) — the scope confines it to what the Google Reader API exposes.
   const { token } = await createSession(db, {
     userId: foundUser.id,
     userAgent,
     ipAddress,
+    scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
   });
 
   return { auth: token };
@@ -97,7 +102,18 @@ async function authenticateRequest(request: Request): Promise<SessionData | null
   const token = extractAuthToken(request);
   if (!token) return null;
 
-  return validateSession(token);
+  // Google Reader tokens are scoped sessions, so opt into scoped validation.
+  // Accept a session that is either full access (a browser session, NULL scopes)
+  // or explicitly granted reader:full-access; reject any other restricted scope.
+  const session = await validateSession(token, { allowScoped: true });
+  if (!session) return null;
+
+  const scopes = session.session.scopes;
+  if (scopes !== null && !scopes.includes(OAUTH_SCOPES.READER_FULL_ACCESS)) {
+    return null;
+  }
+
+  return session;
 }
 
 /**

@@ -44,6 +44,7 @@ function buildSession(userId: string): NonNullable<Context["session"]> {
       id: generateUuidv7(),
       userId,
       tokenHash: "test-hash",
+      scopes: null,
       userAgent: null,
       ipAddress: null,
       createdAt: now,
