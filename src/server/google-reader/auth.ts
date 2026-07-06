@@ -15,6 +15,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/server/db";
 import { users } from "@/server/db/schema";
 import { createSession, validateSession, type SessionData } from "@/server/auth/session";
+import { isSignupConfirmed } from "@/server/auth/confirmation";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
 
 /**
@@ -96,31 +97,31 @@ export function extractAuthToken(request: Request): string | null {
 
 /**
  * Validates a Google Reader request and returns the authenticated session.
- * Returns null if not authenticated.
+ * Returns null if the request carries no valid session token at all. A session
+ * that authenticates but is scoped to something other than the reader surface,
+ * or belongs to an unconfirmed user, is a valid session and returned here — the
+ * scope/confirmation gates live in {@link requireAuth} so it can distinguish
+ * those cases (403) from an unauthenticated request (401).
  */
 async function authenticateRequest(request: Request): Promise<SessionData | null> {
   const token = extractAuthToken(request);
   if (!token) return null;
 
   // Google Reader tokens are scoped sessions, so opt into scoped validation.
-  // Accept a session that is either full access (a browser session, NULL scopes)
-  // or explicitly granted reader:full-access; reject any other restricted scope.
-  const session = await validateSession(token, { allowScoped: true });
-  if (!session) return null;
-
-  const scopes = session.session.scopes;
-  if (scopes !== null && !scopes.includes(OAUTH_SCOPES.READER_FULL_ACCESS)) {
-    return null;
-  }
-
-  return session;
+  return validateSession(token, { allowScoped: true });
 }
 
 /**
  * Validates a Google Reader request and returns the session.
  *
- * Returns a 401 `Response` if not authenticated — callers must forward it, e.g.
- * `const session = await requireAuth(request); if (session instanceof Response) return session;`.
+ * Returns a `Response` that callers must forward, e.g.
+ * `const session = await requireAuth(request); if (session instanceof Response) return session;`:
+ * - **401** if the request is unauthenticated (missing/invalid token).
+ * - **403** if the session authenticates but is scoped to something other than
+ *   `reader:full-access` (a browser session with NULL scopes is full access and
+ *   allowed), or the user hasn't completed signup confirmation — the same gates
+ *   the tRPC and MCP surfaces enforce.
+ *
  * (We return rather than throw because Next.js App Router route handlers don't
  * convert a thrown `Response` into the HTTP response — it surfaces as a 500.)
  */
@@ -129,5 +130,17 @@ export async function requireAuth(request: Request): Promise<SessionData | Respo
   if (!session) {
     return new Response("Unauthorized", { status: 401 });
   }
+
+  // A browser session (NULL scopes) is full access; a scoped session must carry
+  // reader:full-access. Any other restricted scope is rejected with 403.
+  const scopes = session.session.scopes;
+  if (scopes !== null && !scopes.includes(OAUTH_SCOPES.READER_FULL_ACCESS)) {
+    return new Response("Insufficient scope", { status: 403 });
+  }
+
+  if (!isSignupConfirmed(session.user)) {
+    return new Response("Signup confirmation required", { status: 403 });
+  }
+
   return session;
 }

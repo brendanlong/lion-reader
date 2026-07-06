@@ -21,6 +21,7 @@ import {
   rotateRefreshToken,
   validateAccessToken,
 } from "../../src/server/oauth/service";
+import { getIssuer, getResourceIdentifier } from "../../src/server/oauth/config";
 
 const createdUserIds: string[] = [];
 const createdClientIds: string[] = [];
@@ -183,5 +184,58 @@ describe("rotateRefreshToken", () => {
     // The real grant is untouched
     expect(await validateAccessToken(tokens.accessToken)).not.toBeNull();
     expect(await rotateRefreshToken(tokens.refreshToken, clientId)).not.toBeNull();
+  });
+
+  // Audience re-binding on rotation preserves the grant's own resource and
+  // migrates only the legacy bare-origin audience to the canonical identifier.
+  // Blanket-stamping the canonical MCP identifier onto every rotated token would
+  // mislabel a Wallabag credential (minted with a null resource) as MCP-audienced.
+  describe("resource/audience preservation", () => {
+    it("keeps a null resource null (does not stamp the MCP audience)", async () => {
+      const userId = await createTestUser();
+      const clientId = await createTestClient();
+      // Wallabag mints with no resource.
+      const tokens = await createTokens({ clientId, userId, scopes: ["reader:full-access"] });
+
+      const rotated = await rotateRefreshToken(tokens.refreshToken, clientId);
+      expect(rotated).not.toBeNull();
+
+      const validated = await validateAccessToken(rotated!.accessToken);
+      expect(validated?.resource).toBeNull();
+    });
+
+    it("migrates the legacy bare-origin audience to the canonical identifier", async () => {
+      const userId = await createTestUser();
+      const clientId = await createTestClient();
+      const tokens = await createTokens({
+        clientId,
+        userId,
+        scopes: ["mcp"],
+        resource: getIssuer(),
+      });
+
+      const rotated = await rotateRefreshToken(tokens.refreshToken, clientId);
+      expect(rotated).not.toBeNull();
+
+      const validated = await validateAccessToken(rotated!.accessToken);
+      expect(validated?.resource).toBe(getResourceIdentifier());
+    });
+
+    it("preserves the canonical MCP audience across rotation", async () => {
+      const userId = await createTestUser();
+      const clientId = await createTestClient();
+      const tokens = await createTokens({
+        clientId,
+        userId,
+        scopes: ["mcp"],
+        resource: getResourceIdentifier(),
+      });
+
+      const rotated = await rotateRefreshToken(tokens.refreshToken, clientId);
+      expect(rotated).not.toBeNull();
+
+      const validated = await validateAccessToken(rotated!.accessToken);
+      expect(validated?.resource).toBe(getResourceIdentifier());
+    });
   });
 });

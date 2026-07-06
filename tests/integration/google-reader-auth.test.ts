@@ -98,7 +98,7 @@ describe("Google Reader requireAuth session acceptance", () => {
     expect(result.user.id).toBe(user.id);
   });
 
-  it("rejects a session scoped to something other than reader:full-access", async () => {
+  it("rejects a session scoped to something other than reader:full-access with 403", async () => {
     const user = await createTestUser();
     const { token } = await createSession(db, {
       userId: user.id,
@@ -108,7 +108,30 @@ describe("Google Reader requireAuth session acceptance", () => {
     const result = await requireAuth(greaderRequest(token));
     expect(result).toBeInstanceOf(Response);
     if (!(result instanceof Response)) throw new Error("unreachable");
-    expect(result.status).toBe(401);
+    // Authenticated but insufficient scope → 403, distinct from 401 (unauthenticated).
+    expect(result.status).toBe(403);
+  });
+
+  it("rejects a reader-scoped session for an unconfirmed user with 403", async () => {
+    const id = generateUuidv7();
+    const email = `greader-unconfirmed-${id}@test.com`;
+    await db.insert(users).values({
+      id,
+      email,
+      passwordHash: await argon2.hash(PASSWORD),
+      // No tos/privacy/EU agreement — signup not confirmed.
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    createdUserIds.push(id);
+
+    const login = await clientLogin(email, PASSWORD);
+    if (!login) throw new Error("unreachable");
+
+    const result = await requireAuth(greaderRequest(login.auth));
+    expect(result).toBeInstanceOf(Response);
+    if (!(result instanceof Response)) throw new Error("unreachable");
+    expect(result.status).toBe(403);
   });
 
   it("returns 401 for a missing token", async () => {
@@ -118,5 +141,23 @@ describe("Google Reader requireAuth session acceptance", () => {
     expect(result).toBeInstanceOf(Response);
     if (!(result instanceof Response)) throw new Error("unreachable");
     expect(result.status).toBe(401);
+  });
+});
+
+describe("createSession scope validation", () => {
+  it("rejects an unknown scope rather than minting a credential that matches nothing", async () => {
+    const user = await createTestUser();
+    await expect(
+      createSession(db, { userId: user.id, scopes: ["not-a-real-scope"] })
+    ).rejects.toThrow(/unknown scope/i);
+  });
+
+  it("accepts a known scope", async () => {
+    const user = await createTestUser();
+    const { token } = await createSession(db, {
+      userId: user.id,
+      scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
+    });
+    expect(token).toBeTruthy();
   });
 });
