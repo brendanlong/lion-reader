@@ -9,7 +9,7 @@
 
 import { type Metadata } from "next";
 import { EntryArticle } from "@/components/entries/EntryArticle";
-import { defaultOpenGraph } from "@/lib/metadata";
+import { pageOpenGraph } from "@/lib/metadata";
 import {
   getDemoEntry,
   getDemoEntryArticleProps,
@@ -36,7 +36,7 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
   return {
     title,
     description,
-    openGraph: { ...defaultOpenGraph, title, description },
+    openGraph: pageOpenGraph(title, description, entry?.heroImage),
     ...(entryId && { alternates: { canonical: `/demo/all?entry=${entryId}` } }),
   };
 }

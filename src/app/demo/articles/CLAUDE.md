@@ -26,6 +26,11 @@ one in every illustration.
 
 Generated with the **Nano Banana** MCP tool (`generate_image`).
 
+Each hero **doubles as the article's social/OG preview image**, so target the OG
+shape (**~1200×630, 1.91:1**). Nano Banana has no 1.91:1 preset, so generate at
+its closest wide preset (**16:9**) and crop to 1200×630 in the optimize step.
+Keep the subject centered with side whitespace so the crop is safe.
+
 ### Generating an image
 
 Pass the logo as a character reference and force `mode: "generate"` so the
@@ -35,7 +40,7 @@ Text-to-Speech hero (`public/demo/text-to-speech.png`):
 ```
 mode: "generate"                       # REQUIRED — see gotcha
 input_image_path_1: assets/logo-original.png
-aspect_ratio: "3:2"
+aspect_ratio: "16:9"                   # closest wide preset; cropped to 1200x630 later
 resolution: "2k"
 negative_prompt: "readable text, real words, watermark, paper texture, gradient shading, photorealism, 3d render, drop shadows, square crop, portrait"
 prompt: >
@@ -45,9 +50,9 @@ prompt: >
   gold-yellow, teal-blue, leaf green, cream off-white, dark navy linework.
   Composition: the Lion Reader lion (spiky orange mane, gold face, from the
   reference) {DESCRIBE THE SCENE AND PROP}. Wide horizontal landscape banner
-  composition, subject centered with lots of empty off-white space on the left
-  and right. Solid off-white background, cheerful and modern. No real text, no
-  readable letters, no words.
+  composition, subject roughly centered with generous empty off-white space on
+  both the left and right sides so it works as a wide banner. Solid off-white
+  background, cheerful and modern. No real text, no readable letters, no words.
 ```
 
 Tips (learned the hard way):
@@ -72,29 +77,35 @@ Tips (learned the hard way):
 
 ### Optimizing
 
-Nano Banana PNGs are ~1.5 MB at 2k. For these flat illustrations, resize +
-palette-quantize is visually lossless and cuts ~90%. We ship a **single
+Nano Banana PNGs are ~1.5 MB at 2k. For these flat illustrations, crop to the OG
+frame + palette-quantize is visually lossless and cuts ~95%. We ship a **single
 optimized PNG** — the avif/webp `<picture>` multi-format dance is overkill for a
 handful of demo images.
 
 ```bash
-magick <raw>.png -resize 1440x -strip -colors 128 -define png:compression-level=9 out.png
-optipng -quiet -o5 out.png    # ~1.6 MB -> ~135 KB
+# center-crop the 16:9 render to the 1200x630 OG frame, then quantize
+magick <raw>.png -resize 1200x630^ -gravity center -extent 1200x630 \
+  -strip -colors 128 -define png:compression-level=9 out.png
+optipng -quiet -o5 out.png    # ~1.6 MB -> ~90 KB
 ```
 
-- **1440px wide** is retina-friendly for the reading column; don't ship the 2528px raw.
+- **1200×630** is the social/OG frame and is plenty sharp for the reading column too.
 - **128 colors** is the sweet spot for this flat art (no banding on the outlines).
   Eyeball 64 if you want it smaller, but stay at 128 if 64 bands the outlines.
 - Put the final file in `public/demo/<article-id>.png`.
 
-### Embedding in an article
+### Wiring it into an article
 
-Add a hero `<figure>` at the top of the article's `contentHtml`. The reader
-applies `rounded-lg` + `shadow-md` to images automatically (via `reader-prose`
-in `EntryContentRenderer`), so no inline styling is needed — just alt text:
+Set two fields on the `DemoArticle` — **don't** hand-write a `<figure>` in
+`contentHtml`. The single `heroImage` field drives both the in-article hero and
+the `og:image` (via `getDemoEntryArticleProps` + `pageOpenGraph`):
 
-```html
-<figure>
-  <img src="/demo/text-to-speech.png" alt="Descriptive alt text of the scene." />
-</figure>
+```ts
+heroImage: "/demo/<article-id>.png",
+heroImageAlt: "Descriptive alt text of the scene.",
 ```
+
+`getDemoEntryArticleProps` prepends the hero `<figure>` to the content (the reader
+applies `rounded-lg` + `shadow-md` automatically via `reader-prose`), and each
+demo page's `generateMetadata` passes `entry?.heroImage` to `pageOpenGraph`, so
+the illustration is the social preview on whatever `/demo/...?entry=` URL is shared.
