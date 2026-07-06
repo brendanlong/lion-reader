@@ -62,6 +62,20 @@ jobs:
             echo "" > /tmp/prs.txt
           fi
 
+          # Get currently open issues so the model can avoid announcing anything
+          # that is known-broken or not yet ready for users.
+          ISSUES=$(gh issue list --repo "$REPO" --state open \
+            --json number,title,url \
+            --jq '.[] | "#\(.number) \(.title) (\(.url))"' \
+            --limit 200 2>/dev/null || true)
+          if [ -n "$ISSUES" ]; then
+            echo "$ISSUES" > /tmp/open_issues.txt
+            echo "Found $(echo "$ISSUES" | wc -l) open issues"
+          else
+            echo "No open issues found"
+            echo "" > /tmp/open_issues.txt
+          fi
+
       - name: Generate changelog with Claude
         if: steps.commits.outputs.has_commits == 'true'
         id: generate
@@ -70,6 +84,7 @@ jobs:
         run: |
           COMMITS=$(cat /tmp/commits.txt)
           PRS=$(cat /tmp/prs.txt)
+          OPEN_ISSUES=$(cat /tmp/open_issues.txt 2>/dev/null || true)
           PREV_CHANGELOG=$(cat /tmp/previous_changelog.txt 2>/dev/null || true)
           TODAY=$(date +%Y-%m-%d)
           REPO="${GITHUB_REPOSITORY}"
@@ -82,7 +97,8 @@ jobs:
 
           - Focus on HIGH-LEVEL user-visible changes only (new features, UI improvements, bug fixes users would notice)
           - Ignore internal refactors, CI changes, dependency bumps, code cleanup, and work-in-progress commits
-          - Skip any commits that were also reverted
+          - Skip any commits that were also reverted (look for later commits that revert an earlier one, or "Revert" in the subject) — do NOT announce anything that was undone
+          - Do NOT announce anything that is not yet ready for users. Cross-reference the open issues list below: if an open issue reports a feature/fix as broken, incomplete, or disabled, leave it out
           - Group related commits/PRs into a single bullet point
           - Use past tense ("Added", "Fixed", "Improved")
           - Keep it concise — a few bullet points is ideal
@@ -111,7 +127,7 @@ jobs:
 
           If there are genuinely no user-visible changes worth mentioning, respond with exactly the word SKIP and nothing else.
 
-          Otherwise, respond with ONLY the markdown body content (no frontmatter, no title). Start directly with the bullet points or a brief intro sentence followed by bullet points."
+          Otherwise, respond with ONLY the markdown body content (no frontmatter, no title). Start directly with the bullet points — do NOT include any introductory preamble or summary sentence (no \"Here's what's new\", \"These are the changes this week\", or similar)."
 
           # Build the input with both commits and PRs
           INPUT="${PROMPT}
@@ -124,6 +140,13 @@ jobs:
 
           Merged Pull Requests:
           ${PRS}"
+          fi
+
+          if [ -n "$OPEN_ISSUES" ]; then
+            INPUT="${INPUT}
+
+          Currently open issues (do NOT announce anything these report as broken, incomplete, or not ready):
+          ${OPEN_ISSUES}"
           fi
 
           if [ -n "$PREV_CHANGELOG" ]; then
@@ -141,7 +164,7 @@ jobs:
             -d "$(jq -n \
               --arg input "$INPUT" \
               '{
-                model: "claude-sonnet-4-6",
+                model: "claude-sonnet-5",
                 max_tokens: 1024,
                 messages: [{
                   role: "user",
@@ -165,6 +188,7 @@ jobs:
           fi
 
           echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "date=${TODAY}" >> "$GITHUB_OUTPUT"
 
           # Write the post file
           FILENAME="blog/_changelog/${TODAY}-changelog.md"
@@ -190,3 +214,24 @@ jobs:
           git add blog/_changelog/
           git commit -m "Add weekly changelog post for $(date +%Y-%m-%d)"
           git push
+
+      - name: Create GitHub release
+        if: steps.commits.outputs.has_commits == 'true' && steps.generate.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.PUSH_TOKEN }}
+        run: |
+          DATE="${{ steps.generate.outputs.date }}"   # YYYY-MM-DD
+          TAG="v${DATE//-/.}"                          # vYYYY.MM.DD
+          TITLE="Week of $(date -d "$DATE" +'%B %-d, %Y')"
+          FILENAME="blog/_changelog/${DATE}-changelog.md"
+
+          # Release notes = the changelog body (everything after the frontmatter)
+          awk 'BEGIN{c=0} /^---[[:space:]]*$/{c++; next} c>=2{print}' "$FILENAME" \
+            | sed '/./,$!d' > /tmp/release_notes.md
+
+          # Target the commit we just pushed so the release points at the code it describes
+          gh release create "$TAG" \
+            --target "$(git rev-parse HEAD)" \
+            --title "$TITLE" \
+            --notes-file /tmp/release_notes.md \
+            --latest
