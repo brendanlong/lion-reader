@@ -81,76 +81,11 @@ export function updateEntriesInListCache(
 }
 
 /**
- * Entry context for targeted cache updates.
- */
-export interface EntryContext {
-  id: string;
-  subscriptionId: string | null;
-  type: "web" | "email" | "saved";
-  starred: boolean;
-}
-
-/**
  * Affected scope info for targeted cache updates.
  */
 export interface AffectedScope {
   tagIds: Set<string>;
   hasUncategorized: boolean;
-}
-
-/**
- * Updates entries in only the affected cached entry lists.
- * Uses the entry context and affected scope to skip unrelated caches.
- *
- * @param queryClient - React Query client for cache access
- * @param entries - Entries with their context
- * @param updates - Fields to update (read, starred)
- * @param scope - Affected tags and uncategorized flag from server response
- */
-export function updateEntriesInAffectedListCaches(
-  queryClient: QueryClient,
-  entries: EntryContext[],
-  updates: Partial<{ read: boolean }>,
-  scope: AffectedScope
-): void {
-  if (entries.length === 0) return;
-
-  const entryIdSet = new Set(entries.map((e) => e.id));
-  const subscriptionIds = new Set(entries.map((e) => e.subscriptionId).filter(Boolean) as string[]);
-  const entryTypes = new Set(entries.map((e) => e.type));
-  const hasStarred = entries.some((e) => e.starred);
-
-  // Get all cached entry list queries
-  const infiniteQueries = queryClient.getQueriesData<InfiniteData>({
-    queryKey: [["entries", "list"]],
-  });
-
-  for (const [queryKey, data] of infiniteQueries) {
-    if (!data?.pages) continue;
-
-    // Extract filters from query key
-    const keyMeta = queryKey[1] as TRPCQueryKey | undefined;
-    const filters: EntryListFilters = keyMeta?.input ?? {};
-
-    // Check if this cache could contain any of the affected entries
-    if (!shouldUpdateEntryListCache(filters, subscriptionIds, entryTypes, hasStarred, scope)) {
-      continue;
-    }
-
-    // Update entries in this cache
-    queryClient.setQueryData(queryKey, {
-      ...data,
-      pages: data.pages.map((page) => ({
-        ...page,
-        items: page.items.map((entry) => {
-          if (entryIdSet.has(entry.id)) {
-            return { ...entry, ...updates };
-          }
-          return entry;
-        }),
-      })),
-    });
-  }
 }
 
 /**
@@ -423,8 +358,8 @@ const INSERT_SUPPORTED_FILTER_KEYS = new Set([
  * Inserts a new entry into the cached entry lists it belongs to, in sorted
  * position, so it appears live without a refetch (new_entry SSE/sync events).
  *
- * Uses the same filter matching as updateEntriesInAffectedListCaches to skip
- * unrelated caches. Tag/uncategorized membership is derived from the cached
+ * Uses the same filter matching (shouldUpdateEntryListCache) as the read/starred
+ * list updates to skip unrelated caches. Tag/uncategorized membership is derived from the cached
  * subscription (the client's authority on which tags a subscription has —
  * per-entry correct on both the live SSE and catch-up sync paths, unlike the
  * event's counts, whose tag list is a batch-wide union on the catch-up path).

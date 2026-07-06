@@ -125,6 +125,55 @@ describe("useEntryMutations markRead", () => {
     expect(result.current.utils.entries.count.getData({ type: "saved" })).toEqual({ unread: 2 });
   });
 
+  it("updates the entries.list cache with the winning read state on success", async () => {
+    // The list cache is written through the winning-state guard (not
+    // unconditionally from each response), so a successful markRead must still
+    // reach entries.list. Regression guard for that path.
+    const { result, queryClient, callsFor } = renderHookWithTrpc(
+      () => ({ mutations: useEntryMutations(), utils: trpc.useUtils() }),
+      {
+        handlers: {
+          "entries.markRead": (input) => {
+            const typed = input as { entries: { id: string }[]; read: boolean };
+            return {
+              entries: typed.entries.map((e) => ({
+                id: e.id,
+                subscriptionId: "sub-1",
+                read: typed.read,
+                starred: false,
+                type: "web" as const,
+                updatedAt: fixedDate,
+              })),
+              counts: bulkCounts(),
+            };
+          },
+        },
+      }
+    );
+
+    queryClient.setQueryData([["entries", "list"], { input: { limit: 25 }, type: "infinite" }], {
+      pages: [
+        {
+          items: [{ id: "e1", read: false, starred: false, subscriptionId: "sub-1" }],
+          nextCursor: undefined,
+        },
+      ],
+      pageParams: [undefined],
+    });
+
+    act(() => {
+      result.current.mutations.markRead(["e1"], true);
+    });
+
+    await waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(1));
+    await waitFor(() => {
+      const data = queryClient.getQueryData<{
+        pages: Array<{ items: Array<{ id: string; read: boolean }> }>;
+      }>([["entries", "list"], { input: { limit: 25 }, type: "infinite" }]);
+      expect(data?.pages[0].items[0].read).toBe(true);
+    });
+  });
+
   it("toggleRead sends the negation of the current read status for a single entry", async () => {
     const { result, callsFor } = renderHookWithTrpc(
       () => ({ mutations: useEntryMutations(), utils: trpc.useUtils() }),

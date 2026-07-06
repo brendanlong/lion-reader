@@ -58,7 +58,12 @@ export function extractParamsFromPathname(
 
 /**
  * Click handler for client-side navigation without SSR.
- * Allows cmd/ctrl+click to open in new tab.
+ *
+ * Falls through to the browser's default handling (no preventDefault) for any
+ * click the browser would treat specially, so we don't hijack:
+ * - modifier clicks (cmd/ctrl/shift/alt → new tab / new window / download),
+ * - non-primary mouse buttons (middle-click → new tab),
+ * - anchors with an explicit `target` (e.g. `_blank`) or `download` attribute.
  *
  * @example
  * ```tsx
@@ -72,8 +77,12 @@ export function handleClientNav(
   href: string,
   callback?: () => void
 ): void {
-  // Allow cmd/ctrl+click for new tab
-  if (e.metaKey || e.ctrlKey) return;
+  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+
+  // Respect anchors that intentionally open elsewhere or download.
+  const target = e.currentTarget.getAttribute("target");
+  if ((target && target !== "_self") || e.currentTarget.hasAttribute("download")) return;
+
   e.preventDefault();
   clientPush(href);
   callback?.();

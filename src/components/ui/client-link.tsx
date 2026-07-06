@@ -31,7 +31,8 @@ export interface ClientLinkProps extends Omit<
  * Use this instead of Next.js `<Link>` for navigation within the app.
  * It uses pushState directly, avoiding SSR fetches and prefetching.
  *
- * Supports cmd/ctrl+click to open in a new tab.
+ * Modifier/middle clicks, and `target`/`download` anchors, fall through to the
+ * browser (new tab / new window / download) instead of being intercepted.
  *
  * @example
  * ```tsx

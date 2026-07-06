@@ -12,7 +12,11 @@
 
 import type { QueryClient } from "@tanstack/react-query";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
-import { updateEntriesReadStatus, updateEntryStarredStatus } from "./entry-cache";
+import {
+  updateEntriesReadStatus,
+  updateEntryStarredStatus,
+  findEntryInListCache,
+} from "./entry-cache";
 import {
   addSubscriptionToCache,
   removeSubscriptionFromCache,
@@ -353,22 +357,28 @@ export function setCounts(
 }
 
 /**
- * Sets absolute counts from bulk mutation response.
- * Used by markRead mutation that returns BulkUnreadCounts.
+ * Sets absolute counts from a bulk mutation response (markRead) or a
+ * count-bearing realtime event. `saved` is optional: markRead always provides
+ * it, but web/email events omit it and the write is skipped in that case.
  *
  * @param utils - tRPC utils for cache access
- * @param counts - Absolute counts from server
+ * @param counts - Absolute counts from server (saved optional)
  * @param queryClient - React Query client for updating infinite query caches
  */
 export function setBulkCounts(
   utils: TRPCClientUtils,
-  counts: BulkUnreadCounts,
+  counts: EntryRelatedCounts,
   queryClient?: QueryClient
 ): void {
   // Set global counts
   utils.entries.count.setData({}, counts.all);
   utils.entries.count.setData({ starredOnly: true }, counts.starred);
-  utils.entries.count.setData({ type: "saved" }, counts.saved);
+  // Only write the saved count when we actually have one. Events that omit it
+  // (web/email) and an empty cache leave it undefined; writing a fabricated
+  // { unread: 0 } would seed a "fresh" saved count that a later mount trusts.
+  if (counts.saved) {
+    utils.entries.count.setData({ type: "saved" }, counts.saved);
+  }
 
   // Build subscription updates map for efficient batch update
   const subscriptionUpdates = new Map(counts.subscriptions.map((s) => [s.id, s.unread]));
@@ -422,12 +432,13 @@ export function setEntryRelatedCounts(
   counts: EntryRelatedCounts,
   queryClient?: QueryClient
 ): void {
+  // Fill in `saved` from the current cache when the event omits it so
+  // setBulkCounts doesn't clobber an existing saved count. If neither the event
+  // nor the cache has a value, leave it undefined — setBulkCounts then skips the
+  // write rather than fabricating a { unread: 0 } that a later mount serves as
+  // fresh.
   const currentSaved = utils.entries.count.getData({ type: "saved" });
-  setBulkCounts(
-    utils,
-    { ...counts, saved: counts.saved ?? currentSaved ?? { unread: 0 } },
-    queryClient
-  );
+  setBulkCounts(utils, { ...counts, saved: counts.saved ?? currentSaved }, queryClient);
 }
 
 /**
@@ -604,11 +615,20 @@ export async function applyOptimisticReadUpdate(
   // - If a fetch completes with stale read status, onSuccess will correct it immediately
   // - The race condition window is small (between onMutate and onSuccess)
 
-  // Snapshot the previous state for rollback
+  // Snapshot the previous state for rollback. Prefer entries.get, but fall back
+  // to the list cache: entries acted on from the list view often have no
+  // entries.get entry, and defaulting the previous value to `false` would make
+  // a failed mark-unread of a read entry "roll back" to unread (the state the
+  // failed mutation wanted), silently diverging from the server.
   const previousEntries = new Map<string, { read: boolean } | undefined>();
   for (const entryId of entryIds) {
     const data = utils.entries.get.getData({ id: entryId });
-    previousEntries.set(entryId, data?.entry ? { read: data.entry.read } : undefined);
+    if (data?.entry) {
+      previousEntries.set(entryId, { read: data.entry.read });
+    } else {
+      const listEntry = findEntryInListCache(queryClient, entryId);
+      previousEntries.set(entryId, listEntry ? { read: listEntry.read } : undefined);
+    }
   }
 
   // Optimistically update the cache immediately

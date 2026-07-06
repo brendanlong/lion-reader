@@ -141,6 +141,16 @@ const userEventSchema = z.discriminatedUnion("type", [
     timestamp: z.string(),
     updatedAt: z.string(),
   }),
+  // Server-internal signal that a user's saved-articles feed was just created.
+  // It tells already-open SSE connections to subscribe to the new feed's channel
+  // so the first saved article is broadcast live (the saved feed didn't exist
+  // when the connection was established). Not forwarded to the client.
+  z.object({
+    type: z.literal("saved_feed_created"),
+    userId: z.string(),
+    feedId: z.string(),
+    timestamp: z.string(),
+  }),
 ]);
 
 // ============================================================================
@@ -171,6 +181,7 @@ type EntryStateChangedEvent = Extract<UserEvent, { type: "entry_state_changed" }
 type TagCreatedEvent = Extract<UserEvent, { type: "tag_created" }>;
 type TagUpdatedEvent = Extract<UserEvent, { type: "tag_updated" }>;
 type TagDeletedEvent = Extract<UserEvent, { type: "tag_deleted" }>;
+type SavedFeedCreatedEvent = Extract<UserEvent, { type: "saved_feed_created" }>;
 
 /**
  * Returns the channel name for feed-specific events.
@@ -645,6 +656,31 @@ export async function publishTagDeleted(
     tagId,
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
+  };
+  const channel = getUserEventsChannel(userId);
+  return client.publish(channel, JSON.stringify(event));
+}
+
+/**
+ * Publishes a saved_feed_created event when a user's saved-articles feed is
+ * first created. Lets already-open SSE connections subscribe to the new feed's
+ * channel so the very first saved article broadcasts live instead of only after
+ * the next reconnect. Not forwarded to the client.
+ *
+ * @param userId - The ID of the user whose saved feed was created
+ * @param feedId - The ID of the newly created saved feed
+ * @returns The number of subscribers that received the message (0 if Redis unavailable)
+ */
+export async function publishSavedFeedCreated(userId: string, feedId: string): Promise<number> {
+  const client = getPublisherClient();
+  if (!client) {
+    return 0;
+  }
+  const event: SavedFeedCreatedEvent = {
+    type: "saved_feed_created",
+    userId,
+    feedId,
+    timestamp: new Date().toISOString(),
   };
   const channel = getUserEventsChannel(userId);
   return client.publish(channel, JSON.stringify(event));
