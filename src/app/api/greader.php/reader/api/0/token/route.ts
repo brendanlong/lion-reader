@@ -13,7 +13,8 @@ import { requireAuth, extractAuthToken } from "@/server/google-reader/auth";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request): Promise<Response> {
-  await requireAuth(request);
+  const session = await requireAuth(request);
+  if (session instanceof Response) return session;
 
   // Return the auth token as the action token
   // This is what FreshRSS and Miniflux do

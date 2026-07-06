@@ -14,6 +14,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request): Promise<Response> {
   const session = await requireAuth(request);
+  if (session instanceof Response) return session;
 
   return jsonResponse(formatUserInfo(session.user.id, session.user.email));
 }

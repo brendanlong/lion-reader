@@ -12,6 +12,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request): Promise<Response> {
   const auth = await requireAuth(request);
+  if (auth instanceof Response) return auth;
 
   return jsonResponse({
     id: uuidToWallabagId(auth.userId),

@@ -35,6 +35,7 @@ async function handleStreamContents(
   params: Promise<{ streamId: string[] }>
 ): Promise<Response> {
   const session = await requireAuth(request);
+  if (session instanceof Response) return session;
   const { streamId: streamIdParts } = await params;
 
   // Reconstruct the stream ID from path segments

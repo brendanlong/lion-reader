@@ -22,6 +22,7 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: Request): Promise<Response> {
   const session = await requireAuth(request);
+  if (session instanceof Response) return session;
 
   const params = await parseFormData(request);
   const feedUrl = params.get("quickadd");

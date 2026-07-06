@@ -102,12 +102,16 @@ async function authenticateRequest(request: Request): Promise<SessionData | null
 
 /**
  * Validates a Google Reader request and returns the session.
- * Throws a 401 response if not authenticated.
+ *
+ * Returns a 401 `Response` if not authenticated — callers must forward it, e.g.
+ * `const session = await requireAuth(request); if (session instanceof Response) return session;`.
+ * (We return rather than throw because Next.js App Router route handlers don't
+ * convert a thrown `Response` into the HTTP response — it surfaces as a 500.)
  */
-export async function requireAuth(request: Request): Promise<SessionData> {
+export async function requireAuth(request: Request): Promise<SessionData | Response> {
   const session = await authenticateRequest(request);
   if (!session) {
-    throw new Response("Unauthorized", { status: 401 });
+    return new Response("Unauthorized", { status: 401 });
   }
   return session;
 }

@@ -17,6 +17,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request): Promise<Response> {
   const session = await requireAuth(request);
+  if (session instanceof Response) return session;
 
   // Fetch all subscriptions (no pagination — Google Reader clients expect all at once)
   const allSubscriptions: subscriptionsService.Subscription[] = [];

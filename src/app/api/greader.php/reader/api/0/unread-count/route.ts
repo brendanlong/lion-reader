@@ -16,6 +16,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request): Promise<Response> {
   const session = await requireAuth(request);
+  if (session instanceof Response) return session;
 
   // Fetch all subscriptions to get unread counts
   const allSubscriptions: Array<{ id: string; unreadCount: number; subscribedAt: Date }> = [];
