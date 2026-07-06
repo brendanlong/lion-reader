@@ -25,6 +25,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request): Promise<Response> {
   const auth = await requireAuth(request);
+  if (auth instanceof Response) return auth;
   const url = new URL(request.url);
 
   const singleUrl = url.searchParams.get("url");

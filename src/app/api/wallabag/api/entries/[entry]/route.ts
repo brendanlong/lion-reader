@@ -38,6 +38,7 @@ export async function GET(
   { params }: { params: Promise<{ entry: string }> }
 ): Promise<Response> {
   const auth = await requireAuth(request);
+  if (auth instanceof Response) return auth;
   const { entry: entryParam } = await params;
 
   const entryId = await resolveEntryId(auth.userId, entryParam);
@@ -58,6 +59,7 @@ export async function PATCH(
   { params }: { params: Promise<{ entry: string }> }
 ): Promise<Response> {
   const auth = await requireAuth(request);
+  if (auth instanceof Response) return auth;
   const { entry: entryParam } = await params;
   const body = await parseBody(request);
 
@@ -92,6 +94,7 @@ export async function DELETE(
   { params }: { params: Promise<{ entry: string }> }
 ): Promise<Response> {
   const auth = await requireAuth(request);
+  if (auth instanceof Response) return auth;
   const { entry: entryParam } = await params;
 
   const entryId = await resolveEntryId(auth.userId, entryParam);

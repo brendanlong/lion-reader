@@ -45,6 +45,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request): Promise<Response> {
   const auth = await requireAuth(request);
+  if (auth instanceof Response) return auth;
   const url = new URL(request.url);
   const params = parseEntryListParams(url);
 
@@ -129,6 +130,7 @@ export async function GET(request: Request): Promise<Response> {
 
 export async function POST(request: Request): Promise<Response> {
   const auth = await requireAuth(request);
+  if (auth instanceof Response) return auth;
   const body = await parseBody(request);
 
   const articleUrl = body.url;

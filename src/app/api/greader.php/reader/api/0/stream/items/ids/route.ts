@@ -31,6 +31,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request): Promise<Response> {
   const session = await requireAuth(request);
+  if (session instanceof Response) return session;
 
   const url = new URL(request.url);
   const searchParams = url.searchParams;

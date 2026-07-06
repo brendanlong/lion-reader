@@ -14,6 +14,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request): Promise<Response> {
   const auth = await requireAuth(request);
+  if (auth instanceof Response) return auth;
 
   const tags = await tagsService.listTags(db, auth.userId);
   return jsonResponse(formatTags(tags));

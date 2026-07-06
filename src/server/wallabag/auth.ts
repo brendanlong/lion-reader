@@ -124,12 +124,18 @@ async function authenticateRequest(
 
 /**
  * Validates a Wallabag API request and returns the user data.
- * Throws a 401 response if not authenticated.
+ *
+ * Returns a 401 `Response` if not authenticated — callers must forward it, e.g.
+ * `const auth = await requireAuth(request); if (auth instanceof Response) return auth;`.
+ * (We return rather than throw because Next.js App Router route handlers don't
+ * convert a thrown `Response` into the HTTP response — it surfaces as a 500.)
  */
-export async function requireAuth(request: Request): Promise<{ userId: string; email: string }> {
+export async function requireAuth(
+  request: Request
+): Promise<{ userId: string; email: string } | Response> {
   const auth = await authenticateRequest(request);
   if (!auth) {
-    throw new Response(
+    return new Response(
       JSON.stringify({ error: "invalid_grant", error_description: "Unauthorized" }),
       {
         status: 401,
