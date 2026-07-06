@@ -84,7 +84,7 @@ optipng -quiet -o5 out.png    # ~1.6 MB -> ~135 KB
 
 - **1440px wide** is retina-friendly for the reading column; don't ship the 2528px raw.
 - **128 colors** is the sweet spot for this flat art (no banding on the outlines).
-  Eyeball 64 vs 128 if you want it smaller; drop to 128 if 64 bands.
+  Eyeball 64 if you want it smaller, but stay at 128 if 64 bands the outlines.
 - Put the final file in `public/demo/<article-id>.png`.
 
 ### Embedding in an article
