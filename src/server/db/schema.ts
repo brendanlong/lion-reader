@@ -34,9 +34,9 @@ const citext = customType<{ data: string }>({
 // ENUMS
 // ============================================================================
 
-export const feedTypeEnum = pgEnum("feed_type", ["web", "email", "saved"]);
+const feedTypeEnum = pgEnum("feed_type", ["web", "email", "saved"]);
 
-export const websubStateEnum = pgEnum("websub_state", ["pending", "active", "unsubscribed"]);
+const websubStateEnum = pgEnum("websub_state", ["pending", "active", "unsubscribed"]);
 
 // ============================================================================
 // AUTHENTICATION

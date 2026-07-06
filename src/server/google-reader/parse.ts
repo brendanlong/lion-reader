@@ -45,53 +45,6 @@ export async function parseFormData(request: Request): Promise<URLSearchParams> 
 }
 
 /**
- * Gets a single string parameter from form data or query params.
- */
-export function getParam(params: URLSearchParams, key: string): string | null {
-  return params.get(key);
-}
-
-/**
- * Gets all values for a parameter (for repeated params like `i=...&i=...`).
- */
-export function getAllParams(params: URLSearchParams, key: string): string[] {
-  return params.getAll(key);
-}
-
-/**
- * Gets a numeric parameter.
- */
-export function getNumParam(params: URLSearchParams, key: string): number | null {
-  const value = params.get(key);
-  if (value === null) return null;
-  const num = parseInt(value, 10);
-  return isNaN(num) ? null : num;
-}
-
-/**
- * Merges query parameters and POST body parameters.
- * POST body params take precedence for duplicate keys.
- * Google Reader API sometimes accepts params in both locations.
- */
-export async function mergeParams(request: Request): Promise<URLSearchParams> {
-  const url = new URL(request.url);
-  const queryParams = url.searchParams;
-
-  if (request.method === "GET") {
-    return queryParams;
-  }
-
-  const bodyParams = await parseFormData(request);
-  const merged = new URLSearchParams(queryParams);
-
-  for (const [key, value] of bodyParams.entries()) {
-    merged.append(key, value);
-  }
-
-  return merged;
-}
-
-/**
  * Parses item IDs from request parameters.
  * Google Reader sends item IDs as repeated `i` parameters.
  * Each ID can be in long hex, short hex, or decimal format.

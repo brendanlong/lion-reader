@@ -141,7 +141,7 @@ function parseFrontmatterLenient(yaml: string): Record<string, string> | null {
  * @param markdown - The Markdown text to convert
  * @returns The HTML representation
  */
-export async function markdownToHtml(markdown: string): Promise<string> {
+async function markdownToHtml(markdown: string): Promise<string> {
   // Configure marked for safe rendering
   marked.setOptions({
     gfm: true, // GitHub Flavored Markdown

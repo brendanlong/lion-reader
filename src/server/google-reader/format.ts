@@ -7,7 +7,7 @@
 
 import { uuidToInt64, int64ToLongFormId, subscriptionToStreamId } from "./id";
 import { stateStreamId, labelStreamId } from "./streams";
-import type { EntryFull, EntryListItem } from "@/server/services/entries";
+import type { EntryFull } from "@/server/services/entries";
 import type { Subscription } from "@/server/services/subscriptions";
 import type { ListTagsResult } from "@/server/services/tags";
 
@@ -76,52 +76,6 @@ export function formatEntryAsItem(entry: EntryFull): GoogleReaderItem {
       streamId: entry.subscriptionId ? subscriptionToStreamId(entry.subscriptionId) : "",
       title: entry.feedTitle ?? "",
       htmlUrl: entry.feedUrl ?? entry.url ?? "",
-    },
-    categories,
-  };
-}
-
-/**
- * Formats a list entry (without content) as a Google Reader item.
- * Used when full content is not needed (e.g., stream/items/ids).
- */
-export function formatListEntryAsItem(
-  entry: EntryListItem
-): Omit<GoogleReaderItem, "summary"> & { summary: { direction: string; content: string } } {
-  const itemId = uuidToInt64(entry.id);
-  const publishedTs = entry.publishedAt
-    ? Math.floor(entry.publishedAt.getTime() / 1000)
-    : Math.floor(entry.fetchedAt.getTime() / 1000);
-  const updatedTs = Math.floor(entry.updatedAt.getTime() / 1000);
-  const crawlTimeMs = entry.fetchedAt.getTime().toString();
-
-  const categories: string[] = [];
-  categories.push(stateStreamId("reading-list"));
-  if (entry.read) {
-    categories.push(stateStreamId("read"));
-  }
-  if (entry.starred) {
-    categories.push(stateStreamId("starred"));
-  }
-
-  return {
-    id: int64ToLongFormId(itemId),
-    crawlTimeMsec: crawlTimeMs,
-    timestampUsec: (BigInt(crawlTimeMs) * BigInt(1000)).toString(),
-    published: publishedTs,
-    updated: updatedTs,
-    title: entry.title ?? "",
-    canonical: entry.url ? [{ href: entry.url }] : [],
-    alternate: entry.url ? [{ href: entry.url, type: "text/html" }] : [],
-    summary: {
-      direction: "ltr",
-      content: entry.summary ?? "",
-    },
-    author: entry.author ?? "",
-    origin: {
-      streamId: entry.subscriptionId ? subscriptionToStreamId(entry.subscriptionId) : "",
-      title: entry.feedTitle ?? "",
-      htmlUrl: entry.url ?? "",
     },
     categories,
   };

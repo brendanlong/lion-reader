@@ -32,7 +32,7 @@ export const INITIAL_RECONNECT_DELAY_MS = 1_000;
 export const MAX_RECONNECT_DELAY_MS = 30_000;
 
 /** Backoff multiplier for exponential backoff. */
-export const BACKOFF_MULTIPLIER = 2;
+const BACKOFF_MULTIPLIER = 2;
 
 /** Polling interval when in fallback mode (30 seconds). */
 export const POLL_INTERVAL_MS = 30_000;

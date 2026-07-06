@@ -122,7 +122,7 @@ export interface WorkerStats {
 /**
  * Error thrown when a job exceeds its timeout.
  */
-export class JobTimeoutError extends Error {
+class JobTimeoutError extends Error {
   constructor(
     public readonly jobId: string,
     public readonly timeoutMs: number

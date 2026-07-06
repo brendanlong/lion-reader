@@ -127,7 +127,7 @@ export const DEFAULT_SUBSCRIPTIONS: SeededSubscription[] = [
   },
 ];
 
-export const DEFAULT_TAGS: SeededTag[] = [
+const DEFAULT_TAGS: SeededTag[] = [
   {
     id: "tag-1",
     name: "Tech",
@@ -146,7 +146,7 @@ export const DEFAULT_TAGS: SeededTag[] = [
   },
 ];
 
-export const DEFAULT_UNCATEGORIZED = { feedCount: 1, unreadCount: 3 };
+const DEFAULT_UNCATEGORIZED = { feedCount: 1, unreadCount: 3 };
 
 export const DEFAULT_ENTRIES: SeededEntry[] = [
   {
