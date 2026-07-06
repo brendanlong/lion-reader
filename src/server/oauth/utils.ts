@@ -31,6 +31,14 @@ const AUTH_CODE_EXPIRY_SECONDS = 600;
 export const OAUTH_SCOPES = {
   MCP: "mcp",
   SAVED_WRITE: "saved:write",
+  /**
+   * Full read/write access to the reader surface: entries, subscriptions, tags,
+   * and saved articles — but NOT account settings, sessions, passwords, API
+   * tokens, or OAuth grant management. Granted to reader-style API clients (the
+   * Wallabag and Google Reader compatibility APIs) so a single scope covers
+   * everything those surfaces need without per-endpoint micro-management.
+   */
+  READER_FULL_ACCESS: "reader:full-access",
 } as const;
 
 export type OAuthScope = (typeof OAUTH_SCOPES)[keyof typeof OAUTH_SCOPES];
@@ -41,6 +49,7 @@ export type OAuthScope = (typeof OAUTH_SCOPES)[keyof typeof OAUTH_SCOPES];
 export const SCOPE_DESCRIPTIONS: Record<OAuthScope, string> = {
   mcp: "Read and manage your feeds and articles",
   "saved:write": "Save articles to your library",
+  "reader:full-access": "Read and manage your feeds, subscriptions, tags, and saved articles",
 };
 
 // ============================================================================
