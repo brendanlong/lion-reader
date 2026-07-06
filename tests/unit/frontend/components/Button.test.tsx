@@ -22,8 +22,8 @@ describe("Button", () => {
     it("renders with default props (primary variant, md size)", () => {
       render(<Button>Default Button</Button>);
       const button = screen.getByRole("button");
-      // Primary variant has bg-zinc-900
-      expect(button).toHaveClass("bg-zinc-900");
+      // Primary variant applies the shared btn-primary color utility
+      expect(button).toHaveClass("btn-primary");
       // md size has min-h-[44px]
       expect(button).toHaveClass("min-h-[44px]");
     });
@@ -33,7 +33,7 @@ describe("Button", () => {
     it("applies primary variant styles", () => {
       render(<Button variant="primary">Primary</Button>);
       const button = screen.getByRole("button");
-      expect(button).toHaveClass("bg-zinc-900", "text-white");
+      expect(button).toHaveClass("btn-primary");
     });
 
     it("applies secondary variant styles", () => {
@@ -46,7 +46,7 @@ describe("Button", () => {
       render(<Button variant="ghost">Ghost</Button>);
       const button = screen.getByRole("button");
       expect(button).toHaveClass("text-zinc-900");
-      expect(button).not.toHaveClass("bg-zinc-900", "bg-white");
+      expect(button).not.toHaveClass("btn-primary", "bg-white");
     });
   });
 
