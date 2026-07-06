@@ -256,6 +256,12 @@ export async function GET(req: Request): Promise<Response> {
       // Expose cleanup to the stream's cancel() callback below.
       cleanupRef = cleanup;
 
+      // Increment the active-connections gauge here, strictly paired with the
+      // decrement in cleanup(): every early return past this point (including a
+      // failed Redis setup) runs cleanup(), so the gauge can't drift. The
+      // already-aborted bail-out above returns before this and never increments.
+      incrementSSEConnections();
+
       /**
        * Sends data to the stream, handling any errors
        */
@@ -460,6 +466,7 @@ export async function GET(req: Request): Promise<Response> {
         // This should never happen since we checked Redis health above,
         // but handle it gracefully just in case
         if (!subscription) {
+          cleanup();
           controller.error(new Error("Redis subscriber unavailable"));
           return;
         }
@@ -500,9 +507,6 @@ export async function GET(req: Request): Promise<Response> {
           send(formatSSEHeartbeat());
           trackSSEEventSent("heartbeat");
         }, HEARTBEAT_INTERVAL_MS);
-
-        // Increment active SSE connections counter
-        incrementSSEConnections();
 
         // Send an initial heartbeat to confirm the connection. (The client
         // detects "connected" from the EventSource open event, and tracks sync

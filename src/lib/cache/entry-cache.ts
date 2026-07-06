@@ -358,8 +358,8 @@ const INSERT_SUPPORTED_FILTER_KEYS = new Set([
  * Inserts a new entry into the cached entry lists it belongs to, in sorted
  * position, so it appears live without a refetch (new_entry SSE/sync events).
  *
- * Uses the same filter matching as updateEntriesInAffectedListCaches to skip
- * unrelated caches. Tag/uncategorized membership is derived from the cached
+ * Uses the same filter matching (shouldUpdateEntryListCache) as the read/starred
+ * list updates to skip unrelated caches. Tag/uncategorized membership is derived from the cached
  * subscription (the client's authority on which tags a subscription has —
  * per-entry correct on both the live SSE and catch-up sync paths, unlike the
  * event's counts, whose tag list is a batch-wide union on the catch-up path).
