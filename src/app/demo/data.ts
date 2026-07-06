@@ -37,6 +37,10 @@ export interface DemoEntry extends EntryListData {
   contentHtml: string;
   /** Pre-generated AI summary HTML for the summary card */
   summaryHtml: string;
+  /** Optional hero illustration (also used as the social/OG image). See DemoArticle. */
+  heroImage?: string;
+  /** Alt text for heroImage; falls back to "<title> illustration". */
+  heroImageAlt?: string;
 }
 
 // ============================================================================
@@ -193,6 +197,24 @@ export function getDemoSubscription(subscriptionId: string): DemoSubscription | 
   return subscriptionsById.get(subscriptionId);
 }
 
+function escapeHtmlAttr(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/**
+ * Build the hero <figure> for an article, or "" when it has no heroImage.
+ * The reader (reader-prose) styles the <img> automatically (rounded + shadow).
+ */
+function heroFigureHtml(entry: DemoEntry): string {
+  if (!entry.heroImage) return "";
+  const alt = entry.heroImageAlt ?? `${entry.title ?? "Article"} illustration`;
+  return `<figure><img src="${escapeHtmlAttr(entry.heroImage)}" alt="${escapeHtmlAttr(alt)}" /></figure>\n`;
+}
+
 /** Get EntryArticle props for a demo entry */
 export function getDemoEntryArticleProps(
   entry: DemoEntry
@@ -206,7 +228,7 @@ export function getDemoEntryArticleProps(
     source: entry.feedTitle ?? "Lion Reader",
     author: entry.author,
     date: entry.publishedAt ?? entry.fetchedAt,
-    contentHtml: entry.contentHtml,
+    contentHtml: heroFigureHtml(entry) + entry.contentHtml,
     fallbackContent: entry.summary,
   };
 }

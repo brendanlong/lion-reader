@@ -11,6 +11,9 @@ const article: DemoArticle = {
     "Listen to articles read aloud with AI-enhanced text preprocessing and paragraph highlighting.",
   publishedAt: new Date("2025-12-27T18:00:00Z"),
   starred: false,
+  heroImage: "/demo/text-to-speech.png",
+  heroImageAlt:
+    "The Lion Reader lion wearing headphones and reading a newspaper as an article is read aloud, with sound waves rising from the page.",
   summaryHtml: `<p>Lion Reader converts articles to audio using a two-stage process: an <strong>AI preprocessor</strong> (Llama 3.1) transforms HTML into narration-friendly text by expanding abbreviations and formatting complex elements, then either Web Speech API or local <strong>Piper TTS</strong> synthesizes speech. Features include synchronized paragraph highlighting, playback controls, and offline capability.</p>`,
   contentHtml: `
     <p>Sometimes you want to listen instead of read &mdash; while cooking, commuting, or just giving your eyes a rest. Lion Reader&rsquo;s narration feature transforms articles into natural-sounding audio using a two-stage pipeline that combines AI preprocessing with on-device speech synthesis.</p>

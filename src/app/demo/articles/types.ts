@@ -17,4 +17,12 @@ export interface DemoArticle {
   contentHtml: string;
   /** Pre-generated AI summary HTML (from Claude Sonnet) for the demo summary card */
   summaryHtml: string;
+  /**
+   * Optional hero illustration (path under public/demo/, e.g. "/demo/text-to-speech.png").
+   * Rendered at the top of the article AND used as the social/OG preview image, so
+   * generate it at ~1200x630. See src/app/demo/articles/CLAUDE.md for the house style.
+   */
+  heroImage?: string;
+  /** Alt text for heroImage; falls back to "<title> illustration" when omitted. */
+  heroImageAlt?: string;
 }
