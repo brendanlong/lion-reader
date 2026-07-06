@@ -207,18 +207,20 @@ Session tokens are 32 random bytes, base64url encoded. We store SHA-256 hash in 
 
 ### Token Scopes & Authorization
 
-Authorization is **fail-closed** for tokens. There are three credential types:
+Authorization is **fail-closed** for tokens. There are four credential types:
 
-- **Browser sessions**: full access. Scopes do not apply (`scopes` is a token-only concept).
+- **Browser sessions**: full access. A normal login session has `scopes = NULL`.
+- **Scoped sessions**: a session with a non-NULL `scopes` array — a restricted bearer credential minted by a session-based compat API (the Google Reader `ClientLogin` mints one with `reader:full-access`). `validateSession` is **fail-closed**: a scoped session is rejected for full-access use (main tRPC/REST, RSC caller, SSE, `/oauth/authorize`) exactly as if invalid, unless the caller passes `allowScoped: true` (only the Google Reader API does, and it then verifies the reader scope). This keeps a leaked Google Reader token from being replayed as a browser session for account management.
 - **API tokens** (`api_tokens`, used by extensions/integrations and the legacy MCP path): restricted to their granted scopes.
-- **OAuth 2.1 access tokens**: audience-bound to the MCP endpoint only (see below).
+- **OAuth 2.1 access tokens**: audience-bound to the MCP endpoint at `/api/mcp` (see below). The Wallabag compat API also validates OAuth access tokens directly, requiring `reader:full-access`.
 
 Available scopes (`API_TOKEN_SCOPES` / `OAUTH_SCOPES`):
 
-| Scope         | Grants                                                                                                             |
-| ------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `mcp`         | The MCP tool surface: entries list/get/mark-read/star/count, subscriptions list/get, tag CRUD, saved delete/upload |
-| `saved:write` | Saving articles (`saved.save`) only                                                                                |
+| Scope                | Grants                                                                                                                                                                                                                           |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mcp`                | The MCP tool surface: entries list/get/mark-read/star/count, subscriptions list/get, tag CRUD, saved delete/upload                                                                                                               |
+| `saved:write`        | Saving articles (`saved.save`) only                                                                                                                                                                                              |
+| `reader:full-access` | Full reader surface (entries, subscriptions, tags, saved articles — not account settings). Minted for the Wallabag and Google Reader compat APIs and enforced by them; OAuth/session-only (not an `API_TOKEN_SCOPES` value yet). |
 
 Enforcement (`src/server/trpc/trpc.ts`):
 
