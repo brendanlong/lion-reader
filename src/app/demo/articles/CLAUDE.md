@@ -90,6 +90,9 @@ optipng -quiet -o5 out.png    # ~1.6 MB -> ~90 KB
 ```
 
 - **1200×630** is the social/OG frame and is plenty sharp for the reading column too.
+  Keep this exact size: the `og:image:width`/`height` tags are emitted from the
+  `OG_IMAGE_WIDTH`/`OG_IMAGE_HEIGHT` constants in `src/lib/metadata.ts`, so a hero
+  at a different size would advertise wrong dimensions to crawlers.
 - **128 colors** is the sweet spot for this flat art (no banding on the outlines).
   Eyeball 64 if you want it smaller, but stay at 128 if 64 bands the outlines.
 - Put the final file in `public/demo/<article-id>.png`.
