@@ -20,6 +20,13 @@
   --accent-border: #bfdbfe; /* blue-200 */
 
   /* =================================
+     Primary Solid Color (filled primary buttons + "on" toggle/selected states)
+     Light mode: dark grey (not pure black, so it doesn't look like plain text)
+     ================================= */
+  --primary-solid: #3f3f46; /* zinc-700 */
+  --primary-solid-foreground: #ffffff;
+
+  /* =================================
      Info Colors (for informational alerts, summary cards)
      Light mode: blue, Dark mode: warm neutral to reduce blue light
      ================================= */
@@ -50,6 +57,8 @@
   --color-accent-subtle: var(--accent-subtle);
   --color-accent-subtle-foreground: var(--accent-subtle-foreground);
   --color-accent-border: var(--accent-border);
+  --color-primary-solid: var(--primary-solid);
+  --color-primary-solid-foreground: var(--primary-solid-foreground);
   --color-info: var(--info);
   --color-info-muted: var(--info-muted);
   --color-info-subtle: var(--info-subtle);
@@ -73,6 +82,10 @@
   --accent-subtle-foreground: #fecaca; /* red-200 */
   --accent-border: #991b1b; /* red-800 */
 
+  /* Dark mode: soft light grey so the primary button doesn't glare */
+  --primary-solid: #e4e4e7; /* zinc-200 */
+  --primary-solid-foreground: #18181b; /* zinc-900 */
+
   /* Dark mode: neutral info colors for readability */
   --info: #a1a1aa; /* zinc-400 */
   --info-muted: #71717a; /* zinc-500 */
@@ -95,6 +108,10 @@
     --accent-subtle: rgba(127, 29, 29, 0.2); /* red-900/20 */
     --accent-subtle-foreground: #fecaca; /* red-200 */
     --accent-border: #991b1b; /* red-800 */
+
+    /* Dark mode: soft light grey so the primary button doesn't glare */
+    --primary-solid: #e4e4e7; /* zinc-200 */
+    --primary-solid-foreground: #18181b; /* zinc-900 */
 
     /* Dark mode: neutral info colors for readability */
     --info: #a1a1aa; /* zinc-400 */
@@ -152,19 +169,20 @@ body {
 /* =================================
    Primary Button Color Scheme
 
-   Single source of truth for the filled "primary" button/link color scheme
-   (background, text, hover/active, focus ring) in both light and dark mode.
-   Consumers add their own layout classes (size, padding, rounding). Used by
-   the shared <Button> primary variant and the primary link/anchor buttons
-   that can't use it (Subscribe, demo CTAs, OAuth consent, extension retry).
+   Single source of truth for the filled "primary" button/link color scheme.
+   The resting background/text come from the shared --primary-solid variables
+   (see :root / .dark above) so the primary buttons AND the "on" toggle/selected
+   states stay in sync; only the hover/active/focus deltas live here. Consumers
+   add their own layout classes (size, padding, rounding). Used by the shared
+   <Button> primary variant and the primary link/anchor buttons that can't use
+   it (Subscribe, demo CTAs, OAuth consent, extension retry).
 
-   Kept intentionally less contrasty than pure zinc-900/zinc-50 so the button
-   doesn't glare in dark mode. Change the palette here to update every primary
-   button at once.
+   To retune the primary color, edit --primary-solid; the hover/active shades
+   below sit one zinc step to either side of it.
    ================================= */
 
 @utility btn-primary {
-  @apply bg-zinc-800 text-white transition-colors hover:bg-zinc-700 focus:ring-zinc-700 active:bg-zinc-600 dark:bg-zinc-200 dark:text-zinc-900 dark:hover:bg-zinc-300 dark:focus:ring-zinc-400 dark:active:bg-zinc-400;
+  @apply bg-primary-solid text-primary-solid-foreground transition-colors hover:bg-zinc-600 focus:ring-zinc-700 active:bg-zinc-500 dark:hover:bg-zinc-300 dark:focus:ring-zinc-400 dark:active:bg-zinc-400;
 }
 
 /* =================================

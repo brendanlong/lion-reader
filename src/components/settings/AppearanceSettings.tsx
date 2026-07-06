@@ -28,7 +28,7 @@ function OptionButton<T extends string>({ selected, onClick, children }: OptionB
       onClick={onClick}
       className={`ui-text-sm rounded-md px-4 py-2 font-medium transition-colors ${
         selected
-          ? "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900"
+          ? "bg-primary-solid text-primary-solid-foreground"
           : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
       }`}
     >
