@@ -339,7 +339,7 @@ function processMarkdownContent(content: string): { html: string; title: string 
 function codeToHtml(content: string, language?: string): string {
   const escaped = escapeHtml(content);
 
-  const langClass = language ? ` class="language-${language.toLowerCase()}"` : "";
+  const langClass = language ? ` class="language-${escapeHtml(language.toLowerCase())}"` : "";
   return `<pre><code${langClass}>${escaped}</code></pre>`;
 }
 
