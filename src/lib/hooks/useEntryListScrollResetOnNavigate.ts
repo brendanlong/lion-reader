@@ -14,7 +14,10 @@
  * list and an entry in it — never changes the pathname and never resets scroll
  * (the list stays put under the reader, so closing an entry lands back where you
  * were; the reader itself scrolls its own nested container). Only a genuine list
- * change (sidebar link, All ↔ Starred, subscription/tag swap) resets.
+ * change (sidebar link, All ↔ Starred, subscription/tag swap) resets. Browser
+ * back/forward *between two lists* also changes the pathname and so resets to
+ * the top (the app has no popstate scroll restoration); that's consistent with
+ * the refresh hook and fine until reading-position restore (#406) lands.
  *
  * Runs in a layout effect so the reset happens before paint (no visible jump).
  *
