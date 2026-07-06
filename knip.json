@@ -6,6 +6,5 @@
     "src/lib/stubs/**",
     "worker/index.ts",
     "src/app/demo/articles/scoring.ts"
-  ],
-  "ignoreDependencies": ["postcss"]
+  ]
 }
