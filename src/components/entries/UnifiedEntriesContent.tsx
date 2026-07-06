@@ -51,8 +51,6 @@ interface RouteInfo {
   subscriptionId?: string;
   /** Whether this route needs to fetch a tag for its title */
   tagId?: string;
-  /** Whether to show the file upload button */
-  showUploadButton?: boolean;
   /** Empty message when showing unread only */
   emptyMessageUnread: string;
   /** Empty message when showing all entries */
@@ -102,7 +100,6 @@ function useRouteInfo(): RouteInfo {
         viewId: "saved" as const,
         filters: { type: "saved" as const },
         title: "Saved",
-        showUploadButton: true,
         emptyMessageUnread: "No unread saved articles. Toggle to show all items.",
         emptyMessageAll: "No saved articles yet. Save articles to read them later.",
         markAllReadDescription: "saved articles",
@@ -437,7 +434,6 @@ function UnifiedEntriesContentInner() {
       entryListSlot={entryListSlot}
       markAllReadDescription={emptyMessages.markAllReadDescription}
       markAllReadOptions={markAllReadOptions}
-      showUploadButton={routeInfo.showUploadButton}
       hideSortToggle={routeInfo.hideSortToggle}
     />
   );

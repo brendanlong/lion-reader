@@ -438,7 +438,7 @@ function SpamPreferenceSection() {
             onClick={handleToggle}
             disabled={preferencesQuery.isLoading || updateMutation.isPending}
             className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:focus:ring-offset-zinc-900 ${
-              showSpam ? "bg-zinc-900 dark:bg-zinc-50" : "bg-zinc-200 dark:bg-zinc-700"
+              showSpam ? "bg-primary-solid" : "bg-zinc-200 dark:bg-zinc-700"
             }`}
           >
             <span

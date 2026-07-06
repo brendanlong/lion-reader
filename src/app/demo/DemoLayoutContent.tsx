@@ -75,7 +75,7 @@ export function DemoLayoutContent({ children }: DemoLayoutContentProps) {
                 <div className="flex items-center gap-2">
                   <Link
                     href="/register"
-                    className="ui-text-sm inline-flex min-h-[40px] items-center gap-1.5 rounded-md bg-zinc-900 px-3 font-medium text-white transition-colors hover:bg-zinc-800 active:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200 dark:active:bg-zinc-300"
+                    className="btn-primary ui-text-sm inline-flex min-h-[40px] items-center gap-1.5 rounded-md px-3 font-medium"
                   >
                     Sign Up
                   </Link>

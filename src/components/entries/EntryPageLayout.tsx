@@ -17,7 +17,6 @@ import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
 import { UnreadToggle } from "./UnreadToggle";
 import { SortToggle } from "./SortToggle";
 import { MarkAllReadButton } from "./MarkAllReadButton";
-import { FileUploadButton } from "@/components/saved/FileUploadButton";
 
 /**
  * Loading skeleton for the page title.
@@ -53,9 +52,6 @@ interface EntryPageLayoutProps {
   /** Options to pass to handleMarkAllRead */
   markAllReadOptions: MarkAllReadOptions;
 
-  /** Whether to show the file upload button (for Saved page) */
-  showUploadButton?: boolean;
-
   /** Whether to hide the sort toggle (e.g., for algorithmic feed) */
   hideSortToggle?: boolean;
 }
@@ -66,7 +62,6 @@ export function EntryPageLayout({
   entryListSlot,
   markAllReadDescription,
   markAllReadOptions,
-  showUploadButton = false,
   hideSortToggle = false,
 }: EntryPageLayoutProps) {
   // Use non-suspending hooks directly so buttons render immediately
@@ -86,7 +81,6 @@ export function EntryPageLayout({
         <div className="mb-4 flex items-center justify-between sm:mb-6">
           {titleSlot}
           <div className="flex gap-2">
-            {showUploadButton && <FileUploadButton />}
             <MarkAllReadButton
               contextDescription={markAllReadDescription}
               isLoading={isMarkAllReadPending}
