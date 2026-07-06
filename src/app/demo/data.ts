@@ -197,22 +197,18 @@ export function getDemoSubscription(subscriptionId: string): DemoSubscription | 
   return subscriptionsById.get(subscriptionId);
 }
 
-function escapeHtmlAttr(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
 /**
  * Build the hero <figure> for an article, or "" when it has no heroImage.
  * The reader (reader-prose) styles the <img> automatically (rounded + shadow).
+ *
+ * heroImage/heroImageAlt are trusted, hard-coded values from the article files
+ * (same trust level as the surrounding contentHtml, which is also emitted raw),
+ * so they're interpolated without escaping — keep alt text quote-free.
  */
 function heroFigureHtml(entry: DemoEntry): string {
   if (!entry.heroImage) return "";
   const alt = entry.heroImageAlt ?? `${entry.title ?? "Article"} illustration`;
-  return `<figure><img src="${escapeHtmlAttr(entry.heroImage)}" alt="${escapeHtmlAttr(alt)}" /></figure>\n`;
+  return `<figure><img src="${entry.heroImage}" alt="${alt}" /></figure>\n`;
 }
 
 /** Get EntryArticle props for a demo entry */
