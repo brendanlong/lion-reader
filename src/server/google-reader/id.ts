@@ -22,7 +22,7 @@
  * - Decimal string: 31
  */
 
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, gte, lte, sql } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import { entries, subscriptions } from "@/server/db/schema";
 
@@ -116,20 +116,51 @@ function extractRandomBits(id: bigint): bigint {
   return id & BigInt(0x7fff); // lower 15 bits
 }
 
+/** Formats a 48-bit millisecond timestamp as its 12-hex-digit UUID prefix. */
+function timestampHex(timestampMs: bigint): string {
+  return timestampMs.toString(16).padStart(12, "0");
+}
+
 /**
- * Builds a SQL condition to match UUIDs by their timestamp hex prefix.
- * UUIDs are stored as text like "xxxxxxxx-xxxx-...". The first 12 hex
- * digits (positions 1-8 and 10-13, skipping the hyphen) encode the
- * 48-bit millisecond timestamp.
+ * The lowest/highest UUID sharing a given 12-hex-digit timestamp prefix. Because
+ * UUIDv7 text-orders by timestamp, `id BETWEEN floor(minTs) AND ceil(maxTs)` is
+ * an index-seekable bound on the primary key that brackets every UUID in the
+ * requested time window — turning a full index scan (the substring filter alone
+ * can't use the index) into a range scan.
  */
-function uuidTimestampMatch(column: typeof entries.id | typeof subscriptions.id, tsHex: string) {
-  return sql`SUBSTRING(${column}::text, 1, 8) || SUBSTRING(${column}::text, 10, 4) = ${tsHex}`;
+function uuidFloor(tsHex: string): string {
+  return `${tsHex.slice(0, 8)}-${tsHex.slice(8, 12)}-0000-0000-000000000000`;
+}
+function uuidCeil(tsHex: string): string {
+  return `${tsHex.slice(0, 8)}-${tsHex.slice(8, 12)}-ffff-ffff-ffffffffffff`;
+}
+
+/**
+ * Builds a SQL condition matching UUIDs whose timestamp-prefix hex is in the
+ * given set. UUIDs are stored as text like "xxxxxxxx-xxxx-...". The first 12 hex
+ * digits (positions 1-8 and 10-13, skipping the hyphen) encode the 48-bit
+ * millisecond timestamp.
+ */
+function uuidTimestampIn(column: typeof entries.id | typeof subscriptions.id, tsHexes: string[]) {
+  const list = sql.join(
+    tsHexes.map((h) => sql`${h}`),
+    sql`, `
+  );
+  return sql`SUBSTRING(${column}::text, 1, 8) || SUBSTRING(${column}::text, 10, 4) IN (${list})`;
 }
 
 /**
  * Batch converts Google Reader int64 IDs to UUIDv7 entry IDs.
  *
- * Groups IDs by timestamp millisecond for efficient batch queries.
+ * The int64 is a lossy projection of the UUID (48-bit timestamp + 15 random
+ * bits), so we can't reconstruct the UUID directly — we fetch the candidate
+ * UUIDs sharing each requested timestamp and disambiguate by the random bits in
+ * JS. All distinct timestamps are matched in a SINGLE query: an earlier version
+ * ran one query per distinct millisecond, which for a large sync page (e.g. 250
+ * ids from stream/items/contents) became 250 sequential round-trips — the
+ * dominant cost of the request. UUIDv7 encodes creation time at millisecond
+ * resolution, so entries arriving over time rarely share one, making the old
+ * grouping degenerate to one query per id.
  */
 export async function batchInt64ToUuid(
   db: typeof dbType,
@@ -139,34 +170,43 @@ export async function batchInt64ToUuid(
 
   if (ids.length === 0) return result;
 
-  // Group by timestamp millisecond for efficient batch queries
-  const byTimestamp = new Map<bigint, bigint[]>();
-  for (const id of ids) {
-    const ts = extractTimestamp(id);
-    const group = byTimestamp.get(ts) ?? [];
-    group.push(id);
-    byTimestamp.set(ts, group);
+  // Distinct timestamp prefixes to match in one query.
+  const timestamps = ids.map(extractTimestamp);
+  const tsHexes = [...new Set(timestamps.map(timestampHex))];
+  let minTs = timestamps[0];
+  let maxTs = timestamps[0];
+  for (const ts of timestamps) {
+    if (ts < minTs) minTs = ts;
+    if (ts > maxTs) maxTs = ts;
   }
 
-  // Query each timestamp group
-  for (const [timestampMs, groupIds] of byTimestamp) {
-    const tsHex = timestampMs.toString(16).padStart(12, "0");
+  // Match all candidates in a single query, then disambiguate by random bits.
+  // The BETWEEN bound makes the primary-key index seek the requested time window
+  // instead of scanning the whole index; the substring IN then selects the exact
+  // milliseconds within it. The per-timestamp cap of the old code (1000) is
+  // preserved in aggregate so a pathological millisecond can't blow up results.
+  const candidates = await db
+    .select({ id: entries.id })
+    .from(entries)
+    .where(
+      and(
+        gte(entries.id, uuidFloor(timestampHex(minTs))),
+        lte(entries.id, uuidCeil(timestampHex(maxTs))),
+        uuidTimestampIn(entries.id, tsHexes)
+      )
+    )
+    .limit(tsHexes.length * 1000);
 
-    const candidates = await db
-      .select({ id: entries.id })
-      .from(entries)
-      .where(uuidTimestampMatch(entries.id, tsHex))
-      .limit(1000);
-
-    // Match each ID by random bits
-    for (const candidate of candidates) {
-      const candidateInt64 = uuidToInt64(candidate.id);
-      for (const groupId of groupIds) {
-        if (candidateInt64 === groupId) {
-          result.set(groupId, candidate.id);
-        }
-      }
-    }
+  // Index candidates by their derived int64 for O(1) lookup, then resolve each
+  // requested id. A collision (32K+ entries in one ms) is astronomically
+  // unlikely; last-writer-wins is acceptable there.
+  const byInt64 = new Map<bigint, string>();
+  for (const candidate of candidates) {
+    byInt64.set(uuidToInt64(candidate.id), candidate.id);
+  }
+  for (const id of ids) {
+    const uuid = byInt64.get(id);
+    if (uuid !== undefined) result.set(id, uuid);
   }
 
   return result;
@@ -199,14 +239,13 @@ export async function feedStreamIdToSubscriptionUuid(
   userId: string,
   streamId: bigint
 ): Promise<string | null> {
-  const timestampMs = extractTimestamp(streamId);
   const randomBits = extractRandomBits(streamId);
-  const tsHex = timestampMs.toString(16).padStart(12, "0");
+  const tsHex = timestampHex(extractTimestamp(streamId));
 
   const candidates = await db
     .select({ id: subscriptions.id })
     .from(subscriptions)
-    .where(and(eq(subscriptions.userId, userId), uuidTimestampMatch(subscriptions.id, tsHex)))
+    .where(and(eq(subscriptions.userId, userId), uuidTimestampIn(subscriptions.id, [tsHex])))
     .limit(100);
 
   for (const candidate of candidates) {
