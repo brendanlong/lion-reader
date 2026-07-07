@@ -12,6 +12,7 @@ import { useMemo } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { trpc } from "@/lib/trpc/client";
 import { MobileIcon } from "@/components/ui/icon-button";
+import { CopyButton } from "@/components/ui/copy-button";
 
 export function WallabagApiSettings() {
   const userQuery = trpc.auth.me.useQuery();
@@ -150,25 +151,39 @@ export function WallabagApiSettings() {
               <code className="ui-text-xs rounded bg-zinc-100 px-1.5 py-0.5 font-mono dark:bg-zinc-800">
                 {serverUrl}
               </code>
+              <CopyButton
+                value={serverUrl}
+                className="ml-2 px-1.5 py-0.5"
+                title="Copy server URL"
+              />
             </li>
             <li>
               <strong className="text-zinc-900 dark:text-zinc-200">Client ID:</strong>{" "}
               <code className="ui-text-xs rounded bg-zinc-100 px-1.5 py-0.5 font-mono dark:bg-zinc-800">
                 wallabag
               </code>
+              <CopyButton value="wallabag" className="ml-2 px-1.5 py-0.5" title="Copy client ID" />
             </li>
             <li>
               <strong className="text-zinc-900 dark:text-zinc-200">Client Secret:</strong>{" "}
               <code className="ui-text-xs rounded bg-zinc-100 px-1.5 py-0.5 font-mono dark:bg-zinc-800">
                 wallabag
               </code>
+              <CopyButton
+                value="wallabag"
+                className="ml-2 px-1.5 py-0.5"
+                title="Copy client secret"
+              />
             </li>
             <li>
               <strong className="text-zinc-900 dark:text-zinc-200">Username:</strong>{" "}
               {email ? (
-                <code className="ui-text-xs rounded bg-zinc-100 px-1.5 py-0.5 font-mono dark:bg-zinc-800">
-                  {email}
-                </code>
+                <>
+                  <code className="ui-text-xs rounded bg-zinc-100 px-1.5 py-0.5 font-mono dark:bg-zinc-800">
+                    {email}
+                  </code>
+                  <CopyButton value={email} className="ml-2 px-1.5 py-0.5" title="Copy username" />
+                </>
               ) : (
                 "Your Lion Reader email address"
               )}

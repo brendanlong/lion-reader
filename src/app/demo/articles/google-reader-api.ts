@@ -14,7 +14,7 @@ const article: DemoArticle = {
   heroImage: "/demo/google-reader-api.png",
   heroImageAlt:
     "The Lion Reader lion syncing with a phone and a desktop feed reader via two-way arrows.",
-  summaryHtml: `<p>Lion Reader now includes a <strong>Google Reader-compatible API</strong>, allowing you to sync your subscriptions, read state, starred articles, and tags with popular third-party RSS reader apps like Reeder, NetNewsWire, FeedMe, Read You, and NewsFlash. The API uses your existing Lion Reader credentials and requires no additional setup beyond pointing your app at your Lion Reader server.</p>`,
+  summaryHtml: `<p>Lion Reader now includes a <strong>Google Reader-compatible API</strong>, allowing you to sync your subscriptions, read state, starred articles, and tags with popular third-party RSS reader apps like Reeder, NetNewsWire, FocusReader, Read You, and NewsFlash. The API uses your existing Lion Reader credentials and requires no additional setup beyond pointing your app at your Lion Reader server.</p>`,
   contentHtml: `
     <h2>Use Your Favorite RSS App</h2>
 
@@ -27,11 +27,11 @@ const article: DemoArticle = {
     <p>Any app that supports the Google Reader API should work with Lion Reader. Some popular options include:</p>
 
     <ul>
-      <li><strong>Reeder</strong> &mdash; A beautiful RSS reader for iOS and macOS</li>
-      <li><strong>NetNewsWire</strong> &mdash; A free, open-source reader for iOS and macOS</li>
-      <li><strong>FeedMe</strong> &mdash; A popular RSS reader for Android</li>
-      <li><strong>Read You</strong> &mdash; A modern, Material Design reader for Android</li>
-      <li><strong>NewsFlash</strong> &mdash; A GTK4 feed reader for Linux</li>
+      <li><a href="https://reederapp.com/classic/" target="_blank" rel="noopener noreferrer"><strong>Reeder Classic</strong></a> &mdash; A beautiful RSS reader for iOS and macOS</li>
+      <li><a href="https://netnewswire.com/" target="_blank" rel="noopener noreferrer"><strong>NetNewsWire</strong></a> &mdash; A free, open-source reader for iOS and macOS</li>
+      <li><a href="https://play.google.com/store/apps/details?id=allen.town.focus.reader" target="_blank" rel="noopener noreferrer"><strong>FocusReader</strong></a> &mdash; A feature-rich RSS reader for Android</li>
+      <li><a href="https://f-droid.org/packages/me.ash.reader" target="_blank" rel="noopener noreferrer"><strong>Read You</strong></a> &mdash; A modern, Material Design reader for Android</li>
+      <li><a href="https://flathub.org/apps/io.gitlab.news_flash.NewsFlash" target="_blank" rel="noopener noreferrer"><strong>NewsFlash</strong></a> &mdash; A GTK4 feed reader for Linux</li>
     </ul>
 
     <h3>What Syncs</h3>
