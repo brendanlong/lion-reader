@@ -61,6 +61,8 @@ import { generateUuidv7 } from "@/lib/uuidv7";
 import { getFeedPlugin } from "@/server/plugins";
 import { createSubscription } from "../services/subscriptions";
 import { runRetentionCleanup } from "../services/retention";
+import { resanitizeStaleEntries } from "../services/resanitize";
+import { SANITIZER_VERSION } from "../html/sanitize";
 import {
   findPermanentRedirectUrl,
   isHttpToHttpsUpgrade,
@@ -1385,6 +1387,71 @@ export async function handleCleanup(
     success: true,
     nextRunAt: new Date(now.getTime() + CLEANUP_INTERVAL_MS),
     metadata: { ...deleted },
+  };
+}
+
+/**
+ * Number of entries re-sanitized per `resanitize_entries` batch. Deliberately
+ * small so the sweep never monopolizes a worker or the database — it yields
+ * between batches and, as a singleton, is claimed only after real work.
+ */
+export const RESANITIZE_BATCH_SIZE = 10;
+
+/**
+ * Delay before the next batch while a re-sanitization pass is still in progress.
+ * Short enough to make steady progress, long enough to stay a gentle background
+ * trickle rather than a tight loop.
+ */
+const RESANITIZE_BATCH_INTERVAL_MS = 5 * 1000;
+
+/**
+ * Delay before the next run once the corpus is fully caught up (a batch found
+ * nothing stale). The job then just idles, and the next tick re-checks — one
+ * cheap indexed lookup that returns immediately — so it notices a future
+ * SANITIZER_VERSION bump (a deploy) and resumes.
+ */
+const RESANITIZE_IDLE_INTERVAL_MS = 60 * 60 * 1000;
+
+/**
+ * Handler for resanitize_entries jobs (singleton, stateless).
+ *
+ * Re-derives the persisted `entries.*_sanitized` columns for entries left stale
+ * by a `SANITIZER_VERSION` bump, one small batch at a time. Recent entries heal
+ * first (the sweep orders by highest stale version then newest id, which right
+ * after a bump is just newest-first; see `resanitizeStaleEntries`), matching the
+ * read-path self-heal
+ * (`resolveSanitizedFamily`) that already fixes any entry a user opens — this
+ * sweeper covers the long tail nobody reads so the whole corpus converges
+ * without a migration.
+ *
+ * No cross-run state: healed rows advance to the current version and drop out of
+ * the stale range, so each run's batch resumes where the last left off. A bump
+ * needs nothing here — the next scheduled run simply finds newly-stale rows.
+ */
+export async function handleResanitizeEntries(
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _payload: JobPayloads["resanitize_entries"]
+): Promise<JobHandlerResult> {
+  const result = await resanitizeStaleEntries(db, { limit: RESANITIZE_BATCH_SIZE });
+
+  // Nothing stale: the corpus is caught up for the current version. Idle until
+  // the next tick (which is cheap — the indexed lookup returns immediately).
+  // Space the interval from *after* the batch so a slow batch doesn't schedule
+  // the next run in the past (back-to-back batches).
+  const caughtUp = result.processed === 0;
+  const intervalMs = caughtUp ? RESANITIZE_IDLE_INTERVAL_MS : RESANITIZE_BATCH_INTERVAL_MS;
+
+  return {
+    success: true,
+    nextRunAt: new Date(Date.now() + intervalMs),
+    metadata: {
+      status: caughtUp ? "idle" : "in_progress",
+      version: SANITIZER_VERSION,
+      processed: result.processed,
+      contentResanitized: result.contentResanitized,
+      fullContentResanitized: result.fullContentResanitized,
+      failed: result.failed,
+    },
   };
 }
 

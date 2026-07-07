@@ -420,6 +420,7 @@ Business logic is extracted into reusable service functions in `src/server/servi
 | `summarization.ts` | AI-powered article summarization                                                                                                                                                                                                    |
 | `users.ts`         | `deleteUser` - account deletion                                                                                                                                                                                                     |
 | `retention.ts`     | `runRetentionCleanup` - data retention background job                                                                                                                                                                               |
+| `resanitize.ts`    | `resanitizeStaleEntries` - background re-sanitization sweep of stored entry HTML after a `SANITIZER_VERSION` bump                                                                                                                   |
 
 Entry content served by `getEntry`/`getEntries`/`toFullEntry` is **sanitized in
 the services layer** (see "Sanitizing untrusted HTML" in CLAUDE.md), so every

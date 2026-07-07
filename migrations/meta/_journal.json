@@ -582,6 +582,20 @@
       "when": 1782951600000,
       "tag": "0083_websub_hub_stats",
       "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1782951700000,
+      "tag": "0084_resanitize_entries_job",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1782951800000,
+      "tag": "0085_entries_resanitize_index",
+      "breakpoints": true
     }
   ]
 }

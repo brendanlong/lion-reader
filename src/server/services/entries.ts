@@ -39,6 +39,7 @@ import {
   type UnreadCounts,
 } from "./counts";
 import { publishMarkReadStateChanges, publishStarredStateChange } from "./entry-events";
+import { persistResanitizedFamily } from "./resanitize";
 import {
   buildEntryFeedFilter,
   buildEntryFilterConditions,
@@ -356,12 +357,20 @@ async function resolveSanitizedFamily(
     return { original: stored.originalSanitized, cleaned: stored.cleanedSanitized };
   }
 
-  // Heal path: fetch this family's raw columns, sanitize, and persist so we
-  // don't pay this again.
+  // Heal path: fetch this family's raw columns (plus its content hash for the
+  // persist guard), sanitize, and persist so we don't pay this again.
   const rawColumns =
     family === "content"
-      ? { original: entries.contentOriginal, cleaned: entries.contentCleaned }
-      : { original: entries.fullContentOriginal, cleaned: entries.fullContentCleaned };
+      ? {
+          original: entries.contentOriginal,
+          cleaned: entries.contentCleaned,
+          hash: entries.contentHash,
+        }
+      : {
+          original: entries.fullContentOriginal,
+          cleaned: entries.fullContentCleaned,
+          hash: entries.fullContentHash,
+        };
   const [raw] = await db.select(rawColumns).from(entries).where(eq(entries.id, entryId)).limit(1);
 
   // Offload large bodies to a worker thread: this runs on the read request path
@@ -373,41 +382,13 @@ async function resolveSanitizedFamily(
   ]);
   const resolved = { original, cleaned };
 
-  // Persist the healed columns (fire-and-forget). The UPDATE is gated on the
-  // family's version still being stale (`IS DISTINCT FROM`, which also matches
-  // NULL). This is a compare-and-swap: if a concurrent writer (e.g. a feed
-  // refresh via updateEntryContent, or a full-content fetch) has already
-  // stored fresh raw + sanitized + current version, our predicate is false and
-  // we skip — so a backfill computed from now-stale raw can never clobber
-  // newer content.
-  const versionColumn =
-    family === "content" ? entries.contentSanitizedVersion : entries.fullContentSanitizedVersion;
-  const healSet =
-    family === "content"
-      ? {
-          contentOriginalSanitized: resolved.original,
-          contentCleanedSanitized: resolved.cleaned,
-          contentSanitizedVersion: SANITIZER_VERSION,
-        }
-      : {
-          fullContentOriginalSanitized: resolved.original,
-          fullContentCleanedSanitized: resolved.cleaned,
-          fullContentSanitizedVersion: SANITIZER_VERSION,
-        };
-
-  // A failed backfill write must not fail the read.
-  void (async () => {
-    try {
-      await db
-        .update(entries)
-        .set(healSet)
-        .where(
-          and(eq(entries.id, entryId), sql`${versionColumn} IS DISTINCT FROM ${SANITIZER_VERSION}`)
-        );
-    } catch (err) {
-      logger.warn("Failed to persist re-sanitized entry content", { entryId, family, err });
-    }
-  })();
+  // Persist the healed columns (fire-and-forget; a failed backfill must not fail
+  // the read) under the shared version + content-hash CAS guard, so a re-sanitize
+  // computed from now-stale raw can never clobber newer content. See
+  // persistResanitizedFamily in @/server/services/resanitize.
+  void persistResanitizedFamily(db, entryId, family, resolved, raw?.hash ?? null).catch((err) => {
+    logger.warn("Failed to persist re-sanitized entry content", { entryId, family, err });
+  });
 
   return resolved;
 }

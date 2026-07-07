@@ -90,6 +90,11 @@ export interface JobPayloads {
   // Daily retention cleanup of expired/revoked credentials and parked
   // one-time jobs. See src/server/services/retention.ts.
   cleanup: Record<string, never>;
+  // Background sweep that re-sanitizes stored entry HTML after SANITIZER_VERSION
+  // is bumped, a small batch at a time. Stateless: each run queries the stalest
+  // rows via idx_entries_resanitize and heals them, so no cross-run state is
+  // needed. See handleResanitizeEntries and src/server/services/resanitize.ts.
+  resanitize_entries: Record<string, never>;
 }
 
 export type JobType = keyof JobPayloads;
@@ -494,7 +499,12 @@ export async function listJobs(
 /**
  * Singleton job types that have exactly one instance and self-create on first run.
  */
-export const SINGLETON_JOB_TYPES: JobType[] = ["renew_websub", "monitor_feed_health", "cleanup"];
+export const SINGLETON_JOB_TYPES: JobType[] = [
+  "renew_websub",
+  "monitor_feed_health",
+  "cleanup",
+  "resanitize_entries",
+];
 
 /**
  * Tries to claim a singleton job for processing.
