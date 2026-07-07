@@ -15,12 +15,20 @@
 import * as Sentry from "@sentry/nextjs";
 import type { ErrorEvent } from "@sentry/nextjs";
 
-// Query params whose values are credentials/secrets and must never reach Sentry.
+// Query params whose values are credentials/PII and must never reach Sentry.
 // Some clients pass these in the URL even on a POST — notably FeedMe sends the
 // Google Reader `Passwd` (and `Email`) on the ClientLogin URL — so any captured
-// request data would otherwise carry a plaintext password. Case-insensitive to
-// cover both `Passwd` (Google Reader) and `password`/`client_secret` (OAuth).
-const SENSITIVE_QUERY_PARAMS = ["passwd", "password", "email", "client_secret", "t"];
+// request data would otherwise carry a plaintext password. Matched
+// case-insensitively to cover `Passwd` (Google Reader) and
+// `password`/`client_secret` (OAuth).
+const SENSITIVE_QUERY_PARAMS = ["passwd", "password", "email", "client_secret"];
+
+// The Google Reader write/session token is passed as `T` in the URL by some
+// clients — worth redacting. Matched CASE-SENSITIVELY (uppercase only) so it
+// does not also clobber the lowercase `t=` param, which this API uses for
+// non-secret tag names (disable-tag) and feed titles (subscription/edit); those
+// stay visible in Sentry for debugging.
+const SENSITIVE_TOKEN_PARAM = "T";
 
 /**
  * Redacts sensitive values from an event's captured request URL and query
@@ -30,11 +38,13 @@ export function redactSensitiveRequestParams(event: ErrorEvent): void {
   const request = event.request;
   if (!request) return;
 
-  const redact = (value: string): string => {
-    // Matches `?key=…` / `&key=…` (in a full URL) and `key=…` (bare query string).
-    const pattern = new RegExp(`((?:^|[?&])(?:${SENSITIVE_QUERY_PARAMS.join("|")})=)[^&#]*`, "gi");
-    return value.replace(pattern, "$1[REDACTED]");
-  };
+  // Boundary `(?:^|[?&])` requires the name to start the param, so `email` does
+  // not match `…&someemail=` and `T` does not match `&nt=`/`&xt=`/etc.
+  const ciPattern = new RegExp(`((?:^|[?&])(?:${SENSITIVE_QUERY_PARAMS.join("|")})=)[^&#]*`, "gi");
+  const tokenPattern = new RegExp(`((?:^|[?&])${SENSITIVE_TOKEN_PARAM}=)[^&#]*`, "g");
+
+  const redact = (value: string): string =>
+    value.replace(ciPattern, "$1[REDACTED]").replace(tokenPattern, "$1[REDACTED]");
 
   if (typeof request.url === "string") {
     request.url = redact(request.url);

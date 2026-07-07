@@ -52,6 +52,26 @@ describe("redactSensitiveRequestParams", () => {
     );
   });
 
+  it("redacts the uppercase T write-token but keeps the lowercase t tag/title param", () => {
+    // `T` = Google Reader write/session token (secret); lowercase `t` = tag name
+    // (disable-tag) / feed title (subscription/edit), which must stay visible.
+    const event = eventWith({ query_string: "T=sessionsecret&t=my-tag-name&s=reading-list" });
+    redactSensitiveRequestParams(event);
+    expect(event.request?.query_string).toBe("T=[REDACTED]&t=my-tag-name&s=reading-list");
+  });
+
+  it("does not match sensitive names embedded in other param names", () => {
+    // `nt`/`xt`/`ot` (timestamp/exclude params) must not be caught by the `T`
+    // rule, and `someemail` must not be caught by `email`.
+    const event = eventWith({
+      url: "https://x.test/reader/api/0/stream/items/ids?ot=1&nt=2&xt=read&someemail=x",
+    });
+    redactSensitiveRequestParams(event);
+    expect(event.request?.url).toBe(
+      "https://x.test/reader/api/0/stream/items/ids?ot=1&nt=2&xt=read&someemail=x"
+    );
+  });
+
   it("does not throw when there is no request context", () => {
     const event = eventWith(undefined);
     expect(() => redactSensitiveRequestParams(event)).not.toThrow();

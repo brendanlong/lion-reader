@@ -88,4 +88,12 @@ describe("parseFormData", () => {
     const params = await parseFormData(req);
     expect(parseItemIds(params)).toEqual([BigInt(1), BigInt(2), BigInt(3)]);
   });
+
+  it("honors a query-only item ID when the body carries none", async () => {
+    // Mirrors PHP $_REQUEST (GET+POST merge): if the body has no `i`, the query
+    // `i` is used. Harmless — parseItemIds → getEntry is fully user-scoped.
+    const req = postRequest("https://x.test/reader/api/0/stream/items/contents?i=42", "", FORM);
+    const params = await parseFormData(req);
+    expect(parseItemIds(params)).toEqual([BigInt(42)]);
+  });
 });
