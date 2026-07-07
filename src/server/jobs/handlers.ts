@@ -34,6 +34,7 @@ import {
   deactivateWebsub,
   resolveWebsubAction,
 } from "../feed/websub";
+import { recordBackupPollNewEntries } from "../feed/websub-hub-stats";
 import { getDomainFromUrl } from "../feed/types";
 import type { ParsedCacheHeaders } from "../feed/cache-headers";
 import {
@@ -412,8 +413,22 @@ async function processSuccessfulFetch(
 
   // Fetch full content for new entries if any subscriber has fetchFullContent enabled
   // This is done after processEntries so entries exist in the database
-  const newEntryIds = processResult.entries.filter((e) => e.isNew).map((e) => e.id);
+  const newEntries = processResult.entries.filter((e) => e.isNew);
+  const newEntryIds = newEntries.map((e) => e.id);
   const fullContentResult = await fetchFullContentForNewEntries(feed.id, newEntryIds);
+
+  // Push-reliability telemetry: this handler only runs for scheduled/backup
+  // polls (hub pushes go through ingestWebsubNotification, not here). If push
+  // were working, the hub would already have delivered these entries, so any
+  // new entry a backup poll finds on a feed we believed push was covering is a
+  // push miss. Record it per hub for later analysis (see websub-hub-stats.ts).
+  if ((feed.websubActive ?? false) && feed.hubUrl && newEntries.length > 0) {
+    await recordBackupPollNewEntries(
+      feed.hubUrl,
+      newEntries.map((e) => e.newEntryData?.publishedAt),
+      now
+    );
+  }
 
   // Calculate next fetch time based on cache headers and feed hints
   const nextFetch = calculateNextFetch({

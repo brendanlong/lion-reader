@@ -9,6 +9,7 @@ import { db } from "../db";
 import { feeds, type Feed } from "../db/schema";
 import { parseFeedInWorker } from "../worker-thread/pool";
 import { processEntries } from "./entry-processor";
+import { recordHubAnnouncedEntries } from "./websub-hub-stats";
 import { WEBSUB_BACKUP_POLL_INTERVAL_SECONDS } from "./scheduling";
 import { updateFeedJobNextRun } from "../jobs/queue";
 import { trackWebsubNotificationReceived } from "../metrics/metrics";
@@ -91,6 +92,12 @@ export async function ingestWebsubNotification(feed: Feed, bodyText: string): Pr
       updatedEntries: result.updatedCount,
       unchangedEntries: result.unchangedCount,
     });
+
+    // Credit the hub for any new entries it pushed, so we can later compare this
+    // against entries the backup poll had to discover (see websub-hub-stats.ts).
+    if (result.newCount > 0 && feed.hubUrl) {
+      await recordHubAnnouncedEntries(feed.hubUrl, result.newCount);
+    }
   } catch (error) {
     logger.error("WebSub notification processing failed", {
       feedId,

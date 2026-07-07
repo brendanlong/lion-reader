@@ -12,7 +12,7 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { createHmac } from "crypto";
 import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { feeds, entries, websubSubscriptions } from "../../src/server/db/schema";
+import { feeds, entries, websubSubscriptions, websubHubStats } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import {
   generateCallbackSecret,
@@ -20,7 +20,12 @@ import {
   handleVerificationChallengeByFeed,
   verifyHmacSignature,
   verifyHmacSignatureByFeed,
+  MAX_LEASE_SECONDS,
 } from "../../src/server/feed/websub";
+import {
+  recordHubAnnouncedEntries,
+  recordBackupPollNewEntries,
+} from "../../src/server/feed/websub-hub-stats";
 
 // Sample RSS feed content for testing content notifications
 const SAMPLE_RSS_FEED = `<?xml version="1.0" encoding="UTF-8"?>
@@ -82,6 +87,7 @@ describe("WebSub Integration", () => {
   beforeEach(async () => {
     await db.delete(entries);
     await db.delete(websubSubscriptions);
+    await db.delete(websubHubStats);
     await db.delete(feeds);
   });
 
@@ -89,6 +95,7 @@ describe("WebSub Integration", () => {
   afterAll(async () => {
     await db.delete(entries);
     await db.delete(websubSubscriptions);
+    await db.delete(websubHubStats);
     await db.delete(feeds);
   });
 
@@ -222,6 +229,33 @@ describe("WebSub Integration", () => {
       const expiresMs = subscription.expiresAt!.getTime();
       expect(expiresMs).toBeGreaterThanOrEqual(before + 24 * 60 * 60 * 1000);
       expect(expiresMs).toBeLessThanOrEqual(Date.now() + 24 * 60 * 60 * 1000 + 5000);
+    });
+
+    it("clamps a lease longer than the maximum to MAX_LEASE_SECONDS", async () => {
+      // A hub granting a very long lease shouldn't push our re-verification
+      // cadence out arbitrarily far - we clamp it so we re-confirm the hub is
+      // still delivering at least every MAX_LEASE_SECONDS.
+      const feed = await createTestFeed();
+      const topicUrl = "https://example.com/feed-long-lease.xml";
+      await createTestSubscription(feed.id, { topicUrl });
+
+      const before = Date.now();
+      const oneYear = 365 * 24 * 60 * 60;
+      const result = await handleVerificationChallengeByFeed(feed.id, {
+        mode: "subscribe",
+        topic: topicUrl,
+        challenge: "long-lease-challenge",
+        leaseSeconds: String(oneYear),
+      });
+
+      expect(result.success).toBe(true);
+
+      const [subscription] = await db.select().from(websubSubscriptions).limit(1);
+      expect(subscription.state).toBe("active");
+      expect(subscription.leaseSeconds).toBe(MAX_LEASE_SECONDS);
+      const expiresMs = subscription.expiresAt!.getTime();
+      expect(expiresMs).toBeGreaterThanOrEqual(before + MAX_LEASE_SECONDS * 1000);
+      expect(expiresMs).toBeLessThanOrEqual(Date.now() + MAX_LEASE_SECONDS * 1000 + 5000);
     });
 
     it("confirms unsubscribe when we requested it", async () => {
@@ -665,6 +699,54 @@ describe("WebSub Integration", () => {
       expect(await verifyHmacSignature(feed.id, subscription.id, signature, body)).toBe(true);
       // Same secret/body but an unknown subscription ID -> rejected.
       expect(await verifyHmacSignature(feed.id, generateUuidv7(), signature, body)).toBe(false);
+    });
+  });
+
+  // Per-hub push-reliability tallies (websub_hub_stats). These upserts are the
+  // durable record of how new articles first reached us, per hub.
+  describe("websub hub stats", () => {
+    const HUB = "https://hub.example.com/";
+
+    async function getStats(hubUrl: string) {
+      const [row] = await db.select().from(websubHubStats).where(eq(websubHubStats.hubUrl, hubUrl));
+      return row;
+    }
+
+    it("records hub-announced entries and accumulates across calls", async () => {
+      await recordHubAnnouncedEntries(HUB, 3);
+      await recordHubAnnouncedEntries(HUB, 2);
+
+      const row = await getStats(HUB);
+      expect(row.articlesAnnouncedByHub).toBe(5);
+      expect(row.articlesAnnouncedByBackup).toBe(0);
+      expect(row.articlesNearMiss).toBe(0);
+    });
+
+    it("ignores a non-positive hub-announced count", async () => {
+      await recordHubAnnouncedEntries(HUB, 0);
+      expect(await getStats(HUB)).toBeUndefined();
+    });
+
+    it("splits backup-poll entries into confirmed misses and near-misses", async () => {
+      const now = new Date();
+      const old = new Date(now.getTime() - 60 * 60 * 1000); // 1h ago -> miss
+      const recent = new Date(now.getTime() - 60 * 1000); // 1m ago -> near-miss
+      await recordBackupPollNewEntries(HUB, [old, recent, null], now);
+
+      const row = await getStats(HUB);
+      expect(row.articlesAnnouncedByBackup).toBe(1);
+      expect(row.articlesNearMiss).toBe(2); // recent + unknown-date
+      expect(row.articlesAnnouncedByHub).toBe(0);
+    });
+
+    it("keeps hub-announced and backup counters on the same row", async () => {
+      const now = new Date();
+      await recordHubAnnouncedEntries(HUB, 4);
+      await recordBackupPollNewEntries(HUB, [new Date(now.getTime() - 60 * 60 * 1000)], now);
+
+      const row = await getStats(HUB);
+      expect(row.articlesAnnouncedByHub).toBe(4);
+      expect(row.articlesAnnouncedByBackup).toBe(1);
     });
   });
 });
