@@ -20,9 +20,6 @@ export default function IntegrationsSettingsContent() {
       {/* Save to Lion Reader (Firefox extension + bookmarklet) */}
       <BookmarkletSettings />
 
-      {/* Discord Bot */}
-      <DiscordBotSettings />
-
       {/* Google Reader API (mobile/desktop client sync) */}
       <GoogleReaderApiSettings />
 
@@ -31,6 +28,9 @@ export default function IntegrationsSettingsContent() {
 
       {/* AI Integrations (MCP) */}
       <IntegrationsSettings />
+
+      {/* Discord Bot */}
+      <DiscordBotSettings />
 
       {/* API Tokens */}
       <ApiTokensSettingsContent />

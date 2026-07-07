@@ -7,12 +7,11 @@
 
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Alert } from "@/components/ui/alert";
+import { CodeBlock, CopyButton } from "@/components/ui/copy-button";
 
 export function IntegrationsSettings() {
-  const [copiedSection, setCopiedSection] = useState<string | null>(null);
-
   // Check env var first (available on both server and client), then fall back to window.location.origin
   const baseUrl = useMemo(() => {
     return (
@@ -40,12 +39,6 @@ export function IntegrationsSettings() {
 
   const claudeCodeCommand = `claude mcp add --transport http lionreader ${mcpUrl}`;
 
-  const copyToClipboard = (text: string, section: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedSection(section);
-    setTimeout(() => setCopiedSection(null), 2000);
-  };
-
   return (
     <section>
       <h2 className="ui-text-lg mb-4 font-semibold text-zinc-900 dark:text-zinc-50">
@@ -72,18 +65,7 @@ export function IntegrationsSettings() {
           <p className="ui-text-sm mt-1 text-zinc-600 dark:text-zinc-400">
             Run this command in your terminal:
           </p>
-          <div className="relative mt-3">
-            <pre className="ui-text-xs overflow-x-auto rounded-md border border-zinc-200 bg-zinc-100 p-3 pr-20 font-mono text-zinc-800 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
-              <code>{claudeCodeCommand}</code>
-            </pre>
-            <button
-              type="button"
-              onClick={() => copyToClipboard(claudeCodeCommand, "claude-code")}
-              className="ui-text-xs absolute top-2 right-2 rounded border border-zinc-300 bg-white px-2 py-1 font-medium text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600 dark:hover:text-zinc-100"
-            >
-              {copiedSection === "claude-code" ? "Copied!" : "Copy"}
-            </button>
-          </div>
+          <CodeBlock code={claudeCodeCommand} className="mt-3" />
         </div>
 
         {/* Claude.ai */}
@@ -122,13 +104,11 @@ export function IntegrationsSettings() {
               <code className="ui-text-xs rounded bg-zinc-100 px-1.5 py-0.5 font-mono dark:bg-zinc-800">
                 {mcpUrl}
               </code>
-              <button
-                type="button"
-                onClick={() => copyToClipboard(mcpUrl, "claude-ai-url")}
-                className="ui-text-xs ml-2 rounded border border-zinc-300 bg-white px-1.5 py-0.5 font-medium text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600 dark:hover:text-zinc-100"
-              >
-                {copiedSection === "claude-ai-url" ? "Copied!" : "Copy"}
-              </button>
+              <CopyButton
+                value={mcpUrl}
+                className="ml-2 px-1.5 py-0.5"
+                title="Copy MCP server URL"
+              />
             </li>
           </ol>
         </div>
@@ -145,18 +125,7 @@ export function IntegrationsSettings() {
             </code>
             :
           </p>
-          <div className="relative mt-3">
-            <pre className="ui-text-xs overflow-x-auto rounded-md border border-zinc-200 bg-zinc-100 p-3 pr-20 font-mono text-zinc-800 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
-              <code>{claudeDesktopConfig}</code>
-            </pre>
-            <button
-              type="button"
-              onClick={() => copyToClipboard(claudeDesktopConfig, "claude-desktop")}
-              className="ui-text-xs absolute top-2 right-2 rounded border border-zinc-300 bg-white px-2 py-1 font-medium text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600 dark:hover:text-zinc-100"
-            >
-              {copiedSection === "claude-desktop" ? "Copied!" : "Copy"}
-            </button>
-          </div>
+          <CodeBlock code={claudeDesktopConfig} className="mt-3" />
         </div>
 
         {/* Note about MCP URL */}

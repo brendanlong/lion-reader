@@ -8,6 +8,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { CopyButton } from "@/components/ui/copy-button";
 
 export function GoogleReaderApiSettings() {
   const baseUrl = useMemo(() => {
@@ -49,26 +50,59 @@ export function GoogleReaderApiSettings() {
           </p>
           <ul className="ui-text-sm mt-2 list-inside list-disc space-y-1 text-zinc-600 dark:text-zinc-400">
             <li>
-              <strong className="text-zinc-900 dark:text-zinc-200">Reeder</strong> (iOS / macOS)
+              <a
+                href="https://reederapp.com/classic/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-accent hover:text-accent-hover font-medium"
+              >
+                Reeder Classic
+              </a>{" "}
+              (iOS / macOS)
             </li>
             <li>
-              <strong className="text-zinc-900 dark:text-zinc-200">NetNewsWire</strong> (iOS /
-              macOS)
+              <a
+                href="https://netnewswire.com/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-accent hover:text-accent-hover font-medium"
+              >
+                NetNewsWire
+              </a>{" "}
+              (iOS / macOS)
             </li>
             <li>
-              <strong className="text-zinc-900 dark:text-zinc-200">FeedMe</strong> (Android)
+              <a
+                href="https://play.google.com/store/apps/details?id=allen.town.focus.reader"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-accent hover:text-accent-hover font-medium"
+              >
+                FocusReader
+              </a>{" "}
+              (Android)
             </li>
             <li>
-              <strong className="text-zinc-900 dark:text-zinc-200">Read You</strong> (Android)
+              <a
+                href="https://f-droid.org/packages/me.ash.reader"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-accent hover:text-accent-hover font-medium"
+              >
+                Read You
+              </a>{" "}
+              (Android)
             </li>
             <li>
-              <strong className="text-zinc-900 dark:text-zinc-200">FocusReader</strong> (Android)
-            </li>
-            <li>
-              <strong className="text-zinc-900 dark:text-zinc-200">SmartRSS</strong> (Android)
-            </li>
-            <li>
-              <strong className="text-zinc-900 dark:text-zinc-200">NewsFlash</strong> (Linux)
+              <a
+                href="https://flathub.org/apps/io.gitlab.news_flash.NewsFlash"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-accent hover:text-accent-hover font-medium"
+              >
+                NewsFlash
+              </a>{" "}
+              (Linux)
             </li>
           </ul>
         </div>
@@ -86,6 +120,11 @@ export function GoogleReaderApiSettings() {
               <code className="ui-text-xs rounded bg-zinc-100 px-1.5 py-0.5 font-mono dark:bg-zinc-800">
                 {baseUrl}/api/greader.php
               </code>
+              <CopyButton
+                value={`${baseUrl}/api/greader.php`}
+                className="ml-2 px-1.5 py-0.5"
+                title="Copy server URL"
+              />
             </li>
             <li>
               <strong className="text-zinc-900 dark:text-zinc-200">Email:</strong> Your Lion Reader
