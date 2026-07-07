@@ -510,6 +510,10 @@ export const entries = pgTable(
     //   Enables limit pushdown for "all entries" queries. Migration 0060.
     // - idx_entries_feed_published_coalesce: (feed_id, COALESCE(published_at, fetched_at) DESC, id DESC)
     //   Enables seek + limit pushdown for per-feed/subscription queries. Migration 0061.
+    // - idx_entries_resanitize: (RESANITIZE_STALENESS_KEY DESC, id DESC), where the key is
+    //   LEAST of each content family's version if it has raw content else a large sentinel.
+    //   Backs the stateless resanitize_entries sweep (src/server/services/resanitize.ts):
+    //   seeks past fresh rows to the stalest ones without a full scan or sort. Migration 0085.
     //
     // Type-specific check constraints (created via raw SQL in migrations):
     // - entries_spam_only_email: spam fields only for email entries
@@ -847,7 +851,7 @@ export const jobs = pgTable(
     // INSERT...catch actually races correctly (see SINGLETON_JOB_TYPES).
     uniqueIndex("jobs_singleton_type_unique")
       .on(table.type)
-      .where(sql`type IN ('renew_websub', 'monitor_feed_health', 'cleanup')`),
+      .where(sql`type IN ('renew_websub', 'monitor_feed_health', 'cleanup', 'resanitize_entries')`),
   ]
 );
 
