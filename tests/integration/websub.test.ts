@@ -495,5 +495,65 @@ describe("WebSub Integration", () => {
       expect(second.state).toBe("active");
       expect(second.leaseSeconds).toBe(7200);
     });
+
+    it("hub switch: verification activates the new hub row, not the stale one", async () => {
+      // Simulates a publisher switching hubs: the feed fetch deactivated the old
+      // subscription (leaving an unsubscribed row) and created a fresh pending row
+      // for the new hub. Both rows share the feed and topic, so the callback GET
+      // is ambiguous by feedId alone - the newest row must win.
+      const feed = await createTestFeed();
+      const topicUrl = feed.url ?? "https://example.com/feed.xml";
+
+      // Old subscription to hub A, torn down during the switch.
+      const { subscription: oldSub } = await createTestSubscription(feed.id, {
+        hubUrl: "https://hub-a.example.com/",
+        topicUrl,
+        state: "unsubscribed",
+        unsubscribeRequestedAt: new Date(),
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+      });
+
+      // New pending subscription to hub B, created after the switch.
+      const { secret: newSecret, subscription: newSub } = await createTestSubscription(feed.id, {
+        hubUrl: "https://hub-b.example.com/",
+        topicUrl,
+        state: "pending",
+        createdAt: new Date("2026-01-02T00:00:00Z"),
+      });
+
+      const challenge = "hub-b-challenge";
+      const result = await handleVerificationChallenge(feed.id, {
+        mode: "subscribe",
+        topic: topicUrl,
+        challenge,
+        leaseSeconds: "3600",
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.challenge).toBe(challenge);
+
+      // The new (hub B) row is now active; the old (hub A) row stays unsubscribed.
+      const [activatedNew] = await db
+        .select()
+        .from(websubSubscriptions)
+        .where(eq(websubSubscriptions.id, newSub.id));
+      expect(activatedNew.state).toBe("active");
+
+      const [staleOld] = await db
+        .select()
+        .from(websubSubscriptions)
+        .where(eq(websubSubscriptions.id, oldSub.id));
+      expect(staleOld.state).toBe("unsubscribed");
+
+      // Feed is active, and only the new hub's secret verifies notifications.
+      const [updatedFeed] = await db.select().from(feeds).where(eq(feeds.id, feed.id)).limit(1);
+      expect(updatedFeed.websubActive).toBe(true);
+
+      const body = "content from hub b";
+      const hmac = createHmac("sha256", newSecret);
+      hmac.update(body);
+      const isValid = await verifyHmacSignature(feed.id, `sha256=${hmac.digest("hex")}`, body);
+      expect(isValid).toBe(true);
+    });
   });
 });

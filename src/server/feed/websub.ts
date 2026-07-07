@@ -8,7 +8,7 @@
  */
 
 import { randomBytes, createHmac, timingSafeEqual } from "crypto";
-import { eq, and, lt } from "drizzle-orm";
+import { eq, and, lt, desc } from "drizzle-orm";
 import { fetchWithSsrfProtection } from "../http/ssrf";
 import { readResponseBufferWithSizeLimit } from "../http/fetch";
 import { db } from "../db";
@@ -140,6 +140,62 @@ export function canUseWebSub(): boolean {
     // Invalid URL
     return false;
   }
+}
+
+/**
+ * The action a feed fetch should take on the feed's WebSub subscription, based
+ * on how the feed's advertised hub URL changed since the last fetch.
+ *
+ * - `subscribe` - feed advertises a hub and we're not subscribed yet
+ * - `resubscribe` - feed advertises a *different* hub than the one we're
+ *   subscribed to (publisher switched hubs); tear down the old subscription and
+ *   subscribe to the new hub
+ * - `deactivate` - feed no longer advertises a hub; drop back to polling
+ * - `none` - nothing to do (no hub, WebSub unavailable, or already subscribed to
+ *   the same hub — lease renewal is handled separately)
+ */
+export type WebsubAction = "subscribe" | "resubscribe" | "deactivate" | "none";
+
+/**
+ * Decides what to do with a feed's WebSub subscription given the hub URL seen in
+ * the latest fetch versus the previously stored state. Pure function so the
+ * decision can be unit-tested without a DB or HTTP.
+ *
+ * The `resubscribe` case is the one that keeps a publisher's hub switch from
+ * silently breaking push: without it, a feed that changes its `rel="hub"` while
+ * `websubActive` is already true would keep a dangling subscription pointed at
+ * the old (often dead) hub and never subscribe to the new one until the lease
+ * happened to expire.
+ */
+export function resolveWebsubAction(params: {
+  /** Hub URL stored on the feed before this fetch. */
+  previousHubUrl: string | null;
+  /** Whether the feed was already actively subscribed via WebSub. */
+  previousWebsubActive: boolean;
+  /** Hub URL advertised in the current fetch (null if none). */
+  newHubUrl: string | null;
+  /** Whether WebSub is usable at all (public callback URL configured). */
+  canUseWebSub: boolean;
+}): WebsubAction {
+  const { previousHubUrl, previousWebsubActive, newHubUrl, canUseWebSub } = params;
+
+  // Feed advertises no hub - tear down any active subscription, else nothing.
+  if (!newHubUrl) {
+    return previousWebsubActive ? "deactivate" : "none";
+  }
+
+  // Feed has a hub but we can't receive callbacks - stay on polling.
+  if (!canUseWebSub) {
+    return "none";
+  }
+
+  // Not subscribed yet - subscribe fresh.
+  if (!previousWebsubActive) {
+    return "subscribe";
+  }
+
+  // Already active: only act if the publisher switched to a different hub.
+  return previousHubUrl !== newHubUrl ? "resubscribe" : "none";
 }
 
 /**
@@ -417,11 +473,14 @@ export async function handleVerificationChallenge(
     return { success: false, error: `Unsupported mode: ${mode}` };
   }
 
-  // Find the subscription for this feed
+  // Find the subscription for this feed. A hub switch leaves the old (now
+  // unsubscribed) row alongside the new pending one, so order by newest first:
+  // a verification always concerns the most recent subscription attempt.
   const [subscription] = await db
     .select()
     .from(websubSubscriptions)
     .where(eq(websubSubscriptions.feedId, feedId))
+    .orderBy(desc(websubSubscriptions.createdAt))
     .limit(1);
 
   if (!subscription) {
