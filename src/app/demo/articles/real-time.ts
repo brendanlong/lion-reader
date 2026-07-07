@@ -12,7 +12,7 @@ const article: DemoArticle = {
   starred: false,
   heroImage: "/demo/real-time.png",
   heroImageAlt:
-    "The Lion Reader lion looking up in delight as fresh article cards pop into view instantly beside a lightning bolt.",
+    "The Lion Reader lion reading while a conveyor belt delivers a steady stream of fresh newspapers, emails, and books.",
   summaryHtml: `<p>Lion Reader uses <strong>Server-Sent Events (SSE)</strong> and Redis pub/sub for real-time updates without polling. When feeds fetch new content, events publish to per-feed channels, and your browser receives updates instantly. The connection automatically subscribes to relevant feeds, with graceful degradation if Redis fails.</p>`,
   contentHtml: `
     <h2>Server-Sent Events Architecture</h2>
