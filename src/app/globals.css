@@ -242,6 +242,68 @@ body {
 }
 
 /* =================================
+   Reader Prose <details>/<summary>
+
+   Feeds (notably LessWrong) ship collapsible <details> blocks. Browser
+   defaults + Tailwind Typography leave them bare, and because LessWrong wraps
+   the summary title in a <p>, the disclosure marker sits on its own line above
+   the text. Give the block a card border, keep the marker beside the title,
+   and make the spacing look right both collapsed and expanded.
+
+   The card's vertical padding is 0 so a collapsed <details> is exactly the
+   height of its <summary>; the body's spacing comes from the prose margins on
+   its own children (which don't collapse out through the card's border).
+   ================================= */
+
+.reader-prose details {
+  margin: 1.25em 0;
+  padding: 0 1em;
+  border: 1px solid #e4e4e7; /* zinc-200 */
+  border-radius: 0.5rem;
+  background-color: #fafafa; /* zinc-50 */
+}
+.dark .reader-prose details {
+  border-color: #3f3f46; /* zinc-700 */
+  background-color: rgba(39, 39, 42, 0.4); /* zinc-800/40 */
+}
+
+.reader-prose summary {
+  /* Bleed to the card edges so the whole header is the click/hover target. */
+  margin: 0 -1em;
+  padding: 0.6em 1em;
+  border-radius: 0.5rem;
+  font-weight: 600;
+  cursor: pointer;
+  /* Keep the disclosure marker inside the card, just left of the title. */
+  list-style-position: inside;
+}
+.reader-prose summary:hover {
+  background-color: #f4f4f5; /* zinc-100 */
+}
+.dark .reader-prose summary:hover {
+  background-color: rgba(63, 63, 70, 0.4); /* zinc-700/40 */
+}
+
+/* Keep the disclosure marker on the same line as the title: LessWrong wraps
+   the title in a <p> that would otherwise break below the marker. */
+.reader-prose summary > * {
+  display: inline;
+  margin: 0;
+}
+
+/* When open, split the header from the body with the card's border and square
+   off the summary's bottom corners so its hover fill meets the divider. */
+.reader-prose details[open] summary {
+  margin-bottom: 0;
+  border-bottom: 1px solid #e4e4e7; /* zinc-200 */
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.dark .reader-prose details[open] summary {
+  border-bottom-color: #3f3f46; /* zinc-700 */
+}
+
+/* =================================
    Prose Link Hover
    Element-level hover so only the hovered link changes color,
    not all links in the entry.
