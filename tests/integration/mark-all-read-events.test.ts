@@ -153,15 +153,24 @@ async function seedUnreadEntries(userId: string, count: number): Promise<string[
   return entryIds;
 }
 
+// Resolves with the first message on `channel`. Always removes its own listener
+// (on match or timeout) so listeners don't accumulate on the shared subscriber.
 function waitForMessage(channel: string, timeoutMs = 5000): Promise<string> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("Timed out waiting for message")), timeoutMs);
-    subscriber.on("message", (ch, message) => {
-      if (ch === channel) {
-        clearTimeout(timer);
-        resolve(message);
-      }
-    });
+    const listener = (ch: string, message: string) => {
+      if (ch !== channel) return;
+      cleanup();
+      resolve(message);
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error("Timed out waiting for message"));
+    }, timeoutMs);
+    const cleanup = () => {
+      clearTimeout(timer);
+      subscriber.off("message", listener);
+    };
+    subscriber.on("message", listener);
   });
 }
 
@@ -205,16 +214,21 @@ describe("entries.markAllRead SSE publishing", () => {
     const channel = getUserEventsChannel(userId);
     await subscriber.subscribe(channel);
     let received = false;
-    subscriber.on("message", (ch) => {
+    const listener = (ch: string) => {
       if (ch === channel) received = true;
-    });
+    };
+    subscriber.on("message", listener);
 
-    const caller = createCaller(createAuthContext(userId));
-    const result = await caller.entries.markAllRead({});
-    expect(result.count).toBe(0);
+    try {
+      const caller = createCaller(createAuthContext(userId));
+      const result = await caller.entries.markAllRead({});
+      expect(result.count).toBe(0);
 
-    // Give any (erroneous) publish a chance to arrive.
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    expect(received).toBe(false);
+      // Give any (erroneous) publish a chance to arrive.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(received).toBe(false);
+    } finally {
+      subscriber.off("message", listener);
+    }
   });
 });

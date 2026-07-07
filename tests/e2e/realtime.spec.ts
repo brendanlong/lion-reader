@@ -21,6 +21,7 @@ import {
   getUserEventsChannel,
 } from "../../src/server/redis/pubsub";
 import { getBulkEntryRelatedCounts } from "../../src/server/services/counts";
+import { markAllEntriesRead } from "../../src/server/services/entries";
 import {
   getDb,
   createConfirmedUser,
@@ -327,6 +328,47 @@ test("entry_state_changed event syncs read state and counts across lists without
   await expect(links.uncategorized).toContainText("(1)");
 
   expect(refetchProcedures(trpcCalls)).toEqual([]);
+});
+
+// mark_all_read is the ONE realtime event that deliberately refetches (see
+// src/FRONTEND_STATE.md): mark-all-read is unbounded, so the server sends a
+// lightweight signal and the client invalidates its lists + counts instead of
+// patching. This test locks in both the behavior (unread view empties, badges
+// clear) and the boundary (a refetch IS expected here, unlike every test above).
+test("mark_all_read event empties the unread list and clears badges via a refetch", async ({
+  page,
+  baseURL,
+}) => {
+  const { user, taggedFeed, trpcCalls } = await seedAndOpenAll(page, baseURL!, ({ user }) =>
+    getUserEventsChannel(user.id)
+  );
+  const links = sidebarLinks(page, taggedFeed);
+  const firstPostItem = page.locator('[aria-label*="article: First post"]');
+
+  await expect(firstPostItem).toBeVisible();
+  await expect(links.allItems).toContainText("(3)");
+  await expect(links.newsTag).toContainText("(2)");
+  await expect(links.subscriptionRow).toContainText("(2)");
+  await expect(links.uncategorized).toContainText("(1)");
+
+  trpcCalls.length = 0;
+
+  // Simulate another device/tab marking everything read. markAllEntriesRead
+  // marks read in the DB AND publishes the mark_all_read signal — the exact code
+  // path the tRPC mutation and the Google Reader mark-all-as-read route hit.
+  const db = getDb();
+  await markAllEntriesRead(db, { userId: user.id });
+
+  // The unread-only /all view empties out and every sidebar unread badge clears
+  // (CountBadge renders nothing at 0; the tag/sub/uncategorized rows hide).
+  await expect(firstPostItem).toBeHidden();
+  await expect(links.allItems).not.toContainText("(");
+  await expect(links.newsTag).toBeHidden();
+  await expect(links.subscriptionRow).toBeHidden();
+  await expect(links.uncategorized).toBeHidden();
+
+  // ...and, unlike every other realtime event, this one refetched entries.list.
+  expect(refetchProcedures(trpcCalls)).toContain("entries.list");
 });
 
 // Regression test: when the LAST unread entry of a subscription is read, the

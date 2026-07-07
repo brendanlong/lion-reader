@@ -1060,6 +1060,11 @@ export async function markAllEntriesRead(
   // counts — the same thing the acting tab already does on success. Published
   // here (not in the router) so every caller — the tRPC mutation and the Google
   // Reader mark-all-as-read route — notifies other tabs. Fire and forget.
+  //
+  // This publishes after the (autocommitted) UPDATE above completes. Today's
+  // callers pass the global `db`, so that's always post-commit. If a future
+  // caller runs this inside a transaction, move the publish to after the commit
+  // so a rolled-back mark-all-read can't emit a phantom event.
   if (entryIds.length > 0) {
     void publishMarkAllRead(params.userId, updatedAt).catch(() => {
       // Ignore publish errors - SSE is best-effort

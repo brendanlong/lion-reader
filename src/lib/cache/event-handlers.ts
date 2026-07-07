@@ -133,11 +133,14 @@ export function handleSyncEvent(
     case "mark_all_read":
       // Mark-all-read on another tab/device. Mark-all-read is unbounded, so
       // rather than patch (potentially thousands of) entries, we invalidate the
-      // entry lists + counts — exactly what the acting tab does on success
-      // (useEntryMutations.markAllRead). This is the one SSE event that
-      // deliberately refetches entries.list: the whole point of mark-all-read is
-      // that the user is done with the list, so a refetch of a list they've
-      // cleared is an acceptable, rare cost. Counts refetch to their new values.
+      // entry lists + counts — mirroring what the acting tab does on success
+      // (useEntryMutations.markAllRead), just broader: the event carries no
+      // filter, so we invalidate every entries.count variant rather than the
+      // specific ones the acting tab knows were affected. This is the one SSE
+      // event that deliberately refetches entries.list: the whole point of
+      // mark-all-read is that the user is done with the list, so a refetch of a
+      // list they've cleared is an acceptable, rare cost. Counts refetch to
+      // their new values.
       utils.entries.list.invalidate();
       utils.entries.count.invalidate();
       utils.tags.list.invalidate();
