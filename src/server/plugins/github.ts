@@ -2,6 +2,7 @@ import type { UrlPlugin, SavedArticleContent } from "./types";
 import { logger } from "@/lib/logger";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { readResponseWithSizeLimit } from "@/server/http/fetch";
+import { escapeHtml } from "@/server/http/html";
 import { githubConfig, usageLimitsConfig } from "@/server/config/env";
 import { marked } from "marked";
 import { extractAndStripTitleHeader } from "@/server/html/strip-title-header";
@@ -336,9 +337,9 @@ function processMarkdownContent(content: string): { html: string; title: string 
  * Wrap code in a styled pre block.
  */
 function codeToHtml(content: string, language?: string): string {
-  const escaped = content.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const escaped = escapeHtml(content);
 
-  const langClass = language ? ` class="language-${language.toLowerCase()}"` : "";
+  const langClass = language ? ` class="language-${escapeHtml(language.toLowerCase())}"` : "";
   return `<pre><code${langClass}>${escaped}</code></pre>`;
 }
 
@@ -414,14 +415,6 @@ function buildGistHtml(
   }
 
   return { html: parts.join("\n"), title: null };
-}
-
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }
 
 // ============================================================================
