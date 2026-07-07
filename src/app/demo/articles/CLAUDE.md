@@ -53,6 +53,12 @@ set, use the **single canonical full-body mascot** and the **`pro`** model tier:
 - `model_tier: "pro"` — noticeably better reference adherence than the default
   `nb2` for this style-matching job.
 
+Brand reference assets available in `assets/`: `lion-body.png` (canonical mascot,
+use this), `lion-face.png` (face crop, for regenerating the body), `logo-original.png`
+(the `:savetolionreader:` book-reading emoji), `saluting-lion-reader.png`
+(`:salutinglionreader:`), `crying-lion-reader.png`, and `lionreader_emojis.png` (a
+sheet of expression emojis).
+
 In the prompt, say "match the lion's body, face, proportions, paws, tail and
 colors precisely to the reference mascot image". Worked example that produced the
 Text-to-Speech hero (`public/demo/text-to-speech.png`) used an older
@@ -84,15 +90,40 @@ Tips (learned the hard way):
   ignoring `aspect_ratio`. `mode: "generate"` uses the logo as a style/character
   reference instead and honors 3:2. Also add "wide horizontal landscape banner"
   to the prompt as belt-and-suspenders.
-- **Always pass `assets/lion-body.png`** as the single `input_image_path_1` so the
-  lion stays on-model across articles. Don't stack multiple references, and don't
-  use a head-only reference (the model renders bad legs when it has to invent the
-  body).
+- **Always pass `assets/lion-body.png`** as `input_image_path_1` so the lion stays
+  on-model across articles. Don't use a head-only reference (the model renders bad
+  legs when it has to invent the body). The "one reference" rule is about the
+  _lion_ — you _may_ add `input_image_path_2/3` for specific **props**, as long as
+  the lion stays on `_1`. The `discord-bot` hero passed the logo
+  (`:savetolionreader:`) and `assets/saluting-lion-reader.png`
+  (`:salutinglionreader:`) as refs 2 and 3 to render those exact brand emojis;
+  label each in the prompt ("image 2 is …, image 3 is …").
+- **Guard against extra limbs.** The lion sometimes sprouts a third arm when it
+  holds/manipulates a prop. Add "exactly two front paws — no extra arms or limbs"
+  to the prompt and `extra arms, extra limbs` to `negative_prompt`.
+- **Generate `n: 2` for anything non-trivial** and pick the best — cheap insurance
+  against a bad pose/limb/composition. A montage contact sheet
+  (`magick montage … -tile 3xN`) reviews a batch in one image.
+- **Small fixes: use `mode: "edit"`** on the finished PNG instead of regenerating
+  (e.g. `json-feed` had stray `<>` brackets deleted this way) — it preserves the
+  rest. Edit mode auto-selects the `nb2` model and may return a different size, so
+  re-run the crop to 1200×630.
+- **Match the reference pose for "receiving" scenes.** When something is delivered
+  _to_ the lion (conveyor, broadcast tower, phone share), say "sitting upright
+  facing forward (matching the reference)" or it drifts off-model.
 - **State what you want, don't negate.** Spell out the palette and "flat solid
   fills, thick navy outlines"; reserve `negative_prompt` for stray artifacts.
 - **Say "off-white background", not "paper"** — "paper" adds visible fiber texture.
-- **No text in images.** The article title already sits above the image; asking
-  for banner/label text just produces garbled letters.
+- **No _sentences_ in images**, but meaningful **iconography is fine and good**: an
+  RSS glyph, JSON `{ }`, `</>`, file-type badges (W/Md/T), a git-branch all read
+  cleanly. The thing to avoid is asking for banner/label prose, which comes out as
+  garbled letters. Give each article one **distinct, recognizable prop** and keep
+  motifs from colliding across the set (e.g. `browser-extension` = a puzzle piece
+  in a browser; `plugins` = several modular pieces).
+- **No third-party logos, even under a permissive code license.** Our MIT license
+  covers our copyright, not others' trademarks. Use generic motifs (git-branch,
+  puzzle piece, chat bubble, shield) rather than the OSI keyhole, GitHub octocat,
+  Discord mark, etc.
 - Nano Banana writes a `<name>_thumb.jpeg` next to the output — delete it, and
   clean up rejected drafts.
 - The user reviews over the web UI. To share candidates, serve the image dir over
