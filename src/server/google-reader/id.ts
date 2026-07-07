@@ -116,6 +116,9 @@ function extractRandomBits(id: bigint): bigint {
   return id & BigInt(0x7fff); // lower 15 bits
 }
 
+/** Exclusive upper bound of a 48-bit millisecond timestamp (2^48). */
+const MAX_TIMESTAMP_MS = BigInt(2) ** BigInt(48);
+
 /** Formats a 48-bit millisecond timestamp as its 12-hex-digit UUID prefix. */
 function timestampHex(timestampMs: bigint): string {
   return timestampMs.toString(16).padStart(12, "0");
@@ -170,12 +173,21 @@ export async function batchInt64ToUuid(
 
   if (ids.length === 0) return result;
 
-  // Distinct timestamp prefixes to match in one query.
+  // Keep only ids whose extracted timestamp is a valid 48-bit millisecond value.
+  // `parseItemId` accepts negative and unbounded decimals, which would produce a
+  // timestamp outside [0, 2^48) and, in turn, an out-of-range hex that makes
+  // `uuidFloor`/`uuidCeil` emit a malformed uuid literal — Postgres would reject
+  // the whole query, poisoning the batch. Such ids can't correspond to any real
+  // UUIDv7 anyway, so we skip them (leaving them unresolved, as before).
   const timestamps = ids.map(extractTimestamp);
-  const tsHexes = [...new Set(timestamps.map(timestampHex))];
-  let minTs = timestamps[0];
-  let maxTs = timestamps[0];
-  for (const ts of timestamps) {
+  const validTimestamps = timestamps.filter((ts) => ts >= BigInt(0) && ts < MAX_TIMESTAMP_MS);
+  if (validTimestamps.length === 0) return result;
+
+  // Distinct timestamp prefixes to match in one query.
+  const tsHexes = [...new Set(validTimestamps.map(timestampHex))];
+  let minTs = validTimestamps[0];
+  let maxTs = validTimestamps[0];
+  for (const ts of validTimestamps) {
     if (ts < minTs) minTs = ts;
     if (ts > maxTs) maxTs = ts;
   }

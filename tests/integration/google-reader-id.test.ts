@@ -150,4 +150,30 @@ describe("batchInt64ToUuid", () => {
     const resolved = await batchInt64ToUuid(db, []);
     expect(resolved.size).toBe(0);
   });
+
+  it("skips out-of-range ids without poisoning the batch", async () => {
+    // parseItemId accepts negative and unbounded decimals. Their extracted
+    // timestamp falls outside [0, 2^48), which must not throw (a malformed uuid
+    // bound would reject the whole query) — they are simply skipped, and valid
+    // ids in the same batch still resolve.
+    const feedId = await createFeed();
+    const uuid = uuidv7At(Date.now() - 75_000);
+    await insertEntry(feedId, uuid);
+    const validInt64 = uuidToInt64(uuid);
+
+    const negativeId = BigInt(-5);
+    const hugeId = BigInt(2) ** BigInt(70) + BigInt(12345); // timestamp well beyond 2^48
+
+    const resolved = await batchInt64ToUuid(db, [negativeId, validInt64, hugeId]);
+
+    expect(resolved.get(validInt64)).toBe(uuid);
+    expect(resolved.has(negativeId)).toBe(false);
+    expect(resolved.has(hugeId)).toBe(false);
+    expect(resolved.size).toBe(1);
+  });
+
+  it("returns an empty map when every id is out of range", async () => {
+    const resolved = await batchInt64ToUuid(db, [BigInt(-1), BigInt(-999)]);
+    expect(resolved.size).toBe(0);
+  });
 });
