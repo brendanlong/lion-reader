@@ -13,7 +13,7 @@ const article: DemoArticle = {
   starred: false,
   heroImage: "/demo/wallabag-api.png",
   heroImageAlt:
-    "A phone sharing an article to the Lion Reader lion, who catches it to save for later.",
+    "A hand tapping the save button in a phone's read-it-later app, sending the article to the Lion Reader lion.",
   summaryHtml: `<p>Lion Reader implements a <strong>Wallabag-compatible API</strong> that lets you use the official Wallabag mobile apps on Android and iOS to save articles directly to your Lion Reader account. Share any URL from your phone to the Wallabag app, and it appears in Lion Reader as a saved article. The API also supports viewing, archiving, starring, and deleting saved articles from the app.</p>`,
   contentHtml: `
     <h2>Save Articles from Your Phone</h2>
