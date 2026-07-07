@@ -32,6 +32,13 @@ import { logger } from "@/lib/logger";
 import { errors } from "@/server/trpc/errors";
 import { publishMarkAllRead } from "@/server/redis/pubsub";
 import {
+  getBulkEntryRelatedCounts,
+  getEntryRelatedCounts,
+  type BulkUnreadCounts,
+  type UnreadCounts,
+} from "./counts";
+import { publishMarkReadStateChanges, publishStarredStateChange } from "./entry-events";
+import {
   buildEntryFeedFilter,
   buildEntryFilterConditions,
   buildTaggedFeedIdsSubquery,
@@ -830,8 +837,23 @@ export async function getEntries(
  * - `has_marked_unread` whenever marking unread
  * - `has_marked_read_on_list` when marking read with `fromList`
  *
- * Returns the final state for all requested entries with the context fields
- * needed for cache updates, count queries, and SSE publishing.
+ * Returns the final state for all requested entries (with the context fields
+ * callers need for cache updates) plus the absolute unread counts for every
+ * affected list. Counts are computed once here and both returned and published,
+ * so callers don't re-query them.
+ *
+ * Publishes an `entry_state_changed` SSE event for each entry that actually
+ * changed, so a user's other tabs/devices stay in sync regardless of which
+ * surface (tRPC, MCP, Google Reader, Wallabag) issued the mark. Publishing lives
+ * here — not at each API boundary — so every current and future caller notifies
+ * other tabs for free. Idempotent replays (an older `changedAt` losing the
+ * `read_changed_at <= changedAt` guard) update no rows and therefore publish
+ * nothing. Fire and forget.
+ *
+ * This publishes after the (autocommitted) UPDATEs complete. Today's callers
+ * pass the global `db`, so that's always post-commit. If a future caller runs
+ * this inside a transaction, move the publish to after the commit so a
+ * rolled-back mark can't emit a phantom event.
  *
  * @param options.fromList - Whether the mark-read originated from the entry list
  *   (weak negative signal). Only meaningful when marking read.
@@ -842,9 +864,9 @@ export async function markEntriesRead(
   entriesToMark: MarkReadEntry[],
   read: boolean,
   options: { fromList?: boolean } = {}
-): Promise<MarkReadEntryState[]> {
+): Promise<{ entries: MarkReadEntryState[]; counts: BulkUnreadCounts }> {
   if (entriesToMark.length === 0) {
-    return [];
+    return { entries: [], counts: await getBulkEntryRelatedCounts(db, userId, []) };
   }
 
   if (entriesToMark.length > 1000) {
@@ -877,10 +899,12 @@ export async function markEntriesRead(
   }
 
   // Conditional update per timestamp group: only apply if incoming timestamp is
-  // newer or equal than the stored read_changed_at (or it is NULL).
+  // newer or equal than the stored read_changed_at (or it is NULL). `returning`
+  // tells us which entries actually changed so idempotent replays don't publish.
+  const changedIds = new Set<string>();
   for (const [tsIso, entryIds] of entriesByTimestamp) {
     const changedAt = new Date(tsIso);
-    await db
+    const updated = await db
       .update(userEntries)
       .set({
         ...setClause,
@@ -892,13 +916,17 @@ export async function markEntriesRead(
           inArray(userEntries.entryId, entryIds),
           or(isNull(userEntries.readChangedAt), lte(userEntries.readChangedAt, changedAt))
         )
-      );
+      )
+      .returning({ entryId: userEntries.entryId });
+    for (const row of updated) {
+      changedIds.add(row.entryId);
+    }
   }
 
-  // Always return final state for all requested entries, including the context
+  // Always resolve final state for all requested entries, including the context
   // fields callers need for cache updates and count queries.
   const allEntryIds = entriesToMark.map((e) => e.id);
-  return db
+  const entries = await db
     .select({
       id: visibleEntries.id,
       subscriptionId: visibleEntries.subscriptionId,
@@ -909,6 +937,19 @@ export async function markEntriesRead(
     })
     .from(visibleEntries)
     .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.id, allEntryIds)));
+
+  // Compute absolute counts once, for both the return value and the SSE publish.
+  const counts = await getBulkEntryRelatedCounts(db, userId, entries);
+
+  // Notify the user's other tabs/devices for the entries that actually changed,
+  // carrying the absolute counts so they set them directly. See the function
+  // doc for publish/transaction ordering. Fire and forget.
+  const changed = entries.filter((entry) => changedIds.has(entry.id));
+  if (changed.length > 0) {
+    publishMarkReadStateChanges(userId, changed, counts);
+  }
+
+  return { entries, counts };
 }
 
 /**
@@ -1083,6 +1124,23 @@ export async function markAllEntriesRead(
  * Sets the `has_starred` implicit signal flag when starring (a vestige of the
  * removed entry-scoring feature).
  *
+ * Returns the entry's final state plus the absolute unread counts for every
+ * affected list. Counts are computed once here and both returned and published,
+ * so callers don't re-query them.
+ *
+ * Publishes an `entry_state_changed` SSE event when the star state actually
+ * changed, so a user's other tabs/devices stay in sync regardless of which
+ * surface (tRPC, MCP, Google Reader, Wallabag) issued the change. Publishing
+ * lives here — not at each API boundary — so every current and future caller
+ * notifies other tabs for free. An idempotent replay (an older `changedAt`
+ * losing the `starred_changed_at <= changedAt` guard) updates no rows and
+ * therefore publishes nothing. Fire and forget.
+ *
+ * This publishes after the (autocommitted) UPDATE completes. Today's callers
+ * pass the global `db`, so that's always post-commit. If a future caller runs
+ * this inside a transaction, move the publish to after the commit so a
+ * rolled-back change can't emit a phantom event.
+ *
  * @param changedAt - When the user initiated the action. Defaults to now.
  */
 export async function updateEntryStarred(
@@ -1091,7 +1149,7 @@ export async function updateEntryStarred(
   entryId: string,
   starred: boolean,
   changedAt: Date = new Date()
-): Promise<EntryState> {
+): Promise<{ entry: EntryState; counts: UnreadCounts }> {
   // Build the SET clause, setting the implicit signal flag when starring
   const setClause: Record<string, unknown> = {
     starred,
@@ -1102,8 +1160,10 @@ export async function updateEntryStarred(
     setClause.hasStarred = true;
   }
 
-  // Conditional update: only apply if incoming timestamp is newer or equal
-  await db
+  // Conditional update: only apply if incoming timestamp is newer or equal.
+  // `returning` tells us whether the row actually changed so an idempotent
+  // replay doesn't publish.
+  const updated = await db
     .update(userEntries)
     .set(setClause)
     .where(
@@ -1112,9 +1172,10 @@ export async function updateEntryStarred(
         eq(userEntries.entryId, entryId),
         lte(userEntries.starredChangedAt, changedAt)
       )
-    );
+    )
+    .returning({ entryId: userEntries.entryId });
 
-  // Always return final state from visibleEntries (includes computed updatedAt)
+  // Always resolve final state from visibleEntries (includes computed updatedAt)
   const result = await db
     .select({
       id: visibleEntries.id,
@@ -1129,7 +1190,18 @@ export async function updateEntryStarred(
     throw errors.entryNotFound();
   }
 
-  return result[0];
+  const entry = result[0];
+
+  // Compute absolute counts once, for both the return value and the SSE publish.
+  const counts = await getEntryRelatedCounts(db, userId, entryId);
+
+  // Notify the user's other tabs/devices when the star state changed. See the
+  // function doc for publish/transaction ordering. Fire and forget.
+  if (updated.length > 0) {
+    publishStarredStateChange(userId, entry, counts);
+  }
+
+  return { entry, counts };
 }
 
 /**

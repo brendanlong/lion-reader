@@ -17,14 +17,9 @@ import { TRPCError } from "@trpc/server";
 import type { db as dbType } from "@/server/db";
 import { uuidSchema, tagColorSchema } from "@/server/trpc/validation";
 import * as entriesService from "@/server/services/entries";
-import * as countsService from "@/server/services/counts";
 import * as subscriptionsService from "@/server/services/subscriptions";
 import * as savedService from "@/server/services/saved";
 import * as tagsService from "@/server/services/tags";
-import {
-  publishMarkReadStateChanges,
-  publishStarredStateChange,
-} from "@/server/services/entry-events";
 
 // ============================================================================
 // Types
@@ -264,17 +259,14 @@ function buildTools(): Tool[] {
       inputSchema: toInputSchema(markEntriesReadArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(markEntriesReadArgs, args);
-        const entries = await entriesService.markEntriesRead(
+        // markEntriesRead computes the counts and publishes entry_state_changed
+        // for multi-tab/device sync itself, mirroring the tRPC mutation.
+        const { entries, counts } = await entriesService.markEntriesRead(
           db,
           userId,
           params.entryIds.map((id) => ({ id })),
           params.read
         );
-        const counts = await countsService.getBulkEntryRelatedCounts(db, userId, entries);
-
-        // Publish entry_state_changed for multi-tab/device sync, mirroring the
-        // tRPC entries.markRead mutation. Fire and forget.
-        publishMarkReadStateChanges(userId, entries, counts);
 
         return { entries, counts };
       },
@@ -287,17 +279,15 @@ function buildTools(): Tool[] {
       inputSchema: toInputSchema(starEntriesArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(starEntriesArgs, args);
-        const entry = await entriesService.updateEntryStarred(
+        // updateEntryStarred computes the counts and publishes
+        // entry_state_changed for multi-tab/device sync itself, mirroring the
+        // tRPC entries.setStarred mutation.
+        const { entry } = await entriesService.updateEntryStarred(
           db,
           userId,
           params.entryId,
           params.starred
         );
-
-        // Publish entry_state_changed for multi-tab/device sync, mirroring the
-        // tRPC entries.setStarred mutation. Fire and forget.
-        const counts = await countsService.getEntryRelatedCounts(db, userId, params.entryId);
-        publishStarredStateChange(userId, entry, counts);
 
         return entry;
       },
