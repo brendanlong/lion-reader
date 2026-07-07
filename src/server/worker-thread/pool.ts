@@ -48,18 +48,30 @@ function resolveWorkerPath(): { filename: string; execArgv?: string[] } {
   // Next.js webpack at compile time with a virtual path, breaking resolution.
   const cwd = process.cwd();
 
-  // Production: compiled JS bundle
   const distPath = resolve(cwd, "dist/worker-thread.js");
-  if (existsSync(distPath)) {
-    return { filename: distPath };
+  const srcPath = resolve(cwd, "src/server/worker-thread/worker.ts");
+
+  // Production runs the compiled bundle (tsx isn't available). In dev we prefer
+  // the TS source via the tsx loader over any `dist/worker-thread.js` left by a
+  // prior `build:all`: the bundle now embeds the sanitizer allow-list, so a
+  // stale one would sanitize offloaded bodies with an out-of-date
+  // `SANITIZE_OPTIONS` while the main process stamps rows with the current
+  // `SANITIZER_VERSION` — silently persisting mis-sanitized content that the
+  // version-gated self-heal would never notice. Preferring src keeps the worker
+  // in lockstep with the running code.
+  if (process.env.NODE_ENV === "production") {
+    if (existsSync(distPath)) {
+      return { filename: distPath };
+    }
+    // Shouldn't happen in a real prod deploy; fall through to src as a backstop.
   }
 
-  // Development: run the TS source via tsx loader
-  const srcPath = resolve(cwd, "src/server/worker-thread/worker.ts");
-  return {
-    filename: srcPath,
-    execArgv: ["--import", "tsx"],
-  };
+  if (existsSync(srcPath)) {
+    return { filename: srcPath, execArgv: ["--import", "tsx"] };
+  }
+
+  // No source tree (e.g. a production-style bundle run with NODE_ENV unset).
+  return { filename: distPath };
 }
 
 function getPool(): Piscina | null {
@@ -158,8 +170,19 @@ export async function sanitizeEntryHtmlInWorker(
     return sanitizeEntryHtml(html);
   }
 
-  const result = await p.run({ type: "sanitizeEntryHtml", html });
-  return sanitizeEntryHtmlResultSchema.parse(result).sanitized;
+  try {
+    const result = await p.run({ type: "sanitizeEntryHtml", html });
+    return sanitizeEntryHtmlResultSchema.parse(result).sanitized;
+  } catch (error) {
+    // A task-level failure (worker crash/OOM on a pathological body, bad result)
+    // must not fail the caller — the read-path self-heal calls this, so a
+    // rejection would turn entries.get into a 500. Fall back to inline, matching
+    // the pool-unavailable path above.
+    logger.warn("Worker sanitize failed; falling back to inline sanitize", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return sanitizeEntryHtml(html);
+  }
 }
 
 /**

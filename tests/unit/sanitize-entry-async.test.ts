@@ -63,6 +63,33 @@ describe("withSanitizedEntryContentAsync", () => {
     );
     expect(result.contentCleanedSanitized).toBe(sanitizeEntryHtml("<p>cleaned</p>"));
   });
+
+  it("ignores a hint whose raw field is not present in values (no desync)", async () => {
+    // Only contentOriginal is written; a stray contentCleaned hint must NOT be
+    // stored, since the cleaned raw column isn't being written from it.
+    const result = await withSanitizedEntryContentAsync(
+      { contentOriginal: "<p>orig</p>" },
+      { contentCleanedSanitized: "SENTINEL" }
+    );
+    expect(result.contentCleanedSanitized).toBeNull();
+    expect(result.contentCleanedSanitized).not.toBe("SENTINEL");
+  });
+
+  it("sanitizes normally when the hint value is undefined", async () => {
+    const result = await withSanitizedEntryContentAsync(
+      { contentCleaned: "<p>cleaned</p>" },
+      { contentCleanedSanitized: undefined }
+    );
+    expect(result.contentCleanedSanitized).toBe(sanitizeEntryHtml("<p>cleaned</p>"));
+  });
+
+  it("honors an explicit null hint (sanitized-to-null) when the raw field is present", async () => {
+    const result = await withSanitizedEntryContentAsync(
+      { contentCleaned: null },
+      { contentCleanedSanitized: null }
+    );
+    expect(result.contentCleanedSanitized).toBeNull();
+  });
 });
 
 describe("sanitizeEntryHtmlInWorker", () => {

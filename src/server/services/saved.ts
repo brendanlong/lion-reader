@@ -784,9 +784,12 @@ export async function saveArticle(
   // Reuse the sanitized cleaned HTML the cleanContent worker already produced,
   // but only when the content we're about to store is exactly that cleaned
   // output (not markdown/plugin content, which took a different branch above).
+  // Leave the hint value `undefined` if the worker didn't return one (e.g. an
+  // older bundle) so the chokepoint sanitizes normally rather than persisting a
+  // spurious NULL sanitized column.
   const presanitizedCleaned: { contentCleanedSanitized?: string | null } =
     cleaned && finalContentCleaned === cleaned.content
-      ? { contentCleanedSanitized: cleaned.contentSanitized ?? null }
+      ? { contentCleanedSanitized: cleaned.contentSanitized }
       : {};
   const finalTitle =
     pluginContent?.title ||
