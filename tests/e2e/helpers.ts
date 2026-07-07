@@ -9,6 +9,7 @@
  */
 
 import crypto from "node:crypto";
+import * as argon2 from "argon2";
 import { Pool } from "pg";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { and, eq } from "drizzle-orm";
@@ -91,6 +92,39 @@ export async function createConfirmedUser(db: TestDb): Promise<TestUser> {
   });
 
   return { id, email, sessionToken };
+}
+
+export interface TestPasswordUser {
+  id: string;
+  email: string;
+  password: string;
+}
+
+/**
+ * Creates a confirmed user with a password hash (no session), for exercising
+ * password-based auth flows: the Wallabag OAuth password grant and the Google
+ * Reader ClientLogin endpoint. Mirrors createConfirmedUser's confirmation
+ * columns so requireAuth's signup-confirmation gate passes.
+ */
+export async function createPasswordUser(
+  db: TestDb,
+  password = "correct-horse-battery-staple"
+): Promise<TestPasswordUser> {
+  const now = new Date();
+  const id = generateUuidv7();
+  const email = `e2e-${id}@example.com`;
+
+  await db.insert(schema.users).values({
+    id,
+    email,
+    passwordHash: await argon2.hash(password),
+    emailVerifiedAt: now,
+    tosAgreedAt: now,
+    privacyPolicyAgreedAt: now,
+    notEuAgreedAt: now,
+  });
+
+  return { id, email, password };
 }
 
 /** Sets the session cookie so the browser context is logged in as the user. */
