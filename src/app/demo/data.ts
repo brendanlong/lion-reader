@@ -199,7 +199,7 @@ export function getDemoSubscription(subscriptionId: string): DemoSubscription | 
 
 /**
  * Build the hero <figure> for an article, or "" when it has no heroImage.
- * The reader (reader-prose) styles the <img> automatically (rounded + shadow).
+ * The reader (reader-prose) styles the <img> automatically (rounded corners).
  *
  * heroImage/heroImageAlt are trusted, hard-coded values from the article files
  * (same trust level as the surrounding contentHtml, which is also emitted raw),

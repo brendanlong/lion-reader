@@ -159,6 +159,6 @@ heroImageAlt: "Descriptive alt text of the scene.",
 ```
 
 `getDemoEntryArticleProps` prepends the hero `<figure>` to the content (the reader
-applies `rounded-lg` + `shadow-md` automatically via `reader-prose`), and each
+applies `rounded-lg` automatically via `reader-prose`), and each
 demo page's `generateMetadata` passes `entry?.heroImage` to `pageOpenGraph`, so
 the illustration is the social preview on whatever `/demo/...?entry=` URL is shared.
