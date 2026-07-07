@@ -147,10 +147,13 @@ async function fetchFullContentForNewEntries(
   // Fetch full content for each entry sequentially to avoid overwhelming servers
   for (const entry of entriesWithUrls) {
     try {
-      const result = await fetchFullContent(entry.url!);
+      // This is a background job (off the request path), so run Readability
+      // inline rather than offloading to a worker — the thread hop is pure
+      // overhead here.
+      const result = await fetchFullContent(entry.url!, { offloadClean: false });
       // Persists the result (sanitized at write time so the user's first
-      // read is fast) or the fetch error onto the shared entry row. This is a
-      // background job, so sanitize inline rather than offloading to a worker.
+      // read is fast) or the fetch error onto the shared entry row. Sanitize
+      // inline too, for the same reason.
       const update = await persistFullContentResult(db, entry.id, result, new Date(), {
         offloadSanitize: false,
       });
