@@ -37,6 +37,22 @@ const HUB_REQUEST_TIMEOUT_MS = 10000;
 const DEFAULT_LEASE_SECONDS = 24 * 60 * 60;
 
 /**
+ * Maximum lease length (seconds) we honor from a hub: 14 days.
+ *
+ * We store `expiresAt = now + lease_seconds` and only re-verify a subscription
+ * when it nears expiry, so a hub granting a very long lease means we'd trust the
+ * subscription — and never re-confirm the hub is still delivering — for that
+ * whole period. A hub can silently stop pushing while still "active" in our DB,
+ * so we cap how long that can last by clamping the honored lease.
+ *
+ * We don't request a shorter lease from the hub (WebSub has no such request); we
+ * just renew earlier than the hub's stated expiry. 14 days sits comfortably above
+ * the common ~10-day hub max, so it rarely fires against well-behaved hubs; it
+ * only bounds our worst-case re-verification cadence.
+ */
+export const MAX_LEASE_SECONDS = 14 * 24 * 60 * 60;
+
+/**
  * Private/local hostnames and IP ranges that can't receive WebSub callbacks.
  */
 const PRIVATE_HOSTNAMES = ["localhost", "127.0.0.1", "0.0.0.0", "::1"];
@@ -483,9 +499,12 @@ async function applyVerificationChallenge(
 
   // Parse lease seconds. Hubs SHOULD send hub.lease_seconds but some don't; fall
   // back to a default so expiresAt is always set and the subscription stays in
-  // the renewal filter's window (see DEFAULT_LEASE_SECONDS).
+  // the renewal filter's window (see DEFAULT_LEASE_SECONDS). Clamp the granted
+  // lease to MAX_LEASE_SECONDS so a hub can't push our re-verification cadence
+  // arbitrarily far out (see MAX_LEASE_SECONDS).
   const parsedLease = leaseSeconds ? parseInt(leaseSeconds, 10) : NaN;
-  const lease = !isNaN(parsedLease) && parsedLease > 0 ? parsedLease : DEFAULT_LEASE_SECONDS;
+  const grantedLease = !isNaN(parsedLease) && parsedLease > 0 ? parsedLease : DEFAULT_LEASE_SECONDS;
+  const lease = Math.min(grantedLease, MAX_LEASE_SECONDS);
   const expiresAt = new Date(Date.now() + lease * 1000);
 
   // Update subscription to active

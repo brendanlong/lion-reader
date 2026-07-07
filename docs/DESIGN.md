@@ -123,6 +123,7 @@ The schema is defined in `migrations/` directory. Key tables:
 - **user_entries** - Per-user read/starred state for entries
 - **jobs** - Background job queue for feed fetching
 - **websub_subscriptions** - WebSub push subscription state
+- **websub_hub_stats** - Per-hub tally of how new articles first reached us (hub push vs. backup poll), for spotting silently-broken hubs
 - **ingest_addresses** - Per-user email addresses for newsletter ingestion
 - **narration_content** - Cached LLM-processed narration text
 - **entry_summaries** - Cached AI-generated article summaries
@@ -272,6 +273,14 @@ The OAuth/MCP endpoints (`.well-known/*`, `/oauth/register`, `/oauth/token`, `/a
 ### Respectful Fetching
 
 Lion Reader respects server Cache-Control headers and applies exponential backoff for failed fetches.
+
+### WebSub Push & Backup Polling
+
+When a feed advertises a hub, we subscribe via WebSub (see [Real-time Updates](#real-time-updates)) and drop the feed to a 24h **backup poll** cadence (`reason: "websub_backup"`), trusting the hub to push new content in real time. A hub can silently stop delivering while we still believe it's active, so two mechanisms bound how long a dead hub can keep a feed stale:
+
+- **Lease clamp** (`MAX_LEASE_SECONDS`, 14 days, `src/server/feed/websub.ts`): we honor at most a 14-day lease regardless of what the hub grants, so we re-verify the subscription — and re-confirm the hub is still delivering — at least that often. We don't request a shorter lease; we just renew earlier. This bounds the quiet-feed case, where a silently-dropped subscription produces no new content to reveal the breakage.
+
+- **Backup-poll push-reliability tally** (`websub_hub_stats`, `src/server/feed/websub-hub-stats.ts`): this handler (`processSuccessfulFetch`) only runs for scheduled/backup polls — hub pushes go through `ingestWebsubNotification` instead — so any **new** entry a backup poll finds on a feed we believed push was covering is a push miss. We tally, per hub URL, how new articles first reached us: `articles_announced_by_hub` (pushed), `articles_announced_by_backup` (a confirmed miss), and `articles_near_miss` (found by backup but published within a 15-min grace window, or with an unknown date — too recent to confidently blame the hub, e.g. a publish-time race). This is purely observational today: nothing reads it to change fetch behavior; it exists so a chronically-broken hub (e.g. Google's `pubsubhubbub.appspot.com`, which accepts pings but never pushes) becomes visible in aggregate and can be dealt with later.
 
 ### SSRF Protection
 

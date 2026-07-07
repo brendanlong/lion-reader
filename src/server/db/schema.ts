@@ -1,4 +1,5 @@
 import {
+  bigint,
   boolean,
   check,
   customType,
@@ -891,6 +892,39 @@ export const websubSubscriptions = pgTable(
   ]
 );
 
+/**
+ * Per-hub push-reliability tally (keyed by hub URL).
+ *
+ * A WebSub hub can silently stop pushing while we still believe it's active. We
+ * can't take action on a single miss, but aggregating, per hub, how new articles
+ * first reached us lets us later spot chronically-broken hubs (e.g. Google's
+ * pubsubhubbub.appspot.com, which accepts pings but never pushes):
+ *
+ * - `articlesAnnouncedByHub`: a new entry arrived via a hub push notification.
+ * - `articlesAnnouncedByBackup`: a new entry was first discovered by the 24h
+ *   backup poll on a feed we thought push was covering — a confident push miss
+ *   (the entry was published long enough ago that a working hub should have
+ *   pushed it).
+ * - `articlesNearMiss`: a backup poll found a new entry, but it was published
+ *   too recently (or with an unknown date) to confidently blame the hub — it may
+ *   simply not have been pushed yet. Recorded separately so it doesn't inflate
+ *   the miss count.
+ *
+ * Purely observational: nothing reads these to change fetch behavior (yet).
+ */
+export const websubHubStats = pgTable("websub_hub_stats", {
+  hubUrl: text("hub_url").primaryKey(),
+  articlesAnnouncedByHub: bigint("articles_announced_by_hub", { mode: "number" })
+    .notNull()
+    .default(0),
+  articlesAnnouncedByBackup: bigint("articles_announced_by_backup", { mode: "number" })
+    .notNull()
+    .default(0),
+  articlesNearMiss: bigint("articles_near_miss", { mode: "number" }).notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // ============================================================================
 // NARRATION
 // ============================================================================
@@ -1123,6 +1157,8 @@ export type NewSubscriptionTag = typeof subscriptionTags.$inferInsert;
 
 export type WebsubSubscription = typeof websubSubscriptions.$inferSelect;
 export type NewWebsubSubscription = typeof websubSubscriptions.$inferInsert;
+export type WebsubHubStats = typeof websubHubStats.$inferSelect;
+export type NewWebsubHubStats = typeof websubHubStats.$inferInsert;
 
 export type NarrationContent = typeof narrationContent.$inferSelect;
 export type NewNarrationContent = typeof narrationContent.$inferInsert;

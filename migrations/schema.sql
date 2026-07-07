@@ -438,6 +438,15 @@ CREATE VIEW public.visible_entries AS
      LEFT JOIN public.subscriptions s ON ((s.id = sf.subscription_id)))
   WHERE (((s.id IS NOT NULL) AND (s.unsubscribed_at IS NULL)) OR (ue.starred = true) OR (e.type = 'saved'::public.feed_type));
 
+CREATE TABLE public.websub_hub_stats (
+    hub_url text NOT NULL,
+    articles_announced_by_hub bigint DEFAULT 0 NOT NULL,
+    articles_announced_by_backup bigint DEFAULT 0 NOT NULL,
+    articles_near_miss bigint DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
 CREATE TABLE public.websub_subscriptions (
     id uuid NOT NULL,
     feed_id uuid NOT NULL,
@@ -579,6 +588,9 @@ ALTER TABLE ONLY public.users
 
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.websub_hub_stats
+    ADD CONSTRAINT websub_hub_stats_pkey PRIMARY KEY (hub_url);
 
 ALTER TABLE ONLY public.websub_subscriptions
     ADD CONSTRAINT websub_subscriptions_pkey PRIMARY KEY (id);
