@@ -22,6 +22,7 @@
  * touches one family leaves the other untouched.
  */
 
+import { sanitizeEntryHtmlInWorker } from "@/server/worker-thread/pool";
 import { sanitizeEntryHtml, SANITIZER_VERSION } from "./sanitize";
 
 interface RawEntryContent {
@@ -59,6 +60,96 @@ export function withSanitizedEntryContent<const T extends RawEntryContent>(
   if ("fullContentOriginal" in values || "fullContentCleaned" in values) {
     result.fullContentOriginalSanitized = sanitizeEntryHtml(values.fullContentOriginal ?? null);
     result.fullContentCleanedSanitized = sanitizeEntryHtml(values.fullContentCleaned ?? null);
+    result.fullContentSanitizedVersion = SANITIZER_VERSION;
+  }
+
+  return result;
+}
+
+/**
+ * Pre-sanitized values a caller has already computed (via the same
+ * `sanitizeEntryHtml`) and wants to reuse instead of paying to sanitize again —
+ * e.g. the cleaned HTML that `cleanContentInWorker({ sanitizeCleaned: true })`
+ * sanitized inside its worker task. A field's value, when not `undefined`, MUST
+ * equal `sanitizeEntryHtml(values.<field>)`. A hint is honored only when both
+ * the value is present (not `undefined`; an explicit `null` is a valid "sanitized
+ * to null") AND the corresponding raw field is present in `values` — so a hint
+ * can never desync a sanitized column from the raw column it derives from. This
+ * keeps this helper the single place that assigns the `*_sanitized` columns
+ * while letting fused work be reused.
+ */
+interface PresanitizedEntryContent {
+  contentOriginalSanitized?: string | null;
+  contentCleanedSanitized?: string | null;
+  fullContentOriginalSanitized?: string | null;
+  fullContentCleanedSanitized?: string | null;
+}
+
+/**
+ * Async form of `withSanitizedEntryContent` that offloads large-body
+ * sanitization to a worker thread (see `sanitizeEntryHtmlInWorker`), keeping the
+ * sanitize-html pass off the main event loop on app-server request paths. Small
+ * bodies still run inline. Use this from UI-serving code paths (saved articles,
+ * on-demand full-content fetch, read-path re-sanitize); background jobs should
+ * keep using the synchronous `withSanitizedEntryContent`.
+ *
+ * `presanitized` lets a caller supply already-computed sanitized values to
+ * avoid redundant work (see `PresanitizedEntryContent`); when a field is absent
+ * from it, that field is sanitized here.
+ */
+export async function withSanitizedEntryContentAsync<const T extends RawEntryContent>(
+  values: T,
+  presanitized: PresanitizedEntryContent = {}
+): Promise<T & Partial<SanitizedEntryContent>> {
+  const result: T & Partial<SanitizedEntryContent> = { ...values };
+
+  // Reuse a caller-supplied sanitized value only when it is actually provided
+  // (not `undefined`) AND the raw field it claims to derive from is present in
+  // `values`; otherwise sanitize the raw field here. This makes the reused-hint
+  // path produce exactly what a normal sanitize would, so a stale or misapplied
+  // hint can never persist a sanitized column that disagrees with its raw column.
+  const sanitize = (
+    raw: string | null | undefined,
+    reuse: string | null | undefined,
+    rawKeyPresent: boolean
+  ): Promise<string | null> =>
+    reuse !== undefined && rawKeyPresent
+      ? Promise.resolve(reuse)
+      : sanitizeEntryHtmlInWorker(raw ?? null);
+
+  if ("contentOriginal" in values || "contentCleaned" in values) {
+    const [original, cleaned] = await Promise.all([
+      sanitize(
+        values.contentOriginal,
+        presanitized.contentOriginalSanitized,
+        "contentOriginal" in values
+      ),
+      sanitize(
+        values.contentCleaned,
+        presanitized.contentCleanedSanitized,
+        "contentCleaned" in values
+      ),
+    ]);
+    result.contentOriginalSanitized = original;
+    result.contentCleanedSanitized = cleaned;
+    result.contentSanitizedVersion = SANITIZER_VERSION;
+  }
+
+  if ("fullContentOriginal" in values || "fullContentCleaned" in values) {
+    const [original, cleaned] = await Promise.all([
+      sanitize(
+        values.fullContentOriginal,
+        presanitized.fullContentOriginalSanitized,
+        "fullContentOriginal" in values
+      ),
+      sanitize(
+        values.fullContentCleaned,
+        presanitized.fullContentCleanedSanitized,
+        "fullContentCleaned" in values
+      ),
+    ]);
+    result.fullContentOriginalSanitized = original;
+    result.fullContentCleanedSanitized = cleaned;
     result.fullContentSanitizedVersion = SANITIZER_VERSION;
   }
 

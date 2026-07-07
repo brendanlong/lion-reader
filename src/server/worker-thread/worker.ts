@@ -10,18 +10,33 @@
 
 import { cleanContent } from "@/server/feed/content-cleaner";
 import { parseFeed } from "@/server/feed/parser";
+import { sanitizeEntryHtml } from "@/server/html/sanitize";
 import { workerRequestSchema, serializeParsedFeed } from "./types";
-import type { CleanedContent } from "@/server/feed/content-cleaner";
-import type { SerializedParsedFeed } from "./types";
+import type { CleanedContent as RawCleanedContent } from "@/server/feed/content-cleaner";
+import type { CleanedContent, SerializedParsedFeed } from "./types";
 
-export default function handleTask(raw: unknown): CleanedContent | SerializedParsedFeed | null {
+type TaskResult = CleanedContent | SerializedParsedFeed | { sanitized: string | null } | null;
+
+export default function handleTask(raw: unknown): TaskResult {
   const request = workerRequestSchema.parse(raw);
 
   switch (request.type) {
-    case "cleanContent":
-      return cleanContent(request.html, request.options) ?? null;
+    case "cleanContent": {
+      const cleaned: RawCleanedContent | null = cleanContent(request.html, request.options);
+      if (!cleaned) return null;
+      // Fuse the sanitize into this same task so a caller that persists the
+      // cleaned content (e.g. saved articles) doesn't ship the string back
+      // across the thread boundary a second time just to sanitize it.
+      if (request.sanitizeCleaned) {
+        return { ...cleaned, contentSanitized: sanitizeEntryHtml(cleaned.content) };
+      }
+      return cleaned;
+    }
 
     case "parseFeed":
       return serializeParsedFeed(parseFeed(request.content));
+
+    case "sanitizeEntryHtml":
+      return { sanitized: sanitizeEntryHtml(request.html) };
   }
 }

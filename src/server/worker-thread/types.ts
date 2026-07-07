@@ -23,6 +23,11 @@ const cleanContentRequestSchema = z.object({
   type: z.literal("cleanContent"),
   html: z.string(),
   options: cleanContentOptionsSchema.optional(),
+  // When true, the worker also sanitizes the cleaned HTML (via the same
+  // sanitizeEntryHtml the write path uses) and returns it as `contentSanitized`,
+  // so a caller that will persist the cleaned content doesn't pay a second
+  // cross-thread round-trip to sanitize it. See cleanContentInWorker.
+  sanitizeCleaned: z.boolean().optional(),
 });
 
 const parseFeedRequestSchema = z.object({
@@ -30,9 +35,18 @@ const parseFeedRequestSchema = z.object({
   content: z.string(),
 });
 
+// Sanitize an entry-content HTML string in the worker, keeping the (potentially
+// tens-of-ms) sanitize-html pass off the main event loop. Used by
+// sanitizeEntryHtmlInWorker for bodies above the inline-size threshold.
+const sanitizeEntryHtmlRequestSchema = z.object({
+  type: z.literal("sanitizeEntryHtml"),
+  html: z.string(),
+});
+
 export const workerRequestSchema = z.discriminatedUnion("type", [
   cleanContentRequestSchema,
   parseFeedRequestSchema,
+  sanitizeEntryHtmlRequestSchema,
 ]);
 
 export type WorkerRequest = z.infer<typeof workerRequestSchema>;
@@ -48,9 +62,17 @@ export const cleanedContentSchema = z.object({
   excerpt: z.string(),
   title: z.string().nullable(),
   byline: z.string().nullable(),
+  // Present only when the request set `sanitizeCleaned`: sanitizeEntryHtml(content),
+  // computed in the worker so it can be reused without re-sanitizing on the main
+  // thread. Absent otherwise.
+  contentSanitized: z.string().nullable().optional(),
 });
 
 export type CleanedContent = z.infer<typeof cleanedContentSchema>;
+
+export const sanitizeEntryHtmlResultSchema = z.object({
+  sanitized: z.string().nullable(),
+});
 
 const syndicationHintsSchema = z.object({
   updatePeriod: z.enum(["hourly", "daily", "weekly", "monthly", "yearly"]).optional(),
