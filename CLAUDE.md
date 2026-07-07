@@ -62,6 +62,7 @@ Notes:
 - **DRY**: Deduplicate logic that must stay in sync; don't merge code that merely looks similar but serves independent purposes
 - Always write tests for the intended behavior of functions, not the actual behavior. If the actual behavior is wrong and the issue is pre-existing, write the test correctly, mark it skipped, and file a GitHub issue on brendanlong/lion-reader (labels: `bug`, `reported-by-claude`)
 - Don't create barrel files, prefer direct imports within our code
+- **BigInt**: `tsconfig.json` targets ES2017, so the `1n` bigint _literal_ syntax fails `tsc` (`TS2737: BigInt literals are not available when targeting lower than ES2020`). The `BigInt` runtime is available (via the `esnext` lib), so write bigint values with the constructor: `BigInt(48)`, `BigInt(2) ** BigInt(48)`, `id >> BigInt(15)` — not `48n` / `2n ** 48n` / `id >> 15n`.
 
 ## Frontend Testing
 
