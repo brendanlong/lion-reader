@@ -459,6 +459,17 @@ export function createEntryStateChangedEvent(
   };
 }
 
+export function createMarkAllReadEvent(
+  overrides: Partial<Extract<SyncEvent, { type: "mark_all_read" }>> = {}
+): Extract<SyncEvent, { type: "mark_all_read" }> {
+  return {
+    type: "mark_all_read",
+    timestamp: defaultTimestamp,
+    updatedAt: defaultTimestamp,
+    ...overrides,
+  };
+}
+
 export function createSubscriptionCreatedEvent(
   overrides: Partial<Extract<SyncEvent, { type: "subscription_created" }>> = {}
 ): Extract<SyncEvent, { type: "subscription_created" }> {

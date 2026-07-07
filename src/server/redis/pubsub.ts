@@ -120,6 +120,18 @@ const userEventSchema = z.discriminatedUnion("type", [
     timestamp: z.string(),
     updatedAt: z.string(),
   }),
+  // Mark-all-read signal. Mark-all-read is unbounded, so instead of shipping
+  // every affected id (or one entry_state_changed per entry, which would storm
+  // every connection), we publish a single lightweight event and let each
+  // client invalidate its entry lists + counts. `updatedAt` is the mark-all-read
+  // timestamp, used to advance the entries sync cursor so a reconnect catch-up
+  // doesn't re-deliver every marked entry.
+  z.object({
+    type: z.literal("mark_all_read"),
+    userId: z.string(),
+    timestamp: z.string(),
+    updatedAt: z.string(),
+  }),
   z.object({
     type: z.literal("tag_created"),
     userId: z.string(),
@@ -178,6 +190,7 @@ type SubscriptionDeletedEvent = Extract<UserEvent, { type: "subscription_deleted
 type ImportProgressEvent = Extract<UserEvent, { type: "import_progress" }>;
 type ImportCompletedEvent = Extract<UserEvent, { type: "import_completed" }>;
 type EntryStateChangedEvent = Extract<UserEvent, { type: "entry_state_changed" }>;
+type MarkAllReadEvent = Extract<UserEvent, { type: "mark_all_read" }>;
 type TagCreatedEvent = Extract<UserEvent, { type: "tag_created" }>;
 type TagUpdatedEvent = Extract<UserEvent, { type: "tag_updated" }>;
 type TagDeletedEvent = Extract<UserEvent, { type: "tag_deleted" }>;
@@ -570,6 +583,36 @@ export async function publishEntryStateChanged(
     read,
     starred,
     counts,
+    timestamp: new Date().toISOString(),
+    updatedAt: updatedAt.toISOString(),
+  };
+  const channel = getUserEventsChannel(userId);
+  return client.publish(channel, JSON.stringify(event));
+}
+
+/**
+ * Publishes a mark_all_read signal after a bulk mark-all-read.
+ *
+ * Unlike markRead (which publishes one entry_state_changed per entry),
+ * mark-all-read is unbounded, so a per-entry fan-out would storm every one of
+ * the user's connections and shipping every affected id could mean a huge
+ * payload. Instead this single lightweight signal tells each connection to
+ * invalidate its entry lists + counts — the same thing the acting tab does on
+ * success.
+ *
+ * @param userId - The ID of the user whose entries were marked read
+ * @param updatedAt - The mark-all-read timestamp, used to advance the entries
+ *   sync cursor so a reconnect catch-up doesn't re-deliver every marked entry
+ * @returns The number of subscribers that received the message (0 if Redis unavailable)
+ */
+export async function publishMarkAllRead(userId: string, updatedAt: Date): Promise<number> {
+  const client = getPublisherClient();
+  if (!client) {
+    return 0;
+  }
+  const event: MarkAllReadEvent = {
+    type: "mark_all_read",
+    userId,
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
   };

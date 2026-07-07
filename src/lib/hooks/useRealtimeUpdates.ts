@@ -82,6 +82,7 @@ const SSE_EVENT_NAMES = [
   "new_entry",
   "entry_updated",
   "entry_state_changed",
+  "mark_all_read",
   "subscription_created",
   "subscription_updated",
   "subscription_deleted",

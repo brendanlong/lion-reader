@@ -24,6 +24,7 @@ import {
   createNewEntryEvent,
   createEntryUpdatedEvent,
   createEntryStateChangedEvent,
+  createMarkAllReadEvent,
   createSubscriptionCreatedEvent,
   createSubscriptionUpdatedEvent,
   createSubscriptionDeletedEvent,
@@ -687,6 +688,32 @@ describe("handleSyncEvent - entry_state_changed", () => {
     // Counts are set from the server-provided values
     expect(getEntriesCount({})?.unread).toBe(17);
     expect(getSubscriptionsList()?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(4);
+  });
+});
+
+// ============================================================================
+// mark_all_read Events
+// ============================================================================
+
+describe("handleSyncEvent - mark_all_read", () => {
+  it("invalidates entry lists and counts (mirrors the acting tab)", () => {
+    handleSyncEvent(utils, queryClient, createMarkAllReadEvent());
+
+    const invalidated = invalidatedProcedures(invalidateSpy);
+    // The one SSE event that deliberately refetches entries.list.
+    expect(invalidated).toContain("entries.list");
+    expect(invalidated).toContain("entries.count");
+    expect(invalidated).toContain("tags.list");
+    expect(invalidated).toContain("subscriptions.list");
+  });
+
+  it("does not touch entry read state directly (invalidation handles it)", () => {
+    // entry-1/entry-2 stay as-is in the cache; the refetch (not a direct patch)
+    // is what will mark them read, so the handler itself changes nothing.
+    handleSyncEvent(utils, queryClient, createMarkAllReadEvent());
+
+    expect(findEntryInQueryClient("entry-1")?.read).toBe(false);
+    expect(findEntryInQueryClient("entry-2")?.read).toBe(false);
   });
 });
 

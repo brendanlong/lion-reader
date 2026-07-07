@@ -463,6 +463,8 @@ export const entriesRouter = createTRPCRouter({
         }
       }
 
+      // markAllEntriesRead publishes the mark_all_read SSE signal itself (so the
+      // Google Reader mark-all-as-read route notifies other tabs too).
       const entryIds = await entriesService.markAllEntriesRead(ctx.db, {
         userId,
         subscriptionId: input.subscriptionId,

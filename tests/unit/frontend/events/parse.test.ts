@@ -24,6 +24,22 @@ describe("parseSyncEvent", () => {
     });
   });
 
+  it("parses a mark_all_read event and strips server-only userId", () => {
+    const event = parseSyncEvent(
+      JSON.stringify({
+        type: "mark_all_read",
+        userId: "user-1",
+        timestamp: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      })
+    );
+    expect(event).toEqual({
+      type: "mark_all_read",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+  });
+
   it("returns null for unknown event types", () => {
     expect(parseSyncEvent(JSON.stringify({ type: "connected", cursor: "abc" }))).toBeNull();
   });

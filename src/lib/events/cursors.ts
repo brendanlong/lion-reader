@@ -27,6 +27,10 @@ export function cursorTypeForEvent(event: SyncEvent): keyof SyncCursors | null {
     case "new_entry":
     case "entry_updated":
     case "entry_state_changed":
+    case "mark_all_read":
+      // mark_all_read carries the mark-all-read timestamp; advancing the entries
+      // cursor past it stops a reconnect catch-up from re-delivering every
+      // entry it marked read as an individual entry_state_changed.
       return "entries";
     case "subscription_created":
     case "subscription_updated":

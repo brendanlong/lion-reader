@@ -38,6 +38,14 @@ function tagEvent(updatedAt: string): SyncEvent {
   };
 }
 
+function markAllReadEvent(updatedAt: string): SyncEvent {
+  return {
+    type: "mark_all_read",
+    timestamp: updatedAt,
+    updatedAt,
+  };
+}
+
 function importEvent(): SyncEvent {
   return {
     type: "import_completed",
@@ -62,6 +70,10 @@ describe("cursorTypeForEvent", () => {
 
   it("maps tag events to the tags cursor", () => {
     expect(cursorTypeForEvent(tagEvent("2026-01-01T00:00:00.000Z"))).toBe("tags");
+  });
+
+  it("maps mark_all_read to the entries cursor (avoids catch-up re-delivery)", () => {
+    expect(cursorTypeForEvent(markAllReadEvent("2026-01-01T00:00:00.000Z"))).toBe("entries");
   });
 
   it("returns null for import events", () => {
@@ -93,6 +105,11 @@ describe("advanceCursors", () => {
     const cursors = advanceCursors(EMPTY_CURSORS, subscriptionEvent("2026-01-01T00:00:00.000Z"));
     const next = advanceCursors(cursors, subscriptionEvent("2026-01-03T12:00:00.000Z"));
     expect(next.subscriptions).toBe("2026-01-03T12:00:00.000Z");
+  });
+
+  it("advances the entries cursor from a mark_all_read event", () => {
+    const next = advanceCursors(EMPTY_CURSORS, markAllReadEvent("2026-02-01T00:00:00.000Z"));
+    expect(next.entries).toBe("2026-02-01T00:00:00.000Z");
   });
 
   it("does not move a cursor backwards for older or equal events", () => {
