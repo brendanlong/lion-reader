@@ -208,6 +208,24 @@ test.describe("Google Reader API happy path", () => {
       expect(item.summary.content).toContain("Content for GReader entry");
     }
   });
+
+  test("stream/items/contents rejects an oversized id batch with 400", async ({ request }) => {
+    const token = await getToken(request);
+
+    // Post more ids than the per-request cap (1000). The values don't need to
+    // resolve — the cap is enforced before any lookup.
+    const form = new URLSearchParams();
+    for (let i = 0; i < 1001; i++) form.append("i", String(i + 1));
+    const res = await request.post(`${API_BASE}/stream/items/contents`, {
+      headers: {
+        ...authHeader(token),
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      data: form.toString(),
+    });
+    expect(res.status()).toBe(400);
+    expect(await res.text()).toContain("Too many item ids");
+  });
 });
 
 /**
