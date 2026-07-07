@@ -11,6 +11,9 @@ const article: DemoArticle = {
     "An AI-native, all-in-one reader for feeds, newsletters, and read-later. Explore the demo to see what it can do.",
   publishedAt: new Date(),
   starred: true,
+  heroImage: "/demo/welcome.png",
+  heroImageAlt:
+    "The Lion Reader lion sitting and waving hello, surrounded by a cloud of colorful article and feed cards.",
   summaryHtml: `<p><strong>Lion Reader</strong> is an AI-native, self-hostable reader that unifies RSS/Atom/JSON feeds, email newsletters, and saved articles in one fast interface. It connects to AI assistants over <strong>MCP</strong>, generates on-demand <strong>summaries</strong> via Claude, and narrates articles with synchronized highlighting &mdash; all with real-time, jank-free updates. Free and open source.</p>`,
   contentHtml: `
     <p>Lion Reader is a self-hostable feed reader for people who take their reading seriously. It brings your feeds, your newsletters, and everything you save for later into one fast, elegant interface &mdash; and it&rsquo;s built from the ground up to work with AI assistants.</p>
