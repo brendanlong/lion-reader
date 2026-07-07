@@ -171,7 +171,7 @@ test.describe("Google Reader API happy path", () => {
     }
   });
 
-  test("stream/items/contents returns full items for the given ids in order", async ({
+  test("stream/items/contents returns full items with body for the given ids", async ({
     request,
   }) => {
     const token = await getToken(request);
@@ -202,9 +202,10 @@ test.describe("Google Reader API happy path", () => {
     expect(body.items.length).toBe(ids.length);
     for (const item of body.items) {
       expect(typeof item.id).toBe("string");
-      // Full items carry the article body in either `content` (large bodies) or
-      // `summary` (short bodies) — the batch fetch must populate one of them.
-      expect(item.content ?? item.summary).toBeTruthy();
+      // formatEntryAsItem always emits the body under `summary.content` — the
+      // batch fetch must populate it with the seeded entry's actual content, not
+      // an empty string (which is what a failed/missing body fetch produces).
+      expect(item.summary.content).toContain("Content for GReader entry");
     }
   });
 });
