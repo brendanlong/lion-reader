@@ -2,12 +2,20 @@
  * Google Reader API: Stream Contents
  *
  * GET/POST /api/greader.php/reader/api/0/stream/contents/{streamId}
+ * GET/POST /api/greader.php/reader/api/0/stream/contents   (streamId omitted)
  *
  * Returns items (entries) for a given stream. The streamId can be:
  * - feed/{int64} — entries from a specific subscription
  * - user/-/state/com.google/reading-list — all entries
  * - user/-/state/com.google/starred — starred entries
  * - user/-/label/{name} — entries in a tag/folder
+ *
+ * When the streamId is omitted entirely (this is an optional catch-all route),
+ * it defaults to the reading-list, matching Google Reader semantics where
+ * `stream/contents` with no stream id returns the reading list. Newsflash's
+ * FreshRSS backend relies on this: its initial sync fetches "latest" articles
+ * by calling `stream/contents` with no stream id, so a required catch-all would
+ * 404 that request and break account setup.
  *
  * Query parameters:
  * - n: number of items (default 20, max 300) — capped lower than the ids stream
@@ -31,16 +39,22 @@ import { isState } from "@/server/google-reader/streams";
 
 export const dynamic = "force-dynamic";
 
+// Google Reader treats `stream/contents` with no stream id as the reading list.
+const DEFAULT_STREAM_ID = "user/-/state/com.google/reading-list";
+
 async function handleStreamContents(
   request: Request,
-  params: Promise<{ streamId: string[] }>
+  params: Promise<{ streamId?: string[] }>
 ): Promise<Response> {
   const session = await requireAuth(request);
   if (session instanceof Response) return session;
   const { streamId: streamIdParts } = await params;
 
-  // Reconstruct the stream ID from path segments
-  const streamIdStr = streamIdParts.join("/");
+  // Reconstruct the stream ID from path segments. On the optional catch-all,
+  // `streamIdParts` is undefined when the streamId is omitted — default it to
+  // the reading list.
+  const streamIdStr =
+    streamIdParts && streamIdParts.length > 0 ? streamIdParts.join("/") : DEFAULT_STREAM_ID;
 
   let parsedStream: StreamId;
   try {
@@ -172,14 +186,14 @@ async function handleStreamContents(
 
 export async function GET(
   request: Request,
-  ctx: { params: Promise<{ streamId: string[] }> }
+  ctx: { params: Promise<{ streamId?: string[] }> }
 ): Promise<Response> {
   return handleStreamContents(request, ctx.params);
 }
 
 export async function POST(
   request: Request,
-  ctx: { params: Promise<{ streamId: string[] }> }
+  ctx: { params: Promise<{ streamId?: string[] }> }
 ): Promise<Response> {
   return handleStreamContents(request, ctx.params);
 }
