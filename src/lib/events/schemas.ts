@@ -205,6 +205,16 @@ const entryStateChangedEventSchema = z.object({
   updatedAt: z.string(),
 });
 
+const markAllReadEventSchema = z.object({
+  type: z.literal("mark_all_read"),
+  // Mark-all-read is unbounded, so instead of a per-entry event or a huge id
+  // list, the server sends this single signal and the client invalidates its
+  // entry lists + counts (see handleSyncEvent). `updatedAt` is the
+  // mark-all-read timestamp, used to advance the entries cursor.
+  timestamp: timestampWithDefault,
+  updatedAt: z.string(),
+});
+
 const subscriptionCreatedEventSchema = z.object({
   type: z.literal("subscription_created"),
   subscriptionId: z.string(),
@@ -312,6 +322,7 @@ const coreEventSchema = z.discriminatedUnion("type", [
   newEntryEventSchema,
   entryUpdatedEventSchema,
   entryStateChangedEventSchema,
+  markAllReadEventSchema,
   subscriptionCreatedEventSchema,
   subscriptionDeletedEventSchema,
   subscriptionUpdatedEventSchema,

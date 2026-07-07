@@ -30,6 +30,7 @@ import {
 import { sanitizeEntryHtml, SANITIZER_VERSION } from "@/server/html/sanitize";
 import { logger } from "@/lib/logger";
 import { errors } from "@/server/trpc/errors";
+import { publishMarkAllRead } from "@/server/redis/pubsub";
 import {
   buildEntryFeedFilter,
   buildEntryFilterConditions,
@@ -1040,17 +1041,37 @@ export async function markAllEntriesRead(
     conditions.push(inArray(userEntries.entryId, beforeEntryIdsSubquery));
   }
 
+  const updatedAt = new Date();
   const result = await db
     .update(userEntries)
     .set({
       read: true,
       readChangedAt: changedAt,
-      updatedAt: new Date(),
+      updatedAt,
     })
     .where(and(...conditions))
     .returning({ entryId: userEntries.entryId });
 
-  return result.map((r) => r.entryId);
+  const entryIds = result.map((r) => r.entryId);
+
+  // Notify the user's other tabs/devices. Mark-all-read is unbounded, so rather
+  // than emitting a per-entry event (or shipping every affected id), we publish
+  // one lightweight signal and let each connection invalidate its entry lists +
+  // counts — the same thing the acting tab already does on success. Published
+  // here (not in the router) so every caller — the tRPC mutation and the Google
+  // Reader mark-all-as-read route — notifies other tabs. Fire and forget.
+  //
+  // This publishes after the (autocommitted) UPDATE above completes. Today's
+  // callers pass the global `db`, so that's always post-commit. If a future
+  // caller runs this inside a transaction, move the publish to after the commit
+  // so a rolled-back mark-all-read can't emit a phantom event.
+  if (entryIds.length > 0) {
+    void publishMarkAllRead(params.userId, updatedAt).catch(() => {
+      // Ignore publish errors - SSE is best-effort
+    });
+  }
+
+  return entryIds;
 }
 
 /**
