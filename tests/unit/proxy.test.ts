@@ -55,8 +55,15 @@ describe("proxy", () => {
 });
 
 describe("proxy request logging (LOG_MCP_REQUESTS)", () => {
+  const originalMcpHost = process.env.MCP_HOST;
+
   afterEach(() => {
     delete process.env.LOG_MCP_REQUESTS;
+    if (originalMcpHost === undefined) {
+      delete process.env.MCP_HOST;
+    } else {
+      process.env.MCP_HOST = originalMcpHost;
+    }
     vi.restoreAllMocks();
   });
 
@@ -74,7 +81,7 @@ describe("proxy request logging (LOG_MCP_REQUESTS)", () => {
     expect(spy).toHaveBeenCalledOnce();
     const entry = JSON.parse(spy.mock.calls[0][0] as string);
     expect(entry).toMatchObject({
-      message: "MCP surface request",
+      message: "MCP debug request",
       host: "reader.example.com",
       method: "POST",
       path: "/mcp",
@@ -90,6 +97,36 @@ describe("proxy request logging (LOG_MCP_REQUESTS)", () => {
     proxy(makeRequest("/mcp", "POST"));
     const entry = JSON.parse(spy.mock.calls[0][0] as string);
     expect(entry.hasAuthorization).toBe(false);
+  });
+
+  it("does NOT log ordinary (non-surface) apex traffic even when enabled", () => {
+    // No MCP host configured, so only the OAuth/MCP surface is logged on the apex.
+    process.env.LOG_MCP_REQUESTS = "true";
+    delete process.env.MCP_HOST;
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    proxy(makeRequest("/all"));
+    proxy(makeRequest("/api/trpc/entries.list"));
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("logs EVERY path on the dedicated MCP host, including unexpected ones", () => {
+    // The point: catch a request to a path we didn't anticipate (the "wrong URL"
+    // / origin-root-fallback failure modes) so it doesn't slip through unlogged.
+    process.env.LOG_MCP_REQUESTS = "true";
+    process.env.MCP_HOST = "mcp.example.com";
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    proxy(makeRequest("/some/unexpected/path", "GET", { host: "MCP.example.com:443" }));
+    expect(spy).toHaveBeenCalledOnce();
+    const entry = JSON.parse(spy.mock.calls[0][0] as string);
+    expect(entry.path).toBe("/some/unexpected/path");
+  });
+
+  it("does not log unexpected paths on a host that isn't the MCP host", () => {
+    process.env.LOG_MCP_REQUESTS = "true";
+    process.env.MCP_HOST = "mcp.example.com";
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    proxy(makeRequest("/some/unexpected/path", "GET", { host: "reader.example.com" }));
+    expect(spy).not.toHaveBeenCalled();
   });
 
   it("redacts sensitive query params (auth code) but keeps public ones", () => {
