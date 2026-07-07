@@ -12,6 +12,7 @@ import type { db as dbType } from "@/server/db";
 import { entries, narrationContent } from "@/server/db/schema";
 import { fetchHtmlPage, HttpFetchError } from "@/server/http/fetch";
 import { cleanContent, absolutizeUrls } from "@/server/feed/content-cleaner";
+import { cleanContentInWorker } from "@/server/worker-thread/pool";
 import {
   withSanitizedEntryContent,
   withSanitizedEntryContentAsync,
@@ -32,6 +33,13 @@ export interface FetchFullContentResult {
   contentOriginal?: string;
   /** The Readability-cleaned HTML content */
   contentCleaned?: string;
+  /**
+   * The sanitized form of `contentCleaned`, when Readability ran in the worker
+   * pool with the sanitize fused in (offloadClean path). Persisted via
+   * `persistFullContentResult` as a `presanitized` hint so the sanitize isn't
+   * repeated. `undefined` when cleaning ran inline or no cleaned content exists.
+   */
+  contentCleanedSanitized?: string | null;
   /** Error message if the fetch failed */
   error?: string;
 }
@@ -45,9 +53,30 @@ export interface FetchFullContentResult {
  * 3. Returns both the original HTML and the cleaned content
  *
  * @param url - The article URL to fetch
+ * @param options.offloadClean - Run Readability in the worker-thread pool (with
+ *   the cleaned-HTML sanitize fused in) instead of inline on the calling thread.
+ *   On by default; the background feed worker passes false because it already
+ *   runs off the request path, so the thread hop is pure overhead. App-server
+ *   callers (fetchAndStoreFullContent) keep the default so the CPU-bound
+ *   Readability pass never stalls the UI-serving event loop.
  * @returns The fetch result with content or error
  */
-export async function fetchFullContent(url: string): Promise<FetchFullContentResult> {
+export async function fetchFullContent(
+  url: string,
+  options: { offloadClean?: boolean } = {}
+): Promise<FetchFullContentResult> {
+  const { offloadClean = true } = options;
+  // Run Readability either in the worker pool (fusing the cleaned-HTML sanitize
+  // so persistFullContentResult can reuse it) or inline, per offloadClean. The
+  // inline path has no `contentSanitized` (only the worker fuses the sanitize).
+  const runClean = (
+    html: string,
+    resolveUrl: string
+  ): Promise<{ content: string; contentSanitized?: string | null } | null> =>
+    offloadClean
+      ? cleanContentInWorker(html, { url: resolveUrl }, { sanitizeCleaned: true })
+      : Promise.resolve(cleanContent(html, { url: resolveUrl }));
+
   try {
     const urlObj = new URL(url);
 
@@ -83,12 +112,13 @@ export async function fetchFullContent(url: string): Promise<FetchFullContentRes
           }
 
           // Run Readability on plugin content
-          const cleaned = cleanContent(html, { url: resolveUrl });
+          const cleaned = await runClean(html, resolveUrl);
 
           return {
             success: true,
             contentOriginal,
             contentCleaned: cleaned?.content,
+            contentCleanedSanitized: cleaned?.contentSanitized,
           };
         }
       } catch (error) {
@@ -127,7 +157,7 @@ export async function fetchFullContent(url: string): Promise<FetchFullContentRes
     const contentOriginal = absolutizeUrls(html, resolveUrl);
 
     // Clean the content using Readability
-    const cleaned = cleanContent(html, { url: resolveUrl });
+    const cleaned = await runClean(html, resolveUrl);
 
     if (!cleaned) {
       return {
@@ -140,6 +170,7 @@ export async function fetchFullContent(url: string): Promise<FetchFullContentRes
       success: true,
       contentOriginal,
       contentCleaned: cleaned.content,
+      contentCleanedSanitized: cleaned.contentSanitized,
     };
   } catch (error) {
     const errorMessage = getErrorMessage(error);
@@ -204,8 +235,14 @@ export async function persistFullContentResult(
     fullContentError: null,
     updatedAt: now,
   };
+  // When fetchFullContent offloaded cleaning, the worker already sanitized the
+  // cleaned HTML (fused into the same task); reuse it so we don't sanitize the
+  // same body twice. The hint is only honored when its raw column is present in
+  // fullContentValues (it always is here), so it can never desync from the raw.
   const fullContentUpdate = offloadSanitize
-    ? await withSanitizedEntryContentAsync(fullContentValues)
+    ? await withSanitizedEntryContentAsync(fullContentValues, {
+        fullContentCleanedSanitized: result.contentCleanedSanitized,
+      })
     : withSanitizedEntryContent(fullContentValues);
 
   await db.update(entries).set(fullContentUpdate).where(eq(entries.id, entryId));
