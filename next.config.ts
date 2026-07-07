@@ -76,6 +76,7 @@ const withPWAConfig = withPWA({
 });
 
 const nextConfig: NextConfig = {
+  allowedDevOrigins: ["127.0.0.1", "localhost"],
   // Disable Next.js's built-in gzip compression. Our custom server applies
   // zstd/brotli/gzip/deflate compression to streaming SSR responses, and
   // Fly.io's edge handles non-streaming responses.
