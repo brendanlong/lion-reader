@@ -147,8 +147,11 @@ async function fetchFullContentForNewEntries(
     try {
       const result = await fetchFullContent(entry.url!);
       // Persists the result (sanitized at write time so the user's first
-      // read is fast) or the fetch error onto the shared entry row.
-      const update = await persistFullContentResult(db, entry.id, result);
+      // read is fast) or the fetch error onto the shared entry row. This is a
+      // background job, so sanitize inline rather than offloading to a worker.
+      const update = await persistFullContentResult(db, entry.id, result, new Date(), {
+        offloadSanitize: false,
+      });
 
       if (update) {
         fetched++;

@@ -18,8 +18,23 @@ import { availableParallelism } from "os";
 import Piscina from "piscina";
 
 import { logger } from "@/lib/logger";
-import { cleanedContentSchema, serializedParsedFeedSchema, deserializeParsedFeed } from "./types";
+import { sanitizeEntryHtml } from "@/server/html/sanitize";
+import {
+  cleanedContentSchema,
+  sanitizeEntryHtmlResultSchema,
+  serializedParsedFeedSchema,
+  deserializeParsedFeed,
+} from "./types";
 import type { CleanedContent, CleanContentOptions, ParsedFeed } from "./types";
+
+/**
+ * Bodies at or below this size are sanitized inline on the calling thread:
+ * sanitize-html runs in well under a millisecond for them, so the fixed cost of
+ * copying the string across the thread boundary (and scheduling a task) isn't
+ * worth paying. Larger bodies (tens of ms of blocking) are offloaded so they
+ * never stall UI-serving requests on the app-server event loop. ~10 KB.
+ */
+const SANITIZE_INLINE_MAX_CHARS = 10 * 1024;
 
 // ---------------------------------------------------------------------------
 // Pool singleton
@@ -98,17 +113,53 @@ function getPool(): Piscina | null {
  */
 export async function cleanContentInWorker(
   html: string,
-  options?: CleanContentOptions
+  options?: CleanContentOptions,
+  extra?: { sanitizeCleaned?: boolean }
 ): Promise<CleanedContent | null> {
   const p = getPool();
   if (!p) {
     const { cleanContent } = await import("@/server/feed/content-cleaner");
-    return cleanContent(html, options) ?? null;
+    const cleaned = cleanContent(html, options);
+    if (!cleaned) return null;
+    // Match the worker's fused-sanitize behaviour on the inline fallback path.
+    return extra?.sanitizeCleaned
+      ? { ...cleaned, contentSanitized: sanitizeEntryHtml(cleaned.content) }
+      : cleaned;
   }
 
-  const result = await p.run({ type: "cleanContent", html, options });
+  const result = await p.run({
+    type: "cleanContent",
+    html,
+    options,
+    sanitizeCleaned: extra?.sanitizeCleaned,
+  });
   if (result === null) return null;
   return cleanedContentSchema.parse(result);
+}
+
+/**
+ * Sanitize entry-content HTML, offloading to a worker thread for large bodies
+ * so the sanitize-html pass never blocks the main event loop on UI-serving
+ * requests. Small bodies (≤ SANITIZE_INLINE_MAX_CHARS) and environments without
+ * a pool run inline. Drop-in async form of `sanitizeEntryHtml`.
+ *
+ * Intended for app-server request paths (saved articles, on-demand full-content
+ * fetch, read-path re-sanitize). Background jobs (feed fetching, email ingest)
+ * deliberately sanitize inline — they already run off the request path, so the
+ * extra thread hop and string copy would be pure overhead.
+ */
+export async function sanitizeEntryHtmlInWorker(
+  html: string | null | undefined
+): Promise<string | null> {
+  if (!html) return null;
+
+  const p = getPool();
+  if (!p || html.length <= SANITIZE_INLINE_MAX_CHARS) {
+    return sanitizeEntryHtml(html);
+  }
+
+  const result = await p.run({ type: "sanitizeEntryHtml", html });
+  return sanitizeEntryHtmlResultSchema.parse(result).sanitized;
 }
 
 /**

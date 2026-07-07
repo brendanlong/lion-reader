@@ -12,7 +12,10 @@ import type { db as dbType } from "@/server/db";
 import { entries, narrationContent } from "@/server/db/schema";
 import { fetchHtmlPage, HttpFetchError } from "@/server/http/fetch";
 import { cleanContent, absolutizeUrls } from "@/server/feed/content-cleaner";
-import { withSanitizedEntryContent } from "@/server/html/sanitize-entry";
+import {
+  withSanitizedEntryContent,
+  withSanitizedEntryContentAsync,
+} from "@/server/html/sanitize-entry";
 import { pluginRegistry } from "@/server/plugins";
 import { logger } from "@/lib/logger";
 import { processMarkdown } from "@/server/markdown";
@@ -165,8 +168,13 @@ export async function persistFullContentResult(
   db: typeof dbType,
   entryId: string,
   result: FetchFullContentResult,
-  now: Date = new Date()
+  now: Date = new Date(),
+  // Offload sanitization to a worker thread for large bodies. On by default; the
+  // background worker (fetchFullContentForEntries) passes false because it
+  // already runs off the request path, so the extra thread hop is pure overhead.
+  options: { offloadSanitize?: boolean } = {}
 ) {
+  const { offloadSanitize = true } = options;
   if (!result.success) {
     await db
       .update(entries)
@@ -188,14 +196,17 @@ export async function persistFullContentResult(
   // Sanitize the fetched full content once: stored in the *_sanitized columns
   // so reads are fast. The raw page HTML / Readability output is untrusted
   // and rendered via dangerouslySetInnerHTML, so it must not be served raw.
-  const fullContentUpdate = withSanitizedEntryContent({
+  const fullContentValues = {
     fullContentOriginal: result.contentOriginal ?? null,
     fullContentCleaned: result.contentCleaned ?? null,
     fullContentHash,
     fullContentFetchedAt: now,
     fullContentError: null,
     updatedAt: now,
-  });
+  };
+  const fullContentUpdate = offloadSanitize
+    ? await withSanitizedEntryContentAsync(fullContentValues)
+    : withSanitizedEntryContent(fullContentValues);
 
   await db.update(entries).set(fullContentUpdate).where(eq(entries.id, entryId));
   return fullContentUpdate;

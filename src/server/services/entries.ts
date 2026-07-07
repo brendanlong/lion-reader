@@ -27,7 +27,8 @@ import {
   subscriptionTags,
   visibleEntries,
 } from "@/server/db/schema";
-import { sanitizeEntryHtml, SANITIZER_VERSION } from "@/server/html/sanitize";
+import { SANITIZER_VERSION } from "@/server/html/sanitize";
+import { sanitizeEntryHtmlInWorker } from "@/server/worker-thread/pool";
 import { logger } from "@/lib/logger";
 import { errors } from "@/server/trpc/errors";
 import { publishMarkAllRead } from "@/server/redis/pubsub";
@@ -363,10 +364,14 @@ async function resolveSanitizedFamily(
       : { original: entries.fullContentOriginal, cleaned: entries.fullContentCleaned };
   const [raw] = await db.select(rawColumns).from(entries).where(eq(entries.id, entryId)).limit(1);
 
-  const resolved = {
-    original: sanitizeEntryHtml(raw?.original ?? null),
-    cleaned: sanitizeEntryHtml(raw?.cleaned ?? null),
-  };
+  // Offload large bodies to a worker thread: this runs on the read request path
+  // and, right after a SANITIZER_VERSION bump, can fire for many entries at once
+  // as stored rows are healed, so it must not block the app-server event loop.
+  const [original, cleaned] = await Promise.all([
+    sanitizeEntryHtmlInWorker(raw?.original ?? null),
+    sanitizeEntryHtmlInWorker(raw?.cleaned ?? null),
+  ]);
+  const resolved = { original, cleaned };
 
   // Persist the healed columns (fire-and-forget). The UPDATE is gated on the
   // family's version still being stale (`IS DISTINCT FROM`, which also matches
