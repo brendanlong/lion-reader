@@ -11,6 +11,9 @@ const article: DemoArticle = {
     "Lion Reader is fully open source. Self-host it, explore the code, or contribute on GitHub.",
   publishedAt: new Date("2025-12-26T10:00:00Z"),
   starred: false,
+  heroImage: "/demo/open-source.png",
+  heroImageAlt:
+    "The Lion Reader lion hugging a heart containing code brackets, with a git-fork symbol nearby.",
   summaryHtml: `<p>Lion Reader is a fully <strong>open source, self-hostable RSS reader</strong> built with modern technologies including Next.js 16, tRPC, PostgreSQL, and Redis. Features include stateless architecture, efficient feed deduplication, AI-powered summaries and narration, and deployment via Fly.io or Docker Compose.</p>`,
   contentHtml: `
     <p>Lion Reader is fully open source and designed to be self-hosted. Every line of code is available on <a href="https://github.com/brendanlong/lion-reader" target="_blank" rel="noopener noreferrer">GitHub</a> for you to inspect, modify, and deploy on your own infrastructure. When you self-host Lion Reader, you own your data completely &mdash; no third-party services, no vendor lock-in, just you and your feeds.</p>

@@ -11,6 +11,9 @@ const article: DemoArticle = {
     "Migrate to or from Lion Reader with standard OPML files, or back up your subscriptions.",
   publishedAt: new Date("2025-12-28T14:00:00Z"),
   starred: false,
+  heroImage: "/demo/opml.png",
+  heroImageAlt:
+    "The Lion Reader lion beside a moving box of feed subscriptions with import and export arrows.",
   summaryHtml: `<p>Lion Reader supports full OPML import and export for migrating feed subscriptions between readers. Import processes run in the background with real-time progress updates, preserving folder/tag structure while validating feeds. Export generates OPML 2.0 with custom titles and complete hierarchy, compatible with any OPML-supporting reader.</p>`,
   contentHtml: `
     <h2>Portable Subscriptions</h2>

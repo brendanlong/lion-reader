@@ -11,6 +11,9 @@ const article: DemoArticle = {
     "Save articles to Lion Reader directly from Discord by reacting to messages with a lion emoji.",
   publishedAt: new Date("2026-01-18T01:20:31Z"),
   starred: false,
+  heroImage: "/demo/discord-bot.png",
+  heroImageAlt:
+    "The Lion Reader lion beside a chat bubble where an article is saved with a lion emoji reaction.",
   summaryHtml: `<p>The Lion Reader Discord bot automatically saves articles when users react to messages with a lion emoji. After linking accounts through Discord OAuth or API tokens, the bot provides instant visual feedback using custom emojis to confirm successful saves or indicate errors.</p>`,
   contentHtml: `
     <h2>Save Articles from Discord</h2>
