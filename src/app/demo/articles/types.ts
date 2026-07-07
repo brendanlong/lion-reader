@@ -19,10 +19,21 @@ export interface DemoArticle {
   summaryHtml: string;
   /**
    * Optional hero illustration (path under public/demo/, e.g. "/demo/text-to-speech.png").
-   * Rendered at the top of the article AND used as the social/OG preview image, so
-   * generate it at ~1200x630. See src/app/demo/articles/CLAUDE.md for the house style.
+   * Rendered at the top of the article. Generate it at ~1200x630. See
+   * src/app/demo/articles/CLAUDE.md for the house style.
+   *
+   * The social/OG preview uses the opaque `-og.png` sibling instead (see `ogImage`):
+   * transparent heroes flatten unpredictably on social cards, so heroes may be
+   * transparent while their OG variant bakes in a background.
    */
   heroImage?: string;
+  /**
+   * Overrides the social/OG preview image. When omitted it defaults to the
+   * `-og.png` sibling of `heroImage` (e.g. "/demo/foo.png" → "/demo/foo-og.png"),
+   * which must be an opaque 1200x630 variant. Set this only to break that
+   * convention. See `resolveOgImage` in data.ts.
+   */
+  ogImage?: string;
   /** Alt text for heroImage; falls back to "<title> illustration" when omitted. */
   heroImageAlt?: string;
 }

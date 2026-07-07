@@ -37,8 +37,10 @@ export interface DemoEntry extends EntryListData {
   contentHtml: string;
   /** Pre-generated AI summary HTML for the summary card */
   summaryHtml: string;
-  /** Optional hero illustration (also used as the social/OG image). See DemoArticle. */
+  /** Optional hero illustration. See DemoArticle. */
   heroImage?: string;
+  /** Resolved opaque social/OG image (the `-og.png` sibling of heroImage). See DemoArticle. */
+  ogImage?: string;
   /** Alt text for heroImage; falls back to "<title> illustration". */
   heroImageAlt?: string;
 }
@@ -125,11 +127,26 @@ export const DEMO_SUBSCRIPTIONS: DemoSubscription[] = Object.entries(SUBSCRIPTIO
   })
 );
 
+/**
+ * Resolve the opaque social/OG image for an article. Uses an explicit `ogImage`
+ * override when set, otherwise the `-og.png` sibling of `heroImage`
+ * (e.g. "/demo/foo.png" → "/demo/foo-og.png"). Returns undefined when the
+ * article has no hero. Heroes may be transparent; the `-og` variant is baked
+ * with a background so social cards render predictably. Every hero must ship an
+ * `-og.png` sibling (see src/app/demo/articles/CLAUDE.md).
+ */
+function resolveOgImage(article: DemoArticle): string | undefined {
+  if (article.ogImage) return article.ogImage;
+  if (!article.heroImage) return undefined;
+  return article.heroImage.replace(/\.png$/, "-og.png");
+}
+
 /** Convert an article to a full DemoEntry by deriving feedId, feedTitle, etc. */
 function articleToEntry(article: DemoArticle): DemoEntry {
   const config = SUBSCRIPTION_CONFIG[article.subscriptionId];
   return {
     ...article,
+    ogImage: resolveOgImage(article),
     feedId: article.subscriptionId,
     fetchedAt: article.publishedAt,
     read: false,

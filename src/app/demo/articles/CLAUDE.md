@@ -146,19 +146,26 @@ optipng -quiet -o5 out.png    # ~1.6 MB -> ~90 KB
 - **128 colors** is the sweet spot for this flat art (no banding on the outlines).
   Eyeball 64 if you want it smaller, but stay at 128 if 64 bands the outlines.
 - Put the final file in `public/demo/<article-id>.png`.
+- Also ship an opaque **`public/demo/<article-id>-og.png`** sibling at the same
+  1200×630 size. The hero may be transparent (it renders on the reader
+  background), but the social/OG card is composited by the platform onto an
+  unpredictable background, so the OG variant must bake in a solid background.
+  When there are no transparency concerns, `-og.png` can just be a copy of the hero.
 
 ### Wiring it into an article
 
 Set two fields on the `DemoArticle` — **don't** hand-write a `<figure>` in
-`contentHtml`. The single `heroImage` field drives both the in-article hero and
-the `og:image` (via `getDemoEntryArticleProps` + `pageOpenGraph`):
+`contentHtml`. The `heroImage` field drives the in-article hero; the `og:image`
+uses its `-og.png` sibling automatically (`resolveOgImage` in data.ts):
 
 ```ts
 heroImage: "/demo/<article-id>.png",
 heroImageAlt: "Descriptive alt text of the scene.",
+// ogImage: "/demo/<article-id>-og.png"  // implicit; set only to override the -og convention
 ```
 
 `getDemoEntryArticleProps` prepends the hero `<figure>` to the content (the reader
-applies `rounded-lg` automatically via `reader-prose`), and each
-demo page's `generateMetadata` passes `entry?.heroImage` to `pageOpenGraph`, so
-the illustration is the social preview on whatever `/demo/...?entry=` URL is shared.
+applies `rounded-lg` automatically via `reader-prose`), and each demo page's
+`generateMetadata` passes `entry?.ogImage` (the resolved `-og.png`) to
+`pageOpenGraph`, so the opaque variant is the social preview on whatever
+`/demo/...?entry=` URL is shared.

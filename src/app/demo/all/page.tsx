@@ -28,7 +28,7 @@ export async function generateMetadata({ searchParams }: Props): Promise<Metadat
   return {
     title,
     description,
-    openGraph: pageOpenGraph(title, description, entry?.heroImage),
+    openGraph: pageOpenGraph(title, description, entry?.ogImage),
     ...(entryId && { alternates: { canonical: `/demo/all?entry=${entryId}` } }),
   };
 }
