@@ -1,10 +1,18 @@
 /**
  * Next.js Proxy (middleware)
  *
- * The ONLY job of this proxy is the claude.ai OAuth workaround: rewriting
- * POST/OPTIONS `/register` to the Dynamic Client Registration handler at
- * `/oauth/register` (see the big comment in `proxy()`). The `config.matcher`
- * below is scoped to `/register` so middleware doesn't run on any other request.
+ * Two jobs, both scoped by `config.matcher` to the OAuth/MCP surface so the proxy
+ * doesn't run on ordinary app traffic:
+ *
+ * 1. The claude.ai OAuth workaround: rewriting POST/OPTIONS `/register` to the
+ *    Dynamic Client Registration handler at `/oauth/register` (see the big
+ *    comment in `proxy()`).
+ * 2. Optional request logging for debugging remote MCP connectors: when
+ *    `LOG_MCP_REQUESTS=true`, one structured line per request to this surface
+ *    (host, method, path, redacted query, user-agent, whether an Authorization
+ *    header was present). This is how we see exactly what claude.ai sends — most
+ *    importantly whether the authenticated `initialize` POST carries a Bearer
+ *    token (issue #986 / the connector header-drop bug).
  *
  * Route authentication is intentionally NOT handled here. It lives in one place:
  * the server-side layout guards — `src/app/(app)/layout.tsx` (via
@@ -17,8 +25,65 @@
  */
 
 import { NextResponse, type NextRequest } from "next/server";
+import { mcpConfig } from "@/server/config/env";
+
+/**
+ * Query params that are safe to log on the OAuth surface (client_id, PKCE
+ * code_challenge, state, resource, scope are public/one-time — see the redaction
+ * note in the connector-debugging guide). Anything else, notably an
+ * authorization `code`, is redacted so it never lands in logs.
+ */
+const SAFE_QUERY_PARAMS = new Set([
+  "client_id",
+  "code_challenge",
+  "code_challenge_method",
+  "response_type",
+  "redirect_uri",
+  "resource",
+  "scope",
+  "state",
+  "error",
+]);
+
+function redactedQuery(url: URL): string | undefined {
+  if (url.searchParams.size === 0) return undefined;
+  const out = new URLSearchParams();
+  for (const [key, value] of url.searchParams) {
+    out.set(key, SAFE_QUERY_PARAMS.has(key) ? value : "[redacted]");
+  }
+  return out.toString();
+}
+
+/**
+ * Emit one structured line for a request to the OAuth/MCP surface. Uses
+ * console.log directly (not the shared logger) to keep the middleware bundle from
+ * pulling in Sentry; the JSON shape matches the logger's so it collates in
+ * production log search.
+ */
+function logSurfaceRequest(request: NextRequest): void {
+  console.log(
+    JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: "info",
+      message: "MCP surface request",
+      service: "lion-reader",
+      host: request.headers.get("host"),
+      method: request.method,
+      path: request.nextUrl.pathname,
+      query: redactedQuery(request.nextUrl),
+      userAgent: request.headers.get("user-agent"),
+      // Boolean only — never log the token itself.
+      hasAuthorization: request.headers.has("authorization"),
+      contentType: request.headers.get("content-type"),
+    })
+  );
+}
 
 export function proxy(request: NextRequest) {
+  if (mcpConfig.logRequests) {
+    logSurfaceRequest(request);
+  }
+
   // ==========================================================================
   // HACK: claude.ai OAuth "root path" workaround — `/register` is METHOD-SPLIT.
   //
@@ -49,8 +114,6 @@ export function proxy(request: NextRequest) {
   //   https://github.com/anthropics/claude-ai-mcp/issues/341  (tracking bug)
   //   https://github.com/anthropics/claude-ai-mcp/issues/82   (root-path synthesis)
   // ==========================================================================
-  // The pathname guard is redundant with `config.matcher` today, but keeps the
-  // rewrite correct on its own if the matcher is ever widened.
   if (
     request.nextUrl.pathname === "/register" &&
     (request.method === "POST" || request.method === "OPTIONS")
@@ -65,10 +128,19 @@ export function proxy(request: NextRequest) {
 }
 
 /**
- * Only run this proxy on `/register` — its sole purpose is the method-split
- * rewrite above. Everything else (auth included) is handled elsewhere, so there
- * is no reason to invoke middleware on other requests.
+ * Run the proxy on the OAuth/MCP surface only. This covers the `/register`
+ * method-split above and every path a remote MCP connector touches (so the
+ * optional request logging sees the whole handshake), while leaving ordinary
+ * app traffic untouched.
  */
 export const config = {
-  matcher: ["/register"],
+  matcher: [
+    "/register",
+    "/mcp",
+    "/api/mcp",
+    "/authorize",
+    "/token",
+    "/oauth/:path*",
+    "/.well-known/:path*",
+  ],
 };

@@ -83,7 +83,15 @@ export async function GET(request: NextRequest) {
     return rateLimited;
   }
 
-  logger.info("OAuth authorize GET", { url: request.nextUrl.pathname + request.nextUrl.search });
+  // Host drives which OAuth/MCP surface this request belongs to (apex vs the
+  // dedicated MCP host): the token's resource audience and the login/consent
+  // redirect origins must stay on the host the client is talking to, so a
+  // host-only session cookie set during login is sent back to /authorize.
+  const host = request.headers.get("host");
+  logger.info("OAuth authorize GET", {
+    url: request.nextUrl.pathname + request.nextUrl.search,
+    host,
+  });
   const searchParams = request.nextUrl.searchParams;
 
   // Extract required parameters
@@ -207,16 +215,17 @@ export async function GET(request: NextRequest) {
     );
   }
   // Any client-supplied resource has been validated as an alias of this server
-  // above, so bind the token to the canonical identifier in all cases. Newly
-  // minted tokens therefore never carry the legacy origin audience, which lets
-  // that accepted alias age out of circulation.
-  const effectiveResource = getResourceIdentifier();
+  // above, so bind the token to the canonical identifier for THIS host in all
+  // cases (apex → /api/mcp, MCP host → /mcp). Newly minted tokens therefore
+  // never carry the legacy origin audience, which lets that accepted alias age
+  // out of circulation.
+  const effectiveResource = getResourceIdentifier(host);
 
   // Check if user is authenticated
   const sessionToken = getSessionToken(request);
   if (!sessionToken) {
     // Redirect to login with return URL
-    const loginUrl = new URL("/login", getIssuer());
+    const loginUrl = new URL("/login", getIssuer(host));
     loginUrl.searchParams.set("redirect", request.nextUrl.pathname + request.nextUrl.search);
     return NextResponse.redirect(loginUrl.toString());
   }
@@ -224,7 +233,7 @@ export async function GET(request: NextRequest) {
   const session = await validateSession(sessionToken);
   if (!session) {
     // Session invalid, redirect to login
-    const loginUrl = new URL("/login", getIssuer());
+    const loginUrl = new URL("/login", getIssuer(host));
     loginUrl.searchParams.set("redirect", request.nextUrl.pathname + request.nextUrl.search);
     return NextResponse.redirect(loginUrl.toString());
   }
@@ -236,7 +245,7 @@ export async function GET(request: NextRequest) {
 
   if (!alreadyConsented) {
     // Redirect to consent page
-    const consentUrl = new URL("/oauth/consent", getIssuer());
+    const consentUrl = new URL("/oauth/consent", getIssuer(host));
     // Pass all OAuth parameters to consent page
     consentUrl.searchParams.set("client_id", clientId);
     consentUrl.searchParams.set("redirect_uri", redirectUri);
@@ -273,6 +282,7 @@ export async function POST(request: NextRequest) {
     return rateLimited;
   }
 
+  const host = request.headers.get("host");
   const formData = await request.formData();
 
   const clientId = formData.get("client_id") as string;
@@ -356,10 +366,10 @@ export async function POST(request: NextRequest) {
     );
   }
   // Any client-supplied resource has been validated as an alias of this server
-  // above, so bind the token to the canonical identifier in all cases. Newly
-  // minted tokens therefore never carry the legacy origin audience, which lets
-  // that accepted alias age out of circulation.
-  const effectiveResource = getResourceIdentifier();
+  // above, so bind the token to the canonical identifier for THIS host in all
+  // cases. Newly minted tokens therefore never carry the legacy origin audience,
+  // which lets that accepted alias age out of circulation.
+  const effectiveResource = getResourceIdentifier(host);
 
   // Handle user decision
   if (action === "deny") {
