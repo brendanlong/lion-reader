@@ -241,6 +241,41 @@ test.describe("Wallabag API happy path", () => {
 });
 
 /**
+ * A Wallabag token is an OAuth access token scoped to `reader:full-access`. It
+ * must not be usable outside the Wallabag surface: not on the MCP endpoint (that
+ * needs the `mcp` scope), not on the main tRPC/REST account-management surface
+ * (OAuth tokens aren't accepted there at all), and not on the Google Reader API
+ * (which authenticates sessions, not OAuth tokens). These lock in that a leaked
+ * Wallabag credential can't be replayed to escalate.
+ */
+test.describe("Wallabag API credential isolation", () => {
+  test("token is rejected at the MCP endpoint (lacks the mcp scope)", async ({ request }) => {
+    const { access_token } = await getTokens(request);
+    const res = await request.get("/api/mcp", {
+      headers: { Authorization: `Bearer ${access_token}` },
+    });
+    expect(res.status()).toBe(401);
+  });
+
+  test("token cannot reach account-management endpoints", async ({ request }) => {
+    const { access_token } = await getTokens(request);
+    // Session-only account surface (listing the user's active sessions).
+    const res = await request.get("/api/v1/users/me/sessions", {
+      headers: { Authorization: `Bearer ${access_token}` },
+    });
+    expect(res.status()).toBe(401);
+  });
+
+  test("token cannot be replayed against the Google Reader API", async ({ request }) => {
+    const { access_token } = await getTokens(request);
+    const res = await request.get("/api/greader.php/reader/api/0/user-info", {
+      headers: { Authorization: `Bearer ${access_token}` },
+    });
+    expect(res.status()).toBe(401);
+  });
+});
+
+/**
  * Starts a throwaway HTTP server on a random port serving a single article page,
  * returning its URL and a close function. The app fetches this when saving.
  */

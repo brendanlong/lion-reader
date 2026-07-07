@@ -171,3 +171,38 @@ test.describe("Google Reader API happy path", () => {
     }
   });
 });
+
+/**
+ * A Google Reader token is a *scoped* session (`reader:full-access`), minted so
+ * it can't be replayed as a full-access browser session. It must be rejected
+ * (as if invalid) by the main tRPC/REST surface — whether presented as a bearer
+ * token or as the `session` cookie a browser would send — and by the Wallabag
+ * API (which authenticates OAuth access tokens, not sessions). These lock in
+ * that a leaked Google Reader token can't reach account management.
+ */
+test.describe("Google Reader API credential isolation", () => {
+  test("token cannot reach account-management endpoints as a bearer token", async ({ request }) => {
+    const token = await getToken(request);
+    // Session-only account surface (listing the user's active sessions).
+    const res = await request.get("/api/v1/users/me/sessions", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status()).toBe(401);
+  });
+
+  test("token cannot be replayed as a browser session cookie", async ({ request }) => {
+    const token = await getToken(request);
+    const res = await request.get("/api/v1/users/me/sessions", {
+      headers: { Cookie: `session=${token}` },
+    });
+    expect(res.status()).toBe(401);
+  });
+
+  test("token cannot be replayed against the Wallabag API", async ({ request }) => {
+    const token = await getToken(request);
+    const res = await request.get("/api/wallabag/api/user", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status()).toBe(401);
+  });
+});
