@@ -116,14 +116,9 @@ Tips (learned the hard way):
 - **Say "off-white background", not "paper"** — "paper" adds visible fiber texture.
 - **No _sentences_ in images**, but meaningful **iconography is fine and good**: an
   RSS glyph, JSON `{ }`, `</>`, file-type badges (W/Md/T), a git-branch all read
-  cleanly. The thing to avoid is asking for banner/label prose, which comes out as
-  garbled letters. Give each article one **distinct, recognizable prop** and keep
+  cleanly. Give each article one **distinct, recognizable prop** and keep
   motifs from colliding across the set (e.g. `browser-extension` = a puzzle piece
   in a browser; `plugins` = several modular pieces).
-- **No third-party logos, even under a permissive code license.** Our MIT license
-  covers our copyright, not others' trademarks. Use generic motifs (git-branch,
-  puzzle piece, chat bubble, shield) rather than the OSI keyhole, GitHub octocat,
-  Discord mark, etc.
 - Nano Banana writes a `<name>_thumb.jpeg` next to the output — delete it, and
   clean up rejected drafts.
 - The user reviews over the web UI. To share candidates, serve the image dir over
