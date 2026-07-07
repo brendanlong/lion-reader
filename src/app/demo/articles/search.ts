@@ -10,6 +10,9 @@ const article: DemoArticle = {
   summary: "Search across all your entries by title, content, or both with instant results.",
   publishedAt: new Date("2025-12-28T10:00:00Z"),
   starred: false,
+  heroImage: "/demo/search.png",
+  heroImageAlt:
+    "The Lion Reader lion peering through a large magnifying glass at a floating article card.",
   summaryHtml: `<p>Lion Reader provides <strong>fast full-text search</strong> across your entire archive using PostgreSQL with English stemming. Search is <strong>scope-configurable</strong> (title, content, or both) and combines with filters like subscriptions, tags, and read state. Results are <strong>relevance-ranked</strong> and available via web UI, API, and MCP server.</p>`,
   contentHtml: `
     <h2>Search Everything, Instantly</h2>

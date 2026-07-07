@@ -33,13 +33,35 @@ Keep the subject centered with side whitespace so the crop is safe.
 
 ### Generating an image
 
-Pass the logo as a character reference and force `mode: "generate"` so the
-aspect ratio is honored (see gotcha below). Worked example that produced the
-Text-to-Speech hero (`public/demo/text-to-speech.png`):
+Pass the lion as a character reference and force `mode: "generate"` so the aspect
+ratio is honored (see gotcha below). For consistent, on-model lions across the
+set, use the **single canonical full-body mascot** and the **`pro`** model tier:
+
+- `input_image_path_1: assets/lion-body.png` — the canonical full-body mascot: a
+  clean sitting lion with well-defined paws, legs, tail and cream chest. **Use
+  exactly one reference.** This evolved through three tries: (1) the logo alone
+  on `nb2` — the logo is a lion _behind a book_, so the face/body aren't visible
+  and the lion drifted between images; (2) logo + `lionreader_emojis.png` sheet
+  together on `pro` — two references confused the model and it still drifted;
+  (3) a single clean **face** crop (`assets/lion-face.png`) on `pro` — fixed the
+  face but, with no body to copy, `nb`'s invented legs/paws came out blurry and
+  malformed. The fix was to first generate one clean full-body lion from the face
+  crop, save it as `assets/lion-body.png`, and use **that** as the sole reference.
+  It keeps proportions/paws/tail consistent _and_ still poses fine (the model
+  re-poses it for e.g. the dashing `performance` hero). `assets/lion-face.png` is
+  kept for regenerating the body reference itself.
+- `model_tier: "pro"` — noticeably better reference adherence than the default
+  `nb2` for this style-matching job.
+
+In the prompt, say "match the lion's body, face, proportions, paws, tail and
+colors precisely to the reference mascot image". Worked example that produced the
+Text-to-Speech hero (`public/demo/text-to-speech.png`) used an older
+single-logo/`nb2` recipe:
 
 ```
 mode: "generate"                       # REQUIRED — see gotcha
-input_image_path_1: assets/logo-original.png
+input_image_path_1: assets/lion-body.png   # single canonical full-body mascot
+model_tier: "pro"                      # better reference adherence than nb2
 aspect_ratio: "16:9"                   # closest wide preset; cropped to 1200x630 later
 resolution: "2k"
 negative_prompt: "readable text, real words, watermark, paper texture, gradient shading, photorealism, 3d render, drop shadows, square crop, portrait"
@@ -62,8 +84,10 @@ Tips (learned the hard way):
   ignoring `aspect_ratio`. `mode: "generate"` uses the logo as a style/character
   reference instead and honors 3:2. Also add "wide horizontal landscape banner"
   to the prompt as belt-and-suspenders.
-- **Always pass the logo** as `input_image_path_1` so the lion stays on-model
-  across articles.
+- **Always pass `assets/lion-body.png`** as the single `input_image_path_1` so the
+  lion stays on-model across articles. Don't stack multiple references, and don't
+  use a head-only reference (the model renders bad legs when it has to invent the
+  body).
 - **State what you want, don't negate.** Spell out the palette and "flat solid
   fills, thick navy outlines"; reserve `negative_prompt` for stray artifacts.
 - **Say "off-white background", not "paper"** — "paper" adds visible fiber texture.
