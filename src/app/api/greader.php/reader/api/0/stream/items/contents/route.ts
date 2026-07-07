@@ -52,16 +52,13 @@ export async function POST(request: Request): Promise<Response> {
   // Batch resolve int64 IDs to UUIDs
   const uuidMap = await batchInt64ToUuid(db, itemIds);
 
-  // Fetch full entries for resolved UUIDs
-  const items = [];
-  for (const [, uuid] of uuidMap) {
-    try {
-      const entry = await entriesService.getEntry(db, session.user.id, uuid);
-      items.push(formatEntryAsItem(entry));
-    } catch {
-      // Skip entries that can't be found (deleted, not visible to user, etc.)
-    }
-  }
+  // Fetch full entries in a single bulk query (mirrors the Wallabag route)
+  // rather than one getEntry per id. getEntries returns entries in the order of
+  // the given UUIDs and silently skips ones that can't be found (deleted, not
+  // visible to the user, etc.).
+  const uuids = [...uuidMap.values()];
+  const entries = await entriesService.getEntries(db, session.user.id, uuids);
+  const items = entries.map(formatEntryAsItem);
 
   return jsonResponse({
     direction: "ltr",

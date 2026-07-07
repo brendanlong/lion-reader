@@ -10,7 +10,8 @@
  * - user/-/label/{name} — entries in a tag/folder
  *
  * Query parameters:
- * - n: number of items (default 20, max 1000)
+ * - n: number of items (default 20, max 300) — capped lower than the ids stream
+ *   because each item carries a full (potentially large, sanitized) article body
  * - c: continuation token (cursor)
  * - ot: oldest timestamp (unix seconds) — exclude items older than this
  * - nt: newest timestamp (unix seconds) — exclude items newer than this
@@ -52,7 +53,7 @@ async function handleStreamContents(
   const url = new URL(request.url);
   const searchParams = url.searchParams;
 
-  const count = Math.min(parseInt(searchParams.get("n") ?? "20", 10) || 20, 1000);
+  const count = Math.min(parseInt(searchParams.get("n") ?? "20", 10) || 20, 300);
   const continuation = searchParams.get("c") ?? undefined;
   const sortOrder = searchParams.get("r") === "o" ? "oldest" : "newest";
   const excludeTarget = searchParams.get("xt");
@@ -63,7 +64,7 @@ async function handleStreamContents(
   const listParams: entriesService.ListEntriesParams = {
     userId: session.user.id,
     limit: count,
-    maxLimit: 1000,
+    maxLimit: 300,
     cursor: continuation,
     sortOrder: sortOrder as "newest" | "oldest",
     showSpam: session.user.showSpam,
@@ -133,24 +134,26 @@ async function handleStreamContents(
   // Fetch entries using service layer
   const result = await entriesService.listEntries(db, listParams);
 
-  // Get full content for each entry
-  const items = await Promise.all(
-    result.items.map(async (entry) => {
-      try {
-        const full = await entriesService.getEntry(db, session.user.id, entry.id);
-        return formatEntryAsItem(full);
-      } catch {
-        // If entry can't be fetched with full content, use list data
-        return formatEntryAsItem({
-          ...entry,
-          contentOriginal: null,
-          contentCleaned: null,
-          feedUrl: null,
-          unsubscribeUrl: null,
-        });
-      }
-    })
+  // Get full content in a single bulk query rather than one getEntry per entry.
+  const fullEntries = await entriesService.getEntries(
+    db,
+    session.user.id,
+    result.items.map((e) => e.id)
   );
+  const fullMap = new Map(fullEntries.map((e) => [e.id, e]));
+  const items = result.items.map((entry) => {
+    const full = fullMap.get(entry.id);
+    // If full content isn't available, fall back to list data.
+    return formatEntryAsItem(
+      full ?? {
+        ...entry,
+        contentOriginal: null,
+        contentCleaned: null,
+        feedUrl: null,
+        unsubscribeUrl: null,
+      }
+    );
+  });
 
   const response: Record<string, unknown> = {
     direction: "ltr",

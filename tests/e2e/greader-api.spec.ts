@@ -170,6 +170,43 @@ test.describe("Google Reader API happy path", () => {
       expect(typeof ref.id).toBe("string");
     }
   });
+
+  test("stream/items/contents returns full items for the given ids in order", async ({
+    request,
+  }) => {
+    const token = await getToken(request);
+
+    // Grab a couple of item ids from the reading list.
+    const idsRes = await request.get(
+      `${API_BASE}/stream/items/ids?s=user/-/state/com.google/reading-list`,
+      { headers: authHeader(token) }
+    );
+    expect(idsRes.status()).toBe(200);
+    const idsBody = await idsRes.json();
+    const ids: string[] = idsBody.itemRefs.map((ref: { id: string }) => ref.id);
+    expect(ids.length).toBeGreaterThanOrEqual(1);
+
+    // POST them to the batch contents endpoint (form-encoded, i=... repeated).
+    const form = new URLSearchParams();
+    for (const id of ids) form.append("i", id);
+    const res = await request.post(`${API_BASE}/stream/items/contents`, {
+      headers: {
+        ...authHeader(token),
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      data: form.toString(),
+    });
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body.items)).toBe(true);
+    expect(body.items.length).toBe(ids.length);
+    for (const item of body.items) {
+      expect(typeof item.id).toBe("string");
+      // Full items carry the article body in either `content` (large bodies) or
+      // `summary` (short bodies) — the batch fetch must populate one of them.
+      expect(item.content ?? item.summary).toBeTruthy();
+    }
+  });
 });
 
 /**
