@@ -8,7 +8,7 @@
  */
 
 import { randomBytes, createHmac, timingSafeEqual } from "crypto";
-import { eq, and, lt } from "drizzle-orm";
+import { eq, and, lt, desc } from "drizzle-orm";
 import { fetchWithSsrfProtection } from "../http/ssrf";
 import { readResponseBufferWithSizeLimit } from "../http/fetch";
 import { db } from "../db";
@@ -143,6 +143,62 @@ export function canUseWebSub(): boolean {
 }
 
 /**
+ * The action a feed fetch should take on the feed's WebSub subscription, based
+ * on how the feed's advertised hub URL changed since the last fetch.
+ *
+ * - `subscribe` - feed advertises a hub and we're not subscribed yet
+ * - `resubscribe` - feed advertises a *different* hub than the one we're
+ *   subscribed to (publisher switched hubs); tear down the old subscription and
+ *   subscribe to the new hub
+ * - `deactivate` - feed no longer advertises a hub; drop back to polling
+ * - `none` - nothing to do (no hub, WebSub unavailable, or already subscribed to
+ *   the same hub — lease renewal is handled separately)
+ */
+export type WebsubAction = "subscribe" | "resubscribe" | "deactivate" | "none";
+
+/**
+ * Decides what to do with a feed's WebSub subscription given the hub URL seen in
+ * the latest fetch versus the previously stored state. Pure function so the
+ * decision can be unit-tested without a DB or HTTP.
+ *
+ * The `resubscribe` case is the one that keeps a publisher's hub switch from
+ * silently breaking push: without it, a feed that changes its `rel="hub"` while
+ * `websubActive` is already true would keep a dangling subscription pointed at
+ * the old (often dead) hub and never subscribe to the new one until the lease
+ * happened to expire.
+ */
+export function resolveWebsubAction(params: {
+  /** Hub URL stored on the feed before this fetch. */
+  previousHubUrl: string | null;
+  /** Whether the feed was already actively subscribed via WebSub. */
+  previousWebsubActive: boolean;
+  /** Hub URL advertised in the current fetch (null if none). */
+  newHubUrl: string | null;
+  /** Whether WebSub is usable at all (public callback URL configured). */
+  canUseWebSub: boolean;
+}): WebsubAction {
+  const { previousHubUrl, previousWebsubActive, newHubUrl, canUseWebSub } = params;
+
+  // Feed advertises no hub - tear down any active subscription, else nothing.
+  if (!newHubUrl) {
+    return previousWebsubActive ? "deactivate" : "none";
+  }
+
+  // Feed has a hub but we can't receive callbacks - stay on polling.
+  if (!canUseWebSub) {
+    return "none";
+  }
+
+  // Not subscribed yet - subscribe fresh.
+  if (!previousWebsubActive) {
+    return "subscribe";
+  }
+
+  // Already active: only act if the publisher switched to a different hub.
+  return previousHubUrl !== newHubUrl ? "resubscribe" : "none";
+}
+
+/**
  * Gets the base URL for WebSub callbacks.
  * Returns the configured NEXT_PUBLIC_APP_URL or null if not available.
  *
@@ -160,15 +216,21 @@ function getWebsubCallbackBaseUrl(): string | null {
 /**
  * Generates a WebSub callback URL for a specific feed.
  *
+ * The subscription ID is part of the path so a hub's verification/notification
+ * callbacks map to exactly one subscription row. Without it (the old per-feed
+ * URL), a feed that switched hubs — leaving an old and a new subscription row —
+ * produced callbacks that were ambiguous by feed alone.
+ *
  * @param feedId - The feed ID
+ * @param subscriptionId - The WebSub subscription ID
  * @returns The callback URL or null if WebSub is not available
  */
-function generateCallbackUrl(feedId: string): string | null {
+function generateCallbackUrl(feedId: string, subscriptionId: string): string | null {
   const baseUrl = getWebsubCallbackBaseUrl();
   if (!baseUrl) {
     return null;
   }
-  return `${baseUrl}/api/webhooks/websub/${feedId}`;
+  return `${baseUrl}/api/webhooks/websub/${feedId}/${subscriptionId}`;
 }
 
 /**
@@ -219,11 +281,6 @@ export async function subscribeToHub(feed: Feed): Promise<SubscribeToHubResult> 
     return { success: false, error: "WebSub is not available (no public callback URL)" };
   }
 
-  const callbackUrl = generateCallbackUrl(feed.id);
-  if (!callbackUrl) {
-    return { success: false, error: "Could not generate callback URL" };
-  }
-
   // Use selfUrl as topic if available, otherwise fall back to feed URL
   const topicUrl = feed.selfUrl || feed.url;
   if (!topicUrl) {
@@ -232,7 +289,9 @@ export async function subscribeToHub(feed: Feed): Promise<SubscribeToHubResult> 
 
   const secret = generateCallbackSecret();
 
-  // Check if subscription already exists for this feed + hub combination
+  // Check if subscription already exists for this feed + hub combination.
+  // Reusing the row keeps the subscription ID (and thus the callback URL) stable
+  // across renewals; a hub switch goes through deactivate + a fresh row instead.
   const existing = await db
     .select()
     .from(websubSubscriptions)
@@ -241,11 +300,17 @@ export async function subscribeToHub(feed: Feed): Promise<SubscribeToHubResult> 
     )
     .limit(1);
 
-  let subscriptionId: string;
+  // The subscription ID must be known before building the callback URL, since it
+  // is part of the path.
+  const subscriptionId = existing.length > 0 ? existing[0].id : generateUuidv7();
+
+  const callbackUrl = generateCallbackUrl(feed.id, subscriptionId);
+  if (!callbackUrl) {
+    return { success: false, error: "Could not generate callback URL" };
+  }
 
   if (existing.length > 0) {
     // Update existing subscription with new secret
-    subscriptionId = existing[0].id;
     await db
       .update(websubSubscriptions)
       .set({
@@ -264,7 +329,6 @@ export async function subscribeToHub(feed: Feed): Promise<SubscribeToHubResult> 
     });
   } else {
     // Create new pending subscription
-    subscriptionId = generateUuidv7();
     await db.insert(websubSubscriptions).values({
       id: subscriptionId,
       feedId: feed.id,
@@ -373,40 +437,26 @@ export interface VerificationResult {
 }
 
 /**
- * Handles a WebSub verification callback from a hub.
- *
- * The hub sends a GET request with query parameters to verify
- * that we want to receive notifications.
- *
- * @param feedId - The feed ID from the callback URL
- * @param params - Query parameters from the hub
- * @returns Verification result with challenge or error
- *
- * @example
- * // In your API route handler:
- * const result = await handleVerificationChallenge(feedId, {
- *   mode: searchParams.get("hub.mode"),
- *   topic: searchParams.get("hub.topic"),
- *   challenge: searchParams.get("hub.challenge"),
- *   leaseSeconds: searchParams.get("hub.lease_seconds"),
- * });
- *
- * if (result.success) {
- *   return new Response(result.challenge, { status: 200 });
- * } else {
- *   return new Response(result.error, { status: 404 });
- * }
+ * Query parameters a hub sends on a verification callback.
  */
-export async function handleVerificationChallenge(
-  feedId: string,
-  params: {
-    mode: string | null;
-    topic: string | null;
-    challenge: string | null;
-    leaseSeconds: string | null;
-  }
+export interface VerificationParams {
+  mode: string | null;
+  topic: string | null;
+  challenge: string | null;
+  leaseSeconds: string | null;
+}
+
+/**
+ * Applies a verification callback to an already-resolved subscription row:
+ * validates the params + topic, then activates (subscribe) or confirms teardown
+ * (unsubscribe). Shared by the per-subscription and legacy per-feed entry points.
+ */
+async function applyVerificationChallenge(
+  subscription: WebsubSubscription,
+  params: VerificationParams
 ): Promise<VerificationResult> {
   const { mode, topic, challenge, leaseSeconds } = params;
+  const feedId = subscription.feedId;
 
   // Validate required parameters
   if (!mode || !topic || !challenge) {
@@ -415,18 +465,6 @@ export async function handleVerificationChallenge(
 
   if (mode !== "subscribe" && mode !== "unsubscribe") {
     return { success: false, error: `Unsupported mode: ${mode}` };
-  }
-
-  // Find the subscription for this feed
-  const [subscription] = await db
-    .select()
-    .from(websubSubscriptions)
-    .where(eq(websubSubscriptions.feedId, feedId))
-    .limit(1);
-
-  if (!subscription) {
-    logger.warn("WebSub verification for unknown subscription", { feedId, topic });
-    return { success: false, error: "Subscription not found" };
   }
 
   // Verify the topic matches what we subscribed to
@@ -480,6 +518,73 @@ export async function handleVerificationChallenge(
 }
 
 /**
+ * Handles a WebSub verification callback for a specific subscription.
+ *
+ * This is the primary entry point: the callback URL carries both the feed ID and
+ * the subscription ID (`/api/webhooks/websub/:feedId/:subscriptionId`), so the
+ * callback resolves to exactly one subscription row — no ambiguity when a feed
+ * has multiple subscription rows (e.g. after switching hubs).
+ *
+ * @param feedId - The feed ID from the callback URL
+ * @param subscriptionId - The subscription ID from the callback URL
+ * @param params - Query parameters from the hub
+ * @returns Verification result with challenge or error
+ */
+export async function handleVerificationChallenge(
+  feedId: string,
+  subscriptionId: string,
+  params: VerificationParams
+): Promise<VerificationResult> {
+  const [subscription] = await db
+    .select()
+    .from(websubSubscriptions)
+    .where(and(eq(websubSubscriptions.id, subscriptionId), eq(websubSubscriptions.feedId, feedId)))
+    .limit(1);
+
+  if (!subscription) {
+    logger.warn("WebSub verification for unknown subscription", {
+      feedId,
+      subscriptionId,
+      topic: params.topic,
+    });
+    return { success: false, error: "Subscription not found" };
+  }
+
+  return applyVerificationChallenge(subscription, params);
+}
+
+/**
+ * Handles a WebSub verification callback that arrived at the legacy per-feed
+ * callback URL (`/api/webhooks/websub/:feedId`), used by subscriptions registered
+ * before per-subscription callback URLs. Resolves the subscription by feed,
+ * preferring the newest row since a hub switch can leave more than one.
+ *
+ * Transitional: once all subscriptions have renewed onto per-subscription URLs,
+ * this and the legacy route can be removed.
+ */
+export async function handleVerificationChallengeByFeed(
+  feedId: string,
+  params: VerificationParams
+): Promise<VerificationResult> {
+  const [subscription] = await db
+    .select()
+    .from(websubSubscriptions)
+    .where(eq(websubSubscriptions.feedId, feedId))
+    .orderBy(desc(websubSubscriptions.createdAt))
+    .limit(1);
+
+  if (!subscription) {
+    logger.warn("WebSub verification for unknown subscription", {
+      feedId,
+      topic: params.topic,
+    });
+    return { success: false, error: "Subscription not found" };
+  }
+
+  return applyVerificationChallenge(subscription, params);
+}
+
+/**
  * Handles an unsubscribe verification callback from a hub.
  *
  * Per W3C WebSub spec Section 5.3, we only confirm unsubscribes that we
@@ -530,45 +635,15 @@ async function handleUnsubscribeVerification(
 }
 
 /**
- * Verifies the HMAC signature of a WebSub content notification.
- *
- * The hub signs the request body using the shared secret with HMAC-SHA256
- * (or other algorithms) and includes the signature in the X-Hub-Signature header.
- *
- * @param feedId - The feed ID from the callback URL
- * @param signature - The X-Hub-Signature header value (e.g., "sha256=abc123...")
- * @param body - The raw request body as a Buffer or string
- * @returns true if the signature is valid, false otherwise
- *
- * @example
- * const signatureHeader = req.headers.get("x-hub-signature");
- * const body = await req.text();
- *
- * if (!verifyHmacSignature(feedId, signatureHeader, body)) {
- *   return new Response("Invalid signature", { status: 403 });
- * }
+ * Computes whether an X-Hub-Signature matches a body under a subscription's
+ * shared secret. Shared by the per-subscription and legacy per-feed entry points.
  */
-export async function verifyHmacSignature(
-  feedId: string,
-  signature: string | null,
+function computeSignatureValid(
+  subscription: WebsubSubscription,
+  signature: string,
   body: Buffer | string
-): Promise<boolean> {
-  if (!signature) {
-    logger.warn("WebSub notification missing signature", { feedId });
-    return false;
-  }
-
-  // Find the subscription
-  const [subscription] = await db
-    .select()
-    .from(websubSubscriptions)
-    .where(and(eq(websubSubscriptions.feedId, feedId), eq(websubSubscriptions.state, "active")))
-    .limit(1);
-
-  if (!subscription) {
-    logger.warn("WebSub notification for unknown/inactive subscription", { feedId });
-    return false;
-  }
+): boolean {
+  const feedId = subscription.feedId;
 
   // Parse signature format: "algorithm=hex_digest"
   const [algorithm, expectedDigest] = signature.split("=");
@@ -599,6 +674,84 @@ export async function verifyHmacSignature(
     });
     return false;
   }
+}
+
+/**
+ * Verifies the HMAC signature of a WebSub content notification for a specific
+ * subscription (primary entry point; callback carries feed + subscription IDs).
+ *
+ * The hub signs the request body using the shared secret with HMAC-SHA256
+ * (or other algorithms) and includes the signature in the X-Hub-Signature header.
+ *
+ * @param feedId - The feed ID from the callback URL
+ * @param subscriptionId - The subscription ID from the callback URL
+ * @param signature - The X-Hub-Signature header value (e.g., "sha256=abc123...")
+ * @param body - The raw request body as a Buffer or string
+ * @returns true if the signature is valid, false otherwise
+ */
+export async function verifyHmacSignature(
+  feedId: string,
+  subscriptionId: string,
+  signature: string | null,
+  body: Buffer | string
+): Promise<boolean> {
+  if (!signature) {
+    logger.warn("WebSub notification missing signature", { feedId, subscriptionId });
+    return false;
+  }
+
+  const [subscription] = await db
+    .select()
+    .from(websubSubscriptions)
+    .where(
+      and(
+        eq(websubSubscriptions.id, subscriptionId),
+        eq(websubSubscriptions.feedId, feedId),
+        eq(websubSubscriptions.state, "active")
+      )
+    )
+    .limit(1);
+
+  if (!subscription) {
+    logger.warn("WebSub notification for unknown/inactive subscription", {
+      feedId,
+      subscriptionId,
+    });
+    return false;
+  }
+
+  return computeSignatureValid(subscription, signature, body);
+}
+
+/**
+ * Verifies the HMAC signature of a WebSub content notification that arrived at
+ * the legacy per-feed callback URL. Resolves the active subscription by feed.
+ *
+ * Transitional: removable once all subscriptions have migrated to
+ * per-subscription callback URLs.
+ */
+export async function verifyHmacSignatureByFeed(
+  feedId: string,
+  signature: string | null,
+  body: Buffer | string
+): Promise<boolean> {
+  if (!signature) {
+    logger.warn("WebSub notification missing signature", { feedId });
+    return false;
+  }
+
+  const [subscription] = await db
+    .select()
+    .from(websubSubscriptions)
+    .where(and(eq(websubSubscriptions.feedId, feedId), eq(websubSubscriptions.state, "active")))
+    .limit(1);
+
+  if (!subscription) {
+    logger.warn("WebSub notification for unknown/inactive subscription", { feedId });
+    return false;
+  }
+
+  return computeSignatureValid(subscription, signature, body);
 }
 
 /**

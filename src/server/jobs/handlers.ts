@@ -32,6 +32,7 @@ import {
   canUseWebSub,
   subscribeToHub,
   deactivateWebsub,
+  resolveWebsubAction,
 } from "../feed/websub";
 import { getDomainFromUrl } from "../feed/types";
 import type { ParsedCacheHeaders } from "../feed/cache-headers";
@@ -469,8 +470,27 @@ async function processSuccessfulFetch(
   // Handle WebSub subscription changes
   const websubMetadata: Record<string, unknown> = {};
 
-  if (newHubUrl && !feed.websubActive && canUseWebSub()) {
-    // Feed has a hub URL but WebSub isn't active - try to subscribe
+  const websubAction = resolveWebsubAction({
+    previousHubUrl: feed.hubUrl,
+    previousWebsubActive: feed.websubActive ?? false,
+    newHubUrl,
+    canUseWebSub: canUseWebSub(),
+  });
+
+  if (websubAction === "subscribe" || websubAction === "resubscribe") {
+    // On a hub switch, tear down the stale subscription to the old hub first so
+    // we don't leave a dangling active row pointed at a hub that will never
+    // deliver again. deactivateWebsub also clears websubActive, so it stays
+    // false until the new hub verifies our subscription.
+    if (websubAction === "resubscribe") {
+      await deactivateWebsub(feed.id);
+      websubMetadata.websubHubChanged = true;
+      logger.info("WebSub hub URL changed - resubscribing to new hub", {
+        feedId: feed.id,
+        previousHubUrl: feed.hubUrl,
+        newHubUrl,
+      });
+    }
     const updatedFeed: Feed = {
       ...feed,
       hubUrl: newHubUrl,
@@ -491,7 +511,7 @@ async function processSuccessfulFetch(
         error: subscribeResult.error,
       });
     }
-  } else if (!newHubUrl && feed.websubActive) {
+  } else if (websubAction === "deactivate") {
     // Feed had WebSub active but hub URL is now gone - deactivate
     await deactivateWebsub(feed.id);
     websubMetadata.websubDeactivated = true;
