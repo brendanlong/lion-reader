@@ -11,6 +11,9 @@ const article: DemoArticle = {
     "Customize fonts, text size, alignment, and switch between light and a sleep-friendly, low-blue-light dark theme.",
   publishedAt: new Date("2025-12-28T12:00:00Z"),
   starred: false,
+  heroImage: "/demo/appearance.png",
+  heroImageAlt:
+    "The Lion Reader lion holding a card split into a light half with a sun and a dark half with a moon, with a paintbrush and color swatches.",
   summaryHtml: `<p>Lion Reader provides comprehensive appearance customization including a <strong>sleep-friendly dark mode</strong> that swaps blue accents for a warm red accent and neutral zinc tones to reduce blue light, multiple font families (serif and sans-serif), adjustable text sizes, and alignment choices. All settings save locally and apply instantly, and the app installs as a Progressive Web App.</p>`,
   contentHtml: `
     <p>Reading comfort is personal. What works for one person might strain another&rsquo;s eyes. That&rsquo;s why Lion Reader gives you comprehensive control over how your content appears, letting you create the perfect reading environment for your preferences and lighting conditions.</p>

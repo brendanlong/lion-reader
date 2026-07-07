@@ -11,6 +11,9 @@ const article: DemoArticle = {
     "Extensible plugin architecture for integrating with LessWrong, Google Docs, ArXiv, and GitHub.",
   publishedAt: new Date("2026-01-20T12:00:00Z"),
   starred: false,
+  heroImage: "/demo/plugins.png",
+  heroImageAlt:
+    "The Lion Reader lion with colorful modular puzzle pieces for different content sources snapping into place.",
   summaryHtml: `<p>Lion Reader&rsquo;s plugin system uses a <strong>capability-based architecture</strong> to integrate with external content sources. Plugins declare <code>feed</code> and <code>savedArticle</code> capabilities, enabling custom feed processing and article fetching for platforms like <strong>LessWrong</strong>, <strong>Google Docs</strong>, <strong>ArXiv</strong>, and <strong>GitHub</strong>. Plugins are matched by hostname with O(1) lookup and fall back gracefully when they can&rsquo;t handle a URL.</p>`,
   contentHtml: `
     <h2>Extensible Content Sources</h2>

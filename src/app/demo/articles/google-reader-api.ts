@@ -11,6 +11,9 @@ const article: DemoArticle = {
     "Sync Lion Reader with mobile and desktop RSS apps using the Google Reader-compatible API.",
   publishedAt: new Date("2026-02-20T01:00:00Z"),
   starred: false,
+  heroImage: "/demo/google-reader-api.png",
+  heroImageAlt:
+    "The Lion Reader lion syncing with a phone and a desktop feed reader via two-way arrows.",
   summaryHtml: `<p>Lion Reader now includes a <strong>Google Reader-compatible API</strong>, allowing you to sync your subscriptions, read state, starred articles, and tags with popular third-party RSS reader apps like Reeder, NetNewsWire, FeedMe, Read You, and NewsFlash. The API uses your existing Lion Reader credentials and requires no additional setup beyond pointing your app at your Lion Reader server.</p>`,
   contentHtml: `
     <h2>Use Your Favorite RSS App</h2>
