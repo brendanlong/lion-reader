@@ -13,6 +13,36 @@
  */
 
 import * as Sentry from "@sentry/nextjs";
+import type { ErrorEvent } from "@sentry/nextjs";
+
+// Query params whose values are credentials/secrets and must never reach Sentry.
+// Some clients pass these in the URL even on a POST — notably FeedMe sends the
+// Google Reader `Passwd` (and `Email`) on the ClientLogin URL — so any captured
+// request data would otherwise carry a plaintext password. Case-insensitive to
+// cover both `Passwd` (Google Reader) and `password`/`client_secret` (OAuth).
+const SENSITIVE_QUERY_PARAMS = ["passwd", "password", "email", "client_secret", "t"];
+
+/**
+ * Redacts sensitive values from an event's captured request URL and query
+ * string, in place. Preserves the parameter name so the shape is still visible.
+ */
+export function redactSensitiveRequestParams(event: ErrorEvent): void {
+  const request = event.request;
+  if (!request) return;
+
+  const redact = (value: string): string => {
+    // Matches `?key=…` / `&key=…` (in a full URL) and `key=…` (bare query string).
+    const pattern = new RegExp(`((?:^|[?&])(?:${SENSITIVE_QUERY_PARAMS.join("|")})=)[^&#]*`, "gi");
+    return value.replace(pattern, "$1[REDACTED]");
+  };
+
+  if (typeof request.url === "string") {
+    request.url = redact(request.url);
+  }
+  if (typeof request.query_string === "string") {
+    request.query_string = redact(request.query_string);
+  }
+}
 
 /**
  * Initializes Sentry if SENTRY_DSN is set. Safe to call more than once
@@ -54,6 +84,10 @@ export function initSentry(): void {
           return null;
         }
       }
+
+      // Strip credentials some clients pass in the URL (e.g. FeedMe's Google
+      // Reader `Passwd`) so plaintext passwords never reach Sentry.
+      redactSensitiveRequestParams(event);
 
       return event;
     },
