@@ -18,7 +18,7 @@ const article: DemoArticle = {
   contentHtml: `
     <h2>Extensible Content Sources</h2>
 
-    <p>Not all content lives in standard RSS feeds. Research papers on ArXiv, posts on LessWrong, documents in Google Docs, and code on GitHub each have their own formats and APIs. Lion Reader&rsquo;s plugin system provides a clean way to integrate with these platforms, so you can subscribe to feeds and save articles from them just like any other source.</p>
+    <p>Not all content lives in standard RSS feeds. Research papers on <a href="https://arxiv.org/" target="_blank" rel="noopener noreferrer">ArXiv</a>, posts on <a href="https://www.lesswrong.com/" target="_blank" rel="noopener noreferrer">LessWrong</a>, documents in Google Docs, and code on GitHub each have their own formats and APIs. Lion Reader&rsquo;s plugin system provides a clean way to integrate with these platforms, so you can subscribe to feeds and save articles from them just like any other source.</p>
 
     <h3>Capability-Based Architecture</h3>
 
@@ -26,14 +26,14 @@ const article: DemoArticle = {
 
     <ul>
       <li><strong>Feed capability</strong> &mdash; Transform URLs into feed URLs, clean entry content, and customize feed titles. This lets you subscribe to content sources that don&rsquo;t expose standard RSS feeds.</li>
-      <li><strong>Saved article capability</strong> &mdash; Fetch and process content from URLs when saving articles (see the <strong>Save for Later</strong> article for all the ways to save). This lets you save content from platforms that require API access or special handling to extract clean text.</li>
+      <li><strong>Saved article capability</strong> &mdash; Fetch and process content from URLs when saving articles (see the <a href="/demo/all?entry=save-for-later"><strong>Save for Later</strong></a> article for all the ways to save). This lets you save content from platforms that require API access or special handling to extract clean text.</li>
     </ul>
 
     <p>Plugins are registered by hostname for fast O(1) lookup. When Lion Reader encounters a URL, it checks the registry for a matching plugin and uses its capabilities. If no plugin matches, or the plugin returns <code>null</code>, standard processing takes over.</p>
 
     <h3>LessWrong</h3>
 
-    <p>The LessWrong plugin supports both feed and saved article capabilities. For feeds, it transforms user profile URLs (like <code>/users/eliezer_yudkowsky</code>) into GraphQL-powered RSS feeds, cleans the &ldquo;Published on&hellip;&rdquo; prefix from entry content, and appends author display names to feed titles. For saved articles, it fetches full post and comment content directly through the LessWrong GraphQL API, producing clean HTML without needing Readability post-processing.</p>
+    <p>The LessWrong plugin supports both feed and saved article capabilities. For feeds, it transforms user profile URLs (like <code>/users/eliezer_yudkowsky</code>) into <a href="https://graphql.org/" target="_blank" rel="noopener noreferrer">GraphQL</a>-powered RSS feeds, cleans the &ldquo;Published on&hellip;&rdquo; prefix from entry content, and appends author display names to feed titles. For saved articles, it fetches full post and comment content directly through the LessWrong GraphQL API, producing clean HTML without needing Readability post-processing.</p>
 
     <h3>Google Docs</h3>
 
@@ -58,7 +58,7 @@ const article: DemoArticle = {
 
     <h3>Adding New Plugins</h3>
 
-    <p>The plugin system is designed to be extensible. A new plugin needs to define its name, the hostnames it handles, a <code>matchUrl</code> function for more specific URL matching, and one or more capabilities. Once registered in the plugin registry, it automatically integrates with feed fetching and article saving across the entire application &mdash; including the web UI, MCP server, and Discord bot.</p>
+    <p>The plugin system is designed to be extensible. A new plugin needs to define its name, the hostnames it handles, a <code>matchUrl</code> function for more specific URL matching, and one or more capabilities. Once registered in the plugin registry, it automatically integrates with feed fetching and article saving across the entire application &mdash; including the web UI, <a href="/demo/all?entry=mcp-server">MCP server</a>, and <a href="/demo/all?entry=discord-bot">Discord bot</a>.</p>
   `,
 };
 

@@ -16,7 +16,7 @@ const article: DemoArticle = {
     "The Lion Reader lion placing a document into an upload tray, with Word, Markdown, and text file icons nearby.",
   summaryHtml: `<p>Lion Reader supports uploading Word documents (.docx), Markdown files (.md), HTML files (.html), and plain text (.txt) directly into your saved articles. Word documents are converted via Mammoth with Readability cleaning, Markdown supports YAML frontmatter for metadata, and all uploaded content integrates fully with starring, tagging, search, and narration.</p>`,
   contentHtml: `
-    <p>Beyond saving web pages, Lion Reader lets you upload files directly into your reading library. Whether it&rsquo;s a Word document from a colleague, Markdown notes from your writing tool, an HTML export, or a plain text file &mdash; uploaded content becomes a first-class saved article with all the same features: starring, tagging, search, narration, and AI summaries.</p>
+    <p>Beyond saving web pages, Lion Reader lets you upload files directly into your reading library. Whether it&rsquo;s a Word document from a colleague, Markdown notes from your writing tool, an HTML export, or a plain text file &mdash; uploaded content becomes a first-class <a href="/demo/all?entry=save-for-later">saved article</a> with all the same features: starring, <a href="/demo/all?entry=tags">tagging</a>, <a href="/demo/all?entry=search">search</a>, <a href="/demo/all?entry=text-to-speech">narration</a>, and <a href="/demo/all?entry=ai-summaries">AI summaries</a>.</p>
 
     <h3>Supported File Types</h3>
 
@@ -25,7 +25,7 @@ const article: DemoArticle = {
     <ul>
       <li><strong>Word documents (.docx)</strong> &mdash; Converted to clean HTML using <a href="https://github.com/mwilliamson/mammoth.js" target="_blank" rel="noopener noreferrer">Mammoth</a>, then refined with Mozilla&rsquo;s Readability algorithm. Document styles like Title and Subtitle are mapped to proper HTML headings, preserving your document&rsquo;s structure.</li>
       <li><strong>Markdown (.md, .markdown)</strong> &mdash; Rendered to HTML with full Markdown syntax support. YAML frontmatter is extracted for metadata: set <code>title</code>, <code>description</code>, and <code>author</code> fields and they&rsquo;ll be used automatically.</li>
-      <li><strong>HTML (.html, .htm)</strong> &mdash; Cleaned with Readability to extract the main content, stripping navigation, ads, and other chrome &mdash; just like saving a web page.</li>
+      <li><strong>HTML (.html, .htm)</strong> &mdash; Cleaned with Readability to extract the main content, stripping navigation, ads, and other chrome &mdash; just like <a href="/demo/all?entry=save-for-later">saving a web page</a>.</li>
       <li><strong>Plain text (.txt)</strong> &mdash; Treated as Markdown, so you get paragraph wrapping and basic formatting. Simple and effective for notes and snippets.</li>
     </ul>
 

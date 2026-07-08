@@ -22,7 +22,7 @@ const article: DemoArticle = {
 
     <h3>Import from Anywhere</h3>
 
-    <p>Upload an OPML file from any feed reader &mdash; Feedly, Inoreader, NetNewsWire, or dozens of others. Lion Reader processes imports in the background with real-time progress updates delivered via Server-Sent Events. Each feed is validated and fetched during import to ensure it&rsquo;s still active. The importer preserves folder and tag structure from your original reader, translating folder hierarchies into Lion Reader&rsquo;s tag system.</p>
+    <p>Upload an OPML file from any feed reader &mdash; <a href="https://feedly.com/" target="_blank" rel="noopener noreferrer">Feedly</a>, <a href="https://www.inoreader.com/" target="_blank" rel="noopener noreferrer">Inoreader</a>, <a href="https://netnewswire.com/" target="_blank" rel="noopener noreferrer">NetNewsWire</a>, or dozens of others. Lion Reader processes imports in the background with <a href="/demo/all?entry=real-time">real-time progress updates</a> delivered via Server-Sent Events. Each feed is validated and fetched during import to ensure it&rsquo;s still active. The importer preserves folder and tag structure from your original reader, translating folder hierarchies into Lion Reader&rsquo;s <a href="/demo/all?entry=tags">tag system</a>.</p>
 
     <p>The import process is smart: it automatically skips feeds you&rsquo;re already subscribed to and provides detailed per-feed status reports. You&rsquo;ll see which feeds were successfully imported, which were skipped, and which failed with specific error messages.</p>
 

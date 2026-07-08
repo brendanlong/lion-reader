@@ -32,11 +32,11 @@ const article: DemoArticle = {
 
     <p>The first time you save an article, the extension opens a tab to authenticate with your Lion Reader account. Once logged in, the article is saved and the extension receives a scoped API token for future saves. From then on, saving is instant &mdash; the extension calls the Lion Reader API directly without needing to open any tabs.</p>
 
-    <p>Saved articles appear in your <strong>Saved</strong> section in the sidebar, fully integrated with the rest of Lion Reader. You can star them, tag them, search across them, read them with text-to-speech, and generate AI summaries &mdash; everything you can do with RSS entries.</p>
+    <p>Saved articles appear in your <strong>Saved</strong> section in the sidebar, fully integrated with the rest of Lion Reader. You can star them, <a href="/demo/all?entry=tags">tag them</a>, <a href="/demo/all?entry=search">search</a> across them, read them with <a href="/demo/all?entry=text-to-speech">text-to-speech</a>, and generate <a href="/demo/all?entry=ai-summaries">AI summaries</a> &mdash; everything you can do with <a href="/demo/all?entry=rss-atom">RSS entries</a>.</p>
 
     <h3>Google Docs Support</h3>
 
-    <p>When you save a Google Docs URL, the extension detects it automatically and prompts for the necessary OAuth permissions. Once granted, Lion Reader fetches the document content directly from the Google Docs API, preserving formatting and structure far better than a regular web page save.</p>
+    <p>When you save a Google Docs URL, the extension detects it automatically and prompts for the necessary OAuth permissions. Once granted, Lion Reader fetches the document content directly from the Google Docs API via its <a href="/demo/all?entry=plugins">Plugin System</a>, preserving formatting and structure far better than a regular web page save.</p>
 
     <h3>Installation</h3>
 

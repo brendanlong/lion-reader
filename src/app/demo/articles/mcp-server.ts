@@ -9,7 +9,7 @@ const article: DemoArticle = {
   author: null,
   summary: "Connect Lion Reader to AI assistants like Claude via the Model Context Protocol.",
   publishedAt: new Date("2026-01-14T12:00:00Z"),
-  starred: false,
+  starred: true,
   heroImage: "/demo/mcp-server.png",
   heroImageAlt:
     "The Lion Reader lion plugging a connector cable into a friendly robot AI assistant, linking the two together.",
@@ -19,7 +19,7 @@ const article: DemoArticle = {
 
     <p>The <a href="https://modelcontextprotocol.io/" target="_blank" rel="noopener noreferrer">Model Context Protocol (MCP)</a> is an open standard for connecting AI assistants to external tools and data sources. Think of it as a universal adapter that lets AI models like Claude interact with your applications in a secure, structured way. Instead of manually copying data between your feed reader and your AI assistant, MCP enables direct, programmatic access.</p>
 
-    <p>Lion Reader&rsquo;s MCP server is built with the official <a href="https://github.com/modelcontextprotocol/typescript-sdk" target="_blank" rel="noopener noreferrer">MCP TypeScript SDK</a> and supports two transports. Remote assistants such as <a href="https://claude.ai/" target="_blank" rel="noopener noreferrer">claude.ai</a> connect to the deployed app over <strong>Streamable HTTP</strong>, authenticating with OAuth 2.1 access tokens (or scoped API tokens). Local assistants such as Claude Desktop connect over <strong>stdio</strong>, keeping the connection entirely on your machine. Both transports register the same tools and call the same services layer.</p>
+    <p>Lion Reader&rsquo;s MCP server is built with the official <a href="https://github.com/modelcontextprotocol/typescript-sdk" target="_blank" rel="noopener noreferrer">MCP TypeScript SDK</a> and supports two transports. Remote assistants such as <a href="https://claude.ai/" target="_blank" rel="noopener noreferrer">claude.ai</a> connect to the deployed app over <strong>Streamable HTTP</strong>, authenticating with <a href="https://oauth.net/2.1/" target="_blank" rel="noopener noreferrer">OAuth 2.1</a> access tokens (or scoped API tokens). Local assistants such as <a href="https://claude.ai/download" target="_blank" rel="noopener noreferrer">Claude Desktop</a> connect over <strong>stdio</strong>, keeping the connection entirely on your machine. Both transports register the same tools and call the same services layer.</p>
 
     <h3>Available Tools</h3>
 
@@ -44,7 +44,7 @@ const article: DemoArticle = {
 
     <h3>Consistent Behavior</h3>
 
-    <p>The MCP server uses the same services layer as the web UI, ensuring behavior is identical across interfaces. Whether you&rsquo;re reading entries through your browser or asking Claude to summarize them, you&rsquo;re accessing the same underlying data with the same permissions and filters.</p>
+    <p>The MCP server uses the same services layer as the web UI, ensuring behavior is identical across interfaces. Whether you&rsquo;re reading entries through your browser or asking Claude to <a href="/demo/all?entry=ai-summaries">summarize them</a>, you&rsquo;re accessing the same underlying data with the same permissions and filters.</p>
 
     <h3>Security and Usage</h3>
 

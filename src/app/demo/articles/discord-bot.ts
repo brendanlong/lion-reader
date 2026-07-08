@@ -18,7 +18,7 @@ const article: DemoArticle = {
   contentHtml: `
     <h2>Save Articles from Discord</h2>
 
-    <p>The Lion Reader Discord bot lets you save articles without leaving Discord. When someone shares a link in a channel, just react to the message with the save emoji and the article is automatically saved to your Lion Reader account. The bot extracts URLs from message content, fetches the article, and adds it to your Saved articles.</p>
+    <p>The Lion Reader Discord bot lets you save articles without leaving <a href="https://discord.com/" target="_blank" rel="noopener noreferrer">Discord</a>. When someone shares a link in a channel, just react to the message with the save emoji and the article is automatically saved to your Lion Reader account. The bot extracts URLs from message content, fetches the article, and adds it to your Saved articles.</p>
 
     <h3>Custom Lion Reader Emojis</h3>
 
@@ -58,7 +58,7 @@ const article: DemoArticle = {
     <ol>
       <li>React to any message containing a URL with the save emoji (default: <span style="font-size: 1.25rem;">&#x1F981;</span>)</li>
       <li>The bot extracts URLs from the message, filtering out Discord CDN links, Tenor, Giphy, and media file URLs</li>
-      <li>Each URL is saved using the same <code>saveArticle</code> service as the web UI and MCP server</li>
+      <li>Each URL is saved using the same <code>saveArticle</code> service as the web UI and <a href="/demo/all?entry=mcp-server">MCP server</a></li>
       <li>The bot reacts with <img src="/emojis/saluting-lion-reader.png" alt="saluting lion" style="display: inline; margin: 0; width: 1.25em; height: 1.25em; vertical-align: middle;" /> on success or <img src="/emojis/crying-lion-reader.png" alt="crying lion" style="display: inline; margin: 0; width: 1.25em; height: 1.25em; vertical-align: middle;" /> on failure</li>
     </ol>
 
@@ -89,6 +89,10 @@ const article: DemoArticle = {
     </ul>
 
     <p>The bot is built with <a href="https://discord.js.org/" target="_blank" rel="noopener noreferrer">discord.js</a> and runs as a standalone process alongside the main application server.</p>
+
+    <h3>Other Ways to Save</h3>
+
+    <p>The Discord bot is one of several ways to save articles in Lion Reader. You can also save via the <a href="/demo/all?entry=browser-extension">browser extension</a>, the <a href="/demo/all?entry=save-for-later">bookmarklet</a>, the <a href="/demo/all?entry=wallabag-api">Wallabag app</a> on mobile, the <a href="/demo/all?entry=pwa">PWA share target</a>, or the <a href="/demo/all?entry=mcp-server">MCP server</a> from AI assistants. All methods use the same underlying save service, so your saved articles end up in the same place regardless of how you captured them.</p>
   `,
 };
 
