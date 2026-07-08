@@ -20,6 +20,7 @@ import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
 import { saveArticle, savedArticleExistsByUrl } from "../../src/server/services/saved";
+import { markEntriesRead } from "../../src/server/services/entries";
 
 // ============================================================================
 // Test Helpers
@@ -174,6 +175,7 @@ async function createTestSavedArticle(
     starred: options.starred ?? false,
     readChangedAt: pastTime,
     starredChangedAt: pastTime,
+    updatedAt: pastTime,
   });
 
   return articleId;
@@ -863,6 +865,72 @@ describe("Saved Articles API", () => {
       expect(result.article.starred).toBe(true);
     });
 
+    it("advances read_changed_at/updated_at on the unread flip so stale offline mark-read loses", async () => {
+      // Regression for #1082: the refetch unread flip must go through the
+      // read-state machinery (read_changed_at + updated_at), not a bare
+      // `read=false` UPDATE. Otherwise a stale queued offline "mark read" older
+      // than the refetch would still win when it later replays.
+      const userId = await createTestUser();
+      const testUrl = "https://example.com/refetch-read-changed-at";
+
+      const articleId = await createTestSavedArticle(userId, {
+        url: testUrl,
+        title: "Original Title",
+        read: true,
+      });
+
+      const [before] = await db
+        .select({ readChangedAt: userEntries.readChangedAt, updatedAt: userEntries.updatedAt })
+        .from(userEntries)
+        .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, articleId)));
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const newHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head><title>New Title</title></head>
+          <body>
+            <article>
+              <p>Sufficient content for quality check to pass with new information.</p>
+              <p>The content has been refreshed and updated with new information.</p>
+            </article>
+          </body>
+        </html>
+      `;
+
+      await caller.saved.save({ url: testUrl, html: newHtml, refetch: true });
+
+      const [after] = await db
+        .select({
+          read: userEntries.read,
+          readChangedAt: userEntries.readChangedAt,
+          updatedAt: userEntries.updatedAt,
+        })
+        .from(userEntries)
+        .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, articleId)));
+
+      expect(after.read).toBe(false);
+      // Both change timestamps must have advanced past the pre-refetch values.
+      expect(after.readChangedAt!.getTime()).toBeGreaterThan(before.readChangedAt!.getTime());
+      expect(after.updatedAt.getTime()).toBeGreaterThan(before.updatedAt.getTime());
+
+      // A stale offline "mark read" from before the refetch must not win.
+      await markEntriesRead(
+        db,
+        userId,
+        [{ id: articleId, changedAt: before.readChangedAt! }],
+        true
+      );
+
+      const [final] = await db
+        .select({ read: userEntries.read })
+        .from(userEntries)
+        .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, articleId)));
+      expect(final.read).toBe(false);
+    });
+
     it("rejects refetch when new content is significantly shorter", async () => {
       const userId = await createTestUser();
       const testUrl = "https://example.com/refetch-reject-short";
@@ -1200,6 +1268,39 @@ describe("Saved Articles API", () => {
       const rows = await db.select({ id: entries.id }).from(entries).where(eq(entries.guid, url));
       expect(rows).toHaveLength(1);
       expect(rows[0].id).toBe(a.id);
+    });
+  });
+
+  describe("saved.uploadFile size limit (#1082)", () => {
+    it("rejects a decoded upload larger than the saved article size limit before processing", async () => {
+      const userId = await createTestUser();
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const { usageLimitsConfig } = await import("../../src/server/config/env");
+      // A buffer just over the limit; its base64 stays under the schema cap
+      // (~4/3 inflation) so it reaches the runtime decoded-size guard.
+      const oversized = Buffer.alloc(usageLimitsConfig.maxSavedArticleSizeBytes + 1, 97).toString(
+        "base64"
+      );
+
+      await expect(
+        caller.saved.uploadFile({ content: oversized, filename: "big.md" })
+      ).rejects.toThrow(/exceeds the maximum size/i);
+
+      // Nothing persisted for this user.
+      const savedFeed = await db
+        .select({ id: feeds.id })
+        .from(feeds)
+        .where(and(eq(feeds.type, "saved"), eq(feeds.userId, userId)));
+      const savedEntries =
+        savedFeed.length > 0
+          ? await db
+              .select({ id: entries.id })
+              .from(entries)
+              .where(eq(entries.feedId, savedFeed[0].id))
+          : [];
+      expect(savedEntries).toHaveLength(0);
     });
   });
 

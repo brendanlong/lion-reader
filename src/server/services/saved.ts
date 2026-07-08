@@ -27,6 +27,8 @@ import { logger } from "@/lib/logger";
 import { publishNewEntry, publishEntryUpdatedFromEntry } from "@/server/redis/pubsub";
 import { toNewEntryListData } from "@/lib/events/schemas";
 import { errors } from "@/server/trpc/errors";
+import { markEntriesRead } from "@/server/services/entries";
+import { publishMarkReadStateChanges } from "@/server/services/entry-events";
 import { pluginRegistry } from "@/server/plugins";
 import {
   isGoogleDocsUrl,
@@ -325,13 +327,15 @@ async function insertSavedEntry(
     return null;
   }
 
-  await publishNewEntry(
+  // Fire-and-forget: SSE is best-effort and must never fail the save response
+  // (the entry transaction has already committed). See entry-events.ts.
+  void publishNewEntry(
     savedFeedId,
     entryId,
     now,
     "saved",
     toNewEntryListData(values, SAVED_FEED_TITLE)
-  );
+  ).catch(() => {});
 
   return {
     id: entryId,
@@ -904,13 +908,24 @@ export async function saveArticle(
       },
       presanitizedCleaned
     );
-    await db.update(entries).set(update).where(eq(entries.id, oldEntry.id));
+    // Update the content and flip the entry back to unread atomically. The
+    // unread flip is routed through markEntriesRead (rather than a bare
+    // `read=false` UPDATE) so it maintains read_changed_at (the changedAt
+    // idempotency contract — otherwise a stale queued offline "mark read" older
+    // than this refetch would win later) and bumps updated_at (so sync.events
+    // reports it to offline clients). Both writes share one transaction so a
+    // crash can't leave new content with the old read state. Publishing is
+    // suppressed inside the tx and done after commit (below) so a rolled-back
+    // mark can't emit a phantom entry_state_changed event.
+    const { changed: readChanged, counts: readCounts } = await db.transaction(async (tx) => {
+      await tx.update(entries).set(update).where(eq(entries.id, oldEntry.id));
+      return markEntriesRead(tx, userId, [{ id: oldEntry.id, changedAt: now }], false, {
+        publish: false,
+      });
+    });
 
-    // Mark as unread since content was updated
-    await db
-      .update(userEntries)
-      .set({ read: false })
-      .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, oldEntry.id)));
+    // Post-commit: notify other tabs of the unread flip + refreshed counts.
+    publishMarkReadStateChanges(userId, readChanged, readCounts);
 
     logger.info("Refetched saved article", {
       entryId: oldEntry.id,
@@ -918,8 +933,10 @@ export async function saveArticle(
       forced: params.force ?? false,
     });
 
-    // Publish event to notify other browser windows/tabs of the update
-    await publishEntryUpdatedFromEntry(savedFeedId, {
+    // Publish event to notify other browser windows/tabs of the content update.
+    // Fire-and-forget: SSE is best-effort and must never fail the response (the
+    // transaction has already committed). See entry-events.ts.
+    void publishEntryUpdatedFromEntry(savedFeedId, {
       id: oldEntry.id,
       title: finalTitle,
       author: finalAuthor,
@@ -927,7 +944,7 @@ export async function saveArticle(
       url: normalizedUrl,
       publishedAt: oldEntry.publishedAt,
       updatedAt: now,
-    });
+    }).catch(() => {});
 
     return {
       id: oldEntry.id,

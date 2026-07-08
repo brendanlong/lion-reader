@@ -79,3 +79,12 @@ export const db = drizzle(pool, {
 });
 
 export type Database = typeof db;
+
+/** A transaction handle, as passed to `db.transaction(async (tx) => ...)`. */
+export type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+
+/**
+ * Either the root `db` or an open transaction. Use this for service functions
+ * that must be callable both standalone and inside a caller's transaction.
+ */
+export type DbOrTx = Database | Transaction;

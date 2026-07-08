@@ -11,7 +11,7 @@
  */
 
 import { eq, and, sql, inArray } from "drizzle-orm";
-import type { db as dbType } from "@/server/db";
+import type { db as dbType, DbOrTx } from "@/server/db";
 import { visibleEntries, subscriptionTags, userFeeds } from "@/server/db/schema";
 
 // ============================================================================
@@ -120,7 +120,7 @@ export function toBulkUnreadCounts(counts: UnreadCounts): NewEntryUnreadCounts {
  * slower (per-row subplan), so the view scan is the right shape here.
  */
 async function getGlobalUnreadCounts(
-  db: typeof dbType,
+  db: DbOrTx,
   userId: string
 ): Promise<{ allUnread: number; starredUnread: number; savedUnread: number }> {
   const result = await db
@@ -344,7 +344,7 @@ export interface BulkUnreadCounts {
  * @returns Aggregated unread counts for all affected lists
  */
 export async function getBulkEntryRelatedCounts(
-  db: typeof dbType,
+  db: DbOrTx,
   userId: string,
   entries: Array<{ subscriptionId: string | null; type: "web" | "email" | "saved" }>
 ): Promise<BulkUnreadCounts> {
