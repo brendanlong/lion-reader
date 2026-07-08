@@ -536,6 +536,59 @@ describe("Entry Processor", () => {
       expect(result.unchangedCount).toBe(1);
     });
 
+    it("bumps last_seen_at without touching updated_at for unchanged entries (#1084)", async () => {
+      const feed = await createTestFeed();
+
+      // First fetch: 2 entries become current.
+      const firstFetchedAt = new Date("2024-06-15T10:00:00Z");
+      await processEntries(
+        feed.id,
+        feed.type,
+        {
+          title: "Test Feed",
+          items: [
+            { guid: "entry-a", title: "Entry A", content: "Content A" },
+            { guid: "entry-b", title: "Entry B", content: "Content B" },
+          ],
+        },
+        { fetchedAt: firstFetchedAt }
+      );
+
+      const beforeA = await findEntryByGuid(feed.id, "entry-a");
+      const beforeB = await findEntryByGuid(feed.id, "entry-b");
+      expect(beforeA?.lastSeenAt?.toISOString()).toBe(firstFetchedAt.toISOString());
+
+      // Second fetch: entry A is unchanged, a new entry C appears. This is a
+      // "hasChanges" fetch, so lastSeenAt is refreshed for all still-present
+      // entries — but updated_at must NOT move for the unchanged entry A, or
+      // every subscriber's delta sync would re-ship it as a content change.
+      const secondFetchedAt = new Date("2024-06-15T11:00:00Z");
+      await processEntries(
+        feed.id,
+        feed.type,
+        {
+          title: "Test Feed",
+          items: [
+            { guid: "entry-a", title: "Entry A", content: "Content A" }, // unchanged
+            { guid: "entry-c", title: "Entry C", content: "Content C" }, // new
+          ],
+        },
+        {
+          fetchedAt: secondFetchedAt,
+          previousLastEntriesUpdatedAt: firstFetchedAt,
+        }
+      );
+
+      const afterA = await findEntryByGuid(feed.id, "entry-a");
+      // last_seen_at advanced (A is still present in the feed)...
+      expect(afterA?.lastSeenAt?.toISOString()).toBe(secondFetchedAt.toISOString());
+      // ...but updated_at did not (A's content never changed).
+      expect(afterA?.updatedAt.toISOString()).toBe(beforeA?.updatedAt.toISOString());
+      // Entry B disappeared from the feed; its last_seen_at stays put.
+      const afterB = await findEntryByGuid(feed.id, "entry-b");
+      expect(afterB?.lastSeenAt?.toISOString()).toBe(beforeB?.lastSeenAt?.toISOString());
+    });
+
     it("uses provided fetchedAt timestamp", async () => {
       const feed = await createTestFeed();
       const customFetchedAt = new Date("2024-06-15T10:00:00Z");
