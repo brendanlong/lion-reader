@@ -73,7 +73,7 @@ flyctl launch --no-deploy
 When prompted:
 
 - **App name**: Choose a unique name (e.g., `lion-reader` or `lion-reader-prod`)
-- **Region**: Select your preferred region (e.g., `iad` for US East, `lhr` for London)
+- **Region**: Select your preferred region. This project's `fly.toml` uses `lax` (US West) as `primary_region`; pick the region closest to you (e.g., `iad` for US East, `lhr` for London) and keep Postgres/Redis in the same one.
 - **Postgres**: Select "No" (we'll provision this separately for more control)
 - **Redis**: Select "No" (we'll use Upstash)
 
@@ -98,7 +98,7 @@ Lion Reader uses PostgreSQL for all persistent data.
 ```bash
 flyctl postgres create \
   --name lion-reader-db \
-  --region iad \
+  --region lax \
   --vm-size shared-cpu-1x \
   --initial-cluster-size 1 \
   --volume-size 10
@@ -160,7 +160,7 @@ flyctl redis create
 When prompted:
 
 - **Name**: `lion-reader-redis`
-- **Region**: Same as your app (e.g., `iad`)
+- **Region**: Same as your app (e.g., `lax`)
 - **Plan**: Free tier is fine for MVP (100 commands/day limit)
   - For production, choose "Pay-as-you-go" (~$0.20/1M commands)
 - **Eviction**: Enable if you want auto-cleanup of old data
@@ -229,7 +229,7 @@ You should see:
 
 ## GitHub Actions Setup
 
-The repository includes CI/CD workflows that automatically deploy on push to `master`.
+The repository includes a CI/CD workflow that deploys to Fly.io **after CI passes on `master`** — it is not a direct push-triggered deploy.
 
 ### 1. Generate a Fly.io Deploy Token
 
@@ -250,27 +250,12 @@ This creates a long-lived deploy token. Copy the token value.
 
 ### 3. Verify Workflow Configuration
 
-The deployment workflow is already configured in `.github/workflows/deploy.yml`:
+The deployment workflow is already configured in `.github/workflows/deploy.yml`. Read that file for the exact steps; its current behavior is:
 
-```yaml
-name: Deploy
-
-on:
-  push:
-    branches: [master]
-  workflow_dispatch: # Allow manual trigger
-
-jobs:
-  deploy:
-    name: Deploy to Fly.io
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: superfly/flyctl-actions/setup-flyctl@master
-      - run: flyctl deploy --remote-only
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-```
+- **Trigger**: a `workflow_run` on the `CI` workflow completing for `master` (plus `workflow_dispatch` for manual deploys). There is **no direct `push` trigger** — a push starts CI, and only a **successful** CI run triggers the deploy (`if: … github.event.workflow_run.conclusion == 'success'`). This prevents deploying a commit whose typecheck/lint/tests failed.
+- **Concurrency**: `group: deploy` with `cancel-in-progress: false`, so deploys **queue** instead of cancelling each other — cancelling an in-flight `flyctl deploy` could kill a mid-flight canary rollout and leave a partial deployment.
+- **Checkout**: `ref: ${{ github.event.workflow_run.head_sha || github.sha }}` — deploys the exact commit CI validated, since `workflow_run` runs against the branch tip, which may have moved on.
+- **Deploy**: `flyctl deploy --remote-only` with `FLY_API_TOKEN` from GitHub secrets.
 
 ---
 
@@ -311,14 +296,23 @@ flyctl open
 curl https://lionreader.com/api/health
 ```
 
-Expected response:
+Expected response (see `src/app/api/health/route.ts`):
 
 ```json
 {
   "status": "healthy",
-  "timestamp": "2024-01-15T12:00:00.000Z"
+  "timestamp": "2024-01-15T12:00:00.000Z",
+  "version": "1.2.3",
+  "checks": {
+    "database": { "status": "healthy", "latencyMs": 3 },
+    "redis": { "status": "healthy", "latencyMs": 1 }
+  }
 }
 ```
+
+`status` is `healthy` when both the `database` and `redis` checks pass, `degraded`
+when one is down (still HTTP 200), or `unhealthy` when both are down (HTTP 503). A
+failing component reports `status: "unhealthy"` with an `error` message.
 
 ---
 
@@ -380,8 +374,12 @@ flyctl scale vm shared-cpu-2x --memory 1024
 
 **Add more instances:**
 
+The app runs three process groups (`app`, `worker`, `discord` — see the Architecture
+Overview). Scale a specific group with `--process-group`; keep `app` at 2 or more for
+zero-downtime deploys:
+
 ```bash
-flyctl scale count 2
+flyctl scale count 3 --process-group app
 ```
 
 ### Database Maintenance
@@ -541,45 +539,58 @@ flyctl scale vm shared-cpu-1x --memory 1024
 
 ### Slow Cold Starts
 
-The app uses `auto_stop_machines = "stop"` which stops idle machines. First request after idle period is slow.
+The app uses `auto_stop_machines = "stop"`, which stops idle app machines. The first request after an idle period can be slow while a machine wakes.
 
-To keep at least one machine always running:
-
-```bash
-flyctl scale count 1 --min 1
-```
-
-Or in `fly.toml`:
+`fly.toml` already sets `min_machines_running = 2`. **Keep it at 2 or more** — the canary rolling-deploy strategy needs at least two app machines for zero-downtime deploys, so this also keeps a warm machine ready. Do **not** lower it to 1 (that reintroduces cold starts and breaks zero-downtime rollout):
 
 ```toml
 [http_service]
-  min_machines_running = 1
+  # Need at least 2 machines for zero-downtime rolling deploys
+  min_machines_running = 2
+```
+
+If you need more warm capacity, raise the app machine count (`processes = ["app"]`):
+
+```bash
+flyctl scale count 3 --process-group app
 ```
 
 ---
 
 ## Architecture Overview
 
+Fly.io runs three independent **process groups** (`[processes]` in `fly.toml`),
+each on its own VM(s): `app` (Next.js web + SSE, min 2 machines for zero-downtime
+deploys), `worker` (background feed fetching / jobs), and `discord` (Discord save
+bot). Only `app` is behind the HTTP load balancer; all three share Postgres and Redis.
+
 ```
                     Internet
                         |
-                   Fly.io Edge
+                   Fly.io Edge (LB)
                         |
             +-----------+-----------+
             |                       |
      +------+------+         +------+------+
-     |  App Server |         |  App Server |
-     |  (Next.js)  |         |  (replica)  |
+     | App Server  |         | App Server  |     process group: app
+     |  (Next.js)  |         |  (replica)  |     (min 2 machines)
      +------+------+         +------+------+
             |                       |
             +-----------+-----------+
                         |
-         +--------------+--------------+
-         |                             |
-  +------+------+              +-------+------+
-  |   Postgres  |              |    Redis     |
-  | (Fly.io PG) |              |  (Upstash)   |
-  +-------------+              +--------------+
+    +-------------------+-------------------+
+    |                   |                   |
+    |            +------+------+     +------+------+
+    |            |   Worker    |     |   Discord   |   process groups:
+    |            | (feed jobs) |     |  save bot   |   worker, discord
+    |            +------+------+     +------+------+
+    |                   |                   |
+    +---------+---------+---------+---------+
+              |                   |
+       +------+------+     +------+------+
+       |   Postgres  |     |    Redis    |
+       | (Fly.io PG) |     |  (Upstash)  |
+       +-------------+     +-------------+
 ```
 
 ## Cost Estimate (MVP)
@@ -599,7 +610,7 @@ Costs vary by usage. Check [fly.io/docs/about/pricing](https://fly.io/docs/about
 
 After successful deployment:
 
-1. **Set up monitoring** - Configure Sentry for error tracking (see task 8.4)
+1. **Set up monitoring** - Configure Sentry for error tracking
 2. **Add custom domain** - Use `flyctl certs create` for SSL
 3. **Enable backups** - Configure automated Postgres backups
 4. **Monitor usage** - Use Fly.io dashboard to track resource usage
