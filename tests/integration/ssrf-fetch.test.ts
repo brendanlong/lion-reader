@@ -35,12 +35,26 @@ let port: number;
 
 beforeAll(async () => {
   server = createServer((req, res) => {
-    if (req.url === "/gzip") {
+    const url = req.url ?? "/";
+    if (url === "/gzip") {
       res.writeHead(200, { "Content-Type": "text/plain", "Content-Encoding": "gzip" });
       res.end(gzipSync(BODY));
-    } else if (req.url === "/br") {
+    } else if (url === "/br") {
       res.writeHead(200, { "Content-Type": "text/plain", "Content-Encoding": "br" });
       res.end(brotliCompressSync(BODY));
+    } else if (url.startsWith("/redirect-301")) {
+      res.writeHead(301, { Location: "/final" });
+      res.end();
+    } else if (url.startsWith("/redirect-302")) {
+      res.writeHead(302, { Location: "/final" });
+      res.end();
+    } else if (url.startsWith("/redirect-loop")) {
+      // Always redirects to itself — exercises the max-redirects guard.
+      res.writeHead(302, { Location: "/redirect-loop" });
+      res.end();
+    } else if (url === "/final") {
+      res.writeHead(200, { "Content-Type": "text/plain" });
+      res.end(`FINAL:${req.method}`);
     } else {
       res.writeHead(200, { "Content-Type": "text/plain" });
       res.end(BODY);
@@ -88,6 +102,28 @@ describe("fetchWithSsrfProtection — SSRF blocking", () => {
     ).rejects.toMatchObject({ name: "SsrfBlockedError" });
   });
 
+  it("rejects an IPv4-mapped IPv6 literal for a private address", async () => {
+    // http://[::ffff:169.254.169.254]/ — same metadata IP wrapped as IPv6.
+    await expect(
+      fetchWithSsrfProtection("http://[::ffff:169.254.169.254]/latest/meta-data/", {})
+    ).rejects.toMatchObject({ name: "SsrfBlockedError" });
+  });
+
+  it("rejects an IPv4-mapped IPv6 literal in hex form", async () => {
+    // ::ffff:a9fe:a9fe is 169.254.169.254 written with hex quads.
+    await expect(fetchWithSsrfProtection("http://[::ffff:a9fe:a9fe]/", {})).rejects.toMatchObject({
+      name: "SsrfBlockedError",
+    });
+  });
+
+  it("rejects a decimal-encoded private IP", async () => {
+    // 2130706433 == 127.0.0.1. WHATWG URL normalizes the decimal host to the
+    // dotted literal 127.0.0.1, so the up-front literal check catches it directly.
+    await expect(fetchWithSsrfProtection("http://2130706433/", {})).rejects.toMatchObject({
+      name: "SsrfBlockedError",
+    });
+  });
+
   it("blocks a hostname that resolves to loopback at connection time", async () => {
     // `localhost` resolves to 127.0.0.1/::1; the custom lookup must abort the connect.
     // undici's fetch wraps the connect error as `TypeError: fetch failed` with the
@@ -95,6 +131,57 @@ describe("fetchWithSsrfProtection — SSRF blocking", () => {
     await expect(fetchWithSsrfProtection(`http://localhost:${port}/`, {})).rejects.toMatchObject({
       cause: { name: "SsrfBlockedError" },
     });
+  });
+});
+
+describe("fetchWithSsrfProtection — manual redirect following", () => {
+  // The per-hop private-IP check is the same `assertNotPrivateIpLiteral` call at
+  // hop 0 (covered by the SSRF-blocking tests above) and on every redirect target.
+  // A true protection-ON multi-hop test can't use a loopback server — the initial
+  // request to loopback is itself blocked — so these tests run with protection OFF
+  // to exercise the redirect-following loop itself (following, method downgrade,
+  // manual passthrough, and the max-redirects guard).
+  const prev = process.env.ALLOW_PRIVATE_NETWORK_FETCH;
+
+  beforeAll(() => {
+    process.env.ALLOW_PRIVATE_NETWORK_FETCH = "true";
+  });
+  afterAll(() => {
+    if (prev === undefined) {
+      delete process.env.ALLOW_PRIVATE_NETWORK_FETCH;
+    } else {
+      process.env.ALLOW_PRIVATE_NETWORK_FETCH = prev;
+    }
+  });
+
+  it("follows a 302 redirect and returns the final response", async () => {
+    const res = await fetchWithSsrfProtection(`http://127.0.0.1:${port}/redirect-302`, {});
+    expect(res.status).toBe(200);
+    expect(res.url).toBe(`http://127.0.0.1:${port}/final`);
+    expect(await res.text()).toBe("FINAL:GET");
+  });
+
+  it("downgrades POST to GET on a 302 redirect (per the Fetch spec)", async () => {
+    const res = await fetchWithSsrfProtection(`http://127.0.0.1:${port}/redirect-302`, {
+      method: "POST",
+      body: "hello",
+    });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("FINAL:GET");
+  });
+
+  it("returns the redirect unfollowed when redirect: manual", async () => {
+    const res = await fetchWithSsrfProtection(`http://127.0.0.1:${port}/redirect-301`, {
+      redirect: "manual",
+    });
+    expect(res.status).toBe(301);
+    expect(res.headers.get("location")).toBe("/final");
+  });
+
+  it("throws when a redirect loop exceeds the max hop count", async () => {
+    await expect(
+      fetchWithSsrfProtection(`http://127.0.0.1:${port}/redirect-loop`, {})
+    ).rejects.toThrow(/too many redirects/i);
   });
 });
 
