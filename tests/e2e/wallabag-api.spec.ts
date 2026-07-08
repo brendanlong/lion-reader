@@ -223,6 +223,18 @@ test.describe("Wallabag API happy path", () => {
       expect(existsRes.status()).toBe(200);
       expect((await existsRes.json()).exists).toBe(true);
 
+      // `since` delta sync is wired through the route: since=0 returns everything,
+      // a far-future timestamp returns nothing. (The GREATEST(entry, user_entries)
+      // "modified since" semantics are covered in detail by the integration tests.)
+      const sinceAll = await request.get("/api/wallabag/api/entries?since=0", { headers: auth });
+      expect((await sinceAll.json())._embedded.items.map((e: { id: number }) => e.id)).toContain(
+        saved.id
+      );
+      const sinceFuture = await request.get("/api/wallabag/api/entries?since=9999999999", {
+        headers: auth,
+      });
+      expect((await sinceFuture.json())._embedded.items).toHaveLength(0);
+
       // Delete it.
       const deleteRes = await request.delete(`/api/wallabag/api/entries/${saved.id}`, {
         headers: auth,

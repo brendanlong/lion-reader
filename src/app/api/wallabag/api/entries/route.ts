@@ -50,16 +50,8 @@ export async function GET(request: Request): Promise<Response> {
   const params = parseEntryListParams(url);
 
   // Scope to saved articles only — the Wallabag API is a read-it-later interface.
-  // The read/starred filters are shared by the page query and the count so the
-  // two can't drift.
-  //
-  // NOTE: `since` is intentionally not applied. Wallabag's `since` means "entries
-  // *updated* since" and clients use it to pull archive/star state changes for
-  // delta sync. We have no single indexed "last modified" column — that would be
-  // GREATEST(entry.updated_at, read_changed_at, starred_changed_at) — so mapping
-  // it to publishedAfter (≈ save time) would silently drop read/star deltas and
-  // break multi-device sync. Left unsupported (a wasteful superset) rather than
-  // lossy. See issue #1062.
+  // The read/starred/since filters are shared by the page query and the count so
+  // the two can't drift.
   const filter = {
     type: "saved" as const,
     showSpam: false,
@@ -67,6 +59,11 @@ export async function GET(request: Request): Promise<Response> {
     readOnly: params.archive === true ? true : undefined,
     starredOnly: params.starred === true ? true : undefined,
     unstarredOnly: params.starred === false ? true : undefined,
+    // Wallabag `since` (unix seconds) means "entries *updated* since" — clients
+    // use it to pull new saves AND archive/star state changes for delta sync.
+    // updatedAfter filters on GREATEST(entry.updated_at, user_entries.updated_at),
+    // which captures all three, so this is correct (not a lossy save-time proxy).
+    updatedAfter: params.since ? new Date(params.since * 1000) : undefined,
   };
 
   // Serve the requested page with a single indexed query via LIMIT/OFFSET, and

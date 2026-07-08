@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { eq } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
   users,
@@ -20,7 +20,11 @@ import {
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
-import { markAllEntriesRead, listEntries } from "../../src/server/services/entries";
+import {
+  markAllEntriesRead,
+  markEntriesRead,
+  listEntries,
+} from "../../src/server/services/entries";
 
 // ============================================================================
 // Test Helpers
@@ -329,6 +333,53 @@ describe("Entries", () => {
       expect(page3.items.map((e) => e.id)).toEqual([aId]);
       // Offset past the end yields an empty page (not an error).
       expect(page4.items).toHaveLength(0);
+    });
+  });
+
+  describe("list with updatedAfter (Wallabag `since` delta sync)", () => {
+    it("returns entries whose state OR content changed since the checkpoint", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/feed.xml");
+      await createTestSubscription(userId, feedId);
+
+      // Three entries, all "modified" long ago (both entry.updated_at and
+      // user_entries.updated_at pinned to the same old time).
+      const stateChangedId = await createTestEntry(feedId, { title: "State" });
+      const contentChangedId = await createTestEntry(feedId, { title: "Content" });
+      const untouchedId = await createTestEntry(feedId, { title: "Untouched" });
+      for (const id of [stateChangedId, contentChangedId, untouchedId]) {
+        await createUserEntry(userId, id);
+      }
+
+      const past = new Date("2026-01-01T00:00:00Z");
+      const allIds = [stateChangedId, contentChangedId, untouchedId];
+      await db.update(entries).set({ updatedAt: past }).where(inArray(entries.id, allIds));
+      await db
+        .update(userEntries)
+        .set({ updatedAt: past })
+        .where(and(eq(userEntries.userId, userId), inArray(userEntries.entryId, allIds)));
+
+      // Client's last sync happened after `past`; nothing has changed since, so a
+      // delta sync returns nothing.
+      const checkpoint = new Date("2026-01-02T00:00:00Z");
+      const before = await listEntries(db, { userId, updatedAfter: checkpoint, showSpam: false });
+      expect(before.items).toHaveLength(0);
+
+      // A read-state change bumps user_entries.updated_at (a Wallabag archive), and
+      // a content refetch bumps entries.updated_at — both must surface via the
+      // GREATEST(entry.updated_at, user_entries.updated_at) that updatedAfter filters.
+      await markEntriesRead(db, userId, [{ id: stateChangedId }], true);
+      await db
+        .update(entries)
+        .set({ updatedAt: new Date() })
+        .where(eq(entries.id, contentChangedId));
+
+      const after = await listEntries(db, { userId, updatedAfter: checkpoint, showSpam: false });
+      expect(after.items.map((e) => e.id).sort()).toEqual(
+        [stateChangedId, contentChangedId].sort()
+      );
+      // The untouched entry stays out of the delta.
+      expect(after.items.map((e) => e.id)).not.toContain(untouchedId);
     });
   });
 

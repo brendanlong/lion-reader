@@ -70,6 +70,7 @@ export interface ListEntriesParams {
   maxLimit?: number; // Override MAX_LIMIT (e.g., for Google Reader API which needs larger batches)
   publishedAfter?: Date; // Only entries published/fetched after this timestamp
   publishedBefore?: Date; // Only entries published/fetched before this timestamp
+  updatedAfter?: Date; // Only entries modified at/after this timestamp (GREATEST(entry.updated_at, user_entries.updated_at); powers Wallabag `since` delta sync)
   showSpam: boolean;
 }
 
@@ -92,6 +93,7 @@ export interface SearchEntriesParams {
   maxLimit?: number;
   publishedAfter?: Date;
   publishedBefore?: Date;
+  updatedAfter?: Date; // Only entries modified at/after this timestamp (see ListEntriesParams.updatedAfter)
   showSpam: boolean;
 }
 
@@ -544,6 +546,15 @@ export async function listEntries(
   if (params.publishedBefore) {
     conditions.push(sql`${visibleEntries.publishedOrFetchedAt} <= ${params.publishedBefore}`);
   }
+  // "Modified since" filter (Wallabag `since` delta sync). visibleEntries.updatedAt is
+  // GREATEST(entry.updated_at, user_entries.updated_at), so this captures new saves,
+  // content refetches, AND read/star state changes — the same value we return as the
+  // entry's updated_at, so the filter and the reported timestamp can't disagree. The
+  // GREATEST spans two tables so no single index covers it; the userId predicate bounds
+  // the scan to one user's rows (the exact set an un-filtered client would re-page).
+  if (params.updatedAfter) {
+    conditions.push(sql`${visibleEntries.updatedAt} >= ${params.updatedAfter}`);
+  }
 
   // Recently Read: exclude entries that were never explicitly read-state-changed
   if (params.sortBy === "readChanged") {
@@ -684,6 +695,9 @@ async function searchEntries(
   }
   if (params.publishedBefore) {
     conditions.push(sql`${visibleEntries.publishedOrFetchedAt} <= ${params.publishedBefore}`);
+  }
+  if (params.updatedAfter) {
+    conditions.push(sql`${visibleEntries.updatedAt} >= ${params.updatedAfter}`);
   }
 
   // Cursor for search results (based on rank)
@@ -1281,6 +1295,7 @@ export async function countTotalEntries(
     readOnly?: boolean;
     starredOnly?: boolean;
     unstarredOnly?: boolean;
+    updatedAfter?: Date;
     showSpam: boolean;
   }
 ): Promise<number> {
@@ -1305,6 +1320,10 @@ export async function countTotalEntries(
   }
 
   conditions.push(...buildEntryFilterConditions(params));
+
+  if (params.updatedAfter) {
+    conditions.push(sql`${visibleEntries.updatedAt} >= ${params.updatedAfter}`);
+  }
 
   // count(DISTINCT id): dedupe entries reachable through overlapping
   // subscription_feeds rows (see countEntries).
