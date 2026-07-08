@@ -491,6 +491,13 @@ export async function listEntries(
   db: typeof dbType,
   params: ListEntriesParams
 ): Promise<{ items: EntryListItem[]; nextCursor?: string }> {
+  // `cursor` and `offset` are two different ways to page and must not be combined:
+  // the cursor predicate would narrow the window and offset would then skip *more*
+  // rows on top of it, silently double-skipping. Callers use one or the other.
+  if (params.cursor && params.offset) {
+    throw new Error("listEntries: `cursor` and `offset` are mutually exclusive");
+  }
+
   // If query is provided, delegate to search implementation
   if (params.query) {
     return searchEntries(db, {
@@ -1274,7 +1281,6 @@ export async function countTotalEntries(
     readOnly?: boolean;
     starredOnly?: boolean;
     unstarredOnly?: boolean;
-    publishedAfter?: Date;
     showSpam: boolean;
   }
 ): Promise<number> {
@@ -1299,10 +1305,6 @@ export async function countTotalEntries(
   }
 
   conditions.push(...buildEntryFilterConditions(params));
-
-  if (params.publishedAfter) {
-    conditions.push(sql`${visibleEntries.publishedOrFetchedAt} >= ${params.publishedAfter}`);
-  }
 
   // count(DISTINCT id): dedupe entries reachable through overlapping
   // subscription_feeds rows (see countEntries).
