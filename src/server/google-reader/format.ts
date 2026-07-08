@@ -200,11 +200,17 @@ interface GoogleReaderUnreadCount {
  * `getGreaderNewestItemAt`, keyed by the same feed-stream id), in microseconds.
  * Clients use it to decide whether a stream has new content since their last sync,
  * so it must reflect the actual newest item and stay stable when nothing changes.
- * The reading-list total carries the newest across all feeds. A feed with unread
- * items always has a visible entry, so the map is populated for every line we
- * emit; the `Date.now()` fallback only guards a should-not-happen miss (never the
- * literal "0" the old `subscribedAt`-derived value produced for the synthetic
- * saved feed, whose `subscribedAt` is the epoch sentinel).
+ * The reading-list total carries the newest across all feeds.
+ *
+ * A feed with unread items normally has a visible entry, so the map is populated
+ * for every line we emit. The counts and the newest map are two independent reads,
+ * though, so a feed that gains its first visible entry between them can be counted
+ * (unread > 0) yet still be absent from the map. `Date.now()` is the fallback for
+ * that gap — deliberately, not "0": on such a miss content genuinely did just
+ * arrive, so signalling "new" (and prompting one refetch) is correct, and it
+ * reverts to the real, earlier item time on the next poll. "0" would instead read
+ * as never-updated and risk the client *skipping* the new content — the original
+ * bug from deriving this field off the saved feed's epoch `subscribedAt`.
  */
 export function formatUnreadCounts(
   subscriptions: Array<{ id: string; unreadCount: number }>,

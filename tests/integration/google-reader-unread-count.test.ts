@@ -25,8 +25,15 @@ import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { getGreaderNewestItemAt } from "../../src/server/google-reader/subscriptions";
 
 const createdUserIds: string[] = [];
+const createdFeedIds: string[] = [];
 
 afterAll(async () => {
+  // Web feeds carry no user_id, so they don't cascade from `users`; delete them
+  // explicitly (their `entries` cascade from `feeds`). Saved feeds would cascade
+  // from the user, but deleting them here too is harmless.
+  if (createdFeedIds.length > 0) {
+    await db.delete(feeds).where(inArray(feeds.id, createdFeedIds));
+  }
   if (createdUserIds.length > 0) {
     await db.delete(users).where(inArray(users.id, createdUserIds));
   }
@@ -49,19 +56,18 @@ async function createSubscribedFeed(userId: string): Promise<{ feedId: string; s
   const feedId = generateUuidv7();
   const subId = generateUuidv7();
   const now = new Date();
-  await db
-    .insert(feeds)
-    .values({
-      id: feedId,
-      type: "web",
-      url: `https://f/${feedId}`,
-      createdAt: now,
-      updatedAt: now,
-    });
+  await db.insert(feeds).values({
+    id: feedId,
+    type: "web",
+    url: `https://f/${feedId}`,
+    createdAt: now,
+    updatedAt: now,
+  });
   await db
     .insert(subscriptions)
     .values({ id: subId, userId, feedId, subscribedAt: now, createdAt: now, updatedAt: now });
   await db.insert(subscriptionFeeds).values({ subscriptionId: subId, feedId, userId });
+  createdFeedIds.push(feedId);
   return { feedId, subId };
 }
 
@@ -71,6 +77,7 @@ async function createSavedFeed(userId: string): Promise<string> {
   await db
     .insert(feeds)
     .values({ id: feedId, type: "saved", userId, createdAt: now, updatedAt: now });
+  createdFeedIds.push(feedId);
   return feedId;
 }
 
