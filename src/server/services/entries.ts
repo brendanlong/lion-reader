@@ -287,6 +287,11 @@ const entryFullSelectFields = {
   contentOriginalSanitized: visibleEntries.contentOriginalSanitized,
   contentCleanedSanitized: visibleEntries.contentCleanedSanitized,
   contentSanitizedVersion: visibleEntries.contentSanitizedVersion,
+  // Whether this family has raw content to (re-)sanitize at all. Lets the read
+  // path skip the heal for a family with no raw content instead of wasting a
+  // SELECT + no-op sanitize + version-stamping UPDATE on it (see
+  // resolveSanitizedFamily); matches the background sweep's RESANITIZE_NA rule.
+  hasContentRaw: sql<boolean>`${visibleEntries.contentOriginal} IS NOT NULL OR ${visibleEntries.contentCleaned} IS NOT NULL`,
   summary: visibleEntries.summary,
   publishedAt: visibleEntries.publishedAt,
   fetchedAt: visibleEntries.fetchedAt,
@@ -310,6 +315,10 @@ const fullEntrySelectFields = {
   fullContentOriginalSanitized: visibleEntries.fullContentOriginalSanitized,
   fullContentCleanedSanitized: visibleEntries.fullContentCleanedSanitized,
   fullContentSanitizedVersion: visibleEntries.fullContentSanitizedVersion,
+  // See hasContentRaw. Ordinary feed/email inserts leave the full-content raw
+  // columns (and version) NULL, so without this the *first* read of nearly every
+  // entry would take the heal path for a family that has nothing to sanitize.
+  hasFullContentRaw: sql<boolean>`${visibleEntries.fullContentOriginal} IS NOT NULL OR ${visibleEntries.fullContentCleaned} IS NOT NULL`,
   fullContentFetchedAt: visibleEntries.fullContentFetchedAt,
   fullContentError: visibleEntries.fullContentError,
   contentHash: visibleEntries.contentHash,
@@ -363,6 +372,7 @@ async function resolveSanitizedFamily(
     originalSanitized: string | null;
     cleanedSanitized: string | null;
     version: number | null;
+    hasRaw: boolean;
   }
 ): Promise<{ original: string | null; cleaned: string | null }> {
   // Fast path: already sanitized at (or beyond) the current version. `>=`, not
@@ -371,6 +381,18 @@ async function resolveSanitizedFamily(
   // rollback) is served as-is instead of pointlessly re-sanitized every read —
   // the persist CAS is strictly-less-than and would reject the downgrade anyway.
   if (stored.version !== null && stored.version >= SANITIZER_VERSION) {
+    return { original: stored.originalSanitized, cleaned: stored.cleanedSanitized };
+  }
+
+  // Nothing to heal: a family with no raw content can't be re-sanitized, and its
+  // stored sanitized columns are already NULL. Ordinary feed/email inserts leave
+  // the full-content family's raw columns and version NULL, so without this guard
+  // the *first* read of nearly every entry (and every read after a
+  // SANITIZER_VERSION bump) would take the heal path below — a wasted SELECT, two
+  // no-op sanitize calls, and a fire-and-forget UPDATE stamping the version on a
+  // family that holds no content. Skip it, matching the background sweep, which
+  // treats a no-raw family as not stale (RESANITIZE_NA in resanitize.ts).
+  if (!stored.hasRaw) {
     return { original: stored.originalSanitized, cleaned: stored.cleanedSanitized };
   }
 
@@ -421,9 +443,11 @@ async function resolveSanitizedContent(
     contentOriginalSanitized: string | null;
     contentCleanedSanitized: string | null;
     contentSanitizedVersion: number | null;
+    hasContentRaw: boolean;
     fullContentOriginalSanitized: string | null;
     fullContentCleanedSanitized: string | null;
     fullContentSanitizedVersion: number | null;
+    hasFullContentRaw: boolean;
   }
 ) {
   const [content, fullContent] = await Promise.all([
@@ -431,11 +455,13 @@ async function resolveSanitizedContent(
       originalSanitized: stored.contentOriginalSanitized,
       cleanedSanitized: stored.contentCleanedSanitized,
       version: stored.contentSanitizedVersion,
+      hasRaw: stored.hasContentRaw,
     }),
     resolveSanitizedFamily(db, entryId, "fullContent", {
       originalSanitized: stored.fullContentOriginalSanitized,
       cleanedSanitized: stored.fullContentCleanedSanitized,
       version: stored.fullContentSanitizedVersion,
+      hasRaw: stored.hasFullContentRaw,
     }),
   ]);
 
@@ -467,9 +493,11 @@ export async function toFullEntry(
     contentOriginalSanitized,
     contentCleanedSanitized,
     contentSanitizedVersion,
+    hasContentRaw,
     fullContentOriginalSanitized,
     fullContentCleanedSanitized,
     fullContentSanitizedVersion,
+    hasFullContentRaw,
     ...rest
   } = row;
 
@@ -477,9 +505,11 @@ export async function toFullEntry(
     contentOriginalSanitized,
     contentCleanedSanitized,
     contentSanitizedVersion,
+    hasContentRaw,
     fullContentOriginalSanitized,
     fullContentCleanedSanitized,
     fullContentSanitizedVersion,
+    hasFullContentRaw,
   });
 
   return {
@@ -772,13 +802,19 @@ async function toEntryFull(
   db: typeof dbType,
   row: Awaited<ReturnType<typeof selectEntryFullRows>>[number]
 ): Promise<EntryFull> {
-  const { contentOriginalSanitized, contentCleanedSanitized, contentSanitizedVersion, ...rest } =
-    row;
+  const {
+    contentOriginalSanitized,
+    contentCleanedSanitized,
+    contentSanitizedVersion,
+    hasContentRaw,
+    ...rest
+  } = row;
 
   const content = await resolveSanitizedFamily(db, row.id, "content", {
     originalSanitized: contentOriginalSanitized,
     cleanedSanitized: contentCleanedSanitized,
     version: contentSanitizedVersion,
+    hasRaw: hasContentRaw,
   });
 
   return {
