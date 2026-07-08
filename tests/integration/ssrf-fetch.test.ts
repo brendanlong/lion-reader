@@ -29,18 +29,48 @@ import { fetchWithSsrfProtection } from "../../src/server/http/ssrf";
 
 const BODY = "the quick brown fox ".repeat(64); // big enough that encoding actually differs
 
-// A loopback server that encodes its response according to the request path.
+// A loopback server that encodes its response according to the request path. A
+// second server on a different port stands in as a different origin, so we can test
+// that credentials are stripped on a cross-origin redirect.
 let server: Server;
 let port: number;
+let otherServer: Server;
+let otherPort: number;
 
 beforeAll(async () => {
+  // Second origin: echoes back the Authorization header it received.
+  otherServer = createServer((req, res) => {
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end(`AUTH:${req.headers.authorization ?? "none"}`);
+  });
+  await new Promise<void>((resolve) => otherServer.listen(0, "127.0.0.1", resolve));
+  otherPort = (otherServer.address() as AddressInfo).port;
+
   server = createServer((req, res) => {
-    if (req.url === "/gzip") {
+    const url = req.url ?? "/";
+    if (url === "/gzip") {
       res.writeHead(200, { "Content-Type": "text/plain", "Content-Encoding": "gzip" });
       res.end(gzipSync(BODY));
-    } else if (req.url === "/br") {
+    } else if (url === "/br") {
       res.writeHead(200, { "Content-Type": "text/plain", "Content-Encoding": "br" });
       res.end(brotliCompressSync(BODY));
+    } else if (url.startsWith("/redirect-301")) {
+      res.writeHead(301, { Location: "/final" });
+      res.end();
+    } else if (url.startsWith("/redirect-302")) {
+      res.writeHead(302, { Location: "/final" });
+      res.end();
+    } else if (url.startsWith("/redirect-cross-origin")) {
+      // Redirect to the other origin (different port), which echoes the auth header.
+      res.writeHead(302, { Location: `http://127.0.0.1:${otherPort}/` });
+      res.end();
+    } else if (url.startsWith("/redirect-loop")) {
+      // Always redirects to itself — exercises the max-redirects guard.
+      res.writeHead(302, { Location: "/redirect-loop" });
+      res.end();
+    } else if (url === "/final") {
+      res.writeHead(200, { "Content-Type": "text/plain" });
+      res.end(`FINAL:${req.method}`);
     } else {
       res.writeHead(200, { "Content-Type": "text/plain" });
       res.end(BODY);
@@ -51,13 +81,18 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await new Promise<void>((resolve) => {
-    if (server) {
-      server.close(() => resolve());
-    } else {
-      resolve();
-    }
-  });
+  await Promise.all(
+    [server, otherServer].map(
+      (s) =>
+        new Promise<void>((resolve) => {
+          if (s) {
+            s.close(() => resolve());
+          } else {
+            resolve();
+          }
+        })
+    )
+  );
 });
 
 describe("fetchWithSsrfProtection — SSRF blocking", () => {
@@ -88,6 +123,28 @@ describe("fetchWithSsrfProtection — SSRF blocking", () => {
     ).rejects.toMatchObject({ name: "SsrfBlockedError" });
   });
 
+  it("rejects an IPv4-mapped IPv6 literal for a private address", async () => {
+    // http://[::ffff:169.254.169.254]/ — same metadata IP wrapped as IPv6.
+    await expect(
+      fetchWithSsrfProtection("http://[::ffff:169.254.169.254]/latest/meta-data/", {})
+    ).rejects.toMatchObject({ name: "SsrfBlockedError" });
+  });
+
+  it("rejects an IPv4-mapped IPv6 literal in hex form", async () => {
+    // ::ffff:a9fe:a9fe is 169.254.169.254 written with hex quads.
+    await expect(fetchWithSsrfProtection("http://[::ffff:a9fe:a9fe]/", {})).rejects.toMatchObject({
+      name: "SsrfBlockedError",
+    });
+  });
+
+  it("rejects a decimal-encoded private IP", async () => {
+    // 2130706433 == 127.0.0.1. WHATWG URL normalizes the decimal host to the
+    // dotted literal 127.0.0.1, so the up-front literal check catches it directly.
+    await expect(fetchWithSsrfProtection("http://2130706433/", {})).rejects.toMatchObject({
+      name: "SsrfBlockedError",
+    });
+  });
+
   it("blocks a hostname that resolves to loopback at connection time", async () => {
     // `localhost` resolves to 127.0.0.1/::1; the custom lookup must abort the connect.
     // undici's fetch wraps the connect error as `TypeError: fetch failed` with the
@@ -95,6 +152,68 @@ describe("fetchWithSsrfProtection — SSRF blocking", () => {
     await expect(fetchWithSsrfProtection(`http://localhost:${port}/`, {})).rejects.toMatchObject({
       cause: { name: "SsrfBlockedError" },
     });
+  });
+});
+
+describe("fetchWithSsrfProtection — manual redirect following", () => {
+  // These exercise the real undici/global-fetch plumbing end-to-end: that a manual
+  // redirect exposes Location, that `response.url` reflects the final hop, and that
+  // the loop follows across real connections. The per-hop *blocking* logic (a
+  // redirect chain ending at a private IP literal, credential stripping, method
+  // downgrade) is unit-tested against the real validator in
+  // `tests/unit/ssrf-redirects.test.ts` — a protection-ON multi-hop block can't use
+  // a loopback server here, since the initial request to loopback is itself blocked.
+  // So these run with protection OFF to cover the transport wiring of the loop.
+  const prev = process.env.ALLOW_PRIVATE_NETWORK_FETCH;
+
+  beforeAll(() => {
+    process.env.ALLOW_PRIVATE_NETWORK_FETCH = "true";
+  });
+  afterAll(() => {
+    if (prev === undefined) {
+      delete process.env.ALLOW_PRIVATE_NETWORK_FETCH;
+    } else {
+      process.env.ALLOW_PRIVATE_NETWORK_FETCH = prev;
+    }
+  });
+
+  it("follows a 302 redirect and returns the final response", async () => {
+    const res = await fetchWithSsrfProtection(`http://127.0.0.1:${port}/redirect-302`, {});
+    expect(res.status).toBe(200);
+    expect(res.url).toBe(`http://127.0.0.1:${port}/final`);
+    expect(await res.text()).toBe("FINAL:GET");
+  });
+
+  it("downgrades POST to GET on a 302 redirect (per the Fetch spec)", async () => {
+    const res = await fetchWithSsrfProtection(`http://127.0.0.1:${port}/redirect-302`, {
+      method: "POST",
+      body: "hello",
+    });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("FINAL:GET");
+  });
+
+  it("returns the redirect unfollowed when redirect: manual", async () => {
+    const res = await fetchWithSsrfProtection(`http://127.0.0.1:${port}/redirect-301`, {
+      redirect: "manual",
+    });
+    expect(res.status).toBe(301);
+    expect(res.headers.get("location")).toBe("/final");
+  });
+
+  it("strips the Authorization header on a cross-origin redirect", async () => {
+    const res = await fetchWithSsrfProtection(`http://127.0.0.1:${port}/redirect-cross-origin`, {
+      headers: { Authorization: "Bearer SECRET" },
+    });
+    expect(res.status).toBe(200);
+    // The other origin must NOT have received the bearer token.
+    expect(await res.text()).toBe("AUTH:none");
+  });
+
+  it("throws when a redirect loop exceeds the max hop count", async () => {
+    await expect(
+      fetchWithSsrfProtection(`http://127.0.0.1:${port}/redirect-loop`, {})
+    ).rejects.toThrow(/too many redirects/i);
   });
 });
 
