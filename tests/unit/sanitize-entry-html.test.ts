@@ -146,13 +146,13 @@ describe("sanitizeEntryHtml", () => {
       expect(out).toContain('colspan="2"');
     });
 
-    it("keeps iframes (e.g. embedded video) with allowfullscreen", () => {
+    it("strips iframes (phishing/tracking surface; not on DOMPurify's default list)", () => {
       const out =
-        sanitizeEntryHtml('<iframe src="https://youtube.com/embed/x" allowfullscreen></iframe>') ??
-        "";
-      expect(out).toContain("<iframe");
-      expect(out).toContain("youtube.com/embed/x");
-      expect(out).toContain("allowfullscreen");
+        sanitizeEntryHtml(
+          '<iframe src="https://evil.example/fake-login" allowfullscreen></iframe>'
+        ) ?? "";
+      expect(out).not.toContain("<iframe");
+      expect(out).not.toContain("evil.example");
     });
 
     it("keeps data: image URIs", () => {

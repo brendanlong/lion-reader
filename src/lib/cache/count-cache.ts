@@ -32,12 +32,23 @@ export type CachedSubscription = NonNullable<
 const subscriptionLookupMap = new Map<string, CachedSubscription>();
 
 /**
+ * Clears the subscription lookup map.
+ *
+ * Must be called on logout: this map is module-level state that outlives a
+ * session (it isn't tied to the QueryClient), so without an explicit clear one
+ * account's subscription data bleeds into the next login on a shared browser.
+ */
+export function clearSubscriptionLookupMap(): void {
+  subscriptionLookupMap.clear();
+}
+
+/**
  * Resets the subscription lookup map.
  * Exported for test isolation only - this map is module-level state
  * that persists across tests and must be cleared between them.
  */
 export function _resetSubscriptionLookupMap(): void {
-  subscriptionLookupMap.clear();
+  clearSubscriptionLookupMap();
 }
 
 /**

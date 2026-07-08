@@ -55,15 +55,23 @@ To render these diagrams, use the [D2 CLI](https://d2lang.com/) or [D2 Playgroun
 │  │ tRPC    │  │     │               │     │               │
 │  │ SSE     │  │     │               │     │               │
 │  └─────────┘  │     │               │     │               │
-│  ┌─────────┐  │     │               │     │               │
-│  │ Worker  │  │     │               │     │               │
-│  │ process │  │     │               │     │               │
-│  └─────────┘  │     │               │     │               │
 └───────┬───────┘     └───────┬───────┘     └───────┬───────┘
         │                     │                     │
         └──────────┬──────────┴──────────┬──────────┘
                    │                     │
-                   ▼                     ▼
+   ┌───────────────┤                     │
+   │               │                     │
+   │  Separate Fly process groups (see [processes] in fly.toml):
+   │               │                     │
+   │  ┌─────────────────┐   ┌──────────────────┐
+   │  │  Worker (min 1) │   │  Discord Bot     │
+   │  │  feed fetching, │   │  save via emoji  │
+   │  │  background jobs│   │  reactions       │
+   │  └────────┬────────┘   └────────┬─────────┘
+   │           │                     │
+   ▼           ▼                     ▼
+   └──────────►┤                     │
+               ▼                     ▼
            ┌─────────────┐       ┌─────────────┐
            │  Postgres   │       │    Redis    │
            │             │       │  - pub/sub  │
@@ -78,6 +86,10 @@ To render these diagrams, use the [D2 CLI](https://d2lang.com/) or [D2 Playgroun
 │  Uses same services layer as tRPC routers                    │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+The **app**, **worker**, and **discord** processes are separate Fly.io process
+groups (`[processes]` in `fly.toml`), each independently scaled — the worker is
+not embedded in the app servers.
 
 ### Design Principles
 
@@ -158,7 +170,7 @@ The older `entry.fetched_at >= subscription.subscribed_at` rule was a one-time b
 
 **Read/Star Idempotency**: `user_entries` carries per-field change timestamps (`read_changed_at`, `starred_changed_at`), and state mutations accept a `changedAt` and only apply when newer than the stored timestamp. This makes conflicting updates from multiple clients (tabs, MCP, offline sync replaying old actions) resolve to the newest user intent instead of last-write-wins.
 
-**UUIDv7 Ordering**: Since UUIDv7 is time-ordered, `ORDER BY id DESC` gives us reverse chronological order without needing a separate timestamp column for sorting.
+**UUIDv7 Ordering**: Since UUIDv7 is time-ordered, `id` doubles as a roughly-chronological tiebreaker: keyset pagination breaks ties on `id DESC` and the insert locality keeps B-tree writes sequential. It is **not** the timeline sort key — the entries timeline sorts by `COALESCE(published_at, fetched_at)` (denormalized onto `user_entries.published_or_fetched_at`, see below), not by `id`, because publish order and insert order diverge.
 
 **Timeline Sort Key Denormalization**: The timeline list query filters on `user_entries.user_id` but sorts by `COALESCE(entries.published_at, entries.fetched_at)`. Because filter and sort columns lived on different tables, no single index could cover both. Since that COALESCE value is immutable per entry, it is denormalized onto `user_entries.published_or_fetched_at` and indexed as `(user_id, published_or_fetched_at DESC, entry_id DESC)`, letting the planner serve the filter + sort from one index with LIMIT pushdown. Hot insert paths populate it inline; a `BEFORE INSERT` trigger backfills it for any caller that omits it.
 
@@ -366,13 +378,22 @@ Besides the browser tRPC endpoint (`/api/trpc`), the same routers/services back 
 - **MCP** (`/api/mcp`): see [MCP Server](#mcp-server).
 - **Webhooks** (`/api/webhooks/*`): Mailgun inbound email, WebSub hub callbacks.
 
+This list is not exhaustive. Other route handlers under `src/app/api/` include
+`/api/health` (Fly.io/load-balancer health check), `/api/share` (PWA Web Share
+Target), `/api/admin/session` (admin session helper), and `/api/v1/telemetry`
+(client telemetry ingest).
+
 ### Pagination
 
 Cursor-based pagination everywhere:
 
 - Request: `{ cursor?: string, limit?: number }`
 - Response: `{ items: T[], nextCursor?: string }`
-- Cursor is base64url-encoded UUIDv7 (gives us ordering). base64url (not standard
+- Cursor is a base64url-encoded JSON keyset tuple — the sort key of the last row,
+  so the next page resumes with a `> cursor` comparison. The tuple's shape depends
+  on the ordering: `{ ts, id }` for entry lists (`published_or_fetched_at` + id
+  tiebreaker), `{ title, id }` for subscriptions (alphabetical), and a float rank
+  (encoded in the same `ts` field) for full-text search results. base64url (not standard
   base64) so the cursor is safe to echo back in a URL query string — it surfaces as
   the Google Reader `continuation` token, and some clients concatenate query params
   without URL-encoding, where a `+` from standard base64 would arrive as a space and
@@ -482,18 +503,19 @@ app/
     all/                      # All entries timeline
     starred/                  # Starred entries
     saved/                    # Saved articles
+    recently-read/            # Recently-read timeline (sortBy: readChanged)
     uncategorized/            # Entries from untagged subscriptions
     subscription/[id]/        # Single subscription entries (uses subscription ID)
     tag/[tagId]/              # Entries filtered by tag
-    settings/                 # User settings
+    settings/                 # User settings (rendered by UnifiedSettingsContent)
       appearance/             # Theme, font, text size
+      subscriptions/          # Subscription management + feed stats
+      email/                  # Newsletter ingest addresses + blocked senders
+      ai/                     # AI & narration settings
+      integrations/           # Integration settings + API tokens
+      feed-health/            # Broken/failing feed health
       sessions/               # Active session management
-      api-tokens/             # API token management
-      email/                  # Newsletter ingest addresses
-      blocked-senders/        # Blocked email senders
-      broken-feeds/           # Feeds with fetch failures
-      feed-stats/             # Per-feed statistics
-      integrations/           # Integration settings
+      delete-account/         # Account deletion
     subscribe/                # Add subscription flow
   save/                       # Bookmarklet landing page (top-level, no auth layout)
   extension/save/             # Browser extension save page
@@ -632,6 +654,21 @@ Practically, this means using the expand/contract pattern:
 ### Local Development
 
 Docker Compose provides Postgres and Redis for local development. See README for setup instructions.
+
+### Object Storage (S3/Tigris)
+
+An **optional** S3-compatible object store re-hosts external images that would
+otherwise expire or leak referrers — currently only Google Docs images, which
+carry short-lived `contentUri` links. `src/server/storage/s3.ts` (`isStorageAvailable`,
+`fetchAndUploadImage`) signs requests with `aws4fetch` and works against AWS S3 or
+Fly.io Tigris; `src/server/google/docs.ts` calls it to fetch each image (SSRF-protected,
+size-limited) and rewrite the document to the re-hosted URL.
+
+Configured via `STORAGE_BUCKET`, `STORAGE_ENDPOINT`, `STORAGE_REGION`,
+`STORAGE_PUBLIC_URL_BASE` (see `[env]` in `fly.toml`) plus the `STORAGE_ACCESS_KEY_ID`
+/ `STORAGE_SECRET_ACCESS_KEY` secrets. The feature **no-ops when unconfigured**:
+`isStorageAvailable()` returns false and image re-hosting is skipped, so the rest of
+the app runs unaffected.
 
 ### CI/CD
 

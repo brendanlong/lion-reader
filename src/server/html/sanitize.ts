@@ -32,7 +32,7 @@ import { convertMathJaxChtmlToMathml } from "./mathjax-chtml";
  * stale and transparently re-sanitizes it on next read instead of serving stale
  * output.
  */
-export const SANITIZER_VERSION = 4;
+export const SANITIZER_VERSION = 5;
 
 // Tags allowed in entry content. Superset of sanitize-html's defaults covering
 // the formatting, table, and media elements real articles use. `script` and
@@ -119,7 +119,11 @@ const ALLOWED_TAGS = [
   "audio",
   "video",
   "track",
-  "iframe",
+  // `iframe` is deliberately excluded: an allowed cross-origin iframe lets a feed
+  // embed an arbitrary page full-bleed inside the reader's trusted UI (phishing /
+  // tracking surface), and it isn't in DOMPurify's default tag list either. If we
+  // reintroduce embeds (YouTube/Vimeo), gate them with `allowedIframeHostnames`
+  // and a forced `sandbox` attribute, and bump SANITIZER_VERSION.
 ];
 
 // Presentation MathML, allowed so equations render natively (modern browsers
@@ -219,18 +223,6 @@ const SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
       "decoding",
     ],
     source: [...GLOBAL_ATTRS, "src", "srcset", "type", "media", "sizes"],
-    iframe: [
-      ...GLOBAL_ATTRS,
-      "src",
-      "width",
-      "height",
-      "allow",
-      "allowfullscreen",
-      "frameborder",
-      "loading",
-      "referrerpolicy",
-      "sandbox",
-    ],
     video: [
       ...GLOBAL_ATTRS,
       "src",

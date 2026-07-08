@@ -10,6 +10,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { ClientLink } from "@/components/ui/client-link";
 import {
   CloseIcon,
@@ -32,6 +33,7 @@ import {
 import { KeyboardShortcutsProvider } from "@/components/keyboard/KeyboardShortcutsProvider";
 import { AppRouter } from "@/components/app/AppRouter";
 import { trpc } from "@/lib/trpc/client";
+import { clearSubscriptionLookupMap } from "@/lib/cache/count-cache";
 import { AppearanceProvider } from "@/lib/appearance/AppearanceProvider";
 import { type SyncCursors } from "@/lib/events/cursors";
 
@@ -41,6 +43,7 @@ interface AppLayoutContentProps {
 
 export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
@@ -48,6 +51,13 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
     onSuccess: () => {
       // Clear the session cookie
       document.cookie = "session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+      // Drop all cached data before the next login. The browser QueryClient and
+      // the subscription lookup map are module-level singletons that outlive the
+      // session, so without this a different account signing in on the same tab
+      // (SPA navigation, no full reload) would be served the previous user's
+      // article bodies, lists, counts, and subscription titles.
+      queryClient.clear();
+      clearSubscriptionLookupMap();
       router.push("/login");
       router.refresh();
     },

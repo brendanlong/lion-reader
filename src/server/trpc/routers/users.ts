@@ -12,6 +12,7 @@ import {
   createTRPCRouter,
   confirmedProtectedProcedure as protectedProcedure,
   expensiveProtectedProcedure,
+  expensiveConfirmedProtectedProcedure,
 } from "../trpc";
 import { errors } from "../errors";
 import { sessions, users, oauthAccounts } from "@/server/db/schema";
@@ -150,7 +151,7 @@ export const usersRouter = createTRPCRouter({
    * Only works if the user doesn't already have a password set.
    * This allows OAuth users to add password-based login to their account.
    */
-  "me.setPassword": protectedProcedure
+  "me.setPassword": expensiveConfirmedProtectedProcedure
     .meta({
       openapi: {
         method: "POST",
@@ -197,7 +198,7 @@ export const usersRouter = createTRPCRouter({
    *
    * Requires the current password for verification before setting a new one.
    */
-  "me.changePassword": protectedProcedure
+  "me.changePassword": expensiveConfirmedProtectedProcedure
     .meta({
       openapi: {
         method: "POST",
