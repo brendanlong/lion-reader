@@ -20,7 +20,7 @@ import { extractTextFromHtml } from "@/server/http/html";
 import { sanitizeEntryHtml } from "@/server/html/sanitize";
 import { absolutizeUrls } from "@/server/feed/content-cleaner";
 import { cleanContentInWorker, sanitizeEntryHtmlInWorker } from "@/server/worker-thread/pool";
-import { getOrCreateSavedFeed, SAVED_FEED_TITLE } from "@/server/feed/saved-feed";
+import { getOrCreateSavedFeed, getSavedFeedId, SAVED_FEED_TITLE } from "@/server/feed/saved-feed";
 import { generateSummary } from "@/server/html/strip-html";
 import { withSanitizedEntryContentAsync } from "@/server/html/sanitize-entry";
 import { logger } from "@/lib/logger";
@@ -673,18 +673,55 @@ async function acquireArticleContent(
  * Google Docs, etc.); private Google Docs are supported via the interactive
  * `googleDocsAuth` option.
  */
+/**
+ * Normalizes a URL exactly the way {@link saveArticle} does before storing it as
+ * the entry `guid`: strip fragments (two URLs differing only by `#section` point
+ * to the same article), and for Google Docs remove extraneous query params
+ * except `tab`. Existence checks must use this so they match saved rows.
+ */
+function normalizeSavedUrl(url: string): string {
+  const normalized = normalizeUrl(url);
+  return isGoogleDocsUrl(normalized) ? normalizeGoogleDocsUrl(normalized) : normalized;
+}
+
+/**
+ * Checks whether the user has already saved an article for the given URL,
+ * returning its entry id (or null). Read-only: unlike {@link saveArticle} it
+ * never creates the user's saved feed, so it's safe on probe/exists paths.
+ *
+ * Indexed by the `uq_entries_feed_guid` unique constraint on `(feed_id, guid)`.
+ */
+export async function savedArticleExistsByUrl(
+  db: typeof dbType,
+  userId: string,
+  url: string
+): Promise<string | null> {
+  const savedFeedId = await getSavedFeedId(db, userId);
+  if (!savedFeedId) return null;
+
+  const normalizedUrl = normalizeSavedUrl(url);
+  const existing = await db
+    .select({ id: entries.id })
+    .from(entries)
+    .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
+    .where(
+      and(
+        eq(entries.feedId, savedFeedId),
+        eq(entries.guid, normalizedUrl),
+        eq(userEntries.userId, userId)
+      )
+    )
+    .limit(1);
+
+  return existing[0]?.id ?? null;
+}
+
 export async function saveArticle(
   db: typeof dbType,
   userId: string,
   params: SaveArticleParams
 ): Promise<SaveArticleResult> {
-  // Normalize URL: strip fragments (two URLs differing only by #section point
-  // to the same article). For Google Docs, also remove extraneous query
-  // params except 'tab'.
-  let normalizedUrl = normalizeUrl(params.url);
-  if (isGoogleDocsUrl(normalizedUrl)) {
-    normalizedUrl = normalizeGoogleDocsUrl(normalizedUrl);
-  }
+  const normalizedUrl = normalizeSavedUrl(params.url);
 
   // Get or create the user's saved feed
   const savedFeedId = await getOrCreateSavedFeed(db, userId);

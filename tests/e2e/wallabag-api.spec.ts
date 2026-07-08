@@ -223,6 +223,18 @@ test.describe("Wallabag API happy path", () => {
       expect(existsRes.status()).toBe(200);
       expect((await existsRes.json()).exists).toBe(true);
 
+      // `since` delta sync is wired through the route: since=0 returns everything,
+      // a far-future timestamp returns nothing. (The GREATEST(entry, user_entries)
+      // "modified since" semantics are covered in detail by the integration tests.)
+      const sinceAll = await request.get("/api/wallabag/api/entries?since=0", { headers: auth });
+      expect((await sinceAll.json())._embedded.items.map((e: { id: number }) => e.id)).toContain(
+        saved.id
+      );
+      const sinceFuture = await request.get("/api/wallabag/api/entries?since=9999999999", {
+        headers: auth,
+      });
+      expect((await sinceFuture.json())._embedded.items).toHaveLength(0);
+
       // Delete it.
       const deleteRes = await request.delete(`/api/wallabag/api/entries/${saved.id}`, {
         headers: auth,
@@ -236,6 +248,71 @@ test.describe("Wallabag API happy path", () => {
       expect(deleteAgain.status()).toBe(404);
     } finally {
       await close();
+    }
+  });
+
+  test("paginates saved articles with page/perPage (offset)", async ({ request }) => {
+    const { access_token } = await getTokens(request);
+    const auth = { Authorization: `Bearer ${access_token}` };
+
+    // Two distinct saved articles (two servers → two ports → two URLs).
+    const a = await startArticleServer();
+    const b = await startArticleServer();
+    let idA: number | undefined;
+    let idB: number | undefined;
+    try {
+      idA = (
+        await (
+          await request.post("/api/wallabag/api/entries", { headers: auth, form: { url: a.url } })
+        ).json()
+      ).id;
+      idB = (
+        await (
+          await request.post("/api/wallabag/api/entries", { headers: auth, form: { url: b.url } })
+        ).json()
+      ).id;
+
+      // Ground truth: one big page gives the canonical order and total.
+      const allRes = await request.get("/api/wallabag/api/entries?perPage=100&detail=metadata", {
+        headers: auth,
+      });
+      const all = await allRes.json();
+      const orderedIds: number[] = all._embedded.items.map((e: { id: number }) => e.id);
+      expect(orderedIds).toContain(idA);
+      expect(orderedIds).toContain(idB);
+      const total: number = all.total;
+
+      // perPage=1 must page through the SAME order via LIMIT/OFFSET, one item per
+      // page, with pages == total. This is the regression guard for the old
+      // cursor-skip loop (N sequential queries to reach page N).
+      const page1 = await (
+        await request.get("/api/wallabag/api/entries?perPage=1&page=1&detail=metadata", {
+          headers: auth,
+        })
+      ).json();
+      const page2 = await (
+        await request.get("/api/wallabag/api/entries?perPage=1&page=2&detail=metadata", {
+          headers: auth,
+        })
+      ).json();
+
+      expect(page1.total).toBe(total);
+      expect(page1.pages).toBe(total);
+      expect(page1._embedded.items.map((e: { id: number }) => e.id)).toEqual([orderedIds[0]]);
+      expect(page2._embedded.items.map((e: { id: number }) => e.id)).toEqual([orderedIds[1]]);
+
+      // A page beyond the data is empty, not an error.
+      const beyond = await request.get(
+        `/api/wallabag/api/entries?perPage=1&page=${total + 5}&detail=metadata`,
+        { headers: auth }
+      );
+      expect(beyond.status()).toBe(200);
+      expect((await beyond.json())._embedded.items).toHaveLength(0);
+    } finally {
+      if (idA) await request.delete(`/api/wallabag/api/entries/${idA}`, { headers: auth });
+      if (idB) await request.delete(`/api/wallabag/api/entries/${idB}`, { headers: auth });
+      await a.close();
+      await b.close();
     }
   });
 });
