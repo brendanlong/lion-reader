@@ -642,8 +642,19 @@ export async function listEntries(
       ? [desc(sortColumn), desc(visibleEntries.id)]
       : [asc(sortColumn), asc(visibleEntries.id)];
 
+  // DISTINCT ON (sortColumn, id): visible_entries emits one row per matching
+  // subscription_feeds row, so an entry reachable through overlapping
+  // subscriptions (redirect/merge history) would otherwise appear multiple times
+  // in the timeline. This dedupes to one row per entry, keeping the count paths
+  // (which use count(DISTINCT id)) consistent with the list. The ON expressions
+  // match the leading ORDER BY columns, so the index-ordered scan streams straight
+  // into the Unique node. id is globally unique, so the cursor key (sortColumn, id)
+  // identifies the surviving row unambiguously and the keyset cursor resumes
+  // cleanly. The non-key subscriptionId of the kept row is arbitrary among the
+  // overlapping subscriptions, but they all point at the same feed, so downstream
+  // filtering (which keys on feedId) is unaffected.
   const queryResults = await db
-    .select({
+    .selectDistinctOn([sortColumn, visibleEntries.id], {
       id: visibleEntries.id,
       feedId: visibleEntries.feedId,
       type: visibleEntries.type,
@@ -752,8 +763,15 @@ async function searchEntries(
     );
   }
 
-  // Query
-  const queryResults = await db
+  // Compute the rank in a subquery so it becomes a plain output column, then
+  // dedupe in the outer query with DISTINCT ON (rank, id). This dedupes entries
+  // reachable through overlapping subscription_feeds rows, same as listEntries
+  // above. DISTINCT ON must textually match the leading ORDER BY expressions, and
+  // Postgres treats the two inlined `ts_rank(...)` expressions as unequal because
+  // their bound-parameter placeholders differ ($1 vs $6) — so the rank must be a
+  // single named column referenced by both clauses. id is globally unique, so each
+  // entry yields one row that the (rank, id) keyset cursor resumes from cleanly.
+  const rankedSubquery = db
     .select({
       id: visibleEntries.id,
       feedId: visibleEntries.feedId,
@@ -769,13 +787,38 @@ async function searchEntries(
       updatedAt: visibleEntries.updatedAt,
       subscriptionId: visibleEntries.subscriptionId,
       siteName: visibleEntries.siteName,
-      feedTitle: feeds.title,
-      rank: rankColumn,
+      // Alias to avoid colliding with visibleEntries.title (both are "title")
+      // inside the subquery, which would make the outer reference ambiguous.
+      feedTitle: sql<string | null>`${feeds.title}`.as("feed_title"),
+      // Alias required so the outer query can reference this raw SQL field.
+      rank: rankColumn.as("rank"),
     })
     .from(visibleEntries)
     .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
     .where(and(...conditions))
-    .orderBy(desc(rankColumn), desc(visibleEntries.id))
+    .as("ranked");
+
+  const queryResults = await db
+    .selectDistinctOn([rankedSubquery.rank, rankedSubquery.id], {
+      id: rankedSubquery.id,
+      feedId: rankedSubquery.feedId,
+      type: rankedSubquery.type,
+      url: rankedSubquery.url,
+      title: rankedSubquery.title,
+      author: rankedSubquery.author,
+      summary: rankedSubquery.summary,
+      publishedAt: rankedSubquery.publishedAt,
+      fetchedAt: rankedSubquery.fetchedAt,
+      read: rankedSubquery.read,
+      starred: rankedSubquery.starred,
+      updatedAt: rankedSubquery.updatedAt,
+      subscriptionId: rankedSubquery.subscriptionId,
+      siteName: rankedSubquery.siteName,
+      feedTitle: rankedSubquery.feedTitle,
+      rank: rankedSubquery.rank,
+    })
+    .from(rankedSubquery)
+    .orderBy(desc(rankedSubquery.rank), desc(rankedSubquery.id))
     .limit(limit + 1)
     .offset(params.offset ?? 0);
 
@@ -786,7 +829,9 @@ async function searchEntries(
   let nextCursor: string | undefined;
   if (hasMore && resultEntries.length > 0) {
     const lastEntry = resultEntries[resultEntries.length - 1];
-    nextCursor = encodeCursor(lastEntry.rank.toString(), lastEntry.id);
+    // Drizzle infers the sql<number> rank column as `never` through the subquery
+    // boundary; Number() recovers the value (a float rank) for cursor encoding.
+    nextCursor = encodeCursor(Number(lastEntry.rank).toString(), lastEntry.id);
   }
 
   return { items, nextCursor };
