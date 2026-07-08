@@ -10,6 +10,7 @@
  * the helpers here, so the saved feed is materialized in exactly one place.
  */
 
+import { sql } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import * as subscriptionsService from "@/server/services/subscriptions";
 import { countEntries, type ListEntriesParams } from "@/server/services/entries";
@@ -109,4 +110,71 @@ async function getSavedSubscription(
     tags: [],
     fetchFullContent: false,
   };
+}
+
+/**
+ * Newest visible item time per Google Reader feed stream, for the unread-count
+ * endpoint's `newestItemTimestampUsec`. Keyed by the id `formatUnreadCounts`
+ * emits: the real subscription id, or the saved feed's id for the synthetic saved
+ * feed (issue #730). Feeds with no visible entries are simply absent from the map.
+ *
+ * "Newest visible" is the most recent entry — by `COALESCE(published_at,
+ * fetched_at)`, matching stream ordering — that the user has a `user_entries` row
+ * for (the same record the `visible_entries` view treats as visibility). Read
+ * state is ignored (a read article is still the stream's newest item) and spam is
+ * included, so this stays consistent with the unread counts and never yields null
+ * for a feed that has an unread item.
+ *
+ * Shaped as a per-feed short-circuit: for each subscribed feed, walk entries
+ * newest-first on `idx_entries_feed_published_coalesce` and stop at the first one
+ * the user has (probing the `user_entries` primary key). Because the fanout
+ * invariant guarantees an active subscriber has the feed's newest entries, the
+ * `LIMIT 1` hits immediately, so the cost is O(subscriptions), not O(entry
+ * history). Verified index-only and sub-millisecond with EXPLAIN — it rides
+ * existing indexes, so no new index is needed.
+ */
+export async function getGreaderNewestItemAt(
+  db: typeof dbType,
+  userId: string
+): Promise<Map<string, Date>> {
+  const [realResult, savedFeedId] = await Promise.all([
+    db.execute(sql`
+      SELECT sf.subscription_id AS subscription_id, max(latest.newest) AS newest
+      FROM subscription_feeds sf
+      JOIN subscriptions s ON s.id = sf.subscription_id AND s.unsubscribed_at IS NULL
+      JOIN LATERAL (
+        SELECT COALESCE(e.published_at, e.fetched_at) AS newest
+        FROM entries e
+        JOIN user_entries ue ON ue.user_id = sf.user_id AND ue.entry_id = e.id
+        WHERE e.feed_id = sf.feed_id
+        ORDER BY COALESCE(e.published_at, e.fetched_at) DESC, e.id DESC
+        LIMIT 1
+      ) latest ON true
+      WHERE sf.user_id = ${userId}::uuid
+      GROUP BY sf.subscription_id
+    `),
+    getSavedFeedId(db, userId),
+  ]);
+
+  const newestById = new Map<string, Date>();
+  for (const row of realResult.rows as Array<{ subscription_id: string; newest: Date | null }>) {
+    if (row.newest) newestById.set(row.subscription_id, new Date(row.newest));
+  }
+
+  // The saved feed has no subscription_feeds row, so its newest is looked up by
+  // its feed id directly (same per-feed short-circuit as above).
+  if (savedFeedId) {
+    const savedResult = await db.execute(sql`
+      SELECT COALESCE(e.published_at, e.fetched_at) AS newest
+      FROM entries e
+      JOIN user_entries ue ON ue.user_id = ${userId}::uuid AND ue.entry_id = e.id
+      WHERE e.feed_id = ${savedFeedId}::uuid
+      ORDER BY COALESCE(e.published_at, e.fetched_at) DESC, e.id DESC
+      LIMIT 1
+    `);
+    const newest = (savedResult.rows[0] as { newest: Date | null } | undefined)?.newest;
+    if (newest) newestById.set(savedFeedId, new Date(newest));
+  }
+
+  return newestById;
 }

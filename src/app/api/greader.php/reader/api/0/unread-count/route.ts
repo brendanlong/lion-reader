@@ -10,7 +10,10 @@
 import { requireAuth } from "@/server/google-reader/auth";
 import { jsonResponse } from "@/server/google-reader/parse";
 import { formatUnreadCounts } from "@/server/google-reader/format";
-import { listGreaderSubscriptions } from "@/server/google-reader/subscriptions";
+import {
+  listGreaderSubscriptions,
+  getGreaderNewestItemAt,
+} from "@/server/google-reader/subscriptions";
 import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
@@ -19,9 +22,11 @@ export async function GET(request: Request): Promise<Response> {
   const session = await requireAuth(request);
   if (session instanceof Response) return session;
 
-  const subscriptions = await listGreaderSubscriptions(db, session.user.id, {
-    showSpam: session.user.showSpam,
-  });
+  // Counts and newest-item times are independent scans; run them concurrently.
+  const [subscriptions, newestItemAtById] = await Promise.all([
+    listGreaderSubscriptions(db, session.user.id, { showSpam: session.user.showSpam }),
+    getGreaderNewestItemAt(db, session.user.id),
+  ]);
 
-  return jsonResponse(formatUnreadCounts(subscriptions));
+  return jsonResponse(formatUnreadCounts(subscriptions, newestItemAtById));
 }

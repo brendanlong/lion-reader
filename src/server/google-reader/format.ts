@@ -196,29 +196,39 @@ interface GoogleReaderUnreadCount {
  * `subscriptions` (issue #730), so it is counted and folded into the
  * reading-list total exactly like a real feed — no special case here.
  *
- * `newestItemTimestampUsec` reports the current time (matching the reading-list
- * total below): we don't track a per-feed newest-item timestamp, and "now" is the
- * honest freshness signal for a feed with unread items — clients use it to decide
- * whether to refetch, so a stale value risks them skipping updates. Deriving it
- * from `subscribedAt` (as this once did) emitted a literal "0" for the synthetic
- * saved feed, whose `subscribedAt` is the epoch sentinel.
+ * `newestItemTimestampUsec` is the newest visible item's time (from
+ * `getGreaderNewestItemAt`, keyed by the same feed-stream id), in microseconds.
+ * Clients use it to decide whether a stream has new content since their last sync,
+ * so it must reflect the actual newest item and stay stable when nothing changes.
+ * The reading-list total carries the newest across all feeds. A feed with unread
+ * items always has a visible entry, so the map is populated for every line we
+ * emit; the `Date.now()` fallback only guards a should-not-happen miss (never the
+ * literal "0" the old `subscribedAt`-derived value produced for the synthetic
+ * saved feed, whose `subscribedAt` is the epoch sentinel).
  */
-export function formatUnreadCounts(subscriptions: Array<{ id: string; unreadCount: number }>): {
+export function formatUnreadCounts(
+  subscriptions: Array<{ id: string; unreadCount: number }>,
+  newestItemAtById: Map<string, Date>
+): {
   max: number;
   unreadcounts: GoogleReaderUnreadCount[];
 } {
   const unreadcounts: GoogleReaderUnreadCount[] = [];
-  const nowUsec = Date.now().toString() + "000";
+
+  const toUsec = (ms: number): string => (ms * 1000).toString();
 
   let totalUnread = 0;
+  let newestOverallMs = 0;
   for (const sub of subscriptions) {
     if (sub.unreadCount > 0) {
+      const newestMs = newestItemAtById.get(sub.id)?.getTime() ?? Date.now();
       unreadcounts.push({
         id: feedStreamId(sub.id),
         count: sub.unreadCount,
-        newestItemTimestampUsec: nowUsec,
+        newestItemTimestampUsec: toUsec(newestMs),
       });
       totalUnread += sub.unreadCount;
+      newestOverallMs = Math.max(newestOverallMs, newestMs);
     }
   }
 
@@ -227,7 +237,7 @@ export function formatUnreadCounts(subscriptions: Array<{ id: string; unreadCoun
     unreadcounts.push({
       id: stateStreamId("reading-list"),
       count: totalUnread,
-      newestItemTimestampUsec: nowUsec,
+      newestItemTimestampUsec: toUsec(newestOverallMs),
     });
   }
 
