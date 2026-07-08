@@ -7,7 +7,6 @@
 
 import { uuidToInt64, int64ToLongFormId, subscriptionToStreamId, feedStreamId } from "./id";
 import { stateStreamId, labelStreamId } from "./streams";
-import { SAVED_FEED_TITLE } from "@/server/feed/saved-feed";
 import type { EntryFull } from "@/server/services/entries";
 import type { Subscription } from "@/server/services/subscriptions";
 import type { ListTagsResult } from "@/server/services/tags";
@@ -77,7 +76,7 @@ export function formatEntryAsItem(entry: EntryFull): GoogleReaderItem {
       // Saved articles have no subscription; address them by their saved-feed id
       // (exposed as the synthetic "Saved Articles" subscription — issue #730) so
       // clients attach them to a known feed instead of dropping an empty origin.
-      streamId: originStreamId(entry),
+      streamId: entryFeedStreamId(entry) ?? "",
       title: entry.feedTitle ?? "",
       htmlUrl: entry.feedUrl ?? entry.url ?? "",
     },
@@ -86,18 +85,24 @@ export function formatEntryAsItem(entry: EntryFull): GoogleReaderItem {
 }
 
 /**
- * The `origin.streamId` for an item. Regular entries use their subscription's
- * stream id; saved articles (no subscription) use their saved-feed id, matching
- * the synthetic subscription emitted by `formatSavedSubscription`.
+ * The `feed/{int64}` stream an entry belongs to, or null if it has none. Regular
+ * entries use their subscription's stream id; saved articles (no subscription)
+ * use their saved-feed id (the synthetic "Saved Articles" subscription — issue
+ * #730). Shared by item formatting and the stream/items/ids item refs so both
+ * address saved articles the same way.
  */
-function originStreamId(entry: EntryFull): string {
+export function entryFeedStreamId(entry: {
+  subscriptionId: string | null;
+  feedId: string;
+  type: "web" | "email" | "saved";
+}): string | null {
   if (entry.subscriptionId) {
     return subscriptionToStreamId(entry.subscriptionId);
   }
   if (entry.type === "saved") {
     return feedStreamId(entry.feedId);
   }
-  return "";
+  return null;
 }
 
 // ============================================================================
@@ -132,28 +137,6 @@ export function formatSubscription(sub: Subscription): GoogleReaderSubscription 
     firstitemmsec: sub.subscribedAt.getTime().toString(),
     url: sub.url ?? "",
     htmlUrl: sub.siteUrl ?? sub.url ?? "",
-    iconUrl: "",
-  };
-}
-
-/**
- * Formats the per-user saved-articles feed as a synthetic Google Reader
- * subscription (issue #730). Saved articles have no real subscription row, so
- * they are exposed as an uncategorized "Saved Articles" feed keyed by the saved
- * feed's own id. No categories (uncategorized) avoids the folder-name-uniqueness
- * edge cases a synthetic folder would introduce.
- */
-export function formatSavedSubscription(savedFeedId: string): GoogleReaderSubscription {
-  const int64Id = uuidToInt64(savedFeedId);
-
-  return {
-    id: feedStreamId(savedFeedId),
-    title: SAVED_FEED_TITLE,
-    categories: [],
-    sortid: int64Id.toString(16).padStart(16, "0"),
-    firstitemmsec: "0",
-    url: "",
-    htmlUrl: "",
     iconUrl: "",
   };
 }
@@ -208,16 +191,13 @@ interface GoogleReaderUnreadCount {
 }
 
 /**
- * Formats unread counts per subscription for the Google Reader unread-count endpoint.
- *
- * `savedFeed`, when present, adds the synthetic "Saved Articles" feed (issue
- * #730) as its own line and folds its unread into the reading-list total —
- * keeping the total consistent with saved articles appearing in the reading-list
- * stream.
+ * Formats unread counts per subscription for the Google Reader unread-count
+ * endpoint. The saved-articles feed arrives as a synthetic subscription in
+ * `subscriptions` (issue #730), so it is counted and folded into the
+ * reading-list total exactly like a real feed — no special case here.
  */
 export function formatUnreadCounts(
-  subscriptions: Array<{ id: string; unreadCount: number; subscribedAt: Date }>,
-  savedFeed?: { feedId: string; unreadCount: number }
+  subscriptions: Array<{ id: string; unreadCount: number; subscribedAt: Date }>
 ): {
   max: number;
   unreadcounts: GoogleReaderUnreadCount[];
@@ -234,15 +214,6 @@ export function formatUnreadCounts(
       });
       totalUnread += sub.unreadCount;
     }
-  }
-
-  if (savedFeed && savedFeed.unreadCount > 0) {
-    unreadcounts.push({
-      id: feedStreamId(savedFeed.feedId),
-      count: savedFeed.unreadCount,
-      newestItemTimestampUsec: Date.now().toString() + "000",
-    });
-    totalUnread += savedFeed.unreadCount;
   }
 
   // Add total unread count for reading-list

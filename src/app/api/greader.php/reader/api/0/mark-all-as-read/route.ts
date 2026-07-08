@@ -13,7 +13,7 @@
 import { requireAuth } from "@/server/google-reader/auth";
 import { parseFormData, textResponse, errorResponse } from "@/server/google-reader/parse";
 import { parseStreamId } from "@/server/google-reader/streams";
-import { resolveFeedStream } from "@/server/google-reader/id";
+import { resolveFeedStreamFilter } from "@/server/google-reader/subscriptions";
 import { resolveTagByName } from "@/server/google-reader/tags";
 import { db } from "@/server/db";
 import { markAllEntriesRead } from "@/server/services/entries";
@@ -46,20 +46,14 @@ export async function POST(request: Request): Promise<Response> {
   // Translate GReader stream into shared service params
   switch (parsedStream.type) {
     case "feed": {
-      const resolved = await resolveFeedStream(db, userId, parsedStream.subscriptionInt64);
-      if (!resolved) {
+      const filter = await resolveFeedStreamFilter(db, userId, parsedStream.subscriptionInt64);
+      if (!filter) {
         return textResponse("OK");
       }
 
-      // The saved feed has no subscription; mark all saved entries read via the
-      // type filter (issue #730), mirroring stream/contents' resolution.
-      await markAllEntriesRead(db, {
-        userId,
-        ...(resolved.kind === "saved"
-          ? { type: "saved" as const }
-          : { subscriptionId: resolved.subscriptionId }),
-        before: beforeDate,
-      });
+      // `filter` is the saved-feed type filter or a real subscription id (issue
+      // #730), resolved identically to the stream/contents endpoints.
+      await markAllEntriesRead(db, { userId, ...filter, before: beforeDate });
       break;
     }
     case "state": {
