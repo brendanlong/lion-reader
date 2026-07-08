@@ -26,7 +26,7 @@ const article: DemoArticle = {
 
     <ul>
       <li><strong>Feed capability</strong> &mdash; Transform URLs into feed URLs, clean entry content, and customize feed titles. This lets you subscribe to content sources that don&rsquo;t expose standard RSS feeds.</li>
-      <li><strong>Saved article capability</strong> &mdash; Fetch and process content from URLs when saving articles (see the <a href="/demo/all?entry=save-for-later"><strong>Save for Later</strong></a> article for all the ways to save). This lets you save content from platforms that require API access or special handling to extract clean text.</li>
+      <li><strong>Saved article capability</strong> &mdash; Fetch and process content from URLs when you <a href="/demo/all?entry=save-for-later"><strong>save articles</strong></a>. This lets you save content from platforms that require API access or special handling to extract clean text.</li>
     </ul>
 
     <p>Plugins are registered by hostname for fast O(1) lookup. When Lion Reader encounters a URL, it checks the registry for a matching plugin and uses its capabilities. If no plugin matches, or the plugin returns <code>null</code>, standard processing takes over.</p>

@@ -17,7 +17,7 @@ const article: DemoArticle = {
   contentHtml: `
     <h2>Modern Syndication with RSS &amp; Atom</h2>
 
-    <p>Lion Reader supports all major web feed formats: RSS 2.0, Atom 1.0, and <a href="/demo/all?entry=json-feed">JSON Feed</a>. RSS (Really Simple Syndication) and Atom are XML-based syndication formats that allow you to subscribe to websites and receive updates automatically. Simply paste any URL and Lion Reader will discover available feeds by checking HTML <code>&lt;link&gt;</code> tags and common feed paths like <code>/feed</code>, <code>/rss</code>, and <code>/atom.xml</code>. You can preview the feed&rsquo;s title, description, and sample entries before subscribing.</p>
+    <p>Lion Reader supports all major web feed formats: <a href="https://www.rssboard.org/rss-specification" target="_blank" rel="noopener noreferrer">RSS 2.0</a>, <a href="https://www.rfc-editor.org/rfc/rfc4287" target="_blank" rel="noopener noreferrer">Atom 1.0</a>, and <a href="/demo/all?entry=json-feed">JSON Feed</a>. RSS (Really Simple Syndication) and Atom are XML-based syndication formats that allow you to subscribe to websites and receive updates automatically. Simply paste any URL and Lion Reader will discover available feeds by checking HTML <code>&lt;link&gt;</code> tags and common feed paths like <code>/feed</code>, <code>/rss</code>, and <code>/atom.xml</code>. You can preview the feed&rsquo;s title, description, and sample entries before subscribing.</p>
 
     <h3>Efficient Polling &amp; Smart Scheduling</h3>
 
@@ -30,12 +30,6 @@ const article: DemoArticle = {
     <h3>Fast &amp; Memory-Efficient Parsing</h3>
 
     <p>All feeds are parsed using <code>htmlparser2</code> in SAX (streaming) mode, which provides excellent performance and low memory usage even for large feeds. This architectural choice allows Lion Reader to handle feeds of any size efficiently.</p>
-
-    <ul>
-      <li><a href="https://www.rssboard.org/rss-specification" target="_blank" rel="noopener noreferrer">RSS 2.0 Specification</a></li>
-      <li><a href="https://www.rfc-editor.org/rfc/rfc4287" target="_blank" rel="noopener noreferrer">Atom 1.0 Specification (RFC 4287)</a></li>
-      <li><a href="https://www.jsonfeed.org/version/1.1/" target="_blank" rel="noopener noreferrer">JSON Feed 1.1 Specification</a></li>
-    </ul>
   `,
 };
 
