@@ -82,6 +82,18 @@ describe("convertMathJaxChtmlToMathml", () => {
       );
       expect(out).not.toContain("mjx-");
     });
+
+    it("keeps the ancestor close tag that implicitly closes an unclosed container", () => {
+      // The container is missing its own `</mjx-container>`; the surrounding
+      // `</div>` implicitly closes it. The single-pass splice must resume at the
+      // triggering tag (not past it) so `</div>` and the trailing text survive.
+      const unclosed = MJX_X.replace("</mjx-container>", "");
+      const out = convertMathJaxChtmlToMathml(`<div>${unclosed}</div>after`);
+      expect(out).toBe(
+        `<div><math xmlns="http://www.w3.org/1998/Math/MathML"><mi>\u{1D465}</mi></math></div>after`
+      );
+      expect(out).not.toContain("mjx-");
+    });
   });
 
   describe("basic tokens and structures (LessWrong-serialized samples)", () => {

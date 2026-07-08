@@ -578,7 +578,7 @@ export function convertMathJaxChtmlToMathml(html: string): string {
       ontext(text) {
         if (handler) handler.ontext(text);
       },
-      onclosetag(name) {
+      onclosetag(name, isImplied) {
         const active = handler;
         if (!active) return;
         // domhandler's onclosetag takes no name — it just pops its own stack.
@@ -593,7 +593,13 @@ export function convertMathJaxChtmlToMathml(html: string): string {
         result += html.slice(cursor, containerStart);
         // A container that somehow parsed to nothing is dropped (splice skips it).
         if (container) result += convertContainerElement(container, ctx);
-        cursor = parser.endIndex + 1;
+        // For an explicit `</mjx-container>`, resume after its `>`. For an
+        // *implied* close (the container was left open and an ancestor's close
+        // tag ended it), `endIndex` points at that triggering tag, so resuming
+        // past it would swallow it — resume at `startIndex` instead so the
+        // triggering tag (e.g. `</div>`) is spliced through verbatim. At EOF the
+        // implied close has `startIndex === html.length`, so nothing trails.
+        cursor = isImplied ? parser.startIndex : parser.endIndex + 1;
         converted = true;
       },
     },
