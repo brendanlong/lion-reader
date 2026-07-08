@@ -216,6 +216,51 @@ describe("entries.get sanitized content", () => {
     });
   });
 
+  it("does not heal or stamp a full-content family that has no raw content", async () => {
+    const { userId, feedId } = await seedSubscribedUser();
+    const entryId = generateUuidv7();
+    const now = new Date();
+    // Ordinary feed insert: content family sanitized at the current version, but
+    // the full-content family has no raw columns and a NULL version — the common
+    // case for virtually every entry. Reading it must NOT take the heal path for
+    // the empty full-content family (issue #1086): no wasted no-op sanitize, and
+    // no fire-and-forget UPDATE stamping full_content_sanitized_version.
+    await db.insert(entries).values({
+      id: entryId,
+      feedId,
+      type: "web",
+      guid: `guid-${entryId}`,
+      title: "No full content",
+      contentCleaned: "<p>hello</p>",
+      contentCleanedSanitized: "<p>hello</p>",
+      contentSanitizedVersion: SANITIZER_VERSION,
+      fullContentOriginal: null,
+      fullContentCleaned: null,
+      fullContentSanitizedVersion: null,
+      contentHash: `hash-${entryId}`,
+      fetchedAt: now,
+      publishedAt: now,
+      lastSeenAt: now,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await makeEntryVisible(userId, entryId);
+
+    const caller = createCaller(createAuthContext(userId));
+    const { entry } = await caller.entries.get({ id: entryId });
+    expect(entry.fullContentOriginal).toBeNull();
+    expect(entry.fullContentCleaned).toBeNull();
+
+    // Give any (unwanted) fire-and-forget heal write time to land, then assert the
+    // full-content version was never stamped — the short-circuit skipped the heal.
+    await new Promise((r) => setTimeout(r, 300));
+    const [row] = await db
+      .select({ version: entries.fullContentSanitizedVersion })
+      .from(entries)
+      .where(eq(entries.id, entryId));
+    expect(row?.version).toBeNull();
+  });
+
   // The services-layer getEntry/getEntries are the read path for MCP get_entry,
   // Google Reader, and Wallabag — they must serve sanitized content too, not
   // just the tRPC router (issue #956).
