@@ -94,6 +94,29 @@ describe("convertMathJaxChtmlToMathml", () => {
       );
       expect(out).not.toContain("mjx-");
     });
+
+    it("recovers article content absorbed into an unclosed container (EOF)", () => {
+      // Unclosed container at EOF: HTML parsing pulls the trailing `<p>` into the
+      // container as a child. The converter keeps only the math, so the absorbed
+      // content must be spliced back verbatim rather than dropped with the tail.
+      const unclosed = MJX_X.replace("</mjx-container>", "");
+      const out = convertMathJaxChtmlToMathml(`<p>before</p>${unclosed}<p>rest of article</p>`);
+      expect(out).toBe(
+        `<p>before</p><math xmlns="http://www.w3.org/1998/Math/MathML"><mi>\u{1D465}</mi></math>` +
+          `<p>rest of article</p>`
+      );
+      expect(out).not.toContain("mjx-");
+    });
+
+    it("recovers content absorbed between the math and an ancestor close", () => {
+      const unclosed = MJX_X.replace("</mjx-container>", "");
+      const out = convertMathJaxChtmlToMathml(`<div>${unclosed}<p>stuff</p></div>after`);
+      expect(out).toBe(
+        `<div><math xmlns="http://www.w3.org/1998/Math/MathML"><mi>\u{1D465}</mi></math>` +
+          `<p>stuff</p></div>after`
+      );
+      expect(out).not.toContain("mjx-");
+    });
   });
 
   describe("basic tokens and structures (LessWrong-serialized samples)", () => {

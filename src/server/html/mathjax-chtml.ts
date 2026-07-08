@@ -552,6 +552,12 @@ export function convertMathJaxChtmlToMathml(html: string): string {
   let cursor = 0;
   // Byte offset of the current top-level container's opening `<`.
   let containerStart = -1;
+  // Byte offset just past the current container's convertible math content
+  // (its `<mjx-math>` / `<mjx-assistive-mml>`). Anything the container absorbs
+  // *after* this — only possible when the container is left unclosed and an
+  // ancestor's close tag (or EOF) ends it — is real article content wrongly
+  // pulled into the equation subtree, and is recovered verbatim on close.
+  let mathEnd = -1;
   // Nesting depth of `<mjx-container>` (0 = outside any container).
   let depth = 0;
   // The DOM builder for the container currently being read, else null.
@@ -565,6 +571,10 @@ export function convertMathJaxChtmlToMathml(html: string): string {
           // Enter a top-level container: start a fresh DOM for its subtree and
           // forward this opening tag into it.
           containerStart = parser.startIndex;
+          // Default the math-content boundary to the container's content start
+          // (just past its `>`), so a container that holds no math still
+          // recovers absorbed content on an implied close.
+          mathEnd = parser.endIndex + 1;
           depth = 1;
           handler = new DomHandler();
           handler.onopentag(name, attribs);
@@ -583,6 +593,11 @@ export function convertMathJaxChtmlToMathml(html: string): string {
         if (!active) return;
         // domhandler's onclosetag takes no name — it just pops its own stack.
         active.onclosetag();
+        // Track how far the container's convertible math content reaches, so an
+        // implied close below can tell absorbed article content from the math.
+        if (name === "mjx-math" || name === "mjx-assistive-mml") {
+          mathEnd = parser.endIndex + 1;
+        }
         if (name !== "mjx-container") return;
         depth--;
         if (depth > 0) return;
@@ -593,13 +608,20 @@ export function convertMathJaxChtmlToMathml(html: string): string {
         result += html.slice(cursor, containerStart);
         // A container that somehow parsed to nothing is dropped (splice skips it).
         if (container) result += convertContainerElement(container, ctx);
-        // For an explicit `</mjx-container>`, resume after its `>`. For an
-        // *implied* close (the container was left open and an ancestor's close
-        // tag ended it), `endIndex` points at that triggering tag, so resuming
-        // past it would swallow it — resume at `startIndex` instead so the
-        // triggering tag (e.g. `</div>`) is spliced through verbatim. At EOF the
-        // implied close has `startIndex === html.length`, so nothing trails.
-        cursor = isImplied ? parser.startIndex : parser.endIndex + 1;
+        if (isImplied) {
+          // Implied close: the container was left unclosed and an ancestor's
+          // close tag (or EOF) ended it, so everything from the end of the math
+          // to the triggering tag was real article content wrongly absorbed into
+          // the equation. Splice it back verbatim (its `<mjx-*>` markup, if any,
+          // is stripped by the later sanitize) and resume at the triggering tag
+          // (`startIndex`) so it too survives — `endIndex` points past it. At EOF
+          // `startIndex === html.length`, so both slices are empty.
+          result += html.slice(mathEnd, parser.startIndex);
+          cursor = parser.startIndex;
+        } else {
+          // Explicit `</mjx-container>`: resume just past its `>`.
+          cursor = parser.endIndex + 1;
+        }
         converted = true;
       },
     },
