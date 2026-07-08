@@ -31,20 +31,27 @@
  * are typically a small fraction of a (possibly large) article. Rather than
  * building a DOM for the entire body (the previous linkedom approach parsed and
  * re-serialized everything — the dominant cost on math-heavy content, see
- * issue #1054), we do a single cheap SAX pass with `htmlparser2` to locate each
- * container's byte range, splice the surrounding HTML through **verbatim**, and
- * build a DOM (`htmlparser2` → `domhandler`) only for the container substrings
- * we actually rewrite. Everything outside the containers is byte-identical to
- * the input, which also makes the no-op / false-positive paths exact.
+ * issue #1054), we make a single streaming `htmlparser2` pass over the input:
+ * text outside the containers is spliced through **verbatim** (tracked by byte
+ * offset), and while inside a container the parser's SAX events are forwarded
+ * into a per-container `domhandler` `DomHandler` so a DOM is built *only* for
+ * the equation subtree we actually rewrite. The structural reconstruction
+ * (fraction/script/root/table reordering, scoped part lookups) genuinely needs
+ * random access to that subtree, so it runs against the small DOM; the rest of
+ * the document is never tokenized into nodes. Forwarding events into an existing
+ * handler (instead of re-`parseDocument`-ing each container substring) means the
+ * container bytes are tokenized once, not twice. Everything outside the
+ * containers is byte-identical to the input, which also makes the no-op /
+ * false-positive paths exact.
  *
  * This runs inside `sanitizeEntryHtml`, so its output is covered by the same
  * persisted-sanitized-content cache; bump `SANITIZER_VERSION` when changing it.
  */
 
 import { render } from "dom-serializer";
-import { type AnyNode, type ChildNode, Element, isTag, Text } from "domhandler";
+import { type ChildNode, type Document, DomHandler, Element, isTag, Text } from "domhandler";
 import { findOne, textContent } from "domutils";
-import { Parser, parseDocument } from "htmlparser2";
+import { Parser } from "htmlparser2";
 
 import { logger } from "@/lib/logger";
 
@@ -482,21 +489,19 @@ function findAssistiveMath(container: Element): Element | null {
   return null;
 }
 
-/**
- * Convert one `<mjx-container>…</mjx-container>` substring to a MathML string.
- * Returns "" when the container carries no math (so the caller drops it).
- */
-function convertContainer(fragment: string, ctx: ConvertContext): string {
-  const doc = parseDocument(fragment);
-  const container = findOne(
-    (candidate) => candidate.name === "mjx-container",
-    doc.children as AnyNode[],
-    true
-  );
-  // Shouldn't happen — the SAX pass only hands us real containers — but if the
-  // fragment somehow re-parses without one, pass it through untouched.
-  if (!container) return fragment;
+/** First element (tag) child of a node, or null. */
+function firstElementChild(parent: Element | Document): Element | null {
+  for (const child of parent.children) {
+    if (isTag(child)) return child;
+  }
+  return null;
+}
 
+/**
+ * Convert one parsed `<mjx-container>` element to a MathML string. Returns "" when
+ * the container carries no math (so the caller drops it).
+ */
+function convertContainerElement(container: Element, ctx: ConvertContext): string {
   // Prefer MathJax's own assistive MathML when present — it is the exact MathML
   // the CHTML was rendered from, strictly better than reconstruction.
   const assistive = findAssistiveMath(container);
@@ -527,62 +532,80 @@ function convertContainer(fragment: string, ctx: ConvertContext): string {
 }
 
 /**
- * Find the byte range `[start, end)` of every top-level `<mjx-container>` in the
- * input via a single SAX pass — no DOM built for the document. Depth-tracking
- * guards against the (unexpected) nested container and against a stray closing
- * tag with no open.
- */
-function findContainerRanges(html: string): Array<{ start: number; end: number }> {
-  const ranges: Array<{ start: number; end: number }> = [];
-  let depth = 0;
-  let start = -1;
-  const parser = new Parser({
-    onopentagname(name) {
-      if (name === "mjx-container") {
-        if (depth === 0) start = parser.startIndex;
-        depth++;
-      }
-    },
-    onclosetag(name) {
-      if (name === "mjx-container" && depth > 0) {
-        depth--;
-        if (depth === 0 && start >= 0) {
-          ranges.push({ start, end: parser.endIndex + 1 });
-          start = -1;
-        }
-      }
-    },
-  });
-  parser.write(html);
-  parser.end();
-  return ranges;
-}
-
-/**
  * Convert any MathJax CHTML (`<mjx-container>`) blocks in an HTML string into
  * presentation MathML. Returns the input unchanged when no CHTML is present
  * (the common case), so this is a cheap no-op for the vast majority of entries.
  *
- * HTML outside the containers is spliced through verbatim (byte-identical to the
- * input, including content after a stray `</body>`); only the container
- * substrings are parsed into a DOM and rewritten.
+ * Runs a single streaming `htmlparser2` pass: HTML outside the containers is
+ * spliced through verbatim (byte-identical to the input, including content after
+ * a stray `</body>`), while each container's SAX events are forwarded into a
+ * `DomHandler` so only that equation subtree becomes a DOM — which the tree-walk
+ * then rewrites. Depth-tracking on `<mjx-container>` guards the (unexpected)
+ * nested container and a stray closing tag with no open.
  */
 export function convertMathJaxChtmlToMathml(html: string): string {
   if (!html.includes("<mjx-container")) return html;
 
-  const ranges = findContainerRanges(html);
-  // Guard false-positive (the substring appeared in text/attribute/comment):
-  // return the original string untouched rather than reserializing.
-  if (ranges.length === 0) return html;
-
   const ctx: ConvertContext = { unknownTags: new Set() };
   let result = "";
+  // Position up to which `html` has been copied into `result` verbatim.
   let cursor = 0;
-  for (const { start, end } of ranges) {
-    result += html.slice(cursor, start);
-    result += convertContainer(html.slice(start, end), ctx);
-    cursor = end;
-  }
+  // Byte offset of the current top-level container's opening `<`.
+  let containerStart = -1;
+  // Nesting depth of `<mjx-container>` (0 = outside any container).
+  let depth = 0;
+  // The DOM builder for the container currently being read, else null.
+  let handler: DomHandler | null = null;
+  let converted = false;
+
+  const parser = new Parser(
+    {
+      onopentag(name, attribs) {
+        if (name === "mjx-container" && depth === 0) {
+          // Enter a top-level container: start a fresh DOM for its subtree and
+          // forward this opening tag into it.
+          containerStart = parser.startIndex;
+          depth = 1;
+          handler = new DomHandler();
+          handler.onopentag(name, attribs);
+          return;
+        }
+        if (handler) {
+          if (name === "mjx-container") depth++;
+          handler.onopentag(name, attribs);
+        }
+      },
+      ontext(text) {
+        if (handler) handler.ontext(text);
+      },
+      onclosetag(name) {
+        const active = handler;
+        if (!active) return;
+        // domhandler's onclosetag takes no name — it just pops its own stack.
+        active.onclosetag();
+        if (name !== "mjx-container") return;
+        depth--;
+        if (depth > 0) return;
+        // Left the top-level container: finalize its DOM and rewrite it.
+        active.onend();
+        handler = null;
+        const container = firstElementChild(active.root);
+        result += html.slice(cursor, containerStart);
+        // A container that somehow parsed to nothing is dropped (splice skips it).
+        if (container) result += convertContainerElement(container, ctx);
+        cursor = parser.endIndex + 1;
+        converted = true;
+      },
+    },
+    { decodeEntities: true }
+  );
+  parser.write(html);
+  parser.end();
+
+  // No real container was found (the substring appeared only in
+  // text/attribute/comment): return the original string untouched.
+  if (!converted) return html;
+
   result += html.slice(cursor);
 
   if (ctx.unknownTags.size > 0) {
