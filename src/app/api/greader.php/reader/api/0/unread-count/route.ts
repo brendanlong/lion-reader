@@ -20,29 +20,17 @@ export async function GET(request: Request): Promise<Response> {
   const session = await requireAuth(request);
   if (session instanceof Response) return session;
 
-  // Fetch all subscriptions to get unread counts
-  const allSubscriptions: Array<{ id: string; unreadCount: number; subscribedAt: Date }> = [];
-  let cursor: string | undefined;
-
-  do {
-    const result = await subscriptionsService.listSubscriptions(db, {
-      userId: session.user.id,
-      cursor,
-      limit: 100,
-    });
-    for (const sub of result.subscriptions) {
-      allSubscriptions.push({
-        id: sub.id,
-        unreadCount: sub.unreadCount,
-        subscribedAt: sub.subscribedAt,
-      });
-    }
-    cursor = result.nextCursor;
-  } while (cursor);
+  // Fetch the full subscription list (with per-subscription unread counts) in a
+  // single query, concurrently with the saved-feed lookup.
+  const [allSubscriptions, savedFeedId] = await Promise.all([
+    subscriptionsService.listAllSubscriptions(db, session.user.id),
+    getSavedFeedId(db, session.user.id),
+  ]);
 
   // Include the synthetic "Saved Articles" feed (issue #730) so its unread items
   // are counted alongside subscriptions and folded into the reading-list total.
-  const savedFeedId = await getSavedFeedId(db, session.user.id);
+  // countEntries runs only when a saved feed exists (users who never saved
+  // anything skip the extra aggregate).
   let savedFeed: { feedId: string; unreadCount: number } | undefined;
   if (savedFeedId) {
     const { unread } = await countEntries(db, session.user.id, {

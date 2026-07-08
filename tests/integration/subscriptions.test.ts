@@ -13,6 +13,7 @@ import { users, feeds, entries, subscriptions, userEntries } from "../../src/ser
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
+import * as subscriptionsService from "../../src/server/services/subscriptions";
 
 // ============================================================================
 // Test Helpers
@@ -1039,5 +1040,64 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       expect(result.items).toHaveLength(1);
       expect(result.items[0].title).toBe("Ruby Programming Tips");
     });
+  });
+});
+
+describe("listAllSubscriptions", () => {
+  it("returns every subscription in one call, past the 100-per-page cap", async () => {
+    const userId = await createTestUser();
+
+    // More than listSubscriptions' hard cap of 100 so a single unbounded query is
+    // observably different from a capped one. Bulk-insert for speed.
+    const N = 101;
+    const feedRows = Array.from({ length: N }, (_, i) => ({
+      id: generateUuidv7(),
+      type: "web" as const,
+      url: `https://example.com/all-subs/${i}.xml`,
+      title: `Feed ${String(i).padStart(3, "0")}`,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }));
+    await db.insert(feeds).values(feedRows);
+    await db.insert(subscriptions).values(
+      feedRows.map((f) => ({
+        id: generateUuidv7(),
+        userId,
+        feedId: f.id,
+        subscribedAt: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }))
+    );
+
+    const all = await subscriptionsService.listAllSubscriptions(db, userId);
+
+    expect(all).toHaveLength(N);
+    // Ordered alphabetically by title, matching listSubscriptions.
+    const titles = all.map((s) => s.title);
+    expect(titles).toEqual([...titles].sort());
+  });
+
+  it("matches listSubscriptions' rows and shape for a user's subscriptions", async () => {
+    const userId = await createTestUser();
+    const feedA = await createTestFeed({ url: "https://example.com/a.xml", title: "Alpha" });
+    const feedB = await createTestFeed({ url: "https://example.com/b.xml", title: "Beta" });
+    await createTestSubscription(userId, feedA);
+    await createTestSubscription(userId, feedB);
+
+    const all = await subscriptionsService.listAllSubscriptions(db, userId);
+    const paged = await subscriptionsService.listSubscriptions(db, { userId, limit: 100 });
+
+    // Same rows (ids), no pagination cursor semantics to worry about.
+    expect(all.map((s) => s.id).sort()).toEqual(paged.subscriptions.map((s) => s.id).sort());
+    // Same object shape as the paginated variant (id/title/unreadCount/tags present).
+    const alpha = all.find((s) => s.title === "Alpha");
+    expect(alpha).toMatchObject({ title: "Alpha", unreadCount: 0, tags: [] });
+  });
+
+  it("returns an empty array for a user with no subscriptions", async () => {
+    const userId = await createTestUser();
+    const all = await subscriptionsService.listAllSubscriptions(db, userId);
+    expect(all).toEqual([]);
   });
 });

@@ -288,6 +288,30 @@ export async function listSubscriptions(
 }
 
 /**
+ * Lists ALL active subscriptions for a user in a single query (no pagination).
+ *
+ * The Google Reader `subscription/list` and `unread-count` endpoints need the
+ * user's entire subscription set at once. Paging through `listSubscriptions`
+ * (capped at 100/page) issues ⌈N/100⌉ sequential round-trips; this runs the same
+ * base query (per-subscription unread counts + tags) unbounded instead. Ordered
+ * alphabetically to match `listSubscriptions`. Callers already hold the whole
+ * list in memory, so there is no extra memory cost — only fewer round-trips.
+ *
+ * This is deliberately separate from `listSubscriptions` rather than an
+ * unbounded `limit`: the 100 cap is a safety valve for the paginated UI/MCP/tRPC
+ * callers and stays intact for them.
+ */
+export async function listAllSubscriptions(
+  db: typeof dbType,
+  userId: string
+): Promise<Subscription[]> {
+  const results = await buildSubscriptionBaseQuery(db, userId)
+    .where(eq(userFeeds.userId, userId))
+    .orderBy(sql`COALESCE(${userFeeds.title}, '') ASC`, userFeeds.id);
+  return results.map(formatSubscriptionRow);
+}
+
+/**
  * Gets a single subscription by ID.
  */
 export async function getSubscription(
