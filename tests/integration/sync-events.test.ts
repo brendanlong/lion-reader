@@ -20,6 +20,8 @@ import {
 } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
+import { advanceCursors, type SyncCursors } from "../../src/lib/events/cursors";
+import type { SyncEvent } from "../../src/lib/events/schemas";
 import type { Context } from "../../src/server/trpc/context";
 
 // ============================================================================
@@ -193,6 +195,34 @@ async function linkTagToSubscription(tagId: string, subscriptionId: string): Pro
     subscriptionId,
     createdAt: new Date(),
   });
+}
+
+const ENTRY_EVENT_TYPES = new Set(["new_entry", "entry_updated", "entry_state_changed"]);
+
+/**
+ * Drives sync.events like the real client does: repeatedly polls, advancing the
+ * keyset cursors through the actual `advanceCursors` bookkeeping, until the
+ * server reports no more pages. Returns every event collected across pages.
+ */
+async function drainEntrySync(userId: string, start: SyncCursors): Promise<SyncEvent[]> {
+  let cursors = start;
+  const collected: SyncEvent[] = [];
+  for (let guard = 0; guard < 50; guard++) {
+    const result = await createCaller(createAuthContext(userId)).sync.events({
+      cursors: {
+        entries: cursors.entries ?? undefined,
+        entriesAfterId: cursors.entriesAfterId ?? undefined,
+        subscriptions: cursors.subscriptions ?? undefined,
+        tags: cursors.tags ?? undefined,
+      },
+    });
+    for (const event of result.events as SyncEvent[]) {
+      cursors = advanceCursors(cursors, event);
+      collected.push(event);
+    }
+    if (!result.hasMore) return collected;
+  }
+  throw new Error("drainEntrySync did not terminate");
 }
 
 // ============================================================================
@@ -766,5 +796,172 @@ describe("sync.events", () => {
       );
       expect(entryEvents).toHaveLength(1000);
     }, 30000); // 30s timeout for bulk insert
+  });
+
+  // ==========================================================================
+  // Keyset pagination within tied-timestamp groups + fail-closed visibility
+  // Regression tests for #1080.
+  // ==========================================================================
+
+  describe("keyset pagination (#1080)", () => {
+    it("pages within a tied-timestamp group using entriesAfterId without losing rows", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/tied.xml");
+      await createTestSubscription(userId, feedId);
+
+      // Three entries sharing one exact timestamp (like markAllEntriesRead
+      // stamps). Sort them by id so we can reason about the keyset order.
+      const tiedTime = new Date("2025-01-01T00:00:00.000Z");
+      const ids: string[] = [];
+      for (let i = 0; i < 3; i++) {
+        const id = await createTestEntry(feedId, { createdAt: tiedTime, updatedAt: tiedTime });
+        await createUserEntry(userId, id, { updatedAt: tiedTime });
+        ids.push(id);
+      }
+      ids.sort();
+      const [first, second, third] = ids;
+
+      // Simulate a page boundary landing exactly on the first tied row: the
+      // client's keyset cursor is (tiedTime, first). The OLD strict `> tiedTime`
+      // comparison would exclude every remaining tied row (data loss); the
+      // keyset must instead return the two rows past `first`.
+      const cursorTs = tiedTime.toISOString();
+      const afterFirst = await createCaller(createAuthContext(userId)).sync.events({
+        cursors: { entries: cursorTs, entriesAfterId: first },
+      });
+      const afterFirstNewIds = afterFirst.events
+        .filter((e) => e.type === "new_entry")
+        .map((e) => (e.type === "new_entry" ? e.entryId : ""));
+      expect(afterFirstNewIds.sort()).toEqual([second, third]);
+
+      // Cursor past the last tied row → nothing left in the group.
+      const afterLast = await createCaller(createAuthContext(userId)).sync.events({
+        cursors: { entries: cursorTs, entriesAfterId: third },
+      });
+      expect(afterLast.events.filter((e) => ENTRY_EVENT_TYPES.has(e.type))).toHaveLength(0);
+    });
+
+    it("delivers every row of an oversized tied group across a full drain", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/tied-large.xml");
+      await createTestSubscription(userId, feedId);
+
+      // More than MAX_ENTRIES (500) rows sharing ONE timestamp — the exact
+      // markAllEntriesRead-over-a-large-backlog shape that used to lose every
+      // row past the first page.
+      const tiedTime = new Date("2025-02-02T00:00:00.000Z");
+      const total = 550;
+      const entryValues = [];
+      const userEntryValues = [];
+      const allIds = new Set<string>();
+      for (let i = 0; i < total; i++) {
+        const entryId = generateUuidv7();
+        allIds.add(entryId);
+        entryValues.push({
+          id: entryId,
+          feedId,
+          type: "web" as const,
+          guid: `guid-tied-${i}`,
+          title: `Tied ${i}`,
+          contentHash: `hash-tied-${i}`,
+          fetchedAt: tiedTime,
+          publishedAt: tiedTime,
+          lastSeenAt: tiedTime,
+          createdAt: tiedTime,
+          updatedAt: tiedTime,
+        });
+        userEntryValues.push({ userId, entryId, read: false, starred: false, updatedAt: tiedTime });
+      }
+      const batchSize = 100;
+      for (let i = 0; i < entryValues.length; i += batchSize) {
+        await db.insert(entries).values(entryValues.slice(i, i + batchSize));
+        await db.insert(userEntries).values(userEntryValues.slice(i, i + batchSize));
+      }
+
+      // Start just before the tied timestamp and drain to completion, exactly
+      // as the client would (multiple pages, keyset-advanced between them).
+      const start: SyncCursors = {
+        entries: new Date("2025-02-01T00:00:00.000Z").toISOString(),
+        entriesAfterId: null,
+        subscriptions: null,
+        tags: null,
+      };
+      const events = await drainEntrySync(userId, start);
+
+      const deliveredIds = events
+        .filter((e) => e.type === "new_entry")
+        .map((e) => (e.type === "new_entry" ? e.entryId : ""));
+      // Every tied row delivered exactly once — no loss, no duplication.
+      expect(new Set(deliveredIds).size).toBe(total);
+      expect(deliveredIds.length).toBe(total);
+      expect([...deliveredIds].every((id) => allIds.has(id))).toBe(true);
+    }, 30000);
+  });
+
+  // ==========================================================================
+  // Fail-closed visibility (#1080)
+  // ==========================================================================
+
+  describe("visibility (#1080)", () => {
+    it("hides an orphaned user_entries row (no active subscription, not starred)", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/orphan.xml");
+      // No subscription / subscription_feeds row → orphaned. Old fail-open
+      // predicate leaked this via `NULL IS NULL`; fail-closed must hide it.
+      const entryId = await createTestEntry(feedId, {
+        createdAt: new Date("2025-03-02T00:00:00.000Z"),
+        updatedAt: new Date("2025-03-02T00:00:00.000Z"),
+      });
+      await createUserEntry(userId, entryId, { updatedAt: new Date("2025-03-02T00:00:00.000Z") });
+
+      const result = await createCaller(createAuthContext(userId)).sync.events({
+        cursors: { entries: new Date("2025-03-01T00:00:00.000Z").toISOString() },
+      });
+
+      expect(result.events.filter((e) => ENTRY_EVENT_TYPES.has(e.type))).toHaveLength(0);
+    });
+
+    it("shows an orphaned entry when it is starred (starred exception)", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/orphan-starred.xml");
+      const entryId = await createTestEntry(feedId, {
+        createdAt: new Date("2025-03-02T00:00:00.000Z"),
+        updatedAt: new Date("2025-03-02T00:00:00.000Z"),
+      });
+      await createUserEntry(userId, entryId, {
+        starred: true,
+        updatedAt: new Date("2025-03-02T00:00:00.000Z"),
+      });
+
+      const result = await createCaller(createAuthContext(userId)).sync.events({
+        cursors: { entries: new Date("2025-03-01T00:00:00.000Z").toISOString() },
+      });
+
+      const entryEvents = result.events.filter((e) => ENTRY_EVENT_TYPES.has(e.type));
+      expect(entryEvents.length).toBeGreaterThan(0);
+    });
+
+    it("hides entries from an unsubscribed subscription (not starred)", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/unsubscribed.xml");
+      // Subscription exists but is soft-deleted (unsubscribed).
+      await createTestSubscription(userId, feedId);
+      await db
+        .update(subscriptions)
+        .set({ unsubscribedAt: new Date("2025-03-01T12:00:00.000Z") })
+        .where(eq(subscriptions.userId, userId));
+
+      const entryId = await createTestEntry(feedId, {
+        createdAt: new Date("2025-03-02T00:00:00.000Z"),
+        updatedAt: new Date("2025-03-02T00:00:00.000Z"),
+      });
+      await createUserEntry(userId, entryId, { updatedAt: new Date("2025-03-02T00:00:00.000Z") });
+
+      const result = await createCaller(createAuthContext(userId)).sync.events({
+        cursors: { entries: new Date("2025-03-01T00:00:00.000Z").toISOString() },
+      });
+
+      expect(result.events.filter((e) => ENTRY_EVENT_TYPES.has(e.type))).toHaveLength(0);
+    });
   });
 });

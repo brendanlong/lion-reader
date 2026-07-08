@@ -102,7 +102,7 @@ const SSE_EVENT_NAMES = [
  * ```tsx
  * function AppLayout({ children }) {
  *   // Get initial cursors from server or use null for initial sync
- *   const initialCursors: SyncCursors = { entries: null, subscriptions: null, tags: null };
+ *   const initialCursors: SyncCursors = { entries: null, entriesAfterId: null, subscriptions: null, tags: null };
  *   const { status, isConnected, isPolling } = useRealtimeUpdates(initialCursors);
  *
  *   return (
@@ -186,6 +186,7 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
       const result = await utils.client.sync.events.query({
         cursors: {
           entries: currentCursors.entries ?? undefined,
+          entriesAfterId: currentCursors.entriesAfterId ?? undefined,
           subscriptions: currentCursors.subscriptions ?? undefined,
           tags: currentCursors.tags ?? undefined,
         },
