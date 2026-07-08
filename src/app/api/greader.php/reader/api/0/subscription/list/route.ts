@@ -9,8 +9,9 @@
 
 import { requireAuth } from "@/server/google-reader/auth";
 import { jsonResponse } from "@/server/google-reader/parse";
-import { formatSubscription } from "@/server/google-reader/format";
+import { formatSubscription, formatSavedSubscription } from "@/server/google-reader/format";
 import * as subscriptionsService from "@/server/services/subscriptions";
+import { getSavedFeedId } from "@/server/feed/saved-feed";
 import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
@@ -33,7 +34,15 @@ export async function GET(request: Request): Promise<Response> {
     cursor = result.nextCursor;
   } while (cursor);
 
-  return jsonResponse({
-    subscriptions: allSubscriptions.map(formatSubscription),
-  });
+  const subscriptions = allSubscriptions.map(formatSubscription);
+
+  // Expose saved articles as a synthetic "Saved Articles" subscription (issue
+  // #730). Only when the saved feed exists — a user who has never saved anything
+  // gets no empty feed.
+  const savedFeedId = await getSavedFeedId(db, session.user.id);
+  if (savedFeedId) {
+    subscriptions.push(formatSavedSubscription(savedFeedId));
+  }
+
+  return jsonResponse({ subscriptions });
 }

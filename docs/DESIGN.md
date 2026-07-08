@@ -361,7 +361,7 @@ Routers are organized by resource:
 Besides the browser tRPC endpoint (`/api/trpc`), the same routers/services back several HTTP surfaces under `src/app/api/`:
 
 - **REST API** (`/api/v1/*`): generated from tRPC procedures' `openapi` meta via `trpc-to-openapi`; the OpenAPI 3.0 spec is served at `/api/openapi`. Includes the SSE stream at `/api/v1/events`.
-- **Google Reader API** (`/api/greader.php/*`): compatibility layer for Google Reader clients.
+- **Google Reader API** (`/api/greader.php/*`): compatibility layer for Google Reader clients. Saved (read-it-later) articles have no subscription row, so they are exposed to Google Reader clients as a synthetic uncategorized "Saved Articles" subscription keyed by the saved feed's own id (`feed/{int64(savedFeedId)}`) — see issue #730. `resolveFeedStream` maps that stream id back to `type='saved'`, `formatEntryAsItem` gives saved items that feed as their `origin.streamId`, and `subscription/list` + `unread-count` include the synthetic feed. A subscription (not a folder) avoids the folder-name-uniqueness edge cases a synthetic folder would create.
 - **Wallabag API** (`/api/wallabag/*`): compatibility layer for Wallabag read-it-later clients.
 - **MCP** (`/api/mcp`): see [MCP Server](#mcp-server).
 - **Webhooks** (`/api/webhooks/*`): Mailgun inbound email, WebSub hub callbacks.

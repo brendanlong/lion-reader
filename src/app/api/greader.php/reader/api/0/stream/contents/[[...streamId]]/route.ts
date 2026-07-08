@@ -31,7 +31,7 @@ import { requireAuth } from "@/server/google-reader/auth";
 import { jsonResponse, errorResponse } from "@/server/google-reader/parse";
 import { parseStreamId, type StreamId } from "@/server/google-reader/streams";
 import { formatEntryAsItem } from "@/server/google-reader/format";
-import { feedStreamIdToSubscriptionUuid } from "@/server/google-reader/id";
+import { resolveFeedStream } from "@/server/google-reader/id";
 import { resolveTagByName } from "@/server/google-reader/tags";
 import * as entriesService from "@/server/services/entries";
 import { db } from "@/server/db";
@@ -103,15 +103,15 @@ async function handleStreamContents(
   // Resolve stream ID to filter params
   switch (parsedStream.type) {
     case "feed": {
-      const subscriptionId = await feedStreamIdToSubscriptionUuid(
-        db,
-        session.user.id,
-        parsedStream.subscriptionInt64
-      );
-      if (!subscriptionId) {
+      const resolved = await resolveFeedStream(db, session.user.id, parsedStream.subscriptionInt64);
+      if (!resolved) {
         return errorResponse("Subscription not found", 404);
       }
-      listParams.subscriptionId = subscriptionId;
+      if (resolved.kind === "saved") {
+        listParams.type = "saved";
+      } else {
+        listParams.subscriptionId = resolved.subscriptionId;
+      }
       break;
     }
     case "state": {

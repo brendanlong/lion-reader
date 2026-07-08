@@ -20,8 +20,8 @@
 import { requireAuth } from "@/server/google-reader/auth";
 import { jsonResponse, errorResponse } from "@/server/google-reader/parse";
 import { parseStreamId } from "@/server/google-reader/streams";
-import { uuidToInt64 } from "@/server/google-reader/id";
-import { feedStreamIdToSubscriptionUuid } from "@/server/google-reader/id";
+import { uuidToInt64, feedStreamId } from "@/server/google-reader/id";
+import { resolveFeedStream } from "@/server/google-reader/id";
 import { resolveTagByName } from "@/server/google-reader/tags";
 import { isState } from "@/server/google-reader/streams";
 import * as entriesService from "@/server/services/entries";
@@ -83,15 +83,15 @@ export async function GET(request: Request): Promise<Response> {
 
   switch (parsedStream.type) {
     case "feed": {
-      const subscriptionId = await feedStreamIdToSubscriptionUuid(
-        db,
-        session.user.id,
-        parsedStream.subscriptionInt64
-      );
-      if (!subscriptionId) {
+      const resolved = await resolveFeedStream(db, session.user.id, parsedStream.subscriptionInt64);
+      if (!resolved) {
         return errorResponse("Subscription not found", 404);
       }
-      listParams.subscriptionId = subscriptionId;
+      if (resolved.kind === "saved") {
+        listParams.type = "saved";
+      } else {
+        listParams.subscriptionId = resolved.subscriptionId;
+      }
       break;
     }
     case "state": {
@@ -146,11 +146,16 @@ export async function GET(request: Request): Promise<Response> {
 
   const itemRefs = result.items.map((entry) => {
     const int64Id = uuidToInt64(entry.id);
+    // Saved articles have no subscription; address them by their saved-feed id
+    // (issue #730) so the ref points at the synthetic "Saved Articles" feed.
+    const directStreamId = entry.subscriptionId
+      ? feedStreamId(entry.subscriptionId)
+      : entry.type === "saved"
+        ? feedStreamId(entry.feedId)
+        : null;
     return {
       id: int64Id.toString(),
-      directStreamIds: entry.subscriptionId
-        ? [`feed/${uuidToInt64(entry.subscriptionId).toString()}`]
-        : [],
+      directStreamIds: directStreamId ? [directStreamId] : [],
       timestampUsec: (entry.fetchedAt.getTime() * 1000).toString(),
     };
   });

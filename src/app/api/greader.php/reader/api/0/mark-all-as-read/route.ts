@@ -13,7 +13,7 @@
 import { requireAuth } from "@/server/google-reader/auth";
 import { parseFormData, textResponse, errorResponse } from "@/server/google-reader/parse";
 import { parseStreamId } from "@/server/google-reader/streams";
-import { feedStreamIdToSubscriptionUuid } from "@/server/google-reader/id";
+import { resolveFeedStream } from "@/server/google-reader/id";
 import { resolveTagByName } from "@/server/google-reader/tags";
 import { db } from "@/server/db";
 import { markAllEntriesRead } from "@/server/services/entries";
@@ -46,18 +46,18 @@ export async function POST(request: Request): Promise<Response> {
   // Translate GReader stream into shared service params
   switch (parsedStream.type) {
     case "feed": {
-      const subscriptionId = await feedStreamIdToSubscriptionUuid(
-        db,
-        userId,
-        parsedStream.subscriptionInt64
-      );
-      if (!subscriptionId) {
+      const resolved = await resolveFeedStream(db, userId, parsedStream.subscriptionInt64);
+      if (!resolved) {
         return textResponse("OK");
       }
 
+      // The saved feed has no subscription; mark all saved entries read via the
+      // type filter (issue #730), mirroring stream/contents' resolution.
       await markAllEntriesRead(db, {
         userId,
-        subscriptionId,
+        ...(resolved.kind === "saved"
+          ? { type: "saved" as const }
+          : { subscriptionId: resolved.subscriptionId }),
         before: beforeDate,
       });
       break;

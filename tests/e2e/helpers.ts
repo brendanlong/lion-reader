@@ -239,6 +239,73 @@ export async function createUnreadEntry(
   };
 }
 
+/**
+ * Creates the user's saved-articles feed (type='saved', no subscription) and a
+ * saved entry in it, plus the user_entries row that makes it visible (unread).
+ * Mirrors the shape produced by the saved-articles service. Returns the saved
+ * feed id and the entry.
+ */
+export async function createSavedArticle(
+  db: TestDb,
+  params: { userId: string; title: string }
+): Promise<{ savedFeedId: string; entry: TestEntry }> {
+  const { userId, title } = params;
+
+  // One saved feed per user (unique index on (user_id) WHERE type='saved').
+  const savedFeedId = generateUuidv7();
+  const inserted = await db
+    .insert(schema.feeds)
+    .values({ id: savedFeedId, type: "saved", userId, title: "Saved Articles" })
+    .onConflictDoNothing()
+    .returning({ id: schema.feeds.id });
+  const feedId =
+    inserted[0]?.id ??
+    (
+      await db
+        .select({ id: schema.feeds.id })
+        .from(schema.feeds)
+        .where(and(eq(schema.feeds.type, "saved"), eq(schema.feeds.userId, userId)))
+        .limit(1)
+    )[0].id;
+
+  const id = generateUuidv7();
+  const now = new Date();
+  const content = `<p>Content for ${title}</p>`;
+  const url = `https://example.com/e2e/saved/${id}`;
+  const [entry] = await db
+    .insert(schema.entries)
+    .values({
+      id,
+      feedId,
+      type: "saved",
+      guid: url,
+      url,
+      title,
+      contentOriginal: content,
+      contentCleaned: content,
+      summary: `Summary for ${title}`,
+      publishedAt: null,
+      fetchedAt: now,
+      contentHash: crypto.createHash("sha256").update(content).digest("hex"),
+    })
+    .returning();
+
+  await db.insert(schema.userEntries).values({ userId, entryId: id, publishedOrFetchedAt: now });
+
+  return {
+    savedFeedId: feedId,
+    entry: {
+      id,
+      title,
+      updatedAt: entry.updatedAt,
+      url,
+      summary: entry.summary ?? "",
+      publishedAt: now,
+      fetchedAt: now,
+    },
+  };
+}
+
 /** Marks an entry read directly in the database, returning the update timestamp. */
 export async function markEntryRead(db: TestDb, userId: string, entryId: string): Promise<Date> {
   const now = new Date();

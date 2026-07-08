@@ -17,6 +17,7 @@ import {
   createPasswordUser,
   createSubscribedFeed,
   createUnreadEntry,
+  createSavedArticle,
   closeTestConnections,
   type TestPasswordUser,
   type TestFeed,
@@ -285,6 +286,108 @@ test.describe("Google Reader API happy path", () => {
     expect(body2.itemRefs.length).toBe(1);
     // Page 2 must be a different item than page 1 (cursor advanced, not reset).
     expect(body2.itemRefs[0].id).not.toBe(body1.itemRefs[0].id);
+  });
+
+  // Saved articles (read-it-later) have no subscription row, so they used to
+  // surface with an empty origin.streamId and no entry in subscription/list —
+  // Google Reader clients dropped them (issue #730). They must now appear as a
+  // synthetic uncategorized "Saved Articles" subscription and carry that feed as
+  // their origin everywhere.
+  test("saved articles are exposed as a synthetic Saved Articles subscription", async ({
+    request,
+  }) => {
+    const db = getDb();
+    const user = await createPasswordUser(db);
+    const { entry: saved } = await createSavedArticle(db, { userId: user.id, title: "Saved One" });
+    const token = await clientLogin(request, user);
+
+    // 1. subscription/list includes an uncategorized "Saved Articles" feed.
+    const subsRes = await request.get(`${API_BASE}/subscription/list`, {
+      headers: authHeader(token),
+    });
+    expect(subsRes.status()).toBe(200);
+    const subsBody = await subsRes.json();
+    const savedSub = subsBody.subscriptions.find(
+      (s: { title: string }) => s.title === "Saved Articles"
+    );
+    expect(savedSub, "Saved Articles subscription present").toBeTruthy();
+    expect(savedSub.id).toMatch(/^feed\/\d+$/);
+    expect(savedSub.categories).toEqual([]);
+    const savedStreamId: string = savedSub.id;
+
+    // 2. The saved article is fetchable via its feed stream, with a real origin.
+    const contentsRes = await request.get(`${API_BASE}/stream/contents/${savedStreamId}`, {
+      headers: authHeader(token),
+    });
+    expect(contentsRes.status()).toBe(200);
+    const contentsBody = await contentsRes.json();
+    const item = contentsBody.items.find((i: { title: string }) => i.title === saved.title);
+    expect(item, "saved article returned by its feed stream").toBeTruthy();
+    expect(item.origin.streamId).toBe(savedStreamId);
+    expect(item.summary.content).toContain("Content for Saved One");
+
+    // 3. The saved article appears in the reading list with the saved feed as its
+    //    directStreamIds (not an empty origin).
+    const idsRes = await request.get(
+      `${API_BASE}/stream/items/ids?s=user/-/state/com.google/reading-list`,
+      { headers: authHeader(token) }
+    );
+    expect(idsRes.status()).toBe(200);
+    const idsBody = await idsRes.json();
+    const savedRef = idsBody.itemRefs.find((r: { directStreamIds: string[] }) =>
+      r.directStreamIds.includes(savedStreamId)
+    );
+    expect(savedRef, "saved article present in reading list with real origin").toBeTruthy();
+
+    // 4. unread-count counts the saved feed and folds it into the reading-list total.
+    const countRes = await request.get(`${API_BASE}/unread-count`, { headers: authHeader(token) });
+    expect(countRes.status()).toBe(200);
+    const countBody = await countRes.json();
+    const savedCount = countBody.unreadcounts.find((c: { id: string }) => c.id === savedStreamId);
+    expect(savedCount, "saved feed unread count present").toBeTruthy();
+    expect(savedCount.count).toBeGreaterThanOrEqual(1);
+    const readingListCount = countBody.unreadcounts.find(
+      (c: { id: string }) => c.id === "user/-/state/com.google/reading-list"
+    );
+    expect(readingListCount.count).toBeGreaterThanOrEqual(1);
+  });
+
+  // mark-all-as-read on the synthetic saved feed must actually mark saved
+  // articles read (it used to no-op because the saved feed has no subscription).
+  test("mark-all-as-read marks the Saved Articles feed read", async ({ request }) => {
+    const db = getDb();
+    const user = await createPasswordUser(db);
+    await createSavedArticle(db, { userId: user.id, title: "Mark Me Read" });
+    const token = await clientLogin(request, user);
+
+    // Resolve the synthetic saved feed's stream id from subscription/list.
+    const subsBody = await (
+      await request.get(`${API_BASE}/subscription/list`, { headers: authHeader(token) })
+    ).json();
+    const savedStreamId: string = subsBody.subscriptions.find(
+      (s: { title: string }) => s.title === "Saved Articles"
+    ).id;
+
+    // Precondition: the saved feed has an unread count.
+    const before = await (
+      await request.get(`${API_BASE}/unread-count`, { headers: authHeader(token) })
+    ).json();
+    expect(
+      before.unreadcounts.find((c: { id: string }) => c.id === savedStreamId)?.count
+    ).toBeGreaterThanOrEqual(1);
+
+    // Mark the whole saved feed read.
+    const markRes = await request.post(`${API_BASE}/mark-all-as-read`, {
+      headers: { ...authHeader(token), "content-type": "application/x-www-form-urlencoded" },
+      data: new URLSearchParams({ s: savedStreamId }).toString(),
+    });
+    expect(markRes.status()).toBe(200);
+
+    // The saved feed no longer appears in unread-count (count dropped to 0).
+    const after = await (
+      await request.get(`${API_BASE}/unread-count`, { headers: authHeader(token) })
+    ).json();
+    expect(after.unreadcounts.find((c: { id: string }) => c.id === savedStreamId)).toBeUndefined();
   });
 
   test("stream/items/contents rejects an oversized id batch with 400", async ({ request }) => {
