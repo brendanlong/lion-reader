@@ -51,17 +51,23 @@ export function parseWebSubLinkHeaders(linkHeader: string): WebSubLinkHeaders {
     if (!urlMatch) continue;
 
     const url = urlMatch[1];
+    if (!url) continue;
 
-    // Extract the rel parameter value
-    // Handles both quoted and unquoted values: rel="hub" or rel=hub
-    const relMatch = trimmed.match(/;\s*rel\s*=\s*"?([^";,\s]+)"?/i);
+    // Extract the rel parameter value. Handles both quoted and unquoted values
+    // (rel="hub" or rel=hub). Per RFC 8288 a quoted rel may hold multiple
+    // space-separated relation types (e.g. rel="alternate self"), so split on
+    // whitespace and check each token rather than reading only the first.
+    const relMatch = trimmed.match(/;\s*rel\s*=\s*(?:"([^"]*)"|([^";,\s]+))/i);
     if (!relMatch) continue;
 
-    const rel = relMatch[1].toLowerCase();
+    const relTokens = (relMatch[1] ?? relMatch[2] ?? "").toLowerCase().split(/\s+/);
 
-    if (rel === "hub" && url) {
+    // A later Link entry shouldn't clobber an earlier match with undefined, so
+    // only assign when the relation is present.
+    if (relTokens.includes("hub")) {
       result.hubUrl = url;
-    } else if (rel === "self" && url) {
+    }
+    if (relTokens.includes("self")) {
       result.selfUrl = url;
     }
   }

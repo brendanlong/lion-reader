@@ -210,4 +210,58 @@ describe("parseAtom", () => {
       expect(result.entries[0].link).toBe("https://example.com/entry");
     });
   });
+
+  describe("copied <source> element", () => {
+    it("ignores source feed metadata so it doesn't clobber the entry's own fields", () => {
+      // Planet-style aggregators copy an entry and add a <source> describing the
+      // original feed. Its id/title/published/link must NOT overwrite the entry's.
+      const xml = `<?xml version="1.0" encoding="utf-8"?>
+        <feed xmlns="http://www.w3.org/2005/Atom">
+          <title>Aggregator</title>
+          <entry>
+            <id>urn:entry:real-guid</id>
+            <title>Real Entry Title</title>
+            <link href="https://example.com/real-entry"/>
+            <published>2024-03-03T12:00:00Z</published>
+            <source>
+              <id>urn:feed:original-source</id>
+              <title>Original Source Feed</title>
+              <link href="https://source.example.com/"/>
+              <updated>2020-01-01T00:00:00Z</updated>
+            </source>
+          </entry>
+        </feed>`;
+
+      const result = parseAtom(xml);
+
+      expect(result.entries).toHaveLength(1);
+      expect(result.entries[0].guid).toBe("urn:entry:real-guid");
+      expect(result.entries[0].title).toBe("Real Entry Title");
+      expect(result.entries[0].link).toBe("https://example.com/real-entry");
+      expect(result.entries[0].pubDate).toEqual(new Date("2024-03-03T12:00:00Z"));
+    });
+
+    it("uses the entry's own updated even when source appears before it", () => {
+      const xml = `<?xml version="1.0" encoding="utf-8"?>
+        <feed xmlns="http://www.w3.org/2005/Atom">
+          <title>Aggregator</title>
+          <entry>
+            <id>urn:entry:guid</id>
+            <title>My Title</title>
+            <source>
+              <id>urn:source</id>
+              <title>Source</title>
+              <updated>2019-05-05T00:00:00Z</updated>
+            </source>
+            <updated>2024-07-07T09:00:00Z</updated>
+          </entry>
+        </feed>`;
+
+      const result = parseAtom(xml);
+
+      expect(result.entries[0].guid).toBe("urn:entry:guid");
+      expect(result.entries[0].title).toBe("My Title");
+      expect(result.entries[0].pubDate).toEqual(new Date("2024-07-07T09:00:00Z"));
+    });
+  });
 });

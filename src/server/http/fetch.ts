@@ -74,7 +74,7 @@ export class ContentTooLargeError extends Error {
  * @throws ContentTooLargeError if the response exceeds the limit
  */
 export async function readResponseBufferWithSizeLimit(
-  response: Response,
+  response: Request | Response,
   maxBytes: number,
   url: string
 ): Promise<Buffer> {
@@ -127,6 +127,24 @@ export async function readResponseWithSizeLimit(
   url: string
 ): Promise<string> {
   const buffer = await readResponseBufferWithSizeLimit(response, maxBytes, url);
+  return buffer.toString();
+}
+
+/**
+ * Reads an incoming Request body as text with a streaming size limit.
+ *
+ * Used by webhook endpoints (e.g. WebSub content notifications) that must buffer
+ * the body before authenticating it (HMAC). Enforcing the cap while streaming
+ * means an oversized body is aborted before it is fully buffered, so an attacker
+ * who learns a callback URL can't exhaust memory by POSTing a huge payload.
+ *
+ * @throws ContentTooLargeError if the request body exceeds the limit
+ */
+export async function readRequestTextWithSizeLimit(
+  request: Request,
+  maxBytes: number
+): Promise<string> {
+  const buffer = await readResponseBufferWithSizeLimit(request, maxBytes, request.url);
   return buffer.toString();
 }
 

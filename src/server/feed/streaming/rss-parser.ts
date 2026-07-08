@@ -371,22 +371,40 @@ function parseRssDate(dateString: string): Date | undefined {
     if (!isNaN(parsed.getTime())) return parsed;
   }
 
+  // Map named timezones to numeric offsets. V8's Date parser only understands a
+  // handful of North American abbreviations, so European (and other) zones fall
+  // through to here. Ambiguous abbreviations (IST, BST outside the UK, ...) are
+  // deliberately omitted rather than guessed wrong.
   const timezoneMap: Record<string, string> = {
-    PST: "-0800",
-    PDT: "-0700",
-    MST: "-0700",
-    MDT: "-0600",
-    CST: "-0600",
-    CDT: "-0500",
-    EST: "-0500",
-    EDT: "-0400",
+    UT: "+0000",
     GMT: "+0000",
     UTC: "+0000",
+    Z: "+0000",
+    EST: "-0500",
+    EDT: "-0400",
+    CST: "-0600",
+    CDT: "-0500",
+    MST: "-0700",
+    MDT: "-0600",
+    PST: "-0800",
+    PDT: "-0700",
+    WET: "+0000",
+    WEST: "+0100",
+    CET: "+0100",
+    CEST: "+0200",
+    EET: "+0200",
+    EEST: "+0300",
   };
 
-  for (const [abbr, offset] of Object.entries(timezoneMap)) {
-    if (trimmed.includes(abbr)) {
-      const normalized = trimmed.replace(abbr, offset);
+  // The timezone is the trailing alphabetic token of an RFC 822 date. Match it
+  // anchored to the end of the string so a substring collision (e.g. "CEST"
+  // containing "EST") can't corrupt the date. A numeric offset ("+0000") is
+  // already handled by the native parse above and won't reach here.
+  const tzMatch = trimmed.match(/\b([A-Za-z]{1,5})\s*$/);
+  if (tzMatch && tzMatch.index !== undefined) {
+    const offset = timezoneMap[tzMatch[1].toUpperCase()];
+    if (offset) {
+      const normalized = `${trimmed.slice(0, tzMatch.index).trimEnd()} ${offset}`;
       const parsed = new Date(normalized);
       if (!isNaN(parsed.getTime())) return parsed;
     }

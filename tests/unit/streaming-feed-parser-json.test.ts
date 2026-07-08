@@ -149,6 +149,33 @@ describe("parseJson", () => {
 
       expect(result.hubUrl).toBe("https://hub.example.com");
     });
+
+    it("prefers the websub-typed hub over other hub types", () => {
+      const json = JSON.stringify({
+        version: "https://jsonfeed.org/version/1.1",
+        title: "Feed",
+        hubs: [
+          { type: "rssCloud", url: "https://rsscloud.example.com" },
+          { type: "websub", url: "https://hub.example.com" },
+        ],
+        items: [],
+      });
+
+      expect(parseJson(json).hubUrl).toBe("https://hub.example.com");
+    });
+
+    it("returns no hub when only non-websub hubs are present", () => {
+      // Falling back to a non-WebSub hub (e.g. rssCloud) would make us POST a
+      // WebSub subscribe request to an endpoint that doesn't speak WebSub.
+      const json = JSON.stringify({
+        version: "https://jsonfeed.org/version/1.1",
+        title: "Feed",
+        hubs: [{ type: "rssCloud", url: "https://rsscloud.example.com" }],
+        items: [],
+      });
+
+      expect(parseJson(json).hubUrl).toBeUndefined();
+    });
   });
 
   describe("validation", () => {

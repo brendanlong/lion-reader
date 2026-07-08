@@ -18,6 +18,8 @@ import { db } from "@/server/db";
 import { feeds } from "@/server/db/schema";
 import { handleVerificationChallenge, verifyHmacSignature } from "@/server/feed/websub";
 import { ingestWebsubNotification } from "@/server/feed/websub-notification";
+import { ContentTooLargeError, readRequestTextWithSizeLimit } from "@/server/http/fetch";
+import { usageLimitsConfig } from "@/server/config/env";
 import { logger } from "@/lib/logger";
 import { isValidUuid } from "@/lib/uuidv7";
 
@@ -110,7 +112,19 @@ export async function POST(
     return new Response("Invalid callback URL", { status: 400 });
   }
 
-  const bodyText = await request.text();
+  // Bound the body BEFORE buffering + HMAC: anyone who learns a callback URL
+  // (they leak via hub dashboards/proxies/logs) could otherwise POST an
+  // arbitrarily large payload to exhaust memory.
+  let bodyText: string;
+  try {
+    bodyText = await readRequestTextWithSizeLimit(request, usageLimitsConfig.maxFeedSizeBytes);
+  } catch (error) {
+    if (error instanceof ContentTooLargeError) {
+      logger.warn("WebSub notification body too large", { feedId, subscriptionId });
+      return new Response("Payload too large", { status: 413 });
+    }
+    throw error;
+  }
 
   const signature = request.headers.get("x-hub-signature");
   const isValid = await verifyHmacSignature(feedId, subscriptionId, signature, bodyText);

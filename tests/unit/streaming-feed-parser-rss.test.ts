@@ -270,6 +270,43 @@ describe("parseRss", () => {
     });
   });
 
+  describe("pubDate timezone abbreviations", () => {
+    function parseSinglePubDate(pubDate: string) {
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+        <rss version="2.0">
+          <channel>
+            <title>TZ Feed</title>
+            <item>
+              <title>Item</title>
+              <guid>tz-1</guid>
+              <pubDate>${pubDate}</pubDate>
+            </item>
+          </channel>
+        </rss>`;
+      return parseRss(xml).entries[0].pubDate;
+    }
+
+    it("parses US timezone abbreviations", () => {
+      expect(parseSinglePubDate("Tue, 19 Aug 2025 23:39:00 EST")).toEqual(
+        new Date("2025-08-20T04:39:00Z")
+      );
+    });
+
+    it("parses European timezone abbreviations without a substring collision", () => {
+      // "CEST" contains "EST"; the old substring match corrupted it and dropped
+      // the date. CEST is UTC+2, so 12:00 CEST is 10:00 UTC.
+      expect(parseSinglePubDate("Wed, 02 Jul 2025 12:00:00 CEST")).toEqual(
+        new Date("2025-07-02T10:00:00Z")
+      );
+    });
+
+    it("parses CET", () => {
+      expect(parseSinglePubDate("Wed, 02 Jul 2025 12:00:00 CET")).toEqual(
+        new Date("2025-07-02T11:00:00Z")
+      );
+    });
+  });
+
   describe("malformed XML with unclosed tags", () => {
     it("handles unclosed link tags followed by other elements", () => {
       // This reproduces a real-world malformed feed where <link> tags
