@@ -194,7 +194,7 @@ function getHostname(url: string): string | null {
  *
  * @throws SsrfBlockedError if the URL's host is a literal private/internal IP
  */
-function assertNotPrivateIpLiteral(url: string): void {
+export function assertNotPrivateIpLiteral(url: string): void {
   const hostname = getHostname(url);
   if (hostname && isIP(hostname) !== 0 && isPrivateAddress(hostname)) {
     throw new SsrfBlockedError(hostname, hostname);
@@ -209,73 +209,72 @@ const MAX_REDIRECTS = 20;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
 /**
- * Performs a fetch with SSRF protection. Use this instead of `fetch` for any
- * request whose URL is user-influenced.
- *
- * Two layers of protection, applied to the initial request and every redirect hop:
- * 1. Literal IP hosts (e.g. http://169.254.169.254/) are checked up front and
- *    rejected here — undici bypasses the custom DNS lookup for IP literals.
- * 2. Hostnames are validated at connection time by the attached undici dispatcher,
- *    which resolves DNS and connects only to a vetted address (rebinding-safe).
- *
- * Redirects are followed manually (the underlying fetch is always driven with
- * `redirect: "manual"`) so each hop is re-validated. Following redirects inside
- * undici would skip the literal-IP check for a redirect target like
- * `http://169.254.169.254/`, since undici only runs the custom lookup for
- * hostnames. Callers that request `redirect: "manual"` get the first response back
- * unfollowed (e.g. the feed fetcher, which tracks permanent redirects itself and
- * re-enters this helper per hop); `redirect: "error"` throws on the first redirect.
- *
- * When protection is enabled the request goes through the npm `undici` package's
- * fetch, not Node's global fetch. The dispatcher is constructed from the npm
- * package, and Node's global fetch is a different (bundled) undici copy: on Node 26
- * it accepts the foreign dispatcher but skips response body decompression,
- * returning raw gzip/brotli bytes. The dispatcher and the fetch that uses it must
- * come from the same copy. When private-network fetching is explicitly allowed
- * (dev/test), the literal/DNS checks are skipped and Node's global fetch is used,
- * but redirects are still followed by the same loop.
- *
- * @throws SsrfBlockedError if the URL (or any redirect hop) targets a literal
- *   private/internal IP
- * @example
- * const res = await fetchWithSsrfProtection(url, { headers, signal });
+ * Request headers that carry credentials and must be stripped when a redirect
+ * crosses origins, matching the Fetch spec's "HTTP redirect fetch" (which is what
+ * undici's native redirect handling does — the manual loop must replicate it, or
+ * following a cross-origin redirect would leak, e.g., a Google OAuth `Authorization`
+ * bearer token to the redirect target).
  */
-export async function fetchWithSsrfProtection(url: string, init: RequestInit): Promise<Response> {
-  const dispatcher = getSsrfDispatcher();
-  // When private-network fetching is allowed (dev/test) there is no dispatcher, so
-  // we skip the SSRF checks and use Node's global fetch. The redirect-following
-  // loop runs in both modes so its behavior is identical (and testable) either way.
-  const protectionEnabled = dispatcher !== undefined;
+const CROSS_ORIGIN_STRIPPED_HEADERS = ["authorization", "cookie", "proxy-authorization"];
 
+/**
+ * Request headers describing a body, dropped alongside the body when a redirect
+ * downgrades the method to GET (301/302 on a POST, or any 303). Per the Fetch spec.
+ */
+const BODY_HEADERS = [
+  "content-encoding",
+  "content-language",
+  "content-location",
+  "content-type",
+  "content-length",
+];
+
+/**
+ * A fetch implementation the redirect loop drives. Always called with
+ * `redirect: "manual"` so the loop can inspect and re-validate each hop itself.
+ */
+export type FetchImpl = (url: string, init: UndiciRequestInit) => Promise<Response>;
+
+function originOf(url: string): string {
+  return new URL(url).origin;
+}
+
+/**
+ * Follows redirects manually, re-validating every hop. Pure aside from the injected
+ * `fetchImpl` and `validateHop`, so the per-hop SSRF check, credential stripping,
+ * and method-downgrade behavior can be unit-tested without a live server.
+ *
+ * `validateHop` runs on the initial URL and on every redirect target *before*
+ * connecting — this is where the literal-IP check lives, closing the bypass where
+ * undici follows a redirect to an IP literal (e.g. `http://169.254.169.254/`)
+ * without running its custom DNS lookup.
+ */
+export async function followRedirects(
+  url: string,
+  init: RequestInit,
+  fetchImpl: FetchImpl,
+  validateHop: (url: string) => void
+): Promise<Response> {
   const redirectMode = init.redirect ?? "follow";
 
   let currentUrl = url;
   let method = (init.method ?? "GET").toUpperCase();
   let body = init.body;
+  // Mutable copy so we can strip credentials/body headers across hops without
+  // mutating the caller's object.
+  const headers = new Headers(init.headers as HeadersInit | undefined);
 
   for (let hop = 0; ; hop++) {
-    // Literal IP hosts skip the dispatcher's DNS lookup, so check them here — on
-    // the initial URL and on every redirect target.
-    if (protectionEnabled) {
-      assertNotPrivateIpLiteral(currentUrl);
-    }
+    validateHop(currentUrl);
 
-    const requestInit: UndiciRequestInit = {
+    const response = await fetchImpl(currentUrl, {
       ...(init as UndiciRequestInit),
       method,
       body: body as UndiciRequestInit["body"],
+      headers,
       // Always follow redirects ourselves so each hop is re-validated above.
       redirect: "manual",
-    };
-    if (dispatcher) {
-      requestInit.dispatcher = dispatcher;
-    }
-
-    // undici's Response is the same spec-compliant implementation as the global
-    // one; cast so callers keep using standard Response types.
-    const response = (protectionEnabled
-      ? await undiciFetch(currentUrl, requestInit)
-      : await fetch(currentUrl, requestInit as RequestInit)) as unknown as Response;
+    });
 
     // Caller handles redirects itself (e.g. the feed fetcher): return unfollowed.
     if (redirectMode === "manual") {
@@ -303,16 +302,88 @@ export async function fetchWithSsrfProtection(url: string, init: RequestInit): P
     // Free the intermediate connection before issuing the next request.
     await response.body?.cancel().catch(() => {});
 
-    currentUrl = new URL(location, currentUrl).toString();
+    const nextUrl = new URL(location, currentUrl).toString();
+
+    // Strip credential headers when the redirect crosses origins (scheme/host/port).
+    if (originOf(nextUrl) !== originOf(currentUrl)) {
+      for (const name of CROSS_ORIGIN_STRIPPED_HEADERS) {
+        headers.delete(name);
+      }
+    }
 
     // Per the Fetch spec, 301/302 on a POST and any 303 downgrade to GET and drop
-    // the body; 307/308 preserve method and body.
-    if ((response.status === 301 || response.status === 302) && method === "POST") {
+    // the body (and its describing headers); 307/308 preserve method and body.
+    if (
+      ((response.status === 301 || response.status === 302) && method === "POST") ||
+      (response.status === 303 && method !== "GET" && method !== "HEAD")
+    ) {
       method = "GET";
       body = undefined;
-    } else if (response.status === 303 && method !== "GET" && method !== "HEAD") {
-      method = "GET";
-      body = undefined;
+      for (const name of BODY_HEADERS) {
+        headers.delete(name);
+      }
     }
+
+    currentUrl = nextUrl;
   }
+}
+
+/**
+ * Performs a fetch with SSRF protection. Use this instead of `fetch` for any
+ * request whose URL is user-influenced.
+ *
+ * Two layers of protection, applied to the initial request and every redirect hop:
+ * 1. Literal IP hosts (e.g. http://169.254.169.254/) are checked up front and
+ *    rejected here — undici bypasses the custom DNS lookup for IP literals.
+ * 2. Hostnames are validated at connection time by the attached undici dispatcher,
+ *    which resolves DNS and connects only to a vetted address (rebinding-safe).
+ *
+ * Redirects are followed manually by {@link followRedirects} (the underlying fetch
+ * is always driven with `redirect: "manual"`) so each hop is re-validated. Following
+ * redirects inside undici would skip the literal-IP check for a redirect target like
+ * `http://169.254.169.254/`, since undici only runs the custom lookup for hostnames.
+ * Credential headers (`Authorization`/`Cookie`) are stripped on cross-origin hops,
+ * matching undici's native redirect handling. Callers that request `redirect:
+ * "manual"` get the first response back unfollowed (e.g. the feed fetcher, which
+ * tracks permanent redirects itself and re-enters this helper per hop);
+ * `redirect: "error"` throws on the first redirect.
+ *
+ * When protection is enabled the request goes through the npm `undici` package's
+ * fetch, not Node's global fetch. The dispatcher is constructed from the npm
+ * package, and Node's global fetch is a different (bundled) undici copy: on Node 26
+ * it accepts the foreign dispatcher but skips response body decompression,
+ * returning raw gzip/brotli bytes. The dispatcher and the fetch that uses it must
+ * come from the same copy. When private-network fetching is explicitly allowed
+ * (dev/test), the literal/DNS checks are skipped and Node's global fetch is used,
+ * but redirects are still followed by the same loop.
+ *
+ * @throws SsrfBlockedError if the URL (or any redirect hop) targets a literal
+ *   private/internal IP
+ * @example
+ * const res = await fetchWithSsrfProtection(url, { headers, signal });
+ */
+export async function fetchWithSsrfProtection(url: string, init: RequestInit): Promise<Response> {
+  const dispatcher = getSsrfDispatcher();
+
+  // When private-network fetching is allowed (dev/test) there is no dispatcher, so
+  // we skip the SSRF checks and use Node's global fetch. The redirect-following
+  // loop runs in both modes so its behavior is identical (and testable) either way.
+  if (dispatcher) {
+    return followRedirects(
+      url,
+      init,
+      // undici's Response is the same spec-compliant implementation as the global
+      // one; cast so callers keep using standard Response types.
+      (hopUrl, hopInit) =>
+        undiciFetch(hopUrl, { ...hopInit, dispatcher }) as unknown as Promise<Response>,
+      assertNotPrivateIpLiteral
+    );
+  }
+
+  return followRedirects(
+    url,
+    init,
+    (hopUrl, hopInit) => fetch(hopUrl, hopInit as RequestInit),
+    () => {}
+  );
 }
