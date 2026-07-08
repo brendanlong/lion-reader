@@ -59,6 +59,29 @@ describe("convertMathJaxChtmlToMathml", () => {
       expect(out).toContain("<mi>\u{1D465}</mi>");
       expect(out).not.toContain("mjx-");
     });
+
+    it("splices surrounding markup through verbatim (no full-document reserialize)", () => {
+      // Odd-but-valid markup a full DOM reserialize would normalize (unquoted
+      // attributes, void elements, uppercase tags, entities). Only the math
+      // block is rewritten; everything around it must be byte-identical.
+      const before = `<DIV class=box id=a><img src=x.png><P>Fish &amp; chips`;
+      const after = `</P><br>tail`;
+      const out = convertMathJaxChtmlToMathml(`${before}${MJX_X}${after}`);
+      expect(out.startsWith(before)).toBe(true);
+      expect(out.endsWith(after)).toBe(true);
+      expect(out).toContain("<mi>\u{1D465}</mi>");
+      expect(out).not.toContain("mjx-");
+    });
+
+    it("converts every container and preserves the text between them", () => {
+      const html = `<p>a ${MJX_X} b ${MJX_LOG} c</p>`;
+      const out = convertMathJaxChtmlToMathml(html);
+      expect(out).toBe(
+        `<p>a <math xmlns="${"http://www.w3.org/1998/Math/MathML"}"><mi>\u{1D465}</mi></math> b ` +
+          `<math xmlns="http://www.w3.org/1998/Math/MathML"><mi>log</mi></math> c</p>`
+      );
+      expect(out).not.toContain("mjx-");
+    });
   });
 
   describe("basic tokens and structures (LessWrong-serialized samples)", () => {
