@@ -873,7 +873,9 @@ export const websubSubscriptions = pgTable(
 
     hubUrl: text("hub_url").notNull(), // WebSub hub URL
     topicUrl: text("topic_url").notNull(), // Feed URL (topic)
-    callbackSecret: text("callback_secret").notNull(), // HMAC secret for verification
+    // HMAC secret for verifying pushes. Stable for the row's whole life (never
+    // rotated on renewal), so the hub and we always agree on it. See subscribeToHub.
+    callbackSecret: text("callback_secret").notNull(),
 
     state: websubStateEnum("state").notNull().default("pending"),
     leaseSeconds: integer("lease_seconds"), // Subscription lease duration

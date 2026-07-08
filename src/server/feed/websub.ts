@@ -53,6 +53,33 @@ const DEFAULT_LEASE_SECONDS = 24 * 60 * 60;
 export const MAX_LEASE_SECONDS = 14 * 24 * 60 * 60;
 
 /**
+ * How long past its lease expiry a subscription may stay unrenewed before the
+ * sweep gives up and reverts the feed to polling (6 hours).
+ *
+ * A renewal keeps the subscription `active` and retries the hub POST on each
+ * renewal sweep (hourly) until the hub's verification GET lands (advancing
+ * `expiresAt` back into the future). If the hub accepts the (re)subscribe but
+ * never verifies — a deploy restart dropping the callback, a chronically broken
+ * hub — `expiresAt` stays fixed in the past and the subscription would otherwise
+ * retry forever while silently push-dead. Once it is this far past `expiresAt`
+ * we mark it failed so the feed reverts to polling; the next fetch then
+ * resubscribes cleanly (a fresh subscription that flips `websubActive` only on
+ * verification). Six hours gives several sweep retries to absorb a transient
+ * outage before we fall back. Measuring from `expiresAt` (rather than a separate
+ * "renewal started" timestamp) means a verification that races the sweep — or an
+ * old release that renews without our bookkeeping — self-corrects: it advances
+ * `expiresAt`, which removes the row from the stale window with no extra state.
+ */
+export const RENEWAL_STALL_GRACE_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * `lastError` / renewal-result message stamped when a subscription is reverted to
+ * polling for stalling past `RENEWAL_STALL_GRACE_MS`. Shared so the sweep's result
+ * entry and the row's stored error can't drift apart.
+ */
+const RENEWAL_STALL_ERROR = "Renewal not verified by hub within grace period";
+
+/**
  * Private/local hostnames and IP ranges that can't receive WebSub callbacks.
  */
 const PRIVATE_HOSTNAMES = ["localhost", "127.0.0.1", "0.0.0.0", "::1"];
@@ -277,6 +304,20 @@ export interface SubscribeToHubResult {
  * to the hub. The hub will then send a verification callback (GET request)
  * to confirm the subscription.
  *
+ * **Renewal is non-disruptive.** When an existing row for this feed+hub is
+ * already `active`, this is a lease renewal: the row stays `active` under its
+ * existing `callbackSecret` (re-sent to the hub as `hub.secret`) and only the
+ * topic is refreshed. The secret never rotates for a given row, so the hub and
+ * we always agree on it and a verification GET can't leave them out of sync.
+ * A renewal whose verification never arrives therefore can't invalidate the
+ * still-working subscription — it keeps pushing under the current lease, and the
+ * renewal sweep reverts it to polling only if it stays expired past the grace
+ * window (see `renewExpiringSubscriptions`).
+ *
+ * A fresh subscribe (no row, or a row in a non-active state) takes the classic
+ * path: state `pending`, and `websubActive` flips true only on verification. A
+ * brand-new row mints a secret; a reused row keeps its existing one.
+ *
  * @param feed - The feed with hub URL to subscribe to
  * @returns Result of the subscription attempt
  *
@@ -303,8 +344,6 @@ export async function subscribeToHub(feed: Feed): Promise<SubscribeToHubResult> 
     return { success: false, error: "Feed has no topic URL" };
   }
 
-  const secret = generateCallbackSecret();
-
   // Check if subscription already exists for this feed + hub combination.
   // Reusing the row keeps the subscription ID (and thus the callback URL) stable
   // across renewals; a hub switch goes through deactivate + a fresh row instead.
@@ -318,21 +357,57 @@ export async function subscribeToHub(feed: Feed): Promise<SubscribeToHubResult> 
 
   // The subscription ID must be known before building the callback URL, since it
   // is part of the path.
-  const subscriptionId = existing.length > 0 ? existing[0].id : generateUuidv7();
+  const existingRow = existing.length > 0 ? existing[0] : null;
+  const subscriptionId = existingRow ? existingRow.id : generateUuidv7();
+
+  // Reuse the row's existing secret for every (re)subscribe on that row — only a
+  // brand-new row mints one. The secret is tied to this (feed, hub) pair and the
+  // callback URL the hub already knows, so keeping it stable means a verification
+  // GET (which carries no request identifier we could correlate) can never
+  // promote a secret the hub isn't actually signing with. The hub only learns the
+  // secret over HTTPS and it never rotates, which is fine for WebSub.
+  const secret = existingRow ? existingRow.callbackSecret : generateCallbackSecret();
+
+  // Renewing an already-active subscription: don't disrupt it. Keep it active
+  // under its existing secret; the hub keeps pushing under the current lease
+  // until it verifies this renewal (which advances expiresAt).
+  const isRenewal = existingRow?.state === "active";
 
   const callbackUrl = generateCallbackUrl(feed.id, subscriptionId);
   if (!callbackUrl) {
     return { success: false, error: "Could not generate callback URL" };
   }
 
-  if (existing.length > 0) {
-    // Update existing subscription with new secret
+  if (isRenewal) {
+    // Keep the row active and its secret valid. Not flipping to `pending` — and
+    // not rotating the secret — means a renewal whose verification never arrives
+    // can't invalidate the working subscription; the sweep reverts it to polling
+    // only once it stays expired past the grace window (see
+    // renewExpiringSubscriptions). Pushes are never dropped during a renewal.
     await db
       .update(websubSubscriptions)
       .set({
         topicUrl,
-        callbackSecret: secret,
+        lastError: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(websubSubscriptions.id, subscriptionId));
+
+    logger.debug("Renewing active WebSub subscription", {
+      subscriptionId,
+      feedId: feed.id,
+      hubUrl: feed.hubUrl,
+    });
+  } else if (existingRow) {
+    // Non-active existing row (pending/unsubscribed): a fresh subscribe attempt on
+    // the reused row. Keep its secret and clear any stale unsubscribe request so a
+    // later hub-initiated unsubscribe verification can't be spuriously confirmed.
+    await db
+      .update(websubSubscriptions)
+      .set({
+        topicUrl,
         state: "pending",
+        unsubscribeRequestedAt: null,
         lastError: null,
         updatedAt: new Date(),
       })
@@ -497,6 +572,19 @@ async function applyVerificationChallenge(
     return handleUnsubscribeVerification(feedId, subscription, challenge);
   }
 
+  // Decline a subscribe verification for a subscription we've already abandoned
+  // (the sweep gave up on a stalled renewal and reverted the feed to polling). A
+  // late-arriving verification for that dead cycle must not resurrect the row —
+  // doing so would flip websubActive back on while a fresh subscribe may be in
+  // flight. The hub treats the declined verification as a dropped subscription.
+  if (subscription.state === "unsubscribed") {
+    logger.warn("WebSub subscribe verification for unsubscribed subscription - rejecting", {
+      subscriptionId: subscription.id,
+      feedId,
+    });
+    return { success: false, error: "Subscription is not awaiting verification" };
+  }
+
   // Parse lease seconds. Hubs SHOULD send hub.lease_seconds but some don't; fall
   // back to a default so expiresAt is always set and the subscription stays in
   // the renewal filter's window (see DEFAULT_LEASE_SECONDS). Clamp the granted
@@ -507,7 +595,9 @@ async function applyVerificationChallenge(
   const lease = Math.min(grantedLease, MAX_LEASE_SECONDS);
   const expiresAt = new Date(Date.now() + lease * 1000);
 
-  // Update subscription to active
+  // Activate (fresh subscribe) or extend the lease (renewal). Advancing expiresAt
+  // into the future is what takes a renewed subscription back out of the sweep's
+  // stale window; the secret is unchanged (it never rotates for a row).
   await db
     .update(websubSubscriptions)
     .set({
@@ -683,11 +773,10 @@ function computeSignatureValid(
   try {
     const hmac = createHmac(algorithm.toLowerCase(), subscription.callbackSecret);
     hmac.update(body);
-    const computedDigest = hmac.digest("hex");
 
     // Use timing-safe comparison to prevent timing attacks
     const expectedBuffer = Buffer.from(expectedDigest, "hex");
-    const computedBuffer = Buffer.from(computedDigest, "hex");
+    const computedBuffer = hmac.digest();
 
     if (expectedBuffer.length !== computedBuffer.length) {
       return false;
@@ -798,9 +887,12 @@ export interface RenewSubscriptionsResult {
 /**
  * Renews WebSub subscriptions that are expiring within the specified hours.
  *
- * This function should be called periodically (e.g., daily) to ensure
- * subscriptions don't expire unexpectedly. If renewal fails, the subscription
- * is marked as unsubscribed and polling will take over.
+ * This function should be called periodically (e.g., hourly) to ensure
+ * subscriptions don't expire unexpectedly. A renewal keeps the subscription
+ * `active` and re-requests the lease; a failed hub POST is retried on the next
+ * sweep, not torn down. Only once a subscription stays expired past
+ * `RENEWAL_STALL_GRACE_MS` — the hub accepted our (re)subscribe but never
+ * verified — is it marked unsubscribed so polling takes over.
  *
  * @param hoursBeforeExpiry - Renew subscriptions expiring within this many hours (default: 24)
  * @returns Result with counts of checked, renewed, and failed subscriptions
@@ -857,37 +949,73 @@ export async function renewExpiringSubscriptions(
     hoursBeforeExpiry,
   });
 
+  // Anything already this far past its lease has stalled: the hub took our
+  // (re)subscribe but never verified it. Compare against this rather than a
+  // stored "renewal started" time so a verification that raced the sweep (which
+  // advances expiresAt) is never clobbered.
+  const staleCutoff = new Date(Date.now() - RENEWAL_STALL_GRACE_MS);
+
   // Renew each expiring subscription
   for (const { subscription, feed } of expiringSubs) {
+    // A renewal stuck long past expiry: give up and revert the feed to polling
+    // instead of retrying forever. The subscription stayed `active` throughout,
+    // so this is the only place a wedged renewal is cut off. The teardown is a
+    // compare-and-swap (still active AND still stale) so a verification landing
+    // between the select above and here — which advances expiresAt out of the
+    // stale window — isn't torn down.
+    if (subscription.expiresAt && subscription.expiresAt < staleCutoff) {
+      const reverted = await revertStalledSubscription(subscription.id, feed.id, staleCutoff);
+      if (reverted) {
+        result.failed++;
+        result.errors.push({ feedId: feed.id, error: RENEWAL_STALL_ERROR });
+        logger.warn("WebSub renewal stalled past grace - reverting feed to polling", {
+          subscriptionId: subscription.id,
+          feedId: feed.id,
+          expiresAt: subscription.expiresAt,
+        });
+      }
+      continue;
+    }
+
     try {
       const renewResult = await subscribeToHub(feed);
 
       if (renewResult.success) {
         result.renewed++;
-        logger.info("WebSub subscription renewed", {
+        logger.info("WebSub subscription renewal requested", {
           subscriptionId: subscription.id,
           feedId: feed.id,
         });
       } else {
-        // Renewal request failed - mark as unsubscribed so polling takes over
-        await markSubscriptionFailed(
-          subscription.id,
-          feed.id,
-          renewResult.error ?? "Renewal failed"
-        );
+        // The hub POST was rejected or failed. Don't tear the subscription down:
+        // it stays `active` under its secret (the hub keeps pushing under the
+        // current lease), and the next sweep retries — until it drifts past
+        // RENEWAL_STALL_GRACE_MS, after which the check above reverts to polling.
+        // subscribeToHub already recorded lastError.
         result.failed++;
         result.errors.push({
           feedId: feed.id,
           error: renewResult.error ?? "Renewal failed",
         });
+        logger.warn("WebSub renewal request failed - will retry next sweep", {
+          subscriptionId: subscription.id,
+          feedId: feed.id,
+          error: renewResult.error,
+        });
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
 
-      // Mark as unsubscribed so polling takes over
-      await markSubscriptionFailed(subscription.id, feed.id, errorMessage);
+      // Unexpected error - also leave the subscription active and retry next
+      // sweep rather than tearing down a working subscription over a transient
+      // fault. The stale-cutoff check bounds how long this can repeat.
       result.failed++;
       result.errors.push({
+        feedId: feed.id,
+        error: errorMessage,
+      });
+      logger.warn("WebSub renewal errored - will retry next sweep", {
+        subscriptionId: subscription.id,
         feedId: feed.id,
         error: errorMessage,
       });
@@ -904,24 +1032,42 @@ export async function renewExpiringSubscriptions(
 }
 
 /**
- * Marks a WebSub subscription as failed/unsubscribed.
- * Updates both the subscription state and the feed's websubActive flag.
+ * Reverts a stalled WebSub subscription to polling, guarded by a compare-and-swap.
+ *
+ * The subscription row is only marked `unsubscribed` (and the feed's
+ * `websubActive` cleared) if it is *still* `active` and *still* stale
+ * (`expiresAt < staleCutoff`). A verification that landed between the renewal
+ * sweep's snapshot select and this call advances `expiresAt` out of the stale
+ * window, so the CAS matches no rows and the freshly-renewed subscription is left
+ * untouched. Returns whether the subscription was actually reverted.
  */
-async function markSubscriptionFailed(
+async function revertStalledSubscription(
   subscriptionId: string,
   feedId: string,
-  error: string
-): Promise<void> {
+  staleCutoff: Date
+): Promise<boolean> {
   const now = new Date();
-  await db
+  const reverted = await db
     .update(websubSubscriptions)
     .set({
       state: "unsubscribed",
-      lastError: error,
+      lastError: RENEWAL_STALL_ERROR,
       unsubscribeRequestedAt: now,
       updatedAt: now,
     })
-    .where(eq(websubSubscriptions.id, subscriptionId));
+    .where(
+      and(
+        eq(websubSubscriptions.id, subscriptionId),
+        eq(websubSubscriptions.state, "active"),
+        lt(websubSubscriptions.expiresAt, staleCutoff)
+      )
+    )
+    .returning({ id: websubSubscriptions.id });
+
+  if (reverted.length === 0) {
+    // A verification (or another sweep) raced us; leave the row alone.
+    return false;
+  }
 
   await db
     .update(feeds)
@@ -934,8 +1080,9 @@ async function markSubscriptionFailed(
   logger.warn("WebSub subscription marked as failed", {
     subscriptionId,
     feedId,
-    error,
+    error: RENEWAL_STALL_ERROR,
   });
+  return true;
 }
 
 /**
