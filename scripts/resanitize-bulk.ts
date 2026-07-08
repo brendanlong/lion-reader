@@ -8,8 +8,17 @@
  * sweep (`resanitizeStaleEntries`) and shares the same guarded write
  * (`persistResanitizedFamily`), so it's safe to run concurrently with the live
  * background worker and with normal writes — the two-part compare-and-swap makes
- * every write a no-op unless the row is still stale and its raw content is
- * unchanged.
+ * every write a no-op unless the row's stored version is still *strictly older*
+ * than ours and its raw content is unchanged (so a row a newer release already
+ * wrote is never downgraded).
+ *
+ * Before doing anything it probes the worker-thread pool's compiled-in
+ * `SANITIZER_VERSION` and refuses to run if it doesn't match the main process
+ * (`assertWorkerBundleCurrent`): a stale `dist/worker-thread.js` would sanitize
+ * large bodies with out-of-date rules while stamping rows current — silently
+ * locking in mis-sanitized content — so we fail loudly instead. This makes it
+ * safe to run in production mode; rebuild the bundle with
+ * `pnpm build:worker-thread` if the preflight complains.
  *
  * ## Architecture: an overlapped producer/consumer pipeline with backpressure
  *
@@ -66,10 +75,14 @@ import { db, pool } from "../src/server/db";
 import { entries } from "../src/server/db/schema";
 import { SANITIZER_VERSION } from "../src/server/html/sanitize";
 import {
+  isSanitizedFamilyStale,
   persistResanitizedFamily,
   RESANITIZE_STALENESS_KEY,
 } from "../src/server/services/resanitize";
-import { sanitizeEntryHtmlInWorker } from "../src/server/worker-thread/pool";
+import {
+  getWorkerSanitizerVersion,
+  sanitizeEntryHtmlInWorker,
+} from "../src/server/worker-thread/pool";
 import { availableParallelism } from "os";
 
 // ---------------------------------------------------------------------------
@@ -207,7 +220,7 @@ async function resanitizeRow(row: StaleRow): Promise<RowOutcome> {
     let fullContent = false;
 
     const contentHasRaw = row.contentOriginal !== null || row.contentCleaned !== null;
-    if (contentHasRaw && row.contentSanitizedVersion !== SANITIZER_VERSION) {
+    if (contentHasRaw && isSanitizedFamilyStale(row.contentSanitizedVersion)) {
       const [original, cleaned] = await Promise.all([
         sanitizeEntryHtmlInWorker(row.contentOriginal),
         sanitizeEntryHtmlInWorker(row.contentCleaned),
@@ -222,7 +235,7 @@ async function resanitizeRow(row: StaleRow): Promise<RowOutcome> {
     }
 
     const fullHasRaw = row.fullContentOriginal !== null || row.fullContentCleaned !== null;
-    if (fullHasRaw && row.fullContentSanitizedVersion !== SANITIZER_VERSION) {
+    if (fullHasRaw && isSanitizedFamilyStale(row.fullContentSanitizedVersion)) {
       const [original, cleaned] = await Promise.all([
         sanitizeEntryHtmlInWorker(row.fullContentOriginal),
         sanitizeEntryHtmlInWorker(row.fullContentCleaned),
@@ -246,10 +259,52 @@ async function resanitizeRow(row: StaleRow): Promise<RowOutcome> {
 }
 
 // ---------------------------------------------------------------------------
+// Preflight: refuse to run against a stale worker bundle
+// ---------------------------------------------------------------------------
+
+/**
+ * The worker-thread bundle embeds a snapshot of the sanitizer rules at build
+ * time. If it's stale, large bodies (which offload to the pool) would be
+ * sanitized with out-of-date rules while every row is stamped with the current
+ * `SANITIZER_VERSION` — silently locking in mis-sanitized content that the
+ * version-gated self-heal will never revisit. That's especially dangerous for a
+ * security-tightening bump, the exact case this tool exists to roll out fast. So
+ * we probe the worker's compiled-in version up front and refuse to run unless it
+ * matches, rather than corrupt the corpus. (Running from source with NODE_ENV
+ * unset uses the src worker via tsx and always matches; the risk is a built
+ * `dist/worker-thread.js` left stale after a sanitizer change — rebuild it with
+ * `pnpm build:worker-thread`.)
+ */
+async function assertWorkerBundleCurrent(): Promise<void> {
+  let workerVersion: number;
+  try {
+    workerVersion = await getWorkerSanitizerVersion();
+  } catch (error) {
+    throw new Error(
+      `Could not verify the worker-thread sanitizer version ` +
+        `(${error instanceof Error ? error.message : String(error)}). The worker bundle ` +
+        `(dist/worker-thread.js) is likely stale or incompatible — rebuild it with ` +
+        `'pnpm build:worker-thread' (or run from source with NODE_ENV unset) and retry.`
+    );
+  }
+  if (workerVersion !== SANITIZER_VERSION) {
+    throw new Error(
+      `Worker sanitizer version mismatch: the main process is at v${SANITIZER_VERSION} but ` +
+        `the worker bundle sanitizes at v${workerVersion}. Running would stamp rows as ` +
+        `v${SANITIZER_VERSION} while sanitizing large bodies with v${workerVersion} rules. ` +
+        `Rebuild the worker with 'pnpm build:worker-thread' (or run from source with ` +
+        `NODE_ENV unset) and retry.`
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Driver
 // ---------------------------------------------------------------------------
 
 async function main(): Promise<void> {
+  await assertWorkerBundleCurrent();
+
   console.log(
     `[resanitize] starting: sanitizer v${SANITIZER_VERSION}, chunkSize=${CHUNK_SIZE}, ` +
       `concurrency=${CONCURRENCY}, prefetch=${PREFETCH_CHUNKS} chunks, ` +

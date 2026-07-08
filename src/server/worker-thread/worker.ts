@@ -10,12 +10,17 @@
 
 import { cleanContent } from "@/server/feed/content-cleaner";
 import { parseFeed } from "@/server/feed/parser";
-import { sanitizeEntryHtml } from "@/server/html/sanitize";
+import { sanitizeEntryHtml, SANITIZER_VERSION } from "@/server/html/sanitize";
 import { workerRequestSchema, serializeParsedFeed } from "./types";
 import type { CleanedContent as RawCleanedContent } from "@/server/feed/content-cleaner";
 import type { CleanedContent, SerializedParsedFeed } from "./types";
 
-type TaskResult = CleanedContent | SerializedParsedFeed | { sanitized: string | null } | null;
+type TaskResult =
+  | CleanedContent
+  | SerializedParsedFeed
+  | { sanitized: string | null }
+  | { version: number }
+  | null;
 
 export default function handleTask(raw: unknown): TaskResult {
   const request = workerRequestSchema.parse(raw);
@@ -38,5 +43,10 @@ export default function handleTask(raw: unknown): TaskResult {
 
     case "sanitizeEntryHtml":
       return { sanitized: sanitizeEntryHtml(request.html) };
+
+    // Report the sanitizer version compiled into this bundle so the main thread
+    // can detect a stale worker build (see getWorkerSanitizerVersion).
+    case "sanitizerVersion":
+      return { version: SANITIZER_VERSION };
   }
 }

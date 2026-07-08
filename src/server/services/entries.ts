@@ -352,8 +352,12 @@ async function resolveSanitizedFamily(
     version: number | null;
   }
 ): Promise<{ original: string | null; cleaned: string | null }> {
-  // Fast path: already sanitized at the current version.
-  if (stored.version === SANITIZER_VERSION) {
+  // Fast path: already sanitized at (or beyond) the current version. `>=`, not
+  // `===`, so a row a newer release wrote at a higher version (during an
+  // expand/contract rollout, or when this is an old release running after a
+  // rollback) is served as-is instead of pointlessly re-sanitized every read —
+  // the persist CAS is strictly-less-than and would reject the downgrade anyway.
+  if (stored.version !== null && stored.version >= SANITIZER_VERSION) {
     return { original: stored.originalSanitized, cleaned: stored.cleanedSanitized };
   }
 

@@ -18,10 +18,11 @@ import { availableParallelism } from "os";
 import Piscina from "piscina";
 
 import { logger } from "@/lib/logger";
-import { sanitizeEntryHtml } from "@/server/html/sanitize";
+import { sanitizeEntryHtml, SANITIZER_VERSION } from "@/server/html/sanitize";
 import {
   cleanedContentSchema,
   sanitizeEntryHtmlResultSchema,
+  sanitizerVersionResultSchema,
   serializedParsedFeedSchema,
   deserializeParsedFeed,
 } from "./types";
@@ -183,6 +184,32 @@ export async function sanitizeEntryHtmlInWorker(
     });
     return sanitizeEntryHtml(html);
   }
+}
+
+/**
+ * Report the `SANITIZER_VERSION` compiled into the worker-thread bundle.
+ *
+ * The bundle (`dist/worker-thread.js` in production) embeds a snapshot of the
+ * sanitizer rules (`SANITIZE_OPTIONS` + pre-sanitization transforms) at build
+ * time, while the main process imports the current `SANITIZER_VERSION` from
+ * source. A stale bundle therefore sanitizes with out-of-date rules even though
+ * the main process stamps rows with the current version — silently persisting
+ * mis-sanitized content. Comparing this value to the main process's
+ * `SANITIZER_VERSION` detects that mismatch (the bump discipline makes the
+ * version the single source of truth for the rules). Bulk re-sanitization refuses
+ * to run on a mismatch; see scripts/resanitize-bulk.ts.
+ *
+ * Runs the probe in the pool (bypassing the inline-size threshold) so it actually
+ * reflects the bundle. When no pool is available every sanitize runs inline on
+ * the main thread with current rules, so there is no bundle to be stale — we
+ * return the in-process version, which always matches.
+ */
+export async function getWorkerSanitizerVersion(): Promise<number> {
+  const p = getPool();
+  if (!p) return SANITIZER_VERSION;
+
+  const result = await p.run({ type: "sanitizerVersion" });
+  return sanitizerVersionResultSchema.parse(result).version;
 }
 
 /**
