@@ -299,6 +299,87 @@ describe("Entries", () => {
     });
   });
 
+  describe("list deduplicates entries reachable through overlapping subscriptions", () => {
+    /**
+     * Regression for #1083. visible_entries emits one row per matching
+     * subscription_feeds row, so an entry reachable through overlapping
+     * subscriptions (from feed redirect/merge history) would appear multiple
+     * times in the list/search — even across cursor pages — and disagree with
+     * the count paths that dedupe via count(DISTINCT id).
+     *
+     * Fixture: sub1 covers feedA and feedB (redirect/merge history in
+     * subscription_feeds), sub2 covers feedB directly. An entry in feedB is thus
+     * reachable through both subscriptions and must still appear exactly once.
+     */
+    async function createOverlappingSubscriptions(
+      userId: string,
+      entryOptions: Parameters<typeof createTestEntry>[1] = {}
+    ) {
+      const feedIdA = await createTestFeed("https://feed-a.com/rss", "Feed A");
+      const feedIdB = await createTestFeed("https://feed-b.com/rss", "Feed B");
+      const subId1 = await createTestSubscription(userId, feedIdA);
+      const subId2 = await createTestSubscription(userId, feedIdB);
+      // sub1 also covers feedB (redirect/merge history) — overlapping with sub2.
+      await db
+        .insert(subscriptionFeeds)
+        .values({ subscriptionId: subId1, feedId: feedIdB, userId });
+
+      const entryIdA = await createTestEntry(feedIdA, { title: "Only In A" });
+      const entryIdB = await createTestEntry(feedIdB, entryOptions);
+      await createUserEntry(userId, entryIdA);
+      await createUserEntry(userId, entryIdB);
+
+      return { feedIdA, feedIdB, subId1, subId2, entryIdA, entryIdB };
+    }
+
+    it("returns a single row per entry in the timeline", async () => {
+      const userId = await createTestUser();
+      const { entryIdA, entryIdB } = await createOverlappingSubscriptions(userId);
+
+      const result = await listEntries(db, { userId, showSpam: false });
+
+      const ids = result.items.map((e) => e.id);
+      expect(ids).toHaveLength(2);
+      expect(ids).toContain(entryIdA);
+      expect(ids.filter((id) => id === entryIdB)).toHaveLength(1);
+    });
+
+    it("does not duplicate the overlapping entry across cursor pages", async () => {
+      const userId = await createTestUser();
+      const { entryIdA, entryIdB } = await createOverlappingSubscriptions(userId);
+
+      const seen: string[] = [];
+      let cursor: string | undefined;
+      // Page size 1 forces the keyset cursor to walk every row; a duplicated
+      // entry would otherwise re-surface on the next page.
+      for (let i = 0; i < 5; i++) {
+        const page = await listEntries(db, { userId, limit: 1, cursor, showSpam: false });
+        seen.push(...page.items.map((e) => e.id));
+        cursor = page.nextCursor;
+        if (!cursor) break;
+      }
+
+      expect(seen.sort()).toEqual([entryIdA, entryIdB].sort());
+    });
+
+    it("returns a single row per entry in search results", async () => {
+      const userId = await createTestUser();
+      const { entryIdB } = await createOverlappingSubscriptions(userId, {
+        title: "Distributed Systems Consensus",
+        contentCleaned: "Content about the Raft algorithm",
+      });
+
+      const result = await listEntries(db, {
+        userId,
+        query: "Distributed Systems",
+        showSpam: false,
+      });
+
+      const ids = result.items.map((e) => e.id);
+      expect(ids).toEqual([entryIdB]);
+    });
+  });
+
   describe("list with offset", () => {
     it("skips `offset` rows in one query (page/offset pagination for compat APIs)", async () => {
       const userId = await createTestUser();
