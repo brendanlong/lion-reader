@@ -3,8 +3,10 @@
  *
  * Run by the `cleanup` singleton job once a day. Every row deleted here is
  * already dead to the application — expired/revoked credentials all fail
- * validation on their read paths, and parked one-time jobs never run again —
- * so deletion only reclaims space and index bloat, never changes behavior.
+ * validation on their read paths, parked one-time jobs never run again, and
+ * subscriber-less `fetch_feed` jobs are permanently ineligible for claiming
+ * (issue #1085) — so deletion only reclaims space and index bloat (and, for
+ * dead feed jobs, un-drags the claim scan), never changes behavior.
  */
 
 import { and, eq, gt, isNull, lt, notExists, or, sql } from "drizzle-orm";
@@ -42,6 +44,18 @@ const REVOKED_RETENTION_MS = 30 * DAY_MS;
 const PARKED_JOB_THRESHOLD_MS = 180 * DAY_MS;
 
 /**
+ * Grace period before a subscriber-less `fetch_feed` job is deleted (issue #1085).
+ *
+ * `createSubscription` calls `ensureFeedJob` (committing the job row) *before*
+ * committing the subscription row, so for the very first subscriber to a feed
+ * there is a brief window where the job exists but no active subscription is yet
+ * visible. Requiring the job to be at least this old avoids racing that window;
+ * a genuinely dead job (feed unsubscribed / user deleted) has an old `created_at`
+ * — `ensureFeedJob`'s upsert never touches `created_at` — so it is unaffected.
+ */
+const DEAD_FEED_JOB_GRACE_MS = 60 * 60 * 1000;
+
+/**
  * How long an orphaned Dynamic Client Registration (RFC 7591) client is retained
  * before deletion. `/oauth/register` is open (no auth) and MCP clients such as
  * claude.ai re-register on every connect, so most rows never complete an
@@ -62,6 +76,7 @@ export interface RetentionCleanupResult {
   oauthRefreshTokens: number;
   oauthClients: number;
   parkedJobs: number;
+  deadFeedJobs: number;
 }
 
 /**
@@ -74,6 +89,7 @@ export async function runRetentionCleanup(db: Database): Promise<RetentionCleanu
   const expiryCutoff = new Date(now - EXPIRY_GRACE_MS);
   const revokedCutoff = new Date(now - REVOKED_RETENTION_MS);
   const parkedCutoff = new Date(now + PARKED_JOB_THRESHOLD_MS);
+  const deadFeedJobCutoff = new Date(now - DEAD_FEED_JOB_GRACE_MS);
   const orphanedClientCutoff = new Date(now - ORPHANED_CLIENT_RETENTION_MS);
 
   const expiredSessions = await db
@@ -116,6 +132,29 @@ export async function runRetentionCleanup(db: Database): Promise<RetentionCleanu
         gt(jobs.nextRunAt, parkedCutoff)
       )
     );
+
+  // Dead feed jobs (issue #1085): a `fetch_feed` job survives when its feed
+  // loses its last active subscriber (unsubscribe soft-delete) or the feed is
+  // hard-deleted (deleteUser orphan cleanup — jobs have no FK to feeds). Such a
+  // job is permanently ineligible for `claimFeedJob` (its active-subscriber
+  // EXISTS check fails) yet its `next_run_at` stays frozen in the past, so it
+  // sorts *first* and is walked on every claim attempt — including every idle
+  // poll — dragging the claim scan forever. Deleting it is safe: a new
+  // subscriber recreates the job via `ensureFeedJob`'s idempotent upsert. Guard
+  // with `running_since IS NULL` (never touch an in-flight job) and a grace on
+  // `created_at` (see DEAD_FEED_JOB_GRACE_MS) so we don't race the first-ever
+  // subscribe, where the job is committed just before its subscription.
+  const deadFeedJobs = await db.execute(sql`
+    DELETE FROM ${jobs} j
+    WHERE j.type = 'fetch_feed'
+      AND j.running_since IS NULL
+      AND j.created_at < ${deadFeedJobCutoff}
+      AND NOT EXISTS (
+        SELECT 1 FROM subscriptions s
+        WHERE s.feed_id = (j.payload->>'feedId')::uuid
+          AND s.unsubscribed_at IS NULL
+      )
+  `);
 
   // Orphaned Dynamic Client Registration clients (issue #975): every row in
   // oauth_clients comes from open /oauth/register (CIMD URL clients are resolved
@@ -173,5 +212,6 @@ export async function runRetentionCleanup(db: Database): Promise<RetentionCleanu
     oauthRefreshTokens: expiredRefreshTokens.rowCount ?? 0,
     oauthClients: orphanedClients.rowCount ?? 0,
     parkedJobs: parkedJobs.rowCount ?? 0,
+    deadFeedJobs: deadFeedJobs.rowCount ?? 0,
   };
 }
