@@ -82,8 +82,11 @@ export async function listGreaderSubscriptions(
  * exactly like a real subscription (uncategorized, titled "Saved Articles"), so
  * downstream formatting needs no saved special case. `subscribedAt` is the epoch
  * — the saved feed has no meaningful subscription time.
+ *
+ * Module-private: routes go through `listGreaderSubscriptions` so the saved feed
+ * is appended in exactly one place (issue #1069).
  */
-export async function getSavedSubscription(
+async function getSavedSubscription(
   db: typeof dbType,
   userId: string,
   opts: { showSpam: boolean }
