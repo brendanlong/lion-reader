@@ -122,7 +122,7 @@ export function formatSubscription(sub: Subscription): GoogleReaderSubscription 
   const int64Id = uuidToInt64(sub.id);
 
   return {
-    id: `feed/${int64Id.toString()}`,
+    id: feedStreamId(sub.id),
     title: sub.title ?? "",
     categories: sub.tags.map((tag) => ({
       id: labelStreamId(tag.name),
@@ -147,7 +147,7 @@ export function formatSavedSubscription(savedFeedId: string): GoogleReaderSubscr
   const int64Id = uuidToInt64(savedFeedId);
 
   return {
-    id: `feed/${int64Id.toString()}`,
+    id: feedStreamId(savedFeedId),
     title: SAVED_FEED_TITLE,
     categories: [],
     sortid: int64Id.toString(16).padStart(16, "0"),
@@ -227,9 +227,8 @@ export function formatUnreadCounts(
   let totalUnread = 0;
   for (const sub of subscriptions) {
     if (sub.unreadCount > 0) {
-      const int64Id = uuidToInt64(sub.id);
       unreadcounts.push({
-        id: `feed/${int64Id.toString()}`,
+        id: feedStreamId(sub.id),
         count: sub.unreadCount,
         newestItemTimestampUsec: (sub.subscribedAt.getTime() * 1000).toString(),
       });

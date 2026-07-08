@@ -352,6 +352,44 @@ test.describe("Google Reader API happy path", () => {
     expect(readingListCount.count).toBeGreaterThanOrEqual(1);
   });
 
+  // mark-all-as-read on the synthetic saved feed must actually mark saved
+  // articles read (it used to no-op because the saved feed has no subscription).
+  test("mark-all-as-read marks the Saved Articles feed read", async ({ request }) => {
+    const db = getDb();
+    const user = await createPasswordUser(db);
+    await createSavedArticle(db, { userId: user.id, title: "Mark Me Read" });
+    const token = await clientLogin(request, user);
+
+    // Resolve the synthetic saved feed's stream id from subscription/list.
+    const subsBody = await (
+      await request.get(`${API_BASE}/subscription/list`, { headers: authHeader(token) })
+    ).json();
+    const savedStreamId: string = subsBody.subscriptions.find(
+      (s: { title: string }) => s.title === "Saved Articles"
+    ).id;
+
+    // Precondition: the saved feed has an unread count.
+    const before = await (
+      await request.get(`${API_BASE}/unread-count`, { headers: authHeader(token) })
+    ).json();
+    expect(
+      before.unreadcounts.find((c: { id: string }) => c.id === savedStreamId)?.count
+    ).toBeGreaterThanOrEqual(1);
+
+    // Mark the whole saved feed read.
+    const markRes = await request.post(`${API_BASE}/mark-all-as-read`, {
+      headers: { ...authHeader(token), "content-type": "application/x-www-form-urlencoded" },
+      data: new URLSearchParams({ s: savedStreamId }).toString(),
+    });
+    expect(markRes.status()).toBe(200);
+
+    // The saved feed no longer appears in unread-count (count dropped to 0).
+    const after = await (
+      await request.get(`${API_BASE}/unread-count`, { headers: authHeader(token) })
+    ).json();
+    expect(after.unreadcounts.find((c: { id: string }) => c.id === savedStreamId)).toBeUndefined();
+  });
+
   test("stream/items/contents rejects an oversized id batch with 400", async ({ request }) => {
     const token = await getToken(request);
 
