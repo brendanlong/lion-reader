@@ -44,10 +44,16 @@ const SANITIZE_INLINE_MAX_CHARS = 10 * 1024;
 let pool: Piscina | null = null;
 let poolInitFailed = false;
 /**
- * Memoized result of the one-time bundle-version probe. Resolves true if the
- * worker bundle's `SANITIZER_VERSION` matches the main process, false otherwise.
+ * Set once the worker bundle's `SANITIZER_VERSION` has been confirmed to match
+ * the main process, so the probe runs at most once in the happy path.
  */
-let sanitizerVersionCheck: Promise<boolean> | null = null;
+let sanitizerVersionVerified = false;
+/**
+ * The in-flight bundle-version probe, shared by concurrent first callers. Reset
+ * to null after a *transient* probe error so the next call retries (only a real
+ * version mismatch permanently disables the pool).
+ */
+let sanitizerVersionProbe: Promise<"ok" | "mismatch" | "error"> | null = null;
 
 function resolveWorkerPath(): { filename: string; execArgv?: string[] } {
   // Use process.cwd() for all path resolution — __dirname gets replaced by
@@ -127,41 +133,52 @@ function getPool(): Piscina | null {
  * disable the pool entirely so every sanitize runs inline on the main thread
  * with the current rules.
  */
-async function verifyWorkerSanitizerVersion(p: Piscina): Promise<boolean> {
+async function verifyWorkerSanitizerVersion(p: Piscina): Promise<"ok" | "mismatch" | "error"> {
+  let version: number;
   try {
     const result = await p.run({ type: "sanitizerVersion" });
-    const version = sanitizerVersionResultSchema.parse(result).version;
-    if (version !== SANITIZER_VERSION) {
-      logger.error(
-        "Worker thread bundle SANITIZER_VERSION mismatch — disabling worker pool, sanitizing inline. Rebuild the worker bundle (build:all).",
-        { workerVersion: version, mainVersion: SANITIZER_VERSION }
-      );
-      return false;
-    }
-    return true;
+    version = sanitizerVersionResultSchema.parse(result).version;
   } catch (error) {
-    logger.error("Failed to verify worker sanitizer version — disabling worker pool", {
+    // A transient worker crash/timeout (not a genuine version mismatch) must not
+    // permanently disable offload — the caller retries on the next call.
+    logger.warn("Worker sanitizer version probe failed; sanitizing inline for now, will retry", {
       error: error instanceof Error ? error.message : String(error),
     });
-    return false;
+    return "error";
   }
+  if (version !== SANITIZER_VERSION) {
+    logger.error(
+      "Worker thread bundle SANITIZER_VERSION mismatch — disabling worker pool, sanitizing inline. Rebuild the worker bundle (build:all).",
+      { workerVersion: version, mainVersion: SANITIZER_VERSION }
+    );
+    return "mismatch";
+  }
+  return "ok";
 }
 
 /**
  * Returns the pool only after confirming the worker bundle's sanitizer version
- * matches the main process. On mismatch (or probe failure) the pool is torn down
- * and permanently disabled, so all callers fall back to inline execution with
- * current rules. The probe runs once and its result is memoized.
+ * matches the main process. A genuine version *mismatch* tears the pool down and
+ * permanently disables it (all callers then fall back to inline execution with
+ * current rules). A transient probe *error* only skips offload for the current
+ * call and is retried next time — a one-off worker blip mustn't disable offload
+ * for the whole process. The successful probe runs at most once.
  */
 async function getVerifiedPool(): Promise<Piscina | null> {
   const p = getPool();
   if (!p) return null;
+  if (sanitizerVersionVerified) return p;
 
-  if (!sanitizerVersionCheck) {
-    sanitizerVersionCheck = verifyWorkerSanitizerVersion(p);
+  if (!sanitizerVersionProbe) {
+    sanitizerVersionProbe = verifyWorkerSanitizerVersion(p);
   }
-  const ok = await sanitizerVersionCheck;
-  if (!ok) {
+  const outcome = await sanitizerVersionProbe;
+
+  if (outcome === "ok") {
+    sanitizerVersionVerified = true;
+    return p;
+  }
+  if (outcome === "mismatch") {
     poolInitFailed = true;
     if (pool) {
       const stale = pool;
@@ -170,7 +187,9 @@ async function getVerifiedPool(): Promise<Piscina | null> {
     }
     return null;
   }
-  return p;
+  // Transient error: don't memoize, retry on the next call, run inline for now.
+  sanitizerVersionProbe = null;
+  return null;
 }
 
 // ---------------------------------------------------------------------------

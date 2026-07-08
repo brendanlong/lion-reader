@@ -45,29 +45,54 @@ function isTimestampFresh(timestamp: string): boolean {
   return Math.abs(nowSeconds - ts) <= MAILGUN_TIMESTAMP_TOLERANCE_SECONDS;
 }
 
+function webhookNonceKey(token: string): string {
+  return `mailgun:webhook:nonce:${token}`;
+}
+
 /**
- * Records the webhook token as a single-use nonce, returning false if it was
- * already seen (a replay of a previously-captured signed request). The TTL
- * outlives the freshness window so a token can't be reused within it. When Redis
- * is unavailable we can't dedup, so we allow the request — the timestamp
- * freshness check and downstream Message-ID dedup still bound replays.
+ * Returns true if this webhook token has already been marked seen — i.e. a
+ * previously-*completed* request replayed. Mailgun reuses the same
+ * `(timestamp, token, signature)` on every delivery retry, so the nonce is
+ * marked only *after* a request durably completes ({@link markWebhookTokenSeen}),
+ * never up front: that way a legitimate retry after a mid-processing crash
+ * (which never marked the token) still reprocesses instead of being dropped,
+ * while a genuine replay of an already-handled event is rejected. When Redis is
+ * unavailable we can't dedup, so we treat the token as unseen — timestamp
+ * freshness and downstream Message-ID dedup still bound replays.
  */
-async function consumeWebhookToken(token: string): Promise<boolean> {
+async function wasWebhookTokenSeen(token: string): Promise<boolean> {
   const redis = getRedisClient();
   if (!redis) {
-    return true;
+    return false;
   }
   try {
-    const key = `mailgun:webhook:nonce:${token}`;
-    const result = await redis.set(key, "1", "EX", MAILGUN_TIMESTAMP_TOLERANCE_SECONDS + 60, "NX");
-    return result === "OK";
+    return (await redis.exists(webhookNonceKey(token))) === 1;
   } catch (error) {
-    // A Redis hiccup must not drop legitimate mail; fall back to allowing it
-    // (freshness + Message-ID dedup remain in force).
-    logger.warn("Mailgun webhook nonce check failed; allowing request", {
+    // A Redis hiccup must not drop legitimate mail; treat as unseen.
+    logger.warn("Mailgun webhook nonce lookup failed; treating as unseen", {
       error: error instanceof Error ? error.message : String(error),
     });
-    return true;
+    return false;
+  }
+}
+
+/**
+ * Marks the webhook token as seen once its event has been durably handled, so
+ * later retries/replays of the same token are rejected by
+ * {@link wasWebhookTokenSeen}. The TTL matches the freshness window (plus a small
+ * buffer): a replay older than that is already rejected by the timestamp check.
+ */
+async function markWebhookTokenSeen(token: string): Promise<void> {
+  const redis = getRedisClient();
+  if (!redis) {
+    return;
+  }
+  try {
+    await redis.set(webhookNonceKey(token), "1", "EX", MAILGUN_TIMESTAMP_TOLERANCE_SECONDS + 60);
+  } catch (error) {
+    logger.warn("Mailgun webhook nonce mark failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }
 
@@ -235,9 +260,10 @@ export async function POST(request: Request): Promise<Response> {
     return new Response("Stale Timestamp", { status: 406 });
   }
 
-  if (!(await consumeWebhookToken(token))) {
-    // Token already used — a replay, or a Mailgun delivery retry of an
-    // already-acknowledged request. Ack without reprocessing (idempotent).
+  if (await wasWebhookTokenSeen(token)) {
+    // Token already handled to completion — a replay of an already-acknowledged
+    // request. Ack without reprocessing (idempotent). A retry whose original
+    // never completed won't hit this (the token is marked only on completion).
     logger.warn("Mailgun webhook token replay detected; ignoring");
     return new Response("OK", { status: 200 });
   }
@@ -269,6 +295,12 @@ export async function POST(request: Request): Promise<Response> {
   // 6. Process the email
   try {
     const result = await processInboundEmail(email);
+
+    // Processing reached a durable decision (accepted or deliberately rejected),
+    // so mark the token seen to reject future replays. Deliberately NOT done in
+    // the catch below: an unexpected throw means the event wasn't durably
+    // handled, so a Mailgun retry (same token) should be allowed to reprocess.
+    await markWebhookTokenSeen(token);
 
     if (result.success) {
       logger.info("Mailgun email webhook processed successfully", {
