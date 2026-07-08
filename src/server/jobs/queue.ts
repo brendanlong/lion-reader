@@ -503,7 +503,11 @@ export const SINGLETON_JOB_TYPES: JobType[] = [
   "renew_websub",
   "monitor_feed_health",
   "cleanup",
-  "resanitize_entries",
+  // Temporarily paused: keeping "resanitize_entries" out of this list stops the
+  // worker from claiming (or self-creating) the singleton, so the background
+  // re-sanitization sweep does not run. The read-path self-heal still fixes any
+  // entry that is actually opened. Re-enable by restoring the entry below.
+  // "resanitize_entries",
 ];
 
 /**
