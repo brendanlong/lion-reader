@@ -874,23 +874,31 @@ export async function getEntries(
  * `read_changed_at <= changedAt` guard) update no rows and therefore publish
  * nothing. Fire and forget.
  *
- * This publishes after the (autocommitted) UPDATEs complete. Today's callers
- * pass the global `db`, so that's always post-commit. If a future caller runs
- * this inside a transaction, move the publish to after the commit so a
- * rolled-back mark can't emit a phantom event.
+ * This publishes after the (autocommitted) UPDATEs complete. Callers that pass
+ * the global `db` get post-commit publishing for free. A caller running this
+ * inside a transaction must pass `publish: false` and publish the returned
+ * `changed`+`counts` itself after the commit, so a rolled-back mark can't emit
+ * a phantom event.
  *
  * @param options.fromList - Whether the mark-read originated from the entry list
  *   (weak negative signal). Only meaningful when marking read.
+ * @param options.publish - Whether to publish `entry_state_changed` events here
+ *   (default true). Pass false when calling inside a transaction and publish the
+ *   returned `changed`/`counts` after the commit.
  */
 export async function markEntriesRead(
   db: DbOrTx,
   userId: string,
   entriesToMark: MarkReadEntry[],
   read: boolean,
-  options: { fromList?: boolean } = {}
-): Promise<{ entries: MarkReadEntryState[]; counts: BulkUnreadCounts }> {
+  options: { fromList?: boolean; publish?: boolean } = {}
+): Promise<{
+  entries: MarkReadEntryState[];
+  changed: MarkReadEntryState[];
+  counts: BulkUnreadCounts;
+}> {
   if (entriesToMark.length === 0) {
-    return { entries: [], counts: await getBulkEntryRelatedCounts(db, userId, []) };
+    return { entries: [], changed: [], counts: await getBulkEntryRelatedCounts(db, userId, []) };
   }
 
   if (entriesToMark.length > 1000) {
@@ -968,12 +976,16 @@ export async function markEntriesRead(
   // Notify the user's other tabs/devices for the entries that actually changed,
   // carrying the absolute counts so they set them directly. See the function
   // doc for publish/transaction ordering. Fire and forget.
+  //
+  // Transactional callers pass `publish: false` and publish `changed`+`counts`
+  // themselves after the commit, so a rolled-back mark can't emit a phantom
+  // event (see the function doc).
   const changed = entries.filter((entry) => changedIds.has(entry.id));
-  if (changed.length > 0) {
+  if (options.publish !== false && changed.length > 0) {
     publishMarkReadStateChanges(userId, changed, counts);
   }
 
-  return { entries, counts };
+  return { entries, changed, counts };
 }
 
 /**

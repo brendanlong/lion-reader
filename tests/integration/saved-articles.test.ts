@@ -175,6 +175,7 @@ async function createTestSavedArticle(
     starred: options.starred ?? false,
     readChangedAt: pastTime,
     starredChangedAt: pastTime,
+    updatedAt: pastTime,
   });
 
   return articleId;

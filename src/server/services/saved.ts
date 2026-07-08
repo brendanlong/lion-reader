@@ -28,6 +28,7 @@ import { publishNewEntry, publishEntryUpdatedFromEntry } from "@/server/redis/pu
 import { toNewEntryListData } from "@/lib/events/schemas";
 import { errors } from "@/server/trpc/errors";
 import { markEntriesRead } from "@/server/services/entries";
+import { publishMarkReadStateChanges } from "@/server/services/entry-events";
 import { pluginRegistry } from "@/server/plugins";
 import {
   isGoogleDocsUrl,
@@ -911,14 +912,20 @@ export async function saveArticle(
     // unread flip is routed through markEntriesRead (rather than a bare
     // `read=false` UPDATE) so it maintains read_changed_at (the changedAt
     // idempotency contract — otherwise a stale queued offline "mark read" older
-    // than this refetch would win later), bumps updated_at (so sync.events
-    // reports it to offline clients), and publishes entry_state_changed + counts
-    // (so other tabs' unread badges refresh). Both writes share one transaction
-    // so a crash can't leave new content with the old read state.
-    await db.transaction(async (tx) => {
+    // than this refetch would win later) and bumps updated_at (so sync.events
+    // reports it to offline clients). Both writes share one transaction so a
+    // crash can't leave new content with the old read state. Publishing is
+    // suppressed inside the tx and done after commit (below) so a rolled-back
+    // mark can't emit a phantom entry_state_changed event.
+    const { changed: readChanged, counts: readCounts } = await db.transaction(async (tx) => {
       await tx.update(entries).set(update).where(eq(entries.id, oldEntry.id));
-      await markEntriesRead(tx, userId, [{ id: oldEntry.id, changedAt: now }], false);
+      return markEntriesRead(tx, userId, [{ id: oldEntry.id, changedAt: now }], false, {
+        publish: false,
+      });
     });
+
+    // Post-commit: notify other tabs of the unread flip + refreshed counts.
+    publishMarkReadStateChanges(userId, readChanged, readCounts);
 
     logger.info("Refetched saved article", {
       entryId: oldEntry.id,
