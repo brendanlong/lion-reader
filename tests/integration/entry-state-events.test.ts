@@ -228,14 +228,88 @@ describe("updateEntryStarred SSE publishing", () => {
     const entryId = await seedEntry(userId);
 
     // Establish a recent starred_changed_at.
-    await entriesService.updateEntryStarred(db, userId, entryId, true, new Date());
+    await entriesService.updateEntryStarred(db, userId, entryId, true, { changedAt: new Date() });
 
     const channel = getUserEventsChannel(userId);
     await subscriber.subscribe(channel);
 
     // Replaying an older action loses the starred_changed_at <= changedAt guard.
     await expectNoMessage(channel, () =>
-      entriesService.updateEntryStarred(db, userId, entryId, false, new Date(0))
+      entriesService.updateEntryStarred(db, userId, entryId, false, { changedAt: new Date(0) })
+    );
+  });
+});
+
+// The Google Reader / Wallabag compat routes discard the return value and pass
+// computeCounts: false to skip the several visible_entries count scans per call
+// (issue #1045/#1046). They still publish the state change so other tabs sync;
+// the event just carries no counts and the mutation returns counts: null.
+describe("computeCounts: false (compat routes)", () => {
+  it("markEntriesRead publishes a count-less event and returns null counts", async () => {
+    const userId = await seedUser();
+    const entryId = await seedEntry(userId);
+
+    const channel = getUserEventsChannel(userId);
+    await subscriber.subscribe(channel);
+    const messagePromise = waitForMessage(channel);
+
+    const { entries: result, counts } = await entriesService.markEntriesRead(
+      db,
+      userId,
+      [{ id: entryId }],
+      true,
+      { computeCounts: false }
+    );
+    expect(result[0].read).toBe(true);
+    expect(counts).toBeNull();
+
+    // The read state still syncs to other tabs; the event just omits counts.
+    const event = JSON.parse(await messagePromise);
+    expect(event.type).toBe("entry_state_changed");
+    expect(event.entryId).toBe(entryId);
+    expect(event.read).toBe(true);
+    expect(event.counts).toBeUndefined();
+  });
+
+  it("updateEntryStarred publishes a count-less event and returns null counts", async () => {
+    const userId = await seedUser();
+    const entryId = await seedEntry(userId);
+
+    const channel = getUserEventsChannel(userId);
+    await subscriber.subscribe(channel);
+    const messagePromise = waitForMessage(channel);
+
+    const { entry, counts } = await entriesService.updateEntryStarred(db, userId, entryId, true, {
+      computeCounts: false,
+    });
+    expect(entry.starred).toBe(true);
+    expect(counts).toBeNull();
+
+    const event = JSON.parse(await messagePromise);
+    expect(event.type).toBe("entry_state_changed");
+    expect(event.entryId).toBe(entryId);
+    expect(event.starred).toBe(true);
+    expect(event.counts).toBeUndefined();
+  });
+
+  it("still suppresses the publish on an idempotent replay with computeCounts: false", async () => {
+    const userId = await seedUser();
+    const entryId = await seedEntry(userId);
+
+    // Establish a recent read_changed_at.
+    await entriesService.markEntriesRead(db, userId, [{ id: entryId }], true, {
+      computeCounts: false,
+    });
+
+    const channel = getUserEventsChannel(userId);
+    await subscriber.subscribe(channel);
+
+    // An older replay updates no rows, so nothing publishes — the change-gating
+    // is independent of whether counts are computed.
+    await expectNoMessage(channel, () =>
+      entriesService.markEntriesRead(db, userId, [{ id: entryId, changedAt: new Date(0) }], false, {
+        computeCounts: false,
+      })
     );
   });
 });

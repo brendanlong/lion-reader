@@ -65,11 +65,20 @@ export async function POST(request: Request): Promise<Response> {
   const addRead = addTags.some((t) => isState(t, "read"));
   const removeRead = removeTags.some((t) => isState(t, "read"));
 
+  // computeCounts: false — this route discards the return value and only needs
+  // the read/starred state to sync to other tabs (published count-less). Google
+  // Reader clients (Reeder, NetNewsWire, …) mark read/star at high volume, and
+  // the star path below loops per entry, so skipping the several visible_entries
+  // count scans per call avoids a large amount of DB CPU (see #1045/#1046).
   const entriesToMark = entryUuids.map((id) => ({ id }));
   if (addRead) {
-    await entriesService.markEntriesRead(db, session.user.id, entriesToMark, true);
+    await entriesService.markEntriesRead(db, session.user.id, entriesToMark, true, {
+      computeCounts: false,
+    });
   } else if (removeRead) {
-    await entriesService.markEntriesRead(db, session.user.id, entriesToMark, false);
+    await entriesService.markEntriesRead(db, session.user.id, entriesToMark, false, {
+      computeCounts: false,
+    });
   }
 
   // Process starred state changes
@@ -78,7 +87,9 @@ export async function POST(request: Request): Promise<Response> {
 
   if (addStarred || removeStarred) {
     for (const entryId of entryUuids) {
-      await entriesService.updateEntryStarred(db, session.user.id, entryId, addStarred);
+      await entriesService.updateEntryStarred(db, session.user.id, entryId, addStarred, {
+        computeCounts: false,
+      });
     }
   }
 

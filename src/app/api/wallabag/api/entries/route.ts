@@ -118,12 +118,19 @@ export async function POST(request: Request): Promise<Response> {
     title: body.title || undefined,
   });
 
-  // Handle archive/starred flags if provided
+  // Handle archive/starred flags if provided. computeCounts: false — this route
+  // discards the return value and only needs the state change to sync to other
+  // tabs (published count-less), so it skips the visible_entries count scans
+  // (see #1045/#1046).
   if (body.archive === "1" && !article.read) {
-    await entriesService.markEntriesRead(db, auth.userId, [{ id: article.id }], true);
+    await entriesService.markEntriesRead(db, auth.userId, [{ id: article.id }], true, {
+      computeCounts: false,
+    });
   }
   if (body.starred === "1" && !article.starred) {
-    await entriesService.updateEntryStarred(db, auth.userId, article.id, true);
+    await entriesService.updateEntryStarred(db, auth.userId, article.id, true, {
+      computeCounts: false,
+    });
   }
 
   return jsonResponse(formatSavedArticle(article));

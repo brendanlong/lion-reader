@@ -505,7 +505,7 @@ export const entriesRouter = createTRPCRouter({
         userId,
         input.id,
         input.starred,
-        input.changedAt ?? new Date()
+        { changedAt: input.changedAt ?? new Date() }
       );
 
       return { entry, counts };

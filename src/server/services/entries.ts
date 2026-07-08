@@ -966,20 +966,53 @@ export async function getEntries(
  * @param options.publish - Whether to publish `entry_state_changed` events here
  *   (default true). Pass false when calling inside a transaction and publish the
  *   returned `changed`/`counts` after the commit.
+ * @param options.computeCounts - Whether to compute the absolute unread counts
+ *   (default true). Counting scans the `visible_entries` view several times, so
+ *   callers that discard the return value and don't need count-accurate SSE
+ *   badges (the Google Reader and Wallabag compat routes) pass false: the state
+ *   change still publishes (count-less) and `counts` is returned as null. See
+ *   the count-cost note on the compat routes.
  */
 export async function markEntriesRead(
   db: DbOrTx,
   userId: string,
   entriesToMark: MarkReadEntry[],
   read: boolean,
-  options: { fromList?: boolean; publish?: boolean } = {}
+  options?: { fromList?: boolean; publish?: boolean; computeCounts?: true }
 ): Promise<{
   entries: MarkReadEntryState[];
   changed: MarkReadEntryState[];
   counts: BulkUnreadCounts;
+}>;
+export async function markEntriesRead(
+  db: DbOrTx,
+  userId: string,
+  entriesToMark: MarkReadEntry[],
+  read: boolean,
+  options: { fromList?: boolean; publish?: boolean; computeCounts: false }
+): Promise<{
+  entries: MarkReadEntryState[];
+  changed: MarkReadEntryState[];
+  counts: null;
+}>;
+export async function markEntriesRead(
+  db: DbOrTx,
+  userId: string,
+  entriesToMark: MarkReadEntry[],
+  read: boolean,
+  options: { fromList?: boolean; publish?: boolean; computeCounts?: boolean } = {}
+): Promise<{
+  entries: MarkReadEntryState[];
+  changed: MarkReadEntryState[];
+  counts: BulkUnreadCounts | null;
 }> {
+  const computeCounts = options.computeCounts ?? true;
   if (entriesToMark.length === 0) {
-    return { entries: [], changed: [], counts: await getBulkEntryRelatedCounts(db, userId, []) };
+    return {
+      entries: [],
+      changed: [],
+      counts: computeCounts ? await getBulkEntryRelatedCounts(db, userId, []) : null,
+    };
   }
 
   if (entriesToMark.length > 1000) {
@@ -1051,8 +1084,10 @@ export async function markEntriesRead(
     .from(visibleEntries)
     .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.id, allEntryIds)));
 
-  // Compute absolute counts once, for both the return value and the SSE publish.
-  const counts = await getBulkEntryRelatedCounts(db, userId, entries);
+  // Compute absolute counts once, for both the return value and the SSE publish
+  // — unless the caller opted out (computeCounts: false), which skips the
+  // several visible_entries scans and publishes count-less events instead.
+  const counts = computeCounts ? await getBulkEntryRelatedCounts(db, userId, entries) : null;
 
   // Notify the user's other tabs/devices for the entries that actually changed,
   // carrying the absolute counts so they set them directly. See the function
@@ -1258,15 +1293,36 @@ export async function markAllEntriesRead(
  * this inside a transaction, move the publish to after the commit so a
  * rolled-back change can't emit a phantom event.
  *
- * @param changedAt - When the user initiated the action. Defaults to now.
+ * @param options.changedAt - When the user initiated the action. Defaults to now.
+ * @param options.computeCounts - Whether to compute the absolute unread counts
+ *   (default true). Counting scans the `visible_entries` view; callers that
+ *   discard the return value and don't need count-accurate SSE badges (the
+ *   Google Reader and Wallabag compat routes) pass false: the star change still
+ *   publishes (count-less) and `counts` is returned as null. See markEntriesRead.
  */
 export async function updateEntryStarred(
   db: typeof dbType,
   userId: string,
   entryId: string,
   starred: boolean,
-  changedAt: Date = new Date()
-): Promise<{ entry: EntryState; counts: UnreadCounts }> {
+  options?: { changedAt?: Date; computeCounts?: true }
+): Promise<{ entry: EntryState; counts: UnreadCounts }>;
+export async function updateEntryStarred(
+  db: typeof dbType,
+  userId: string,
+  entryId: string,
+  starred: boolean,
+  options: { changedAt?: Date; computeCounts: false }
+): Promise<{ entry: EntryState; counts: null }>;
+export async function updateEntryStarred(
+  db: typeof dbType,
+  userId: string,
+  entryId: string,
+  starred: boolean,
+  options: { changedAt?: Date; computeCounts?: boolean } = {}
+): Promise<{ entry: EntryState; counts: UnreadCounts | null }> {
+  const changedAt = options.changedAt ?? new Date();
+  const computeCounts = options.computeCounts ?? true;
   // Build the SET clause, setting the implicit signal flag when starring
   const setClause: Record<string, unknown> = {
     starred,
@@ -1309,8 +1365,10 @@ export async function updateEntryStarred(
 
   const entry = result[0];
 
-  // Compute absolute counts once, for both the return value and the SSE publish.
-  const counts = await getEntryRelatedCounts(db, userId, entryId);
+  // Compute absolute counts once, for both the return value and the SSE publish
+  // — unless the caller opted out (computeCounts: false), which skips the
+  // visible_entries scans and publishes a count-less event instead.
+  const counts = computeCounts ? await getEntryRelatedCounts(db, userId, entryId) : null;
 
   // Notify the user's other tabs/devices when the star state changed. See the
   // function doc for publish/transaction ordering. Fire and forget.

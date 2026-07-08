@@ -68,16 +68,23 @@ export async function PATCH(
     return errorResponse("not_found", "Entry not found", 404);
   }
 
+  // computeCounts: false on both — this route discards the return value and only
+  // needs the state change to sync to other tabs (published count-less), so it
+  // skips the visible_entries count scans (see #1045/#1046).
   // Handle archive (read) state
   if (body.archive !== undefined) {
     const read = body.archive === "1";
-    await entriesService.markEntriesRead(db, auth.userId, [{ id: entryId }], read);
+    await entriesService.markEntriesRead(db, auth.userId, [{ id: entryId }], read, {
+      computeCounts: false,
+    });
   }
 
   // Handle starred state
   if (body.starred !== undefined) {
     const starred = body.starred === "1";
-    await entriesService.updateEntryStarred(db, auth.userId, entryId, starred);
+    await entriesService.updateEntryStarred(db, auth.userId, entryId, starred, {
+      computeCounts: false,
+    });
   }
 
   // Return the updated entry

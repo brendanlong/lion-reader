@@ -22,11 +22,17 @@ import type { EntryState, MarkReadEntryState } from "@/server/services/entries";
 /**
  * Publishes an entry_state_changed event for each entry affected by a bulk
  * markRead, carrying the absolute counts so other tabs set them directly.
+ *
+ * `counts` may be null when the caller skipped the count aggregation
+ * (computeCounts: false — the Google Reader / Wallabag compat routes, which
+ * discard counts); the event is then published count-less and other tabs still
+ * apply the read/starred state, self-healing badges on the next count-bearing
+ * event.
  */
 export function publishMarkReadStateChanges(
   userId: string,
   entries: MarkReadEntryState[],
-  counts: BulkUnreadCounts
+  counts: BulkUnreadCounts | null
 ): void {
   for (const entry of entries) {
     void publishEntryStateChanged(
@@ -35,7 +41,7 @@ export function publishMarkReadStateChanges(
       entry.read,
       entry.starred,
       entry.updatedAt,
-      counts
+      counts ?? undefined
     ).catch(() => {
       // Ignore publish errors - SSE is best-effort
     });
@@ -45,12 +51,13 @@ export function publishMarkReadStateChanges(
 /**
  * Publishes an entry_state_changed event after a single-entry star/unstar,
  * normalizing the single-entry UnreadCounts into the array-shaped counts the
- * event (and the client's setBulkCounts) expects.
+ * event (and the client's setBulkCounts) expects. `counts` may be null when the
+ * caller skipped the aggregation (see publishMarkReadStateChanges).
  */
 export function publishStarredStateChange(
   userId: string,
   entry: EntryState,
-  counts: UnreadCounts
+  counts: UnreadCounts | null
 ): void {
   void publishEntryStateChanged(
     userId,
@@ -58,7 +65,7 @@ export function publishStarredStateChange(
     entry.read,
     entry.starred,
     entry.updatedAt,
-    toBulkUnreadCounts(counts)
+    counts ? toBulkUnreadCounts(counts) : undefined
   ).catch(() => {
     // Ignore publish errors - SSE is best-effort
   });
