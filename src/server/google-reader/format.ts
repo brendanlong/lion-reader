@@ -195,14 +195,20 @@ interface GoogleReaderUnreadCount {
  * endpoint. The saved-articles feed arrives as a synthetic subscription in
  * `subscriptions` (issue #730), so it is counted and folded into the
  * reading-list total exactly like a real feed — no special case here.
+ *
+ * `newestItemTimestampUsec` reports the current time (matching the reading-list
+ * total below): we don't track a per-feed newest-item timestamp, and "now" is the
+ * honest freshness signal for a feed with unread items — clients use it to decide
+ * whether to refetch, so a stale value risks them skipping updates. Deriving it
+ * from `subscribedAt` (as this once did) emitted a literal "0" for the synthetic
+ * saved feed, whose `subscribedAt` is the epoch sentinel.
  */
-export function formatUnreadCounts(
-  subscriptions: Array<{ id: string; unreadCount: number; subscribedAt: Date }>
-): {
+export function formatUnreadCounts(subscriptions: Array<{ id: string; unreadCount: number }>): {
   max: number;
   unreadcounts: GoogleReaderUnreadCount[];
 } {
   const unreadcounts: GoogleReaderUnreadCount[] = [];
+  const nowUsec = Date.now().toString() + "000";
 
   let totalUnread = 0;
   for (const sub of subscriptions) {
@@ -210,7 +216,7 @@ export function formatUnreadCounts(
       unreadcounts.push({
         id: feedStreamId(sub.id),
         count: sub.unreadCount,
-        newestItemTimestampUsec: (sub.subscribedAt.getTime() * 1000).toString(),
+        newestItemTimestampUsec: nowUsec,
       });
       totalUnread += sub.unreadCount;
     }
@@ -221,7 +227,7 @@ export function formatUnreadCounts(
     unreadcounts.push({
       id: stateStreamId("reading-list"),
       count: totalUnread,
-      newestItemTimestampUsec: Date.now().toString() + "000",
+      newestItemTimestampUsec: nowUsec,
     });
   }
 

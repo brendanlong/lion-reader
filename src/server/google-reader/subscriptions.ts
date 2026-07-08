@@ -12,7 +12,7 @@
 
 import type { db as dbType } from "@/server/db";
 import * as subscriptionsService from "@/server/services/subscriptions";
-import { countEntries } from "@/server/services/entries";
+import { countEntries, type ListEntriesParams } from "@/server/services/entries";
 import { getSavedFeedId, SAVED_FEED_TITLE } from "@/server/feed/saved-feed";
 import { resolveFeedStream } from "./id";
 
@@ -20,8 +20,15 @@ import { resolveFeedStream } from "./id";
  * An entries-service feed filter fragment. Both `listEntries` and
  * `markAllEntriesRead` accept `type`/`subscriptionId`, so a resolved feed stream
  * spreads straight into either param object.
+ *
+ * The member types are derived from `ListEntriesParams` (both services share
+ * these key names) so a rename or retype of `type`/`subscriptionId` in the
+ * service fails typecheck here instead of silently letting the `Object.assign`
+ * spread at the call sites drop the filter.
  */
-export type GreaderFeedFilter = { type: "saved" } | { subscriptionId: string };
+export type GreaderFeedFilter =
+  | { type: Extract<NonNullable<ListEntriesParams["type"]>, "saved"> }
+  | { subscriptionId: NonNullable<ListEntriesParams["subscriptionId"]> };
 
 /**
  * Resolves a `feed/{int64}` stream to the entries-service filter that selects its
