@@ -372,7 +372,11 @@ Cursor-based pagination everywhere:
 
 - Request: `{ cursor?: string, limit?: number }`
 - Response: `{ items: T[], nextCursor?: string }`
-- Cursor is base64-encoded UUIDv7 (gives us ordering)
+- Cursor is base64url-encoded UUIDv7 (gives us ordering). base64url (not standard
+  base64) so the cursor is safe to echo back in a URL query string — it surfaces as
+  the Google Reader `continuation` token, and some clients concatenate query params
+  without URL-encoding, where a `+` from standard base64 would arrive as a space and
+  corrupt the cursor.
 
 ### Rate Limiting
 

@@ -237,6 +237,56 @@ test.describe("Google Reader API happy path", () => {
     }
   });
 
+  // Regression guard: the `continuation` token is our base64 list cursor. It is
+  // handed straight back by clients as the `c=` query param, and some (e.g. Read
+  // You) concatenate query params WITHOUT URL-encoding. A standard-base64 cursor
+  // can contain "+", which then arrives as a space and corrupts the cursor —
+  // 400ing every page past the first and aborting the whole sync (0 articles).
+  // The token must be URL-safe (base64url: only [A-Za-z0-9_-], no padding) and
+  // must round-trip even when sent raw/unescaped.
+  test("stream/items/ids continuation is URL-safe and pages when sent unescaped", async ({
+    request,
+  }) => {
+    // Dedicated user so paging with a tiny page size doesn't disturb the shared
+    // seeded user's assertions.
+    const db = getDb();
+    const user = await createPasswordUser(db);
+    const feed = await createSubscribedFeed(db, user.id);
+    for (let i = 0; i < 3; i++) {
+      await createUnreadEntry(db, {
+        feedId: feed.feedId,
+        userId: user.id,
+        title: `Page entry ${i}`,
+      });
+    }
+    const token = await clientLogin(request, user);
+
+    // Page 1 with n=1 forces a continuation across the 3 entries.
+    const page1 = await request.get(
+      `${API_BASE}/stream/items/ids?s=user/-/state/com.google/reading-list&n=1`,
+      { headers: authHeader(token) }
+    );
+    expect(page1.status()).toBe(200);
+    const body1 = await page1.json();
+    expect(body1.itemRefs.length).toBe(1);
+    const continuation: string = body1.continuation;
+    expect(typeof continuation).toBe("string");
+    // The crux: URL-safe alphabet only, no "+", "/", or "=".
+    expect(continuation).toMatch(/^[A-Za-z0-9_-]+$/);
+
+    // Send the continuation raw (unescaped) the way Read You does. Build the URL
+    // by hand so the value isn't re-encoded, mirroring the client's behavior.
+    const page2 = await request.get(
+      `${API_BASE}/stream/items/ids?s=user/-/state/com.google/reading-list&n=1&c=${continuation}`,
+      { headers: authHeader(token) }
+    );
+    expect(page2.status()).toBe(200);
+    const body2 = await page2.json();
+    expect(body2.itemRefs.length).toBe(1);
+    // Page 2 must be a different item than page 1 (cursor advanced, not reset).
+    expect(body2.itemRefs[0].id).not.toBe(body1.itemRefs[0].id);
+  });
+
   test("stream/items/contents rejects an oversized id batch with 400", async ({ request }) => {
     const token = await getToken(request);
 
