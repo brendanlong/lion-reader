@@ -20,26 +20,18 @@ export async function GET(request: Request): Promise<Response> {
   const session = await requireAuth(request);
   if (session instanceof Response) return session;
 
-  // Fetch all subscriptions (no pagination — Google Reader clients expect all at once)
-  const allSubscriptions: subscriptionsService.Subscription[] = [];
-  let cursor: string | undefined;
-
-  do {
-    const result = await subscriptionsService.listSubscriptions(db, {
-      userId: session.user.id,
-      cursor,
-      limit: 100,
-    });
-    allSubscriptions.push(...result.subscriptions);
-    cursor = result.nextCursor;
-  } while (cursor);
+  // Google Reader clients expect the whole subscription list at once. Fetch it in
+  // a single query (not a cursor loop) concurrently with the saved-feed lookup.
+  const [allSubscriptions, savedFeedId] = await Promise.all([
+    subscriptionsService.listAllSubscriptions(db, session.user.id),
+    getSavedFeedId(db, session.user.id),
+  ]);
 
   const subscriptions = allSubscriptions.map(formatSubscription);
 
   // Expose saved articles as a synthetic "Saved Articles" subscription (issue
   // #730). Only when the saved feed exists — a user who has never saved anything
   // gets no empty feed.
-  const savedFeedId = await getSavedFeedId(db, session.user.id);
   if (savedFeedId) {
     subscriptions.push(formatSavedSubscription(savedFeedId));
   }
