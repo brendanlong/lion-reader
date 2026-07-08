@@ -237,6 +237,10 @@ interface CursorData {
 
 function decodeCursor(cursor: string): CursorData {
   try {
+    // Node's "base64" decoder accepts both the standard (+/=) and URL-safe
+    // (-_) alphabets, so this still decodes cursors we emitted before switching
+    // encodeCursor to base64url, as well as any the client mangled by not
+    // URL-encoding the standard form (e.g. "+" arriving as a space).
     const decoded = Buffer.from(cursor, "base64").toString("utf8");
     const parsed = JSON.parse(decoded) as CursorData;
     if (!parsed.ts || !parsed.id) {
@@ -250,7 +254,12 @@ function decodeCursor(cursor: string): CursorData {
 
 function encodeCursor(ts: string, entryId: string): string {
   const data: CursorData = { ts, id: entryId };
-  return Buffer.from(JSON.stringify(data), "utf8").toString("base64");
+  // base64url (no "+", "/", or "=" padding) so the cursor is safe to place in a
+  // URL query string. It is surfaced as the Google Reader `continuation` token,
+  // and some clients (e.g. Read You) concatenate query params without
+  // URL-encoding — a "+" in standard base64 would decode to a space server-side
+  // and corrupt the cursor, 400ing every page past the first and aborting sync.
+  return Buffer.from(JSON.stringify(data), "utf8").toString("base64url");
 }
 
 // ============================================================================
