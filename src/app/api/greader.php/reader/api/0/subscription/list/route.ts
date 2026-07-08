@@ -20,8 +20,11 @@ export async function GET(request: Request): Promise<Response> {
   if (session instanceof Response) return session;
 
   // `formatSubscription` ignores unread counts, but listGreaderSubscriptions
-  // still computes them (they're baked into the subscription query). Skipping
-  // that discarded aggregate is tracked as an optimization in issue #1074.
+  // computes them anyway: the per-subscription counts are baked into the
+  // subscription query (skipping those is tracked as issue #1074), and the
+  // synthetic saved feed runs its own separate `countEntries` (out of scope for
+  // #1074) whose result is likewise discarded here. Both are wasted work only on
+  // this endpoint; unread-count needs the counts.
   const subscriptions = (
     await listGreaderSubscriptions(db, session.user.id, { showSpam: session.user.showSpam })
   ).map(formatSubscription);
