@@ -22,10 +22,10 @@ const article: DemoArticle = {
     <p>Choose the authentication method that works best for you:</p>
 
     <ul>
-      <li><strong>Email and password</strong> &mdash; Traditional authentication with Argon2 password hashing, one of the most secure hashing algorithms available</li>
+      <li><strong>Email and password</strong> &mdash; Traditional authentication with <a href="https://github.com/P-H-C/phc-winner-argon2" target="_blank" rel="noopener noreferrer">Argon2</a> password hashing, one of the most secure hashing algorithms available</li>
       <li><strong>Google OAuth</strong> &mdash; Sign in with your Google account, with optional Google Docs access for importing documents</li>
       <li><strong>Apple Sign-In</strong> &mdash; Native Apple authentication with support for private relay email addresses</li>
-      <li><strong>Discord OAuth</strong> &mdash; Connect with your Discord account for quick sign-in</li>
+      <li><strong>Discord OAuth</strong> &mdash; Connect with your <a href="https://discord.com/" target="_blank" rel="noopener noreferrer">Discord</a> account for quick sign-in</li>
     </ul>
 
     <p>All OAuth providers are optional and can be enabled or disabled per deployment. Your Lion Reader instance, your choice.</p>
@@ -47,7 +47,7 @@ const article: DemoArticle = {
       <li><strong>Scoped permissions</strong> &mdash; Tokens can be limited to specific capabilities like saved:write or mcp</li>
       <li><strong>Expiration dates</strong> &mdash; Set automatic expiration for temporary access</li>
       <li><strong>Usage tracking</strong> &mdash; See when each token was last used</li>
-      <li><strong>Perfect for extensions</strong> &mdash; Use API tokens to connect browser extensions, the MCP server, or the Discord bot</li>
+      <li><strong>Perfect for extensions</strong> &mdash; Use API tokens to connect <a href="/demo/all?entry=browser-extension">browser extensions</a>, the <a href="/demo/all?entry=mcp-server">MCP server</a>, or the <a href="/demo/all?entry=discord-bot">Discord bot</a></li>
     </ul>
 
     <h3>Security Features</h3>
@@ -66,7 +66,7 @@ const article: DemoArticle = {
       <li><strong>Subscription-based visibility</strong> &mdash; You only see entries fetched after you subscribed, preventing access to historical private content</li>
       <li><strong>Starred entry preservation</strong> &mdash; Entries you&rsquo;ve starred remain visible even after unsubscribing</li>
       <li><strong>Soft deletes</strong> &mdash; Unsubscribing preserves your read state and preferences for seamless resubscription</li>
-      <li><strong>Your data stays yours</strong> &mdash; No ads, no data selling, no third-party analytics. Reading behavior is used only to power features like article scoring, and self-hosting gives you full control</li>
+      <li><strong>Your data stays yours</strong> &mdash; No ads, no data selling, no third-party analytics. Your reading behavior is used only to sync your read and starred state across devices, and self-hosting gives you full control</li>
     </ul>
   `,
 };

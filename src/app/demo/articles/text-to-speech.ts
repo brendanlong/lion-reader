@@ -20,17 +20,17 @@ const article: DemoArticle = {
 
     <h3>Stage 1: AI Text Preprocessing</h3>
 
-    <p>Raw article HTML isn&rsquo;t ready for text-to-speech. Abbreviations like &ldquo;Dr.&rdquo; get mispronounced, URLs sound terrible when read aloud, and technical notation confuses speech engines. To solve this, Lion Reader first sends article content through an LLM (Llama 3.1 via <a href="https://groq.com/" target="_blank" rel="noopener noreferrer">Groq</a>) that transforms the text for natural narration.</p>
+    <p>Raw article HTML isn&rsquo;t ready for text-to-speech. Abbreviations like &ldquo;Dr.&rdquo; get mispronounced, URLs sound terrible when read aloud, and technical notation confuses speech engines. To solve this, Lion Reader first sends article content through an LLM (<a href="https://www.llama.com/" target="_blank" rel="noopener noreferrer">Llama 3.1</a> via <a href="https://groq.com/" target="_blank" rel="noopener noreferrer">Groq</a>) that transforms the text for natural narration.</p>
 
     <p>The AI expands abbreviations (&ldquo;Dr.&rdquo; becomes &ldquo;Doctor&rdquo;), converts URLs to readable phrases, formats lists and tables as natural language, and handles code blocks with clear verbal markers. Crucially, it maintains paragraph-level mapping so the app can synchronize highlighting as the audio plays. This preprocessing is cached by content hash, so the same article is only processed once &mdash; even if multiple users narrate it.</p>
 
     <h3>Stage 2: Audio Synthesis</h3>
 
-    <p>After preprocessing, you can choose between two synthesis options. The Web Speech API uses your browser&rsquo;s built-in voices for instant, zero-cost narration. Or enable <a href="https://github.com/rhasspy/piper" target="_blank" rel="noopener noreferrer">Piper TTS</a> for higher-quality neural voice synthesis powered by ONNX Runtime WebAssembly running locally in your browser &mdash; no server required, no per-character fees.</p>
+    <p>After preprocessing, you can choose between two synthesis options. The <a href="https://developer.mozilla.org/en-US/docs/Web/API/Web_Speech_API" target="_blank" rel="noopener noreferrer">Web Speech API</a> uses your browser&rsquo;s built-in voices for instant, zero-cost narration. Or enable <a href="https://github.com/rhasspy/piper" target="_blank" rel="noopener noreferrer">Piper TTS</a> for higher-quality neural voice synthesis powered by ONNX Runtime WebAssembly running locally in your browser &mdash; no server required, no per-character fees.</p>
 
     <h3>Reading Along</h3>
 
-    <p>As narration plays, Lion Reader highlights each paragraph in sync with the audio and automatically scrolls to keep the current paragraph visible. You can control playback speed, skip forward or backward by paragraph, and use media session integration to control narration from your lock screen or notification shade. If the LLM service is unavailable, the system gracefully falls back to plain text narration so you can always listen to your articles.</p>
+    <p>As narration plays, Lion Reader highlights each paragraph in sync with the audio and automatically scrolls to keep the current paragraph visible. You can control playback speed, skip forward or backward by paragraph, and use <a href="https://developer.mozilla.org/en-US/docs/Web/API/Media_Session_API" target="_blank" rel="noopener noreferrer">Media Session</a> integration to control narration from your lock screen or notification shade. If the LLM service is unavailable, the system gracefully falls back to plain text narration so you can always listen to your articles.</p>
   `,
 };
 

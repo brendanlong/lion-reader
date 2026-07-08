@@ -42,7 +42,7 @@ const article: DemoArticle = {
 
     <h3>Progressive Web App</h3>
 
-    <p>Lion Reader is a Progressive Web App, which means you can install it on your desktop or mobile device for a native app-like experience. On mobile, the app locks to portrait orientation for optimal reading comfort. The demo page you&rsquo;re viewing right now showcases the reading experience with all these customization options available.</p>
+    <p>Lion Reader is a <a href="/demo/all?entry=pwa">Progressive Web App</a>, which means you can install it on your desktop or mobile device for a native app-like experience. On mobile, the app locks to portrait orientation for optimal reading comfort. The demo page you&rsquo;re viewing right now showcases the reading experience with all these customization options available.</p>
   `,
 };
 

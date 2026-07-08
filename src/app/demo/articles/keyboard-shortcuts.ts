@@ -13,9 +13,9 @@ const article: DemoArticle = {
   heroImage: "/demo/keyboard-shortcuts.png",
   heroImageAlt:
     "The Lion Reader lion tapping a large keyboard key, with arrow keycaps floating nearby.",
-  summaryHtml: `<p>Lion Reader offers <strong>Vim-inspired keyboard shortcuts</strong> for faster navigation. Use <strong>j/k</strong> to move through entries, <strong>m</strong> to mark read/unread, <strong>s</strong> to star items, and <strong>g+letter combinations</strong> to jump between sections like All Items, Starred, and Saved articles.</p>`,
+  summaryHtml: `<p>Lion Reader offers <strong>keyboard shortcuts</strong> for faster navigation. Use <strong>j/k</strong> to move through entries, <strong>m</strong> to mark read/unread, <strong>s</strong> to star items, and <strong>g+letter combinations</strong> to jump between sections like All Items, Starred, and Saved articles.</p>`,
   contentHtml: `
-    <p>Mouse or touch interfaces work fine, but keyboard navigation is faster once you learn it. Lion Reader follows a keyboard-first design philosophy inspired by Vim, giving every core action a keyboard shortcut so you can blaze through your reading workflow without touching the mouse.</p>
+    <p>Mouse or touch interfaces work fine, but keyboard navigation is faster once you learn it. Lion Reader follows a keyboard-first design philosophy, giving every core action a keyboard shortcut so you can blaze through your reading workflow without touching the mouse.</p>
 
     <h3>List Navigation</h3>
 
@@ -27,13 +27,13 @@ const article: DemoArticle = {
 
     <h3>Navigation Shortcuts</h3>
 
-    <p>Jump between major sections with two-key combinations. Press <kbd>g</kbd> followed by <kbd>a</kbd> to go to All Items. Press <kbd>g</kbd> then <kbd>s</kbd> for Starred items. Press <kbd>g</kbd> then <kbd>l</kbd> to open your Saved articles. The <kbd>g</kbd> prefix activates for 1.5 seconds, giving you time to press the second key.</p>
+    <p>Jump between major sections with two-key combinations. Press <kbd>g</kbd> followed by <kbd>a</kbd> to go to All Items. Press <kbd>g</kbd> then <kbd>s</kbd> for Starred items. Press <kbd>g</kbd> then <kbd>l</kbd> to open your <a href="/demo/all?entry=save-for-later">Saved articles</a>. The <kbd>g</kbd> prefix activates for 1.5 seconds, giving you time to press the second key.</p>
 
     <h3>Smart Focus Detection</h3>
 
     <p>Shortcuts respect focus state and won&rsquo;t fire when you&rsquo;re typing in a search field or text input. This prevents accidental navigation while you&rsquo;re entering text. But when focus is on the reading interface, every core action is just a keypress away.</p>
 
-    <p>On touch devices, Lion Reader follows WCAG accessibility guidelines with 44px minimum touch targets for comfortable tapping. The interface works great with both keyboard and touch &mdash; use whichever input method fits your current context.</p>
+    <p>On touch devices, Lion Reader follows <a href="https://www.w3.org/WAI/standards-guidelines/wcag/" target="_blank" rel="noopener noreferrer">WCAG</a> accessibility guidelines with 44px minimum touch targets for comfortable tapping. The interface works great with both keyboard and touch &mdash; use whichever input method fits your current context.</p>
   `,
 };
 

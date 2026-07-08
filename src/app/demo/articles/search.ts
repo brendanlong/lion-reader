@@ -19,11 +19,11 @@ const article: DemoArticle = {
 
     <p>Lion Reader&rsquo;s full-text search is powered by PostgreSQL with English language stemming, giving you fast, relevant results across your entire archive. Search by title, content, or both &mdash; the search scope is fully configurable, so you can narrow down exactly what you&rsquo;re looking for.</p>
 
-    <p>Search results can be combined with any other filter in Lion Reader: subscription, tag, read/unread state, starred entries, or entry type. This makes it easy to search within a specific newsletter, across all saved articles, or just your starred items. Results are ranked by relevance using PostgreSQL&rsquo;s <code>ts_rank</code> algorithm.</p>
+    <p>Search results can be combined with any other filter in Lion Reader: subscription, <a href="/demo/all?entry=tags">tag</a>, read/unread state, starred entries, or entry type. This makes it easy to search within a specific <a href="/demo/all?entry=email-newsletters">newsletter</a>, across all <a href="/demo/all?entry=save-for-later">saved articles</a>, or just your starred items. Results are ranked by relevance using PostgreSQL&rsquo;s <code>ts_rank</code> algorithm.</p>
 
     <h3>Performance and Availability</h3>
 
-    <p>Even with large archives containing thousands of entries, search remains fast thanks to database-level full-text indexing. Results use cursor-based pagination, so you can scroll through unlimited result sets without performance degradation. Search is available everywhere: the web UI, the tRPC API, and the MCP server for AI assistant integrations.</p>
+    <p>Even with large archives containing thousands of entries, search remains fast thanks to database-level full-text indexing. Results use cursor-based pagination, so you can scroll through unlimited result sets without performance degradation. Search is available everywhere: the web UI, the tRPC API, and the <a href="/demo/all?entry=mcp-server">MCP server</a> for AI assistant integrations.</p>
 
     <p>Search capabilities:</p>
     <ul>

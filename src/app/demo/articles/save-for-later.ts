@@ -9,7 +9,7 @@ const article: DemoArticle = {
   author: null,
   summary: "Save any web page, upload documents, or capture articles for later reading.",
   publishedAt: new Date("2025-12-27T16:00:00Z"),
-  starred: false,
+  starred: true,
   heroImage: "/demo/save-for-later.png",
   heroImageAlt:
     "The Lion Reader lion placing a bookmark ribbon into an open book to save its place, with a clock nearby.",
@@ -22,24 +22,24 @@ const article: DemoArticle = {
     <p>Lion Reader offers flexibility in how you capture content for later reading:</p>
 
     <ul>
-      <li><strong>Browser extension</strong> &mdash; Save from Firefox or Chrome with a click, keyboard shortcut, or context menu</li>
+      <li><a href="/demo/all?entry=browser-extension"><strong>Browser extension</strong></a> &mdash; Save from Firefox or Chrome with a click, keyboard shortcut, or context menu</li>
       <li><strong>Browser bookmarklet</strong> &mdash; One-click saving from any page while browsing</li>
-      <li><strong>PWA share target</strong> &mdash; Use your phone&rsquo;s native share menu to send articles directly to Lion Reader</li>
-      <li><strong>MCP integration</strong> &mdash; Save articles via AI assistants like Claude</li>
+      <li><a href="/demo/all?entry=pwa"><strong>PWA share target</strong></a> &mdash; Use your phone&rsquo;s native share menu to send articles directly to Lion Reader</li>
+      <li><a href="/demo/all?entry=mcp-server"><strong>MCP integration</strong></a> &mdash; Save articles via AI assistants like Claude</li>
       <li><strong>tRPC API</strong> &mdash; Programmatic saving for automation and integrations</li>
-      <li><strong>Wallabag app</strong> &mdash; Use the Wallabag mobile app&rsquo;s share intent to save URLs from any app on your phone</li>
-      <li><strong>Discord bot</strong> &mdash; Save articles shared in Discord channels</li>
-      <li><strong>File upload</strong> &mdash; Upload Markdown files, Word documents, and HTML files directly</li>
-      <li><strong>Google Docs import</strong> &mdash; Import Google Docs directly with the optional OAuth scope (powered by the <strong>Plugin System</strong>)</li>
+      <li><a href="/demo/all?entry=wallabag-api"><strong>Wallabag app</strong></a> &mdash; Use the Wallabag mobile app&rsquo;s share intent to save URLs from any app on your phone</li>
+      <li><a href="/demo/all?entry=discord-bot"><strong>Discord bot</strong></a> &mdash; Save articles shared in Discord channels</li>
+      <li><a href="/demo/all?entry=file-upload"><strong>File upload</strong></a> &mdash; Upload Markdown files, Word documents, and HTML files directly</li>
+      <li><strong>Google Docs import</strong> &mdash; Import Google Docs directly with the optional OAuth scope (powered by the <a href="/demo/all?entry=plugins"><strong>Plugin System</strong></a>)</li>
     </ul>
 
     <h3>Smart Content Extraction</h3>
 
-    <p>When you save a URL from a supported platform &mdash; like ArXiv, GitHub, Google Docs, or LessWrong &mdash; Lion Reader&rsquo;s <strong>Plugin System</strong> uses platform-specific APIs to extract cleaner, more complete content than generic web scraping. For everything else, Readability handles the extraction. See the <strong>Plugin System</strong> article for details on supported platforms.</p>
+    <p>When you save a URL from a supported platform &mdash; like ArXiv, GitHub, Google Docs, or LessWrong &mdash; Lion Reader&rsquo;s <strong>Plugin System</strong> uses platform-specific APIs to extract cleaner, more complete content than generic web scraping. For everything else, Readability handles the extraction. See the <a href="/demo/all?entry=plugins"><strong>Plugin System</strong></a> article for details on supported platforms.</p>
 
     <h3>Custom Metadata &amp; Organization</h3>
 
-    <p>When saving articles, you can provide a custom title to override automatic extraction. Saved articles appear in a dedicated &ldquo;Saved&rdquo; section in your sidebar, but they&rsquo;re fully integrated with the rest of Lion Reader: star important articles, tag them for organization, search across saved content, and browse your reading archive chronologically. Unlike traditional bookmarks that rot over time as pages disappear, your saved articles are preserved with full content extraction, ensuring your reading list remains accessible indefinitely.</p>
+    <p>When saving articles, you can provide a custom title to override automatic extraction. Saved articles appear in a dedicated &ldquo;Saved&rdquo; section in your sidebar, but they&rsquo;re fully integrated with the rest of Lion Reader: star important articles, <a href="/demo/all?entry=tags">tag them</a> for organization, <a href="/demo/all?entry=search">search</a> across saved content, and browse your reading archive chronologically. Unlike traditional bookmarks that rot over time as pages disappear, your saved articles are preserved with full content extraction, ensuring your reading list remains accessible indefinitely.</p>
   `,
 };
 

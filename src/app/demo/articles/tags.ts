@@ -19,7 +19,7 @@ const article: DemoArticle = {
 
     <p>Lion Reader gives you powerful tools to organize your subscriptions exactly how you want. Create custom tags with names and colors using the built-in color palette, then assign them to any combination of subscriptions. Tags are many-to-many, so a single subscription can belong to multiple categories &mdash; perfect for feeds that span multiple interests.</p>
 
-    <p>Once you&rsquo;ve tagged your subscriptions, browse entries filtered by tag directly from the sidebar. Each tag shows real-time unread counts that update as you read and as new entries arrive. Subscriptions without tags appear in the &ldquo;Uncategorized&rdquo; section, so nothing gets lost. Tags work seamlessly across all feed types: web feeds (RSS/Atom/JSON), email newsletters, and saved articles.</p>
+    <p>Once you&rsquo;ve tagged your subscriptions, browse entries filtered by tag directly from the sidebar. Each tag shows <a href="/demo/all?entry=real-time">real-time unread counts</a> that update as you read and as new entries arrive. Subscriptions without tags appear in the &ldquo;Uncategorized&rdquo; section, so nothing gets lost. Tags work seamlessly across all feed types: web feeds (<a href="/demo/all?entry=rss-atom">RSS/Atom</a>/<a href="/demo/all?entry=json-feed">JSON</a>), <a href="/demo/all?entry=email-newsletters">email newsletters</a>, and <a href="/demo/all?entry=save-for-later">saved articles</a>.</p>
 
     <h3>Custom Titles and Flexible Management</h3>
 

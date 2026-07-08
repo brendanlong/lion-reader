@@ -10,7 +10,7 @@ const article: DemoArticle = {
   summary:
     "Lion Reader is fully open source. Self-host it, explore the code, or contribute on GitHub.",
   publishedAt: new Date("2025-12-26T10:00:00Z"),
-  starred: false,
+  starred: true,
   heroImage: "/demo/open-source.png",
   heroImageAlt:
     "The Lion Reader lion holding up a git branch symbol with a code tag and a small heart nearby, representing open-source software.",
@@ -23,16 +23,16 @@ const article: DemoArticle = {
     <p>Lion Reader is built with cutting-edge technologies chosen for performance, developer experience, and long-term maintainability:</p>
 
     <ul>
-      <li><strong>Frontend</strong> &mdash; <a href="https://nextjs.org/" target="_blank" rel="noopener noreferrer">Next.js</a> 16 with React 19, <a href="https://tailwindcss.com/" target="_blank" rel="noopener noreferrer">Tailwind CSS</a> 4 for styling</li>
+      <li><strong>Frontend</strong> &mdash; <a href="https://nextjs.org/" target="_blank" rel="noopener noreferrer">Next.js</a> 16 with <a href="https://react.dev/" target="_blank" rel="noopener noreferrer">React</a> 19, <a href="https://tailwindcss.com/" target="_blank" rel="noopener noreferrer">Tailwind CSS</a> 4 for styling</li>
       <li><strong>API</strong> &mdash; <a href="https://trpc.io/" target="_blank" rel="noopener noreferrer">tRPC</a> for end-to-end type-safe APIs with <a href="https://zod.dev/" target="_blank" rel="noopener noreferrer">Zod</a> 4 validation</li>
-      <li><strong>Database</strong> &mdash; PostgreSQL with <a href="https://orm.drizzle.team/" target="_blank" rel="noopener noreferrer">Drizzle ORM</a> for type-safe queries, UUIDv7 primary keys</li>
-      <li><strong>Caching &amp; Real-time</strong> &mdash; Redis for session caching, rate limiting, and SSE pub/sub</li>
-      <li><strong>Auth</strong> &mdash; Custom session management with <a href="https://arcticjs.dev/" target="_blank" rel="noopener noreferrer">Arctic</a> for OAuth (Google, Apple, Discord), Argon2 password hashing</li>
+      <li><strong>Database</strong> &mdash; <a href="https://www.postgresql.org/" target="_blank" rel="noopener noreferrer">PostgreSQL</a> with <a href="https://orm.drizzle.team/" target="_blank" rel="noopener noreferrer">Drizzle ORM</a> for type-safe queries, UUIDv7 primary keys</li>
+      <li><strong>Caching &amp; Real-time</strong> &mdash; <a href="https://redis.io/" target="_blank" rel="noopener noreferrer">Redis</a> for session caching, rate limiting, and <a href="/demo/all?entry=real-time">SSE pub/sub</a></li>
+      <li><strong>Auth</strong> &mdash; Custom session management with <a href="https://arcticjs.dev/" target="_blank" rel="noopener noreferrer">Arctic</a> for OAuth (Google, Apple, Discord), <a href="https://github.com/P-H-C/phc-winner-argon2" target="_blank" rel="noopener noreferrer">Argon2</a> password hashing</li>
       <li><strong>AI</strong> &mdash; <a href="https://www.anthropic.com/" target="_blank" rel="noopener noreferrer">Anthropic</a> SDK for summaries, <a href="https://groq.com/" target="_blank" rel="noopener noreferrer">Groq</a> for narration preprocessing, <a href="https://onnxruntime.ai/" target="_blank" rel="noopener noreferrer">ONNX Runtime</a> for client-side neural TTS voice synthesis, <a href="https://modelcontextprotocol.io/" target="_blank" rel="noopener noreferrer">MCP</a> for AI-assistant integration</li>
-      <li><strong>Feed parsing</strong> &mdash; htmlparser2 for SAX-style streaming XML/HTML parsing, fast-xml-parser for OPML, Mozilla Readability for content extraction</li>
-      <li><strong>Deployment</strong> &mdash; <a href="https://fly.io/" target="_blank" rel="noopener noreferrer">Fly.io</a> with auto-scaling, Docker Compose for local development</li>
+      <li><strong>Feed parsing</strong> &mdash; <a href="https://github.com/fb55/htmlparser2" target="_blank" rel="noopener noreferrer">htmlparser2</a> for SAX-style streaming XML/HTML parsing, <a href="https://github.com/NaturalIntelligence/fast-xml-parser" target="_blank" rel="noopener noreferrer">fast-xml-parser</a> for OPML, <a href="https://github.com/mozilla/readability" target="_blank" rel="noopener noreferrer">Mozilla Readability</a> for content extraction</li>
+      <li><strong>Deployment</strong> &mdash; <a href="https://fly.io/" target="_blank" rel="noopener noreferrer">Fly.io</a> with auto-scaling, <a href="https://www.docker.com/" target="_blank" rel="noopener noreferrer">Docker</a> Compose for local development</li>
       <li><strong>Testing</strong> &mdash; <a href="https://vitest.dev/" target="_blank" rel="noopener noreferrer">Vitest</a> with real database integration tests (no mocks)</li>
-      <li><strong>Observability</strong> &mdash; <a href="https://sentry.io/" target="_blank" rel="noopener noreferrer">Sentry</a> for error tracking, structured JSON logging, Prometheus metrics</li>
+      <li><strong>Observability</strong> &mdash; <a href="https://sentry.io/" target="_blank" rel="noopener noreferrer">Sentry</a> for error tracking, structured JSON logging, <a href="https://prometheus.io/" target="_blank" rel="noopener noreferrer">Prometheus</a> metrics</li>
     </ul>
 
     <h3>Architecture Highlights</h3>

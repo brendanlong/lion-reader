@@ -17,11 +17,11 @@ const article: DemoArticle = {
   contentHtml: `
     <h2>Modern Syndication with RSS &amp; Atom</h2>
 
-    <p>Lion Reader supports all major web feed formats: RSS 2.0, Atom 1.0, and JSON Feed. RSS (Really Simple Syndication) and Atom are XML-based syndication formats that allow you to subscribe to websites and receive updates automatically. Simply paste any URL and Lion Reader will discover available feeds by checking HTML <code>&lt;link&gt;</code> tags and common feed paths like <code>/feed</code>, <code>/rss</code>, and <code>/atom.xml</code>. You can preview the feed&rsquo;s title, description, and sample entries before subscribing.</p>
+    <p>Lion Reader supports all major web feed formats: RSS 2.0, Atom 1.0, and <a href="/demo/all?entry=json-feed">JSON Feed</a>. RSS (Really Simple Syndication) and Atom are XML-based syndication formats that allow you to subscribe to websites and receive updates automatically. Simply paste any URL and Lion Reader will discover available feeds by checking HTML <code>&lt;link&gt;</code> tags and common feed paths like <code>/feed</code>, <code>/rss</code>, and <code>/atom.xml</code>. You can preview the feed&rsquo;s title, description, and sample entries before subscribing.</p>
 
     <h3>Efficient Polling &amp; Smart Scheduling</h3>
 
-    <p>Lion Reader uses HTTP conditional requests to avoid wasting bandwidth on unchanged content. When checking for updates, it sends <code>If-Modified-Since</code> and <code>If-None-Match</code> headers so servers can respond with a lightweight 304 Not Modified status if nothing has changed. The polling schedule respects <code>Cache-Control</code> headers from the server while enforcing reasonable bounds: feeds are checked between once every 10 minutes (with a server-provided cache hint) and once every 7 days.</p>
+    <p>Lion Reader uses HTTP conditional requests to avoid wasting bandwidth on unchanged content. When checking for updates, it sends <code>If-Modified-Since</code> and <code>If-None-Match</code> headers so servers can respond with a lightweight 304 Not Modified status if nothing has changed. The polling schedule respects <code>Cache-Control</code> headers from the server while enforcing reasonable bounds: feeds are checked between once every 10 minutes (with a server-provided cache hint) and once every 7 days. For feeds that advertise a hub, Lion Reader skips polling entirely and receives <a href="/demo/all?entry=websub">WebSub push notifications</a> the moment new content is published.</p>
 
     <h3>Graceful Error Handling</h3>
 
@@ -34,6 +34,7 @@ const article: DemoArticle = {
     <ul>
       <li><a href="https://www.rssboard.org/rss-specification" target="_blank" rel="noopener noreferrer">RSS 2.0 Specification</a></li>
       <li><a href="https://www.rfc-editor.org/rfc/rfc4287" target="_blank" rel="noopener noreferrer">Atom 1.0 Specification (RFC 4287)</a></li>
+      <li><a href="https://www.jsonfeed.org/version/1.1/" target="_blank" rel="noopener noreferrer">JSON Feed 1.1 Specification</a></li>
     </ul>
   `,
 };

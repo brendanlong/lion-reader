@@ -17,17 +17,17 @@ const article: DemoArticle = {
   contentHtml: `
     <h2>Install Anywhere</h2>
 
-    <p>Lion Reader is a full Progressive Web App (PWA). This means you can install it on any device &mdash; desktop (Chrome, Edge, Firefox) or mobile (iOS Safari, Android Chrome) &mdash; and get a native app-like experience without downloading anything from an app store. Once installed, Lion Reader runs in its own window with no browser chrome, just like any other app on your device.</p>
+    <p>Lion Reader is a full <a href="https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps" target="_blank" rel="noopener noreferrer">Progressive Web App</a> (PWA). This means you can install it on any device &mdash; desktop (Chrome, Edge, Firefox) or mobile (iOS Safari, Android Chrome) &mdash; and get a native app-like experience without downloading anything from an app store. Once installed, Lion Reader runs in its own window with no browser chrome, just like any other app on your device.</p>
 
     <h3>Share Target Integration</h3>
 
     <p>One of the most powerful PWA features is share target integration. When you install Lion Reader on your phone, it registers as a share target with your operating system. This means you can save articles directly to Lion Reader using your phone&rsquo;s native share menu from any app &mdash; your browser, Twitter, Reddit, or anywhere else.</p>
 
-    <p>But it goes beyond just URLs. Lion Reader&rsquo;s share target also accepts files, so you can share Markdown documents, HTML files, or even Word documents directly into your saved articles. The app automatically detects the content type and processes each file appropriately. This makes Lion Reader a universal inbox for anything you want to read later, not just web content.</p>
+    <p>But it goes beyond just URLs. Lion Reader&rsquo;s share target also accepts files, so you can share <a href="/demo/all?entry=file-upload">Markdown documents, HTML files, or even Word documents</a> directly into your <a href="/demo/all?entry=save-for-later">saved articles</a>. The app automatically detects the content type and processes each file appropriately. This makes Lion Reader a universal inbox for anything you want to read later, not just web content.</p>
 
     <h3>Mobile Optimizations</h3>
 
-    <p>On mobile devices, the app locks to portrait orientation for optimal reading. This prevents the screen from rotating while you&rsquo;re reading long articles, reducing distractions and maintaining a consistent layout. Combined with real-time updates via Server-Sent Events, the mobile experience rivals dedicated feed reader apps.</p>
+    <p>On mobile devices, the app locks to portrait orientation for optimal reading. This prevents the screen from rotating while you&rsquo;re reading long articles, reducing distractions and maintaining a consistent layout. Combined with <a href="/demo/all?entry=real-time">real-time updates</a> via Server-Sent Events, the mobile experience rivals dedicated feed reader apps.</p>
 
     <h3>Single Codebase</h3>
 

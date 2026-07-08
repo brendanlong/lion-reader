@@ -20,7 +20,7 @@ const article: DemoArticle = {
 
     <h3>Real-time updates without the jank</h3>
 
-    <p>When a new article arrives, it appears in your list automatically &mdash; no refresh, no clicking to load more. It slides into the right spot by date, and if you&rsquo;re partway down a list, your scroll position and the article you&rsquo;re reading stay exactly where they are. Read and starred changes you make on another device show up the same way, without anything jumping around underneath you.</p>
+    <p>When a new article arrives, it <a href="/demo/all?entry=real-time">appears in your list automatically</a> &mdash; no refresh, no clicking to load more. It slides into the right spot by date, and if you&rsquo;re partway down a list, your scroll position and the article you&rsquo;re reading stay exactly where they are. Read and starred changes you make on another device show up the same way, without anything jumping around underneath you.</p>
 
     <h3>Instant navigation</h3>
 

@@ -22,7 +22,7 @@ const article: DemoArticle = {
 
     <p>When you subscribe to a feed, Lion Reader automatically checks if the feed advertises a WebSub hub URL in its <code>&lt;link&gt;</code> headers. If it does, Lion Reader subscribes to that hub with a callback URL. The hub then verifies the subscription via a challenge-response handshake to ensure the request is legitimate.</p>
 
-    <p>Once subscribed, the publisher&rsquo;s hub pushes new content directly to Lion Reader the moment it&rsquo;s published. Lion Reader processes this pushed content just like a regular fetch &mdash; parsing entries, deduplicating, and notifying you via real-time updates. The entire process happens automatically in the background with no manual configuration required.</p>
+    <p>Once subscribed, the publisher&rsquo;s hub pushes new content directly to Lion Reader the moment it&rsquo;s published. Lion Reader processes this pushed content just like a regular fetch &mdash; parsing entries, deduplicating, and notifying you via <a href="/demo/all?entry=real-time">real-time updates</a>. The entire process happens automatically in the background with no manual configuration required.</p>
 
     <h3>Benefits Over Polling</h3>
 
@@ -35,7 +35,7 @@ const article: DemoArticle = {
 
     <h3>Automatic Detection</h3>
 
-    <p>Lion Reader discovers and subscribes to WebSub hubs automatically for any feed that supports them. For feeds without WebSub support, Lion Reader seamlessly falls back to regular polling. Subscription renewal and error handling are built in, so the system is resilient to hub outages and network issues.</p>
+    <p>Lion Reader discovers and subscribes to WebSub hubs automatically for any feed that supports them. For feeds without WebSub support, Lion Reader seamlessly falls back to <a href="/demo/all?entry=rss-atom">regular polling</a>. Subscription renewal and error handling are built in, so the system is resilient to hub outages and network issues.</p>
   `,
 };
 

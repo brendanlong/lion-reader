@@ -9,7 +9,7 @@ const article: DemoArticle = {
   author: null,
   summary: "Generate concise AI summaries to quickly triage your reading list.",
   publishedAt: new Date("2026-01-16T12:00:00Z"),
-  starred: false,
+  starred: true,
   heroImage: "/demo/ai-summaries.png",
   heroImageAlt:
     "The Lion Reader lion waving a sparkling magic wand to condense a long scroll into a short summary card.",
@@ -29,7 +29,7 @@ const article: DemoArticle = {
 
     <h3>Works Everywhere</h3>
 
-    <p>Summaries work with both feed content and full-fetched content. If a feed only provides an excerpt, fetch the full article first, then summarize &mdash; ensuring you get a summary of the complete text, not just the preview. The feature gracefully degrades when the AI service is unavailable, displaying a clear error message rather than leaving you wondering what happened.</p>
+    <p>Summaries work with both feed content and full-fetched content. If a feed only provides an excerpt, <a href="/demo/all?entry=full-content">fetch the full article</a> first, then summarize &mdash; ensuring you get a summary of the complete text, not just the preview. The feature gracefully degrades when the AI service is unavailable, displaying a clear error message rather than leaving you wondering what happened.</p>
 
     <p>Great for working through a large backlog: quickly scan summaries to separate the must-reads from the can-skip, then dive deep into the articles that matter most to you.</p>
   `,
