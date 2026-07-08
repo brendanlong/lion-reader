@@ -64,6 +64,15 @@ importers:
       discord.js:
         specifier: ^14.26.2
         version: 14.26.2
+      dom-serializer:
+        specifier: ^2.0.0
+        version: 2.0.0
+      domhandler:
+        specifier: ^5.0.3
+        version: 5.0.3
+      domutils:
+        specifier: ^3.2.2
+        version: 3.2.2
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.20.0)(pg@8.22.0)

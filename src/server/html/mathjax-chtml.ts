@@ -25,11 +25,33 @@
  * readable) rather than being dropped, and are logged so layout drift in a
  * future MathJax version is noticed rather than silently degrading.
  *
+ * ## Why this doesn't parse the whole document
+ *
+ * The structural work is localized to individual `<mjx-container>` blocks, which
+ * are typically a small fraction of a (possibly large) article. Rather than
+ * building a DOM for the entire body (the previous linkedom approach parsed and
+ * re-serialized everything — the dominant cost on math-heavy content, see
+ * issue #1054), we make a single streaming `htmlparser2` pass over the input:
+ * text outside the containers is spliced through **verbatim** (tracked by byte
+ * offset), and while inside a container the parser's SAX events are forwarded
+ * into a per-container `domhandler` `DomHandler` so a DOM is built *only* for
+ * the equation subtree we actually rewrite. The structural reconstruction
+ * (fraction/script/root/table reordering, scoped part lookups) genuinely needs
+ * random access to that subtree, so it runs against the small DOM; the rest of
+ * the document is never tokenized into nodes. Forwarding events into an existing
+ * handler (instead of re-`parseDocument`-ing each container substring) means the
+ * container bytes are tokenized once, not twice. Everything outside the
+ * containers is byte-identical to the input, which also makes the no-op /
+ * false-positive paths exact.
+ *
  * This runs inside `sanitizeEntryHtml`, so its output is covered by the same
  * persisted-sanitized-content cache; bump `SANITIZER_VERSION` when changing it.
  */
 
-import { parseHTML } from "linkedom";
+import { render } from "dom-serializer";
+import { type ChildNode, type Document, DomHandler, Element, isTag, Text } from "domhandler";
+import { findOne, textContent } from "domutils";
+import { Parser } from "htmlparser2";
 
 import { logger } from "@/lib/logger";
 
@@ -68,9 +90,22 @@ const KNOWN_LAYOUT_TAGS = new Set([
 
 /** Per-conversion state threaded through the tree walk. */
 interface ConvertContext {
-  doc: Document;
   /** `mjx-*` tags that hit the unknown-wrapper fallback, for one log per call. */
   unknownTags: Set<string>;
+}
+
+// htmlparser2 lowercases tag names by default (non-XML mode), so every `.name`
+// we compare against below is already lowercase — no per-node toLowerCase().
+
+/** Build a MathML element node with the given children (parent links set). */
+function makeElement(
+  name: string,
+  children: ChildNode[] = [],
+  attribs: Record<string, string> = {}
+): Element {
+  const el = new Element(name, attribs, children);
+  for (const child of children) child.parent = el;
+  return el;
 }
 
 /**
@@ -80,7 +115,7 @@ interface ConvertContext {
  * hostile class name inject ill-formed UTF-16 into persisted content.
  */
 function codepointChar(el: Element): string {
-  const cls = el.getAttribute("class") ?? "";
+  const cls = el.attribs.class ?? "";
   const match = cls.match(/\bmjx-c([0-9A-Fa-f]{2,6})\b/);
   if (!match) return "";
   const codepoint = parseInt(match[1], 16);
@@ -104,18 +139,17 @@ function codepointChar(el: Element): string {
 function tokenText(el: Element): string {
   let text = "";
   const walk = (node: Element): void => {
-    for (const child of node.childNodes) {
-      if (child.nodeType !== 1) continue;
-      const childEl = child as Element;
-      const tag = childEl.tagName.toLowerCase();
+    for (const child of node.children) {
+      if (!isTag(child)) continue;
+      const tag = child.name;
       if (tag === "mjx-c") {
-        text += codepointChar(childEl);
+        text += codepointChar(child);
       } else if (tag === "mjx-utext") {
-        text += childEl.textContent ?? "";
+        text += textContent(child);
       } else if (tag === "mjx-stretchy-v" || tag === "mjx-stretchy-h") {
-        text += codepointChar(childEl);
+        text += codepointChar(child);
       } else {
-        walk(childEl);
+        walk(child);
       }
     }
   };
@@ -124,25 +158,28 @@ function tokenText(el: Element): string {
 }
 
 /** Convert every element child of `parent`, appending results to `out`. */
-function convertChildren(parent: Element, ctx: ConvertContext, out: Node[]): void {
-  for (const child of parent.childNodes) {
-    if (child.nodeType === 1) convertElement(child as Element, ctx, out);
+function convertChildren(parent: Element, ctx: ConvertContext, out: ChildNode[]): void {
+  for (const child of parent.children) {
+    if (isTag(child)) convertElement(child, ctx, out);
   }
 }
 
 /** Wrap a node list as a single MathML node (an <mrow> when there are 0 or >1). */
-function groupNodes(nodes: Node[], ctx: ConvertContext): Node {
+function groupNodes(nodes: ChildNode[]): ChildNode {
   if (nodes.length === 1) return nodes[0];
-  const mrow = ctx.doc.createElement("mrow");
-  for (const node of nodes) mrow.appendChild(node);
-  return mrow;
+  return makeElement("mrow", nodes);
 }
 
 /** Convert the children of `parent` and wrap them as a single MathML node. */
-function convertGroup(parent: Element | null, ctx: ConvertContext): Node {
-  const nodes: Node[] = [];
+function convertGroup(parent: Element | null, ctx: ConvertContext): ChildNode {
+  const nodes: ChildNode[] = [];
   if (parent) convertChildren(parent, ctx, nodes);
-  return groupNodes(nodes, ctx);
+  return groupNodes(nodes);
+}
+
+/** First descendant element (any depth) with the given tag name, or null. */
+function firstDescendant(el: Element, name: string): Element | null {
+  return findOne((candidate) => candidate.name === name, el.children, true);
 }
 
 /**
@@ -159,16 +196,15 @@ function findFractionParts(frac: Element): {
   let num: Element | null = null;
   let den: Element | null = null;
   const visit = (node: Element): void => {
-    for (const child of node.childNodes) {
-      if (child.nodeType !== 1) continue;
-      const childEl = child as Element;
-      const childTag = childEl.tagName.toLowerCase();
+    for (const child of node.children) {
+      if (!isTag(child)) continue;
+      const childTag = child.name;
       if (childTag === "mjx-num") {
-        num ??= childEl;
+        num ??= child;
       } else if (childTag === "mjx-den") {
-        den ??= childEl;
+        den ??= child;
       } else if (childTag !== "mjx-mfrac") {
-        visit(childEl);
+        visit(child);
       }
     }
   };
@@ -196,18 +232,17 @@ function findScriptParts(el: Element): {
   let under: Element | null = null;
   const layout = new Set(["mjx-row", "mjx-box", "mjx-munder", "mjx-mover", "mjx-munderover"]);
   const visit = (node: Element): void => {
-    for (const child of node.childNodes) {
-      if (child.nodeType !== 1) continue;
-      const childEl = child as Element;
-      const childTag = childEl.tagName.toLowerCase();
+    for (const child of node.children) {
+      if (!isTag(child)) continue;
+      const childTag = child.name;
       if (childTag === "mjx-base") {
-        base ??= childEl;
+        base ??= child;
       } else if (childTag === "mjx-over") {
-        over ??= childEl;
+        over ??= child;
       } else if (childTag === "mjx-under") {
-        under ??= childEl;
+        under ??= child;
       } else if (layout.has(childTag)) {
-        visit(childEl);
+        visit(child);
       }
     }
   };
@@ -221,15 +256,14 @@ function findScriptParts(el: Element): {
  * for `msubsup` the groups are [sup, sub] and for script-layout `munderover`
  * they are [over, under].
  */
-function splitScriptGroups(script: Element, ctx: ConvertContext): Node[][] {
-  const groups: Node[][] = [[]];
-  for (const child of script.childNodes) {
-    if (child.nodeType !== 1) continue;
-    const childEl = child as Element;
-    if (childEl.tagName.toLowerCase() === "mjx-spacer") {
+function splitScriptGroups(script: Element, ctx: ConvertContext): ChildNode[][] {
+  const groups: ChildNode[][] = [[]];
+  for (const child of script.children) {
+    if (!isTag(child)) continue;
+    if (child.name === "mjx-spacer") {
       groups.push([]);
     } else {
-      convertElement(childEl, ctx, groups[groups.length - 1]);
+      convertElement(child, ctx, groups[groups.length - 1]);
     }
   }
   return groups;
@@ -243,14 +277,13 @@ function splitScriptGroups(script: Element, ctx: ConvertContext): Node[][] {
 function partitionScript(
   el: Element,
   ctx: ConvertContext
-): { baseNodes: Node[]; script: Element | null } {
-  const baseNodes: Node[] = [];
+): { baseNodes: ChildNode[]; script: Element | null } {
+  const baseNodes: ChildNode[] = [];
   let script: Element | null = null;
-  for (const child of el.childNodes) {
-    if (child.nodeType !== 1) continue;
-    const childEl = child as Element;
-    if (childEl.tagName.toLowerCase() === "mjx-script") script = childEl;
-    else convertElement(childEl, ctx, baseNodes);
+  for (const child of el.children) {
+    if (!isTag(child)) continue;
+    if (child.name === "mjx-script") script = child;
+    else convertElement(child, ctx, baseNodes);
   }
   return { baseNodes, script };
 }
@@ -260,57 +293,50 @@ function partitionScript(
  * <mjx-mtd>…` → `<mtable><mtr><mtd>…`, descending through the intermediate
  * layout wrappers to find rows, and cells within rows.
  */
-function convertTable(el: Element, ctx: ConvertContext): Node {
-  const mtable = ctx.doc.createElement("mtable");
+function convertTable(el: Element, ctx: ConvertContext): ChildNode {
+  const rows: ChildNode[] = [];
   const visitRows = (node: Element): void => {
-    for (const child of node.childNodes) {
-      if (child.nodeType !== 1) continue;
-      const childEl = child as Element;
-      const childTag = childEl.tagName.toLowerCase();
+    for (const child of node.children) {
+      if (!isTag(child)) continue;
+      const childTag = child.name;
       if (childTag === "mjx-mtr" || childTag === "mjx-mlabeledtr") {
-        const mtr = ctx.doc.createElement("mtr");
-        for (const cell of childEl.childNodes) {
-          if (cell.nodeType !== 1) continue;
-          const cellEl = cell as Element;
-          if (cellEl.tagName.toLowerCase() === "mjx-mtd") {
-            const mtd = ctx.doc.createElement("mtd");
-            mtd.appendChild(convertGroup(cellEl, ctx));
-            mtr.appendChild(mtd);
+        const cells: ChildNode[] = [];
+        for (const cell of child.children) {
+          if (!isTag(cell)) continue;
+          if (cell.name === "mjx-mtd") {
+            cells.push(makeElement("mtd", [convertGroup(cell, ctx)]));
           }
         }
-        mtable.appendChild(mtr);
+        rows.push(makeElement("mtr", cells));
       } else if (childTag === "mjx-mtable" || TOKEN_TAGS[childTag]) {
         // A nested table or content element belongs to a cell, not to us —
         // only descend through this table's own layout wrappers.
       } else {
-        visitRows(childEl);
+        visitRows(child);
       }
     }
   };
   visitRows(el);
-  return mtable;
+  return makeElement("mtable", rows);
 }
 
-function convertElement(el: Element, ctx: ConvertContext, out: Node[]): void {
-  const tag = el.tagName.toLowerCase();
-  const doc = ctx.doc;
+function convertElement(el: Element, ctx: ConvertContext, out: ChildNode[]): void {
+  const tag = el.name;
 
   if (tag === "mjx-c") {
-    out.push(doc.createTextNode(codepointChar(el)));
+    out.push(new Text(codepointChar(el)));
     return;
   }
 
   // Characters outside the MathJax fonts (CJK, etc.) carry real text.
   if (tag === "mjx-utext") {
-    out.push(doc.createTextNode(el.textContent ?? ""));
+    out.push(new Text(textContent(el)));
     return;
   }
 
   const tokenTag = TOKEN_TAGS[tag];
   if (tokenTag) {
-    const node = doc.createElement(tokenTag);
-    node.textContent = tokenText(el);
-    out.push(node);
+    out.push(makeElement(tokenTag, [new Text(tokenText(el))]));
     return;
   }
 
@@ -322,10 +348,8 @@ function convertElement(el: Element, ctx: ConvertContext, out: Node[]): void {
 
   // Explicit spacing (\quad, \, …): the width lives in the inline style.
   if (tag === "mjx-mspace") {
-    const width = (el.getAttribute("style") ?? "").match(/width:\s*([^;]+)/)?.[1]?.trim();
-    const node = doc.createElement("mspace");
-    if (width) node.setAttribute("width", width);
-    out.push(node);
+    const width = (el.attribs.style ?? "").match(/width:\s*([^;]+)/)?.[1]?.trim();
+    out.push(makeElement("mspace", [], width ? { width } : {}));
     return;
   }
 
@@ -335,17 +359,17 @@ function convertElement(el: Element, ctx: ConvertContext, out: Node[]): void {
     const { baseNodes, script } = partitionScript(el, ctx);
     const groups = script ? splitScriptGroups(script, ctx) : [];
     if (tag === "mjx-msubsup" && groups.length >= 2) {
-      const node = doc.createElement("msubsup");
-      node.appendChild(groupNodes(baseNodes, ctx));
-      node.appendChild(groupNodes(groups[1], ctx)); // sub (stacked below)
-      node.appendChild(groupNodes(groups[0], ctx)); // sup (stacked above)
-      out.push(node);
+      out.push(
+        makeElement("msubsup", [
+          groupNodes(baseNodes),
+          groupNodes(groups[1]), // sub (stacked below)
+          groupNodes(groups[0]), // sup (stacked above)
+        ])
+      );
       return;
     }
-    const node = doc.createElement(tag === "mjx-msubsup" ? "msubsup" : tag.slice(4));
-    node.appendChild(groupNodes(baseNodes, ctx));
-    for (const group of groups) node.appendChild(groupNodes(group, ctx));
-    out.push(node);
+    const name = tag === "mjx-msubsup" ? "msubsup" : tag.slice(4);
+    out.push(makeElement(name, [groupNodes(baseNodes), ...groups.map(groupNodes)]));
     return;
   }
 
@@ -359,30 +383,28 @@ function convertElement(el: Element, ctx: ConvertContext, out: Node[]): void {
       const { baseNodes, script } = partitionScript(el, ctx);
       const groups = script ? splitScriptGroups(script, ctx) : [];
       if (tag === "mjx-munderover" && groups.length >= 2) {
-        const node = doc.createElement("munderover");
-        node.appendChild(groupNodes(baseNodes, ctx));
-        node.appendChild(groupNodes(groups[1], ctx)); // under (stacked below)
-        node.appendChild(groupNodes(groups[0], ctx)); // over (stacked above)
-        out.push(node);
+        out.push(
+          makeElement("munderover", [
+            groupNodes(baseNodes),
+            groupNodes(groups[1]), // under (stacked below)
+            groupNodes(groups[0]), // over (stacked above)
+          ])
+        );
         return;
       }
-      const node = doc.createElement(tag.slice(4));
-      node.appendChild(groupNodes(baseNodes, ctx));
-      for (const group of groups) node.appendChild(groupNodes(group, ctx));
-      out.push(node);
+      out.push(makeElement(tag.slice(4), [groupNodes(baseNodes), ...groups.map(groupNodes)]));
       return;
     }
-    const node = doc.createElement(tag.slice(4));
-    node.appendChild(convertGroup(base, ctx));
+    const children: ChildNode[] = [convertGroup(base, ctx)];
     if (tag === "mjx-munder") {
-      node.appendChild(convertGroup(under, ctx));
+      children.push(convertGroup(under, ctx));
     } else if (tag === "mjx-mover") {
-      node.appendChild(convertGroup(over, ctx));
+      children.push(convertGroup(over, ctx));
     } else {
-      node.appendChild(convertGroup(under, ctx));
-      node.appendChild(convertGroup(over, ctx));
+      children.push(convertGroup(under, ctx));
+      children.push(convertGroup(over, ctx));
     }
-    out.push(node);
+    out.push(makeElement(tag.slice(4), children));
     return;
   }
 
@@ -395,10 +417,7 @@ function convertElement(el: Element, ctx: ConvertContext, out: Node[]): void {
   if (tag === "mjx-mfrac") {
     const { num, den } = findFractionParts(el);
     if (num && den) {
-      const node = doc.createElement("mfrac");
-      node.appendChild(convertGroup(num, ctx));
-      node.appendChild(convertGroup(den, ctx));
-      out.push(node);
+      out.push(makeElement("mfrac", [convertGroup(num, ctx), convertGroup(den, ctx)]));
       return;
     }
     convertChildren(el, ctx, out);
@@ -409,11 +428,9 @@ function convertElement(el: Element, ctx: ConvertContext, out: Node[]): void {
   // <mjx-surd>. Safe against nesting: the outer <mjx-box> is an ancestor of
   // any inner one, so it wins document order.
   if (tag === "mjx-msqrt" || tag === "mjx-sqrt") {
-    const box = el.querySelector("mjx-box");
+    const box = firstDescendant(el, "mjx-box");
     if (box) {
-      const node = doc.createElement("msqrt");
-      node.appendChild(convertGroup(box, ctx));
-      out.push(node);
+      out.push(makeElement("msqrt", [convertGroup(box, ctx)]));
       return;
     }
     convertChildren(el, ctx, out);
@@ -424,13 +441,10 @@ function convertElement(el: Element, ctx: ConvertContext, out: Node[]): void {
   // <mjx-surd>√</mjx-surd><mjx-box>radicand</mjx-box></mjx-sqrt></mjx-mroot>.
   // MathML order is (base, index).
   if (tag === "mjx-mroot") {
-    const index = el.querySelector("mjx-root");
-    const box = el.querySelector("mjx-box");
+    const index = firstDescendant(el, "mjx-root");
+    const box = firstDescendant(el, "mjx-box");
     if (index && box) {
-      const node = doc.createElement("mroot");
-      node.appendChild(convertGroup(box, ctx));
-      node.appendChild(convertGroup(index, ctx));
-      out.push(node);
+      out.push(makeElement("mroot", [convertGroup(box, ctx), convertGroup(index, ctx)]));
       return;
     }
     convertChildren(el, ctx, out);
@@ -465,55 +479,162 @@ function convertElement(el: Element, ctx: ConvertContext, out: Node[]): void {
   // A stray non-MathJax element inside the math tree: drop it.
 }
 
+/** The `<math>` inside a container's `<mjx-assistive-mml>`, if present. */
+function findAssistiveMath(container: Element): Element | null {
+  const assistive = firstDescendant(container, "mjx-assistive-mml");
+  if (!assistive) return null;
+  for (const child of assistive.children) {
+    if (isTag(child) && child.name === "math") return child;
+  }
+  return null;
+}
+
+/** First element (tag) child of a node, or null. */
+function firstElementChild(parent: Element | Document): Element | null {
+  for (const child of parent.children) {
+    if (isTag(child)) return child;
+  }
+  return null;
+}
+
+/**
+ * Convert one parsed `<mjx-container>` element to a MathML string. Returns "" when
+ * the container carries no math (so the caller drops it).
+ */
+function convertContainerElement(container: Element, ctx: ConvertContext): string {
+  // Prefer MathJax's own assistive MathML when present — it is the exact MathML
+  // the CHTML was rendered from, strictly better than reconstruction.
+  const assistive = findAssistiveMath(container);
+  if (assistive) {
+    if (!assistive.attribs.xmlns) assistive.attribs.xmlns = MATHML_NS;
+    return render(assistive);
+  }
+
+  const source = firstDescendant(container, "mjx-math");
+  // Nothing to convert; drop the container rather than leaving an empty shell.
+  if (!source) return "";
+
+  const nodes: ChildNode[] = [];
+  convertChildren(source, ctx, nodes);
+  // Block (display) vs inline math.
+  const isDisplay = container.attribs.display === "true" || source.attribs.display === "true";
+  // Serialize the children (not a wrapping <math>) so dom-serializer stays in
+  // HTML mode: `encodeEntities: "utf8"` then escapes only `< > & "` and leaves
+  // the mathematical-alphanumeric codepoints (e.g. U+1D465 `𝑥`) as raw
+  // characters. Rendering a `<math>` node instead flips dom-serializer into
+  // "foreign" (XML) mode, which would emit those as numeric character
+  // references — equivalent after sanitization, but needlessly unreadable.
+  // The <math> wrapper is built here from fixed, trusted attribute values.
+  const open = isDisplay
+    ? `<math xmlns="${MATHML_NS}" display="block">`
+    : `<math xmlns="${MATHML_NS}">`;
+  return `${open}${render(nodes, { encodeEntities: "utf8" })}</math>`;
+}
+
 /**
  * Convert any MathJax CHTML (`<mjx-container>`) blocks in an HTML string into
  * presentation MathML. Returns the input unchanged when no CHTML is present
  * (the common case), so this is a cheap no-op for the vast majority of entries.
  *
- * linkedom's parse/serialize round-trips both fragments and full documents
- * faithfully (including content after a stray `</body>`, which a synthetic
- * body wrapper would truncate), so the input is parsed as-is.
+ * Runs a single streaming `htmlparser2` pass: HTML outside the containers is
+ * spliced through verbatim (byte-identical to the input, including content after
+ * a stray `</body>`), while each container's SAX events are forwarded into a
+ * `DomHandler` so only that equation subtree becomes a DOM — which the tree-walk
+ * then rewrites. Depth-tracking on `<mjx-container>` guards the (unexpected)
+ * nested container and a stray closing tag with no open.
  */
 export function convertMathJaxChtmlToMathml(html: string): string {
   if (!html.includes("<mjx-container")) return html;
 
-  const { document } = parseHTML(html);
-  const containers = document.querySelectorAll("mjx-container");
-  // Guard false-positive (the substring appeared in text/attribute/comment):
-  // return the original string untouched rather than reserializing.
-  if (containers.length === 0) return html;
+  const ctx: ConvertContext = { unknownTags: new Set() };
+  let result = "";
+  // Position up to which `html` has been copied into `result` verbatim.
+  let cursor = 0;
+  // Byte offset of the current top-level container's opening `<`.
+  let containerStart = -1;
+  // Byte offset just past the current container's convertible math content
+  // (its `<mjx-math>` / `<mjx-assistive-mml>`). Anything the container absorbs
+  // *after* this — only possible when the container is left unclosed and an
+  // ancestor's close tag (or EOF) ends it — is real article content wrongly
+  // pulled into the equation subtree, and is recovered verbatim on close.
+  let mathEnd = -1;
+  // Nesting depth of `<mjx-container>` (0 = outside any container).
+  let depth = 0;
+  // The DOM builder for the container currently being read, else null.
+  let handler: DomHandler | null = null;
+  let converted = false;
 
-  const ctx: ConvertContext = { doc: document, unknownTags: new Set() };
+  const parser = new Parser(
+    {
+      onopentag(name, attribs) {
+        if (name === "mjx-container" && depth === 0) {
+          // Enter a top-level container: start a fresh DOM for its subtree and
+          // forward this opening tag into it.
+          containerStart = parser.startIndex;
+          // Default the math-content boundary to the container's content start
+          // (just past its `>`), so a container that holds no math still
+          // recovers absorbed content on an implied close.
+          mathEnd = parser.endIndex + 1;
+          depth = 1;
+          handler = new DomHandler();
+          handler.onopentag(name, attribs);
+          return;
+        }
+        if (handler) {
+          if (name === "mjx-container") depth++;
+          handler.onopentag(name, attribs);
+        }
+      },
+      ontext(text) {
+        if (handler) handler.ontext(text);
+      },
+      onclosetag(name, isImplied) {
+        const active = handler;
+        if (!active) return;
+        // domhandler's onclosetag takes no name — it just pops its own stack.
+        active.onclosetag();
+        // Track how far the container's convertible math content reaches, so an
+        // implied close below can tell absorbed article content from the math.
+        if (name === "mjx-math" || name === "mjx-assistive-mml") {
+          mathEnd = parser.endIndex + 1;
+        }
+        if (name !== "mjx-container") return;
+        depth--;
+        if (depth > 0) return;
+        // Left the top-level container: finalize its DOM and rewrite it.
+        active.onend();
+        handler = null;
+        const container = firstElementChild(active.root);
+        result += html.slice(cursor, containerStart);
+        // A container that somehow parsed to nothing is dropped (splice skips it).
+        if (container) result += convertContainerElement(container, ctx);
+        if (isImplied) {
+          // Implied close: the container was left unclosed and an ancestor's
+          // close tag (or EOF) ended it, so everything from the end of the math
+          // to the triggering tag was real article content wrongly absorbed into
+          // the equation. Splice it back verbatim (its `<mjx-*>` markup, if any,
+          // is stripped by the later sanitize) and resume at the triggering tag
+          // (`startIndex`) so it too survives — `endIndex` points past it. At EOF
+          // `startIndex === html.length`, so both slices are empty.
+          result += html.slice(mathEnd, parser.startIndex);
+          cursor = parser.startIndex;
+        } else {
+          // Explicit `</mjx-container>`: resume just past its `>`.
+          cursor = parser.endIndex + 1;
+        }
+        converted = true;
+      },
+    },
+    { decodeEntities: true }
+  );
+  parser.write(html);
+  parser.end();
 
-  for (const container of containers) {
-    // Prefer MathJax's own assistive MathML when present — it is the exact
-    // MathML the CHTML was rendered from, strictly better than reconstruction.
-    const assistive = container.querySelector("mjx-assistive-mml > math");
-    if (assistive) {
-      if (!assistive.getAttribute("xmlns")) assistive.setAttribute("xmlns", MATHML_NS);
-      container.replaceWith(assistive);
-      continue;
-    }
+  // No real container was found (the substring appeared only in
+  // text/attribute/comment): return the original string untouched.
+  if (!converted) return html;
 
-    const source = container.querySelector("mjx-math");
-    if (!source) {
-      // Nothing to convert; remove the container rather than leaving an empty
-      // shell for the sanitizer to strip.
-      container.remove();
-      continue;
-    }
-
-    const math = document.createElement("math");
-    math.setAttribute("xmlns", MATHML_NS);
-    // Block (display) vs inline math.
-    const isDisplay =
-      container.getAttribute("display") === "true" || source.getAttribute("display") === "true";
-    if (isDisplay) math.setAttribute("display", "block");
-    const nodes: Node[] = [];
-    convertChildren(source, ctx, nodes);
-    for (const node of nodes) math.appendChild(node);
-    container.replaceWith(math);
-  }
+  result += html.slice(cursor);
 
   if (ctx.unknownTags.size > 0) {
     logger.warn("Unwrapped unrecognized MathJax CHTML wrappers during MathML conversion", {
@@ -521,5 +642,5 @@ export function convertMathJaxChtmlToMathml(html: string): string {
     });
   }
 
-  return document.toString();
+  return result;
 }

@@ -59,6 +59,64 @@ describe("convertMathJaxChtmlToMathml", () => {
       expect(out).toContain("<mi>\u{1D465}</mi>");
       expect(out).not.toContain("mjx-");
     });
+
+    it("splices surrounding markup through verbatim (no full-document reserialize)", () => {
+      // Odd-but-valid markup a full DOM reserialize would normalize (unquoted
+      // attributes, void elements, uppercase tags, entities). Only the math
+      // block is rewritten; everything around it must be byte-identical.
+      const before = `<DIV class=box id=a><img src=x.png><P>Fish &amp; chips`;
+      const after = `</P><br>tail`;
+      const out = convertMathJaxChtmlToMathml(`${before}${MJX_X}${after}`);
+      expect(out.startsWith(before)).toBe(true);
+      expect(out.endsWith(after)).toBe(true);
+      expect(out).toContain("<mi>\u{1D465}</mi>");
+      expect(out).not.toContain("mjx-");
+    });
+
+    it("converts every container and preserves the text between them", () => {
+      const html = `<p>a ${MJX_X} b ${MJX_LOG} c</p>`;
+      const out = convertMathJaxChtmlToMathml(html);
+      expect(out).toBe(
+        `<p>a <math xmlns="${"http://www.w3.org/1998/Math/MathML"}"><mi>\u{1D465}</mi></math> b ` +
+          `<math xmlns="http://www.w3.org/1998/Math/MathML"><mi>log</mi></math> c</p>`
+      );
+      expect(out).not.toContain("mjx-");
+    });
+
+    it("keeps the ancestor close tag that implicitly closes an unclosed container", () => {
+      // The container is missing its own `</mjx-container>`; the surrounding
+      // `</div>` implicitly closes it. The single-pass splice must resume at the
+      // triggering tag (not past it) so `</div>` and the trailing text survive.
+      const unclosed = MJX_X.replace("</mjx-container>", "");
+      const out = convertMathJaxChtmlToMathml(`<div>${unclosed}</div>after`);
+      expect(out).toBe(
+        `<div><math xmlns="http://www.w3.org/1998/Math/MathML"><mi>\u{1D465}</mi></math></div>after`
+      );
+      expect(out).not.toContain("mjx-");
+    });
+
+    it("recovers article content absorbed into an unclosed container (EOF)", () => {
+      // Unclosed container at EOF: HTML parsing pulls the trailing `<p>` into the
+      // container as a child. The converter keeps only the math, so the absorbed
+      // content must be spliced back verbatim rather than dropped with the tail.
+      const unclosed = MJX_X.replace("</mjx-container>", "");
+      const out = convertMathJaxChtmlToMathml(`<p>before</p>${unclosed}<p>rest of article</p>`);
+      expect(out).toBe(
+        `<p>before</p><math xmlns="http://www.w3.org/1998/Math/MathML"><mi>\u{1D465}</mi></math>` +
+          `<p>rest of article</p>`
+      );
+      expect(out).not.toContain("mjx-");
+    });
+
+    it("recovers content absorbed between the math and an ancestor close", () => {
+      const unclosed = MJX_X.replace("</mjx-container>", "");
+      const out = convertMathJaxChtmlToMathml(`<div>${unclosed}<p>stuff</p></div>after`);
+      expect(out).toBe(
+        `<div><math xmlns="http://www.w3.org/1998/Math/MathML"><mi>\u{1D465}</mi></math>` +
+          `<p>stuff</p></div>after`
+      );
+      expect(out).not.toContain("mjx-");
+    });
   });
 
   describe("basic tokens and structures (LessWrong-serialized samples)", () => {
