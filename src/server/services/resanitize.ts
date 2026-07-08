@@ -98,15 +98,39 @@ export const RESANITIZE_STALENESS_KEY = sql<number>`LEAST(
 )`;
 
 /**
- * Builds the "stalest rows first" query used by both the sweep and the EXPLAIN
- * test, so the test verifies the exact query the service runs. Selects each
- * family's content hash so the persist can guard against the raw changing under
- * us (see persistResanitizedFamily).
+ * Builds the "stalest rows first" query shared by the background sweep, the bulk
+ * re-sanitize script (`scripts/resanitize-bulk.ts`), and the EXPLAIN test, so all
+ * three run the exact query `idx_entries_resanitize` is designed for. Orders by
+ * the staleness key `DESC` (then `id DESC`) under the `key < SANITIZER_VERSION`
+ * bound, which the index serves as a single range seek — no full scan, no sort,
+ * even when only a sparse scattering of rows is stale (the steady state between
+ * version bumps).
+ *
+ * Selects each family's content hash so the persist can guard against the raw
+ * changing under us (see persistResanitizedFamily), plus the computed
+ * `stalenessKey` so a paginating caller can build the next keyset cursor from the
+ * last row. The optional `cursor` keyset-paginates *within* the stale range on
+ * `(stalenessKey, id)` descending — used by the bulk script to walk the whole set
+ * without re-fetching in-flight rows. The background sweep passes no cursor and
+ * instead relies on healed rows leaving the stale range to make forward progress.
  */
-export function selectStaleEntriesForResanitize(db: typeof dbType, limit: number) {
+export function selectStaleEntriesForResanitize(
+  db: typeof dbType,
+  limit: number,
+  cursor?: { stalenessKey: number; id: string }
+) {
+  const staleFilter = sql`${RESANITIZE_STALENESS_KEY} < ${SANITIZER_VERSION}`;
+  // Keyset over the index's own ordering `(key DESC, id DESC)`: rows strictly
+  // "after" the cursor are those with a smaller key, or the same key and a
+  // smaller id. Combined with staleFilter (a bound on the same leading indexed
+  // expression) the planner still serves it from `idx_entries_resanitize`.
+  const keysetFilter = cursor
+    ? sql`(${RESANITIZE_STALENESS_KEY} < ${cursor.stalenessKey} OR (${RESANITIZE_STALENESS_KEY} = ${cursor.stalenessKey} AND ${entries.id} < ${cursor.id}))`
+    : undefined;
   return db
     .select({
       id: entries.id,
+      stalenessKey: RESANITIZE_STALENESS_KEY,
       contentOriginal: entries.contentOriginal,
       contentCleaned: entries.contentCleaned,
       contentSanitizedVersion: entries.contentSanitizedVersion,
@@ -117,7 +141,7 @@ export function selectStaleEntriesForResanitize(db: typeof dbType, limit: number
       fullContentHash: entries.fullContentHash,
     })
     .from(entries)
-    .where(sql`${RESANITIZE_STALENESS_KEY} < ${SANITIZER_VERSION}`)
+    .where(keysetFilter ? and(staleFilter, keysetFilter) : staleFilter)
     .orderBy(sql`${RESANITIZE_STALENESS_KEY} DESC`, desc(entries.id))
     .limit(limit);
 }
