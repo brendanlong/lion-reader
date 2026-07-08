@@ -93,7 +93,7 @@ Write your summary inside <summary> tags.`;
  * Uses the user's custom prompt if provided, otherwise falls back to the default.
  * Template variables: {{content}}, {{title}}, {{maxWords}}
  */
-function buildSummarizationPrompt(
+export function buildSummarizationPrompt(
   content: string,
   title: string,
   options?: { userMaxWords?: number | null; userPrompt?: string | null }
@@ -101,10 +101,20 @@ function buildSummarizationPrompt(
   const maxWords = getMaxWords(options?.userMaxWords);
   const template = options?.userPrompt || DEFAULT_SUMMARIZATION_PROMPT;
 
-  return template
-    .replaceAll("{{content}}", content)
-    .replaceAll("{{title}}", title)
-    .replaceAll("{{maxWords}}", String(maxWords));
+  // Single pass with a function replacement, NOT sequential string replaceAll:
+  // string replacements interpret `$&`, `` $` ``, `$'` etc. in the replacement,
+  // so article content containing `$` patterns would splice in template
+  // fragments. A single regex pass also prevents content substituted for one
+  // placeholder from injecting into a later placeholder's slot.
+  const substitutions: Record<string, string> = {
+    "{{content}}": content,
+    "{{title}}": title,
+    "{{maxWords}}": String(maxWords),
+  };
+  return template.replaceAll(
+    /\{\{(?:content|title|maxWords)\}\}/g,
+    (match) => substitutions[match]
+  );
 }
 
 /**

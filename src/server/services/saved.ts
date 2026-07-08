@@ -17,7 +17,6 @@ import { fetchHtmlPage, HttpFetchError, ContentTooLargeError } from "@/server/ht
 import { processMarkdown } from "@/server/markdown";
 import { usageLimitsConfig } from "@/server/config/env";
 import { extractTextFromHtml } from "@/server/http/html";
-import { sanitizeEntryHtml } from "@/server/html/sanitize";
 import { absolutizeUrls } from "@/server/feed/content-cleaner";
 import { cleanContentInWorker, sanitizeEntryHtmlInWorker } from "@/server/worker-thread/pool";
 import { getOrCreateSavedFeed, getSavedFeedId, SAVED_FEED_TITLE } from "@/server/feed/saved-feed";
@@ -27,7 +26,7 @@ import { logger } from "@/lib/logger";
 import { publishNewEntry, publishEntryUpdatedFromEntry } from "@/server/redis/pubsub";
 import { toNewEntryListData } from "@/lib/events/schemas";
 import { errors } from "@/server/trpc/errors";
-import { markEntriesRead } from "@/server/services/entries";
+import { markEntriesRead, resolveSanitizedFamily } from "@/server/services/entries";
 import { publishMarkReadStateChanges } from "@/server/services/entry-events";
 import { pluginRegistry } from "@/server/plugins";
 import {
@@ -58,7 +57,9 @@ export interface SaveArticleParams {
   html?: string;
   /**
    * When true, re-fetch and update the article if the URL is already saved.
-   * Default: return the existing article without refetching.
+   * When omitted here, the existing article is returned without refetching —
+   * but note the tRPC/REST `saved.save` endpoint defaults this to `true`, so
+   * that surface refetches by default (MCP and other direct callers do not).
    */
   refetch?: boolean;
   /** With refetch, update even if the new content appears lower quality. */
@@ -753,6 +754,16 @@ export async function saveArticle(
   if (existing.length > 0) {
     if (!params.refetch) {
       const { entry, userState } = existing[0];
+      // Serve the stored sanitized body, healing it off the event loop if the
+      // stored SANITIZER_VERSION is behind (raw content must not leave the
+      // service layer). resolveSanitizedFamily version-checks, offloads large
+      // sanitizes to the worker pool, and self-heals — matching entries.get.
+      const { cleaned } = await resolveSanitizedFamily(db, entry.id, "content", {
+        originalSanitized: entry.contentOriginalSanitized,
+        cleanedSanitized: entry.contentCleanedSanitized,
+        version: entry.contentSanitizedVersion,
+        hasRaw: entry.contentOriginal !== null || entry.contentCleaned !== null,
+      });
       return {
         id: entry.id,
         url: entry.url!,
@@ -760,9 +771,7 @@ export async function saveArticle(
         siteName: entry.siteName,
         author: entry.author,
         imageUrl: entry.imageUrl,
-        // Serve the stored sanitized body (self-heal happens on entries.get);
-        // raw content must not leave the service layer.
-        contentCleaned: entry.contentCleanedSanitized ?? sanitizeEntryHtml(entry.contentCleaned),
+        contentCleaned: cleaned,
         excerpt: entry.summary,
         read: userState.read,
         starred: userState.starred,
@@ -1003,6 +1012,14 @@ export async function saveArticle(
       throw new Error(`Saved article vanished after conflict: ${normalizedUrl}`);
     }
     const { entry, userState } = row;
+    // See the no-refetch path above: version-check + worker-offload + self-heal
+    // rather than a synchronous re-sanitize of a possibly-stale body.
+    const { cleaned } = await resolveSanitizedFamily(db, entry.id, "content", {
+      originalSanitized: entry.contentOriginalSanitized,
+      cleanedSanitized: entry.contentCleanedSanitized,
+      version: entry.contentSanitizedVersion,
+      hasRaw: entry.contentOriginal !== null || entry.contentCleaned !== null,
+    });
     return {
       id: entry.id,
       url: entry.url!,
@@ -1010,7 +1027,7 @@ export async function saveArticle(
       siteName: entry.siteName,
       author: entry.author,
       imageUrl: entry.imageUrl,
-      contentCleaned: entry.contentCleanedSanitized ?? sanitizeEntryHtml(entry.contentCleaned),
+      contentCleaned: cleaned,
       excerpt: entry.summary,
       read: userState.read,
       starred: userState.starred,
@@ -1038,7 +1055,11 @@ export async function deleteSavedArticle(
   userId: string,
   articleId: string
 ): Promise<boolean> {
-  const savedFeedId = await getOrCreateSavedFeed(db, userId);
+  // Read-only lookup: deleting can never need to create the saved feed, so avoid
+  // the write side effect. No saved feed → nothing to delete (matches
+  // savedArticleExistsByUrl).
+  const savedFeedId = await getSavedFeedId(db, userId);
+  if (!savedFeedId) return false;
 
   // Verify the article exists and belongs to the user's saved feed
   const existing = await db

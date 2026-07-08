@@ -24,6 +24,7 @@ export async function POST(request: Request): Promise<Response> {
   const session = await requireAuth(request);
   if (session instanceof Response) return session;
   const userId = session.user.id;
+  const showSpam = session.user.showSpam;
 
   const params = await parseFormData(request);
   const streamIdStr = params.get("s");
@@ -53,7 +54,7 @@ export async function POST(request: Request): Promise<Response> {
 
       // `filter` is the saved-feed type filter or a real subscription id (issue
       // #730), resolved identically to the stream/contents endpoints.
-      await markAllEntriesRead(db, { userId, ...filter, before: beforeDate });
+      await markAllEntriesRead(db, { userId, ...filter, before: beforeDate, showSpam });
       break;
     }
     case "state": {
@@ -62,6 +63,7 @@ export async function POST(request: Request): Promise<Response> {
           await markAllEntriesRead(db, {
             userId,
             before: beforeDate,
+            showSpam,
           });
           break;
         case "starred":
@@ -69,6 +71,7 @@ export async function POST(request: Request): Promise<Response> {
             userId,
             starredOnly: true,
             before: beforeDate,
+            showSpam,
           });
           break;
         default:
@@ -89,6 +92,7 @@ export async function POST(request: Request): Promise<Response> {
         userId,
         tagId: tag.id,
         before: beforeDate,
+        showSpam,
       });
       break;
     }

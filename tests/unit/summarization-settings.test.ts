@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import {
   getMaxWords,
   hashPrompt,
+  buildSummarizationPrompt,
   DEFAULT_SUMMARIZATION_PROMPT,
 } from "@/server/services/summarization";
 import { DEFAULT_SUMMARIZATION_MAX_WORDS } from "@/lib/summarization/constants";
@@ -57,5 +58,33 @@ describe("hashPrompt", () => {
 
   it("distinguishes a custom prompt from the default", () => {
     expect(hashPrompt("a custom prompt")).not.toBe(hashPrompt(null));
+  });
+});
+
+describe("buildSummarizationPrompt", () => {
+  it("substitutes placeholders", () => {
+    const result = buildSummarizationPrompt("BODY", "TITLE", {
+      userPrompt: "Title: {{title}} / Content: {{content}} / Max: {{maxWords}}",
+      userMaxWords: 50,
+    });
+    expect(result).toBe("Title: TITLE / Content: BODY / Max: 50");
+  });
+
+  it("does not interpret $ patterns in content as replacement specials", () => {
+    // A string replaceAll would turn `$&`/`$'`/`` $` `` in the content into
+    // spliced template fragments; the function replacement inserts them verbatim.
+    const content = "price is $5 and $& and $` and $' and $$";
+    const result = buildSummarizationPrompt(content, "T", {
+      userPrompt: "[{{content}}]",
+    });
+    expect(result).toBe(`[${content}]`);
+  });
+
+  it("does not let content inject into a later placeholder slot", () => {
+    // Content containing another placeholder must not be re-substituted.
+    const result = buildSummarizationPrompt("{{title}}", "REAL TITLE", {
+      userPrompt: "{{content}}|{{title}}",
+    });
+    expect(result).toBe("{{title}}|REAL TITLE");
   });
 });

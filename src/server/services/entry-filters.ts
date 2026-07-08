@@ -91,8 +91,10 @@ export async function getSubscriptionFeedIds(
 
 /**
  * Builds a subquery for feed IDs associated with a tag.
- * The join with tags table ensures the tag belongs to the user, eliminating
- * the need for a separate tag ownership validation query.
+ * The join with tags table ensures the tag belongs to the user (and is not
+ * soft-deleted), eliminating the need for a separate tag ownership validation
+ * query. Excluding tombstoned tags means a client can't filter/mark-read
+ * entries through a tag that no longer appears in listTags.
  */
 export function buildTaggedFeedIdsSubquery(db: typeof dbType, tagId: string, userId: string) {
   return db
@@ -102,7 +104,10 @@ export function buildTaggedFeedIdsSubquery(db: typeof dbType, tagId: string, use
       subscriptionFeeds,
       eq(subscriptionTags.subscriptionId, subscriptionFeeds.subscriptionId)
     )
-    .innerJoin(tags, and(eq(subscriptionTags.tagId, tags.id), eq(tags.userId, userId)))
+    .innerJoin(
+      tags,
+      and(eq(subscriptionTags.tagId, tags.id), eq(tags.userId, userId), isNull(tags.deletedAt))
+    )
     .where(eq(subscriptionTags.tagId, tagId));
 }
 
@@ -110,8 +115,11 @@ export function buildTaggedFeedIdsSubquery(db: typeof dbType, tagId: string, use
  * Builds a subquery for feed IDs from uncategorized subscriptions.
  * Uses a LEFT JOIN anti-join pattern: subscriptions with no matching
  * subscription_tags row are "uncategorized".
+ *
+ * Exported so markAllEntriesRead reuses the exact same definition rather than
+ * reimplementing it against a different base table (they must stay in sync).
  */
-function buildUncategorizedFeedIdsSubquery(db: typeof dbType, userId: string) {
+export function buildUncategorizedFeedIdsSubquery(db: typeof dbType, userId: string) {
   return db
     .select({ feedId: subscriptionFeeds.feedId })
     .from(userFeeds)

@@ -144,23 +144,30 @@ async function createTestEntry(
     title?: string;
     contentCleaned?: string;
     publishedAt?: Date;
+    isSpam?: boolean;
+    type?: "web" | "email" | "saved";
   } = {}
 ): Promise<string> {
   const entryId = generateUuidv7();
   const now = new Date();
   const guid = options.guid ?? `guid-${entryId}`;
+  // is_spam is only permitted on email entries (entries_spam_only_email);
+  // last_seen_at is only permitted on fetched/web entries
+  // (entries_last_seen_only_fetched).
+  const type = options.type ?? (options.isSpam ? "email" : "web");
 
   await db.insert(entries).values({
     id: entryId,
     feedId,
-    type: "web",
+    type,
     guid,
     title: options.title ?? `Entry ${entryId}`,
     contentCleaned: options.contentCleaned ?? `Content for ${options.title ?? entryId}`,
     contentHash: `hash-${entryId}`,
     fetchedAt: options.publishedAt ?? now,
     publishedAt: options.publishedAt ?? now,
-    lastSeenAt: now,
+    lastSeenAt: type === "web" ? now : null,
+    isSpam: options.isSpam ?? false,
     createdAt: now,
     updatedAt: now,
   });
@@ -825,7 +832,7 @@ describe("Entries", () => {
       await createTestSubscription(attackerId, feedId);
       await createUserEntry(attackerId, entryId, { read: false });
 
-      const marked = await markAllEntriesRead(db, { userId: attackerId, tagId });
+      const marked = await markAllEntriesRead(db, { userId: attackerId, tagId, showSpam: false });
       expect(marked).toEqual([]);
 
       const attackerEntries = await db
@@ -835,8 +842,36 @@ describe("Entries", () => {
       expect(attackerEntries).toEqual([{ read: false }]);
 
       // The owner can still mark through their tag
-      const ownMarked = await markAllEntriesRead(db, { userId: victimId, tagId });
+      const ownMarked = await markAllEntriesRead(db, { userId: victimId, tagId, showSpam: false });
       expect(ownMarked).toEqual([entryId]);
+    });
+
+    it("excludes hidden spam entries unless showSpam is set", async () => {
+      // "Mark all read" must only touch entries the user can actually see, like
+      // listEntries/countEntries — otherwise hidden spam would be marked read and
+      // surface as already-read if the user later enables showSpam (issue #1089).
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://spam-feed.com/rss");
+      await createTestSubscription(userId, feedId);
+
+      const normalId = await createTestEntry(feedId, { title: "Normal" });
+      const spamId = await createTestEntry(feedId, { title: "Spam", isSpam: true });
+      await createUserEntry(userId, normalId, { read: false });
+      await createUserEntry(userId, spamId, { read: false });
+
+      // With spam hidden, only the non-spam entry is marked.
+      const marked = await markAllEntriesRead(db, { userId, showSpam: false });
+      expect(marked).toEqual([normalId]);
+
+      const spamState = await db
+        .select({ read: userEntries.read })
+        .from(userEntries)
+        .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, spamId)));
+      expect(spamState).toEqual([{ read: false }]);
+
+      // With showSpam, the spam entry is marked too.
+      const markedWithSpam = await markAllEntriesRead(db, { userId, showSpam: true });
+      expect(markedWithSpam).toEqual([spamId]);
     });
   });
 
