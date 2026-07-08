@@ -19,7 +19,7 @@ import { users, entries, userEntries, feeds } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
-import { saveArticle } from "../../src/server/services/saved";
+import { saveArticle, savedArticleExistsByUrl } from "../../src/server/services/saved";
 
 // ============================================================================
 // Test Helpers
@@ -1200,6 +1200,44 @@ describe("Saved Articles API", () => {
       const rows = await db.select({ id: entries.id }).from(entries).where(eq(entries.guid, url));
       expect(rows).toHaveLength(1);
       expect(rows[0].id).toBe(a.id);
+    });
+  });
+
+  describe("savedArticleExistsByUrl", () => {
+    it("returns the entry id for a saved URL and null for an unsaved one", async () => {
+      const userId = await createTestUser();
+      const savedUrl = "https://example.com/saved-exists";
+      const articleId = await createTestSavedArticle(userId, { url: savedUrl });
+
+      // Matches on the normalized URL (fragments are stripped, so a #hash on the
+      // query URL still resolves to the same saved article).
+      expect(await savedArticleExistsByUrl(db, userId, savedUrl)).toBe(articleId);
+      expect(await savedArticleExistsByUrl(db, userId, `${savedUrl}#section`)).toBe(articleId);
+      expect(await savedArticleExistsByUrl(db, userId, "https://example.com/not-saved")).toBeNull();
+    });
+
+    it("is scoped per user", async () => {
+      const userId = await createTestUser();
+      const otherId = await createTestUser("other");
+      const url = "https://example.com/mine";
+      await createTestSavedArticle(userId, { url });
+
+      expect(await savedArticleExistsByUrl(db, userId, url)).not.toBeNull();
+      expect(await savedArticleExistsByUrl(db, otherId, url)).toBeNull();
+    });
+
+    it("is read-only: does not create the saved feed for a user who has none", async () => {
+      const userId = await createTestUser();
+
+      const result = await savedArticleExistsByUrl(db, userId, "https://example.com/whatever");
+
+      expect(result).toBeNull();
+      // The probe must not have created a saved feed as a side effect.
+      const savedFeeds = await db
+        .select({ id: feeds.id })
+        .from(feeds)
+        .where(and(eq(feeds.type, "saved"), eq(feeds.userId, userId)));
+      expect(savedFeeds).toHaveLength(0);
     });
   });
 });

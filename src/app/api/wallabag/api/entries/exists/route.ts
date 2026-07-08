@@ -15,11 +15,8 @@
 import { requireAuth } from "@/server/wallabag/auth";
 import { jsonResponse, errorResponse } from "@/server/wallabag/parse";
 import { uuidToWallabagId } from "@/server/wallabag/format";
-import { normalizeUrl } from "@/lib/url";
-import { eq, and } from "drizzle-orm";
+import * as savedService from "@/server/services/saved";
 import { db } from "@/server/db";
-import { entries, userEntries } from "@/server/db/schema";
-import { getOrCreateSavedFeed } from "@/server/feed/saved-feed";
 
 export const dynamic = "force-dynamic";
 
@@ -35,26 +32,12 @@ export async function GET(request: Request): Promise<Response> {
     return errorResponse("invalid_request", "url parameter is required", 400);
   }
 
-  const normalizedUrl = normalizeUrl(singleUrl);
-  const savedFeedId = await getOrCreateSavedFeed(db, auth.userId);
+  const entryId = await savedService.savedArticleExistsByUrl(db, auth.userId, singleUrl);
 
-  const existing = await db
-    .select({ id: entries.id })
-    .from(entries)
-    .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
-    .where(
-      and(
-        eq(entries.feedId, savedFeedId),
-        eq(entries.guid, normalizedUrl),
-        eq(userEntries.userId, auth.userId)
-      )
-    )
-    .limit(1);
-
-  if (existing.length > 0) {
+  if (entryId) {
     const result: Record<string, unknown> = { exists: true };
     if (returnId) {
-      result.id = uuidToWallabagId(existing[0].id);
+      result.id = uuidToWallabagId(entryId);
     }
     return jsonResponse(result);
   }

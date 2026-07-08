@@ -12,7 +12,7 @@
  */
 
 import { requireAuth } from "@/server/wallabag/auth";
-import { jsonResponse, errorResponse } from "@/server/wallabag/parse";
+import { jsonResponse, errorResponse, parseEntryListParams } from "@/server/wallabag/parse";
 import { formatEntryListItem, createPaginatedResponse } from "@/server/wallabag/format";
 import * as entriesService from "@/server/services/entries";
 import { db } from "@/server/db";
@@ -29,39 +29,17 @@ export async function GET(request: Request): Promise<Response> {
     return errorResponse("invalid_request", "term parameter is required", 400);
   }
 
-  const page = Math.max(1, parseInt(url.searchParams.get("page") ?? "1", 10) || 1);
-  const perPage = Math.min(
-    Math.max(1, parseInt(url.searchParams.get("perPage") ?? "30", 10) || 30),
-    100
-  );
+  // Reuse the shared page/perPage parsing (clamped identically to the list endpoint).
+  const { page, perPage } = parseEntryListParams(url);
 
-  const searchParams: entriesService.ListEntriesParams = {
+  // Serve the requested page with a single indexed query via LIMIT/OFFSET.
+  const result = await entriesService.listEntries(db, {
     userId: auth.userId,
     query: term,
     type: "saved",
     limit: perPage,
+    offset: (page - 1) * perPage,
     showSpam: false,
-  };
-
-  // Simulate page-based pagination by iterating through cursor-based pages.
-  let cursor: string | undefined;
-  for (let p = 1; p < page; p++) {
-    const skipResult = await entriesService.listEntries(db, {
-      ...searchParams,
-      cursor,
-    });
-    cursor = skipResult.nextCursor;
-    if (!cursor) {
-      // Requested page is beyond available data
-      const baseUrl = `${url.origin}/api/wallabag/api/search`;
-      return jsonResponse(createPaginatedResponse([], page, perPage, 0, baseUrl));
-    }
-  }
-
-  // Fetch the actual requested page
-  const result = await entriesService.listEntries(db, {
-    ...searchParams,
-    cursor,
   });
 
   // Estimate total: for search results we don't have an efficient count query,

@@ -20,7 +20,7 @@ import {
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
-import { markAllEntriesRead } from "../../src/server/services/entries";
+import { markAllEntriesRead, listEntries } from "../../src/server/services/entries";
 
 // ============================================================================
 // Test Helpers
@@ -292,6 +292,43 @@ describe("Entries", () => {
       expect(result.items).toHaveLength(1);
       expect(result.items[0].id).toBe(starredId);
       expect(result.items[0].starred).toBe(true);
+    });
+  });
+
+  describe("list with offset", () => {
+    it("skips `offset` rows in one query (page/offset pagination for compat APIs)", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/feed.xml");
+      await createTestSubscription(userId, feedId);
+
+      // Three entries with distinct publish times so the newest-first order is
+      // deterministic: newest → oldest is [c, b, a].
+      const aId = await createTestEntry(feedId, {
+        title: "A",
+        publishedAt: new Date("2026-01-01T00:00:00Z"),
+      });
+      const bId = await createTestEntry(feedId, {
+        title: "B",
+        publishedAt: new Date("2026-01-02T00:00:00Z"),
+      });
+      const cId = await createTestEntry(feedId, {
+        title: "C",
+        publishedAt: new Date("2026-01-03T00:00:00Z"),
+      });
+      for (const id of [aId, bId, cId]) await createUserEntry(userId, id);
+
+      // Page size 1: offset 0/1/2 return c/b/a respectively, matching what the
+      // old cursor-skip loop produced but in a single indexed query per page.
+      const page1 = await listEntries(db, { userId, limit: 1, offset: 0, showSpam: false });
+      const page2 = await listEntries(db, { userId, limit: 1, offset: 1, showSpam: false });
+      const page3 = await listEntries(db, { userId, limit: 1, offset: 2, showSpam: false });
+      const page4 = await listEntries(db, { userId, limit: 1, offset: 3, showSpam: false });
+
+      expect(page1.items.map((e) => e.id)).toEqual([cId]);
+      expect(page2.items.map((e) => e.id)).toEqual([bId]);
+      expect(page3.items.map((e) => e.id)).toEqual([aId]);
+      // Offset past the end yields an empty page (not an error).
+      expect(page4.items).toHaveLength(0);
     });
   });
 

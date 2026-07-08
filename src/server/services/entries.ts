@@ -65,6 +65,7 @@ export interface ListEntriesParams {
   sortOrder?: "newest" | "oldest";
   sortBy?: "published" | "readChanged"; // Which column to sort by (default: published)
   cursor?: string;
+  offset?: number; // Skip this many rows (for page/offset-based compat APIs like Wallabag). Mutually exclusive with cursor.
   limit?: number;
   maxLimit?: number; // Override MAX_LIMIT (e.g., for Google Reader API which needs larger batches)
   publishedAfter?: Date; // Only entries published/fetched after this timestamp
@@ -86,6 +87,7 @@ export interface SearchEntriesParams {
   starredOnly?: boolean;
   unstarredOnly?: boolean;
   cursor?: string;
+  offset?: number; // Skip this many rows (for page/offset-based compat APIs like Wallabag). Mutually exclusive with cursor.
   limit?: number;
   maxLimit?: number;
   publishedAfter?: Date;
@@ -603,7 +605,8 @@ export async function listEntries(
     .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
     .where(and(...conditions))
     .orderBy(...orderByClause)
-    .limit(limit + 1);
+    .limit(limit + 1)
+    .offset(params.offset ?? 0);
 
   const hasMore = queryResults.length > limit;
   const resultEntries = hasMore ? queryResults.slice(0, limit) : queryResults;
@@ -709,7 +712,8 @@ async function searchEntries(
     .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
     .where(and(...conditions))
     .orderBy(desc(rankColumn), desc(visibleEntries.id))
-    .limit(limit + 1);
+    .limit(limit + 1)
+    .offset(params.offset ?? 0);
 
   const hasMore = queryResults.length > limit;
   const resultEntries = hasMore ? queryResults.slice(0, limit) : queryResults;
@@ -1270,6 +1274,7 @@ export async function countTotalEntries(
     readOnly?: boolean;
     starredOnly?: boolean;
     unstarredOnly?: boolean;
+    publishedAfter?: Date;
     showSpam: boolean;
   }
 ): Promise<number> {
@@ -1294,6 +1299,10 @@ export async function countTotalEntries(
   }
 
   conditions.push(...buildEntryFilterConditions(params));
+
+  if (params.publishedAfter) {
+    conditions.push(sql`${visibleEntries.publishedOrFetchedAt} >= ${params.publishedAfter}`);
+  }
 
   // count(DISTINCT id): dedupe entries reachable through overlapping
   // subscription_feeds rows (see countEntries).

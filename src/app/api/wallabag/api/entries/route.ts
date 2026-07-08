@@ -49,61 +49,33 @@ export async function GET(request: Request): Promise<Response> {
   const url = new URL(request.url);
   const params = parseEntryListParams(url);
 
-  // Build list params from Wallabag query params
-  // Scope to saved articles only — the Wallabag API is a read-it-later interface
-  const baseParams: entriesService.ListEntriesParams = {
-    userId: auth.userId,
-    type: "saved",
-    limit: params.perPage,
-    sortOrder: params.order === "asc" ? "oldest" : "newest",
+  // Scope to saved articles only — the Wallabag API is a read-it-later interface.
+  // The read/starred/since filters are shared by the page query and the count so
+  // the two can't drift.
+  const filter = {
+    type: "saved" as const,
     showSpam: false,
-  };
-
-  // Filter by read/archived state
-  if (params.archive === false) {
-    baseParams.unreadOnly = true;
-  } else if (params.archive === true) {
-    baseParams.readOnly = true;
-  }
-
-  // Filter by starred state
-  if (params.starred === true) {
-    baseParams.starredOnly = true;
-  } else if (params.starred === false) {
-    baseParams.unstarredOnly = true;
-  }
-
-  // Get total count for pagination metadata (Wallabag API needs total for offset pagination)
-  const total = await entriesService.countTotalEntries(db, auth.userId, {
-    type: "saved",
     unreadOnly: params.archive === false ? true : undefined,
     readOnly: params.archive === true ? true : undefined,
     starredOnly: params.starred === true ? true : undefined,
     unstarredOnly: params.starred === false ? true : undefined,
-    showSpam: false,
-  });
+    // Wallabag `since` is a unix timestamp (seconds). Map it to publishedAfter so
+    // clients can sync incrementally instead of re-paging the whole library.
+    publishedAfter: params.since ? new Date(params.since * 1000) : undefined,
+  };
 
-  // Simulate page-based pagination by iterating through cursor-based pages.
-  // Skip (page - 1) pages of entries, then return the requested page.
-  let cursor: string | undefined;
-  for (let p = 1; p < params.page; p++) {
-    const skipResult = await entriesService.listEntries(db, {
-      ...baseParams,
-      cursor,
-    });
-    cursor = skipResult.nextCursor;
-    if (!cursor) {
-      // Requested page is beyond available data
-      const baseUrl = `${url.origin}/api/wallabag/api/entries`;
-      return jsonResponse(createPaginatedResponse([], params.page, params.perPage, total, baseUrl));
-    }
-  }
-
-  // Fetch the actual requested page
-  const result = await entriesService.listEntries(db, {
-    ...baseParams,
-    cursor,
-  });
+  // Serve the requested page with a single indexed query via LIMIT/OFFSET, and
+  // fetch the total count in parallel (Wallabag needs it for page metadata).
+  const [result, total] = await Promise.all([
+    entriesService.listEntries(db, {
+      ...filter,
+      userId: auth.userId,
+      limit: params.perPage,
+      offset: (params.page - 1) * params.perPage,
+      sortOrder: params.order === "asc" ? "oldest" : "newest",
+    }),
+    entriesService.countTotalEntries(db, auth.userId, filter),
+  ]);
 
   // If detail is "full", fetch full content in a single bulk query
   let formattedItems;

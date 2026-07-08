@@ -90,86 +90,108 @@ function formatDate(date: Date | null): string | null {
 }
 
 /**
+ * The fields that vary between our entry shapes (full entry, list item, saved
+ * article); everything else in a Wallabag entry is derived or constant.
+ */
+interface WallabagEntryInput {
+  id: string;
+  url: string | null;
+  title: string | null;
+  content: string | null;
+  read: boolean;
+  starred: boolean;
+  author: string | null;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+  publishedAt: Date | null;
+  previewPicture: string | null;
+}
+
+/**
+ * Builds a Wallabag entry from the varying fields, deriving the constant and
+ * computed ones (id hash, archived/starred flags, domain, reading time). This is
+ * the single place the Wallabag entry shape is assembled, so the three format*
+ * helpers below can't drift.
+ */
+function buildWallabagEntry(input: WallabagEntryInput): WallabagEntry {
+  return {
+    id: uuidToWallabagId(input.id),
+    url: input.url,
+    title: input.title,
+    content: input.content,
+    is_archived: input.read ? 1 : 0,
+    is_starred: input.starred ? 1 : 0,
+    is_public: false,
+    tags: [],
+    created_at: formatDate(input.createdAt)!,
+    updated_at: formatDate(input.updatedAt)!,
+    published_at: formatDate(input.publishedAt),
+    published_by: input.author ? [input.author] : null,
+    domain_name: extractDomain(input.url),
+    reading_time: estimateReadingTime(input.content),
+    preview_picture: input.previewPicture,
+    mimetype: "text/html",
+    language: null,
+    uid: input.id,
+    _lion_reader_id: input.id,
+  };
+}
+
+/**
  * Formats a full entry as a Wallabag entry.
  */
 export function formatEntryFull(entry: EntryFull): WallabagEntry {
-  const content = entry.contentCleaned ?? entry.contentOriginal ?? entry.summary ?? null;
-
-  return {
-    id: uuidToWallabagId(entry.id),
+  return buildWallabagEntry({
+    id: entry.id,
     url: entry.url,
     title: entry.title,
-    content,
-    is_archived: entry.read ? 1 : 0,
-    is_starred: entry.starred ? 1 : 0,
-    is_public: false,
-    tags: [],
-    created_at: formatDate(entry.fetchedAt)!,
-    updated_at: formatDate(entry.updatedAt)!,
-    published_at: formatDate(entry.publishedAt),
-    published_by: entry.author ? [entry.author] : null,
-    domain_name: extractDomain(entry.url),
-    reading_time: estimateReadingTime(content),
-    preview_picture: null,
-    mimetype: "text/html",
-    language: null,
-    uid: entry.id,
-    _lion_reader_id: entry.id,
-  };
+    content: entry.contentCleaned ?? entry.contentOriginal ?? entry.summary ?? null,
+    read: entry.read,
+    starred: entry.starred,
+    author: entry.author,
+    createdAt: entry.fetchedAt,
+    updatedAt: entry.updatedAt,
+    publishedAt: entry.publishedAt,
+    previewPicture: null,
+  });
 }
 
 /**
  * Formats a list entry as a Wallabag entry (no full content).
  */
 export function formatEntryListItem(entry: EntryListItem): WallabagEntry {
-  return {
-    id: uuidToWallabagId(entry.id),
+  return buildWallabagEntry({
+    id: entry.id,
     url: entry.url,
     title: entry.title,
     content: entry.summary ?? null,
-    is_archived: entry.read ? 1 : 0,
-    is_starred: entry.starred ? 1 : 0,
-    is_public: false,
-    tags: [],
-    created_at: formatDate(entry.fetchedAt)!,
-    updated_at: formatDate(entry.updatedAt)!,
-    published_at: formatDate(entry.publishedAt),
-    published_by: entry.author ? [entry.author] : null,
-    domain_name: extractDomain(entry.url),
-    reading_time: estimateReadingTime(entry.summary),
-    preview_picture: null,
-    mimetype: "text/html",
-    language: null,
-    uid: entry.id,
-    _lion_reader_id: entry.id,
-  };
+    read: entry.read,
+    starred: entry.starred,
+    author: entry.author,
+    createdAt: entry.fetchedAt,
+    updatedAt: entry.updatedAt,
+    publishedAt: entry.publishedAt,
+    previewPicture: null,
+  });
 }
 
 /**
  * Formats a saved article as a Wallabag entry.
  */
 export function formatSavedArticle(article: SavedArticle): WallabagEntry {
-  return {
-    id: uuidToWallabagId(article.id),
+  return buildWallabagEntry({
+    id: article.id,
     url: article.url,
     title: article.title,
     content: article.contentCleaned ?? article.excerpt ?? null,
-    is_archived: article.read ? 1 : 0,
-    is_starred: article.starred ? 1 : 0,
-    is_public: false,
-    tags: [],
-    created_at: formatDate(article.savedAt)!,
-    updated_at: formatDate(article.savedAt)!,
-    published_at: null,
-    published_by: article.author ? [article.author] : null,
-    domain_name: extractDomain(article.url),
-    reading_time: estimateReadingTime(article.contentCleaned),
-    preview_picture: article.imageUrl,
-    mimetype: "text/html",
-    language: null,
-    uid: article.id,
-    _lion_reader_id: article.id,
-  };
+    read: article.read,
+    starred: article.starred,
+    author: article.author,
+    createdAt: article.savedAt,
+    updatedAt: article.savedAt,
+    publishedAt: null,
+    previewPicture: article.imageUrl,
+  });
 }
 
 // ============================================================================
