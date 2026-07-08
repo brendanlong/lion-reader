@@ -595,7 +595,11 @@ export function convertMathJaxChtmlToMathml(html: string): string {
         active.onclosetag();
         // Track how far the container's convertible math content reaches, so an
         // implied close below can tell absorbed article content from the math.
-        if (name === "mjx-math" || name === "mjx-assistive-mml") {
+        // Only advance on an *explicit* `</mjx-math>` etc.: an implied close of
+        // one of these tags is itself triggered by the absorbed article content
+        // (or EOF), so treating its position as the math boundary would swallow
+        // that content and defeat the recovery below.
+        if (!isImplied && (name === "mjx-math" || name === "mjx-assistive-mml")) {
           mathEnd = parser.endIndex + 1;
         }
         if (name !== "mjx-container") return;

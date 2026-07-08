@@ -413,6 +413,8 @@ Token bucket via Redis, per-user. Different buckets for different operations (e.
 
 **Password brute-force protection**: every password-accepting path is rate-limited two ways. A per-IP `expensive` bucket (10 burst, 1/sec) caps a single source, and a **shared per-account** `expensive` bucket keyed by normalized (trimmed/lower-cased) email caps total guesses against one account regardless of source IP — so a distributed, IP-rotating brute-force is throttled too. The account key is shared across the tRPC `auth.login` mutation, Google Reader `ClientLogin`, and the Wallabag password grant via `checkAccountRateLimit`/`checkAccountRouteRateLimit` in `src/server/rate-limit/`. The tRPC login consumes the account bucket _before_ the user lookup so attempts against non-existent accounts are throttled identically (no enumeration side channel). The OAuth 2.1 `/oauth/token` endpoint takes no password (only `authorization_code`/`refresh_token` grants), so it has no account key and uses the generous `oauth` bucket.
 
+Ordinary rate limits **fail open** when Redis is unavailable (availability over strictness for reads/writes). The **account** bucket is the exception: `checkAccountRateLimit` passes `fallback: "memory"`, so during a Redis outage it degrades to a per-process in-memory token bucket instead of failing fully open — password brute-force protection would otherwise evaporate exactly when the system is degraded. The in-memory map is size-bounded (LRU eviction) so an attacker rotating identifiers can't grow it without limit. Per-process (not cross-server) but it bounds guesses on each server without hard-locking legitimate users out.
+
 ### Error Responses
 
 Errors use tRPC's standard error envelope, extended by the `errorFormatter` in

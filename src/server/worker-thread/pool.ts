@@ -43,6 +43,11 @@ const SANITIZE_INLINE_MAX_CHARS = 10 * 1024;
 
 let pool: Piscina | null = null;
 let poolInitFailed = false;
+/**
+ * Memoized result of the one-time bundle-version probe. Resolves true if the
+ * worker bundle's `SANITIZER_VERSION` matches the main process, false otherwise.
+ */
+let sanitizerVersionCheck: Promise<boolean> | null = null;
 
 function resolveWorkerPath(): { filename: string; execArgv?: string[] } {
   // Use process.cwd() for all path resolution — __dirname gets replaced by
@@ -113,6 +118,61 @@ function getPool(): Piscina | null {
   }
 }
 
+/**
+ * Runs the one-time bundle-version probe against the pool. A stale
+ * `dist/worker-thread.js` embeds an out-of-date `SANITIZE_OPTIONS`/transform
+ * snapshot, so it would sanitize offloaded bodies with old rules while the main
+ * process stamps rows with the current `SANITIZER_VERSION` — silently persisting
+ * mis-sanitized HTML the version-gated self-heal never revisits. On mismatch we
+ * disable the pool entirely so every sanitize runs inline on the main thread
+ * with the current rules.
+ */
+async function verifyWorkerSanitizerVersion(p: Piscina): Promise<boolean> {
+  try {
+    const result = await p.run({ type: "sanitizerVersion" });
+    const version = sanitizerVersionResultSchema.parse(result).version;
+    if (version !== SANITIZER_VERSION) {
+      logger.error(
+        "Worker thread bundle SANITIZER_VERSION mismatch — disabling worker pool, sanitizing inline. Rebuild the worker bundle (build:all).",
+        { workerVersion: version, mainVersion: SANITIZER_VERSION }
+      );
+      return false;
+    }
+    return true;
+  } catch (error) {
+    logger.error("Failed to verify worker sanitizer version — disabling worker pool", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+}
+
+/**
+ * Returns the pool only after confirming the worker bundle's sanitizer version
+ * matches the main process. On mismatch (or probe failure) the pool is torn down
+ * and permanently disabled, so all callers fall back to inline execution with
+ * current rules. The probe runs once and its result is memoized.
+ */
+async function getVerifiedPool(): Promise<Piscina | null> {
+  const p = getPool();
+  if (!p) return null;
+
+  if (!sanitizerVersionCheck) {
+    sanitizerVersionCheck = verifyWorkerSanitizerVersion(p);
+  }
+  const ok = await sanitizerVersionCheck;
+  if (!ok) {
+    poolInitFailed = true;
+    if (pool) {
+      const stale = pool;
+      pool = null;
+      void stale.destroy().catch(() => {});
+    }
+    return null;
+  }
+  return p;
+}
+
 // ---------------------------------------------------------------------------
 // Public API — same signatures as the originals, but async
 // ---------------------------------------------------------------------------
@@ -129,7 +189,7 @@ export async function cleanContentInWorker(
   options?: CleanContentOptions,
   extra?: { sanitizeCleaned?: boolean }
 ): Promise<CleanedContent | null> {
-  const p = getPool();
+  const p = await getVerifiedPool();
   if (!p) {
     const { cleanContent } = await import("@/server/feed/content-cleaner");
     const cleaned = cleanContent(html, options);
@@ -166,8 +226,14 @@ export async function sanitizeEntryHtmlInWorker(
 ): Promise<string | null> {
   if (!html) return null;
 
-  const p = getPool();
-  if (!p || html.length <= SANITIZE_INLINE_MAX_CHARS) {
+  // Small bodies sanitize inline (cheaper than the thread hop), so skip the pool
+  // — and its version probe — entirely for them.
+  if (html.length <= SANITIZE_INLINE_MAX_CHARS) {
+    return sanitizeEntryHtml(html);
+  }
+
+  const p = await getVerifiedPool();
+  if (!p) {
     return sanitizeEntryHtml(html);
   }
 
@@ -197,7 +263,9 @@ export async function sanitizeEntryHtmlInWorker(
  * mis-sanitized content. Comparing this value to the main process's
  * `SANITIZER_VERSION` detects that mismatch (the bump discipline makes the
  * version the single source of truth for the rules). Bulk re-sanitization refuses
- * to run on a mismatch; see scripts/resanitize-bulk.ts.
+ * to run on a mismatch (see scripts/resanitize-bulk.ts), and the pool itself runs
+ * the same probe once at first use (`getVerifiedPool`), disabling offload on a
+ * mismatch so app-server request paths never persist stale-sanitized HTML.
  *
  * Runs the probe in the pool (bypassing the inline-size threshold) so it actually
  * reflects the bundle. When no pool is available every sanitize runs inline on
@@ -220,7 +288,7 @@ export async function getWorkerSanitizerVersion(): Promise<number> {
  * pool is unavailable.
  */
 export async function parseFeedInWorker(content: string): Promise<ParsedFeed> {
-  const p = getPool();
+  const p = await getVerifiedPool();
   if (!p) {
     const { parseFeed } = await import("@/server/feed/parser");
     return parseFeed(content);

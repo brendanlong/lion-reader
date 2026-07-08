@@ -15,6 +15,7 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import { processInboundEmail, type InboundEmail } from "@/server/email/process-inbound";
 import { ingestConfig } from "@/server/config/env";
+import { getRedisClient } from "@/server/redis";
 import { logger } from "@/lib/logger";
 import { parseFromAddress } from "@/server/email/parse-utils";
 
@@ -22,6 +23,53 @@ import { parseFromAddress } from "@/server/email/parse-utils";
  * Route segment config for Next.js
  */
 export const dynamic = "force-dynamic";
+
+/**
+ * How far a Mailgun webhook timestamp may be from now (seconds) before we treat
+ * the request as a replay. Mailgun's signature only covers `(timestamp, token)`
+ * — NOT the body — so a captured valid triple could otherwise be replayed
+ * forever with an arbitrary body. A ~15-minute window bounds that, while leaving
+ * generous slack for clock skew and Mailgun's own delivery retries.
+ */
+const MAILGUN_TIMESTAMP_TOLERANCE_SECONDS = 15 * 60;
+
+/**
+ * Checks that the Mailgun webhook timestamp is within the freshness window.
+ */
+function isTimestampFresh(timestamp: string): boolean {
+  const ts = Number(timestamp);
+  if (!Number.isFinite(ts)) {
+    return false;
+  }
+  const nowSeconds = Date.now() / 1000;
+  return Math.abs(nowSeconds - ts) <= MAILGUN_TIMESTAMP_TOLERANCE_SECONDS;
+}
+
+/**
+ * Records the webhook token as a single-use nonce, returning false if it was
+ * already seen (a replay of a previously-captured signed request). The TTL
+ * outlives the freshness window so a token can't be reused within it. When Redis
+ * is unavailable we can't dedup, so we allow the request — the timestamp
+ * freshness check and downstream Message-ID dedup still bound replays.
+ */
+async function consumeWebhookToken(token: string): Promise<boolean> {
+  const redis = getRedisClient();
+  if (!redis) {
+    return true;
+  }
+  try {
+    const key = `mailgun:webhook:nonce:${token}`;
+    const result = await redis.set(key, "1", "EX", MAILGUN_TIMESTAMP_TOLERANCE_SECONDS + 60, "NX");
+    return result === "OK";
+  } catch (error) {
+    // A Redis hiccup must not drop legitimate mail; fall back to allowing it
+    // (freshness + Message-ID dedup remain in force).
+    logger.warn("Mailgun webhook nonce check failed; allowing request", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return true;
+  }
+}
 
 /**
  * Verifies the Mailgun webhook signature.
@@ -177,6 +225,21 @@ export async function POST(request: Request): Promise<Response> {
   if (!verifySignature(timestamp, token, signature, signingKey)) {
     logger.warn("Mailgun webhook signature verification failed");
     return new Response("Invalid Signature", { status: 406 });
+  }
+
+  // 3b. Reject stale requests and replays. The signature covers only
+  // (timestamp, token), not the body, so a captured valid triple is otherwise
+  // replayable forever with arbitrary content.
+  if (!isTimestampFresh(timestamp)) {
+    logger.warn("Mailgun webhook timestamp outside freshness window", { timestamp });
+    return new Response("Stale Timestamp", { status: 406 });
+  }
+
+  if (!(await consumeWebhookToken(token))) {
+    // Token already used — a replay, or a Mailgun delivery retry of an
+    // already-acknowledged request. Ack without reprocessing (idempotent).
+    logger.warn("Mailgun webhook token replay detected; ignoring");
+    return new Response("OK", { status: 200 });
   }
 
   // 4. Validate required fields

@@ -31,6 +31,7 @@ import {
   getProtectedResourceMetadataUrl,
 } from "@/server/oauth/config";
 import { withMcpCorsHeaders, mcpCorsPreflight } from "@/server/http/cors";
+import { checkRouteRateLimit } from "@/server/rate-limit";
 import { logger } from "@/lib/logger";
 
 // ============================================================================
@@ -214,6 +215,14 @@ function unauthorizedResponse(failure: AuthFailure): Response {
  * Creates a stateless server+transport pair per request.
  */
 async function handleMcpRequest(request: NextRequest): Promise<Response> {
+  // Rate limit before auth/work. Uses the generous `oauth` bucket (per DESIGN.md)
+  // rather than the strict `expensive` one, because claude.ai proxies MCP traffic
+  // server-to-server from a shared egress range.
+  const rateLimited = await checkRouteRateLimit(request, "oauth", { json: true });
+  if (rateLimited) {
+    return rateLimited;
+  }
+
   // Authenticate request
   const auth = await authenticateRequest(request);
   if (!auth.success) {
@@ -290,6 +299,10 @@ export function OPTIONS() {
  * no persistent sessions for SSE streaming.
  */
 export async function GET(request: NextRequest) {
+  const rateLimited = await checkRouteRateLimit(request, "oauth", { json: true });
+  if (rateLimited) {
+    return withMcpCorsHeaders(rateLimited);
+  }
   const auth = await authenticateRequest(request);
   if (!auth.success) {
     return withMcpCorsHeaders(unauthorizedResponse(auth));
@@ -306,6 +319,10 @@ export async function GET(request: NextRequest) {
  * no sessions to terminate.
  */
 export async function DELETE(request: NextRequest) {
+  const rateLimited = await checkRouteRateLimit(request, "oauth", { json: true });
+  if (rateLimited) {
+    return withMcpCorsHeaders(rateLimited);
+  }
   const auth = await authenticateRequest(request);
   if (!auth.success) {
     return withMcpCorsHeaders(unauthorizedResponse(auth));
