@@ -6,7 +6,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, inArray, sql } from "drizzle-orm";
+import { eq, and, inArray, sql, type SQL, type SQLWrapper } from "drizzle-orm";
 
 import { createTRPCRouter, confirmedProtectedProcedure as protectedProcedure } from "../trpc";
 import {
@@ -91,6 +91,14 @@ const syncEventsOutputSchema = z.object({
 const syncCursorsSchema = z.object({
   /** Cursor for entries - max of GREATEST(entries.updated_at, user_entries.updated_at) */
   entries: z.string().datetime().nullable(),
+  /**
+   * Id tiebreaker for the entries cursor. Together `(entries, entriesAfterId)`
+   * form a keyset so a catch-up can page within a group of entries sharing one
+   * timestamp (e.g. a large mark-all-read) instead of losing the tied rows to a
+   * strict `>` comparison. It is the id of the entry achieving the max entries
+   * timestamp; null when there are no entries.
+   */
+  entriesAfterId: z.string().uuid().nullable(),
   /** Cursor for subscriptions - max(subscriptions.updated_at), covers both active and removed */
   subscriptions: z.string().datetime().nullable(),
   /** Cursor for tags - max(tags.updated_at), covers creates, updates, and soft deletes */
@@ -119,17 +127,26 @@ export const syncRouter = createTRPCRouter({
     // Avoids JavaScript Date truncation which loses microseconds and causes
     // cursor comparison bugs (see #680).
     const [entriesResult, subscriptionsResult, tagsResult] = await Promise.all([
-      // Entries: max of GREATEST(entries.updated_at, user_entries.updated_at)
-      // This catches both entry metadata changes AND read/starred state changes
+      // Entries: newest GREATEST(entries.updated_at, user_entries.updated_at)
+      // plus the id of the entry achieving it, forming the `(entries,
+      // entriesAfterId)` keyset. This catches both entry metadata changes AND
+      // read/starred state changes; the id lets a catch-up page within a tied
+      // timestamp group. Ordered by (key DESC, id DESC) so LIMIT 1 is the argmax.
       ctx.db
         .select({
           max: sql<
             string | null
-          >`to_char(MAX(GREATEST(${entries.updatedAt}, ${userEntries.updatedAt})) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
+          >`to_char(GREATEST(${entries.updatedAt}, ${userEntries.updatedAt}) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
+          maxId: entries.id,
         })
         .from(userEntries)
         .innerJoin(entries, eq(entries.id, userEntries.entryId))
-        .where(eq(userEntries.userId, userId)),
+        .where(eq(userEntries.userId, userId))
+        .orderBy(
+          sql`GREATEST(${entries.updatedAt}, ${userEntries.updatedAt}) DESC`,
+          sql`${entries.id} DESC`
+        )
+        .limit(1),
 
       // Subscriptions: max(updated_at) from ALL subscriptions (active and removed)
       // updated_at is set when unsubscribing, so this covers both cases
@@ -155,6 +172,7 @@ export const syncRouter = createTRPCRouter({
 
     return {
       entries: entriesResult[0]?.max ?? null,
+      entriesAfterId: entriesResult[0]?.maxId ?? null,
       subscriptions: subscriptionsResult[0]?.max ?? null,
       tags: tagsResult[0]?.max ?? null,
     };
@@ -179,6 +197,12 @@ export const syncRouter = createTRPCRouter({
         cursors: z
           .object({
             entries: z.string().datetime().optional(),
+            /**
+             * Id tiebreaker for the entries cursor (keyset pagination within a
+             * tied-timestamp group). Optional for backward compatibility: when
+             * absent the server falls back to a strict timestamp comparison.
+             */
+            entriesAfterId: z.string().uuid().optional(),
             subscriptions: z.string().datetime().optional(),
             tags: z.string().datetime().optional(),
           })
@@ -216,9 +240,32 @@ export const syncRouter = createTRPCRouter({
       // Uses GREATEST(entries.updated_at, user_entries.updated_at) > cursor
       // to catch all changes with a single cursor, avoiding missed updates
       // when one timestamp advances past the other (see #738).
+      //
+      // Keyset pagination on (GREATEST(...), entry_id): markAllEntriesRead (and
+      // the subscribe-time insert) stamp one identical timestamp onto hundreds
+      // of rows, so a strict timestamp `>` cursor would drop every tied row past
+      // the MAX_ENTRIES boundary permanently. Carrying the entry id as a
+      // tiebreaker (same pattern as listEntries) lets the client page within a
+      // tied-timestamp group. See #1080.
+      //
+      // The metadata/state/new booleans are computed in SQL against the same
+      // (ts, id) keyset the selection uses — not with JavaScript Date math —
+      // because new Date() truncates Postgres µs to ms, which could select a row
+      // by µs precision yet then emit no event (leaving the cursor stuck). #1080
       // ========================================================================
       if (entriesCursor) {
-        const entriesCursorDate = new Date(entriesCursor);
+        const entriesAfterId = input.cursors?.entriesAfterId ?? null;
+
+        // `col` is "after" the keyset cursor when it is past the timestamp, or at
+        // the timestamp with a larger entry id. Without an id tiebreaker (legacy
+        // clients / first sync) fall back to a strict timestamp comparison.
+        const afterCursor = (col: SQLWrapper): SQL =>
+          entriesAfterId
+            ? sql`(${col} > ${entriesCursor}::timestamptz OR (${col} = ${entriesCursor}::timestamptz AND ${entries.id} > ${entriesAfterId}::uuid))`
+            : sql`${col} > ${entriesCursor}::timestamptz`;
+
+        const greatest = sql`GREATEST(${entries.updatedAt}, ${userEntries.updatedAt})`;
+
         const changedEntryResults = await ctx.db
           .select({
             id: entries.id,
@@ -230,17 +277,19 @@ export const syncRouter = createTRPCRouter({
             fetchedAt: entries.fetchedAt,
             siteName: entries.siteName,
             isSpam: entries.isSpam,
-            createdAt: entries.createdAt,
-            entryUpdatedAt: entries.updatedAt,
             read: userEntries.read,
             starred: userEntries.starred,
-            userEntryUpdatedAt: userEntries.updatedAt,
             subscriptionId: subscriptions.id,
             feedId: entries.feedId,
             feedType: feeds.type,
             feedTitle: feeds.title,
+            // Categorization booleans, computed in SQL at µs precision against
+            // the keyset cursor so selection and categorization never disagree.
+            metadataChanged: sql<boolean>`${afterCursor(entries.updatedAt)}`,
+            stateChanged: sql<boolean>`${afterCursor(userEntries.updatedAt)}`,
+            isNew: sql<boolean>`${afterCursor(entries.createdAt)}`,
             // Raw ISO string with µs precision for cursor/timestamp output
-            maxUpdatedAtRaw: sql<string>`to_char(GREATEST(${entries.updatedAt}, ${userEntries.updatedAt}) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
+            maxUpdatedAtRaw: sql<string>`to_char(${greatest} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
           })
           .from(userEntries)
           .innerJoin(entries, eq(entries.id, userEntries.entryId))
@@ -256,14 +305,20 @@ export const syncRouter = createTRPCRouter({
           .where(
             and(
               eq(userEntries.userId, userId),
-              sql`GREATEST(${entries.updatedAt}, ${userEntries.updatedAt}) > ${entriesCursor}::timestamptz`,
-              // Visibility: match visible_entries view logic
-              // LEFT JOIN produces NULL unsubscribedAt for saved articles (no subscription),
-              // and NULL IS NULL = TRUE, so saved articles pass this check
-              sql`(${subscriptions.unsubscribedAt} IS NULL OR ${userEntries.starred} = true)`
+              afterCursor(greatest),
+              // Fail-closed visibility, matching the visible_entries view
+              // (migration 0073): an entry is visible only via an ACTIVE
+              // subscription, being starred, or being a saved article. The old
+              // `subscriptions.unsubscribed_at IS NULL` was fail-OPEN — for an
+              // orphaned user_entries row the LEFT JOIN yields NULL and
+              // `NULL IS NULL` = TRUE, leaking entries the web app hides. #1080
+              sql`((${subscriptions.id} IS NOT NULL AND ${subscriptions.unsubscribedAt} IS NULL) OR ${userEntries.starred} = true OR ${entries.type} = 'saved')`
             )
           )
-          .orderBy(sql`GREATEST(${entries.updatedAt}, ${userEntries.updatedAt})`)
+          // uq_subscriptions_user_feed guarantees at most one subscription per
+          // (user, feed), so the LEFT JOINs above can't fan out an entry into
+          // duplicate rows/events.
+          .orderBy(greatest, entries.id)
           .limit(MAX_ENTRIES + 1);
 
         if (changedEntryResults.length > MAX_ENTRIES) {
@@ -276,18 +331,14 @@ export const syncRouter = createTRPCRouter({
         // events for each — the frontend handles them with different cache updates.
 
         // Collect entries with state changes for batch count computation
-        const stateChangedEntries = changedEntryResults.filter(
-          (row) => row.userEntryUpdatedAt > entriesCursorDate
-        );
+        const stateChangedEntries = changedEntryResults.filter((row) => row.stateChanged);
 
         // Entries created after the cursor emit new_entry events. Compute one
         // absolute-count snapshot covering all of them so each new_entry event
         // carries server-authoritative counts (the client sets them directly
         // rather than applying a +1 delta, making the events idempotent across
         // the live-SSE / catch-up-sync overlap).
-        const newEntries = changedEntryResults.filter(
-          (row) => row.entryUpdatedAt > entriesCursorDate && row.createdAt > entriesCursorDate
-        );
+        const newEntries = changedEntryResults.filter((row) => row.metadataChanged && row.isNew);
         const newEntryCounts =
           newEntries.length > 0
             ? await getBulkEntryRelatedCounts(
@@ -316,11 +367,11 @@ export const syncRouter = createTRPCRouter({
             : undefined;
 
         for (const row of changedEntryResults) {
-          const entryMetadataChanged = row.entryUpdatedAt > entriesCursorDate;
-          const entryStateChanged = row.userEntryUpdatedAt > entriesCursorDate;
+          const entryMetadataChanged = row.metadataChanged;
+          const entryStateChanged = row.stateChanged;
 
           if (entryMetadataChanged) {
-            if (row.createdAt > entriesCursorDate) {
+            if (row.isNew) {
               // New entry created after cursor - emit new_entry for count and
               // list updates. The entry payload mirrors the live SSE path so a
               // catch-up sync inserts missed entries into cached lists too.
