@@ -973,6 +973,11 @@ export async function getEntries(
  *   change still publishes (count-less) and `counts` is returned as null. See
  *   the count-cost note on the compat routes.
  */
+// Overloads narrow the return: omitted/`true` computeCounts → non-null counts;
+// literal `false` → null. Pass computeCounts as a literal (all callers do); a
+// value typed as a plain `boolean` matches neither overload — widen the call
+// site to a literal, or add a `computeCounts?: boolean` overload if a dynamic
+// caller ever appears.
 export async function markEntriesRead(
   db: DbOrTx,
   userId: string,
@@ -1300,6 +1305,8 @@ export async function markAllEntriesRead(
  *   Google Reader and Wallabag compat routes) pass false: the star change still
  *   publishes (count-less) and `counts` is returned as null. See markEntriesRead.
  */
+// Pass computeCounts as a literal (see the overload note on markEntriesRead): a
+// plain `boolean` value matches neither overload.
 export async function updateEntryStarred(
   db: typeof dbType,
   userId: string,
