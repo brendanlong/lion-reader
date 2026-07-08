@@ -20,8 +20,9 @@
 import { requireAuth } from "@/server/google-reader/auth";
 import { jsonResponse, errorResponse } from "@/server/google-reader/parse";
 import { parseStreamId } from "@/server/google-reader/streams";
-import { uuidToInt64, feedStreamId } from "@/server/google-reader/id";
-import { resolveFeedStream } from "@/server/google-reader/id";
+import { uuidToInt64 } from "@/server/google-reader/id";
+import { entryFeedStreamId } from "@/server/google-reader/format";
+import { resolveFeedStreamFilter } from "@/server/google-reader/subscriptions";
 import { resolveTagByName } from "@/server/google-reader/tags";
 import { isState } from "@/server/google-reader/streams";
 import * as entriesService from "@/server/services/entries";
@@ -83,15 +84,15 @@ export async function GET(request: Request): Promise<Response> {
 
   switch (parsedStream.type) {
     case "feed": {
-      const resolved = await resolveFeedStream(db, session.user.id, parsedStream.subscriptionInt64);
-      if (!resolved) {
+      const filter = await resolveFeedStreamFilter(
+        db,
+        session.user.id,
+        parsedStream.subscriptionInt64
+      );
+      if (!filter) {
         return errorResponse("Subscription not found", 404);
       }
-      if (resolved.kind === "saved") {
-        listParams.type = "saved";
-      } else {
-        listParams.subscriptionId = resolved.subscriptionId;
-      }
+      Object.assign(listParams, filter);
       break;
     }
     case "state": {
@@ -146,13 +147,10 @@ export async function GET(request: Request): Promise<Response> {
 
   const itemRefs = result.items.map((entry) => {
     const int64Id = uuidToInt64(entry.id);
-    // Saved articles have no subscription; address them by their saved-feed id
-    // (issue #730) so the ref points at the synthetic "Saved Articles" feed.
-    const directStreamId = entry.subscriptionId
-      ? feedStreamId(entry.subscriptionId)
-      : entry.type === "saved"
-        ? feedStreamId(entry.feedId)
-        : null;
+    // Saved articles have no subscription; `entryFeedStreamId` addresses them by
+    // their saved-feed id (issue #730) so the ref points at the synthetic
+    // "Saved Articles" feed, matching the item's origin.
+    const directStreamId = entryFeedStreamId(entry);
     return {
       id: int64Id.toString(),
       directStreamIds: directStreamId ? [directStreamId] : [],
