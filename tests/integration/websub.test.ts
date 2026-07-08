@@ -20,7 +20,10 @@ import {
   handleVerificationChallengeByFeed,
   verifyHmacSignature,
   verifyHmacSignatureByFeed,
+  renewExpiringSubscriptions,
+  subscribeToHub,
   MAX_LEASE_SECONDS,
+  RENEWAL_STALL_GRACE_MS,
 } from "../../src/server/feed/websub";
 import {
   recordHubAnnouncedEntries,
@@ -699,6 +702,199 @@ describe("WebSub Integration", () => {
       expect(await verifyHmacSignature(feed.id, subscription.id, signature, body)).toBe(true);
       // Same secret/body but an unknown subscription ID -> rejected.
       expect(await verifyHmacSignature(feed.id, generateUuidv7(), signature, body)).toBe(false);
+    });
+  });
+
+  // Non-disruptive renewal (issue #1079): a renewal keeps the subscription
+  // active under its unchanged secret and just re-requests the lease. A renewal
+  // whose verification never lands self-heals via the sweep (reverting to
+  // polling once past the grace window) instead of wedging the feed push-dead.
+  describe("non-disruptive renewal", () => {
+    it("renewal verification extends the lease without changing the secret", async () => {
+      const feed = await createTestFeed();
+      const topicUrl = feed.selfUrl ?? feed.url ?? "https://example.com/feed.xml";
+      const secret = generateCallbackSecret();
+      const { subscription } = await createTestSubscription(feed.id, {
+        topicUrl,
+        state: "active",
+        callbackSecret: secret,
+        // Nearly expired - a renewal is in flight.
+        expiresAt: new Date(Date.now() + 60 * 1000),
+      });
+
+      const before = Date.now();
+      const result = await handleVerificationChallenge(feed.id, subscription.id, {
+        mode: "subscribe",
+        topic: topicUrl,
+        challenge: "renewal-challenge",
+        leaseSeconds: "3600",
+      });
+
+      expect(result.success).toBe(true);
+
+      const [renewed] = await db
+        .select()
+        .from(websubSubscriptions)
+        .where(eq(websubSubscriptions.id, subscription.id));
+      expect(renewed.state).toBe("active");
+      // Secret is untouched (it never rotates for a row).
+      expect(renewed.callbackSecret).toBe(secret);
+      expect(renewed.leaseSeconds).toBe(3600);
+      // Lease extended into the future, taking the row out of the stale window.
+      expect(renewed.expiresAt!.getTime()).toBeGreaterThanOrEqual(before + 3600 * 1000);
+    });
+
+    it("pushes are never dropped during a renewal (secret stays valid)", async () => {
+      // The row stays active under the same secret throughout a renewal, so a
+      // content push arriving mid-renewal always verifies.
+      const feed = await createTestFeed();
+      const secret = generateCallbackSecret();
+      const { subscription } = await createTestSubscription(feed.id, {
+        state: "active",
+        callbackSecret: secret,
+        expiresAt: new Date(Date.now() + 60 * 1000),
+      });
+
+      const body = SAMPLE_RSS_FEED;
+      const signature = `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
+      expect(await verifyHmacSignature(feed.id, subscription.id, signature, body)).toBe(true);
+    });
+
+    it("declines a subscribe verification for an already-unsubscribed subscription", async () => {
+      // The sweep gave up on a stalled renewal and reverted to polling; a late
+      // verification for that dead cycle must not resurrect the row.
+      const feed = await createTestFeed();
+      const topicUrl = feed.selfUrl ?? feed.url ?? "https://example.com/feed.xml";
+      const { subscription } = await createTestSubscription(feed.id, {
+        topicUrl,
+        state: "unsubscribed",
+        unsubscribeRequestedAt: new Date(),
+      });
+
+      const result = await handleVerificationChallenge(feed.id, subscription.id, {
+        mode: "subscribe",
+        topic: topicUrl,
+        challenge: "late-challenge",
+        leaseSeconds: "3600",
+      });
+
+      expect(result.success).toBe(false);
+
+      const [after] = await db
+        .select()
+        .from(websubSubscriptions)
+        .where(eq(websubSubscriptions.id, subscription.id));
+      expect(after.state).toBe("unsubscribed");
+      const [unchangedFeed] = await db.select().from(feeds).where(eq(feeds.id, feed.id)).limit(1);
+      expect(unchangedFeed.websubActive ?? false).toBe(false);
+    });
+
+    it("sweep reverts a feed to polling once a renewal stalls past the grace window", async () => {
+      // A renewal the hub accepted but never verified: expiresAt is far enough in
+      // the past that the sweep gives up and reverts to polling.
+      const prevAppUrl = process.env.NEXT_PUBLIC_APP_URL;
+      process.env.NEXT_PUBLIC_APP_URL = "https://reader.example.com";
+      try {
+        const feed = await createTestFeed({ websubActive: true });
+        const { subscription } = await createTestSubscription(feed.id, {
+          state: "active",
+          expiresAt: new Date(Date.now() - RENEWAL_STALL_GRACE_MS - 60 * 1000),
+        });
+
+        const result = await renewExpiringSubscriptions(24);
+        expect(result.failed).toBeGreaterThanOrEqual(1);
+
+        const [swept] = await db
+          .select()
+          .from(websubSubscriptions)
+          .where(eq(websubSubscriptions.id, subscription.id));
+        expect(swept.state).toBe("unsubscribed");
+        expect(swept.unsubscribeRequestedAt).toBeInstanceOf(Date);
+
+        const [updatedFeed] = await db.select().from(feeds).where(eq(feeds.id, feed.id)).limit(1);
+        expect(updatedFeed.websubActive).toBe(false);
+      } finally {
+        process.env.NEXT_PUBLIC_APP_URL = prevAppUrl;
+      }
+    });
+
+    it("sweep does NOT revert a subscription that is expired but still within grace", async () => {
+      // Expired (so it's in the sweep) but not yet past the grace window: the hub
+      // POST fails (unreachable), yet the subscription must stay active to retry.
+      const prevAppUrl = process.env.NEXT_PUBLIC_APP_URL;
+      process.env.NEXT_PUBLIC_APP_URL = "https://reader.example.com";
+      try {
+        const feed = await createTestFeed({
+          websubActive: true,
+          hubUrl: "https://hub.invalid.example/",
+          selfUrl: "https://example.com/feed-post-fail.xml",
+        });
+        const workingSecret = generateCallbackSecret();
+        const { subscription } = await createTestSubscription(feed.id, {
+          hubUrl: "https://hub.invalid.example/",
+          topicUrl: "https://example.com/feed-post-fail.xml",
+          state: "active",
+          callbackSecret: workingSecret,
+          // Just expired - within the grace window, so a stall give-up must not fire.
+          expiresAt: new Date(Date.now() - 60 * 1000),
+        });
+
+        await renewExpiringSubscriptions(24);
+
+        const [afterSweep] = await db
+          .select()
+          .from(websubSubscriptions)
+          .where(eq(websubSubscriptions.id, subscription.id));
+        // Still active - not torn down over an unreachable hub within grace.
+        expect(afterSweep.state).toBe("active");
+        // Secret is unchanged (never rotated on renewal).
+        expect(afterSweep.callbackSecret).toBe(workingSecret);
+
+        const [updatedFeed] = await db.select().from(feeds).where(eq(feeds.id, feed.id)).limit(1);
+        expect(updatedFeed.websubActive).toBe(true);
+      } finally {
+        process.env.NEXT_PUBLIC_APP_URL = prevAppUrl;
+      }
+    });
+
+    it("subscribeToHub resubscribing a reused unsubscribed row keeps its secret and clears the unsubscribe request", async () => {
+      // After a give-up, the row is unsubscribed with unsubscribe_requested_at set.
+      // A later resubscribe reuses the row through the real subscribeToHub path: its
+      // secret is preserved and the stale unsubscribe request is cleared so a
+      // hub-initiated unsubscribe can't be spuriously confirmed later. The hub POST
+      // fails (invalid host), but the DB reset happens before the POST.
+      const prevAppUrl = process.env.NEXT_PUBLIC_APP_URL;
+      process.env.NEXT_PUBLIC_APP_URL = "https://reader.example.com";
+      try {
+        const feed = await createTestFeed({
+          hubUrl: "https://hub.invalid.example/",
+          selfUrl: "https://example.com/feed-resub.xml",
+        });
+        const secret = generateCallbackSecret();
+        const { subscription } = await createTestSubscription(feed.id, {
+          hubUrl: "https://hub.invalid.example/",
+          topicUrl: "https://example.com/feed-resub.xml",
+          state: "unsubscribed",
+          callbackSecret: secret,
+          unsubscribeRequestedAt: new Date(),
+        });
+
+        // Real fetch-path resubscribe; POST fails but the row reset already applied.
+        const result = await subscribeToHub(feed);
+        expect(result.success).toBe(false);
+
+        const [reset] = await db
+          .select()
+          .from(websubSubscriptions)
+          .where(eq(websubSubscriptions.id, subscription.id));
+        expect(reset.state).toBe("pending");
+        // Secret survived the unsubscribe/resubscribe cycle (never rotated).
+        expect(reset.callbackSecret).toBe(secret);
+        // Stale unsubscribe request cleared so a later hub unsubscribe can't be confirmed.
+        expect(reset.unsubscribeRequestedAt).toBeNull();
+      } finally {
+        process.env.NEXT_PUBLIC_APP_URL = prevAppUrl;
+      }
     });
   });
 
