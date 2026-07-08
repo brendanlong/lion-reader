@@ -16,7 +16,7 @@ import { toNewEntryListData, type NewEntryListDataSource } from "@/lib/events/sc
 import { deriveEntryUrl, type ParsedEntry, type ParsedFeed } from "./types";
 import { cleanEntryContent } from "./content-utils";
 import { generateSummary } from "../html/strip-html";
-import { withSanitizedEntryContent } from "../html/sanitize-entry";
+import { withSanitizedEntryContent, withSanitizedEntryContentAsync } from "../html/sanitize-entry";
 import { logger } from "@/lib/logger";
 
 /**
@@ -70,6 +70,13 @@ export interface ProcessEntriesOptions {
   feedUrl?: string;
   /** The feed's title (feeds.title), carried on new_entry events for list display */
   feedTitle?: string | null;
+  /**
+   * Offload large-body HTML sanitization to the worker pool instead of running
+   * it inline. Set on app-server request paths (WebSub ingest) so a fat push
+   * doesn't block the event loop; left false for background jobs (feed worker,
+   * email ingest), which already run off the request path. See CLAUDE.md.
+   */
+  offloadSanitize?: boolean;
 }
 
 /**
@@ -204,7 +211,8 @@ export async function createEntry(
   parsedEntry: ParsedEntry,
   contentHash: string,
   fetchedAt: Date,
-  feedUrl?: string
+  feedUrl?: string,
+  offloadSanitize = false
 ): Promise<Entry> {
   const guid = deriveGuid(parsedEntry);
   const entryUrl = deriveEntryUrl(parsedEntry);
@@ -236,8 +244,13 @@ export async function createEntry(
   };
 
   // Sanitize once at write time so entries.get serves it without re-running
-  // sanitize-html on every read.
-  const [entry] = await db.insert(entries).values(withSanitizedEntryContent(newEntry)).returning();
+  // sanitize-html on every read. Request-path callers (e.g. WebSub ingest in the
+  // app process) pass offloadSanitize so a large body goes to the worker pool
+  // instead of blocking the event loop; background jobs sanitize inline.
+  const values = offloadSanitize
+    ? await withSanitizedEntryContentAsync(newEntry)
+    : withSanitizedEntryContent(newEntry);
+  const [entry] = await db.insert(entries).values(values).returning();
 
   return entry;
 }
@@ -255,7 +268,8 @@ export async function updateEntryContent(
   entryId: string,
   parsedEntry: ParsedEntry,
   contentHash: string,
-  feedUrl?: string
+  feedUrl?: string,
+  offloadSanitize = false
 ): Promise<Entry> {
   const entryUrl = deriveEntryUrl(parsedEntry);
 
@@ -265,20 +279,24 @@ export async function updateEntryContent(
     feedUrl,
   });
 
+  // Content changed, so re-sanitize for the new output. offloadSanitize routes a
+  // large body through the worker pool on request paths (see createEntry).
+  const updateValues = {
+    url: entryUrl ?? null,
+    title: parsedEntry.title ?? null,
+    author: parsedEntry.author ?? null,
+    contentOriginal: cleaningResult.contentOriginal,
+    contentCleaned: cleaningResult.contentCleaned,
+    summary: cleaningResult.summary,
+    contentHash,
+    updatedAt: new Date(),
+  };
   const [entry] = await db
     .update(entries)
-    // Content changed, so withSanitizedEntryContent re-sanitizes for the new output.
     .set(
-      withSanitizedEntryContent({
-        url: entryUrl ?? null,
-        title: parsedEntry.title ?? null,
-        author: parsedEntry.author ?? null,
-        contentOriginal: cleaningResult.contentOriginal,
-        contentCleaned: cleaningResult.contentCleaned,
-        summary: cleaningResult.summary,
-        contentHash,
-        updatedAt: new Date(),
-      })
+      offloadSanitize
+        ? await withSanitizedEntryContentAsync(updateValues)
+        : withSanitizedEntryContent(updateValues)
     )
     .where(eq(entries.id, entryId))
     .returning();
@@ -302,7 +320,8 @@ export async function processEntry(
   feedType: "web" | "email" | "saved",
   parsedEntry: ParsedEntry,
   fetchedAt: Date,
-  feedUrl?: string
+  feedUrl?: string,
+  offloadSanitize = false
 ): Promise<ProcessedEntry> {
   const guid = deriveGuid(parsedEntry);
   const contentHash = generateContentHash(parsedEntry);
@@ -317,7 +336,15 @@ export async function processEntry(
     // computes per-user absolute counts from visible_entries when the event
     // arrives — publishing before the user_entries fanout would produce counts
     // that exclude this entry.
-    const entry = await createEntry(feedId, feedType, parsedEntry, contentHash, fetchedAt, feedUrl);
+    const entry = await createEntry(
+      feedId,
+      feedType,
+      parsedEntry,
+      contentHash,
+      fetchedAt,
+      feedUrl,
+      offloadSanitize
+    );
 
     return {
       id: entry.id,
@@ -332,7 +359,13 @@ export async function processEntry(
   // Entry exists - check if content changed
   if (existing.contentHash !== contentHash) {
     // Content changed - update it
-    const entry = await updateEntryContent(existing.id, parsedEntry, contentHash, feedUrl);
+    const entry = await updateEntryContent(
+      existing.id,
+      parsedEntry,
+      contentHash,
+      feedUrl,
+      offloadSanitize
+    );
 
     // Publish entry_updated event for real-time updates (safe to publish here:
     // subscribers' user_entries rows already exist for a previously-seen entry).
@@ -405,7 +438,8 @@ async function processEntryWithCache(
   parsedEntry: ParsedEntry,
   fetchedAt: Date,
   existingEntriesMap: Map<string, CachedEntryInfo>,
-  feedUrl?: string
+  feedUrl?: string,
+  offloadSanitize = false
 ): Promise<ProcessedEntry> {
   const guid = deriveGuid(parsedEntry);
   const contentHash = generateContentHash(parsedEntry);
@@ -418,7 +452,15 @@ async function processEntryWithCache(
     // Note: the new_entry event is NOT published here — processEntries
     // publishes it after createUserEntriesForFeed so the SSE endpoint's
     // per-user count computation sees the entry in visible_entries.
-    const entry = await createEntry(feedId, feedType, parsedEntry, contentHash, fetchedAt, feedUrl);
+    const entry = await createEntry(
+      feedId,
+      feedType,
+      parsedEntry,
+      contentHash,
+      fetchedAt,
+      feedUrl,
+      offloadSanitize
+    );
 
     // Add to cache so duplicate GUIDs in same feed don't create duplicates
     existingEntriesMap.set(guid, { id: entry.id, guid, contentHash });
@@ -436,7 +478,13 @@ async function processEntryWithCache(
   // Entry exists - check if content changed
   if (existing.contentHash !== contentHash) {
     // Content changed - update it
-    const entry = await updateEntryContent(existing.id, parsedEntry, contentHash, feedUrl);
+    const entry = await updateEntryContent(
+      existing.id,
+      parsedEntry,
+      contentHash,
+      feedUrl,
+      offloadSanitize
+    );
 
     // Update cache with new hash
     existingEntriesMap.set(guid, { ...existing, contentHash });
@@ -580,7 +628,13 @@ export async function processEntries(
   feed: ParsedFeed,
   options: ProcessEntriesOptions = {}
 ): Promise<ProcessEntriesResult> {
-  const { fetchedAt = new Date(), previousLastEntriesUpdatedAt, feedUrl, feedTitle } = options;
+  const {
+    fetchedAt = new Date(),
+    previousLastEntriesUpdatedAt,
+    feedUrl,
+    feedTitle,
+    offloadSanitize = false,
+  } = options;
 
   // Derive GUIDs from all items first, so we only query for entries we need
   const guidsToCheck: string[] = [];
@@ -623,7 +677,8 @@ export async function processEntries(
         item,
         fetchedAt,
         existingEntriesMap,
-        feedUrl
+        feedUrl,
+        offloadSanitize
       );
       results.push(result);
 

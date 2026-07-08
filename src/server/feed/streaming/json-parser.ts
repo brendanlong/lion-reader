@@ -67,7 +67,10 @@ function extractHubUrl(hubs: JsonFeedHub[] | undefined): string | undefined {
   for (const hub of hubs) {
     if (hub.type === "websub" && hub.url) return hub.url;
   }
-  return hubs[0].url;
+  // No WebSub-typed hub: don't fall back to a hub of another type (e.g.
+  // "rssCloud") — we'd POST a WebSub subscribe request to an endpoint that
+  // doesn't speak WebSub.
+  return undefined;
 }
 
 /**

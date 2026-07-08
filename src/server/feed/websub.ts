@@ -671,9 +671,17 @@ function computeSignatureValid(
     return false;
   }
 
+  // Whitelist the hash algorithm per the WebSub spec. Without this, the hub
+  // header dictates which digest we compute (e.g. a weak "md5="), letting an
+  // attacker downgrade the check to an algorithm they can forge.
+  const ALLOWED_ALGORITHMS = new Set(["sha1", "sha256", "sha384", "sha512"]);
+  if (!ALLOWED_ALGORITHMS.has(algorithm.toLowerCase())) {
+    logger.warn("WebSub signature uses disallowed algorithm", { feedId, algorithm });
+    return false;
+  }
+
   try {
-    // Compute expected signature (hub sends sha1, sha256, etc. which Node crypto accepts directly)
-    const hmac = createHmac(algorithm, subscription.callbackSecret);
+    const hmac = createHmac(algorithm.toLowerCase(), subscription.callbackSecret);
     hmac.update(body);
     const computedDigest = hmac.digest("hex");
 

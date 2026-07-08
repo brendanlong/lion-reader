@@ -50,6 +50,12 @@ export function parseAtom(content: string): FeedParseResult {
   let state: AtomParserState = "initial";
   let textBuffer = "";
   let inFeedLevel = false;
+  // Depth of nested <source> elements inside the current entry. Atom copies an
+  // entry with a <source> describing its *original* feed (Planet-style
+  // aggregators do this), whose <id>/<title>/<published>/<link> would otherwise
+  // overwrite the entry's own fields. While inside a <source> we ignore element
+  // mapping so those children don't clobber the entry.
+  let sourceDepth = 0;
 
   const entries: ParsedEntry[] = [];
   let parseError: Error | null = null;
@@ -69,6 +75,13 @@ export function parseAtom(content: string): FeedParseResult {
           currentEntry = {};
           currentEntryContent = undefined;
           inFeedLevel = false;
+          sourceDepth = 0;
+        }
+
+        // Track <source> nesting so the copied source feed's metadata doesn't
+        // overwrite the entry's own fields.
+        if (tagName === "source") {
+          sourceDepth++;
         }
 
         if (inFeedLevel && state === "in_feed") {
@@ -90,7 +103,11 @@ export function parseAtom(content: string): FeedParseResult {
           }
         }
 
-        if (state === "in_entry" && currentEntry) {
+        // Skip element mapping while inside a copied <source> (sourceDepth > 0):
+        // the entry's <source> reopens as `tagName === "source"`, so sourceDepth
+        // is already ≥ 1 here and its children (id/title/published/link/...) are
+        // ignored rather than overwriting the entry's own fields.
+        if (state === "in_entry" && currentEntry && sourceDepth === 0) {
           if (tagName === "id") state = "in_entry_id";
           else if (tagName === "title") state = "in_entry_title";
           else if (tagName === "summary") state = "in_entry_summary";
@@ -108,7 +125,7 @@ export function parseAtom(content: string): FeedParseResult {
           }
         }
 
-        if (state === "in_entry_author" && tagName === "name") {
+        if (state === "in_entry_author" && tagName === "name" && sourceDepth === 0) {
           state = "in_entry_author_name";
         }
 
@@ -121,6 +138,11 @@ export function parseAtom(content: string): FeedParseResult {
 
       onclosetag(name) {
         const tagName = name.toLowerCase();
+
+        if (tagName === "source" && sourceDepth > 0) {
+          sourceDepth--;
+        }
+
         const trimmedText = textBuffer.trim();
         // Entities are decoded natively by htmlparser2 (decodeEntities: true),
         // while CDATA stays literal. Decoding again would corrupt escaped HTML

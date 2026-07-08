@@ -452,6 +452,23 @@ describe("WebSub Integration", () => {
 
       expect(isValid).toBe(true);
     });
+
+    it("rejects a disallowed algorithm even with a correct digest", async () => {
+      const feed = await createTestFeed();
+      const { secret } = await createTestSubscription(feed.id, { state: "active" });
+
+      // A correctly-computed md5 HMAC must still be rejected: the WebSub spec
+      // only permits sha1/sha256/sha384/sha512, and honoring an attacker-named
+      // weak algorithm would let them downgrade the check.
+      const body = "content notification body";
+      const hmac = createHmac("md5", secret);
+      hmac.update(body);
+      const signature = `md5=${hmac.digest("hex")}`;
+
+      const isValid = await verifyHmacSignatureByFeed(feed.id, signature, body);
+
+      expect(isValid).toBe(false);
+    });
   });
 
   describe("WebSub subscription lifecycle", () => {

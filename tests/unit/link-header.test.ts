@@ -68,6 +68,21 @@ describe("parseWebSubLinkHeaders", () => {
     });
   });
 
+  describe("multi-value rel", () => {
+    it("extracts self from a space-separated rel with multiple relation types", () => {
+      // RFC 8288 allows rel="alternate self"; the self link must still be found.
+      const result = parseWebSubLinkHeaders('<https://example.com/feed.xml>; rel="alternate self"');
+
+      expect(result.selfUrl).toBe("https://example.com/feed.xml");
+    });
+
+    it("extracts hub from a multi-value rel", () => {
+      const result = parseWebSubLinkHeaders('<https://hub.example.com/>; rel="hub preload"');
+
+      expect(result.hubUrl).toBe("https://hub.example.com/");
+    });
+  });
+
   describe("edge cases", () => {
     it("returns empty object for empty string", () => {
       const result = parseWebSubLinkHeaders("");
