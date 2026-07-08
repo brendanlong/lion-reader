@@ -525,6 +525,16 @@ async function processEntryWithCache(
  *
  * Only applies to rss/atom/json feeds - email/saved entries don't use lastSeenAt.
  *
+ * Deliberately does NOT touch `updated_at`: that column is the "content changed"
+ * signal (set only by createEntry/updateEntryContent) and drives every
+ * subscriber's delta sync via visible_entries.updated_at (sync.events + the
+ * Wallabag `since` query). Bumping it here — on every still-present entry of any
+ * feed that gained a single item — would re-ship `entry_updated` payloads for
+ * entries whose content never changed and rewrite every wide row on the largest
+ * table (MVCC/WAL/index churn). `last_seen_at` alone is what visibility needs.
+ * We also only write rows whose `last_seen_at` actually differs, so entries just
+ * created in this fetch (already stamped with `fetchedAt`) aren't rewritten. See #1084.
+ *
  * @param entryIds - Array of entry IDs seen in this fetch
  * @param lastSeenAt - Timestamp to set (should match feed.lastFetchedAt)
  */
@@ -539,8 +549,10 @@ async function updateEntriesLastSeenAt(entryIds: string[], lastSeenAt: Date): Pr
     const batch = entryIds.slice(i, i + BATCH_SIZE);
     await db
       .update(entries)
-      .set({ lastSeenAt, updatedAt: new Date() })
-      .where(inArray(entries.id, batch));
+      .set({ lastSeenAt })
+      .where(
+        and(inArray(entries.id, batch), sql`${entries.lastSeenAt} IS DISTINCT FROM ${lastSeenAt}`)
+      );
   }
 }
 
