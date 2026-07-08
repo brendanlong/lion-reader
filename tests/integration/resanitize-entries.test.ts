@@ -243,6 +243,54 @@ describe("resanitizeStaleEntries", () => {
     expect(row.contentSanitized).toBeNull(); // stale output not written
   });
 
+  it("persistResanitizedFamily skips a row already at a newer version (no downgrade)", async () => {
+    // A newer release wrote this family at version+1 (expand/contract rollout, or
+    // we're an old release running after a rollback). The strictly-less-than CAS
+    // must leave it untouched rather than clobber it with our older rules.
+    const feedId = await seedFeed();
+    const id = await seedStaleEntry(feedId, {
+      version: SANITIZER_VERSION + 1,
+      contentSanitized: "<p>NEWER</p>",
+    });
+
+    const persisted = await persistResanitizedFamily(
+      db,
+      id,
+      "content",
+      { original: "<p>older rules</p>", cleaned: "<p>older rules</p>" },
+      `hash-${id}`
+    );
+
+    expect(persisted).toBe(false);
+    const row = await getVersions(id);
+    expect(row.contentVersion).toBe(SANITIZER_VERSION + 1);
+    expect(row.contentSanitized).toBe("<p>NEWER</p>");
+  });
+
+  it("sweep heals a stale family but leaves a newer sibling family untouched", async () => {
+    // content is stale (version-1) while full_content was written by a newer
+    // release (version+1). The row is selected (LEAST = version-1 < current), so
+    // content heals, but the newer full-content family must not be downgraded.
+    const feedId = await seedFeed();
+    const id = await seedStaleEntry(feedId, { full: true });
+    await db
+      .update(entries)
+      .set({
+        fullContentSanitizedVersion: SANITIZER_VERSION + 1,
+        fullContentCleanedSanitized: "<p>NEWER FULL</p>",
+      })
+      .where(eq(entries.id, id));
+
+    const result = await resanitizeStaleEntries(db, { limit: 10 });
+
+    expect(result.contentResanitized).toBe(1);
+    expect(result.fullContentResanitized).toBe(0);
+    const row = await getVersions(id);
+    expect(row.contentVersion).toBe(SANITIZER_VERSION);
+    expect(row.fullVersion).toBe(SANITIZER_VERSION + 1);
+    expect(row.fullSanitized).toBe("<p>NEWER FULL</p>");
+  });
+
   it("uses idx_entries_resanitize with no sort (EXPLAIN)", async () => {
     const feedId = await seedFeed();
     // Enough rows + fresh stats so the planner has a real choice to make.

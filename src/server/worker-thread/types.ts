@@ -43,10 +43,20 @@ const sanitizeEntryHtmlRequestSchema = z.object({
   html: z.string(),
 });
 
+// Ask the worker which SANITIZER_VERSION its bundle was built with. The
+// worker-thread bundle embeds a snapshot of the sanitizer rules at build time,
+// so a stale bundle would sanitize with out-of-date rules while the main process
+// stamps rows with the current version. Callers compare the returned version to
+// the main process's to detect a stale build. See getWorkerSanitizerVersion.
+const sanitizerVersionRequestSchema = z.object({
+  type: z.literal("sanitizerVersion"),
+});
+
 export const workerRequestSchema = z.discriminatedUnion("type", [
   cleanContentRequestSchema,
   parseFeedRequestSchema,
   sanitizeEntryHtmlRequestSchema,
+  sanitizerVersionRequestSchema,
 ]);
 
 export type WorkerRequest = z.infer<typeof workerRequestSchema>;
@@ -72,6 +82,10 @@ export type CleanedContent = z.infer<typeof cleanedContentSchema>;
 
 export const sanitizeEntryHtmlResultSchema = z.object({
   sanitized: z.string().nullable(),
+});
+
+export const sanitizerVersionResultSchema = z.object({
+  version: z.number(),
 });
 
 const syndicationHintsSchema = z.object({

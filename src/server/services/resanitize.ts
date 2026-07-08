@@ -123,14 +123,32 @@ export function selectStaleEntriesForResanitize(db: typeof dbType, limit: number
 }
 
 /**
+ * True when a content family's stored sanitized version is behind the current
+ * `SANITIZER_VERSION` and so needs re-sanitizing. NULL means "has raw content but
+ * was never sanitized" (genuinely stale). A version *greater* than the current
+ * one — a row written by a newer release, e.g. during an expand/contract rollout
+ * or after a rollback — is deliberately NOT stale: we must never downgrade it to
+ * our older rules. Shared by the sweep and the bulk script so both gate the same.
+ */
+export function isSanitizedFamilyStale(version: number | null): boolean {
+  return version === null || version < SANITIZER_VERSION;
+}
+
+/**
  * Persists re-sanitized output for one content family under a two-part
  * compare-and-swap guard. Shared by the background sweep and the read-path
  * self-heal (`resolveSanitizedFamily`) so both persist identically. Returns
  * whether the row was actually updated.
  *
  * The guard skips the write unless BOTH still hold:
- * - `version IS DISTINCT FROM SANITIZER_VERSION` — a concurrent writer that
- *   already produced current-version output wins; we don't re-stamp it.
+ * - the stored version is still older than `SANITIZER_VERSION` (`version IS NULL
+ *   OR version < SANITIZER_VERSION`). This is strictly-less-than, not
+ *   `IS DISTINCT FROM`: a concurrent writer that already produced
+ *   current-version output wins (equal → skip), and — crucially — a row already
+ *   at a *newer* version than ours (a newer release wrote it during a rollout, or
+ *   we're an old release running after a rollback) is left untouched rather than
+ *   downgraded to our older sanitizer rules. NULL version means never-sanitized,
+ *   so it counts as stale.
  * - `hash IS NOT DISTINCT FROM expectedHash` — the raw content is still the one
  *   we sanitized from. The content hash changes whenever the raw content changes
  *   (`updateEntryContent` / `persistFullContentResult` co-write it), so this
@@ -169,7 +187,7 @@ export async function persistResanitizedFamily(
     .where(
       and(
         eq(entries.id, entryId),
-        sql`${versionColumn} IS DISTINCT FROM ${SANITIZER_VERSION}`,
+        sql`(${versionColumn} IS NULL OR ${versionColumn} < ${SANITIZER_VERSION})`,
         sql`${hashColumn} IS NOT DISTINCT FROM ${expectedHash}`
       )
     )
@@ -185,11 +203,11 @@ export async function persistResanitizedFamily(
  * behind — matching the staleness key, so every selected row heals at least one
  * family and then leaves the stale range (forward progress without a cursor).
  * Each family is re-derived from its raw columns and persisted with a
- * compare-and-swap guard (`version IS DISTINCT FROM SANITIZER_VERSION`), exactly
- * like the read-path self-heal in `resolveSanitizedFamily`: if a concurrent
- * writer (feed refresh, full-content fetch) already stored fresh content at the
- * current version, our guard matches no row and we skip it, so a value computed
- * from now-stale raw HTML can never clobber newer content.
+ * compare-and-swap guard (`version IS NULL OR version < SANITIZER_VERSION`),
+ * exactly like the read-path self-heal in `resolveSanitizedFamily`: if a
+ * concurrent writer (feed refresh, full-content fetch) already stored content at
+ * or beyond the current version, our guard matches no row and we skip it, so a
+ * value computed from now-stale raw HTML can never clobber newer content.
  *
  * Sanitizing is wrapped per row: a row whose HTML makes `sanitize-html` throw is
  * logged and skipped rather than failing the whole batch (which — since the
@@ -213,7 +231,7 @@ export async function resanitizeStaleEntries(
   for (const row of rows) {
     try {
       const contentHasRaw = row.contentOriginal !== null || row.contentCleaned !== null;
-      if (contentHasRaw && row.contentSanitizedVersion !== SANITIZER_VERSION) {
+      if (contentHasRaw && isSanitizedFamilyStale(row.contentSanitizedVersion)) {
         const persisted = await persistResanitizedFamily(
           db,
           row.id,
@@ -228,7 +246,7 @@ export async function resanitizeStaleEntries(
       }
 
       const fullHasRaw = row.fullContentOriginal !== null || row.fullContentCleaned !== null;
-      if (fullHasRaw && row.fullContentSanitizedVersion !== SANITIZER_VERSION) {
+      if (fullHasRaw && isSanitizedFamilyStale(row.fullContentSanitizedVersion)) {
         const persisted = await persistResanitizedFamily(
           db,
           row.id,
