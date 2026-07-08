@@ -27,8 +27,8 @@
  * clock: the DB sits idle while the CPU chews, and the CPU sits idle while the DB
  * fetches. Instead this runs both at once:
  *
- *   - A single **producer** walks the stale rows by keyset (`id < cursor`) in
- *     chunks and pushes each row into a bounded queue.
+ *   - A single **producer** walks the stale rows by keyset over
+ *     `(stalenessKey, id)` in chunks and pushes each row into a bounded queue.
  *   - `concurrency` **consumers** each pull one row at a time and sanitize its
  *     stale families in the piscina worker pool, then persist under the CAS guard.
  *
@@ -43,15 +43,22 @@
  *
  * ## Row selection
  *
- * We page the stale set (`RESANITIZE_STALENESS_KEY < SANITIZER_VERSION`) by
- * primary key descending, keyset-style (`id < cursor`). Right after a version
- * bump essentially every row is stale, so a backward scan of `entries_pkey`
- * finds a full chunk almost immediately on every page — a clean single pass with
- * no offset cost and no cursor to persist across runs. As rows heal they leave
- * the stale range, but we never revisit them because the cursor only moves toward
- * smaller ids, so healed/skipped rows don't cost us a re-fetch. (This favors the
- * common post-bump case; if only a sparse scattering of rows is stale, the tail
- * pages scan more of the pkey to find matches — acceptable for a one-shot tool.)
+ * We page the stale set (`RESANITIZE_STALENESS_KEY < SANITIZER_VERSION`) via the
+ * shared `selectStaleEntriesForResanitize`, ordered by the staleness key
+ * descending (then `id` descending) and keyset-paginated on `(stalenessKey, id)`.
+ * That ordering is exactly what `idx_entries_resanitize` provides, so every chunk
+ * is an index range seek into the stale rows — never a full table scan. This
+ * matters most *between* version bumps, when only a sparse scattering of rows is
+ * stale (or none): the earlier `ORDER BY id` walked `entries_pkey` and evaluated
+ * the staleness expression as a filter on every row, so a near-caught-up corpus
+ * cost a near-full-table scan per page just to find a handful of matches. Seeking
+ * the index instead makes an empty stale set return immediately.
+ *
+ * The cursor only moves toward smaller `(key, id)`, and healed rows leave the
+ * stale range entirely (their key jumps to `SANITIZER_VERSION`), so we never
+ * re-fetch a row we already passed — nor one the background sweep or a normal
+ * write healed ahead of us. No cursor is persisted across runs; a fresh run just
+ * re-seeks the current stale range from the top.
  *
  * ## Usage
  *
@@ -69,15 +76,12 @@
  * producer's fetches (default pool is 20).
  */
 
-import { and, desc, lt, sql } from "drizzle-orm";
-
 import { db, pool } from "../src/server/db";
-import { entries } from "../src/server/db/schema";
 import { SANITIZER_VERSION } from "../src/server/html/sanitize";
 import {
   isSanitizedFamilyStale,
   persistResanitizedFamily,
-  RESANITIZE_STALENESS_KEY,
+  selectStaleEntriesForResanitize,
 } from "../src/server/services/resanitize";
 import {
   getWorkerSanitizerVersion,
@@ -172,37 +176,16 @@ class BoundedQueue<T> {
 // Row selection + per-row work
 // ---------------------------------------------------------------------------
 
-type StaleRow = {
-  id: string;
-  contentOriginal: string | null;
-  contentCleaned: string | null;
-  contentSanitizedVersion: number | null;
-  contentHash: string | null;
-  fullContentOriginal: string | null;
-  fullContentCleaned: string | null;
-  fullContentSanitizedVersion: number | null;
-  fullContentHash: string | null;
-};
+// Row shape and query are shared with the background sweep so the two can't
+// drift (and so both use idx_entries_resanitize).
+type StaleRow = Awaited<ReturnType<typeof selectStaleEntriesForResanitize>>[number];
 
-/** Fetch the next chunk of stale rows with id < cursor (or from the top). */
-function fetchChunk(cursor: string | null, limit: number): Promise<StaleRow[]> {
-  const staleFilter = sql`${RESANITIZE_STALENESS_KEY} < ${SANITIZER_VERSION}`;
-  return db
-    .select({
-      id: entries.id,
-      contentOriginal: entries.contentOriginal,
-      contentCleaned: entries.contentCleaned,
-      contentSanitizedVersion: entries.contentSanitizedVersion,
-      contentHash: entries.contentHash,
-      fullContentOriginal: entries.fullContentOriginal,
-      fullContentCleaned: entries.fullContentCleaned,
-      fullContentSanitizedVersion: entries.fullContentSanitizedVersion,
-      fullContentHash: entries.fullContentHash,
-    })
-    .from(entries)
-    .where(cursor ? and(staleFilter, lt(entries.id, cursor)) : staleFilter)
-    .orderBy(desc(entries.id))
-    .limit(limit);
+/** Keyset cursor over the index ordering `(stalenessKey DESC, id DESC)`. */
+type Cursor = { stalenessKey: number; id: string };
+
+/** Fetch the next chunk of stale rows after the keyset cursor (or from the top). */
+function fetchChunk(cursor: Cursor | null, limit: number): Promise<StaleRow[]> {
+  return selectStaleEntriesForResanitize(db, limit, cursor ?? undefined);
 }
 
 type RowOutcome = { content: boolean; fullContent: boolean; failed: boolean };
@@ -324,12 +307,13 @@ async function main(): Promise<void> {
   // Producer: walk the stale set by keyset and feed the queue. `push` provides
   // backpressure, so this stays at most PREFETCH_CHUNKS ahead of the consumers.
   const producer = (async () => {
-    let cursor: string | null = null;
+    let cursor: Cursor | null = null;
     while (fetched < LIMIT) {
       const remaining = LIMIT - fetched;
       const chunk = await fetchChunk(cursor, Math.min(CHUNK_SIZE, remaining));
       if (chunk.length === 0) break;
-      cursor = chunk[chunk.length - 1].id;
+      const last = chunk[chunk.length - 1];
+      cursor = { stalenessKey: last.stalenessKey, id: last.id };
       fetched += chunk.length;
       for (const row of chunk) {
         await queue.push(row);

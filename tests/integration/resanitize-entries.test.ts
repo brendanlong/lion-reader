@@ -310,6 +310,29 @@ describe("resanitizeStaleEntries", () => {
     expect(plan).toContain("idx_entries_resanitize");
     expect(plan).not.toContain("Sort");
   });
+
+  it("uses idx_entries_resanitize with no sort when keyset-paginated (EXPLAIN)", async () => {
+    const feedId = await seedFeed();
+    for (let i = 0; i < 40; i++) await seedStaleEntry(feedId);
+    await db.execute(sql`ANALYZE entries`);
+
+    // The bulk script (scripts/resanitize-bulk.ts) pages the stale set with a
+    // keyset cursor; guard that the cursor variant still seeks the index rather
+    // than falling back to a pkey walk + filter (the pre-fix regression that
+    // scanned the whole table when little was stale).
+    const query = selectStaleEntriesForResanitize(db, RESANITIZE_BATCH_SIZE, {
+      stalenessKey: SANITIZER_VERSION - 1,
+      id: "ffffffff-ffff-ffff-ffff-ffffffffffff",
+    });
+    const plan = await db.transaction(async (tx) => {
+      await tx.execute(sql`SET LOCAL enable_seqscan = off`);
+      const explain = await tx.execute(sql`EXPLAIN ${query.getSQL()}`);
+      return explain.rows.map((r) => r["QUERY PLAN"] as string).join("\n");
+    });
+
+    expect(plan).toContain("idx_entries_resanitize");
+    expect(plan).not.toContain("Sort");
+  });
 });
 
 describe("handleResanitizeEntries", () => {
