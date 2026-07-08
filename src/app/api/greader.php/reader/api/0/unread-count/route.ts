@@ -10,6 +10,8 @@ import { requireAuth } from "@/server/google-reader/auth";
 import { jsonResponse } from "@/server/google-reader/parse";
 import { formatUnreadCounts } from "@/server/google-reader/format";
 import * as subscriptionsService from "@/server/services/subscriptions";
+import { countEntries } from "@/server/services/entries";
+import { getSavedFeedId } from "@/server/feed/saved-feed";
 import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
@@ -38,5 +40,17 @@ export async function GET(request: Request): Promise<Response> {
     cursor = result.nextCursor;
   } while (cursor);
 
-  return jsonResponse(formatUnreadCounts(allSubscriptions));
+  // Include the synthetic "Saved Articles" feed (issue #730) so its unread items
+  // are counted alongside subscriptions and folded into the reading-list total.
+  const savedFeedId = await getSavedFeedId(db, session.user.id);
+  let savedFeed: { feedId: string; unreadCount: number } | undefined;
+  if (savedFeedId) {
+    const { unread } = await countEntries(db, session.user.id, {
+      type: "saved",
+      showSpam: session.user.showSpam,
+    });
+    savedFeed = { feedId: savedFeedId, unreadCount: unread };
+  }
+
+  return jsonResponse(formatUnreadCounts(allSubscriptions, savedFeed));
 }

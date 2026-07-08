@@ -25,6 +25,7 @@
 import { eq, and, gte, lte, sql } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import { entries, subscriptions } from "@/server/db/schema";
+import { getSavedFeedId } from "@/server/feed/saved-feed";
 
 /**
  * Converts a UUIDv7 string to a signed 63-bit integer (as bigint).
@@ -225,11 +226,22 @@ export async function batchInt64ToUuid(
 }
 
 /**
+ * Builds a Google Reader feed stream ID ("feed/{int64}") from any feed-like
+ * UUID. Regular feeds are addressed by their *subscription* UUID (the
+ * subscription-centric model), while the per-user saved-articles feed has no
+ * subscription and is addressed by its own `feeds.id`. Both are just UUIDv7s
+ * projected to a 63-bit int, so the same encoding works for either.
+ */
+export function feedStreamId(uuid: string): string {
+  return `feed/${uuidToInt64(uuid).toString()}`;
+}
+
+/**
  * Converts a subscription UUIDv7 to a Google Reader feed stream ID.
  * Format: "feed/{int64}"
  */
 export function subscriptionToStreamId(subscriptionId: string): string {
-  return `feed/${uuidToInt64(subscriptionId).toString()}`;
+  return feedStreamId(subscriptionId);
 }
 
 /**
@@ -265,6 +277,40 @@ export async function feedStreamIdToSubscriptionUuid(
     if (extractRandomBits(candidateInt64) === randomBits) {
       return candidate.id;
     }
+  }
+
+  return null;
+}
+
+/**
+ * A resolved `feed/{int64}` stream: either a real subscription or the user's
+ * synthetic saved-articles feed (which has no subscription row and is exposed
+ * to Google Reader clients as an uncategorized "Saved Articles" subscription —
+ * see issue #730).
+ */
+export type FeedStreamResolution =
+  | { kind: "subscription"; subscriptionId: string }
+  | { kind: "saved"; feedId: string };
+
+/**
+ * Resolves a `feed/{int64}` stream ID to either a subscription or the user's
+ * saved-articles feed. Tries subscriptions first (the common case); if none
+ * matches, checks whether the int64 is the saved feed's own id. Returns null
+ * when it matches nothing the user owns.
+ */
+export async function resolveFeedStream(
+  db: typeof dbType,
+  userId: string,
+  streamId: bigint
+): Promise<FeedStreamResolution | null> {
+  const subscriptionId = await feedStreamIdToSubscriptionUuid(db, userId, streamId);
+  if (subscriptionId) {
+    return { kind: "subscription", subscriptionId };
+  }
+
+  const savedFeedId = await getSavedFeedId(db, userId);
+  if (savedFeedId && uuidToInt64(savedFeedId) === streamId) {
+    return { kind: "saved", feedId: savedFeedId };
   }
 
   return null;
