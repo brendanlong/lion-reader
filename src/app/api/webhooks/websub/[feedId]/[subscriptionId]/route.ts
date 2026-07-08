@@ -18,7 +18,7 @@ import { db } from "@/server/db";
 import { feeds } from "@/server/db/schema";
 import { handleVerificationChallenge, verifyHmacSignature } from "@/server/feed/websub";
 import { ingestWebsubNotification } from "@/server/feed/websub-notification";
-import { ContentTooLargeError, readRequestTextWithSizeLimit } from "@/server/http/fetch";
+import { ContentTooLargeError, readRequestBufferWithSizeLimit } from "@/server/http/fetch";
 import { usageLimitsConfig } from "@/server/config/env";
 import { logger } from "@/lib/logger";
 import { isValidUuid } from "@/lib/uuidv7";
@@ -115,9 +115,9 @@ export async function POST(
   // Bound the body BEFORE buffering + HMAC: anyone who learns a callback URL
   // (they leak via hub dashboards/proxies/logs) could otherwise POST an
   // arbitrarily large payload to exhaust memory.
-  let bodyText: string;
+  let bodyBuffer: Buffer;
   try {
-    bodyText = await readRequestTextWithSizeLimit(request, usageLimitsConfig.maxFeedSizeBytes);
+    bodyBuffer = await readRequestBufferWithSizeLimit(request, usageLimitsConfig.maxFeedSizeBytes);
   } catch (error) {
     if (error instanceof ContentTooLargeError) {
       logger.warn("WebSub notification body too large", { feedId, subscriptionId });
@@ -127,7 +127,8 @@ export async function POST(
   }
 
   const signature = request.headers.get("x-hub-signature");
-  const isValid = await verifyHmacSignature(feedId, subscriptionId, signature, bodyText);
+  // Verify over the raw bytes the hub signed, not a decoded/re-encoded string.
+  const isValid = await verifyHmacSignature(feedId, subscriptionId, signature, bodyBuffer);
 
   if (!isValid) {
     logger.warn("WebSub notification with invalid signature", {
@@ -144,7 +145,7 @@ export async function POST(
     return new Response("Feed not found", { status: 404 });
   }
 
-  await ingestWebsubNotification(feed, bodyText);
+  await ingestWebsubNotification(feed, bodyBuffer.toString());
 
   // Always return 200 to acknowledge receipt
   return new Response("OK", { status: 200 });
