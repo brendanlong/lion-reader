@@ -34,6 +34,7 @@ const article: DemoArticle = {
     <ul>
       <li><a href="https://www.rssboard.org/rss-specification" target="_blank" rel="noopener noreferrer">RSS 2.0 Specification</a></li>
       <li><a href="https://www.rfc-editor.org/rfc/rfc4287" target="_blank" rel="noopener noreferrer">Atom 1.0 Specification (RFC 4287)</a></li>
+      <li><a href="https://www.jsonfeed.org/version/1.1/" target="_blank" rel="noopener noreferrer">JSON Feed 1.1 Specification</a></li>
     </ul>
   `,
 };
