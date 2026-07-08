@@ -9,6 +9,7 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { db } from "../../src/server/db";
 import {
+  feeds,
   jobs,
   oauthAccessTokens,
   oauthAuthorizationCodes,
@@ -16,6 +17,7 @@ import {
   oauthConsentGrants,
   oauthRefreshTokens,
   sessions,
+  subscriptions,
   users,
 } from "../../src/server/db/schema";
 import { runRetentionCleanup } from "../../src/server/services/retention";
@@ -142,6 +144,49 @@ async function createAuthCode(userId: string, expiresAt: Date): Promise<string> 
   return id;
 }
 
+async function createFeed(): Promise<string> {
+  const id = generateUuidv7();
+  await db.insert(feeds).values({
+    id,
+    type: "web",
+    url: `https://retention-${id}.example.com/feed.xml`,
+  });
+  return id;
+}
+
+async function createSubscription(
+  userId: string,
+  feedId: string,
+  options: { unsubscribedAt?: Date } = {}
+): Promise<string> {
+  const id = generateUuidv7();
+  await db.insert(subscriptions).values({
+    id,
+    userId,
+    feedId,
+    unsubscribedAt: options.unsubscribedAt ?? null,
+  });
+  return id;
+}
+
+async function createFeedJob(
+  feedId: string,
+  options: { createdAt?: Date; runningSince?: Date } = {}
+): Promise<string> {
+  const id = generateUuidv7();
+  const createdAt = options.createdAt ?? new Date(Date.now() - DAY_MS);
+  await db.insert(jobs).values({
+    id,
+    type: "fetch_feed",
+    payload: { feedId },
+    nextRunAt: new Date(Date.now() - DAY_MS),
+    runningSince: options.runningSince ?? null,
+    createdAt,
+    updatedAt: createdAt,
+  });
+  return id;
+}
+
 async function cleanupTables(): Promise<void> {
   await db.delete(oauthRefreshTokens);
   await db.delete(oauthAccessTokens);
@@ -150,6 +195,8 @@ async function cleanupTables(): Promise<void> {
   await db.delete(oauthClients);
   await db.delete(sessions);
   await db.delete(jobs);
+  await db.delete(subscriptions);
+  await db.delete(feeds);
   await db.delete(users);
 }
 
@@ -290,6 +337,51 @@ describe("runRetentionCleanup", () => {
     expect(remaining).not.toContain(parkedId);
   });
 
+  it("deletes subscriber-less fetch_feed jobs but keeps subscribed, running, or fresh ones", async () => {
+    const userId = await createTestUser();
+
+    // Active subscriber: kept.
+    const subscribedFeed = await createFeed();
+    await createSubscription(userId, subscribedFeed);
+    const subscribedJobId = await createFeedJob(subscribedFeed);
+
+    // Only an unsubscribed (soft-deleted) subscription: dead, deleted.
+    const unsubscribedFeed = await createFeed();
+    await createSubscription(userId, unsubscribedFeed, { unsubscribedAt: new Date() });
+    const unsubscribedJobId = await createFeedJob(unsubscribedFeed);
+
+    // No subscription at all (e.g. deleteUser orphan cleanup): dead, deleted.
+    const orphanFeed = await createFeed();
+    const orphanJobId = await createFeedJob(orphanFeed);
+
+    // No subscribers but currently running: kept (never touch an in-flight job).
+    const runningFeed = await createFeed();
+    const runningJobId = await createFeedJob(runningFeed, { runningSince: new Date() });
+
+    // No subscribers, running_since set but stale (crashed mid-fetch): still
+    // kept — the guard is intentionally stricter than claimFeedJob's staleness
+    // check, deferring to a later sweep after the stale job is reclaimed.
+    const staleRunningFeed = await createFeed();
+    const staleRunningJobId = await createFeedJob(staleRunningFeed, {
+      runningSince: new Date(Date.now() - 7 * DAY_MS),
+    });
+
+    // No subscribers but freshly created — races the first-ever subscribe, whose
+    // job commits just before its subscription: kept by the created_at grace.
+    const freshFeed = await createFeed();
+    const freshJobId = await createFeedJob(freshFeed, { createdAt: new Date() });
+
+    const result = await runRetentionCleanup(db);
+
+    expect(result.deadFeedJobs).toBe(2);
+    const remaining = (await db.select({ id: jobs.id }).from(jobs)).map((r) => r.id);
+    expect(remaining.sort()).toEqual(
+      [subscribedJobId, runningJobId, staleRunningJobId, freshJobId].sort()
+    );
+    expect(remaining).not.toContain(unsubscribedJobId);
+    expect(remaining).not.toContain(orphanJobId);
+  });
+
   it("deletes orphaned old DCR clients but keeps recent or actively-used ones", async () => {
     const userId = await createTestUser();
     const old = new Date(Date.now() - 40 * DAY_MS);
@@ -351,6 +443,7 @@ describe("runRetentionCleanup", () => {
       oauthRefreshTokens: 0,
       oauthClients: 0,
       parkedJobs: 0,
+      deadFeedJobs: 0,
     });
   });
 });
