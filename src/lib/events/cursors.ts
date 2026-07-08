@@ -21,6 +21,14 @@ import type { SyncEvent } from "./schemas";
  * which carries no single entry id: advancing past `(T, MAX_UUID)` skips every
  * entry tied at timestamp T (they were all just marked read), so a catch-up
  * doesn't re-deliver them one by one.
+ *
+ * Known limitation (pre-existing, not introduced by the keyset): if an unrelated
+ * new entry is inserted at the *exact* same microsecond timestamp T as the
+ * mark-all-read and its live `new_entry` is missed, this sentinel makes a
+ * later catch-up skip it (`GREATEST = T AND id > MAX_UUID` is false). The old
+ * timestamp-only strict-`>` cursor had the identical blind spot. Collisions at
+ * µs precision are vanishingly rare, and `mark_all_read` already invalidates the
+ * entry lists, so the entry reappears on the next list refresh regardless.
  */
 const MAX_UUID = "ffffffff-ffff-ffff-ffff-ffffffffffff";
 
