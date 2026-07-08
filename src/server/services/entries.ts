@@ -17,7 +17,7 @@ import {
   or,
   type SQL,
 } from "drizzle-orm";
-import type { db as dbType } from "@/server/db";
+import type { db as dbType, DbOrTx } from "@/server/db";
 import {
   entries,
   feeds,
@@ -883,7 +883,7 @@ export async function getEntries(
  *   (weak negative signal). Only meaningful when marking read.
  */
 export async function markEntriesRead(
-  db: typeof dbType,
+  db: DbOrTx,
   userId: string,
   entriesToMark: MarkReadEntry[],
   read: boolean,

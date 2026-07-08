@@ -223,7 +223,17 @@ export const savedRouter = createTRPCRouter({
     })
     .input(
       z.object({
-        content: z.string().min(1, "File content is required"),
+        // Base64 inflates by ~4/3; cap the encoded string so an oversized upload
+        // is rejected by validation before we spend memory/CPU decoding it. The
+        // decoded byte length is enforced exactly below (base64 length is only an
+        // upper bound on decoded size). Slack covers padding/newlines.
+        content: z
+          .string()
+          .min(1, "File content is required")
+          .max(
+            Math.ceil((usageLimitsConfig.maxSavedArticleSizeBytes * 4) / 3) + 1024,
+            "File content exceeds the maximum saved article size"
+          ),
         filename: z.string().min(1, "Filename is required"),
         title: z.string().optional(),
       })
@@ -250,6 +260,12 @@ export const savedRouter = createTRPCRouter({
           code: "BAD_REQUEST",
           message: "Invalid file content encoding. Expected base64.",
         });
+      }
+
+      // Enforce the size limit on the decoded bytes before any conversion
+      // (mammoth/Readability/marked), so a large upload can't burn memory/CPU.
+      if (fileBuffer.length > usageLimitsConfig.maxSavedArticleSizeBytes) {
+        throw errors.contentTooLarge("Uploaded file", usageLimitsConfig.maxSavedArticleSizeBytes);
       }
 
       // Process the file
