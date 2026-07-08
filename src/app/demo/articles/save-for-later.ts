@@ -35,7 +35,7 @@ const article: DemoArticle = {
 
     <h3>Smart Content Extraction</h3>
 
-    <p>When you save a URL from a supported platform &mdash; like ArXiv, GitHub, Google Docs, or LessWrong &mdash; Lion Reader&rsquo;s <a href="/demo/all?entry=plugins"><strong>Plugin System</strong></a> uses platform-specific APIs to extract cleaner, more complete content than generic web scraping. For everything else, Readability handles the extraction. See the <a href="/demo/all?entry=plugins"><strong>Plugin System</strong></a> article for details on supported platforms.</p>
+    <p>When you save a URL from a supported platform &mdash; like ArXiv, GitHub, Google Docs, or LessWrong &mdash; Lion Reader&rsquo;s <strong>Plugin System</strong> uses platform-specific APIs to extract cleaner, more complete content than generic web scraping. For everything else, Readability handles the extraction. See the <a href="/demo/all?entry=plugins"><strong>Plugin System</strong></a> article for details on supported platforms.</p>
 
     <h3>Custom Metadata &amp; Organization</h3>
 
