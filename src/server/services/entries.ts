@@ -645,12 +645,14 @@ export async function listEntries(
   // DISTINCT ON (sortColumn, id): visible_entries emits one row per matching
   // subscription_feeds row, so an entry reachable through overlapping
   // subscriptions (redirect/merge history) would otherwise appear multiple times
-  // in the timeline — and across cursor pages, since (sortColumn, id) is the
-  // keyset. This dedupes to one row per entry, keeping the count paths (which use
-  // count(DISTINCT id)) consistent with the list. The ON expressions match the
-  // leading ORDER BY columns, so the index-ordered scan streams straight into the
-  // Unique node; id is globally unique, so the row kept per entry is the same one
-  // the keyset cursor resumes from.
+  // in the timeline. This dedupes to one row per entry, keeping the count paths
+  // (which use count(DISTINCT id)) consistent with the list. The ON expressions
+  // match the leading ORDER BY columns, so the index-ordered scan streams straight
+  // into the Unique node. id is globally unique, so the cursor key (sortColumn, id)
+  // identifies the surviving row unambiguously and the keyset cursor resumes
+  // cleanly. The non-key subscriptionId of the kept row is arbitrary among the
+  // overlapping subscriptions, but they all point at the same feed, so downstream
+  // filtering (which keys on feedId) is unaffected.
   const queryResults = await db
     .selectDistinctOn([sortColumn, visibleEntries.id], {
       id: visibleEntries.id,

@@ -344,14 +344,16 @@ describe("Entries", () => {
       expect(ids.filter((id) => id === entryIdB)).toHaveLength(1);
     });
 
-    it("does not duplicate the overlapping entry across cursor pages", async () => {
+    it("returns each entry once when paging through the cursor", async () => {
       const userId = await createTestUser();
       const { entryIdA, entryIdB } = await createOverlappingSubscriptions(userId);
 
       const seen: string[] = [];
       let cursor: string | undefined;
-      // Page size 1 forces the keyset cursor to walk every row; a duplicated
-      // entry would otherwise re-surface on the next page.
+      // Documents keyset cross-page safety: the duplicate rows share an identical
+      // (ts, id) cursor key, so DISTINCT ON collapses them within a page and the
+      // `< cursor` predicate never re-surfaces the survivor on a later page. Walk
+      // every row at page size 1 to confirm each entry appears exactly once.
       for (let i = 0; i < 5; i++) {
         const page = await listEntries(db, { userId, limit: 1, cursor, showSpam: false });
         seen.push(...page.items.map((e) => e.id));
