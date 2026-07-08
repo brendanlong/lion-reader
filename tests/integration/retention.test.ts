@@ -358,6 +358,14 @@ describe("runRetentionCleanup", () => {
     const runningFeed = await createFeed();
     const runningJobId = await createFeedJob(runningFeed, { runningSince: new Date() });
 
+    // No subscribers, running_since set but stale (crashed mid-fetch): still
+    // kept — the guard is intentionally stricter than claimFeedJob's staleness
+    // check, deferring to a later sweep after the stale job is reclaimed.
+    const staleRunningFeed = await createFeed();
+    const staleRunningJobId = await createFeedJob(staleRunningFeed, {
+      runningSince: new Date(Date.now() - 7 * DAY_MS),
+    });
+
     // No subscribers but freshly created — races the first-ever subscribe, whose
     // job commits just before its subscription: kept by the created_at grace.
     const freshFeed = await createFeed();
@@ -367,7 +375,9 @@ describe("runRetentionCleanup", () => {
 
     expect(result.deadFeedJobs).toBe(2);
     const remaining = (await db.select({ id: jobs.id }).from(jobs)).map((r) => r.id);
-    expect(remaining.sort()).toEqual([subscribedJobId, runningJobId, freshJobId].sort());
+    expect(remaining.sort()).toEqual(
+      [subscribedJobId, runningJobId, staleRunningJobId, freshJobId].sort()
+    );
     expect(remaining).not.toContain(unsubscribedJobId);
     expect(remaining).not.toContain(orphanJobId);
   });

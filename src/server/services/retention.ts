@@ -144,6 +144,12 @@ export async function runRetentionCleanup(db: Database): Promise<RetentionCleanu
   // with `running_since IS NULL` (never touch an in-flight job) and a grace on
   // `created_at` (see DEAD_FEED_JOB_GRACE_MS) so we don't race the first-ever
   // subscribe, where the job is committed just before its subscription.
+  //
+  // The `running_since IS NULL` guard is deliberately stricter than
+  // `claimFeedJob`'s staleness check (`running_since IS NULL OR ... < staleThreshold`):
+  // we'd rather leave a rare crashed-mid-fetch job (stale `running_since`) in
+  // place than risk deleting a genuinely in-flight one. Such a job is reclaimed
+  // by `claimFeedJob`'s stale path and becomes deletable on a later sweep.
   const deadFeedJobs = await db.execute(sql`
     DELETE FROM ${jobs} j
     WHERE j.type = 'fetch_feed'
