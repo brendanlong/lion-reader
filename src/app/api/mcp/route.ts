@@ -31,7 +31,13 @@ import {
   getProtectedResourceMetadataUrl,
 } from "@/server/oauth/config";
 import { withMcpCorsHeaders, mcpCorsPreflight } from "@/server/http/cors";
-import { checkRouteRateLimit } from "@/server/rate-limit";
+import {
+  checkRateLimit,
+  checkRouteRateLimit,
+  getClientIdentifier,
+  getRateLimitHeaders,
+  RATE_LIMIT_CONFIGS,
+} from "@/server/rate-limit";
 import { logger } from "@/lib/logger";
 
 // ============================================================================
@@ -194,6 +200,39 @@ function createMcpServer(userId: string): Server {
 // Unauthorized Response
 // ============================================================================
 
+/**
+ * Rate-limits an *authenticated* MCP request by user id (not IP). claude.ai
+ * proxies MCP traffic for many users from a shared egress range, so a per-IP
+ * bucket would throttle legitimate tool calls; per-user keeps one client from
+ * hammering the DB without penalizing everyone behind the same egress. Uses the
+ * generous `oauth` bucket. Returns a 429 Response if exceeded, else null.
+ */
+async function checkMcpUserRateLimit(userId: string, headers: Headers): Promise<Response | null> {
+  const result = await checkRateLimit(getClientIdentifier(userId, headers), "oauth");
+  if (result.allowed) {
+    return null;
+  }
+  return new Response(
+    JSON.stringify({ error: "rate_limit_exceeded", error_description: "Rate limit exceeded" }),
+    {
+      status: 429,
+      headers: {
+        ...getRateLimitHeaders(result, RATE_LIMIT_CONFIGS.oauth),
+        "Content-Type": "application/json",
+      },
+    }
+  );
+}
+
+/**
+ * Rate-limits an *unauthenticated* MCP request by IP to bound anonymous probing
+ * (each such request also triggers the OAuth discovery dance). Returns a 429
+ * Response if exceeded, else null.
+ */
+function checkMcpAnonRateLimit(request: NextRequest): Promise<Response | null> {
+  return checkRouteRateLimit(request, "oauth", { json: true });
+}
+
 function unauthorizedResponse(failure: AuthFailure): Response {
   logger.warn("MCP auth unauthorized", { reason: failure.reason });
   const status = failure.status ?? 401;
@@ -215,20 +254,21 @@ function unauthorizedResponse(failure: AuthFailure): Response {
  * Creates a stateless server+transport pair per request.
  */
 async function handleMcpRequest(request: NextRequest): Promise<Response> {
-  // Rate limit before auth/work. Uses the generous `oauth` bucket (per DESIGN.md)
-  // rather than the strict `expensive` one, because claude.ai proxies MCP traffic
-  // server-to-server from a shared egress range.
-  const rateLimited = await checkRouteRateLimit(request, "oauth", { json: true });
+  // Authenticate first, then rate-limit by the right dimension: unauthenticated
+  // requests per-IP (anonymous-abuse bound), authenticated requests per-user
+  // (so a shared claude.ai egress IP isn't collectively throttled). Token
+  // validation is a single indexed lookup — the same "auth before rate-limit"
+  // ordering the rest of the app uses (session lookup happens in context too).
+  const auth = await authenticateRequest(request);
+  if (!auth.success) {
+    return (await checkMcpAnonRateLimit(request)) ?? unauthorizedResponse(auth);
+  }
+  const { userId } = auth;
+
+  const rateLimited = await checkMcpUserRateLimit(userId, request.headers);
   if (rateLimited) {
     return rateLimited;
   }
-
-  // Authenticate request
-  const auth = await authenticateRequest(request);
-  if (!auth.success) {
-    return unauthorizedResponse(auth);
-  }
-  const { userId } = auth;
 
   // Create a stateless MCP server and transport for this request
   const server = createMcpServer(userId);
@@ -299,13 +339,13 @@ export function OPTIONS() {
  * no persistent sessions for SSE streaming.
  */
 export async function GET(request: NextRequest) {
-  const rateLimited = await checkRouteRateLimit(request, "oauth", { json: true });
-  if (rateLimited) {
-    return withMcpCorsHeaders(rateLimited);
-  }
   const auth = await authenticateRequest(request);
   if (!auth.success) {
-    return withMcpCorsHeaders(unauthorizedResponse(auth));
+    return withMcpCorsHeaders((await checkMcpAnonRateLimit(request)) ?? unauthorizedResponse(auth));
+  }
+  const rateLimited = await checkMcpUserRateLimit(auth.userId, request.headers);
+  if (rateLimited) {
+    return withMcpCorsHeaders(rateLimited);
   }
   return withMcpCorsHeaders(new Response(null, { status: 405 }));
 }
@@ -319,13 +359,13 @@ export async function GET(request: NextRequest) {
  * no sessions to terminate.
  */
 export async function DELETE(request: NextRequest) {
-  const rateLimited = await checkRouteRateLimit(request, "oauth", { json: true });
-  if (rateLimited) {
-    return withMcpCorsHeaders(rateLimited);
-  }
   const auth = await authenticateRequest(request);
   if (!auth.success) {
-    return withMcpCorsHeaders(unauthorizedResponse(auth));
+    return withMcpCorsHeaders((await checkMcpAnonRateLimit(request)) ?? unauthorizedResponse(auth));
+  }
+  const rateLimited = await checkMcpUserRateLimit(auth.userId, request.headers);
+  if (rateLimited) {
+    return withMcpCorsHeaders(rateLimited);
   }
   return withMcpCorsHeaders(new Response(null, { status: 405 }));
 }
