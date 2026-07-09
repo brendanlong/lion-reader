@@ -241,11 +241,13 @@ describe("updateEntryStarred SSE publishing", () => {
 });
 
 // The Google Reader / Wallabag compat routes discard the return value and pass
-// computeCounts: false to skip the several visible_entries count scans per call
-// (issue #1045/#1046). They still publish the state change so other tabs sync;
-// the event just carries no counts and the mutation returns counts: null.
-describe("computeCounts: false (compat routes)", () => {
-  it("markEntriesRead publishes a count-less event and returns null counts", async () => {
+// returnCounts: false to skip the several visible_entries count scans when they
+// aren't needed (issue #1045/#1046). Crucially this is invisible to the UI: a
+// real change still publishes an event carrying FULL counts (other tabs stay
+// accurate); only the unused return is null, and a no-op replay (nothing to
+// publish) does no count work.
+describe("returnCounts: false (compat routes)", () => {
+  it("markEntriesRead still publishes a count-bearing event; returns null counts", async () => {
     const userId = await seedUser();
     const entryId = await seedEntry(userId);
 
@@ -258,20 +260,21 @@ describe("computeCounts: false (compat routes)", () => {
       userId,
       [{ id: entryId }],
       true,
-      { computeCounts: false }
+      { returnCounts: false }
     );
     expect(result[0].read).toBe(true);
+    // The return is null (caller discards it), but the published event is
+    // identical to the default path — full counts, so other tabs stay accurate.
     expect(counts).toBeNull();
 
-    // The read state still syncs to other tabs; the event just omits counts.
     const event = JSON.parse(await messagePromise);
     expect(event.type).toBe("entry_state_changed");
     expect(event.entryId).toBe(entryId);
     expect(event.read).toBe(true);
-    expect(event.counts).toBeUndefined();
+    expect(event.counts.all.unread).toBe(0);
   });
 
-  it("updateEntryStarred publishes a count-less event and returns null counts", async () => {
+  it("updateEntryStarred still publishes a count-bearing event; returns null counts", async () => {
     const userId = await seedUser();
     const entryId = await seedEntry(userId);
 
@@ -280,7 +283,7 @@ describe("computeCounts: false (compat routes)", () => {
     const messagePromise = waitForMessage(channel);
 
     const { entry, counts } = await entriesService.updateEntryStarred(db, userId, entryId, true, {
-      computeCounts: false,
+      returnCounts: false,
     });
     expect(entry.starred).toBe(true);
     expect(counts).toBeNull();
@@ -289,26 +292,26 @@ describe("computeCounts: false (compat routes)", () => {
     expect(event.type).toBe("entry_state_changed");
     expect(event.entryId).toBe(entryId);
     expect(event.starred).toBe(true);
-    expect(event.counts).toBeUndefined();
+    expect(event.counts.starred.unread).toBe(1);
   });
 
-  it("still suppresses the publish on an idempotent replay with computeCounts: false", async () => {
+  it("still suppresses the publish on an idempotent replay with returnCounts: false", async () => {
     const userId = await seedUser();
     const entryId = await seedEntry(userId);
 
     // Establish a recent read_changed_at.
     await entriesService.markEntriesRead(db, userId, [{ id: entryId }], true, {
-      computeCounts: false,
+      returnCounts: false,
     });
 
     const channel = getUserEventsChannel(userId);
     await subscriber.subscribe(channel);
 
-    // An older replay updates no rows, so nothing publishes — the change-gating
-    // is independent of whether counts are computed.
+    // An older replay updates no rows, so nothing publishes — and because nothing
+    // published, no counts are computed either (the whole point of returnCounts).
     await expectNoMessage(channel, () =>
       entriesService.markEntriesRead(db, userId, [{ id: entryId, changedAt: new Date(0) }], false, {
-        computeCounts: false,
+        returnCounts: false,
       })
     );
   });

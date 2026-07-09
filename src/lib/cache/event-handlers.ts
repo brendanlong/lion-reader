@@ -126,12 +126,7 @@ export function handleSyncEvent(
       }
 
       // Set all counts from the server directly — no delta estimation needed.
-      // A count-less event (from a compat route that skipped the aggregation)
-      // still applied the read/starred state above; badge totals self-heal on
-      // the next count-bearing event or refetch.
-      if (event.counts) {
-        setEntryRelatedCounts(utils, event.counts, queryClient);
-      }
+      setEntryRelatedCounts(utils, event.counts, queryClient);
       break;
     }
 

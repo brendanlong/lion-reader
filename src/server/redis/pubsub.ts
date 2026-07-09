@@ -116,10 +116,7 @@ const userEventSchema = z.discriminatedUnion("type", [
     entryId: z.string(),
     read: z.boolean(),
     starred: z.boolean(),
-    // Optional: compat routes (computeCounts: false) publish a count-less event
-    // that still syncs read/starred state; badges self-heal on the next
-    // count-bearing event. Mirrors entryStateChangedEventSchema in lib/events.
-    counts: unreadCountsSchema.optional(),
+    counts: unreadCountsSchema,
     timestamp: z.string(),
     updatedAt: z.string(),
   }),
@@ -573,11 +570,7 @@ export async function publishEntryStateChanged(
   read: boolean,
   starred: boolean,
   updatedAt: Date,
-  // Absolute counts are optional: callers that skip the visible_entries
-  // aggregation (compat routes with computeCounts: false) publish a count-less
-  // event that still syncs read/starred state; badges self-heal on the next
-  // count-bearing event. See entryStateChangedEventSchema.
-  counts?: z.infer<typeof unreadCountsSchema>
+  counts: z.infer<typeof unreadCountsSchema>
 ): Promise<number> {
   const client = getPublisherClient();
   if (!client) {
@@ -589,7 +582,7 @@ export async function publishEntryStateChanged(
     entryId,
     read,
     starred,
-    ...(counts ? { counts } : {}),
+    counts,
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
   };

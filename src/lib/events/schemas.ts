@@ -199,14 +199,8 @@ const entryStateChangedEventSchema = z.object({
   read: z.boolean(),
   starred: z.boolean(),
   // Absolute unread counts from the server. The client sets these directly
-  // instead of estimating deltas from cached state. Optional: the Google Reader
-  // and Wallabag compat routes discard the mutation's counts anyway, so they
-  // skip the expensive visible_entries aggregation and publish a count-less
-  // event — the read/starred state still syncs live to other tabs, and badge
-  // totals self-heal on the next count-bearing event or refetch (same
-  // graceful-degradation as new_entry). Also optional so events from servers
-  // predating this change still parse.
-  counts: unreadCountsSchema.optional(),
+  // instead of estimating deltas from cached state.
+  counts: unreadCountsSchema,
   timestamp: timestampWithDefault,
   updatedAt: z.string(),
 });

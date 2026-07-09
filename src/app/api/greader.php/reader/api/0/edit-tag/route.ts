@@ -65,19 +65,20 @@ export async function POST(request: Request): Promise<Response> {
   const addRead = addTags.some((t) => isState(t, "read"));
   const removeRead = removeTags.some((t) => isState(t, "read"));
 
-  // computeCounts: false — this route discards the return value and only needs
-  // the read/starred state to sync to other tabs (published count-less). Google
-  // Reader clients (Reeder, NetNewsWire, …) mark read/star at high volume, and
-  // the star path below loops per entry, so skipping the several visible_entries
-  // count scans per call avoids a large amount of DB CPU (see #1045/#1046).
+  // returnCounts: false — this route discards the mutation's return value, so the
+  // service skips the several visible_entries count scans except when a real
+  // change actually publishes an entry_state_changed (which still carries full
+  // counts). Google Reader clients (Reeder, NetNewsWire, …) re-assert read/star
+  // state at high volume, so the no-op replays (nothing changed) cost nothing
+  // instead of a full aggregation each (see #1045/#1046).
   const entriesToMark = entryUuids.map((id) => ({ id }));
   if (addRead) {
     await entriesService.markEntriesRead(db, session.user.id, entriesToMark, true, {
-      computeCounts: false,
+      returnCounts: false,
     });
   } else if (removeRead) {
     await entriesService.markEntriesRead(db, session.user.id, entriesToMark, false, {
-      computeCounts: false,
+      returnCounts: false,
     });
   }
 
@@ -88,7 +89,7 @@ export async function POST(request: Request): Promise<Response> {
   if (addStarred || removeStarred) {
     for (const entryId of entryUuids) {
       await entriesService.updateEntryStarred(db, session.user.id, entryId, addStarred, {
-        computeCounts: false,
+        returnCounts: false,
       });
     }
   }
