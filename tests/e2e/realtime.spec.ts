@@ -357,7 +357,7 @@ test("mark_all_read event empties the unread list and clears badges via a refetc
   // marks read in the DB AND publishes the mark_all_read signal — the exact code
   // path the tRPC mutation and the Google Reader mark-all-as-read route hit.
   const db = getDb();
-  await markAllEntriesRead(db, { userId: user.id });
+  await markAllEntriesRead(db, { userId: user.id, showSpam: false });
 
   // The unread-only /all view empties out and every sidebar unread badge clears
   // (CountBadge renders nothing at 0; the tag/sub/uncategorized rows hide).

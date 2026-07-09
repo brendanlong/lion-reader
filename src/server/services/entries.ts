@@ -24,9 +24,9 @@ import {
   subscriptionFeeds,
   userEntries,
   subscriptions,
-  subscriptionTags,
   visibleEntries,
 } from "@/server/db/schema";
+import { isValidUuid } from "@/lib/uuidv7";
 import { SANITIZER_VERSION } from "@/server/html/sanitize";
 import { sanitizeEntryHtmlInWorker } from "@/server/worker-thread/pool";
 import { logger } from "@/lib/logger";
@@ -44,6 +44,7 @@ import {
   buildEntryFeedFilter,
   buildEntryFilterConditions,
   buildTaggedFeedIdsSubquery,
+  buildUncategorizedFeedIdsSubquery,
 } from "./entry-filters";
 
 // ============================================================================
@@ -247,7 +248,12 @@ function decodeCursor(cursor: string): CursorData {
     // URL-encoding the standard form (e.g. "+" arriving as a space).
     const decoded = Buffer.from(cursor, "base64").toString("utf8");
     const parsed = JSON.parse(decoded) as CursorData;
-    if (!parsed.ts || !parsed.id) {
+    // Both callers interpolate `id` into a uuid comparison, so a non-UUID would
+    // reach Postgres as "invalid input syntax for type uuid" and 500 (Sentry
+    // noise) — reject it here, matching the subscriptions cursor hardening. `ts`
+    // is validated per-caller since its meaning differs (an ISO timestamp for
+    // the timeline, a float rank for search).
+    if (typeof parsed.ts !== "string" || typeof parsed.id !== "string" || !isValidUuid(parsed.id)) {
       throw new Error("Invalid cursor structure");
     }
     return parsed;
@@ -364,7 +370,7 @@ export async function selectFullEntry(db: typeof dbType, userId: string, entryId
  * (getEntry/getEntries) don't pay to fetch and re-sanitize full-content HTML
  * they never return.
  */
-async function resolveSanitizedFamily(
+export async function resolveSanitizedFamily(
   db: typeof dbType,
   entryId: string,
   family: "content" | "fullContent",
@@ -625,6 +631,11 @@ export async function listEntries(
   // causing entries to fall into gaps between cursor and actual timestamps.
   if (params.cursor) {
     const { ts, id } = decodeCursor(params.cursor);
+    // ts is cast to ::timestamptz below; reject a non-date string here so it
+    // surfaces as a validation error rather than a Postgres cast 500.
+    if (Number.isNaN(Date.parse(ts))) {
+      throw errors.validation("Invalid cursor format");
+    }
     if (sortOrder === "newest") {
       conditions.push(
         sql`(${sortColumn} < ${ts}::timestamptz OR (${sortColumn} = ${ts}::timestamptz AND ${visibleEntries.id} < ${id}))`
@@ -758,6 +769,11 @@ async function searchEntries(
   if (params.cursor) {
     const { ts: rankStr, id } = decodeCursor(params.cursor);
     const cursorRank = parseFloat(rankStr);
+    // The search cursor encodes a float rank in the ts field; reject a
+    // non-numeric value so NaN never reaches the rank comparison.
+    if (!Number.isFinite(cursorRank)) {
+      throw errors.validation("Invalid cursor format");
+    }
     conditions.push(
       sql`(${rankColumn} < ${cursorRank} OR (${rankColumn} = ${cursorRank} AND ${visibleEntries.id} < ${id}))`
     );
@@ -988,53 +1004,35 @@ export async function markEntriesRead(
 
   const now = new Date();
 
-  // Build the SET clause, including implicit score signal flags
-  const setClause: Record<string, unknown> = {
-    read,
-    updatedAt: now,
-  };
-  if (read && options.fromList) {
-    // Marking read from the entry list → implicit -1
-    setClause.hasMarkedReadOnList = true;
-  } else if (!read) {
-    // Marking unread from anywhere → implicit 0 (overrides read-on-list penalty)
-    setClause.hasMarkedUnread = true;
-  }
+  // Apply every entry's per-entry changedAt in a single UPDATE ... FROM
+  // (VALUES ...). Offline sync can send a distinct timestamp per entry; the
+  // previous code grouped by timestamp and issued one UPDATE per distinct value
+  // — up to N sequential round-trips outside a transaction. One statement does
+  // it atomically. The per-row `read_changed_at <= v.ts` guard preserves the
+  // idempotent last-write-wins semantics, and RETURNING tells us which rows
+  // actually changed so idempotent replays don't publish.
+  const rows = entriesToMark.map(
+    (entry) => sql`(${entry.id}::uuid, ${(entry.changedAt ?? now).toISOString()}::timestamptz)`
+  );
 
-  // Group entries by timestamp for efficient batch updates. Most interactive
-  // cases share a single timestamp; per-entry timestamps come from offline sync.
-  const entriesByTimestamp = new Map<string, string[]>();
-  for (const entry of entriesToMark) {
-    const ts = (entry.changedAt ?? now).toISOString();
-    const existing = entriesByTimestamp.get(ts) ?? [];
-    existing.push(entry.id);
-    entriesByTimestamp.set(ts, existing);
-  }
+  // Implicit score-signal flag, identical for every entry in this call.
+  const signalAssignment =
+    read && options.fromList
+      ? sql`, has_marked_read_on_list = true` // marking read from the list → implicit -1
+      : !read
+        ? sql`, has_marked_unread = true` // marking unread → implicit 0 (overrides read-on-list)
+        : sql``;
 
-  // Conditional update per timestamp group: only apply if incoming timestamp is
-  // newer or equal than the stored read_changed_at (or it is NULL). `returning`
-  // tells us which entries actually changed so idempotent replays don't publish.
-  const changedIds = new Set<string>();
-  for (const [tsIso, entryIds] of entriesByTimestamp) {
-    const changedAt = new Date(tsIso);
-    const updated = await db
-      .update(userEntries)
-      .set({
-        ...setClause,
-        readChangedAt: changedAt,
-      })
-      .where(
-        and(
-          eq(userEntries.userId, userId),
-          inArray(userEntries.entryId, entryIds),
-          or(isNull(userEntries.readChangedAt), lte(userEntries.readChangedAt, changedAt))
-        )
-      )
-      .returning({ entryId: userEntries.entryId });
-    for (const row of updated) {
-      changedIds.add(row.entryId);
-    }
-  }
+  const updated = await db.execute<{ entry_id: string }>(sql`
+    UPDATE user_entries AS ue
+    SET read = ${read}, updated_at = ${now}, read_changed_at = v.ts${signalAssignment}
+    FROM (VALUES ${sql.join(rows, sql`, `)}) AS v(entry_id, ts)
+    WHERE ue.user_id = ${userId}::uuid
+      AND ue.entry_id = v.entry_id
+      AND (ue.read_changed_at IS NULL OR ue.read_changed_at <= v.ts)
+    RETURNING ue.entry_id AS entry_id
+  `);
+  const changedIds = new Set(updated.rows.map((row) => row.entry_id));
 
   // Always resolve final state for all requested entries, including the context
   // fields callers need for cache updates and count queries.
@@ -1092,6 +1090,14 @@ export async function markAllEntriesRead(
     type?: "web" | "email" | "saved";
     before?: Date;
     changedAt?: Date;
+    /**
+     * Whether to include spam entries, matching the user's preference. When
+     * false (the default), only entries visible via `visible_entries` with
+     * `is_spam = false` are marked — otherwise "mark all read" would also flip
+     * hidden spam and unsubscribed-orphan `user_entries` rows the user never
+     * saw, which would surface as already-read if they later enable showSpam.
+     */
+    showSpam: boolean;
   }
 ): Promise<string[]> {
   const changedAt = params.changedAt ?? new Date();
@@ -1101,6 +1107,23 @@ export async function markAllEntriesRead(
     eq(userEntries.read, false),
     or(isNull(userEntries.readChangedAt), lte(userEntries.readChangedAt, changedAt))!,
   ];
+
+  // Only mark entries the user can actually see, matching listEntries/countEntries
+  // (which go through visible_entries). This excludes hidden spam (unless
+  // showSpam) and unsubscribed-feed orphans that aren't starred/saved.
+  const visibleConditions = [eq(visibleEntries.userId, params.userId)];
+  if (!params.showSpam) {
+    visibleConditions.push(eq(visibleEntries.isSpam, false));
+  }
+  conditions.push(
+    inArray(
+      userEntries.entryId,
+      db
+        .select({ id: visibleEntries.id })
+        .from(visibleEntries)
+        .where(and(...visibleConditions))
+    )
+  );
 
   // Filter by explicit feed IDs (used by GReader route after stream resolution)
   if (params.feedIds) {
@@ -1150,20 +1173,10 @@ export async function markAllEntriesRead(
     conditions.push(inArray(userEntries.entryId, taggedEntryIdsSubquery));
   }
 
-  // Filter by uncategorized (no tags) - use LEFT JOIN anti-join to avoid scanning all subscription_tags
+  // Filter by uncategorized (no tags). Reuse the shared subquery builder so this
+  // stays in sync with buildEntryFeedFilter (listEntries/countEntries).
   if (params.uncategorized) {
-    const uncategorizedFeedIdsSubquery = db
-      .select({ feedId: subscriptionFeeds.feedId })
-      .from(subscriptions)
-      .innerJoin(subscriptionFeeds, eq(subscriptionFeeds.subscriptionId, subscriptions.id))
-      .leftJoin(subscriptionTags, eq(subscriptionTags.subscriptionId, subscriptions.id))
-      .where(
-        and(
-          eq(subscriptions.userId, params.userId),
-          isNull(subscriptions.unsubscribedAt),
-          isNull(subscriptionTags.subscriptionId)
-        )
-      );
+    const uncategorizedFeedIdsSubquery = buildUncategorizedFeedIdsSubquery(db, params.userId);
 
     const uncategorizedEntryIdsSubquery = db
       .select({ id: entries.id })
@@ -1364,6 +1377,12 @@ export async function countEntries(
   // Apply entry filter conditions (unreadOnly, starredOnly, type, excludeTypes, showSpam)
   conditions.push(...buildEntryFilterConditions(params));
 
+  // Callers only consume `unread`, so push read=false into the WHERE clause
+  // (rather than a FILTER over all visible entries) — this lets the partial
+  // idx_user_entries_unread index drive the scan instead of counting every
+  // visible entry, matching how counts.ts computes unread counts.
+  conditions.push(eq(visibleEntries.read, false));
+
   // count(DISTINCT id), not count(*): visible_entries emits one row per matching
   // subscription_feeds row, so an entry reachable through overlapping
   // subscriptions (redirect/merge history) would be counted multiple times.
@@ -1371,7 +1390,7 @@ export async function countEntries(
   // dedupes the same way.
   const result = await db
     .select({
-      unread: sql<number>`count(DISTINCT ${visibleEntries.id}) FILTER (WHERE ${visibleEntries.read} = false)::int`,
+      unread: sql<number>`count(DISTINCT ${visibleEntries.id})::int`,
     })
     .from(visibleEntries)
     .where(and(...conditions));

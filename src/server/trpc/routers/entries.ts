@@ -10,7 +10,7 @@
  */
 
 import { z } from "zod";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 
 import {
   createTRPCRouter,
@@ -432,12 +432,14 @@ export const entriesRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
-      // Validate tag belongs to user before passing to service
+      // Validate tag belongs to user (and isn't soft-deleted) before passing to
+      // the service — a tombstoned tag is invisible in listTags and must not be
+      // markable.
       if (input.tagId) {
         const tagExists = await ctx.db
           .select({ id: tags.id })
           .from(tags)
-          .where(and(eq(tags.id, input.tagId), eq(tags.userId, userId)))
+          .where(and(eq(tags.id, input.tagId), eq(tags.userId, userId), isNull(tags.deletedAt)))
           .limit(1);
 
         if (tagExists.length === 0) {
@@ -464,6 +466,7 @@ export const entriesRouter = createTRPCRouter({
         type: input.type,
         before: input.before,
         changedAt: input.changedAt,
+        showSpam: ctx.session.user.showSpam,
       });
 
       return { count: entryIds.length };

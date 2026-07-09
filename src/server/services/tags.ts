@@ -14,6 +14,7 @@ import {
   userFeeds,
 } from "@/server/db/schema";
 import { errors } from "@/server/trpc/errors";
+import { isUniqueViolation } from "@/server/db/errors";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { publishTagCreated, publishTagUpdated, publishTagDeleted } from "@/server/redis/pubsub";
 
@@ -287,7 +288,17 @@ export async function updateTag(
     updateData.color = params.color;
   }
 
-  await db.update(tags).set(updateData).where(eq(tags.id, tagId));
+  // The duplicate check above is check-then-act; a concurrent rename to the same
+  // name can still slip in between and trip the partial unique index. Catch that
+  // as a validation error instead of surfacing a raw 500.
+  try {
+    await db.update(tags).set(updateData).where(eq(tags.id, tagId));
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      throw errors.validation("A tag with this name already exists");
+    }
+    throw err;
+  }
 
   // Get updated tag with feed count and unread count
   const tagUnreadCounts = tagUnreadCountsQuery(db, userId);
@@ -352,21 +363,29 @@ export async function updateTag(
 export async function deleteTag(db: typeof dbType, userId: string, tagId: string): Promise<void> {
   const now = new Date();
 
-  const deleted = await db
-    .update(tags)
-    .set({ deletedAt: now, updatedAt: now })
-    .where(and(eq(tags.id, tagId), eq(tags.userId, userId), isNull(tags.deletedAt)))
-    .returning({ id: tags.id, updatedAt: tags.updatedAt });
+  // Tombstone the tag and drop its subscription associations as one unit, so a
+  // crash between them can't leave a soft-deleted tag with live associations
+  // (which would silently drop subscriptions from "Uncategorized" while the tag
+  // is invisible in listTags).
+  const updatedAt = await db.transaction(async (tx) => {
+    const deleted = await tx
+      .update(tags)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(and(eq(tags.id, tagId), eq(tags.userId, userId), isNull(tags.deletedAt)))
+      .returning({ id: tags.id, updatedAt: tags.updatedAt });
 
-  if (deleted.length === 0) {
-    throw errors.tagNotFound();
-  }
+    if (deleted.length === 0) {
+      throw errors.tagNotFound();
+    }
 
-  // Remove subscription_tags associations (these aren't synced, so hard delete is fine)
-  await db.delete(subscriptionTags).where(eq(subscriptionTags.tagId, tagId));
+    // Remove subscription_tags associations (these aren't synced, so hard delete is fine)
+    await tx.delete(subscriptionTags).where(eq(subscriptionTags.tagId, tagId));
+
+    return deleted[0].updatedAt;
+  });
 
   // Publish tag deleted event for multi-tab/device sync (fire and forget)
-  publishTagDeleted(userId, tagId, deleted[0].updatedAt).catch(() => {
+  publishTagDeleted(userId, tagId, updatedAt).catch(() => {
     // Ignore publish errors - SSE is best-effort
   });
 }

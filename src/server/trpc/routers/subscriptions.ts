@@ -402,16 +402,19 @@ export const subscriptionsRouter = createTRPCRouter({
           .innerJoin(tags, eq(tags.id, subscriptionTags.tagId))
           .where(eq(subscriptionTags.subscriptionId, subscription.id)),
 
-        // Unread count (use visibleEntries view to include entries from redirected feeds)
+        // Unread count (use visibleEntries view to include entries from redirected feeds).
+        // read=false lives in WHERE (not a FILTER over all entries) so the partial
+        // idx_user_entries_unread index can drive the scan, matching counts.ts.
         ctx.db
           .select({
-            count: sql<number>`COUNT(*) FILTER (WHERE ${visibleEntries.read} = false)::int`,
+            count: sql<number>`COUNT(*)::int`,
           })
           .from(visibleEntries)
           .where(
             and(
               eq(visibleEntries.userId, userId),
-              eq(visibleEntries.subscriptionId, subscription.id)
+              eq(visibleEntries.subscriptionId, subscription.id),
+              eq(visibleEntries.read, false)
             )
           ),
       ]);
@@ -895,11 +898,16 @@ export const subscriptionsRouter = createTRPCRouter({
         return {};
       }
 
-      // Verify all tag IDs belong to the current user and get tag details
+      // Verify all tag IDs belong to the current user, are not soft-deleted, and
+      // get tag details. Excluding tombstoned tags prevents assigning a tag that
+      // is invisible in listTags (which would silently drop the subscription
+      // from "Uncategorized").
       const userTags = await ctx.db
         .select({ id: tags.id, name: tags.name, color: tags.color })
         .from(tags)
-        .where(and(eq(tags.userId, userId), inArray(tags.id, input.tagIds)));
+        .where(
+          and(eq(tags.userId, userId), inArray(tags.id, input.tagIds), isNull(tags.deletedAt))
+        );
 
       const validTagIds = new Set(userTags.map((t) => t.id));
       const invalidTagIds = input.tagIds.filter((id) => !validTagIds.has(id));

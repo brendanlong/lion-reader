@@ -18,6 +18,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "../db";
 import { jobs, type Job } from "../db/schema";
+import { isUniqueViolation } from "../db/errors";
 import { generateUuidv7 } from "../../lib/uuidv7";
 
 /**
@@ -35,28 +36,6 @@ type RawJobRow = {
   created_at: string;
   updated_at: string;
 } & Record<string, unknown>;
-
-/**
- * Postgres SQLSTATE for a unique-constraint violation.
- */
-const PG_UNIQUE_VIOLATION = "23505";
-
-/**
- * Returns true if the error is a Postgres unique-constraint violation.
- * The `pg` driver surfaces the SQLSTATE on the error's `code` property, but
- * Drizzle wraps query errors and puts the original on `cause`, so we walk the
- * cause chain.
- */
-function isUniqueViolation(error: unknown): boolean {
-  let current: unknown = error;
-  for (let depth = 0; depth < 5 && typeof current === "object" && current !== null; depth++) {
-    if ((current as { code?: unknown }).code === PG_UNIQUE_VIOLATION) {
-      return true;
-    }
-    current = (current as { cause?: unknown }).cause;
-  }
-  return false;
-}
 
 /**
  * Converts a raw SQL row to a Job with proper Date objects.
