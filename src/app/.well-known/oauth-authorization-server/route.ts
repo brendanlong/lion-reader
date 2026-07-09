@@ -10,15 +10,9 @@
 import { NextResponse } from "next/server";
 import { getAuthorizationServerMetadata } from "@/server/oauth/config";
 import { withMcpCorsHeaders, mcpCorsPreflight } from "@/server/http/cors";
-import { checkRouteRateLimit } from "@/server/rate-limit";
 import { logger } from "@/lib/logger";
 
-export async function GET(request: Request) {
-  const rateLimited = await checkRouteRateLimit(request, "oauth", { json: true });
-  if (rateLimited) {
-    return withMcpCorsHeaders(rateLimited);
-  }
-
+export async function GET() {
   logger.info("OAuth authorization server metadata requested");
   const metadata = getAuthorizationServerMetadata();
 
