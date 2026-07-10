@@ -190,12 +190,14 @@ export async function startDiscordBot(): Promise<void> {
     logger.error("Discord gateway shard error", { error, shardId });
   });
   client.on("shardDisconnect", (event, shardId) => {
-    // Discord sends a close code explaining why the WebSocket dropped; 4014 =
-    // disallowed (privileged) intents, 4004 = auth failed, etc.
+    // Only fires on unrecoverable close codes (recoverable drops go to
+    // shardReconnecting instead), so this is always serious. The close code
+    // explains why: 4014 = disallowed (privileged) intents, 4004 = auth failed,
+    // etc. (event.reason is a deprecated placeholder in discord.js v14 — the
+    // code is the real signal.)
     logger.warn("Discord gateway shard disconnected", {
       shardId,
       code: event.code,
-      reason: event.reason,
     });
   });
   client.on("shardReconnecting", (shardId) => {
@@ -268,7 +270,14 @@ export async function startDiscordBot(): Promise<void> {
     });
   });
 
-  await client.login(DISCORD_BOT_TOKEN);
+  try {
+    await client.login(DISCORD_BOT_TOKEN);
+  } catch (error) {
+    // login() rejected (bad token, network) — clear the watchdog so it can't
+    // later fire the misleading "resolved but clientReady never fired" message.
+    clearTimeout(readyWatchdog);
+    throw error;
+  }
 }
 
 async function registerCommands(): Promise<void> {
