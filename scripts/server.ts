@@ -15,6 +15,7 @@
 import next from "next";
 import { createServer } from "node:http";
 import { maybeCompressResponse } from "../src/server/http/compression";
+import { stripOauthSurfaceTrailingSlash } from "../src/server/http/trailing-slash";
 import { startMetricsServer, stopMetricsServer } from "../src/server/metrics/server";
 import { getResourceCleanup } from "../src/server/shutdown";
 import { logger } from "../src/lib/logger";
@@ -42,6 +43,14 @@ app.prepare().then(() => {
   const upgrade = app.getUpgradeHandler();
 
   const server = createServer((req, res) => {
+    // OAuth/MCP endpoints must answer trailing-slash URLs in place instead of
+    // Next's default 308 (server-to-server OAuth clients don't follow
+    // redirects on POST). Normalizing req.url here keeps the built-in
+    // trailing-slash redirect intact for the rest of the site — see
+    // src/server/http/trailing-slash.ts.
+    if (req.url) {
+      req.url = stripOauthSurfaceTrailingSlash(req.url);
+    }
     maybeCompressResponse(req, res);
     handle(req, res);
   });
