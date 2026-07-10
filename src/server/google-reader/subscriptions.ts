@@ -62,14 +62,21 @@ export async function resolveFeedStreamFilter(
  *
  * Centralizing the saved-feed append here means subscription/list and
  * unread-count inherit it for free instead of each re-deriving it (issue #1069).
+ *
+ * `includeUnreadCounts: false` (issue #1074) skips both the per-subscription
+ * unread aggregate and the saved feed's `countEntries`, returning every
+ * `unreadCount` as 0 — for callers like subscription/list that never emit
+ * counts. unread-count keeps the default.
  */
 export async function listGreaderSubscriptions(
   db: typeof dbType,
   userId: string,
-  opts: { showSpam: boolean }
+  opts: { showSpam: boolean; includeUnreadCounts?: boolean }
 ): Promise<subscriptionsService.Subscription[]> {
   const [all, saved] = await Promise.all([
-    subscriptionsService.listAllSubscriptions(db, userId),
+    subscriptionsService.listAllSubscriptions(db, userId, {
+      includeUnreadCounts: opts.includeUnreadCounts,
+    }),
     getSavedSubscription(db, userId, opts),
   ]);
 
@@ -90,12 +97,15 @@ export async function listGreaderSubscriptions(
 async function getSavedSubscription(
   db: typeof dbType,
   userId: string,
-  opts: { showSpam: boolean }
+  opts: { showSpam: boolean; includeUnreadCounts?: boolean }
 ): Promise<subscriptionsService.Subscription | null> {
   const feedId = await getSavedFeedId(db, userId);
   if (!feedId) return null;
 
-  const { unread } = await countEntries(db, userId, { type: "saved", showSpam: opts.showSpam });
+  const unread =
+    (opts.includeUnreadCounts ?? true)
+      ? (await countEntries(db, userId, { type: "saved", showSpam: opts.showSpam })).unread
+      : 0;
 
   return {
     id: feedId,

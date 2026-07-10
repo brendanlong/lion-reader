@@ -9,7 +9,14 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
+import {
+  users,
+  feeds,
+  entries,
+  subscriptions,
+  subscriptionFeeds,
+  userEntries,
+} from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
@@ -1099,5 +1106,54 @@ describe("listAllSubscriptions", () => {
     const userId = await createTestUser();
     const all = await subscriptionsService.listAllSubscriptions(db, userId);
     expect(all).toEqual([]);
+  });
+});
+
+describe("includeUnreadCounts: false (issue #1074)", () => {
+  /**
+   * A user with one subscription and one unread visible entry, so the default
+   * query provably counts it (unreadCount 1) and the opt-out is observable
+   * (unreadCount 0) rather than vacuously matching an empty backlog.
+   */
+  async function createUserWithUnreadEntry(): Promise<{ userId: string; subId: string }> {
+    const userId = await createTestUser();
+    const feedId = await createTestFeed({
+      url: `https://example.com/unread-${userId}.xml`,
+      title: "Counted Feed",
+    });
+    const subId = await createTestSubscription(userId, feedId);
+    // visible_entries maps entries to subscriptions via subscription_feeds
+    await db.insert(subscriptionFeeds).values({ subscriptionId: subId, feedId, userId });
+    const entryId = await createTestEntry(feedId);
+    await db.insert(userEntries).values({ userId, entryId });
+    return { userId, subId };
+  }
+
+  it("listAllSubscriptions returns the same rows with unreadCount pinned to 0", async () => {
+    const { userId } = await createUserWithUnreadEntry();
+
+    const withCounts = await subscriptionsService.listAllSubscriptions(db, userId);
+    const withoutCounts = await subscriptionsService.listAllSubscriptions(db, userId, {
+      includeUnreadCounts: false,
+    });
+
+    // Sanity: the default query actually counts the unread entry.
+    expect(withCounts).toHaveLength(1);
+    expect(withCounts[0].unreadCount).toBe(1);
+
+    // Identical rows apart from the skipped count.
+    expect(withoutCounts).toEqual([{ ...withCounts[0], unreadCount: 0 }]);
+  });
+
+  it("getSubscription returns the same row with unreadCount pinned to 0", async () => {
+    const { userId, subId } = await createUserWithUnreadEntry();
+
+    const withCounts = await subscriptionsService.getSubscription(db, userId, subId);
+    const withoutCounts = await subscriptionsService.getSubscription(db, userId, subId, {
+      includeUnreadCounts: false,
+    });
+
+    expect(withCounts.unreadCount).toBe(1);
+    expect(withoutCounts).toEqual({ ...withCounts, unreadCount: 0 });
   });
 });
