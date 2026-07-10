@@ -477,6 +477,13 @@ export async function listJobs(
 
 /**
  * Singleton job types that have exactly one instance and self-create on first run.
+ *
+ * ORDERING INVARIANT: the worker's claim loop tries these first-due-wins, in
+ * array order. A singleton that reschedules itself near-immediately under
+ * backlog (e.g. resanitize_entries at +5s) must be listed LAST — placed earlier
+ * it would be due again on every claim cycle and starve every type after it.
+ * The current types reschedule at +15min or slower, so ordering among them is
+ * harmless; keep any fast-rescheduling type at the end when adding/re-enabling.
  */
 export const SINGLETON_JOB_TYPES: JobType[] = [
   "renew_websub",

@@ -22,6 +22,7 @@ import {
   claimSingletonJob,
   renewJobLease,
 } from "../../src/server/jobs/queue";
+import { startJobLeaseHeartbeat } from "../../src/server/jobs/worker";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 
 // A valid UUID that doesn't exist in the database
@@ -830,6 +831,96 @@ describe("Job Queue", () => {
       // Not due yet - job should not be claimed
       const claimed = await claimFeedJob();
       expect(claimed).toBeNull();
+    });
+  });
+
+  describe("startJobLeaseHeartbeat hard cap", () => {
+    // These tests inject tiny heartbeat/cap intervals to exercise the wedged-
+    // handler hard cap against the real database. The silent failure this
+    // guards: a handler stuck on a never-settling await heartbeating its lease
+    // forever, so the job is never reclaimed until a process restart.
+    const quietLogger = { info: () => {}, warn: () => {}, error: () => {} };
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+    const HEARTBEAT_MS = 30;
+    const CAP_MS = 150;
+
+    async function readRunningSince(jobId: string): Promise<Date | null> {
+      const job = await getJob(jobId);
+      return job?.runningSince ?? null;
+    }
+
+    it("renews until the cap, then stops so the job becomes reclaimable; a late finish on an unreclaimed job still commits", async () => {
+      const job = await claimSingletonJob("renew_websub");
+      expect(job?.runningSince).toBeInstanceOf(Date);
+
+      const lease = startJobLeaseHeartbeat(job!, quietLogger, CAP_MS, HEARTBEAT_MS);
+
+      // Before the cap: at least one renewal must advance running_since.
+      const original = job!.runningSince!;
+      let renewed: Date | null = null;
+      for (let i = 0; i < 40 && !renewed; i++) {
+        await sleep(25);
+        const current = await readRunningSince(job!.id);
+        if (current && current.getTime() > original.getTime()) {
+          renewed = current;
+        }
+      }
+      expect(renewed).not.toBeNull();
+
+      // Past the cap (plus margin for an in-flight renewal to land): renewals
+      // must have stopped — two samples a few heartbeats apart are identical.
+      await sleep(CAP_MS + HEARTBEAT_MS * 3);
+      const sample1 = await readRunningSince(job!.id);
+      await sleep(HEARTBEAT_MS * 3);
+      const sample2 = await readRunningSince(job!.id);
+      expect(sample1?.getTime()).toBe(sample2?.getTime());
+
+      // The controller keeps its last token (not nulled), so a handler that
+      // settles after the cap — before anyone reclaims — still finishes
+      // legitimately via the CAS fence.
+      await lease.stop();
+      const token = lease.currentToken();
+      expect(token).not.toBeNull();
+      expect(token!.getTime()).toBe(sample2!.getTime());
+
+      const finished = await finishJob(job!.id, {
+        success: true,
+        nextRunAt: new Date(Date.now() + 60 * 60 * 1000),
+        expectedRunningSince: token!,
+      });
+      expect(finished).not.toBeNull();
+      expect((await getJob(job!.id))?.runningSince).toBeNull();
+    });
+
+    it("a post-cap finish no-ops when another worker has reclaimed the job", async () => {
+      const job = await claimSingletonJob("renew_websub");
+      expect(job?.runningSince).toBeInstanceOf(Date);
+
+      const lease = startJobLeaseHeartbeat(job!, quietLogger, CAP_MS, HEARTBEAT_MS);
+
+      // Wait until safely past the cap so the heartbeat has stopped renewing.
+      await sleep(CAP_MS + HEARTBEAT_MS * 4);
+      await lease.stop();
+      const staleToken = lease.currentToken();
+      expect(staleToken).not.toBeNull();
+
+      // Simulate another worker reclaiming the now-stale job.
+      const reclaimedAt = new Date(Date.now() + 1000);
+      await db
+        .update(jobs)
+        .set({ runningSince: reclaimedAt })
+        .where(sql`${jobs.id} = ${job!.id}`);
+
+      // The wedged handler finally settles: its finish must no-op (CAS fails),
+      // never clobbering the reclaimer's lease.
+      const finished = await finishJob(job!.id, {
+        success: true,
+        nextRunAt: new Date(Date.now() + 60 * 60 * 1000),
+        expectedRunningSince: staleToken!,
+      });
+      expect(finished).toBeNull();
+      expect((await readRunningSince(job!.id))?.getTime()).toBe(reclaimedAt.getTime());
     });
   });
 });

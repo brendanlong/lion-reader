@@ -8,8 +8,9 @@
  * - Processes the email to create feed entries
  *
  * Response codes:
- * - 200: Success - email accepted
+ * - 200: Success - email accepted (or a deliberate, durable rejection)
  * - 406: Rejected - invalid signature or missing data (Mailgun won't retry)
+ * - 500: Transient processing failure - Mailgun WILL retry (same signed triple)
  */
 
 import { createHmac, timingSafeEqual } from "crypto";
@@ -28,10 +29,20 @@ export const dynamic = "force-dynamic";
  * How far a Mailgun webhook timestamp may be from now (seconds) before we treat
  * the request as a replay. Mailgun's signature only covers `(timestamp, token)`
  * — NOT the body — so a captured valid triple could otherwise be replayed
- * forever with an arbitrary body. A ~15-minute window bounds that, while leaving
- * generous slack for clock skew and Mailgun's own delivery retries.
+ * forever with an arbitrary body. This window bounds that.
+ *
+ * The window MUST cover Mailgun's full delivery-retry horizon (~8h of backoff:
+ * 10m, 10m, 15m, 30m, 1h, 2h, 4h), because retries reuse the *original*
+ * `(timestamp, token, signature)` triple — the timestamp is the first-attempt
+ * send time, not per-attempt. With a narrow window (e.g. 15 min), any outage
+ * longer than the window would 406 every later retry of mail sent during it,
+ * and a 406 tells Mailgun to stop retrying — converting a transient outage into
+ * permanent, silent mail loss. Within the window, actual replays are still
+ * blocked by the Redis nonce below whenever Redis is up; the wide window only
+ * weakens things in the (Redis down ∧ attacker holds a captured triple) case,
+ * where Message-ID dedup still bounds the damage.
  */
-const MAILGUN_TIMESTAMP_TOLERANCE_SECONDS = 15 * 60;
+const MAILGUN_TIMESTAMP_TOLERANCE_SECONDS = 9 * 60 * 60;
 
 /**
  * Checks that the Mailgun webhook timestamp is within the freshness window.
@@ -209,8 +220,9 @@ function parseMailgunEmail(formData: FormData): InboundEmail {
  * Verifies the signature and processes the email.
  *
  * Returns:
- * - 200 OK: Email processed successfully
+ * - 200 OK: Email processed successfully (or durably rejected)
  * - 406 Not Acceptable: Invalid signature or missing required data (no retry)
+ * - 500 Internal Server Error: Transient processing failure (Mailgun retries)
  */
 export async function POST(request: Request): Promise<Response> {
   // 1. Check webhook signing key is configured
@@ -317,13 +329,20 @@ export async function POST(request: Request): Promise<Response> {
       });
     }
   } catch (error) {
-    // Log unexpected errors but still return 200 to prevent retries
-    logger.error("Mailgun email webhook processing failed", {
+    // Unexpected throw (e.g. transient DB failure): the event was NOT durably
+    // handled and the token was NOT marked seen, so return 500 to make Mailgun
+    // retry — the retry passes the (unmarked) nonce check and reprocesses.
+    // Reprocessing is idempotent (uq_entries_feed_guid + Message-ID dedup), and
+    // Mailgun's retry schedule is bounded (~8 attempts over ~8h), so a
+    // persistent failure can't retry forever. Returning 200 here instead would
+    // silently drop the email.
+    logger.error("Mailgun email webhook processing failed; returning 500 for retry", {
       error: error instanceof Error ? error.message : String(error),
       from: email.from.address,
       to: email.to,
       messageId: email.messageId,
     });
+    return new Response("Processing Failed", { status: 500 });
   }
 
   // Return 200 to acknowledge receipt
