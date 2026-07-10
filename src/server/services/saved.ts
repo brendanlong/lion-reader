@@ -934,7 +934,11 @@ export async function saveArticle(
     });
 
     // Post-commit: notify other tabs of the unread flip + refreshed counts.
-    publishMarkReadStateChanges(userId, readChanged, readCounts);
+    // Both are absent when the article was already unread (a re-save flips
+    // nothing) — nothing to publish then.
+    if (readChanged.length > 0 && readCounts) {
+      publishMarkReadStateChanges(userId, readChanged, readCounts);
+    }
 
     logger.info("Refetched saved article", {
       entryId: oldEntry.id,

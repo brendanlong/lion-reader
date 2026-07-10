@@ -304,8 +304,11 @@ export function useEntryMutations(): UseEntryMutationsResult {
         }
       }
 
-      // Update counts (always apply, not dependent on timestamp)
-      setBulkCounts(utils, data.counts, queryClient);
+      // Update counts (not dependent on timestamp). Absent when no read value
+      // actually flipped — the cached counts are already correct (issue #1118).
+      if (data.counts) {
+        setBulkCounts(utils, data.counts, queryClient);
+      }
     },
 
     onError: (error, variables) => {
@@ -391,8 +394,11 @@ export function useEntryMutations(): UseEntryMutationsResult {
         applyWinningStateToCache(data.entry.id, winningState);
       }
 
-      // Update counts (always apply)
-      setCounts(utils, data.counts, queryClient);
+      // Update counts. Absent when the starred value didn't actually flip —
+      // the cached counts are already correct (issue #1118).
+      if (data.counts) {
+        setCounts(utils, data.counts, queryClient);
+      }
     },
 
     onError: (error, variables) => {

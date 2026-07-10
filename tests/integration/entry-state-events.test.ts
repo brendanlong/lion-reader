@@ -10,11 +10,19 @@
  * publishes, while an idempotent replay (an older changedAt losing the
  * *_changed_at guard) publishes nothing.
  *
+ * Also covers issue #1118: a same-value re-assert with a FRESH changedAt (the
+ * common Google Reader/Wallabag resync pattern) writes the row — it must keep
+ * advancing the *_changed_at last-write-wins watermark — but flips nothing the
+ * user can see, so it publishes no event and computes no counts. The
+ * multi-device T1/T2/T3 tests pin that the watermark still advances on those
+ * writes: if it didn't, an older conflicting update would incorrectly win.
+ *
  * Uses a real Postgres + Redis via docker-compose.
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import Redis from "ioredis";
+import { and, eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
   users,
@@ -139,6 +147,21 @@ function waitForMessage(channel: string, timeoutMs = 5000): Promise<string> {
   });
 }
 
+// Reads the user_entries state row directly, for asserting on the LWW
+// watermark columns that the service return value doesn't expose.
+async function getUserEntryRow(userId: string, entryId: string) {
+  const [row] = await db
+    .select({
+      read: userEntries.read,
+      starred: userEntries.starred,
+      readChangedAt: userEntries.readChangedAt,
+      starredChangedAt: userEntries.starredChangedAt,
+    })
+    .from(userEntries)
+    .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, entryId)));
+  return row;
+}
+
 // Runs `action`, then waits `quietMs` and asserts no message arrived on `channel`.
 async function expectNoMessage(
   channel: string,
@@ -176,7 +199,7 @@ describe("markEntriesRead SSE publishing", () => {
     );
     expect(result[0].read).toBe(true);
     // The service computes counts once and both returns and publishes them.
-    expect(counts.all.unread).toBe(0);
+    expect(counts?.all.unread).toBe(0);
 
     const event = JSON.parse(await messagePromise);
     expect(event.type).toBe("entry_state_changed");
@@ -201,6 +224,94 @@ describe("markEntriesRead SSE publishing", () => {
       entriesService.markEntriesRead(db, userId, [{ id: entryId, changedAt: new Date(0) }], false)
     );
   });
+
+  it("does not publish or compute counts when re-asserting an already-read entry (issue #1118)", async () => {
+    const userId = await seedUser();
+    const entryId = await seedEntry(userId);
+
+    const t1 = new Date("2026-01-01T00:00:01Z");
+    const t2 = new Date("2026-01-01T00:00:05Z");
+    await entriesService.markEntriesRead(db, userId, [{ id: entryId, changedAt: t1 }], true);
+
+    const channel = getUserEventsChannel(userId);
+    await subscriber.subscribe(channel);
+
+    // A FRESH changedAt wins the guard and writes the row (the watermark must
+    // advance), but the read value doesn't flip — so nothing is published,
+    // `changed` is empty, and no counts are computed.
+    await expectNoMessage(channel, async () => {
+      const result = await entriesService.markEntriesRead(
+        db,
+        userId,
+        [{ id: entryId, changedAt: t2 }],
+        true
+      );
+      expect(result.entries[0].read).toBe(true);
+      expect(result.changed).toEqual([]);
+      expect(result.counts).toBeUndefined();
+    });
+
+    // The re-assert advanced the LWW watermark even though nothing flipped.
+    const row = await getUserEntryRow(userId, entryId);
+    expect(row.readChangedAt).toEqual(t2);
+  });
+
+  it("keeps multi-device last-writer-wins intact across a redundant re-assert (issue #1118)", async () => {
+    const userId = await seedUser();
+    const entryId = await seedEntry(userId);
+
+    // Wall-clock order of user intent: read@T1, unread@T3, read@T2 — but the
+    // redundant read@T2 (latest intent) ARRIVES before the unread@T3 (e.g. a
+    // slow offline device syncing late). The result must be "read": the
+    // re-assert at T2 advanced the watermark, so the older unread@T3 loses.
+    const t1 = new Date("2026-01-01T00:00:01Z");
+    const t3 = new Date("2026-01-01T00:00:03Z");
+    const t2 = new Date("2026-01-01T00:00:05Z");
+
+    await entriesService.markEntriesRead(db, userId, [{ id: entryId, changedAt: t1 }], true);
+    await entriesService.markEntriesRead(db, userId, [{ id: entryId, changedAt: t2 }], true);
+    const stale = await entriesService.markEntriesRead(
+      db,
+      userId,
+      [{ id: entryId, changedAt: t3 }],
+      false
+    );
+
+    // The unread@T3 was rejected by the watermark and flipped nothing.
+    expect(stale.changed).toEqual([]);
+    expect(stale.entries[0].read).toBe(true);
+
+    const row = await getUserEntryRow(userId, entryId);
+    expect(row.read).toBe(true);
+    expect(row.readChangedAt).toEqual(t2);
+  });
+
+  it("publishes and counts only the flipped entries in a mixed batch", async () => {
+    const userId = await seedUser();
+    const unreadEntryId = await seedEntry(userId);
+    const readEntryId = await seedEntry(userId);
+    await entriesService.markEntriesRead(db, userId, [{ id: readEntryId }], true);
+
+    const channel = getUserEventsChannel(userId);
+    await subscriber.subscribe(channel);
+    const messagePromise = waitForMessage(channel);
+
+    // One entry flips unread→read, the other is a same-value re-assert.
+    const result = await entriesService.markEntriesRead(
+      db,
+      userId,
+      [{ id: unreadEntryId }, { id: readEntryId }],
+      true
+    );
+
+    expect(result.entries).toHaveLength(2);
+    expect(result.changed.map((e) => e.id)).toEqual([unreadEntryId]);
+    expect(result.counts).toBeDefined();
+
+    const event = JSON.parse(await messagePromise);
+    expect(event.type).toBe("entry_state_changed");
+    expect(event.entryId).toBe(unreadEntryId);
+  });
 });
 
 describe("updateEntryStarred SSE publishing", () => {
@@ -214,7 +325,7 @@ describe("updateEntryStarred SSE publishing", () => {
 
     const { entry, counts } = await entriesService.updateEntryStarred(db, userId, entryId, true);
     expect(entry.starred).toBe(true);
-    expect(counts.starred.unread).toBe(1);
+    expect(counts?.starred.unread).toBe(1);
 
     const event = JSON.parse(await messagePromise);
     expect(event.type).toBe("entry_state_changed");
@@ -237,5 +348,53 @@ describe("updateEntryStarred SSE publishing", () => {
     await expectNoMessage(channel, () =>
       entriesService.updateEntryStarred(db, userId, entryId, false, new Date(0))
     );
+  });
+
+  it("does not publish or compute counts when re-asserting an already-starred entry (issue #1118)", async () => {
+    const userId = await seedUser();
+    const entryId = await seedEntry(userId);
+
+    const t1 = new Date("2026-01-01T00:00:01Z");
+    const t2 = new Date("2026-01-01T00:00:05Z");
+    await entriesService.updateEntryStarred(db, userId, entryId, true, t1);
+
+    const channel = getUserEventsChannel(userId);
+    await subscriber.subscribe(channel);
+
+    // A FRESH changedAt wins the guard and writes the row (the watermark must
+    // advance), but the starred value doesn't flip — so nothing is published
+    // and no counts are computed.
+    await expectNoMessage(channel, async () => {
+      const result = await entriesService.updateEntryStarred(db, userId, entryId, true, t2);
+      expect(result.entry.starred).toBe(true);
+      expect(result.counts).toBeUndefined();
+    });
+
+    // The re-assert advanced the LWW watermark even though nothing flipped.
+    const row = await getUserEntryRow(userId, entryId);
+    expect(row.starredChangedAt).toEqual(t2);
+  });
+
+  it("keeps multi-device last-writer-wins intact across a redundant re-assert (issue #1118)", async () => {
+    const userId = await seedUser();
+    const entryId = await seedEntry(userId);
+
+    // star@T1, redundant star@T2 arrives before unstar@T3 (T1 < T3 < T2).
+    // Latest intent is the T2 star, so the entry must stay starred — which
+    // requires the redundant T2 write to have advanced the watermark.
+    const t1 = new Date("2026-01-01T00:00:01Z");
+    const t3 = new Date("2026-01-01T00:00:03Z");
+    const t2 = new Date("2026-01-01T00:00:05Z");
+
+    await entriesService.updateEntryStarred(db, userId, entryId, true, t1);
+    await entriesService.updateEntryStarred(db, userId, entryId, true, t2);
+    const stale = await entriesService.updateEntryStarred(db, userId, entryId, false, t3);
+
+    // The unstar@T3 was rejected by the watermark.
+    expect(stale.entry.starred).toBe(true);
+
+    const row = await getUserEntryRow(userId, entryId);
+    expect(row.starred).toBe(true);
+    expect(row.starredChangedAt).toEqual(t2);
   });
 });

@@ -201,7 +201,9 @@ const bulkUnreadCountsSchema = z.object({
  */
 const setStarredOutputSchema = z.object({
   entry: entryMutationResultSchema,
-  counts: unreadCountsSchema,
+  // Absent when the starred value didn't actually flip (same-value re-assert)
+  // — the client's cached counts are already correct (issue #1118).
+  counts: unreadCountsSchema.optional(),
 });
 
 // ============================================================================
@@ -373,8 +375,10 @@ export const entriesRouter = createTRPCRouter({
             updatedAt: z.date(), // For cache freshness comparison
           })
         ),
-        // Absolute counts for all affected lists
-        counts: bulkUnreadCountsSchema,
+        // Absolute counts for all affected lists. Absent when no read value
+        // actually flipped (same-value re-assert) — the client's cached counts
+        // are already correct (issue #1118).
+        counts: bulkUnreadCountsSchema.optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
