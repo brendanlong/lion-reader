@@ -37,6 +37,10 @@ import {
 // Redis key prefix for storing Discord user -> API token mappings
 const REDIS_KEY_PREFIX = "discord:token:";
 
+// How long after login() to wait for the gateway `clientReady` event before
+// warning that the bot connected but isn't receiving events.
+const READY_WATCHDOG_MS = 30 * 1000;
+
 // In-memory fallback when Redis is unavailable
 const tokenCache = new Map<string, string>();
 
@@ -174,6 +178,38 @@ export async function startDiscordBot(): Promise<void> {
     partials: [Partials.Message, Partials.Reaction],
   });
 
+  // Gateway diagnostics. `client.login()` resolves as soon as the token
+  // handshake starts, long before the gateway is actually connected, so a bot
+  // that authenticates but never reaches `clientReady` would silently receive
+  // zero reaction events while still logging "started successfully". These
+  // handlers make that failure mode visible instead of invisible.
+  client.on("error", (error) => {
+    logger.error("Discord client error", { error });
+  });
+  client.on("shardError", (error, shardId) => {
+    logger.error("Discord gateway shard error", { error, shardId });
+  });
+  client.on("shardDisconnect", (event, shardId) => {
+    // Only fires on unrecoverable close codes (recoverable drops go to
+    // shardReconnecting instead), so this is always serious. The close code
+    // explains why: 4014 = disallowed (privileged) intents, 4004 = auth failed,
+    // etc. (event.reason is a deprecated placeholder in discord.js v14 — the
+    // code is the real signal.)
+    logger.warn("Discord gateway shard disconnected", {
+      shardId,
+      code: event.code,
+    });
+  });
+  client.on("shardReconnecting", (shardId) => {
+    logger.info("Discord gateway shard reconnecting", { shardId });
+  });
+  client.on("invalidated", () => {
+    logger.error("Discord session invalidated (bot will stop receiving events)");
+  });
+  client.on("warn", (message) => {
+    logger.warn("Discord client warning", { message });
+  });
+
   // Register slash commands
   await registerCommands();
 
@@ -202,7 +238,20 @@ export async function startDiscordBot(): Promise<void> {
     await handleSaveReaction(reaction.message, user);
   });
 
+  // Watchdog: `client.login()` below resolves on token handshake, not on a live
+  // gateway. If `clientReady` hasn't fired within this window the bot is logged
+  // in but not receiving events (stuck handshake, network, disallowed intents),
+  // so log loudly rather than sitting silently "started successfully".
+  const readyWatchdog = setTimeout(() => {
+    logger.error("Discord gateway not ready after login", {
+      timeoutMs: READY_WATCHDOG_MS,
+      hint: "client.login() resolved but clientReady never fired; check gateway connectivity and privileged intents",
+    });
+  }, READY_WATCHDOG_MS);
+
   client.once("clientReady", async () => {
+    clearTimeout(readyWatchdog);
+
     // Fetch application emojis to populate the cache
     if (client?.application) {
       try {
@@ -221,7 +270,14 @@ export async function startDiscordBot(): Promise<void> {
     });
   });
 
-  await client.login(DISCORD_BOT_TOKEN);
+  try {
+    await client.login(DISCORD_BOT_TOKEN);
+  } catch (error) {
+    // login() rejected (bad token, network) — clear the watchdog so it can't
+    // later fire the misleading "resolved but clientReady never fired" message.
+    clearTimeout(readyWatchdog);
+    throw error;
+  }
 }
 
 async function registerCommands(): Promise<void> {
