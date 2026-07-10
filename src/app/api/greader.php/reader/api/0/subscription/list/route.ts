@@ -19,14 +19,15 @@ export async function GET(request: Request): Promise<Response> {
   const session = await requireAuth(request);
   if (session instanceof Response) return session;
 
-  // `formatSubscription` ignores unread counts, but listGreaderSubscriptions
-  // computes them anyway: the per-subscription counts are baked into the
-  // subscription query (skipping those is tracked as issue #1074), and the
-  // synthetic saved feed runs its own separate `countEntries` (out of scope for
-  // #1074) whose result is likewise discarded here. Both are wasted work only on
-  // this endpoint; unread-count needs the counts.
+  // `formatSubscription` ignores unread counts, so skip computing them — the
+  // per-subscription unread aggregate scales with the user's unread backlog and
+  // would dominate this query for nothing (issue #1074). unread-count is the
+  // endpoint that needs the counts and keeps the default.
   const subscriptions = (
-    await listGreaderSubscriptions(db, session.user.id, { showSpam: session.user.showSpam })
+    await listGreaderSubscriptions(db, session.user.id, {
+      showSpam: session.user.showSpam,
+      includeUnreadCounts: false,
+    })
   ).map(formatSubscription);
 
   return jsonResponse({ subscriptions });

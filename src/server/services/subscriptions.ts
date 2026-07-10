@@ -54,10 +54,30 @@ export interface Subscription {
 // ============================================================================
 
 /**
- * Builds the base query for fetching subscriptions using the user_feeds view.
- * Includes unread counts and tags.
+ * Options shared by the subscription read functions.
  */
-function buildSubscriptionBaseQuery(db: typeof dbType, userId: string) {
+export interface SubscriptionQueryOptions {
+  /**
+   * Compute per-subscription unread counts (default true). The count is a
+   * grouped aggregate over `visible_entries` that scales with the user's unread
+   * backlog — often the dominant cost of the query — so callers that discard
+   * `unreadCount` (Google Reader `subscription/list`/`quickadd`, issue #1074)
+   * pass false and get a literal 0 instead.
+   */
+  includeUnreadCounts?: boolean;
+}
+
+/**
+ * Builds the base query for fetching subscriptions using the user_feeds view.
+ * Includes unread counts (unless opted out) and tags.
+ */
+function buildSubscriptionBaseQuery(
+  db: typeof dbType,
+  userId: string,
+  opts: SubscriptionQueryOptions = {}
+) {
+  const includeUnreadCounts = opts.includeUnreadCounts ?? true;
+
   // Subquery to get unread counts per subscription.
   // Counts through visible_entries (grouped by subscription_id) rather than by
   // entries.feed_id: a subscription can own entries under multiple feed_ids via
@@ -76,7 +96,7 @@ function buildSubscriptionBaseQuery(db: typeof dbType, userId: string) {
     .groupBy(visibleEntries.subscriptionId)
     .as("unread_counts");
 
-  return db
+  const baseSelect = db
     .select({
       // From user_feeds view - subscription fields
       id: userFeeds.id,
@@ -90,8 +110,11 @@ function buildSubscriptionBaseQuery(db: typeof dbType, userId: string) {
       originalTitle: userFeeds.originalTitle,
       description: userFeeds.description,
       siteUrl: userFeeds.siteUrl,
-      // Unread count from subquery
-      unreadCount: sql<number>`COALESCE(${unreadCountsSubquery.unreadCount}, 0)`,
+      // Unread count from subquery (a literal 0 when skipped — the column stays
+      // declared so the row shape is identical either way)
+      unreadCount: includeUnreadCounts
+        ? sql<number>`COALESCE(${unreadCountsSubquery.unreadCount}, 0)`
+        : sql<number>`0`,
       // Tags aggregated as JSON array
       tags: sql<Array<{ id: string; name: string; color: string | null }>>`
         COALESCE(
@@ -103,7 +126,16 @@ function buildSubscriptionBaseQuery(db: typeof dbType, userId: string) {
       `,
     })
     .from(userFeeds)
-    .leftJoin(unreadCountsSubquery, eq(unreadCountsSubquery.subscriptionId, userFeeds.id))
+    .$dynamic();
+
+  return (
+    includeUnreadCounts
+      ? baseSelect.leftJoin(
+          unreadCountsSubquery,
+          eq(unreadCountsSubquery.subscriptionId, userFeeds.id)
+        )
+      : baseSelect
+  )
     .leftJoin(subscriptionTags, eq(subscriptionTags.subscriptionId, userFeeds.id))
     .leftJoin(tags, eq(tags.id, subscriptionTags.tagId))
     .groupBy(
@@ -117,7 +149,7 @@ function buildSubscriptionBaseQuery(db: typeof dbType, userId: string) {
       userFeeds.originalTitle,
       userFeeds.description,
       userFeeds.siteUrl,
-      unreadCountsSubquery.unreadCount
+      ...(includeUnreadCounts ? [unreadCountsSubquery.unreadCount] : [])
     );
 }
 
@@ -303,9 +335,10 @@ export async function listSubscriptions(
  */
 export async function listAllSubscriptions(
   db: typeof dbType,
-  userId: string
+  userId: string,
+  opts: SubscriptionQueryOptions = {}
 ): Promise<Subscription[]> {
-  const results = await buildSubscriptionBaseQuery(db, userId)
+  const results = await buildSubscriptionBaseQuery(db, userId, opts)
     .where(eq(userFeeds.userId, userId))
     .orderBy(sql`COALESCE(${userFeeds.title}, '') ASC`, userFeeds.id);
   return results.map(formatSubscriptionRow);
@@ -317,9 +350,10 @@ export async function listAllSubscriptions(
 export async function getSubscription(
   db: typeof dbType,
   userId: string,
-  subscriptionId: string
+  subscriptionId: string,
+  opts: SubscriptionQueryOptions = {}
 ): Promise<Subscription> {
-  const results = await buildSubscriptionBaseQuery(db, userId)
+  const results = await buildSubscriptionBaseQuery(db, userId, opts)
     .where(and(eq(userFeeds.id, subscriptionId), eq(userFeeds.userId, userId)))
     .limit(1);
 
