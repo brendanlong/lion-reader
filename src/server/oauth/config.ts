@@ -4,7 +4,7 @@
  * Centralized configuration for the OAuth 2.1 authorization server.
  */
 
-import { OAUTH_SCOPES } from "./utils";
+import { OAUTH_SCOPES, SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS } from "./utils";
 
 /**
  * Get the OAuth issuer URL (base URL of the authorization server).
@@ -65,12 +65,20 @@ export function getAuthorizationServerMetadata() {
     authorization_endpoint: `${issuer}/oauth/authorize`,
     token_endpoint: `${issuer}/oauth/token`,
     registration_endpoint: `${issuer}/oauth/register`,
+    revocation_endpoint: `${issuer}/oauth/revoke`,
     scopes_supported: Object.values(OAUTH_SCOPES),
     response_types_supported: ["code"],
     response_modes_supported: ["query"],
     grant_types_supported: ["authorization_code", "refresh_token"],
     code_challenge_methods_supported: ["S256"],
-    token_endpoint_auth_methods_supported: ["none"],
+    // All three methods, matching every known-working remote MCP server (Linear,
+    // Sentry, Notion). Advertising only ["none"] while /oauth/register accepted
+    // client_secret_post was a metadata/endpoint contradiction (the failure class
+    // of anthropics/claude-ai-mcp#285), and it declared manually-registered
+    // confidential clients (client ID + secret pasted into claude.ai's Advanced
+    // settings) unsupported. Shared with /oauth/register validation so the two
+    // can't drift apart again.
+    token_endpoint_auth_methods_supported: SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS,
     // NB: we intentionally do NOT advertise `client_id_metadata_document_supported`.
     // Clients pick their registration method by priority: pre-registered → CIMD →
     // DCR. claude.ai treats CIMD (when advertised alongside `"none"` auth) as

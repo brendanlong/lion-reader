@@ -16,6 +16,7 @@ import {
   getProtectedResourceMetadataUrl,
   getAuthorizationServerMetadata,
 } from "../../src/server/oauth/config";
+import { SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS } from "../../src/server/oauth/utils";
 
 describe("OAuth resource identifiers", () => {
   const original = process.env.NEXT_PUBLIC_APP_URL;
@@ -78,7 +79,23 @@ describe("OAuth resource identifiers", () => {
   it("advertises the endpoints and PKCE claude.ai requires for DCR", () => {
     const metadata = getAuthorizationServerMetadata();
     expect(metadata.registration_endpoint).toBe("https://reader.example.com/oauth/register");
+    expect(metadata.revocation_endpoint).toBe("https://reader.example.com/oauth/revoke");
     expect(metadata.code_challenge_methods_supported).toEqual(["S256"]);
-    expect(metadata.token_endpoint_auth_methods_supported).toEqual(["none"]);
+  });
+
+  it("advertises the same token-endpoint auth methods /oauth/register accepts", () => {
+    // Advertising fewer methods than registration accepts is the
+    // metadata/endpoint contradiction of anthropics/claude-ai-mcp#285; the
+    // known-working remote MCP servers (Linear, Sentry, Notion) all advertise
+    // these three.
+    const metadata = getAuthorizationServerMetadata();
+    expect(metadata.token_endpoint_auth_methods_supported).toEqual(
+      SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS
+    );
+    expect(metadata.token_endpoint_auth_methods_supported).toEqual([
+      "client_secret_basic",
+      "client_secret_post",
+      "none",
+    ]);
   });
 });

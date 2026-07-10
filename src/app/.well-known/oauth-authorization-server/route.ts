@@ -20,7 +20,10 @@ export async function GET() {
     NextResponse.json(metadata, {
       headers: {
         "Content-Type": "application/json",
-        "Cache-Control": "public, max-age=3600", // Cache for 1 hour
+        // no-store: MCP clients (claude.ai) re-run discovery on every connect
+        // and can act on a stale cached document mid-flow. None of the working
+        // remote MCP servers (Linear, Sentry, Notion) allow caching here.
+        "Cache-Control": "no-store",
       },
     })
   );

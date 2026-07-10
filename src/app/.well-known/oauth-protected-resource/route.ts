@@ -20,7 +20,8 @@ export async function GET() {
     NextResponse.json(metadata, {
       headers: {
         "Content-Type": "application/json",
-        "Cache-Control": "public, max-age=3600", // Cache for 1 hour
+        // no-store: see .well-known/oauth-authorization-server/route.ts
+        "Cache-Control": "no-store",
       },
     })
   );

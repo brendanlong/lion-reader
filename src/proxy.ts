@@ -1,10 +1,18 @@
 /**
  * Next.js Proxy (middleware)
  *
- * The ONLY job of this proxy is the claude.ai OAuth workaround: rewriting
- * POST/OPTIONS `/register` to the Dynamic Client Registration handler at
- * `/oauth/register` (see the big comment in `proxy()`). The `config.matcher`
- * below is scoped to `/register` so middleware doesn't run on any other request.
+ * This proxy has exactly two jobs, both claude.ai OAuth/MCP workarounds:
+ *
+ * 1. Method-splitting `/register` so claude.ai's root-path Dynamic Client
+ *    Registration POST reaches the real DCR handler (see the big comment in
+ *    `proxy()`).
+ * 2. Trailing-slash normalization (`skipTrailingSlashRedirect` is enabled in
+ *    next.config.ts): slashed OAuth/MCP-surface paths are REWRITTEN in place —
+ *    server-to-server OAuth clients (claude.ai's connector uses python-httpx)
+ *    don't follow redirects on POST, and claude.ai has been observed appending
+ *    trailing slashes (anthropics/claude-ai-mcp#324); the known-working remote
+ *    MCP servers all answer `POST /mcp/` directly. Every other path keeps
+ *    Next's default behavior (a 308 redirect to the slashless URL).
  *
  * Route authentication is intentionally NOT handled here. It lives in one place:
  * the server-side layout guards — `src/app/(app)/layout.tsx` (via
@@ -18,7 +26,50 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 
+/**
+ * True when a (slash-trimmed) path belongs to the OAuth/MCP surface, where
+ * non-browser clients POST and a redirect would break the flow. `/register` is
+ * only part of the surface for POST/OPTIONS (the DCR method-split below); GET
+ * `/register/` is the human signup page and keeps the redirect.
+ */
+function isOauthMcpSurfacePath(pathname: string, method: string): boolean {
+  if (pathname === "/api/mcp" || pathname === "/authorize" || pathname === "/token") {
+    return true;
+  }
+  if (pathname.startsWith("/oauth/") || pathname.startsWith("/.well-known/")) {
+    return true;
+  }
+  return pathname === "/register" && (method === "POST" || method === "OPTIONS");
+}
+
+/** True for the requests that `/register` method-splits to the DCR handler. */
+function isDcrRegisterRequest(pathname: string, method: string): boolean {
+  return pathname === "/register" && (method === "POST" || method === "OPTIONS");
+}
+
 export function proxy(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  // ==========================================================================
+  // Trailing-slash normalization (see file header). Next's own redirect is
+  // disabled via `skipTrailingSlashRedirect`, so this must handle EVERY slashed
+  // path: rewrite the OAuth/MCP surface in place, 308 the rest like Next would.
+  // ==========================================================================
+  if (pathname.length > 1 && pathname.endsWith("/")) {
+    // A plain URL, not request.nextUrl.clone(): NextURL remembers that the
+    // original path had a trailing slash and re-appends it when serialized,
+    // silently undoing the rewrite.
+    const url = new URL(request.url);
+    url.pathname = pathname.replace(/\/+$/, "");
+    if (isOauthMcpSurfacePath(url.pathname, request.method)) {
+      if (isDcrRegisterRequest(url.pathname, request.method)) {
+        url.pathname = "/oauth/register";
+      }
+      return NextResponse.rewrite(url);
+    }
+    return NextResponse.redirect(url, 308);
+  }
+
   // ==========================================================================
   // HACK: claude.ai OAuth "root path" workaround — `/register` is METHOD-SPLIT.
   //
@@ -51,10 +102,7 @@ export function proxy(request: NextRequest) {
   // ==========================================================================
   // The pathname guard is redundant with `config.matcher` today, but keeps the
   // rewrite correct on its own if the matcher is ever widened.
-  if (
-    request.nextUrl.pathname === "/register" &&
-    (request.method === "POST" || request.method === "OPTIONS")
-  ) {
+  if (isDcrRegisterRequest(pathname, request.method)) {
     const dcrUrl = request.nextUrl.clone();
     dcrUrl.pathname = "/oauth/register";
     return NextResponse.rewrite(dcrUrl);
@@ -65,10 +113,15 @@ export function proxy(request: NextRequest) {
 }
 
 /**
- * Only run this proxy on `/register` — its sole purpose is the method-split
- * rewrite above. Everything else (auth included) is handled elsewhere, so there
- * is no reason to invoke middleware on other requests.
+ * The proxy must see every path that can carry a trailing slash, because
+ * `skipTrailingSlashRedirect` hands ALL slashed URLs to us — an unmatched
+ * slashed path is served a broken empty 200 by Next. A matcher can't target
+ * trailing slashes directly (Next normalizes the trailing slash out of matcher
+ * patterns — verified against `/:path+/` and `/(.+)/`, whose slashed requests
+ * bypassed the proxy), so match everything except Next's own assets. The
+ * function body is a few string comparisons and no-ops for slashless paths, so
+ * the per-request cost is negligible. Auth is still handled elsewhere (#984).
  */
 export const config = {
-  matcher: ["/register"],
+  matcher: ["/((?!_next/).*)"],
 };

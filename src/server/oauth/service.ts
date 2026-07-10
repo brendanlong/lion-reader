@@ -28,6 +28,7 @@ import {
   isValidRedirectUriFormat,
   isResourceForThisServer,
   OAUTH_SCOPES,
+  SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS,
 } from "./utils";
 import { getIssuer, getResourceIdentifier } from "./config";
 import { logger } from "@/lib/logger";
@@ -546,6 +547,67 @@ async function handlePossibleRefreshTokenReuse(
     );
 }
 
+/**
+ * Revokes a token presented by a client (RFC 7009).
+ *
+ * The token may be an access token or a refresh token; both tables are checked
+ * regardless of any `token_type_hint` (the RFC allows extending the search).
+ * Revoking a refresh token also revokes the access token issued with it
+ * (RFC 7009 §2.1: the server SHOULD invalidate related tokens).
+ *
+ * Only tokens belonging to `clientId` are revoked — a token owned by another
+ * client is treated like an unknown token (a silent no-op), which is also what
+ * the caller reports: RFC 7009 requires HTTP 200 for unknown tokens.
+ */
+export async function revokeClientToken(clientId: string, token: string): Promise<void> {
+  const tokenHash = hashToken(token);
+  const now = new Date();
+
+  await db
+    .update(oauthAccessTokens)
+    .set({ revokedAt: now })
+    .where(
+      and(
+        eq(oauthAccessTokens.tokenHash, tokenHash),
+        eq(oauthAccessTokens.clientId, clientId),
+        isNull(oauthAccessTokens.revokedAt)
+      )
+    );
+
+  const [refreshToken] = await db
+    .select({
+      id: oauthRefreshTokens.id,
+      accessTokenId: oauthRefreshTokens.accessTokenId,
+      revokedAt: oauthRefreshTokens.revokedAt,
+    })
+    .from(oauthRefreshTokens)
+    .where(
+      and(eq(oauthRefreshTokens.tokenHash, tokenHash), eq(oauthRefreshTokens.clientId, clientId))
+    )
+    .limit(1);
+
+  if (!refreshToken || refreshToken.revokedAt) {
+    return;
+  }
+
+  await db
+    .update(oauthRefreshTokens)
+    .set({ revokedAt: now })
+    .where(eq(oauthRefreshTokens.id, refreshToken.id));
+
+  if (refreshToken.accessTokenId) {
+    await db
+      .update(oauthAccessTokens)
+      .set({ revokedAt: now })
+      .where(
+        and(
+          eq(oauthAccessTokens.id, refreshToken.accessTokenId),
+          isNull(oauthAccessTokens.revokedAt)
+        )
+      );
+  }
+}
+
 // ============================================================================
 // Consent Management
 // ============================================================================
@@ -639,6 +701,7 @@ export interface ClientRegistrationResponse {
   client_secret?: string;
   client_id_issued_at?: number;
   client_secret_expires_at?: number;
+  registration_client_uri?: string;
   redirect_uris: string[];
   token_endpoint_auth_method: string;
   grant_types: string[];
@@ -713,15 +776,17 @@ export async function registerClient(
     }
   }
 
-  // Validate token_endpoint_auth_method
-  const authMethod = request.token_endpoint_auth_method ?? "none";
-  const supportedAuthMethods = ["none", "client_secret_post"];
-  if (!supportedAuthMethods.includes(authMethod)) {
+  // Validate token_endpoint_auth_method. When omitted, RFC 7591 §2 defines the
+  // default as client_secret_basic (a confidential client) — the working remote
+  // MCP servers (Linear, Sentry, Notion) all follow this, so clients that omit
+  // the field demonstrably handle receiving a secret.
+  const authMethod = request.token_endpoint_auth_method ?? "client_secret_basic";
+  if (!SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS.includes(authMethod)) {
     return {
       success: false,
       error: {
         error: "invalid_client_metadata",
-        error_description: `Unsupported token_endpoint_auth_method: ${authMethod}. Supported methods: ${supportedAuthMethods.join(", ")}`,
+        error_description: `Unsupported token_endpoint_auth_method: ${authMethod}. Supported methods: ${SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS.join(", ")}`,
       },
     };
   }
@@ -818,6 +883,12 @@ export async function registerClient(
     token_endpoint_auth_method: authMethod,
     grant_types: grantTypes,
     response_types: responseTypes,
+    // Response-shape parity with the working remote MCP servers (Linear, Sentry,
+    // Notion), which all include this field. RFC 7592 client management is not
+    // implemented (theirs isn't either — Linear's URI 404s), and per RFC 7592 a
+    // client can't use it anyway without a registration_access_token, which we
+    // don't issue.
+    registration_client_uri: `${getIssuer()}/oauth/register/${clientId}`,
   };
 
   // Add client_secret for confidential clients

@@ -20,6 +20,7 @@ import {
   createTokens,
   rotateRefreshToken,
   validateAccessToken,
+  revokeClientToken,
 } from "../../src/server/oauth/service";
 import { getIssuer, getResourceIdentifier } from "../../src/server/oauth/config";
 
@@ -237,5 +238,50 @@ describe("rotateRefreshToken", () => {
       const validated = await validateAccessToken(rotated!.accessToken);
       expect(validated?.resource).toBe(getResourceIdentifier());
     });
+  });
+});
+
+describe("revokeClientToken (RFC 7009)", () => {
+  it("revokes an access token", async () => {
+    const userId = await createTestUser();
+    const clientId = await createTestClient();
+    const tokens = await createTokens({ clientId, userId, scopes: ["mcp"] });
+
+    await revokeClientToken(clientId, tokens.accessToken);
+    expect(await validateAccessToken(tokens.accessToken)).toBeNull();
+
+    // The refresh token stays usable — RFC 7009 only requires revoking related
+    // refresh tokens when the client also revokes them; rotation still works.
+    expect(await rotateRefreshToken(tokens.refreshToken, clientId)).not.toBeNull();
+  });
+
+  it("revokes a refresh token and its linked access token", async () => {
+    const userId = await createTestUser();
+    const clientId = await createTestClient();
+    const tokens = await createTokens({ clientId, userId, scopes: ["mcp"] });
+
+    await revokeClientToken(clientId, tokens.refreshToken);
+
+    // RFC 7009 §2.1: revoking a refresh token SHOULD invalidate the access
+    // token issued with it.
+    expect(await validateAccessToken(tokens.accessToken)).toBeNull();
+    expect(await rotateRefreshToken(tokens.refreshToken, clientId)).toBeNull();
+  });
+
+  it("is a silent no-op for an unknown token", async () => {
+    const clientId = await createTestClient();
+    await expect(revokeClientToken(clientId, "not-a-real-token")).resolves.toBeUndefined();
+  });
+
+  it("does not revoke a token owned by a different client", async () => {
+    const userId = await createTestUser();
+    const clientId = await createTestClient();
+    const otherClientId = await createTestClient();
+    const tokens = await createTokens({ clientId, userId, scopes: ["mcp"] });
+
+    await revokeClientToken(otherClientId, tokens.accessToken);
+    await revokeClientToken(otherClientId, tokens.refreshToken);
+
+    expect(await validateAccessToken(tokens.accessToken)).not.toBeNull();
   });
 });

@@ -81,6 +81,14 @@ const nextConfig: NextConfig = {
   // zstd/brotli/gzip/deflate compression to streaming SSR responses, and
   // Fly.io's edge handles non-streaming responses.
   compress: false,
+  // Trailing-slash handling moves to src/proxy.ts: Next's built-in behavior is
+  // a blanket 308 redirect (`/foo/` → `/foo`), but server-to-server OAuth/MCP
+  // clients (claude.ai's connector uses python-httpx) don't follow redirects on
+  // POST — and claude.ai has been observed appending trailing slashes
+  // (anthropics/claude-ai-mcp#324). The proxy instead REWRITES slashed
+  // OAuth/MCP-surface paths in place (matching how Linear/Sentry/Notion answer
+  // `POST /mcp/` directly) and keeps the 308 for the rest of the site.
+  skipTrailingSlashRedirect: true,
   env: {
     // Inject git commit SHA at build time
     GIT_COMMIT_SHA: getGitCommitSha(),

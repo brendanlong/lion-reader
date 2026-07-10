@@ -52,6 +52,21 @@ export const SCOPE_DESCRIPTIONS: Record<OAuthScope, string> = {
   "reader:full-access": "Read and manage your feeds, subscriptions, tags, and saved articles",
 };
 
+/**
+ * Token-endpoint auth methods this server supports, in the order they are
+ * advertised. Used by both the RFC 8414 metadata (config.ts) and /oauth/register
+ * validation (service.ts) so the two can never contradict each other — a
+ * metadata/endpoint mismatch makes strict clients (claude.ai) abort registration
+ * (anthropics/claude-ai-mcp#285). All three methods, matching every
+ * known-working remote MCP server (Linear, Sentry, Notion). The credential
+ * extraction for basic/post lives in client-auth.ts.
+ */
+export const SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS = [
+  "client_secret_basic",
+  "client_secret_post",
+  "none",
+];
+
 // ============================================================================
 // Token Generation
 // ============================================================================

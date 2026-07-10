@@ -196,7 +196,13 @@ function createMcpServer(userId: string): Server {
 function unauthorizedResponse(failure: AuthFailure): Response {
   logger.warn("MCP auth unauthorized", { reason: failure.reason });
   const status = failure.status ?? 401;
-  return new Response(JSON.stringify({ error: status === 403 ? "Forbidden" : "Unauthorized" }), {
+  // RFC 6750-style error body, byte-identical to what the known-working remote
+  // MCP servers (Linear, Sentry, Notion) return on an unauthenticated request.
+  const body =
+    status === 403
+      ? { error: "forbidden", error_description: "Access denied" }
+      : { error: "invalid_token", error_description: "Missing or invalid access token" };
+  return new Response(JSON.stringify(body), {
     status,
     headers: {
       "Content-Type": "application/json",
