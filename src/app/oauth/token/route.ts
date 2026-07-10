@@ -9,7 +9,6 @@
  * POST /oauth/token
  */
 
-import crypto from "node:crypto";
 import { type NextRequest, NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import {
@@ -20,11 +19,11 @@ import {
   type ResolvedClient,
 } from "@/server/oauth/service";
 import {
-  isValidCodeVerifier,
-  hashToken,
-  OAUTH_ERRORS,
-  createOAuthError,
-} from "@/server/oauth/utils";
+  extractClientCredentials,
+  clientSecretError,
+  type ClientCredentials,
+} from "@/server/oauth/client-auth";
+import { isValidCodeVerifier, OAUTH_ERRORS, createOAuthError } from "@/server/oauth/utils";
 import { checkRouteRateLimit } from "@/server/rate-limit";
 import { withMcpCorsHeaders, mcpCorsPreflight } from "@/server/http/cors";
 
@@ -66,11 +65,23 @@ async function handleToken(request: NextRequest): Promise<Response> {
 
   const grantType = body.grant_type;
 
+  // Client credentials may arrive via the form body (client_secret_post,
+  // public clients) or an HTTP Basic header (client_secret_basic).
+  const extracted = extractClientCredentials(request.headers.get("authorization"), body);
+  if (!extracted.success) {
+    logger.warn("OAuth token request: client credential extraction failed", {
+      error: extracted.error.error_description,
+    });
+    return NextResponse.json(extracted.error, { status: extracted.status });
+  }
+  const credentials = extracted.credentials;
+
   // Log what the client sent (no secrets) so token-exchange failures are
   // debuggable — grant type + which required params are present.
   logger.info("OAuth token request", {
     grantType,
-    clientId: body.client_id,
+    clientId: credentials.clientId,
+    hasClientSecret: !!credentials.clientSecret,
     hasCode: !!body.code,
     hasCodeVerifier: !!body.code_verifier,
     hasRedirectUri: !!body.redirect_uri,
@@ -78,9 +89,9 @@ async function handleToken(request: NextRequest): Promise<Response> {
   });
 
   if (grantType === "authorization_code") {
-    return handleAuthorizationCodeGrant(body);
+    return handleAuthorizationCodeGrant(body, credentials);
   } else if (grantType === "refresh_token") {
-    return handleRefreshTokenGrant(body);
+    return handleRefreshTokenGrant(body, credentials);
   } else {
     return NextResponse.json(
       createOAuthError(OAUTH_ERRORS.UNSUPPORTED_GRANT_TYPE, "Unsupported grant_type"),
@@ -90,36 +101,16 @@ async function handleToken(request: NextRequest): Promise<Response> {
 }
 
 /**
- * Validates client_secret for confidential clients.
- * Public clients (isPublic=true) don't require a secret.
+ * Validates client_secret for confidential clients (see client-auth.ts).
  * Returns an error response if validation fails, or null if valid.
  */
 function validateClientSecret(
   client: ResolvedClient,
   clientSecret: string | undefined
 ): NextResponse | null {
-  if (client.isPublic) {
-    return null; // Public clients don't need secret validation
-  }
-  if (!clientSecret) {
-    return NextResponse.json(
-      createOAuthError(
-        OAUTH_ERRORS.INVALID_CLIENT,
-        "Missing client_secret for confidential client"
-      ),
-      { status: 401 }
-    );
-  }
-  const computedHash = hashToken(clientSecret);
-  if (
-    !client.clientSecretHash ||
-    computedHash.length !== client.clientSecretHash.length ||
-    !crypto.timingSafeEqual(Buffer.from(computedHash), Buffer.from(client.clientSecretHash))
-  ) {
-    return NextResponse.json(
-      createOAuthError(OAUTH_ERRORS.INVALID_CLIENT, "Invalid client_secret"),
-      { status: 401 }
-    );
+  const error = clientSecretError(client, clientSecret);
+  if (error) {
+    return NextResponse.json(error, { status: 401 });
   }
   return null;
 }
@@ -127,8 +118,12 @@ function validateClientSecret(
 /**
  * Handle authorization_code grant type
  */
-async function handleAuthorizationCodeGrant(body: Record<string, string>) {
-  const { code, redirect_uri, client_id, code_verifier, client_secret } = body;
+async function handleAuthorizationCodeGrant(
+  body: Record<string, string>,
+  credentials: ClientCredentials
+) {
+  const { code, redirect_uri, code_verifier } = body;
+  const { clientId: client_id, clientSecret: client_secret } = credentials;
 
   // Validate required parameters
   if (!code) {
@@ -235,8 +230,12 @@ async function handleAuthorizationCodeGrant(body: Record<string, string>) {
 /**
  * Handle refresh_token grant type
  */
-async function handleRefreshTokenGrant(body: Record<string, string>) {
-  const { refresh_token, client_id, client_secret } = body;
+async function handleRefreshTokenGrant(
+  body: Record<string, string>,
+  credentials: ClientCredentials
+) {
+  const { refresh_token } = body;
+  const { clientId: client_id, clientSecret: client_secret } = credentials;
 
   // Validate required parameters
   if (!refresh_token) {
