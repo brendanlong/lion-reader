@@ -213,17 +213,17 @@ export function isValidRedirectUriFormat(redirectUri: string): boolean {
 
 /**
  * Parses a space-separated scope string into an array.
+ *
+ * Only matches against scope *values* (e.g. `"mcp"`), never the enum keys
+ * (`"MCP"`): `s in OAUTH_SCOPES` would treat the uppercase key names as valid
+ * scopes, which `validateScopes` re-filters away today, but is wrong on its face.
  */
 export function parseScopes(scopeString: string | undefined): OAuthScope[] {
   if (!scopeString) {
     return [];
   }
-  return scopeString
-    .split(" ")
-    .filter(
-      (s): s is OAuthScope =>
-        s in OAUTH_SCOPES || Object.values(OAUTH_SCOPES).includes(s as OAuthScope)
-    );
+  const values = Object.values(OAUTH_SCOPES) as string[];
+  return scopeString.split(" ").filter((s): s is OAuthScope => values.includes(s));
 }
 
 /**

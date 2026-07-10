@@ -117,6 +117,23 @@ describe("convertMathJaxChtmlToMathml", () => {
       );
       expect(out).not.toContain("mjx-");
     });
+
+    it("recovers content absorbed when </mjx-math> is only implicitly closed", () => {
+      // Both `</mjx-math>` and `</mjx-container>` are missing, so the trailing
+      // `<p>text</p>` is parsed as a child of the container and the closes are all
+      // implied. mathEnd must NOT advance on the implied `</mjx-math>` (that
+      // position is the absorbed content, not the math), or the recovery slice
+      // would swallow `<p>text</p>`. The math still converts; the absorbed content
+      // survives (its residual mjx markup is stripped by the downstream sanitize).
+      const unclosedMath = MJX_X.replace("</mjx-math></mjx-container>", "");
+      const sanitized = sanitizeEntryHtml(
+        convertMathJaxChtmlToMathml(`<div>${unclosedMath}<p>text</p></div>tail`)
+      );
+      expect(sanitized).toContain("text");
+      expect(sanitized).toContain("tail");
+      expect(sanitized).toContain("<math");
+      expect(sanitized).not.toContain("mjx-");
+    });
   });
 
   describe("basic tokens and structures (LessWrong-serialized samples)", () => {

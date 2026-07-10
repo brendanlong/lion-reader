@@ -9,6 +9,7 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { db } from "../../src/server/db";
 import {
+  apiTokens,
   feeds,
   jobs,
   oauthAccessTokens,
@@ -16,6 +17,7 @@ import {
   oauthClients,
   oauthConsentGrants,
   oauthRefreshTokens,
+  opmlImports,
   sessions,
   subscriptions,
   users,
@@ -200,6 +202,40 @@ async function cleanupTables(): Promise<void> {
   await db.delete(users);
 }
 
+async function createApiToken(
+  userId: string,
+  options: { expiresAt?: Date | null; revokedAt?: Date } = {}
+): Promise<string> {
+  const id = generateUuidv7();
+  await db.insert(apiTokens).values({
+    id,
+    userId,
+    tokenHash: `hash-${id}`,
+    scopes: ["mcp"],
+    expiresAt: options.expiresAt ?? null,
+    revokedAt: options.revokedAt ?? null,
+    createdAt: new Date(),
+  });
+  return id;
+}
+
+async function createOpmlImport(
+  userId: string,
+  options: { status: string; createdAt: Date }
+): Promise<string> {
+  const id = generateUuidv7();
+  await db.insert(opmlImports).values({
+    id,
+    userId,
+    status: options.status,
+    totalFeeds: 1,
+    feedsData: [],
+    createdAt: options.createdAt,
+    updatedAt: options.createdAt,
+  });
+  return id;
+}
+
 describe("runRetentionCleanup", () => {
   beforeEach(cleanupTables);
   afterAll(cleanupTables);
@@ -224,6 +260,61 @@ describe("runRetentionCleanup", () => {
     expect(remaining.sort()).toEqual([live, justExpired].sort());
     expect(remaining).not.toContain(expired);
     expect(remaining).not.toContain(longRevoked);
+  });
+
+  it("deletes expired/long-revoked API tokens and keeps live/non-expiring ones", async () => {
+    const userId = await createTestUser();
+    const expired = await createApiToken(userId, { expiresAt: new Date(Date.now() - 2 * DAY_MS) });
+    const live = await createApiToken(userId, { expiresAt: new Date(Date.now() + 30 * DAY_MS) });
+    // Non-expiring token (expiresAt NULL): never swept until revoked.
+    const nonExpiring = await createApiToken(userId, { expiresAt: null });
+    // Just expired (inside grace period): kept.
+    const justExpired = await createApiToken(userId, {
+      expiresAt: new Date(Date.now() - 60 * 1000),
+    });
+    // Revoked long ago but not expired: deleted.
+    const longRevoked = await createApiToken(userId, {
+      expiresAt: new Date(Date.now() + 30 * DAY_MS),
+      revokedAt: new Date(Date.now() - 31 * DAY_MS),
+    });
+
+    const result = await runRetentionCleanup(db);
+
+    expect(result.apiTokens).toBe(2);
+    const remaining = (await db.select({ id: apiTokens.id }).from(apiTokens)).map((r) => r.id);
+    expect(remaining.sort()).toEqual([live, nonExpiring, justExpired].sort());
+    expect(remaining).not.toContain(expired);
+    expect(remaining).not.toContain(longRevoked);
+  });
+
+  it("deletes old terminal OPML imports and keeps recent/in-progress ones", async () => {
+    const userId = await createTestUser();
+    const oldCompleted = await createOpmlImport(userId, {
+      status: "completed",
+      createdAt: new Date(Date.now() - 31 * DAY_MS),
+    });
+    const oldFailed = await createOpmlImport(userId, {
+      status: "failed",
+      createdAt: new Date(Date.now() - 31 * DAY_MS),
+    });
+    // Recent terminal import: kept for the user to review.
+    const recentCompleted = await createOpmlImport(userId, {
+      status: "completed",
+      createdAt: new Date(Date.now() - DAY_MS),
+    });
+    // Old but still in-progress: never reaped.
+    const oldProcessing = await createOpmlImport(userId, {
+      status: "processing",
+      createdAt: new Date(Date.now() - 31 * DAY_MS),
+    });
+
+    const result = await runRetentionCleanup(db);
+
+    expect(result.opmlImports).toBe(2);
+    const remaining = (await db.select({ id: opmlImports.id }).from(opmlImports)).map((r) => r.id);
+    expect(remaining.sort()).toEqual([recentCompleted, oldProcessing].sort());
+    expect(remaining).not.toContain(oldCompleted);
+    expect(remaining).not.toContain(oldFailed);
   });
 
   it("deletes expired OAuth authorization codes, access tokens, and refresh tokens", async () => {
@@ -438,10 +529,12 @@ describe("runRetentionCleanup", () => {
     const result = await runRetentionCleanup(db);
     expect(result).toEqual({
       sessions: 0,
+      apiTokens: 0,
       oauthAuthorizationCodes: 0,
       oauthAccessTokens: 0,
       oauthRefreshTokens: 0,
       oauthClients: 0,
+      opmlImports: 0,
       parkedJobs: 0,
       deadFeedJobs: 0,
     });

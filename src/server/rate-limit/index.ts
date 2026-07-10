@@ -14,13 +14,69 @@ import { getClientIp } from "@/server/http/client-ip";
 import {
   type RateLimitType,
   type ConsumeResult,
+  type BucketState,
   RATE_LIMIT_CONFIGS,
+  consumeToken,
+  createBucket,
   getRateLimitKey,
   getRateLimitHeaders,
 } from "./token-bucket";
+import { logger } from "@/lib/logger";
 
 // Re-export types and helpers
 export { type RateLimitType, RATE_LIMIT_CONFIGS, getRateLimitHeaders };
+
+/**
+ * Behavior when the Redis-backed limiter is unavailable (Redis down or the eval
+ * throws):
+ *
+ * - `"open"` (default): allow the request. Preferred for ordinary read/write
+ *   endpoints — we favor availability over strict limiting when the limiter
+ *   infrastructure itself is degraded.
+ * - `"memory"`: fall back to a per-process in-memory token bucket. Used by
+ *   password-accepting paths so brute-force protection does not evaporate the
+ *   moment Redis is degraded (a distributed attacker could otherwise get
+ *   unlimited guesses during an outage). Per-process only — not shared across
+ *   app servers — but it bounds guesses on each server instead of failing fully
+ *   open, without hard-locking legitimate users out (as pure fail-closed would).
+ */
+type RateLimitFallback = "open" | "memory";
+
+/**
+ * In-memory token buckets used only by the `"memory"` fallback when Redis is
+ * unavailable. Bounded in size so an attacker rotating identifiers (emails/IPs)
+ * during an outage can't grow it without limit; oldest entries are evicted
+ * first (Map preserves insertion order).
+ */
+const inMemoryBuckets = new Map<string, BucketState>();
+const IN_MEMORY_MAX_KEYS = 10_000;
+
+function checkInMemoryRateLimit(
+  identifier: string,
+  type: RateLimitType,
+  cost: number
+): ConsumeResult {
+  const config = RATE_LIMIT_CONFIGS[type];
+  const nowMs = Date.now();
+  const key = getRateLimitKey(identifier, type);
+
+  const existing = inMemoryBuckets.get(key);
+  const bucket = existing ?? createBucket(config, nowMs);
+  const { result, newState } = consumeToken(bucket, config, nowMs, cost);
+
+  // Evict the oldest entry before inserting a new key past the cap.
+  if (!existing && inMemoryBuckets.size >= IN_MEMORY_MAX_KEYS) {
+    const oldest = inMemoryBuckets.keys().next().value;
+    if (oldest !== undefined) {
+      inMemoryBuckets.delete(oldest);
+    }
+  }
+  // Re-insert so the key moves to the most-recently-used position.
+  inMemoryBuckets.delete(key);
+  inMemoryBuckets.set(key, newState);
+
+  return result;
+}
 
 /**
  * Lua script for atomic token bucket rate limiting.
@@ -111,19 +167,29 @@ return {allowed, remaining, reset_ms, retry_after_seconds}
 export async function checkRateLimit(
   identifier: string,
   type: RateLimitType = "default",
-  cost: number = 1
+  cost: number = 1,
+  options: { fallback?: RateLimitFallback } = {}
 ): Promise<ConsumeResult> {
   const redis = getRedisClient();
   const config = RATE_LIMIT_CONFIGS[type];
+  const fallback = options.fallback ?? "open";
 
-  // If Redis is not available, fall back to permissive mode
-  if (!redis) {
+  const applyFallback = (): ConsumeResult => {
+    if (fallback === "memory") {
+      return checkInMemoryRateLimit(identifier, type, cost);
+    }
+    // Permissive mode: favor availability when the limiter is degraded.
     return {
       allowed: true,
       remaining: config.capacity,
       resetMs: Date.now() + 60000, // Reset in 1 minute (arbitrary)
       retryAfterSeconds: null,
     };
+  };
+
+  // If Redis is not available, fall back per the configured policy.
+  if (!redis) {
+    return applyFallback();
   }
 
   const key = getRateLimitKey(identifier, type);
@@ -149,14 +215,13 @@ export async function checkRateLimit(
       retryAfterSeconds: allowed === 0 ? retryAfterSeconds : null,
     };
   } catch (err) {
-    // Redis error - fall back to permissive mode
-    console.error("Rate limit check failed:", err);
-    return {
-      allowed: true,
-      remaining: config.capacity,
-      resetMs: Date.now() + 60000,
-      retryAfterSeconds: null,
-    };
+    // Redis error - fall back per the configured policy.
+    logger.error("Rate limit check failed", {
+      error: err instanceof Error ? err.message : String(err),
+      type,
+      fallback,
+    });
+    return applyFallback();
   }
 }
 
@@ -261,7 +326,12 @@ export async function checkRouteRateLimit(
  * transport-appropriate error (429 Response / TRPCError).
  */
 export async function checkAccountRateLimit(email: string): Promise<ConsumeResult> {
-  return checkRateLimit(getAccountRateLimitIdentifier(email), "expensive");
+  // Fail to a per-process in-memory bucket rather than fully open: this is the
+  // shared-per-account guard against distributed password brute-force, and it
+  // must keep bounding guesses even while Redis is degraded.
+  return checkRateLimit(getAccountRateLimitIdentifier(email), "expensive", 1, {
+    fallback: "memory",
+  });
 }
 
 /**

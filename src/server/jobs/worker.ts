@@ -50,6 +50,39 @@ export type { WorkerLogger, Worker, WorkerStats } from "./worker-core";
 const DEFAULT_JOB_TIMEOUT_MS = 5 * 60 * 1000;
 
 /**
+ * How often the claim loop checks singleton jobs *before* feed jobs. Feed jobs
+ * normally win the race for throughput, but a large `fetch_feed` backlog (after
+ * downtime or an OPML import) would otherwise starve the singleton maintenance
+ * jobs (`SINGLETON_JOB_TYPES` in queue.ts — renew_websub, monitor_feed_health,
+ * cleanup, plus any re-enabled entries) forever. Every Nth claim we look at
+ * singletons first so an overdue one is picked up within a handful of rapid
+ * claim cycles regardless of backlog depth.
+ */
+export const SINGLETON_PRIORITY_INTERVAL = 4;
+
+/**
+ * Hard cap on how long a single handler's lease is heartbeated, as a multiple of
+ * `jobTimeoutMs`. The worker-loop timeout frees the slot at `jobTimeoutMs` but
+ * intentionally does not abort the handler (issue #871), and the heartbeat keeps
+ * the lease alive so the still-running work isn't double-executed. A handler
+ * stuck on a never-settling await would otherwise hold its lease until the
+ * process restarts. Past this cap we stop heartbeating and alert, so the job
+ * becomes reclaimable at the stale threshold — bounding the "wedged forever"
+ * case while giving legitimately-slow handlers enormous margin over the timeout.
+ */
+const LEASE_HARD_CAP_MULTIPLIER = 6;
+
+/**
+ * Floor on the lease hard cap. The cap is only checked on heartbeat ticks, so a
+ * cap below one heartbeat interval would trip on the FIRST tick — no renewal
+ * would ever happen, the job would go reclaimable at the stale threshold while
+ * its handler is legitimately running, and the anti-double-execution lease
+ * (issue #871) would be silently disabled. A misconfigured tiny `jobTimeoutMs`
+ * must not be able to do that, so the cap never drops below a few heartbeats.
+ */
+const LEASE_HARD_CAP_MIN_MS = 3 * JOB_LEASE_HEARTBEAT_MS;
+
+/**
  * Worker configuration options.
  */
 export interface WorkerConfig {
@@ -79,7 +112,7 @@ export interface WorkerConfig {
 /**
  * Tracks a job lease that a background heartbeat keeps renewing.
  */
-interface JobLeaseController {
+export interface JobLeaseController {
   /**
    * Stops the heartbeat and waits for any in-flight renewal to settle, so that
    * {@link JobLeaseController.currentToken} reflects the final committed lease.
@@ -111,12 +144,24 @@ interface JobLeaseController {
  *
  * Renewal failures (transient DB hiccups) are logged but never throw and don't
  * drop the lease — at worst they cost one heartbeat of margin.
+ *
+ * Exported for integration tests (which inject a small `heartbeatMs` to exercise
+ * the hard cap against a real database); production code calls it only from
+ * `processJob` below.
  */
-function startJobLeaseHeartbeat(job: Job, logger: WorkerLogger): JobLeaseController {
+export function startJobLeaseHeartbeat(
+  job: Job,
+  logger: WorkerLogger,
+  maxLeaseDurationMs: number,
+  // Injectable for tests only — production always uses the shared constant.
+  heartbeatMs: number = JOB_LEASE_HEARTBEAT_MS
+): JobLeaseController {
   let token: Date | null = job.runningSince;
   // The single in-flight renewal, awaited by stop() so the token is final.
   let pending: Promise<void> = Promise.resolve();
   let renewing = false;
+  const startTime = Date.now();
+  let hardCapped = false;
 
   // A claimed job always has running_since set; guard defensively so we never
   // renew with a null token.
@@ -125,6 +170,29 @@ function startJobLeaseHeartbeat(job: Job, logger: WorkerLogger): JobLeaseControl
   }
 
   const interval = setInterval(() => {
+    // Hard cap: a handler that has heartbeated far past its timeout is wedged on
+    // a never-settling await. Stop renewing (and alert) so the job can be
+    // reclaimed by another worker at the stale threshold instead of being pinned
+    // until this process restarts. We leave `token` intact rather than nulling
+    // it: if the handler does eventually settle before another worker reclaims,
+    // finishJob is still fenced on this token and either commits legitimately or
+    // no-ops against the new owner.
+    if (!hardCapped && Date.now() - startTime > maxLeaseDurationMs) {
+      hardCapped = true;
+      clearInterval(interval);
+      logger.error("Job lease hard cap reached; handler appears wedged, stopping heartbeat", {
+        jobId: job.id,
+        type: job.type,
+        maxLeaseDurationMs,
+      });
+      Sentry.captureMessage("Job handler exceeded lease hard cap (wedged)", {
+        level: "error",
+        tags: { jobType: job.type },
+        extra: { jobId: job.id, maxLeaseDurationMs },
+      });
+      return;
+    }
+
     // Skip if the previous renewal hasn't finished (pathologically slow DB) so
     // `pending` always refers to exactly one renewal.
     if (renewing || token === null) {
@@ -158,7 +226,7 @@ function startJobLeaseHeartbeat(job: Job, logger: WorkerLogger): JobLeaseControl
       .finally(() => {
         renewing = false;
       });
-  }, JOB_LEASE_HEARTBEAT_MS);
+  }, heartbeatMs);
 
   // Don't let the heartbeat timer keep the process alive during shutdown.
   interval.unref();
@@ -169,6 +237,85 @@ function startJobLeaseHeartbeat(job: Job, logger: WorkerLogger): JobLeaseControl
       await pending;
     },
     currentToken: () => token,
+  };
+}
+
+/**
+ * The claim primitives the worker's claim strategy composes. Injected so the
+ * round-robin ordering below is unit-testable without touching the database
+ * (production passes the real queue functions).
+ */
+export interface WorkerClaimDeps {
+  /** Generic due-job claim, used for regular (non-feed, non-singleton) jobs. */
+  claimRegular: (options: { types: JobType[] }) => Promise<Job | null>;
+  /** Data-driven fetch_feed claim (only feeds with active subscribers). */
+  claimFeed: () => Promise<Job | null>;
+  /** Due-gated singleton claim (self-creates the row on first ever run). */
+  claimSingleton: (type: JobType) => Promise<Job | null>;
+}
+
+/**
+ * Builds the worker's claim function. Priority order:
+ *
+ * 1. Regular jobs (process_opml_import) — user-triggered, always first.
+ * 2. Feed jobs vs. singleton jobs — round-robined: on most cycles feeds go
+ *    first (throughput), but every SINGLETON_PRIORITY_INTERVAL-th cycle
+ *    singletons are checked first, so an overdue maintenance job is claimed
+ *    within a few cycles even under a deep fetch_feed backlog (which would
+ *    otherwise starve singletons forever). Whichever category is checked
+ *    first, the other is still tried if it has nothing to claim — neither is
+ *    ever skipped on a given cycle.
+ *
+ * Exported for unit tests (which inject fake claim deps to verify the
+ * ordering); production calls it only from `createWorker` below.
+ */
+export function createWorkerClaimJob(
+  deps: WorkerClaimDeps
+): (options?: { types?: JobType[] }) => Promise<Job | null> {
+  // Try to claim a feed job (data-driven: only if a feed has active subscribers).
+  async function tryClaimFeedJob(options?: { types?: JobType[] }): Promise<Job | null> {
+    if (!options?.types || options.types.includes("fetch_feed")) {
+      return deps.claimFeed();
+    }
+    return null;
+  }
+
+  // Try singleton jobs. claimSingleton only returns a due job, so checking these
+  // ahead of feeds costs a few indexed no-op lookups when nothing is due.
+  async function tryClaimSingletonJob(options?: { types?: JobType[] }): Promise<Job | null> {
+    for (const singletonType of SINGLETON_JOB_TYPES) {
+      if (!options?.types || options.types.includes(singletonType)) {
+        const singletonJob = await deps.claimSingleton(singletonType);
+        if (singletonJob) {
+          return singletonJob;
+        }
+      }
+    }
+    return null;
+  }
+
+  // Round-robin counter deciding whether singletons or feeds are checked first.
+  let claimCounter = 0;
+
+  return async function claimJob(options?: { types?: JobType[] }): Promise<Job | null> {
+    // First try to claim a regular job (e.g., OPML imports)
+    // Exclude feed jobs here since they need special data-driven claiming
+    const regularTypes = options?.types?.filter((t) => t !== "fetch_feed");
+    if (!options?.types || (regularTypes && regularTypes.length > 0)) {
+      const regularJob = await deps.claimRegular({
+        types: regularTypes || ["process_opml_import"],
+      });
+      if (regularJob) {
+        return regularJob;
+      }
+    }
+
+    const singletonsFirst = claimCounter++ % SINGLETON_PRIORITY_INTERVAL === 0;
+
+    if (singletonsFirst) {
+      return (await tryClaimSingletonJob(options)) ?? (await tryClaimFeedJob(options));
+    }
+    return (await tryClaimFeedJob(options)) ?? (await tryClaimSingletonJob(options));
   };
 }
 
@@ -214,44 +361,16 @@ function createWorker(config: WorkerConfig = {}): Worker {
 
   // Default claim function - tries different job types in priority order:
   // 1. Regular jobs (process_opml_import) - user-triggered, highest priority
-  // 2. Feed jobs (fetch_feed) - data-driven, only for feeds with active subscribers
-  // 3. Singleton jobs (renew_websub) - system maintenance
+  // 2. Feed jobs (fetch_feed) and singleton jobs (renew_websub, etc.) - the
+  //    order between these two is round-robined so a fetch_feed backlog can't
+  //    starve singleton maintenance (see SINGLETON_PRIORITY_INTERVAL).
   const baseClaimJob = claimJobOverride ?? defaultClaimJob;
 
-  async function claimJob(options?: { types?: JobType[] }): Promise<Job | null> {
-    // First try to claim a regular job (e.g., OPML imports)
-    // Exclude feed jobs here since they need special data-driven claiming
-    const regularTypes = options?.types?.filter((t) => t !== "fetch_feed");
-    if (!options?.types || (regularTypes && regularTypes.length > 0)) {
-      const regularJob = await baseClaimJob({
-        types: regularTypes || ["process_opml_import"],
-      });
-      if (regularJob) {
-        return regularJob;
-      }
-    }
-
-    // Try to claim a feed job (data-driven: only if feed has active subscribers)
-    if (!options?.types || options.types.includes("fetch_feed")) {
-      const feedJob = await claimFeedJob();
-      if (feedJob) {
-        return feedJob;
-      }
-    }
-
-    // Try singleton jobs (only if not filtered by type)
-    // Singleton jobs self-create if they don't exist
-    for (const singletonType of SINGLETON_JOB_TYPES) {
-      if (!options?.types || options.types.includes(singletonType)) {
-        const singletonJob = await claimSingletonJob(singletonType);
-        if (singletonJob) {
-          return singletonJob;
-        }
-      }
-    }
-
-    return null;
-  }
+  const claimJob = createWorkerClaimJob({
+    claimRegular: baseClaimJob,
+    claimFeed: claimFeedJob,
+    claimSingleton: claimSingletonJob,
+  });
 
   /**
    * Processes a single job using the real handlers.
@@ -261,8 +380,13 @@ function createWorker(config: WorkerConfig = {}): Worker {
 
     // Keep the job's lease alive for as long as this handler actually runs so a
     // slow (or timed-out-but-still-running) job can't be reclaimed and executed
-    // concurrently by another worker (issue #871).
-    const lease = startJobLeaseHeartbeat(job, logger);
+    // concurrently by another worker (issue #871), up to a hard cap that bounds a
+    // permanently-wedged handler.
+    const lease = startJobLeaseHeartbeat(
+      job,
+      logger,
+      Math.max(jobTimeoutMs * LEASE_HARD_CAP_MULTIPLIER, LEASE_HARD_CAP_MIN_MS)
+    );
 
     // Finishes the job fenced on our lease token. Stops the heartbeat first so
     // the token is final, then writes only if we still hold the lease — if a

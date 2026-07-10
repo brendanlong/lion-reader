@@ -7,17 +7,27 @@
  * subscriber-less `fetch_feed` jobs are permanently ineligible for claiming
  * (issue #1085) — so deletion only reclaims space and index bloat (and, for
  * dead feed jobs, un-drags the claim scan), never changes behavior.
+ *
+ * Terminal OPML imports are the exception to "dead credential": they remain
+ * valid history but hold the full parsed OPML as JSONB, so they're aged out
+ * after a retention window. The content-hash-keyed caches (`narration_content`,
+ * `entry_summaries`) are deliberately NOT swept here: they're deduplicated
+ * across entries by content hash, so a row "orphaned" by one hard-deleted saved
+ * article may still back another entry with identical content — deleting it by
+ * back-reference would be unsafe. They're accepted as append-only.
  */
 
-import { and, eq, gt, isNull, lt, notExists, or, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, lt, notExists, or, sql } from "drizzle-orm";
 import type { Database } from "../db";
 import {
+  apiTokens,
   jobs,
   oauthAccessTokens,
   oauthAuthorizationCodes,
   oauthClients,
   oauthConsentGrants,
   oauthRefreshTokens,
+  opmlImports,
   sessions,
 } from "../db/schema";
 
@@ -67,14 +77,25 @@ const DEAD_FEED_JOB_GRACE_MS = 60 * 60 * 1000;
 const ORPHANED_CLIENT_RETENTION_MS = 30 * DAY_MS;
 
 /**
+ * How long a terminal (completed/failed) OPML import is retained before deletion.
+ * Each row holds the full parsed OPML (`feeds_data`) and per-feed results as
+ * JSONB, so keeping them forever bloats the table; a month is ample for a user
+ * to review a recent import's outcome. Only terminal imports are swept —
+ * pending/processing rows are left untouched.
+ */
+const OPML_IMPORT_RETENTION_MS = 30 * DAY_MS;
+
+/**
  * Row counts deleted by a cleanup run, keyed for job metadata/logging.
  */
 export interface RetentionCleanupResult {
   sessions: number;
+  apiTokens: number;
   oauthAuthorizationCodes: number;
   oauthAccessTokens: number;
   oauthRefreshTokens: number;
   oauthClients: number;
+  opmlImports: number;
   parkedJobs: number;
   deadFeedJobs: number;
 }
@@ -91,10 +112,19 @@ export async function runRetentionCleanup(db: Database): Promise<RetentionCleanu
   const parkedCutoff = new Date(now + PARKED_JOB_THRESHOLD_MS);
   const deadFeedJobCutoff = new Date(now - DEAD_FEED_JOB_GRACE_MS);
   const orphanedClientCutoff = new Date(now - ORPHANED_CLIENT_RETENTION_MS);
+  const opmlImportCutoff = new Date(now - OPML_IMPORT_RETENTION_MS);
 
   const expiredSessions = await db
     .delete(sessions)
     .where(or(lt(sessions.expiresAt, expiryCutoff), lt(sessions.revokedAt, revokedCutoff)));
+
+  // API tokens mirror sessions: delete once expired past the grace window or
+  // revoked past the revoked-retention window. Non-expiring tokens have a NULL
+  // expires_at, and lt(NULL, …) is NULL (never true), so they're never swept
+  // until revoked.
+  const expiredApiTokens = await db
+    .delete(apiTokens)
+    .where(or(lt(apiTokens.expiresAt, expiryCutoff), lt(apiTokens.revokedAt, revokedCutoff)));
 
   const expiredAuthCodes = await db
     .delete(oauthAuthorizationCodes)
@@ -211,12 +241,27 @@ export async function runRetentionCleanup(db: Database): Promise<RetentionCleanu
     )
   );
 
+  // Terminal OPML imports past the retention window. createdAt is immutable, so
+  // an import created over a month ago that reached a terminal state is long
+  // done; pending/processing rows are excluded so an in-flight import is never
+  // reaped.
+  const oldOpmlImports = await db
+    .delete(opmlImports)
+    .where(
+      and(
+        inArray(opmlImports.status, ["completed", "failed"]),
+        lt(opmlImports.createdAt, opmlImportCutoff)
+      )
+    );
+
   return {
     sessions: expiredSessions.rowCount ?? 0,
+    apiTokens: expiredApiTokens.rowCount ?? 0,
     oauthAuthorizationCodes: expiredAuthCodes.rowCount ?? 0,
     oauthAccessTokens: expiredAccessTokens.rowCount ?? 0,
     oauthRefreshTokens: expiredRefreshTokens.rowCount ?? 0,
     oauthClients: orphanedClients.rowCount ?? 0,
+    opmlImports: oldOpmlImports.rowCount ?? 0,
     parkedJobs: parkedJobs.rowCount ?? 0,
     deadFeedJobs: deadFeedJobs.rowCount ?? 0,
   };
