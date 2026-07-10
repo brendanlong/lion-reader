@@ -963,13 +963,23 @@ export async function getEntries(
  * affected list. Counts are computed once here and both returned and published,
  * so callers don't re-query them.
  *
- * Publishes an `entry_state_changed` SSE event for each entry that actually
- * changed, so a user's other tabs/devices stay in sync regardless of which
- * surface (tRPC, MCP, Google Reader, Wallabag) issued the mark. Publishing lives
- * here — not at each API boundary — so every current and future caller notifies
- * other tabs for free. Idempotent replays (an older `changedAt` losing the
- * `read_changed_at <= changedAt` guard) update no rows and therefore publish
- * nothing. Fire and forget.
+ * A row being WRITTEN is not the same as the read value CHANGING (issue #1118):
+ * re-asserting a state the entry already has (the common Google Reader/Wallabag
+ * resync pattern) still writes the row to advance the `read_changed_at`
+ * last-write-wins watermark — dropping that write would let an older conflicting
+ * update win later — but nothing the user can see changed, so `changed` contains
+ * only entries whose read value actually flipped, and the unread-count
+ * aggregation (the dominant cost of this path) runs only when something flipped.
+ * `counts` is undefined otherwise; callers treat "no counts" as "counts didn't
+ * change".
+ *
+ * Publishes an `entry_state_changed` SSE event for each entry whose value
+ * actually flipped, so a user's other tabs/devices stay in sync regardless of
+ * which surface (tRPC, MCP, Google Reader, Wallabag) issued the mark. Publishing
+ * lives here — not at each API boundary — so every current and future caller
+ * notifies other tabs for free. Idempotent replays (an older `changedAt` losing
+ * the `read_changed_at <= changedAt` guard) update no rows, and same-value
+ * re-asserts flip nothing; neither publishes. Fire and forget.
  *
  * This publishes after the (autocommitted) UPDATEs complete. Callers that pass
  * the global `db` get post-commit publishing for free. A caller running this
@@ -992,10 +1002,10 @@ export async function markEntriesRead(
 ): Promise<{
   entries: MarkReadEntryState[];
   changed: MarkReadEntryState[];
-  counts: BulkUnreadCounts;
+  counts?: BulkUnreadCounts;
 }> {
   if (entriesToMark.length === 0) {
-    return { entries: [], changed: [], counts: await getBulkEntryRelatedCounts(db, userId, []) };
+    return { entries: [], changed: [] };
   }
 
   if (entriesToMark.length > 1000) {
@@ -1009,8 +1019,12 @@ export async function markEntriesRead(
   // previous code grouped by timestamp and issued one UPDATE per distinct value
   // — up to N sequential round-trips outside a transaction. One statement does
   // it atomically. The per-row `read_changed_at <= v.ts` guard preserves the
-  // idempotent last-write-wins semantics, and RETURNING tells us which rows
-  // actually changed so idempotent replays don't publish.
+  // idempotent last-write-wins semantics.
+  //
+  // The self-join on `prev` captures each row's pre-update read value in the
+  // same statement (RETURNING only sees new values before PG 18's `old.*`), so
+  // we can tell a real flip from a same-value watermark bump without a separate
+  // pre-SELECT and its wider TOCTOU window.
   const rows = entriesToMark.map(
     (entry) => sql`(${entry.id}::uuid, ${(entry.changedAt ?? now).toISOString()}::timestamptz)`
   );
@@ -1023,16 +1037,24 @@ export async function markEntriesRead(
         ? sql`, has_marked_unread = true` // marking unread → implicit 0 (overrides read-on-list)
         : sql``;
 
-  const updated = await db.execute<{ entry_id: string }>(sql`
+  const updated = await db.execute<{ entry_id: string; old_read: boolean }>(sql`
     UPDATE user_entries AS ue
     SET read = ${read}, updated_at = ${now}, read_changed_at = v.ts${signalAssignment}
     FROM (VALUES ${sql.join(rows, sql`, `)}) AS v(entry_id, ts)
+    JOIN user_entries AS prev
+      ON prev.user_id = ${userId}::uuid
+      AND prev.entry_id = v.entry_id
     WHERE ue.user_id = ${userId}::uuid
       AND ue.entry_id = v.entry_id
       AND (ue.read_changed_at IS NULL OR ue.read_changed_at <= v.ts)
-    RETURNING ue.entry_id AS entry_id
+    RETURNING ue.entry_id AS entry_id, prev.read AS old_read
   `);
-  const changedIds = new Set(updated.rows.map((row) => row.entry_id));
+  // Rows whose read value actually flipped — the only ones that warrant SSE
+  // events and count recomputation. Same-value writes still advanced the
+  // watermark above.
+  const flippedIds = new Set(
+    updated.rows.filter((row) => row.old_read !== read).map((row) => row.entry_id)
+  );
 
   // Always resolve final state for all requested entries, including the context
   // fields callers need for cache updates and count queries.
@@ -1049,18 +1071,23 @@ export async function markEntriesRead(
     .from(visibleEntries)
     .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.id, allEntryIds)));
 
-  // Compute absolute counts once, for both the return value and the SSE publish.
-  const counts = await getBulkEntryRelatedCounts(db, userId, entries);
+  // Compute absolute counts once, for both the return value and the SSE
+  // publish — but only when a value actually flipped. A batch of pure
+  // re-asserts changes no count, so the aggregation (several scans of
+  // visible_entries) would be wasted work (issue #1118). Counts cover the
+  // flipped entries' lists, which are exactly the lists that moved.
+  const changed = entries.filter((entry) => flippedIds.has(entry.id));
+  const counts =
+    changed.length > 0 ? await getBulkEntryRelatedCounts(db, userId, changed) : undefined;
 
-  // Notify the user's other tabs/devices for the entries that actually changed,
+  // Notify the user's other tabs/devices for the entries that actually flipped,
   // carrying the absolute counts so they set them directly. See the function
   // doc for publish/transaction ordering. Fire and forget.
   //
   // Transactional callers pass `publish: false` and publish `changed`+`counts`
   // themselves after the commit, so a rolled-back mark can't emit a phantom
   // event (see the function doc).
-  const changed = entries.filter((entry) => changedIds.has(entry.id));
-  if (options.publish !== false && changed.length > 0) {
+  if (options.publish !== false && changed.length > 0 && counts) {
     publishMarkReadStateChanges(userId, changed, counts);
   }
 
@@ -1258,13 +1285,21 @@ export async function markAllEntriesRead(
  * affected list. Counts are computed once here and both returned and published,
  * so callers don't re-query them.
  *
+ * A row being written is not the same as the starred value changing (issue
+ * #1118): re-asserting a state the entry already has still writes the row to
+ * advance the `starred_changed_at` last-write-wins watermark — dropping that
+ * write would let an older conflicting update win later — but the count
+ * aggregation runs and the SSE event publishes only when the value actually
+ * flipped. `counts` is undefined otherwise; callers treat "no counts" as
+ * "counts didn't change".
+ *
  * Publishes an `entry_state_changed` SSE event when the star state actually
  * changed, so a user's other tabs/devices stay in sync regardless of which
  * surface (tRPC, MCP, Google Reader, Wallabag) issued the change. Publishing
  * lives here — not at each API boundary — so every current and future caller
  * notifies other tabs for free. An idempotent replay (an older `changedAt`
- * losing the `starred_changed_at <= changedAt` guard) updates no rows and
- * therefore publishes nothing. Fire and forget.
+ * losing the `starred_changed_at <= changedAt` guard) updates no rows, and a
+ * same-value re-assert flips nothing; neither publishes. Fire and forget.
  *
  * This publishes after the (autocommitted) UPDATE completes. Today's callers
  * pass the global `db`, so that's always post-commit. If a future caller runs
@@ -1279,31 +1314,33 @@ export async function updateEntryStarred(
   entryId: string,
   starred: boolean,
   changedAt: Date = new Date()
-): Promise<{ entry: EntryState; counts: UnreadCounts }> {
-  // Build the SET clause, setting the implicit signal flag when starring
-  const setClause: Record<string, unknown> = {
-    starred,
-    starredChangedAt: changedAt,
-    updatedAt: new Date(),
-  };
-  if (starred) {
-    setClause.hasStarred = true;
-  }
+): Promise<{ entry: EntryState; counts?: UnreadCounts }> {
+  // Implicit score-signal flag, set only when starring.
+  const signalAssignment = starred ? sql`, has_starred = true` : sql``;
 
-  // Conditional update: only apply if incoming timestamp is newer or equal.
-  // `returning` tells us whether the row actually changed so an idempotent
-  // replay doesn't publish.
-  const updated = await db
-    .update(userEntries)
-    .set(setClause)
-    .where(
-      and(
-        eq(userEntries.userId, userId),
-        eq(userEntries.entryId, entryId),
-        lte(userEntries.starredChangedAt, changedAt)
-      )
-    )
-    .returning({ entryId: userEntries.entryId });
+  // Conditional update: only apply if incoming timestamp is newer or equal
+  // (starred_changed_at is NOT NULL with a default, so no NULL guard needed).
+  // Date params bind un-cast here because SET/WHERE column context supplies the
+  // timestamptz type — unlike markEntriesRead's bare VALUES tuples, which need
+  // an explicit ::timestamptz cast.
+  // The self-join on `prev` captures the pre-update starred value in the same
+  // statement (RETURNING only sees new values before PG 18's `old.*`), so we
+  // can tell a real flip from a same-value watermark bump without a separate
+  // pre-SELECT and its wider TOCTOU window.
+  const updated = await db.execute<{ old_starred: boolean }>(sql`
+    UPDATE user_entries AS ue
+    SET starred = ${starred}, starred_changed_at = ${changedAt}, updated_at = ${new Date()}${signalAssignment}
+    FROM user_entries AS prev
+    WHERE ue.user_id = ${userId}::uuid
+      AND ue.entry_id = ${entryId}::uuid
+      AND prev.user_id = ue.user_id
+      AND prev.entry_id = ue.entry_id
+      AND ue.starred_changed_at <= ${changedAt}
+    RETURNING prev.starred AS old_starred
+  `);
+  // The starred value actually flipped only if a row was written AND its old
+  // value differed. A same-value write advanced the watermark above.
+  const flipped = updated.rows.length > 0 && updated.rows[0].old_starred !== starred;
 
   // Always resolve final state from visibleEntries (includes computed updatedAt)
   const result = await db
@@ -1322,12 +1359,14 @@ export async function updateEntryStarred(
 
   const entry = result[0];
 
-  // Compute absolute counts once, for both the return value and the SSE publish.
-  const counts = await getEntryRelatedCounts(db, userId, entryId);
+  // Compute absolute counts once, for both the return value and the SSE
+  // publish — but only when the value actually flipped; a re-assert changes no
+  // count, so the aggregation would be wasted work (issue #1118).
+  const counts = flipped ? await getEntryRelatedCounts(db, userId, entryId) : undefined;
 
-  // Notify the user's other tabs/devices when the star state changed. See the
-  // function doc for publish/transaction ordering. Fire and forget.
-  if (updated.length > 0) {
+  // Notify the user's other tabs/devices when the star state actually flipped.
+  // See the function doc for publish/transaction ordering. Fire and forget.
+  if (flipped && counts) {
     publishStarredStateChange(userId, entry, counts);
   }
 

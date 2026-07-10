@@ -131,7 +131,7 @@ Mutations return everything cache updates need (the client never derives counts 
     type: "web" | "email" | "saved";
     updatedAt: Date; // cache-freshness comparison
   }>;
-  counts: BulkUnreadCounts; // absolute counts for all affected lists
+  counts?: BulkUnreadCounts; // absolute counts for all affected lists
 }
 
 // entries.setStarred
@@ -142,9 +142,17 @@ Mutations return everything cache updates need (the client never derives counts 
     starred: boolean;
     updatedAt: Date;
   }
-  counts: UnreadCounts; // absolute counts for the lists this entry belongs to
+  counts?: UnreadCounts; // absolute counts for the lists this entry belongs to
 }
 ```
+
+`counts` is **absent when no value actually flipped** (a same-value re-assert —
+e.g. marking an already-read entry read again — writes the row to advance the
+last-write-wins watermark but changes nothing the user can see, so the server
+skips the count aggregation; issue #1118). The `onSuccess` handlers apply counts
+only when present; absent counts mean the cached counts are already correct. The
+same rule gates the server's `entry_state_changed` SSE publish, so re-asserts
+emit no event at all.
 
 ## Key Files
 
