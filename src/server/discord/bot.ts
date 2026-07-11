@@ -175,7 +175,9 @@ export async function startDiscordBot(): Promise<void> {
       GatewayIntentBits.GuildMessageReactions,
       GatewayIntentBits.MessageContent,
     ],
-    partials: [Partials.Message, Partials.Reaction],
+    // User partial: guild reaction payloads carry the full member, but DM
+    // reactions from uncached users are silently dropped without it.
+    partials: [Partials.Message, Partials.Reaction, Partials.User],
   });
 
   // Gateway diagnostics. `client.login()` resolves as soon as the token
@@ -233,7 +235,24 @@ export async function startDiscordBot(): Promise<void> {
     if (user.bot) return;
 
     const emoji = reaction.emoji.name;
-    if (emoji !== DISCORD_SAVE_EMOJI) return;
+    if (emoji !== DISCORD_SAVE_EMOJI) {
+      // Users can't react with application emojis (they're only usable by the
+      // bot itself), so the save trigger must be a server emoji whose name
+      // matches DISCORD_SAVE_EMOJI exactly. Log mismatches so a wrong or
+      // renamed server emoji is diagnosable instead of silently ignored.
+      logger.info("Ignoring reaction with non-save emoji", {
+        emoji,
+        emojiId: reaction.emoji.id,
+        expected: DISCORD_SAVE_EMOJI,
+        userId: user.id,
+      });
+      return;
+    }
+
+    logger.info("Save reaction received", {
+      userId: user.id,
+      messageId: reaction.message.id,
+    });
 
     await handleSaveReaction(reaction.message, user);
   });
@@ -418,7 +437,7 @@ async function handleSaveReaction(
   // Look up Lion Reader user
   const resolved = await resolveUser(user.id);
   if (!resolved) {
-    // User hasn't linked their account - silently ignore
+    logger.info("Ignoring save reaction from unlinked Discord user", { discordId: user.id });
     return;
   }
 
@@ -437,7 +456,13 @@ async function handleSaveReaction(
 
   // Extract URLs
   const urls = extractUrls(message.content);
-  if (urls.length === 0) return;
+  if (urls.length === 0) {
+    logger.info("Save reaction message contained no URLs", {
+      messageId: message.id,
+      contentLength: message.content?.length ?? 0,
+    });
+    return;
+  }
 
   // Save each URL
   let hasSuccess = false;
