@@ -45,6 +45,10 @@ logger.info("Starting standalone worker", {
   pollIntervalMs,
   concurrency,
   pid: process.pid,
+  // Machine identity: a "Starting standalone worker" line carrying a discord/app
+  // process group is the smoking gun for a machine running the wrong binary.
+  flyProcessGroup: process.env.FLY_PROCESS_GROUP,
+  flyMachineId: process.env.FLY_MACHINE_ID,
 });
 
 // Start internal metrics server on port 9092 (separate from Next.js on 9091)

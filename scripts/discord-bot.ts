@@ -36,6 +36,21 @@ let stopHeartbeat: (() => void) | undefined;
 logger.info("Starting Discord bot", {
   pid: process.pid,
   saveEmoji: process.env.DISCORD_SAVE_EMOJI || "🦁",
+  // Machine identity: makes it obvious in aggregated logs which Fly machine /
+  // process group a line came from, so a machine running the wrong binary
+  // (config drift) is visible at a glance.
+  flyProcessGroup: process.env.FLY_PROCESS_GROUP,
+  flyMachineId: process.env.FLY_MACHINE_ID,
+});
+
+// Surface Node process warnings (deprecations etc.) as structured logs instead
+// of unstructured stderr lines that scroll past in `fly logs`.
+process.on("warning", (warning) => {
+  logger.warn("Node process warning", {
+    name: warning.name,
+    message: warning.message,
+    stack: warning.stack,
+  });
 });
 
 // Start internal metrics server on port 9093 (separate from Next.js/worker)

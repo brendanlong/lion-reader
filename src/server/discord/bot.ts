@@ -7,9 +7,11 @@
  * 2. Using /link with an API token
  */
 
+import * as Sentry from "@sentry/nextjs";
 import {
   Client,
   GatewayIntentBits,
+  MessageFlags,
   Partials,
   REST,
   Routes,
@@ -175,7 +177,9 @@ export async function startDiscordBot(): Promise<void> {
       GatewayIntentBits.GuildMessageReactions,
       GatewayIntentBits.MessageContent,
     ],
-    partials: [Partials.Message, Partials.Reaction],
+    // User partial: guild reaction payloads carry the full member, but DM
+    // reactions from uncached users are silently dropped without it.
+    partials: [Partials.Message, Partials.Reaction, Partials.User],
   });
 
   // Gateway diagnostics. `client.login()` resolves as soon as the token
@@ -213,18 +217,29 @@ export async function startDiscordBot(): Promise<void> {
   // Register slash commands
   await registerCommands();
 
-  // Handle slash commands
+  // Handle slash commands.
+  // A rejection from an async event listener is an unhandled promise rejection,
+  // which kills the whole process (Sentry's global handler captures then exits)
+  // — so one failed reply or DB hiccup must not take the bot down.
   client.on("interactionCreate", async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
 
     const { commandName, user } = interaction;
 
-    if (commandName === "link") {
-      await handleLinkCommand(interaction, user);
-    } else if (commandName === "unlink") {
-      await handleUnlinkCommand(interaction, user);
-    } else if (commandName === "status") {
-      await handleStatusCommand(interaction, user);
+    try {
+      if (commandName === "link") {
+        await handleLinkCommand(interaction, user);
+      } else if (commandName === "unlink") {
+        await handleUnlinkCommand(interaction, user);
+      } else if (commandName === "status") {
+        await handleStatusCommand(interaction, user);
+      }
+    } catch (error) {
+      // logger.error only adds a Sentry breadcrumb; capture explicitly so the
+      // error still becomes a Sentry event now that it no longer crashes the
+      // process (where the global handler used to report it).
+      Sentry.captureException(error);
+      logger.error("Discord command handler failed", { commandName, error });
     }
   });
 
@@ -233,9 +248,36 @@ export async function startDiscordBot(): Promise<void> {
     if (user.bot) return;
 
     const emoji = reaction.emoji.name;
-    if (emoji !== DISCORD_SAVE_EMOJI) return;
+    if (emoji !== DISCORD_SAVE_EMOJI) {
+      // Users can't react with application emojis (they're only usable by the
+      // bot itself), so the save trigger must be a server emoji whose name
+      // matches DISCORD_SAVE_EMOJI exactly. Log mismatches so a wrong or
+      // renamed server emoji is diagnosable instead of silently ignored.
+      logger.info("Ignoring reaction with non-save emoji", {
+        emoji,
+        emojiId: reaction.emoji.id,
+        expected: DISCORD_SAVE_EMOJI,
+        userId: user.id,
+      });
+      return;
+    }
 
-    await handleSaveReaction(reaction.message, user);
+    logger.info("Save reaction received", {
+      userId: user.id,
+      messageId: reaction.message.id,
+    });
+
+    try {
+      await handleSaveReaction(reaction.message, user);
+    } catch (error) {
+      // Same rationale as interactionCreate: a rejection here (e.g. the
+      // resolveUser DB lookup) would otherwise crash the whole bot process.
+      Sentry.captureException(error);
+      logger.error("Discord save-reaction handler failed", {
+        messageId: reaction.message.id,
+        error,
+      });
+    }
   });
 
   // Watchdog: `client.login()` below resolves on token handshake, not on a live
@@ -330,7 +372,7 @@ async function handleLinkCommand(
       content:
         "Invalid API token. Please check your token and try again.\n\n" +
         "To get a token: Lion Reader → Settings → API Tokens → Create with 'Save articles' scope.",
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
@@ -342,7 +384,7 @@ async function handleLinkCommand(
     content:
       `Your Lion Reader account is now linked via API token. ` +
       `React to any message containing a URL with ${DISCORD_SAVE_EMOJI} to save it.`,
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
   });
 
   logger.info("Discord user linked via API token", {
@@ -372,14 +414,14 @@ async function handleUnlinkCommand(
       content: hasOAuth
         ? "API token removed. You're still linked via Discord OAuth, so saving will continue to work."
         : "API token removed. You're no longer linked to Lion Reader.",
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   } else {
     await interaction.reply({
       content: hasOAuth
         ? "You don't have an API token linked, but you're connected via Discord OAuth."
         : "You don't have an API token linked. Use `/link` to connect, or sign in with Discord on the Lion Reader website.",
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 }
@@ -394,7 +436,7 @@ async function handleStatusCommand(
     const methodText = resolved.method === "oauth" ? "Discord OAuth" : "API token";
     await interaction.reply({
       content: `Your account is linked via ${methodText}. React to messages with ${DISCORD_SAVE_EMOJI} to save articles.`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   } else {
     await interaction.reply({
@@ -402,7 +444,7 @@ async function handleStatusCommand(
         `Your account is not linked. You can:\n` +
         `• Sign in with Discord at Lion Reader (recommended)\n` +
         `• Use \`/link\` with an API token from Settings > API Tokens`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 }
@@ -418,7 +460,7 @@ async function handleSaveReaction(
   // Look up Lion Reader user
   const resolved = await resolveUser(user.id);
   if (!resolved) {
-    // User hasn't linked their account - silently ignore
+    logger.info("Ignoring save reaction from unlinked Discord user", { discordId: user.id });
     return;
   }
 
@@ -437,7 +479,13 @@ async function handleSaveReaction(
 
   // Extract URLs
   const urls = extractUrls(message.content);
-  if (urls.length === 0) return;
+  if (urls.length === 0) {
+    logger.info("Save reaction message contained no URLs", {
+      messageId: message.id,
+      contentLength: message.content?.length ?? 0,
+    });
+    return;
+  }
 
   // Save each URL
   let hasSuccess = false;
