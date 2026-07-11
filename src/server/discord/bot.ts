@@ -10,6 +10,7 @@
 import {
   Client,
   GatewayIntentBits,
+  MessageFlags,
   Partials,
   REST,
   Routes,
@@ -215,18 +216,25 @@ export async function startDiscordBot(): Promise<void> {
   // Register slash commands
   await registerCommands();
 
-  // Handle slash commands
+  // Handle slash commands.
+  // A rejection from an async event listener is an unhandled promise rejection,
+  // which kills the whole process (Sentry's global handler captures then exits)
+  // — so one failed reply or DB hiccup must not take the bot down.
   client.on("interactionCreate", async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
 
     const { commandName, user } = interaction;
 
-    if (commandName === "link") {
-      await handleLinkCommand(interaction, user);
-    } else if (commandName === "unlink") {
-      await handleUnlinkCommand(interaction, user);
-    } else if (commandName === "status") {
-      await handleStatusCommand(interaction, user);
+    try {
+      if (commandName === "link") {
+        await handleLinkCommand(interaction, user);
+      } else if (commandName === "unlink") {
+        await handleUnlinkCommand(interaction, user);
+      } else if (commandName === "status") {
+        await handleStatusCommand(interaction, user);
+      }
+    } catch (error) {
+      logger.error("Discord command handler failed", { commandName, error });
     }
   });
 
@@ -254,7 +262,16 @@ export async function startDiscordBot(): Promise<void> {
       messageId: reaction.message.id,
     });
 
-    await handleSaveReaction(reaction.message, user);
+    try {
+      await handleSaveReaction(reaction.message, user);
+    } catch (error) {
+      // Same rationale as interactionCreate: a rejection here (e.g. the
+      // resolveUser DB lookup) would otherwise crash the whole bot process.
+      logger.error("Discord save-reaction handler failed", {
+        messageId: reaction.message.id,
+        error,
+      });
+    }
   });
 
   // Watchdog: `client.login()` below resolves on token handshake, not on a live
@@ -349,7 +366,7 @@ async function handleLinkCommand(
       content:
         "Invalid API token. Please check your token and try again.\n\n" +
         "To get a token: Lion Reader → Settings → API Tokens → Create with 'Save articles' scope.",
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
@@ -391,14 +408,14 @@ async function handleUnlinkCommand(
       content: hasOAuth
         ? "API token removed. You're still linked via Discord OAuth, so saving will continue to work."
         : "API token removed. You're no longer linked to Lion Reader.",
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   } else {
     await interaction.reply({
       content: hasOAuth
         ? "You don't have an API token linked, but you're connected via Discord OAuth."
         : "You don't have an API token linked. Use `/link` to connect, or sign in with Discord on the Lion Reader website.",
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 }
@@ -413,7 +430,7 @@ async function handleStatusCommand(
     const methodText = resolved.method === "oauth" ? "Discord OAuth" : "API token";
     await interaction.reply({
       content: `Your account is linked via ${methodText}. React to messages with ${DISCORD_SAVE_EMOJI} to save articles.`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   } else {
     await interaction.reply({
@@ -421,7 +438,7 @@ async function handleStatusCommand(
         `Your account is not linked. You can:\n` +
         `• Sign in with Discord at Lion Reader (recommended)\n` +
         `• Use \`/link\` with an API token from Settings > API Tokens`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 }
