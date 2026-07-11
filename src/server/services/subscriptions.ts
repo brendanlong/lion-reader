@@ -563,8 +563,8 @@ export async function createSubscription(
     //    would see an empty feed until the next new entry (issue #952). The JOIN
     //    reads the current value atomically within this statement.
     await tx.execute(sql`
-      INSERT INTO user_entries (user_id, entry_id, published_or_fetched_at)
-      SELECT ${userId}, e.id, COALESCE(e.published_at, e.fetched_at)
+      INSERT INTO user_entries (user_id, entry_id, published_or_fetched_at, subscription_id, is_spam)
+      SELECT ${userId}, e.id, COALESCE(e.published_at, e.fetched_at), ${subscriptionId}, e.is_spam
       FROM entries e
       JOIN feeds f ON f.id = e.feed_id
       WHERE e.feed_id = ${feedId}

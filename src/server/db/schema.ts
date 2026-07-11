@@ -697,10 +697,24 @@ export const userEntries = pgTable(
 
     // Denormalized timeline sort key: COALESCE(entries.published_at, entries.fetched_at).
     // Immutable per entry, so it's copied here at insert time (or filled by the
-    // user_entries_fill_sort_key trigger) to enable a single (user_id, sort_key, id)
+    // user_entries_fill_denormalized trigger) to enable a single (user_id, sort_key, id)
     // index that covers the timeline list query's filter + sort. The DB enforces
     // NOT NULL; left optional here so callers may rely on the trigger to fill it.
     publishedOrFetchedAt: timestamp("published_or_fetched_at", { withTimezone: true }),
+
+    // Direct 1:1 subscription attribution (issue #1117). NULL = saved/uploaded
+    // article (per-user feed with no subscription row). Filled inline by the bulk
+    // insert paths or by the user_entries_fill_denormalized trigger; re-stamped by
+    // the feed-merge job. INFORMATIONAL during the transition: entry visibility is
+    // still resolved through the subscription_feeds junction.
+    subscriptionId: uuid("subscription_id").references(() => subscriptions.id, {
+      onDelete: "set null",
+    }),
+
+    // Denormalized entries.is_spam (immutable after insert — set only by email
+    // ingest from the provider's verdict). The DB enforces NOT NULL; left optional
+    // here so callers may rely on the trigger to fill it.
+    isSpam: boolean("is_spam"),
   },
   (table) => [
     primaryKey({ columns: [table.userId, table.entryId] }),
@@ -712,6 +726,8 @@ export const userEntries = pgTable(
       table.publishedOrFetchedAt.desc(),
       table.entryId.desc()
     ),
+    // idx_user_entries_subscription (partial: WHERE subscription_id IS NOT NULL)
+    // is defined in migration 0086.
     // Partial indexes defined in migration (can't express WHERE clause in drizzle)
   ]
 );
