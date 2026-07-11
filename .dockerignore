@@ -5,6 +5,8 @@ node_modules/
 .next/
 out/
 dist/
+# Regenerated in the builder stage by scripts/copy-onnx-wasm.mjs (Dockerfile)
+public/onnx/
 
 # Git
 .git/
