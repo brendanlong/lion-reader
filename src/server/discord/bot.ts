@@ -7,6 +7,7 @@
  * 2. Using /link with an API token
  */
 
+import * as Sentry from "@sentry/nextjs";
 import {
   Client,
   GatewayIntentBits,
@@ -234,6 +235,10 @@ export async function startDiscordBot(): Promise<void> {
         await handleStatusCommand(interaction, user);
       }
     } catch (error) {
+      // logger.error only adds a Sentry breadcrumb; capture explicitly so the
+      // error still becomes a Sentry event now that it no longer crashes the
+      // process (where the global handler used to report it).
+      Sentry.captureException(error);
       logger.error("Discord command handler failed", { commandName, error });
     }
   });
@@ -267,6 +272,7 @@ export async function startDiscordBot(): Promise<void> {
     } catch (error) {
       // Same rationale as interactionCreate: a rejection here (e.g. the
       // resolveUser DB lookup) would otherwise crash the whole bot process.
+      Sentry.captureException(error);
       logger.error("Discord save-reaction handler failed", {
         messageId: reaction.message.id,
         error,
@@ -378,7 +384,7 @@ async function handleLinkCommand(
     content:
       `Your Lion Reader account is now linked via API token. ` +
       `React to any message containing a URL with ${DISCORD_SAVE_EMOJI} to save it.`,
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
   });
 
   logger.info("Discord user linked via API token", {
