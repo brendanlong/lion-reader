@@ -585,12 +585,12 @@ export async function createUserEntriesForFeed(feedId: string, entryIds: string[
   // 3. Uses ON CONFLICT DO NOTHING for idempotency
   // We use db.execute() with raw SQL because Drizzle's INSERT...SELECT always
   // generates column lists for all table columns. Since we only want to insert
-  // (user_id, entry_id) and let other columns use defaults, we need raw SQL
-  // to specify just those columns.
+  // the identity + denormalized columns and let the rest use defaults, we need
+  // raw SQL to specify just those columns.
   // https://github.com/drizzle-team/drizzle-orm/issues/3608
   const result = await db.execute(sql`
-      INSERT INTO user_entries (user_id, entry_id, published_or_fetched_at)
-      SELECT s.user_id, e.id, COALESCE(e.published_at, e.fetched_at)
+      INSERT INTO user_entries (user_id, entry_id, published_or_fetched_at, subscription_id, is_spam)
+      SELECT s.user_id, e.id, COALESCE(e.published_at, e.fetched_at), s.id, e.is_spam
       FROM subscriptions s
       INNER JOIN entries e ON e.feed_id = s.feed_id
       WHERE s.feed_id = ${feedId}::uuid

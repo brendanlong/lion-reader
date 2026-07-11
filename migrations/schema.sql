@@ -21,15 +21,28 @@ CREATE TYPE public.websub_state AS ENUM (
     'unsubscribed'
 );
 
-CREATE FUNCTION public.user_entries_fill_sort_key() RETURNS trigger
+CREATE FUNCTION public.user_entries_fill_denormalized() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
+DECLARE
+  v_feed_id uuid;
 BEGIN
-  IF NEW.published_or_fetched_at IS NULL THEN
-    SELECT COALESCE(e.published_at, e.fetched_at)
-      INTO NEW.published_or_fetched_at
+  IF NEW.published_or_fetched_at IS NULL
+     OR NEW.is_spam IS NULL
+     OR NEW.subscription_id IS NULL THEN
+    SELECT COALESCE(NEW.published_or_fetched_at, e.published_at, e.fetched_at),
+           COALESCE(NEW.is_spam, e.is_spam),
+           e.feed_id
+      INTO NEW.published_or_fetched_at, NEW.is_spam, v_feed_id
       FROM entries e
       WHERE e.id = NEW.entry_id;
+    IF NEW.subscription_id IS NULL THEN
+      SELECT s.id
+        INTO NEW.subscription_id
+        FROM subscriptions s
+        WHERE s.user_id = NEW.user_id
+          AND s.feed_id = v_feed_id;
+    END IF;
   END IF;
   RETURN NEW;
 END;
@@ -344,6 +357,8 @@ CREATE TABLE public.user_entries (
     has_starred boolean DEFAULT false NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     published_or_fetched_at timestamp with time zone NOT NULL,
+    subscription_id uuid,
+    is_spam boolean NOT NULL,
     CONSTRAINT user_entries_score_range CHECK (((score >= '-2'::integer) AND (score <= 2)))
 );
 
@@ -701,6 +716,8 @@ CREATE INDEX idx_user_entries_read_changed_at ON public.user_entries USING btree
 
 CREATE INDEX idx_user_entries_starred ON public.user_entries USING btree (user_id) WHERE (starred = true);
 
+CREATE INDEX idx_user_entries_subscription ON public.user_entries USING btree (subscription_id) WHERE (subscription_id IS NOT NULL);
+
 CREATE INDEX idx_user_entries_unread ON public.user_entries USING btree (user_id) WHERE (read = false);
 
 CREATE INDEX idx_user_entries_updated_at ON public.user_entries USING btree (user_id, updated_at);
@@ -717,7 +734,7 @@ CREATE UNIQUE INDEX uq_feeds_saved_user ON public.feeds USING btree (user_id) WH
 
 CREATE UNIQUE INDEX uq_tags_user_name ON public.tags USING btree (user_id, name) WHERE (deleted_at IS NULL);
 
-CREATE TRIGGER user_entries_fill_sort_key_trigger BEFORE INSERT ON public.user_entries FOR EACH ROW EXECUTE FUNCTION public.user_entries_fill_sort_key();
+CREATE TRIGGER user_entries_fill_denormalized_trigger BEFORE INSERT ON public.user_entries FOR EACH ROW EXECUTE FUNCTION public.user_entries_fill_denormalized();
 
 ALTER TABLE ONLY public.api_tokens
     ADD CONSTRAINT api_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
@@ -790,6 +807,9 @@ ALTER TABLE ONLY public.subscriptions
 
 ALTER TABLE ONLY public.tags
     ADD CONSTRAINT tags_user_id_users_id_fk FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.user_entries
+    ADD CONSTRAINT user_entries_subscription_id_fkey FOREIGN KEY (subscription_id) REFERENCES public.subscriptions(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.user_entries
     ADD CONSTRAINT user_entry_states_entry_id_entries_id_fk FOREIGN KEY (entry_id) REFERENCES public.entries(id) ON DELETE CASCADE;
