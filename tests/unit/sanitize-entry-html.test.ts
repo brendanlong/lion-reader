@@ -146,7 +146,7 @@ describe("sanitizeEntryHtml", () => {
       expect(out).toContain('colspan="2"');
     });
 
-    it("strips iframes (phishing/tracking surface; not on DOMPurify's default list)", () => {
+    it("strips non-YouTube iframes (phishing/tracking surface)", () => {
       const out =
         sanitizeEntryHtml(
           '<iframe src="https://evil.example/fake-login" allowfullscreen></iframe>'
@@ -163,6 +163,71 @@ describe("sanitizeEntryHtml", () => {
     it("preserves the narration data-para-id attribute", () => {
       const out = sanitizeEntryHtml('<p data-para-id="3">x</p>') ?? "";
       expect(out).toContain('data-para-id="3"');
+    });
+  });
+
+  describe("YouTube embed iframes (issue #1115)", () => {
+    it("keeps a YouTube embed, rewritten to youtube-nocookie with forced sandbox", () => {
+      const out =
+        sanitizeEntryHtml(
+          '<iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ" width="560" height="315"></iframe>'
+        ) ?? "";
+      expect(out).toContain('src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ"');
+      expect(out).toContain('sandbox="allow-scripts allow-same-origin');
+      expect(out).toContain('loading="lazy"');
+      expect(out).toContain('width="560"');
+      expect(out).toContain('height="315"');
+    });
+
+    it("normalizes protocol-relative embed srcs", () => {
+      const out =
+        sanitizeEntryHtml('<iframe src="//www.youtube.com/embed/abc123def45"></iframe>') ?? "";
+      expect(out).toContain('src="https://www.youtube-nocookie.com/embed/abc123def45"');
+    });
+
+    it("keeps playback params but drops autoplay and JS-API params", () => {
+      const out =
+        sanitizeEntryHtml(
+          '<iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ?start=30&autoplay=1&enablejsapi=1"></iframe>'
+        ) ?? "";
+      expect(out).toContain("start=30");
+      expect(out).not.toContain("autoplay");
+      expect(out).not.toContain("enablejsapi");
+    });
+
+    it("keeps playlist embeds", () => {
+      const out =
+        sanitizeEntryHtml(
+          '<iframe src="https://www.youtube.com/embed/videoseries?list=PL0123abc"></iframe>'
+        ) ?? "";
+      expect(out).toContain(
+        'src="https://www.youtube-nocookie.com/embed/videoseries?list=PL0123abc"'
+      );
+    });
+
+    it("overrides a feed-supplied sandbox/allow with the forced values", () => {
+      const out =
+        sanitizeEntryHtml(
+          '<iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ" sandbox="allow-top-navigation" allow="autoplay"></iframe>'
+        ) ?? "";
+      expect(out).not.toContain("allow-top-navigation");
+      expect(out).not.toContain('allow="autoplay"');
+    });
+
+    it("removes YouTube iframes that are not embed URLs", () => {
+      const out =
+        sanitizeEntryHtml(
+          '<iframe src="https://www.youtube.com/watch?v=dQw4w9WgXcQ"></iframe><p>x</p>'
+        ) ?? "";
+      expect(out).toBe("<p>x</p>");
+    });
+
+    it("removes iframes with dangerous or missing srcs entirely", () => {
+      expect(sanitizeEntryHtml('<iframe src="javascript:alert(1)"></iframe>')).toBe("");
+      expect(sanitizeEntryHtml("<iframe></iframe>")).toBe("");
+      expect(
+        sanitizeEntryHtml('<iframe src="https://www.youtube.com.evil.com/embed/x"></iframe>')
+      ).toBe("");
     });
   });
 });
