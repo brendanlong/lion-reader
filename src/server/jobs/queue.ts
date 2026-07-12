@@ -69,6 +69,9 @@ export interface JobPayloads {
   // Daily retention cleanup of expired/revoked credentials and parked
   // one-time jobs. See src/server/services/retention.ts.
   cleanup: Record<string, never>;
+  // Daily self-healing sweep of the denormalized unread counters (issue
+  // #1117). See src/server/services/reconcile-counters.ts.
+  reconcile_counters: Record<string, never>;
 }
 
 export type JobType = keyof JobPayloads;
@@ -480,7 +483,12 @@ export async function listJobs(
  * +15min or slower, so ordering among them is harmless; keep any
  * fast-rescheduling type at the end when adding one.
  */
-export const SINGLETON_JOB_TYPES: JobType[] = ["renew_websub", "monitor_feed_health", "cleanup"];
+export const SINGLETON_JOB_TYPES: JobType[] = [
+  "renew_websub",
+  "monitor_feed_health",
+  "cleanup",
+  "reconcile_counters",
+];
 
 /**
  * Tries to claim a singleton job for processing.

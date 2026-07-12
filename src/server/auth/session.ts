@@ -297,6 +297,10 @@ function deserializeFromCache(data: string): SessionData {
       notEuAgreedAt: cached.userNotEuAgreedAt ? new Date(cached.userNotEuAgreedAt) : null,
       // Not cached in Redis; only the admin activity view reads it, from the DB.
       lastActiveAt: null,
+      // Not cached in Redis; the badge queries read these from the DB directly,
+      // never through the session user.
+      savedUnreadCount: 0,
+      starredUnreadCount: 0,
     },
     hasGroqApiKey: cached.userHasGroqApiKey ?? false,
     hasAnthropicApiKey: cached.userHasAnthropicApiKey ?? false,

@@ -21,6 +21,121 @@ CREATE TYPE public.websub_state AS ENUM (
     'unsubscribed'
 );
 
+CREATE FUNCTION public.user_entries_counters_delete() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  UPDATE subscriptions s
+  SET unread_count = s.unread_count - d.u,
+      starred_unread_count = s.starred_unread_count - d.su
+  FROM (
+    SELECT subscription_id,
+           count(*) FILTER (WHERE NOT read AND NOT is_spam)::int AS u,
+           count(*) FILTER (WHERE starred AND NOT read AND NOT is_spam)::int AS su
+    FROM old_rows
+    WHERE subscription_id IS NOT NULL
+    GROUP BY subscription_id
+  ) d
+  WHERE s.id = d.subscription_id AND (d.u <> 0 OR d.su <> 0);
+
+  UPDATE users usr
+  SET saved_unread_count = usr.saved_unread_count - d.sv,
+      starred_unread_count = usr.starred_unread_count - d.st
+  FROM (
+    SELECT user_id,
+           count(*) FILTER (WHERE subscription_id IS NULL AND NOT read AND NOT is_spam)::int AS sv,
+           count(*) FILTER (WHERE starred AND NOT read AND NOT is_spam)::int AS st
+    FROM old_rows
+    GROUP BY user_id
+  ) d
+  WHERE usr.id = d.user_id AND (d.sv <> 0 OR d.st <> 0);
+  RETURN NULL;
+END;
+$$;
+
+CREATE FUNCTION public.user_entries_counters_insert() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  UPDATE subscriptions s
+  SET unread_count = s.unread_count + d.u,
+      starred_unread_count = s.starred_unread_count + d.su
+  FROM (
+    SELECT subscription_id,
+           count(*) FILTER (WHERE NOT read AND NOT is_spam)::int AS u,
+           count(*) FILTER (WHERE starred AND NOT read AND NOT is_spam)::int AS su
+    FROM new_rows
+    WHERE subscription_id IS NOT NULL
+    GROUP BY subscription_id
+  ) d
+  WHERE s.id = d.subscription_id AND (d.u <> 0 OR d.su <> 0);
+
+  UPDATE users usr
+  SET saved_unread_count = usr.saved_unread_count + d.sv,
+      starred_unread_count = usr.starred_unread_count + d.st
+  FROM (
+    SELECT user_id,
+           count(*) FILTER (WHERE subscription_id IS NULL AND NOT read AND NOT is_spam)::int AS sv,
+           count(*) FILTER (WHERE starred AND NOT read AND NOT is_spam)::int AS st
+    FROM new_rows
+    GROUP BY user_id
+  ) d
+  WHERE usr.id = d.user_id AND (d.sv <> 0 OR d.st <> 0);
+  RETURN NULL;
+END;
+$$;
+
+CREATE FUNCTION public.user_entries_counters_update() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  UPDATE subscriptions s
+  SET unread_count = s.unread_count + d.u,
+      starred_unread_count = s.starred_unread_count + d.su
+  FROM (
+    SELECT subscription_id, sum(u)::int AS u, sum(su)::int AS su
+    FROM (
+      SELECT subscription_id,
+             (NOT read AND NOT is_spam)::int AS u,
+             (starred AND NOT read AND NOT is_spam)::int AS su
+      FROM new_rows
+      WHERE subscription_id IS NOT NULL
+      UNION ALL
+      SELECT subscription_id,
+             -((NOT read AND NOT is_spam)::int),
+             -((starred AND NOT read AND NOT is_spam)::int)
+      FROM old_rows
+      WHERE subscription_id IS NOT NULL
+    ) x
+    GROUP BY subscription_id
+    HAVING sum(u) <> 0 OR sum(su) <> 0
+  ) d
+  WHERE s.id = d.subscription_id;
+
+  UPDATE users usr
+  SET saved_unread_count = usr.saved_unread_count + d.sv,
+      starred_unread_count = usr.starred_unread_count + d.st
+  FROM (
+    SELECT user_id, sum(sv)::int AS sv, sum(st)::int AS st
+    FROM (
+      SELECT user_id,
+             (subscription_id IS NULL AND NOT read AND NOT is_spam)::int AS sv,
+             (starred AND NOT read AND NOT is_spam)::int AS st
+      FROM new_rows
+      UNION ALL
+      SELECT user_id,
+             -((subscription_id IS NULL AND NOT read AND NOT is_spam)::int),
+             -((starred AND NOT read AND NOT is_spam)::int)
+      FROM old_rows
+    ) x
+    GROUP BY user_id
+    HAVING sum(sv) <> 0 OR sum(st) <> 0
+  ) d
+  WHERE usr.id = d.user_id;
+  RETURN NULL;
+END;
+$$;
+
 CREATE FUNCTION public.user_entries_fill_denormalized() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -322,7 +437,9 @@ CREATE TABLE public.subscriptions (
     unsubscribed_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    fetch_full_content boolean DEFAULT false NOT NULL
+    fetch_full_content boolean DEFAULT false NOT NULL,
+    unread_count integer DEFAULT 0 NOT NULL,
+    starred_unread_count integer DEFAULT 0 NOT NULL
 );
 
 CREATE TABLE public.tags (
@@ -384,7 +501,9 @@ CREATE TABLE public.users (
     tos_agreed_at timestamp with time zone,
     privacy_policy_agreed_at timestamp with time zone,
     not_eu_agreed_at timestamp with time zone,
-    last_active_at timestamp with time zone
+    last_active_at timestamp with time zone,
+    saved_unread_count integer DEFAULT 0 NOT NULL,
+    starred_unread_count integer DEFAULT 0 NOT NULL
 );
 
 CREATE VIEW public.visible_entries AS
@@ -703,11 +822,17 @@ CREATE INDEX idx_websub_expiring ON public.websub_subscriptions USING btree (exp
 
 CREATE INDEX idx_websub_feed ON public.websub_subscriptions USING btree (feed_id);
 
-CREATE UNIQUE INDEX jobs_singleton_type_unique ON public.jobs USING btree (type) WHERE (type = ANY (ARRAY['renew_websub'::text, 'monitor_feed_health'::text, 'cleanup'::text]));
+CREATE UNIQUE INDEX jobs_singleton_type_unique ON public.jobs USING btree (type) WHERE (type = ANY (ARRAY['renew_websub'::text, 'monitor_feed_health'::text, 'cleanup'::text, 'reconcile_counters'::text]));
 
 CREATE UNIQUE INDEX uq_feeds_saved_user ON public.feeds USING btree (user_id) WHERE (type = 'saved'::public.feed_type);
 
 CREATE UNIQUE INDEX uq_tags_user_name ON public.tags USING btree (user_id, name) WHERE (deleted_at IS NULL);
+
+CREATE TRIGGER user_entries_counters_delete_trigger AFTER DELETE ON public.user_entries REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION public.user_entries_counters_delete();
+
+CREATE TRIGGER user_entries_counters_insert_trigger AFTER INSERT ON public.user_entries REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.user_entries_counters_insert();
+
+CREATE TRIGGER user_entries_counters_update_trigger AFTER UPDATE ON public.user_entries REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.user_entries_counters_update();
 
 CREATE TRIGGER user_entries_fill_denormalized_trigger BEFORE INSERT ON public.user_entries FOR EACH ROW EXECUTE FUNCTION public.user_entries_fill_denormalized();
 
