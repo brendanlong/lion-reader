@@ -443,3 +443,50 @@ describe("UnknownFeedFormatError", () => {
     expect(error).toBeInstanceOf(UnknownFeedFormatError);
   });
 });
+
+describe("Media RSS extraction (YouTube-style Atom feeds)", () => {
+  const youtubeAtom = `<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/" xmlns="http://www.w3.org/2005/Atom">
+  <title>Channel Title</title>
+  <entry>
+    <id>yt:video:dQw4w9WgXcQ</id>
+    <yt:videoId>dQw4w9WgXcQ</yt:videoId>
+    <title>Video Title</title>
+    <link rel="alternate" href="https://www.youtube.com/watch?v=dQw4w9WgXcQ"/>
+    <author><name>Channel Author</name></author>
+    <published>2026-07-01T12:00:00+00:00</published>
+    <media:group>
+      <media:title>Video Title</media:title>
+      <media:content url="https://www.youtube.com/v/dQw4w9WgXcQ?version=3" type="application/x-shockwave-flash" width="640" height="390"/>
+      <media:thumbnail url="https://i2.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg" width="480" height="360"/>
+      <media:description>First line of description.
+
+Links: https://example.com/sponsor &amp; more</media:description>
+    </media:group>
+  </entry>
+</feed>`;
+
+  it("extracts media:description and media:thumbnail from media:group", () => {
+    const feed = parseFeed(youtubeAtom);
+    const entry = feed.items[0];
+
+    expect(entry.mediaDescription).toBe(
+      "First line of description.\n\nLinks: https://example.com/sponsor & more"
+    );
+    expect(entry.mediaThumbnailUrl).toBe("https://i2.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg");
+  });
+
+  it("does not let media:group children clobber the entry's own fields", () => {
+    const feed = parseFeed(youtubeAtom);
+    const entry = feed.items[0];
+
+    expect(entry.title).toBe("Video Title");
+    expect(entry.guid).toBe("yt:video:dQw4w9WgXcQ");
+    expect(entry.link).toBe("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+    expect(entry.author).toBe("Channel Author");
+    // YouTube provides no <content>/<summary>; media:description must not
+    // masquerade as either (it's plain text, not HTML).
+    expect(entry.content).toBeUndefined();
+    expect(entry.summary).toBeUndefined();
+  });
+});

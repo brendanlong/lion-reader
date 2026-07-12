@@ -1,4 +1,11 @@
 import type { UrlPlugin } from "./types";
+import type { ParsedEntry } from "@/server/feed/types";
+import { escapeHtml } from "@/server/http/html";
+import {
+  extractYouTubeVideoId,
+  YOUTUBE_IFRAME_ALLOW,
+  YOUTUBE_IFRAME_SANDBOX,
+} from "@/server/html/youtube-embed";
 
 /**
  * Minimum polling interval for YouTube feeds: 1 hour.
@@ -14,12 +21,46 @@ import type { UrlPlugin } from "./types";
 export const YOUTUBE_MIN_FETCH_INTERVAL_SECONDS = 60 * 60;
 
 /**
+ * Converts a plain-text YouTube video description to HTML: escapes it, turns
+ * blank-line-separated blocks into paragraphs (single newlines into <br>), and
+ * links bare http(s) URLs (YouTube descriptions are full of them).
+ */
+export function youtubeDescriptionToHtml(description: string): string {
+  const paragraphs = description
+    .split(/\n{2,}/)
+    .map((block) => linkifyEscapedText(escapeHtml(block.trim())).replace(/\n/g, "<br>"))
+    .filter((block) => block.length > 0);
+  return paragraphs.map((p) => `<p>${p}</p>`).join("");
+}
+
+/**
+ * Wraps bare http(s) URLs in already-HTML-escaped text with <a> tags. Escaped
+ * text contains no raw `<`/`"`, so a match is safe to place in an href
+ * attribute as-is (entities like `&amp;` decode back to the original URL).
+ */
+function linkifyEscapedText(escapedText: string): string {
+  return escapedText.replace(/https?:\/\/[^\s]+/g, (match) => {
+    // Trailing sentence punctuation is almost never part of the URL; a
+    // trailing `)` only is when the URL itself contains `(`.
+    let url = match.replace(/[.,!?]+$/, "");
+    if (url.endsWith(")") && !url.includes("(")) {
+      url = url.slice(0, -1);
+    }
+    const trailer = match.slice(url.length);
+    return `<a href="${url}">${url}</a>${trailer}`;
+  });
+}
+
+/**
  * YouTube plugin.
  *
  * Provides feed capability for YouTube's RSS feeds
  * (`/feeds/videos.xml?channel_id=...`, `?playlist_id=...`, `?user=...`):
- * currently just a polling floor so we don't hammer YouTube's aggressively
- * rate-limited feed endpoint (see YOUTUBE_MIN_FETCH_INTERVAL_SECONDS).
+ * a polling floor so we don't hammer YouTube's aggressively rate-limited feed
+ * endpoint (see YOUTUBE_MIN_FETCH_INTERVAL_SECONDS), and entry-content
+ * synthesis — the feed entries carry no HTML body, only Media RSS metadata,
+ * so `buildEntryContent` builds one from the embedded player plus the
+ * `media:description` (issue #1115).
  *
  * Note: YouTube supports WebSub push for channel feeds via Google's hub
  * (https://developers.google.com/youtube/v3/guides/push_notifications), but
@@ -45,6 +86,34 @@ export const youtubePlugin: UrlPlugin = {
   capabilities: {
     feed: {
       minFetchIntervalSeconds: YOUTUBE_MIN_FETCH_INTERVAL_SECONDS,
+
+      buildEntryContent(entry: ParsedEntry, entryUrl: string | undefined): string | null {
+        // Video id from the entry link (watch?v=...), falling back to the
+        // Atom guid (`yt:video:VIDEOID`).
+        const videoId =
+          extractYouTubeVideoId(entryUrl) ??
+          (entry.guid?.startsWith("yt:video:")
+            ? extractYouTubeVideoId(
+                `https://www.youtube.com/watch?v=${entry.guid.slice("yt:video:".length)}`
+              )
+            : null);
+        if (!videoId) return null;
+
+        // The sanitizer re-validates the src and re-forces sandbox/allow on
+        // the read path (see transformTags.iframe in sanitize.ts); setting
+        // them here just keeps the stored raw content self-contained.
+        const title = entry.title ? ` title="${escapeHtml(entry.title)}"` : "";
+        const iframe =
+          `<iframe src="https://www.youtube-nocookie.com/embed/${videoId}"` +
+          ` width="560" height="315"${title}` +
+          ` sandbox="${YOUTUBE_IFRAME_SANDBOX}" allow="${YOUTUBE_IFRAME_ALLOW}"` +
+          ` allowfullscreen loading="lazy"></iframe>`;
+
+        const description = entry.mediaDescription
+          ? youtubeDescriptionToHtml(entry.mediaDescription)
+          : "";
+        return iframe + description;
+      },
     },
   },
 };

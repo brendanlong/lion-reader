@@ -111,3 +111,62 @@ describe("cleanEntryContent", () => {
     });
   });
 });
+
+describe("YouTube feeds (synthesized content via buildEntryContent)", () => {
+  const youtubeFeedUrl = "https://www.youtube.com/feeds/videos.xml?channel_id=UCabc123";
+
+  it("synthesizes embed + description content for entries with no feed content", () => {
+    const parsedEntry: ParsedEntry = {
+      guid: "yt:video:dQw4w9WgXcQ",
+      link: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      title: "Video Title",
+      mediaDescription: "A description of the video.\n\nMore details here.",
+    };
+
+    const result = cleanEntryContent(parsedEntry, {
+      entryUrl: parsedEntry.link,
+      feedUrl: youtubeFeedUrl,
+    });
+
+    // No feed-provided content, so original stays null; the synthesized body
+    // is the cleaned content.
+    expect(result.contentOriginal).toBeNull();
+    expect(result.contentCleaned).toContain(
+      'src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ"'
+    );
+    expect(result.contentCleaned).toContain("A description of the video.");
+
+    // Summary comes from the synthesized content (iframe strips to nothing).
+    expect(result.summary).toContain("A description of the video.");
+    expect(result.summary).not.toContain("<iframe");
+  });
+
+  it("still returns empty results when no video id can be derived", () => {
+    const parsedEntry: ParsedEntry = {
+      guid: "not-a-video",
+      title: "Weird entry",
+    };
+
+    const result = cleanEntryContent(parsedEntry, { feedUrl: youtubeFeedUrl });
+
+    expect(result.contentOriginal).toBeNull();
+    expect(result.contentCleaned).toBeNull();
+    expect(result.summary).toBe("");
+  });
+
+  it("does not synthesize content for non-YouTube feeds", () => {
+    const parsedEntry: ParsedEntry = {
+      guid: "yt:video:dQw4w9WgXcQ",
+      link: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      mediaDescription: "description",
+    };
+
+    const result = cleanEntryContent(parsedEntry, {
+      entryUrl: parsedEntry.link,
+      feedUrl: "https://example.com/feed.xml",
+    });
+
+    expect(result.contentCleaned).toBeNull();
+    expect(result.contentOriginal).toBeNull();
+  });
+});

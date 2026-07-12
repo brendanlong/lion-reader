@@ -103,7 +103,10 @@ export function generateContentHash(entry: ParsedEntry): string {
   // Use deriveEntryUrl so the hash tracks the URL we actually store (link, or a
   // URL-shaped guid), matching updateEntryContent's write.
   const title = entry.title ?? "";
-  const content = entry.content ?? entry.summary ?? "";
+  // mediaDescription is the content fallback for feeds that provide neither
+  // content nor summary (YouTube), so hash it in that case — otherwise a
+  // description edit would never propagate to the stored entry.
+  const content = entry.content ?? entry.summary ?? entry.mediaDescription ?? "";
   const author = entry.author ?? "";
   const url = deriveEntryUrl(entry) ?? "";
 

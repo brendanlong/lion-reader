@@ -629,20 +629,20 @@ Lion Reader has an extensible plugin system (`src/server/plugins/`) that consoli
 
 The registry indexes plugins by hostname for O(1) lookup, then calls the plugin's `matchUrl(url)`; `findWithCapability(url, capability)` returns the first plugin that matches AND declares the capability:
 
-- **`feed`** capability: transform page URLs to feed URLs, clean entry content, transform feed titles (e.g., LessWrong GraphQL API), raise the source's minimum polling interval (e.g., YouTube rate-limit avoidance)
+- **`feed`** capability: transform page URLs to feed URLs, clean entry content, synthesize entry content from parsed-entry metadata (e.g., YouTube's embedded player + description), transform feed titles (e.g., LessWrong GraphQL API), raise the source's minimum polling interval (e.g., YouTube rate-limit avoidance)
 - **`savedArticle`** capability: fetch full article content for read-it-later, optionally skipping Readability when the source returns clean HTML
 
 `matchUrl` must be selective, not "any URL on my hosts" — a plugin should only match URLs it can actually handle (e.g. LessWrong `/tag/...` pages must return `false` so the caller falls back to normal fetching).
 
 ### Available Plugins
 
-| Plugin          | Capabilities           | Description                                                |
-| --------------- | ---------------------- | ---------------------------------------------------------- |
-| **LessWrong**   | `feed`, `savedArticle` | GraphQL API for posts/comments, user profile feeds         |
-| **Google Docs** | `savedArticle`         | Fetch Google Docs content via API                          |
-| **ArXiv**       | `savedArticle`         | Fetch ArXiv paper content                                  |
-| **GitHub**      | `savedArticle`         | Fetch GitHub content                                       |
-| **YouTube**     | `feed`                 | Polling floor (1h) to avoid YouTube's per-IP rate limiting |
+| Plugin          | Capabilities           | Description                                                                                                                         |
+| --------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| **LessWrong**   | `feed`, `savedArticle` | GraphQL API for posts/comments, user profile feeds                                                                                  |
+| **Google Docs** | `savedArticle`         | Fetch Google Docs content via API                                                                                                   |
+| **ArXiv**       | `savedArticle`         | Fetch ArXiv paper content                                                                                                           |
+| **GitHub**      | `savedArticle`         | Fetch GitHub content                                                                                                                |
+| **YouTube**     | `feed`                 | Polling floor (1h) to avoid per-IP rate limiting; synthesizes entry content (embedded player + description) from Media RSS metadata |
 
 ---
 
