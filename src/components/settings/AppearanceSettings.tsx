@@ -2,7 +2,7 @@
  * AppearanceSettings Component
  *
  * Settings UI for appearance preferences including:
- * - Theme mode (system/light/dark) - powered by next-themes
+ * - Theme mode (system/light/dark/e-paper) - powered by next-themes
  * - Text size for entry content
  * - Text justification for entry content
  * - Font family for entry content
@@ -12,6 +12,7 @@
 
 import { useTheme } from "next-themes";
 import { SettingsSection } from "@/components/settings/SettingsSection";
+import { useIsEInkDisplay } from "@/lib/theme/eink";
 import { useAppearance, useEntryTextStyles } from "@/lib/appearance/AppearanceProvider";
 import type { TextSize, TextJustification, FontFamily } from "@/lib/appearance/settings";
 
@@ -78,6 +79,7 @@ const THEME_OPTIONS: { value: string; label: string }[] = [
   { value: "system", label: "Auto" },
   { value: "light", label: "Light" },
   { value: "dark", label: "Dark" },
+  { value: "epaper", label: "E-paper" },
 ];
 
 const TEXT_SIZE_OPTIONS: { value: TextSize; label: string }[] = [
@@ -122,6 +124,8 @@ function TextPreview() {
 export function AppearanceSettings() {
   const { settings, updateSettings } = useAppearance();
   const { theme, setTheme, resolvedTheme } = useTheme();
+  // On e-ink displays, "Auto" resolves to the e-paper theme (see ThemeProvider)
+  const isEInk = useIsEInkDisplay();
 
   return (
     <div className="space-y-8">
@@ -130,11 +134,13 @@ export function AppearanceSettings() {
         <OptionGroup
           label="Color Mode"
           description={
-            theme === "system" && resolvedTheme
-              ? `Following system preference (currently ${resolvedTheme})`
+            theme === "system" && (isEInk || resolvedTheme)
+              ? `Following system preference (currently ${isEInk ? "e-paper" : resolvedTheme})`
               : theme === "system"
                 ? "Following system preference"
-                : undefined
+                : theme === "epaper"
+                  ? "Pure white background with high-contrast colors designed for e-ink screens"
+                  : undefined
           }
           value={theme || "system"}
           options={THEME_OPTIONS}

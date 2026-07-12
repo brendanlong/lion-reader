@@ -145,9 +145,83 @@
   --edge-strong: #3f3f46; /* zinc-700 */
 }
 
+/* =================================
+   E-paper theme (issue #1017)
+
+   For e-ink screens: pure white background, near-black text, and colors
+   chosen to keep working when the display forces everything to grayscale.
+   Guidelines for editing this palette:
+   - Accents stay colored (dark blue) but must gray to a tone clearly darker
+     than mid-gray, so links/highlights survive a grayscale conversion.
+   - E-ink panels have few gray levels and dither light grays badly, so
+     borders and fills sit several steps darker than in light mode
+     (edge zinc-400 vs zinc-200) and subtle "tint" backgrounds are avoided
+     or darkened.
+   - Never encode meaning in hue alone; pair color with contrast.
+   ================================= */
+.epaper {
+  /* next-themes only sets color-scheme for light/dark, so declare it here */
+  color-scheme: light;
+
+  --background: #ffffff;
+  --foreground: #000000;
+
+  /* Dark blue accent: grays to a dark tone, still readable on white */
+  --accent: #1e40af; /* blue-800 */
+  --accent-hover: #1e3a8a; /* blue-900 */
+  --accent-muted: #1e40af; /* blue-800 */
+  --accent-subtle: #dbeafe; /* blue-100 - one step darker than light mode's blue-50 so it survives e-ink dithering */
+  --accent-subtle-foreground: #1e3a8a; /* blue-900 */
+  --accent-border: #60a5fa; /* blue-400 - grays to a visible mid tone */
+
+  /* Pure black primary: maximum contrast for buttons and "on" states */
+  --primary-solid: #000000;
+  --primary-solid-foreground: #ffffff;
+
+  --info: #1e40af; /* blue-800 */
+  --info-muted: #1e40af; /* blue-800 */
+  --info-subtle: #dbeafe; /* blue-100 */
+  --info-subtle-foreground: #1e3a8a; /* blue-900 */
+  --info-foreground: #1e3a8a; /* blue-900 */
+  --info-border: #60a5fa; /* blue-400 */
+
+  /* Text tones shifted darker than light mode: e-ink can't render faint grays */
+  --text-strong: #000000;
+  --text-emphasis: #000000;
+  --text-body: #18181b; /* zinc-900 */
+  --text-muted: #3f3f46; /* zinc-700 */
+  --text-subtle: #52525b; /* zinc-600 */
+  --text-faint: #71717a; /* zinc-500 */
+
+  /* Pure white surfaces; separation comes from the darker borders below */
+  --surface: #ffffff;
+  --surface-muted: #e4e4e7; /* zinc-200 - chips/skeletons need a fill that survives dithering */
+  --surface-subtle: #ffffff;
+  --edge: #a1a1aa; /* zinc-400 */
+  --edge-strong: #71717a; /* zinc-500 */
+}
+
+/* Darken Tailwind Typography's prose palette to match the e-paper text tones */
+.epaper .prose {
+  --tw-prose-body: var(--text-body);
+  --tw-prose-headings: var(--text-strong);
+  --tw-prose-lead: var(--text-body);
+  --tw-prose-links: var(--text-strong);
+  --tw-prose-bold: var(--text-strong);
+  --tw-prose-counters: var(--text-muted);
+  --tw-prose-bullets: var(--text-muted);
+  --tw-prose-hr: var(--edge);
+  --tw-prose-quotes: var(--text-body);
+  --tw-prose-quote-borders: var(--edge);
+  --tw-prose-captions: var(--text-muted);
+  --tw-prose-code: var(--text-strong);
+  --tw-prose-th-borders: var(--edge);
+  --tw-prose-td-borders: var(--edge);
+}
+
 /* Fallback to system preference when no class is set */
 @media (prefers-color-scheme: dark) {
-  :root:not(.dark):not(.light) {
+  :root:not(.dark):not(.light):not(.epaper) {
     --background: #0a0a0a;
     --foreground: #ededed;
 
@@ -366,6 +440,19 @@ body {
   border-bottom-color: #3f3f46; /* zinc-700 */
 }
 
+/* E-paper: zinc-200 borders and zinc-50 fills vanish on e-ink, so use the
+   theme's darker edge color and a plain white card */
+.epaper .reader-prose details {
+  border-color: var(--edge);
+  background-color: #ffffff;
+}
+.epaper .reader-prose summary:hover {
+  background-color: #e4e4e7; /* zinc-200 */
+}
+.epaper .reader-prose details[open] summary {
+  border-bottom-color: var(--edge);
+}
+
 /* =================================
    Reader Prose Video Embeds
 
@@ -410,9 +497,15 @@ body {
 }
 
 @media (prefers-color-scheme: dark) {
-  [data-para-id].narration-highlight {
+  :root:not(.light):not(.epaper) [data-para-id].narration-highlight {
     background-color: rgba(113, 63, 18, 0.3); /* yellow-900/30 for dark mode */
   }
+}
+
+/* E-paper highlight: a 30% yellow tint grays to near-invisible on e-ink,
+   so use a solid gray fill instead */
+.epaper [data-para-id].narration-highlight {
+  background-color: #e4e4e7; /* zinc-200 */
 }
 
 /* Smooth scroll to highlighted paragraph - account for sticky header */

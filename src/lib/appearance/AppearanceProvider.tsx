@@ -19,9 +19,9 @@ import {
 interface AppearanceContextValue {
   settings: AppearanceSettings;
   updateSettings: (settings: Partial<AppearanceSettings>) => void;
-  /** The resolved theme (always "light" or "dark", never "system"). Undefined during SSR. */
-  resolvedTheme: "light" | "dark" | undefined;
-  /** Set the theme ("light", "dark", or "system") */
+  /** The resolved theme (never "system"). Undefined during SSR. */
+  resolvedTheme: "light" | "dark" | "epaper" | undefined;
+  /** Set the theme ("light", "dark", "epaper", or "system") */
   setTheme: (theme: string) => void;
 }
 
@@ -46,7 +46,7 @@ export function AppearanceProvider({ children }: AppearanceProviderProps) {
     () => ({
       settings,
       updateSettings,
-      resolvedTheme: resolvedTheme as "light" | "dark" | undefined,
+      resolvedTheme: resolvedTheme as "light" | "dark" | "epaper" | undefined,
       setTheme,
     }),
     [settings, updateSettings, resolvedTheme, setTheme]
