@@ -13,6 +13,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ClientLink } from "@/components/ui/client-link";
 import { SpinnerIcon, GoogleIcon, AppleIcon, DiscordIcon } from "@/components/ui/icon-button";
@@ -282,7 +283,7 @@ export default function AdminUsersContent() {
       ) : users.length === 0 ? (
         <EmptyState hasSearch={debouncedSearch.length > 0} />
       ) : (
-        <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+        <Card padding="none">
           {users.map((user) => (
             <UserRow key={user.id} user={user} />
           ))}
@@ -304,7 +305,7 @@ export default function AdminUsersContent() {
               No more users
             </p>
           )}
-        </div>
+        </Card>
       )}
     </div>
   );

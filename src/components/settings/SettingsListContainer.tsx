@@ -12,6 +12,7 @@
 
 import type { ReactNode } from "react";
 import { Alert } from "@/components/ui/alert";
+import { Card } from "@/components/ui/card";
 import { SettingsListSkeleton } from "@/components/settings/SettingsListSkeleton";
 
 interface SettingsListContainerProps<T> {
@@ -65,7 +66,7 @@ export function SettingsListContainer<T>({
   }
 
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+    <Card padding="none">
       {isLoading ? (
         <SettingsListSkeleton count={skeletonCount} height={skeletonHeight} />
       ) : error ? (
@@ -78,6 +79,6 @@ export function SettingsListContainer<T>({
         <div className="divide-y divide-zinc-200 dark:divide-zinc-800">{items.map(renderItem)}</div>
       )}
       {footer}
-    </div>
+    </Card>
   );
 }

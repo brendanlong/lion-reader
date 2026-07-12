@@ -13,6 +13,7 @@ import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { formatRelativeTime, formatFutureTime, formatBytes } from "@/lib/format";
 import {
@@ -426,7 +427,7 @@ export default function AdminFeedsContent() {
       ) : feeds.length === 0 ? (
         <EmptyState hasFilters={hasFilters} />
       ) : (
-        <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+        <Card padding="none">
           {feeds.map((feed) => (
             <FeedRow
               key={feed.feedId}
@@ -453,7 +454,7 @@ export default function AdminFeedsContent() {
               No more feeds
             </p>
           )}
-        </div>
+        </Card>
       )}
     </div>
   );

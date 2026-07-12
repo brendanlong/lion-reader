@@ -17,6 +17,7 @@ import {
   formatBytes,
 } from "@/lib/format";
 import { Alert } from "@/components/ui/alert";
+import { Card } from "@/components/ui/card";
 import { SettingsListSkeleton } from "@/components/settings/SettingsListSkeleton";
 import {
   RssIcon,
@@ -163,7 +164,7 @@ export default function FeedStatsSettingsContent() {
       )}
 
       {/* Feed Stats List */}
-      <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+      <Card padding="none">
         {statsQuery.isLoading ? (
           <SettingsListSkeleton />
         ) : statsQuery.error ? (
@@ -197,7 +198,7 @@ export default function FeedStatsSettingsContent() {
             )}
           </div>
         )}
-      </div>
+      </Card>
     </div>
   );
 }
