@@ -9,14 +9,7 @@
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { db } from "../../src/server/db";
-import {
-  users,
-  feeds,
-  entries,
-  subscriptions,
-  subscriptionFeeds,
-  userEntries,
-} from "../../src/server/db/schema";
+import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
@@ -107,10 +100,6 @@ async function createTestSubscription(userId: string, feedId: string): Promise<s
     createdAt: new Date(),
     updatedAt: new Date(),
   });
-  await db
-    .insert(subscriptionFeeds)
-    .values({ subscriptionId, feedId, userId })
-    .onConflictDoNothing();
   return subscriptionId;
 }
 
@@ -140,7 +129,6 @@ describe("Feed Stats API", () => {
   beforeEach(async () => {
     await db.delete(userEntries);
     await db.delete(entries);
-    await db.delete(subscriptionFeeds);
     await db.delete(subscriptions);
     await db.delete(feeds);
     await db.delete(users);
@@ -149,7 +137,6 @@ describe("Feed Stats API", () => {
   afterAll(async () => {
     await db.delete(userEntries);
     await db.delete(entries);
-    await db.delete(subscriptionFeeds);
     await db.delete(subscriptions);
     await db.delete(feeds);
     await db.delete(users);

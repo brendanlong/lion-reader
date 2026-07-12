@@ -13,7 +13,6 @@ import {
   feeds,
   entries,
   subscriptions,
-  subscriptionFeeds,
   subscriptionTags,
   userEntries,
   tags,
@@ -119,10 +118,6 @@ async function createTestSubscription(
     createdAt: now,
     updatedAt: options.updatedAt ?? now,
   });
-  await db
-    .insert(subscriptionFeeds)
-    .values({ subscriptionId, feedId, userId })
-    .onConflictDoNothing();
   return subscriptionId;
 }
 
@@ -906,7 +901,7 @@ describe("sync.events", () => {
     it("hides an orphaned user_entries row (no active subscription, not starred)", async () => {
       const userId = await createTestUser();
       const feedId = await createTestFeed("https://example.com/orphan.xml");
-      // No subscription / subscription_feeds row → orphaned. Old fail-open
+      // No subscription row → orphaned. Old fail-open
       // predicate leaked this via `NULL IS NULL`; fail-closed must hide it.
       const entryId = await createTestEntry(feedId, {
         createdAt: new Date("2025-03-02T00:00:00.000Z"),

@@ -2,30 +2,25 @@
  * Integration tests for the denormalized user_entries.subscription_id and
  * user_entries.is_spam columns (issue #1117, migration 0086).
  *
- * These columns are INFORMATIONAL during the transition — entry visibility is
- * still resolved through the subscription_feeds junction — but every write
- * path must keep them consistent with what the junction resolves, because a
- * later release flips visibility (and unread counters) onto them:
+ * Entry visibility (and entry → subscription attribution) resolves through
+ * these columns — the subscription_feeds junction is no longer written or
+ * read. Every write path must stamp them correctly:
  *
  * - Bulk insert paths (feed fanout, subscribe-time populate) set them inline.
  * - Single-row paths (email ingest, saved articles, tests/seeds) omit them and
- *   the user_entries_fill_denormalized BEFORE INSERT trigger fills them.
+ *   the user_entries_fill_denormalized BEFORE INSERT trigger fills them by
+ *   matching the entry's feed against the user's subscriptions.
  * - The feed-merge job re-stamps rows from the old subscription to the survivor.
- *
- * The "reconciliation" tests at the bottom encode the exact query used to
- * verify prod before the visibility flip: every row's stamped subscription_id
- * must equal the junction-derived preferred subscription.
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
   users,
   feeds,
   entries,
   subscriptions,
-  subscriptionFeeds,
   userEntries,
   jobs,
 } from "../../src/server/db/schema";
@@ -75,7 +70,7 @@ async function createTestFeed(options: {
 async function createTestSubscription(
   userId: string,
   feedId: string,
-  options?: { previousFeedIds?: string[]; unsubscribedAt?: Date | null }
+  options?: { unsubscribedAt?: Date | null }
 ): Promise<string> {
   const subscriptionId = generateUuidv7();
   await db.insert(subscriptions).values({
@@ -87,11 +82,6 @@ async function createTestSubscription(
     createdAt: new Date(),
     updatedAt: new Date(),
   });
-  const allFeedIds = [feedId, ...(options?.previousFeedIds ?? [])];
-  await db
-    .insert(subscriptionFeeds)
-    .values(allFeedIds.map((fId) => ({ subscriptionId, feedId: fId, userId })))
-    .onConflictDoNothing();
   return subscriptionId;
 }
 
@@ -133,37 +123,9 @@ async function getUserEntry(userId: string, entryId: string) {
   return row;
 }
 
-/**
- * The reconciliation query: rows whose stamped subscription_id differs from the
- * junction-derived preferred subscription (active first, then direct feed
- * match, then most recent). This is the check to run against production before
- * flipping visibility onto the stamped column. Zero = consistent.
- */
-async function countStampMismatches(): Promise<number> {
-  const result = await db.execute(sql`
-    SELECT count(*)::int AS mismatches
-    FROM user_entries ue
-    JOIN entries e ON e.id = ue.entry_id
-    WHERE ue.subscription_id IS DISTINCT FROM (
-      SELECT sf.subscription_id
-      FROM subscription_feeds sf
-      JOIN subscriptions s ON s.id = sf.subscription_id
-      WHERE sf.user_id = ue.user_id
-        AND sf.feed_id = e.feed_id
-      ORDER BY (s.unsubscribed_at IS NULL) DESC,
-               (s.feed_id = e.feed_id) DESC,
-               s.subscribed_at DESC,
-               s.id DESC
-      LIMIT 1
-    )
-  `);
-  return (result.rows[0] as { mismatches: number }).mismatches;
-}
-
 async function cleanupTables() {
   await db.delete(userEntries);
   await db.delete(entries);
-  await db.delete(subscriptionFeeds);
   await db.delete(subscriptions);
   await db.delete(jobs);
   await db.delete(feeds);
@@ -262,7 +224,6 @@ describe("user_entries.subscription_id / is_spam denormalization", () => {
       expect(row1.subscriptionId).toBe(sub1);
       expect(row2.subscriptionId).toBe(sub2);
       expect(row1.isSpam).toBe(false);
-      expect(await countStampMismatches()).toBe(0);
     });
 
     it("copies is_spam from the entry", async () => {
@@ -293,7 +254,6 @@ describe("user_entries.subscription_id / is_spam denormalization", () => {
       const row = await getUserEntry(userId, entryId);
       expect(row.subscriptionId).toBe(result.subscriptionId);
       expect(row.isSpam).toBe(false);
-      expect(await countStampMismatches()).toBe(0);
     });
   });
 
@@ -320,7 +280,6 @@ describe("user_entries.subscription_id / is_spam denormalization", () => {
       const row = await getUserEntry(userId, entryId);
       expect(row.subscriptionId).toBe(newSub.id);
       expect(row.subscriptionId).not.toBe(oldSubId);
-      expect(await countStampMismatches()).toBe(0);
     });
 
     it("re-stamps old-feed entries to the user's existing subscription to the target feed", async () => {
@@ -354,7 +313,6 @@ describe("user_entries.subscription_id / is_spam denormalization", () => {
         .from(userEntries)
         .where(eq(userEntries.subscriptionId, oldSubId));
       expect(orphaned).toHaveLength(0);
-      expect(await countStampMismatches()).toBe(0);
     });
 
     it("re-stamps every affected user in a multi-subscriber merge", async () => {
@@ -380,7 +338,6 @@ describe("user_entries.subscription_id / is_spam denormalization", () => {
         .where(and(eq(subscriptions.userId, userA), eq(subscriptions.feedId, newFeedId)));
       expect((await getUserEntry(userA, entryId)).subscriptionId).toBe(newASub.id);
       expect((await getUserEntry(userB, entryId)).subscriptionId).toBe(existingBSub);
-      expect(await countStampMismatches()).toBe(0);
     });
   });
 });

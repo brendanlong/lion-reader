@@ -142,7 +142,7 @@ export interface TestFeed {
   title: string;
 }
 
-/** Creates a web feed and an active subscription (with subscription_feeds row). */
+/** Creates a web feed and an active subscription. */
 export async function createSubscribedFeed(db: TestDb, userId: string): Promise<TestFeed> {
   const feedId = generateUuidv7();
   const subscriptionId = generateUuidv7();
@@ -155,9 +155,9 @@ export async function createSubscribedFeed(db: TestDb, userId: string): Promise<
     title,
     siteUrl: `https://example.com/e2e/${feedId}`,
   });
+  // The user_entries fill trigger stamps subscription_id on later user_entries
+  // inserts by matching (user_id, entry's feed_id) against this row.
   await db.insert(schema.subscriptions).values({ id: subscriptionId, userId, feedId });
-  // visible_entries maps entries to subscriptions through subscription_feeds
-  await db.insert(schema.subscriptionFeeds).values({ subscriptionId, feedId, userId });
 
   return { feedId, subscriptionId, title };
 }

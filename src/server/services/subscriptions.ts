@@ -10,7 +10,6 @@ import {
   feeds,
   entries,
   subscriptions,
-  subscriptionFeeds,
   userEntries,
   tags,
   subscriptionTags,
@@ -466,10 +465,9 @@ export async function createSubscription(
   // 2. Ensure background fetch job exists
   await ensureFeedJob(feedId);
 
-  // 3–6. Cap check + subscription upsert + subscription_feeds + user_entries
-  //       populate, all in ONE transaction. Previously these were separate
-  //       statements: a crash between them could leave an active subscription
-  //       with no subscription_feeds row (so its entries were unqueryable), and
+  // 3–5. Cap check + subscription upsert + user_entries populate, all in ONE
+  //       transaction. Previously these were separate statements: a crash
+  //       between them could leave a half-created subscription, and
   //       the cap count → insert was check-then-act. The advisory lock
   //       serializes concurrent subscribes for this user so two callers can't
   //       both pass the cap check and both insert past the limit; it releases
@@ -585,13 +583,7 @@ export async function createSubscription(
     const customTitle = upsertedRow.custom_title;
     const fetchFullContent = upsertedRow.fetch_full_content;
 
-    // 5. Upsert subscription_feeds
-    await tx
-      .insert(subscriptionFeeds)
-      .values({ subscriptionId, feedId, userId })
-      .onConflictDoNothing();
-
-    // 6. Populate user_entries using INSERT...SELECT and count unread.
+    // 5. Populate user_entries using INSERT...SELECT and count unread.
     //    Re-read feeds.last_entries_updated_at inside the INSERT (via the JOIN)
     //    rather than using the value captured in feedRecord earlier: a feed fetch
     //    completing between that read and here bumps last_entries_updated_at, so

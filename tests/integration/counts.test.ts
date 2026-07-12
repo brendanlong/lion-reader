@@ -2,9 +2,9 @@
  * Integration tests for the entry counts service.
  *
  * These verify the per-tag and uncategorized unread counts used by mutations
- * and SSE cache updates, in particular that they deduplicate entries reachable
- * through multiple subscriptions (overlapping subscription_feeds rows from
- * feed redirect/merge history) and stay consistent with listTags.
+ * and SSE cache updates, in particular that each entry counts exactly once
+ * (attribution is 1:1 via user_entries.subscription_id) and that they stay
+ * consistent with listTags.
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
@@ -14,7 +14,6 @@ import {
   users,
   tags,
   subscriptions,
-  subscriptionFeeds,
   subscriptionTags,
   feeds,
   entries,
@@ -62,10 +61,6 @@ async function createTestSubscription(userId: string, feedId: string): Promise<s
     createdAt: new Date(),
     updatedAt: new Date(),
   });
-  await db
-    .insert(subscriptionFeeds)
-    .values({ subscriptionId, feedId, userId })
-    .onConflictDoNothing();
   return subscriptionId;
 }
 
@@ -100,17 +95,16 @@ async function createTestEntry(feedId: string, userIds: string[]): Promise<strin
 }
 
 /**
- * Creates the overlapping-subscriptions fixture: sub1 covers feedA and feedB
- * (redirect/merge history in subscription_feeds), sub2 covers feedB directly.
- * An unread entry in feedB is visible through both subscriptions; an unread
- * entry in feedA only through sub1.
+ * Creates the two-subscription fixture: sub1 covers feedA, sub2 covers feedB,
+ * with one unread entry in each feed. Attribution is 1:1 — each user_entries
+ * row is stamped with exactly one subscription_id (formerly an entry could be
+ * reachable through overlapping subscription_feeds rows and double-count).
  */
 async function createOverlappingSubscriptions(userId: string) {
   const feedIdA = await createTestFeed("https://feed-a.com/rss");
   const feedIdB = await createTestFeed("https://feed-b.com/rss");
   const subId1 = await createTestSubscription(userId, feedIdA);
   const subId2 = await createTestSubscription(userId, feedIdB);
-  await db.insert(subscriptionFeeds).values({ subscriptionId: subId1, feedId: feedIdB, userId });
 
   const entryIdA = await createTestEntry(feedIdA, [userId]);
   const entryIdB = await createTestEntry(feedIdB, [userId]);
@@ -219,11 +213,10 @@ describe("Entry counts service", () => {
     });
 
     it("does not double-count global unread for entries reachable through multiple subscriptions", async () => {
-      // Regression test: the global "All Articles" count previously scanned the
-      // visible_entries view with count(*), which emits an entry once per
-      // matching subscription_feeds row. entryIdB is reachable through both
-      // sub1 and sub2, so it was counted twice, inflating allUnread to 3 for
-      // what are really 2 distinct unread entries.
+      // Regression test: the global "All Articles" count once inflated when
+      // visible_entries emitted an entry once per matching junction row. With
+      // 1:1 attribution the view emits one row per (user, entry), so the two
+      // distinct unread entries count as exactly 2.
       const userId = await createTestUser();
       const { entryIdB } = await createOverlappingSubscriptions(userId);
 
@@ -254,10 +247,6 @@ describe("Entry counts service", () => {
         createdAt: new Date(),
         updatedAt: new Date(),
       });
-      await db
-        .insert(subscriptionFeeds)
-        .values({ subscriptionId: goneSubId, feedId: goneFeedId, userId })
-        .onConflictDoNothing();
       await createTestEntry(goneFeedId, [userId]);
 
       const counts = await getEntryRelatedCounts(db, userId, activeEntryId);
@@ -281,10 +270,6 @@ describe("Entry counts service", () => {
         createdAt: new Date(),
         updatedAt: new Date(),
       });
-      await db
-        .insert(subscriptionFeeds)
-        .values({ subscriptionId: goneSubId, feedId: goneFeedId, userId })
-        .onConflictDoNothing();
       const starredEntryId = await createTestEntry(goneFeedId, []);
       await db.insert(userEntries).values({
         userId,

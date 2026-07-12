@@ -10,14 +10,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { McpError, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { db } from "../../src/server/db";
-import {
-  users,
-  feeds,
-  entries,
-  subscriptions,
-  subscriptionFeeds,
-  userEntries,
-} from "../../src/server/db/schema";
+import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { registerTools } from "../../src/server/mcp/tools";
 
@@ -66,7 +59,6 @@ beforeAll(async () => {
     createdAt: now,
     updatedAt: now,
   });
-  await db.insert(subscriptionFeeds).values({ subscriptionId, feedId, userId });
   await db.insert(entries).values({
     id: entryId,
     feedId,
