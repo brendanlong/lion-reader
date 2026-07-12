@@ -168,14 +168,7 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
   }, [previousEntryId, setOpenEntryId]);
 
   // Entry mutations
-  const { toggleRead: rawToggleRead, toggleStar } = useEntryMutations();
-
-  const handleToggleRead = useCallback(
-    (entryId: string, currentlyRead: boolean) => {
-      rawToggleRead(entryId, currentlyRead, true);
-    },
-    [rawToggleRead]
-  );
+  const { toggleRead, toggleStar } = useEntryMutations();
 
   // Entry click handler
   const handleEntryClick = useCallback(
@@ -201,7 +194,7 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
     isEntryOpen: !!openEntryId,
     openEntryId,
     enabled: keyboardShortcutsEnabled,
-    onToggleRead: handleToggleRead,
+    onToggleRead: toggleRead,
     onToggleStar: toggleStar,
     onRefresh: () => utils.entries.list.invalidate(),
     onToggleUnreadOnly: toggleShowUnreadOnly,
@@ -258,7 +251,7 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
       onEntryClick={handleEntryClick}
       onEntryMouseDown={handleEntryMouseDown}
       selectedEntryId={selectedEntryId}
-      onToggleRead={handleToggleRead}
+      onToggleRead={toggleRead}
       onToggleStar={toggleStar}
       externalEntries={entries}
       externalQueryState={externalQueryState}

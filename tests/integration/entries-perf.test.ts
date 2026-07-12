@@ -461,7 +461,7 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Entries Performance Profiling", ()
       // 2. visible_entries lookup for one entry
       const { timing: t2 } = await timeAsync("visible_entries single entry", () =>
         db.execute(sql`
-          SELECT ve.id, ve.read, ve.starred, ve.updated_at, ve.score, ve.subscription_id, ve.type
+          SELECT ve.id, ve.read, ve.starred, ve.updated_at, ve.subscription_id, ve.type
           FROM visible_entries ve
           WHERE ve.user_id = ${testUserId} AND ve.id = ${entryId}
         `)
@@ -472,7 +472,7 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Entries Performance Profiling", ()
       const tenIds = testEntryIds.slice(0, 10);
       const { timing: t3 } = await timeAsync("visible_entries 10 entries", () =>
         db.execute(sql`
-          SELECT ve.id, ve.read, ve.starred, ve.updated_at, ve.score, ve.subscription_id, ve.type
+          SELECT ve.id, ve.read, ve.starred, ve.updated_at, ve.subscription_id, ve.type
           FROM visible_entries ve
           WHERE ve.user_id = ${testUserId} AND ve.id = ANY(${pgUuidArray(tenIds)}::uuid[])
         `)
@@ -595,7 +595,7 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Entries Performance Profiling", ()
       const entryId = testEntryIds[0];
       const result = await db.execute(sql`
         EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
-        SELECT ve.id, ve.read, ve.starred, ve.updated_at, ve.score, ve.subscription_id, ve.type
+        SELECT ve.id, ve.read, ve.starred, ve.updated_at, ve.subscription_id, ve.type
         FROM visible_entries ve
         WHERE ve.user_id = ${testUserId} AND ve.id = ${entryId}
       `);
@@ -717,7 +717,6 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Entries Performance Profiling", ()
           caller.entries.markRead({
             entries: [{ id: entryId }],
             read: true,
-            fromList: true,
           })
         );
         timings.push(timing);
@@ -743,7 +742,6 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Entries Performance Profiling", ()
           caller.entries.markRead({
             entries: entryIds.map((id) => ({ id })),
             read: true,
-            fromList: true,
           })
         );
         timings.push(timing);
@@ -762,7 +760,6 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Entries Performance Profiling", ()
         caller.entries.markRead({
           entries: entryIds.map((id) => ({ id })),
           read: true,
-          fromList: true,
         })
       );
 
@@ -784,7 +781,7 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Entries Performance Profiling", ()
       const { timing: t1 } = await timeAsync("1. UPDATE user_entries", () =>
         db.execute(sql`
           UPDATE user_entries
-          SET starred = true, starred_changed_at = now(), updated_at = now(), has_starred = true
+          SET starred = true, starred_changed_at = now(), updated_at = now()
           WHERE user_id = ${testUserId} AND entry_id = ${entryId}
             AND starred_changed_at <= now()
         `)
@@ -794,8 +791,7 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Entries Performance Profiling", ()
       // Step 2: SELECT from visible_entries (get final state)
       const { timing: t2 } = await timeAsync("2. SELECT visible_entries (1 entry)", () =>
         db.execute(sql`
-          SELECT id, read, starred, updated_at, score, has_marked_read_on_list,
-                 has_marked_unread, has_starred, type
+          SELECT id, read, starred, updated_at, type
           FROM visible_entries
           WHERE user_id = ${testUserId} AND id = ${entryId}
         `)
@@ -897,7 +893,7 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Entries Performance Profiling", ()
       const { timing: t1 } = await timeAsync("1. UPDATE user_entries (10 entries)", () =>
         db.execute(sql`
           UPDATE user_entries
-          SET read = true, read_changed_at = now(), updated_at = now(), has_marked_read_on_list = true
+          SET read = true, read_changed_at = now(), updated_at = now()
           WHERE user_id = ${testUserId} AND entry_id = ANY(${pgUuidArray(entryIds)}::uuid[])
             AND read_changed_at <= now()
         `)
@@ -909,8 +905,7 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Entries Performance Profiling", ()
         "2. SELECT visible_entries (10 entries)",
         () =>
           db.execute(sql`
-          SELECT id, subscription_id, read, starred, type, updated_at, score,
-                 has_marked_read_on_list, has_marked_unread, has_starred
+          SELECT id, subscription_id, read, starred, type, updated_at
           FROM visible_entries
           WHERE user_id = ${testUserId} AND id = ANY(${pgUuidArray(entryIds)}::uuid[])
         `)

@@ -356,8 +356,6 @@ export const entriesRouter = createTRPCRouter({
           .min(1, "At least one entry is required")
           .max(1000, "Maximum 1000 entries per request"),
         read: z.boolean(),
-        // Implicit score signal: set when marking read from the entry list
-        fromList: z.boolean().optional(),
       })
     )
     .output(
@@ -391,8 +389,7 @@ export const entriesRouter = createTRPCRouter({
         ctx.db,
         userId,
         input.entries,
-        input.read,
-        { fromList: input.fromList }
+        input.read
       );
 
       return {

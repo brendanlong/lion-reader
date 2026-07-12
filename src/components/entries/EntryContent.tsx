@@ -309,8 +309,6 @@ function EntryContentInner({
   };
 
   // Handle read toggle from entry view
-  // Marking unread sets implicit score signal (+1), marking read does NOT
-  // (only marking read from the entry list sets implicit -1)
   const handleReadToggle = () => {
     if (!entry) return;
     markRead([entryId], !entry.read);

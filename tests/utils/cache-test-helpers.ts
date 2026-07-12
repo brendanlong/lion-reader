@@ -57,10 +57,7 @@ export interface SeededEntry {
   read: boolean;
   starred: boolean;
   feedTitle: string | null;
-  score: number | null;
-  implicitScore: number;
   siteName: string | null;
-  predictedScore: number | null;
 }
 
 // ============================================================================
@@ -164,10 +161,7 @@ export const DEFAULT_ENTRIES: SeededEntry[] = [
     read: false,
     starred: true,
     feedTitle: "Feed One",
-    score: null,
-    implicitScore: 0,
     siteName: null,
-    predictedScore: null,
   },
   {
     id: "entry-2",
@@ -184,10 +178,7 @@ export const DEFAULT_ENTRIES: SeededEntry[] = [
     read: false,
     starred: false,
     feedTitle: "Feed One",
-    score: null,
-    implicitScore: 0,
     siteName: null,
-    predictedScore: null,
   },
   {
     id: "entry-3",
@@ -204,10 +195,7 @@ export const DEFAULT_ENTRIES: SeededEntry[] = [
     read: true,
     starred: false,
     feedTitle: "Feed Two",
-    score: null,
-    implicitScore: 0,
     siteName: null,
-    predictedScore: null,
   },
   {
     id: "entry-saved",
@@ -224,10 +212,7 @@ export const DEFAULT_ENTRIES: SeededEntry[] = [
     read: false,
     starred: false,
     feedTitle: null,
-    score: null,
-    implicitScore: 0,
     siteName: null,
-    predictedScore: null,
   },
   {
     id: "entry-starred-orphan",
@@ -244,10 +229,7 @@ export const DEFAULT_ENTRIES: SeededEntry[] = [
     read: false,
     starred: true,
     feedTitle: "Old Feed",
-    score: null,
-    implicitScore: 0,
     siteName: null,
-    predictedScore: null,
   },
 ];
 

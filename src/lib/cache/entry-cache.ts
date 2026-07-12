@@ -55,8 +55,6 @@ export function updateEntriesInListCache(
   updates: Partial<{
     read: boolean;
     starred: boolean;
-    score: number | null;
-    implicitScore: number;
   }>
 ): void {
   const entryIdSet = new Set(entryIds);

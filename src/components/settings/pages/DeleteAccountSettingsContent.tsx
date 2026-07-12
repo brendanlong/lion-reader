@@ -81,8 +81,8 @@ export default function DeleteAccountSettingsContent() {
           </p>
           <p className="ui-text-sm mt-2 text-zinc-600 dark:text-zinc-400">
             This will delete your subscriptions, reading history, starred items, tags, saved
-            articles, email ingest addresses, score models, AI summaries, sessions, API tokens, and
-            all other account data.
+            articles, email ingest addresses, AI summaries, sessions, API tokens, and all other
+            account data.
           </p>
           <div className="mt-4">
             <Button
