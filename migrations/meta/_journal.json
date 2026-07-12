@@ -617,6 +617,13 @@
       "when": 1782952100000,
       "tag": "0088_user_entries_subscription_timeline_index",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1782952200000,
+      "tag": "0089_drop_resanitize_entries_job",
+      "breakpoints": true
     }
   ]
 }

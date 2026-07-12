@@ -3,14 +3,15 @@
  *
  * Re-sanitizes stored entry HTML across the whole corpus as fast as a machine
  * can, so a `SANITIZER_VERSION` bump can be rolled out in minutes on a beefy,
- * temporary box instead of waiting for the gentle background `resanitize_entries`
- * sweep to trickle through the long tail. It does exactly the same work as that
- * sweep (`resanitizeStaleEntries`) and shares the same guarded write
- * (`persistResanitizedFamily`), so it's safe to run concurrently with the live
- * background worker and with normal writes — the two-part compare-and-swap makes
- * every write a no-op unless the row's stored version is still *strictly older*
- * than ours and its raw content is unchanged (so a row a newer release already
- * wrote is never downgraded).
+ * temporary box. This is the deliberate, operator-run path for converging the
+ * long tail of entries nobody opens — the read-path self-heal only fixes
+ * entries that are actually read, and the old `resanitize_entries` background
+ * sweep was removed for costing too much database CPU (issue #1116). It shares
+ * the read path's guarded write (`persistResanitizedFamily`), so it's safe to
+ * run concurrently with the live app and with normal writes — the two-part
+ * compare-and-swap makes every write a no-op unless the row's stored version is
+ * still *strictly older* than ours and its raw content is unchanged (so a row a
+ * newer release already wrote is never downgraded).
  *
  * Before doing anything it probes the worker-thread pool's compiled-in
  * `SANITIZER_VERSION` and refuses to run if it doesn't match the main process
@@ -56,7 +57,7 @@
  *
  * The cursor only moves toward smaller `(key, id)`, and healed rows leave the
  * stale range entirely (their key jumps to `SANITIZER_VERSION`), so we never
- * re-fetch a row we already passed — nor one the background sweep or a normal
+ * re-fetch a row we already passed — nor one the read-path self-heal or a normal
  * write healed ahead of us. No cursor is persisted across runs; a fresh run just
  * re-seeks the current stale range from the top.
  *
@@ -176,8 +177,9 @@ class BoundedQueue<T> {
 // Row selection + per-row work
 // ---------------------------------------------------------------------------
 
-// Row shape and query are shared with the background sweep so the two can't
-// drift (and so both use idx_entries_resanitize).
+// Row shape and query come from the shared service so the EXPLAIN-tested
+// staleness query (backed by idx_entries_resanitize) can't drift from this
+// script's usage.
 type StaleRow = Awaited<ReturnType<typeof selectStaleEntriesForResanitize>>[number];
 
 /** Keyset cursor over the index ordering `(stalenessKey DESC, id DESC)`. */
@@ -192,10 +194,11 @@ type RowOutcome = { content: boolean; fullContent: boolean; failed: boolean };
 
 /**
  * Re-sanitize one row's stale families in the worker pool and persist under the
- * CAS guard. Mirrors `resanitizeStaleEntries`'s inner loop, but offloads the
- * sanitize to the piscina pool (`sanitizeEntryHtmlInWorker`) so the main thread
- * stays free to keep fetching. Never throws — a pathological body is logged and
- * counted, matching the background sweep's per-row isolation.
+ * CAS guard. A family is healed only when it has raw content and its stored
+ * version is behind (`isSanitizedFamilyStale`), matching the staleness key.
+ * Offloads the sanitize to the piscina pool (`sanitizeEntryHtmlInWorker`) so
+ * the main thread stays free to keep fetching. Never throws — a pathological
+ * body is logged and counted, so one poison row can't wedge the run.
  */
 async function resanitizeRow(row: StaleRow): Promise<RowOutcome> {
   try {

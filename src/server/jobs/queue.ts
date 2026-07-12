@@ -69,11 +69,6 @@ export interface JobPayloads {
   // Daily retention cleanup of expired/revoked credentials and parked
   // one-time jobs. See src/server/services/retention.ts.
   cleanup: Record<string, never>;
-  // Background sweep that re-sanitizes stored entry HTML after SANITIZER_VERSION
-  // is bumped, a small batch at a time. Stateless: each run queries the stalest
-  // rows via idx_entries_resanitize and heals them, so no cross-run state is
-  // needed. See handleResanitizeEntries and src/server/services/resanitize.ts.
-  resanitize_entries: Record<string, never>;
 }
 
 export type JobType = keyof JobPayloads;
@@ -480,21 +475,12 @@ export async function listJobs(
  *
  * ORDERING INVARIANT: the worker's claim loop tries these first-due-wins, in
  * array order. A singleton that reschedules itself near-immediately under
- * backlog (e.g. resanitize_entries at +5s) must be listed LAST — placed earlier
- * it would be due again on every claim cycle and starve every type after it.
- * The current types reschedule at +15min or slower, so ordering among them is
- * harmless; keep any fast-rescheduling type at the end when adding/re-enabling.
+ * backlog must be listed LAST — placed earlier it would be due again on every
+ * claim cycle and starve every type after it. The current types reschedule at
+ * +15min or slower, so ordering among them is harmless; keep any
+ * fast-rescheduling type at the end when adding one.
  */
-export const SINGLETON_JOB_TYPES: JobType[] = [
-  "renew_websub",
-  "monitor_feed_health",
-  "cleanup",
-  // Temporarily paused: keeping "resanitize_entries" out of this list stops the
-  // worker from claiming (or self-creating) the singleton, so the background
-  // re-sanitization sweep does not run. The read-path self-heal still fixes any
-  // entry that is actually opened. Re-enable by restoring the entry below.
-  // "resanitize_entries",
-];
+export const SINGLETON_JOB_TYPES: JobType[] = ["renew_websub", "monitor_feed_health", "cleanup"];
 
 /**
  * Tries to claim a singleton job for processing.
