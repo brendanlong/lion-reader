@@ -14,6 +14,7 @@
  *   WORKER_CONCURRENCY - Max concurrent jobs (default: 3)
  */
 
+import { isMainThread, threadId } from "node:worker_threads";
 import { startWorkerWithSignalHandling } from "../src/server/jobs/worker";
 import { startMetricsServer, setHealthChecker } from "../src/server/metrics/server";
 import { startHeartbeat } from "../src/server/notifications/healthchecks";
@@ -49,6 +50,12 @@ logger.info("Starting standalone worker", {
   // process group is the smoking gun for a machine running the wrong binary.
   flyProcessGroup: process.env.FLY_PROCESS_GROUP,
   flyMachineId: process.env.FLY_MACHINE_ID,
+  // Thread identity: worker threads share the parent's pid, so pid alone can't
+  // distinguish "second OS process on this machine" from "this bundle was
+  // loaded inside another process's worker thread (e.g. a wrong piscina
+  // bundle)". isMainThread=false means the latter.
+  isMainThread,
+  threadId,
 });
 
 // Start internal metrics server on port 9092 (separate from Next.js on 9091)
