@@ -72,7 +72,7 @@
     "aws4fetch": "^1.0.20",
     "concurrently": "^10.0.3",
     "discord.js": "^14.26.2",
-    "dom-serializer": "^2.0.0",
+    "dom-serializer": "^3.1.1",
     "domhandler": "^5.0.3",
     "domutils": "^3.2.2",
     "drizzle-orm": "^0.45.2",
