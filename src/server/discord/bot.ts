@@ -247,20 +247,11 @@ export async function startDiscordBot(): Promise<void> {
   client.on("messageReactionAdd", async (reaction, user) => {
     if (user.bot) return;
 
+    // Users can't react with application emojis (they're only usable by the
+    // bot itself), so the save trigger must be a server emoji whose name
+    // matches DISCORD_SAVE_EMOJI exactly.
     const emoji = reaction.emoji.name;
-    if (emoji !== DISCORD_SAVE_EMOJI) {
-      // Users can't react with application emojis (they're only usable by the
-      // bot itself), so the save trigger must be a server emoji whose name
-      // matches DISCORD_SAVE_EMOJI exactly. Log mismatches so a wrong or
-      // renamed server emoji is diagnosable instead of silently ignored.
-      logger.info("Ignoring reaction with non-save emoji", {
-        emoji,
-        emojiId: reaction.emoji.id,
-        expected: DISCORD_SAVE_EMOJI,
-        userId: user.id,
-      });
-      return;
-    }
+    if (emoji !== DISCORD_SAVE_EMOJI) return;
 
     logger.info("Save reaction received", {
       userId: user.id,
