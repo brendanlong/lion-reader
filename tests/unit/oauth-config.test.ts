@@ -74,14 +74,15 @@ describe("OAuth resource identifiers", () => {
   });
 
   it("does NOT advertise Client ID Metadata Document support", () => {
-    // Advertising `client_id_metadata_document_supported` makes claude.ai prefer
-    // CIMD over Dynamic Client Registration; its CIMD setup fails inside the
-    // connector flow (it never calls /oauth/register or /oauth/authorize) and
-    // surfaces as "Couldn't register with the sign-in service". Omitting the flag
-    // drops clients to DCR, which works. Do not re-add without confirming
+    // Advertising `client_id_metadata_document_supported: true` makes claude.ai
+    // prefer CIMD over Dynamic Client Registration; its CIMD setup fails inside
+    // the connector flow (it never calls /oauth/register or /oauth/authorize) and
+    // surfaces as "Couldn't register with the sign-in service". The flag must be
+    // an EXPLICIT false (Sentry parity — see getAuthorizationServerMetadata), so
+    // clients drop to DCR, which works. Do not flip to true without confirming
     // claude.ai's CIMD flow actually completes.
     const metadata = getAuthorizationServerMetadata();
-    expect("client_id_metadata_document_supported" in metadata).toBe(false);
+    expect(metadata.client_id_metadata_document_supported).toBe(false);
   });
 
   it("advertises the endpoints and PKCE claude.ai requires for DCR", () => {
