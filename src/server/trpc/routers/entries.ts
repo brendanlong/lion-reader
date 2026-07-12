@@ -567,7 +567,6 @@ export const entriesRouter = createTRPCRouter({
         excludeTypes: input?.excludeTypes,
         unreadOnly: input?.unreadOnly,
         starredOnly: input?.starredOnly,
-        showSpam: ctx.session.user.showSpam,
       });
     }),
 

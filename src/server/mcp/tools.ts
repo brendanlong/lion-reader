@@ -299,10 +299,7 @@ function buildTools(): Tool[] {
       inputSchema: toInputSchema(countEntriesArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(countEntriesArgs, args);
-        return entriesService.countEntries(db, userId, {
-          ...params,
-          showSpam: false,
-        });
+        return entriesService.countEntries(db, userId, params);
       },
     },
 

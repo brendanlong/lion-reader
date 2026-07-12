@@ -22,6 +22,7 @@ import { createUserEntriesForFeed } from "../../src/server/feed/entry-processor"
 import { migrateSubscriptionsToExistingFeed } from "../../src/server/jobs/handlers";
 import { createSubscription } from "../../src/server/services/subscriptions";
 import {
+  countEntries,
   markEntriesRead,
   markAllEntriesRead,
   updateEntryStarred,
@@ -360,6 +361,29 @@ describe("unread counters (triggers + reconciliation)", () => {
     expect(counts.starred).toEqual({ unread: 1 });
     // saved = users.saved_unread_count
     expect(counts.saved).toEqual({ unread: 1 });
+    await expectNoDrift();
+  });
+
+  it("countEntries never counts spam and serves the badge shapes from counters", async () => {
+    const userId = await createTestUser();
+    // Email feed with one ham + one spam entry (spam is only valid on email).
+    const feedId = await createTestFeed({ type: "email", userId });
+    const subId = await createTestSubscription(userId, feedId);
+    const hamId = await createTestEntry(feedId, { type: "email" });
+    const spamId = await createTestEntry(feedId, { type: "email", isSpam: true });
+    await createUserEntriesForFeed(feedId, [hamId, spamId]);
+
+    // The three sidebar badge shapes (counter fast-path) exclude spam, always —
+    // there is no showSpam parameter anymore (issue #1117: unread counts never
+    // include spam, matching the counters).
+    expect(await countEntries(db, userId, {})).toEqual({ unread: 1 });
+    expect(await countEntries(db, userId, { starredOnly: true })).toEqual({ unread: 0 });
+    expect(await countEntries(db, userId, { type: "saved" })).toEqual({ unread: 0 });
+
+    // Scoped filters take the visible_entries scan path — same spam exclusion,
+    // and the same value as the subscription's counter.
+    expect(await countEntries(db, userId, { subscriptionId: subId })).toEqual({ unread: 1 });
+    expect((await subscriptionCounters(subId)).unread).toBe(1);
     await expectNoDrift();
   });
 

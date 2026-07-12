@@ -125,7 +125,7 @@ export function toBulkUnreadCounts(counts: UnreadCounts): NewEntryUnreadCounts {
  * subscription rows LEFT-JOINed to the users row. LEFT JOIN so a user with no
  * subscriptions still gets their saved/starred counters back.
  */
-async function getGlobalUnreadCounts(
+export async function getGlobalUnreadCounts(
   db: DbOrTx,
   userId: string
 ): Promise<{ allUnread: number; starredUnread: number; savedUnread: number }> {

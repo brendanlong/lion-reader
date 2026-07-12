@@ -28,6 +28,7 @@ import { publishMarkAllRead } from "@/server/redis/pubsub";
 import {
   getBulkEntryRelatedCounts,
   getEntryRelatedCounts,
+  getGlobalUnreadCounts,
   type BulkUnreadCounts,
   type UnreadCounts,
 } from "./counts";
@@ -1326,7 +1327,15 @@ export async function updateEntryStarred(
 }
 
 /**
- * Counts entries with filters.
+ * Counts unread entries with filters. Spam is NEVER counted (issue #1117):
+ * unread counts exclude spam everywhere, regardless of the user's showSpam
+ * list preference — matching the denormalized counters that serve the other
+ * badges.
+ *
+ * The three sidebar top-level badge shapes (`{}`, `{starredOnly}`,
+ * `{type:'saved'}`) are served straight from the counters (O(subscriptions)
+ * arithmetic); every other filter combination falls back to the
+ * visible_entries scan.
  */
 export async function countEntries(
   db: typeof dbType,
@@ -1341,9 +1350,32 @@ export async function countEntries(
     readOnly?: boolean;
     starredOnly?: boolean;
     unstarredOnly?: boolean;
-    showSpam: boolean;
   }
 ): Promise<{ unread: number }> {
+  // Counter fast-path for the global badge shapes. Deliberately conservative:
+  // any scoping or shape-altering filter falls through to the scan.
+  const unscoped =
+    !params.subscriptionId &&
+    !params.tagId &&
+    !params.uncategorized &&
+    !params.excludeTypes?.length &&
+    !params.readOnly &&
+    !params.unstarredOnly;
+  if (unscoped) {
+    if (!params.type && !params.starredOnly) {
+      const counts = await getGlobalUnreadCounts(db, userId);
+      return { unread: counts.allUnread };
+    }
+    if (params.starredOnly && !params.type) {
+      const counts = await getGlobalUnreadCounts(db, userId);
+      return { unread: counts.starredUnread };
+    }
+    if (params.type === "saved" && !params.starredOnly) {
+      const counts = await getGlobalUnreadCounts(db, userId);
+      return { unread: counts.savedUnread };
+    }
+  }
+
   const conditions = [eq(visibleEntries.userId, userId)];
 
   // Apply subscription filters (subscriptionId, tagId, uncategorized)
@@ -1367,8 +1399,9 @@ export async function countEntries(
     );
   }
 
-  // Apply entry filter conditions (unreadOnly, starredOnly, type, excludeTypes, showSpam)
-  conditions.push(...buildEntryFilterConditions(params));
+  // Apply entry filter conditions. showSpam is hard-coded false: unread counts
+  // never include spam (the list may, when the user opts in — the badge doesn't).
+  conditions.push(...buildEntryFilterConditions({ ...params, showSpam: false }));
 
   // Callers only consume `unread`, so push read=false into the WHERE clause
   // (rather than a FILTER over all visible entries) — this lets the partial
