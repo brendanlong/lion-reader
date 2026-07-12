@@ -1157,11 +1157,12 @@ describe("Tags API", () => {
 
   describe("subscriptions.list unread counts", () => {
     it("counts unread entries reachable through a merged/redirected feed", async () => {
-      // Regression: the per-subscription unread count must follow the
-      // subscription_feeds mapping (via visible_entries), not just the
-      // subscription's current feed_id. A subscription that absorbed a
-      // redirected/merged feed owns entries under the old feed_id too; counting
-      // only the current feed_id silently undercounts them.
+      // Regression: the per-subscription unread count must follow the entry →
+      // subscription attribution (user_entries.subscription_id, via
+      // visible_entries), not just the subscription's current feed_id. A
+      // subscription that absorbed a redirected/merged feed owns entries under
+      // the old feed_id too — the merge job re-stamps them to the surviving
+      // subscription; counting only the current feed_id silently undercounts.
       const userId = await createTestUser();
 
       const feedIdA = await createTestFeed("https://feed-a.com/rss"); // current feed
@@ -1176,7 +1177,13 @@ describe("Tags API", () => {
       // 2 unread under the current feed, 1 unread under the merged-in feed.
       await createTestEntry(feedIdA, { userIds: [userId] });
       await createTestEntry(feedIdA, { userIds: [userId] });
-      await createTestEntry(feedIdB, { userIds: [userId] });
+      const mergedEntry = await createTestEntry(feedIdB, { userIds: [userId] });
+      // The merge job re-stamps old-feed rows to the surviving subscription
+      // (the fill trigger can't: the user has no subscription row for feedB).
+      await db
+        .update(userEntries)
+        .set({ subscriptionId: subId })
+        .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, mergedEntry)));
 
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
@@ -1247,7 +1254,12 @@ describe("Tags API", () => {
         .onConflictDoNothing();
 
       await createTestEntry(feedIdA, { userIds: [userId] });
-      await createTestEntry(feedIdB, { userIds: [userId] });
+      const mergedEntry = await createTestEntry(feedIdB, { userIds: [userId] });
+      // Merge-job re-stamp (see the subscriptions.list merged-feed test above).
+      await db
+        .update(userEntries)
+        .set({ subscriptionId: subId })
+        .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, mergedEntry)));
 
       const ctx = createAuthContext(userId);
       const result = await createCaller(ctx).tags.list();

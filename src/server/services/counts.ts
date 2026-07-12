@@ -105,11 +105,9 @@ export function toBulkUnreadCounts(counts: UnreadCounts): NewEntryUnreadCounts {
 /**
  * Global unread counts (all + starred + saved) for a user.
  *
- * `count(DISTINCT id)` — not `count(*)` — because `visible_entries` emits one
- * row per matching `subscription_feeds` row, so an entry reachable through
- * overlapping subscriptions (redirect/merge history) appears multiple times and
- * a plain `count(*)` over-counts. DISTINCT dedupes by entry id, matching the
- * per-tag/uncategorized counts below. Keeping the visibility rule in the view
+ * `visible_entries` emits exactly one row per (user, entry) — the view joins
+ * subscriptions on the stamped `user_entries.subscription_id` (migration 0087),
+ * so plain `count(*)` is exact. Keeping the visibility rule in the view
  * (rather than re-deriving it here) means it stays defined in exactly one place.
  *
  * `read = false` is in WHERE (not a FILTER predicate) so the partial
@@ -125,9 +123,9 @@ async function getGlobalUnreadCounts(
 ): Promise<{ allUnread: number; starredUnread: number; savedUnread: number }> {
   const result = await db
     .select({
-      allUnread: sql<number>`count(DISTINCT ${visibleEntries.id})::int`,
-      starredUnread: sql<number>`count(DISTINCT ${visibleEntries.id}) FILTER (WHERE ${visibleEntries.starred})::int`,
-      savedUnread: sql<number>`count(DISTINCT ${visibleEntries.id}) FILTER (WHERE ${visibleEntries.type} = 'saved')::int`,
+      allUnread: sql<number>`count(*)::int`,
+      starredUnread: sql<number>`count(*) FILTER (WHERE ${visibleEntries.starred})::int`,
+      savedUnread: sql<number>`count(*) FILTER (WHERE ${visibleEntries.type} = 'saved')::int`,
     })
     .from(visibleEntries)
     .where(and(eq(visibleEntries.userId, userId), eq(visibleEntries.read, false)));
@@ -244,13 +242,13 @@ async function getSubscriptionTagCounts(
       .select({ tagId: subscriptionTags.tagId })
       .from(subscriptionTags)
       .where(eq(subscriptionTags.subscriptionId, subscriptionId)),
-    // COUNT(DISTINCT) dedupes entries reachable through multiple subscriptions
-    // of the same tag (overlapping subscription_feeds from redirect/merge
-    // history), matching listTags semantics.
+    // One row per (tag, entry): the view emits one row per user_entries row
+    // and subscription_tags is unique per (tag, subscription), so count(*)
+    // is exact — matching listTags semantics.
     db
       .select({
         tagId: subscriptionTags.tagId,
-        unread: sql<number>`count(DISTINCT ${visibleEntries.id})::int`,
+        unread: sql<number>`count(*)::int`,
       })
       .from(subscriptionTags)
       .innerJoin(visibleEntries, eq(visibleEntries.subscriptionId, subscriptionTags.subscriptionId))
@@ -290,7 +288,7 @@ async function getSubscriptionTagCounts(
   // Subscription has no tags - get uncategorized count
   const uncategorizedResult = await db
     .select({
-      unread: sql<number>`count(DISTINCT ${visibleEntries.id})::int`,
+      unread: sql<number>`count(*)::int`,
     })
     .from(visibleEntries)
     .innerJoin(
@@ -418,8 +416,9 @@ export async function getBulkEntryRelatedCounts(
       ? db
           .select({
             tagId: subscriptionTags.tagId,
-            // COUNT(DISTINCT) for parity with listTags (see getSubscriptionTagCounts)
-            unread: sql<number>`count(DISTINCT ${visibleEntries.id})::int`,
+            // One row per (tag, entry) — count(*) matches listTags semantics
+            // (see getSubscriptionTagCounts).
+            unread: sql<number>`count(*)::int`,
           })
           .from(subscriptionTags)
           .innerJoin(
@@ -443,7 +442,7 @@ export async function getBulkEntryRelatedCounts(
     hasUncategorized
       ? db
           .select({
-            unread: sql<number>`count(DISTINCT ${visibleEntries.id})::int`,
+            unread: sql<number>`count(*)::int`,
           })
           .from(visibleEntries)
           .innerJoin(
@@ -492,21 +491,20 @@ export async function getNewEntryRelatedCounts(
 ): Promise<UnreadCounts> {
   // Query unread counts for global + starred + saved + subscription in one
   // scan. read=false in WHERE lets the partial idx_user_entries_unread index
-  // drive; every aggregate is then a subset of unread. count(DISTINCT id)
-  // dedupes entries reachable through overlapping subscription_feeds rows (see
-  // getGlobalUnreadCounts).
+  // drive; every aggregate is then a subset of unread. The view emits one row
+  // per (user, entry), so count(*) is exact (see getGlobalUnreadCounts).
   const result = await db
     .select({
       // Global unread counts
-      allUnread: sql<number>`count(DISTINCT ${visibleEntries.id})::int`,
+      allUnread: sql<number>`count(*)::int`,
       // Starred unread counts
-      starredUnread: sql<number>`count(DISTINCT ${visibleEntries.id}) FILTER (WHERE ${visibleEntries.starred})::int`,
+      starredUnread: sql<number>`count(*) FILTER (WHERE ${visibleEntries.starred})::int`,
       // Saved unread counts
-      savedUnread: sql<number>`count(DISTINCT ${visibleEntries.id}) FILTER (WHERE ${visibleEntries.type} = 'saved')::int`,
+      savedUnread: sql<number>`count(*) FILTER (WHERE ${visibleEntries.type} = 'saved')::int`,
       // Subscription count (only computed if subscriptionId provided)
       subscriptionUnread:
         subscriptionId !== null
-          ? sql<number>`count(DISTINCT ${visibleEntries.id}) FILTER (WHERE ${visibleEntries.subscriptionId} = ${subscriptionId})::int`
+          ? sql<number>`count(*) FILTER (WHERE ${visibleEntries.subscriptionId} = ${subscriptionId})::int`
           : sql<number>`0`,
     })
     .from(visibleEntries)
@@ -583,7 +581,7 @@ export async function getSubscriptionDeletionCounts(
     // Subscription was uncategorized — only Uncategorized's unread changed.
     const uncategorizedResult = await db
       .select({
-        unread: sql<number>`count(DISTINCT ${visibleEntries.id}) FILTER (WHERE NOT ${visibleEntries.read})::int`,
+        unread: sql<number>`count(*) FILTER (WHERE NOT ${visibleEntries.read})::int`,
       })
       .from(visibleEntries)
       .innerJoin(userFeeds, eq(userFeeds.id, visibleEntries.subscriptionId))
@@ -606,7 +604,7 @@ export async function getSubscriptionDeletionCounts(
   const tagCounts = await db
     .select({
       tagId: subscriptionTags.tagId,
-      unread: sql<number>`count(DISTINCT ${visibleEntries.id}) FILTER (WHERE NOT ${visibleEntries.read})::int`,
+      unread: sql<number>`count(*) FILTER (WHERE NOT ${visibleEntries.read})::int`,
     })
     .from(subscriptionTags)
     .innerJoin(visibleEntries, eq(visibleEntries.subscriptionId, subscriptionTags.subscriptionId))

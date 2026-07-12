@@ -58,26 +58,26 @@ export interface UpdateTagParams {
 /**
  * Builds a grouped subquery of per-tag unread counts for a user.
  *
- * Counts through visible_entries so the visibility rule (and the
- * subscription_feeds mapping that lets a subscription own entries under
- * multiple feed_ids after a redirect/merge) lives in one place. Filtering
- * read=false in WHERE lets the partial idx_user_entries_unread index drive.
+ * Counts through visible_entries so the visibility rule (and the entry →
+ * subscription attribution, which survives feed redirects/merges via the
+ * merge-job re-stamp) lives in one place. Filtering read=false in WHERE lets
+ * the partial idx_user_entries_unread index drive.
  *
  * The inner join to user_feeds (active subscriptions only) scopes the count to
  * active subscriptions: visible_entries also surfaces starred entries from
  * unsubscribed feeds, which belong to Starred, not to a tag's unread badge.
  *
- * COUNT(DISTINCT id) dedupes entries reachable through multiple subscriptions
- * of the same tag (possible when subscription_feeds rows overlap). Computing
- * all tags in one grouped aggregation (instead of a correlated subquery per
- * tag row) keeps listTags to a single scan (#831); updateTag reuses this for
- * a single tag by filtering on tag_id.
+ * The view emits one row per (user, entry) and subscription_tags is unique per
+ * (tag, subscription), so COUNT(*) is exact. Computing all tags in one grouped
+ * aggregation (instead of a correlated subquery per tag row) keeps listTags to
+ * a single scan (#831); updateTag reuses this for a single tag by filtering on
+ * tag_id.
  */
 function tagUnreadCountsQuery(db: typeof dbType, userId: string) {
   return db
     .select({
       tagId: subscriptionTags.tagId,
-      unreadCount: sql<number>`COUNT(DISTINCT ${visibleEntries.id})::int`.as("unread_count"),
+      unreadCount: sql<number>`COUNT(*)::int`.as("unread_count"),
     })
     .from(visibleEntries)
     .innerJoin(
@@ -139,11 +139,10 @@ export async function listTags(db: typeof dbType, userId: string): Promise<ListT
     // WHERE) lets the partial unread index scan ~unread rows instead of every
     // entry in every uncategorized feed. The inner join to user_feeds scopes to
     // active subscriptions, excluding starred orphans (entries kept visible
-    // after unsubscribe), which aren't "uncategorized". COUNT(DISTINCT id)
-    // guards against an entry mapping to multiple subscriptions via
-    // subscription_feeds overlap.
+    // after unsubscribe), which aren't "uncategorized". One row per (user,
+    // entry), so COUNT(*) is exact.
     db
-      .select({ unreadCount: sql<number>`COUNT(DISTINCT ${visibleEntries.id})::int` })
+      .select({ unreadCount: sql<number>`COUNT(*)::int` })
       .from(visibleEntries)
       .innerJoin(
         userFeeds,

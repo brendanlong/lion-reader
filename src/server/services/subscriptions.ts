@@ -80,10 +80,11 @@ function buildSubscriptionBaseQuery(
 
   // Subquery to get unread counts per subscription.
   // Counts through visible_entries (grouped by subscription_id) rather than by
-  // entries.feed_id: a subscription can own entries under multiple feed_ids via
-  // the subscription_feeds junction (feed redirect/merge history), and matching
-  // only on the current feed_id would undercount those. The view encapsulates
-  // that mapping plus the visibility rule, so this stays correct by construction.
+  // entries.feed_id: a subscription can own entries under multiple feed_ids
+  // (feed redirect/merge history — the merge job re-stamps old-feed entries to
+  // the surviving subscription), and matching only on the current feed_id would
+  // undercount those. The view encapsulates the attribution plus the visibility
+  // rule, so this stays correct by construction.
   // Filtering read=false in WHERE (not a FILTER aggregate) lets the partial
   // idx_user_entries_unread index drive the scan.
   const unreadCountsSubquery = db
@@ -246,8 +247,9 @@ export async function listSubscriptions(
   // even when more unread subs exist past the first page).
   if (unreadOnly) {
     // Match the per-subscription count: an entry counts as unread for this
-    // subscription if visible_entries maps it here (via subscription_feeds),
-    // not merely if its feed_id equals the subscription's current feed_id.
+    // subscription if visible_entries attributes it here (stamped
+    // user_entries.subscription_id), not merely if its feed_id equals the
+    // subscription's current feed_id.
     conditions.push(sql`EXISTS (
       SELECT 1 FROM ${visibleEntries} ve
       WHERE ve.subscription_id = ${userFeeds.id}

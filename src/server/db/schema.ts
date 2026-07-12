@@ -705,8 +705,9 @@ export const userEntries = pgTable(
     // Direct 1:1 subscription attribution (issue #1117). NULL = saved/uploaded
     // article (per-user feed with no subscription row). Filled inline by the bulk
     // insert paths or by the user_entries_fill_denormalized trigger; re-stamped by
-    // the feed-merge job. INFORMATIONAL during the transition: entry visibility is
-    // still resolved through the subscription_feeds junction.
+    // the feed-merge job. Since migration 0087, visible_entries resolves entry
+    // visibility through this column (the subscription_feeds junction is
+    // write-only for visibility and slated for removal).
     subscriptionId: uuid("subscription_id").references(() => subscriptions.id, {
       onDelete: "set null",
     }),
