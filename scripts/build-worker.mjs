@@ -45,8 +45,13 @@ const buildOptions = {
   // External packages that can't/shouldn't be bundled:
   // - Native modules (argon2 uses node-gyp bindings)
   // - html-rewriter-wasm has WASM files and internal requires that break when bundled
+  // - piscina resolves its thread bootstrap as resolve(__dirname, "worker.js");
+  //   bundled, __dirname becomes the bundle's dir (dist/), so its threads load
+  //   dist/worker.js — the standalone job worker — instead of piscina's own
+  //   bootstrap, silently booting a rogue job worker inside this process and
+  //   hanging every offloaded task
   // We bundle everything else for a smaller, faster deployment
-  external: ["argon2", "html-rewriter-wasm"],
+  external: ["argon2", "html-rewriter-wasm", "piscina"],
 
   // Source maps for debugging production issues
   sourcemap: true,

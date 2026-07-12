@@ -47,7 +47,9 @@ const buildOptions = {
   // - html-rewriter-wasm has WASM files and internal requires that break when bundled
   // - jsdom uses __dirname-relative fs.readFileSync for browser/default-stylesheet.css;
   //   bundling breaks the path resolution (required at runtime by isomorphic-dompurify)
-  external: ["next", "argon2", "html-rewriter-wasm", "jsdom"],
+  // - piscina resolves its thread bootstrap via __dirname; bundled it would load
+  //   dist/worker.js (the job worker) into its threads (see build-worker.mjs)
+  external: ["next", "argon2", "html-rewriter-wasm", "jsdom", "piscina"],
 
   // Source maps for debugging production issues
   sourcemap: true,

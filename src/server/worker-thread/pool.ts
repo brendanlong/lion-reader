@@ -54,6 +54,12 @@ let sanitizerVersionVerified = false;
  * version mismatch permanently disables the pool).
  */
 let sanitizerVersionProbe: Promise<"ok" | "mismatch" | "error"> | null = null;
+/**
+ * Upper bound on the version probe. A cold thread spawn answers in well under a
+ * second; 15s only trips when the thread is wedged (wrong module loaded, event
+ * loop blocked), where waiting longer can't help and inline is the right call.
+ */
+const PROBE_TIMEOUT_MS = 15_000;
 
 function resolveWorkerPath(): { filename: string; execArgv?: string[] } {
   // Use process.cwd() for all path resolution — __dirname gets replaced by
@@ -136,8 +142,25 @@ function getPool(): Piscina | null {
 async function verifyWorkerSanitizerVersion(p: Piscina): Promise<"ok" | "mismatch" | "error"> {
   let version: number;
   try {
-    const result = await p.run({ type: "sanitizerVersion" });
-    version = sanitizerVersionResultSchema.parse(result).version;
+    // The probe must be bounded: a thread whose entry module loads but never
+    // speaks piscina's task protocol (e.g. the wrong file resolved into the
+    // thread — bundled piscina once resolved its bootstrap to dist/worker.js,
+    // the standalone job worker) leaves p.run() pending forever, and every
+    // offload caller awaits this shared probe — so an unbounded probe freezes
+    // every save/sanitize in the process instead of degrading to inline.
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`sanitizer version probe timed out after ${PROBE_TIMEOUT_MS}ms`)),
+        PROBE_TIMEOUT_MS
+      );
+    });
+    try {
+      const result = await Promise.race([p.run({ type: "sanitizerVersion" }), timeout]);
+      version = sanitizerVersionResultSchema.parse(result).version;
+    } finally {
+      clearTimeout(timer);
+    }
   } catch (error) {
     // A transient worker crash/timeout (not a genuine version mismatch) must not
     // permanently disable offload — the caller retries on the next call.
