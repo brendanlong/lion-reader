@@ -1,27 +1,26 @@
 /**
- * Integration tests for the background entry re-sanitization sweep.
+ * Integration tests for the entry re-sanitization primitives
+ * (src/server/services/resanitize.ts).
  *
- * `resanitizeStaleEntries` (service) heals stored `entries.*_sanitized` columns
- * left stale by a SANITIZER_VERSION bump, a batch at a time, with a
- * compare-and-swap guard so it can't clobber concurrent writes. The sweep is
- * stateless — it relies on `idx_entries_resanitize` to seek to the stalest rows
- * each run — and is driven by the `resanitize_entries` singleton job
- * (`handleResanitizeEntries`). All exercised here against a real database,
- * including an EXPLAIN check that the query actually uses the index (no sort).
+ * `selectStaleEntriesForResanitize` finds entries whose stored
+ * `entries.*_sanitized` columns were left stale by a SANITIZER_VERSION bump
+ * (used by the manual bulk script, scripts/resanitize-bulk.ts), and
+ * `persistResanitizedFamily` writes healed output under a compare-and-swap
+ * guard (shared with the read-path self-heal) so it can't clobber concurrent
+ * writes. All exercised here against a real database, including EXPLAIN checks
+ * that the staleness query actually uses `idx_entries_resanitize` (no sort).
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { eq, inArray, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { feeds, entries, userEntries } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { SANITIZER_VERSION } from "../../src/server/html/sanitize";
 import {
-  resanitizeStaleEntries,
   selectStaleEntriesForResanitize,
   persistResanitizedFamily,
 } from "../../src/server/services/resanitize";
-import { handleResanitizeEntries, RESANITIZE_BATCH_SIZE } from "../../src/server/jobs/handlers";
 
 const STALE_VERSION = SANITIZER_VERSION - 1;
 
@@ -101,48 +100,36 @@ async function cleanup() {
   await db.delete(feeds);
 }
 
-describe("resanitizeStaleEntries", () => {
+describe("selectStaleEntriesForResanitize", () => {
   beforeEach(cleanup);
   afterAll(cleanup);
 
-  it("sanitizes stale rows and stamps the current version (both families)", async () => {
+  it("selects rows with a stale family (both families reported)", async () => {
     const feedId = await seedFeed();
     const id = await seedStaleEntry(feedId, { full: true });
 
-    const result = await resanitizeStaleEntries(db, { limit: 10 });
+    const rows = await selectStaleEntriesForResanitize(db, 10);
 
-    expect(result.processed).toBe(1);
-    expect(result.contentResanitized).toBe(1);
-    expect(result.fullContentResanitized).toBe(1);
-    expect(result.failed).toBe(0);
-
-    const row = await getVersions(id);
-    expect(row.contentVersion).toBe(SANITIZER_VERSION);
-    expect(row.fullVersion).toBe(SANITIZER_VERSION);
-    expect(row.contentSanitized).toContain(`body-${id}`);
-    expect(row.contentSanitized).not.toContain("<script>");
-    expect(row.contentSanitized).not.toContain("onclick");
-    expect(row.fullSanitized).toContain(`full-${id}`);
-    expect(row.fullSanitized).not.toContain("<script>");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe(id);
+    expect(rows[0].contentSanitizedVersion).toBe(STALE_VERSION);
+    expect(rows[0].fullContentSanitizedVersion).toBe(STALE_VERSION);
   });
 
   it("does NOT treat a content-only entry's NULL full-content version as stale", async () => {
     // Regression: the dominant production row is content sanitized at the
     // current version with full_content_sanitized_version = NULL (full content
     // never fetched). That row is fully fresh and must be left alone — otherwise
-    // the sweep targets the whole table forever.
+    // the staleness query targets the whole table forever.
     const feedId = await seedFeed();
-    const fresh = await seedStaleEntry(feedId, { version: SANITIZER_VERSION });
+    await seedStaleEntry(feedId, { version: SANITIZER_VERSION });
 
-    const result = await resanitizeStaleEntries(db, { limit: 10 });
+    const rows = await selectStaleEntriesForResanitize(db, 10);
 
-    expect(result.processed).toBe(0);
-    const row = await getVersions(fresh);
-    expect(row.contentVersion).toBe(SANITIZER_VERSION);
-    expect(row.fullVersion).toBeNull(); // not re-stamped
+    expect(rows).toHaveLength(0);
   });
 
-  it("heals a stale full-content family while leaving fresh content alone", async () => {
+  it("selects a row whose full-content family is stale while content is fresh", async () => {
     const feedId = await seedFeed();
     // Full content present but at a stale version, content family already fresh.
     const id = await seedStaleEntry(feedId, { version: SANITIZER_VERSION, full: true });
@@ -151,144 +138,61 @@ describe("resanitizeStaleEntries", () => {
       .set({ fullContentSanitizedVersion: STALE_VERSION })
       .where(eq(entries.id, id));
 
-    const result = await resanitizeStaleEntries(db, { limit: 10 });
+    const rows = await selectStaleEntriesForResanitize(db, 10);
 
-    expect(result.processed).toBe(1);
-    expect(result.contentResanitized).toBe(0); // fresh content untouched
-    expect(result.fullContentResanitized).toBe(1);
-    const row = await getVersions(id);
-    expect(row.fullVersion).toBe(SANITIZER_VERSION);
-    expect(row.fullSanitized).not.toContain("<script>");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe(id);
   });
 
-  it("heals newest-first among rows at the same stale version", async () => {
+  it("skips rows already at the current version", async () => {
+    const feedId = await seedFeed();
+    await seedStaleEntry(feedId, { version: SANITIZER_VERSION });
+    const stale = await seedStaleEntry(feedId);
+
+    const rows = await selectStaleEntriesForResanitize(db, 10);
+
+    expect(rows.map((r) => r.id)).toEqual([stale]);
+  });
+
+  it("orders newest-first among rows at the same stale version", async () => {
     const feedId = await seedFeed();
     const ids: string[] = [];
     for (let i = 0; i < 3; i++) ids.push(await seedStaleEntry(feedId));
     // UUIDv7 ids minted within a ms aren't strictly monotonic; sort to learn the
     // true newest-first order (string order == uuid order).
-    const [oldest, , newest] = [...ids].sort();
+    const newestFirst = [...ids].sort().reverse();
 
-    const batch = await resanitizeStaleEntries(db, { limit: 1 });
-    expect(batch.processed).toBe(1);
-    expect((await getVersions(newest)).contentVersion).toBe(SANITIZER_VERSION);
-    expect((await getVersions(oldest)).contentVersion).toBe(STALE_VERSION);
+    const rows = await selectStaleEntriesForResanitize(db, 10);
+
+    expect(rows.map((r) => r.id)).toEqual(newestFirst);
   });
 
-  it("heals the highest stale version before older ones", async () => {
+  it("orders the highest stale version before older ones", async () => {
     const feedId = await seedFeed();
-    // Straggler at an older version (from a hypothetical unfinished earlier
-    // pass) plus a row at the previous version. The previous-version row is the
-    // higher stale key, so it heals first.
+    // Straggler at an older version (from an unfinished earlier pass) plus a
+    // row at the previous version. The previous-version row is the higher stale
+    // key, so it comes first.
     const older = await seedStaleEntry(feedId, { version: STALE_VERSION - 1 });
     const newerVersion = await seedStaleEntry(feedId, { version: STALE_VERSION });
 
-    const batch = await resanitizeStaleEntries(db, { limit: 1 });
-    expect(batch.processed).toBe(1);
-    expect((await getVersions(newerVersion)).contentVersion).toBe(SANITIZER_VERSION);
-    expect((await getVersions(older)).contentVersion).toBe(STALE_VERSION - 1);
+    const rows = await selectStaleEntriesForResanitize(db, 10);
+
+    expect(rows.map((r) => r.id)).toEqual([newerVersion, older]);
   });
 
-  it("skips rows already at the current version (no wasted work)", async () => {
+  it("keyset-paginates within the stale range on (stalenessKey, id) descending", async () => {
     const feedId = await seedFeed();
-    const fresh = await seedStaleEntry(feedId, {
-      version: SANITIZER_VERSION,
-      contentSanitized: "<p>ALREADY_FRESH</p>",
-    });
-    const stale = await seedStaleEntry(feedId);
+    const ids: string[] = [];
+    for (let i = 0; i < 3; i++) ids.push(await seedStaleEntry(feedId));
+    const newestFirst = [...ids].sort().reverse();
 
-    const result = await resanitizeStaleEntries(db, { limit: 10 });
-
-    expect(result.processed).toBe(1);
-    expect((await getVersions(fresh)).contentSanitized).toBe("<p>ALREADY_FRESH</p>");
-    expect((await getVersions(stale)).contentVersion).toBe(SANITIZER_VERSION);
-  });
-
-  it("persistResanitizedFamily writes when version is stale and hash matches", async () => {
-    const feedId = await seedFeed();
-    const id = await seedStaleEntry(feedId);
-
-    const persisted = await persistResanitizedFamily(
-      db,
-      id,
-      "content",
-      { original: "<p>ok</p>", cleaned: "<p>ok</p>" },
-      `hash-${id}`
-    );
-
-    expect(persisted).toBe(true);
-    const row = await getVersions(id);
-    expect(row.contentVersion).toBe(SANITIZER_VERSION);
-    expect(row.contentSanitized).toBe("<p>ok</p>");
-  });
-
-  it("persistResanitizedFamily skips when the content changed under it (TOCTOU guard)", async () => {
-    const feedId = await seedFeed();
-    const id = await seedStaleEntry(feedId);
-    // Simulate a concurrent writer swapping the raw content (new hash) between
-    // when we read the old raw and when we persist what we sanitized from it.
-    await db.update(entries).set({ contentHash: "CHANGED" }).where(eq(entries.id, id));
-
-    const persisted = await persistResanitizedFamily(
-      db,
-      id,
-      "content",
-      { original: "<p>from stale raw</p>", cleaned: "<p>from stale raw</p>" },
-      `hash-${id}` // the hash our sanitize was based on — now outdated
-    );
-
-    expect(persisted).toBe(false);
-    const row = await getVersions(id);
-    expect(row.contentVersion).toBe(STALE_VERSION); // version untouched
-    expect(row.contentSanitized).toBeNull(); // stale output not written
-  });
-
-  it("persistResanitizedFamily skips a row already at a newer version (no downgrade)", async () => {
-    // A newer release wrote this family at version+1 (expand/contract rollout, or
-    // we're an old release running after a rollback). The strictly-less-than CAS
-    // must leave it untouched rather than clobber it with our older rules.
-    const feedId = await seedFeed();
-    const id = await seedStaleEntry(feedId, {
-      version: SANITIZER_VERSION + 1,
-      contentSanitized: "<p>NEWER</p>",
+    const [first] = await selectStaleEntriesForResanitize(db, 1);
+    const rest = await selectStaleEntriesForResanitize(db, 10, {
+      stalenessKey: first.stalenessKey,
+      id: first.id,
     });
 
-    const persisted = await persistResanitizedFamily(
-      db,
-      id,
-      "content",
-      { original: "<p>older rules</p>", cleaned: "<p>older rules</p>" },
-      `hash-${id}`
-    );
-
-    expect(persisted).toBe(false);
-    const row = await getVersions(id);
-    expect(row.contentVersion).toBe(SANITIZER_VERSION + 1);
-    expect(row.contentSanitized).toBe("<p>NEWER</p>");
-  });
-
-  it("sweep heals a stale family but leaves a newer sibling family untouched", async () => {
-    // content is stale (version-1) while full_content was written by a newer
-    // release (version+1). The row is selected (LEAST = version-1 < current), so
-    // content heals, but the newer full-content family must not be downgraded.
-    const feedId = await seedFeed();
-    const id = await seedStaleEntry(feedId, { full: true });
-    await db
-      .update(entries)
-      .set({
-        fullContentSanitizedVersion: SANITIZER_VERSION + 1,
-        fullContentCleanedSanitized: "<p>NEWER FULL</p>",
-      })
-      .where(eq(entries.id, id));
-
-    const result = await resanitizeStaleEntries(db, { limit: 10 });
-
-    expect(result.contentResanitized).toBe(1);
-    expect(result.fullContentResanitized).toBe(0);
-    const row = await getVersions(id);
-    expect(row.contentVersion).toBe(SANITIZER_VERSION);
-    expect(row.fullVersion).toBe(SANITIZER_VERSION + 1);
-    expect(row.fullSanitized).toBe("<p>NEWER FULL</p>");
+    expect([first.id, ...rest.map((r) => r.id)]).toEqual(newestFirst);
   });
 
   it("uses idx_entries_resanitize with no sort (EXPLAIN)", async () => {
@@ -297,7 +201,7 @@ describe("resanitizeStaleEntries", () => {
     for (let i = 0; i < 40; i++) await seedStaleEntry(feedId);
     await db.execute(sql`ANALYZE entries`);
 
-    const query = selectStaleEntriesForResanitize(db, RESANITIZE_BATCH_SIZE);
+    const query = selectStaleEntriesForResanitize(db, 10);
     const plan = await db.transaction(async (tx) => {
       // Disable seq scan so "index vs. seq scan" cost noise can't hide a genuine
       // failure to match the expression index; a Sort in the plan would then
@@ -320,7 +224,7 @@ describe("resanitizeStaleEntries", () => {
     // keyset cursor; guard that the cursor variant still seeks the index rather
     // than falling back to a pkey walk + filter (the pre-fix regression that
     // scanned the whole table when little was stale).
-    const query = selectStaleEntriesForResanitize(db, RESANITIZE_BATCH_SIZE, {
+    const query = selectStaleEntriesForResanitize(db, 10, {
       stalenessKey: SANITIZER_VERSION - 1,
       id: "ffffffff-ffff-ffff-ffff-ffffffffffff",
     });
@@ -335,55 +239,70 @@ describe("resanitizeStaleEntries", () => {
   });
 });
 
-describe("handleResanitizeEntries", () => {
+describe("persistResanitizedFamily", () => {
   beforeEach(cleanup);
   afterAll(cleanup);
 
-  it("heals the corpus across stateless runs, then idles", async () => {
+  it("writes when version is stale and hash matches", async () => {
     const feedId = await seedFeed();
-    const total = RESANITIZE_BATCH_SIZE + 2; // spans two batches
-    const ids: string[] = [];
-    for (let i = 0; i < total; i++) ids.push(await seedStaleEntry(feedId));
+    const id = await seedStaleEntry(feedId);
 
-    // First run heals a full batch and asks to be run again soon.
-    const run1 = await handleResanitizeEntries({});
-    expect(run1.success).toBe(true);
-    expect(run1.metadata?.status).toBe("in_progress");
-    expect(await countHealed(ids)).toBe(RESANITIZE_BATCH_SIZE);
+    const persisted = await persistResanitizedFamily(
+      db,
+      id,
+      "content",
+      { original: "<p>ok</p>", cleaned: "<p>ok</p>" },
+      `hash-${id}`
+    );
 
-    // Second run finishes the remainder (still "in_progress" — nonzero work).
-    const run2 = await handleResanitizeEntries({});
-    expect(run2.metadata?.status).toBe("in_progress");
-    expect(await countHealed(ids)).toBe(total);
-
-    // Third run finds nothing stale → idle, with the far-future reschedule.
-    const before = Date.now();
-    const run3 = await handleResanitizeEntries({});
-    expect(run3.metadata?.status).toBe("idle");
-    expect(run3.metadata?.processed).toBe(0);
-    expect(run3.nextRunAt.getTime() - before).toBeGreaterThan(10 * 60 * 1000);
+    expect(persisted).toBe(true);
+    const row = await getVersions(id);
+    expect(row.contentVersion).toBe(SANITIZER_VERSION);
+    expect(row.contentSanitized).toBe("<p>ok</p>");
   });
 
-  it("resumes automatically after a (simulated) version bump", async () => {
+  it("skips when the content changed under it (TOCTOU guard)", async () => {
     const feedId = await seedFeed();
-    // A fresh content-only row — nothing to do.
-    await seedStaleEntry(feedId, { version: SANITIZER_VERSION });
-    expect((await handleResanitizeEntries({})).metadata?.status).toBe("idle");
+    const id = await seedStaleEntry(feedId);
+    // Simulate a concurrent writer swapping the raw content (new hash) between
+    // when we read the old raw and when we persist what we sanitized from it.
+    await db.update(entries).set({ contentHash: "CHANGED" }).where(eq(entries.id, id));
 
-    // A bump is modeled by a row landing below the current version; the very
-    // next stateless run picks it up with no cursor to reset.
-    const stale = await seedStaleEntry(feedId);
-    const run = await handleResanitizeEntries({});
-    expect(run.metadata?.status).toBe("in_progress");
-    expect((await getVersions(stale)).contentVersion).toBe(SANITIZER_VERSION);
+    const persisted = await persistResanitizedFamily(
+      db,
+      id,
+      "content",
+      { original: "<p>from stale raw</p>", cleaned: "<p>from stale raw</p>" },
+      `hash-${id}` // the hash our sanitize was based on — now outdated
+    );
+
+    expect(persisted).toBe(false);
+    const row = await getVersions(id);
+    expect(row.contentVersion).toBe(STALE_VERSION); // version untouched
+    expect(row.contentSanitized).toBeNull(); // stale output not written
+  });
+
+  it("skips a row already at a newer version (no downgrade)", async () => {
+    // A newer release wrote this family at version+1 (expand/contract rollout, or
+    // we're an old release running after a rollback). The strictly-less-than CAS
+    // must leave it untouched rather than clobber it with our older rules.
+    const feedId = await seedFeed();
+    const id = await seedStaleEntry(feedId, {
+      version: SANITIZER_VERSION + 1,
+      contentSanitized: "<p>NEWER</p>",
+    });
+
+    const persisted = await persistResanitizedFamily(
+      db,
+      id,
+      "content",
+      { original: "<p>older rules</p>", cleaned: "<p>older rules</p>" },
+      `hash-${id}`
+    );
+
+    expect(persisted).toBe(false);
+    const row = await getVersions(id);
+    expect(row.contentVersion).toBe(SANITIZER_VERSION + 1);
+    expect(row.contentSanitized).toBe("<p>NEWER</p>");
   });
 });
-
-/** Count how many of the given entries are healed to the current version. */
-async function countHealed(ids: string[]): Promise<number> {
-  const rows = await db
-    .select({ id: entries.id, v: entries.contentSanitizedVersion })
-    .from(entries)
-    .where(inArray(entries.id, ids));
-  return rows.filter((r) => r.v === SANITIZER_VERSION).length;
-}

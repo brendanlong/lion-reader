@@ -296,7 +296,7 @@ const entryFullSelectFields = {
   // Whether this family has raw content to (re-)sanitize at all. Lets the read
   // path skip the heal for a family with no raw content instead of wasting a
   // SELECT + no-op sanitize + version-stamping UPDATE on it (see
-  // resolveSanitizedFamily); matches the background sweep's RESANITIZE_NA rule.
+  // resolveSanitizedFamily); matches the staleness query's RESANITIZE_NA rule.
   hasContentRaw: sql<boolean>`${visibleEntries.contentOriginal} IS NOT NULL OR ${visibleEntries.contentCleaned} IS NOT NULL`,
   summary: visibleEntries.summary,
   publishedAt: visibleEntries.publishedAt,
@@ -396,8 +396,9 @@ export async function resolveSanitizedFamily(
   // the *first* read of nearly every entry (and every read after a
   // SANITIZER_VERSION bump) would take the heal path below — a wasted SELECT, two
   // no-op sanitize calls, and a fire-and-forget UPDATE stamping the version on a
-  // family that holds no content. Skip it, matching the background sweep, which
-  // treats a no-raw family as not stale (RESANITIZE_NA in resanitize.ts).
+  // family that holds no content. Skip it, matching the bulk-resanitize
+  // staleness query, which treats a no-raw family as not stale (RESANITIZE_NA
+  // in resanitize.ts).
   if (!stored.hasRaw) {
     return { original: stored.originalSanitized, cleaned: stored.cleanedSanitized };
   }

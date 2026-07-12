@@ -30,7 +30,6 @@ import {
   handleProcessOpmlImport,
   handleMonitorFeedHealth,
   handleCleanup,
-  handleResanitizeEntries,
   type JobHandlerResult,
 } from "./handlers";
 import type { Job } from "../db/schema";
@@ -54,7 +53,7 @@ const DEFAULT_JOB_TIMEOUT_MS = 5 * 60 * 1000;
  * normally win the race for throughput, but a large `fetch_feed` backlog (after
  * downtime or an OPML import) would otherwise starve the singleton maintenance
  * jobs (`SINGLETON_JOB_TYPES` in queue.ts — renew_websub, monitor_feed_health,
- * cleanup, plus any re-enabled entries) forever. Every Nth claim we look at
+ * cleanup) forever. Every Nth claim we look at
  * singletons first so an overdue one is picked up within a handful of rapid
  * claim cycles regardless of backlog depth.
  */
@@ -444,11 +443,6 @@ function createWorker(config: WorkerConfig = {}): Worker {
         case "cleanup": {
           const payload = getJobPayload<"cleanup">(job);
           result = await handleCleanup(payload);
-          break;
-        }
-        case "resanitize_entries": {
-          const payload = getJobPayload<"resanitize_entries">(job);
-          result = await handleResanitizeEntries(payload);
           break;
         }
         case "process_opml_import": {
