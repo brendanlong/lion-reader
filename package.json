@@ -57,7 +57,7 @@
     ]
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.95.1",
+    "@anthropic-ai/sdk": "^0.110.0",
     "@ducanh2912/next-pwa": "^10.2.9",
     "@mintplex-labs/piper-tts-web": "^1.0.4",
     "@modelcontextprotocol/sdk": "^1.29.0",

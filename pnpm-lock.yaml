@@ -20,8 +20,8 @@ importers:
   .:
     dependencies:
       '@anthropic-ai/sdk':
-        specifier: ^0.95.1
-        version: 0.95.2(zod@4.4.3)
+        specifier: ^0.110.0
+        version: 0.110.0(zod@4.4.3)
       '@ducanh2912/next-pwa':
         specifier: ^10.2.9
         version: 10.2.9(next@16.2.6(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(@playwright/test@1.60.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(webpack@5.104.1(esbuild@0.28.1)(lightningcss@1.32.0))
@@ -249,8 +249,8 @@ packages:
     resolution: {integrity: sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw==}
     engines: {node: '>=10'}
 
-  '@anthropic-ai/sdk@0.95.2':
-    resolution: {integrity: sha512-Egddwo3sheo1PzUrMkZnH6VkQYwS0h/b/i8vSK8Ta9M45UQipAMeDFH57dYuDAfXMEUUGeKw6CMlremgMZgrSQ==}
+  '@anthropic-ai/sdk@0.110.0':
+    resolution: {integrity: sha512-hOP4bNYXDFHDxxiEgzlILXrxZIYCDnhe8sry0RDRKD/QnsEpvZcQpablCdm9X/WuD/YgOiSIkkqsL1mLLlTqJw==}
     hasBin: true
     peerDependencies:
       zod: ^3.25.0 || ^4.0.0
@@ -816,8 +816,8 @@ packages:
     resolution: {integrity: sha512-05WQkdpL9COIMz4LjTxGpPNCdlpyimKppYNoJ5Di5EUObifl8t4tuLuUBBZEpoLYOmfvIWrsp9fCl0HoPRVTdA==}
     engines: {node: '>=6.9.0'}
 
-  '@babel/runtime@7.29.2':
-    resolution: {integrity: sha512-JiDShH45zKHWyGe4ZNVRrCjBz8Nh9TMmZG1kh4QTK8hCBTWBi8Da+i7s1fJw7/lYpM4ccepSNfqzZ/QvABBi5g==}
+  '@babel/runtime@7.29.7':
+    resolution: {integrity: sha512-Nq8OhGWiZIZGV6hLHoyAKLLcJihP/xFeBMGJoUrxTX2psI8dCifzLhZISFb+VWS3wFMRDmCGw5R+dOySCqPLhw==}
     engines: {node: '>=6.9.0'}
 
   '@babel/template@7.28.6':
@@ -6462,7 +6462,7 @@ snapshots:
 
   '@alloc/quick-lru@5.2.0': {}
 
-  '@anthropic-ai/sdk@0.95.2(zod@4.4.3)':
+  '@anthropic-ai/sdk@0.110.0(zod@4.4.3)':
     dependencies:
       json-schema-to-ts: 3.1.1
       standardwebhooks: 1.0.0
@@ -7731,7 +7731,7 @@ snapshots:
 
   '@babel/runtime@7.28.6': {}
 
-  '@babel/runtime@7.29.2': {}
+  '@babel/runtime@7.29.7': {}
 
   '@babel/template@7.28.6':
     dependencies:
@@ -11587,7 +11587,7 @@ snapshots:
 
   json-schema-to-ts@3.1.1:
     dependencies:
-      '@babel/runtime': 7.29.2
+      '@babel/runtime': 7.29.7
       ts-algebra: 2.0.0
 
   json-schema-traverse@0.4.1: {}
@@ -13342,7 +13342,7 @@ snapshots:
       '@apideck/better-ajv-errors': 0.3.6(ajv@8.18.0)
       '@babel/core': 7.29.7
       '@babel/preset-env': 7.29.0(@babel/core@7.29.7)
-      '@babel/runtime': 7.29.2
+      '@babel/runtime': 7.29.7
       '@rollup/plugin-babel': 5.3.1(@babel/core@7.29.7)(rollup@2.80.0)
       '@rollup/plugin-node-resolve': 15.3.1(rollup@2.80.0)
       '@rollup/plugin-replace': 2.4.2(rollup@2.80.0)
