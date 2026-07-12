@@ -44,6 +44,15 @@ kill_timeout = 30
   NODE_ENV = "production"
   PORT = "3000"
 
+  # Dedicated MCP host (issue #986 workaround): the same app process serves the
+  # MCP endpoint at https://{MCP_HOST}/mcp with OAuth at the origin root.
+  # Requires DNS (CNAME mcp -> lion-reader.fly.dev) and a cert
+  # (`fly certs add mcp.lionreader.com`); inert for requests on other hosts.
+  MCP_HOST = "mcp.lionreader.com"
+  # Log every request to MCP_HOST (+ the OAuth/MCP surface on any host) to debug
+  # the claude.ai connector. TEMPORARY — remove once #986 debugging is done.
+  LOG_MCP_REQUESTS = "true"
+
   FETCHER_CONTACT_EMAIL = "self@brendanlong.com"
 
   WORKER_CONCURRENCY = "1"
