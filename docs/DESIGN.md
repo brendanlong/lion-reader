@@ -280,9 +280,9 @@ The `.well-known/*` OAuth metadata routes and the `/api/mcp` tool surface are **
    - 200 OK: parse feed, process entries
    - 301 Permanent Redirect: track, update URL after 7-day wait period (HTTP-to-HTTPS applied immediately)
    - 302/307 Temporary Redirect: follow without updating URL
-   - 429 Too Many Requests / 5xx: treated as a failure with exponential backoff; when a `Retry-After` header is present it is honored as a floor on the backoff (`max(retryAfterSeconds, backoff)`, capped at the 7-day max), so we never poll earlier than the server asked
-   - 4xx/5xx: increment failures, backoff
-5. Calculate `next_fetch_at` based on Cache-Control (10min with cache hint, 60min default min, 7day max)
+   - 429 Too Many Requests / 5xx: treated as a failure with exponential backoff; when a `Retry-After` header is present it is honored as a floor on the backoff (`max(retryAfterSeconds, backoff)`, capped at the 7-day max), so we never poll earlier than the server asked. 429 backoff is additionally capped at 6 hours (`RATE_LIMIT_MAX_BACKOFF_SECONDS`) — rate limiting means "slow down right now", not "this feed is broken", and the per-IP blocks behind it last hours, not days, so a chronically rate-limited feed must not be starved at the 7-day max (a larger `Retry-After` still wins over the cap)
+   - 4xx/5xx: increment failures, backoff. This includes a 404/410 with no tracked redirect: a single 404 is **not** proof the feed is gone (YouTube returns 404 for all of its feeds for a few hours most days — issue #1114), so instead of jumping straight to a 7-day next fetch, the ordinary backoff ladder applies — it converges to the same 7-day cadence if the 404 persists, and one success resets it. A 404/410 with a tracked redirect URL still applies the redirect immediately
+5. Calculate `next_fetch_at` based on Cache-Control (10min with cache hint, 60min default min, 7day max). A URL plugin can raise the minimum for its source (`FeedCapability.minFetchIntervalSeconds`): YouTube serves `max-age=900` but rate-limits RSS fetches per IP, so its plugin floors polling at 1 hour
 
 ### Feed Types
 
@@ -636,12 +636,13 @@ The registry indexes plugins by hostname for O(1) lookup, then calls the plugin'
 
 ### Available Plugins
 
-| Plugin          | Capabilities           | Description                                        |
-| --------------- | ---------------------- | -------------------------------------------------- |
-| **LessWrong**   | `feed`, `savedArticle` | GraphQL API for posts/comments, user profile feeds |
-| **Google Docs** | `savedArticle`         | Fetch Google Docs content via API                  |
-| **ArXiv**       | `savedArticle`         | Fetch ArXiv paper content                          |
-| **GitHub**      | `savedArticle`         | Fetch GitHub content                               |
+| Plugin          | Capabilities           | Description                                                |
+| --------------- | ---------------------- | ---------------------------------------------------------- |
+| **LessWrong**   | `feed`, `savedArticle` | GraphQL API for posts/comments, user profile feeds         |
+| **Google Docs** | `savedArticle`         | Fetch Google Docs content via API                          |
+| **ArXiv**       | `savedArticle`         | Fetch ArXiv paper content                                  |
+| **GitHub**      | `savedArticle`         | Fetch GitHub content                                       |
+| **YouTube**     | `feed`                 | Polling floor (1h) to avoid YouTube's per-IP rate limiting |
 
 ---
 

@@ -12,6 +12,7 @@ import {
   getMinFetchIntervalSeconds,
   MIN_FETCH_INTERVAL_WITH_CACHE_HINT_SECONDS,
   MAX_FETCH_INTERVAL_SECONDS,
+  RATE_LIMIT_MAX_BACKOFF_SECONDS,
   DEFAULT_FETCH_INTERVAL_SECONDS,
   DEFAULT_JITTER_FRACTION,
   MAX_JITTER_SECONDS,
@@ -514,6 +515,111 @@ describe("calculateNextFetch", () => {
 
       expect(result.intervalSeconds).toBe(7200);
       expect(result.reason).toBe("cache_control");
+    });
+  });
+
+  describe("with rate-limited failures", () => {
+    it("caps rate-limited backoff at 6 hours instead of escalating to 7 days", () => {
+      // 10 ordinary failures would hit the 7-day max; a chronically
+      // rate-limited feed must keep retrying every few hours instead.
+      const result = calculateNextFetch({
+        consecutiveFailures: 10,
+        rateLimited: true,
+        now: fixedNow,
+        randomSource: noJitter,
+      });
+
+      expect(result.intervalSeconds).toBe(RATE_LIMIT_MAX_BACKOFF_SECONDS);
+      expect(result.reason).toBe("failure_backoff");
+    });
+
+    it("uses the ordinary ladder below the cap", () => {
+      const result = calculateNextFetch({
+        consecutiveFailures: 3,
+        rateLimited: true,
+        now: fixedNow,
+        randomSource: noJitter,
+      });
+
+      expect(result.intervalSeconds).toBe(2 * 60 * 60); // 2 hours, same as non-rate-limited
+      expect(result.reason).toBe("failure_backoff");
+    });
+
+    it("honors a Retry-After larger than the rate-limit cap", () => {
+      const result = calculateNextFetch({
+        consecutiveFailures: 10,
+        rateLimited: true,
+        retryAfterSeconds: 12 * 60 * 60,
+        now: fixedNow,
+        randomSource: noJitter,
+      });
+
+      expect(result.intervalSeconds).toBe(12 * 60 * 60);
+      expect(result.reason).toBe("failure_backoff");
+    });
+
+    it("does not cap non-rate-limited failures", () => {
+      const result = calculateNextFetch({
+        consecutiveFailures: 10,
+        rateLimited: false,
+        now: fixedNow,
+        randomSource: noJitter,
+      });
+
+      expect(result.intervalSeconds).toBe(MAX_FETCH_INTERVAL_SECONDS);
+    });
+  });
+
+  describe("with a plugin minimum interval", () => {
+    it("raises the floor above a shorter cache hint", () => {
+      // YouTube's max-age=900 would normally poll every 15 minutes; the
+      // plugin floor holds it at an hour.
+      const result = calculateNextFetch({
+        cacheControl: createCacheControl({ maxAge: 900 }),
+        minIntervalSeconds: 60 * 60,
+        now: fixedNow,
+        randomSource: noJitter,
+      });
+
+      expect(result.intervalSeconds).toBe(60 * 60);
+      expect(result.reason).toBe("cache_control_clamped_min");
+    });
+
+    it("does not lower a longer interval", () => {
+      const result = calculateNextFetch({
+        cacheControl: createCacheControl({ maxAge: 4 * 60 * 60 }),
+        minIntervalSeconds: 60 * 60,
+        now: fixedNow,
+        randomSource: noJitter,
+      });
+
+      expect(result.intervalSeconds).toBe(4 * 60 * 60);
+      expect(result.reason).toBe("cache_control");
+    });
+
+    it("does not shorten the WebSub backup interval", () => {
+      const result = calculateNextFetch({
+        cacheControl: createCacheControl({ maxAge: 900 }),
+        minIntervalSeconds: 60 * 60,
+        websubActive: true,
+        now: fixedNow,
+        randomSource: noJitter,
+      });
+
+      expect(result.intervalSeconds).toBe(24 * 60 * 60);
+      expect(result.reason).toBe("websub_backup");
+    });
+
+    it("does not affect failure backoff", () => {
+      const result = calculateNextFetch({
+        consecutiveFailures: 1,
+        minIntervalSeconds: 60 * 60,
+        now: fixedNow,
+        randomSource: noJitter,
+      });
+
+      expect(result.intervalSeconds).toBe(30 * 60);
+      expect(result.reason).toBe("failure_backoff");
     });
   });
 

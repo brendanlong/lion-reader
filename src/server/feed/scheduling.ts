@@ -61,6 +61,18 @@ const MAX_CONSECUTIVE_FAILURES = 10;
 const FAILURE_BASE_BACKOFF_SECONDS = 30 * 60; // 1800
 
 /**
+ * Maximum backoff for rate-limited (429) failures: 6 hours.
+ *
+ * A 429 means "you're polling too fast right now", not "this feed is broken",
+ * and the blocks behind it are transient (YouTube's per-IP blocks last hours,
+ * not days — see issue #1114). Letting the ordinary failure ladder escalate a
+ * chronically rate-limited feed to the 7-day max starves it long after the
+ * block has lifted, so rate-limited failures cap out here instead. A larger
+ * server-sent Retry-After still wins over this cap.
+ */
+export const RATE_LIMIT_MAX_BACKOFF_SECONDS = 6 * 60 * 60; // 21600
+
+/**
  * Seconds per syndication period.
  */
 const PERIOD_SECONDS: Record<NonNullable<SyndicationHints["updatePeriod"]>, number> = {
@@ -127,6 +139,22 @@ export interface CalculateNextFetchOptions {
    * Ignored on success (there's no failure to back off from).
    */
   retryAfterSeconds?: number;
+  /**
+   * Whether the current failure is a rate limit (429). Caps the failure
+   * backoff at RATE_LIMIT_MAX_BACKOFF_SECONDS instead of letting it escalate
+   * to the 7-day max — rate limiting is transient, not feed brokenness.
+   * Only meaningful alongside consecutiveFailures > 0.
+   */
+  rateLimited?: boolean;
+  /**
+   * Source-specific minimum interval in seconds (from a URL plugin), raising
+   * the floor on the success-path interval. E.g. YouTube serves
+   * `Cache-Control: max-age=900`, but polling every channel every 15 minutes
+   * is a fast way to get an IP rate-limited, so its plugin floors the
+   * interval at an hour. Never lowers the context minimum, and doesn't
+   * affect failure backoff.
+   */
+  minIntervalSeconds?: number;
   /**
    * Whether WebSub is active for this feed.
    * When true, uses a longer backup polling interval since WebSub
@@ -241,6 +269,8 @@ export function calculateNextFetch(options: CalculateNextFetchOptions = {}): Nex
     feedHints,
     consecutiveFailures = 0,
     retryAfterSeconds,
+    rateLimited = false,
+    minIntervalSeconds,
     websubActive = false,
     now = new Date(),
     randomSource = Math.random,
@@ -253,7 +283,9 @@ export function calculateNextFetch(options: CalculateNextFetchOptions = {}): Nex
   // Retry-After, honor it as a floor so we never poll earlier than asked
   // (capped at the max interval so we always check eventually).
   if (consecutiveFailures > 0) {
-    const backoff = calculateFailureBackoff(consecutiveFailures);
+    const backoff = rateLimited
+      ? Math.min(calculateFailureBackoff(consecutiveFailures), RATE_LIMIT_MAX_BACKOFF_SECONDS)
+      : calculateFailureBackoff(consecutiveFailures);
     if (retryAfterSeconds !== undefined && retryAfterSeconds > backoff) {
       intervalSeconds = Math.min(retryAfterSeconds, MAX_FETCH_INTERVAL_SECONDS);
     } else {
@@ -300,11 +332,13 @@ export function calculateNextFetch(options: CalculateNextFetchOptions = {}): Nex
     // - WebSub active: min 24h (backup polling since we get real-time push)
     // - Cache hint present: min 10min (trust server-provided hints)
     // - Otherwise: min 60min (configurable default)
-    const minInterval = websubActive
+    // A plugin-provided source minimum can raise (never lower) the floor.
+    const contextMinInterval = websubActive
       ? WEBSUB_BACKUP_POLL_INTERVAL_SECONDS
       : effectiveMaxAge !== undefined
         ? MIN_FETCH_INTERVAL_WITH_CACHE_HINT_SECONDS
         : getMinFetchIntervalSeconds();
+    const minInterval = Math.max(contextMinInterval, minIntervalSeconds ?? 0);
 
     if (baseInterval < minInterval) {
       intervalSeconds = minInterval;
