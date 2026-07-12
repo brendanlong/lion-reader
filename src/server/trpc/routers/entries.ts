@@ -23,7 +23,7 @@ import { uuidSchema } from "../validation";
 import { tags } from "@/server/db/schema";
 import * as fullContentService from "@/server/services/full-content";
 import * as entriesService from "@/server/services/entries";
-import { getSubscriptionFeedIds } from "@/server/services/entry-filters";
+import { verifySubscriptionOwnership } from "@/server/services/entry-filters";
 
 // Endpoints exposed via the MCP tool surface; accessible to tokens with the `mcp` scope.
 const mcpProcedure = scopedProtectedProcedure(API_TOKEN_SCOPES.MCP);
@@ -453,8 +453,8 @@ export const entriesRouter = createTRPCRouter({
 
       // Validate subscription belongs to user before passing to service
       if (input.subscriptionId) {
-        const subFeedIds = await getSubscriptionFeedIds(ctx.db, input.subscriptionId, userId);
-        if (subFeedIds === null) {
+        const owned = await verifySubscriptionOwnership(ctx.db, input.subscriptionId, userId);
+        if (!owned) {
           return { count: 0 };
         }
       }

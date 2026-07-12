@@ -12,7 +12,6 @@ import { createTRPCRouter, confirmedProtectedProcedure as protectedProcedure } f
 import {
   entries,
   feeds,
-  subscriptionFeeds,
   subscriptions,
   subscriptionTags,
   userEntries,
@@ -294,14 +293,7 @@ export const syncRouter = createTRPCRouter({
           .from(userEntries)
           .innerJoin(entries, eq(entries.id, userEntries.entryId))
           .innerJoin(feeds, eq(feeds.id, entries.feedId))
-          .leftJoin(
-            subscriptionFeeds,
-            and(
-              eq(subscriptionFeeds.userId, userEntries.userId),
-              eq(subscriptionFeeds.feedId, entries.feedId)
-            )
-          )
-          .leftJoin(subscriptions, eq(subscriptions.id, subscriptionFeeds.subscriptionId))
+          .leftJoin(subscriptions, eq(subscriptions.id, userEntries.subscriptionId))
           .where(
             and(
               eq(userEntries.userId, userId),
@@ -315,9 +307,8 @@ export const syncRouter = createTRPCRouter({
               sql`((${subscriptions.id} IS NOT NULL AND ${subscriptions.unsubscribedAt} IS NULL) OR ${userEntries.starred} = true OR ${entries.type} = 'saved')`
             )
           )
-          // uq_subscriptions_user_feed guarantees at most one subscription per
-          // (user, feed), so the LEFT JOINs above can't fan out an entry into
-          // duplicate rows/events.
+          // Direct join on the stamped user_entries.subscription_id — one
+          // subscription per row by construction, so no fan-out is possible.
           .orderBy(greatest, entries.id)
           .limit(MAX_ENTRIES + 1);
 
