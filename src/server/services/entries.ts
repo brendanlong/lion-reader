@@ -18,14 +18,7 @@ import {
   type SQL,
 } from "drizzle-orm";
 import type { db as dbType, DbOrTx } from "@/server/db";
-import {
-  entries,
-  feeds,
-  userEntries,
-  userFeeds,
-  subscriptions,
-  visibleEntries,
-} from "@/server/db/schema";
+import { entries, feeds, userEntries, subscriptions, visibleEntries } from "@/server/db/schema";
 import { isValidUuid } from "@/lib/uuidv7";
 import { SANITIZER_VERSION } from "@/server/html/sanitize";
 import { sanitizeEntryHtmlInWorker } from "@/server/worker-thread/pool";
@@ -1135,16 +1128,24 @@ export async function markAllEntriesRead(
   }
 
   // Filter by subscriptionId, matching the entry's stamped attribution. The
-  // user_feeds subquery (active-only, user-scoped) validates ownership inside
-  // the statement, so a foreign or unsubscribed subscription id matches nothing.
+  // subscriptions subquery (active-only, user-scoped) validates ownership
+  // inside the statement, so a foreign or unsubscribed subscription id matches
+  // nothing. (The user_feeds view is display-only — scoping checks query the
+  // subscriptions table directly.)
   if (params.subscriptionId) {
     conditions.push(
       inArray(
         userEntries.subscriptionId,
         db
-          .select({ id: userFeeds.id })
-          .from(userFeeds)
-          .where(and(eq(userFeeds.id, params.subscriptionId), eq(userFeeds.userId, params.userId)))
+          .select({ id: subscriptions.id })
+          .from(subscriptions)
+          .where(
+            and(
+              eq(subscriptions.id, params.subscriptionId),
+              eq(subscriptions.userId, params.userId),
+              isNull(subscriptions.unsubscribedAt)
+            )
+          )
       )
     );
   }

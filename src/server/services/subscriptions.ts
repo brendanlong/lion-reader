@@ -4,7 +4,7 @@
  * Business logic for subscription operations. Used by both tRPC routers and MCP server.
  */
 
-import { eq, and, isNull, sql } from "drizzle-orm";
+import { eq, and, gt, isNull, sql } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import {
   feeds,
@@ -14,7 +14,6 @@ import {
   tags,
   subscriptionTags,
   userFeeds,
-  visibleEntries,
 } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { logger } from "@/lib/logger";
@@ -53,50 +52,17 @@ export interface Subscription {
 // ============================================================================
 
 /**
- * Options shared by the subscription read functions.
- */
-export interface SubscriptionQueryOptions {
-  /**
-   * Compute per-subscription unread counts (default true). The count is a
-   * grouped aggregate over `visible_entries` that scales with the user's unread
-   * backlog — often the dominant cost of the query — so callers that discard
-   * `unreadCount` (Google Reader `subscription/list`/`quickadd`, issue #1074)
-   * pass false and get a literal 0 instead.
-   */
-  includeUnreadCounts?: boolean;
-}
-
-/**
  * Builds the base query for fetching subscriptions using the user_feeds view.
- * Includes unread counts (unless opted out) and tags.
+ * Includes unread counts and tags.
+ *
+ * The unread count is the trigger-maintained `subscriptions.unread_count`
+ * counter (migration 0092, exposed through the view in migration 0093) — a
+ * free column read, so there is no opt-out (the old `includeUnreadCounts`
+ * option existed because the count was a scan over visible_entries that
+ * scaled with the unread backlog, issue #1074). Spam never counts.
  */
-function buildSubscriptionBaseQuery(
-  db: typeof dbType,
-  userId: string,
-  opts: SubscriptionQueryOptions = {}
-) {
-  const includeUnreadCounts = opts.includeUnreadCounts ?? true;
-
-  // Subquery to get unread counts per subscription.
-  // Counts through visible_entries (grouped by subscription_id) rather than by
-  // entries.feed_id: a subscription can own entries under multiple feed_ids
-  // (feed redirect/merge history — the merge job re-stamps old-feed entries to
-  // the surviving subscription), and matching only on the current feed_id would
-  // undercount those. The view encapsulates the attribution plus the visibility
-  // rule, so this stays correct by construction.
-  // Filtering read=false in WHERE (not a FILTER aggregate) lets the partial
-  // idx_user_entries_unread index drive the scan.
-  const unreadCountsSubquery = db
-    .select({
-      subscriptionId: visibleEntries.subscriptionId,
-      unreadCount: sql<number>`count(*)::int`.as("unread_count"),
-    })
-    .from(visibleEntries)
-    .where(and(eq(visibleEntries.userId, userId), eq(visibleEntries.read, false)))
-    .groupBy(visibleEntries.subscriptionId)
-    .as("unread_counts");
-
-  const baseSelect = db
+function buildSubscriptionBaseQuery(db: typeof dbType) {
+  return db
     .select({
       // From user_feeds view - subscription fields
       id: userFeeds.id,
@@ -110,11 +76,8 @@ function buildSubscriptionBaseQuery(
       originalTitle: userFeeds.originalTitle,
       description: userFeeds.description,
       siteUrl: userFeeds.siteUrl,
-      // Unread count from subquery (a literal 0 when skipped — the column stays
-      // declared so the row shape is identical either way)
-      unreadCount: includeUnreadCounts
-        ? sql<number>`COALESCE(${unreadCountsSubquery.unreadCount}, 0)`
-        : sql<number>`0`,
+      // Trigger-maintained unread counter (spam excluded)
+      unreadCount: userFeeds.unreadCount,
       // Tags aggregated as JSON array
       tags: sql<Array<{ id: string; name: string; color: string | null }>>`
         COALESCE(
@@ -126,16 +89,7 @@ function buildSubscriptionBaseQuery(
       `,
     })
     .from(userFeeds)
-    .$dynamic();
-
-  return (
-    includeUnreadCounts
-      ? baseSelect.leftJoin(
-          unreadCountsSubquery,
-          eq(unreadCountsSubquery.subscriptionId, userFeeds.id)
-        )
-      : baseSelect
-  )
+    .$dynamic()
     .leftJoin(subscriptionTags, eq(subscriptionTags.subscriptionId, userFeeds.id))
     .leftJoin(tags, eq(tags.id, subscriptionTags.tagId))
     .groupBy(
@@ -149,7 +103,7 @@ function buildSubscriptionBaseQuery(
       userFeeds.originalTitle,
       userFeeds.description,
       userFeeds.siteUrl,
-      ...(includeUnreadCounts ? [unreadCountsSubquery.unreadCount] : [])
+      userFeeds.unreadCount
     );
 }
 
@@ -245,16 +199,9 @@ export async function listSubscriptions(
   // (filtering in-memory after LIMIT breaks pagination: hasMore ends up false
   // even when more unread subs exist past the first page).
   if (unreadOnly) {
-    // Match the per-subscription count: an entry counts as unread for this
-    // subscription if visible_entries attributes it here (stamped
-    // user_entries.subscription_id), not merely if its feed_id equals the
-    // subscription's current feed_id.
-    conditions.push(sql`EXISTS (
-      SELECT 1 FROM ${visibleEntries} ve
-      WHERE ve.subscription_id = ${userFeeds.id}
-        AND ve.user_id = ${userId}
-        AND ve.read = false
-    )`);
+    // Match the per-subscription badge exactly: the trigger-maintained
+    // counter (spam excluded) is what the row's unreadCount reports.
+    conditions.push(gt(userFeeds.unreadCount, 0));
   }
 
   // Cursor pagination using (title, id) keyset for alphabetical ordering
@@ -291,7 +238,7 @@ export async function listSubscriptions(
   }
 
   // Build and execute query, sorted alphabetically by title then by id as tiebreaker
-  const results = await buildSubscriptionBaseQuery(db, userId)
+  const results = await buildSubscriptionBaseQuery(db)
     .where(and(...conditions))
     .orderBy(sql`COALESCE(${userFeeds.title}, '') ASC`, userFeeds.id)
     .limit(effectiveLimit + 1);
@@ -336,10 +283,9 @@ export async function listSubscriptions(
  */
 export async function listAllSubscriptions(
   db: typeof dbType,
-  userId: string,
-  opts: SubscriptionQueryOptions = {}
+  userId: string
 ): Promise<Subscription[]> {
-  const results = await buildSubscriptionBaseQuery(db, userId, opts)
+  const results = await buildSubscriptionBaseQuery(db)
     .where(eq(userFeeds.userId, userId))
     .orderBy(sql`COALESCE(${userFeeds.title}, '') ASC`, userFeeds.id);
   return results.map(formatSubscriptionRow);
@@ -351,10 +297,9 @@ export async function listAllSubscriptions(
 export async function getSubscription(
   db: typeof dbType,
   userId: string,
-  subscriptionId: string,
-  opts: SubscriptionQueryOptions = {}
+  subscriptionId: string
 ): Promise<Subscription> {
-  const results = await buildSubscriptionBaseQuery(db, userId, opts)
+  const results = await buildSubscriptionBaseQuery(db)
     .where(and(eq(userFeeds.id, subscriptionId), eq(userFeeds.userId, userId)))
     .limit(1);
 
@@ -623,8 +568,8 @@ export async function createSubscription(
   // Idempotent already-active return: compute the real unread count from the
   // view now that the transaction has committed.
   if (txResult.kind === "alreadyActive") {
-    const viewResults = await buildSubscriptionBaseQuery(db, userId)
-      .where(eq(userFeeds.id, txResult.subscriptionId))
+    const viewResults = await buildSubscriptionBaseQuery(db)
+      .where(and(eq(userFeeds.id, txResult.subscriptionId), eq(userFeeds.userId, userId)))
       .limit(1);
 
     return {

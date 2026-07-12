@@ -479,7 +479,8 @@ CREATE VIEW public.user_feeds AS
     f.title AS original_title,
     f.url,
     f.site_url,
-    f.description
+    f.description,
+    s.unread_count
    FROM (public.subscriptions s
      JOIN public.feeds f ON ((f.id = s.feed_id)))
   WHERE (s.unsubscribed_at IS NULL);
