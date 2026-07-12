@@ -400,7 +400,7 @@ export function SubscribeContent() {
           {/* Sample Entries */}
           {previewQuery.data?.feed.sampleEntries &&
             previewQuery.data.feed.sampleEntries.length > 0 && (
-              <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+              <Card padding="none">
                 <h3 className="ui-text-sm border-b border-zinc-200 px-4 py-3 font-medium text-zinc-900 dark:border-zinc-800 dark:text-zinc-50">
                   Recent Entries
                 </h3>
@@ -427,7 +427,7 @@ export function SubscribeContent() {
                     </li>
                   ))}
                 </ul>
-              </div>
+              </Card>
             )}
 
           {/* Error from subscribe */}

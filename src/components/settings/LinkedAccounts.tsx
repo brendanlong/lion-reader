@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { useFormMessages } from "@/lib/hooks/useFormMessages";
 import { Button } from "@/components/ui/button";
+import { NoteBox } from "@/components/ui/note-box";
 import {
   type OAuthProvider,
   providerNames,
@@ -223,7 +224,7 @@ function LinkedAccountItem({ account, canUnlink, isUnlinking, onUnlink }: Linked
   });
 
   return (
-    <div className="flex items-center justify-between rounded-md border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800/50">
+    <NoteBox className="flex items-center justify-between">
       <div className="flex items-center gap-3">
         <ProviderIcon provider={account.provider} />
         <div>
@@ -241,7 +242,7 @@ function LinkedAccountItem({ account, canUnlink, isUnlinking, onUnlink }: Linked
       >
         Unlink
       </Button>
-    </div>
+    </NoteBox>
   );
 }
 

@@ -407,7 +407,7 @@ function ImportPreview({ feeds, onImport, onCancel, isImporting }: ImportPreview
         <button
           type="button"
           onClick={() => setShowAll(true)}
-          className="ui-text-sm text-accent hover:text-accent-hover mb-4"
+          className="ui-text-sm text-accent hover:text-accent-hover mb-4 font-medium"
         >
           Show all {feeds.length} feeds
         </button>
@@ -466,7 +466,7 @@ function ImportResults({ imported, skipped, failed, results, onReset }: ImportRe
           <button
             type="button"
             onClick={() => setShowDetails(!showDetails)}
-            className="ui-text-sm text-accent hover:text-accent-hover"
+            className="ui-text-sm text-accent hover:text-accent-hover font-medium"
           >
             {showDetails ? "Hide details" : "Show details"}
           </button>

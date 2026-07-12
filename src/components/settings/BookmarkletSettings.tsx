@@ -10,6 +10,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { CardSection } from "@/components/ui/card";
+import { NoteBox } from "@/components/ui/note-box";
 import {
   BookmarkIcon,
   ChevronRightIcon,
@@ -45,13 +46,10 @@ export function BookmarkletSettings() {
   }, [bookmarkletHref]);
 
   return (
-    <SettingsSection title="Save to Lion Reader">
-      {/* Description */}
-      <p className="ui-text-sm text-zinc-600 dark:text-zinc-400">
-        Save any webpage to Lion Reader with one click. The article will be added to your Saved
-        section where you can read it later.
-      </p>
-
+    <SettingsSection
+      title="Save to Lion Reader"
+      description="Save any webpage to Lion Reader with one click. The article will be added to your Saved section where you can read it later."
+    >
       {/* Browser Extensions */}
       <div className="mt-6">
         <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">
@@ -110,7 +108,7 @@ export function BookmarkletSettings() {
       </div>
 
       {/* Installation Instructions */}
-      <div className="mt-6 rounded-md border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800/50">
+      <NoteBox className="mt-6">
         <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">
           Installation Instructions
         </h3>
@@ -128,7 +126,7 @@ export function BookmarkletSettings() {
           </li>
           <li>A popup will appear confirming the article has been saved</li>
         </ol>
-      </div>
+      </NoteBox>
 
       {/* Show/Hide Code Section */}
       <CardSection>

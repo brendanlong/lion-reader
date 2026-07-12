@@ -14,6 +14,7 @@ import { CheckIcon } from "@/components/ui/icon-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TextLink } from "@/components/ui/text-link";
+import { InlineCode } from "@/components/ui/inline-code";
 import {
   DEFAULT_SUMMARIZATION_MODEL,
   DEFAULT_SUMMARIZATION_MAX_WORDS,
@@ -70,16 +71,19 @@ export function GroqApiKeySettings() {
   }, [updatePreferences]);
 
   return (
-    <SettingsSection title="AI Text Processing">
-      <p className="ui-text-sm mb-4 text-zinc-600 dark:text-zinc-400">
-        Add a{" "}
-        <TextLink href="https://console.groq.com/keys" external>
-          Groq API key
-        </TextLink>{" "}
-        to enable AI-powered text processing for narration. This improves narration quality by
-        expanding abbreviations and formatting content for text-to-speech.
-      </p>
-
+    <SettingsSection
+      title="AI Text Processing"
+      description={
+        <>
+          Add a{" "}
+          <TextLink href="https://console.groq.com/keys" external>
+            Groq API key
+          </TextLink>{" "}
+          to enable AI-powered text processing for narration. This improves narration quality by
+          expanding abbreviations and formatting content for text-to-speech.
+        </>
+      }
+    >
       {preferencesQuery.isLoading ? (
         <div className="h-10 w-full animate-pulse rounded bg-zinc-100 dark:bg-zinc-800" />
       ) : isEditing ? (
@@ -297,15 +301,18 @@ export function SummarizationApiKeySettings() {
   }, [updatePreferences]);
 
   return (
-    <SettingsSection title="Summaries">
-      <p className="ui-text-sm mb-4 text-zinc-600 dark:text-zinc-400">
-        Add an{" "}
-        <TextLink href="https://console.anthropic.com/settings/keys" external>
-          Anthropic API key
-        </TextLink>{" "}
-        to enable AI-powered article summaries.
-      </p>
-
+    <SettingsSection
+      title="Summaries"
+      description={
+        <>
+          Add an{" "}
+          <TextLink href="https://console.anthropic.com/settings/keys" external>
+            Anthropic API key
+          </TextLink>{" "}
+          to enable AI-powered article summaries.
+        </>
+      }
+    >
       {preferencesQuery.isLoading ? (
         <div className="h-10 w-full animate-pulse rounded bg-zinc-100 dark:bg-zinc-800" />
       ) : (
@@ -503,16 +510,9 @@ export function SummarizationApiKeySettings() {
                   className="ui-text-sm block w-full rounded-md border border-zinc-300 bg-white px-3 py-2 font-mono text-zinc-900 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
                 />
                 <p className="ui-text-xs text-zinc-500 dark:text-zinc-400">
-                  Available template variables:{" "}
-                  <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">{"{{content}}"}</code>
-                  , <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">{"{{title}}"}</code>
-                  ,{" "}
-                  <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">
-                    {"{{maxWords}}"}
-                  </code>
-                  . The response should be wrapped in{" "}
-                  <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">{"<summary>"}</code>{" "}
-                  tags.
+                  Available template variables: <InlineCode>{"{{content}}"}</InlineCode>,{" "}
+                  <InlineCode>{"{{title}}"}</InlineCode>, <InlineCode>{"{{maxWords}}"}</InlineCode>.
+                  The response should be wrapped in <InlineCode>{"<summary>"}</InlineCode> tags.
                 </p>
                 <div className="flex gap-2">
                   <Button

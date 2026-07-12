@@ -16,10 +16,12 @@ Reusable UI primitives are in `src/components/ui/`. **Always check for existing 
 | **Dialog**            | Modal dialogs with backdrop, focus trap, escape handling  |
 | **Card**              | Container with border, background, and consistent padding |
 | **CardSection**       | Subsection within a Card, separated by a top border       |
+| **NoteBox**           | Subtle zinc-tinted box for notes and secondary content    |
 | **StatusCard**        | Colored card for info/success/warning/error states        |
 | **ClientLink**        | Internal navigation links (use instead of Next.js Link)   |
 | **TextLink**          | Accent-colored inline text link (`external` for new tab)  |
 | **InlineCode**        | Small monospace chip for inline code, URLs, file names    |
+| **Kbd**               | Keyboard key chip for displaying shortcut keys            |
 | **NavLink**           | Sidebar navigation links with active state and counts     |
 | **IconButton**        | Small icon-only action buttons (edit, close, etc.)        |
 | **NotFoundCard**      | Card for 404/missing content states                       |

@@ -11,6 +11,7 @@
 
 import { useCallback } from "react";
 import { Button } from "@/components/ui/button";
+import { NoteBox } from "@/components/ui/note-box";
 import {
   CheckIcon,
   AlertCircleIcon,
@@ -429,7 +430,7 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
 
       {/* Storage info section */}
       {downloadedCount > 0 && (
-        <div className="flex items-center justify-between rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800/50">
+        <NoteBox padding="sm" className="flex items-center justify-between">
           <span className="ui-text-xs text-zinc-600 dark:text-zinc-400">
             Storage used: {formatStorageSize(storageUsed)} ({downloadedCount}{" "}
             {downloadedCount === 1 ? "voice" : "voices"})
@@ -443,7 +444,7 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
               Delete All
             </button>
           )}
-        </div>
+        </NoteBox>
       )}
 
       {/* Info text */}

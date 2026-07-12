@@ -149,11 +149,10 @@ export function AppearanceSettings() {
       </SettingsSection>
 
       {/* Article Text Section */}
-      <SettingsSection title="Article Text">
-        <p className="ui-text-sm mb-6 text-zinc-600 dark:text-zinc-400">
-          These settings affect how article content is displayed in the entry view.
-        </p>
-
+      <SettingsSection
+        title="Article Text"
+        description="These settings affect how article content is displayed in the entry view."
+      >
         <div className="space-y-6">
           <OptionGroup
             label="Text Size"

@@ -249,14 +249,14 @@ function PasswordForm({ mode, onSuccess }: { mode: "set" | "change"; onSuccess: 
   };
 
   return (
-    <SettingsSection title={isSetMode ? "Set Password" : "Change Password"}>
-      {isSetMode && (
-        <p className="ui-text-sm mb-4 text-zinc-600 dark:text-zinc-400">
-          Your account was created with OAuth. Set a password to also log in with your email and
-          password.
-        </p>
-      )}
-
+    <SettingsSection
+      title={isSetMode ? "Set Password" : "Change Password"}
+      description={
+        isSetMode
+          ? "Your account was created with OAuth. Set a password to also log in with your email and password."
+          : undefined
+      }
+    >
       {successMessage && (
         <Alert variant="success" className="mb-4">
           {successMessage}
@@ -339,11 +339,11 @@ export default function AccountSettingsContent() {
       <KeyboardShortcutsSettings />
 
       {/* Privacy & Legal Section - fully static */}
-      <SettingsSection title="Privacy & Legal">
-        <p className="ui-text-sm text-zinc-600 dark:text-zinc-400">
-          Learn more about how we collect, use, and protect your data.
-        </p>
-        <div className="mt-4 flex gap-4">
+      <SettingsSection
+        title="Privacy & Legal"
+        description="Learn more about how we collect, use, and protect your data."
+      >
+        <div className="flex gap-4">
           <TextLink href="/privacy" className="ui-text-sm">
             View Privacy Policy &rarr;
           </TextLink>
