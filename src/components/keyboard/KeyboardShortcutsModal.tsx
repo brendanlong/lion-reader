@@ -12,6 +12,7 @@ import { useEffect, useRef } from "react";
 import { Dialog, DialogHeader, DialogBody, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { IconButton, CloseIcon } from "@/components/ui/icon-button";
+import { Kbd } from "@/components/ui/kbd";
 
 /**
  * Shortcut definition for display
@@ -126,9 +127,7 @@ export function KeyboardShortcutsModal({ isOpen, onClose }: KeyboardShortcutsMod
                         {index > 0 && (
                           <span className="ui-text-xs text-zinc-400 dark:text-zinc-500">then</span>
                         )}
-                        <kbd className="ui-text-xs inline-flex min-w-[24px] items-center justify-center rounded border border-zinc-300 bg-zinc-100 px-1.5 py-0.5 font-mono font-medium text-zinc-700 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-                          {key}
-                        </kbd>
+                        <Kbd>{key}</Kbd>
                       </span>
                     ))}
                   </div>

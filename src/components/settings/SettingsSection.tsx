@@ -83,7 +83,7 @@ export function SettingsSection({
       <SettingsSectionHeading>{title}</SettingsSectionHeading>
       <Card>
         {description && (
-          <p className="ui-text-sm mb-4 text-zinc-500 dark:text-zinc-400">{description}</p>
+          <p className="ui-text-sm mb-4 text-zinc-600 dark:text-zinc-400">{description}</p>
         )}
 
         {error && (

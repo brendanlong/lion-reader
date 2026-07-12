@@ -16,6 +16,7 @@ import { CardSection } from "@/components/ui/card";
 import { CopyButton } from "@/components/ui/copy-button";
 import { MobileIcon } from "@/components/ui/icon-button";
 import { InlineCode } from "@/components/ui/inline-code";
+import { NoteBox } from "@/components/ui/note-box";
 import { TextLink } from "@/components/ui/text-link";
 
 export function WallabagApiSettings() {
@@ -46,17 +47,19 @@ export function WallabagApiSettings() {
   }, [email, baseUrl, serverUrl]);
 
   return (
-    <SettingsSection title="Wallabag API (Save Articles)">
-      {/* Description */}
-      <p className="ui-text-sm text-zinc-600 dark:text-zinc-400">
-        Lion Reader exposes a{" "}
-        <TextLink href="https://doc.wallabag.org/developer/api/methods/" external>
-          Wallabag-compatible API
-        </TextLink>{" "}
-        so you can use the Wallabag app on your phone or tablet to save articles directly to Lion
-        Reader.
-      </p>
-
+    <SettingsSection
+      title="Wallabag API (Save Articles)"
+      description={
+        <>
+          Lion Reader exposes a{" "}
+          <TextLink href="https://doc.wallabag.org/developer/api/methods/" external>
+            Wallabag-compatible API
+          </TextLink>{" "}
+          so you can use the Wallabag app on your phone or tablet to save articles directly to Lion
+          Reader.
+        </>
+      }
+    >
       {/* Supported Clients */}
       <div className="mt-6">
         <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">Compatible Apps</h3>
@@ -86,14 +89,7 @@ export function WallabagApiSettings() {
           <p className="ui-text-sm mt-1 text-zinc-600 dark:text-zinc-400">
             Scan this QR code with your phone or tap the button below to auto-configure the Wallabag
             Android app. You&apos;ll need to enter your password, and fix the username if the{" "}
-            <code className="ui-text-xs rounded bg-zinc-100 px-1 font-mono dark:bg-zinc-800">
-              @
-            </code>{" "}
-            shows as{" "}
-            <code className="ui-text-xs rounded bg-zinc-100 px-1 font-mono dark:bg-zinc-800">
-              %40
-            </code>
-            .
+            <InlineCode>@</InlineCode> shows as <InlineCode>%40</InlineCode>.
           </p>
 
           <div className="mt-4 flex flex-col items-center gap-4 sm:flex-row sm:items-start">
@@ -113,11 +109,7 @@ export function WallabagApiSettings() {
               </a>
               <p className="ui-text-xs max-w-xs text-zinc-400 dark:text-zinc-500">
                 The QR code and button pre-fill the server URL and your email address. Client ID and
-                secret are both{" "}
-                <code className="rounded bg-zinc-100 px-1 font-mono dark:bg-zinc-800">
-                  wallabag
-                </code>
-                .
+                secret are both <InlineCode>wallabag</InlineCode>.
               </p>
             </div>
           </div>
@@ -169,12 +161,12 @@ export function WallabagApiSettings() {
       </CardSection>
 
       {/* How it works */}
-      <div className="mt-6 rounded-md border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800/50">
+      <NoteBox className="mt-6">
         <p className="ui-text-sm text-zinc-600 dark:text-zinc-400">
           When you share a URL to the Wallabag app, it will save it to your Lion Reader account as a
           saved article. You can also view, archive, star, and delete saved articles from the app.
         </p>
-      </div>
+      </NoteBox>
 
       {/* API base URL note */}
       {baseUrl && (

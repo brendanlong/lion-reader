@@ -11,6 +11,7 @@ import { useState } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { CardSection } from "@/components/ui/card";
+import { NoteBox } from "@/components/ui/note-box";
 import { InlineCode } from "@/components/ui/inline-code";
 import { DiscordIcon, ExternalLinkIcon } from "@/components/ui/icon-button";
 
@@ -60,13 +61,10 @@ export function DiscordBotSettings() {
   const errorEmoji = botConfig.errorEmoji ? formatEmoji(botConfig.errorEmoji) : null;
 
   return (
-    <SettingsSection title="Discord Bot">
-      {/* Description */}
-      <p className="ui-text-sm text-zinc-600 dark:text-zinc-400">
-        Save articles to Lion Reader by reacting to Discord messages. When you react to a message
-        containing a URL, the article will be saved to your account.
-      </p>
-
+    <SettingsSection
+      title="Discord Bot"
+      description="Save articles to Lion Reader by reacting to Discord messages. When you react to a message containing a URL, the article will be saved to your account."
+    >
       {/* Invite Button */}
       <div className="mt-6">
         <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">
@@ -156,7 +154,7 @@ export function DiscordBotSettings() {
       </CardSection>
 
       {/* Bot Commands */}
-      <div className="mt-6 rounded-md border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800/50">
+      <NoteBox className="mt-6">
         <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">Bot Commands</h3>
         <dl className="ui-text-sm mt-2 space-y-2 text-zinc-600 dark:text-zinc-400">
           <div>
@@ -172,7 +170,7 @@ export function DiscordBotSettings() {
             <dd className="ml-2 inline">- Remove your linked API token</dd>
           </div>
         </dl>
-      </div>
+      </NoteBox>
     </SettingsSection>
   );
 }

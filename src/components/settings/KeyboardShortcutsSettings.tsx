@@ -11,6 +11,7 @@ import { useKeyboardShortcutsContext } from "@/components/keyboard/KeyboardShort
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { CardSection } from "@/components/ui/card";
 import { InfoCircleIcon } from "@/components/ui/icon-button";
+import { Kbd } from "@/components/ui/kbd";
 
 export function KeyboardShortcutsSettings() {
   const { enabled, setEnabled, openShortcutsModal } = useKeyboardShortcutsContext();
@@ -53,11 +54,7 @@ export function KeyboardShortcutsSettings() {
         >
           <InfoCircleIcon className="h-4 w-4" />
           View all keyboard shortcuts
-          {enabled && (
-            <kbd className="ui-text-xs ml-1 rounded border border-zinc-300 bg-zinc-100 px-1.5 py-0.5 font-mono font-medium text-zinc-600 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
-              ?
-            </kbd>
-          )}
+          {enabled && <Kbd className="ml-1">?</Kbd>}
         </button>
       </CardSection>
     </SettingsSection>

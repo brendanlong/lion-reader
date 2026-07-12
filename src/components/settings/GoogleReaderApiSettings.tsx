@@ -12,6 +12,7 @@ import { SettingsSection } from "@/components/settings/SettingsSection";
 import { CardSection } from "@/components/ui/card";
 import { CopyButton } from "@/components/ui/copy-button";
 import { InlineCode } from "@/components/ui/inline-code";
+import { NoteBox } from "@/components/ui/note-box";
 import { TextLink } from "@/components/ui/text-link";
 
 export function GoogleReaderApiSettings() {
@@ -25,16 +26,18 @@ export function GoogleReaderApiSettings() {
   const apiBase = `${baseUrl}/api/greader.php/reader/api/0`;
 
   return (
-    <SettingsSection title="Google Reader API">
-      {/* Description */}
-      <p className="ui-text-sm text-zinc-600 dark:text-zinc-400">
-        Lion Reader exposes a{" "}
-        <TextLink href="https://feedhq.readthedocs.io/en/latest/api/" external>
-          Google Reader-compatible API
-        </TextLink>{" "}
-        so you can use third-party RSS reader apps to sync with your Lion Reader account.
-      </p>
-
+    <SettingsSection
+      title="Google Reader API"
+      description={
+        <>
+          Lion Reader exposes a{" "}
+          <TextLink href="https://feedhq.readthedocs.io/en/latest/api/" external>
+            Google Reader-compatible API
+          </TextLink>{" "}
+          so you can use third-party RSS reader apps to sync with your Lion Reader account.
+        </>
+      }
+    >
       {/* Supported Clients */}
       <div className="mt-6">
         <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">Compatible Apps</h3>
@@ -107,12 +110,12 @@ export function GoogleReaderApiSettings() {
       </CardSection>
 
       {/* Note */}
-      <div className="mt-6 rounded-md border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800/50">
+      <NoteBox className="mt-6">
         <p className="ui-text-sm text-zinc-600 dark:text-zinc-400">
           The API uses your regular Lion Reader credentials for authentication. All your
           subscriptions, tags, read state, and starred articles sync automatically.
         </p>
-      </div>
+      </NoteBox>
 
       {/* API base URL note */}
       {baseUrl && (

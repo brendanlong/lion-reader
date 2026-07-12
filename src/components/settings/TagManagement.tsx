@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { ChevronDownIcon, EditIcon, TrashIcon } from "@/components/ui/icon-button";
 import { ColorPicker, ColorDot } from "@/components/ui/color-picker";
 import { CardSection } from "@/components/ui/card";
+import { NoteBox } from "@/components/ui/note-box";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { SettingsSection } from "./SettingsSection";
 
@@ -308,7 +309,7 @@ function TagItem({ tag, onSuccess, onError }: TagItemProps) {
 
   if (isEditing && editingValues) {
     return (
-      <div className="flex flex-col gap-3 rounded-md border border-zinc-300 bg-zinc-50 p-4 sm:flex-row sm:items-center dark:border-zinc-600 dark:bg-zinc-800/50">
+      <NoteBox className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="flex flex-1 items-center gap-3">
           <div className="relative">
             <button
@@ -352,12 +353,12 @@ function TagItem({ tag, onSuccess, onError }: TagItemProps) {
             Save
           </Button>
         </div>
-      </div>
+      </NoteBox>
     );
   }
 
   return (
-    <div className="flex items-center justify-between rounded-md border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800/50">
+    <NoteBox className="flex items-center justify-between">
       <div className="flex items-center gap-3">
         <ColorDot color={tag.color} size="lg" />
         <div>
@@ -381,6 +382,6 @@ function TagItem({ tag, onSuccess, onError }: TagItemProps) {
           <TrashIcon className="h-4 w-4" />
         </Button>
       </div>
-    </div>
+    </NoteBox>
   );
 }

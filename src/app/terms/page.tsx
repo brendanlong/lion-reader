@@ -7,6 +7,7 @@
 
 import type { Metadata } from "next";
 import Link from "next/link";
+import { TextLink } from "@/components/ui/text-link";
 
 export const metadata: Metadata = {
   title: "Terms of Service - Lion Reader",
@@ -44,7 +45,7 @@ export default function TermsOfServicePage() {
             </p>
             <p className="mt-2 text-zinc-600 dark:text-zinc-400">
               Please also review our{" "}
-              <Link href="/privacy" className="text-accent hover:text-accent-hover underline">
+              <Link href="/privacy" className="text-accent hover:text-accent-hover font-medium">
                 Privacy Policy
               </Link>
               , which describes how we collect and use your data.
@@ -166,7 +167,7 @@ export default function TermsOfServicePage() {
             <p className="mt-2 text-zinc-600 dark:text-zinc-400">
               You may also delete your account at any time. Upon termination, your personal data
               will be handled according to our{" "}
-              <Link href="/privacy" className="text-accent hover:text-accent-hover underline">
+              <Link href="/privacy" className="text-accent hover:text-accent-hover font-medium">
                 Privacy Policy
               </Link>
               .
@@ -179,14 +180,9 @@ export default function TermsOfServicePage() {
             </h2>
             <p className="mt-2 text-zinc-600 dark:text-zinc-400">
               Lion Reader is open-source software. The source code is available on{" "}
-              <a
-                href="https://github.com/brendanlong/lion-reader"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-accent hover:text-accent-hover underline"
-              >
+              <TextLink href="https://github.com/brendanlong/lion-reader" external>
                 GitHub
-              </a>
+              </TextLink>
               . Content you subscribe to or save through the service remains the property of its
               respective owners. We do not claim ownership of any content fetched from external
               feeds.
@@ -226,14 +222,9 @@ export default function TermsOfServicePage() {
             <h2 className="ui-text-xl font-semibold text-zinc-900 dark:text-zinc-50">Contact</h2>
             <p className="mt-2 text-zinc-600 dark:text-zinc-400">
               If you have any questions about these Terms of Service, please open an issue on our{" "}
-              <a
-                href="https://github.com/brendanlong/lion-reader"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-accent hover:text-accent-hover underline"
-              >
+              <TextLink href="https://github.com/brendanlong/lion-reader" external>
                 GitHub repository
-              </a>
+              </TextLink>
               .
             </p>
           </section>

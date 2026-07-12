@@ -7,6 +7,7 @@
 
 import type { Metadata } from "next";
 import Link from "next/link";
+import { TextLink } from "@/components/ui/text-link";
 
 export const metadata: Metadata = {
   title: "Privacy Policy - Lion Reader",
@@ -206,14 +207,9 @@ export default function PrivacyPolicyPage() {
                   sent to external servers.
                 </p>
                 <p className="mt-2">
-                  <a
-                    href="https://groq.com/privacy-policy/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="ui-text-sm text-accent hover:text-accent-hover"
-                  >
+                  <TextLink href="https://groq.com/privacy-policy/" external className="ui-text-sm">
                     View Groq&apos;s Privacy Policy &rarr;
-                  </a>
+                  </TextLink>
                 </p>
               </div>
 

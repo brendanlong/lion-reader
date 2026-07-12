@@ -8,8 +8,8 @@ import type { ReactNode } from "react";
 
 export interface CardProps {
   children: ReactNode;
-  /** Padding size */
-  padding?: "sm" | "md" | "lg";
+  /** Padding size ("none" for containers whose rows carry their own padding) */
+  padding?: "none" | "sm" | "md" | "lg";
   /** Additional class name */
   className?: string;
 }
@@ -29,6 +29,7 @@ export interface CardProps {
  */
 export function Card({ children, padding = "lg", className = "" }: CardProps) {
   const paddingStyles = {
+    none: "",
     sm: "p-3",
     md: "p-4",
     lg: "p-6",

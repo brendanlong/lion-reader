@@ -44,16 +44,18 @@ export function IntegrationsSettings() {
   const claudeCodeCommand = `claude mcp add --transport http lionreader ${mcpUrl}`;
 
   return (
-    <SettingsSection title="AI Integrations">
-      {/* Description */}
-      <p className="ui-text-sm text-zinc-600 dark:text-zinc-400">
-        Connect Lion Reader to AI assistants via{" "}
-        <TextLink href="https://modelcontextprotocol.io/" external>
-          MCP (Model Context Protocol)
-        </TextLink>
-        . This lets Claude read, search, and manage your feeds directly.
-      </p>
-
+    <SettingsSection
+      title="AI Integrations"
+      description={
+        <>
+          Connect Lion Reader to AI assistants via{" "}
+          <TextLink href="https://modelcontextprotocol.io/" external>
+            MCP (Model Context Protocol)
+          </TextLink>
+          . This lets Claude read, search, and manage your feeds directly.
+        </>
+      }
+    >
       {/* Claude Code */}
       <div className="mt-6">
         <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">Claude Code</h3>
