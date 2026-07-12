@@ -307,13 +307,6 @@ CREATE TABLE public.sessions (
     last_active_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
-CREATE TABLE public.subscription_feeds (
-    subscription_id uuid NOT NULL,
-    feed_id uuid NOT NULL,
-    user_id uuid NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
 CREATE TABLE public.subscription_tags (
     subscription_id uuid NOT NULL,
     tag_id uuid NOT NULL,
@@ -554,9 +547,6 @@ ALTER TABLE ONLY public.sessions
 ALTER TABLE ONLY public.sessions
     ADD CONSTRAINT sessions_token_hash_unique UNIQUE (token_hash);
 
-ALTER TABLE ONLY public.subscription_feeds
-    ADD CONSTRAINT subscription_feeds_pkey PRIMARY KEY (subscription_id, feed_id);
-
 ALTER TABLE ONLY public.subscription_tags
     ADD CONSTRAINT subscription_tags_subscription_id_tag_id_pk PRIMARY KEY (subscription_id, tag_id);
 
@@ -681,10 +671,6 @@ CREATE INDEX idx_sessions_last_active ON public.sessions USING btree (last_activ
 
 CREATE INDEX idx_sessions_user ON public.sessions USING btree (user_id);
 
-CREATE INDEX idx_subscription_feeds_feed ON public.subscription_feeds USING btree (feed_id);
-
-CREATE INDEX idx_subscription_feeds_user_feed ON public.subscription_feeds USING btree (user_id, feed_id);
-
 CREATE INDEX idx_subscription_tags_subscription ON public.subscription_tags USING btree (subscription_id);
 
 CREATE INDEX idx_subscription_tags_tag ON public.subscription_tags USING btree (tag_id);
@@ -772,15 +758,6 @@ ALTER TABLE ONLY public.opml_imports
 
 ALTER TABLE ONLY public.sessions
     ADD CONSTRAINT sessions_user_id_users_id_fk FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY public.subscription_feeds
-    ADD CONSTRAINT subscription_feeds_feed_id_fkey FOREIGN KEY (feed_id) REFERENCES public.feeds(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY public.subscription_feeds
-    ADD CONSTRAINT subscription_feeds_subscription_id_fkey FOREIGN KEY (subscription_id) REFERENCES public.subscriptions(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY public.subscription_feeds
-    ADD CONSTRAINT subscription_feeds_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.subscription_tags
     ADD CONSTRAINT subscription_tags_subscription_id_subscriptions_id_fk FOREIGN KEY (subscription_id) REFERENCES public.subscriptions(id) ON DELETE CASCADE;

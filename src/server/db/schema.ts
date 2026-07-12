@@ -617,12 +617,6 @@ export const subscriptions = pgTable(
   ]
 );
 
-// The subscription_feeds junction table (subscription → covered feed IDs,
-// including redirect/merge history) still exists in the database but is no
-// longer read or written: entry → subscription resolution goes through
-// user_entries.subscription_id (issue #1117). The table is dropped in a
-// follow-up migration once no deployed release touches it.
-
 // ============================================================================
 // USER ENTRIES (visibility + state)
 // ============================================================================
@@ -676,8 +670,8 @@ export const userEntries = pgTable(
     // article (per-user feed with no subscription row). Filled inline by the bulk
     // insert paths or by the user_entries_fill_denormalized trigger; re-stamped by
     // the feed-merge job. Since migration 0087, visible_entries resolves entry
-    // visibility through this column; the subscription_feeds junction is no
-    // longer read or written and is slated for removal.
+    // visibility through this column (the old subscription_feeds junction was
+    // dropped in migration 0091).
     subscriptionId: uuid("subscription_id").references(() => subscriptions.id, {
       onDelete: "set null",
     }),

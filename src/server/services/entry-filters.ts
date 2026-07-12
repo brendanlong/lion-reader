@@ -42,9 +42,9 @@ type SubscriptionIdsCondition = string[] | SQLWrapper;
  *
  * Entries are attributed to exactly one subscription via
  * `user_entries.subscription_id` (surfaced as `visible_entries.subscription_id`),
- * which survives feed redirects/merges via the merge-job re-stamp — so filtering
- * on subscription IDs matches everything the old junction-derived feed-ID
- * filtering matched, without touching `subscription_feeds`.
+ * which survives feed redirects/merges via the merge-job re-stamp — so
+ * subscription-ID filtering always agrees with what the visibility view
+ * attributes.
  *
  * @property subscriptionIdsCondition - Either an array of subscription IDs, a
  *                                      subquery that returns subscription IDs,
