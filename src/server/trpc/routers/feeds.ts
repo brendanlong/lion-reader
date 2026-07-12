@@ -112,8 +112,10 @@ function truncateText(text: string | undefined, maxLength: number): string | nul
  * @returns A sample entry object
  */
 function toSampleEntry(entry: ParsedEntry, feedUrl: string): z.infer<typeof sampleEntrySchema> {
-  // Get the content to use for summary
-  let content = entry.summary ?? entry.content;
+  // Get the content to use for summary. mediaDescription is the fallback for
+  // feeds that provide neither (YouTube); it's plain text, which truncateText
+  // handles the same way.
+  let content = entry.summary ?? entry.content ?? entry.mediaDescription;
 
   // Apply feed-specific cleaning via the matching plugin (if any)
   if (content) {

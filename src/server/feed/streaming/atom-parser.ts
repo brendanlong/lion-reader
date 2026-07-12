@@ -22,6 +22,7 @@ type AtomParserState =
   | "in_entry_title"
   | "in_entry_summary"
   | "in_entry_content"
+  | "in_entry_media_description"
   | "in_entry_published"
   | "in_entry_updated"
   | "in_entry_author"
@@ -112,9 +113,16 @@ export function parseAtom(content: string): FeedParseResult {
           else if (tagName === "title") state = "in_entry_title";
           else if (tagName === "summary") state = "in_entry_summary";
           else if (tagName === "content") state = "in_entry_content";
+          // Media RSS: YouTube nests these in <media:group>, which doesn't
+          // change state, so they're seen here whether grouped or direct.
+          else if (tagName === "media:description") state = "in_entry_media_description";
           else if (tagName === "published") state = "in_entry_published";
           else if (tagName === "updated") state = "in_entry_updated";
           else if (tagName === "author") state = "in_entry_author";
+
+          if (tagName === "media:thumbnail" && attribs.url && !currentEntry.mediaThumbnailUrl) {
+            currentEntry.mediaThumbnailUrl = attribs.url;
+          }
 
           if (tagName === "link") {
             const rel = attribs.rel;
@@ -193,6 +201,9 @@ export function parseAtom(content: string): FeedParseResult {
           } else if (state === "in_entry_content") {
             currentEntryContent = decodedText;
             currentEntry.content = decodedText;
+            state = "in_entry";
+          } else if (state === "in_entry_media_description") {
+            currentEntry.mediaDescription = decodedText;
             state = "in_entry";
           } else if (state === "in_entry_published") {
             if (decodedText) {

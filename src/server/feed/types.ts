@@ -70,6 +70,14 @@ export interface ParsedEntry {
   summary?: string;
   /** Publication date of the entry */
   pubDate?: Date;
+  /**
+   * Media RSS `media:description` (plain text, NOT HTML). YouTube feeds carry
+   * the video description here and provide no `content`/`summary` at all;
+   * the YouTube plugin builds entry content from it (see `buildEntryContent`).
+   */
+  mediaDescription?: string;
+  /** Media RSS `media:thumbnail` URL (first one found). */
+  mediaThumbnailUrl?: string;
 }
 
 /**

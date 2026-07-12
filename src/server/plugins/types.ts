@@ -3,6 +3,8 @@
  * Consolidates custom parsing logic for feeds, entries, and saved articles.
  */
 
+import type { ParsedEntry } from "@/server/feed/types";
+
 /**
  * Core plugin interface with hostname-based registry support.
  */
@@ -51,6 +53,17 @@ export interface FeedCapability {
    * Runs synchronously during feed processing.
    */
   cleanEntryContent?(html: string): string;
+
+  /**
+   * Synthesize entry content HTML from the parsed entry, for sources whose
+   * feed entries carry no usable HTML body. E.g., YouTube feeds provide only
+   * Media RSS metadata, from which the plugin builds a video embed plus the
+   * description. The result is stored as the entry's cleaned content (the
+   * feed-provided content, if any, remains the original).
+   * Runs synchronously during feed processing; return null to fall back to
+   * normal content handling.
+   */
+  buildEntryContent?(entry: ParsedEntry, entryUrl: string | undefined): string | null;
 
   /**
    * Transform feed title after parsing.

@@ -52,10 +52,35 @@ export function cleanEntryContent(
   options: CleanEntryContentOptions = {}
 ): EntryContentResult {
   const { entryUrl, feedUrl } = options;
+  const feedCapability = getFeedPlugin(feedUrl)?.capabilities.feed;
   const originalContent = parsedEntry.content ?? parsedEntry.summary ?? null;
 
-  // If no content, return early
-  if (!originalContent) {
+  // Absolutize relative URLs in original content if we have a base URL
+  const absolutizedOriginal =
+    originalContent && entryUrl ? absolutizeUrls(originalContent, entryUrl) : originalContent;
+
+  let contentCleaned: string | null = null;
+
+  // Content synthesis via the matching plugin (if any): builds the entry body
+  // from parsed-entry metadata for sources whose feeds carry no usable HTML
+  // (e.g. YouTube's video embed + media:description). Takes precedence over
+  // cleaning — the synthesized body replaces the feed content for display.
+  const builder = feedCapability?.buildEntryContent;
+  if (builder) {
+    // Isolate plugin failures: a throwing hook must not fail the entry (or,
+    // since this runs per-entry, every entry of the feed).
+    try {
+      contentCleaned = builder(parsedEntry, entryUrl);
+    } catch (error) {
+      logger.warn("Plugin buildEntryContent hook threw; using feed content", {
+        feedUrl,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  // If no synthesized and no feed-provided content, return early
+  if (!contentCleaned && !absolutizedOriginal) {
     return {
       contentOriginal: null,
       contentCleaned: null,
@@ -63,19 +88,12 @@ export function cleanEntryContent(
     };
   }
 
-  // Absolutize relative URLs in original content if we have a base URL
-  const absolutizedOriginal = entryUrl
-    ? absolutizeUrls(originalContent, entryUrl)
-    : originalContent;
-
-  // Apply feed-specific content cleaning via the matching plugin (if any)
-  let contentCleaned: string | null = null;
-
-  const cleaner = getFeedPlugin(feedUrl)?.capabilities.feed.cleanEntryContent;
-  if (cleaner) {
-    // Isolate plugin failures: a throwing cleaner must not fail the entry (or,
-    // since this runs per-entry, every entry of the feed). Fall back to the
-    // uncleaned-but-absolutized content.
+  // Apply feed-specific content cleaning via the matching plugin (if any),
+  // unless synthesis already produced the cleaned content.
+  const cleaner = feedCapability?.cleanEntryContent;
+  if (!contentCleaned && absolutizedOriginal && cleaner) {
+    // Isolate plugin failures: fall back to the uncleaned-but-absolutized
+    // content.
     try {
       const cleaned = cleaner(absolutizedOriginal);
       // Only set contentCleaned if cleaning actually changed something
@@ -95,7 +113,8 @@ export function cleanEntryContent(
   // AND they are different, meaning the summary is actually intended as an excerpt.
   // When content === summary (like RSS feeds without content:encoded), the parser
   // sets both to the same value, so we should use cleaned content for summary.
-  const contentForSummary = contentCleaned ?? absolutizedOriginal;
+  // Non-null: the early return above fires when both are null.
+  const contentForSummary = contentCleaned ?? absolutizedOriginal ?? "";
   const { content: entryContent, summary: entrySummary } = parsedEntry;
   const hasSeparateSummary = entryContent && entrySummary && entryContent !== entrySummary;
   const summary = hasSeparateSummary

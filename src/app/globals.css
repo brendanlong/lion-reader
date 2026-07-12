@@ -304,6 +304,23 @@ body {
 }
 
 /* =================================
+   Reader Prose Video Embeds
+
+   The only iframes that survive sanitization are YouTube embeds (see
+   sanitize.ts). Feed-supplied width/height attributes are arbitrary, so make
+   the player fill the column at the standard 16:9 aspect instead.
+   ================================= */
+
+.reader-prose iframe {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  border: 0;
+  border-radius: 0.5rem;
+}
+
+/* =================================
    Prose Link Hover
    Element-level hover so only the hovered link changes color,
    not all links in the entry.
