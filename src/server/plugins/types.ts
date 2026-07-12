@@ -65,6 +65,15 @@ export interface FeedCapability {
    * Falls back to feed's own site name if not provided.
    */
   siteName?: string;
+
+  /**
+   * Minimum polling interval in seconds for feeds from this source, raising
+   * the floor on the scheduler's success-path interval (it never lowers the
+   * context minimum, and failure backoff is unaffected).
+   * E.g. YouTube serves `Cache-Control: max-age=900`, but polling every
+   * channel every 15 minutes is a fast way to get an IP rate-limited.
+   */
+  minFetchIntervalSeconds?: number;
 }
 
 export interface FeedTitleContext {

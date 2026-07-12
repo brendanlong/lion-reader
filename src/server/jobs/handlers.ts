@@ -371,11 +371,13 @@ async function processSuccessfulFetch(
   // This allows parsedFeed.items (the large part) to be GC'd after processEntries
   let feedTitle = parsedFeed.title;
 
+  const feedPlugin = feed.url ? getFeedPlugin(feed.url) : null;
+
   // Let a matching plugin transform the feed title. For LessWrong user feeds this
   // appends the author name (e.g. "LessWrong - Brendan Long" instead of just
   // "LessWrong"), and automatically updates if the user changes their display name.
   if (feed.url && feedTitle) {
-    const transformTitle = getFeedPlugin(feed.url)?.capabilities.feed.transformFeedTitle;
+    const transformTitle = feedPlugin?.capabilities.feed.transformFeedTitle;
     if (transformTitle) {
       // Isolate plugin failures: a throwing hook must not fail the whole fetch.
       // Fall back to the untransformed title.
@@ -447,6 +449,8 @@ async function processSuccessfulFetch(
       syndication: feedMetadata.syndication,
     },
     consecutiveFailures: 0, // Reset failures on success
+    // Source-specific polling floor (e.g. YouTube's rate-limit-avoiding 1h)
+    minIntervalSeconds: feedPlugin?.capabilities.feed.minFetchIntervalSeconds,
     websubActive: feed.websubActive ?? false,
     now,
   });
@@ -616,6 +620,7 @@ async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<
         const nextFetch = calculateNextFetch({
           cacheControl: result.cacheHeaders.cacheControl,
           consecutiveFailures: 0,
+          minIntervalSeconds: getFeedPlugin(feed.url)?.capabilities.feed.minFetchIntervalSeconds,
           websubActive: feed.websubActive ?? false,
           now,
         });
@@ -680,6 +685,7 @@ async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<
       const nextFetch = calculateNextFetch({
         cacheControl: result.cacheHeaders.cacheControl,
         consecutiveFailures: 0,
+        minIntervalSeconds: getFeedPlugin(feed.url)?.capabilities.feed.minFetchIntervalSeconds,
         websubActive: feed.websubActive ?? false,
         now,
       });
@@ -712,55 +718,35 @@ async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<
     // fetch result — applying a redirect immediately here would contradict that wait.
 
     case "client_error": {
-      if (result.permanent) {
-        // Permanent error (404, 410) - the original URL is broken
-        // If we have a tracked redirect URL, apply it immediately since the original is gone
-        if (feed.redirectUrl) {
-          logger.info("Original URL broken, applying tracked redirect", {
-            feedId: feed.id,
-            originalUrl: feed.url,
-            redirectUrl: feed.redirectUrl,
-            error: result.message,
-          });
-
-          const redirectResult = await applyRedirectMigration(feed, feed.redirectUrl, now);
-          return {
-            success: true,
-            nextRunAt: redirectResult.nextRunAt ?? now,
-            metadata: {
-              ...redirectResult.metadata,
-              originalUrlBroken: true,
-              originalError: result.message,
-            },
-          };
-        }
-
-        // No tracked redirect - schedule far in future but don't stop entirely
-        // The job will remain enabled in case the feed comes back
-        const nextFetch = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 days
-
-        await db
-          .update(feeds)
-          .set({
-            lastFetchedAt: now,
-            nextFetchAt: nextFetch,
-            consecutiveFailures: (feed.consecutiveFailures ?? 0) + 1,
-            lastError: result.message,
-            updatedAt: now,
-          })
-          .where(eq(feeds.id, feed.id));
-
-        return {
-          success: false,
-          nextRunAt: nextFetch,
+      if (result.permanent && feed.redirectUrl) {
+        // Permanent error (404, 410) with a tracked redirect URL - the original
+        // URL is broken, so apply the redirect immediately
+        logger.info("Original URL broken, applying tracked redirect", {
+          feedId: feed.id,
+          originalUrl: feed.url,
+          redirectUrl: feed.redirectUrl,
           error: result.message,
+        });
+
+        const redirectResult = await applyRedirectMigration(feed, feed.redirectUrl, now);
+        return {
+          success: true,
+          nextRunAt: redirectResult.nextRunAt ?? now,
           metadata: {
-            permanent: true,
+            ...redirectResult.metadata,
+            originalUrlBroken: true,
+            originalError: result.message,
           },
         };
       }
 
-      // Temporary client error - backoff
+      // All other client errors - exponential backoff. This deliberately
+      // includes "permanent" 404/410 with no tracked redirect: a single 404 is
+      // not proof the feed is gone (YouTube returns 404 for all of its feeds
+      // for a few hours most days — issue #1114), and jumping straight to a
+      // 7-day next fetch turns one poll landing in such a window into a week
+      // of staleness. The backoff ladder reaches the same 7-day cadence
+      // anyway once a feed 404s persistently, and one success resets it.
       return handleTemporaryError(feed, result.message, now);
     }
 
@@ -797,7 +783,10 @@ async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<
           ? result.retryAfter
           : undefined;
 
-      return handleTemporaryError(feed, errorMessage, now, retryAfterSeconds);
+      return handleTemporaryError(feed, errorMessage, now, {
+        retryAfterSeconds,
+        rateLimited: result.status === "rate_limited",
+      });
     }
 
     default: {
@@ -810,20 +799,23 @@ async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<
 /**
  * Handles temporary errors by calculating backoff and updating the feed.
  *
- * @param retryAfterSeconds - Server-requested retry delay (Retry-After header),
- *   honored as a floor on the exponential backoff when present.
+ * @param options.retryAfterSeconds - Server-requested retry delay (Retry-After
+ *   header), honored as a floor on the exponential backoff when present.
+ * @param options.rateLimited - Whether the failure was a 429; caps the backoff
+ *   at RATE_LIMIT_MAX_BACKOFF_SECONDS instead of the 7-day max.
  */
 async function handleTemporaryError(
   feed: Feed,
   errorMessage: string,
   now: Date,
-  retryAfterSeconds?: number
+  options: { retryAfterSeconds?: number; rateLimited?: boolean } = {}
 ): Promise<JobHandlerResult> {
   const newFailureCount = (feed.consecutiveFailures ?? 0) + 1;
 
   const nextFetch = calculateNextFetch({
     consecutiveFailures: newFailureCount,
-    retryAfterSeconds,
+    retryAfterSeconds: options.retryAfterSeconds,
+    rateLimited: options.rateLimited,
     websubActive: feed.websubActive ?? false,
     now,
   });
