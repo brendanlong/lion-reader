@@ -63,14 +63,14 @@ export function StickyEntryControls({
 
   return (
     <div className="pointer-events-none sticky bottom-0 -mx-4 flex justify-center px-4 pb-4">
-      <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-zinc-200 bg-white/95 px-3 py-1.5 shadow-lg backdrop-blur-sm dark:border-zinc-700 dark:bg-zinc-900/95">
+      <div className="border-edge-strong pointer-events-auto flex items-center gap-2 rounded-full border bg-white/95 px-3 py-1.5 shadow-lg backdrop-blur-sm dark:bg-zinc-900/95">
         {/* Star button */}
         <button
           onClick={onToggleStar}
           className={`flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full transition-colors ${
             starred
               ? "text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-950"
-              : "text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+              : "text-subtle hover:bg-zinc-100 dark:hover:bg-zinc-800"
           }`}
           aria-label={starred ? "Remove from starred" : "Add to starred"}
         >
@@ -86,7 +86,7 @@ export function StickyEntryControls({
           className={`flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full transition-colors ${
             !read
               ? "text-accent hover:bg-accent-subtle"
-              : "text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+              : "text-subtle hover:bg-zinc-100 dark:hover:bg-zinc-800"
           }`}
           aria-label={read ? "Mark as unread" : "Mark as read"}
           title="Keyboard shortcut: m"

@@ -70,7 +70,7 @@ function ProgressBar({ progress, size }: { progress: number; size: number }) {
           style={{ width: `${percent}%` }}
         />
       </div>
-      <p className="ui-text-xs mt-1 text-zinc-500 dark:text-zinc-400">
+      <p className="ui-text-xs text-subtle mt-1">
         {percent}% ({downloadedMB} MB / {totalMB} MB)
       </p>
     </div>
@@ -134,8 +134,8 @@ function VoiceItem({
         isSelected
           ? "border-zinc-900 bg-zinc-50 dark:border-zinc-400 dark:bg-zinc-800"
           : isDownloaded
-            ? "cursor-pointer border-zinc-200 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800/50"
-            : "border-zinc-200 dark:border-zinc-700"
+            ? "border-edge-strong cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+            : "border-edge-strong"
       }`}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
@@ -162,12 +162,8 @@ function VoiceItem({
           {/* Voice info */}
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                {voice.displayName}
-              </span>
-              <span className="ui-text-xs text-zinc-500 dark:text-zinc-400">
-                - {voice.description}
-              </span>
+              <span className="ui-text-sm text-strong font-medium">{voice.displayName}</span>
+              <span className="ui-text-xs text-subtle">- {voice.description}</span>
             </div>
 
             {/* Status line */}
@@ -185,15 +181,11 @@ function VoiceItem({
                   {errorInfo.message}
                 </div>
                 {errorInfo.suggestion && (
-                  <p className="ui-text-xs text-zinc-500 dark:text-zinc-400">
-                    {errorInfo.suggestion}
-                  </p>
+                  <p className="ui-text-xs text-subtle">{errorInfo.suggestion}</p>
                 )}
               </div>
             ) : (
-              <p className="ui-text-xs mt-1 text-zinc-500 dark:text-zinc-400">
-                {formatSize(voice.sizeBytes)}
-              </p>
+              <p className="ui-text-xs text-subtle mt-1">{formatSize(voice.sizeBytes)}</p>
             )}
           </div>
         </div>
@@ -202,7 +194,7 @@ function VoiceItem({
         <div className="flex flex-shrink-0 items-center gap-2">
           {isDownloading ? (
             // Cancel button during download (optional - just showing spinner for now)
-            <div className="ui-text-xs flex items-center gap-2 text-zinc-500 dark:text-zinc-400">
+            <div className="ui-text-xs text-subtle flex items-center gap-2">
               <SpinnerIcon className="h-4 w-4" />
               Downloading...
             </div>
@@ -243,7 +235,7 @@ function VoiceItem({
                   e.stopPropagation();
                   onDelete();
                 }}
-                className="rounded-md p-2 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+                className="text-faint rounded-md p-2 transition-colors hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
                 title="Delete voice"
               >
                 <TrashIcon className="h-4 w-4" />
@@ -361,7 +353,7 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
     return (
       <div className="flex items-center justify-center py-8">
         <SpinnerIcon className="h-6 w-6 text-zinc-400" />
-        <span className="ui-text-sm ml-2 text-zinc-500 dark:text-zinc-400">Loading voices...</span>
+        <span className="ui-text-sm text-subtle ml-2">Loading voices...</span>
       </div>
     );
   }
@@ -431,7 +423,7 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
       {/* Storage info section */}
       {downloadedCount > 0 && (
         <NoteBox padding="sm" className="flex items-center justify-between">
-          <span className="ui-text-xs text-zinc-600 dark:text-zinc-400">
+          <span className="ui-text-xs text-muted">
             Storage used: {formatStorageSize(storageUsed)} ({downloadedCount}{" "}
             {downloadedCount === 1 ? "voice" : "voices"})
           </span>
@@ -439,7 +431,7 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
             <button
               type="button"
               onClick={handleDeleteAllVoices}
-              className="ui-text-xs text-zinc-500 underline hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+              className="ui-text-xs text-subtle underline hover:text-zinc-700 dark:hover:text-zinc-200"
             >
               Delete All
             </button>
@@ -448,7 +440,7 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
       )}
 
       {/* Info text */}
-      <p className="ui-text-xs text-zinc-500 dark:text-zinc-400">
+      <p className="ui-text-xs text-subtle">
         Enhanced voices run entirely in your browser. Once downloaded, they work offline.
       </p>
     </div>

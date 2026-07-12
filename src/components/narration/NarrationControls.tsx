@@ -196,7 +196,7 @@ export function NarrationControlsImpl({
 
       {/* Paragraph indicator - only show when active */}
       {isActive && totalParagraphs > 0 && (
-        <span className="ui-text-xs text-zinc-500 dark:text-zinc-400">
+        <span className="ui-text-xs text-subtle">
           {currentParagraph + 1} of {totalParagraphs}
         </span>
       )}

@@ -152,7 +152,7 @@ export function Dialog({
       {/* Dialog container */}
       <div
         ref={dialogRef}
-        className={`relative z-10 mx-4 w-full ${sizeStyles[size]} rounded-lg border border-zinc-200 bg-white p-6 shadow-lg dark:border-zinc-700 dark:bg-zinc-900 ${className}`}
+        className={`relative z-10 mx-4 w-full ${sizeStyles[size]} border-edge-strong bg-surface rounded-lg border p-6 shadow-lg ${className}`}
       >
         {children}
       </div>
@@ -183,7 +183,7 @@ export interface DialogTitleProps {
 
 export function DialogTitle({ children, id, className = "" }: DialogTitleProps) {
   return (
-    <h2 id={id} className={`ui-text-lg font-semibold text-zinc-900 dark:text-zinc-50 ${className}`}>
+    <h2 id={id} className={`ui-text-lg text-strong font-semibold ${className}`}>
       {children}
     </h2>
   );
@@ -198,9 +198,7 @@ export interface DialogDescriptionProps {
 }
 
 export function DialogDescription({ children, className = "" }: DialogDescriptionProps) {
-  return (
-    <p className={`ui-text-sm mt-2 text-zinc-600 dark:text-zinc-400 ${className}`}>{children}</p>
-  );
+  return <p className={`ui-text-sm text-muted mt-2 ${className}`}>{children}</p>;
 }
 
 /**

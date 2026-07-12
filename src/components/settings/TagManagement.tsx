@@ -61,7 +61,7 @@ function TagManagementContent() {
       {/* Tag list */}
       <CardSection>
         {tags.length === 0 ? (
-          <p className="ui-text-sm text-zinc-500 dark:text-zinc-400">
+          <p className="ui-text-sm text-subtle">
             No tags created yet. Create your first tag above.
           </p>
         ) : (
@@ -157,17 +157,15 @@ function CreateTagForm({ onSuccess, onError }: CreateTagFormProps) {
       </div>
 
       <div className="relative">
-        <label className="ui-text-sm mb-1.5 block font-medium text-zinc-700 dark:text-zinc-300">
-          Color
-        </label>
+        <label className="ui-text-sm text-body mb-1.5 block font-medium">Color</label>
         <button
           type="button"
           onClick={() => setShowColorPicker(!showColorPicker)}
-          className="ui-text-sm flex h-[38px] items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 py-2 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800"
+          className="ui-text-sm bg-surface flex h-[38px] items-center gap-2 rounded-md border border-zinc-300 px-3 py-2 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
           disabled={createMutation.isPending}
         >
           <ColorDot color={color} size="md" />
-          <span className="text-zinc-700 dark:text-zinc-300">
+          <span className="text-body">
             {TAG_COLORS.find((c) => c.value === color)?.name ?? "Select"}
           </span>
           <ChevronDownIcon className="h-4 w-4 text-zinc-400" />
@@ -276,10 +274,8 @@ function TagItem({ tag, onSuccess, onError }: TagItemProps) {
         <div className="flex items-center gap-3">
           <ColorDot color={tag.color} size="lg" />
           <div>
-            <p className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-50">
-              Delete &quot;{tag.name}&quot;?
-            </p>
-            <p className="ui-text-xs text-zinc-500 dark:text-zinc-400">
+            <p className="ui-text-sm text-strong font-medium">Delete &quot;{tag.name}&quot;?</p>
+            <p className="ui-text-xs text-subtle">
               This will remove the tag from all {tag.feedCount} subscription
               {tag.feedCount !== 1 ? "s" : ""}.
             </p>
@@ -335,7 +331,7 @@ function TagItem({ tag, onSuccess, onError }: TagItemProps) {
             type="text"
             value={editingValues.name}
             onChange={(e) => setEditingValues({ ...editingValues, name: e.target.value })}
-            className="ui-text-sm flex-1 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-zinc-900 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+            className="ui-text-sm bg-surface text-strong flex-1 rounded-md border border-zinc-300 px-3 py-1.5 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none dark:border-zinc-600 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
             disabled={updateMutation.isPending}
             autoFocus
           />
@@ -362,8 +358,8 @@ function TagItem({ tag, onSuccess, onError }: TagItemProps) {
       <div className="flex items-center gap-3">
         <ColorDot color={tag.color} size="lg" />
         <div>
-          <p className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-50">{tag.name}</p>
-          <p className="ui-text-xs text-zinc-500 dark:text-zinc-400">
+          <p className="ui-text-sm text-strong font-medium">{tag.name}</p>
+          <p className="ui-text-xs text-subtle">
             {tag.feedCount} feed{tag.feedCount !== 1 ? "s" : ""}
           </p>
         </div>

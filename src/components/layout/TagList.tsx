@@ -80,7 +80,7 @@ function TagListContent({
   };
 
   if (!hasTags) {
-    return <p className="ui-text-sm px-3 text-zinc-500 dark:text-zinc-400">No unread feeds</p>;
+    return <p className="ui-text-sm text-subtle px-3">No unread feeds</p>;
   }
 
   return (
@@ -101,7 +101,7 @@ function TagListContent({
                   e.stopPropagation();
                   toggleExpanded(tag.id);
                 }}
-                className="flex h-6 w-6 shrink-0 items-center justify-center text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-300"
+                className="text-subtle flex h-6 w-6 shrink-0 items-center justify-center hover:text-zinc-700 dark:hover:text-zinc-300"
                 aria-label={expanded ? "Collapse" : "Expand"}
               >
                 {expanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
@@ -146,7 +146,7 @@ function TagListContent({
                 e.stopPropagation();
                 toggleExpanded("uncategorized");
               }}
-              className="flex h-6 w-6 shrink-0 items-center justify-center text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-300"
+              className="text-subtle flex h-6 w-6 shrink-0 items-center justify-center hover:text-zinc-700 dark:hover:text-zinc-300"
               aria-label={isExpanded("uncategorized") ? "Collapse" : "Expand"}
             >
               {isExpanded("uncategorized") ? <ChevronDownIcon /> : <ChevronRightIcon />}
@@ -189,7 +189,7 @@ function TagListSkeleton() {
   return (
     <div className="space-y-2">
       {[1, 2, 3].map((i) => (
-        <div key={i} className="h-9 animate-pulse rounded-md bg-zinc-100 dark:bg-zinc-800" />
+        <div key={i} className="bg-surface-muted h-9 animate-pulse rounded-md" />
       ))}
     </div>
   );

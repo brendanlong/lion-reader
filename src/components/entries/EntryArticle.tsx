@@ -107,19 +107,19 @@ export function EntryArticle({
                 href={url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="ui-text-xl sm:ui-text-2xl hover:text-accent block leading-tight font-bold text-zinc-900 underline-offset-2 transition-colors hover:underline md:text-3xl dark:text-zinc-100"
+                className="ui-text-xl sm:ui-text-2xl hover:text-accent block leading-tight font-bold text-strong underline-offset-2 transition-colors hover:underline md:text-3xl"
               >
                 {title}
               </a>
             ) : (
-              <h1 className="ui-text-xl sm:ui-text-2xl leading-tight font-bold text-zinc-900 md:text-3xl dark:text-zinc-100">
+              <h1 className="ui-text-xl sm:ui-text-2xl leading-tight font-bold text-strong md:text-3xl">
                 {title}
               </h1>
             )}
           </div>
 
           {/* Meta row: Source, Author, Date */}
-          <div className="ui-text-xs sm:ui-text-sm flex flex-wrap items-center gap-x-3 gap-y-1 text-zinc-600 sm:gap-x-4 sm:gap-y-2 dark:text-zinc-400">
+          <div className="ui-text-xs sm:ui-text-sm flex flex-wrap items-center gap-x-3 gap-y-1 text-muted sm:gap-x-4 sm:gap-y-2">
             <span className="font-medium">{source}</span>
             {author && author.toLowerCase().trim() !== source.toLowerCase().trim() && (
               <>
@@ -148,7 +148,7 @@ export function EntryArticle({
       </header>
 
       {/* Divider */}
-      <hr className="mb-6 border-zinc-200 sm:mb-8 dark:border-zinc-700" />
+      <hr className="mb-6 border-edge-strong sm:mb-8" />
 
       {/* Before content slot (summary card, narration highlight styles) */}
       {beforeContent}
@@ -171,7 +171,7 @@ export function EntryArticle({
 
       {/* Footer with original link and unsubscribe link */}
       {(url || unsubscribeUrl) && (
-        <footer className="mt-8 border-t border-zinc-200 pt-6 sm:mt-12 sm:pt-8 dark:border-zinc-700">
+        <footer className="mt-8 border-t border-edge-strong pt-6 sm:mt-12 sm:pt-8">
           <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
             {url && (
               <a
@@ -189,7 +189,7 @@ export function EntryArticle({
                 href={unsubscribeUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="ui-text-sm inline-flex min-h-[44px] items-center gap-2 font-medium text-zinc-500 transition-colors hover:text-zinc-700 active:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-300 dark:active:text-zinc-200"
+                className="ui-text-sm inline-flex min-h-[44px] items-center gap-2 font-medium text-subtle transition-colors hover:text-zinc-700 active:text-zinc-800 dark:hover:text-zinc-300 dark:active:text-zinc-200"
               >
                 <ExternalLinkIcon className="h-4 w-4" />
                 Unsubscribe

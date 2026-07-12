@@ -54,7 +54,7 @@ function StatusBadge({ status }: StatusBadgeProps) {
   const styles = {
     pending: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
     used: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300",
-    expired: "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400",
+    expired: "bg-surface-muted text-subtle",
   };
 
   return (
@@ -92,9 +92,7 @@ function CreatedInviteDisplay({ inviteUrl, onDismiss }: CreatedInviteProps) {
   return (
     <StatusCard variant="info" className="mb-6">
       <div className="flex flex-col gap-2">
-        <p className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-50">
-          Invite created successfully
-        </p>
+        <p className="ui-text-sm text-strong font-medium">Invite created successfully</p>
         <div className="flex items-center gap-2">
           <code className="ui-text-sm flex-1 truncate rounded bg-white/60 px-2 py-1 dark:bg-zinc-800/60">
             {inviteUrl}
@@ -106,7 +104,7 @@ function CreatedInviteDisplay({ inviteUrl, onDismiss }: CreatedInviteProps) {
         </div>
         <button
           onClick={onDismiss}
-          className="ui-text-sm self-start text-zinc-500 underline hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+          className="ui-text-sm text-subtle self-start underline hover:text-zinc-700 dark:hover:text-zinc-200"
         >
           Dismiss
         </button>
@@ -137,16 +135,14 @@ interface InviteRowProps {
 
 function InviteRow({ invite, onRevoke, isRevoking }: InviteRowProps) {
   return (
-    <div className="flex flex-col gap-2 border-b border-zinc-200 p-4 last:border-b-0 sm:flex-row sm:items-center sm:justify-between dark:border-zinc-800">
+    <div className="border-edge flex flex-col gap-2 border-b p-4 last:border-b-0 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <StatusBadge status={invite.status} />
-          <code className="ui-text-sm text-zinc-600 dark:text-zinc-400">
-            {truncateToken(invite.token)}
-          </code>
+          <code className="ui-text-sm text-muted">{truncateToken(invite.token)}</code>
         </div>
 
-        <div className="ui-text-xs mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-zinc-500 dark:text-zinc-400">
+        <div className="ui-text-xs text-subtle mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5">
           <span>Created: {formatDate(invite.createdAt)}</span>
           <span>Expires: {formatDate(invite.expiresAt)}</span>
           {invite.usedAt && <span>Used: {formatDate(invite.usedAt)}</span>}
@@ -154,7 +150,7 @@ function InviteRow({ invite, onRevoke, isRevoking }: InviteRowProps) {
 
         {invite.status === "used" && invite.usedByEmail && (
           <p className="ui-text-sm mt-1">
-            <span className="text-zinc-500 dark:text-zinc-400">Used by: </span>
+            <span className="text-subtle">Used by: </span>
             <ClientLink
               href={`/admin/users?search=${encodeURIComponent(invite.usedByEmail)}`}
               className="text-blue-600 underline hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
@@ -189,10 +185,10 @@ function InviteRow({ invite, onRevoke, isRevoking }: InviteRowProps) {
 function EmptyState({ hasSearch }: { hasSearch: boolean }) {
   return (
     <div className="p-8 text-center">
-      <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-50">
+      <h3 className="ui-text-sm text-strong font-medium">
         {hasSearch ? "No matching invites" : "No invites yet"}
       </h3>
-      <p className="ui-text-sm mt-1 text-zinc-500 dark:text-zinc-400">
+      <p className="ui-text-sm text-subtle mt-1">
         {hasSearch ? "Try a different search term." : "Generate an invite to get started."}
       </p>
     </div>
@@ -304,7 +300,7 @@ export default function AdminInvitesContent() {
     <div>
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
-        <h2 className="ui-text-lg font-semibold text-zinc-900 dark:text-zinc-50">Invites</h2>
+        <h2 className="ui-text-lg text-strong font-semibold">Invites</h2>
         <Button
           onClick={() => createInviteMutation.mutate({})}
           loading={createInviteMutation.isPending}
@@ -370,15 +366,13 @@ export default function AdminInvitesContent() {
           {invitesQuery.isFetchingNextPage && (
             <div className="flex items-center justify-center p-4">
               <SpinnerIcon className="mr-2 h-4 w-4 text-zinc-400" />
-              <span className="ui-text-sm text-zinc-500 dark:text-zinc-400">Loading more...</span>
+              <span className="ui-text-sm text-subtle">Loading more...</span>
             </div>
           )}
 
           {/* End of list */}
           {!invitesQuery.hasNextPage && invites.length > 0 && (
-            <p className="ui-text-xs p-3 text-center text-zinc-400 dark:text-zinc-500">
-              No more invites
-            </p>
+            <p className="ui-text-xs text-faint p-3 text-center">No more invites</p>
           )}
         </Card>
       )}

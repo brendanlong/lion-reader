@@ -85,15 +85,13 @@ export default function SessionsSettingsContent() {
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="ui-text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-          Active Sessions
-        </h2>
-        <span className="ui-text-sm text-zinc-500 dark:text-zinc-400">
+        <h2 className="ui-text-lg text-strong font-semibold">Active Sessions</h2>
+        <span className="ui-text-sm text-subtle">
           {sessionsQuery.data?.sessions.length ?? 0} active
         </span>
       </div>
 
-      <p className="ui-text-sm mb-6 text-zinc-600 dark:text-zinc-400">
+      <p className="ui-text-sm text-muted mb-6">
         These are the devices that are currently logged into your account. You can revoke any
         session that you do not recognize.
       </p>
@@ -156,23 +154,23 @@ function SessionCard({ session, onRevoke, isRevoking }: SessionCardProps) {
       className={`rounded-lg border p-3 sm:p-4 ${
         session.isCurrent
           ? "border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950"
-          : "border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900"
+          : "border-edge bg-surface"
       }`}
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex-1">
           <div className="flex items-center gap-2">
             {/* Device icon */}
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800">
+            <div className="bg-surface-muted flex h-8 w-8 shrink-0 items-center justify-center rounded-full">
               {platform === "iOS" || platform === "Android" ? (
-                <MobileIcon className="h-4 w-4 text-zinc-600 dark:text-zinc-400" />
+                <MobileIcon className="text-muted h-4 w-4" />
               ) : (
-                <DesktopIcon className="h-4 w-4 text-zinc-600 dark:text-zinc-400" />
+                <DesktopIcon className="text-muted h-4 w-4" />
               )}
             </div>
 
             <div className="min-w-0 flex-1">
-              <p className="font-medium text-zinc-900 dark:text-zinc-50">
+              <p className="text-strong font-medium">
                 {browser} on {platform}
               </p>
               {session.isCurrent && (
@@ -180,13 +178,11 @@ function SessionCard({ session, onRevoke, isRevoking }: SessionCardProps) {
                   Current session
                 </span>
               )}
-              <p className="ui-text-sm text-zinc-500 dark:text-zinc-400">
-                {session.ipAddress || "Unknown IP"}
-              </p>
+              <p className="ui-text-sm text-subtle">{session.ipAddress || "Unknown IP"}</p>
             </div>
           </div>
 
-          <div className="ui-text-xs mt-2 flex flex-wrap gap-x-4 gap-y-1 text-zinc-500 dark:text-zinc-400">
+          <div className="ui-text-xs text-subtle mt-2 flex flex-wrap gap-x-4 gap-y-1">
             <span>Last active: {formatRelativeTime(lastActive)}</span>
             <span>
               Created:{" "}

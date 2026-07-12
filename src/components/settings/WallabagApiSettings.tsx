@@ -62,8 +62,8 @@ export function WallabagApiSettings() {
     >
       {/* Supported Clients */}
       <div className="mt-6">
-        <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">Compatible Apps</h3>
-        <ul className="ui-text-sm mt-2 list-inside list-disc space-y-1 text-zinc-600 dark:text-zinc-400">
+        <h3 className="ui-text-sm text-strong font-medium">Compatible Apps</h3>
+        <ul className="ui-text-sm text-muted mt-2 list-inside list-disc space-y-1">
           <li>
             <TextLink
               href="https://play.google.com/store/apps/details?id=fr.gaulupeau.apps.InThePoche"
@@ -85,8 +85,8 @@ export function WallabagApiSettings() {
       {/* Quick Setup: QR Code + Deep Link */}
       {wallabagDeepLink && (
         <CardSection>
-          <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">Quick Setup</h3>
-          <p className="ui-text-sm mt-1 text-zinc-600 dark:text-zinc-400">
+          <h3 className="ui-text-sm text-strong font-medium">Quick Setup</h3>
+          <p className="ui-text-sm text-muted mt-1">
             Scan this QR code with your phone or tap the button below to auto-configure the Wallabag
             Android app. You&apos;ll need to enter your password, and fix the username if the{" "}
             <InlineCode>@</InlineCode> shows as <InlineCode>%40</InlineCode>.
@@ -94,7 +94,7 @@ export function WallabagApiSettings() {
 
           <div className="mt-4 flex flex-col items-center gap-4 sm:flex-row sm:items-start">
             {/* QR Code */}
-            <div className="rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-white">
+            <div className="border-edge-strong rounded-lg border bg-white p-3 dark:bg-white">
               <QRCodeSVG value={wallabagDeepLink} size={160} level="M" />
             </div>
 
@@ -107,7 +107,7 @@ export function WallabagApiSettings() {
                 <MobileIcon className="h-4 w-4" />
                 Open in Wallabag App
               </a>
-              <p className="ui-text-xs max-w-xs text-zinc-400 dark:text-zinc-500">
+              <p className="ui-text-xs text-faint max-w-xs">
                 The QR code and button pre-fill the server URL and your email address. Client ID and
                 secret are both <InlineCode>wallabag</InlineCode>.
               </p>
@@ -118,23 +118,22 @@ export function WallabagApiSettings() {
 
       {/* Manual Setup Instructions */}
       <CardSection>
-        <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">Manual Setup</h3>
-        <p className="ui-text-sm mt-1 text-zinc-600 dark:text-zinc-400">
+        <h3 className="ui-text-sm text-strong font-medium">Manual Setup</h3>
+        <p className="ui-text-sm text-muted mt-1">
           In the Wallabag app, go to Settings and enter the following:
         </p>
-        <ul className="ui-text-sm mt-3 space-y-2 text-zinc-600 dark:text-zinc-400">
+        <ul className="ui-text-sm text-muted mt-3 space-y-2">
           <li>
-            <strong className="text-zinc-900 dark:text-zinc-200">Server URL:</strong>{" "}
+            <strong className="text-emphasis">Server URL:</strong>{" "}
             <InlineCode>{serverUrl}</InlineCode>
             <CopyButton value={serverUrl} className="ml-2 px-1.5 py-0.5" title="Copy server URL" />
           </li>
           <li>
-            <strong className="text-zinc-900 dark:text-zinc-200">Client ID:</strong>{" "}
-            <InlineCode>wallabag</InlineCode>
+            <strong className="text-emphasis">Client ID:</strong> <InlineCode>wallabag</InlineCode>
             <CopyButton value="wallabag" className="ml-2 px-1.5 py-0.5" title="Copy client ID" />
           </li>
           <li>
-            <strong className="text-zinc-900 dark:text-zinc-200">Client Secret:</strong>{" "}
+            <strong className="text-emphasis">Client Secret:</strong>{" "}
             <InlineCode>wallabag</InlineCode>
             <CopyButton
               value="wallabag"
@@ -143,7 +142,7 @@ export function WallabagApiSettings() {
             />
           </li>
           <li>
-            <strong className="text-zinc-900 dark:text-zinc-200">Username:</strong>{" "}
+            <strong className="text-emphasis">Username:</strong>{" "}
             {email ? (
               <>
                 <InlineCode>{email}</InlineCode>
@@ -154,26 +153,21 @@ export function WallabagApiSettings() {
             )}
           </li>
           <li>
-            <strong className="text-zinc-900 dark:text-zinc-200">Password:</strong> Your Lion Reader
-            password
+            <strong className="text-emphasis">Password:</strong> Your Lion Reader password
           </li>
         </ul>
       </CardSection>
 
       {/* How it works */}
       <NoteBox className="mt-6">
-        <p className="ui-text-sm text-zinc-600 dark:text-zinc-400">
+        <p className="ui-text-sm text-muted">
           When you share a URL to the Wallabag app, it will save it to your Lion Reader account as a
           saved article. You can also view, archive, star, and delete saved articles from the app.
         </p>
       </NoteBox>
 
       {/* API base URL note */}
-      {baseUrl && (
-        <p className="ui-text-xs mt-4 text-zinc-400 dark:text-zinc-500">
-          API endpoint: {serverUrl}
-        </p>
-      )}
+      {baseUrl && <p className="ui-text-xs text-faint mt-4">API endpoint: {serverUrl}</p>}
     </SettingsSection>
   );
 }

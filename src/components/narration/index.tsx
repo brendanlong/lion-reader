@@ -14,7 +14,7 @@ import dynamic from "next/dynamic";
 
 function NarrationControlsSkeleton() {
   return (
-    <div className="min-h-[36px] w-[88px] animate-pulse rounded-lg bg-zinc-100 sm:min-h-[32px] dark:bg-zinc-800" />
+    <div className="bg-surface-muted min-h-[36px] w-[88px] animate-pulse rounded-lg sm:min-h-[32px]" />
   );
 }
 

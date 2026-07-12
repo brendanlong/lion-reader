@@ -45,16 +45,13 @@ export function LayoutShell({
 
       {/* Sidebar */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-64 transform border-r border-zinc-200 bg-white transition-transform duration-200 ease-in-out lg:static lg:translate-x-0 dark:border-zinc-800 dark:bg-zinc-900 ${
+        className={`border-edge bg-surface fixed inset-y-0 left-0 z-50 w-64 transform border-r transition-transform duration-200 ease-in-out lg:static lg:translate-x-0 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
         {/* Sidebar header */}
-        <div className="flex h-14 items-center justify-between border-b border-zinc-200 px-4 dark:border-zinc-800">
-          <ClientLink
-            href={sidebarTitleHref}
-            className="ui-text-lg font-semibold text-zinc-900 dark:text-zinc-50"
-          >
+        <div className="border-edge flex h-14 items-center justify-between border-b px-4">
+          <ClientLink href={sidebarTitleHref} className="ui-text-lg text-strong font-semibold">
             Lion Reader
           </ClientLink>
           {sidebarCloseButton}
@@ -67,7 +64,7 @@ export function LayoutShell({
       {/* Main content area */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Header */}
-        <header className="flex h-14 items-center justify-between border-b border-zinc-200 bg-white px-4 dark:border-zinc-800 dark:bg-zinc-900">
+        <header className="border-edge bg-surface flex h-14 items-center justify-between border-b px-4">
           {/* Mobile menu button */}
           {mobileMenuButton}
 

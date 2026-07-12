@@ -55,14 +55,12 @@ function DefaultErrorFallback({
   return (
     <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
       <AlertIcon className="mb-4 h-12 w-12 text-red-400 dark:text-red-500" />
-      <h2 className="ui-text-lg mb-2 font-semibold text-zinc-900 dark:text-zinc-50">
-        Something went wrong
-      </h2>
-      <p className="ui-text-sm mb-4 max-w-sm text-zinc-500 dark:text-zinc-400">
+      <h2 className="ui-text-lg text-strong mb-2 font-semibold">Something went wrong</h2>
+      <p className="ui-text-sm text-subtle mb-4 max-w-sm">
         {message ?? "An unexpected error occurred. Please try again."}
       </p>
       {error && process.env.NODE_ENV === "development" && (
-        <pre className="ui-text-xs mb-4 max-w-md overflow-auto rounded-md bg-zinc-100 p-3 text-left text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+        <pre className="ui-text-xs bg-surface-muted text-body mb-4 max-w-md overflow-auto rounded-md p-3 text-left">
           {error.message}
         </pre>
       )}

@@ -64,10 +64,8 @@ export default function CompleteSignupPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="ui-text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-          Before you continue
-        </h2>
-        <p className="ui-text-sm mt-1 text-zinc-600 dark:text-zinc-400">
+        <h2 className="ui-text-lg text-strong font-semibold">Before you continue</h2>
+        <p className="ui-text-sm text-muted mt-1">
           Please review and accept the following to complete your account setup.
         </p>
       </div>
@@ -80,15 +78,15 @@ export default function CompleteSignupPage() {
             type="checkbox"
             checked={acceptedTos}
             onChange={(e) => setAcceptedTos(e.target.checked)}
-            className="mt-0.5 h-5 w-5 shrink-0 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-50 dark:focus:ring-zinc-400"
+            className="text-strong mt-0.5 h-5 w-5 shrink-0 rounded border-zinc-300 focus:ring-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:ring-zinc-400"
           />
-          <span className="ui-text-sm text-zinc-700 dark:text-zinc-300">
+          <span className="ui-text-sm text-body">
             I have read and agree to the{" "}
             <a
               href="/terms"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-zinc-900 underline hover:text-zinc-700 dark:text-zinc-100 dark:hover:text-zinc-300"
+              className="text-strong underline hover:text-zinc-700 dark:hover:text-zinc-300"
             >
               Terms of Service
             </a>
@@ -100,15 +98,15 @@ export default function CompleteSignupPage() {
             type="checkbox"
             checked={acceptedPrivacy}
             onChange={(e) => setAcceptedPrivacy(e.target.checked)}
-            className="mt-0.5 h-5 w-5 shrink-0 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-50 dark:focus:ring-zinc-400"
+            className="text-strong mt-0.5 h-5 w-5 shrink-0 rounded border-zinc-300 focus:ring-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:ring-zinc-400"
           />
-          <span className="ui-text-sm text-zinc-700 dark:text-zinc-300">
+          <span className="ui-text-sm text-body">
             I have read and agree to the{" "}
             <a
               href="/privacy"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-zinc-900 underline hover:text-zinc-700 dark:text-zinc-100 dark:hover:text-zinc-300"
+              className="text-strong underline hover:text-zinc-700 dark:hover:text-zinc-300"
             >
               Privacy Policy
             </a>
@@ -120,9 +118,9 @@ export default function CompleteSignupPage() {
             type="checkbox"
             checked={confirmedNotInEu}
             onChange={(e) => setConfirmedNotInEu(e.target.checked)}
-            className="mt-0.5 h-5 w-5 shrink-0 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-50 dark:focus:ring-zinc-400"
+            className="text-strong mt-0.5 h-5 w-5 shrink-0 rounded border-zinc-300 focus:ring-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:ring-zinc-400"
           />
-          <span className="ui-text-sm text-zinc-700 dark:text-zinc-300">
+          <span className="ui-text-sm text-body">
             I confirm that I am not located in the European Union
           </span>
         </label>
@@ -141,7 +139,7 @@ export default function CompleteSignupPage() {
         {!showDeleteConfirm ? (
           <button
             onClick={() => setShowDeleteConfirm(true)}
-            className="ui-text-sm w-full text-center text-zinc-500 underline hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-300"
+            className="ui-text-sm text-subtle w-full text-center underline hover:text-zinc-700 dark:hover:text-zinc-300"
           >
             Delete my account instead
           </button>

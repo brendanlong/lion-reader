@@ -77,9 +77,7 @@ function AdminLoginForm({ onLogin }: { onLogin: () => void }) {
   return (
     <div className="flex min-h-screen items-center justify-center px-4">
       <Card className="w-full max-w-sm">
-        <h1 className="ui-text-lg mb-6 text-center font-bold text-zinc-900 dark:text-zinc-50">
-          Admin Login
-        </h1>
+        <h1 className="ui-text-lg text-strong mb-6 text-center font-bold">Admin Login</h1>
         <form onSubmit={handleSubmit} className="space-y-4">
           <Input
             id="admin-secret"
@@ -107,7 +105,7 @@ function AdminTabNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="border-b border-zinc-200 dark:border-zinc-800">
+    <nav className="border-edge border-b">
       <div className="flex gap-1 overflow-x-auto px-4">
         {adminTabs.map((tab) => {
           const isActive = pathname === tab.href;
@@ -117,8 +115,8 @@ function AdminTabNav() {
               href={tab.href}
               className={`ui-text-sm block shrink-0 border-b-2 px-4 py-3 font-medium whitespace-nowrap transition-colors ${
                 isActive
-                  ? "border-zinc-900 text-zinc-900 dark:border-zinc-50 dark:text-zinc-50"
-                  : "border-transparent text-zinc-500 hover:border-zinc-300 hover:text-zinc-700 dark:text-zinc-400 dark:hover:border-zinc-600 dark:hover:text-zinc-200"
+                  ? "text-strong border-zinc-900 dark:border-zinc-50"
+                  : "text-subtle border-transparent hover:border-zinc-300 hover:text-zinc-700 dark:hover:border-zinc-600 dark:hover:text-zinc-200"
               }`}
             >
               {tab.label}
@@ -137,8 +135,8 @@ function AdminShell({ onLogout, children }: { onLogout: () => void; children: Re
   return (
     <div className="min-h-screen">
       {/* Header */}
-      <header className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-800">
-        <h1 className="ui-text-lg font-bold text-zinc-900 dark:text-zinc-50">Lion Reader Admin</h1>
+      <header className="border-edge flex items-center justify-between border-b px-6 py-4">
+        <h1 className="ui-text-lg text-strong font-bold">Lion Reader Admin</h1>
         <Button variant="ghost" size="sm" onClick={onLogout}>
           Logout
         </Button>
@@ -215,7 +213,7 @@ export function AdminApp({ children }: AdminAppProps) {
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <p className="ui-text-sm text-zinc-500 dark:text-zinc-400">Verifying credentials...</p>
+        <p className="ui-text-sm text-subtle">Verifying credentials...</p>
       </div>
     );
   }

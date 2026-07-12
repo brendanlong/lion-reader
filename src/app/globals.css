@@ -38,6 +38,32 @@
   --info-border: #bfdbfe; /* blue-200 */
 
   /* =================================
+     Neutral Semantic Colors
+
+     One utility class per role (e.g. `text-muted`) instead of a light/dark
+     zinc pair (`text-zinc-600 dark:text-zinc-400`) at every call site.
+     Change a value here to retheme every consumer at once.
+     ================================= */
+
+  /* Text tones, strongest to faintest */
+  --text-strong: #18181b; /* zinc-900 - headings, primary values */
+  --text-emphasis: #18181b; /* zinc-900 - <strong> inside muted prose (dimmer than strong in dark) */
+  --text-body: #3f3f46; /* zinc-700 - body copy, labels */
+  --text-muted: #52525b; /* zinc-600 - descriptions, secondary text */
+  --text-subtle: #71717a; /* zinc-500 - metadata, hints */
+  --text-faint: #a1a1aa; /* zinc-400 - de-emphasized notes, placeholders */
+
+  /* Surfaces */
+  --surface: #ffffff; /* white - cards, inputs, controls */
+  --surface-muted: #f4f4f5; /* zinc-100 - chips, skeletons */
+  --surface-subtle: #fafafa; /* zinc-50 - note boxes, subtle fills */
+
+  /* Borders: `edge` for card outlines, `edge-strong` for dividers/note boxes
+     (more visible in dark mode) */
+  --edge: #e4e4e7; /* zinc-200 */
+  --edge-strong: #e4e4e7; /* zinc-200 (dark mode differs: zinc-700 vs zinc-800) */
+
+  /* =================================
      UI Typography Scale (16px baseline)
      ================================= */
   --ui-text-xs: 0.875rem; /* 14px - badges, status indicators */
@@ -65,6 +91,17 @@
   --color-info-subtle-foreground: var(--info-subtle-foreground);
   --color-info-foreground: var(--info-foreground);
   --color-info-border: var(--info-border);
+  --color-strong: var(--text-strong);
+  --color-emphasis: var(--text-emphasis);
+  --color-body: var(--text-body);
+  --color-muted: var(--text-muted);
+  --color-subtle: var(--text-subtle);
+  --color-faint: var(--text-faint);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-surface-subtle: var(--surface-subtle);
+  --color-edge: var(--edge);
+  --color-edge-strong: var(--edge-strong);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -93,6 +130,19 @@
   --info-subtle-foreground: #e4e4e7; /* zinc-200 */
   --info-foreground: #d4d4d8; /* zinc-300 */
   --info-border: #3f3f46; /* zinc-700 */
+
+  /* Dark mode: neutral semantic colors */
+  --text-strong: #fafafa; /* zinc-50 */
+  --text-emphasis: #e4e4e7; /* zinc-200 - dimmer than strong so bold prose doesn't glare */
+  --text-body: #d4d4d8; /* zinc-300 */
+  --text-muted: #a1a1aa; /* zinc-400 */
+  --text-subtle: #a1a1aa; /* zinc-400 */
+  --text-faint: #71717a; /* zinc-500 */
+  --surface: #18181b; /* zinc-900 */
+  --surface-muted: #27272a; /* zinc-800 */
+  --surface-subtle: rgba(39, 39, 42, 0.5); /* zinc-800/50 */
+  --edge: #27272a; /* zinc-800 */
+  --edge-strong: #3f3f46; /* zinc-700 */
 }
 
 /* Fallback to system preference when no class is set */
@@ -120,6 +170,19 @@
     --info-subtle-foreground: #e4e4e7; /* zinc-200 */
     --info-foreground: #d4d4d8; /* zinc-300 */
     --info-border: #3f3f46; /* zinc-700 */
+
+    /* Dark mode: neutral semantic colors */
+    --text-strong: #fafafa; /* zinc-50 */
+    --text-emphasis: #e4e4e7; /* zinc-200 - dimmer than strong so bold prose doesn't glare */
+    --text-body: #d4d4d8; /* zinc-300 */
+    --text-muted: #a1a1aa; /* zinc-400 */
+    --text-subtle: #a1a1aa; /* zinc-400 */
+    --text-faint: #71717a; /* zinc-500 */
+    --surface: #18181b; /* zinc-900 */
+    --surface-muted: #27272a; /* zinc-800 */
+    --surface-subtle: rgba(39, 39, 42, 0.5); /* zinc-800/50 */
+    --edge: #27272a; /* zinc-800 */
+    --edge-strong: #3f3f46; /* zinc-700 */
   }
 }
 

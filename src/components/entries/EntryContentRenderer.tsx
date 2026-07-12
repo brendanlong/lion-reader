@@ -47,14 +47,11 @@ export const EntryContentRenderer = React.memo(function EntryContentRenderer({
 
   if (fallbackContent) {
     return (
-      <p
-        className="ui-text-base leading-relaxed text-zinc-700 dark:text-zinc-300"
-        style={textStyle}
-      >
+      <p className="ui-text-base text-body leading-relaxed" style={textStyle}>
         {fallbackContent}
       </p>
     );
   }
 
-  return <p className="text-zinc-500 italic dark:text-zinc-400">No content available.</p>;
+  return <p className="text-subtle italic">No content available.</p>;
 });

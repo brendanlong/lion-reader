@@ -113,15 +113,13 @@ export function Sidebar({ onClose }: SidebarProps) {
 
   return (
     <>
-      <nav className="flex h-full flex-col bg-white dark:bg-zinc-900">
+      <nav className="bg-surface flex h-full flex-col">
         {/* Main Navigation with streaming counts */}
         <SidebarNav onNavigate={handleNavigate} onPrefetch={handlePrefetchRoute} />
 
         {/* Divider with unread toggle */}
-        <div className="mx-3 flex items-center gap-2 border-t border-zinc-200 pt-2 dark:border-zinc-700">
-          <span className="ui-text-xs flex-1 font-medium text-zinc-500 dark:text-zinc-400">
-            Feeds
-          </span>
+        <div className="border-edge-strong mx-3 flex items-center gap-2 border-t pt-2">
+          <span className="ui-text-xs text-subtle flex-1 font-medium">Feeds</span>
           <SidebarUnreadToggle unreadOnly={sidebarUnreadOnly} onToggle={toggleSidebarUnreadOnly} />
         </div>
 

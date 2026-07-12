@@ -93,7 +93,7 @@ export function EntryContentFallback({ entryId, onBack }: EntryContentFallbackPr
         {onBack && (
           <button
             onClick={onBack}
-            className="ui-text-sm mb-4 -ml-2 inline-flex min-h-[44px] items-center gap-2 rounded-md px-2 text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 active:bg-zinc-200 sm:mb-6 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 dark:active:bg-zinc-700"
+            className="ui-text-sm text-muted mb-4 -ml-2 inline-flex min-h-[44px] items-center gap-2 rounded-md px-2 transition-colors hover:bg-zinc-100 hover:text-zinc-900 active:bg-zinc-200 sm:mb-6 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 dark:active:bg-zinc-700"
           >
             <ArrowLeftIcon className="h-4 w-4" />
             <span>Back to list</span>
@@ -113,19 +113,19 @@ export function EntryContentFallback({ entryId, onBack }: EntryContentFallbackPr
                     href={url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="ui-text-xl sm:ui-text-2xl hover:text-accent block leading-tight font-bold text-zinc-900 underline-offset-2 transition-colors hover:underline md:text-3xl dark:text-zinc-100"
+                    className="ui-text-xl sm:ui-text-2xl hover:text-accent text-strong block leading-tight font-bold underline-offset-2 transition-colors hover:underline md:text-3xl"
                   >
                     {title}
                   </a>
                 ) : (
-                  <h1 className="ui-text-xl sm:ui-text-2xl leading-tight font-bold text-zinc-900 md:text-3xl dark:text-zinc-100">
+                  <h1 className="ui-text-xl sm:ui-text-2xl text-strong leading-tight font-bold md:text-3xl">
                     {title}
                   </h1>
                 )}
               </div>
 
               {/* Meta row: Source, Author, Date */}
-              <div className="ui-text-xs sm:ui-text-sm flex flex-wrap items-center gap-x-3 gap-y-1 text-zinc-600 sm:gap-x-4 sm:gap-y-2 dark:text-zinc-400">
+              <div className="ui-text-xs sm:ui-text-sm text-muted flex flex-wrap items-center gap-x-3 gap-y-1 sm:gap-x-4 sm:gap-y-2">
                 <span className="font-medium">{source}</span>
                 {cachedEntry.author &&
                   cachedEntry.author.toLowerCase().trim() !== source.toLowerCase().trim() && (
@@ -201,14 +201,14 @@ export function EntryContentFallback({ entryId, onBack }: EntryContentFallbackPr
         </header>
 
         {/* Divider - always show */}
-        <hr className="mb-6 border-zinc-200 sm:mb-8 dark:border-zinc-700" />
+        <hr className="border-edge-strong mb-6 sm:mb-8" />
 
         {/* Content skeleton */}
         <ContentSkeleton />
 
         {/* Footer with original link - show if URL available */}
         {url && (
-          <footer className="mt-8 border-t border-zinc-200 pt-6 sm:mt-12 sm:pt-8 dark:border-zinc-700">
+          <footer className="border-edge-strong mt-8 border-t pt-6 sm:mt-12 sm:pt-8">
             <a
               href={url}
               target="_blank"

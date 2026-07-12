@@ -46,7 +46,7 @@ export function EntryContentSkeleton() {
       </header>
 
       {/* Divider - always show (not animated) */}
-      <hr className="mb-6 border-zinc-200 sm:mb-8 dark:border-zinc-700" />
+      <hr className="border-edge-strong mb-6 sm:mb-8" />
 
       {/* Content placeholders */}
       <ContentSkeleton />

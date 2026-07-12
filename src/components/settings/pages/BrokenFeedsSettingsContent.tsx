@@ -80,8 +80,8 @@ export default function BrokenFeedsSettingsContent() {
     <div>
       {/* Page Header */}
       <div className="mb-6">
-        <h2 className="ui-text-lg font-semibold text-zinc-900 dark:text-zinc-50">Broken Feeds</h2>
-        <p className="ui-text-sm mt-1 text-zinc-600 dark:text-zinc-400">
+        <h2 className="ui-text-lg text-strong font-semibold">Broken Feeds</h2>
+        <p className="ui-text-sm text-muted mt-1">
           These feeds have failed to fetch recently. You can retry fetching immediately or wait for
           the next scheduled attempt.
         </p>
@@ -125,10 +125,8 @@ function EmptyState() {
       <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
         <CheckIcon className="h-6 w-6 text-green-600 dark:text-green-400" />
       </div>
-      <h3 className="ui-text-sm mt-4 font-medium text-zinc-900 dark:text-zinc-50">
-        All feeds are working
-      </h3>
-      <p className="ui-text-sm mt-1 text-zinc-500 dark:text-zinc-400">
+      <h3 className="ui-text-sm text-strong mt-4 font-medium">All feeds are working</h3>
+      <p className="ui-text-sm text-subtle mt-1">
         None of your subscribed feeds have fetch errors.
       </p>
     </div>
@@ -177,13 +175,11 @@ function BrokenFeedRow({ feed, onUnsubscribe }: BrokenFeedRowProps) {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 flex-1">
           {/* Feed Title */}
-          <p className="font-medium text-zinc-900 dark:text-zinc-50">{displayName}</p>
+          <p className="text-strong font-medium">{displayName}</p>
 
           {/* Feed URL */}
           {feed.url && feed.title && (
-            <p className="ui-text-sm mt-0.5 truncate text-zinc-500 dark:text-zinc-400">
-              {feed.url}
-            </p>
+            <p className="ui-text-sm text-subtle mt-0.5 truncate">{feed.url}</p>
           )}
 
           {/* Error Message */}
@@ -196,7 +192,7 @@ function BrokenFeedRow({ feed, onUnsubscribe }: BrokenFeedRowProps) {
           )}
 
           {/* Metadata */}
-          <div className="ui-text-sm mt-2 flex flex-wrap gap-x-4 gap-y-1 text-zinc-500 dark:text-zinc-400">
+          <div className="ui-text-sm text-subtle mt-2 flex flex-wrap gap-x-4 gap-y-1">
             <span className="flex items-center gap-1">
               <AlertCircleIcon className="h-4 w-4 text-red-500" />
               {feed.consecutiveFailures} consecutive failure

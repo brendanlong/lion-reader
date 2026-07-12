@@ -47,10 +47,8 @@ export default function EmailSettingsContent() {
     <div className="space-y-8">
       {/* Page Header */}
       <div>
-        <h2 className="ui-text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-          Email Subscriptions
-        </h2>
-        <p className="ui-text-sm mt-1 text-zinc-600 dark:text-zinc-400">
+        <h2 className="ui-text-lg text-strong font-semibold">Email Subscriptions</h2>
+        <p className="ui-text-sm text-muted mt-1">
           Create ingest addresses to subscribe to email newsletters. Emails sent to these addresses
           will appear as entries in your feeds.
         </p>
@@ -110,8 +108,8 @@ function IngestAddressesSection() {
   return (
     <section>
       <div className="mb-4 flex items-center justify-between">
-        <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-50">Ingest Addresses</h3>
-        <span className="ui-text-sm text-zinc-500 dark:text-zinc-400">{addresses.length} / 5</span>
+        <h3 className="ui-text-sm text-strong font-medium">Ingest Addresses</h3>
+        <span className="ui-text-sm text-subtle">{addresses.length} / 5</span>
       </div>
 
       <SettingsListContainer
@@ -126,7 +124,7 @@ function IngestAddressesSection() {
             <></>
           ) : (
             <div className="p-6 text-center">
-              <p className="ui-text-sm text-zinc-500 dark:text-zinc-400">
+              <p className="ui-text-sm text-subtle">
                 No ingest addresses yet. Create one to start receiving newsletter emails.
               </p>
             </div>
@@ -137,7 +135,7 @@ function IngestAddressesSection() {
           <>
             {/* Create Form */}
             {isCreating && (
-              <div className="border-t border-zinc-200 p-4 dark:border-zinc-800">
+              <div className="border-edge border-t p-4">
                 {createError && (
                   <Alert variant="error" className="mb-4">
                     {createError}
@@ -170,7 +168,7 @@ function IngestAddressesSection() {
 
             {/* Create Button */}
             {!isCreating && addresses.length < 5 && (
-              <div className="border-t border-zinc-200 p-4 dark:border-zinc-800">
+              <div className="border-edge border-t p-4">
                 <Button variant="secondary" onClick={() => setIsCreating(true)}>
                   <PlusIcon className="mr-2 h-4 w-4" />
                   Create New Address
@@ -289,13 +287,13 @@ function IngestAddressRow({ address }: IngestAddressRowProps) {
         <div className="min-w-0 flex-1">
           {/* Email Address */}
           <div className="flex items-center gap-2">
-            <code className="ui-text-sm rounded bg-zinc-100 px-2 py-1 break-all text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200">
+            <code className="ui-text-sm bg-surface-muted text-emphasis rounded px-2 py-1 break-all">
               {address.email}
             </code>
             <button
               type="button"
               onClick={handleCopy}
-              className="flex-shrink-0 rounded p-1 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+              className="text-subtle flex-shrink-0 rounded p-1 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
               title="Copy email address"
             >
               {copied ? (
@@ -332,14 +330,14 @@ function IngestAddressRow({ address }: IngestAddressRowProps) {
           ) : (
             <div className="mt-1 flex items-center gap-2">
               {address.label ? (
-                <span className="ui-text-sm text-zinc-600 dark:text-zinc-400">{address.label}</span>
+                <span className="ui-text-sm text-muted">{address.label}</span>
               ) : (
-                <span className="ui-text-sm text-zinc-400 dark:text-zinc-500">No label</span>
+                <span className="ui-text-sm text-faint">No label</span>
               )}
               <button
                 type="button"
                 onClick={() => setIsEditing(true)}
-                className="rounded p-0.5 text-zinc-400 transition-colors hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"
+                className="text-faint rounded p-0.5 transition-colors hover:text-zinc-600 dark:hover:text-zinc-300"
                 title="Edit label"
               >
                 <EditIcon className="h-3.5 w-3.5" />
@@ -348,7 +346,7 @@ function IngestAddressRow({ address }: IngestAddressRowProps) {
           )}
 
           {/* Created Date */}
-          <p className="ui-text-xs mt-1 text-zinc-400 dark:text-zinc-500">
+          <p className="ui-text-xs text-faint mt-1">
             Created{" "}
             {new Date(address.createdAt).toLocaleDateString("en-US", {
               month: "short",
@@ -421,14 +419,12 @@ function SpamPreferenceSection() {
 
   return (
     <section>
-      <h3 className="ui-text-sm mb-4 font-medium text-zinc-900 dark:text-zinc-50">Preferences</h3>
+      <h3 className="ui-text-sm text-strong mb-4 font-medium">Preferences</h3>
       <Card>
         <div className="flex items-center justify-between">
           <div>
-            <h4 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-50">
-              Show spam entries
-            </h4>
-            <p className="ui-text-sm mt-1 text-zinc-500 dark:text-zinc-400">
+            <h4 className="ui-text-sm text-strong font-medium">Show spam entries</h4>
+            <p className="ui-text-sm text-subtle mt-1">
               Display entries that were flagged as spam by our email provider.
             </p>
           </div>
@@ -444,7 +440,7 @@ function SpamPreferenceSection() {
           >
             <span
               aria-hidden="true"
-              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out dark:bg-zinc-900 ${
+              className={`bg-surface pointer-events-none inline-block h-5 w-5 transform rounded-full shadow ring-0 transition duration-200 ease-in-out ${
                 showSpam ? "translate-x-5" : "translate-x-0"
               }`}
             />

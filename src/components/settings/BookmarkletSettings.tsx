@@ -52,10 +52,8 @@ export function BookmarkletSettings() {
     >
       {/* Browser Extensions */}
       <div className="mt-6">
-        <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">
-          Browser Extensions
-        </h3>
-        <p className="ui-text-sm mt-1 text-zinc-600 dark:text-zinc-400">
+        <h3 className="ui-text-sm text-strong font-medium">Browser Extensions</h3>
+        <p className="ui-text-sm text-muted mt-1">
           The easiest way to save articles from your browser.
         </p>
         <div className="mt-3 flex flex-wrap gap-3">
@@ -82,19 +80,15 @@ export function BookmarkletSettings() {
 
       {/* Bookmarklet Section */}
       <CardSection>
-        <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">
-          Bookmarklet (Other Browsers)
-        </h3>
-        <p className="ui-text-sm mt-1 text-zinc-600 dark:text-zinc-400">
+        <h3 className="ui-text-sm text-strong font-medium">Bookmarklet (Other Browsers)</h3>
+        <p className="ui-text-sm text-muted mt-1">
           For Safari and other browsers, use the bookmarklet.
         </p>
       </CardSection>
 
       {/* Draggable Bookmarklet Link */}
       <div className="mt-4">
-        <p className="ui-text-sm mb-3 text-zinc-700 dark:text-zinc-300">
-          Drag this button to your bookmarks bar:
-        </p>
+        <p className="ui-text-sm text-body mb-3">Drag this button to your bookmarks bar:</p>
         <a
           ref={bookmarkletRef}
           href="#"
@@ -109,16 +103,11 @@ export function BookmarkletSettings() {
 
       {/* Installation Instructions */}
       <NoteBox className="mt-6">
-        <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">
-          Installation Instructions
-        </h3>
-        <ol className="ui-text-sm mt-2 list-inside list-decimal space-y-2 text-zinc-600 dark:text-zinc-400">
+        <h3 className="ui-text-sm text-strong font-medium">Installation Instructions</h3>
+        <ol className="ui-text-sm text-muted mt-2 list-inside list-decimal space-y-2">
           <li>Make sure your browser&apos;s bookmarks bar is visible</li>
           <li>
-            Drag the{" "}
-            <strong className="text-zinc-900 dark:text-zinc-200">
-              &quot;Save to Lion Reader&quot;
-            </strong>{" "}
+            Drag the <strong className="text-emphasis">&quot;Save to Lion Reader&quot;</strong>{" "}
             button above to your bookmarks bar
           </li>
           <li>
@@ -133,7 +122,7 @@ export function BookmarkletSettings() {
         <button
           type="button"
           onClick={() => setShowCode(!showCode)}
-          className="ui-text-sm inline-flex items-center gap-2 font-medium text-zinc-700 transition-colors hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-50"
+          className="ui-text-sm text-body inline-flex items-center gap-2 font-medium transition-colors hover:text-zinc-900 dark:hover:text-zinc-50"
         >
           <ChevronRightIcon
             className={`h-4 w-4 transition-transform ${showCode ? "rotate-90" : ""}`}
@@ -143,11 +132,11 @@ export function BookmarkletSettings() {
 
         {showCode && (
           <div className="mt-4">
-            <p className="ui-text-sm mb-2 text-zinc-500 dark:text-zinc-400">
+            <p className="ui-text-sm text-subtle mb-2">
               If you prefer, you can manually create a bookmark with this JavaScript code:
             </p>
             <div className="relative">
-              <pre className="ui-text-xs overflow-x-auto rounded-md border border-zinc-200 bg-zinc-100 p-3 font-mono text-zinc-800 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
+              <pre className="ui-text-xs border-edge-strong bg-surface-muted text-emphasis overflow-x-auto rounded-md border p-3 font-mono">
                 <code className="break-all whitespace-pre-wrap">{bookmarkletHref}</code>
               </pre>
               <button
@@ -165,11 +154,7 @@ export function BookmarkletSettings() {
       </CardSection>
 
       {/* Note about app URL */}
-      {appUrl && (
-        <p className="ui-text-xs mt-4 text-zinc-400 dark:text-zinc-500">
-          Bookmarklet configured for: {appUrl}
-        </p>
-      )}
+      {appUrl && <p className="ui-text-xs text-faint mt-4">Bookmarklet configured for: {appUrl}</p>}
     </SettingsSection>
   );
 }

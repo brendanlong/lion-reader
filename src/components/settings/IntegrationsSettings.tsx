@@ -58,16 +58,14 @@ export function IntegrationsSettings() {
     >
       {/* Claude Code */}
       <div className="mt-6">
-        <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">Claude Code</h3>
-        <p className="ui-text-sm mt-1 text-zinc-600 dark:text-zinc-400">
-          Run this command in your terminal:
-        </p>
+        <h3 className="ui-text-sm text-strong font-medium">Claude Code</h3>
+        <p className="ui-text-sm text-muted mt-1">Run this command in your terminal:</p>
         <CodeBlock code={claudeCodeCommand} className="mt-3" />
       </div>
 
       {/* Claude.ai */}
       <CardSection>
-        <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">Claude.ai</h3>
+        <h3 className="ui-text-sm text-strong font-medium">Claude.ai</h3>
         <div className="mt-2">
           <Alert variant="warning">
             The claude.ai <strong>web</strong> connector is currently broken due to a bug on
@@ -83,17 +81,17 @@ export function IntegrationsSettings() {
             . The MCP server should work with other tools, including Claude Code.
           </Alert>
         </div>
-        <ol className="ui-text-sm mt-2 list-inside list-decimal space-y-2 text-zinc-600 dark:text-zinc-400">
+        <ol className="ui-text-sm text-muted mt-2 list-inside list-decimal space-y-2">
           <li>Click your name in the bottom-left corner</li>
           <li>
-            Go to <strong className="text-zinc-900 dark:text-zinc-200">Settings</strong> &rarr;{" "}
-            <strong className="text-zinc-900 dark:text-zinc-200">Connectors</strong>
+            Go to <strong className="text-emphasis">Settings</strong> &rarr;{" "}
+            <strong className="text-emphasis">Connectors</strong>
           </li>
           <li>
-            Click <strong className="text-zinc-900 dark:text-zinc-200">Add Custom Connector</strong>
+            Click <strong className="text-emphasis">Add Custom Connector</strong>
           </li>
           <li>
-            Enter Name: <strong className="text-zinc-900 dark:text-zinc-200">Lion Reader</strong>
+            Enter Name: <strong className="text-emphasis">Lion Reader</strong>
           </li>
           <li>
             Enter Remote MCP server URL: <InlineCode>{mcpUrl}</InlineCode>
@@ -104,17 +102,15 @@ export function IntegrationsSettings() {
 
       {/* Claude Desktop */}
       <CardSection>
-        <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">Claude Desktop</h3>
-        <p className="ui-text-sm mt-1 text-zinc-600 dark:text-zinc-400">
+        <h3 className="ui-text-sm text-strong font-medium">Claude Desktop</h3>
+        <p className="ui-text-sm text-muted mt-1">
           Add this to your <InlineCode>claude_desktop_config.json</InlineCode>:
         </p>
         <CodeBlock code={claudeDesktopConfig} className="mt-3" />
       </CardSection>
 
       {/* Note about MCP URL */}
-      {baseUrl && (
-        <p className="ui-text-xs mt-4 text-zinc-400 dark:text-zinc-500">MCP server URL: {mcpUrl}</p>
-      )}
+      {baseUrl && <p className="ui-text-xs text-faint mt-4">MCP server URL: {mcpUrl}</p>}
     </SettingsSection>
   );
 }

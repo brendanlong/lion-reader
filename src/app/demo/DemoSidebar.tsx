@@ -60,7 +60,7 @@ export function DemoSidebar({ onClose }: DemoSidebarProps) {
   const highlightCount = demoState.countUnreadStarred();
 
   return (
-    <nav className="flex h-full flex-col bg-white dark:bg-zinc-900">
+    <nav className="bg-surface flex h-full flex-col">
       {/* Top navigation */}
       <div className="space-y-1 p-3">
         <NavLink
@@ -68,9 +68,7 @@ export function DemoSidebar({ onClose }: DemoSidebarProps) {
           isActive={isAllActive}
           countElement={
             totalUnread > 0 ? (
-              <span className="ui-text-xs ml-2 shrink-0 text-zinc-500 dark:text-zinc-400">
-                ({totalUnread})
-              </span>
+              <span className="ui-text-xs text-subtle ml-2 shrink-0">({totalUnread})</span>
             ) : undefined
           }
           onClick={onClose}
@@ -83,9 +81,7 @@ export function DemoSidebar({ onClose }: DemoSidebarProps) {
           isActive={isHighlightsActive}
           countElement={
             highlightCount > 0 ? (
-              <span className="ui-text-xs ml-2 shrink-0 text-zinc-500 dark:text-zinc-400">
-                ({highlightCount})
-              </span>
+              <span className="ui-text-xs text-subtle ml-2 shrink-0">({highlightCount})</span>
             ) : undefined
           }
           onClick={onClose}
@@ -95,7 +91,7 @@ export function DemoSidebar({ onClose }: DemoSidebarProps) {
       </div>
 
       {/* Divider */}
-      <div className="mx-3 border-t border-zinc-200 dark:border-zinc-700" />
+      <div className="border-edge-strong mx-3 border-t" />
 
       {/* Tags and subscriptions */}
       <div className="flex-1 overflow-y-auto p-3">
@@ -118,7 +114,7 @@ export function DemoSidebar({ onClose }: DemoSidebarProps) {
                       e.stopPropagation();
                       toggleTag(tag.id);
                     }}
-                    className="flex h-6 w-6 shrink-0 items-center justify-center text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-300"
+                    className="text-subtle flex h-6 w-6 shrink-0 items-center justify-center hover:text-zinc-700 dark:hover:text-zinc-300"
                     aria-label={expanded ? "Collapse" : "Expand"}
                   >
                     {expanded ? <ChevronDownIcon /> : <ChevronRightIcon />}

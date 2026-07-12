@@ -33,14 +33,11 @@ describe("getItemClasses", () => {
       const classes = getItemClasses(true, false);
 
       expect(classes).toContain(baseClasses);
-      // Read has lighter border and white background
-      expect(classes).toContain("border-zinc-200");
-      expect(classes).toContain("bg-white");
+      // Read has lighter border and card-surface background (light/dark via tokens)
+      expect(classes).toContain("border-edge");
+      expect(classes).toContain("bg-surface");
       expect(classes).toContain("hover:bg-zinc-50");
       expect(classes).toContain("active:bg-zinc-100");
-      // Dark mode variants
-      expect(classes).toContain("dark:border-zinc-800");
-      expect(classes).toContain("dark:bg-zinc-900");
     });
   });
 
@@ -72,11 +69,10 @@ describe("getItemClasses", () => {
       expect(classes).toContain("ring-2");
       expect(classes).toContain("ring-accent");
       expect(classes).toContain("ring-offset-1");
-      // Read background within selected state
-      expect(classes).toContain("bg-white");
+      // Read background within selected state (light/dark via token)
+      expect(classes).toContain("bg-surface");
       // Dark mode variants
       expect(classes).toContain("dark:ring-offset-zinc-900");
-      expect(classes).toContain("dark:bg-zinc-900");
     });
   });
 

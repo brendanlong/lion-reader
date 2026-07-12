@@ -19,14 +19,12 @@ export function AuthLayoutContent({ children }: AuthLayoutContentProps) {
       <div className="w-full max-w-md">
         {/* Logo / Brand */}
         <div className="mb-8 text-center">
-          <h1 className="ui-text-2xl font-bold text-zinc-900 dark:text-zinc-50">Lion Reader</h1>
-          <p className="ui-text-sm mt-2 text-zinc-600 dark:text-zinc-400">A modern feed reader</p>
+          <h1 className="ui-text-2xl text-strong font-bold">Lion Reader</h1>
+          <p className="ui-text-sm text-muted mt-2">A modern feed reader</p>
         </div>
 
         {/* Auth card */}
-        <div className="rounded-lg border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-          {children}
-        </div>
+        <div className="border-edge bg-surface rounded-lg border p-6 shadow-sm">{children}</div>
       </div>
     </div>
   );

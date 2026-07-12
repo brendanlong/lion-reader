@@ -32,10 +32,8 @@ export default async function ExtensionCallbackPage({ searchParams }: PageProps)
         {isSuccess ? (
           <>
             <div className="mb-4 text-5xl text-green-500">✓</div>
-            <h1 className="ui-text-xl mb-2 font-semibold text-zinc-900 dark:text-zinc-100">
-              Article Saved!
-            </h1>
-            {title && <p className="mb-4 text-zinc-600 dark:text-zinc-400">{title}</p>}
+            <h1 className="ui-text-xl text-strong mb-2 font-semibold">Article Saved!</h1>
+            {title && <p className="text-muted mb-4">{title}</p>}
             <p className="ui-text-sm text-zinc-400 dark:text-zinc-600">
               This tab will close automatically.
               <br />
@@ -45,12 +43,8 @@ export default async function ExtensionCallbackPage({ searchParams }: PageProps)
         ) : (
           <>
             <div className="mb-4 text-5xl text-red-500">!</div>
-            <h1 className="ui-text-xl mb-2 font-semibold text-zinc-900 dark:text-zinc-100">
-              Something Went Wrong
-            </h1>
-            <p className="mb-4 text-zinc-600 dark:text-zinc-400">
-              {error || "Failed to complete the save operation."}
-            </p>
+            <h1 className="ui-text-xl text-strong mb-2 font-semibold">Something Went Wrong</h1>
+            <p className="text-muted mb-4">{error || "Failed to complete the save operation."}</p>
             <p className="ui-text-sm text-zinc-400 dark:text-zinc-600">
               Please close this tab and try again.
             </p>

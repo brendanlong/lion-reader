@@ -153,13 +153,13 @@ function FeedRow({ feed, onRetry, isRetrying }: FeedRowProps) {
   const displayTitle = getFeedDisplayTitle(feed);
 
   return (
-    <div className="border-b border-zinc-200 p-4 last:border-b-0 dark:border-zinc-800">
+    <div className="border-edge border-b p-4 last:border-b-0">
       {/* Title, Status, and URL */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 flex-1">
           {/* Title and badges */}
           <div className="flex flex-wrap items-center gap-2">
-            <p className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-50">{displayTitle}</p>
+            <p className="ui-text-sm text-strong font-medium">{displayTitle}</p>
             <FeedStatusBadge feed={feed} />
             {feed.websubActive && <WebSubBadge />}
           </div>
@@ -170,7 +170,7 @@ function FeedRow({ feed, onRetry, isRetrying }: FeedRowProps) {
               href={feed.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="ui-text-xs mt-0.5 inline-flex items-center gap-1 text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+              className="ui-text-xs text-subtle mt-0.5 inline-flex items-center gap-1 hover:text-zinc-700 dark:hover:text-zinc-200"
             >
               <span className="truncate">{truncateUrl(feed.url)}</span>
               <ExternalLinkIcon className="h-3 w-3 shrink-0" />
@@ -197,7 +197,7 @@ function FeedRow({ feed, onRetry, isRetrying }: FeedRowProps) {
       {feed.lastError && <ExpandableError error={feed.lastError} />}
 
       {/* Stats grid */}
-      <div className="ui-text-xs mt-3 grid grid-cols-2 gap-x-6 gap-y-1.5 text-zinc-500 sm:grid-cols-3 lg:grid-cols-4 dark:text-zinc-400">
+      <div className="ui-text-xs text-subtle mt-3 grid grid-cols-2 gap-x-6 gap-y-1.5 sm:grid-cols-3 lg:grid-cols-4">
         <StatItem
           label="Last fetched"
           value={feed.lastFetchedAt ? formatRelativeTime(new Date(feed.lastFetchedAt)) : "Never"}
@@ -226,7 +226,7 @@ function FeedRow({ feed, onRetry, isRetrying }: FeedRowProps) {
 function StatItem({ label, value }: { label: string; value: string }) {
   return (
     <span>
-      <span className="font-medium text-zinc-700 dark:text-zinc-300">{label}:</span> {value}
+      <span className="text-body font-medium">{label}:</span> {value}
     </span>
   );
 }
@@ -238,13 +238,13 @@ function StatItem({ label, value }: { label: string; value: string }) {
 function EmptyState({ hasFilters }: { hasFilters: boolean }) {
   return (
     <div className="p-8 text-center">
-      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800">
-        <RssIcon className="h-6 w-6 text-zinc-400 dark:text-zinc-500" />
+      <div className="bg-surface-muted mx-auto flex h-12 w-12 items-center justify-center rounded-full">
+        <RssIcon className="text-faint h-6 w-6" />
       </div>
-      <h3 className="ui-text-sm mt-4 font-medium text-zinc-900 dark:text-zinc-50">
+      <h3 className="ui-text-sm text-strong mt-4 font-medium">
         {hasFilters ? "No matching feeds" : "No feeds"}
       </h3>
-      <p className="ui-text-sm mt-1 text-zinc-500 dark:text-zinc-400">
+      <p className="ui-text-sm text-subtle mt-1">
         {hasFilters ? "Try adjusting your filters." : "No feeds have been added to the system yet."}
       </p>
     </div>
@@ -364,7 +364,7 @@ export default function AdminFeedsContent() {
     <div>
       {/* Header */}
       <div className="mb-6">
-        <h2 className="ui-text-lg font-semibold text-zinc-900 dark:text-zinc-50">Feed Health</h2>
+        <h2 className="ui-text-lg text-strong font-semibold">Feed Health</h2>
       </div>
 
       {/* Filter Controls */}
@@ -386,7 +386,7 @@ export default function AdminFeedsContent() {
           />
         </div>
         <div className="flex shrink-0 items-center gap-3">
-          <label className="ui-text-sm flex cursor-pointer items-center gap-2 text-zinc-600 dark:text-zinc-400">
+          <label className="ui-text-sm text-muted flex cursor-pointer items-center gap-2">
             <input
               type="checkbox"
               checked={hasSubscribers}
@@ -444,15 +444,13 @@ export default function AdminFeedsContent() {
           {feedsQuery.isFetchingNextPage && (
             <div className="flex items-center justify-center p-4">
               <SpinnerIcon className="mr-2 h-4 w-4 text-zinc-400" />
-              <span className="ui-text-sm text-zinc-500 dark:text-zinc-400">Loading more...</span>
+              <span className="ui-text-sm text-subtle">Loading more...</span>
             </div>
           )}
 
           {/* End of list */}
           {!feedsQuery.hasNextPage && feeds.length > 0 && (
-            <p className="ui-text-xs p-3 text-center text-zinc-400 dark:text-zinc-500">
-              No more feeds
-            </p>
+            <p className="ui-text-xs text-faint p-3 text-center">No more feeds</p>
           )}
         </Card>
       )}

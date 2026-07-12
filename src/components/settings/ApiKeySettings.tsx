@@ -85,7 +85,7 @@ export function GroqApiKeySettings() {
       }
     >
       {preferencesQuery.isLoading ? (
-        <div className="h-10 w-full animate-pulse rounded bg-zinc-100 dark:bg-zinc-800" />
+        <div className="bg-surface-muted h-10 w-full animate-pulse rounded" />
       ) : isEditing ? (
         <div className="space-y-3">
           <Input
@@ -314,7 +314,7 @@ export function SummarizationApiKeySettings() {
       }
     >
       {preferencesQuery.isLoading ? (
-        <div className="h-10 w-full animate-pulse rounded bg-zinc-100 dark:bg-zinc-800" />
+        <div className="bg-surface-muted h-10 w-full animate-pulse rounded" />
       ) : (
         <div className="space-y-4">
           {/* API Key */}
@@ -381,7 +381,7 @@ export function SummarizationApiKeySettings() {
           <div>
             <label
               htmlFor="summarization-model"
-              className="ui-text-sm mb-1.5 block font-medium text-zinc-700 dark:text-zinc-300"
+              className="ui-text-sm text-body mb-1.5 block font-medium"
             >
               Model
             </label>
@@ -390,7 +390,7 @@ export function SummarizationApiKeySettings() {
               value={currentModel ?? defaultModelId}
               onChange={handleModelChange}
               disabled={updatePreferences.isPending || modelsQuery.isLoading}
-              className="ui-text-sm block w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-zinc-900 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+              className="ui-text-sm bg-surface text-strong block w-full rounded-md border border-zinc-300 px-3 py-2 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
             >
               {modelsQuery.isLoading ? (
                 <option value={currentModel ?? defaultModelId}>Loading models...</option>
@@ -412,7 +412,7 @@ export function SummarizationApiKeySettings() {
                   <option value={currentModel}>{currentModel}</option>
                 )}
             </select>
-            <p className="ui-text-xs mt-1.5 text-zinc-500 dark:text-zinc-400">
+            <p className="ui-text-xs text-subtle mt-1.5">
               Choose the Anthropic model used for generating article summaries. Sonnet models offer
               the best balance of quality and cost.
             </p>
@@ -422,7 +422,7 @@ export function SummarizationApiKeySettings() {
           <div>
             <label
               htmlFor="summarization-max-words"
-              className="ui-text-sm mb-1.5 block font-medium text-zinc-700 dark:text-zinc-300"
+              className="ui-text-sm text-body mb-1.5 block font-medium"
             >
               Max words
             </label>
@@ -460,7 +460,7 @@ export function SummarizationApiKeySettings() {
               </div>
             ) : (
               <div className="flex items-center gap-3">
-                <span className="ui-text-sm text-zinc-600 dark:text-zinc-400">
+                <span className="ui-text-sm text-muted">
                   {currentMaxWords ?? `${DEFAULT_SUMMARIZATION_MAX_WORDS} (default)`}
                 </span>
                 <Button
@@ -485,7 +485,7 @@ export function SummarizationApiKeySettings() {
                 )}
               </div>
             )}
-            <p className="ui-text-xs mt-1.5 text-zinc-500 dark:text-zinc-400">
+            <p className="ui-text-xs text-subtle mt-1.5">
               Maximum number of words for generated summaries.
             </p>
           </div>
@@ -494,7 +494,7 @@ export function SummarizationApiKeySettings() {
           <div>
             <label
               htmlFor="summarization-prompt"
-              className="ui-text-sm mb-1.5 block font-medium text-zinc-700 dark:text-zinc-300"
+              className="ui-text-sm text-body mb-1.5 block font-medium"
             >
               Custom prompt
             </label>
@@ -507,9 +507,9 @@ export function SummarizationApiKeySettings() {
                   value={promptInput}
                   onChange={(e) => setPromptInput(e.target.value)}
                   disabled={updatePreferences.isPending}
-                  className="ui-text-sm block w-full rounded-md border border-zinc-300 bg-white px-3 py-2 font-mono text-zinc-900 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+                  className="ui-text-sm bg-surface text-strong block w-full rounded-md border border-zinc-300 px-3 py-2 font-mono focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
                 />
-                <p className="ui-text-xs text-zinc-500 dark:text-zinc-400">
+                <p className="ui-text-xs text-subtle">
                   Available template variables: <InlineCode>{"{{content}}"}</InlineCode>,{" "}
                   <InlineCode>{"{{title}}"}</InlineCode>, <InlineCode>{"{{maxWords}}"}</InlineCode>.
                   The response should be wrapped in <InlineCode>{"<summary>"}</InlineCode> tags.
@@ -536,7 +536,7 @@ export function SummarizationApiKeySettings() {
               </div>
             ) : (
               <div className="flex items-center gap-3">
-                <span className="ui-text-sm text-zinc-600 dark:text-zinc-400">
+                <span className="ui-text-sm text-muted">
                   {currentPrompt ? "Custom prompt configured" : "Using default prompt"}
                 </span>
                 <Button
@@ -561,7 +561,7 @@ export function SummarizationApiKeySettings() {
                 )}
               </div>
             )}
-            <p className="ui-text-xs mt-1.5 text-zinc-500 dark:text-zinc-400">
+            <p className="ui-text-xs text-subtle mt-1.5">
               Override the default prompt sent to the AI model when generating summaries.
             </p>
           </div>

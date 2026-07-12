@@ -27,8 +27,8 @@ export interface EntryListEmptyProps {
 export function EntryListEmpty({ message, icon }: EntryListEmptyProps) {
   return (
     <div className="flex flex-col items-center justify-center py-12 text-center">
-      {icon ?? <DefaultEmptyIcon className="mb-4 h-12 w-12 text-zinc-400 dark:text-zinc-500" />}
-      <p className="ui-text-sm text-zinc-500 dark:text-zinc-400">{message}</p>
+      {icon ?? <DefaultEmptyIcon className="text-faint mb-4 h-12 w-12" />}
+      <p className="ui-text-sm text-subtle">{message}</p>
     </div>
   );
 }
@@ -50,7 +50,7 @@ export function EntryListError({ message, onRetry }: EntryListErrorProps) {
   return (
     <div className="flex flex-col items-center justify-center py-12 text-center">
       <AlertIcon className="mb-4 h-12 w-12 text-red-400 dark:text-red-500" />
-      <p className="ui-text-sm mb-4 text-zinc-500 dark:text-zinc-400">{message}</p>
+      <p className="ui-text-sm text-subtle mb-4">{message}</p>
       <Button onClick={onRetry}>Try again</Button>
     </div>
   );
@@ -72,5 +72,5 @@ export function EntryListLoadingMore({ label = "Loading more..." }: { label?: st
  * End of list indicator.
  */
 export function EntryListEnd({ message = "No more entries" }: { message?: string }) {
-  return <p className="ui-text-sm py-4 text-center text-zinc-400 dark:text-zinc-500">{message}</p>;
+  return <p className="ui-text-sm text-faint py-4 text-center">{message}</p>;
 }

@@ -124,7 +124,7 @@ export default function ApiTokensSettingsContent() {
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="ui-text-lg font-semibold text-zinc-900 dark:text-zinc-50">API Tokens</h2>
+        <h2 className="ui-text-lg text-strong font-semibold">API Tokens</h2>
         {!showCreateForm && (
           <Button onClick={() => setShowCreateForm(true)} size="sm">
             Create New Token
@@ -132,7 +132,7 @@ export default function ApiTokensSettingsContent() {
         )}
       </div>
 
-      <p className="ui-text-sm mb-6 text-zinc-600 dark:text-zinc-400">
+      <p className="ui-text-sm text-muted mb-6">
         API tokens allow you to connect third-party applications like Claude Desktop, browser
         extensions, and other integrations. Tokens are only shown once when created.
       </p>
@@ -171,35 +171,31 @@ export default function ApiTokensSettingsContent() {
       {/* Create Token Form */}
       {showCreateForm && (
         <Card className="mb-6">
-          <h3 className="mb-4 font-medium text-zinc-900 dark:text-zinc-50">Create New Token</h3>
+          <h3 className="text-strong mb-4 font-medium">Create New Token</h3>
 
           <div className="space-y-4">
             {/* Token Name */}
             <div>
-              <label className="ui-text-sm mb-1 block font-medium text-zinc-700 dark:text-zinc-300">
-                Token Name
-              </label>
+              <label className="ui-text-sm text-body mb-1 block font-medium">Token Name</label>
               <Input
                 value={tokenName}
                 onChange={(e) => setTokenName(e.target.value)}
                 placeholder="e.g., Claude Desktop, Browser Extension"
                 className="w-full"
               />
-              <p className="ui-text-xs mt-1 text-zinc-500 dark:text-zinc-400">
+              <p className="ui-text-xs text-subtle mt-1">
                 A descriptive name to help you identify this token
               </p>
             </div>
 
             {/* Scopes */}
             <div>
-              <label className="ui-text-sm mb-2 block font-medium text-zinc-700 dark:text-zinc-300">
-                Scopes
-              </label>
+              <label className="ui-text-sm text-body mb-2 block font-medium">Scopes</label>
               <div className="space-y-2">
                 {Object.entries(scopeLabels).map(([scope, { label, description }]) => (
                   <label
                     key={scope}
-                    className="flex cursor-pointer items-start gap-3 rounded-lg border border-zinc-200 p-3 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800"
+                    className="border-edge flex cursor-pointer items-start gap-3 rounded-lg border p-3 hover:bg-zinc-50 dark:hover:bg-zinc-800"
                   >
                     <input
                       type="checkbox"
@@ -208,8 +204,8 @@ export default function ApiTokensSettingsContent() {
                       className="text-accent focus:ring-accent mt-1 h-4 w-4 rounded border-zinc-300 dark:border-zinc-700 dark:bg-zinc-800"
                     />
                     <div className="flex-1">
-                      <p className="font-medium text-zinc-900 dark:text-zinc-50">{label}</p>
-                      <p className="ui-text-xs text-zinc-500 dark:text-zinc-400">{description}</p>
+                      <p className="text-strong font-medium">{label}</p>
+                      <p className="ui-text-xs text-subtle">{description}</p>
                     </div>
                   </label>
                 ))}
@@ -218,7 +214,7 @@ export default function ApiTokensSettingsContent() {
 
             {/* Expiration (Optional) */}
             <div>
-              <label className="ui-text-sm mb-1 block font-medium text-zinc-700 dark:text-zinc-300">
+              <label className="ui-text-sm text-body mb-1 block font-medium">
                 Expiration (Optional)
               </label>
               <Input
@@ -229,7 +225,7 @@ export default function ApiTokensSettingsContent() {
                 className="w-full"
                 min="1"
               />
-              <p className="ui-text-xs mt-1 text-zinc-500 dark:text-zinc-400">
+              <p className="ui-text-xs text-subtle mt-1">
                 Leave empty for a token that never expires
               </p>
             </div>
@@ -262,7 +258,7 @@ export default function ApiTokensSettingsContent() {
 
       {/* Active Tokens List */}
       <div className="mb-6">
-        <h3 className="ui-text-sm mb-3 font-medium text-zinc-700 dark:text-zinc-300">
+        <h3 className="ui-text-sm text-body mb-3 font-medium">
           Active Tokens ({activeTokens.length})
         </h3>
         <SettingsListContainer
@@ -287,14 +283,14 @@ export default function ApiTokensSettingsContent() {
       {/* Revoked/Expired Tokens */}
       {inactiveTokens.length > 0 && (
         <div>
-          <h3 className="ui-text-sm mb-3 font-medium text-zinc-700 dark:text-zinc-300">
+          <h3 className="ui-text-sm text-body mb-3 font-medium">
             Revoked/Expired Tokens ({inactiveTokens.length})
           </h3>
           <div className="space-y-3">
             {inactiveTokens.map((token) => (
               <div
                 key={token.id}
-                className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 opacity-60 dark:border-zinc-800 dark:bg-zinc-900"
+                className="border-edge rounded-lg border bg-zinc-50 p-4 opacity-60 dark:bg-zinc-900"
               >
                 <div className="flex items-center gap-2">
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-200 dark:bg-zinc-800">
@@ -344,14 +340,12 @@ function ActiveTokenCard({ token, onRevoke, isRevoking }: ActiveTokenCardProps) 
         <div className="flex-1">
           <div className="flex items-center gap-2">
             {/* Key icon */}
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800">
-              <KeyIcon className="h-4 w-4 text-zinc-600 dark:text-zinc-400" />
+            <div className="bg-surface-muted flex h-8 w-8 shrink-0 items-center justify-center rounded-full">
+              <KeyIcon className="text-muted h-4 w-4" />
             </div>
 
             <div className="min-w-0 flex-1">
-              <p className="font-medium text-zinc-900 dark:text-zinc-50">
-                {token.name || "Unnamed Token"}
-              </p>
+              <p className="text-strong font-medium">{token.name || "Unnamed Token"}</p>
               <div className="mt-1 flex flex-wrap gap-1">
                 {token.scopes.map((scope) => (
                   <span
@@ -365,7 +359,7 @@ function ActiveTokenCard({ token, onRevoke, isRevoking }: ActiveTokenCardProps) 
             </div>
           </div>
 
-          <div className="ui-text-xs mt-2 flex flex-wrap gap-x-4 gap-y-1 text-zinc-500 dark:text-zinc-400">
+          <div className="ui-text-xs text-subtle mt-2 flex flex-wrap gap-x-4 gap-y-1">
             <span>
               Created:{" "}
               {new Date(token.createdAt).toLocaleDateString("en-US", {

@@ -243,7 +243,7 @@ describe("DialogTitle", () => {
   it("applies title styles", () => {
     render(<DialogTitle>Styled Title</DialogTitle>);
     const title = screen.getByRole("heading");
-    expect(title).toHaveClass("font-semibold", "text-zinc-900");
+    expect(title).toHaveClass("font-semibold", "text-strong");
   });
 
   it("applies custom id", () => {
@@ -267,7 +267,7 @@ describe("DialogDescription", () => {
   it("applies description styles", () => {
     render(<DialogDescription>Styled description</DialogDescription>);
     const description = screen.getByText("Styled description");
-    expect(description).toHaveClass("text-zinc-600", "mt-2");
+    expect(description).toHaveClass("text-muted", "mt-2");
   });
 
   it("applies custom className", () => {

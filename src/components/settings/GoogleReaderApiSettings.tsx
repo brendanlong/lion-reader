@@ -40,11 +40,11 @@ export function GoogleReaderApiSettings() {
     >
       {/* Supported Clients */}
       <div className="mt-6">
-        <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">Compatible Apps</h3>
-        <p className="ui-text-sm mt-1 text-zinc-600 dark:text-zinc-400">
+        <h3 className="ui-text-sm text-strong font-medium">Compatible Apps</h3>
+        <p className="ui-text-sm text-muted mt-1">
           Any app that supports the Google Reader API should work, including:
         </p>
-        <ul className="ui-text-sm mt-2 list-inside list-disc space-y-1 text-zinc-600 dark:text-zinc-400">
+        <ul className="ui-text-sm text-muted mt-2 list-inside list-disc space-y-1">
           <li>
             <TextLink href="https://reederapp.com/classic/" external>
               Reeder Classic
@@ -83,14 +83,14 @@ export function GoogleReaderApiSettings() {
 
       {/* Setup Instructions */}
       <CardSection>
-        <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">Setup</h3>
-        <p className="ui-text-sm mt-1 text-zinc-600 dark:text-zinc-400">
+        <h3 className="ui-text-sm text-strong font-medium">Setup</h3>
+        <p className="ui-text-sm text-muted mt-1">
           In your app&apos;s account settings, choose &ldquo;FreshRSS&rdquo; as the service type,
           then enter:
         </p>
-        <ul className="ui-text-sm mt-3 space-y-2 text-zinc-600 dark:text-zinc-400">
+        <ul className="ui-text-sm text-muted mt-3 space-y-2">
           <li>
-            <strong className="text-zinc-900 dark:text-zinc-200">Server URL:</strong>{" "}
+            <strong className="text-emphasis">Server URL:</strong>{" "}
             <InlineCode>{baseUrl}/api/greader.php</InlineCode>
             <CopyButton
               value={`${baseUrl}/api/greader.php`}
@@ -99,28 +99,24 @@ export function GoogleReaderApiSettings() {
             />
           </li>
           <li>
-            <strong className="text-zinc-900 dark:text-zinc-200">Email:</strong> Your Lion Reader
-            email address
+            <strong className="text-emphasis">Email:</strong> Your Lion Reader email address
           </li>
           <li>
-            <strong className="text-zinc-900 dark:text-zinc-200">Password:</strong> Your Lion Reader
-            password
+            <strong className="text-emphasis">Password:</strong> Your Lion Reader password
           </li>
         </ul>
       </CardSection>
 
       {/* Note */}
       <NoteBox className="mt-6">
-        <p className="ui-text-sm text-zinc-600 dark:text-zinc-400">
+        <p className="ui-text-sm text-muted">
           The API uses your regular Lion Reader credentials for authentication. All your
           subscriptions, tags, read state, and starred articles sync automatically.
         </p>
       </NoteBox>
 
       {/* API base URL note */}
-      {baseUrl && (
-        <p className="ui-text-xs mt-4 text-zinc-400 dark:text-zinc-500">API endpoint: {apiBase}</p>
-      )}
+      {baseUrl && <p className="ui-text-xs text-faint mt-4">API endpoint: {apiBase}</p>}
     </SettingsSection>
   );
 }

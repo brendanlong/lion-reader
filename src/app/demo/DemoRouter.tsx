@@ -239,7 +239,7 @@ function DemoRouterContent() {
           backButton={
             <ClientLink
               href={backHref}
-              className="ui-text-sm mb-4 -ml-2 inline-flex min-h-[44px] items-center gap-2 rounded-md px-2 text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 active:bg-zinc-200 sm:mb-6 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 dark:active:bg-zinc-700"
+              className="ui-text-sm text-muted mb-4 -ml-2 inline-flex min-h-[44px] items-center gap-2 rounded-md px-2 transition-colors hover:bg-zinc-100 hover:text-zinc-900 active:bg-zinc-200 sm:mb-6 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 dark:active:bg-zinc-700"
             >
               <ArrowLeftIcon className="h-4 w-4" />
               <span>Back to list</span>
@@ -318,10 +318,8 @@ function DemoRouterContent() {
                 />
               )}
               {selectedEntry.id === "welcome" && (
-                <div className="mb-6 rounded-lg border border-zinc-200 bg-zinc-50 p-6 text-center dark:border-zinc-700 dark:bg-zinc-800/50">
-                  <h2 className="mb-4 text-2xl font-semibold text-zinc-900 dark:text-zinc-100">
-                    Get Started
-                  </h2>
+                <div className="border-edge-strong bg-surface-subtle mb-6 rounded-lg border p-6 text-center">
+                  <h2 className="text-strong mb-4 text-2xl font-semibold">Get Started</h2>
                   <div className="flex flex-col justify-center gap-3 sm:flex-row sm:items-center">
                     <Link
                       href="/register"
@@ -331,7 +329,7 @@ function DemoRouterContent() {
                     </Link>
                     <Link
                       href="/login"
-                      className="ui-text-base inline-flex h-12 w-full items-center justify-center rounded-md border border-zinc-300 bg-white px-6 font-medium text-zinc-900 transition-colors hover:bg-zinc-50 sm:w-auto dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                      className="ui-text-base bg-surface text-strong inline-flex h-12 w-full items-center justify-center rounded-md border border-zinc-300 px-6 font-medium transition-colors hover:bg-zinc-50 sm:w-auto dark:border-zinc-700 dark:hover:bg-zinc-800"
                     >
                       Sign in
                     </Link>
@@ -342,12 +340,10 @@ function DemoRouterContent() {
           }
           afterContent={
             selectedEntry.id === "appearance" && (
-              <div className="mt-8 border-t border-zinc-200 pt-8 dark:border-zinc-700">
+              <div className="border-edge-strong mt-8 border-t pt-8">
                 <div className="mb-4">
-                  <h2 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">
-                    Try it yourself
-                  </h2>
-                  <p className="ui-text-sm mt-1 text-zinc-600 dark:text-zinc-400">
+                  <h2 className="text-strong text-xl font-semibold">Try it yourself</h2>
+                  <p className="ui-text-sm text-muted mt-1">
                     These are the real appearance settings from the app. Switch to the dark theme to
                     see the warm, low-blue-light palette, or adjust the fonts and text size &mdash;
                     changes apply live to this article. Your choices are saved in this browser.
@@ -366,9 +362,7 @@ function DemoRouterContent() {
     <div className="mx-auto max-w-3xl px-4 py-4 sm:p-6">
       {/* Header with title and action buttons */}
       <div className="mb-4 flex items-center justify-between sm:mb-6">
-        <h1 className="ui-text-xl sm:ui-text-2xl font-bold text-zinc-900 dark:text-zinc-50">
-          {pageTitle}
-        </h1>
+        <h1 className="ui-text-xl sm:ui-text-2xl text-strong font-bold">{pageTitle}</h1>
         {!isHighlights && (
           <div className="flex gap-2">
             <MarkAllReadButton

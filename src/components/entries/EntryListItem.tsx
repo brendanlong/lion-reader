@@ -70,12 +70,12 @@ export function getItemClasses(read: boolean, selected: boolean): string {
   if (selected) {
     // Selected state takes priority - accent ring indicator
     return `${baseClasses} border-accent ring-2 ring-accent ring-offset-1 dark:ring-offset-zinc-900 ${
-      read ? "bg-white dark:bg-zinc-900" : "bg-zinc-50 dark:bg-zinc-800"
+      read ? "bg-surface" : "bg-zinc-50 dark:bg-zinc-800"
     }`;
   }
 
   if (read) {
-    return `${baseClasses} border-zinc-200 bg-white hover:bg-zinc-50 active:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800/50 dark:active:bg-zinc-800`;
+    return `${baseClasses} border-edge bg-surface hover:bg-zinc-50 active:bg-zinc-100 dark:hover:bg-zinc-800/50 dark:active:bg-zinc-800`;
   }
 
   return `${baseClasses} border-zinc-300 bg-zinc-50 hover:bg-zinc-100 active:bg-zinc-200 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-700/50 dark:active:bg-zinc-700`;
@@ -187,9 +187,7 @@ export const EntryListItem = memo(function EntryListItem({
           <div className="flex items-start justify-between gap-2">
             <h3
               className={`ui-text-sm line-clamp-2 ${
-                read
-                  ? "font-normal text-zinc-700 dark:text-zinc-300"
-                  : "font-medium text-zinc-900 dark:text-zinc-100"
+                read ? "text-body font-normal" : "text-strong font-medium"
               }`}
             >
               {displayTitle}
@@ -226,7 +224,7 @@ export const EntryListItem = memo(function EntryListItem({
           </div>
 
           {/* Meta Row: Source and Date */}
-          <div className="ui-text-xs mt-1 flex items-center gap-2 text-zinc-500 dark:text-zinc-400">
+          <div className="ui-text-xs text-subtle mt-1 flex items-center gap-2">
             <span className="truncate">{source}</span>
             <span aria-hidden="true">·</span>
             <time dateTime={date.toISOString()} className="shrink-0">
@@ -235,11 +233,7 @@ export const EntryListItem = memo(function EntryListItem({
           </div>
 
           {/* Preview */}
-          {summary && (
-            <p className="ui-text-sm mt-2 line-clamp-2 text-zinc-600 dark:text-zinc-400">
-              {summary}
-            </p>
-          )}
+          {summary && <p className="ui-text-sm text-muted mt-2 line-clamp-2">{summary}</p>}
         </div>
       </div>
     </article>

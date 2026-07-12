@@ -46,10 +46,8 @@ export default function BlockedSendersSettingsContent() {
     <div>
       {/* Page Header */}
       <div className="mb-6">
-        <h2 className="ui-text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-          Blocked Senders
-        </h2>
-        <p className="ui-text-sm mt-1 text-zinc-600 dark:text-zinc-400">
+        <h2 className="ui-text-lg text-strong font-semibold">Blocked Senders</h2>
+        <p className="ui-text-sm text-muted mt-1">
           These senders were blocked when you unsubscribed from their newsletters. Emails from
           blocked senders are automatically rejected.
         </p>
@@ -77,13 +75,11 @@ export default function BlockedSendersSettingsContent() {
 function EmptyState() {
   return (
     <div className="p-8 text-center">
-      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800">
-        <ProhibitionIcon className="h-6 w-6 text-zinc-400 dark:text-zinc-500" />
+      <div className="bg-surface-muted mx-auto flex h-12 w-12 items-center justify-center rounded-full">
+        <ProhibitionIcon className="text-faint h-6 w-6" />
       </div>
-      <h3 className="ui-text-sm mt-4 font-medium text-zinc-900 dark:text-zinc-50">
-        No blocked senders
-      </h3>
-      <p className="ui-text-sm mt-1 text-zinc-500 dark:text-zinc-400">
+      <h3 className="ui-text-sm text-strong mt-4 font-medium">No blocked senders</h3>
+      <p className="ui-text-sm text-subtle mt-1">
         When you unsubscribe from a newsletter, the sender will be added here to prevent future
         emails.
       </p>
@@ -154,10 +150,10 @@ function BlockedSenderRow({ sender }: BlockedSenderRowProps) {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 flex-1">
           {/* Sender Email */}
-          <p className="font-medium text-zinc-900 dark:text-zinc-50">{sender.senderEmail}</p>
+          <p className="text-strong font-medium">{sender.senderEmail}</p>
 
           {/* Metadata */}
-          <div className="ui-text-sm mt-1 flex flex-wrap gap-x-4 gap-y-1 text-zinc-500 dark:text-zinc-400">
+          <div className="ui-text-sm text-subtle mt-1 flex flex-wrap gap-x-4 gap-y-1">
             <span>Blocked {formatRelativeTime(sender.blockedAt)}</span>
             {sender.unsubscribeSentAt && (
               <span className="flex items-center gap-1">

@@ -228,11 +228,9 @@ function SaveContent() {
 
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-50 p-4 dark:bg-zinc-950">
-        <div className="w-full max-w-sm rounded-lg border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="border-edge bg-surface w-full max-w-sm rounded-lg border p-6 shadow-sm">
           <div className="text-center">
-            <h1 className="ui-text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-              Save to Lion Reader
-            </h1>
+            <h1 className="ui-text-lg text-strong font-semibold">Save to Lion Reader</h1>
             <Alert variant="error" className="mt-4">
               {shareError
                 ? errorMessages[shareError] || "An error occurred."
@@ -249,19 +247,17 @@ function SaveContent() {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-50 p-4 dark:bg-zinc-950">
-      <div className="w-full max-w-sm rounded-lg border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="border-edge bg-surface w-full max-w-sm rounded-lg border p-6 shadow-sm">
         <div className="text-center">
-          <h1 className="ui-text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-            Save to Lion Reader
-          </h1>
+          <h1 className="ui-text-lg text-strong font-semibold">Save to Lion Reader</h1>
 
           {/* Saving State (includes idle and pending) */}
           {(activeMutation.isIdle || activeMutation.isPending) && (
             <div className="mt-6">
               <div className="flex justify-center">
-                <SpinnerIcon className="h-8 w-8 text-zinc-600 dark:text-zinc-400" />
+                <SpinnerIcon className="text-muted h-8 w-8" />
               </div>
-              <p className="ui-text-sm mt-3 text-zinc-600 dark:text-zinc-400">
+              <p className="ui-text-sm text-muted mt-3">
                 {shareType === "file" ? "Uploading file..." : "Saving article..."}
               </p>
               {urlToSave && (
@@ -282,9 +278,7 @@ function SaveContent() {
                 Saved successfully!
               </p>
               {articleTitle && (
-                <p className="ui-text-sm mt-2 line-clamp-2 text-zinc-600 dark:text-zinc-400">
-                  {articleTitle}
-                </p>
+                <p className="ui-text-sm text-muted mt-2 line-clamp-2">{articleTitle}</p>
               )}
               <p className="ui-text-xs mt-4 text-zinc-500 dark:text-zinc-500">
                 Closing in {countdown}...

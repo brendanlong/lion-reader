@@ -30,9 +30,9 @@ export function Button({
   const variantStyles = {
     primary: "btn-primary",
     secondary:
-      "border border-zinc-300 bg-white text-zinc-900 hover:bg-zinc-50 focus:ring-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800 dark:focus:ring-zinc-400",
+      "border border-zinc-300 bg-surface text-strong hover:bg-zinc-50 focus:ring-zinc-900 dark:border-zinc-700 dark:hover:bg-zinc-800 dark:focus:ring-zinc-400",
     ghost:
-      "text-zinc-900 hover:bg-zinc-100 focus:ring-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800 dark:focus:ring-zinc-400",
+      "text-strong hover:bg-zinc-100 focus:ring-zinc-900 dark:hover:bg-zinc-800 dark:focus:ring-zinc-400",
   };
 
   // Ensure minimum 44px height for touch targets on mobile (WCAG touch target guidelines)
