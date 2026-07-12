@@ -15,6 +15,7 @@ import {
   getProtectedResourceMetadata,
   getProtectedResourceMetadataUrl,
   getAuthorizationServerMetadata,
+  getRegistrationClientUri,
 } from "../../src/server/oauth/config";
 import { SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS } from "../../src/server/oauth/utils";
 
@@ -154,6 +155,20 @@ describe("OAuth resource identifiers on the dedicated MCP host", () => {
     expect(metadata.registration_endpoint).toBe("https://mcp.example.com/register");
     // Served by the root alias in src/app/revoke/route.ts.
     expect(metadata.revocation_endpoint).toBe("https://mcp.example.com/revoke");
+  });
+
+  it("expresses registration_client_uri on the requesting host's surface", () => {
+    // Cross-origin registration_client_uri (apex origin in an MCP-host DCR
+    // response) is an inconsistency a strict client can reject.
+    expect(getRegistrationClientUri("abc123", "mcp.example.com")).toBe(
+      "https://mcp.example.com/register/abc123"
+    );
+    expect(getRegistrationClientUri("abc123", "reader.example.com")).toBe(
+      "https://reader.example.com/oauth/register/abc123"
+    );
+    expect(getRegistrationClientUri("abc123")).toBe(
+      "https://reader.example.com/oauth/register/abc123"
+    );
   });
 
   it("advertises the MCP host itself as its own authorization server", () => {

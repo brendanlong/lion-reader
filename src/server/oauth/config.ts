@@ -136,6 +136,20 @@ export function getAcceptedResourceIdentifiers(): string[] {
 }
 
 /**
+ * The `registration_client_uri` returned from Dynamic Client Registration
+ * (RFC 7591). Host-derived like the advertised endpoints: a registration on the
+ * MCP host must not reference the apex origin — a cross-origin URI in the
+ * registration response is an inconsistency a strict client can reject. The URI
+ * intentionally 404s on both surfaces (RFC 7592 client management is not
+ * implemented — see registerClient); only its origin-consistency matters.
+ */
+export function getRegistrationClientUri(clientId: string, host?: string | null): string {
+  const surface = resolveSurface(host);
+  const prefix = surface.rootOauthEndpoints ? "" : "/oauth";
+  return `${surface.issuer}${prefix}/register/${clientId}`;
+}
+
+/**
  * OAuth 2.0 Authorization Server Metadata (RFC 8414)
  * Used by /.well-known/oauth-authorization-server
  */
