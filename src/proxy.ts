@@ -65,6 +65,7 @@ function isOAuthMcpSurfacePath(pathname: string): boolean {
     pathname === "/api/mcp" ||
     pathname === "/authorize" ||
     pathname === "/token" ||
+    pathname === "/revoke" ||
     pathname.startsWith("/oauth/") ||
     pathname.startsWith("/.well-known/")
   );
