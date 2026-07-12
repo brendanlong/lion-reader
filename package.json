@@ -121,7 +121,7 @@
     "dotenv-cli": "^11.0.0",
     "esbuild": "^0.28.1",
     "eslint": "^9.39.2",
-    "eslint-config-next": "16.2.6",
+    "eslint-config-next": "16.2.10",
     "fake-indexeddb": "^6.2.5",
     "husky": "^9.1.7",
     "jsdom": "^29.1.1",
