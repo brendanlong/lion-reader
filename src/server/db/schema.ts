@@ -617,32 +617,11 @@ export const subscriptions = pgTable(
   ]
 );
 
-/**
- * Subscription feeds junction table - maps subscriptions to all feed IDs they cover.
- * Each subscription has at least one row (for the current feed_id). Additional rows
- * are added during feed redirects to preserve access to entries from old feeds.
- */
-export const subscriptionFeeds = pgTable(
-  "subscription_feeds",
-  {
-    subscriptionId: uuid("subscription_id")
-      .notNull()
-      .references(() => subscriptions.id, { onDelete: "cascade" }),
-    feedId: uuid("feed_id")
-      .notNull()
-      .references(() => feeds.id, { onDelete: "cascade" }),
-    userId: uuid("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [
-    primaryKey({ columns: [table.subscriptionId, table.feedId] }),
-    index("idx_subscription_feeds_user_feed").on(table.userId, table.feedId),
-    index("idx_subscription_feeds_feed").on(table.feedId),
-  ]
-);
+// The subscription_feeds junction table (subscription → covered feed IDs,
+// including redirect/merge history) still exists in the database but is no
+// longer read or written: entry → subscription resolution goes through
+// user_entries.subscription_id (issue #1117). The table is dropped in a
+// follow-up migration once no deployed release touches it.
 
 // ============================================================================
 // USER ENTRIES (visibility + state)
@@ -707,8 +686,8 @@ export const userEntries = pgTable(
     // article (per-user feed with no subscription row). Filled inline by the bulk
     // insert paths or by the user_entries_fill_denormalized trigger; re-stamped by
     // the feed-merge job. Since migration 0087, visible_entries resolves entry
-    // visibility through this column (the subscription_feeds junction is
-    // write-only for visibility and slated for removal).
+    // visibility through this column; the subscription_feeds junction is no
+    // longer read or written and is slated for removal.
     subscriptionId: uuid("subscription_id").references(() => subscriptions.id, {
       onDelete: "set null",
     }),

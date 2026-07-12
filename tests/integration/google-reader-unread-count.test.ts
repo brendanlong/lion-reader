@@ -13,14 +13,7 @@
 import { describe, it, expect, afterAll } from "vitest";
 import { inArray } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import {
-  users,
-  feeds,
-  entries,
-  userEntries,
-  subscriptions,
-  subscriptionFeeds,
-} from "../../src/server/db/schema";
+import { users, feeds, entries, userEntries, subscriptions } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { getGreaderNewestItemAt } from "../../src/server/google-reader/subscriptions";
 
@@ -66,7 +59,6 @@ async function createSubscribedFeed(userId: string): Promise<{ feedId: string; s
   await db
     .insert(subscriptions)
     .values({ id: subId, userId, feedId, subscribedAt: now, createdAt: now, updatedAt: now });
-  await db.insert(subscriptionFeeds).values({ subscriptionId: subId, feedId, userId });
   createdFeedIds.push(feedId);
   return { feedId, subId };
 }

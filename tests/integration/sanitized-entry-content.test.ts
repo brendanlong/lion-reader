@@ -11,14 +11,7 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import {
-  users,
-  feeds,
-  entries,
-  subscriptions,
-  subscriptionFeeds,
-  userEntries,
-} from "../../src/server/db/schema";
+import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
@@ -102,10 +95,6 @@ async function seedSubscribedUser(): Promise<{ userId: string; feedId: string }>
     createdAt: now,
     updatedAt: now,
   });
-  await db
-    .insert(subscriptionFeeds)
-    .values({ subscriptionId, feedId, userId })
-    .onConflictDoNothing();
   return { userId, feedId };
 }
 

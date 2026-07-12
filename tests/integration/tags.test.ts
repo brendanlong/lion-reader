@@ -12,7 +12,6 @@ import {
   users,
   tags,
   subscriptions,
-  subscriptionFeeds,
   subscriptionTags,
   feeds,
   entries,
@@ -133,10 +132,6 @@ async function createTestSubscription(userId: string, feedId: string): Promise<s
     createdAt: new Date(),
     updatedAt: new Date(),
   });
-  await db
-    .insert(subscriptionFeeds)
-    .values({ subscriptionId, feedId, userId })
-    .onConflictDoNothing();
   return subscriptionId;
 }
 
@@ -332,17 +327,14 @@ describe("Tags API", () => {
       const tagId = generateUuidv7();
       await db.insert(tags).values({ id: tagId, userId, name: "Tech", createdAt: new Date() });
 
-      // sub1 subscribed to feedA but previously covered feedB (redirect/merge
-      // history), so subscription_feeds maps it to both. sub2 is subscribed to
-      // feedB directly. An unread entry in feedB is reachable through both
-      // subscriptions and must be counted once.
+      // sub1 is subscribed to feedA, sub2 to feedB. Each user_entries row is
+      // attributed to exactly one subscription (user_entries.subscription_id),
+      // so an unread entry in feedB counts once for the tag even though both
+      // subscriptions carry the same tag.
       const feedIdA = await createTestFeed("https://feed-a.com/rss");
       const feedIdB = await createTestFeed("https://feed-b.com/rss");
       const subId1 = await createTestSubscription(userId, feedIdA);
       const subId2 = await createTestSubscription(userId, feedIdB);
-      await db
-        .insert(subscriptionFeeds)
-        .values({ subscriptionId: subId1, feedId: feedIdB, userId });
       await linkTagToSubscription(tagId, subId1);
       await linkTagToSubscription(tagId, subId2);
 
@@ -725,16 +717,12 @@ describe("Tags API", () => {
       const tagId = generateUuidv7();
       await db.insert(tags).values({ id: tagId, userId, name: "Tech", createdAt: new Date() });
 
-      // Overlapping subscription_feeds within the tag (dedup case) plus a
-      // second user on the shared feed (scoping case) — update must count the
-      // same way list does.
+      // Two tagged subscriptions plus a second user on the shared feed
+      // (scoping case) — update must count the same way list does.
       const feedIdA = await createTestFeed("https://feed-a.com/rss");
       const feedIdB = await createTestFeed("https://feed-b.com/rss");
       const subId1 = await createTestSubscription(userId, feedIdA);
       const subId2 = await createTestSubscription(userId, feedIdB);
-      await db
-        .insert(subscriptionFeeds)
-        .values({ subscriptionId: subId1, feedId: feedIdB, userId });
       await linkTagToSubscription(tagId, subId1);
       await linkTagToSubscription(tagId, subId2);
       await createTestSubscription(otherUserId, feedIdB);
@@ -1168,11 +1156,6 @@ describe("Tags API", () => {
       const feedIdA = await createTestFeed("https://feed-a.com/rss"); // current feed
       const feedIdB = await createTestFeed("https://feed-b.com/rss"); // merged-in old feed
       const subId = await createTestSubscription(userId, feedIdA);
-      // subscription_feeds links the subscription to BOTH feeds (merge history).
-      await db
-        .insert(subscriptionFeeds)
-        .values({ subscriptionId: subId, feedId: feedIdB, userId })
-        .onConflictDoNothing();
 
       // 2 unread under the current feed, 1 unread under the merged-in feed.
       await createTestEntry(feedIdA, { userIds: [userId] });
@@ -1194,9 +1177,9 @@ describe("Tags API", () => {
     });
 
     it("does not count another user's unread entries on a shared feed", async () => {
-      // The per-subscription count must stay user-scoped: subscription_feeds is
-      // per-user and feeds are shared, so a missing user filter would leak other
-      // users' unread counts.
+      // The per-subscription count must stay user-scoped: user_entries
+      // attribution is per-user and feeds are shared, so a missing user filter
+      // would leak other users' unread counts.
       const userId = await createTestUser("user-a");
       const otherUserId = await createTestUser("user-b");
 
@@ -1248,10 +1231,6 @@ describe("Tags API", () => {
       const feedIdA = await createTestFeed("https://feed-a.com/rss");
       const feedIdB = await createTestFeed("https://feed-b.com/rss");
       const subId = await createTestSubscription(userId, feedIdA); // untagged
-      await db
-        .insert(subscriptionFeeds)
-        .values({ subscriptionId: subId, feedId: feedIdB, userId })
-        .onConflictDoNothing();
 
       await createTestEntry(feedIdA, { userIds: [userId] });
       const mergedEntry = await createTestEntry(feedIdB, { userIds: [userId] });

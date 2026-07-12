@@ -24,14 +24,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import Redis from "ioredis";
 import { and, eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import {
-  users,
-  feeds,
-  entries,
-  subscriptions,
-  subscriptionFeeds,
-  userEntries,
-} from "../../src/server/db/schema";
+import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import * as entriesService from "../../src/server/services/entries";
 import { getUserEventsChannel } from "../../src/server/redis/pubsub";
@@ -97,7 +90,6 @@ async function seedEntry(userId: string): Promise<string> {
     createdAt: now,
     updatedAt: now,
   });
-  await db.insert(subscriptionFeeds).values({ subscriptionId, feedId, userId });
 
   const entryId = generateUuidv7();
   await db.insert(entries).values({

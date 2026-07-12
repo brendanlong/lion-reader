@@ -12,7 +12,6 @@ import {
   feeds,
   entries,
   subscriptions,
-  subscriptionFeeds,
   subscriptionTags,
   tags,
   userEntries,
@@ -127,10 +126,6 @@ async function createTestSubscription(userId: string, feedId: string): Promise<s
     createdAt: new Date(),
     updatedAt: new Date(),
   });
-  await db
-    .insert(subscriptionFeeds)
-    .values({ subscriptionId, feedId, userId })
-    .onConflictDoNothing();
   return subscriptionId;
 }
 
@@ -308,15 +303,14 @@ describe("Entries", () => {
 
   describe("list deduplicates entries reachable through overlapping subscriptions", () => {
     /**
-     * Regression for #1083. visible_entries emits one row per matching
+     * Regression for #1083. visible_entries used to emit one row per matching
      * subscription_feeds row, so an entry reachable through overlapping
      * subscriptions (from feed redirect/merge history) would appear multiple
-     * times in the list/search — even across cursor pages — and disagree with
-     * the count paths that dedupe via count(DISTINCT id).
+     * times in the list/search — even across cursor pages. With 1:1 attribution
+     * (user_entries.subscription_id) the view emits exactly one row per
+     * (user, entry); these tests pin that each entry appears exactly once.
      *
-     * Fixture: sub1 covers feedA and feedB (redirect/merge history in
-     * subscription_feeds), sub2 covers feedB directly. An entry in feedB is thus
-     * reachable through both subscriptions and must still appear exactly once.
+     * Fixture: sub1 covers feedA, sub2 covers feedB; an entry in each feed.
      */
     async function createOverlappingSubscriptions(
       userId: string,
@@ -326,10 +320,6 @@ describe("Entries", () => {
       const feedIdB = await createTestFeed("https://feed-b.com/rss", "Feed B");
       const subId1 = await createTestSubscription(userId, feedIdA);
       const subId2 = await createTestSubscription(userId, feedIdB);
-      // sub1 also covers feedB (redirect/merge history) — overlapping with sub2.
-      await db
-        .insert(subscriptionFeeds)
-        .values({ subscriptionId: subId1, feedId: feedIdB, userId });
 
       const entryIdA = await createTestEntry(feedIdA, { title: "Only In A" });
       const entryIdB = await createTestEntry(feedIdB, entryOptions);
@@ -864,25 +854,20 @@ describe("Entries", () => {
     });
 
     it("does not double-count entries reachable through overlapping subscriptions", async () => {
-      // visible_entries emits one row per matching subscription_feeds row, so an
-      // entry reachable through two subscriptions to the same feed (redirect/
-      // merge history) appears twice. The unread count must dedupe by entry id
-      // so the sidebar badge stays consistent with the counts service.
+      // visible_entries used to emit one row per matching subscription_feeds
+      // row, double-counting an entry reachable through two subscriptions
+      // (redirect/merge history). With 1:1 attribution the view emits one row
+      // per (user, entry); the unread count must match the counts service.
       const userId = await createTestUser();
       const feedA = await createTestFeed("https://a.com/rss");
       const feedB = await createTestFeed("https://b.com/rss");
-      const subId1 = await createTestSubscription(userId, feedA);
+      await createTestSubscription(userId, feedA);
       await createTestSubscription(userId, feedB);
-      // Extra subscription_feeds row: sub1 also covers feedB (merge history).
-      await db
-        .insert(subscriptionFeeds)
-        .values({ subscriptionId: subId1, feedId: feedB, userId })
-        .onConflictDoNothing();
 
       const entryA = await createTestEntry(feedA, { title: "A" });
       const entryB = await createTestEntry(feedB, { title: "B" });
       await createUserEntry(userId, entryA, { read: false });
-      await createUserEntry(userId, entryB, { read: false }); // reachable via sub1 AND sub2
+      await createUserEntry(userId, entryB, { read: false });
 
       const caller = createCaller(createAuthContext(userId));
       const result = await caller.entries.count({});

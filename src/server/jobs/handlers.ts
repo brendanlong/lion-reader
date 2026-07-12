@@ -13,7 +13,6 @@ import { db } from "../db";
 import {
   feeds,
   subscriptions,
-  subscriptionFeeds,
   entries,
   opmlImports,
   tags,
@@ -1080,14 +1079,14 @@ async function applyRedirectMigration(
  * Used when a permanent redirect is detected and the target URL already has a feed.
  *
  * For each subscriber:
- * 1. Creates or updates subscription to new feed, adding old feed ID to subscription_feeds
+ * 1. Creates or updates subscription to the new feed
  * 2. Re-stamps user_entries.subscription_id from the old subscription to the survivor
  * 3. Unsubscribes from old feed
  *
- * User entries stay linked to entries in the old feed. Entry queries use
- * the subscription_feeds junction table to find all relevant entries; the
- * re-stamp keeps the denormalized subscription_id column (issue #1117)
- * pointing at the surviving, active subscription.
+ * User entries stay linked to entries in the old feed: entry visibility and
+ * filtering resolve through user_entries.subscription_id (issue #1117), so the
+ * re-stamp is what keeps the old feed's entries attributed to the surviving,
+ * active subscription.
  *
  * @param oldFeed - The feed that is being redirected
  * @param newFeed - The existing feed at the redirect URL
@@ -1157,7 +1156,7 @@ export async function migrateSubscriptionsToExistingFeed(
   // Surviving subscription per user, for re-stamping user_entries.subscription_id
   const survivorByUser = new Map<string, string>();
 
-  // For users with existing subscriptions: reactivate if needed and add old feed to subscription_feeds
+  // For users with existing subscriptions: reactivate if needed
   for (const user of usersWithExisting) {
     survivorByUser.set(user.userId, user.existingSubId);
     if (user.wasUnsubscribed) {
@@ -1170,16 +1169,6 @@ export async function migrateSubscriptionsToExistingFeed(
         })
         .where(eq(subscriptions.id, user.existingSubId));
     }
-
-    // Add old feed ID to the existing subscription's subscription_feeds
-    await db
-      .insert(subscriptionFeeds)
-      .values({
-        subscriptionId: user.existingSubId,
-        feedId: oldFeed.id,
-        userId: user.userId,
-      })
-      .onConflictDoNothing();
   }
 
   // Batch insert: For users without existing subscriptions, create new ones
@@ -1198,24 +1187,16 @@ export async function migrateSubscriptionsToExistingFeed(
 
     await db.insert(subscriptions).values(newSubscriptions);
 
-    // Add subscription_feeds entries for both new feed and old feed
-    const sfEntries = newSubscriptions.flatMap((sub) => [
-      { subscriptionId: sub.id, feedId: newFeed.id, userId: sub.userId },
-      { subscriptionId: sub.id, feedId: oldFeed.id, userId: sub.userId },
-    ]);
-    await db.insert(subscriptionFeeds).values(sfEntries).onConflictDoNothing();
-
     // Ensure a job exists for the new feed (will be claimed via data-driven eligibility)
     await ensureFeedJob(newFeed.id);
   }
 
   // Re-stamp user_entries attribution from each old subscription to its survivor.
-  // user_entries.subscription_id is stamped at insert (issue #1117), so without
-  // this, the old feed's entries would stay attributed to the about-to-be-
-  // unsubscribed subscription. Junction-based visibility (subscription_feeds) is
-  // unaffected; this keeps the stamped column consistent with what the junction
-  // resolves. Deliberately leaves updated_at alone: nothing user-visible changes,
-  // and bumping it would flood every affected user's delta sync.
+  // user_entries.subscription_id is stamped at insert (issue #1117) and is what
+  // visibility and filtering resolve through, so without this the old feed's
+  // entries would vanish with the about-to-be-unsubscribed subscription.
+  // Deliberately leaves updated_at alone: nothing user-visible changes, and
+  // bumping it would flood every affected user's delta sync.
   for (const oldSub of activeSubscriptions) {
     const survivorId = survivorByUser.get(oldSub.userId);
     if (!survivorId) continue;

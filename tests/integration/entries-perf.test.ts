@@ -14,7 +14,6 @@ import { db } from "../../src/server/db";
 import {
   users,
   subscriptions,
-  subscriptionFeeds,
   userEntries,
   tags,
   subscriptionTags,
@@ -146,7 +145,7 @@ let testTagIds: string[] = [];
 async function cleanupTestData() {
   // Use TRUNCATE for speed on large tables
   await db.execute(sql`TRUNCATE subscription_tags, tags, user_entries, entries,
-    subscription_feeds, subscriptions, feeds, users CASCADE`);
+    subscriptions, feeds, users CASCADE`);
 }
 
 describe.skipIf(!process.env.RUN_PERF_TESTS)("Entries Performance Profiling", () => {
@@ -235,14 +234,14 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Entries Performance Profiling", ()
     `);
     const allFeedIds = feedRows.rows.map((r: Record<string, unknown>) => r.id as string);
 
-    // Step 5: Create subscriptions + subscription_feeds for each user
+    // Step 5: Create subscriptions for each user
     // Each user gets FEEDS_PER_USER distinct feeds
     const subsStart = performance.now();
     for (let u = 0; u < NUM_USERS; u++) {
       const userId = userIds[u];
       const userFeedIds = allFeedIds.slice(u * FEEDS_PER_USER, (u + 1) * FEEDS_PER_USER);
 
-      // Build subscription + subscription_feeds values in chunks
+      // Build subscription values in chunks
       const CHUNK = 1000;
       for (let c = 0; c < userFeedIds.length; c += CHUNK) {
         const chunk = userFeedIds.slice(c, c + CHUNK);
@@ -255,13 +254,6 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Entries Performance Profiling", ()
           updatedAt: new Date(),
         }));
         await db.insert(subscriptions).values(subValues);
-
-        const sfValues = subValues.map((s) => ({
-          subscriptionId: s.id,
-          feedId: s.feedId,
-          userId,
-        }));
-        await db.insert(subscriptionFeeds).values(sfValues);
       }
     }
     console.log(
@@ -398,7 +390,6 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Entries Performance Profiling", ()
     await db.execute(sql`ANALYZE user_entries`);
     await db.execute(sql`ANALYZE feeds`);
     await db.execute(sql`ANALYZE subscriptions`);
-    await db.execute(sql`ANALYZE subscription_feeds`);
     await db.execute(sql`ANALYZE subscription_tags`);
     await db.execute(sql`ANALYZE tags`);
     console.log(`  ANALYZE complete (${(performance.now() - analyzeStart).toFixed(0)}ms)`);

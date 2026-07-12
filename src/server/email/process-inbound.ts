@@ -16,7 +16,6 @@ import {
   feeds,
   entries,
   subscriptions,
-  subscriptionFeeds,
   userEntries,
   ingestAddresses,
   blockedSenders,
@@ -337,17 +336,6 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
     .returning();
 
   if (upsertedSubscription) {
-    // Ensure subscription_feeds row exists so entry queries can find this
-    // subscription's entries (they join through subscription_feeds)
-    await db
-      .insert(subscriptionFeeds)
-      .values({
-        subscriptionId: upsertedSubscription.id,
-        feedId: feed.id,
-        userId,
-      })
-      .onConflictDoNothing();
-
     const isNewSubscription = upsertedSubscription.id === subscriptionId;
     logger.info(isNewSubscription ? "Created subscription" : "Reactivated subscription", {
       subscriptionId: upsertedSubscription.id,
