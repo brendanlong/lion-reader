@@ -11,6 +11,7 @@
 "use client";
 
 import { useTheme } from "next-themes";
+import { SettingsSection } from "@/components/settings/SettingsSection";
 import { useAppearance, useEntryTextStyles } from "@/lib/appearance/AppearanceProvider";
 import type { TextSize, TextJustification, FontFamily } from "@/lib/appearance/settings";
 
@@ -131,61 +132,53 @@ export function AppearanceSettings() {
   return (
     <div className="space-y-8">
       {/* Theme Section */}
-      <section>
-        <h2 className="ui-text-lg mb-4 font-semibold text-zinc-900 dark:text-zinc-50">Theme</h2>
-        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          <OptionGroup
-            label="Color Mode"
-            description={
-              theme === "system" && resolvedTheme
-                ? `Following system preference (currently ${resolvedTheme})`
-                : theme === "system"
-                  ? "Following system preference"
-                  : undefined
-            }
-            value={theme || "system"}
-            options={THEME_OPTIONS}
-            onChange={setTheme}
-          />
-        </div>
-      </section>
+      <SettingsSection title="Theme">
+        <OptionGroup
+          label="Color Mode"
+          description={
+            theme === "system" && resolvedTheme
+              ? `Following system preference (currently ${resolvedTheme})`
+              : theme === "system"
+                ? "Following system preference"
+                : undefined
+          }
+          value={theme || "system"}
+          options={THEME_OPTIONS}
+          onChange={setTheme}
+        />
+      </SettingsSection>
 
       {/* Article Text Section */}
-      <section>
-        <h2 className="ui-text-lg mb-4 font-semibold text-zinc-900 dark:text-zinc-50">
-          Article Text
-        </h2>
-        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          <p className="ui-text-sm mb-6 text-zinc-600 dark:text-zinc-400">
-            These settings affect how article content is displayed in the entry view.
-          </p>
+      <SettingsSection title="Article Text">
+        <p className="ui-text-sm mb-6 text-zinc-600 dark:text-zinc-400">
+          These settings affect how article content is displayed in the entry view.
+        </p>
 
-          <div className="space-y-6">
-            <OptionGroup
-              label="Text Size"
-              value={settings.textSize}
-              options={TEXT_SIZE_OPTIONS}
-              onChange={(textSize) => updateSettings({ textSize })}
-            />
+        <div className="space-y-6">
+          <OptionGroup
+            label="Text Size"
+            value={settings.textSize}
+            options={TEXT_SIZE_OPTIONS}
+            onChange={(textSize) => updateSettings({ textSize })}
+          />
 
-            <OptionGroup
-              label="Font"
-              value={settings.fontFamily}
-              options={FONT_OPTIONS}
-              onChange={(fontFamily) => updateSettings({ fontFamily })}
-            />
+          <OptionGroup
+            label="Font"
+            value={settings.fontFamily}
+            options={FONT_OPTIONS}
+            onChange={(fontFamily) => updateSettings({ fontFamily })}
+          />
 
-            <OptionGroup
-              label="Text Alignment"
-              value={settings.textJustification}
-              options={JUSTIFICATION_OPTIONS}
-              onChange={(textJustification) => updateSettings({ textJustification })}
-            />
+          <OptionGroup
+            label="Text Alignment"
+            value={settings.textJustification}
+            options={JUSTIFICATION_OPTIONS}
+            onChange={(textJustification) => updateSettings({ textJustification })}
+          />
 
-            <TextPreview />
-          </div>
+          <TextPreview />
         </div>
-      </section>
+      </SettingsSection>
     </div>
   );
 }

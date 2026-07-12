@@ -11,7 +11,9 @@
 import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
 import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
+import { CardSection } from "@/components/ui/card";
 import { AlertIcon, InfoCircleIcon } from "@/components/ui/icon-button";
+import { SettingsSection } from "@/components/settings/SettingsSection";
 import { useNarrationSettings } from "@/lib/narration/settings";
 import { getNarrationSupportInfo, isFirefox } from "@/lib/narration/feature-detection";
 import { waitForVoices, rankVoices, findVoiceByUri } from "@/lib/narration/voices";
@@ -161,245 +163,262 @@ export function NarrationSettings() {
   // Show loading skeleton while checking support (avoids hydration mismatch)
   if (supportInfo === null) {
     return (
-      <section>
-        <h2 className="ui-text-lg mb-4 font-semibold text-zinc-900 dark:text-zinc-50">Narration</h2>
-        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="h-5 w-32 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700" />
-              <div className="mt-2 h-4 w-48 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700" />
-            </div>
-            <div className="h-6 w-11 animate-pulse rounded-full bg-zinc-200 dark:bg-zinc-700" />
+      <SettingsSection title="Narration">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="h-5 w-32 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700" />
+            <div className="mt-2 h-4 w-48 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700" />
           </div>
+          <div className="h-6 w-11 animate-pulse rounded-full bg-zinc-200 dark:bg-zinc-700" />
         </div>
-      </section>
+      </SettingsSection>
     );
   }
 
   // Show unsupported message if narration is not available
   if (!supportInfo.supported) {
     return (
-      <section>
-        <h2 className="ui-text-lg mb-4 font-semibold text-zinc-900 dark:text-zinc-50">Narration</h2>
-        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          <div className="flex items-start gap-3">
-            <AlertIcon className="mt-0.5 h-5 w-5 flex-shrink-0 text-zinc-400 dark:text-zinc-500" />
-            <div>
-              <p className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                Narration Unavailable
-              </p>
-              <p className="ui-text-sm mt-1 text-zinc-500 dark:text-zinc-400">
-                {supportInfo.reason}
-              </p>
-              <p className="ui-text-xs mt-2 text-zinc-400 dark:text-zinc-500">
-                Try using Chrome, Safari, or Edge for the best narration experience.
-              </p>
-            </div>
+      <SettingsSection title="Narration">
+        <div className="flex items-start gap-3">
+          <AlertIcon className="mt-0.5 h-5 w-5 flex-shrink-0 text-zinc-400 dark:text-zinc-500" />
+          <div>
+            <p className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">
+              Narration Unavailable
+            </p>
+            <p className="ui-text-sm mt-1 text-zinc-500 dark:text-zinc-400">{supportInfo.reason}</p>
+            <p className="ui-text-xs mt-2 text-zinc-400 dark:text-zinc-500">
+              Try using Chrome, Safari, or Edge for the best narration experience.
+            </p>
           </div>
         </div>
-      </section>
+      </SettingsSection>
     );
   }
 
   return (
-    <section>
-      <h2 className="ui-text-lg mb-4 font-semibold text-zinc-900 dark:text-zinc-50">Narration</h2>
-      <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-        {/* Enable/Disable Toggle */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-50">
-              Enable narration
-            </h3>
-            <p className="ui-text-sm mt-1 text-zinc-500 dark:text-zinc-400">
-              Listen to articles using text-to-speech.
-            </p>
-          </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={settings.enabled}
-            onClick={() => setSettings((prev) => ({ ...prev, enabled: !prev.enabled }))}
-            className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none dark:focus:ring-offset-zinc-900 ${
-              settings.enabled ? "bg-primary-solid" : "bg-zinc-200 dark:bg-zinc-700"
-            }`}
-          >
-            <span
-              aria-hidden="true"
-              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out dark:bg-zinc-900 ${
-                settings.enabled ? "translate-x-5" : "translate-x-0"
-              }`}
-            />
-          </button>
+    <SettingsSection title="Narration">
+      {/* Enable/Disable Toggle */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-50">
+            Enable narration
+          </h3>
+          <p className="ui-text-sm mt-1 text-zinc-500 dark:text-zinc-400">
+            Listen to articles using text-to-speech.
+          </p>
         </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={settings.enabled}
+          onClick={() => setSettings((prev) => ({ ...prev, enabled: !prev.enabled }))}
+          className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none dark:focus:ring-offset-zinc-900 ${
+            settings.enabled ? "bg-primary-solid" : "bg-zinc-200 dark:bg-zinc-700"
+          }`}
+        >
+          <span
+            aria-hidden="true"
+            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out dark:bg-zinc-900 ${
+              settings.enabled ? "translate-x-5" : "translate-x-0"
+            }`}
+          />
+        </button>
+      </div>
 
-        {/* Voice Settings (only shown when enabled) */}
-        {settings.enabled && (
-          <div className="mt-6 space-y-6 border-t border-zinc-200 pt-6 dark:border-zinc-700">
-            {/* Voice Provider Selection */}
-            <div>
-              <h3 className="ui-text-sm mb-3 font-medium text-zinc-900 dark:text-zinc-50">
-                Voice Provider
-              </h3>
-              <div className="space-y-3">
-                {/* Browser Voices Option */}
-                <label
-                  className={`relative flex cursor-pointer rounded-lg border p-4 transition-colors ${
-                    settings.provider === "browser"
-                      ? "border-zinc-900 bg-zinc-50 dark:border-zinc-400 dark:bg-zinc-800"
-                      : "border-zinc-200 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800/50"
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="voice-provider"
-                    value="browser"
-                    checked={settings.provider === "browser"}
-                    onChange={() => handleProviderChange("browser")}
-                    className="sr-only"
-                  />
-                  <div className="flex items-start gap-3">
-                    <div
-                      className={`mt-0.5 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border ${
-                        settings.provider === "browser"
-                          ? "border-zinc-900 dark:border-zinc-400"
-                          : "border-zinc-400 dark:border-zinc-500"
-                      }`}
-                    >
-                      {settings.provider === "browser" && (
-                        <div className="h-2 w-2 rounded-full bg-zinc-900 dark:bg-zinc-400" />
-                      )}
-                    </div>
-                    <div>
-                      <span className="ui-text-sm block font-medium text-zinc-900 dark:text-zinc-100">
-                        Browser Voices
-                      </span>
-                      <span className="ui-text-xs mt-0.5 block text-zinc-500 dark:text-zinc-400">
-                        Uses your browser&apos;s built-in text-to-speech
-                      </span>
-                    </div>
-                  </div>
-                </label>
-
-                {/* Enhanced Voices Option */}
-                <label
-                  className={`relative flex cursor-pointer rounded-lg border p-4 transition-colors ${
-                    settings.provider === "piper"
-                      ? "border-zinc-900 bg-zinc-50 dark:border-zinc-400 dark:bg-zinc-800"
-                      : "border-zinc-200 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800/50"
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="voice-provider"
-                    value="piper"
-                    checked={settings.provider === "piper"}
-                    onChange={() => handleProviderChange("piper")}
-                    className="sr-only"
-                  />
-                  <div className="flex items-start gap-3">
-                    <div
-                      className={`mt-0.5 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border ${
-                        settings.provider === "piper"
-                          ? "border-zinc-900 dark:border-zinc-400"
-                          : "border-zinc-400 dark:border-zinc-500"
-                      }`}
-                    >
-                      {settings.provider === "piper" && (
-                        <div className="h-2 w-2 rounded-full bg-zinc-900 dark:bg-zinc-400" />
-                      )}
-                    </div>
-                    <div>
-                      <span className="ui-text-sm block font-medium text-zinc-900 dark:text-zinc-100">
-                        Enhanced Voices
-                      </span>
-                      <span className="ui-text-xs mt-0.5 block text-zinc-500 dark:text-zinc-400">
-                        Higher quality voices (requires download)
-                      </span>
-                    </div>
-                  </div>
-                </label>
-              </div>
-            </div>
-
-            {/* Browser Voice Selector (only shown when browser provider selected) */}
-            {settings.provider === "browser" && (
-              <div>
-                <label
-                  htmlFor="narration-voice"
-                  className="ui-text-sm mb-1.5 block font-medium text-zinc-700 dark:text-zinc-300"
-                >
-                  Voice
-                </label>
-                <div className="flex gap-3">
-                  <select
-                    id="narration-voice"
-                    value={settings.voiceId || ""}
-                    onChange={handleVoiceChange}
-                    disabled={isLoadingVoices}
-                    className="ui-text-sm block flex-1 rounded-md border border-zinc-300 bg-white px-3 py-2 text-zinc-900 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+      {/* Voice Settings (only shown when enabled) */}
+      {settings.enabled && (
+        <CardSection className="space-y-6">
+          {/* Voice Provider Selection */}
+          <div>
+            <h3 className="ui-text-sm mb-3 font-medium text-zinc-900 dark:text-zinc-50">
+              Voice Provider
+            </h3>
+            <div className="space-y-3">
+              {/* Browser Voices Option */}
+              <label
+                className={`relative flex cursor-pointer rounded-lg border p-4 transition-colors ${
+                  settings.provider === "browser"
+                    ? "border-zinc-900 bg-zinc-50 dark:border-zinc-400 dark:bg-zinc-800"
+                    : "border-zinc-200 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800/50"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="voice-provider"
+                  value="browser"
+                  checked={settings.provider === "browser"}
+                  onChange={() => handleProviderChange("browser")}
+                  className="sr-only"
+                />
+                <div className="flex items-start gap-3">
+                  <div
+                    className={`mt-0.5 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border ${
+                      settings.provider === "browser"
+                        ? "border-zinc-900 dark:border-zinc-400"
+                        : "border-zinc-400 dark:border-zinc-500"
+                    }`}
                   >
-                    {isLoadingVoices ? (
-                      <option value="">Loading voices...</option>
-                    ) : voices.length === 0 ? (
-                      <option value="">No voices available</option>
-                    ) : (
-                      <>
-                        <option value="">Default voice</option>
-                        {voices.map((voice) => (
-                          <option key={voice.voiceURI} value={voice.voiceURI}>
-                            {voice.name}
-                            {voice.localService ? "" : " (online)"}
-                          </option>
-                        ))}
-                      </>
+                    {settings.provider === "browser" && (
+                      <div className="h-2 w-2 rounded-full bg-zinc-900 dark:bg-zinc-400" />
                     )}
-                  </select>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={isPreviewing ? handleStopPreview : handlePreview}
-                    disabled={isLoadingVoices || voices.length === 0}
+                  </div>
+                  <div>
+                    <span className="ui-text-sm block font-medium text-zinc-900 dark:text-zinc-100">
+                      Browser Voices
+                    </span>
+                    <span className="ui-text-xs mt-0.5 block text-zinc-500 dark:text-zinc-400">
+                      Uses your browser&apos;s built-in text-to-speech
+                    </span>
+                  </div>
+                </div>
+              </label>
+
+              {/* Enhanced Voices Option */}
+              <label
+                className={`relative flex cursor-pointer rounded-lg border p-4 transition-colors ${
+                  settings.provider === "piper"
+                    ? "border-zinc-900 bg-zinc-50 dark:border-zinc-400 dark:bg-zinc-800"
+                    : "border-zinc-200 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800/50"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="voice-provider"
+                  value="piper"
+                  checked={settings.provider === "piper"}
+                  onChange={() => handleProviderChange("piper")}
+                  className="sr-only"
+                />
+                <div className="flex items-start gap-3">
+                  <div
+                    className={`mt-0.5 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border ${
+                      settings.provider === "piper"
+                        ? "border-zinc-900 dark:border-zinc-400"
+                        : "border-zinc-400 dark:border-zinc-500"
+                    }`}
                   >
-                    {isPreviewing ? "Stop" : "Preview"}
-                  </Button>
+                    {settings.provider === "piper" && (
+                      <div className="h-2 w-2 rounded-full bg-zinc-900 dark:bg-zinc-400" />
+                    )}
+                  </div>
+                  <div>
+                    <span className="ui-text-sm block font-medium text-zinc-900 dark:text-zinc-100">
+                      Enhanced Voices
+                    </span>
+                    <span className="ui-text-xs mt-0.5 block text-zinc-500 dark:text-zinc-400">
+                      Higher quality voices (requires download)
+                    </span>
+                  </div>
                 </div>
-                <p className="ui-text-xs mt-1.5 text-zinc-500 dark:text-zinc-400">
-                  Voices are provided by your browser. Chrome and Safari typically offer higher
-                  quality voices.
-                </p>
-              </div>
-            )}
+              </label>
+            </div>
+          </div>
 
-            {/* Enhanced Voices List (only shown when piper provider selected) */}
-            {settings.provider === "piper" && (
-              <div className="space-y-4">
-                <div>
-                  <label className="ui-text-sm mb-3 block font-medium text-zinc-700 dark:text-zinc-300">
-                    Select Voice
-                  </label>
-                  <EnhancedVoiceList settings={settings} setSettings={setSettings} />
-                </div>
-                <EnhancedVoicesHelp />
-              </div>
-            )}
-
-            {/* Speed Slider */}
+          {/* Browser Voice Selector (only shown when browser provider selected) */}
+          {settings.provider === "browser" && (
             <div>
               <label
-                htmlFor="narration-rate"
+                htmlFor="narration-voice"
                 className="ui-text-sm mb-1.5 block font-medium text-zinc-700 dark:text-zinc-300"
               >
-                Speed: {settings.rate.toFixed(1)}x
+                Voice
+              </label>
+              <div className="flex gap-3">
+                <select
+                  id="narration-voice"
+                  value={settings.voiceId || ""}
+                  onChange={handleVoiceChange}
+                  disabled={isLoadingVoices}
+                  className="ui-text-sm block flex-1 rounded-md border border-zinc-300 bg-white px-3 py-2 text-zinc-900 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+                >
+                  {isLoadingVoices ? (
+                    <option value="">Loading voices...</option>
+                  ) : voices.length === 0 ? (
+                    <option value="">No voices available</option>
+                  ) : (
+                    <>
+                      <option value="">Default voice</option>
+                      {voices.map((voice) => (
+                        <option key={voice.voiceURI} value={voice.voiceURI}>
+                          {voice.name}
+                          {voice.localService ? "" : " (online)"}
+                        </option>
+                      ))}
+                    </>
+                  )}
+                </select>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={isPreviewing ? handleStopPreview : handlePreview}
+                  disabled={isLoadingVoices || voices.length === 0}
+                >
+                  {isPreviewing ? "Stop" : "Preview"}
+                </Button>
+              </div>
+              <p className="ui-text-xs mt-1.5 text-zinc-500 dark:text-zinc-400">
+                Voices are provided by your browser. Chrome and Safari typically offer higher
+                quality voices.
+              </p>
+            </div>
+          )}
+
+          {/* Enhanced Voices List (only shown when piper provider selected) */}
+          {settings.provider === "piper" && (
+            <div className="space-y-4">
+              <div>
+                <label className="ui-text-sm mb-3 block font-medium text-zinc-700 dark:text-zinc-300">
+                  Select Voice
+                </label>
+                <EnhancedVoiceList settings={settings} setSettings={setSettings} />
+              </div>
+              <EnhancedVoicesHelp />
+            </div>
+          )}
+
+          {/* Speed Slider */}
+          <div>
+            <label
+              htmlFor="narration-rate"
+              className="ui-text-sm mb-1.5 block font-medium text-zinc-700 dark:text-zinc-300"
+            >
+              Speed: {settings.rate.toFixed(1)}x
+            </label>
+            <input
+              id="narration-rate"
+              type="range"
+              min="0.5"
+              max="2"
+              step="0.1"
+              value={settings.rate}
+              onChange={handleRateChange}
+              className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-zinc-200 accent-zinc-900 dark:bg-zinc-700 dark:accent-zinc-400"
+            />
+            <div className="ui-text-xs mt-1 flex justify-between text-zinc-400 dark:text-zinc-500">
+              <span>0.5x</span>
+              <span>1.0x</span>
+              <span>1.5x</span>
+              <span>2.0x</span>
+            </div>
+          </div>
+
+          {/* Pitch Slider (browser voices only - Piper doesn't support pitch control) */}
+          {settings.provider === "browser" && (
+            <div>
+              <label
+                htmlFor="narration-pitch"
+                className="ui-text-sm mb-1.5 block font-medium text-zinc-700 dark:text-zinc-300"
+              >
+                Pitch: {settings.pitch.toFixed(1)}x
               </label>
               <input
-                id="narration-rate"
+                id="narration-pitch"
                 type="range"
                 min="0.5"
                 max="2"
                 step="0.1"
-                value={settings.rate}
-                onChange={handleRateChange}
+                value={settings.pitch}
+                onChange={handlePitchChange}
                 className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-zinc-200 accent-zinc-900 dark:bg-zinc-700 dark:accent-zinc-400"
               />
               <div className="ui-text-xs mt-1 flex justify-between text-zinc-400 dark:text-zinc-500">
@@ -409,172 +428,140 @@ export function NarrationSettings() {
                 <span>2.0x</span>
               </div>
             </div>
+          )}
 
-            {/* Pitch Slider (browser voices only - Piper doesn't support pitch control) */}
-            {settings.provider === "browser" && (
-              <div>
-                <label
-                  htmlFor="narration-pitch"
-                  className="ui-text-sm mb-1.5 block font-medium text-zinc-700 dark:text-zinc-300"
-                >
-                  Pitch: {settings.pitch.toFixed(1)}x
-                </label>
-                <input
-                  id="narration-pitch"
-                  type="range"
-                  min="0.5"
-                  max="2"
-                  step="0.1"
-                  value={settings.pitch}
-                  onChange={handlePitchChange}
-                  className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-zinc-200 accent-zinc-900 dark:bg-zinc-700 dark:accent-zinc-400"
-                />
-                <div className="ui-text-xs mt-1 flex justify-between text-zinc-400 dark:text-zinc-500">
-                  <span>0.5x</span>
-                  <span>1.0x</span>
-                  <span>1.5x</span>
-                  <span>2.0x</span>
-                </div>
-              </div>
-            )}
-
-            {/* Processing Settings - only shown if AI text processing is available */}
-            {isAiTextProcessingAvailable && (
-              <div className="space-y-4">
-                <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-50">
-                  Processing
-                </h3>
-
-                {/* LLM Normalization Toggle */}
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="ui-text-sm text-zinc-700 dark:text-zinc-300">
-                      Use AI text processing
-                    </p>
-                    <p className="ui-text-xs text-zinc-500 dark:text-zinc-400">
-                      Improves narration quality by expanding abbreviations and formatting content
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={settings.useLlmNormalization}
-                    onClick={() =>
-                      setSettings((prev) => ({
-                        ...prev,
-                        useLlmNormalization: !prev.useLlmNormalization,
-                      }))
-                    }
-                    className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none dark:focus:ring-offset-zinc-900 ${
-                      settings.useLlmNormalization
-                        ? "bg-primary-solid"
-                        : "bg-zinc-200 dark:bg-zinc-700"
-                    }`}
-                  >
-                    <span
-                      aria-hidden="true"
-                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out dark:bg-zinc-900 ${
-                        settings.useLlmNormalization ? "translate-x-5" : "translate-x-0"
-                      }`}
-                    />
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Highlighting Settings */}
+          {/* Processing Settings - only shown if AI text processing is available */}
+          {isAiTextProcessingAvailable && (
             <div className="space-y-4">
-              <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-50">
-                Highlighting
-              </h3>
+              <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-50">Processing</h3>
 
-              {/* Highlight Current Paragraph Toggle */}
+              {/* LLM Normalization Toggle */}
               <div className="flex items-center justify-between">
                 <div>
                   <p className="ui-text-sm text-zinc-700 dark:text-zinc-300">
-                    Highlight current paragraph
+                    Use AI text processing
                   </p>
                   <p className="ui-text-xs text-zinc-500 dark:text-zinc-400">
-                    Visually highlight the paragraph being read
+                    Improves narration quality by expanding abbreviations and formatting content
                   </p>
                 </div>
                 <button
                   type="button"
                   role="switch"
-                  aria-checked={settings.highlightEnabled}
+                  aria-checked={settings.useLlmNormalization}
                   onClick={() =>
-                    setSettings((prev) => ({ ...prev, highlightEnabled: !prev.highlightEnabled }))
+                    setSettings((prev) => ({
+                      ...prev,
+                      useLlmNormalization: !prev.useLlmNormalization,
+                    }))
                   }
                   className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none dark:focus:ring-offset-zinc-900 ${
-                    settings.highlightEnabled ? "bg-primary-solid" : "bg-zinc-200 dark:bg-zinc-700"
+                    settings.useLlmNormalization
+                      ? "bg-primary-solid"
+                      : "bg-zinc-200 dark:bg-zinc-700"
                   }`}
                 >
                   <span
                     aria-hidden="true"
                     className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out dark:bg-zinc-900 ${
-                      settings.highlightEnabled ? "translate-x-5" : "translate-x-0"
-                    }`}
-                  />
-                </button>
-              </div>
-
-              {/* Auto-scroll to Current Paragraph Toggle */}
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="ui-text-sm text-zinc-700 dark:text-zinc-300">
-                    Auto-scroll to current paragraph
-                  </p>
-                  <p className="ui-text-xs text-zinc-500 dark:text-zinc-400">
-                    Automatically scroll the page to keep the current paragraph visible
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={settings.autoScrollEnabled}
-                  onClick={() =>
-                    setSettings((prev) => ({ ...prev, autoScrollEnabled: !prev.autoScrollEnabled }))
-                  }
-                  className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none dark:focus:ring-offset-zinc-900 ${
-                    settings.autoScrollEnabled ? "bg-primary-solid" : "bg-zinc-200 dark:bg-zinc-700"
-                  }`}
-                >
-                  <span
-                    aria-hidden="true"
-                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out dark:bg-zinc-900 ${
-                      settings.autoScrollEnabled ? "translate-x-5" : "translate-x-0"
+                      settings.useLlmNormalization ? "translate-x-5" : "translate-x-0"
                     }`}
                   />
                 </button>
               </div>
             </div>
+          )}
 
-            {/* Firefox Warning */}
-            {isFirefoxBrowser && (
-              <div className="ui-text-xs flex items-start gap-2 rounded-md bg-amber-50 p-3 text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
-                <AlertIcon className="mt-0.5 h-4 w-4 flex-shrink-0" />
-                <span>
-                  Firefox has limited support for pausing narration. When you pause and resume,
-                  playback will restart from the beginning of the current paragraph.
-                </span>
+          {/* Highlighting Settings */}
+          <div className="space-y-4">
+            <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-50">Highlighting</h3>
+
+            {/* Highlight Current Paragraph Toggle */}
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="ui-text-sm text-zinc-700 dark:text-zinc-300">
+                  Highlight current paragraph
+                </p>
+                <p className="ui-text-xs text-zinc-500 dark:text-zinc-400">
+                  Visually highlight the paragraph being read
+                </p>
               </div>
-            )}
-          </div>
-        )}
+              <button
+                type="button"
+                role="switch"
+                aria-checked={settings.highlightEnabled}
+                onClick={() =>
+                  setSettings((prev) => ({ ...prev, highlightEnabled: !prev.highlightEnabled }))
+                }
+                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none dark:focus:ring-offset-zinc-900 ${
+                  settings.highlightEnabled ? "bg-primary-solid" : "bg-zinc-200 dark:bg-zinc-700"
+                }`}
+              >
+                <span
+                  aria-hidden="true"
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out dark:bg-zinc-900 ${
+                    settings.highlightEnabled ? "translate-x-5" : "translate-x-0"
+                  }`}
+                />
+              </button>
+            </div>
 
-        {/* Media Session Info */}
-        {settings.enabled && supportInfo.mediaSession && (
-          <div className="mt-6 border-t border-zinc-200 pt-6 dark:border-zinc-700">
-            <div className="ui-text-xs flex items-start gap-2 text-zinc-500 dark:text-zinc-400">
-              <InfoCircleIcon className="mt-0.5 h-4 w-4 flex-shrink-0" />
+            {/* Auto-scroll to Current Paragraph Toggle */}
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="ui-text-sm text-zinc-700 dark:text-zinc-300">
+                  Auto-scroll to current paragraph
+                </p>
+                <p className="ui-text-xs text-zinc-500 dark:text-zinc-400">
+                  Automatically scroll the page to keep the current paragraph visible
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={settings.autoScrollEnabled}
+                onClick={() =>
+                  setSettings((prev) => ({ ...prev, autoScrollEnabled: !prev.autoScrollEnabled }))
+                }
+                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none dark:focus:ring-offset-zinc-900 ${
+                  settings.autoScrollEnabled ? "bg-primary-solid" : "bg-zinc-200 dark:bg-zinc-700"
+                }`}
+              >
+                <span
+                  aria-hidden="true"
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out dark:bg-zinc-900 ${
+                    settings.autoScrollEnabled ? "translate-x-5" : "translate-x-0"
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+
+          {/* Firefox Warning */}
+          {isFirefoxBrowser && (
+            <div className="ui-text-xs flex items-start gap-2 rounded-md bg-amber-50 p-3 text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+              <AlertIcon className="mt-0.5 h-4 w-4 flex-shrink-0" />
               <span>
-                Your browser supports media controls. You can control playback using your keyboard
-                media keys or lock screen controls.
+                Firefox has limited support for pausing narration. When you pause and resume,
+                playback will restart from the beginning of the current paragraph.
               </span>
             </div>
+          )}
+        </CardSection>
+      )}
+
+      {/* Media Session Info */}
+      {settings.enabled && supportInfo.mediaSession && (
+        <CardSection>
+          <div className="ui-text-xs flex items-start gap-2 text-zinc-500 dark:text-zinc-400">
+            <InfoCircleIcon className="mt-0.5 h-4 w-4 flex-shrink-0" />
+            <span>
+              Your browser supports media controls. You can control playback using your keyboard
+              media keys or lock screen controls.
+            </span>
           </div>
-        )}
-      </div>
-    </section>
+        </CardSection>
+      )}
+    </SettingsSection>
   );
 }

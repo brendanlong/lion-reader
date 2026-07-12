@@ -14,8 +14,10 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
+import { SettingsSectionHeading } from "@/components/settings/SettingsSection";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
+import { Card } from "@/components/ui/card";
 import { UploadIcon, DownloadIcon, SpinnerIcon } from "@/components/ui/icon-button";
 import { parseOpml, type OpmlFeed } from "@/server/feed/opml";
 
@@ -51,9 +53,7 @@ type ImportState =
 export function OpmlImportExport() {
   return (
     <section>
-      <h2 className="ui-text-lg mb-4 font-semibold text-zinc-900 dark:text-zinc-50">
-        Import / Export
-      </h2>
+      <SettingsSectionHeading>Import / Export</SettingsSectionHeading>
       <div className="space-y-6">
         <ImportSection />
         <ExportSection />
@@ -253,7 +253,7 @@ function ImportSection() {
   }, []);
 
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+    <Card>
       <h3 className="ui-text-sm mb-2 font-medium text-zinc-900 dark:text-zinc-50">
         Import from OPML
       </h3>
@@ -355,7 +355,7 @@ function ImportSection() {
           onReset={handleReset}
         />
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -557,7 +557,7 @@ function ExportSection() {
   }, [utils.subscriptions.export]);
 
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+    <Card>
       <h3 className="ui-text-sm mb-2 font-medium text-zinc-900 dark:text-zinc-50">
         Export to OPML
       </h3>
@@ -581,6 +581,6 @@ function ExportSection() {
         <DownloadIcon className="mr-2 h-4 w-4" />
         Export subscriptions
       </Button>
-    </div>
+    </Card>
   );
 }

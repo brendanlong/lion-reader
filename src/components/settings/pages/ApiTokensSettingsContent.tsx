@@ -13,6 +13,7 @@ import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
+import { Card } from "@/components/ui/card";
 import { SettingsListContainer } from "@/components/settings/SettingsListContainer";
 import { CloseIcon, KeyIcon } from "@/components/ui/icon-button";
 import { formatRelativeTime } from "@/lib/format";
@@ -169,7 +170,7 @@ export default function ApiTokensSettingsContent() {
 
       {/* Create Token Form */}
       {showCreateForm && (
-        <div className="mb-6 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+        <Card className="mb-6">
           <h3 className="mb-4 font-medium text-zinc-900 dark:text-zinc-50">Create New Token</h3>
 
           <div className="space-y-4">
@@ -256,7 +257,7 @@ export default function ApiTokensSettingsContent() {
               </Button>
             </div>
           </div>
-        </div>
+        </Card>
       )}
 
       {/* Active Tokens List */}
@@ -338,7 +339,7 @@ interface ActiveTokenCardProps {
 
 function ActiveTokenCard({ token, onRevoke, isRevoking }: ActiveTokenCardProps) {
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+    <Card padding="md">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex-1">
           <div className="flex items-center gap-2">
@@ -402,6 +403,6 @@ function ActiveTokenCard({ token, onRevoke, isRevoking }: ActiveTokenCardProps) 
           Revoke
         </Button>
       </div>
-    </div>
+    </Card>
   );
 }

@@ -14,6 +14,7 @@ import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
+import { Card } from "@/components/ui/card";
 import {
   Dialog,
   DialogHeader,
@@ -421,7 +422,7 @@ function SpamPreferenceSection() {
   return (
     <section>
       <h3 className="ui-text-sm mb-4 font-medium text-zinc-900 dark:text-zinc-50">Preferences</h3>
-      <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+      <Card>
         <div className="flex items-center justify-between">
           <div>
             <h4 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-50">
@@ -449,7 +450,7 @@ function SpamPreferenceSection() {
             />
           </button>
         </div>
-      </div>
+      </Card>
     </section>
   );
 }

@@ -15,8 +15,11 @@ Reusable UI primitives are in `src/components/ui/`. **Always check for existing 
 | **Alert**             | Status messages (error, success, warning, info)           |
 | **Dialog**            | Modal dialogs with backdrop, focus trap, escape handling  |
 | **Card**              | Container with border, background, and consistent padding |
+| **CardSection**       | Subsection within a Card, separated by a top border       |
 | **StatusCard**        | Colored card for info/success/warning/error states        |
 | **ClientLink**        | Internal navigation links (use instead of Next.js Link)   |
+| **TextLink**          | Accent-colored inline text link (`external` for new tab)  |
+| **InlineCode**        | Small monospace chip for inline code, URLs, file names    |
 | **NavLink**           | Sidebar navigation links with active state and counts     |
 | **IconButton**        | Small icon-only action buttons (edit, close, etc.)        |
 | **NotFoundCard**      | Card for 404/missing content states                       |
@@ -49,6 +52,10 @@ Icons are in `@/components/ui/icon-button`. Use these instead of duplicating SVG
 - `ui-text-lg` - Large text (headings)
 
 The `ui-text-*` classes are defined in `src/app/globals.css` and provide responsive scaling.
+
+### Settings Sections
+
+Settings pages are built from `SettingsSection` (`@/components/settings/SettingsSection`), which renders the standard heading + `Card` shell and handles loading/error/success states. Don't hand-roll the `<section><h2>…</h2><div className="rounded-lg border …">` pattern — use `SettingsSection`, or `SettingsSectionHeading` + `Card` when the content doesn't fit the wrapper.
 
 ### Guidelines
 

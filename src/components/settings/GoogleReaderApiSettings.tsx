@@ -8,7 +8,11 @@
 "use client";
 
 import { useMemo } from "react";
+import { SettingsSection } from "@/components/settings/SettingsSection";
+import { CardSection } from "@/components/ui/card";
 import { CopyButton } from "@/components/ui/copy-button";
+import { InlineCode } from "@/components/ui/inline-code";
+import { TextLink } from "@/components/ui/text-link";
 
 export function GoogleReaderApiSettings() {
   const baseUrl = useMemo(() => {
@@ -21,137 +25,99 @@ export function GoogleReaderApiSettings() {
   const apiBase = `${baseUrl}/api/greader.php/reader/api/0`;
 
   return (
-    <section>
-      <h2 className="ui-text-lg mb-4 font-semibold text-zinc-900 dark:text-zinc-50">
-        Google Reader API
-      </h2>
-      <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-        {/* Description */}
-        <p className="ui-text-sm text-zinc-600 dark:text-zinc-400">
-          Lion Reader exposes a{" "}
-          <a
-            href="https://feedhq.readthedocs.io/en/latest/api/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-accent hover:text-accent-hover font-medium"
-          >
-            Google Reader-compatible API
-          </a>{" "}
-          so you can use third-party RSS reader apps to sync with your Lion Reader account.
+    <SettingsSection title="Google Reader API">
+      {/* Description */}
+      <p className="ui-text-sm text-zinc-600 dark:text-zinc-400">
+        Lion Reader exposes a{" "}
+        <TextLink href="https://feedhq.readthedocs.io/en/latest/api/" external>
+          Google Reader-compatible API
+        </TextLink>{" "}
+        so you can use third-party RSS reader apps to sync with your Lion Reader account.
+      </p>
+
+      {/* Supported Clients */}
+      <div className="mt-6">
+        <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">Compatible Apps</h3>
+        <p className="ui-text-sm mt-1 text-zinc-600 dark:text-zinc-400">
+          Any app that supports the Google Reader API should work, including:
         </p>
-
-        {/* Supported Clients */}
-        <div className="mt-6">
-          <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">
-            Compatible Apps
-          </h3>
-          <p className="ui-text-sm mt-1 text-zinc-600 dark:text-zinc-400">
-            Any app that supports the Google Reader API should work, including:
-          </p>
-          <ul className="ui-text-sm mt-2 list-inside list-disc space-y-1 text-zinc-600 dark:text-zinc-400">
-            <li>
-              <a
-                href="https://reederapp.com/classic/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-accent hover:text-accent-hover font-medium"
-              >
-                Reeder Classic
-              </a>{" "}
-              (iOS / macOS)
-            </li>
-            <li>
-              <a
-                href="https://netnewswire.com/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-accent hover:text-accent-hover font-medium"
-              >
-                NetNewsWire
-              </a>{" "}
-              (iOS / macOS)
-            </li>
-            <li>
-              <a
-                href="https://play.google.com/store/apps/details?id=allen.town.focus.reader"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-accent hover:text-accent-hover font-medium"
-              >
-                FocusReader
-              </a>{" "}
-              (Android)
-            </li>
-            <li>
-              <a
-                href="https://f-droid.org/packages/me.ash.reader"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-accent hover:text-accent-hover font-medium"
-              >
-                Read You
-              </a>{" "}
-              (Android)
-            </li>
-            <li>
-              <a
-                href="https://flathub.org/apps/io.gitlab.news_flash.NewsFlash"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-accent hover:text-accent-hover font-medium"
-              >
-                NewsFlash
-              </a>{" "}
-              (Linux)
-            </li>
-          </ul>
-        </div>
-
-        {/* Setup Instructions */}
-        <div className="mt-6 border-t border-zinc-200 pt-6 dark:border-zinc-700">
-          <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">Setup</h3>
-          <p className="ui-text-sm mt-1 text-zinc-600 dark:text-zinc-400">
-            In your app&apos;s account settings, choose &ldquo;FreshRSS&rdquo; as the service type,
-            then enter:
-          </p>
-          <ul className="ui-text-sm mt-3 space-y-2 text-zinc-600 dark:text-zinc-400">
-            <li>
-              <strong className="text-zinc-900 dark:text-zinc-200">Server URL:</strong>{" "}
-              <code className="ui-text-xs rounded bg-zinc-100 px-1.5 py-0.5 font-mono dark:bg-zinc-800">
-                {baseUrl}/api/greader.php
-              </code>
-              <CopyButton
-                value={`${baseUrl}/api/greader.php`}
-                className="ml-2 px-1.5 py-0.5"
-                title="Copy server URL"
-              />
-            </li>
-            <li>
-              <strong className="text-zinc-900 dark:text-zinc-200">Email:</strong> Your Lion Reader
-              email address
-            </li>
-            <li>
-              <strong className="text-zinc-900 dark:text-zinc-200">Password:</strong> Your Lion
-              Reader password
-            </li>
-          </ul>
-        </div>
-
-        {/* Note */}
-        <div className="mt-6 rounded-md border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800/50">
-          <p className="ui-text-sm text-zinc-600 dark:text-zinc-400">
-            The API uses your regular Lion Reader credentials for authentication. All your
-            subscriptions, tags, read state, and starred articles sync automatically.
-          </p>
-        </div>
-
-        {/* API base URL note */}
-        {baseUrl && (
-          <p className="ui-text-xs mt-4 text-zinc-400 dark:text-zinc-500">
-            API endpoint: {apiBase}
-          </p>
-        )}
+        <ul className="ui-text-sm mt-2 list-inside list-disc space-y-1 text-zinc-600 dark:text-zinc-400">
+          <li>
+            <TextLink href="https://reederapp.com/classic/" external>
+              Reeder Classic
+            </TextLink>{" "}
+            (iOS / macOS)
+          </li>
+          <li>
+            <TextLink href="https://netnewswire.com/" external>
+              NetNewsWire
+            </TextLink>{" "}
+            (iOS / macOS)
+          </li>
+          <li>
+            <TextLink
+              href="https://play.google.com/store/apps/details?id=allen.town.focus.reader"
+              external
+            >
+              FocusReader
+            </TextLink>{" "}
+            (Android)
+          </li>
+          <li>
+            <TextLink href="https://f-droid.org/packages/me.ash.reader" external>
+              Read You
+            </TextLink>{" "}
+            (Android)
+          </li>
+          <li>
+            <TextLink href="https://flathub.org/apps/io.gitlab.news_flash.NewsFlash" external>
+              NewsFlash
+            </TextLink>{" "}
+            (Linux)
+          </li>
+        </ul>
       </div>
-    </section>
+
+      {/* Setup Instructions */}
+      <CardSection>
+        <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">Setup</h3>
+        <p className="ui-text-sm mt-1 text-zinc-600 dark:text-zinc-400">
+          In your app&apos;s account settings, choose &ldquo;FreshRSS&rdquo; as the service type,
+          then enter:
+        </p>
+        <ul className="ui-text-sm mt-3 space-y-2 text-zinc-600 dark:text-zinc-400">
+          <li>
+            <strong className="text-zinc-900 dark:text-zinc-200">Server URL:</strong>{" "}
+            <InlineCode>{baseUrl}/api/greader.php</InlineCode>
+            <CopyButton
+              value={`${baseUrl}/api/greader.php`}
+              className="ml-2 px-1.5 py-0.5"
+              title="Copy server URL"
+            />
+          </li>
+          <li>
+            <strong className="text-zinc-900 dark:text-zinc-200">Email:</strong> Your Lion Reader
+            email address
+          </li>
+          <li>
+            <strong className="text-zinc-900 dark:text-zinc-200">Password:</strong> Your Lion Reader
+            password
+          </li>
+        </ul>
+      </CardSection>
+
+      {/* Note */}
+      <div className="mt-6 rounded-md border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800/50">
+        <p className="ui-text-sm text-zinc-600 dark:text-zinc-400">
+          The API uses your regular Lion Reader credentials for authentication. All your
+          subscriptions, tags, read state, and starred articles sync automatically.
+        </p>
+      </div>
+
+      {/* API base URL note */}
+      {baseUrl && (
+        <p className="ui-text-xs mt-4 text-zinc-400 dark:text-zinc-500">API endpoint: {apiBase}</p>
+      )}
+    </SettingsSection>
   );
 }

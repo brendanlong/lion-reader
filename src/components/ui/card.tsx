@@ -110,6 +110,23 @@ export function CardFooter({ children, className = "" }: CardFooterProps) {
 }
 
 /**
+ * A subsection within a Card, separated from the content above it by a
+ * top border. Use for the repeated divided-section pattern inside cards.
+ */
+export interface CardSectionProps {
+  children: ReactNode;
+  className?: string;
+}
+
+export function CardSection({ children, className = "" }: CardSectionProps) {
+  return (
+    <div className={`mt-6 border-t border-zinc-200 pt-6 dark:border-zinc-700 ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+/**
  * Colored status card for alerts, summaries, etc.
  */
 export interface StatusCardProps {
