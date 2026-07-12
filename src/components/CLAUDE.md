@@ -57,7 +57,7 @@ The `ui-text-*` classes are defined in `src/app/globals.css` and provide respons
 
 ### Semantic Colors
 
-**Use the semantic color tokens instead of raw zinc light/dark pairs.** Each token is one utility class covering both modes; the palette lives in `src/app/globals.css` (`:root` + `.dark`), so retheming means editing CSS variables, not call sites:
+**Use the semantic color tokens instead of raw zinc light/dark pairs.** Each token is one utility class covering all themes; the palettes live in `src/app/globals.css` (`:root` for light, `.dark`, and `.epaper` for e-ink screens), so retheming means editing CSS variables, not call sites:
 
 | Token                | Replaces                               | Use for                            |
 | -------------------- | -------------------------------------- | ---------------------------------- |
@@ -85,7 +85,7 @@ Settings pages are built from `SettingsSection` (`@/components/settings/Settings
 - **Use existing icons** - Check the icon list above before adding inline SVGs
 - **Watch for patterns** - If you see the same UI pattern 3+ times, consider extracting a component
 - **44px touch targets** - Ensure interactive elements meet WCAG touch target guidelines (handled by UI components)
-- **Dark mode** - All UI components support dark mode via `dark:` Tailwind classes
+- **Dark mode** - All UI components support dark mode via `dark:` Tailwind classes. The e-paper theme (`.epaper` on `<html>`) is light-like, so `dark:` variants don't apply to it; it restyles the app purely through the semantic-color CSS variables, plus colors that must gray safely (see the `.epaper` block in `globals.css`)
 
 ### When to Keep Icons Local
 

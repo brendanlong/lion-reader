@@ -8,13 +8,13 @@ const article: DemoArticle = {
   title: "Appearance & Themes",
   author: null,
   summary:
-    "Customize fonts, text size, alignment, and switch between light and a sleep-friendly, low-blue-light dark theme.",
+    "Customize fonts, text size, alignment, and switch between light, a sleep-friendly low-blue-light dark theme, and an e-paper theme for e-ink screens.",
   publishedAt: new Date("2025-12-28T12:00:00Z"),
   starred: false,
   heroImage: "/demo/appearance.png",
   heroImageAlt:
     "The Lion Reader lion holding a card split into a light half with a sun and a dark half with a moon, with a paintbrush and color swatches.",
-  summaryHtml: `<p>Lion Reader provides comprehensive appearance customization including a <strong>sleep-friendly dark mode</strong> that swaps blue accents for a warm red accent and neutral zinc tones to reduce blue light, multiple font families (serif and sans-serif), adjustable text sizes, and alignment choices. All settings save locally and apply instantly, and the app installs as a Progressive Web App.</p>`,
+  summaryHtml: `<p>Lion Reader provides comprehensive appearance customization including a <strong>sleep-friendly dark mode</strong> that swaps blue accents for a warm red accent and neutral zinc tones to reduce blue light, an <strong>e-paper theme</strong> with a pure white background and grayscale-safe colors for e-ink readers, multiple font families (serif and sans-serif), adjustable text sizes, and alignment choices. All settings save locally and apply instantly, and the app installs as a Progressive Web App.</p>`,
   contentHtml: `
     <p>Reading comfort is personal. What works for one person might strain another&rsquo;s eyes. That&rsquo;s why Lion Reader gives you comprehensive control over how your content appears, letting you create the perfect reading environment for your preferences and lighting conditions.</p>
 
@@ -27,6 +27,10 @@ const article: DemoArticle = {
     <p>Lion Reader&rsquo;s dark theme is designed for late-night reading. Rather than the usual blue-accented dark mode, it deliberately minimizes blue light: the accent color switches from blue to a warm <strong>red</strong> (red-400, <code>#f87171</code>), and informational highlights use neutral <strong>zinc</strong> grays (zinc-400, <code>#a1a1aa</code>) instead of blue. In light mode those same elements stay blue, where blue light is a non-issue in a bright environment.</p>
 
     <p>The motivation is simple: blue light in the evening is the wavelength most associated with suppressing melatonin, the hormone that helps you wind down for sleep. By steering the dark theme toward warm and neutral tones, Lion Reader aims to be gentler on your eyes and your circadian rhythm when you&rsquo;re reading in bed with the lights off. This is a design choice to reduce blue light, not a medical claim &mdash; but if you read at night, it&rsquo;s one less thing keeping you awake.</p>
+
+    <h3>E-paper theme</h3>
+
+    <p>Reading on a Kindle, Kobo, or Onyx Boox? The <strong>E-paper</strong> theme is built for e-ink screens: a pure white background, near-black text, and colors chosen so everything stays readable even when the display forces the page to grayscale. Borders and highlights are darker than in the regular light theme because e-ink panels can&rsquo;t render faint grays. When your theme is set to <strong>Auto</strong>, Lion Reader even tries to detect e-reader devices and switches to the e-paper theme automatically.</p>
 
     <h3>Typography Controls</h3>
 
