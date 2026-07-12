@@ -25,7 +25,7 @@ export interface LegalPageProps {
 
 export function LegalPage({ title, lastUpdated, children }: LegalPageProps) {
   return (
-    <div className="min-h-screen bg-zinc-50 px-4 py-12 dark:bg-zinc-950">
+    <div className="bg-canvas min-h-screen px-4 py-12">
       <main className="mx-auto max-w-3xl">
         <div className="mb-8">
           <Link
