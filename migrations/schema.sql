@@ -447,10 +447,9 @@ CREATE VIEW public.visible_entries AS
     e.full_content_original_sanitized,
     e.full_content_cleaned_sanitized,
     e.full_content_sanitized_version
-   FROM (((public.user_entries ue
+   FROM ((public.user_entries ue
      JOIN public.entries e ON ((e.id = ue.entry_id)))
-     LEFT JOIN public.subscription_feeds sf ON (((sf.user_id = ue.user_id) AND (sf.feed_id = e.feed_id))))
-     LEFT JOIN public.subscriptions s ON ((s.id = sf.subscription_id)))
+     LEFT JOIN public.subscriptions s ON ((s.id = ue.subscription_id)))
   WHERE (((s.id IS NOT NULL) AND (s.unsubscribed_at IS NULL)) OR (ue.starred = true) OR (e.type = 'saved'::public.feed_type));
 
 CREATE TABLE public.websub_hub_stats (

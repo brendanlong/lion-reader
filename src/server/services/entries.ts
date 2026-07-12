@@ -653,19 +653,12 @@ export async function listEntries(
       ? [desc(sortColumn), desc(visibleEntries.id)]
       : [asc(sortColumn), asc(visibleEntries.id)];
 
-  // DISTINCT ON (sortColumn, id): visible_entries emits one row per matching
-  // subscription_feeds row, so an entry reachable through overlapping
-  // subscriptions (redirect/merge history) would otherwise appear multiple times
-  // in the timeline. This dedupes to one row per entry, keeping the count paths
-  // (which use count(DISTINCT id)) consistent with the list. The ON expressions
-  // match the leading ORDER BY columns, so the index-ordered scan streams straight
-  // into the Unique node. id is globally unique, so the cursor key (sortColumn, id)
-  // identifies the surviving row unambiguously and the keyset cursor resumes
-  // cleanly. The non-key subscriptionId of the kept row is arbitrary among the
-  // overlapping subscriptions, but they all point at the same feed, so downstream
-  // filtering (which keys on feedId) is unaffected.
+  // visible_entries emits exactly one row per (user, entry) — it joins
+  // subscriptions on the stamped user_entries.subscription_id (migration 0087)
+  // — so no DISTINCT ON dedup is needed and the (sortColumn, id) keyset cursor
+  // resumes cleanly over unique rows.
   const queryResults = await db
-    .selectDistinctOn([sortColumn, visibleEntries.id], {
+    .select({
       id: visibleEntries.id,
       feedId: visibleEntries.feedId,
       type: visibleEntries.type,
@@ -779,14 +772,12 @@ async function searchEntries(
     );
   }
 
-  // Compute the rank in a subquery so it becomes a plain output column, then
-  // dedupe in the outer query with DISTINCT ON (rank, id). This dedupes entries
-  // reachable through overlapping subscription_feeds rows, same as listEntries
-  // above. DISTINCT ON must textually match the leading ORDER BY expressions, and
-  // Postgres treats the two inlined `ts_rank(...)` expressions as unequal because
-  // their bound-parameter placeholders differ ($1 vs $6) — so the rank must be a
-  // single named column referenced by both clauses. id is globally unique, so each
-  // entry yields one row that the (rank, id) keyset cursor resumes from cleanly.
+  // Compute the rank in a subquery so it becomes a plain output column the
+  // outer query can ORDER BY and the keyset cursor can compare against:
+  // Postgres treats two inlined `ts_rank(...)` expressions as unequal because
+  // their bound-parameter placeholders differ ($1 vs $6), so the rank must be a
+  // single named column. The view emits one row per (user, entry), so no
+  // DISTINCT ON dedup is needed and the (rank, id) cursor resumes cleanly.
   const rankedSubquery = db
     .select({
       id: visibleEntries.id,
@@ -815,7 +806,7 @@ async function searchEntries(
     .as("ranked");
 
   const queryResults = await db
-    .selectDistinctOn([rankedSubquery.rank, rankedSubquery.id], {
+    .select({
       id: rankedSubquery.id,
       feedId: rankedSubquery.feedId,
       type: rankedSubquery.type,
@@ -1422,14 +1413,11 @@ export async function countEntries(
   // visible entry, matching how counts.ts computes unread counts.
   conditions.push(eq(visibleEntries.read, false));
 
-  // count(DISTINCT id), not count(*): visible_entries emits one row per matching
-  // subscription_feeds row, so an entry reachable through overlapping
-  // subscriptions (redirect/merge history) would be counted multiple times.
-  // This keeps the sidebar badge consistent with the counts.ts service, which
-  // dedupes the same way.
+  // The view emits one row per (user, entry) (migration 0087), so count(*) is
+  // exact and consistent with the counts.ts service.
   const result = await db
     .select({
-      unread: sql<number>`count(DISTINCT ${visibleEntries.id})::int`,
+      unread: sql<number>`count(*)::int`,
     })
     .from(visibleEntries)
     .where(and(...conditions));
@@ -1489,11 +1477,10 @@ export async function countTotalEntries(
     conditions.push(sql`${visibleEntries.updatedAt} >= ${params.updatedAfter}`);
   }
 
-  // count(DISTINCT id): dedupe entries reachable through overlapping
-  // subscription_feeds rows (see countEntries).
+  // One row per (user, entry), so count(*) is exact (see countEntries).
   const result = await db
     .select({
-      total: sql<number>`count(DISTINCT ${visibleEntries.id})::int`,
+      total: sql<number>`count(*)::int`,
     })
     .from(visibleEntries)
     .where(and(...conditions));
