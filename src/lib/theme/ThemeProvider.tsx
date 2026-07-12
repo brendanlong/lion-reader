@@ -47,6 +47,15 @@ function EInkSystemThemeOverride() {
         root.classList.remove("light", "dark");
         root.classList.add("epaper");
       }
+      // next-themes writes the resolved system theme's color-scheme as an
+      // inline style (e.g. "dark" when the OS prefers dark), which would beat
+      // the `.epaper { color-scheme: light }` rule. It always rewrites this
+      // together with the class, so re-asserting here covers every path; when
+      // the user later picks an explicit theme, next-themes overwrites or
+      // clears it again.
+      if (root.style.colorScheme !== "light") {
+        root.style.colorScheme = "light";
+      }
     };
     apply();
     const observer = new MutationObserver(apply);
