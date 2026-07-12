@@ -87,6 +87,8 @@ function createAuthContext(userId: string): Context {
         summarizationModel: null,
         summarizationMaxWords: null,
         summarizationPrompt: null,
+        savedUnreadCount: 0,
+        starredUnreadCount: 0,
         tosAgreedAt: now,
         privacyPolicyAgreedAt: now,
         notEuAgreedAt: now,

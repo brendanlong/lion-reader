@@ -30,6 +30,7 @@ import {
   handleProcessOpmlImport,
   handleMonitorFeedHealth,
   handleCleanup,
+  handleReconcileCounters,
   type JobHandlerResult,
 } from "./handlers";
 import type { Job } from "../db/schema";
@@ -443,6 +444,11 @@ function createWorker(config: WorkerConfig = {}): Worker {
         case "cleanup": {
           const payload = getJobPayload<"cleanup">(job);
           result = await handleCleanup(payload);
+          break;
+        }
+        case "reconcile_counters": {
+          const payload = getJobPayload<"reconcile_counters">(job);
+          result = await handleReconcileCounters(payload);
           break;
         }
         case "process_opml_import": {

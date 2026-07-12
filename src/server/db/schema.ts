@@ -96,6 +96,14 @@ export const users = pgTable(
     // expired sessions (the previous MAX(sessions.last_active_at) source).
     lastActiveAt: timestamp("last_active_at", { withTimezone: true }),
 
+    // Denormalized unread counters (issue #1117, migration 0092), maintained by
+    // the user_entries_counters_* statement triggers (spam permanently
+    // excluded). saved = unread rows with no subscription (saved/uploaded);
+    // starred = ALL starred unread rows (any subscription state + saved) — the
+    // Starred badge directly.
+    savedUnreadCount: integer("saved_unread_count").notNull().default(0),
+    starredUnreadCount: integer("starred_unread_count").notNull().default(0),
+
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -606,6 +614,14 @@ export const subscriptions = pgTable(
 
     subscribedAt: timestamp("subscribed_at", { withTimezone: true }).notNull().defaultNow(), // critical for visibility
     unsubscribedAt: timestamp("unsubscribed_at", { withTimezone: true }), // soft delete
+
+    // Denormalized unread counters (issue #1117, migration 0092), maintained by
+    // the user_entries_counters_* statement triggers over rows attributed to
+    // this subscription (spam permanently excluded). Stay accurate while the
+    // subscription is unsubscribed (rows keep their stamp); starred_unread_count
+    // of INACTIVE subscriptions is the starred-orphans term of the "all" badge.
+    unreadCount: integer("unread_count").notNull().default(0),
+    starredUnreadCount: integer("starred_unread_count").notNull().default(0),
 
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
