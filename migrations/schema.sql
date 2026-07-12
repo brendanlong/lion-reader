@@ -350,16 +350,10 @@ CREATE TABLE public.user_entries (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     read_changed_at timestamp with time zone,
     starred_changed_at timestamp with time zone DEFAULT now() NOT NULL,
-    score smallint,
-    score_changed_at timestamp with time zone,
-    has_marked_read_on_list boolean DEFAULT false NOT NULL,
-    has_marked_unread boolean DEFAULT false NOT NULL,
-    has_starred boolean DEFAULT false NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     published_or_fetched_at timestamp with time zone NOT NULL,
     subscription_id uuid,
-    is_spam boolean NOT NULL,
-    CONSTRAINT user_entries_score_range CHECK (((score >= '-2'::integer) AND (score <= 2)))
+    is_spam boolean NOT NULL
 );
 
 CREATE VIEW public.user_feeds AS
@@ -432,10 +426,6 @@ CREATE VIEW public.visible_entries AS
     e.full_content_error,
     ue.read,
     ue.starred,
-    ue.score,
-    ue.has_marked_read_on_list,
-    ue.has_marked_unread,
-    ue.has_starred,
     s.id AS subscription_id,
     e.unsubscribe_url,
     ue.read_changed_at,

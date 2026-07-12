@@ -624,6 +624,13 @@
       "when": 1782952200000,
       "tag": "0089_drop_resanitize_entries_job",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1782952300000,
+      "tag": "0090_drop_entry_scoring_columns",
+      "breakpoints": true
     }
   ]
 }
