@@ -3,7 +3,7 @@
  *
  * Pure presentational component for rendering an article.
  * Extracted from EntryContentBody to be SSR-compatible (no "use client").
- * Interactive features (narration, summarization, voting, etc.) are passed
+ * Interactive features (narration, summarization, etc.) are passed
  * as slots from client components.
  */
 
@@ -46,8 +46,6 @@ export interface EntryArticleProps {
   // Slots for interactive client components
   /** Back button slot (has onClick) */
   backButton?: ReactNode;
-  /** Vote controls slot (score display on right side of title) */
-  voteControls?: ReactNode;
   /** Action buttons slot (star, read, narration, summarize buttons) */
   actionButtons?: ReactNode;
   /** Content inserted before the main article content (e.g., summary card, narration highlight styles) */
@@ -78,7 +76,6 @@ export function EntryArticle({
   isContentLoading,
   contentRef,
   backButton,
-  voteControls,
   actionButtons,
   beforeContent,
   afterContent,
@@ -101,58 +98,49 @@ export function EntryArticle({
 
       {/* Header */}
       <header className="mb-6 sm:mb-8">
-        {/* Title row: title+meta on left, vote controls on right */}
-        <div className="mb-4 flex gap-4 sm:mb-6">
-          {/* Left column: title and meta */}
-          <div className="min-w-0 flex-1">
-            {/* Title */}
-            <div className="mb-2">
-              {url ? (
-                <a
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="ui-text-xl sm:ui-text-2xl hover:text-accent block leading-tight font-bold text-zinc-900 underline-offset-2 transition-colors hover:underline md:text-3xl dark:text-zinc-100"
-                >
-                  {title}
-                </a>
-              ) : (
-                <h1 className="ui-text-xl sm:ui-text-2xl leading-tight font-bold text-zinc-900 md:text-3xl dark:text-zinc-100">
-                  {title}
-                </h1>
-              )}
-            </div>
-
-            {/* Meta row: Source, Author, Date */}
-            <div className="ui-text-xs sm:ui-text-sm flex flex-wrap items-center gap-x-3 gap-y-1 text-zinc-600 sm:gap-x-4 sm:gap-y-2 dark:text-zinc-400">
-              <span className="font-medium">{source}</span>
-              {author && author.toLowerCase().trim() !== source.toLowerCase().trim() && (
-                <>
-                  <span
-                    aria-hidden="true"
-                    className="hidden text-zinc-400 sm:inline dark:text-zinc-600"
-                  >
-                    |
-                  </span>
-                  <span className="hidden sm:inline">by {author}</span>
-                  <span className="sm:hidden">- {author}</span>
-                </>
-              )}
-              <span
-                aria-hidden="true"
-                className="hidden text-zinc-400 sm:inline dark:text-zinc-600"
+        {/* Title and meta */}
+        <div className="mb-4 sm:mb-6">
+          {/* Title */}
+          <div className="mb-2">
+            {url ? (
+              <a
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="ui-text-xl sm:ui-text-2xl hover:text-accent block leading-tight font-bold text-zinc-900 underline-offset-2 transition-colors hover:underline md:text-3xl dark:text-zinc-100"
               >
-                |
-              </span>
-              <time dateTime={date.toISOString()} className="basis-full sm:basis-auto">
-                {datePrefix ? `${datePrefix} ` : ""}
-                {formatDate(date)}
-              </time>
-            </div>
+                {title}
+              </a>
+            ) : (
+              <h1 className="ui-text-xl sm:ui-text-2xl leading-tight font-bold text-zinc-900 md:text-3xl dark:text-zinc-100">
+                {title}
+              </h1>
+            )}
           </div>
 
-          {/* Right column: vote controls slot */}
-          {voteControls}
+          {/* Meta row: Source, Author, Date */}
+          <div className="ui-text-xs sm:ui-text-sm flex flex-wrap items-center gap-x-3 gap-y-1 text-zinc-600 sm:gap-x-4 sm:gap-y-2 dark:text-zinc-400">
+            <span className="font-medium">{source}</span>
+            {author && author.toLowerCase().trim() !== source.toLowerCase().trim() && (
+              <>
+                <span
+                  aria-hidden="true"
+                  className="hidden text-zinc-400 sm:inline dark:text-zinc-600"
+                >
+                  |
+                </span>
+                <span className="hidden sm:inline">by {author}</span>
+                <span className="sm:hidden">- {author}</span>
+              </>
+            )}
+            <span aria-hidden="true" className="hidden text-zinc-400 sm:inline dark:text-zinc-600">
+              |
+            </span>
+            <time dateTime={date.toISOString()} className="basis-full sm:basis-auto">
+              {datePrefix ? `${datePrefix} ` : ""}
+              {formatDate(date)}
+            </time>
+          </div>
         </div>
 
         {/* Action buttons slot */}
