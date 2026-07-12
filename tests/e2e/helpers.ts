@@ -180,7 +180,7 @@ export async function starEntry(db: TestDb, userId: string, entryId: string): Pr
   const now = new Date();
   await db
     .update(schema.userEntries)
-    .set({ starred: true, hasStarred: true, starredChangedAt: now, updatedAt: now })
+    .set({ starred: true, starredChangedAt: now, updatedAt: now })
     .where(and(eq(schema.userEntries.userId, userId), eq(schema.userEntries.entryId, entryId)));
 }
 

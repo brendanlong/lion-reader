@@ -313,8 +313,7 @@ const entryFullSelectFields = {
 
 /**
  * Superset selected by `selectFullEntry` for the tRPC full-entry view: adds
- * the full-content family, score-signal flags, and the subscription's
- * fetchFullContent setting.
+ * the full-content family and the subscription's fetchFullContent setting.
  */
 const fullEntrySelectFields = {
   ...entryFullSelectFields,
@@ -328,9 +327,6 @@ const fullEntrySelectFields = {
   fullContentFetchedAt: visibleEntries.fullContentFetchedAt,
   fullContentError: visibleEntries.fullContentError,
   contentHash: visibleEntries.contentHash,
-  hasMarkedReadOnList: visibleEntries.hasMarkedReadOnList,
-  hasMarkedUnread: visibleEntries.hasMarkedUnread,
-  hasStarred: visibleEntries.hasStarred,
   fetchFullContent: subscriptions.fetchFullContent,
 };
 
@@ -489,12 +485,6 @@ export async function toFullEntry(
   row: NonNullable<Awaited<ReturnType<typeof selectFullEntry>>>
 ) {
   const {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    hasStarred,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    hasMarkedUnread,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    hasMarkedReadOnList,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     contentHash,
     contentOriginalSanitized,
@@ -950,10 +940,6 @@ export async function getEntries(
  * read_changed_at timestamp. This prevents stale updates from overwriting newer
  * state. Supports per-entry timestamps for offline sync.
  *
- * Sets the implicit signal flags (vestiges of the removed entry-scoring feature):
- * - `has_marked_unread` whenever marking unread
- * - `has_marked_read_on_list` when marking read with `fromList`
- *
  * Returns the final state for all requested entries (with the context fields
  * callers need for cache updates) plus the absolute unread counts for every
  * affected list. Counts are computed once here and both returned and published,
@@ -983,8 +969,6 @@ export async function getEntries(
  * `changed`+`counts` itself after the commit, so a rolled-back mark can't emit
  * a phantom event.
  *
- * @param options.fromList - Whether the mark-read originated from the entry list
- *   (weak negative signal). Only meaningful when marking read.
  * @param options.publish - Whether to publish `entry_state_changed` events here
  *   (default true). Pass false when calling inside a transaction and publish the
  *   returned `changed`/`counts` after the commit.
@@ -994,7 +978,7 @@ export async function markEntriesRead(
   userId: string,
   entriesToMark: MarkReadEntry[],
   read: boolean,
-  options: { fromList?: boolean; publish?: boolean } = {}
+  options: { publish?: boolean } = {}
 ): Promise<{
   entries: MarkReadEntryState[];
   changed: MarkReadEntryState[];
@@ -1025,17 +1009,9 @@ export async function markEntriesRead(
     (entry) => sql`(${entry.id}::uuid, ${(entry.changedAt ?? now).toISOString()}::timestamptz)`
   );
 
-  // Implicit score-signal flag, identical for every entry in this call.
-  const signalAssignment =
-    read && options.fromList
-      ? sql`, has_marked_read_on_list = true` // marking read from the list → implicit -1
-      : !read
-        ? sql`, has_marked_unread = true` // marking unread → implicit 0 (overrides read-on-list)
-        : sql``;
-
   const updated = await db.execute<{ entry_id: string; old_read: boolean }>(sql`
     UPDATE user_entries AS ue
-    SET read = ${read}, updated_at = ${now}, read_changed_at = v.ts${signalAssignment}
+    SET read = ${read}, updated_at = ${now}, read_changed_at = v.ts
     FROM (VALUES ${sql.join(rows, sql`, `)}) AS v(entry_id, ts)
     JOIN user_entries AS prev
       ON prev.user_id = ${userId}::uuid
@@ -1259,9 +1235,6 @@ export async function markAllEntriesRead(
  * Uses idempotent updates: only applies if changedAt is newer than the stored
  * starred_changed_at timestamp. This prevents stale updates from overwriting newer state.
  *
- * Sets the `has_starred` implicit signal flag when starring (a vestige of the
- * removed entry-scoring feature).
- *
  * Returns the entry's final state plus the absolute unread counts for every
  * affected list. Counts are computed once here and both returned and published,
  * so callers don't re-query them.
@@ -1296,9 +1269,6 @@ export async function updateEntryStarred(
   starred: boolean,
   changedAt: Date = new Date()
 ): Promise<{ entry: EntryState; counts?: UnreadCounts }> {
-  // Implicit score-signal flag, set only when starring.
-  const signalAssignment = starred ? sql`, has_starred = true` : sql``;
-
   // Conditional update: only apply if incoming timestamp is newer or equal
   // (starred_changed_at is NOT NULL with a default, so no NULL guard needed).
   // Date params bind un-cast here because SET/WHERE column context supplies the
@@ -1310,7 +1280,7 @@ export async function updateEntryStarred(
   // pre-SELECT and its wider TOCTOU window.
   const updated = await db.execute<{ old_starred: boolean }>(sql`
     UPDATE user_entries AS ue
-    SET starred = ${starred}, starred_changed_at = ${changedAt}, updated_at = ${new Date()}${signalAssignment}
+    SET starred = ${starred}, starred_changed_at = ${changedAt}, updated_at = ${new Date()}
     FROM user_entries AS prev
     WHERE ue.user_id = ${userId}::uuid
       AND ue.entry_id = ${entryId}::uuid

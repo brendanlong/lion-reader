@@ -53,15 +53,13 @@ export interface MarkAllReadOptions {
 export interface UseEntryMutationsResult {
   /**
    * Mark one or more entries as read or unread.
-   * @param fromList - If true, sets implicit score signal (mark-read-on-list)
    */
-  markRead: (ids: string[], read: boolean, fromList?: boolean) => void;
+  markRead: (ids: string[], read: boolean) => void;
 
   /**
    * Toggle the read status of an entry.
-   * @param fromList - If true, sets implicit score signal (mark-read-on-list)
    */
-  toggleRead: (entryId: string, currentlyRead: boolean, fromList?: boolean) => void;
+  toggleRead: (entryId: string, currentlyRead: boolean) => void;
 
   /**
    * Mark all entries as read with optional filters.
@@ -261,7 +259,6 @@ export function useEntryMutations(): UseEntryMutationsResult {
   };
 
   // markRead mutation - uses optimistic updates for instant UI feedback
-  // Also updates score cache since marking read/unread sets implicit signal flags
   const markReadMutation = trpc.entries.markRead.useMutation({
     // Optimistic update: immediately update the UI before server responds
     onMutate: async (variables) => {
@@ -359,7 +356,6 @@ export function useEntryMutations(): UseEntryMutationsResult {
   });
 
   // setStarred mutation - uses optimistic updates for instant UI feedback
-  // Also updates score cache since starring sets hasStarred implicit signal
   const setStarredMutation = trpc.entries.setStarred.useMutation({
     // Optimistic update: immediately show the entry with new starred status
     onMutate: async (variables) => {
@@ -419,23 +415,21 @@ export function useEntryMutations(): UseEntryMutationsResult {
 
   // Generate timestamp at action time for idempotent updates
   const markRead = useCallback(
-    (ids: string[], read: boolean, fromList?: boolean) => {
+    (ids: string[], read: boolean) => {
       const changedAt = new Date();
       markReadMutation.mutate({
         entries: ids.map((id) => ({ id, changedAt })),
         read,
-        fromList: fromList || undefined,
       });
     },
     [markReadMutation]
   );
 
   const toggleRead = useCallback(
-    (entryId: string, currentlyRead: boolean, fromList?: boolean) => {
+    (entryId: string, currentlyRead: boolean) => {
       markReadMutation.mutate({
         entries: [{ id: entryId, changedAt: new Date() }],
         read: !currentlyRead,
-        fromList: fromList || undefined,
       });
     },
     [markReadMutation]
