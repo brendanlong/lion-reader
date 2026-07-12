@@ -30,7 +30,7 @@ import {
   OAUTH_SCOPES,
   SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS,
 } from "./utils";
-import { getIssuer, getResourceIdentifier } from "./config";
+import { getIssuer, getRegistrationClientUri, getResourceIdentifier } from "./config";
 import { logger } from "@/lib/logger";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { fetchWithSsrfProtection } from "@/server/http/ssrf";
@@ -740,10 +740,13 @@ function generateClientId(): string {
  * Supports open registration (no initial access token required).
  *
  * @param request - Client registration request
+ * @param host - Request Host header; picks the OAuth surface (apex vs MCP host)
+ *   the `registration_client_uri` is expressed on
  * @returns Client registration response or error
  */
 export async function registerClient(
-  request: ClientRegistrationRequest
+  request: ClientRegistrationRequest,
+  host?: string | null
 ): Promise<
   | { success: true; data: ClientRegistrationResponse }
   | { success: false; error: ClientRegistrationError }
@@ -887,8 +890,9 @@ export async function registerClient(
     // Notion), which all include this field. RFC 7592 client management is not
     // implemented (theirs isn't either — Linear's URI 404s), and per RFC 7592 a
     // client can't use it anyway without a registration_access_token, which we
-    // don't issue.
-    registration_client_uri: `${getIssuer()}/oauth/register/${clientId}`,
+    // don't issue. Host-derived so a registration on the MCP host doesn't
+    // reference the apex origin.
+    registration_client_uri: getRegistrationClientUri(clientId, host),
   };
 
   // Add client_secret for confidential clients

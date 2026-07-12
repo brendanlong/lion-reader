@@ -93,6 +93,34 @@ describe("OAuth Dynamic Client Registration auth methods", () => {
       );
     }
   });
+
+  it("expresses registration_client_uri on the requesting host's surface", async () => {
+    // A registration on the dedicated MCP host must not reference the apex
+    // origin — a cross-origin registration_client_uri is an inconsistency a
+    // strict client can reject.
+    process.env.MCP_HOST = "mcp.example.com";
+    try {
+      const result = await registerClient(
+        {
+          redirect_uris: ["https://claude.ai/api/mcp/auth_callback"],
+          client_name: "MCP Host Test Client",
+          token_endpoint_auth_method: "none",
+        },
+        "mcp.example.com"
+      );
+      expect(result.success).toBe(true);
+      if (result.success) {
+        registeredClientIds.push(result.data.client_id);
+        // Origin root (no /oauth prefix), matching the MCP host's advertised
+        // registration_endpoint.
+        expect(result.data.registration_client_uri).toBe(
+          `https://mcp.example.com/register/${result.data.client_id}`
+        );
+      }
+    } finally {
+      delete process.env.MCP_HOST;
+    }
+  });
 });
 
 describe("OAuth Dynamic Client Registration scope handling", () => {
