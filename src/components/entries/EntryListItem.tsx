@@ -77,8 +77,9 @@ export function getItemClasses(read: boolean, selected: boolean): string {
   if (read) {
     // Read entries recede into the page canvas: no fill of their own and a
     // faint hairline border, so they read as "already handled". They lift to a
-    // surface fill on hover to signal they're still clickable.
-    return `${baseClasses} border-edge bg-canvas hover:bg-surface active:bg-surface-muted dark:hover:bg-zinc-900 dark:active:bg-zinc-800`;
+    // surface fill on hover to signal they're still clickable (the surface
+    // tokens already carry their own dark-mode values).
+    return `${baseClasses} border-edge bg-canvas hover:bg-surface active:bg-surface-muted`;
   }
 
   // Unread entries stand out as raised surface cards with a distinctly stronger
