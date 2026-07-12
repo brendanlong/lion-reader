@@ -124,9 +124,13 @@ async function authenticateRequest(request: NextRequest): Promise<AuthResult> {
  * server advertises. The `realm`/`error` shape also mirrors those servers. We do
  * NOT include a `scope` parameter: working servers omit it, and ours would carry
  * a colon/space value (`mcp saved:write`) that risks tripping strict parsers.
+ *
+ * The `resource_metadata` URL is host-derived so a request to the dedicated MCP
+ * host points at that host's `/.well-known/oauth-protected-resource/mcp`, while
+ * the apex points at `.../api/mcp`.
  */
-function buildWwwAuthenticateHeader(): string {
-  const metadataUrl = getProtectedResourceMetadataUrl();
+function buildWwwAuthenticateHeader(host: string | null): string {
+  const metadataUrl = getProtectedResourceMetadataUrl(host);
   return `Bearer realm="OAuth", resource_metadata="${metadataUrl}", error="invalid_token", error_description="Missing or invalid access token"`;
 }
 
@@ -193,8 +197,8 @@ function createMcpServer(userId: string): Server {
 // Unauthorized Response
 // ============================================================================
 
-function unauthorizedResponse(failure: AuthFailure): Response {
-  logger.warn("MCP auth unauthorized", { reason: failure.reason });
+function unauthorizedResponse(failure: AuthFailure, host: string | null): Response {
+  logger.warn("MCP auth unauthorized", { reason: failure.reason, host });
   const status = failure.status ?? 401;
   // RFC 6750-style error body, byte-identical to what the known-working remote
   // MCP servers (Linear, Sentry, Notion) return on an unauthenticated request.
@@ -206,7 +210,7 @@ function unauthorizedResponse(failure: AuthFailure): Response {
     status,
     headers: {
       "Content-Type": "application/json",
-      "WWW-Authenticate": buildWwwAuthenticateHeader(),
+      "WWW-Authenticate": buildWwwAuthenticateHeader(host),
     },
   });
 }
@@ -223,7 +227,7 @@ async function handleMcpRequest(request: NextRequest): Promise<Response> {
   // Authenticate request
   const auth = await authenticateRequest(request);
   if (!auth.success) {
-    return unauthorizedResponse(auth);
+    return unauthorizedResponse(auth, request.headers.get("host"));
   }
   const { userId } = auth;
 
@@ -298,7 +302,7 @@ export function OPTIONS() {
 export async function GET(request: NextRequest) {
   const auth = await authenticateRequest(request);
   if (!auth.success) {
-    return withMcpCorsHeaders(unauthorizedResponse(auth));
+    return withMcpCorsHeaders(unauthorizedResponse(auth, request.headers.get("host")));
   }
   return withMcpCorsHeaders(new Response(null, { status: 405 }));
 }
@@ -314,7 +318,7 @@ export async function GET(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   const auth = await authenticateRequest(request);
   if (!auth.success) {
-    return withMcpCorsHeaders(unauthorizedResponse(auth));
+    return withMcpCorsHeaders(unauthorizedResponse(auth, request.headers.get("host")));
   }
   return withMcpCorsHeaders(new Response(null, { status: 405 }));
 }

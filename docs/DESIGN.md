@@ -266,6 +266,24 @@ The OAuth **server write** endpoints (`/oauth/register`, `/oauth/token`, `/oauth
 
 The `.well-known/*` OAuth metadata routes and the `/api/mcp` tool surface are **not** rate limited, by the same rule as the rest of the app: only expensive/abusable operations are limited (see below), and neither is one — `.well-known/*` returns cached static JSON, and `/api/mcp` is a normal authenticated read/write surface backed by the same services as the (un-rate-limited) `mcp`-scoped tRPC endpoints. Rate limiting only these two would be a special case with no analogue elsewhere.
 
+#### Dedicated MCP host (`MCP_HOST`)
+
+The claude.ai **web** connector fails against `/api/mcp` on the apex (issue #986) while Claude Code, Claude Desktop, and `mcp-remote` connect fine. Every remote MCP server that _does_ work with the web connector (Notion, Linear, Sentry) is on a dedicated `mcp.*` subdomain with the endpoint at `/mcp` and the OAuth endpoints at the origin root — a clean origin where the paths claude.ai synthesizes at the root (`/authorize`, `/token`, `/register`) collide with nothing (on the apex, `/register` is the signup page, which is why `src/proxy.ts` method-splits it).
+
+Setting `MCP_HOST` (e.g. `mcp.lionreader.com`) makes the **same `app` process** — no extra machine — serve a second, self-consistent OAuth/MCP surface for that host, alongside the unchanged apex surface. The surface is resolved per request from the `Host` header in `src/server/oauth/config.ts` (`resolveSurface`), so route handlers pass `request.headers.get("host")` into `getIssuer`/`getResourceIdentifier`/`getProtectedResourceMetadataUrl`/`getAuthorizationServerMetadata`/`getProtectedResourceMetadata`; omitting the host resolves to the apex, so pre-existing no-arg calls are unchanged.
+
+|                             | Apex (default)                                  | MCP host (`MCP_HOST`)                                              |
+| --------------------------- | ----------------------------------------------- | ------------------------------------------------------------------ |
+| MCP endpoint                | `/api/mcp`                                      | `/mcp` (`src/app/mcp/route.ts` re-exports the `/api/mcp` handlers) |
+| Resource identifier         | `https://{apex}/api/mcp`                        | `https://{mcpHost}/mcp`                                            |
+| Protected-resource metadata | `/.well-known/oauth-protected-resource/api/mcp` | `/.well-known/oauth-protected-resource/mcp`                        |
+| OAuth endpoints advertised  | under `/oauth/*` (+ root aliases)               | at the origin root (`/authorize`, `/token`, `/register`)           |
+| `authorization_servers`     | `[https://{apex}]`                              | `[https://{mcpHost}]`                                              |
+
+`getAcceptedResourceIdentifiers()` is **host-independent**: it returns the audiences for _both_ surfaces (apex `/api/mcp` + legacy origin, and — when `MCP_HOST` is set — the MCP host's `/mcp` + origin), so a token minted on one surface validates at that surface's endpoint regardless of which host the request arrived on. Tokens are minted bound to the requesting host's resource (`/authorize` passes the host into `getResourceIdentifier`), and login/consent redirects stay on that host so a host-only session cookie set during login is sent back to `/authorize`. Refresh rotation is unchanged and preserves each token's own audience. Rollout is infra-only: add DNS + `fly certs add {MCP_HOST}`, then set `MCP_HOST`; until then the code is inert.
+
+Setting `LOG_MCP_REQUESTS=true` makes `src/proxy.ts` emit one structured line per request (host, method, path, **redacted** query, user-agent, and `hasAuthorization` — a boolean, never the token). To catch requests to paths we don't expect (the "wrong URL" / origin-root-fallback failure modes) the proxy matcher runs on all requests, but logging is filtered so ordinary app traffic stays out of the logs: it logs **every** request whose Host is the dedicated `MCP_HOST` (full visibility on the debug host), plus the OAuth/MCP surface paths (`/mcp`, `/api/mcp`, `/authorize`, `/token`, `/register`, `/oauth/*`, `/.well-known/*`) on any host. This is the diagnostic that separates claude.ai's failure modes — e.g. an authenticated `initialize` arriving with no Bearer header (the connector header-drop bug) vs. a registration/discovery failure vs. a probe to an unanticipated path.
+
 ---
 
 ## Feed Processing

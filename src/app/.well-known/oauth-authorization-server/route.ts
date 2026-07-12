@@ -7,14 +7,15 @@
  * GET /.well-known/oauth-authorization-server
  */
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getAuthorizationServerMetadata } from "@/server/oauth/config";
 import { withMcpCorsHeaders, mcpCorsPreflight } from "@/server/http/cors";
 import { logger } from "@/lib/logger";
 
-export async function GET() {
-  logger.info("OAuth authorization server metadata requested");
-  const metadata = getAuthorizationServerMetadata();
+export async function GET(request: NextRequest) {
+  const host = request.headers.get("host");
+  logger.info("OAuth authorization server metadata requested", { host });
+  const metadata = getAuthorizationServerMetadata(host);
 
   return withMcpCorsHeaders(
     NextResponse.json(metadata, {

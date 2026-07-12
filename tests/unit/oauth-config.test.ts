@@ -20,9 +20,11 @@ import { SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS } from "../../src/server/oauth/ut
 
 describe("OAuth resource identifiers", () => {
   const original = process.env.NEXT_PUBLIC_APP_URL;
+  const originalMcpHost = process.env.MCP_HOST;
 
   beforeEach(() => {
     process.env.NEXT_PUBLIC_APP_URL = "https://reader.example.com";
+    delete process.env.MCP_HOST;
   });
 
   afterEach(() => {
@@ -33,6 +35,11 @@ describe("OAuth resource identifiers", () => {
       delete process.env.NEXT_PUBLIC_APP_URL;
     } else {
       process.env.NEXT_PUBLIC_APP_URL = original;
+    }
+    if (originalMcpHost === undefined) {
+      delete process.env.MCP_HOST;
+    } else {
+      process.env.MCP_HOST = originalMcpHost;
     }
   });
 
@@ -96,6 +103,80 @@ describe("OAuth resource identifiers", () => {
       "client_secret_basic",
       "client_secret_post",
       "none",
+    ]);
+  });
+});
+
+describe("OAuth resource identifiers on the dedicated MCP host", () => {
+  const original = process.env.NEXT_PUBLIC_APP_URL;
+  const originalMcpHost = process.env.MCP_HOST;
+
+  beforeEach(() => {
+    process.env.NEXT_PUBLIC_APP_URL = "https://reader.example.com";
+    process.env.MCP_HOST = "mcp.example.com";
+  });
+
+  afterEach(() => {
+    if (original === undefined) {
+      delete process.env.NEXT_PUBLIC_APP_URL;
+    } else {
+      process.env.NEXT_PUBLIC_APP_URL = original;
+    }
+    if (originalMcpHost === undefined) {
+      delete process.env.MCP_HOST;
+    } else {
+      process.env.MCP_HOST = originalMcpHost;
+    }
+  });
+
+  it("serves the MCP endpoint at /mcp with the host as issuer", () => {
+    // Matches the shape of every server that works with the claude.ai web
+    // connector (Notion/Linear/Sentry are all https://mcp.*/mcp).
+    expect(getIssuer("mcp.example.com")).toBe("https://mcp.example.com");
+    expect(getResourceIdentifier("mcp.example.com")).toBe("https://mcp.example.com/mcp");
+  });
+
+  it("matches the host case-insensitively and ignores the port", () => {
+    expect(getResourceIdentifier("MCP.Example.com:443")).toBe("https://mcp.example.com/mcp");
+  });
+
+  it("points the metadata URL at the path-inserted /mcp location", () => {
+    expect(getProtectedResourceMetadataUrl("mcp.example.com")).toBe(
+      "https://mcp.example.com/.well-known/oauth-protected-resource/mcp"
+    );
+  });
+
+  it("advertises OAuth endpoints at the origin root on the MCP host", () => {
+    const metadata = getAuthorizationServerMetadata("mcp.example.com");
+    expect(metadata.issuer).toBe("https://mcp.example.com");
+    expect(metadata.authorization_endpoint).toBe("https://mcp.example.com/authorize");
+    expect(metadata.token_endpoint).toBe("https://mcp.example.com/token");
+    expect(metadata.registration_endpoint).toBe("https://mcp.example.com/register");
+    // Served by the root alias in src/app/revoke/route.ts.
+    expect(metadata.revocation_endpoint).toBe("https://mcp.example.com/revoke");
+  });
+
+  it("advertises the MCP host itself as its own authorization server", () => {
+    const metadata = getProtectedResourceMetadata("mcp.example.com");
+    expect(metadata.resource).toBe("https://mcp.example.com/mcp");
+    expect(metadata.authorization_servers).toEqual(["https://mcp.example.com"]);
+  });
+
+  it("falls back to the apex surface for the apex host or an unknown host", () => {
+    expect(getResourceIdentifier("reader.example.com")).toBe("https://reader.example.com/api/mcp");
+    expect(getResourceIdentifier(null)).toBe("https://reader.example.com/api/mcp");
+    const apexMetadata = getAuthorizationServerMetadata("reader.example.com");
+    expect(apexMetadata.registration_endpoint).toBe("https://reader.example.com/oauth/register");
+  });
+
+  it("accepts audiences from BOTH surfaces so cross-host tokens validate", () => {
+    // Host-independent: a token minted on either surface must be accepted at that
+    // surface's endpoint regardless of the current request host.
+    expect(getAcceptedResourceIdentifiers()).toEqual([
+      "https://reader.example.com/api/mcp",
+      "https://reader.example.com",
+      "https://mcp.example.com/mcp",
+      "https://mcp.example.com",
     ]);
   });
 });

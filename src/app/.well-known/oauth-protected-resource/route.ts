@@ -7,14 +7,15 @@
  * GET /.well-known/oauth-protected-resource
  */
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getProtectedResourceMetadata } from "@/server/oauth/config";
 import { withMcpCorsHeaders, mcpCorsPreflight } from "@/server/http/cors";
 import { logger } from "@/lib/logger";
 
-export async function GET() {
-  logger.info("OAuth protected resource metadata requested");
-  const metadata = getProtectedResourceMetadata();
+export async function GET(request: NextRequest) {
+  const host = request.headers.get("host");
+  logger.info("OAuth protected resource metadata requested", { host });
+  const metadata = getProtectedResourceMetadata(host);
 
   return withMcpCorsHeaders(
     NextResponse.json(metadata, {
