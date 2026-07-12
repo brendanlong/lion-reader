@@ -631,6 +631,13 @@
       "when": 1782952300000,
       "tag": "0090_drop_entry_scoring_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1782952400000,
+      "tag": "0091_drop_subscription_feeds",
+      "breakpoints": true
     }
   ]
 }
