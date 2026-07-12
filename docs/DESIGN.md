@@ -629,7 +629,7 @@ Lion Reader has an extensible plugin system (`src/server/plugins/`) that consoli
 
 The registry indexes plugins by hostname for O(1) lookup, then calls the plugin's `matchUrl(url)`; `findWithCapability(url, capability)` returns the first plugin that matches AND declares the capability:
 
-- **`feed`** capability: transform page URLs to feed URLs, clean entry content, transform feed titles (e.g., LessWrong GraphQL API)
+- **`feed`** capability: transform page URLs to feed URLs, clean entry content, transform feed titles (e.g., LessWrong GraphQL API), raise the source's minimum polling interval (e.g., YouTube rate-limit avoidance)
 - **`savedArticle`** capability: fetch full article content for read-it-later, optionally skipping Readability when the source returns clean HTML
 
 `matchUrl` must be selective, not "any URL on my hosts" — a plugin should only match URLs it can actually handle (e.g. LessWrong `/tag/...` pages must return `false` so the caller falls back to normal fetching).
