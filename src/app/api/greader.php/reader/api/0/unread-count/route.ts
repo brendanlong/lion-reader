@@ -22,9 +22,9 @@ export async function GET(request: Request): Promise<Response> {
   const session = await requireAuth(request);
   if (session instanceof Response) return session;
 
-  // Counts and newest-item times are independent scans; run them concurrently.
+  // Counts and newest-item times are independent queries; run them concurrently.
   const [subscriptions, newestItemAtById] = await Promise.all([
-    listGreaderSubscriptions(db, session.user.id, { showSpam: session.user.showSpam }),
+    listGreaderSubscriptions(db, session.user.id),
     getGreaderNewestItemAt(db, session.user.id),
   ]);
 

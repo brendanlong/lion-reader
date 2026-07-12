@@ -22,12 +22,14 @@ import { createUserEntriesForFeed } from "../../src/server/feed/entry-processor"
 import { migrateSubscriptionsToExistingFeed } from "../../src/server/jobs/handlers";
 import { createSubscription } from "../../src/server/services/subscriptions";
 import {
+  countEntries,
   markEntriesRead,
   markAllEntriesRead,
   updateEntryStarred,
 } from "../../src/server/services/entries";
 import { createUploadedArticle, deleteSavedArticle } from "../../src/server/services/saved";
 import { reconcileCounters } from "../../src/server/services/reconcile-counters";
+import { getBulkEntryRelatedCounts } from "../../src/server/services/counts";
 
 // ============================================================================
 // Helpers
@@ -313,6 +315,75 @@ describe("unread counters (triggers + reconciliation)", () => {
     // Reading the starred orphan flows through the dead sub's counters.
     await markEntriesRead(db, userId, [{ id: entryId }], true);
     expect(await subscriptionCounters(subId)).toEqual({ unread: 0, starredUnread: 0 });
+    await expectNoDrift();
+  });
+
+  it("computes the full 'all' badge algebra from the counters (step 5b, read side)", async () => {
+    // all = SUM(unread_count) over ACTIVE subs
+    //     + users.saved_unread_count
+    //     + SUM(starred_unread_count) over INACTIVE subs (starred orphans)
+    const userId = await createTestUser();
+
+    // Active subscription with 2 unread entries.
+    const activeFeedId = await createTestFeed({});
+    await createTestSubscription(userId, activeFeedId);
+    for (let i = 0; i < 2; i++) {
+      const entryId = await createTestEntry(activeFeedId);
+      await db.insert(userEntries).values({ userId, entryId });
+    }
+
+    // Unsubscribed subscription with 1 starred unread orphan (still visible).
+    const goneFeedId = await createTestFeed({});
+    const goneSubId = await createTestSubscription(userId, goneFeedId);
+    const orphanId = await createTestEntry(goneFeedId);
+    // starredChangedAt in the past — see the note in the merge test above.
+    await db
+      .insert(userEntries)
+      .values({ userId, entryId: orphanId, starredChangedAt: new Date(Date.now() - 60_000) });
+    await updateEntryStarred(db, userId, orphanId, true);
+    await db
+      .update(subscriptions)
+      .set({ unsubscribedAt: new Date() })
+      .where(eq(subscriptions.id, goneSubId));
+
+    // One unread saved article.
+    await createUploadedArticle(db, userId, {
+      contentHtml: "<p>Saved content for the all-badge algebra test.</p>",
+      title: "All Badge Algebra",
+      siteName: "Uploaded Document",
+    });
+
+    const counts = await getBulkEntryRelatedCounts(db, userId, []);
+
+    // all = 2 (active) + 1 (saved) + 1 (starred orphan on the inactive sub)
+    expect(counts.all).toEqual({ unread: 4 });
+    // starred = users.starred_unread_count = the one starred unread orphan
+    expect(counts.starred).toEqual({ unread: 1 });
+    // saved = users.saved_unread_count
+    expect(counts.saved).toEqual({ unread: 1 });
+    await expectNoDrift();
+  });
+
+  it("countEntries never counts spam and serves the badge shapes from counters", async () => {
+    const userId = await createTestUser();
+    // Email feed with one ham + one spam entry (spam is only valid on email).
+    const feedId = await createTestFeed({ type: "email", userId });
+    const subId = await createTestSubscription(userId, feedId);
+    const hamId = await createTestEntry(feedId, { type: "email" });
+    const spamId = await createTestEntry(feedId, { type: "email", isSpam: true });
+    await createUserEntriesForFeed(feedId, [hamId, spamId]);
+
+    // The three sidebar badge shapes (counter fast-path) exclude spam, always —
+    // there is no showSpam parameter anymore (issue #1117: unread counts never
+    // include spam, matching the counters).
+    expect(await countEntries(db, userId, {})).toEqual({ unread: 1 });
+    expect(await countEntries(db, userId, { starredOnly: true })).toEqual({ unread: 0 });
+    expect(await countEntries(db, userId, { type: "saved" })).toEqual({ unread: 0 });
+
+    // Scoped filters take the visible_entries scan path — same spam exclusion,
+    // and the same value as the subscription's counter.
+    expect(await countEntries(db, userId, { subscriptionId: subId })).toEqual({ unread: 1 });
+    expect((await subscriptionCounters(subId)).unread).toBe(1);
     await expectNoDrift();
   });
 

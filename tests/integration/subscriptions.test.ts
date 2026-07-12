@@ -1104,49 +1104,7 @@ describe("listAllSubscriptions", () => {
   });
 });
 
-describe("includeUnreadCounts: false (issue #1074)", () => {
-  /**
-   * A user with one subscription and one unread visible entry, so the default
-   * query provably counts it (unreadCount 1) and the opt-out is observable
-   * (unreadCount 0) rather than vacuously matching an empty backlog.
-   */
-  async function createUserWithUnreadEntry(): Promise<{ userId: string; subId: string }> {
-    const userId = await createTestUser();
-    const feedId = await createTestFeed({
-      url: `https://example.com/unread-${userId}.xml`,
-      title: "Counted Feed",
-    });
-    const subId = await createTestSubscription(userId, feedId);
-    const entryId = await createTestEntry(feedId);
-    await db.insert(userEntries).values({ userId, entryId });
-    return { userId, subId };
-  }
-
-  it("listAllSubscriptions returns the same rows with unreadCount pinned to 0", async () => {
-    const { userId } = await createUserWithUnreadEntry();
-
-    const withCounts = await subscriptionsService.listAllSubscriptions(db, userId);
-    const withoutCounts = await subscriptionsService.listAllSubscriptions(db, userId, {
-      includeUnreadCounts: false,
-    });
-
-    // Sanity: the default query actually counts the unread entry.
-    expect(withCounts).toHaveLength(1);
-    expect(withCounts[0].unreadCount).toBe(1);
-
-    // Identical rows apart from the skipped count.
-    expect(withoutCounts).toEqual([{ ...withCounts[0], unreadCount: 0 }]);
-  });
-
-  it("getSubscription returns the same row with unreadCount pinned to 0", async () => {
-    const { userId, subId } = await createUserWithUnreadEntry();
-
-    const withCounts = await subscriptionsService.getSubscription(db, userId, subId);
-    const withoutCounts = await subscriptionsService.getSubscription(db, userId, subId, {
-      includeUnreadCounts: false,
-    });
-
-    expect(withCounts.unreadCount).toBe(1);
-    expect(withoutCounts).toEqual({ ...withCounts, unreadCount: 0 });
-  });
-});
+// The `includeUnreadCounts: false` opt-out (issue #1074) was removed in the
+// #1117 step 5b counter migration: unread counts are now free reads of the
+// trigger-maintained subscriptions.unread_count counter, so every caller gets
+// real counts and there is nothing to skip.

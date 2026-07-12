@@ -10,10 +10,11 @@
  * the helpers here, so the saved feed is materialized in exactly one place.
  */
 
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
+import { users } from "@/server/db/schema";
 import * as subscriptionsService from "@/server/services/subscriptions";
-import { countEntries, type ListEntriesParams } from "@/server/services/entries";
+import type { ListEntriesParams } from "@/server/services/entries";
 import { getSavedFeedId, SAVED_FEED_TITLE } from "@/server/feed/saved-feed";
 import { resolveFeedStream } from "./id";
 
@@ -63,21 +64,18 @@ export async function resolveFeedStreamFilter(
  * Centralizing the saved-feed append here means subscription/list and
  * unread-count inherit it for free instead of each re-deriving it (issue #1069).
  *
- * `includeUnreadCounts: false` (issue #1074) skips both the per-subscription
- * unread aggregate and the saved feed's `countEntries`, returning every
- * `unreadCount` as 0 — for callers like subscription/list that never emit
- * counts. unread-count keeps the default.
+ * Unread counts are trigger-maintained counters (issue #1117, step 5b) — a
+ * free column read per subscription plus one users-row read for the saved
+ * feed — so the old `includeUnreadCounts` opt-out (issue #1074) is gone; every
+ * caller gets real counts. Spam never counts (the counters exclude it).
  */
 export async function listGreaderSubscriptions(
   db: typeof dbType,
-  userId: string,
-  opts: { showSpam: boolean; includeUnreadCounts?: boolean }
+  userId: string
 ): Promise<subscriptionsService.Subscription[]> {
   const [all, saved] = await Promise.all([
-    subscriptionsService.listAllSubscriptions(db, userId, {
-      includeUnreadCounts: opts.includeUnreadCounts,
-    }),
-    getSavedSubscription(db, userId, opts),
+    subscriptionsService.listAllSubscriptions(db, userId),
+    getSavedSubscription(db, userId),
   ]);
 
   return saved ? [...all, saved] : all;
@@ -96,16 +94,19 @@ export async function listGreaderSubscriptions(
  */
 async function getSavedSubscription(
   db: typeof dbType,
-  userId: string,
-  opts: { showSpam: boolean; includeUnreadCounts?: boolean }
+  userId: string
 ): Promise<subscriptionsService.Subscription | null> {
   const feedId = await getSavedFeedId(db, userId);
   if (!feedId) return null;
 
-  const unread =
-    (opts.includeUnreadCounts ?? true)
-      ? (await countEntries(db, userId, { type: "saved", showSpam: opts.showSpam })).unread
-      : 0;
+  // The saved badge is the trigger-maintained users.saved_unread_count
+  // counter (migration 0092) — a single-row read, so there's no wasted work
+  // for callers that ignore counts (the issue #1074 opt-out is moot).
+  const [row] = await db
+    .select({ unread: users.savedUnreadCount })
+    .from(users)
+    .where(eq(users.id, userId));
+  const unread = row?.unread ?? 0;
 
   return {
     id: feedId,

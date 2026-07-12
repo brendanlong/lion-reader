@@ -645,6 +645,13 @@
       "when": 1782952500000,
       "tag": "0092_unread_counters",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1782952600000,
+      "tag": "0093_user_feeds_unread_count",
+      "breakpoints": true
     }
   ]
 }

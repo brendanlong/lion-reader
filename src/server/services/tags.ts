@@ -6,13 +6,7 @@
 
 import { eq, and, sql, isNull } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
-import {
-  tags,
-  subscriptionTags,
-  subscriptions,
-  visibleEntries,
-  userFeeds,
-} from "@/server/db/schema";
+import { tags, subscriptionTags, subscriptions } from "@/server/db/schema";
 import { errors } from "@/server/trpc/errors";
 import { isUniqueViolation } from "@/server/db/errors";
 import { generateUuidv7 } from "@/lib/uuidv7";
@@ -58,34 +52,32 @@ export interface UpdateTagParams {
 /**
  * Builds a grouped subquery of per-tag unread counts for a user.
  *
- * Counts through visible_entries so the visibility rule (and the entry →
- * subscription attribution, which survives feed redirects/merges via the
- * merge-job re-stamp) lives in one place. Filtering read=false in WHERE lets
- * the partial idx_user_entries_unread index drive.
+ * The tag badge is SUM of the trigger-maintained `subscriptions.unread_count`
+ * counters (migration 0092, spam excluded) over each tag's ACTIVE
+ * subscriptions — starred entries from unsubscribed feeds belong to Starred,
+ * not to a tag's unread badge, so inactive subscriptions are excluded.
+ * subscription_tags is unique per (tag, subscription), so each subscription's
+ * counter contributes exactly once per tag.
  *
- * The inner join to user_feeds (active subscriptions only) scopes the count to
- * active subscriptions: visible_entries also surfaces starred entries from
- * unsubscribed feeds, which belong to Starred, not to a tag's unread badge.
- *
- * The view emits one row per (user, entry) and subscription_tags is unique per
- * (tag, subscription), so COUNT(*) is exact. Computing all tags in one grouped
- * aggregation (instead of a correlated subquery per tag row) keeps listTags to
- * a single scan (#831); updateTag reuses this for a single tag by filtering on
- * tag_id.
+ * Computing all tags in one grouped aggregation (instead of a correlated
+ * subquery per tag row) keeps listTags to a single query (#831); updateTag
+ * reuses this for a single tag by filtering on tag_id.
  */
 function tagUnreadCountsQuery(db: typeof dbType, userId: string) {
   return db
     .select({
       tagId: subscriptionTags.tagId,
-      unreadCount: sql<number>`COUNT(*)::int`.as("unread_count"),
+      unreadCount: sql<number>`sum(${subscriptions.unreadCount})::int`.as("unread_count"),
     })
-    .from(visibleEntries)
+    .from(subscriptionTags)
     .innerJoin(
-      userFeeds,
-      and(eq(userFeeds.id, visibleEntries.subscriptionId), eq(userFeeds.userId, userId))
+      subscriptions,
+      and(
+        eq(subscriptions.id, subscriptionTags.subscriptionId),
+        eq(subscriptions.userId, userId),
+        isNull(subscriptions.unsubscribedAt)
+      )
     )
-    .innerJoin(subscriptionTags, eq(subscriptionTags.subscriptionId, visibleEntries.subscriptionId))
-    .where(and(eq(visibleEntries.userId, userId), eq(visibleEntries.read, false)))
     .groupBy(subscriptionTags.tagId)
     .as("tag_unread_counts");
 }
@@ -134,27 +126,19 @@ export async function listTags(db: typeof dbType, userId: string): Promise<ListT
           )`
         )
       ),
-    // Uncategorized unread count: unread visible entries whose (active)
-    // subscription has no tags. Driving from visible_entries (read=false in
-    // WHERE) lets the partial unread index scan ~unread rows instead of every
-    // entry in every uncategorized feed. The inner join to user_feeds scopes to
-    // active subscriptions, excluding starred orphans (entries kept visible
-    // after unsubscribe), which aren't "uncategorized". One row per (user,
-    // entry), so COUNT(*) is exact.
+    // Uncategorized unread count: SUM of the unread counters over active
+    // subscriptions with no tags. Active-only excludes starred orphans
+    // (entries kept visible after unsubscribe), which aren't "uncategorized".
     db
-      .select({ unreadCount: sql<number>`COUNT(*)::int` })
-      .from(visibleEntries)
-      .innerJoin(
-        userFeeds,
-        and(eq(userFeeds.id, visibleEntries.subscriptionId), eq(userFeeds.userId, userId))
-      )
+      .select({ unreadCount: sql<number>`COALESCE(sum(${subscriptions.unreadCount}), 0)::int` })
+      .from(subscriptions)
       .where(
         and(
-          eq(visibleEntries.userId, userId),
-          eq(visibleEntries.read, false),
+          eq(subscriptions.userId, userId),
+          isNull(subscriptions.unsubscribedAt),
           sql`NOT EXISTS (
             SELECT 1 FROM ${subscriptionTags}
-            WHERE ${subscriptionTags.subscriptionId} = ${visibleEntries.subscriptionId}
+            WHERE ${subscriptionTags.subscriptionId} = ${subscriptions.id}
           )`
         )
       ),

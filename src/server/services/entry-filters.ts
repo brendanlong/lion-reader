@@ -7,7 +7,7 @@
 
 import { eq, and, isNull, notInArray, type SQL, type SQLWrapper } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
-import { subscriptionTags, tags, userFeeds, visibleEntries } from "@/server/db/schema";
+import { subscriptionTags, subscriptions, tags, visibleEntries } from "@/server/db/schema";
 
 // ============================================================================
 // Types
@@ -62,8 +62,9 @@ export interface EntryFilterResult {
 // ============================================================================
 
 /**
- * Verifies a subscription exists, is active, and belongs to the user (the
- * user_feeds view is active-only).
+ * Verifies a subscription exists, is active, and belongs to the user.
+ * Queries the subscriptions table directly — the user_feeds view is
+ * display-only (subscription list surfaces), not for ownership checks.
  */
 export async function verifySubscriptionOwnership(
   db: typeof dbType,
@@ -71,9 +72,15 @@ export async function verifySubscriptionOwnership(
   userId: string
 ): Promise<boolean> {
   const subExists = await db
-    .select({ id: userFeeds.id })
-    .from(userFeeds)
-    .where(and(eq(userFeeds.id, subscriptionId), eq(userFeeds.userId, userId)))
+    .select({ id: subscriptions.id })
+    .from(subscriptions)
+    .where(
+      and(
+        eq(subscriptions.id, subscriptionId),
+        eq(subscriptions.userId, userId),
+        isNull(subscriptions.unsubscribedAt)
+      )
+    )
     .limit(1);
   return subExists.length > 0;
 }
@@ -102,18 +109,25 @@ export function buildTaggedSubscriptionIdsSubquery(
 
 /**
  * Builds a subquery for subscription IDs of uncategorized subscriptions.
- * Uses a LEFT JOIN anti-join pattern: subscriptions with no matching
- * subscription_tags row are "uncategorized". user_feeds is active-only.
+ * Uses a LEFT JOIN anti-join pattern: active subscriptions with no matching
+ * subscription_tags row are "uncategorized". Queries the subscriptions table
+ * directly (the user_feeds view is display-only).
  *
  * Exported so markAllEntriesRead reuses the exact same definition rather than
  * reimplementing it (they must stay in sync).
  */
 export function buildUncategorizedSubscriptionIdsSubquery(db: typeof dbType, userId: string) {
   return db
-    .select({ subscriptionId: userFeeds.id })
-    .from(userFeeds)
-    .leftJoin(subscriptionTags, eq(subscriptionTags.subscriptionId, userFeeds.id))
-    .where(and(eq(userFeeds.userId, userId), isNull(subscriptionTags.subscriptionId)));
+    .select({ subscriptionId: subscriptions.id })
+    .from(subscriptions)
+    .leftJoin(subscriptionTags, eq(subscriptionTags.subscriptionId, subscriptions.id))
+    .where(
+      and(
+        eq(subscriptions.userId, userId),
+        isNull(subscriptions.unsubscribedAt),
+        isNull(subscriptionTags.subscriptionId)
+      )
+    );
 }
 
 // ============================================================================

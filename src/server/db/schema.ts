@@ -723,7 +723,11 @@ export const userEntries = pgTable(
  * user_feeds view - Active subscriptions with feed metadata merged.
  * Uses subscription.id as the primary key, hiding the internal feedId from clients.
  *
- * Note: This view is defined in migration 0035_subscription_views.sql.
+ * This view is DISPLAY-ONLY (subscription list surfaces): link/ownership/
+ * scoping checks must query the subscriptions table directly.
+ *
+ * Note: This view is defined in migration 0035_subscription_views.sql
+ * (most recently redefined in 0093_user_feeds_unread_count.sql).
  * The Drizzle definition here allows type-safe queries against the view.
  */
 export const userFeeds = pgView("user_feeds", {
@@ -740,6 +744,7 @@ export const userFeeds = pgView("user_feeds", {
   url: text("url"),
   siteUrl: text("site_url"),
   description: text("description"),
+  unreadCount: integer("unread_count").notNull(), // trigger-maintained counter (migration 0092)
 }).existing();
 
 /**

@@ -19,16 +19,12 @@ export async function GET(request: Request): Promise<Response> {
   const session = await requireAuth(request);
   if (session instanceof Response) return session;
 
-  // `formatSubscription` ignores unread counts, so skip computing them — the
-  // per-subscription unread aggregate scales with the user's unread backlog and
-  // would dominate this query for nothing (issue #1074). unread-count is the
-  // endpoint that needs the counts and keeps the default.
-  const subscriptions = (
-    await listGreaderSubscriptions(db, session.user.id, {
-      showSpam: session.user.showSpam,
-      includeUnreadCounts: false,
-    })
-  ).map(formatSubscription);
+  // `formatSubscription` ignores unread counts, but they're now free counter
+  // column reads (issue #1117, step 5b), so the old opt-out (issue #1074) is
+  // gone.
+  const subscriptions = (await listGreaderSubscriptions(db, session.user.id)).map(
+    formatSubscription
+  );
 
   return jsonResponse({ subscriptions });
 }

@@ -58,12 +58,12 @@ export async function POST(request: Request): Promise<Response> {
 
       if (existingSub.length > 0) {
         // Already subscribed — return existing subscription. Only the title is
-        // used in the response, so skip the unread-count aggregate (issue #1074).
+        // used in the response; the unread count is a free counter read now
+        // (issue #1117, step 5b), so there's nothing to skip.
         const sub = await subscriptionsService.getSubscription(
           db,
           session.user.id,
-          existingSub[0].id,
-          { includeUnreadCounts: false }
+          existingSub[0].id
         );
         return jsonResponse({
           query: feedUrl,
