@@ -88,7 +88,7 @@ export function DemoLayoutContent({ children }: DemoLayoutContentProps) {
                 </div>
               }
             >
-              <MainScrollContainer className="flex-1 overflow-y-auto bg-zinc-50 dark:bg-zinc-950">
+              <MainScrollContainer className="bg-canvas flex-1 overflow-y-auto">
                 {hydrated ? <DemoRouter /> : (children ?? <DemoListSkeleton />)}
               </MainScrollContainer>
             </LayoutShell>

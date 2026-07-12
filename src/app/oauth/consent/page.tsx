@@ -120,7 +120,7 @@ export default async function ConsentPage({ searchParams }: ConsentPageProps) {
 
 function ConsentLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-50 px-4 py-12 dark:bg-zinc-950">
+    <div className="bg-canvas flex min-h-screen flex-col items-center justify-center px-4 py-12">
       <div className="w-full max-w-md">
         <div className="mb-8 text-center">
           <h1 className="ui-text-2xl text-strong font-bold">Lion Reader</h1>

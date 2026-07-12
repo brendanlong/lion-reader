@@ -27,7 +27,7 @@ export default async function ExtensionCallbackPage({ searchParams }: PageProps)
   const isSuccess = status === "success";
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-zinc-900">
+    <div className="bg-canvas flex min-h-screen items-center justify-center">
       <div className="max-w-md p-8 text-center">
         {isSuccess ? (
           <>

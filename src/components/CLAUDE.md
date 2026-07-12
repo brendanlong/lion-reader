@@ -67,6 +67,7 @@ The `ui-text-*` classes are defined in `src/app/globals.css` and provide respons
 | `text-muted`         | `text-zinc-600 dark:text-zinc-400`     | Descriptions, secondary text       |
 | `text-subtle`        | `text-zinc-500 dark:text-zinc-400`     | Metadata, hints                    |
 | `text-faint`         | `text-zinc-400 dark:text-zinc-500`     | De-emphasized notes, placeholders  |
+| `bg-canvas`          | `bg-zinc-50 dark:bg-zinc-950`          | Page background behind the shell   |
 | `bg-surface`         | `bg-white dark:bg-zinc-900`            | Cards, inputs, controls            |
 | `bg-surface-muted`   | `bg-zinc-100 dark:bg-zinc-800`         | Chips, skeletons                   |
 | `bg-surface-subtle`  | `bg-zinc-50 dark:bg-zinc-800/50`       | Note boxes, subtle fills           |

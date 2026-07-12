@@ -181,7 +181,7 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
               <OfflineBanner />
 
               {/* Main content */}
-              <MainScrollContainer className="flex-1 overflow-y-auto bg-zinc-50 dark:bg-zinc-950">
+              <MainScrollContainer className="bg-canvas flex-1 overflow-y-auto">
                 <AppRouter />
               </MainScrollContainer>
             </LayoutShell>

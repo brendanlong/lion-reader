@@ -54,6 +54,7 @@
   --text-faint: #a1a1aa; /* zinc-400 - de-emphasized notes, placeholders */
 
   /* Surfaces */
+  --canvas: #fafafa; /* zinc-50 - page background behind cards/app shell */
   --surface: #ffffff; /* white - cards, inputs, controls */
   --surface-muted: #f4f4f5; /* zinc-100 - chips, skeletons */
   --surface-subtle: #fafafa; /* zinc-50 - note boxes, subtle fills */
@@ -97,6 +98,7 @@
   --color-muted: var(--text-muted);
   --color-subtle: var(--text-subtle);
   --color-faint: var(--text-faint);
+  --color-canvas: var(--canvas);
   --color-surface: var(--surface);
   --color-surface-muted: var(--surface-muted);
   --color-surface-subtle: var(--surface-subtle);
@@ -138,6 +140,7 @@
   --text-muted: #a1a1aa; /* zinc-400 */
   --text-subtle: #a1a1aa; /* zinc-400 */
   --text-faint: #71717a; /* zinc-500 */
+  --canvas: #09090b; /* zinc-950 */
   --surface: #18181b; /* zinc-900 */
   --surface-muted: #27272a; /* zinc-800 */
   --surface-subtle: rgba(39, 39, 42, 0.5); /* zinc-800/50 */
@@ -194,6 +197,7 @@
   --text-faint: #71717a; /* zinc-500 */
 
   /* Pure white surfaces; separation comes from the darker borders below */
+  --canvas: #ffffff;
   --surface: #ffffff;
   --surface-muted: #e4e4e7; /* zinc-200 - chips/skeletons need a fill that survives dithering */
   --surface-subtle: #ffffff;
@@ -252,6 +256,7 @@
     --text-muted: #a1a1aa; /* zinc-400 */
     --text-subtle: #a1a1aa; /* zinc-400 */
     --text-faint: #71717a; /* zinc-500 */
+    --canvas: #09090b; /* zinc-950 */
     --surface: #18181b; /* zinc-900 */
     --surface-muted: #27272a; /* zinc-800 */
     --surface-subtle: rgba(39, 39, 42, 0.5); /* zinc-800/50 */

@@ -39,7 +39,7 @@ export function LayoutShell({
   children,
 }: LayoutShellProps) {
   return (
-    <div className="flex h-screen bg-zinc-50 dark:bg-zinc-950">
+    <div className="bg-canvas flex h-screen">
       {/* Mobile sidebar overlay */}
       {sidebarOpen && sidebarOverlay}
 

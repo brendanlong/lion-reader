@@ -227,7 +227,7 @@ function SaveContent() {
     };
 
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-50 p-4 dark:bg-zinc-950">
+      <div className="bg-canvas flex min-h-screen flex-col items-center justify-center p-4">
         <div className="border-edge bg-surface w-full max-w-sm rounded-lg border p-6 shadow-sm">
           <div className="text-center">
             <h1 className="ui-text-lg text-strong font-semibold">Save to Lion Reader</h1>
@@ -246,7 +246,7 @@ function SaveContent() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-50 p-4 dark:bg-zinc-950">
+    <div className="bg-canvas flex min-h-screen flex-col items-center justify-center p-4">
       <div className="border-edge bg-surface w-full max-w-sm rounded-lg border p-6 shadow-sm">
         <div className="text-center">
           <h1 className="ui-text-lg text-strong font-semibold">Save to Lion Reader</h1>
