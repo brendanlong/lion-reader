@@ -4,6 +4,13 @@
 /* Configure dark mode to use class-based approach (.dark on html) */
 @variant dark (&:where(.dark, .dark *));
 
+/* E-paper theme variant (.epaper on html) — lets components target e-ink
+   screens where every background is white and read/unread contrast has to come
+   from borders and text weight instead of fills. Registered with
+   @custom-variant (new variant) rather than @variant, which only overrides an
+   existing one like the built-in `dark` above. */
+@custom-variant epaper (&:where(.epaper, .epaper *));
+
 :root {
   --background: #ffffff;
   --foreground: #171717;

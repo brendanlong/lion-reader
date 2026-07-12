@@ -176,11 +176,15 @@ describe("EntryListItem", () => {
 
       const { rerender } = render(<EntryListItem entry={unreadEntry} />);
       const unreadTitle = screen.getByText("Unread");
-      expect(unreadTitle).toHaveClass("font-medium");
+      // Unread titles are bold and use the strongest text tone to stand out
+      expect(unreadTitle).toHaveClass("font-semibold");
+      expect(unreadTitle).toHaveClass("text-strong");
 
       rerender(<EntryListItem entry={readEntry} />);
       const readTitle = screen.getByText("Read");
+      // Read titles are dimmed to recede
       expect(readTitle).toHaveClass("font-normal");
+      expect(readTitle).toHaveClass("text-muted");
     });
   });
 

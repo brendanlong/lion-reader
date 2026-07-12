@@ -17,14 +17,16 @@ describe("getItemClasses", () => {
       const classes = getItemClasses(false, false);
 
       expect(classes).toContain(baseClasses);
-      // Unread has darker border and background
+      // Unread stands out: raised surface card with a distinctly stronger border
       expect(classes).toContain("border-zinc-300");
-      expect(classes).toContain("bg-zinc-50");
-      expect(classes).toContain("hover:bg-zinc-100");
-      expect(classes).toContain("active:bg-zinc-200");
+      expect(classes).toContain("bg-surface");
+      expect(classes).toContain("hover:bg-zinc-50");
+      expect(classes).toContain("active:bg-zinc-100");
       // Dark mode variants
-      expect(classes).toContain("dark:border-zinc-700");
-      expect(classes).toContain("dark:bg-zinc-800");
+      expect(classes).toContain("dark:border-zinc-600");
+      expect(classes).toContain("dark:hover:bg-zinc-800");
+      // E-paper (all fills white) leans on a darker border for card separation
+      expect(classes).toContain("epaper:border-zinc-500");
     });
   });
 
@@ -33,11 +35,12 @@ describe("getItemClasses", () => {
       const classes = getItemClasses(true, false);
 
       expect(classes).toContain(baseClasses);
-      // Read has lighter border and card-surface background (light/dark via tokens)
+      // Read recedes into the page canvas with a faint hairline border
       expect(classes).toContain("border-edge");
-      expect(classes).toContain("bg-surface");
-      expect(classes).toContain("hover:bg-zinc-50");
-      expect(classes).toContain("active:bg-zinc-100");
+      expect(classes).toContain("bg-canvas");
+      // Lifts to a surface fill on hover to signal it's still clickable
+      expect(classes).toContain("hover:bg-surface");
+      expect(classes).toContain("active:bg-surface-muted");
     });
   });
 
@@ -51,11 +54,10 @@ describe("getItemClasses", () => {
       expect(classes).toContain("ring-2");
       expect(classes).toContain("ring-accent");
       expect(classes).toContain("ring-offset-1");
-      // Unread background within selected state
-      expect(classes).toContain("bg-zinc-50");
+      // Unread background within selected state (raised surface)
+      expect(classes).toContain("bg-surface");
       // Dark mode variants
       expect(classes).toContain("dark:ring-offset-zinc-900");
-      expect(classes).toContain("dark:bg-zinc-800");
     });
   });
 
@@ -69,8 +71,8 @@ describe("getItemClasses", () => {
       expect(classes).toContain("ring-2");
       expect(classes).toContain("ring-accent");
       expect(classes).toContain("ring-offset-1");
-      // Read background within selected state (light/dark via token)
-      expect(classes).toContain("bg-surface");
+      // Read background within selected state recedes into the canvas
+      expect(classes).toContain("bg-canvas");
       // Dark mode variants
       expect(classes).toContain("dark:ring-offset-zinc-900");
     });
@@ -86,8 +88,8 @@ describe("getItemClasses", () => {
       expect(selectedRead).toContain("ring-accent");
 
       // Neither should have hover states that conflict with selection
-      expect(selectedUnread).not.toContain("hover:bg-zinc-100");
-      expect(selectedRead).not.toContain("hover:bg-zinc-50");
+      expect(selectedUnread).not.toContain("hover:bg-zinc-50");
+      expect(selectedRead).not.toContain("hover:bg-surface");
     });
   });
 });
