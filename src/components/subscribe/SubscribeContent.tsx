@@ -17,6 +17,7 @@ import { clientPush } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
+import { Card } from "@/components/ui/card";
 import {
   CheckCircleIcon,
   SpinnerIcon,
@@ -219,7 +220,7 @@ export function SubscribeContent() {
       </h1>
 
       {step === "input" && (
-        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+        <Card>
           <p className="ui-text-sm mb-4 text-zinc-600 dark:text-zinc-400">
             Enter the URL of an RSS or Atom feed, or a website that has a feed. We&apos;ll
             automatically discover the feed if possible.
@@ -273,13 +274,13 @@ export function SubscribeContent() {
               Preview Feed
             </Button>
           </form>
-        </div>
+        </Card>
       )}
 
       {step === "discovery" && (
         <div className="space-y-4">
           {/* Discovery Results Card */}
-          <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+          <Card>
             <div className="mb-4 flex items-center gap-2">
               <CheckCircleIcon className="h-5 w-5 text-green-600 dark:text-green-400" />
               <h2 className="ui-text-lg font-semibold text-zinc-900 dark:text-zinc-50">
@@ -352,7 +353,7 @@ export function SubscribeContent() {
                 </a>
               </p>
             )}
-          </div>
+          </Card>
 
           {/* Back button */}
           <div className="flex">
@@ -366,7 +367,7 @@ export function SubscribeContent() {
       {step === "preview" && (
         <div className="space-y-4">
           {/* Feed Preview Card */}
-          <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+          <Card>
             <div className="mb-4 flex items-start justify-between">
               <div>
                 <h2 className="ui-text-xl font-semibold text-zinc-900 dark:text-zinc-50">
@@ -394,7 +395,7 @@ export function SubscribeContent() {
             <p className="ui-text-xs text-zinc-500 dark:text-zinc-400">
               Feed URL: <span className="font-mono">{previewQuery.data?.feed.url}</span>
             </p>
-          </div>
+          </Card>
 
           {/* Sample Entries */}
           {previewQuery.data?.feed.sampleEntries &&

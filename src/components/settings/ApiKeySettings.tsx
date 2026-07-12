@@ -13,10 +13,12 @@ import { trpc } from "@/lib/trpc/client";
 import { CheckIcon } from "@/components/ui/icon-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { TextLink } from "@/components/ui/text-link";
 import {
   DEFAULT_SUMMARIZATION_MODEL,
   DEFAULT_SUMMARIZATION_MAX_WORDS,
 } from "@/lib/summarization/constants";
+import { SettingsSection } from "./SettingsSection";
 
 /**
  * Groq API key settings, displayed near the narration settings.
@@ -68,87 +70,77 @@ export function GroqApiKeySettings() {
   }, [updatePreferences]);
 
   return (
-    <section>
-      <h2 className="ui-text-lg mb-4 font-semibold text-zinc-900 dark:text-zinc-50">
-        AI Text Processing
-      </h2>
-      <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-        <p className="ui-text-sm mb-4 text-zinc-600 dark:text-zinc-400">
-          Add a{" "}
-          <a
-            href="https://console.groq.com/keys"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-accent hover:text-accent-hover font-medium"
-          >
-            Groq API key
-          </a>{" "}
-          to enable AI-powered text processing for narration. This improves narration quality by
-          expanding abbreviations and formatting content for text-to-speech.
-        </p>
+    <SettingsSection title="AI Text Processing">
+      <p className="ui-text-sm mb-4 text-zinc-600 dark:text-zinc-400">
+        Add a{" "}
+        <TextLink href="https://console.groq.com/keys" external>
+          Groq API key
+        </TextLink>{" "}
+        to enable AI-powered text processing for narration. This improves narration quality by
+        expanding abbreviations and formatting content for text-to-speech.
+      </p>
 
-        {preferencesQuery.isLoading ? (
-          <div className="h-10 w-full animate-pulse rounded bg-zinc-100 dark:bg-zinc-800" />
-        ) : isEditing ? (
-          <div className="space-y-3">
-            <Input
-              id="groq-api-key"
-              type="password"
-              placeholder="gsk_..."
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
+      {preferencesQuery.isLoading ? (
+        <div className="h-10 w-full animate-pulse rounded bg-zinc-100 dark:bg-zinc-800" />
+      ) : isEditing ? (
+        <div className="space-y-3">
+          <Input
+            id="groq-api-key"
+            type="password"
+            placeholder="gsk_..."
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            disabled={updatePreferences.isPending}
+            autoComplete="off"
+          />
+          <div className="flex gap-2">
+            <Button
+              onClick={handleSave}
+              loading={updatePreferences.isPending}
+              disabled={!apiKey.trim()}
+            >
+              Save
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setIsEditing(false);
+                setApiKey("");
+              }}
               disabled={updatePreferences.isPending}
-              autoComplete="off"
-            />
-            <div className="flex gap-2">
-              <Button
-                onClick={handleSave}
-                loading={updatePreferences.isPending}
-                disabled={!apiKey.trim()}
-              >
-                Save
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center gap-3">
+          {hasKey ? (
+            <>
+              <span className="ui-text-sm inline-flex items-center text-green-600 dark:text-green-400">
+                <CheckIcon className="mr-1 h-4 w-4" />
+                API key configured
+              </span>
+              <Button variant="secondary" size="sm" onClick={() => setIsEditing(true)}>
+                Change
               </Button>
               <Button
                 variant="secondary"
-                onClick={() => {
-                  setIsEditing(false);
-                  setApiKey("");
-                }}
-                disabled={updatePreferences.isPending}
+                size="sm"
+                onClick={handleRemove}
+                loading={updatePreferences.isPending}
               >
-                Cancel
+                Remove
               </Button>
-            </div>
-          </div>
-        ) : (
-          <div className="flex items-center gap-3">
-            {hasKey ? (
-              <>
-                <span className="ui-text-sm inline-flex items-center text-green-600 dark:text-green-400">
-                  <CheckIcon className="mr-1 h-4 w-4" />
-                  API key configured
-                </span>
-                <Button variant="secondary" size="sm" onClick={() => setIsEditing(true)}>
-                  Change
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={handleRemove}
-                  loading={updatePreferences.isPending}
-                >
-                  Remove
-                </Button>
-              </>
-            ) : (
-              <Button variant="secondary" onClick={() => setIsEditing(true)}>
-                Add API key
-              </Button>
-            )}
-          </div>
-        )}
-      </div>
-    </section>
+            </>
+          ) : (
+            <Button variant="secondary" onClick={() => setIsEditing(true)}>
+              Add API key
+            </Button>
+          )}
+        </div>
+      )}
+    </SettingsSection>
   );
 }
 
@@ -305,51 +297,153 @@ export function SummarizationApiKeySettings() {
   }, [updatePreferences]);
 
   return (
-    <section>
-      <h2 className="ui-text-lg mb-4 font-semibold text-zinc-900 dark:text-zinc-50">Summaries</h2>
-      <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-        <p className="ui-text-sm mb-4 text-zinc-600 dark:text-zinc-400">
-          Add an{" "}
-          <a
-            href="https://console.anthropic.com/settings/keys"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-accent hover:text-accent-hover font-medium"
-          >
-            Anthropic API key
-          </a>{" "}
-          to enable AI-powered article summaries.
-        </p>
+    <SettingsSection title="Summaries">
+      <p className="ui-text-sm mb-4 text-zinc-600 dark:text-zinc-400">
+        Add an{" "}
+        <TextLink href="https://console.anthropic.com/settings/keys" external>
+          Anthropic API key
+        </TextLink>{" "}
+        to enable AI-powered article summaries.
+      </p>
 
-        {preferencesQuery.isLoading ? (
-          <div className="h-10 w-full animate-pulse rounded bg-zinc-100 dark:bg-zinc-800" />
-        ) : (
-          <div className="space-y-4">
-            {/* API Key */}
-            {isEditing ? (
+      {preferencesQuery.isLoading ? (
+        <div className="h-10 w-full animate-pulse rounded bg-zinc-100 dark:bg-zinc-800" />
+      ) : (
+        <div className="space-y-4">
+          {/* API Key */}
+          {isEditing ? (
+            <div className="space-y-3">
+              <Input
+                id="anthropic-api-key"
+                type="password"
+                placeholder="sk-ant-..."
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                disabled={updatePreferences.isPending}
+                autoComplete="off"
+              />
+              <div className="flex gap-2">
+                <Button
+                  onClick={handleSave}
+                  loading={updatePreferences.isPending}
+                  disabled={!apiKey.trim()}
+                >
+                  Save
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setIsEditing(false);
+                    setApiKey("");
+                  }}
+                  disabled={updatePreferences.isPending}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              {hasKey ? (
+                <>
+                  <span className="ui-text-sm inline-flex items-center text-green-600 dark:text-green-400">
+                    <CheckIcon className="mr-1 h-4 w-4" />
+                    API key configured
+                  </span>
+                  <Button variant="secondary" size="sm" onClick={() => setIsEditing(true)}>
+                    Change
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleRemove}
+                    loading={updatePreferences.isPending}
+                  >
+                    Remove
+                  </Button>
+                </>
+              ) : (
+                <Button variant="secondary" onClick={() => setIsEditing(true)}>
+                  Add API key
+                </Button>
+              )}
+            </div>
+          )}
+
+          {/* Model Selection */}
+          <div>
+            <label
+              htmlFor="summarization-model"
+              className="ui-text-sm mb-1.5 block font-medium text-zinc-700 dark:text-zinc-300"
+            >
+              Model
+            </label>
+            <select
+              id="summarization-model"
+              value={currentModel ?? defaultModelId}
+              onChange={handleModelChange}
+              disabled={updatePreferences.isPending || modelsQuery.isLoading}
+              className="ui-text-sm block w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-zinc-900 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+            >
+              {modelsQuery.isLoading ? (
+                <option value={currentModel ?? defaultModelId}>Loading models...</option>
+              ) : models.length > 0 ? (
+                models.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.displayName}
+                    {model.id === defaultModelId ? " (default)" : ""}
+                  </option>
+                ))
+              ) : (
+                <option value={defaultModelId}>{defaultModelId}</option>
+              )}
+              {/* Show custom value if it's not in the models list */}
+              {currentModel &&
+                !modelsQuery.isLoading &&
+                models.length > 0 &&
+                !models.some((m) => m.id === currentModel) && (
+                  <option value={currentModel}>{currentModel}</option>
+                )}
+            </select>
+            <p className="ui-text-xs mt-1.5 text-zinc-500 dark:text-zinc-400">
+              Choose the Anthropic model used for generating article summaries. Sonnet models offer
+              the best balance of quality and cost.
+            </p>
+          </div>
+
+          {/* Max Words */}
+          <div>
+            <label
+              htmlFor="summarization-max-words"
+              className="ui-text-sm mb-1.5 block font-medium text-zinc-700 dark:text-zinc-300"
+            >
+              Max words
+            </label>
+            {isEditingMaxWords ? (
               <div className="space-y-3">
                 <Input
-                  id="anthropic-api-key"
-                  type="password"
-                  placeholder="sk-ant-..."
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
+                  id="summarization-max-words"
+                  type="number"
+                  min={1}
+                  max={10000}
+                  placeholder={String(DEFAULT_SUMMARIZATION_MAX_WORDS)}
+                  value={maxWordsInput}
+                  onChange={(e) => setMaxWordsInput(e.target.value)}
                   disabled={updatePreferences.isPending}
-                  autoComplete="off"
                 />
                 <div className="flex gap-2">
                   <Button
-                    onClick={handleSave}
+                    onClick={handleMaxWordsSave}
                     loading={updatePreferences.isPending}
-                    disabled={!apiKey.trim()}
+                    disabled={!maxWordsInput.trim()}
                   >
                     Save
                   </Button>
                   <Button
                     variant="secondary"
                     onClick={() => {
-                      setIsEditing(false);
-                      setApiKey("");
+                      setIsEditingMaxWords(false);
+                      setMaxWordsInput(currentMaxWords?.toString() ?? "");
                     }}
                     disabled={updatePreferences.isPending}
                   >
@@ -359,233 +453,120 @@ export function SummarizationApiKeySettings() {
               </div>
             ) : (
               <div className="flex items-center gap-3">
-                {hasKey ? (
-                  <>
-                    <span className="ui-text-sm inline-flex items-center text-green-600 dark:text-green-400">
-                      <CheckIcon className="mr-1 h-4 w-4" />
-                      API key configured
-                    </span>
-                    <Button variant="secondary" size="sm" onClick={() => setIsEditing(true)}>
-                      Change
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={handleRemove}
-                      loading={updatePreferences.isPending}
-                    >
-                      Remove
-                    </Button>
-                  </>
-                ) : (
-                  <Button variant="secondary" onClick={() => setIsEditing(true)}>
-                    Add API key
+                <span className="ui-text-sm text-zinc-600 dark:text-zinc-400">
+                  {currentMaxWords ?? `${DEFAULT_SUMMARIZATION_MAX_WORDS} (default)`}
+                </span>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setMaxWordsInput(currentMaxWords?.toString() ?? "");
+                    setIsEditingMaxWords(true);
+                  }}
+                >
+                  Change
+                </Button>
+                {currentMaxWords !== null && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleMaxWordsReset}
+                    loading={updatePreferences.isPending}
+                  >
+                    Reset
                   </Button>
                 )}
               </div>
             )}
-
-            {/* Model Selection */}
-            <div>
-              <label
-                htmlFor="summarization-model"
-                className="ui-text-sm mb-1.5 block font-medium text-zinc-700 dark:text-zinc-300"
-              >
-                Model
-              </label>
-              <select
-                id="summarization-model"
-                value={currentModel ?? defaultModelId}
-                onChange={handleModelChange}
-                disabled={updatePreferences.isPending || modelsQuery.isLoading}
-                className="ui-text-sm block w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-zinc-900 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
-              >
-                {modelsQuery.isLoading ? (
-                  <option value={currentModel ?? defaultModelId}>Loading models...</option>
-                ) : models.length > 0 ? (
-                  models.map((model) => (
-                    <option key={model.id} value={model.id}>
-                      {model.displayName}
-                      {model.id === defaultModelId ? " (default)" : ""}
-                    </option>
-                  ))
-                ) : (
-                  <option value={defaultModelId}>{defaultModelId}</option>
-                )}
-                {/* Show custom value if it's not in the models list */}
-                {currentModel &&
-                  !modelsQuery.isLoading &&
-                  models.length > 0 &&
-                  !models.some((m) => m.id === currentModel) && (
-                    <option value={currentModel}>{currentModel}</option>
-                  )}
-              </select>
-              <p className="ui-text-xs mt-1.5 text-zinc-500 dark:text-zinc-400">
-                Choose the Anthropic model used for generating article summaries. Sonnet models
-                offer the best balance of quality and cost.
-              </p>
-            </div>
-
-            {/* Max Words */}
-            <div>
-              <label
-                htmlFor="summarization-max-words"
-                className="ui-text-sm mb-1.5 block font-medium text-zinc-700 dark:text-zinc-300"
-              >
-                Max words
-              </label>
-              {isEditingMaxWords ? (
-                <div className="space-y-3">
-                  <Input
-                    id="summarization-max-words"
-                    type="number"
-                    min={1}
-                    max={10000}
-                    placeholder={String(DEFAULT_SUMMARIZATION_MAX_WORDS)}
-                    value={maxWordsInput}
-                    onChange={(e) => setMaxWordsInput(e.target.value)}
-                    disabled={updatePreferences.isPending}
-                  />
-                  <div className="flex gap-2">
-                    <Button
-                      onClick={handleMaxWordsSave}
-                      loading={updatePreferences.isPending}
-                      disabled={!maxWordsInput.trim()}
-                    >
-                      Save
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      onClick={() => {
-                        setIsEditingMaxWords(false);
-                        setMaxWordsInput(currentMaxWords?.toString() ?? "");
-                      }}
-                      disabled={updatePreferences.isPending}
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex items-center gap-3">
-                  <span className="ui-text-sm text-zinc-600 dark:text-zinc-400">
-                    {currentMaxWords ?? `${DEFAULT_SUMMARIZATION_MAX_WORDS} (default)`}
-                  </span>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => {
-                      setMaxWordsInput(currentMaxWords?.toString() ?? "");
-                      setIsEditingMaxWords(true);
-                    }}
-                  >
-                    Change
-                  </Button>
-                  {currentMaxWords !== null && (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={handleMaxWordsReset}
-                      loading={updatePreferences.isPending}
-                    >
-                      Reset
-                    </Button>
-                  )}
-                </div>
-              )}
-              <p className="ui-text-xs mt-1.5 text-zinc-500 dark:text-zinc-400">
-                Maximum number of words for generated summaries.
-              </p>
-            </div>
-
-            {/* Custom Prompt */}
-            <div>
-              <label
-                htmlFor="summarization-prompt"
-                className="ui-text-sm mb-1.5 block font-medium text-zinc-700 dark:text-zinc-300"
-              >
-                Custom prompt
-              </label>
-              {isEditingPrompt ? (
-                <div className="space-y-3">
-                  <textarea
-                    id="summarization-prompt"
-                    rows={10}
-                    placeholder={defaultPrompt}
-                    value={promptInput}
-                    onChange={(e) => setPromptInput(e.target.value)}
-                    disabled={updatePreferences.isPending}
-                    className="ui-text-sm block w-full rounded-md border border-zinc-300 bg-white px-3 py-2 font-mono text-zinc-900 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
-                  />
-                  <p className="ui-text-xs text-zinc-500 dark:text-zinc-400">
-                    Available template variables:{" "}
-                    <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">
-                      {"{{content}}"}
-                    </code>
-                    ,{" "}
-                    <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">{"{{title}}"}</code>
-                    ,{" "}
-                    <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">
-                      {"{{maxWords}}"}
-                    </code>
-                    . The response should be wrapped in{" "}
-                    <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">{"<summary>"}</code>{" "}
-                    tags.
-                  </p>
-                  <div className="flex gap-2">
-                    <Button
-                      onClick={handlePromptSave}
-                      loading={updatePreferences.isPending}
-                      disabled={!promptInput.trim()}
-                    >
-                      Save
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      onClick={() => {
-                        setIsEditingPrompt(false);
-                        setPromptInput(currentPrompt ?? "");
-                      }}
-                      disabled={updatePreferences.isPending}
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex items-center gap-3">
-                  <span className="ui-text-sm text-zinc-600 dark:text-zinc-400">
-                    {currentPrompt ? "Custom prompt configured" : "Using default prompt"}
-                  </span>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => {
-                      setPromptInput(currentPrompt ?? "");
-                      setIsEditingPrompt(true);
-                    }}
-                  >
-                    {currentPrompt ? "Edit" : "Customize"}
-                  </Button>
-                  {currentPrompt && (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={handlePromptReset}
-                      loading={updatePreferences.isPending}
-                    >
-                      Reset
-                    </Button>
-                  )}
-                </div>
-              )}
-              <p className="ui-text-xs mt-1.5 text-zinc-500 dark:text-zinc-400">
-                Override the default prompt sent to the AI model when generating summaries.
-              </p>
-            </div>
+            <p className="ui-text-xs mt-1.5 text-zinc-500 dark:text-zinc-400">
+              Maximum number of words for generated summaries.
+            </p>
           </div>
-        )}
-      </div>
-    </section>
+
+          {/* Custom Prompt */}
+          <div>
+            <label
+              htmlFor="summarization-prompt"
+              className="ui-text-sm mb-1.5 block font-medium text-zinc-700 dark:text-zinc-300"
+            >
+              Custom prompt
+            </label>
+            {isEditingPrompt ? (
+              <div className="space-y-3">
+                <textarea
+                  id="summarization-prompt"
+                  rows={10}
+                  placeholder={defaultPrompt}
+                  value={promptInput}
+                  onChange={(e) => setPromptInput(e.target.value)}
+                  disabled={updatePreferences.isPending}
+                  className="ui-text-sm block w-full rounded-md border border-zinc-300 bg-white px-3 py-2 font-mono text-zinc-900 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+                />
+                <p className="ui-text-xs text-zinc-500 dark:text-zinc-400">
+                  Available template variables:{" "}
+                  <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">{"{{content}}"}</code>
+                  , <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">{"{{title}}"}</code>
+                  ,{" "}
+                  <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">
+                    {"{{maxWords}}"}
+                  </code>
+                  . The response should be wrapped in{" "}
+                  <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">{"<summary>"}</code>{" "}
+                  tags.
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={handlePromptSave}
+                    loading={updatePreferences.isPending}
+                    disabled={!promptInput.trim()}
+                  >
+                    Save
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      setIsEditingPrompt(false);
+                      setPromptInput(currentPrompt ?? "");
+                    }}
+                    disabled={updatePreferences.isPending}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3">
+                <span className="ui-text-sm text-zinc-600 dark:text-zinc-400">
+                  {currentPrompt ? "Custom prompt configured" : "Using default prompt"}
+                </span>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setPromptInput(currentPrompt ?? "");
+                    setIsEditingPrompt(true);
+                  }}
+                >
+                  {currentPrompt ? "Edit" : "Customize"}
+                </Button>
+                {currentPrompt && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handlePromptReset}
+                    loading={updatePreferences.isPending}
+                  >
+                    Reset
+                  </Button>
+                )}
+              </div>
+            )}
+            <p className="ui-text-xs mt-1.5 text-zinc-500 dark:text-zinc-400">
+              Override the default prompt sent to the AI model when generating summaries.
+            </p>
+          </div>
+        </div>
+      )}
+    </SettingsSection>
   );
 }

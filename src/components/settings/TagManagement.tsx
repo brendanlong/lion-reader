@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ChevronDownIcon, EditIcon, TrashIcon } from "@/components/ui/icon-button";
 import { ColorPicker, ColorDot } from "@/components/ui/color-picker";
+import { CardSection } from "@/components/ui/card";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { SettingsSection } from "./SettingsSection";
 
@@ -57,7 +58,7 @@ function TagManagementContent() {
       <CreateTagForm onSuccess={showSuccess} onError={showError} />
 
       {/* Tag list */}
-      <div className="mt-6 border-t border-zinc-200 pt-6 dark:border-zinc-700">
+      <CardSection>
         {tags.length === 0 ? (
           <p className="ui-text-sm text-zinc-500 dark:text-zinc-400">
             No tags created yet. Create your first tag above.
@@ -69,7 +70,7 @@ function TagManagementContent() {
             ))}
           </div>
         )}
-      </div>
+      </CardSection>
     </SettingsSection>
   );
 }
