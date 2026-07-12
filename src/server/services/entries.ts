@@ -21,8 +21,8 @@ import type { db as dbType, DbOrTx } from "@/server/db";
 import {
   entries,
   feeds,
-  subscriptionFeeds,
   userEntries,
+  userFeeds,
   subscriptions,
   visibleEntries,
 } from "@/server/db/schema";
@@ -41,10 +41,10 @@ import {
 import { publishMarkReadStateChanges, publishStarredStateChange } from "./entry-events";
 import { persistResanitizedFamily } from "./resanitize";
 import {
-  buildEntryFeedFilter,
+  buildEntrySubscriptionFilter,
   buildEntryFilterConditions,
-  buildTaggedFeedIdsSubquery,
-  buildUncategorizedFeedIdsSubquery,
+  buildTaggedSubscriptionIdsSubquery,
+  buildUncategorizedSubscriptionIdsSubquery,
 } from "./entry-filters";
 
 // ============================================================================
@@ -565,8 +565,8 @@ export async function listEntries(
 
   const conditions = [eq(visibleEntries.userId, params.userId)];
 
-  // Apply feed filters (subscriptionId, tagId, uncategorized)
-  const feedFilter = await buildEntryFeedFilter(
+  // Apply subscription filters (subscriptionId, tagId, uncategorized)
+  const subscriptionFilter = await buildEntrySubscriptionFilter(
     db,
     {
       subscriptionId: params.subscriptionId,
@@ -576,12 +576,14 @@ export async function listEntries(
     params.userId
   );
 
-  if (feedFilter.isEmpty) {
+  if (subscriptionFilter.isEmpty) {
     return { items: [], nextCursor: undefined };
   }
 
-  if (feedFilter.feedIdsCondition !== null) {
-    conditions.push(inArray(visibleEntries.feedId, feedFilter.feedIdsCondition));
+  if (subscriptionFilter.subscriptionIdsCondition !== null) {
+    conditions.push(
+      inArray(visibleEntries.subscriptionId, subscriptionFilter.subscriptionIdsCondition)
+    );
   }
 
   // Apply entry filter conditions (unreadOnly, starredOnly, type, excludeTypes, showSpam)
@@ -725,8 +727,8 @@ async function searchEntries(
 
   const rankColumn = sql<number>`ts_rank(${searchVector}, ${searchQuery})`;
 
-  // Apply feed filters (subscriptionId, tagId, uncategorized)
-  const feedFilter = await buildEntryFeedFilter(
+  // Apply subscription filters (subscriptionId, tagId, uncategorized)
+  const subscriptionFilter = await buildEntrySubscriptionFilter(
     db,
     {
       subscriptionId: params.subscriptionId,
@@ -736,12 +738,14 @@ async function searchEntries(
     params.userId
   );
 
-  if (feedFilter.isEmpty) {
+  if (subscriptionFilter.isEmpty) {
     return { items: [], nextCursor: undefined };
   }
 
-  if (feedFilter.feedIdsCondition !== null) {
-    conditions.push(inArray(visibleEntries.feedId, feedFilter.feedIdsCondition));
+  if (subscriptionFilter.subscriptionIdsCondition !== null) {
+    conditions.push(
+      inArray(visibleEntries.subscriptionId, subscriptionFilter.subscriptionIdsCondition)
+    );
   }
 
   // Apply entry filter conditions (unreadOnly, starredOnly, type, excludeTypes, showSpam)
@@ -1153,55 +1157,40 @@ export async function markAllEntriesRead(
     conditions.push(inArray(userEntries.entryId, entryIdsSubquery));
   }
 
-  // Filter by subscriptionId (single subquery, no extra roundtrip)
+  // Filter by subscriptionId, matching the entry's stamped attribution. The
+  // user_feeds subquery (active-only, user-scoped) validates ownership inside
+  // the statement, so a foreign or unsubscribed subscription id matches nothing.
   if (params.subscriptionId) {
-    const entryIdsSubquery = db
-      .select({ id: entries.id })
-      .from(entries)
-      .where(
-        inArray(
-          entries.feedId,
-          db
-            .select({ feedId: subscriptionFeeds.feedId })
-            .from(subscriptionFeeds)
-            .innerJoin(
-              subscriptions,
-              and(
-                eq(subscriptions.id, subscriptionFeeds.subscriptionId),
-                eq(subscriptions.userId, params.userId),
-                isNull(subscriptions.unsubscribedAt)
-              )
-            )
-            .where(eq(subscriptionFeeds.subscriptionId, params.subscriptionId))
-        )
-      );
-
-    conditions.push(inArray(userEntries.entryId, entryIdsSubquery));
+    conditions.push(
+      inArray(
+        userEntries.subscriptionId,
+        db
+          .select({ id: userFeeds.id })
+          .from(userFeeds)
+          .where(and(eq(userFeeds.id, params.subscriptionId), eq(userFeeds.userId, params.userId)))
+      )
+    );
   }
 
   // Filter by tag (ownership enforced by the shared subquery's tags.userId join)
   if (params.tagId) {
-    const taggedFeedIdsSubquery = buildTaggedFeedIdsSubquery(db, params.tagId, params.userId);
-
-    const taggedEntryIdsSubquery = db
-      .select({ id: entries.id })
-      .from(entries)
-      .where(inArray(entries.feedId, taggedFeedIdsSubquery));
-
-    conditions.push(inArray(userEntries.entryId, taggedEntryIdsSubquery));
+    conditions.push(
+      inArray(
+        userEntries.subscriptionId,
+        buildTaggedSubscriptionIdsSubquery(db, params.tagId, params.userId)
+      )
+    );
   }
 
   // Filter by uncategorized (no tags). Reuse the shared subquery builder so this
-  // stays in sync with buildEntryFeedFilter (listEntries/countEntries).
+  // stays in sync with buildEntrySubscriptionFilter (listEntries/countEntries).
   if (params.uncategorized) {
-    const uncategorizedFeedIdsSubquery = buildUncategorizedFeedIdsSubquery(db, params.userId);
-
-    const uncategorizedEntryIdsSubquery = db
-      .select({ id: entries.id })
-      .from(entries)
-      .where(inArray(entries.feedId, uncategorizedFeedIdsSubquery));
-
-    conditions.push(inArray(userEntries.entryId, uncategorizedEntryIdsSubquery));
+    conditions.push(
+      inArray(
+        userEntries.subscriptionId,
+        buildUncategorizedSubscriptionIdsSubquery(db, params.userId)
+      )
+    );
   }
 
   // Filter by starred only
@@ -1385,8 +1374,8 @@ export async function countEntries(
 ): Promise<{ unread: number }> {
   const conditions = [eq(visibleEntries.userId, userId)];
 
-  // Apply feed filters (subscriptionId, tagId, uncategorized)
-  const feedFilter = await buildEntryFeedFilter(
+  // Apply subscription filters (subscriptionId, tagId, uncategorized)
+  const subscriptionFilter = await buildEntrySubscriptionFilter(
     db,
     {
       subscriptionId: params.subscriptionId,
@@ -1396,12 +1385,14 @@ export async function countEntries(
     userId
   );
 
-  if (feedFilter.isEmpty) {
+  if (subscriptionFilter.isEmpty) {
     return { unread: 0 };
   }
 
-  if (feedFilter.feedIdsCondition !== null) {
-    conditions.push(inArray(visibleEntries.feedId, feedFilter.feedIdsCondition));
+  if (subscriptionFilter.subscriptionIdsCondition !== null) {
+    conditions.push(
+      inArray(visibleEntries.subscriptionId, subscriptionFilter.subscriptionIdsCondition)
+    );
   }
 
   // Apply entry filter conditions (unreadOnly, starredOnly, type, excludeTypes, showSpam)
@@ -1453,7 +1444,7 @@ export async function countTotalEntries(
 ): Promise<number> {
   const conditions = [eq(visibleEntries.userId, userId)];
 
-  const feedFilter = await buildEntryFeedFilter(
+  const subscriptionFilter = await buildEntrySubscriptionFilter(
     db,
     {
       subscriptionId: params.subscriptionId,
@@ -1463,12 +1454,14 @@ export async function countTotalEntries(
     userId
   );
 
-  if (feedFilter.isEmpty) {
+  if (subscriptionFilter.isEmpty) {
     return 0;
   }
 
-  if (feedFilter.feedIdsCondition !== null) {
-    conditions.push(inArray(visibleEntries.feedId, feedFilter.feedIdsCondition));
+  if (subscriptionFilter.subscriptionIdsCondition !== null) {
+    conditions.push(
+      inArray(visibleEntries.subscriptionId, subscriptionFilter.subscriptionIdsCondition)
+    );
   }
 
   conditions.push(...buildEntryFilterConditions(params));

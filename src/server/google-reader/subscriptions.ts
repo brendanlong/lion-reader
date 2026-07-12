@@ -135,13 +135,11 @@ async function getSavedSubscription(
  * included, so this stays consistent with the unread counts and never yields null
  * for a feed that has an unread item.
  *
- * Shaped as a per-feed short-circuit: for each subscribed feed, walk entries
- * newest-first on `idx_entries_feed_published_coalesce` and stop at the first one
- * the user has (probing the `user_entries` primary key). Because the fanout
- * invariant guarantees an active subscriber has the feed's newest entries, the
- * `LIMIT 1` hits immediately, so the cost is O(subscriptions), not O(entry
- * history). Verified index-only and sub-millisecond with EXPLAIN — it rides
- * existing indexes, so no new index is needed.
+ * Shaped as a per-subscription seek: for each active subscription, a LATERAL
+ * `LIMIT 1` over `user_entries` reads the newest attributed row straight off
+ * `idx_user_entries_subscription_timeline` (subscription_id,
+ * published_or_fetched_at DESC, entry_id DESC — migration 0088), using the
+ * denormalized sort key. Cost is O(subscriptions) index seeks, no entries join.
  */
 export async function getGreaderNewestItemAt(
   db: typeof dbType,
@@ -149,19 +147,17 @@ export async function getGreaderNewestItemAt(
 ): Promise<Map<string, Date>> {
   const [realResult, savedFeedId] = await Promise.all([
     db.execute(sql`
-      SELECT sf.subscription_id AS subscription_id, max(latest.newest) AS newest
-      FROM subscription_feeds sf
-      JOIN subscriptions s ON s.id = sf.subscription_id AND s.unsubscribed_at IS NULL
+      SELECT s.id AS subscription_id, latest.newest AS newest
+      FROM subscriptions s
       JOIN LATERAL (
-        SELECT COALESCE(e.published_at, e.fetched_at) AS newest
-        FROM entries e
-        JOIN user_entries ue ON ue.user_id = sf.user_id AND ue.entry_id = e.id
-        WHERE e.feed_id = sf.feed_id
-        ORDER BY COALESCE(e.published_at, e.fetched_at) DESC, e.id DESC
+        SELECT ue.published_or_fetched_at AS newest
+        FROM user_entries ue
+        WHERE ue.subscription_id = s.id
+        ORDER BY ue.published_or_fetched_at DESC, ue.entry_id DESC
         LIMIT 1
       ) latest ON true
-      WHERE sf.user_id = ${userId}::uuid
-      GROUP BY sf.subscription_id
+      WHERE s.user_id = ${userId}::uuid
+        AND s.unsubscribed_at IS NULL
     `),
     getSavedFeedId(db, userId),
   ]);
@@ -171,7 +167,7 @@ export async function getGreaderNewestItemAt(
     if (row.newest) newestById.set(row.subscription_id, new Date(row.newest));
   }
 
-  // The saved feed has no subscription_feeds row, so its newest is looked up by
+  // The saved feed has no subscription row, so its newest is looked up by
   // its feed id directly (same per-feed short-circuit as above).
   if (savedFeedId) {
     const savedResult = await db.execute(sql`

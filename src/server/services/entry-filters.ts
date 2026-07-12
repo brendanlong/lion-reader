@@ -7,13 +7,7 @@
 
 import { eq, and, isNull, notInArray, type SQL, type SQLWrapper } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
-import {
-  subscriptionFeeds,
-  subscriptionTags,
-  tags,
-  userFeeds,
-  visibleEntries,
-} from "@/server/db/schema";
+import { subscriptionTags, tags, userFeeds, visibleEntries } from "@/server/db/schema";
 
 // ============================================================================
 // Types
@@ -36,23 +30,30 @@ export interface EntryConditionParams {
 }
 
 /**
- * Type for feed IDs condition that can be used with inArray.
- * This is either a string array (for subscription filters) or a Drizzle
- * subquery (for tag or uncategorized filters) — subqueries implement
+ * Type for subscription IDs condition that can be used with inArray.
+ * This is either a string array (for the single-subscription filter) or a
+ * Drizzle subquery (for tag or uncategorized filters) — subqueries implement
  * SQLWrapper, which is what inArray accepts.
  */
-type FeedIdsCondition = string[] | SQLWrapper;
+type SubscriptionIdsCondition = string[] | SQLWrapper;
 
 /**
- * Result of building entry feed filters.
+ * Result of building entry subscription filters.
  *
- * @property feedIdsCondition - Either an array of feed IDs, a subquery that returns feed IDs,
- *                              or null if no feed filter is needed
+ * Entries are attributed to exactly one subscription via
+ * `user_entries.subscription_id` (surfaced as `visible_entries.subscription_id`),
+ * which survives feed redirects/merges via the merge-job re-stamp — so filtering
+ * on subscription IDs matches everything the old junction-derived feed-ID
+ * filtering matched, without touching `subscription_feeds`.
+ *
+ * @property subscriptionIdsCondition - Either an array of subscription IDs, a
+ *                                      subquery that returns subscription IDs,
+ *                                      or null if no subscription filter is needed
  * @property isEmpty - True if the filter conditions result in no possible matches
  *                    (e.g., invalid subscription ID, non-existent tag)
  */
 export interface EntryFilterResult {
-  feedIdsCondition: FeedIdsCondition | null;
+  subscriptionIdsCondition: SubscriptionIdsCondition | null;
   isEmpty: boolean;
 }
 
@@ -61,49 +62,37 @@ export interface EntryFilterResult {
 // ============================================================================
 
 /**
- * Gets feed IDs for a subscription from the subscription_feeds junction table.
- * Validates subscription ownership via the user_feeds view. Returns null if the
- * subscription doesn't exist or doesn't belong to the user.
+ * Verifies a subscription exists, is active, and belongs to the user (the
+ * user_feeds view is active-only).
  */
-export async function getSubscriptionFeedIds(
+export async function verifySubscriptionOwnership(
   db: typeof dbType,
   subscriptionId: string,
   userId: string
-): Promise<string[] | null> {
-  // Verify subscription exists and belongs to user
+): Promise<boolean> {
   const subExists = await db
     .select({ id: userFeeds.id })
     .from(userFeeds)
     .where(and(eq(userFeeds.id, subscriptionId), eq(userFeeds.userId, userId)))
     .limit(1);
-
-  if (subExists.length === 0) {
-    return null;
-  }
-
-  const result = await db
-    .select({ feedId: subscriptionFeeds.feedId })
-    .from(subscriptionFeeds)
-    .where(eq(subscriptionFeeds.subscriptionId, subscriptionId));
-
-  return result.map((r) => r.feedId);
+  return subExists.length > 0;
 }
 
 /**
- * Builds a subquery for feed IDs associated with a tag.
+ * Builds a subquery for subscription IDs associated with a tag.
  * The join with tags table ensures the tag belongs to the user (and is not
  * soft-deleted), eliminating the need for a separate tag ownership validation
  * query. Excluding tombstoned tags means a client can't filter/mark-read
  * entries through a tag that no longer appears in listTags.
  */
-export function buildTaggedFeedIdsSubquery(db: typeof dbType, tagId: string, userId: string) {
+export function buildTaggedSubscriptionIdsSubquery(
+  db: typeof dbType,
+  tagId: string,
+  userId: string
+) {
   return db
-    .select({ feedId: subscriptionFeeds.feedId })
+    .select({ subscriptionId: subscriptionTags.subscriptionId })
     .from(subscriptionTags)
-    .innerJoin(
-      subscriptionFeeds,
-      eq(subscriptionTags.subscriptionId, subscriptionFeeds.subscriptionId)
-    )
     .innerJoin(
       tags,
       and(eq(subscriptionTags.tagId, tags.id), eq(tags.userId, userId), isNull(tags.deletedAt))
@@ -112,18 +101,17 @@ export function buildTaggedFeedIdsSubquery(db: typeof dbType, tagId: string, use
 }
 
 /**
- * Builds a subquery for feed IDs from uncategorized subscriptions.
+ * Builds a subquery for subscription IDs of uncategorized subscriptions.
  * Uses a LEFT JOIN anti-join pattern: subscriptions with no matching
- * subscription_tags row are "uncategorized".
+ * subscription_tags row are "uncategorized". user_feeds is active-only.
  *
  * Exported so markAllEntriesRead reuses the exact same definition rather than
- * reimplementing it against a different base table (they must stay in sync).
+ * reimplementing it (they must stay in sync).
  */
-export function buildUncategorizedFeedIdsSubquery(db: typeof dbType, userId: string) {
+export function buildUncategorizedSubscriptionIdsSubquery(db: typeof dbType, userId: string) {
   return db
-    .select({ feedId: subscriptionFeeds.feedId })
+    .select({ subscriptionId: userFeeds.id })
     .from(userFeeds)
-    .innerJoin(subscriptionFeeds, eq(subscriptionFeeds.subscriptionId, userFeeds.id))
     .leftJoin(subscriptionTags, eq(subscriptionTags.subscriptionId, userFeeds.id))
     .where(and(eq(userFeeds.userId, userId), isNull(subscriptionTags.subscriptionId)));
 }
@@ -133,47 +121,47 @@ export function buildUncategorizedFeedIdsSubquery(db: typeof dbType, userId: str
 // ============================================================================
 
 /**
- * Builds feed filter conditions for entry queries.
+ * Builds subscription filter conditions for entry queries.
  *
- * This function handles the three main feed-based filters:
- * 1. subscriptionId - Filter to entries from a specific subscription's feeds
- * 2. tagId - Filter to entries from feeds belonging to tagged subscriptions
- * 3. uncategorized - Filter to entries from untagged subscriptions
+ * This function handles the three main subscription-based filters:
+ * 1. subscriptionId - Filter to entries attributed to a specific subscription
+ * 2. tagId - Filter to entries attributed to tagged subscriptions
+ * 3. uncategorized - Filter to entries attributed to untagged subscriptions
  *
  * @param db - Database instance
  * @param params - Filter parameters
  * @param userId - User ID for ownership validation
- * @returns Filter result with feedIdsCondition and isEmpty flag
+ * @returns Filter result with subscriptionIdsCondition and isEmpty flag
  */
-export async function buildEntryFeedFilter(
+export async function buildEntrySubscriptionFilter(
   db: typeof dbType,
   params: EntryFilterParams,
   userId: string
 ): Promise<EntryFilterResult> {
-  // Filter by subscriptionId - returns array of feed IDs or null for early exit
+  // Filter by subscriptionId - validates ownership, early-exits when invalid
   if (params.subscriptionId) {
-    const feedIds = await getSubscriptionFeedIds(db, params.subscriptionId, userId);
-    if (feedIds === null) {
-      return { feedIdsCondition: null, isEmpty: true };
+    const owned = await verifySubscriptionOwnership(db, params.subscriptionId, userId);
+    if (!owned) {
+      return { subscriptionIdsCondition: null, isEmpty: true };
     }
-    return { feedIdsCondition: feedIds, isEmpty: false };
+    return { subscriptionIdsCondition: [params.subscriptionId], isEmpty: false };
   }
 
   // Filter by tagId - uses join to validate tag ownership, returns subquery
   // The subquery will return no rows if the tag doesn't exist or belongs to another user
   if (params.tagId) {
-    const taggedFeedIds = buildTaggedFeedIdsSubquery(db, params.tagId, userId);
-    return { feedIdsCondition: taggedFeedIds, isEmpty: false };
+    const taggedSubscriptionIds = buildTaggedSubscriptionIdsSubquery(db, params.tagId, userId);
+    return { subscriptionIdsCondition: taggedSubscriptionIds, isEmpty: false };
   }
 
   // Filter by uncategorized - returns subquery
   if (params.uncategorized) {
-    const uncategorizedFeedIds = buildUncategorizedFeedIdsSubquery(db, userId);
-    return { feedIdsCondition: uncategorizedFeedIds, isEmpty: false };
+    const uncategorizedSubscriptionIds = buildUncategorizedSubscriptionIdsSubquery(db, userId);
+    return { subscriptionIdsCondition: uncategorizedSubscriptionIds, isEmpty: false };
   }
 
-  // No feed filter needed
-  return { feedIdsCondition: null, isEmpty: false };
+  // No subscription filter needed
+  return { subscriptionIdsCondition: null, isEmpty: false };
 }
 
 // ============================================================================

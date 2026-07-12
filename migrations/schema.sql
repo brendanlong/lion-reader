@@ -715,7 +715,7 @@ CREATE INDEX idx_user_entries_read_changed_at ON public.user_entries USING btree
 
 CREATE INDEX idx_user_entries_starred ON public.user_entries USING btree (user_id) WHERE (starred = true);
 
-CREATE INDEX idx_user_entries_subscription ON public.user_entries USING btree (subscription_id) WHERE (subscription_id IS NOT NULL);
+CREATE INDEX idx_user_entries_subscription_timeline ON public.user_entries USING btree (subscription_id, published_or_fetched_at DESC, entry_id DESC) WHERE (subscription_id IS NOT NULL);
 
 CREATE INDEX idx_user_entries_unread ON public.user_entries USING btree (user_id) WHERE (read = false);
 

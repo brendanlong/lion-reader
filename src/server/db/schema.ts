@@ -727,8 +727,9 @@ export const userEntries = pgTable(
       table.publishedOrFetchedAt.desc(),
       table.entryId.desc()
     ),
-    // idx_user_entries_subscription (partial: WHERE subscription_id IS NOT NULL)
-    // is defined in migration 0086.
+    // idx_user_entries_subscription_timeline (subscription_id,
+    // published_or_fetched_at DESC, entry_id DESC; partial: WHERE
+    // subscription_id IS NOT NULL) is defined in migration 0088.
     // Partial indexes defined in migration (can't express WHERE clause in drizzle)
   ]
 );
