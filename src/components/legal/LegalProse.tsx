@@ -30,16 +30,12 @@ export function LegalPage({ title, lastUpdated, children }: LegalPageProps) {
         <div className="mb-8">
           <Link
             href="/"
-            className="ui-text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+            className="ui-text-sm text-muted hover:text-zinc-900 dark:hover:text-zinc-100"
           >
             &larr; Back to Lion Reader
           </Link>
-          <h1 className="mt-4 text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
-            {title}
-          </h1>
-          <p className="ui-text-sm mt-2 text-zinc-500 dark:text-zinc-400">
-            Last updated: {lastUpdated}
-          </p>
+          <h1 className="text-strong mt-4 text-3xl font-bold tracking-tight">{title}</h1>
+          <p className="ui-text-sm text-subtle mt-2">Last updated: {lastUpdated}</p>
         </div>
 
         <div className="prose prose-zinc dark:prose-invert max-w-none">{children}</div>
@@ -59,7 +55,7 @@ export interface LegalSectionProps {
 export function LegalSection({ title, children }: LegalSectionProps) {
   return (
     <section className="mb-8">
-      <h2 className="ui-text-xl font-semibold text-zinc-900 dark:text-zinc-50">{title}</h2>
+      <h2 className="ui-text-xl text-strong font-semibold">{title}</h2>
       {children}
     </section>
   );
@@ -76,7 +72,7 @@ export interface LegalSubsectionProps {
 export function LegalSubsection({ title, children }: LegalSubsectionProps) {
   return (
     <div>
-      <h3 className="font-medium text-zinc-800 dark:text-zinc-200">{title}</h3>
+      <h3 className="text-emphasis font-medium">{title}</h3>
       {children}
     </div>
   );
@@ -92,9 +88,7 @@ export interface LegalParagraphProps {
 }
 
 export function LegalParagraph({ children, tight = false }: LegalParagraphProps) {
-  return (
-    <p className={`${tight ? "mt-1" : "mt-2"} text-zinc-600 dark:text-zinc-400`}>{children}</p>
-  );
+  return <p className={`${tight ? "mt-1" : "mt-2"} text-muted`}>{children}</p>;
 }
 
 /**
@@ -105,7 +99,5 @@ export interface LegalListProps {
 }
 
 export function LegalList({ children }: LegalListProps) {
-  return (
-    <ul className="mt-2 list-disc space-y-1 pl-6 text-zinc-600 dark:text-zinc-400">{children}</ul>
-  );
+  return <ul className="text-muted mt-2 list-disc space-y-1 pl-6">{children}</ul>;
 }

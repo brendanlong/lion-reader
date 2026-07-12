@@ -14,7 +14,7 @@ export interface InlineCodeProps extends HTMLAttributes<HTMLElement> {
 export function InlineCode({ className = "", children, ...props }: InlineCodeProps) {
   return (
     <code
-      className={`ui-text-xs rounded bg-zinc-100 px-1.5 py-0.5 font-mono dark:bg-zinc-800 ${className}`}
+      className={`ui-text-xs bg-surface-muted rounded px-1.5 py-0.5 font-mono ${className}`}
       {...props}
     >
       {children}

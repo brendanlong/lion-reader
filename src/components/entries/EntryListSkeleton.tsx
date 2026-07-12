@@ -24,7 +24,7 @@ const EntryListItemSkeleton = memo(function EntryListItemSkeleton({
   hasLongSummary = true,
 }: EntryListItemSkeletonProps) {
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+    <div className="border-edge bg-surface rounded-lg border p-4">
       <div className="flex items-start gap-3">
         {/* Read indicator skeleton */}
         <div className="mt-1.5 shrink-0">

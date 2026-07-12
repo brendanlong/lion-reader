@@ -55,13 +55,13 @@ export function SubscriptionItem({
         onPrefetch={onPrefetch}
         className={`ui-text-sm flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 transition-colors ${
           isActive
-            ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
-            : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            ? "bg-surface-muted text-strong"
+            : "text-body hover:bg-zinc-100 dark:hover:bg-zinc-800"
         }`}
       >
         <span className="truncate pr-8">{displayTitle}</span>
         {subscription.unreadCount > 0 && (
-          <span className="ui-text-xs shrink-0 text-zinc-500 group-hover:hidden dark:text-zinc-400">
+          <span className="ui-text-xs text-subtle shrink-0 group-hover:hidden">
             ({subscription.unreadCount})
           </span>
         )}

@@ -254,10 +254,8 @@ function ImportSection() {
 
   return (
     <Card>
-      <h3 className="ui-text-sm mb-2 font-medium text-zinc-900 dark:text-zinc-50">
-        Import from OPML
-      </h3>
-      <p className="ui-text-sm mb-4 text-zinc-500 dark:text-zinc-400">
+      <h3 className="ui-text-sm text-strong mb-2 font-medium">Import from OPML</h3>
+      <p className="ui-text-sm text-subtle mb-4">
         Import your feed subscriptions from another RSS reader by uploading an OPML file.
       </p>
 
@@ -284,8 +282,8 @@ function ImportSection() {
             className="absolute inset-0 cursor-pointer opacity-0"
           />
           <div className="pointer-events-none">
-            <UploadIcon className="mx-auto h-12 w-12 text-zinc-400 dark:text-zinc-500" />
-            <p className="ui-text-sm mt-2 text-zinc-600 dark:text-zinc-400">
+            <UploadIcon className="text-faint mx-auto h-12 w-12" />
+            <p className="ui-text-sm text-muted mt-2">
               Drag and drop your OPML file here, or{" "}
               <span className="text-accent font-medium">browse</span>
             </p>
@@ -299,9 +297,7 @@ function ImportSection() {
       {importState.type === "parsing" && (
         <div className="flex items-center justify-center py-8">
           <SpinnerIcon className="h-6 w-6 text-zinc-400" />
-          <span className="ui-text-sm ml-2 text-zinc-600 dark:text-zinc-400">
-            Parsing OPML file...
-          </span>
+          <span className="ui-text-sm text-muted ml-2">Parsing OPML file...</span>
         </div>
       )}
 
@@ -318,9 +314,7 @@ function ImportSection() {
         <div className="py-4">
           <div className="mb-2 flex items-center">
             <SpinnerIcon className="text-accent h-5 w-5" />
-            <span className="ui-text-sm ml-2 font-medium text-zinc-700 dark:text-zinc-300">
-              Importing feeds...
-            </span>
+            <span className="ui-text-sm text-body ml-2 font-medium">Importing feeds...</span>
           </div>
           {importState.type === "importing" && importQuery.data && (
             <div className="mb-2">
@@ -332,7 +326,7 @@ function ImportSection() {
                   }}
                 />
               </div>
-              <p className="ui-text-xs mt-1 text-zinc-500 dark:text-zinc-400">
+              <p className="ui-text-xs text-subtle mt-1">
                 {importQuery.data.importedCount +
                   importQuery.data.skippedCount +
                   importQuery.data.failedCount}{" "}
@@ -340,7 +334,7 @@ function ImportSection() {
               </p>
             </div>
           )}
-          <p className="ui-text-xs text-zinc-500 dark:text-zinc-400">
+          <p className="ui-text-xs text-subtle">
             This may take a moment depending on the number of feeds.
           </p>
         </div>
@@ -378,25 +372,19 @@ function ImportPreview({ feeds, onImport, onCancel, isImporting }: ImportPreview
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <p className="ui-text-sm font-medium text-zinc-700 dark:text-zinc-300">
+        <p className="ui-text-sm text-body font-medium">
           Found {feeds.length} feed{feeds.length !== 1 ? "s" : ""} to import
         </p>
       </div>
 
-      <div className="mb-4 max-h-64 overflow-y-auto rounded-md border border-zinc-200 dark:border-zinc-700">
+      <div className="border-edge-strong mb-4 max-h-64 overflow-y-auto rounded-md border">
         <ul className="divide-y divide-zinc-200 dark:divide-zinc-700">
           {displayedFeeds.map((feed, index) => (
             <li key={`${feed.xmlUrl}-${index}`} className="px-4 py-3">
-              <p className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-50">
-                {feed.title || "Untitled Feed"}
-              </p>
-              <p className="ui-text-xs mt-0.5 truncate text-zinc-500 dark:text-zinc-400">
-                {feed.xmlUrl}
-              </p>
+              <p className="ui-text-sm text-strong font-medium">{feed.title || "Untitled Feed"}</p>
+              <p className="ui-text-xs text-subtle mt-0.5 truncate">{feed.xmlUrl}</p>
               {feed.category && feed.category.length > 0 && (
-                <p className="ui-text-xs mt-1 text-zinc-400 dark:text-zinc-500">
-                  Folder: {feed.category.join(" / ")}
-                </p>
+                <p className="ui-text-xs text-faint mt-1">Folder: {feed.category.join(" / ")}</p>
               )}
             </li>
           ))}
@@ -472,18 +460,16 @@ function ImportResults({ imported, skipped, failed, results, onReset }: ImportRe
           </button>
 
           {showDetails && (
-            <div className="mt-2 max-h-64 overflow-y-auto rounded-md border border-zinc-200 dark:border-zinc-700">
+            <div className="border-edge-strong mt-2 max-h-64 overflow-y-auto rounded-md border">
               <ul className="divide-y divide-zinc-200 dark:divide-zinc-700">
                 {results.map((result, index) => (
                   <li key={`${result.url}-${index}`} className="px-4 py-2">
                     <div className="flex items-start justify-between">
                       <div className="min-w-0 flex-1">
-                        <p className="ui-text-sm truncate font-medium text-zinc-900 dark:text-zinc-50">
+                        <p className="ui-text-sm text-strong truncate font-medium">
                           {result.title || "Untitled Feed"}
                         </p>
-                        <p className="ui-text-xs truncate text-zinc-500 dark:text-zinc-400">
-                          {result.url}
-                        </p>
+                        <p className="ui-text-xs text-subtle truncate">{result.url}</p>
                         {result.error && (
                           <p className="ui-text-xs mt-1 text-red-600 dark:text-red-400">
                             {result.error}
@@ -558,10 +544,8 @@ function ExportSection() {
 
   return (
     <Card>
-      <h3 className="ui-text-sm mb-2 font-medium text-zinc-900 dark:text-zinc-50">
-        Export to OPML
-      </h3>
-      <p className="ui-text-sm mb-4 text-zinc-500 dark:text-zinc-400">
+      <h3 className="ui-text-sm text-strong mb-2 font-medium">Export to OPML</h3>
+      <p className="ui-text-sm text-subtle mb-4">
         Download your subscriptions as an OPML file to import into another RSS reader.
       </p>
 

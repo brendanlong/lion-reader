@@ -145,10 +145,8 @@ export default function FeedStatsSettingsContent() {
     <div>
       {/* Page Header */}
       <div className="mb-6">
-        <h2 className="ui-text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-          Feed Statistics
-        </h2>
-        <p className="ui-text-sm mt-1 text-zinc-600 dark:text-zinc-400">
+        <h2 className="ui-text-lg text-strong font-semibold">Feed Statistics</h2>
+        <p className="ui-text-sm text-muted mt-1">
           View fetch status and statistics for all your subscribed feeds.
         </p>
       </div>
@@ -174,7 +172,7 @@ export default function FeedStatsSettingsContent() {
         ) : feeds.length === 0 ? (
           <EmptyState />
         ) : (
-          <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
+          <div className="divide-edge divide-y">
             {feeds.map((feed) => (
               <FeedStatsRow key={feed.subscriptionId} feed={feed} />
             ))}
@@ -186,15 +184,13 @@ export default function FeedStatsSettingsContent() {
             {statsQuery.isFetchingNextPage && (
               <div className="flex items-center justify-center p-4">
                 <SpinnerIcon className="mr-2 h-4 w-4 text-zinc-400" />
-                <span className="ui-text-sm text-zinc-500 dark:text-zinc-400">Loading more...</span>
+                <span className="ui-text-sm text-subtle">Loading more...</span>
               </div>
             )}
 
             {/* End of list */}
             {!statsQuery.hasNextPage && feeds.length > 0 && (
-              <p className="ui-text-xs p-3 text-center text-zinc-400 dark:text-zinc-500">
-                All feeds loaded
-              </p>
+              <p className="ui-text-xs text-faint p-3 text-center">All feeds loaded</p>
             )}
           </div>
         )}
@@ -215,15 +211,15 @@ interface SummaryCardProps {
 
 function SummaryCard({ label, value, variant = "default" }: SummaryCardProps) {
   const variantClasses = {
-    default: "text-zinc-900 dark:text-zinc-50",
+    default: "text-strong",
     success: "text-green-600 dark:text-green-400",
     error: "text-red-600 dark:text-red-400",
     info: "text-purple-600 dark:text-purple-400",
   };
 
   return (
-    <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800">
-      <p className="ui-text-sm text-zinc-500 dark:text-zinc-400">{label}</p>
+    <div className="border-edge-strong rounded-lg border bg-zinc-50 p-4 dark:bg-zinc-800">
+      <p className="ui-text-sm text-subtle">{label}</p>
       <p className={`ui-text-2xl font-semibold ${variantClasses[variant]}`}>{value}</p>
     </div>
   );
@@ -236,13 +232,11 @@ function SummaryCard({ label, value, variant = "default" }: SummaryCardProps) {
 function EmptyState() {
   return (
     <div className="p-8 text-center">
-      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800">
-        <RssIcon className="h-6 w-6 text-zinc-400 dark:text-zinc-500" />
+      <div className="bg-surface-muted mx-auto flex h-12 w-12 items-center justify-center rounded-full">
+        <RssIcon className="text-faint h-6 w-6" />
       </div>
-      <h3 className="ui-text-sm mt-4 font-medium text-zinc-900 dark:text-zinc-50">
-        No feeds subscribed
-      </h3>
-      <p className="ui-text-sm mt-1 text-zinc-500 dark:text-zinc-400">
+      <h3 className="ui-text-sm text-strong mt-4 font-medium">No feeds subscribed</h3>
+      <p className="ui-text-sm text-subtle mt-1">
         Subscribe to some feeds to see their statistics here.
       </p>
     </div>
@@ -268,7 +262,7 @@ function FeedStatsRow({ feed }: FeedStatsRowProps) {
         <div className="min-w-0 flex-1">
           {/* Feed Title and Status */}
           <div className="flex items-center gap-2">
-            <p className="font-medium text-zinc-900 dark:text-zinc-50">{displayName}</p>
+            <p className="text-strong font-medium">{displayName}</p>
             <span
               className={`ui-text-xs inline-flex items-center rounded-full px-2 py-0.5 font-medium ${statusBadge.className}`}
             >
@@ -277,11 +271,7 @@ function FeedStatsRow({ feed }: FeedStatsRowProps) {
           </div>
 
           {/* Feed URL */}
-          {feed.url && (
-            <p className="ui-text-sm mt-0.5 truncate text-zinc-500 dark:text-zinc-400">
-              {feed.url}
-            </p>
-          )}
+          {feed.url && <p className="ui-text-sm text-subtle mt-0.5 truncate">{feed.url}</p>}
 
           {/* Error Message (if any) */}
           {feed.lastError && (
@@ -358,10 +348,10 @@ interface StatItemProps {
 
 function StatItem({ icon, label, value }: StatItemProps) {
   return (
-    <div className="flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400">
+    <div className="text-subtle flex items-center gap-1.5">
       <span className="h-4 w-4 shrink-0">{icon}</span>
       <span className="truncate">
-        <span className="font-medium text-zinc-700 dark:text-zinc-300">{label}:</span> {value}
+        <span className="text-body font-medium">{label}:</span> {value}
       </span>
     </div>
   );

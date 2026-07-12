@@ -21,10 +21,8 @@ export function KeyboardShortcutsSettings() {
       {/* Enable/Disable Toggle */}
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-50">
-            Enable keyboard shortcuts
-          </h3>
-          <p className="ui-text-sm mt-1 text-zinc-500 dark:text-zinc-400">
+          <h3 className="ui-text-sm text-strong font-medium">Enable keyboard shortcuts</h3>
+          <p className="ui-text-sm text-subtle mt-1">
             Use keyboard shortcuts to navigate entries and perform actions quickly.
           </p>
         </div>
@@ -39,7 +37,7 @@ export function KeyboardShortcutsSettings() {
         >
           <span
             aria-hidden="true"
-            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out dark:bg-zinc-900 ${
+            className={`bg-surface pointer-events-none inline-block h-5 w-5 transform rounded-full shadow ring-0 transition duration-200 ease-in-out ${
               enabled ? "translate-x-5" : "translate-x-0"
             }`}
           />
@@ -50,7 +48,7 @@ export function KeyboardShortcutsSettings() {
       <CardSection>
         <button
           onClick={openShortcutsModal}
-          className="ui-text-sm inline-flex items-center gap-2 font-medium text-zinc-700 transition-colors hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-50"
+          className="ui-text-sm text-body inline-flex items-center gap-2 font-medium transition-colors hover:text-zinc-900 dark:hover:text-zinc-50"
         >
           <InfoCircleIcon className="h-4 w-4" />
           View all keyboard shortcuts

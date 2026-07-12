@@ -53,12 +53,10 @@ function OAuthCompleteContent() {
 
   return (
     <div className="flex flex-col items-center justify-center">
-      <h2 className="ui-text-xl mb-6 font-semibold text-zinc-900 dark:text-zinc-50">
-        Sign-in successful
-      </h2>
+      <h2 className="ui-text-xl text-strong mb-6 font-semibold">Sign-in successful</h2>
       <div className="flex flex-col items-center gap-4">
-        <SpinnerIcon className="h-8 w-8 text-zinc-900 dark:text-zinc-100" />
-        <p className="ui-text-sm text-zinc-600 dark:text-zinc-400">Redirecting...</p>
+        <SpinnerIcon className="text-strong h-8 w-8" />
+        <p className="ui-text-sm text-muted">Redirecting...</p>
       </div>
     </div>
   );

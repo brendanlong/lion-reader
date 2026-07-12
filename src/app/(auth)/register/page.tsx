@@ -130,10 +130,8 @@ function RegisterForm() {
   if (isLoadingConfig) {
     return (
       <div>
-        <h2 className="ui-text-xl mb-6 font-semibold text-zinc-900 dark:text-zinc-50">
-          Create your account
-        </h2>
-        <div className="text-center text-zinc-600 dark:text-zinc-400">Loading...</div>
+        <h2 className="ui-text-xl text-strong mb-6 font-semibold">Create your account</h2>
+        <div className="text-muted text-center">Loading...</div>
       </div>
     );
   }
@@ -144,19 +142,14 @@ function RegisterForm() {
   if (effectiveProviders.length === 0) {
     return (
       <div>
-        <h2 className="ui-text-xl mb-6 font-semibold text-zinc-900 dark:text-zinc-50">
-          Invite Required
-        </h2>
+        <h2 className="ui-text-xl text-strong mb-6 font-semibold">Invite Required</h2>
         <Alert variant="error" className="mb-4">
           This instance requires an invite to sign up. Please contact an administrator to request an
           invite.
         </Alert>
-        <p className="ui-text-sm mt-6 text-center text-zinc-600 dark:text-zinc-400">
+        <p className="ui-text-sm text-muted mt-6 text-center">
           Already have an account?{" "}
-          <Link
-            href="/login"
-            className="font-medium text-zinc-900 hover:underline dark:text-zinc-50"
-          >
+          <Link href="/login" className="text-strong font-medium hover:underline">
             Sign in
           </Link>
         </p>
@@ -168,9 +161,7 @@ function RegisterForm() {
 
   return (
     <div>
-      <h2 className="ui-text-xl mb-6 font-semibold text-zinc-900 dark:text-zinc-50">
-        Create your account
-      </h2>
+      <h2 className="ui-text-xl text-strong mb-6 font-semibold">Create your account</h2>
 
       {errors.form && (
         <Alert variant="error" className="mb-4">
@@ -194,9 +185,7 @@ function RegisterForm() {
               <div className="w-full border-t border-zinc-300 dark:border-zinc-700" />
             </div>
             <div className="ui-text-sm relative flex justify-center">
-              <span className="bg-white px-2 text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
-                Or continue with email
-              </span>
+              <span className="bg-surface text-subtle px-2">Or continue with email</span>
             </div>
           </div>
 
@@ -244,7 +233,7 @@ function RegisterForm() {
         </>
       )}
 
-      <p className="ui-text-xs mt-4 text-center text-zinc-500 dark:text-zinc-400">
+      <p className="ui-text-xs text-subtle mt-4 text-center">
         By creating an account, you agree to our{" "}
         <Link href="/terms" className="underline hover:text-zinc-700 dark:hover:text-zinc-300">
           Terms of Service
@@ -255,9 +244,9 @@ function RegisterForm() {
         </Link>
       </p>
 
-      <p className="ui-text-sm mt-6 text-center text-zinc-600 dark:text-zinc-400">
+      <p className="ui-text-sm text-muted mt-6 text-center">
         Already have an account?{" "}
-        <Link href="/login" className="font-medium text-zinc-900 hover:underline dark:text-zinc-50">
+        <Link href="/login" className="text-strong font-medium hover:underline">
           Sign in
         </Link>
       </p>

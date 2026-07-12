@@ -180,13 +180,11 @@ export function NarrationSettings() {
     return (
       <SettingsSection title="Narration">
         <div className="flex items-start gap-3">
-          <AlertIcon className="mt-0.5 h-5 w-5 flex-shrink-0 text-zinc-400 dark:text-zinc-500" />
+          <AlertIcon className="text-faint mt-0.5 h-5 w-5 flex-shrink-0" />
           <div>
-            <p className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">
-              Narration Unavailable
-            </p>
-            <p className="ui-text-sm mt-1 text-zinc-500 dark:text-zinc-400">{supportInfo.reason}</p>
-            <p className="ui-text-xs mt-2 text-zinc-400 dark:text-zinc-500">
+            <p className="ui-text-sm text-strong font-medium">Narration Unavailable</p>
+            <p className="ui-text-sm text-subtle mt-1">{supportInfo.reason}</p>
+            <p className="ui-text-xs text-faint mt-2">
               Try using Chrome, Safari, or Edge for the best narration experience.
             </p>
           </div>
@@ -200,12 +198,8 @@ export function NarrationSettings() {
       {/* Enable/Disable Toggle */}
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-50">
-            Enable narration
-          </h3>
-          <p className="ui-text-sm mt-1 text-zinc-500 dark:text-zinc-400">
-            Listen to articles using text-to-speech.
-          </p>
+          <h3 className="ui-text-sm text-strong font-medium">Enable narration</h3>
+          <p className="ui-text-sm text-subtle mt-1">Listen to articles using text-to-speech.</p>
         </div>
         <button
           type="button"
@@ -218,7 +212,7 @@ export function NarrationSettings() {
         >
           <span
             aria-hidden="true"
-            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out dark:bg-zinc-900 ${
+            className={`bg-surface pointer-events-none inline-block h-5 w-5 transform rounded-full shadow ring-0 transition duration-200 ease-in-out ${
               settings.enabled ? "translate-x-5" : "translate-x-0"
             }`}
           />
@@ -230,16 +224,14 @@ export function NarrationSettings() {
         <CardSection className="space-y-6">
           {/* Voice Provider Selection */}
           <div>
-            <h3 className="ui-text-sm mb-3 font-medium text-zinc-900 dark:text-zinc-50">
-              Voice Provider
-            </h3>
+            <h3 className="ui-text-sm text-strong mb-3 font-medium">Voice Provider</h3>
             <div className="space-y-3">
               {/* Browser Voices Option */}
               <label
                 className={`relative flex cursor-pointer rounded-lg border p-4 transition-colors ${
                   settings.provider === "browser"
                     ? "border-zinc-900 bg-zinc-50 dark:border-zinc-400 dark:bg-zinc-800"
-                    : "border-zinc-200 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800/50"
+                    : "border-edge-strong hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
                 }`}
               >
                 <input
@@ -263,10 +255,8 @@ export function NarrationSettings() {
                     )}
                   </div>
                   <div>
-                    <span className="ui-text-sm block font-medium text-zinc-900 dark:text-zinc-100">
-                      Browser Voices
-                    </span>
-                    <span className="ui-text-xs mt-0.5 block text-zinc-500 dark:text-zinc-400">
+                    <span className="ui-text-sm text-strong block font-medium">Browser Voices</span>
+                    <span className="ui-text-xs text-subtle mt-0.5 block">
                       Uses your browser&apos;s built-in text-to-speech
                     </span>
                   </div>
@@ -278,7 +268,7 @@ export function NarrationSettings() {
                 className={`relative flex cursor-pointer rounded-lg border p-4 transition-colors ${
                   settings.provider === "piper"
                     ? "border-zinc-900 bg-zinc-50 dark:border-zinc-400 dark:bg-zinc-800"
-                    : "border-zinc-200 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800/50"
+                    : "border-edge-strong hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
                 }`}
               >
                 <input
@@ -302,10 +292,10 @@ export function NarrationSettings() {
                     )}
                   </div>
                   <div>
-                    <span className="ui-text-sm block font-medium text-zinc-900 dark:text-zinc-100">
+                    <span className="ui-text-sm text-strong block font-medium">
                       Enhanced Voices
                     </span>
-                    <span className="ui-text-xs mt-0.5 block text-zinc-500 dark:text-zinc-400">
+                    <span className="ui-text-xs text-subtle mt-0.5 block">
                       Higher quality voices (requires download)
                     </span>
                   </div>
@@ -319,7 +309,7 @@ export function NarrationSettings() {
             <div>
               <label
                 htmlFor="narration-voice"
-                className="ui-text-sm mb-1.5 block font-medium text-zinc-700 dark:text-zinc-300"
+                className="ui-text-sm text-body mb-1.5 block font-medium"
               >
                 Voice
               </label>
@@ -329,7 +319,7 @@ export function NarrationSettings() {
                   value={settings.voiceId || ""}
                   onChange={handleVoiceChange}
                   disabled={isLoadingVoices}
-                  className="ui-text-sm block flex-1 rounded-md border border-zinc-300 bg-white px-3 py-2 text-zinc-900 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+                  className="ui-text-sm bg-surface text-strong block flex-1 rounded-md border border-zinc-300 px-3 py-2 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
                 >
                   {isLoadingVoices ? (
                     <option value="">Loading voices...</option>
@@ -356,7 +346,7 @@ export function NarrationSettings() {
                   {isPreviewing ? "Stop" : "Preview"}
                 </Button>
               </div>
-              <p className="ui-text-xs mt-1.5 text-zinc-500 dark:text-zinc-400">
+              <p className="ui-text-xs text-subtle mt-1.5">
                 Voices are provided by your browser. Chrome and Safari typically offer higher
                 quality voices.
               </p>
@@ -367,9 +357,7 @@ export function NarrationSettings() {
           {settings.provider === "piper" && (
             <div className="space-y-4">
               <div>
-                <label className="ui-text-sm mb-3 block font-medium text-zinc-700 dark:text-zinc-300">
-                  Select Voice
-                </label>
+                <label className="ui-text-sm text-body mb-3 block font-medium">Select Voice</label>
                 <EnhancedVoiceList settings={settings} setSettings={setSettings} />
               </div>
               <EnhancedVoicesHelp />
@@ -380,7 +368,7 @@ export function NarrationSettings() {
           <div>
             <label
               htmlFor="narration-rate"
-              className="ui-text-sm mb-1.5 block font-medium text-zinc-700 dark:text-zinc-300"
+              className="ui-text-sm text-body mb-1.5 block font-medium"
             >
               Speed: {settings.rate.toFixed(1)}x
             </label>
@@ -394,7 +382,7 @@ export function NarrationSettings() {
               onChange={handleRateChange}
               className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-zinc-200 accent-zinc-900 dark:bg-zinc-700 dark:accent-zinc-400"
             />
-            <div className="ui-text-xs mt-1 flex justify-between text-zinc-400 dark:text-zinc-500">
+            <div className="ui-text-xs text-faint mt-1 flex justify-between">
               <span>0.5x</span>
               <span>1.0x</span>
               <span>1.5x</span>
@@ -407,7 +395,7 @@ export function NarrationSettings() {
             <div>
               <label
                 htmlFor="narration-pitch"
-                className="ui-text-sm mb-1.5 block font-medium text-zinc-700 dark:text-zinc-300"
+                className="ui-text-sm text-body mb-1.5 block font-medium"
               >
                 Pitch: {settings.pitch.toFixed(1)}x
               </label>
@@ -421,7 +409,7 @@ export function NarrationSettings() {
                 onChange={handlePitchChange}
                 className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-zinc-200 accent-zinc-900 dark:bg-zinc-700 dark:accent-zinc-400"
               />
-              <div className="ui-text-xs mt-1 flex justify-between text-zinc-400 dark:text-zinc-500">
+              <div className="ui-text-xs text-faint mt-1 flex justify-between">
                 <span>0.5x</span>
                 <span>1.0x</span>
                 <span>1.5x</span>
@@ -433,15 +421,13 @@ export function NarrationSettings() {
           {/* Processing Settings - only shown if AI text processing is available */}
           {isAiTextProcessingAvailable && (
             <div className="space-y-4">
-              <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-50">Processing</h3>
+              <h3 className="ui-text-sm text-strong font-medium">Processing</h3>
 
               {/* LLM Normalization Toggle */}
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="ui-text-sm text-zinc-700 dark:text-zinc-300">
-                    Use AI text processing
-                  </p>
-                  <p className="ui-text-xs text-zinc-500 dark:text-zinc-400">
+                  <p className="ui-text-sm text-body">Use AI text processing</p>
+                  <p className="ui-text-xs text-subtle">
                     Improves narration quality by expanding abbreviations and formatting content
                   </p>
                 </div>
@@ -463,7 +449,7 @@ export function NarrationSettings() {
                 >
                   <span
                     aria-hidden="true"
-                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out dark:bg-zinc-900 ${
+                    className={`bg-surface pointer-events-none inline-block h-5 w-5 transform rounded-full shadow ring-0 transition duration-200 ease-in-out ${
                       settings.useLlmNormalization ? "translate-x-5" : "translate-x-0"
                     }`}
                   />
@@ -474,15 +460,13 @@ export function NarrationSettings() {
 
           {/* Highlighting Settings */}
           <div className="space-y-4">
-            <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-50">Highlighting</h3>
+            <h3 className="ui-text-sm text-strong font-medium">Highlighting</h3>
 
             {/* Highlight Current Paragraph Toggle */}
             <div className="flex items-center justify-between">
               <div>
-                <p className="ui-text-sm text-zinc-700 dark:text-zinc-300">
-                  Highlight current paragraph
-                </p>
-                <p className="ui-text-xs text-zinc-500 dark:text-zinc-400">
+                <p className="ui-text-sm text-body">Highlight current paragraph</p>
+                <p className="ui-text-xs text-subtle">
                   Visually highlight the paragraph being read
                 </p>
               </div>
@@ -499,7 +483,7 @@ export function NarrationSettings() {
               >
                 <span
                   aria-hidden="true"
-                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out dark:bg-zinc-900 ${
+                  className={`bg-surface pointer-events-none inline-block h-5 w-5 transform rounded-full shadow ring-0 transition duration-200 ease-in-out ${
                     settings.highlightEnabled ? "translate-x-5" : "translate-x-0"
                   }`}
                 />
@@ -509,10 +493,8 @@ export function NarrationSettings() {
             {/* Auto-scroll to Current Paragraph Toggle */}
             <div className="flex items-center justify-between">
               <div>
-                <p className="ui-text-sm text-zinc-700 dark:text-zinc-300">
-                  Auto-scroll to current paragraph
-                </p>
-                <p className="ui-text-xs text-zinc-500 dark:text-zinc-400">
+                <p className="ui-text-sm text-body">Auto-scroll to current paragraph</p>
+                <p className="ui-text-xs text-subtle">
                   Automatically scroll the page to keep the current paragraph visible
                 </p>
               </div>
@@ -529,7 +511,7 @@ export function NarrationSettings() {
               >
                 <span
                   aria-hidden="true"
-                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out dark:bg-zinc-900 ${
+                  className={`bg-surface pointer-events-none inline-block h-5 w-5 transform rounded-full shadow ring-0 transition duration-200 ease-in-out ${
                     settings.autoScrollEnabled ? "translate-x-5" : "translate-x-0"
                   }`}
                 />
@@ -553,7 +535,7 @@ export function NarrationSettings() {
       {/* Media Session Info */}
       {settings.enabled && supportInfo.mediaSession && (
         <CardSection>
-          <div className="ui-text-xs flex items-start gap-2 text-zinc-500 dark:text-zinc-400">
+          <div className="ui-text-xs text-subtle flex items-start gap-2">
             <InfoCircleIcon className="mt-0.5 h-4 w-4 flex-shrink-0" />
             <span>
               Your browser supports media controls. You can control playback using your keyboard

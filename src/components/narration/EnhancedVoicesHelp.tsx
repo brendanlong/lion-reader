@@ -69,25 +69,23 @@ function FAQItemComponent({
   onToggle: () => void;
 }) {
   return (
-    <div className="border-b border-zinc-200 last:border-b-0 dark:border-zinc-700">
+    <div className="border-edge-strong border-b last:border-b-0">
       <button
         type="button"
         onClick={onToggle}
         className="flex w-full items-center justify-between py-3 text-left"
         aria-expanded={isOpen}
       >
-        <span className="ui-text-sm font-medium text-zinc-700 dark:text-zinc-300">
-          {item.question}
-        </span>
+        <span className="ui-text-sm text-body font-medium">{item.question}</span>
         <ChevronDownIcon
-          className={`h-4 w-4 flex-shrink-0 text-zinc-500 transition-transform duration-200 dark:text-zinc-400 ${
+          className={`text-subtle h-4 w-4 flex-shrink-0 transition-transform duration-200 ${
             isOpen ? "rotate-180" : ""
           }`}
         />
       </button>
       {isOpen && (
         <div className="pr-8 pb-3">
-          <p className="ui-text-sm text-zinc-600 dark:text-zinc-400">{item.answer}</p>
+          <p className="ui-text-sm text-muted">{item.answer}</p>
         </div>
       )}
     </div>
@@ -123,7 +121,7 @@ export function EnhancedVoicesHelp() {
   };
 
   return (
-    <div className="rounded-lg border border-zinc-200 dark:border-zinc-700">
+    <div className="border-edge-strong rounded-lg border">
       {/* Header button */}
       <button
         type="button"
@@ -132,13 +130,11 @@ export function EnhancedVoicesHelp() {
         aria-expanded={isExpanded}
       >
         <div className="flex items-center gap-2">
-          <QuestionCircleIcon className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
-          <span className="ui-text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            Help with enhanced voices
-          </span>
+          <QuestionCircleIcon className="text-subtle h-4 w-4" />
+          <span className="ui-text-sm text-body font-medium">Help with enhanced voices</span>
         </div>
         <ChevronDownIcon
-          className={`h-4 w-4 text-zinc-500 transition-transform duration-200 dark:text-zinc-400 ${
+          className={`text-subtle h-4 w-4 transition-transform duration-200 ${
             isExpanded ? "rotate-180" : ""
           }`}
         />
@@ -146,7 +142,7 @@ export function EnhancedVoicesHelp() {
 
       {/* Expandable FAQ content */}
       {isExpanded && (
-        <div className="border-t border-zinc-200 px-4 dark:border-zinc-700">
+        <div className="border-edge-strong border-t px-4">
           {FAQ_ITEMS.map((item, index) => (
             <FAQItemComponent
               key={index}

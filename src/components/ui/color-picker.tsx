@@ -76,7 +76,7 @@ export function ColorPicker({ selectedColor, onSelect, onClose }: ColorPickerPro
       <div className="fixed inset-0 z-10" onClick={onClose} aria-hidden="true" />
 
       {/* Color picker dropdown */}
-      <div className="absolute top-full left-0 z-20 mt-1 w-48 rounded-md border border-zinc-200 bg-white p-2 shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
+      <div className="border-edge-strong absolute top-full left-0 z-20 mt-1 w-48 rounded-md border bg-white p-2 shadow-lg dark:bg-zinc-800">
         <div className="grid grid-cols-6 gap-1">
           {TAG_COLORS.map((colorOption) => (
             <button

@@ -84,7 +84,7 @@ export default function TermsOfServicePage() {
           limits. These limits are subject to change at any time.
         </LegalParagraph>
         <Card padding="md" className="mt-4">
-          <ul className="list-disc space-y-2 pl-6 text-zinc-600 dark:text-zinc-400">
+          <ul className="text-muted list-disc space-y-2 pl-6">
             <li>
               <strong>Subscriptions:</strong> Up to 500 active feed subscriptions per account
             </li>

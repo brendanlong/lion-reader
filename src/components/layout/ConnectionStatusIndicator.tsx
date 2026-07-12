@@ -36,7 +36,7 @@ export function ConnectionStatusIndicator({ status, onReconnect }: ConnectionSta
 
   return (
     <div
-      className="ui-text-sm fixed right-4 bottom-4 z-50 flex items-center gap-2 rounded-full bg-white px-3 py-2 shadow-lg ring-1 ring-zinc-200 dark:bg-zinc-900 dark:ring-zinc-700"
+      className="ui-text-sm bg-surface fixed right-4 bottom-4 z-50 flex items-center gap-2 rounded-full px-3 py-2 shadow-lg ring-1 ring-zinc-200 dark:ring-zinc-700"
       role="status"
       aria-live="polite"
     >
@@ -46,7 +46,7 @@ export function ConnectionStatusIndicator({ status, onReconnect }: ConnectionSta
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-yellow-400 opacity-75" />
             <span className="relative inline-flex h-2 w-2 rounded-full bg-yellow-500" />
           </span>
-          <span className="text-zinc-600 dark:text-zinc-400">Connecting...</span>
+          <span className="text-muted">Connecting...</span>
         </>
       )}
 
@@ -55,14 +55,11 @@ export function ConnectionStatusIndicator({ status, onReconnect }: ConnectionSta
           <span className="relative flex h-2 w-2">
             <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
           </span>
-          <span className="text-zinc-600 dark:text-zinc-400">
+          <span className="text-muted">
             {status === "error" ? "Connection error" : "Disconnected"}
           </span>
           {onReconnect && (
-            <button
-              onClick={onReconnect}
-              className="ml-1 text-zinc-900 underline hover:no-underline dark:text-zinc-50"
-            >
+            <button onClick={onReconnect} className="text-strong ml-1 underline hover:no-underline">
               Retry
             </button>
           )}

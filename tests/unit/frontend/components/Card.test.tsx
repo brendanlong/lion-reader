@@ -30,7 +30,7 @@ describe("Card", () => {
     it("applies base styles", () => {
       render(<Card>Content</Card>);
       const card = screen.getByText("Content").closest("div");
-      expect(card).toHaveClass("rounded-lg", "border", "bg-white");
+      expect(card).toHaveClass("rounded-lg", "border", "bg-surface");
     });
   });
 
@@ -97,7 +97,7 @@ describe("CardTitle", () => {
   it("applies title styles", () => {
     render(<CardTitle>Styled Title</CardTitle>);
     const title = screen.getByRole("heading");
-    expect(title).toHaveClass("font-semibold", "text-zinc-900");
+    expect(title).toHaveClass("font-semibold", "text-strong");
   });
 
   it("applies custom className", () => {
@@ -116,7 +116,7 @@ describe("CardDescription", () => {
   it("applies description styles", () => {
     render(<CardDescription>Styled description</CardDescription>);
     const description = screen.getByText("Styled description");
-    expect(description).toHaveClass("text-zinc-500", "mt-1");
+    expect(description).toHaveClass("text-subtle", "mt-1");
   });
 
   it("applies custom className", () => {

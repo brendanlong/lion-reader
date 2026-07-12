@@ -67,7 +67,7 @@ function ProviderBadge({ provider }: { provider: string }) {
   const config = providerConfig[provider];
   if (!config) {
     return (
-      <span className="ui-text-xs inline-flex items-center rounded-full bg-zinc-100 px-2 py-0.5 font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+      <span className="ui-text-xs bg-surface-muted text-muted inline-flex items-center rounded-full px-2 py-0.5 font-medium">
         {provider}
       </span>
     );
@@ -75,7 +75,7 @@ function ProviderBadge({ provider }: { provider: string }) {
 
   const Icon = config.icon;
   return (
-    <span className="ui-text-xs inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+    <span className="ui-text-xs bg-surface-muted text-muted inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium">
       <Icon className="h-3 w-3" />
       {config.label}
     </span>
@@ -99,13 +99,11 @@ interface User {
 
 function UserRow({ user }: { user: User }) {
   return (
-    <div className="flex flex-col gap-2 border-b border-zinc-200 p-4 last:border-b-0 dark:border-zinc-800">
+    <div className="border-edge flex flex-col gap-2 border-b p-4 last:border-b-0">
       {/* Email and ID */}
       <div className="flex flex-wrap items-center gap-2">
-        <span className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-50">{user.email}</span>
-        <code className="ui-text-xs font-mono text-zinc-400 dark:text-zinc-500">
-          {truncateId(user.id)}
-        </code>
+        <span className="ui-text-sm text-strong font-medium">{user.email}</span>
+        <code className="ui-text-xs text-faint font-mono">{truncateId(user.id)}</code>
       </div>
 
       {/* OAuth providers */}
@@ -118,7 +116,7 @@ function UserRow({ user }: { user: User }) {
       )}
 
       {/* Stats row */}
-      <div className="ui-text-xs flex flex-wrap gap-x-4 gap-y-1 text-zinc-500 dark:text-zinc-400">
+      <div className="ui-text-xs text-subtle flex flex-wrap gap-x-4 gap-y-1">
         <span>Member since {formatDate(user.createdAt)}</span>
         <span>Last active: {user.lastActiveAt ? formatDate(user.lastActiveAt) : "Never"}</span>
         <span>
@@ -146,10 +144,10 @@ function UserRow({ user }: { user: User }) {
 function EmptyState({ hasSearch }: { hasSearch: boolean }) {
   return (
     <div className="p-8 text-center">
-      <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-50">
+      <h3 className="ui-text-sm text-strong font-medium">
         {hasSearch ? "No matching users" : "No users yet"}
       </h3>
-      <p className="ui-text-sm mt-1 text-zinc-500 dark:text-zinc-400">
+      <p className="ui-text-sm text-subtle mt-1">
         {hasSearch ? "Try a different search term." : "No users have registered yet."}
       </p>
     </div>
@@ -229,7 +227,7 @@ export default function AdminUsersContent() {
     <div>
       {/* Header */}
       <div className="mb-6">
-        <h2 className="ui-text-lg font-semibold text-zinc-900 dark:text-zinc-50">Users</h2>
+        <h2 className="ui-text-lg text-strong font-semibold">Users</h2>
       </div>
 
       {/* Search + sort */}
@@ -243,14 +241,14 @@ export default function AdminUsersContent() {
           />
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <label htmlFor="user-sort" className="ui-text-sm text-zinc-600 dark:text-zinc-400">
+          <label htmlFor="user-sort" className="ui-text-sm text-muted">
             Sort by
           </label>
           <select
             id="user-sort"
             value={sort}
             onChange={(e) => setSort(e.target.value as UserSort)}
-            className="ui-text-sm block rounded-md border border-zinc-300 bg-white px-3 py-2 text-zinc-900 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+            className="ui-text-sm bg-surface text-strong block rounded-md border border-zinc-300 px-3 py-2 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none dark:border-zinc-700 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
           >
             {SORT_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
@@ -295,15 +293,13 @@ export default function AdminUsersContent() {
           {usersQuery.isFetchingNextPage && (
             <div className="flex items-center justify-center p-4">
               <SpinnerIcon className="mr-2 h-4 w-4 text-zinc-400" />
-              <span className="ui-text-sm text-zinc-500 dark:text-zinc-400">Loading more...</span>
+              <span className="ui-text-sm text-subtle">Loading more...</span>
             </div>
           )}
 
           {/* End of list */}
           {!usersQuery.hasNextPage && users.length > 0 && (
-            <p className="ui-text-xs p-3 text-center text-zinc-400 dark:text-zinc-500">
-              No more users
-            </p>
+            <p className="ui-text-xs text-faint p-3 text-center">No more users</p>
           )}
         </Card>
       )}

@@ -90,8 +90,8 @@ function AccountInfoSection() {
     <SettingsSection title="Account Information">
       {userQuery.isLoading ? (
         <div className="space-y-4">
-          <div className="h-5 w-48 animate-pulse rounded bg-zinc-100 dark:bg-zinc-800" />
-          <div className="h-5 w-32 animate-pulse rounded bg-zinc-100 dark:bg-zinc-800" />
+          <div className="bg-surface-muted h-5 w-48 animate-pulse rounded" />
+          <div className="bg-surface-muted h-5 w-32 animate-pulse rounded" />
         </div>
       ) : userQuery.error ? (
         <p className="ui-text-sm text-red-600 dark:text-red-400">
@@ -100,16 +100,12 @@ function AccountInfoSection() {
       ) : (
         <dl className="space-y-4">
           <div>
-            <dt className="ui-text-sm font-medium text-zinc-500 dark:text-zinc-400">Email</dt>
-            <dd className="ui-text-sm mt-1 text-zinc-900 dark:text-zinc-50">
-              {userQuery.data?.user.email}
-            </dd>
+            <dt className="ui-text-sm text-subtle font-medium">Email</dt>
+            <dd className="ui-text-sm text-strong mt-1">{userQuery.data?.user.email}</dd>
           </div>
           <div>
-            <dt className="ui-text-sm font-medium text-zinc-500 dark:text-zinc-400">
-              Member since
-            </dt>
-            <dd className="ui-text-sm mt-1 text-zinc-900 dark:text-zinc-50">
+            <dt className="ui-text-sm text-subtle font-medium">Member since</dt>
+            <dd className="ui-text-sm text-strong mt-1">
               {userQuery.data?.user.createdAt
                 ? new Date(userQuery.data.user.createdAt).toLocaleDateString("en-US", {
                     year: "numeric",
@@ -120,17 +116,15 @@ function AccountInfoSection() {
             </dd>
           </div>
           <div>
-            <dt className="ui-text-sm font-medium text-zinc-500 dark:text-zinc-400">
-              Email verified
-            </dt>
-            <dd className="ui-text-sm mt-1 text-zinc-900 dark:text-zinc-50">
+            <dt className="ui-text-sm text-subtle font-medium">Email verified</dt>
+            <dd className="ui-text-sm text-strong mt-1">
               {userQuery.data?.user.emailVerifiedAt ? (
                 <span className="inline-flex items-center text-green-600 dark:text-green-400">
                   <CheckIcon className="mr-1 h-4 w-4" />
                   Verified
                 </span>
               ) : (
-                <span className="text-zinc-500 dark:text-zinc-400">Not verified</span>
+                <span className="text-subtle">Not verified</span>
               )}
             </dd>
           </div>
@@ -147,7 +141,7 @@ function PasswordSection() {
   if (linkedAccountsQuery.isLoading) {
     return (
       <SettingsSection title="Password">
-        <div className="h-32 animate-pulse rounded bg-zinc-100 dark:bg-zinc-800" />
+        <div className="bg-surface-muted h-32 animate-pulse rounded" />
       </SettingsSection>
     );
   }

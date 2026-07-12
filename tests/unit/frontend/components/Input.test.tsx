@@ -50,7 +50,7 @@ describe("Input", () => {
     it("applies label styles", () => {
       render(<Input label="Styled Label" id="styled" />);
       const label = screen.getByText("Styled Label");
-      expect(label).toHaveClass("font-medium", "text-zinc-700");
+      expect(label).toHaveClass("font-medium", "text-body");
     });
   });
 
@@ -191,7 +191,7 @@ describe("Input", () => {
     it("applies base input styles", () => {
       render(<Input />);
       const input = screen.getByRole("textbox");
-      expect(input).toHaveClass("rounded-md", "border", "bg-white", "px-3", "py-2");
+      expect(input).toHaveClass("rounded-md", "border", "bg-surface", "px-3", "py-2");
     });
 
     it("applies focus ring styles", () => {

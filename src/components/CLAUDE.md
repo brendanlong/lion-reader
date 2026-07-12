@@ -55,6 +55,26 @@ Icons are in `@/components/ui/icon-button`. Use these instead of duplicating SVG
 
 The `ui-text-*` classes are defined in `src/app/globals.css` and provide responsive scaling.
 
+### Semantic Colors
+
+**Use the semantic color tokens instead of raw zinc light/dark pairs.** Each token is one utility class covering both modes; the palette lives in `src/app/globals.css` (`:root` + `.dark`), so retheming means editing CSS variables, not call sites:
+
+| Token                | Replaces                               | Use for                            |
+| -------------------- | -------------------------------------- | ---------------------------------- |
+| `text-strong`        | `text-zinc-900 dark:text-zinc-50`      | Headings, primary values           |
+| `text-emphasis`      | `text-zinc-900 dark:text-zinc-200`     | `<strong>` inside muted prose      |
+| `text-body`          | `text-zinc-700 dark:text-zinc-300`     | Body copy, labels                  |
+| `text-muted`         | `text-zinc-600 dark:text-zinc-400`     | Descriptions, secondary text       |
+| `text-subtle`        | `text-zinc-500 dark:text-zinc-400`     | Metadata, hints                    |
+| `text-faint`         | `text-zinc-400 dark:text-zinc-500`     | De-emphasized notes, placeholders  |
+| `bg-surface`         | `bg-white dark:bg-zinc-900`            | Cards, inputs, controls            |
+| `bg-surface-muted`   | `bg-zinc-100 dark:bg-zinc-800`         | Chips, skeletons                   |
+| `bg-surface-subtle`  | `bg-zinc-50 dark:bg-zinc-800/50`       | Note boxes, subtle fills           |
+| `border-edge`        | `border-zinc-200 dark:border-zinc-800` | Card outlines (also `divide-edge`) |
+| `border-edge-strong` | `border-zinc-200 dark:border-zinc-700` | Dividers, note-box borders         |
+
+Interactive-state colors (`hover:bg-zinc-50`, focus rings, input borders) are not tokenized yet — keep using raw utilities with `dark:` variants for those.
+
 ### Settings Sections
 
 Settings pages are built from `SettingsSection` (`@/components/settings/SettingsSection`), which renders the standard heading + `Card` shell and handles loading/error/success states. Don't hand-roll the `<section><h2>…</h2><div className="rounded-lg border …">` pattern — use `SettingsSection`, or `SettingsSectionHeading` + `Card` when the content doesn't fit the wrapper.

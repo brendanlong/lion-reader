@@ -215,13 +215,13 @@ export function SubscribeContent() {
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-4 sm:p-6">
-      <h1 className="ui-text-xl sm:ui-text-2xl mb-4 font-bold text-zinc-900 sm:mb-6 dark:text-zinc-50">
+      <h1 className="ui-text-xl sm:ui-text-2xl text-strong mb-4 font-bold sm:mb-6">
         Subscribe to Feed
       </h1>
 
       {step === "input" && (
         <Card>
-          <p className="ui-text-sm mb-4 text-zinc-600 dark:text-zinc-400">
+          <p className="ui-text-sm text-muted mb-4">
             Enter the URL of an RSS or Atom feed, or a website that has a feed. We&apos;ll
             automatically discover the feed if possible.
           </p>
@@ -283,15 +283,13 @@ export function SubscribeContent() {
           <Card>
             <div className="mb-4 flex items-center gap-2">
               <CheckCircleIcon className="h-5 w-5 text-green-600 dark:text-green-400" />
-              <h2 className="ui-text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+              <h2 className="ui-text-lg text-strong font-semibold">
                 We found {discoveredFeeds.length} feed{discoveredFeeds.length !== 1 ? "s" : ""} on
                 this site
               </h2>
             </div>
 
-            <p className="ui-text-sm mb-4 text-zinc-600 dark:text-zinc-400">
-              Select a feed to preview and subscribe:
-            </p>
+            <p className="ui-text-sm text-muted mb-4">Select a feed to preview and subscribe:</p>
 
             {/* Show error if preview of selected feed failed */}
             {selectedFeedUrl && previewQuery.error && (
@@ -311,22 +309,18 @@ export function SubscribeContent() {
                   className={`w-full rounded-lg border p-4 text-left transition-colors ${
                     selectedFeedUrl === feed.url
                       ? "border-zinc-900 bg-zinc-50 dark:border-zinc-100 dark:bg-zinc-800"
-                      : "border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:border-zinc-600 dark:hover:bg-zinc-800"
+                      : "border-edge-strong bg-surface hover:border-zinc-300 hover:bg-zinc-50 dark:hover:border-zinc-600 dark:hover:bg-zinc-800"
                   } ${isLoading ? "cursor-not-allowed opacity-50" : ""}`}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <p className="font-medium text-zinc-900 dark:text-zinc-50">
-                          {feed.title || "Untitled Feed"}
-                        </p>
-                        <span className="ui-text-xs inline-flex items-center rounded-full bg-zinc-100 px-2 py-0.5 font-medium text-zinc-700 dark:bg-zinc-700 dark:text-zinc-300">
+                        <p className="text-strong font-medium">{feed.title || "Untitled Feed"}</p>
+                        <span className="ui-text-xs text-body inline-flex items-center rounded-full bg-zinc-100 px-2 py-0.5 font-medium dark:bg-zinc-700">
                           {getFeedTypeLabel(feed.type)}
                         </span>
                       </div>
-                      <p className="ui-text-xs mt-1 truncate font-mono text-zinc-500 dark:text-zinc-400">
-                        {feed.url}
-                      </p>
+                      <p className="ui-text-xs text-subtle mt-1 truncate font-mono">{feed.url}</p>
                     </div>
                     {selectedFeedUrl === feed.url && isLoading ? (
                       <SpinnerIcon className="h-5 w-5 text-zinc-500" />
@@ -340,13 +334,13 @@ export function SubscribeContent() {
 
             {/* Feed builder link from plugin */}
             {feedBuilderUrl && (
-              <p className="ui-text-sm mt-4 text-zinc-600 dark:text-zinc-400">
+              <p className="ui-text-sm text-muted mt-4">
                 Looking for a custom feed?{" "}
                 <a
                   href={feedBuilderUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-zinc-900 underline hover:text-zinc-700 dark:text-zinc-200 dark:hover:text-zinc-400"
+                  className="text-emphasis inline-flex items-center gap-1 underline hover:text-zinc-700 dark:hover:text-zinc-400"
                 >
                   Build a custom feed URL
                   <ExternalLinkIcon className="h-3.5 w-3.5" />
@@ -370,7 +364,7 @@ export function SubscribeContent() {
           <Card>
             <div className="mb-4 flex items-start justify-between">
               <div>
-                <h2 className="ui-text-xl font-semibold text-zinc-900 dark:text-zinc-50">
+                <h2 className="ui-text-xl text-strong font-semibold">
                   {previewQuery.data?.feed.title ?? "Untitled Feed"}
                 </h2>
                 {previewQuery.data?.feed.siteUrl && (
@@ -378,7 +372,7 @@ export function SubscribeContent() {
                     href={previewQuery.data.feed.siteUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="ui-text-sm text-zinc-500 hover:underline dark:text-zinc-400"
+                    className="ui-text-sm text-subtle hover:underline"
                   >
                     {new URL(previewQuery.data.feed.siteUrl).hostname}
                   </a>
@@ -387,12 +381,10 @@ export function SubscribeContent() {
             </div>
 
             {previewQuery.data?.feed.description && (
-              <p className="ui-text-sm mb-4 text-zinc-600 dark:text-zinc-400">
-                {previewQuery.data.feed.description}
-              </p>
+              <p className="ui-text-sm text-muted mb-4">{previewQuery.data.feed.description}</p>
             )}
 
-            <p className="ui-text-xs text-zinc-500 dark:text-zinc-400">
+            <p className="ui-text-xs text-subtle">
               Feed URL: <span className="font-mono">{previewQuery.data?.feed.url}</span>
             </p>
           </Card>
@@ -401,25 +393,23 @@ export function SubscribeContent() {
           {previewQuery.data?.feed.sampleEntries &&
             previewQuery.data.feed.sampleEntries.length > 0 && (
               <Card padding="none">
-                <h3 className="ui-text-sm border-b border-zinc-200 px-4 py-3 font-medium text-zinc-900 dark:border-zinc-800 dark:text-zinc-50">
+                <h3 className="ui-text-sm border-edge text-strong border-b px-4 py-3 font-medium">
                   Recent Entries
                 </h3>
-                <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
+                <ul className="divide-edge divide-y">
                   {previewQuery.data.feed.sampleEntries.map((entry, index) => (
                     <li key={entry.guid ?? index} className="px-4 py-3">
                       <div className="flex items-start justify-between gap-4">
                         <div className="min-w-0 flex-1">
-                          <p className="font-medium text-zinc-900 dark:text-zinc-50">
-                            {entry.title ?? "Untitled"}
-                          </p>
+                          <p className="text-strong font-medium">{entry.title ?? "Untitled"}</p>
                           {entry.summary && (
-                            <p className="ui-text-sm mt-1 line-clamp-2 text-zinc-600 dark:text-zinc-400">
+                            <p className="ui-text-sm text-muted mt-1 line-clamp-2">
                               {entry.summary}
                             </p>
                           )}
                         </div>
                         {entry.pubDate && (
-                          <span className="ui-text-xs shrink-0 text-zinc-500 dark:text-zinc-400">
+                          <span className="ui-text-xs text-subtle shrink-0">
                             {formatDate(entry.pubDate)}
                           </span>
                         )}

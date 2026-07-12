@@ -58,8 +58,8 @@ export function NavLink({
       onPrefetch={onPrefetch}
       className={`ui-text-sm flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 font-medium transition-colors ${
         isActive
-          ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
-          : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+          ? "bg-surface-muted text-strong"
+          : "text-body hover:bg-zinc-100 dark:hover:bg-zinc-800"
       } ${className}`}
     >
       <span className="truncate">{children}</span>
@@ -112,16 +112,14 @@ export function NavLinkWithIcon({
       onPrefetch={onPrefetch}
       className={`ui-text-sm flex min-h-[44px] flex-1 items-center gap-2 rounded-md px-3 py-2 transition-colors ${
         isActive
-          ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
-          : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+          ? "bg-surface-muted text-strong"
+          : "text-body hover:bg-zinc-100 dark:hover:bg-zinc-800"
       } ${className}`}
     >
       {icon && <span className="shrink-0">{icon}</span>}
       <span className="truncate">{label}</span>
       {count !== undefined && count > 0 && (
-        <span className="ui-text-xs ml-auto shrink-0 text-zinc-500 dark:text-zinc-400">
-          ({count})
-        </span>
+        <span className="ui-text-xs text-subtle ml-auto shrink-0">({count})</span>
       )}
     </ClientLink>
   );

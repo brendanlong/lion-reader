@@ -67,10 +67,8 @@ export function DiscordBotSettings() {
     >
       {/* Invite Button */}
       <div className="mt-6">
-        <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">
-          Add Bot to Server
-        </h3>
-        <p className="ui-text-sm mt-1 text-zinc-600 dark:text-zinc-400">
+        <h3 className="ui-text-sm text-strong font-medium">Add Bot to Server</h3>
+        <p className="ui-text-sm text-muted mt-1">
           Invite the Lion Reader bot to your Discord server to enable saving articles.
         </p>
         <div className="mt-3 flex flex-wrap gap-3">
@@ -87,7 +85,7 @@ export function DiscordBotSettings() {
           <button
             type="button"
             onClick={copyInviteUrl}
-            className="ui-text-sm inline-flex items-center gap-2 rounded-lg border border-zinc-300 bg-white px-4 py-2.5 font-medium text-zinc-700 shadow-sm transition-all hover:border-zinc-400 hover:bg-zinc-50 hover:shadow dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:border-zinc-500 dark:hover:bg-zinc-700"
+            className="ui-text-sm text-body inline-flex items-center gap-2 rounded-lg border border-zinc-300 bg-white px-4 py-2.5 font-medium shadow-sm transition-all hover:border-zinc-400 hover:bg-zinc-50 hover:shadow dark:border-zinc-600 dark:bg-zinc-800 dark:hover:border-zinc-500 dark:hover:bg-zinc-700"
           >
             {copied ? "Copied!" : "Copy Link"}
           </button>
@@ -96,14 +94,14 @@ export function DiscordBotSettings() {
 
       {/* Usage Instructions */}
       <CardSection>
-        <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">How to Use</h3>
-        <ol className="ui-text-sm mt-2 list-inside list-decimal space-y-2 text-zinc-600 dark:text-zinc-400">
+        <h3 className="ui-text-sm text-strong font-medium">How to Use</h3>
+        <ol className="ui-text-sm text-muted mt-2 list-inside list-decimal space-y-2">
           <li>
-            <strong className="text-zinc-900 dark:text-zinc-200">Link your account</strong> - Sign
-            in to Lion Reader with Discord, or use <InlineCode>/link</InlineCode> with an API token
+            <strong className="text-emphasis">Link your account</strong> - Sign in to Lion Reader
+            with Discord, or use <InlineCode>/link</InlineCode> with an API token
           </li>
           <li>
-            <strong className="text-zinc-900 dark:text-zinc-200">React to messages</strong> -{" "}
+            <strong className="text-emphasis">React to messages</strong> -{" "}
             {emoji ? (
               <>
                 React with{" "}
@@ -119,7 +117,7 @@ export function DiscordBotSettings() {
             )}
           </li>
           <li>
-            <strong className="text-zinc-900 dark:text-zinc-200">Look for the reaction</strong> -{" "}
+            <strong className="text-emphasis">Look for the reaction</strong> -{" "}
             {successEmoji ? (
               <>
                 The bot will react with{" "}
@@ -147,26 +145,26 @@ export function DiscordBotSettings() {
             )}
           </li>
           <li>
-            <strong className="text-zinc-900 dark:text-zinc-200">Check your Saved</strong> - The
-            article will appear in your Saved section
+            <strong className="text-emphasis">Check your Saved</strong> - The article will appear in
+            your Saved section
           </li>
         </ol>
       </CardSection>
 
       {/* Bot Commands */}
       <NoteBox className="mt-6">
-        <h3 className="ui-text-sm font-medium text-zinc-900 dark:text-zinc-100">Bot Commands</h3>
-        <dl className="ui-text-sm mt-2 space-y-2 text-zinc-600 dark:text-zinc-400">
+        <h3 className="ui-text-sm text-strong font-medium">Bot Commands</h3>
+        <dl className="ui-text-sm text-muted mt-2 space-y-2">
           <div>
-            <dt className="inline font-mono text-zinc-800 dark:text-zinc-200">/status</dt>
+            <dt className="text-emphasis inline font-mono">/status</dt>
             <dd className="ml-2 inline">- Check if your Discord account is linked</dd>
           </div>
           <div>
-            <dt className="inline font-mono text-zinc-800 dark:text-zinc-200">/link [token]</dt>
+            <dt className="text-emphasis inline font-mono">/link [token]</dt>
             <dd className="ml-2 inline">- Link your account using an API token</dd>
           </div>
           <div>
-            <dt className="inline font-mono text-zinc-800 dark:text-zinc-200">/unlink</dt>
+            <dt className="text-emphasis inline font-mono">/unlink</dt>
             <dd className="ml-2 inline">- Remove your linked API token</dd>
           </div>
         </dl>

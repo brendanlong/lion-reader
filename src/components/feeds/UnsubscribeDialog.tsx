@@ -46,8 +46,8 @@ export function UnsubscribeDialog({
 
       <DialogDescription>
         Are you sure you want to unsubscribe from{" "}
-        <span className="font-medium text-zinc-900 dark:text-zinc-50">{feedTitle}</span>? You can
-        always resubscribe later.
+        <span className="text-strong font-medium">{feedTitle}</span>? You can always resubscribe
+        later.
       </DialogDescription>
 
       <DialogFooter>

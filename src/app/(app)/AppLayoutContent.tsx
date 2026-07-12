@@ -89,7 +89,7 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
               sidebarCloseButton={
                 <button
                   onClick={() => setSidebarOpen(false)}
-                  className="flex h-10 w-10 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 active:bg-zinc-200 lg:hidden dark:text-zinc-400 dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
+                  className="text-subtle flex h-10 w-10 items-center justify-center rounded-md hover:bg-zinc-100 active:bg-zinc-200 lg:hidden dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
                   aria-label="Close navigation menu"
                 >
                   <CloseIcon className="h-5 w-5" />
@@ -98,7 +98,7 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
               mobileMenuButton={
                 <button
                   onClick={() => setSidebarOpen(true)}
-                  className="flex h-10 w-10 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 active:bg-zinc-200 lg:hidden dark:text-zinc-400 dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
+                  className="text-subtle flex h-10 w-10 items-center justify-center rounded-md hover:bg-zinc-100 active:bg-zinc-200 lg:hidden dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
                   aria-label="Open navigation menu"
                 >
                   <MenuIcon className="h-5 w-5" />
@@ -122,7 +122,7 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
                   <div className="relative">
                     <button
                       onClick={() => setUserMenuOpen(!userMenuOpen)}
-                      className="ui-text-sm flex min-h-[40px] items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 text-zinc-700 transition-colors hover:bg-zinc-50 active:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
+                      className="ui-text-sm border-edge-strong bg-surface text-body flex min-h-[40px] items-center gap-2 rounded-md border px-3 transition-colors hover:bg-zinc-50 active:bg-zinc-100 dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
                       aria-expanded={userMenuOpen}
                       aria-haspopup="true"
                     >
@@ -144,29 +144,29 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
                           className="fixed inset-0 z-10"
                           onClick={() => setUserMenuOpen(false)}
                         />
-                        <div className="absolute right-0 z-20 mt-1 w-48 rounded-md border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+                        <div className="border-edge-strong bg-surface absolute right-0 z-20 mt-1 w-48 rounded-md border py-1 shadow-lg">
                           <ClientLink
                             href="/settings"
                             onNavigate={() => setUserMenuOpen(false)}
-                            className="ui-text-sm flex min-h-[44px] items-center px-4 text-zinc-700 hover:bg-zinc-100 active:bg-zinc-200 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
+                            className="ui-text-sm text-body flex min-h-[44px] items-center px-4 hover:bg-zinc-100 active:bg-zinc-200 dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
                           >
                             Settings
                           </ClientLink>
                           <ClientLink
                             href="/settings/sessions"
                             onNavigate={() => setUserMenuOpen(false)}
-                            className="ui-text-sm flex min-h-[44px] items-center px-4 text-zinc-700 hover:bg-zinc-100 active:bg-zinc-200 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
+                            className="ui-text-sm text-body flex min-h-[44px] items-center px-4 hover:bg-zinc-100 active:bg-zinc-200 dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
                           >
                             Sessions
                           </ClientLink>
-                          <hr className="my-1 border-zinc-200 dark:border-zinc-700" />
+                          <hr className="border-edge-strong my-1" />
                           <button
                             onClick={() => {
                               setUserMenuOpen(false);
                               handleLogout();
                             }}
                             disabled={logoutMutation.isPending}
-                            className="ui-text-sm flex min-h-[44px] w-full items-center px-4 text-left text-zinc-700 hover:bg-zinc-100 active:bg-zinc-200 disabled:opacity-50 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
+                            className="ui-text-sm text-body flex min-h-[44px] w-full items-center px-4 text-left hover:bg-zinc-100 active:bg-zinc-200 disabled:opacity-50 dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
                           >
                             {logoutMutation.isPending ? "Signing out..." : "Sign out"}
                           </button>

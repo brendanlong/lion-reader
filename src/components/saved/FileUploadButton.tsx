@@ -177,7 +177,7 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
       <button
         type="button"
         onClick={handleOpen}
-        className={`ui-text-sm inline-flex min-h-[40px] items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-3 font-medium text-zinc-700 transition-colors hover:bg-zinc-50 focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none active:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:focus:ring-zinc-400 dark:active:bg-zinc-700 ${className}`}
+        className={`ui-text-sm border-edge-strong bg-surface text-body inline-flex min-h-[40px] items-center gap-1.5 rounded-md border px-3 font-medium transition-colors hover:bg-zinc-50 focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none active:bg-zinc-100 dark:hover:bg-zinc-800 dark:focus:ring-zinc-400 dark:active:bg-zinc-700 ${className}`}
         title="Upload file"
         aria-label="Upload file"
       >
@@ -210,7 +210,7 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
             onClick={handleBrowseClick}
             className={`cursor-pointer rounded-lg border-2 border-dashed p-8 text-center transition-colors ${
               isDragging
-                ? "border-zinc-500 bg-zinc-100 dark:border-zinc-400 dark:bg-zinc-800"
+                ? "bg-surface-muted border-zinc-500 dark:border-zinc-400"
                 : selectedFile
                   ? "border-green-500 bg-green-50 dark:border-green-600 dark:bg-green-900/20"
                   : "border-zinc-300 hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-600 dark:hover:border-zinc-500 dark:hover:bg-zinc-800"
@@ -227,25 +227,17 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
             {selectedFile ? (
               <div className="flex flex-col items-center">
                 <DocumentIcon className="h-10 w-10 text-green-600 dark:text-green-500" />
-                <p className="mt-2 font-medium text-zinc-900 dark:text-zinc-50">
-                  {selectedFile.name}
-                </p>
-                <p className="ui-text-sm text-zinc-500 dark:text-zinc-400">
-                  {formatFileSize(selectedFile.size)}
-                </p>
-                <p className="ui-text-xs mt-2 text-zinc-400 dark:text-zinc-500">
+                <p className="text-strong mt-2 font-medium">{selectedFile.name}</p>
+                <p className="ui-text-sm text-subtle">{formatFileSize(selectedFile.size)}</p>
+                <p className="ui-text-xs text-faint mt-2">
                   Click or drop a different file to replace
                 </p>
               </div>
             ) : (
               <div className="flex flex-col items-center">
-                <UploadIcon className="h-10 w-10 text-zinc-400 dark:text-zinc-500" />
-                <p className="mt-2 font-medium text-zinc-900 dark:text-zinc-50">
-                  Drop file here or click to browse
-                </p>
-                <p className="ui-text-sm text-zinc-500 dark:text-zinc-400">
-                  .docx, .html, .md up to 10MB
-                </p>
+                <UploadIcon className="text-faint h-10 w-10" />
+                <p className="text-strong mt-2 font-medium">Drop file here or click to browse</p>
+                <p className="ui-text-sm text-subtle">.docx, .html, .md up to 10MB</p>
               </div>
             )}
           </div>

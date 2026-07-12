@@ -39,29 +39,25 @@ export function ConsentForm({
     <div>
       {/* Application info */}
       <div className="mb-6 text-center">
-        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800">
-          <ShieldCheckIcon className="h-8 w-8 text-zinc-600 dark:text-zinc-400" />
+        <div className="bg-surface-muted mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full">
+          <ShieldCheckIcon className="text-muted h-8 w-8" />
         </div>
-        <h2 className="ui-text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-          Authorize {clientName}
-        </h2>
-        <p className="ui-text-sm mt-2 text-zinc-600 dark:text-zinc-400">
+        <h2 className="ui-text-lg text-strong font-semibold">Authorize {clientName}</h2>
+        <p className="ui-text-sm text-muted mt-2">
           This application wants to access your Lion Reader account
         </p>
       </div>
 
       {/* Requested permissions */}
-      <div className="mb-6 rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800/50">
-        <h3 className="ui-text-sm mb-3 font-medium text-zinc-900 dark:text-zinc-100">
+      <div className="border-edge-strong bg-surface-subtle mb-6 rounded-lg border p-4">
+        <h3 className="ui-text-sm text-strong mb-3 font-medium">
           This will allow {clientName} to:
         </h3>
         <ul className="space-y-2">
           {scopes.map((scope) => (
             <li key={scope.name} className="flex items-start gap-2">
               <CheckIcon className="mt-0.5 h-4 w-4 shrink-0 text-green-600 dark:text-green-400" />
-              <span className="ui-text-sm text-zinc-700 dark:text-zinc-300">
-                {scope.description}
-              </span>
+              <span className="ui-text-sm text-body">{scope.description}</span>
             </li>
           ))}
         </ul>
@@ -89,7 +85,7 @@ export function ConsentForm({
             type="submit"
             name="user_action"
             value="deny"
-            className="ui-text-sm flex-1 rounded-lg border border-zinc-300 bg-white px-4 py-2.5 font-medium text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+            className="ui-text-sm text-body flex-1 rounded-lg border border-zinc-300 bg-white px-4 py-2.5 font-medium transition-colors hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:hover:bg-zinc-700"
           >
             Deny
           </button>

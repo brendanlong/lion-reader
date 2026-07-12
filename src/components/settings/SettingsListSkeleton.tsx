@@ -25,7 +25,7 @@ export function SettingsListSkeleton({
         {items.map((i) => (
           <div
             key={i}
-            className={`${height} animate-pulse rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900`}
+            className={`${height} border-edge bg-surface animate-pulse rounded-lg border`}
           />
         ))}
       </>
@@ -37,7 +37,7 @@ export function SettingsListSkeleton({
       {items.map((i) => (
         <div
           key={i}
-          className={`mb-4 ${height} animate-pulse rounded bg-zinc-100 last:mb-0 dark:bg-zinc-800`}
+          className={`mb-4 ${height} bg-surface-muted animate-pulse rounded last:mb-0`}
         />
       ))}
     </div>

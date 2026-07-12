@@ -75,11 +75,11 @@ export default function DeleteAccountSettingsContent() {
         <h2 className="ui-text-lg mb-4 font-semibold text-red-600 dark:text-red-400">
           Delete Account
         </h2>
-        <div className="rounded-lg border border-red-200 bg-white p-6 dark:border-red-900/50 dark:bg-zinc-900">
-          <p className="ui-text-sm text-zinc-600 dark:text-zinc-400">
+        <div className="bg-surface rounded-lg border border-red-200 p-6 dark:border-red-900/50">
+          <p className="ui-text-sm text-muted">
             Permanently delete your account and all associated data. This action cannot be undone.
           </p>
-          <p className="ui-text-sm mt-2 text-zinc-600 dark:text-zinc-400">
+          <p className="ui-text-sm text-muted mt-2">
             This will delete your subscriptions, reading history, starred items, tags, saved
             articles, email ingest addresses, AI summaries, sessions, API tokens, and all other
             account data.
@@ -113,10 +113,7 @@ export default function DeleteAccountSettingsContent() {
               {error}
             </Alert>
           )}
-          <label
-            htmlFor="delete-confirmation"
-            className="ui-text-sm text-zinc-700 dark:text-zinc-300"
-          >
+          <label htmlFor="delete-confirmation" className="ui-text-sm text-body">
             Type <span className="font-semibold">delete</span> to confirm:
           </label>
           <Input

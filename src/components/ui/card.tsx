@@ -37,7 +37,7 @@ export function Card({ children, padding = "lg", className = "" }: CardProps) {
 
   return (
     <div
-      className={`rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 ${paddingStyles[padding]} ${className}`}
+      className={`border-edge bg-surface rounded-lg border ${paddingStyles[padding]} ${className}`}
     >
       {children}
     </div>
@@ -65,11 +65,7 @@ export interface CardTitleProps {
 }
 
 export function CardTitle({ children, className = "" }: CardTitleProps) {
-  return (
-    <h3 className={`ui-text-base font-semibold text-zinc-900 dark:text-zinc-50 ${className}`}>
-      {children}
-    </h3>
-  );
+  return <h3 className={`ui-text-base text-strong font-semibold ${className}`}>{children}</h3>;
 }
 
 /**
@@ -81,9 +77,7 @@ export interface CardDescriptionProps {
 }
 
 export function CardDescription({ children, className = "" }: CardDescriptionProps) {
-  return (
-    <p className={`ui-text-sm mt-1 text-zinc-500 dark:text-zinc-400 ${className}`}>{children}</p>
-  );
+  return <p className={`ui-text-sm text-subtle mt-1 ${className}`}>{children}</p>;
 }
 
 /**
@@ -120,11 +114,7 @@ export interface CardSectionProps {
 }
 
 export function CardSection({ children, className = "" }: CardSectionProps) {
-  return (
-    <div className={`mt-6 border-t border-zinc-200 pt-6 dark:border-zinc-700 ${className}`}>
-      {children}
-    </div>
-  );
+  return <div className={`border-edge-strong mt-6 border-t pt-6 ${className}`}>{children}</div>;
 }
 
 /**

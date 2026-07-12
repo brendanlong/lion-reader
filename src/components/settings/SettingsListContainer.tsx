@@ -43,9 +43,7 @@ export function SettingsListContainer<T>({
   skeletonHeight,
   footer,
 }: SettingsListContainerProps<T>) {
-  const defaultEmpty = (
-    <p className="ui-text-sm text-center text-zinc-500 dark:text-zinc-400">{emptyMessage}</p>
-  );
+  const defaultEmpty = <p className="ui-text-sm text-subtle text-center">{emptyMessage}</p>;
 
   const resolvedEmptyState = emptyState ?? defaultEmpty;
 
@@ -76,7 +74,7 @@ export function SettingsListContainer<T>({
       ) : !items || items.length === 0 ? (
         resolvedEmptyState
       ) : (
-        <div className="divide-y divide-zinc-200 dark:divide-zinc-800">{items.map(renderItem)}</div>
+        <div className="divide-edge divide-y">{items.map(renderItem)}</div>
       )}
       {footer}
     </Card>

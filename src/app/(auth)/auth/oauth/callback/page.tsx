@@ -287,7 +287,7 @@ function OAuthCallbackContent() {
 
   return (
     <div className="flex flex-col items-center justify-center">
-      <h2 className="ui-text-xl mb-6 font-semibold text-zinc-900 dark:text-zinc-50">
+      <h2 className="ui-text-xl text-strong mb-6 font-semibold">
         {errorMessage
           ? isSaveMode
             ? "Permission Error"
@@ -300,14 +300,14 @@ function OAuthCallbackContent() {
       {errorMessage ? (
         <div className="text-center">
           <p className="ui-text-sm mb-4 text-red-600 dark:text-red-400">{errorMessage}</p>
-          <p className="ui-text-sm text-zinc-600 dark:text-zinc-400">
+          <p className="ui-text-sm text-muted">
             Redirecting to {isSaveMode ? "save" : isLinkMode ? "settings" : "login"} page...
           </p>
         </div>
       ) : (
         <div className="flex flex-col items-center gap-4">
-          <SpinnerIcon className="h-8 w-8 text-zinc-900 dark:text-zinc-100" />
-          <p className="ui-text-sm text-zinc-600 dark:text-zinc-400">
+          <SpinnerIcon className="text-strong h-8 w-8" />
+          <p className="ui-text-sm text-muted">
             Please wait while we complete{" "}
             {isSaveMode
               ? "granting permissions"

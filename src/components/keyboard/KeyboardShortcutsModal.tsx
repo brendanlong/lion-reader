@@ -94,10 +94,7 @@ export function KeyboardShortcutsModal({ isOpen, onClose }: KeyboardShortcutsMod
     >
       {/* Header */}
       <DialogHeader className="flex items-center justify-between">
-        <h2
-          id="shortcuts-title"
-          className="ui-text-lg font-semibold text-zinc-900 dark:text-zinc-50"
-        >
+        <h2 id="shortcuts-title" className="ui-text-lg text-strong font-semibold">
           Keyboard Shortcuts
         </h2>
         <IconButton
@@ -112,21 +109,15 @@ export function KeyboardShortcutsModal({ isOpen, onClose }: KeyboardShortcutsMod
       <DialogBody className="space-y-6">
         {SHORTCUT_SECTIONS.map((section) => (
           <div key={section.title}>
-            <h3 className="ui-text-sm mb-3 font-medium text-zinc-500 dark:text-zinc-400">
-              {section.title}
-            </h3>
+            <h3 className="ui-text-sm text-subtle mb-3 font-medium">{section.title}</h3>
             <div className="space-y-2">
               {section.shortcuts.map((shortcut) => (
                 <div key={shortcut.description} className="flex items-center justify-between py-1">
-                  <span className="ui-text-sm text-zinc-700 dark:text-zinc-300">
-                    {shortcut.description}
-                  </span>
+                  <span className="ui-text-sm text-body">{shortcut.description}</span>
                   <div className="flex items-center gap-1">
                     {shortcut.keys.map((key, index) => (
                       <span key={index} className="flex items-center gap-1">
-                        {index > 0 && (
-                          <span className="ui-text-xs text-zinc-400 dark:text-zinc-500">then</span>
-                        )}
+                        {index > 0 && <span className="ui-text-xs text-faint">then</span>}
                         <Kbd>{key}</Kbd>
                       </span>
                     ))}
@@ -139,8 +130,8 @@ export function KeyboardShortcutsModal({ isOpen, onClose }: KeyboardShortcutsMod
       </DialogBody>
 
       {/* Footer */}
-      <DialogFooter className="flex-col items-stretch border-t border-zinc-200 pt-4 dark:border-zinc-700">
-        <p className="ui-text-xs mb-4 text-zinc-500 dark:text-zinc-400">
+      <DialogFooter className="border-edge-strong flex-col items-stretch border-t pt-4">
+        <p className="ui-text-xs text-subtle mb-4">
           Keyboard shortcuts can be disabled in Settings.
         </p>
         <div className="flex justify-end">

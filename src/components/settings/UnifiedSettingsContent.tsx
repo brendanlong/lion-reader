@@ -88,12 +88,12 @@ export function UnifiedSettingsContent() {
       <div className="mb-8">
         <ClientLink
           href="/all"
-          className="ui-text-sm mb-4 inline-flex items-center text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+          className="ui-text-sm text-subtle mb-4 inline-flex items-center hover:text-zinc-700 dark:hover:text-zinc-200"
         >
           <ChevronLeftIcon className="mr-1 h-4 w-4" />
           Back to feeds
         </ClientLink>
-        <h1 className="ui-text-2xl font-bold text-zinc-900 dark:text-zinc-50">Settings</h1>
+        <h1 className="ui-text-2xl text-strong font-bold">Settings</h1>
       </div>
 
       <div className="flex flex-col gap-8 md:flex-row">
@@ -108,8 +108,8 @@ export function UnifiedSettingsContent() {
                     href={link.href}
                     className={`ui-text-sm block rounded-md px-3 py-2 font-medium whitespace-nowrap transition-colors ${
                       isActive
-                        ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
-                        : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
+                        ? "bg-surface-muted text-strong"
+                        : "text-muted hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
                     }`}
                   >
                     {link.label}
