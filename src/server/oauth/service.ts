@@ -701,6 +701,7 @@ export interface ClientRegistrationResponse {
   client_secret?: string;
   client_id_issued_at?: number;
   client_secret_expires_at?: number;
+  client_secret_issued_at?: number;
   registration_client_uri?: string;
   redirect_uris: string[];
   token_endpoint_auth_method: string;
@@ -899,6 +900,12 @@ export async function registerClient(
   if (clientSecret) {
     response.client_secret = clientSecret;
     response.client_secret_expires_at = 0; // 0 means it doesn't expire
+    // Not an RFC 7591 field, but BOTH Notion and Linear include it in
+    // confidential-client registrations and they are the reference targets the
+    // claude.ai connector demonstrably works against — a strict client response
+    // model built against them could require it whenever client_secret is
+    // present. Cheap parity; observed during the #986 subdomain debugging.
+    response.client_secret_issued_at = Math.floor(now.getTime() / 1000);
   }
 
   // Add optional fields if provided

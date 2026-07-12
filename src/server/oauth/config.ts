@@ -181,7 +181,7 @@ export function getAuthorizationServerMetadata(host?: string | null) {
     // settings) unsupported. Shared with /oauth/register validation so the two
     // can't drift apart again.
     token_endpoint_auth_methods_supported: SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS,
-    // NB: we intentionally do NOT advertise `client_id_metadata_document_supported`.
+    // NB: we intentionally do NOT advertise CIMD *support* (i.e. never `true`).
     // Clients pick their registration method by priority: pre-registered → CIMD →
     // DCR. claude.ai treats CIMD (when advertised alongside `"none"` auth) as
     // preferred and sets up the client entirely client-side (its own metadata-doc
@@ -193,6 +193,12 @@ export function getAuthorizationServerMetadata(host?: string | null) {
     // (and other clients) to Dynamic Client Registration, which works. The
     // server-side CIMD resolution in `resolveClient` is retained, so a client that
     // explicitly presents a URL client_id still works.
+    //
+    // The flag is set to an EXPLICIT `false` (rather than omitted) for parity
+    // with Sentry, which works with the claude.ai connector while advertising
+    // exactly this. Omission and false should read the same to a spec-correct
+    // client, but a strict/buggy one may treat a missing key differently.
+    client_id_metadata_document_supported: false,
   };
 }
 
@@ -206,5 +212,8 @@ export function getProtectedResourceMetadata(host?: string | null) {
     authorization_servers: [getIssuer(host)],
     scopes_supported: Object.values(OAUTH_SCOPES),
     bearer_methods_supported: ["header"],
+    // RFC 9728 §2 display name; Notion includes it and clients may show it in
+    // their connect UI.
+    resource_name: "Lion Reader",
   };
 }

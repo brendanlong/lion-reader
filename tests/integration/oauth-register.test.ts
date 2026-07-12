@@ -54,6 +54,9 @@ describe("OAuth Dynamic Client Registration auth methods", () => {
         expect(result.data.token_endpoint_auth_method).toBe(method);
         expect(result.data.client_secret).toBeTruthy();
         expect(result.data.client_secret_expires_at).toBe(0);
+        // Notion and Linear both include this alongside client_secret; a strict
+        // client response model built against them may require it (#986).
+        expect(result.data.client_secret_issued_at).toBe(result.data.client_id_issued_at);
       }
     }
   );
