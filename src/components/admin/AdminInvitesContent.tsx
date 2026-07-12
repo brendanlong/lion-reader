@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { StatusCard } from "@/components/ui/card";
+import { Card, StatusCard } from "@/components/ui/card";
 import { ClientLink } from "@/components/ui/client-link";
 import { CopyIcon, SpinnerIcon } from "@/components/ui/icon-button";
 
@@ -353,7 +353,7 @@ export default function AdminInvitesContent() {
       ) : invites.length === 0 ? (
         <EmptyState hasSearch={debouncedSearch.length > 0} />
       ) : (
-        <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+        <Card padding="none">
           {invites.map((invite) => (
             <InviteRow
               key={invite.id}
@@ -380,7 +380,7 @@ export default function AdminInvitesContent() {
               No more invites
             </p>
           )}
-        </div>
+        </Card>
       )}
     </div>
   );
