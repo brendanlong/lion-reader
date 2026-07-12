@@ -136,7 +136,6 @@ export function getAcceptedResourceIdentifiers(): string[] {
 }
 
 /**
- * OAuth 2.0 Authorization Server Metadata (RFC 8414)
  * The `registration_client_uri` returned from Dynamic Client Registration
  * (RFC 7591). Host-derived like the advertised endpoints: a registration on the
  * MCP host must not reference the apex origin — a cross-origin URI in the
@@ -151,6 +150,7 @@ export function getRegistrationClientUri(clientId: string, host?: string | null)
 }
 
 /**
+ * OAuth 2.0 Authorization Server Metadata (RFC 8414)
  * Used by /.well-known/oauth-authorization-server
  */
 export function getAuthorizationServerMetadata(host?: string | null) {
