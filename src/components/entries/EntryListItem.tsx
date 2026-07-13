@@ -197,15 +197,15 @@ export const EntryListItem = memo(function EntryListItem({
               <span
                 className={`block h-2.5 w-2.5 rounded-full transition-colors ${
                   read
-                    ? "group-hover/toggle:border-accent group-hover/toggle:bg-accent-subtle border-edge-input border bg-transparent"
-                    : "bg-accent-muted group-hover/toggle:bg-accent dark:bg-accent dark:group-hover/toggle:bg-accent-hover"
+                    ? "group-hover/toggle:border-edge-strong group-hover/toggle:bg-surface-muted border-edge-input border bg-transparent"
+                    : "bg-strong group-hover/toggle:bg-muted"
                 }`}
               />
             </button>
           ) : (
             <span
               className={`block h-2.5 w-2.5 rounded-full ${
-                read ? "border-edge-input border bg-transparent" : "bg-accent-muted dark:bg-accent"
+                read ? "border-edge-input border bg-transparent" : "bg-strong"
               }`}
               aria-hidden="true"
             />

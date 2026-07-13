@@ -10,16 +10,8 @@
 import { useEffect, useRef, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Button } from "@/components/ui/button";
-import {
-  StarIcon,
-  StarFilledIcon,
-  CircleIcon,
-  CircleFilledIcon,
-  SpinnerIcon,
-  SparklesIcon,
-  AlertIcon,
-  ArrowLeftIcon,
-} from "@/components/ui/icon-button";
+import { SpinnerIcon, SparklesIcon, AlertIcon, ArrowLeftIcon } from "@/components/ui/icon-button";
+import { StarButton, ReadToggleButton } from "@/components/entries/EntryStateButtons";
 import { SummaryCard } from "@/components/summarization/SummaryCard";
 import { NarrationControls } from "@/components/narration";
 import { NarrationHighlightStyles } from "@/components/narration/NarrationHighlightStyles";
@@ -346,28 +338,9 @@ export function EntryContentBody({
       }
       actionButtons={
         <div ref={actionButtonsRef} className="flex flex-wrap items-center gap-2 sm:gap-3">
-          {/* Star button */}
-          <Button
-            variant={starred ? "primary" : "secondary"}
-            size="sm"
-            onClick={onToggleStar}
-            aria-label={starred ? "Remove from starred" : "Add to starred"}
-          >
-            {starred ? <StarFilledIcon className="h-5 w-5" /> : <StarIcon className="h-5 w-5" />}
-            <span className="ml-2">{starred ? "Starred" : "Star"}</span>
-          </Button>
-
-          {/* Mark read/unread button */}
-          <Button
-            variant={!read ? "primary" : "secondary"}
-            size="sm"
-            onClick={onToggleRead}
-            aria-label={read ? "Mark as unread" : "Mark as read"}
-            title="Keyboard shortcut: m"
-          >
-            {read ? <CircleIcon className="h-4 w-4" /> : <CircleFilledIcon className="h-4 w-4" />}
-            <span className="ml-2">{read ? "Read" : "Unread"}</span>
-          </Button>
+          {/* Star + Read/Unread toggles (shared with the fallback and demo readers) */}
+          <StarButton starred={starred} onToggle={onToggleStar} />
+          <ReadToggleButton read={read} onToggle={onToggleRead} />
 
           {/* Content view toggle - only show when both versions exist and not showing full content */}
           {hasBothVersions && (
