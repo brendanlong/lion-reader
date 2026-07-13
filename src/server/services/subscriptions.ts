@@ -19,6 +19,7 @@ import { generateUuidv7 } from "@/lib/uuidv7";
 import { logger } from "@/lib/logger";
 import { usageLimitsConfig } from "@/server/config/env";
 import { ensureFeedJob } from "@/server/jobs/queue";
+import { feedDefaultsToFullContent } from "@/server/plugins";
 import { publishSubscriptionCreated } from "@/server/redis/pubsub";
 import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
 import { errors } from "@/server/trpc/errors";
@@ -410,6 +411,11 @@ export async function createSubscription(
   // 2. Ensure background fetch job exists
   await ensureFeedJob(feedId);
 
+  // A plugin may opt a source into full-content-by-default (e.g. Bluesky, whose
+  // RSS drops embedded content). Applied only to a fresh subscribe below; a
+  // resubscribe keeps the user's stored preference.
+  const defaultFullContent = feedDefaultsToFullContent(feed.url);
+
   // 3–5. Cap check + subscription upsert + user_entries populate, all in ONE
   //       transaction. Previously these were separate statements: a crash
   //       between them could leave a half-created subscription, and
@@ -491,8 +497,8 @@ export async function createSubscription(
       custom_title: string | null;
       fetch_full_content: boolean;
     }>(sql`
-      INSERT INTO subscriptions (id, user_id, feed_id, subscribed_at, created_at, updated_at)
-      VALUES (${newSubscriptionId}, ${userId}, ${feedId}, ${subscribedAt}, ${subscribedAt}, ${subscribedAt})
+      INSERT INTO subscriptions (id, user_id, feed_id, subscribed_at, created_at, updated_at, fetch_full_content)
+      VALUES (${newSubscriptionId}, ${userId}, ${feedId}, ${subscribedAt}, ${subscribedAt}, ${subscribedAt}, ${defaultFullContent})
       ON CONFLICT (user_id, feed_id) DO UPDATE SET
         unsubscribed_at = NULL,
         subscribed_at = ${subscribedAt},
