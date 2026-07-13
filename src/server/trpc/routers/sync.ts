@@ -21,6 +21,7 @@ import {
 import { syncTagSchema, serverSyncEventSchema, toNewEntryListData } from "@/lib/events/schemas";
 import type { Database } from "@/server/db";
 import { getBulkEntryRelatedCounts } from "@/server/services/counts";
+import { getSavedFeedId } from "@/server/feed/saved-feed";
 
 // ============================================================================
 // Helpers
@@ -265,7 +266,93 @@ export const syncRouter = createTRPCRouter({
 
         const greatest = sql`GREATEST(${entries.updatedAt}, ${userEntries.updatedAt})`;
 
+        // ── Index-driven candidate set (issue #1105) ──────────────────────────
+        // The delta filters and sorts on GREATEST(entries.updated_at,
+        // user_entries.updated_at). That value spans two tables, so no index can
+        // serve it: the old query scanned + sorted the user's ENTIRE history on
+        // every call (LIMIT gave no help — the sort must see every row first).
+        // This is the SSE-down polling fallback, so a Redis outage turned every
+        // open tab into a repeating full-timeline scan.
+        //
+        // Since GREATEST(e, ue) > cursor  ⟺  e.updated_at > cursor OR
+        // ue.updated_at > cursor, generate candidates from index-driven arms,
+        // UNION them, then decorate + keyset the (now bounded) result:
+        //
+        //   Arm A  — user_entries.updated_at (idx_user_entries_updated_at). Covers
+        //            every state change (read/star flips, mark-all-read) AND new
+        //            entries: the feed fanout inserts user_entries rows with
+        //            updated_at = now(), so new entries ride this arm too.
+        //   Arm B1 — entries.updated_at for the user's SUBSCRIBED feeds. Catches
+        //            content refetches that bump entries.updated_at WITHOUT
+        //            touching the user_entries row (updateEntryContent) — the case
+        //            Arm A misses. Pre-filtered to feeds whose
+        //            last_entries_updated_at moved (it is stamped >= every
+        //            entry.updated_at in the feed, so it never drops a changed
+        //            entry), then seeks idx_entries_feed_updated_at.
+        //   Arm B2 — same, for the user's saved-articles feed (no subscription
+        //            row, and saved feeds are never polled so their
+        //            last_entries_updated_at stays NULL — so it is keyed by the
+        //            feed id directly).
+        //
+        // Arms compare with `>=` so a tied-timestamp boundary row is still a
+        // candidate; the outer query re-applies the exact `(GREATEST, id)` keyset
+        // (afterCursor) so pagination within a tied group stays correct (#1080).
+        // Driving Arm B1 from subscriptions can surface an entry from an
+        // unsubscribed feed, but the outer visibility predicate drops it unless
+        // it is starred — matching visible_entries.
+        const cursorTs = sql`${entriesCursor}::timestamptz`;
+
+        const stateChangedCandidates = ctx.db
+          .select({ entryId: userEntries.entryId })
+          .from(userEntries)
+          .where(and(eq(userEntries.userId, userId), sql`${userEntries.updatedAt} >= ${cursorTs}`));
+
+        const subscribedEntryCandidates = ctx.db
+          .select({ entryId: userEntries.entryId })
+          .from(subscriptions)
+          .innerJoin(
+            feeds,
+            and(
+              eq(feeds.id, subscriptions.feedId),
+              sql`${feeds.lastEntriesUpdatedAt} >= ${cursorTs}`
+            )
+          )
+          .innerJoin(
+            entries,
+            and(eq(entries.feedId, subscriptions.feedId), sql`${entries.updatedAt} >= ${cursorTs}`)
+          )
+          .innerJoin(
+            userEntries,
+            and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, subscriptions.userId))
+          )
+          .where(eq(subscriptions.userId, userId));
+
+        // Saved-articles arm: keyed by the saved feed id (no subscription row,
+        // and last_entries_updated_at is never set on saved feeds).
+        const savedFeedId = await getSavedFeedId(ctx.db, userId);
+        const savedEntryCandidates = savedFeedId
+          ? ctx.db
+              .select({ entryId: userEntries.entryId })
+              .from(userEntries)
+              .innerJoin(
+                entries,
+                and(
+                  eq(entries.id, userEntries.entryId),
+                  eq(entries.feedId, savedFeedId),
+                  sql`${entries.updatedAt} >= ${cursorTs}`
+                )
+              )
+              .where(eq(userEntries.userId, userId))
+          : null;
+
+        const candidates = savedEntryCandidates
+          ? stateChangedCandidates.union(subscribedEntryCandidates).union(savedEntryCandidates)
+          : stateChangedCandidates.union(subscribedEntryCandidates);
+
+        const changed = ctx.db.$with("changed_entries").as(candidates);
+
         const changedEntryResults = await ctx.db
+          .with(changed)
           .select({
             id: entries.id,
             title: entries.title,
@@ -290,13 +377,16 @@ export const syncRouter = createTRPCRouter({
             // Raw ISO string with µs precision for cursor/timestamp output
             maxUpdatedAtRaw: sql<string>`to_char(${greatest} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
           })
-          .from(userEntries)
+          .from(changed)
+          .innerJoin(
+            userEntries,
+            and(eq(userEntries.userId, userId), eq(userEntries.entryId, changed.entryId))
+          )
           .innerJoin(entries, eq(entries.id, userEntries.entryId))
           .innerJoin(feeds, eq(feeds.id, entries.feedId))
           .leftJoin(subscriptions, eq(subscriptions.id, userEntries.subscriptionId))
           .where(
             and(
-              eq(userEntries.userId, userId),
               afterCursor(greatest),
               // Fail-closed visibility, matching the visible_entries view
               // (migration 0073): an entry is visible only via an ACTIVE

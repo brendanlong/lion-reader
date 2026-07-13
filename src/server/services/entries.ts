@@ -585,9 +585,16 @@ export async function listEntries(
   // "Modified since" filter (Wallabag `since` delta sync). visibleEntries.updatedAt is
   // GREATEST(entry.updated_at, user_entries.updated_at), so this captures new saves,
   // content refetches, AND read/star state changes — the same value we return as the
-  // entry's updated_at, so the filter and the reported timestamp can't disagree. The
-  // GREATEST spans two tables so no single index covers it; the userId predicate bounds
-  // the scan to one user's rows (the exact set an un-filtered client would re-page).
+  // entry's updated_at, so the filter and the reported timestamp can't disagree.
+  //
+  // The GREATEST spans two tables so no single index covers it — but here (unlike
+  // the old sync.events, which #1105 rewrote into an index-driven UNION) it is only
+  // a RESIDUAL filter, not the sort key: the query still sorts by
+  // publishedOrFetchedAt (idx_user_entries_published_or_fetched) with LIMIT
+  // pushdown. The Wallabag caller also scopes to type='saved', so the scan is
+  // bounded to the user's read-it-later library, not the whole timeline. That keeps
+  // the acute #1105 problem (a mandatory full sort of the user's entire history)
+  // from applying, so this path deliberately keeps the simple residual filter.
   if (params.updatedAfter) {
     conditions.push(sql`${visibleEntries.updatedAt} >= ${params.updatedAfter}`);
   }
