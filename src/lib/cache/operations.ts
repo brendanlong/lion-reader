@@ -261,28 +261,36 @@ export function handleSubscriptionDeleted(
   counts?: EntryRelatedCounts
 ): void {
   // Look up the cached subscription before removing it, so we can target the
-  // affected subscription-list queries.
+  // affected subscription-list queries and know whether a structural removal is
+  // needed at all.
   const subscription = queryClient
     ? findCachedSubscription(queryClient, subscriptionId)
-    : undefined;
+    : getSubscriptionLookupMap().get(subscriptionId);
 
-  // Remove from all subscription caches (structural).
-  removeSubscriptionFromCache(subscriptionId);
-  if (queryClient) {
-    removeSubscriptionFromInfiniteQueries(queryClient, subscriptionId);
+  // Structural removal only runs when the subscription is actually cached. A
+  // subscription may be uncached because the acting tab already removed it
+  // optimistically, or because it was never loaded (e.g. tags collapsed, so the
+  // per-tag subscriptions.list was never fetched). In the latter case the event
+  // still carries real state changes, so the count/entries updates below must
+  // still run — they were previously skipped entirely, leaving inflated counts
+  // and the deleted feed's entries in the list until an unrelated event (#1081).
+  if (subscription) {
+    removeSubscriptionFromCache(subscriptionId);
+    if (queryClient) {
+      removeSubscriptionFromInfiniteQueries(queryClient, subscriptionId);
+      invalidateSubscriptionListsForTags(
+        queryClient,
+        subscription.tags.map((t) => t.id),
+        subscription.tags.length === 0
+      );
+    } else {
+      utils.subscriptions.list.invalidate();
+    }
   }
 
-  // Refresh the affected subscription list queries.
-  if (subscription && queryClient) {
-    invalidateSubscriptionListsForTags(
-      queryClient,
-      subscription.tags.map((t) => t.id),
-      subscription.tags.length === 0
-    );
-  } else {
-    utils.subscriptions.list.invalidate();
-  }
-
+  // Counts and the entries.list refresh are idempotent (absolute counts; the
+  // list refetch just re-filters), so they run unconditionally regardless of
+  // whether the subscription was cached.
   applySubscriptionCounts(utils, counts, queryClient);
 
   // Always invalidate entries.list - entries from this subscription should be filtered out
@@ -666,9 +674,20 @@ export async function applyOptimisticStarredUpdate(
   // - Cancelling entries.list would disrupt scrolling/loading
   // - If a fetch completes with stale starred status, onSuccess will correct it immediately
 
-  // Snapshot previous state for rollback
+  // Snapshot the previous state for rollback. Prefer entries.get, but fall back
+  // to the list cache: an entry starred from the list view often has no
+  // entries.get entry, and defaulting to `!starred` would make a failed star of
+  // an already-starred entry (or a non-toggle star/unstar) "roll back" to the
+  // state the failed mutation wanted, silently diverging from the server. This
+  // mirrors applyOptimisticReadUpdate's list-cache fallback (#1081).
   const previousEntry = utils.entries.get.getData({ id: entryId });
-  const wasStarred = previousEntry?.entry?.starred ?? !starred;
+  let wasStarred: boolean;
+  if (previousEntry?.entry) {
+    wasStarred = previousEntry.entry.starred;
+  } else {
+    const listEntry = findEntryInListCache(queryClient, entryId);
+    wasStarred = listEntry ? listEntry.starred : !starred;
+  }
 
   // Optimistically update the cache
   updateEntryStarredStatus(utils, entryId, starred, queryClient);
