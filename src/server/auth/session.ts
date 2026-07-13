@@ -86,7 +86,6 @@ interface CachedSession {
   userCreatedAt: string;
   userUpdatedAt: string;
   userEmailVerifiedAt: string | null;
-  userPasswordHash?: string | null; // deprecated: no longer cached but kept for compat with old cache entries
   userInviteId: string | null;
   userShowSpam: boolean;
   userHasGroqApiKey: boolean;
