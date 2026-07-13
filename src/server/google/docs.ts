@@ -1288,9 +1288,6 @@ async function fetchPublicGoogleDoc(
     return null;
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
-
   // Track if we should try Drive API fallback
   let shouldTryDriveFallback = false;
 
@@ -1307,7 +1304,7 @@ async function fetchPublicGoogleDoc(
         Authorization: `Bearer ${accessToken}`,
         "User-Agent": USER_AGENT,
       },
-      signal: controller.signal,
+      signal: AbortSignal.timeout(API_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -1381,7 +1378,7 @@ async function fetchPublicGoogleDoc(
       }
     }
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
+    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
       logger.warn("Google Docs API request timed out, trying Drive API fallback", { docId });
       shouldTryDriveFallback = true;
     } else {
@@ -1391,8 +1388,6 @@ async function fetchPublicGoogleDoc(
       });
       shouldTryDriveFallback = true;
     }
-  } finally {
-    clearTimeout(timeout);
   }
 
   // Try Drive API fallback for .docx files
@@ -1431,9 +1426,6 @@ export async function fetchPrivateGoogleDoc(
   accessToken: string,
   tabId: string | null = null
 ): Promise<GoogleDocsContent | null> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
-
   // Track if we should try Drive API fallback and why
   let shouldTryDriveFallback = false;
   let docsApiError: Error | null = null;
@@ -1451,7 +1443,7 @@ export async function fetchPrivateGoogleDoc(
         Authorization: `Bearer ${accessToken}`,
         "User-Agent": USER_AGENT,
       },
-      signal: controller.signal,
+      signal: AbortSignal.timeout(API_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -1522,7 +1514,7 @@ export async function fetchPrivateGoogleDoc(
       }
     }
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
+    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
       logger.warn("Google Docs API request timed out, trying Drive API fallback", { docId });
       shouldTryDriveFallback = true;
     } else if (error instanceof Error && error.message === "GOOGLE_TOKEN_INVALID") {
@@ -1535,8 +1527,6 @@ export async function fetchPrivateGoogleDoc(
       });
       shouldTryDriveFallback = true;
     }
-  } finally {
-    clearTimeout(timeout);
   }
 
   // Try Drive API fallback for .docx files

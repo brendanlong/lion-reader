@@ -147,9 +147,6 @@ async function tryFetchAsFeed(
   url: string,
   timeoutMs: number = DISCOVERY_PATH_TIMEOUT_MS
 ): Promise<DiscoveredFeed | null> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
   try {
     const response = await fetchWithSsrfProtection(url, {
       headers: {
@@ -158,7 +155,7 @@ async function tryFetchAsFeed(
           "application/rss+xml, application/atom+xml, application/feed+json, application/json, application/xml, text/xml, */*",
         "Accept-Encoding": ACCEPT_ENCODING,
       },
-      signal: controller.signal,
+      signal: AbortSignal.timeout(timeoutMs),
       redirect: "follow",
     });
 
@@ -191,8 +188,6 @@ async function tryFetchAsFeed(
     }
   } catch {
     return null;
-  } finally {
-    clearTimeout(timeoutId);
   }
 }
 

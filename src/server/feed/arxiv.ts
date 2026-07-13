@@ -118,9 +118,6 @@ async function checkArxivHtmlExists(url: string): Promise<ArxivHtmlCheckResult |
   const htmlUrl = buildArxivHtmlUrl(paperId);
   const fallbackUrl = buildArxivAbsUrl(paperId);
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FEED_FETCH_TIMEOUT_MS);
-
   try {
     // Use HEAD request to check if HTML version exists without downloading it
     const response = await fetch(htmlUrl, {
@@ -128,7 +125,7 @@ async function checkArxivHtmlExists(url: string): Promise<ArxivHtmlCheckResult |
       headers: {
         "User-Agent": USER_AGENT,
       },
-      signal: controller.signal,
+      signal: AbortSignal.timeout(FEED_FETCH_TIMEOUT_MS),
       redirect: "follow",
     });
 
@@ -142,7 +139,7 @@ async function checkArxivHtmlExists(url: string): Promise<ArxivHtmlCheckResult |
 
     return { exists, htmlUrl, fallbackUrl };
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
+    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
       logger.warn("ArXiv HTML check timed out", { paperId, htmlUrl });
     } else {
       logger.warn("ArXiv HTML check failed", {
@@ -153,8 +150,6 @@ async function checkArxivHtmlExists(url: string): Promise<ArxivHtmlCheckResult |
     }
     // On error, assume HTML doesn't exist and fall back
     return { exists: false, htmlUrl, fallbackUrl };
-  } finally {
-    clearTimeout(timeout);
   }
 }
 

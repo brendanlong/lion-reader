@@ -159,16 +159,13 @@ const CLIENT_METADATA_MAX_BYTES = 256 * 1024;
  * and size-limited.
  */
 async function fetchClientMetadata(url: string): Promise<ClientMetadata | null> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), CLIENT_METADATA_TIMEOUT_MS);
-
   try {
     const response = await fetchWithSsrfProtection(url, {
       headers: {
         Accept: "application/json",
         "User-Agent": USER_AGENT,
       },
-      signal: controller.signal,
+      signal: AbortSignal.timeout(CLIENT_METADATA_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -191,8 +188,6 @@ async function fetchClientMetadata(url: string): Promise<ClientMetadata | null> 
     return metadata;
   } catch {
     return null;
-  } finally {
-    clearTimeout(timeoutId);
   }
 }
 

@@ -239,9 +239,6 @@ export async function fetchUrl(url: string, options?: FetchUrlOptions): Promise<
   const userAgent = options?.userAgent ?? USER_AGENT;
   const maxSizeBytes = options?.maxSizeBytes ?? usageLimitsConfig.maxFeedSizeBytes;
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
   try {
     const response = await fetchWithSsrfProtection(url, {
       headers: {
@@ -249,7 +246,7 @@ export async function fetchUrl(url: string, options?: FetchUrlOptions): Promise<
         Accept: accept,
         "Accept-Encoding": ACCEPT_ENCODING,
       },
-      signal: controller.signal,
+      signal: AbortSignal.timeout(timeoutMs),
       redirect: "follow",
     });
 
@@ -266,7 +263,7 @@ export async function fetchUrl(url: string, options?: FetchUrlOptions): Promise<
     if (error instanceof ContentTooLargeError) {
       throw errors.contentTooLarge("Feed", maxSizeBytes);
     }
-    if (error instanceof Error && error.name === "AbortError") {
+    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
       throw errors.feedFetchError(url, "Request timed out");
     }
     if (error instanceof Error && "code" in error) {
@@ -274,8 +271,6 @@ export async function fetchUrl(url: string, options?: FetchUrlOptions): Promise<
       throw error;
     }
     throw errors.feedFetchError(url, error instanceof Error ? error.message : "Unknown error");
-  } finally {
-    clearTimeout(timeoutId);
   }
 }
 
@@ -306,41 +301,35 @@ export async function fetchHtmlPage(
   options?: { maxSizeBytes?: number }
 ): Promise<FetchHtmlPageResult> {
   const maxSizeBytes = options?.maxSizeBytes ?? usageLimitsConfig.maxSavedArticleSizeBytes;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), PAGE_FETCH_TIMEOUT_MS);
 
-  try {
-    const response = await fetchWithSsrfProtection(url, {
-      signal: controller.signal,
-      headers: {
-        "User-Agent": USER_AGENT,
-        Accept: HTML_ACCEPT_HEADER,
-        "Accept-Encoding": ACCEPT_ENCODING,
-      },
-      redirect: "follow",
-    });
+  const response = await fetchWithSsrfProtection(url, {
+    signal: AbortSignal.timeout(PAGE_FETCH_TIMEOUT_MS),
+    headers: {
+      "User-Agent": USER_AGENT,
+      Accept: HTML_ACCEPT_HEADER,
+      "Accept-Encoding": ACCEPT_ENCODING,
+    },
+    redirect: "follow",
+  });
 
-    if (!response.ok) {
-      throw new HttpFetchError(response.status, response.statusText, url);
-    }
-
-    const contentType = response.headers.get("content-type") || "";
-    const isMarkdown = contentType.includes("text/markdown");
-
-    // Accept markdown, HTML, or XHTML
-    if (
-      !isMarkdown &&
-      !contentType.includes("text/html") &&
-      !contentType.includes("application/xhtml+xml")
-    ) {
-      throw new Error(`Invalid content type: ${contentType}`);
-    }
-
-    const content = await readResponseWithSizeLimit(response, maxSizeBytes, url);
-    return { content, isMarkdown, finalUrl: response.url };
-  } finally {
-    clearTimeout(timeout);
+  if (!response.ok) {
+    throw new HttpFetchError(response.status, response.statusText, url);
   }
+
+  const contentType = response.headers.get("content-type") || "";
+  const isMarkdown = contentType.includes("text/markdown");
+
+  // Accept markdown, HTML, or XHTML
+  if (
+    !isMarkdown &&
+    !contentType.includes("text/html") &&
+    !contentType.includes("application/xhtml+xml")
+  ) {
+    throw new Error(`Invalid content type: ${contentType}`);
+  }
+
+  const content = await readResponseWithSizeLimit(response, maxSizeBytes, url);
+  return { content, isMarkdown, finalUrl: response.url };
 }
 
 // ============================================================================

@@ -306,9 +306,6 @@ const POST_QUERY = `
  * @returns Post content including HTML, or null if fetch fails
  */
 async function fetchLessWrongPost(postId: string): Promise<LessWrongPostContent | null> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), GRAPHQL_TIMEOUT_MS);
-
   try {
     const response = await fetch(LESSWRONG_GRAPHQL_ENDPOINT, {
       method: "POST",
@@ -321,7 +318,7 @@ async function fetchLessWrongPost(postId: string): Promise<LessWrongPostContent 
         query: POST_QUERY,
         variables: { postId },
       }),
-      signal: controller.signal,
+      signal: AbortSignal.timeout(GRAPHQL_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -400,7 +397,7 @@ async function fetchLessWrongPost(postId: string): Promise<LessWrongPostContent 
     if (error instanceof HttpFetchError) {
       throw error;
     }
-    if (error instanceof Error && error.name === "AbortError") {
+    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
       logger.warn("LessWrong GraphQL request timed out", { postId });
     } else {
       logger.warn("LessWrong GraphQL request error", {
@@ -409,8 +406,6 @@ async function fetchLessWrongPost(postId: string): Promise<LessWrongPostContent 
       });
     }
     return null;
-  } finally {
-    clearTimeout(timeout);
   }
 }
 
@@ -448,9 +443,6 @@ const COMMENT_QUERY = `
  * @returns Comment content including HTML, or null if fetch fails
  */
 async function fetchLessWrongComment(commentId: string): Promise<LessWrongCommentContent | null> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), GRAPHQL_TIMEOUT_MS);
-
   try {
     const response = await fetch(LESSWRONG_GRAPHQL_ENDPOINT, {
       method: "POST",
@@ -463,7 +455,7 @@ async function fetchLessWrongComment(commentId: string): Promise<LessWrongCommen
         query: COMMENT_QUERY,
         variables: { commentId },
       }),
-      signal: controller.signal,
+      signal: AbortSignal.timeout(GRAPHQL_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -526,7 +518,7 @@ async function fetchLessWrongComment(commentId: string): Promise<LessWrongCommen
     if (error instanceof HttpFetchError) {
       throw error;
     }
-    if (error instanceof Error && error.name === "AbortError") {
+    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
       logger.warn("LessWrong GraphQL comment request timed out", { commentId });
     } else {
       logger.warn("LessWrong GraphQL comment request error", {
@@ -535,8 +527,6 @@ async function fetchLessWrongComment(commentId: string): Promise<LessWrongCommen
       });
     }
     return null;
-  } finally {
-    clearTimeout(timeout);
   }
 }
 
@@ -652,9 +642,6 @@ const USER_BY_SLUG_QUERY = `
  * @returns User info including ID, or null if not found
  */
 export async function fetchLessWrongUserBySlug(slug: string): Promise<LessWrongUser | null> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), GRAPHQL_TIMEOUT_MS);
-
   try {
     const response = await fetch(LESSWRONG_GRAPHQL_ENDPOINT, {
       method: "POST",
@@ -667,7 +654,7 @@ export async function fetchLessWrongUserBySlug(slug: string): Promise<LessWrongU
         query: USER_BY_SLUG_QUERY,
         variables: { slug },
       }),
-      signal: controller.signal,
+      signal: AbortSignal.timeout(GRAPHQL_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -711,7 +698,7 @@ export async function fetchLessWrongUserBySlug(slug: string): Promise<LessWrongU
       slug: user.slug,
     };
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
+    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
       logger.warn("LessWrong GraphQL user request timed out", { slug });
     } else {
       logger.warn("LessWrong GraphQL user request error", {
@@ -720,8 +707,6 @@ export async function fetchLessWrongUserBySlug(slug: string): Promise<LessWrongU
       });
     }
     return null;
-  } finally {
-    clearTimeout(timeout);
   }
 }
 
@@ -820,9 +805,6 @@ const USER_BY_ID_QUERY = `
  * @returns User info, or null if not found
  */
 export async function fetchLessWrongUserById(userId: string): Promise<LessWrongUser | null> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), GRAPHQL_TIMEOUT_MS);
-
   try {
     const response = await fetch(LESSWRONG_GRAPHQL_ENDPOINT, {
       method: "POST",
@@ -835,7 +817,7 @@ export async function fetchLessWrongUserById(userId: string): Promise<LessWrongU
         query: USER_BY_ID_QUERY,
         variables: { userId },
       }),
-      signal: controller.signal,
+      signal: AbortSignal.timeout(GRAPHQL_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -879,7 +861,7 @@ export async function fetchLessWrongUserById(userId: string): Promise<LessWrongU
       slug: user.slug,
     };
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
+    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
       logger.warn("LessWrong GraphQL user-by-id request timed out", { userId });
     } else {
       logger.warn("LessWrong GraphQL user-by-id request error", {
@@ -888,8 +870,6 @@ export async function fetchLessWrongUserById(userId: string): Promise<LessWrongU
       });
     }
     return null;
-  } finally {
-    clearTimeout(timeout);
   }
 }
 
@@ -961,9 +941,6 @@ const POST_METADATA_QUERY = `
 export async function fetchLessWrongPostMetadata(
   postId: string
 ): Promise<LessWrongPostMetadata | null> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), GRAPHQL_TIMEOUT_MS);
-
   try {
     const response = await fetch(LESSWRONG_GRAPHQL_ENDPOINT, {
       method: "POST",
@@ -976,7 +953,7 @@ export async function fetchLessWrongPostMetadata(
         query: POST_METADATA_QUERY,
         variables: { postId },
       }),
-      signal: controller.signal,
+      signal: AbortSignal.timeout(GRAPHQL_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -1019,7 +996,7 @@ export async function fetchLessWrongPostMetadata(
       userId: post.userId,
     };
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
+    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
       logger.warn("LessWrong GraphQL post metadata request timed out", { postId });
     } else {
       logger.warn("LessWrong GraphQL post metadata request error", {
@@ -1028,7 +1005,5 @@ export async function fetchLessWrongPostMetadata(
       });
     }
     return null;
-  } finally {
-    clearTimeout(timeout);
   }
 }
