@@ -18,13 +18,12 @@ describe("getItemClasses", () => {
 
       expect(classes).toContain(baseClasses);
       // Unread stands out: raised surface card with a distinctly stronger border
-      expect(classes).toContain("border-zinc-300");
+      expect(classes).toContain("border-edge-input");
       expect(classes).toContain("bg-surface");
-      expect(classes).toContain("hover:bg-zinc-50");
+      expect(classes).toContain("hover:bg-surface-muted");
       expect(classes).toContain("active:bg-zinc-100");
-      // Dark mode variants
-      expect(classes).toContain("dark:border-zinc-600");
-      expect(classes).toContain("dark:hover:bg-zinc-800");
+      // Dark mode variants (active press step is still a raw pair)
+      expect(classes).toContain("dark:active:bg-zinc-700");
       // E-paper (all fills white) leans on a darker border for card separation
       expect(classes).toContain("epaper:border-zinc-500");
     });
@@ -88,7 +87,7 @@ describe("getItemClasses", () => {
       expect(selectedRead).toContain("ring-accent");
 
       // Neither should have hover states that conflict with selection
-      expect(selectedUnread).not.toContain("hover:bg-zinc-50");
+      expect(selectedUnread).not.toContain("hover:bg-surface-muted");
       expect(selectedRead).not.toContain("hover:bg-surface");
     });
   });

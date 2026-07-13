@@ -74,7 +74,7 @@ describe("Input", () => {
     it("applies normal border styles when no error", () => {
       render(<Input id="normal-field" />);
       const input = screen.getByRole("textbox");
-      expect(input).toHaveClass("border-zinc-300");
+      expect(input).toHaveClass("border-edge-input");
       expect(input).not.toHaveClass("border-red-500");
     });
 
