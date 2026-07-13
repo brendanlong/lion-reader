@@ -96,6 +96,8 @@ The `ui-text-*` classes are defined in `src/app/globals.css` and provide respons
 - **`star`**: `text-star` (+ `hover:text-star-hover`, `bg-star`) is the formalized amber favorite/star color. Use it only for the star/favorite icon; amber used for alerts/offline/"unsaved changes" is `warning`, not `star`.
 - `StatusCard`, `Alert`, and the `Input` error state are already token-driven — reuse them instead of rebuilding a colored box.
 
+**Global focus outline.** Every focusable element gets an amber `:focus-visible` outline by default via a single `@layer base` rule in `globals.css` (`outline: 2px solid var(--focus)`), so bare focusable elements (nav links, entry rows, plain links) are already covered and no longer fall back to the browser-default blue outline. Add `focus:ring-focus` only for controls that want a box-shadow ring instead (buttons, inputs) — those pair it with `focus:outline-none`, which wins from the utilities layer and suppresses the global outline so there's no double indicator. Don't set `focus:outline-none` without also adding a ring, or the element ends up with no focus indicator at all.
+
 Tokens work under variants (`hover:bg-surface-muted`, `focus:ring-focus`), so interactive states use them too. Notes:
 
 - **Filled** "on"/selected controls (a solid pill/toggle, not an outline) use `bg-primary-solid text-primary-solid-foreground` — the same token as primary buttons (now the branded amber fill). `control-selected` is the **outline/indicator** color for the same states; it aliases the accent (amber) and shares `ring-focus`'s value today, but is a separate token so the two roles can diverge.
