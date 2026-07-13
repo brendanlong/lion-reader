@@ -1057,18 +1057,24 @@ describe("sync.events", () => {
       expect(result.events.filter((e) => e.type === "entry_state_changed")).toHaveLength(0);
     });
 
-    it("still delivers the refetch even though the feed's last_entries_updated_at moved (pre-filter is a superset)", async () => {
-      // Guard the Arm B1 pre-filter: last_entries_updated_at is always stamped
-      // >= every entry.updated_at in the feed, so a `>= cursor` pre-filter can
-      // never drop a changed entry. Here both are just past the cursor.
+    it("delivers a refetch even when the feed's last_entries_updated_at LAGS the entry's updated_at", async () => {
+      // Regression guard: feeds.last_entries_updated_at is stamped from the
+      // poll's start-time `now`, but each changed entry's updated_at is a later
+      // wall-clock write (after fetch+parse), so entry.updated_at is routinely
+      // GREATER than the feed's last_entries_updated_at. Here the feed's stamp is
+      // BEFORE the cursor while the entry changed AFTER it — a stale-then-fresh
+      // window that must still be delivered. A `last_entries_updated_at >= cursor`
+      // pre-filter (the original bug) would prune the feed and drop this entry.
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://example.com/refetch-boundary.xml");
+      const feedId = await createTestFeed("https://example.com/refetch-lag.xml");
       await createTestSubscription(userId, feedId);
       const entryId = await createTestEntry(feedId, { createdAt: OLD, updatedAt: OLD });
       await createUserEntry(userId, entryId, { updatedAt: OLD });
 
+      // Entry content changed after the cursor; the feed's last_entries_updated_at
+      // lags behind it (before the cursor), as production always produces.
       await db.update(entries).set({ updatedAt: NEW }).where(eq(entries.id, entryId));
-      await db.update(feeds).set({ lastEntriesUpdatedAt: NEW }).where(eq(feeds.id, feedId));
+      await db.update(feeds).set({ lastEntriesUpdatedAt: OLD }).where(eq(feeds.id, feedId));
 
       const result = await createCaller(createAuthContext(userId)).sync.events({
         cursors: { entries: CURSOR.toISOString() },
@@ -1182,14 +1188,10 @@ describe("sync.events", () => {
         .from(userEntries)
         .where(and(eq(userEntries.userId, userId), sql`${userEntries.updatedAt} >= ${cursorTs}`));
 
-      // Arm B1 — entries.updated_at within subscribed feeds
+      // Arm B1 — entries.updated_at within subscribed feeds (seek per feed)
       const armB1 = db
         .select({ entryId: userEntries.entryId })
         .from(subscriptions)
-        .innerJoin(
-          feeds,
-          and(eq(feeds.id, subscriptions.feedId), sql`${feeds.lastEntriesUpdatedAt} >= ${cursorTs}`)
-        )
         .innerJoin(
           entries,
           and(eq(entries.feedId, subscriptions.feedId), sql`${entries.updatedAt} >= ${cursorTs}`)
