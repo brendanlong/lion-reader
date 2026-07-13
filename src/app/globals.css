@@ -16,22 +16,26 @@
   --foreground: #171717;
 
   /* =================================
-     Accent Colors (for links, highlights, focus rings)
-     Light mode: blue
+     Accent Colors (links, highlights, focus rings, unread dots, selection)
+     The single warm brand hue. Light mode: amber. The base tone is the AA-safe
+     shade for link *text* on white; --accent-muted is the vivid tone for
+     dots/fills. Warm ⇒ inherently low-blue-light (see the dark theme).
      ================================= */
-  --accent: #2563eb; /* blue-600 */
-  --accent-hover: #1d4ed8; /* blue-700 */
-  --accent-muted: #3b82f6; /* blue-500 */
-  --accent-subtle: #eff6ff; /* blue-50 */
-  --accent-subtle-foreground: #1e40af; /* blue-800 */
-  --accent-border: #bfdbfe; /* blue-200 */
+  --accent: #b45309; /* amber-700 - AA on white (4.5:1) for link text */
+  --accent-hover: #92400e; /* amber-800 */
+  --accent-muted: #f59e0b; /* amber-500 - unread dots, vivid fills */
+  --accent-subtle: #fffbeb; /* amber-50 */
+  --accent-subtle-foreground: #92400e; /* amber-800 */
+  --accent-border: #fde68a; /* amber-200 */
 
   /* =================================
      Primary Solid Color (filled primary buttons + "on" toggle/selected states)
-     Light mode: dark grey (not pure black, so it doesn't look like plain text)
+     Branded: the accent fill (amber-700 + white, AA). Retune via these vars;
+     btn-primary derives hover/active/focus from them (no raw colors).
      ================================= */
-  --primary-solid: #3f3f46; /* zinc-700 */
+  --primary-solid: #b45309; /* amber-700 */
   --primary-solid-foreground: #ffffff;
+  --primary-solid-hover: #92400e; /* amber-800 */
 
   /* =================================
      Info Colors (for informational alerts, summary cards)
@@ -118,10 +122,10 @@
   --edge-input: #d4d4d8; /* zinc-300 */
 
   /* Focus ring / focused-border color (also drives control focus outlines) */
-  --focus: #18181b; /* zinc-900 */
+  --focus: #b45309; /* amber-700 - the brand accent */
   /* Selected / "on" state for checkboxes, radios, selected cards, progress fills.
-     Shares --focus's value today but kept separate so the two roles can diverge. */
-  --control-selected: #18181b; /* zinc-900 */
+     Aliases the accent (branded selection); kept separate so the two roles can diverge. */
+  --control-selected: #b45309; /* amber-700 */
 
   /* =================================
      UI Typography Scale (16px baseline)
@@ -145,6 +149,7 @@
   --color-accent-border: var(--accent-border);
   --color-primary-solid: var(--primary-solid);
   --color-primary-solid-foreground: var(--primary-solid-foreground);
+  --color-primary-solid-hover: var(--primary-solid-hover);
   --color-info: var(--info);
   --color-info-muted: var(--info-muted);
   --color-info-subtle: var(--info-subtle);
@@ -201,17 +206,19 @@
   --background: #0a0a0a;
   --foreground: #ededed;
 
-  /* Dark mode: red accent */
-  --accent: #f87171; /* red-400 */
-  --accent-hover: #fca5a5; /* red-300 */
-  --accent-muted: #ef4444; /* red-500 */
-  --accent-subtle: rgba(127, 29, 29, 0.2); /* red-900/20 */
-  --accent-subtle-foreground: #fecaca; /* red-200 */
-  --accent-border: #991b1b; /* red-800 */
+  /* Dark mode: amber accent — warm ⇒ low-blue-light, and distinct from the
+     danger red-400 (unlike the old red accent, which collided with it). */
+  --accent: #fbbf24; /* amber-400 */
+  --accent-hover: #fcd34d; /* amber-300 */
+  --accent-muted: #f59e0b; /* amber-500 - unread dots */
+  --accent-subtle: rgba(120, 53, 15, 0.25); /* amber-900/25 */
+  --accent-subtle-foreground: #fde68a; /* amber-200 */
+  --accent-border: #92400e; /* amber-800 */
 
-  /* Dark mode: soft light grey so the primary button doesn't glare */
-  --primary-solid: #e4e4e7; /* zinc-200 */
+  /* Dark mode: amber primary with dark text so it doesn't glare */
+  --primary-solid: #fbbf24; /* amber-400 */
   --primary-solid-foreground: #18181b; /* zinc-900 */
+  --primary-solid-hover: #fcd34d; /* amber-300 */
 
   /* Dark mode: neutral info colors for readability */
   --info: #a1a1aa; /* zinc-400 */
@@ -268,8 +275,8 @@
   --edge: #27272a; /* zinc-800 */
   --edge-strong: #3f3f46; /* zinc-700 */
   --edge-input: #3f3f46; /* zinc-700 */
-  --focus: #a1a1aa; /* zinc-400 */
-  --control-selected: #a1a1aa; /* zinc-400 */
+  --focus: #fbbf24; /* amber-400 - the brand accent */
+  --control-selected: #fbbf24; /* amber-400 */
 }
 
 /* =================================
@@ -293,17 +300,23 @@
   --background: #ffffff;
   --foreground: #000000;
 
-  /* Dark blue accent: grays to a dark tone, still readable on white */
-  --accent: #1e40af; /* blue-800 */
-  --accent-hover: #1e3a8a; /* blue-900 */
-  --accent-muted: #1e40af; /* blue-800 */
-  --accent-subtle: #dbeafe; /* blue-100 - one step darker than light mode's blue-50 so it survives e-ink dithering */
-  --accent-subtle-foreground: #1e3a8a; /* blue-900 */
-  --accent-border: #60a5fa; /* blue-400 - grays to a visible mid tone */
+  /* Dark amber accent: warm brand hue biased dark so it grays to a clearly-dark
+     tone on monochrome e-ink, still readable on white. Greys stay cool (below). */
+  --accent: #92400e; /* amber-800 */
+  --accent-hover: #78350f; /* amber-900 */
+  --accent-muted: #b45309; /* amber-700 */
+  --accent-subtle: #fef3c7; /* amber-100 - one step darker than light mode's amber-50 so it survives e-ink dithering */
+  --accent-subtle-foreground: #78350f; /* amber-900 */
+  --accent-border: #d97706; /* amber-600 - grays to a visible mid tone */
 
   /* Pure black primary: maximum contrast for buttons and "on" states */
   --primary-solid: #000000;
   --primary-solid-foreground: #ffffff;
+  --primary-solid-hover: #27272a; /* zinc-800 - a hair off black for press/hover feedback */
+
+  /* Focus/selection follow the accent (amber-800), grays to a dark tone */
+  --focus: #92400e; /* amber-800 */
+  --control-selected: #92400e; /* amber-800 */
 
   --info: #1e40af; /* blue-800 */
   --info-muted: #1e40af; /* blue-800 */
@@ -385,17 +398,18 @@
     --background: #0a0a0a;
     --foreground: #ededed;
 
-    /* Dark mode: red accent */
-    --accent: #f87171; /* red-400 */
-    --accent-hover: #fca5a5; /* red-300 */
-    --accent-muted: #ef4444; /* red-500 */
-    --accent-subtle: rgba(127, 29, 29, 0.2); /* red-900/20 */
-    --accent-subtle-foreground: #fecaca; /* red-200 */
-    --accent-border: #991b1b; /* red-800 */
+    /* Dark mode: amber accent (mirrors .dark) — warm, low-blue, distinct from danger red */
+    --accent: #fbbf24; /* amber-400 */
+    --accent-hover: #fcd34d; /* amber-300 */
+    --accent-muted: #f59e0b; /* amber-500 */
+    --accent-subtle: rgba(120, 53, 15, 0.25); /* amber-900/25 */
+    --accent-subtle-foreground: #fde68a; /* amber-200 */
+    --accent-border: #92400e; /* amber-800 */
 
-    /* Dark mode: soft light grey so the primary button doesn't glare */
-    --primary-solid: #e4e4e7; /* zinc-200 */
+    /* Dark mode: amber primary with dark text so it doesn't glare */
+    --primary-solid: #fbbf24; /* amber-400 */
     --primary-solid-foreground: #18181b; /* zinc-900 */
+    --primary-solid-hover: #fcd34d; /* amber-300 */
 
     /* Dark mode: neutral info colors for readability */
     --info: #a1a1aa; /* zinc-400 */
@@ -450,8 +464,8 @@
     --edge: #27272a; /* zinc-800 */
     --edge-strong: #3f3f46; /* zinc-700 */
     --edge-input: #3f3f46; /* zinc-700 */
-    --focus: #a1a1aa; /* zinc-400 */
-    --control-selected: #a1a1aa; /* zinc-400 */
+    --focus: #fbbf24; /* amber-400 - the brand accent */
+    --control-selected: #fbbf24; /* amber-400 */
   }
 }
 
@@ -513,12 +527,14 @@ body {
    <Button> primary variant and the primary link/anchor buttons that can't use
    it (Subscribe, demo CTAs, OAuth consent, extension retry).
 
-   To retune the primary color, edit --primary-solid; the hover/active shades
-   below sit one zinc step to either side of it.
+   To retune the primary color, edit --primary-solid / --primary-solid-hover
+   (per theme in :root / .dark / .epaper). Hover and active both use the
+   -hover token and the focus ring uses --focus, so no raw colors live here and
+   the branded (amber) primary re-themes from the variables alone.
    ================================= */
 
 @utility btn-primary {
-  @apply bg-primary-solid text-primary-solid-foreground transition-colors hover:bg-zinc-600 focus:ring-zinc-700 active:bg-zinc-500 dark:hover:bg-zinc-300 dark:focus:ring-zinc-400 dark:active:bg-zinc-400;
+  @apply bg-primary-solid text-primary-solid-foreground hover:bg-primary-solid-hover active:bg-primary-solid-hover focus:ring-focus transition-colors;
 }
 
 /* =================================
