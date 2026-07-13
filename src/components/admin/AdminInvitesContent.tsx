@@ -52,7 +52,7 @@ interface StatusBadgeProps {
 
 function StatusBadge({ status }: StatusBadgeProps) {
   const styles = {
-    pending: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
+    pending: "bg-info-subtle text-info-foreground",
     used: "bg-success-subtle text-success",
     expired: "bg-surface-muted text-muted",
   };
@@ -104,7 +104,7 @@ function CreatedInviteDisplay({ inviteUrl, onDismiss }: CreatedInviteProps) {
         </div>
         <button
           onClick={onDismiss}
-          className="ui-text-sm text-muted self-start underline hover:text-zinc-700 dark:hover:text-zinc-200"
+          className="ui-text-sm text-muted hover:text-body self-start underline"
         >
           Dismiss
         </button>
@@ -153,7 +153,7 @@ function InviteRow({ invite, onRevoke, isRevoking }: InviteRowProps) {
             <span className="text-muted">Used by: </span>
             <ClientLink
               href={`/admin/users?search=${encodeURIComponent(invite.usedByEmail)}`}
-              className="text-blue-600 underline hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+              className="text-accent hover:text-accent-hover underline"
             >
               {invite.usedByEmail}
             </ClientLink>
@@ -330,7 +330,7 @@ export default function AdminInvitesContent() {
       {/* Invites List */}
       {invitesQuery.isLoading ? (
         <div className="flex items-center justify-center p-8">
-          <SpinnerIcon className="h-6 w-6 text-zinc-400" />
+          <SpinnerIcon className="text-faint h-6 w-6" />
         </div>
       ) : invitesQuery.isError ? (
         <div className="p-8 text-center">
@@ -363,7 +363,7 @@ export default function AdminInvitesContent() {
           {/* Loading indicator */}
           {invitesQuery.isFetchingNextPage && (
             <div className="flex items-center justify-center p-4">
-              <SpinnerIcon className="mr-2 h-4 w-4 text-zinc-400" />
+              <SpinnerIcon className="text-faint mr-2 h-4 w-4" />
               <span className="ui-text-sm text-muted">Loading more...</span>
             </div>
           )}

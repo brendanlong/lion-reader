@@ -91,7 +91,7 @@ export function getItemClasses(
   if (selected) {
     // Selected state takes priority - accent ring indicator. In compact mode the
     // ring stands in for the border the cards would otherwise carry.
-    return `${baseClasses} ${compact ? "" : "border-accent "}ring-2 ring-accent ring-offset-1 dark:ring-offset-zinc-900 ${
+    return `${baseClasses} ${compact ? "" : "border-accent "}ring-2 ring-accent ring-offset-1 ring-offset-surface ${
       read ? "bg-canvas" : "bg-surface"
     }`;
   }

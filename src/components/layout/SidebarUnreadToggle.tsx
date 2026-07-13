@@ -71,7 +71,7 @@ export function SidebarUnreadToggle({ unreadOnly, onToggle }: SidebarUnreadToggl
     <button
       type="button"
       onClick={onToggle}
-      className="text-faint hover:bg-surface-muted rounded p-1 transition-colors hover:text-zinc-600 dark:hover:text-zinc-300"
+      className="text-faint hover:bg-surface-muted hover:text-muted rounded p-1 transition-colors"
       title={label}
       aria-label={label}
       aria-pressed={unreadOnly}

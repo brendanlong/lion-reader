@@ -130,20 +130,14 @@ export function EntryContentFallback({ entryId, onBack }: EntryContentFallbackPr
                 {cachedEntry.author &&
                   cachedEntry.author.toLowerCase().trim() !== source.toLowerCase().trim() && (
                     <>
-                      <span
-                        aria-hidden="true"
-                        className="hidden text-zinc-400 sm:inline dark:text-zinc-600"
-                      >
+                      <span aria-hidden="true" className="text-faint hidden sm:inline">
                         |
                       </span>
                       <span className="hidden sm:inline">by {cachedEntry.author}</span>
                       <span className="sm:hidden">- {cachedEntry.author}</span>
                     </>
                   )}
-                <span
-                  aria-hidden="true"
-                  className="hidden text-zinc-400 sm:inline dark:text-zinc-600"
-                >
+                <span aria-hidden="true" className="text-faint hidden sm:inline">
                   |
                 </span>
                 <time dateTime={date.toISOString()} className="basis-full sm:basis-auto">

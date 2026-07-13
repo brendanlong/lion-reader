@@ -86,7 +86,7 @@ export default function CompleteSignupPage() {
               href="/terms"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-strong underline hover:text-zinc-700 dark:hover:text-zinc-300"
+              className="text-strong hover:text-body underline"
             >
               Terms of Service
             </a>
@@ -106,7 +106,7 @@ export default function CompleteSignupPage() {
               href="/privacy"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-strong underline hover:text-zinc-700 dark:hover:text-zinc-300"
+              className="text-strong hover:text-body underline"
             >
               Privacy Policy
             </a>
@@ -139,7 +139,7 @@ export default function CompleteSignupPage() {
         {!showDeleteConfirm ? (
           <button
             onClick={() => setShowDeleteConfirm(true)}
-            className="ui-text-sm text-muted w-full text-center underline hover:text-zinc-700 dark:hover:text-zinc-300"
+            className="ui-text-sm text-muted hover:text-body w-full text-center underline"
           >
             Delete my account instead
           </button>

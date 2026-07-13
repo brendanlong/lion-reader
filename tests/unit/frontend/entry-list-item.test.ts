@@ -22,7 +22,7 @@ describe("getItemClasses", () => {
       expect(classes).toContain("bg-surface");
       expect(classes).toContain("hover:bg-surface-muted");
       expect(classes).toContain("active:bg-zinc-100");
-      // Dark mode variants (active press step is still a raw pair)
+      // Press step is intentionally a raw zinc pair (one step darker than surface-muted hover)
       expect(classes).toContain("dark:active:bg-zinc-700");
       // E-paper (all fills white) leans on a darker border for card separation
       expect(classes).toContain("epaper:border-zinc-500");
@@ -55,8 +55,8 @@ describe("getItemClasses", () => {
       expect(classes).toContain("ring-offset-1");
       // Unread background within selected state (raised surface)
       expect(classes).toContain("bg-surface");
-      // Dark mode variants
-      expect(classes).toContain("dark:ring-offset-zinc-900");
+      // Ring-offset uses the surface token (was dark:ring-offset-zinc-900)
+      expect(classes).toContain("ring-offset-surface");
     });
   });
 
@@ -72,8 +72,8 @@ describe("getItemClasses", () => {
       expect(classes).toContain("ring-offset-1");
       // Read background within selected state recedes into the canvas
       expect(classes).toContain("bg-canvas");
-      // Dark mode variants
-      expect(classes).toContain("dark:ring-offset-zinc-900");
+      // Ring-offset uses the surface token (was dark:ring-offset-zinc-900)
+      expect(classes).toContain("ring-offset-surface");
     });
   });
 
