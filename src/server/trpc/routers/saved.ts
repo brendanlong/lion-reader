@@ -147,8 +147,9 @@ export const savedRouter = createTRPCRouter({
         title: input.title,
         refetch: input.refetch,
         force: input.force,
-        // The web UI can walk the user through Google sign-in / consent.
-        googleDocsAuth: true,
+        // The web UI can walk the user through Google sign-in / consent, so it
+        // wants the machine-readable NEEDS_* codes it matches to drive prompts.
+        googleDocsAuth: "interactive",
       });
 
       const counts =

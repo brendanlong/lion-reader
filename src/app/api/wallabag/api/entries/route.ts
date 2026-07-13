@@ -118,6 +118,10 @@ export async function POST(request: Request): Promise<Response> {
     const article = await savedService.saveArticle(db, auth.userId, {
       url: articleUrl,
       title: body.title || undefined,
+      // Use the user's stored Google credentials for private Google Docs when
+      // already linked/granted (no interactive consent possible from an API
+      // client). Falls back to a clean 4xx pointing at the web app otherwise.
+      googleDocsAuth: "non-interactive",
     });
 
     // Handle archive/starred flags if provided
