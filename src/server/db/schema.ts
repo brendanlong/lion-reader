@@ -504,6 +504,14 @@ export const entries = pgTable(
     wallabagId: integer("wallabag_id").generatedAlwaysAs(
       sql`(('x' || left(encode(sha256(id::text::bytea), 'hex'), 8))::bit(32)::int & x'7fffffff'::int)`
     ),
+
+    // Google Reader item ID - global bigint serial. The DB assigns it from a
+    // sequence default, so inserts omit it (the .default tells Drizzle it's
+    // optional-on-insert). Item ids are stored, not derived from the UUID; see
+    // src/server/google-reader/id.ts.
+    greaderItemId: bigint("greader_item_id", { mode: "bigint" })
+      .notNull()
+      .default(sql`nextval('entries_greader_item_id_seq'::regclass)`),
   },
   (table) => [
     // Unique constraint on feed + guid
@@ -520,6 +528,9 @@ export const entries = pgTable(
     // (feed_id = <subscribed/saved feed> AND updated_at >= cursor). Backs the
     // entry-side arm of the sync.events UNION rewrite (#1105). Migration 0094.
     index("idx_entries_feed_updated_at").on(table.feedId, table.updatedAt),
+    // Unique global Google Reader item id; backs the greader_item_id -> UUID
+    // reverse lookup (greaderItemIdsToUuids) with an index seek.
+    uniqueIndex("idx_entries_greader_item_id").on(table.greaderItemId),
     // Expression indexes for entry list sorting (Drizzle can't express these, created via raw SQL):
     // - idx_entries_published_coalesce: (COALESCE(published_at, fetched_at) DESC, id DESC)
     //   Enables limit pushdown for "all entries" queries. Migration 0060.
@@ -808,6 +819,9 @@ export const visibleEntries = pgView("visible_entries", {
   fullContentOriginalSanitized: text("full_content_original_sanitized"),
   fullContentCleanedSanitized: text("full_content_cleaned_sanitized"),
   fullContentSanitizedVersion: smallint("full_content_sanitized_version"),
+  // NOT NULL in reality (entries.greader_item_id is NOT NULL); typed non-null so
+  // it flows into EntryListItem/EntryFull's non-null greaderItemId without a cast.
+  greaderItemId: bigint("greader_item_id", { mode: "bigint" }).notNull(),
 }).existing();
 
 // ============================================================================

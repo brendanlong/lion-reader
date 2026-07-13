@@ -38,7 +38,9 @@ interface GoogleReaderItem {
  * Formats a full entry (with content) as a Google Reader item.
  */
 export function formatEntryAsItem(entry: EntryFull): GoogleReaderItem {
-  const itemId = uuidToInt64(entry.id);
+  // Item ids are a stored global serial (entries.greader_item_id), not derived
+  // from the UUID. Feed stream ids / tag sortids / user ids still use uuidToInt64.
+  const itemId = entry.greaderItemId;
   const publishedTs = entry.publishedAt
     ? Math.floor(entry.publishedAt.getTime() / 1000)
     : Math.floor(entry.fetchedAt.getTime() / 1000);
