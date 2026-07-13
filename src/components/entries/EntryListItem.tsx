@@ -85,7 +85,7 @@ export function getItemClasses(read: boolean, selected: boolean): string {
   // Unread entries stand out as raised surface cards with a distinctly stronger
   // border (the only card/canvas separation available on e-paper, where every
   // fill is white).
-  return `${baseClasses} border-zinc-300 bg-surface hover:bg-zinc-50 active:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-800 dark:active:bg-zinc-700 epaper:border-zinc-500`;
+  return `${baseClasses} border-edge-input bg-surface hover:bg-surface-hover active:bg-zinc-100 dark:active:bg-zinc-700 epaper:border-zinc-500`;
 }
 
 /**
@@ -172,7 +172,7 @@ export const EntryListItem = memo(function EntryListItem({
               <span
                 className={`block h-2.5 w-2.5 rounded-full transition-colors ${
                   read
-                    ? "group-hover/toggle:border-accent group-hover/toggle:bg-accent-subtle border border-zinc-300 bg-transparent dark:border-zinc-600"
+                    ? "group-hover/toggle:border-accent group-hover/toggle:bg-accent-subtle border-edge-input border bg-transparent"
                     : "bg-accent-muted group-hover/toggle:bg-accent dark:bg-accent dark:group-hover/toggle:bg-accent-hover"
                 }`}
               />
@@ -180,9 +180,7 @@ export const EntryListItem = memo(function EntryListItem({
           ) : (
             <span
               className={`block h-2.5 w-2.5 rounded-full ${
-                read
-                  ? "border border-zinc-300 bg-transparent dark:border-zinc-600"
-                  : "bg-accent-muted dark:bg-accent"
+                read ? "border-edge-input border bg-transparent" : "bg-accent-muted dark:bg-accent"
               }`}
               aria-hidden="true"
             />

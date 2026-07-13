@@ -78,7 +78,7 @@ export function StickyEntryControls({
         </button>
 
         {/* Divider */}
-        <div className="h-5 w-px bg-zinc-200 dark:bg-zinc-700" />
+        <div className="bg-fill-muted h-5 w-px" />
 
         {/* Read/unread button */}
         <button

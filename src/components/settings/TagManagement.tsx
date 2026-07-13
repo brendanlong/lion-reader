@@ -161,7 +161,7 @@ function CreateTagForm({ onSuccess, onError }: CreateTagFormProps) {
         <button
           type="button"
           onClick={() => setShowColorPicker(!showColorPicker)}
-          className="ui-text-sm bg-surface flex h-[38px] items-center gap-2 rounded-md border border-zinc-300 px-3 py-2 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+          className="ui-text-sm bg-surface border-edge-input hover:bg-surface-hover flex h-[38px] items-center gap-2 rounded-md border px-3 py-2 transition-colors"
           disabled={createMutation.isPending}
         >
           <ColorDot color={color} size="md" />
@@ -311,7 +311,7 @@ function TagItem({ tag, onSuccess, onError }: TagItemProps) {
             <button
               type="button"
               onClick={() => setShowColorPicker(!showColorPicker)}
-              className="flex items-center justify-center rounded-md border border-zinc-300 p-2 transition-colors hover:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-700"
+              className="border-edge-input flex items-center justify-center rounded-md border p-2 transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-700"
               disabled={updateMutation.isPending}
             >
               <ColorDot color={editingValues.color} size="lg" />
@@ -331,7 +331,7 @@ function TagItem({ tag, onSuccess, onError }: TagItemProps) {
             type="text"
             value={editingValues.name}
             onChange={(e) => setEditingValues({ ...editingValues, name: e.target.value })}
-            className="ui-text-sm bg-surface text-strong flex-1 rounded-md border border-zinc-300 px-3 py-1.5 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none dark:border-zinc-600 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+            className="ui-text-sm bg-surface text-strong border-edge-input focus:border-focus focus:ring-focus flex-1 rounded-md border px-3 py-1.5 focus:ring-2 focus:ring-offset-2 focus:outline-none"
             disabled={updateMutation.isPending}
             autoFocus
           />

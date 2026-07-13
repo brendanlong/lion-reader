@@ -64,7 +64,7 @@ function ProgressBar({ progress, size }: { progress: number; size: number }) {
 
   return (
     <div className="mt-2">
-      <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
+      <div className="bg-fill-muted h-2 w-full overflow-hidden rounded-full">
         <div
           className="h-full rounded-full bg-zinc-900 transition-all duration-200 dark:bg-zinc-400"
           style={{ width: `${percent}%` }}
@@ -134,7 +134,7 @@ function VoiceItem({
         isSelected
           ? "border-zinc-900 bg-zinc-50 dark:border-zinc-400 dark:bg-zinc-800"
           : isDownloaded
-            ? "border-edge-strong cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+            ? "border-edge-strong hover:bg-surface-hover cursor-pointer"
             : "border-edge-strong"
       }`}
       onClick={handleClick}
@@ -153,7 +153,7 @@ function VoiceItem({
                 ? "border-zinc-900 dark:border-zinc-400"
                 : isDownloaded
                   ? "border-zinc-400 dark:border-zinc-500"
-                  : "border-zinc-300 dark:border-zinc-600"
+                  : "border-edge-input"
             }`}
           >
             {isSelected && <div className="h-2 w-2 rounded-full bg-zinc-900 dark:bg-zinc-400" />}

@@ -391,7 +391,7 @@ export default function AdminFeedsContent() {
               type="checkbox"
               checked={hasSubscribers}
               onChange={(e) => setHasSubscribers(e.target.checked)}
-              className="text-accent focus:ring-accent h-4 w-4 rounded border-zinc-300 dark:border-zinc-700 dark:bg-zinc-800"
+              className="text-accent focus:ring-accent border-edge-input h-4 w-4 rounded dark:bg-zinc-800"
             />
             Has subscribers
           </label>

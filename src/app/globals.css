@@ -65,11 +65,17 @@
   --surface: #ffffff; /* white - cards, inputs, controls */
   --surface-muted: #f4f4f5; /* zinc-100 - chips, skeletons */
   --surface-subtle: #fafafa; /* zinc-50 - note boxes, subtle fills */
+  --surface-hover: #fafafa; /* zinc-50 - hover fill on secondary/ghost controls, list rows */
+  --fill-muted: #e4e4e7; /* zinc-200 - skeleton pulses, toggle-off/progress/range tracks, thin dividers */
 
   /* Borders: `edge` for card outlines, `edge-strong` for dividers/note boxes
-     (more visible in dark mode) */
+     (more visible in dark mode), `edge-input` for input/control outlines */
   --edge: #e4e4e7; /* zinc-200 */
   --edge-strong: #e4e4e7; /* zinc-200 (dark mode differs: zinc-700 vs zinc-800) */
+  --edge-input: #d4d4d8; /* zinc-300 */
+
+  /* Focus ring / focused-border color (also drives control focus outlines) */
+  --focus: #18181b; /* zinc-900 */
 
   /* =================================
      UI Typography Scale (16px baseline)
@@ -109,8 +115,12 @@
   --color-surface: var(--surface);
   --color-surface-muted: var(--surface-muted);
   --color-surface-subtle: var(--surface-subtle);
+  --color-surface-hover: var(--surface-hover);
+  --color-fill-muted: var(--fill-muted);
   --color-edge: var(--edge);
   --color-edge-strong: var(--edge-strong);
+  --color-edge-input: var(--edge-input);
+  --color-focus: var(--focus);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -151,8 +161,12 @@
   --surface: #18181b; /* zinc-900 */
   --surface-muted: #27272a; /* zinc-800 */
   --surface-subtle: rgba(39, 39, 42, 0.5); /* zinc-800/50 */
+  --surface-hover: #27272a; /* zinc-800 */
+  --fill-muted: #3f3f46; /* zinc-700 */
   --edge: #27272a; /* zinc-800 */
   --edge-strong: #3f3f46; /* zinc-700 */
+  --edge-input: #3f3f46; /* zinc-700 */
+  --focus: #a1a1aa; /* zinc-400 */
 }
 
 /* =================================
@@ -267,8 +281,12 @@
     --surface: #18181b; /* zinc-900 */
     --surface-muted: #27272a; /* zinc-800 */
     --surface-subtle: rgba(39, 39, 42, 0.5); /* zinc-800/50 */
+    --surface-hover: #27272a; /* zinc-800 */
+    --fill-muted: #3f3f46; /* zinc-700 */
     --edge: #27272a; /* zinc-800 */
     --edge-strong: #3f3f46; /* zinc-700 */
+    --edge-input: #3f3f46; /* zinc-700 */
+    --focus: #a1a1aa; /* zinc-400 */
   }
 }
 

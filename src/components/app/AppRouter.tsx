@@ -26,7 +26,7 @@ function PageSkeleton() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-4 sm:p-6">
       <div className="mb-4 sm:mb-6">
-        <div className="h-8 w-48 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700" />
+        <div className="bg-fill-muted h-8 w-48 animate-pulse rounded" />
       </div>
       <div className="space-y-4">
         {[1, 2, 3].map((i) => (

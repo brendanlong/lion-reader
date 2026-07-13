@@ -38,7 +38,7 @@ interface EntryContentFallbackProps {
  * Shimmer placeholder for a button.
  */
 function ButtonShimmer({ width = "w-24" }: { width?: string }) {
-  return <div className={`h-10 ${width} animate-pulse rounded bg-zinc-200 dark:bg-zinc-700`} />;
+  return <div className={`h-10 ${width} bg-fill-muted animate-pulse rounded`} />;
 }
 
 /**

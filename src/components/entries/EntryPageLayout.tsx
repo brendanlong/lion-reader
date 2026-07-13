@@ -22,7 +22,7 @@ import { MarkAllReadButton } from "./MarkAllReadButton";
  * Loading skeleton for the page title.
  */
 export function TitleSkeleton() {
-  return <div className="h-8 w-48 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700" />;
+  return <div className="bg-fill-muted h-8 w-48 animate-pulse rounded" />;
 }
 
 /**

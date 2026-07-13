@@ -32,7 +32,7 @@ export function KeyboardShortcutsSettings() {
           aria-checked={enabled}
           onClick={() => setEnabled(!enabled)}
           className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none dark:focus:ring-offset-zinc-900 ${
-            enabled ? "bg-primary-solid" : "bg-zinc-200 dark:bg-zinc-700"
+            enabled ? "bg-primary-solid" : "bg-fill-muted"
           }`}
         >
           <span

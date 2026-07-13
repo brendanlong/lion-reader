@@ -22,9 +22,7 @@ function UserEmailContent() {
  * Skeleton fallback while loading.
  */
 function UserEmailSkeleton() {
-  return (
-    <span className="inline-block h-4 w-20 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700" />
-  );
+  return <span className="bg-fill-muted inline-block h-4 w-20 animate-pulse rounded" />;
 }
 
 /**

@@ -195,13 +195,13 @@ export default function ApiTokensSettingsContent() {
                 {Object.entries(scopeLabels).map(([scope, { label, description }]) => (
                   <label
                     key={scope}
-                    className="border-edge flex cursor-pointer items-start gap-3 rounded-lg border p-3 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                    className="border-edge hover:bg-surface-hover flex cursor-pointer items-start gap-3 rounded-lg border p-3"
                   >
                     <input
                       type="checkbox"
                       checked={selectedScopes.includes(scope)}
                       onChange={() => toggleScope(scope)}
-                      className="text-accent focus:ring-accent mt-1 h-4 w-4 rounded border-zinc-300 dark:border-zinc-700 dark:bg-zinc-800"
+                      className="text-accent focus:ring-accent border-edge-input mt-1 h-4 w-4 rounded dark:bg-zinc-800"
                     />
                     <div className="flex-1">
                       <p className="text-strong font-medium">{label}</p>
@@ -300,7 +300,7 @@ export default function ApiTokensSettingsContent() {
                     <p className="font-medium text-zinc-700 dark:text-zinc-400">
                       {token.name || "Unnamed Token"}
                     </p>
-                    <p className="ui-text-xs text-zinc-500 dark:text-zinc-500">
+                    <p className="ui-text-xs text-subtle">
                       {token.revokedAt
                         ? `Revoked ${formatRelativeTime(new Date(token.revokedAt))}`
                         : `Expired ${formatRelativeTime(new Date(token.expiresAt!))}`}

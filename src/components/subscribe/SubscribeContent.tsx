@@ -309,7 +309,7 @@ export function SubscribeContent() {
                   className={`w-full rounded-lg border p-4 text-left transition-colors ${
                     selectedFeedUrl === feed.url
                       ? "border-zinc-900 bg-zinc-50 dark:border-zinc-100 dark:bg-zinc-800"
-                      : "border-edge-strong bg-surface hover:border-zinc-300 hover:bg-zinc-50 dark:hover:border-zinc-600 dark:hover:bg-zinc-800"
+                      : "border-edge-strong bg-surface hover:bg-surface-hover hover:border-zinc-300 dark:hover:border-zinc-600"
                   } ${isLoading ? "cursor-not-allowed opacity-50" : ""}`}
                 >
                   <div className="flex items-start justify-between gap-3">

@@ -166,10 +166,10 @@ export function NarrationSettings() {
       <SettingsSection title="Narration">
         <div className="flex items-center justify-between">
           <div>
-            <div className="h-5 w-32 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700" />
-            <div className="mt-2 h-4 w-48 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700" />
+            <div className="bg-fill-muted h-5 w-32 animate-pulse rounded" />
+            <div className="bg-fill-muted mt-2 h-4 w-48 animate-pulse rounded" />
           </div>
-          <div className="h-6 w-11 animate-pulse rounded-full bg-zinc-200 dark:bg-zinc-700" />
+          <div className="bg-fill-muted h-6 w-11 animate-pulse rounded-full" />
         </div>
       </SettingsSection>
     );
@@ -207,7 +207,7 @@ export function NarrationSettings() {
           aria-checked={settings.enabled}
           onClick={() => setSettings((prev) => ({ ...prev, enabled: !prev.enabled }))}
           className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none dark:focus:ring-offset-zinc-900 ${
-            settings.enabled ? "bg-primary-solid" : "bg-zinc-200 dark:bg-zinc-700"
+            settings.enabled ? "bg-primary-solid" : "bg-fill-muted"
           }`}
         >
           <span
@@ -231,7 +231,7 @@ export function NarrationSettings() {
                 className={`relative flex cursor-pointer rounded-lg border p-4 transition-colors ${
                   settings.provider === "browser"
                     ? "border-zinc-900 bg-zinc-50 dark:border-zinc-400 dark:bg-zinc-800"
-                    : "border-edge-strong hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+                    : "border-edge-strong hover:bg-surface-hover"
                 }`}
               >
                 <input
@@ -268,7 +268,7 @@ export function NarrationSettings() {
                 className={`relative flex cursor-pointer rounded-lg border p-4 transition-colors ${
                   settings.provider === "piper"
                     ? "border-zinc-900 bg-zinc-50 dark:border-zinc-400 dark:bg-zinc-800"
-                    : "border-edge-strong hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+                    : "border-edge-strong hover:bg-surface-hover"
                 }`}
               >
                 <input
@@ -319,7 +319,7 @@ export function NarrationSettings() {
                   value={settings.voiceId || ""}
                   onChange={handleVoiceChange}
                   disabled={isLoadingVoices}
-                  className="ui-text-sm bg-surface text-strong block flex-1 rounded-md border border-zinc-300 px-3 py-2 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+                  className="ui-text-sm bg-surface text-strong border-edge-input focus:border-focus focus:ring-focus block flex-1 rounded-md border px-3 py-2 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {isLoadingVoices ? (
                     <option value="">Loading voices...</option>
@@ -380,7 +380,7 @@ export function NarrationSettings() {
               step="0.1"
               value={settings.rate}
               onChange={handleRateChange}
-              className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-zinc-200 accent-zinc-900 dark:bg-zinc-700 dark:accent-zinc-400"
+              className="bg-fill-muted h-2 w-full cursor-pointer appearance-none rounded-lg accent-zinc-900 dark:accent-zinc-400"
             />
             <div className="ui-text-xs text-faint mt-1 flex justify-between">
               <span>0.5x</span>
@@ -407,7 +407,7 @@ export function NarrationSettings() {
                 step="0.1"
                 value={settings.pitch}
                 onChange={handlePitchChange}
-                className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-zinc-200 accent-zinc-900 dark:bg-zinc-700 dark:accent-zinc-400"
+                className="bg-fill-muted h-2 w-full cursor-pointer appearance-none rounded-lg accent-zinc-900 dark:accent-zinc-400"
               />
               <div className="ui-text-xs text-faint mt-1 flex justify-between">
                 <span>0.5x</span>
@@ -442,9 +442,7 @@ export function NarrationSettings() {
                     }))
                   }
                   className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none dark:focus:ring-offset-zinc-900 ${
-                    settings.useLlmNormalization
-                      ? "bg-primary-solid"
-                      : "bg-zinc-200 dark:bg-zinc-700"
+                    settings.useLlmNormalization ? "bg-primary-solid" : "bg-fill-muted"
                   }`}
                 >
                   <span
@@ -478,7 +476,7 @@ export function NarrationSettings() {
                   setSettings((prev) => ({ ...prev, highlightEnabled: !prev.highlightEnabled }))
                 }
                 className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none dark:focus:ring-offset-zinc-900 ${
-                  settings.highlightEnabled ? "bg-primary-solid" : "bg-zinc-200 dark:bg-zinc-700"
+                  settings.highlightEnabled ? "bg-primary-solid" : "bg-fill-muted"
                 }`}
               >
                 <span
@@ -506,7 +504,7 @@ export function NarrationSettings() {
                   setSettings((prev) => ({ ...prev, autoScrollEnabled: !prev.autoScrollEnabled }))
                 }
                 className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none dark:focus:ring-offset-zinc-900 ${
-                  settings.autoScrollEnabled ? "bg-primary-solid" : "bg-zinc-200 dark:bg-zinc-700"
+                  settings.autoScrollEnabled ? "bg-primary-solid" : "bg-fill-muted"
                 }`}
               >
                 <span

@@ -85,7 +85,7 @@ export function ConsentForm({
             type="submit"
             name="user_action"
             value="deny"
-            className="ui-text-sm text-body flex-1 rounded-lg border border-zinc-300 bg-white px-4 py-2.5 font-medium transition-colors hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:hover:bg-zinc-700"
+            className="ui-text-sm text-body border-edge-input flex-1 rounded-lg border bg-white px-4 py-2.5 font-medium transition-colors hover:bg-zinc-50 dark:bg-zinc-800 dark:hover:bg-zinc-700"
           >
             Deny
           </button>
@@ -101,7 +101,7 @@ export function ConsentForm({
       </form>
 
       {/* Client ID info */}
-      <p className="ui-text-xs mt-4 text-center text-zinc-500 dark:text-zinc-500">
+      <p className="ui-text-xs text-subtle mt-4 text-center">
         Client ID: {clientId.length > 50 ? `${clientId.slice(0, 50)}...` : clientId}
       </p>
     </div>

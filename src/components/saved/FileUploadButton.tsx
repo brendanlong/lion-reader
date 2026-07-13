@@ -177,7 +177,7 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
       <button
         type="button"
         onClick={handleOpen}
-        className={`ui-text-sm border-edge-strong bg-surface text-body inline-flex min-h-[40px] items-center gap-1.5 rounded-md border px-3 font-medium transition-colors hover:bg-zinc-50 focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none active:bg-zinc-100 dark:hover:bg-zinc-800 dark:focus:ring-zinc-400 dark:active:bg-zinc-700 ${className}`}
+        className={`ui-text-sm border-edge-strong bg-surface text-body hover:bg-surface-hover inline-flex min-h-[40px] items-center gap-1.5 rounded-md border px-3 font-medium transition-colors focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none active:bg-zinc-100 dark:focus:ring-zinc-400 dark:active:bg-zinc-700 ${className}`}
         title="Upload file"
         aria-label="Upload file"
       >
@@ -213,7 +213,7 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
                 ? "bg-surface-muted border-zinc-500 dark:border-zinc-400"
                 : selectedFile
                   ? "border-green-500 bg-green-50 dark:border-green-600 dark:bg-green-900/20"
-                  : "border-zinc-300 hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-600 dark:hover:border-zinc-500 dark:hover:bg-zinc-800"
+                  : "border-edge-input hover:bg-surface-hover hover:border-zinc-400 dark:hover:border-zinc-500"
             }`}
           >
             <input

@@ -260,12 +260,12 @@ function LinkableProviderItem({ provider, isLinking, onLink }: LinkableProviderI
   const name = providerNames[provider];
 
   return (
-    <div className="flex items-center justify-between rounded-md border border-dashed border-zinc-300 p-4 dark:border-zinc-600">
+    <div className="border-edge-input flex items-center justify-between rounded-md border border-dashed p-4">
       <div className="flex items-center gap-3">
         <ProviderIcon provider={provider} muted />
         <div>
           <p className="ui-text-sm text-muted font-medium">{name}</p>
-          <p className="ui-text-xs text-zinc-500 dark:text-zinc-500">Not connected</p>
+          <p className="ui-text-xs text-subtle">Not connected</p>
         </div>
       </div>
       <Button

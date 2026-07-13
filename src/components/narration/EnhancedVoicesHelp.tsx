@@ -126,7 +126,7 @@ export function EnhancedVoicesHelp() {
       <button
         type="button"
         onClick={() => setIsExpanded(!isExpanded)}
-        className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+        className="hover:bg-surface-hover flex w-full items-center justify-between px-4 py-3 text-left"
         aria-expanded={isExpanded}
       >
         <div className="flex items-center gap-2">

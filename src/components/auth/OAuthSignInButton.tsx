@@ -24,10 +24,10 @@ interface OAuthSignInButtonProps {
 }
 
 const defaultButtonClassName =
-  "ui-text-sm flex min-h-[44px] w-full items-center justify-center gap-3 rounded-md border border-zinc-300 bg-surface px-4 font-medium text-strong transition-colors hover:bg-zinc-50 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800 dark:focus:ring-zinc-400";
+  "ui-text-sm flex min-h-[44px] w-full items-center justify-center gap-3 rounded-md border border-edge-input bg-surface px-4 font-medium text-strong transition-colors hover:bg-surface-hover focus:ring-2 focus:ring-focus focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50";
 
 const appleButtonClassName =
-  "ui-text-sm flex min-h-[44px] w-full items-center justify-center gap-3 rounded-md bg-black px-4 font-medium text-white transition-colors hover:bg-zinc-800 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-zinc-200 dark:focus:ring-zinc-400";
+  "ui-text-sm flex min-h-[44px] w-full items-center justify-center gap-3 rounded-md bg-black px-4 font-medium text-white transition-colors hover:bg-zinc-800 focus:ring-2 focus:ring-focus focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-zinc-200";
 
 export function OAuthSignInButton({
   provider,

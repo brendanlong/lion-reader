@@ -59,22 +59,26 @@ The `ui-text-*` classes are defined in `src/app/globals.css` and provide respons
 
 **Use the semantic color tokens instead of raw zinc light/dark pairs.** Each token is one utility class covering all themes; the palettes live in `src/app/globals.css` (`:root` for light, `.dark`, and `.epaper` for e-ink screens), so retheming means editing CSS variables, not call sites:
 
-| Token                | Replaces                               | Use for                            |
-| -------------------- | -------------------------------------- | ---------------------------------- |
-| `text-strong`        | `text-zinc-900 dark:text-zinc-50`      | Headings, primary values           |
-| `text-emphasis`      | `text-zinc-900 dark:text-zinc-200`     | `<strong>` inside muted prose      |
-| `text-body`          | `text-zinc-700 dark:text-zinc-300`     | Body copy, labels                  |
-| `text-muted`         | `text-zinc-600 dark:text-zinc-400`     | Descriptions, secondary text       |
-| `text-subtle`        | `text-zinc-500 dark:text-zinc-400`     | Metadata, hints                    |
-| `text-faint`         | `text-zinc-400 dark:text-zinc-500`     | De-emphasized notes, placeholders  |
-| `bg-canvas`          | `bg-zinc-50 dark:bg-zinc-950`          | Page background behind the shell   |
-| `bg-surface`         | `bg-white dark:bg-zinc-900`            | Cards, inputs, controls            |
-| `bg-surface-muted`   | `bg-zinc-100 dark:bg-zinc-800`         | Chips, skeletons                   |
-| `bg-surface-subtle`  | `bg-zinc-50 dark:bg-zinc-800/50`       | Note boxes, subtle fills           |
-| `border-edge`        | `border-zinc-200 dark:border-zinc-800` | Card outlines (also `divide-edge`) |
-| `border-edge-strong` | `border-zinc-200 dark:border-zinc-700` | Dividers, note-box borders         |
+| Token                | Replaces                               | Use for                                                                         |
+| -------------------- | -------------------------------------- | ------------------------------------------------------------------------------- |
+| `text-strong`        | `text-zinc-900 dark:text-zinc-50`      | Headings, primary values                                                        |
+| `text-emphasis`      | `text-zinc-900 dark:text-zinc-200`     | `<strong>` inside muted prose                                                   |
+| `text-body`          | `text-zinc-700 dark:text-zinc-300`     | Body copy, labels                                                               |
+| `text-muted`         | `text-zinc-600 dark:text-zinc-400`     | Descriptions, secondary text                                                    |
+| `text-subtle`        | `text-zinc-500 dark:text-zinc-400`     | Metadata, hints                                                                 |
+| `text-faint`         | `text-zinc-400 dark:text-zinc-500`     | De-emphasized notes, placeholders                                               |
+| `bg-canvas`          | `bg-zinc-50 dark:bg-zinc-950`          | Page background behind the shell                                                |
+| `bg-surface`         | `bg-white dark:bg-zinc-900`            | Cards, inputs, controls                                                         |
+| `bg-surface-muted`   | `bg-zinc-100 dark:bg-zinc-800`         | Chips, skeletons                                                                |
+| `bg-surface-subtle`  | `bg-zinc-50 dark:bg-zinc-800/50`       | Note boxes, subtle fills                                                        |
+| `bg-surface-hover`   | `bg-zinc-50 dark:bg-zinc-800`          | Hover fill (as `hover:bg-surface-hover`) on secondary/ghost controls, list rows |
+| `bg-fill-muted`      | `bg-zinc-200 dark:bg-zinc-700`         | Skeleton pulses, toggle-off/progress/range tracks, thin dividers                |
+| `border-edge`        | `border-zinc-200 dark:border-zinc-800` | Card outlines (also `divide-edge`)                                              |
+| `border-edge-strong` | `border-zinc-200 dark:border-zinc-700` | Dividers, note-box borders                                                      |
+| `border-edge-input`  | `border-zinc-300 dark:border-zinc-700` | Input/control outlines                                                          |
+| `ring-focus`         | `ring-zinc-900 dark:ring-zinc-400`     | Focus rings (as `focus:ring-focus`); also `focus:border-focus`                  |
 
-Interactive-state colors (`hover:bg-zinc-50`, focus rings, input borders) are not tokenized yet — keep using raw utilities with `dark:` variants for those.
+Tokens work under variants (`hover:bg-surface-hover`, `focus:ring-focus`), so interactive states use them too. Two remaining raw patterns are deliberately left un-tokenized because they're intentional variations, not drift: the ghost-button hover fill `hover:bg-zinc-100 dark:hover:bg-zinc-800` (one step stronger than `surface-hover` on purpose) and the `active:` press step `active:bg-zinc-100 dark:active:bg-zinc-700`.
 
 ### Settings Sections
 

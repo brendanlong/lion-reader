@@ -122,7 +122,7 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
                   <div className="relative">
                     <button
                       onClick={() => setUserMenuOpen(!userMenuOpen)}
-                      className="ui-text-sm border-edge-strong bg-surface text-body flex min-h-[40px] items-center gap-2 rounded-md border px-3 transition-colors hover:bg-zinc-50 active:bg-zinc-100 dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
+                      className="ui-text-sm border-edge-strong bg-surface text-body hover:bg-surface-hover flex min-h-[40px] items-center gap-2 rounded-md border px-3 transition-colors active:bg-zinc-100 dark:active:bg-zinc-700"
                       aria-expanded={userMenuOpen}
                       aria-haspopup="true"
                     >

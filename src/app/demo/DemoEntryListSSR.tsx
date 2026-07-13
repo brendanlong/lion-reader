@@ -32,7 +32,7 @@ export function DemoEntryListSSR({ entries, backHref, title }: DemoEntryListSSRP
             <a
               key={entry.id}
               href={`${backHref}?entry=${entry.id}`}
-              className="group relative block cursor-pointer rounded-lg border border-zinc-300 bg-zinc-50 p-3 transition-colors hover:bg-zinc-100 active:bg-zinc-200 sm:p-4 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-700/50 dark:active:bg-zinc-700"
+              className="group border-edge-input relative block cursor-pointer rounded-lg border bg-zinc-50 p-3 transition-colors hover:bg-zinc-100 active:bg-zinc-200 sm:p-4 dark:bg-zinc-800 dark:hover:bg-zinc-700/50 dark:active:bg-zinc-700"
             >
               <div className="flex items-start gap-3">
                 <div className="mt-1.5 shrink-0">

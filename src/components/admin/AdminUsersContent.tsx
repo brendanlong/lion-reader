@@ -248,7 +248,7 @@ export default function AdminUsersContent() {
             id="user-sort"
             value={sort}
             onChange={(e) => setSort(e.target.value as UserSort)}
-            className="ui-text-sm bg-surface text-strong block rounded-md border border-zinc-300 px-3 py-2 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none dark:border-zinc-700 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+            className="ui-text-sm bg-surface text-strong border-edge-input focus:border-focus focus:ring-focus block rounded-md border px-3 py-2 focus:ring-2 focus:ring-offset-2 focus:outline-none"
           >
             {SORT_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
