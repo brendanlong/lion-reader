@@ -107,7 +107,7 @@ export function EntryArticle({
                 href={url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="ui-text-xl sm:ui-text-2xl hover:text-accent text-strong block leading-tight font-bold underline-offset-2 transition-colors hover:underline md:text-3xl"
+                className="ui-text-xl sm:ui-text-2xl hover:text-accent text-strong block leading-tight font-bold transition-colors md:text-3xl"
               >
                 {title}
               </a>
