@@ -115,7 +115,7 @@ export function NavLinkWithIcon({
       {icon && <span className="shrink-0">{icon}</span>}
       <span className="truncate">{label}</span>
       {count !== undefined && count > 0 && (
-        <span className="ui-text-xs text-muted ml-auto shrink-0">({count})</span>
+        <span className="ui-text-xs text-muted ml-auto shrink-0 tabular-nums">({count})</span>
       )}
     </ClientLink>
   );
