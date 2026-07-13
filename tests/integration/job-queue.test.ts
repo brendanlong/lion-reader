@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { jobs, feeds, subscriptions, users } from "../../src/server/db/schema";
 import {
@@ -18,6 +18,7 @@ import {
   listJobs,
   ensureFeedJob,
   updateFeedJobNextRun,
+  scheduleFeedRefreshNow,
   claimFeedJob,
   claimSingletonJob,
   renewJobLease,
@@ -675,6 +676,106 @@ describe("Job Queue", () => {
 
       expect(updated).not.toBeNull();
       expect(updated!.nextRunAt!.getTime()).toBe(newTime.getTime());
+    });
+
+    it("scheduleFeedRefreshNow creates a force-reprocess job set to run now", async () => {
+      const feedId = generateUuidv7();
+      const job = await scheduleFeedRefreshNow(feedId);
+
+      expect(job.type).toBe("fetch_feed");
+      const payload = getJobPayload<"fetch_feed">(job);
+      expect(payload.feedId).toBe(feedId);
+      expect(typeof payload.forceReprocessRequestedAt).toBe("string");
+      expect(job.nextRunAt!.getTime()).toBeLessThanOrEqual(Date.now());
+
+      // Single-flight: still exactly one job for the feed.
+      expect(await listJobs({ type: "fetch_feed" })).toHaveLength(1);
+    });
+
+    it("scheduleFeedRefreshNow pulls an already-scheduled job forward and sets the token", async () => {
+      const feedId = generateUuidv7();
+      const future = new Date(Date.now() + 3 * 60 * 60 * 1000);
+      await createJob({ type: "fetch_feed", payload: { feedId }, nextRunAt: future });
+
+      const job = await scheduleFeedRefreshNow(feedId);
+
+      // Coalesced onto the existing single job, pulled forward, token merged in,
+      // feedId preserved.
+      expect(await listJobs({ type: "fetch_feed" })).toHaveLength(1);
+      expect(job.nextRunAt!.getTime()).toBeLessThanOrEqual(Date.now());
+      const payload = getJobPayload<"fetch_feed">(job);
+      expect(payload.feedId).toBe(feedId);
+      expect(typeof payload.forceReprocessRequestedAt).toBe("string");
+    });
+
+    it("finishJob consumes the forceReprocess token on a successful run", async () => {
+      const feedId = generateUuidv7();
+      await scheduleFeedRefreshNow(feedId);
+      const claimed = await claimJob();
+      const claimedAt = getJobPayload<"fetch_feed">(claimed!).forceReprocessRequestedAt;
+      expect(typeof claimedAt).toBe("string");
+
+      const cadence = new Date(Date.now() + 60 * 60 * 1000);
+      const finished = await finishJob(claimed!.id, {
+        success: true,
+        nextRunAt: cadence,
+        consumeForceReprocess: { claimedAt: claimedAt ?? null },
+      });
+
+      // Token consumed, feedId preserved, normal cadence used.
+      expect(getJobPayload<"fetch_feed">(finished!).forceReprocessRequestedAt).toBeUndefined();
+      expect(getJobPayload<"fetch_feed">(finished!).feedId).toBe(feedId);
+      expect(finished!.nextRunAt!.getTime()).toBe(cadence.getTime());
+    });
+
+    it("finishJob keeps a mid-run re-armed token and re-runs now (no lost request)", async () => {
+      // Two subscribers race a running forced fetch: sub1 arms + the worker
+      // claims; sub2 re-arms with a newer token while the fetch runs. The finish
+      // must NOT drop sub2's request — it keeps the token and pulls next_run to
+      // now so the fetch re-runs and covers sub2.
+      const feedId = generateUuidv7();
+      await scheduleFeedRefreshNow(feedId);
+      const claimed = await claimJob();
+      const claimedAt = getJobPayload<"fetch_feed">(claimed!).forceReprocessRequestedAt!;
+
+      // Re-arm with a strictly-later token (simulate sub2 mid-run).
+      await db
+        .update(jobs)
+        .set({
+          payload: sql`${jobs.payload} || jsonb_build_object('forceReprocessRequestedAt', ${new Date(Date.now() + 1000).toISOString()}::text)`,
+        })
+        .where(eq(jobs.id, claimed!.id));
+
+      const finished = await finishJob(claimed!.id, {
+        success: true,
+        nextRunAt: new Date(Date.now() + 60 * 60 * 1000),
+        consumeForceReprocess: { claimedAt: claimedAt ?? null },
+      });
+
+      // Token still present (sub2's request survives) and scheduled to run now.
+      expect(getJobPayload<"fetch_feed">(finished!).forceReprocessRequestedAt).toBeDefined();
+      expect(finished!.nextRunAt!.getTime()).toBeLessThanOrEqual(Date.now());
+    });
+
+    it("finishJob after an ordinary poll runs now if a request landed mid-run", async () => {
+      // A plain poll (no token at claim) finishes while a subscribe arms the job.
+      // The finish must honor the pending request: keep it and run now.
+      const feedId = generateUuidv7();
+      await createJob({ type: "fetch_feed", payload: { feedId }, nextRunAt: new Date() });
+      const claimed = await claimJob();
+      expect(getJobPayload<"fetch_feed">(claimed!).forceReprocessRequestedAt).toBeUndefined();
+
+      // A subscribe arms the job during the run.
+      await scheduleFeedRefreshNow(feedId);
+
+      const finished = await finishJob(claimed!.id, {
+        success: true,
+        nextRunAt: new Date(Date.now() + 60 * 60 * 1000),
+        consumeForceReprocess: { claimedAt: null },
+      });
+
+      expect(getJobPayload<"fetch_feed">(finished!).forceReprocessRequestedAt).toBeDefined();
+      expect(finished!.nextRunAt!.getTime()).toBeLessThanOrEqual(Date.now());
     });
   });
 

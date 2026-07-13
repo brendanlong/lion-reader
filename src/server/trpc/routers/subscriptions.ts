@@ -35,7 +35,8 @@ import { discoverFeeds } from "@/server/feed/discovery";
 import { getDomainFromUrl } from "@/server/feed/types";
 import { extractUserIdFromFeedUrl, fetchLessWrongUserById } from "@/server/feed/lesswrong";
 import { parseOpml, generateOpml, type OpmlFeed, type OpmlSubscription } from "@/server/feed/opml";
-import { createJob } from "@/server/jobs/queue";
+import { createJob, scheduleFeedRefreshNow } from "@/server/jobs/queue";
+import { shouldRefetchOnSubscribe } from "@/server/feed/scheduling";
 import { publishSubscriptionDeleted, publishSubscriptionUpdated } from "@/server/redis/pubsub";
 import { attemptUnsubscribe, getLatestUnsubscribeMailto } from "@/server/email/unsubscribe";
 import { logger } from "@/lib/logger";
@@ -216,20 +217,60 @@ export const subscriptionsRouter = createTRPCRouter({
       const userId = ctx.session.user.id;
       const feedUrl = input.url;
 
-      // Check if this exact URL already exists as a feed that's been fetched.
-      // If so, we can skip the network request entirely.
+      // Look up whether we already know this feed, and its fetch state.
       const existingFeed = await ctx.db
-        .select({ lastFetchedAt: feeds.lastFetchedAt })
+        .select({
+          id: feeds.id,
+          lastFetchedAt: feeds.lastFetchedAt,
+          nextFetchAt: feeds.nextFetchAt,
+          websubActive: feeds.websubActive,
+        })
         .from(feeds)
         .where(eq(feeds.url, feedUrl))
         .limit(1);
 
-      const canSkipFetch = existingFeed.length > 0 && existingFeed[0].lastFetchedAt !== null;
+      let feedInput: subscriptionsService.CreateSubscriptionFeedInput;
+      // Feed id to force-refresh in the background after the subscription is
+      // created (set only when a known feed is stale — see below).
+      let staleFeedId: string | null = null;
+      if (existingFeed.length === 0 || existingFeed[0].lastFetchedAt === null) {
+        // Brand-new feed, or a feed row that has never been successfully fetched
+        // (e.g. a raw URL inserted by Google Reader `quickadd` / OPML import that
+        // may actually be an HTML page): fetch and parse to resolve the real feed
+        // URL + metadata via feed discovery. Its entries are populated by the
+        // background fetch job, so no forced refresh is needed here. Discovery
+        // throwing on an unreachable/unparseable URL surfaces as a subscribe
+        // error, as before.
+        feedInput = await fetchAndResolveFeed(feedUrl);
+      } else {
+        const existing = existingFeed[0];
+        feedInput = { url: feedUrl };
+        // Known feed (already fetched, so feed.url is a validated feed URL). If
+        // its cached entries may be stale (WebSub feed whose last real poll has
+        // aged out, or a normal feed past its poll cadence), we can't know the
+        // current set without re-fetching. Rather than fetch on the request path,
+        // skip the synchronous populate and schedule an immediate forced
+        // background refresh (below), whose fanout populates this subscriber from
+        // ground truth — excluding anything the publisher has since removed
+        // (#1078). Fresh feeds skip the refresh and are populated synchronously.
+        if (shouldRefetchOnSubscribe(existing)) {
+          staleFeedId = existing.id;
+        }
+      }
 
-      // Fetch and parse only if we don't already know this feed
-      const feedInput = canSkipFetch ? { url: feedUrl } : await fetchAndResolveFeed(feedUrl);
+      const result = await subscriptionsService.createSubscription(ctx.db, userId, feedInput, {
+        skipInitialPopulate: staleFeedId !== null,
+      });
 
-      const result = await subscriptionsService.createSubscription(ctx.db, userId, feedInput);
+      // For a stale feed with a newly created (or reactivated) subscription,
+      // trigger the forced background refresh. The job queue is single-flight per
+      // feed, so concurrent subscribes coalesce into one fetch (and it merges
+      // with any pending scheduled poll). Skipped when the subscription was
+      // already active — nothing to populate.
+      if (staleFeedId !== null && !result.alreadyActive) {
+        await scheduleFeedRefreshNow(staleFeedId);
+      }
+
       return formatSubscriptionResponse(result);
     }),
 

@@ -192,6 +192,33 @@ async function fetchFullContentForNewEntries(
 }
 
 /**
+ * Options for `handleFetchFeed`.
+ */
+export interface HandleFetchFeedOptions {
+  /**
+   * Force a full reprocess + visibility refresh, regardless of whether the feed
+   * changed. Set by the interactive subscribe path (via
+   * `scheduleFeedRefreshNow`) so a brand-new subscriber to a stale feed is
+   * populated with ground truth even when the fetch finds no changes. Still
+   * runs on the background worker like any other fetch. `forceReprocess` mode:
+   *
+   * - fetches **unconditionally** (no If-None-Match / If-Modified-Since) and
+   *   bypasses the body-hash short-circuit, so the feed is always parsed and
+   *   processed — even when the content is byte-identical to the last poll (a
+   *   WebSub feed that pushed then dropped an entry looks byte-identical, but
+   *   the drop must be applied);
+   * - re-stamps every current entry's `last_seen_at` to this fetch and advances
+   *   `last_entries_updated_at` (`alwaysUpdateVisibility`), re-establishing a
+   *   single visibility generation and fanning out `user_entries` to the new
+   *   subscriber (`createUserEntriesForFeed` runs even with no changes).
+   *
+   * It does NOT change how content is fetched/parsed otherwise — full-content
+   * fetching and inline sanitization stay on, same as a normal worker poll.
+   */
+  forceReprocess?: boolean;
+}
+
+/**
  * Handler for fetch_feed jobs.
  * Fetches a feed, processes entries, and returns the next fetch time.
  *
@@ -199,14 +226,17 @@ async function fetchFullContentForNewEntries(
  * by the job enable/disable mechanism. If a job is running, the feed has subscribers.
  *
  * @param payload - The job payload containing the feedId
+ * @param options - See {@link HandleFetchFeedOptions} (`forceReprocess` subscribe-time refresh)
  * @returns Job handler result with next run time
  */
 export async function handleFetchFeed(
-  payload: JobPayloads["fetch_feed"]
+  payload: JobPayloads["fetch_feed"],
+  options: HandleFetchFeedOptions = {}
 ): Promise<JobHandlerResult> {
   const { feedId } = payload;
+  const { forceReprocess = false } = options;
 
-  logger.debug("Starting feed fetch", { feedId });
+  logger.debug("Starting feed fetch", { feedId, forceReprocess });
 
   // Start metrics timer for feed fetch
   const endFeedFetchTimer = startFeedFetchTimer();
@@ -242,16 +272,18 @@ export async function handleFetchFeed(
     .from(subscriptions)
     .where(and(eq(subscriptions.feedId, feedId), isNull(subscriptions.unsubscribedAt)));
 
-  // Fetch the feed with conditional GET headers
+  // Fetch the feed with conditional GET headers. A forced (subscribe-time)
+  // refresh fetches unconditionally so it always gets the full current feed back
+  // (a 304 would carry no body to re-establish visibility from).
   const fetchResult = await fetchFeed(feed.url, {
-    etag: feed.etag ?? undefined,
-    lastModified: feed.lastModifiedHeader ?? undefined,
+    etag: forceReprocess ? undefined : (feed.etag ?? undefined),
+    lastModified: forceReprocess ? undefined : (feed.lastModifiedHeader ?? undefined),
     feedId,
     subscriberCount,
   });
 
   // Process the result based on status
-  const handlerResult = await processFetchResult(feed, fetchResult);
+  const handlerResult = await processFetchResult(feed, fetchResult, forceReprocess);
 
   // Map handler result to metrics status
   const metricsStatus: FeedFetchStatus = getMetricsStatus(fetchResult, handlerResult);
@@ -306,6 +338,9 @@ function getMetricsStatus(
  * @param redirects - The redirect chain from the fetch
  * @param websubLinks - WebSub hub and self URLs from HTTP Link headers
  * @param now - Current timestamp
+ * @param forceReprocess - Whether this is a forced (subscribe-time) refresh; see
+ *   `HandleFetchFeedOptions.forceReprocess`. Re-stamps all current entries'
+ *   visibility and fans out even when nothing changed.
  * @returns Job handler result with next run time
  */
 async function processSuccessfulFetch(
@@ -315,9 +350,11 @@ async function processSuccessfulFetch(
   bodyHash: string,
   redirects: RedirectInfo[],
   websubLinks: WebSubLinkHeaders,
-  now: Date
+  now: Date,
+  forceReprocess = false
 ): Promise<JobHandlerResult> {
-  // Decode to string for parsing (we only get here when hash differs, so content changed)
+  // Decode to string for parsing. A forced refresh also reaches here on an
+  // unchanged body (it bypasses the body-hash short-circuit).
   const bodyText = body.toString("utf-8");
 
   // Parse the feed content
@@ -418,20 +455,26 @@ async function processSuccessfulFetch(
     previousLastEntriesUpdatedAt: feed.lastEntriesUpdatedAt,
     feedUrl: feed.url ?? undefined,
     feedTitle: resolvedFeedTitle,
+    // A forced (subscribe-time) refresh re-stamps all current entries' visibility
+    // and fans out user_entries even when nothing changed, so the new subscriber
+    // sees exactly the current feed.
+    alwaysUpdateVisibility: forceReprocess,
   });
 
-  // Fetch full content for new entries if any subscriber has fetchFullContent enabled
-  // This is done after processEntries so entries exist in the database
+  // Fetch full content for new entries if any subscriber has fetchFullContent
+  // enabled. This is done after processEntries so entries exist in the database.
   const newEntries = processResult.entries.filter((e) => e.isNew);
   const newEntryIds = newEntries.map((e) => e.id);
   const fullContentResult = await fetchFullContentForNewEntries(feed.id, newEntryIds);
 
-  // Push-reliability telemetry: this handler only runs for scheduled/backup
-  // polls (hub pushes go through ingestWebsubNotification, not here). If push
-  // were working, the hub would already have delivered these entries, so any
-  // new entry a backup poll finds on a feed we believed push was covering is a
-  // push miss. Record it per hub for later analysis (see websub-hub-stats.ts).
-  if ((feed.websubActive ?? false) && feed.hubUrl && newEntries.length > 0) {
+  // Push-reliability telemetry: for scheduled/backup polls only (hub pushes go
+  // through ingestWebsubNotification, not here). If push were working, the hub
+  // would already have delivered these entries, so any new entry a backup poll
+  // finds on a feed we believed push was covering is a push miss. Record it per
+  // hub for later analysis (see websub-hub-stats.ts). Skipped for a forced
+  // subscribe-time refresh: it's a user-triggered fetch, not a scheduled backup
+  // poll, so crediting/faulting the hub from it would skew the tally.
+  if (!forceReprocess && (feed.websubActive ?? false) && feed.hubUrl && newEntries.length > 0) {
     await recordBackupPollNewEntries(
       feed.hubUrl,
       newEntries.map((e) => e.newEntryData?.publishedAt),
@@ -455,9 +498,13 @@ async function processSuccessfulFetch(
 
   // Update feed metadata including WebSub hub discovery
 
-  // Only update lastEntriesUpdatedAt when entries actually changed (new, updated, or disappeared)
-  // This timestamp must match entries.lastSeenAt for entries currently in the feed
-  const lastEntriesUpdatedAt = processResult.hasChanges ? now : feed.lastEntriesUpdatedAt;
+  // Only update lastEntriesUpdatedAt when entries actually changed (new, updated,
+  // or disappeared), so unchanged polls don't churn. A forced subscribe-time
+  // refresh advances it unconditionally: it re-stamped every current entry's
+  // last_seen_at to `now` (alwaysUpdateVisibility), so lastEntriesUpdatedAt must
+  // move to `now` too to keep the "current generation" invariant those two share.
+  const lastEntriesUpdatedAt =
+    processResult.hasChanges || forceReprocess ? now : feed.lastEntriesUpdatedAt;
 
   // Determine the new hub URL state
   // If the feed content has a hub URL, use it; otherwise clear it
@@ -586,7 +633,11 @@ function generateBodyHash(body: Buffer): string {
  * @param result - The fetch result
  * @returns Job handler result with next run time
  */
-async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<JobHandlerResult> {
+async function processFetchResult(
+  feed: Feed,
+  result: FetchFeedResult,
+  forceReprocess = false
+): Promise<JobHandlerResult> {
   const now = new Date();
 
   switch (result.status) {
@@ -594,7 +645,11 @@ async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<
       // Check if body is unchanged by comparing hashes
       const bodyHash = generateBodyHash(result.body);
 
-      if (feed.bodyHash === bodyHash) {
+      // A forced subscribe-time refresh must always re-process so it can
+      // re-stamp the current entries' visibility (the body can be byte-identical
+      // to the last poll yet a WebSub push may have desynced last_seen_at, or an
+      // entry may need to be dropped from the current generation).
+      if (!forceReprocess && feed.bodyHash === bodyHash) {
         // Feed body unchanged - skip parsing and entry processing
         // But still check for permanent redirects (we know the content was valid before)
         const permanentRedirectUrl = feed.url
@@ -655,7 +710,8 @@ async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<
         bodyHash,
         result.redirects,
         result.websubLinks,
-        now
+        now,
+        forceReprocess
       );
     }
 

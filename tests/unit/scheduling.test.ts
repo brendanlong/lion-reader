@@ -10,6 +10,7 @@ import {
   getNextFetchTime,
   syndicationToSeconds,
   getMinFetchIntervalSeconds,
+  shouldRefetchOnSubscribe,
   MIN_FETCH_INTERVAL_WITH_CACHE_HINT_SECONDS,
   MAX_FETCH_INTERVAL_SECONDS,
   RATE_LIMIT_MAX_BACKOFF_SECONDS,
@@ -977,5 +978,76 @@ describe("calculateJitter", () => {
     // Above threshold: still capped
     const aboveThreshold = thresholdInterval + 1000;
     expect(calculateJitter(aboveThreshold, 1)).toBe(MAX_JITTER_SECONDS);
+  });
+});
+
+describe("shouldRefetchOnSubscribe", () => {
+  const now = new Date("2024-06-01T12:00:00Z");
+
+  it("returns true for a feed that has never been fetched", () => {
+    expect(
+      shouldRefetchOnSubscribe({ lastFetchedAt: null, nextFetchAt: null, websubActive: false }, now)
+    ).toBe(true);
+  });
+
+  describe("normal (non-WebSub) feeds", () => {
+    it("is not stale before it is due for its next poll", () => {
+      const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+      const inThirtyMinutes = new Date(now.getTime() + 30 * 60 * 1000);
+      expect(
+        shouldRefetchOnSubscribe(
+          { lastFetchedAt: oneHourAgo, nextFetchAt: inThirtyMinutes, websubActive: false },
+          now
+        )
+      ).toBe(false);
+    });
+
+    it("is stale once it is due for its next poll", () => {
+      const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
+      const oneHourAgoDue = new Date(now.getTime() - 60 * 60 * 1000);
+      expect(
+        shouldRefetchOnSubscribe(
+          { lastFetchedAt: twoHoursAgo, nextFetchAt: oneHourAgoDue, websubActive: false },
+          now
+        )
+      ).toBe(true);
+    });
+
+    it("is stale when nextFetchAt is unknown", () => {
+      const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+      expect(
+        shouldRefetchOnSubscribe(
+          { lastFetchedAt: oneHourAgo, nextFetchAt: null, websubActive: false },
+          now
+        )
+      ).toBe(true);
+    });
+  });
+
+  describe("WebSub feeds", () => {
+    // WebSub feeds ignore nextFetchAt (24h backup) and key off time since the
+    // last real poll, bounded by the normal cache window.
+    const cacheWindowMs = getMinFetchIntervalSeconds() * 1000;
+    const backupNextFetch = new Date(now.getTime() + 20 * 60 * 60 * 1000); // 20h out
+
+    it("is not stale within the cache window of the last real poll", () => {
+      const justPolled = new Date(now.getTime() - cacheWindowMs / 2);
+      expect(
+        shouldRefetchOnSubscribe(
+          { lastFetchedAt: justPolled, nextFetchAt: backupNextFetch, websubActive: true },
+          now
+        )
+      ).toBe(false);
+    });
+
+    it("is stale once the last real poll is older than the cache window", () => {
+      const staleFetch = new Date(now.getTime() - cacheWindowMs - 1000);
+      expect(
+        shouldRefetchOnSubscribe(
+          { lastFetchedAt: staleFetch, nextFetchAt: backupNextFetch, websubActive: true },
+          now
+        )
+      ).toBe(true);
+    });
   });
 });
