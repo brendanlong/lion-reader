@@ -484,7 +484,13 @@ async function handleSaveReaction(
 
   for (const url of urls) {
     try {
-      const saved = await saveArticle(db, resolved.userId, { url });
+      // Discord is a non-interactive surface like Wallabag/MCP: use the user's
+      // stored Google credentials for private Google Docs when already
+      // linked/granted (the failure just surfaces as the error reaction below).
+      const saved = await saveArticle(db, resolved.userId, {
+        url,
+        googleDocsAuth: "non-interactive",
+      });
       logger.info("Saved article via Discord", {
         userId: resolved.userId,
         discordUser: user.tag,
