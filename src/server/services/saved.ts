@@ -65,14 +65,24 @@ export interface SaveArticleParams {
   /** With refetch, update even if the new content appears lower quality. */
   force?: boolean;
   /**
-   * Enable the interactive private-Google-Docs auth flow: when a Google Docs
-   * URL can't be fetched publicly, throw NEEDS_GOOGLE_SIGNIN /
-   * NEEDS_DOCS_PERMISSION / NEEDS_GOOGLE_REAUTH errors that the web UI turns
-   * into consent prompts (or fetch with the user's OAuth token when already
-   * granted). Leave off for non-interactive callers (MCP), which fall back to
-   * a plain HTML fetch.
+   * Enable the private-Google-Docs auth flow: when a Google Docs URL can't be
+   * fetched publicly, fetch it with the user's stored Google OAuth token
+   * (requires a linked Google account with the Docs/Drive scopes granted). Both
+   * modes attempt exactly the same token fetch; they differ only in how they
+   * report "auth isn't set up yet":
+   *
+   * - `"interactive"` (web UI): throw the machine-readable NEEDS_GOOGLE_SIGNIN /
+   *   NEEDS_DOCS_PERMISSION / NEEDS_GOOGLE_REAUTH errors the UI matches to drive
+   *   an in-page consent prompt.
+   * - `"non-interactive"` (Wallabag, MCP, and other API surfaces that can't run
+   *   an interactive consent dance): throw the same 4xx classification but with a
+   *   human-readable message pointing the user at the web app to complete the
+   *   one-time Google authorization.
+   *
+   * Leave undefined for callers that shouldn't attempt private docs at all; they
+   * fall back to a plain HTML fetch.
    */
-  googleDocsAuth?: boolean;
+  googleDocsAuth?: "interactive" | "non-interactive";
 }
 
 /** How a saveArticle call resolved. */
@@ -361,17 +371,40 @@ async function insertSavedEntry(
 // ============================================================================
 
 /**
- * Fetch a private Google Doc with the user's OAuth credentials (the
- * interactive `googleDocsAuth` flow).
+ * Human-readable messages for the `"non-interactive"` auth flow (Wallabag, MCP,
+ * and other API surfaces that can't run an in-page consent dance). The
+ * `"interactive"` flow instead throws the machine-readable NEEDS_* codes the web
+ * UI matches — both share the same 4xx classification, so Wallabag's
+ * `clientErrorResponse` and MCP surface either one cleanly.
+ */
+const NON_INTERACTIVE_GOOGLE_DOCS_MESSAGES = {
+  signin:
+    "This is a private Google Doc. To save private Google Docs from the API, first link your Google account and authorize Google Docs access in the Lion Reader web app (by saving a Google Doc there once).",
+  permission:
+    "This is a private Google Doc. To save it from the API, grant Google Docs access in the Lion Reader web app first (by saving a Google Doc there once).",
+  reauth:
+    "Your Google authorization has expired. Please reconnect your Google account in the Lion Reader web app, then try saving again.",
+} as const;
+
+/**
+ * Fetch a private Google Doc with the user's stored OAuth credentials.
  *
- * Throws NEEDS_GOOGLE_SIGNIN when no Google account is linked and
- * NEEDS_DOCS_PERMISSION when the required scopes haven't been granted — the
- * web UI turns these into consent prompts. Returns null (caller falls back to
- * a plain HTML fetch) when the doc can't be fetched for other reasons.
+ * When no Google account is linked or the required scopes aren't granted, throws
+ * a 4xx error. The `mode` only controls the *message*:
+ * - `"interactive"` throws the machine-readable NEEDS_GOOGLE_SIGNIN /
+ *   NEEDS_DOCS_PERMISSION / NEEDS_GOOGLE_REAUTH codes the web UI turns into
+ *   consent prompts.
+ * - `"non-interactive"` throws the same UNAUTHORIZED/FORBIDDEN classification
+ *   with a human-readable message telling API clients to complete the one-time
+ *   authorization in the web app.
+ *
+ * Returns null (caller falls back to a plain HTML fetch) when the doc can't be
+ * fetched for other reasons.
  */
 async function fetchPrivateGoogleDocWithAuth(
   userId: string,
-  normalizedUrl: string
+  normalizedUrl: string,
+  mode: "interactive" | "non-interactive"
 ): Promise<GoogleDocsContent | null> {
   const docId = extractDocId(normalizedUrl);
   if (!docId) {
@@ -384,10 +417,14 @@ async function fetchPrivateGoogleDocWithAuth(
     logger.debug("User needs to sign in with Google for private docs", {
       userId,
       url: normalizedUrl,
+      mode,
     });
     throw new TRPCError({
       code: "UNAUTHORIZED",
-      message: "NEEDS_GOOGLE_SIGNIN",
+      message:
+        mode === "interactive"
+          ? "NEEDS_GOOGLE_SIGNIN"
+          : NON_INTERACTIVE_GOOGLE_DOCS_MESSAGES.signin,
       cause: {
         code: "NEEDS_GOOGLE_SIGNIN",
         details: {
@@ -411,10 +448,14 @@ async function fetchPrivateGoogleDocWithAuth(
       url: normalizedUrl,
       hasDocsApiScope,
       hasDriveScope,
+      mode,
     });
     throw new TRPCError({
       code: "FORBIDDEN",
-      message: "NEEDS_DOCS_PERMISSION",
+      message:
+        mode === "interactive"
+          ? "NEEDS_DOCS_PERMISSION"
+          : NON_INTERACTIVE_GOOGLE_DOCS_MESSAGES.permission,
       cause: {
         code: "NEEDS_DOCS_PERMISSION",
         details: {
@@ -433,7 +474,10 @@ async function fetchPrivateGoogleDocWithAuth(
     if (error instanceof Error && error.message === "GOOGLE_TOKEN_INVALID") {
       throw new TRPCError({
         code: "UNAUTHORIZED",
-        message: "Google authentication expired. Please reconnect your Google account.",
+        message:
+          mode === "interactive"
+            ? "Google authentication expired. Please reconnect your Google account."
+            : NON_INTERACTIVE_GOOGLE_DOCS_MESSAGES.reauth,
       });
     } else if (error instanceof Error && error.message === "GOOGLE_PERMISSION_DENIED") {
       throw new TRPCError({
@@ -443,7 +487,10 @@ async function fetchPrivateGoogleDocWithAuth(
     } else if (error instanceof Error && error.message === "GOOGLE_NEEDS_REAUTH") {
       throw new TRPCError({
         code: "UNAUTHORIZED",
-        message: "NEEDS_GOOGLE_REAUTH",
+        message:
+          mode === "interactive"
+            ? "NEEDS_GOOGLE_REAUTH"
+            : NON_INTERACTIVE_GOOGLE_DOCS_MESSAGES.reauth,
         cause: {
           code: "NEEDS_GOOGLE_REAUTH",
           details: {
@@ -499,9 +546,9 @@ interface AcquiredArticleContent {
 
 /**
  * Acquire the article HTML for a save. Precedence: provided HTML > plugin
- * (incl. public Google Docs) > private Google Docs OAuth (interactive
- * callers) > plain HTML fetch. Enforces maxSavedArticleSizeBytes on every
- * path.
+ * (incl. public Google Docs) > private Google Docs OAuth (when the caller
+ * opts in via `googleDocsAuth`) > plain HTML fetch. Enforces
+ * maxSavedArticleSizeBytes on every path.
  */
 async function acquireArticleContent(
   userId: string,
@@ -587,11 +634,17 @@ async function acquireArticleContent(
     }
   }
 
-  // Private Google Docs: the plugin only fetches public docs. For
-  // interactive callers, try the user's OAuth credentials (throws NEEDS_*
-  // errors the web UI converts into consent prompts).
+  // Private Google Docs: the plugin only fetches public docs. When the caller
+  // opts in, try the user's stored OAuth credentials. This needs no
+  // interactivity once the account is linked and the scopes are granted, so
+  // the compat surfaces (Wallabag/MCP) use "non-interactive" mode — the only
+  // difference is the message thrown when auth isn't set up yet.
   if (params.googleDocsAuth && isGoogleDocsUrl(params.url)) {
-    const googleDocsContent = await fetchPrivateGoogleDocWithAuth(userId, normalizedUrl);
+    const googleDocsContent = await fetchPrivateGoogleDocWithAuth(
+      userId,
+      normalizedUrl,
+      params.googleDocsAuth
+    );
     if (googleDocsContent) {
       if (googleDocsContent.html.length > maxSize) {
         throw errors.contentTooLarge("Article", maxSize);
@@ -685,8 +738,9 @@ async function acquireArticleContent(
  * it in place (guarded by a content-quality comparison unless `force`).
  *
  * Uses the plugin system for special URL handling (LessWrong, ArXiv, public
- * Google Docs, etc.); private Google Docs are supported via the interactive
- * `googleDocsAuth` option.
+ * Google Docs, etc.); private Google Docs are supported via the
+ * `googleDocsAuth` option (interactive for the web UI, non-interactive for the
+ * Wallabag/MCP compat surfaces).
  */
 /**
  * Normalizes a URL exactly the way {@link saveArticle} does before storing it as

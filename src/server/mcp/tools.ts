@@ -310,13 +310,18 @@ function buildTools(): Tool[] {
     {
       name: "save_article",
       description:
-        "Save a URL for later reading. Fetches the page, extracts clean content using Readability, and stores it. Returns the saved article if already saved.",
+        "Save a URL for later reading. Fetches the page, extracts clean content using Readability, and stores it. Returns the saved article if already saved. Private Google Docs are supported when the user has linked their Google account and granted Google Docs access in the web app; otherwise a clear error explains how to authorize.",
       inputSchema: toInputSchema(saveArticleArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(saveArticleArgs, args);
         return savedService.saveArticle(db, userId, {
           url: params.url,
           title: params.title,
+          // Use the user's stored Google credentials for private Google Docs
+          // when already linked/granted; otherwise throw a clear error telling
+          // them to authorize Google Docs access in the web app (an MCP client
+          // can't run the interactive consent flow).
+          googleDocsAuth: "non-interactive",
         });
       },
     },
