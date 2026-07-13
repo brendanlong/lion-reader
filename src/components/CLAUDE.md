@@ -86,7 +86,7 @@ Settings pages are built from `SettingsSection` (`@/components/settings/Settings
 - **Use existing icons** - Check the icon list above before adding inline SVGs
 - **Watch for patterns** - If you see the same UI pattern 3+ times, consider extracting a component
 - **44px touch targets** - Ensure interactive elements meet WCAG touch target guidelines (handled by UI components)
-- **Dark mode** - All UI components support dark mode via `dark:` Tailwind classes. The e-paper theme (`.epaper` on `<html>`) is light-like, so `dark:` variants don't apply to it; it restyles the app purely through the semantic-color CSS variables, plus colors that must gray safely (see the `.epaper` block in `globals.css`)
+- **Dark mode** - All UI components support dark mode via `dark:` Tailwind classes. The e-paper theme (`.epaper` on `<html>`) is light-like, so `dark:` variants don't apply to it; it restyles the app purely through the semantic-color CSS variables, plus colors that must gray safely (see the `.epaper` block in `globals.css`). When a component genuinely needs an e-paper-only override (e.g. a border that can't come from a token because e-paper has no background contrast), use the `epaper:` Tailwind variant — registered via `@custom-variant epaper` in `globals.css`, mirroring `dark:`. Reach for it sparingly; prefer the semantic tokens.
 
 ### When to Keep Icons Local
 

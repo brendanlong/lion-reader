@@ -70,15 +70,22 @@ export function getItemClasses(read: boolean, selected: boolean): string {
   if (selected) {
     // Selected state takes priority - accent ring indicator
     return `${baseClasses} border-accent ring-2 ring-accent ring-offset-1 dark:ring-offset-zinc-900 ${
-      read ? "bg-surface" : "bg-zinc-50 dark:bg-zinc-800"
+      read ? "bg-canvas" : "bg-surface"
     }`;
   }
 
   if (read) {
-    return `${baseClasses} border-edge bg-surface hover:bg-zinc-50 active:bg-zinc-100 dark:hover:bg-zinc-800/50 dark:active:bg-zinc-800`;
+    // Read entries recede into the page canvas: no fill of their own and a
+    // faint hairline border, so they read as "already handled". They lift to a
+    // surface fill on hover to signal they're still clickable (the surface
+    // tokens already carry their own dark-mode values).
+    return `${baseClasses} border-edge bg-canvas hover:bg-surface active:bg-surface-muted`;
   }
 
-  return `${baseClasses} border-zinc-300 bg-zinc-50 hover:bg-zinc-100 active:bg-zinc-200 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-700/50 dark:active:bg-zinc-700`;
+  // Unread entries stand out as raised surface cards with a distinctly stronger
+  // border (the only card/canvas separation available on e-paper, where every
+  // fill is white).
+  return `${baseClasses} border-zinc-300 bg-surface hover:bg-zinc-50 active:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-800 dark:active:bg-zinc-700 epaper:border-zinc-500`;
 }
 
 /**
@@ -187,7 +194,7 @@ export const EntryListItem = memo(function EntryListItem({
           <div className="flex items-start justify-between gap-2">
             <h3
               className={`ui-text-sm line-clamp-2 ${
-                read ? "text-body font-normal" : "text-strong font-medium"
+                read ? "text-muted font-normal" : "text-strong font-semibold"
               }`}
             >
               {displayTitle}
