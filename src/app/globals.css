@@ -78,6 +78,10 @@
   --success-solid: #16a34a; /* green-600 */
   --success-solid-foreground: #ffffff;
   --success-solid-hover: #15803d; /* green-700 */
+  /* Banner: darker than -solid so white text meets AA (5.0:1); -solid stays
+     bright for icon/dot fills that carry no text. See "Status colors" note. */
+  --success-banner: #15803d; /* green-700 */
+  --success-banner-foreground: #ffffff;
 
   /* Warning (amber - the single warning hue; replaces the amber/yellow drift) */
   --warning: #b45309; /* amber-700 - AA on white (5.0:1); amber-600 fails AA */
@@ -88,6 +92,8 @@
   --warning-solid: #f59e0b; /* amber-500 */
   --warning-solid-foreground: #ffffff;
   --warning-solid-hover: #d97706; /* amber-600 */
+  --warning-banner: #b45309; /* amber-700 - AA with white (5.0:1); -solid amber-500 fails */
+  --warning-banner-foreground: #ffffff;
 
   /* Star (formalized amber star) */
   --star: #f59e0b; /* amber-500 */
@@ -172,6 +178,8 @@
   --color-success-solid: var(--success-solid);
   --color-success-solid-foreground: var(--success-solid-foreground);
   --color-success-solid-hover: var(--success-solid-hover);
+  --color-success-banner: var(--success-banner);
+  --color-success-banner-foreground: var(--success-banner-foreground);
   --color-warning: var(--warning);
   --color-warning-hover: var(--warning-hover);
   --color-warning-subtle: var(--warning-subtle);
@@ -180,6 +188,8 @@
   --color-warning-solid: var(--warning-solid);
   --color-warning-solid-foreground: var(--warning-solid-foreground);
   --color-warning-solid-hover: var(--warning-solid-hover);
+  --color-warning-banner: var(--warning-banner);
+  --color-warning-banner-foreground: var(--warning-banner-foreground);
   --color-star: var(--star);
   --color-star-hover: var(--star-hover);
   --color-strong: var(--text-strong);
@@ -248,6 +258,8 @@
   --success-solid: #16a34a; /* green-600 */
   --success-solid-foreground: #ffffff;
   --success-solid-hover: #15803d; /* green-700 */
+  --success-banner: #15803d; /* green-700 - AA with white (5.0:1) */
+  --success-banner-foreground: #ffffff;
 
   --warning: #fbbf24; /* amber-400 */
   --warning-hover: #fcd34d; /* amber-300 */
@@ -257,6 +269,8 @@
   --warning-solid: #f59e0b; /* amber-500 */
   --warning-solid-foreground: #ffffff;
   --warning-solid-hover: #d97706; /* amber-600 */
+  --warning-banner: #b45309; /* amber-700 - AA with white (5.0:1); -solid amber-500 fails */
+  --warning-banner-foreground: #ffffff;
 
   --star: #fbbf24; /* amber-400 */
   --star-hover: #fcd34d; /* amber-300 */
@@ -345,6 +359,8 @@
   --success-solid: #15803d; /* green-700 */
   --success-solid-foreground: #ffffff;
   --success-solid-hover: #166534; /* green-800 */
+  --success-banner: #15803d; /* green-700 - AA with white (5.0:1) */
+  --success-banner-foreground: #ffffff;
 
   --warning: #92400e; /* amber-800 */
   --warning-hover: #78350f; /* amber-900 */
@@ -354,6 +370,8 @@
   --warning-solid: #b45309; /* amber-700 - darker so it grays dark and white text stays readable */
   --warning-solid-foreground: #ffffff;
   --warning-solid-hover: #92400e; /* amber-800 */
+  --warning-banner: #b45309; /* amber-700 - AA with white (5.0:1), grays dark on e-ink */
+  --warning-banner-foreground: #ffffff;
 
   --star: #b45309; /* amber-700 - a filled star grays to a dark-mid tone, distinct from an unstarred outline */
   --star-hover: #92400e; /* amber-800 */
@@ -437,6 +455,8 @@
     --success-solid: #16a34a; /* green-600 */
     --success-solid-foreground: #ffffff;
     --success-solid-hover: #15803d; /* green-700 */
+    --success-banner: #15803d; /* green-700 - AA with white (5.0:1) */
+    --success-banner-foreground: #ffffff;
 
     --warning: #fbbf24; /* amber-400 */
     --warning-hover: #fcd34d; /* amber-300 */
@@ -446,6 +466,8 @@
     --warning-solid: #f59e0b; /* amber-500 */
     --warning-solid-foreground: #ffffff;
     --warning-solid-hover: #d97706; /* amber-600 */
+    --warning-banner: #b45309; /* amber-700 - AA with white (5.0:1); -solid amber-500 fails */
+    --warning-banner-foreground: #ffffff;
 
     --star: #fbbf24; /* amber-400 */
     --star-hover: #fcd34d; /* amber-300 */
