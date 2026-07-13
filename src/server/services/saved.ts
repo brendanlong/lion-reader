@@ -621,28 +621,18 @@ async function acquireArticleContent(
   // Fall back to a normal HTML fetch.
   // For Google Docs use the normalized URL for consistent fetching.
   const fetchUrl = isGoogleDocsUrl(params.url) ? normalizedUrl : params.url;
-  try {
-    const result = await fetchHtmlPage(fetchUrl);
 
-    // If we got Markdown, convert it to HTML and extract title
-    if (result.isMarkdown) {
-      logger.debug("Converting Markdown to HTML for saved article (will skip Readability)", {
-        url: fetchUrl,
-      });
-      const markdownResult = await processMarkdown(result.content);
-      return {
-        html: markdownResult.html,
-        contentUrl: result.finalUrl,
-        pluginContent: null,
-        markdownResult,
-      };
-    }
-    return {
-      html: result.content,
-      contentUrl: result.finalUrl,
-      pluginContent: null,
-      markdownResult: null,
-    };
+  // Scope the try to the fetch itself. Every failure `fetchHtmlPage` can raise —
+  // an upstream error status, a network/DNS failure, a timeout, an SSRF block,
+  // an unusable content type — is a problem with the user-provided URL, not a
+  // bug in our server, so it maps to the client-facing SAVED_ARTICLE_FETCH_ERROR
+  // (a 4xx that isn't reported to Sentry). Post-fetch processing (Markdown
+  // conversion, Readability upstream) is deliberately OUTSIDE this catch: a
+  // failure there is our bug and must surface as a 500 → Sentry, not be masked
+  // as a "fetch error".
+  let result;
+  try {
+    result = await fetchHtmlPage(fetchUrl);
   } catch (error) {
     logger.warn("Failed to fetch URL for saved article", {
       url: fetchUrl,
@@ -664,6 +654,26 @@ async function acquireArticleContent(
       error instanceof Error ? error.message : "Unknown error"
     );
   }
+
+  // If we got Markdown, convert it to HTML and extract title
+  if (result.isMarkdown) {
+    logger.debug("Converting Markdown to HTML for saved article (will skip Readability)", {
+      url: fetchUrl,
+    });
+    const markdownResult = await processMarkdown(result.content);
+    return {
+      html: markdownResult.html,
+      contentUrl: result.finalUrl,
+      pluginContent: null,
+      markdownResult,
+    };
+  }
+  return {
+    html: result.content,
+    contentUrl: result.finalUrl,
+    pluginContent: null,
+    markdownResult: null,
+  };
 }
 
 /**

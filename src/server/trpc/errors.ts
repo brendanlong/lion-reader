@@ -128,7 +128,11 @@ const errorCodeToTRPCCode: Record<
   TOKEN_CREATION_FAILED: "INTERNAL_SERVER_ERROR",
   FEED_FETCH_ERROR: "INTERNAL_SERVER_ERROR",
   PARSE_ERROR: "INTERNAL_SERVER_ERROR",
-  SAVED_ARTICLE_FETCH_ERROR: "INTERNAL_SERVER_ERROR",
+  // A failed fetch of a user-provided URL (404, DNS failure, connection reset,
+  // …) is a client/input error, not a server bug — the user gave us a URL we
+  // can't retrieve. Classify as 4xx so it isn't reported to Sentry (the timing
+  // middleware only exempts client codes) and callers get a proper client error.
+  SAVED_ARTICLE_FETCH_ERROR: "BAD_REQUEST",
   CONTENT_TOO_LARGE: "BAD_REQUEST",
   MAX_SUBSCRIPTIONS_REACHED: "BAD_REQUEST",
   SITE_BLOCKED: "BAD_GATEWAY",
@@ -322,3 +326,39 @@ export const errors = {
 
   adminUnauthorized: () => createError(ErrorCodes.ADMIN_UNAUTHORIZED, "Invalid admin secret"),
 };
+
+/**
+ * Extracts our custom app error code (set by {@link createError} in the
+ * TRPCError `cause`) from a thrown value, or `undefined` if it isn't one of ours.
+ */
+export function getAppErrorCode(error: unknown): string | undefined {
+  if (!(error instanceof TRPCError)) return undefined;
+  const cause = error.cause;
+  return cause && typeof cause === "object" && "code" in cause
+    ? (cause as { code: string }).code
+    : undefined;
+}
+
+/**
+ * App error codes that represent an **expected** condition — the user's input or
+ * an upstream site, not a bug in our server — but which map to a 5xx HTTP status.
+ * These should be treated like client errors for **reporting** purposes: e.g. a
+ * target site blocking our fetch bot is a normal outcome of saving an arbitrary
+ * URL, so it must not be reported to Sentry even though `SITE_BLOCKED` maps to
+ * HTTP 502 (an honest status to return to the client).
+ *
+ * 4xx-mapped app codes (e.g. `SAVED_ARTICLE_FETCH_ERROR`, `UPSTREAM_RATE_LIMITED`,
+ * `CONTENT_TOO_LARGE`) are already treated as client errors by their HTTP status
+ * and don't need to be listed here.
+ */
+const EXPECTED_CLIENT_ERROR_CODES: ReadonlySet<string> = new Set([ErrorCodes.SITE_BLOCKED]);
+
+/**
+ * Whether a thrown error is an expected client/upstream condition that maps to a
+ * 5xx status but should not be reported as a server bug. See
+ * {@link EXPECTED_CLIENT_ERROR_CODES}.
+ */
+export function isExpectedClientError(error: unknown): boolean {
+  const code = getAppErrorCode(error);
+  return code !== undefined && EXPECTED_CLIENT_ERROR_CODES.has(code);
+}

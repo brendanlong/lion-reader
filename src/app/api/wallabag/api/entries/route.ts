@@ -28,6 +28,7 @@ import { requireAuth } from "@/server/wallabag/auth";
 import {
   jsonResponse,
   errorResponse,
+  clientErrorResponse,
   parseEntryListParams,
   parseBody,
 } from "@/server/wallabag/parse";
@@ -112,19 +113,29 @@ export async function POST(request: Request): Promise<Response> {
     return errorResponse("invalid_request", "url is required", 400);
   }
 
-  // Save the article
-  const article = await savedService.saveArticle(db, auth.userId, {
-    url: articleUrl,
-    title: body.title || undefined,
-  });
+  try {
+    // Save the article
+    const article = await savedService.saveArticle(db, auth.userId, {
+      url: articleUrl,
+      title: body.title || undefined,
+    });
 
-  // Handle archive/starred flags if provided
-  if (body.archive === "1" && !article.read) {
-    await entriesService.markEntriesRead(db, auth.userId, [{ id: article.id }], true);
-  }
-  if (body.starred === "1" && !article.starred) {
-    await entriesService.updateEntryStarred(db, auth.userId, article.id, true);
-  }
+    // Handle archive/starred flags if provided
+    if (body.archive === "1" && !article.read) {
+      await entriesService.markEntriesRead(db, auth.userId, [{ id: article.id }], true);
+    }
+    if (body.starred === "1" && !article.starred) {
+      await entriesService.updateEntryStarred(db, auth.userId, article.id, true);
+    }
 
-  return jsonResponse(formatSavedArticle(article));
+    return jsonResponse(formatSavedArticle(article));
+  } catch (error) {
+    // saveArticle throws a TRPCError when the user-provided URL can't be fetched
+    // (e.g. a 404 from a mistyped/markdown-artifact URL). Return that as a clean
+    // Wallabag error envelope instead of an unhandled 500 that hits Sentry;
+    // genuine server errors (null) still propagate.
+    const clientError = clientErrorResponse(error);
+    if (clientError) return clientError;
+    throw error;
+  }
 }

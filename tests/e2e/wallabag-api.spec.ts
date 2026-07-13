@@ -251,6 +251,32 @@ test.describe("Wallabag API happy path", () => {
     }
   });
 
+  test("saving an unfetchable URL returns a clean 4xx, not a 500", async ({ request }) => {
+    const { access_token } = await getTokens(request);
+    const auth = { Authorization: `Bearer ${access_token}` };
+
+    // A reachable server that 404s every path — mirrors the real report where a
+    // user saved a mistyped URL (a markdown link with a trailing `)`), which the
+    // remote returned 404 for. This must surface as a client error, not an
+    // unhandled 500 that gets reported to Sentry.
+    const { url, close } = await start404Server();
+    try {
+      const res = await request.post("/api/wallabag/api/entries", {
+        headers: auth,
+        form: { url },
+      });
+      // A 404 fetch of a user-provided URL is a client error, not a server bug:
+      // exactly 400, not a 500 (which would be reported to Sentry).
+      expect(res.status()).toBe(400);
+      // Wallabag error envelope, so clients can display why the save failed.
+      const body = await res.json();
+      expect(body.error).toBe("BAD_REQUEST");
+      expect(typeof body.error_description).toBe("string");
+    } finally {
+      await close();
+    }
+  });
+
   test("paginates saved articles with page/perPage (offset)", async ({ request }) => {
     const { access_token } = await getTokens(request);
     const auth = { Authorization: `Bearer ${access_token}` };
@@ -374,6 +400,26 @@ async function startArticleServer(): Promise<{ url: string; close: () => Promise
   }
   return {
     url: `http://127.0.0.1:${address.port}/article`,
+    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+  };
+}
+
+/**
+ * A reachable server that returns 404 for every request, used to exercise the
+ * "save a URL that can't be fetched" error path.
+ */
+async function start404Server(): Promise<{ url: string; close: () => Promise<void> }> {
+  const server: Server = createServer((_req, res) => {
+    res.writeHead(404, { "Content-Type": "text/html" });
+    res.end("<!DOCTYPE html><html><body>Not Found</body></html>");
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("Failed to determine 404 server port");
+  }
+  return {
+    url: `http://127.0.0.1:${address.port}/missing`,
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
 }
