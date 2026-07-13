@@ -79,6 +79,107 @@ export function updateEntriesInListCache(
 }
 
 /**
+ * A snapshot of the read/starred state of every cached `entries.get` entry,
+ * taken at the moment a `fetchNextPage` begins. Diffed against the post-fetch
+ * state by `reconcileListFromChangedEntryGets` to find which entries changed
+ * during the fetch window. See `snapshotEntryGetStates`.
+ */
+export type EntryGetStateSnapshot = Map<string, { read: boolean; starred: boolean }>;
+
+/**
+ * Snapshots the read/starred state of every cached `entries.get` entry. Call
+ * this immediately before starting a `fetchNextPage`, and pass the result to
+ * `reconcileListFromChangedEntryGets` after the fetch settles. See #1081.
+ */
+export function snapshotEntryGetStates(queryClient: QueryClient): EntryGetStateSnapshot {
+  const getQueries = queryClient.getQueriesData<{
+    entry: { id: string; read: boolean; starred: boolean };
+  }>({ queryKey: [["entries", "get"]] });
+
+  const snapshot: EntryGetStateSnapshot = new Map();
+  for (const [, data] of getQueries) {
+    if (data?.entry) {
+      snapshot.set(data.entry.id, { read: data.entry.read, starred: data.entry.starred });
+    }
+  }
+  return snapshot;
+}
+
+/**
+ * Re-asserts onto the `entries.list` caches the read/starred state of any
+ * `entries.get` entry that **changed during a just-completed `fetchNextPage`**
+ * (compared to `before`, snapshotted at fetch start by `snapshotEntryGetStates`).
+ *
+ * Why this exists: React Query's `infiniteQueryBehavior` snapshots the existing
+ * pages when a `fetchNextPage` begins and, on completion, replaces the query
+ * data with `snapshot + newPage` — silently dropping any `setQueryData` applied
+ * to the old pages while the fetch was in flight. j/k navigation routinely
+ * triggers this: opening an entry near the end auto-marks it read (a list
+ * `setQueryData`) at the same moment the container fires `fetchNextPage`, so the
+ * completing fetch reverts the entry to unread.
+ *
+ * Why the diff (not a blanket re-assert from `entries.get`): `entries.get` is
+ * NOT universally kept in lockstep with the list — `mark_all_read` invalidates
+ * `entries.list` but never touches `entries.get` (neither the SSE handler nor
+ * the acting-tab mutation). A blanket re-assert would resurrect a stale
+ * `entries.get` value (e.g. an entry prefetched-unread, then marked read by
+ * mark_all_read) back into a freshly-refetched list. Restricting to entries
+ * whose `entries.get` state actually *changed during the fetch window* captures
+ * exactly the writes that could have been clobbered (a clobber only affects
+ * writes made after the fetch started) while leaving untouched-and-therefore-
+ * possibly-stale gets alone (#1081).
+ *
+ * Only touches list rows whose value differs, so unchanged item identities are
+ * preserved (keeps EntryListItem's memo effective).
+ *
+ * Residual limitation: a brand-new entry inserted into the list by an SSE
+ * `new_entry` during the fetch has no `entries.get` entry, so it can't be
+ * restored here; it reappears on the next navigation-triggered list refresh.
+ */
+export function reconcileListFromChangedEntryGets(
+  queryClient: QueryClient,
+  before: EntryGetStateSnapshot
+): void {
+  const getQueries = queryClient.getQueriesData<{
+    entry: { id: string; read: boolean; starred: boolean };
+  }>({ queryKey: [["entries", "get"]] });
+
+  const changed = new Map<string, { read: boolean; starred: boolean }>();
+  for (const [, data] of getQueries) {
+    if (!data?.entry) continue;
+    const prev = before.get(data.entry.id);
+    // Apply an entry only if its entries.get state changed since fetch start (or
+    // the get first appeared during the fetch — a fresh, server-authoritative
+    // read). A get already in its current state before the fetch can't have been
+    // clobbered by this fetch, so re-applying it would only risk resurrecting
+    // list state a concurrent refetch legitimately replaced.
+    if (!prev || prev.read !== data.entry.read || prev.starred !== data.entry.starred) {
+      changed.set(data.entry.id, { read: data.entry.read, starred: data.entry.starred });
+    }
+  }
+  if (changed.size === 0) return;
+
+  queryClient.setQueriesData<InfiniteData>({ queryKey: [["entries", "list"]] }, (oldData) => {
+    if (!oldData?.pages) return oldData;
+
+    let didChange = false;
+    const pages = oldData.pages.map((page) => ({
+      ...page,
+      items: page.items.map((entry) => {
+        const state = changed.get(entry.id);
+        if (state && (entry.read !== state.read || entry.starred !== state.starred)) {
+          didChange = true;
+          return { ...entry, ...state };
+        }
+        return entry;
+      }),
+    }));
+
+    return didChange ? { ...oldData, pages } : oldData;
+  });
+}
+
+/**
  * Affected scope info for targeted cache updates.
  */
 export interface AffectedScope {
