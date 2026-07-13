@@ -17,14 +17,8 @@ import Link from "next/link";
 import { ClientLink } from "@/components/ui/client-link";
 import { ScrollContainer } from "@/components/layout/ScrollContainerContext";
 import { Button } from "@/components/ui/button";
-import {
-  ArrowLeftIcon,
-  SparklesIcon,
-  StarIcon,
-  StarFilledIcon,
-  CircleIcon,
-  CircleFilledIcon,
-} from "@/components/ui/icon-button";
+import { ArrowLeftIcon, SparklesIcon } from "@/components/ui/icon-button";
+import { StarButton, ReadToggleButton } from "@/components/entries/EntryStateButtons";
 import { EntryArticle } from "@/components/entries/EntryArticle";
 import { SummaryCard } from "@/components/summarization/SummaryCard";
 import { AppearanceSettings } from "@/components/settings/AppearanceSettings";
@@ -247,35 +241,15 @@ function DemoRouterContent() {
           }
           actionButtons={
             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-              {/* Star button */}
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => demoState.toggleStar(selectedEntry.id)}
-                aria-label={selectedEntry.starred ? "Remove from starred" : "Add to starred"}
-              >
-                {selectedEntry.starred ? (
-                  <StarFilledIcon className="text-star h-5 w-5" />
-                ) : (
-                  <StarIcon className="h-5 w-5" />
-                )}
-                <span className="ml-2">{selectedEntry.starred ? "Starred" : "Star"}</span>
-              </Button>
-
-              {/* Mark read/unread button */}
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => demoState.toggleRead(selectedEntry.id)}
-                aria-label={selectedEntry.read ? "Mark as unread" : "Mark as read"}
-              >
-                {selectedEntry.read ? (
-                  <CircleIcon className="h-4 w-4" />
-                ) : (
-                  <CircleFilledIcon className="h-4 w-4" />
-                )}
-                <span className="ml-2">{selectedEntry.read ? "Read" : "Unread"}</span>
-              </Button>
+              {/* Star + Read/Unread toggles (shared with the real reader) */}
+              <StarButton
+                starred={selectedEntry.starred}
+                onToggle={() => demoState.toggleStar(selectedEntry.id)}
+              />
+              <ReadToggleButton
+                read={selectedEntry.read}
+                onToggle={() => demoState.toggleRead(selectedEntry.id)}
+              />
 
               {/* Summarize button */}
               <Button
