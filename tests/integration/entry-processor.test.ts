@@ -763,6 +763,80 @@ describe("Entry Processor", () => {
       expect(rows).toHaveLength(0);
     });
 
+    it("detects a pushed-then-removed entry as disappeared via `>=` (#1078)", async () => {
+      // A hub-pushed entry sits above last_entries_updated_at (last_seen_at =
+      // pushTime). When a later poll no longer lists it, disappeared detection
+      // must catch it (it used strict equality on the poll generation and missed
+      // push-stamped entries), so the poll registers hasChanges and the caller
+      // advances the generation past the stranded entry.
+      const feed = await createTestFeed({ url: `https://example.com/gte-${generateUuidv7()}.xml` });
+
+      const pollTime = new Date("2024-06-15T10:00:00Z");
+      await processEntries(
+        feed.id,
+        feed.type,
+        { title: "T", items: [{ guid: "gte-a", title: "A", content: "A" }] },
+        { fetchedAt: pollTime }
+      );
+
+      // Delta push of C, stamped above the poll generation.
+      const pushTime = new Date("2024-06-15T10:30:00Z");
+      await processEntries(
+        feed.id,
+        feed.type,
+        { title: "T", items: [{ guid: "gte-c", title: "C", content: "C" }] },
+        { fetchedAt: pushTime }
+      );
+
+      // Next poll: C is gone. Detection keys off previousLastEntriesUpdatedAt =
+      // pollTime; C is stamped at pushTime > pollTime, so only `>=` catches it.
+      const laterPoll = new Date("2024-06-15T11:00:00Z");
+      const result = await processEntries(
+        feed.id,
+        feed.type,
+        { title: "T", items: [{ guid: "gte-a", title: "A", content: "A" }] },
+        { fetchedAt: laterPoll, previousLastEntriesUpdatedAt: pollTime }
+      );
+
+      expect(result.disappearedCount).toBe(1);
+      expect(result.hasChanges).toBe(true);
+    });
+
+    it("writes last_seen_at monotonically (never regresses under a lower timestamp)", async () => {
+      // The subscribe-time inline refresh bypasses the job queue's per-feed
+      // serialization, so a lower-timestamped writer must not drag a stamp back
+      // below the feed's (forward-only) last_entries_updated_at — that would make
+      // the `>=` populate match nothing (#1078). Simulate an already-advanced
+      // stamp and an unchanged re-process at an earlier timestamp.
+      const feed = await createTestFeed({
+        url: `https://example.com/mono-${generateUuidv7()}.xml`,
+      });
+
+      const laterTime = new Date("2024-06-15T12:00:00Z");
+      await processEntries(
+        feed.id,
+        feed.type,
+        { title: "T", items: [{ guid: "mono-a", title: "A", content: "A" }] },
+        { fetchedAt: laterTime }
+      );
+      expect((await findEntryByGuid(feed.id, "mono-a"))?.lastSeenAt?.toISOString()).toBe(
+        laterTime.toISOString()
+      );
+
+      // Re-process the same (unchanged) entry at an EARLIER timestamp with
+      // alwaysUpdateVisibility — the monotonic guard must keep the later stamp.
+      const earlierTime = new Date("2024-06-15T10:00:00Z");
+      await processEntries(
+        feed.id,
+        feed.type,
+        { title: "T", items: [{ guid: "mono-a", title: "A", content: "A" }] },
+        { fetchedAt: earlierTime, alwaysUpdateVisibility: true }
+      );
+      expect((await findEntryByGuid(feed.id, "mono-a"))?.lastSeenAt?.toISOString()).toBe(
+        laterTime.toISOString()
+      );
+    });
+
     it("uses provided fetchedAt timestamp", async () => {
       const feed = await createTestFeed();
       const customFetchedAt = new Date("2024-06-15T10:00:00Z");

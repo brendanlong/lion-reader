@@ -463,8 +463,10 @@ export const entries = pgTable(
     // Timestamps
     publishedAt: timestamp("published_at", { withTimezone: true }), // from feed (may be null/inaccurate)
     fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(), // when we first saw it
-    // Last time this entry was seen in a feed fetch (web only, NULL for email/saved)
-    // Used to determine visibility: entry.lastSeenAt = feed.lastFetchedAt means it's in the current feed
+    // Last time this entry was seen in a feed fetch (web only, NULL for email/saved).
+    // Written monotonically. Used for subscribe-time visibility: an entry is
+    // current when last_seen_at >= feeds.last_entries_updated_at (see the
+    // subscribe populate and "Entry Visibility" in docs/DESIGN.md).
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
 
     // Version tracking

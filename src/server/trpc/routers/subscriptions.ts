@@ -231,27 +231,33 @@ export const subscriptionsRouter = createTRPCRouter({
         .limit(1);
 
       let feedInput: subscriptionsService.CreateSubscriptionFeedInput;
-      if (existingFeed.length === 0) {
-        // Brand-new feed: fetch and parse to resolve the feed URL + metadata.
-        // Its entries are populated by the background fetch job (there are none
-        // yet), so no forced refresh is needed here.
+      if (existingFeed.length === 0 || existingFeed[0].lastFetchedAt === null) {
+        // Brand-new feed, or a feed row that has never been successfully fetched
+        // (e.g. a raw URL inserted by Google Reader `quickadd` / OPML import that
+        // may actually be an HTML page): fetch and parse to resolve the real feed
+        // URL + metadata via feed discovery. Its entries are populated by the
+        // background fetch job, so no forced refresh is needed here. Discovery
+        // throwing on an unreachable/unparseable URL surfaces as a subscribe
+        // error, as before.
         feedInput = await fetchAndResolveFeed(feedUrl);
       } else {
+        const existing = existingFeed[0];
         feedInput = { url: feedUrl };
-        // Known feed: if its cached entries may be stale (WebSub feed whose last
-        // real poll has aged out, or a normal feed past its poll cadence), force
-        // a refresh through the shared fetch path before we grant visibility.
-        // This re-stamps the current entries to one generation so the subscribe
+        // Known feed (already fetched, so feed.url is a validated feed URL): if
+        // its cached entries may be stale (WebSub feed whose last real poll has
+        // aged out, or a normal feed past its poll cadence), force a refresh
+        // through the shared fetch path before we grant visibility. This
+        // re-stamps the current entries to one generation so the subscribe
         // populate (`last_seen_at >= last_entries_updated_at`) reflects ground
         // truth — the current feed, excluding anything since removed (#1078).
-        if (shouldRefetchOnSubscribe(existingFeed[0])) {
+        if (shouldRefetchOnSubscribe(existing)) {
           try {
-            await handleFetchFeed({ feedId: existingFeed[0].id }, { inline: true });
+            await handleFetchFeed({ feedId: existing.id }, { inline: true });
           } catch (err) {
             // Best-effort: a failed refresh (feed down, parse error) must not
             // block subscribing. We fall back to the cached entries.
             logger.warn("Forced subscribe-time feed refresh failed; using cached entries", {
-              feedId: existingFeed[0].id,
+              feedId: existing.id,
               err: err instanceof Error ? err.message : String(err),
             });
           }
