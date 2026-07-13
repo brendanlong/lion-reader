@@ -1,13 +1,15 @@
 /**
- * Integration tests for `getGreaderNewestItemAt` — the per-feed "newest visible
- * item" lookup that powers the Google Reader unread-count endpoint's
- * `newestItemTimestampUsec`.
+ * Integration tests for `getGreaderUnreadCounts` — the single-query per-feed
+ * "unread count + newest visible item" lookup that powers the Google Reader
+ * unread-count endpoint (`newestItemTimestampUsec`).
  *
- * The value must be the newest entry the user can actually see (has a
- * `user_entries` row for), INCLUDING read entries, and must include the synthetic
- * saved feed keyed by its feed id. These are real-DB concerns (the visibility
- * join and the read-inclusive max), so they're verified against Postgres here
- * rather than in the pure formatting unit test.
+ * The newest value must be the newest entry the user can actually see (has a
+ * `user_entries` row for), INCLUDING read entries, and the result must include the
+ * synthetic saved feed keyed by its feed id. Deriving the count and the newest from
+ * one statement also means they can never disagree about whether a feed has content
+ * (issue #1092). These are real-DB concerns (the visibility join, the read-inclusive
+ * max, the shared snapshot), so they're verified against Postgres here rather than
+ * in the pure formatting unit test.
  */
 
 import { describe, it, expect, afterAll } from "vitest";
@@ -15,7 +17,12 @@ import { inArray } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { users, feeds, entries, userEntries, subscriptions } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
-import { getGreaderNewestItemAt } from "../../src/server/google-reader/subscriptions";
+import { getGreaderUnreadCounts } from "../../src/server/google-reader/subscriptions";
+
+/** Newest-item map for a user, extracted from the combined unread-counts result. */
+async function getNewest(userId: string): Promise<Map<string, Date>> {
+  return (await getGreaderUnreadCounts(db, userId)).newestItemAtById;
+}
 
 const createdUserIds: string[] = [];
 const createdFeedIds: string[] = [];
@@ -108,7 +115,7 @@ async function addEntry(opts: {
 
 const T = (iso: string): Date => new Date(iso);
 
-describe("getGreaderNewestItemAt", () => {
+describe("getGreaderUnreadCounts", () => {
   it("returns the newest visible entry per subscription, counting read entries", async () => {
     const userId = await createUser();
     const { feedId, subId } = await createSubscribedFeed(userId);
@@ -134,7 +141,7 @@ describe("getGreaderNewestItemAt", () => {
       withUserEntry: true,
     });
 
-    const map = await getGreaderNewestItemAt(db, userId);
+    const map = await getNewest(userId);
     expect(map.get(subId)?.toISOString()).toBe("2026-05-01T00:00:00.000Z");
   });
 
@@ -163,7 +170,7 @@ describe("getGreaderNewestItemAt", () => {
       withUserEntry: false,
     });
 
-    const map = await getGreaderNewestItemAt(db, userId);
+    const map = await getNewest(userId);
     expect(map.get(subId)?.toISOString()).toBe("2026-02-01T00:00:00.000Z");
   });
 
@@ -180,7 +187,7 @@ describe("getGreaderNewestItemAt", () => {
       withUserEntry: true,
     });
 
-    const map = await getGreaderNewestItemAt(db, userId);
+    const map = await getNewest(userId);
     expect(map.get(subId)?.toISOString()).toBe("2026-06-15T10:00:00.000Z");
   });
 
@@ -206,7 +213,7 @@ describe("getGreaderNewestItemAt", () => {
       withUserEntry: true,
     });
 
-    const map = await getGreaderNewestItemAt(db, userId);
+    const map = await getNewest(userId);
     expect(map.get(savedFeedId)?.toISOString()).toBe("2026-07-07T07:07:00.000Z");
   });
 
@@ -214,8 +221,89 @@ describe("getGreaderNewestItemAt", () => {
     const userId = await createUser();
     const { subId } = await createSubscribedFeed(userId);
     // No entries / user_entries at all.
-    const map = await getGreaderNewestItemAt(db, userId);
+    const map = await getNewest(userId);
     expect(map.has(subId)).toBe(false);
+  });
+
+  // Regression for issue #1092: the endpoint used to read the per-feed counts and
+  // the newest-item times separately, so a feed gaining its first visible entry
+  // between the reads could be counted (unread > 0) yet be absent from the newest
+  // map. `getGreaderUnreadCounts` derives both from one statement, so a feed's
+  // count and newest come from a single snapshot and can never disagree: whenever
+  // the count is > 0 there is a newest entry, and both reflect the same entry.
+  it("returns count and newest for the same feed from one snapshot (issue #1092)", async () => {
+    const userId = await createUser();
+    const { feedId, subId } = await createSubscribedFeed(userId);
+    await addEntry({
+      userId,
+      feedId,
+      type: "web",
+      publishedAt: T("2026-10-10T00:00:00Z"),
+      fetchedAt: T("2026-10-10T00:00:00Z"),
+      read: false,
+      withUserEntry: true,
+    });
+
+    const { subscriptions, newestItemAtById } = await getGreaderUnreadCounts(db, userId);
+    const sub = subscriptions.find((s) => s.id === subId);
+    // The count is > 0 and the newest map has this feed — the pair a client relies
+    // on to decide a stream has new content, guaranteed consistent by the single
+    // query. (Two independent reads could have returned the count without the map.)
+    expect(sub?.unreadCount).toBe(1);
+    expect(newestItemAtById.get(subId)?.toISOString()).toBe("2026-10-10T00:00:00.000Z");
+  });
+
+  it("reports the trigger-maintained unread count, excluding read entries", async () => {
+    const userId = await createUser();
+    const { feedId, subId } = await createSubscribedFeed(userId);
+    // Two unread + one read entry → count is 2, matching subscriptions.unread_count.
+    await addEntry({
+      userId,
+      feedId,
+      type: "web",
+      publishedAt: T("2026-04-01T00:00:00Z"),
+      fetchedAt: T("2026-04-01T00:00:00Z"),
+      read: false,
+      withUserEntry: true,
+    });
+    await addEntry({
+      userId,
+      feedId,
+      type: "web",
+      publishedAt: T("2026-04-02T00:00:00Z"),
+      fetchedAt: T("2026-04-02T00:00:00Z"),
+      read: false,
+      withUserEntry: true,
+    });
+    await addEntry({
+      userId,
+      feedId,
+      type: "web",
+      publishedAt: T("2026-04-03T00:00:00Z"),
+      fetchedAt: T("2026-04-03T00:00:00Z"),
+      read: true,
+      withUserEntry: true,
+    });
+
+    const { subscriptions } = await getGreaderUnreadCounts(db, userId);
+    expect(subscriptions.find((s) => s.id === subId)?.unreadCount).toBe(2);
+  });
+
+  it("reports the saved feed count from users.saved_unread_count", async () => {
+    const userId = await createUser();
+    const savedFeedId = await createSavedFeed(userId);
+    await addEntry({
+      userId,
+      feedId: savedFeedId,
+      type: "saved",
+      publishedAt: null,
+      fetchedAt: T("2026-05-05T05:05:00Z"),
+      read: false,
+      withUserEntry: true,
+    });
+
+    const { subscriptions } = await getGreaderUnreadCounts(db, userId);
+    expect(subscriptions.find((s) => s.id === savedFeedId)?.unreadCount).toBe(1);
   });
 
   it("does not leak newest times across users", async () => {
@@ -233,7 +321,7 @@ describe("getGreaderNewestItemAt", () => {
       withUserEntry: true,
     });
 
-    const mapA = await getGreaderNewestItemAt(db, userA);
+    const mapA = await getNewest(userA);
     expect(mapA.has(subId)).toBe(false);
   });
 });
