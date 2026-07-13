@@ -351,11 +351,6 @@ export function EntryContentBody({
             variant={starred ? "primary" : "secondary"}
             size="sm"
             onClick={onToggleStar}
-            className={
-              starred
-                ? "bg-warning-solid text-warning-solid-foreground hover:bg-warning-solid-hover"
-                : ""
-            }
             aria-label={starred ? "Remove from starred" : "Add to starred"}
           >
             {starred ? <StarFilledIcon className="h-5 w-5" /> : <StarIcon className="h-5 w-5" />}
@@ -394,11 +389,7 @@ export function EntryContentBody({
               onClick={onToggleFetchFullContent}
               disabled={isFullContentFetching}
               className={
-                fullContentError
-                  ? "border-danger-border text-danger hover:bg-danger-subtle"
-                  : fetchFullContent
-                    ? "bg-accent-muted hover:bg-accent dark:bg-accent dark:hover:bg-accent-hover text-white dark:text-zinc-900"
-                    : ""
+                fullContentError ? "border-danger-border text-danger hover:bg-danger-subtle" : ""
               }
               aria-label={
                 fullContentError
@@ -442,11 +433,6 @@ export function EntryContentBody({
               size="sm"
               onClick={onSummarize}
               disabled={isSummarizing}
-              className={
-                showSummary && summary
-                  ? "bg-accent-muted hover:bg-accent dark:bg-accent dark:hover:bg-accent-hover text-white dark:text-zinc-900"
-                  : ""
-              }
               aria-label={summary ? "Toggle summary" : "Generate AI summary"}
             >
               {isSummarizing ? (
