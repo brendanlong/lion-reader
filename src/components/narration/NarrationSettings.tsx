@@ -380,7 +380,7 @@ export function NarrationSettings() {
               step="0.1"
               value={settings.rate}
               onChange={handleRateChange}
-              className="bg-fill-muted accent-control-selected h-2 w-full cursor-pointer appearance-none rounded-lg"
+              className="bg-fill-muted h-2 w-full cursor-pointer appearance-none rounded-lg"
             />
             <div className="ui-text-xs text-faint mt-1 flex justify-between">
               <span>0.5x</span>
@@ -407,7 +407,7 @@ export function NarrationSettings() {
                 step="0.1"
                 value={settings.pitch}
                 onChange={handlePitchChange}
-                className="bg-fill-muted accent-control-selected h-2 w-full cursor-pointer appearance-none rounded-lg"
+                className="bg-fill-muted h-2 w-full cursor-pointer appearance-none rounded-lg"
               />
               <div className="ui-text-xs text-faint mt-1 flex justify-between">
                 <span>0.5x</span>
