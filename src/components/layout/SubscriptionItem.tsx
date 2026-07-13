@@ -59,7 +59,7 @@ export function SubscriptionItem({
       >
         <span className="truncate pr-8">{displayTitle}</span>
         {subscription.unreadCount > 0 && (
-          <span className="ui-text-xs text-muted shrink-0 group-hover:hidden">
+          <span className="ui-text-xs text-muted shrink-0 tabular-nums group-hover:hidden">
             ({subscription.unreadCount})
           </span>
         )}

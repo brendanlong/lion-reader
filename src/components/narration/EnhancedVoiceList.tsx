@@ -70,7 +70,7 @@ function ProgressBar({ progress, size }: { progress: number; size: number }) {
           style={{ width: `${percent}%` }}
         />
       </div>
-      <p className="ui-text-xs text-muted mt-1">
+      <p className="ui-text-xs text-muted mt-1 tabular-nums">
         {percent}% ({downloadedMB} MB / {totalMB} MB)
       </p>
     </div>
@@ -423,7 +423,7 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
       {/* Storage info section */}
       {downloadedCount > 0 && (
         <NoteBox padding="sm" className="flex items-center justify-between">
-          <span className="ui-text-xs text-muted">
+          <span className="ui-text-xs text-muted tabular-nums">
             Storage used: {formatStorageSize(storageUsed)} ({downloadedCount}{" "}
             {downloadedCount === 1 ? "voice" : "voices"})
           </span>

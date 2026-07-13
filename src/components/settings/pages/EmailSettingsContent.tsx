@@ -109,7 +109,7 @@ function IngestAddressesSection() {
     <section>
       <div className="mb-4 flex items-center justify-between">
         <h3 className="ui-text-sm text-strong font-medium">Ingest Addresses</h3>
-        <span className="ui-text-sm text-muted">{addresses.length} / 5</span>
+        <span className="ui-text-sm text-muted tabular-nums">{addresses.length} / 5</span>
       </div>
 
       <SettingsListContainer
