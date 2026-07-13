@@ -30,12 +30,12 @@ const article: DemoArticle = {
       <li><a href="/demo/all?entry=wallabag-api"><strong>Wallabag app</strong></a> &mdash; Use the Wallabag mobile app&rsquo;s share intent to save URLs from any app on your phone</li>
       <li><a href="/demo/all?entry=discord-bot"><strong>Discord bot</strong></a> &mdash; Save articles shared in Discord channels</li>
       <li><a href="/demo/all?entry=file-upload"><strong>File upload</strong></a> &mdash; Upload Markdown files, Word documents, and HTML files directly</li>
-      <li><strong>Google Docs import</strong> &mdash; Import Google Docs directly with the optional OAuth scope (powered by the <a href="/demo/all?entry=plugins"><strong>Plugin System</strong></a>)</li>
+      <li><strong>Google Docs import</strong> &mdash; Import Google Docs directly with the optional OAuth scope (powered by <a href="/demo/all?entry=plugins"><strong>smart content sources</strong></a>)</li>
     </ul>
 
     <h3>Smart Content Extraction</h3>
 
-    <p>When you save a URL from a supported platform &mdash; like ArXiv, GitHub, Google Docs, or LessWrong &mdash; Lion Reader&rsquo;s <a href="/demo/all?entry=plugins"><strong>Plugin System</strong></a> uses platform-specific APIs to extract cleaner, more complete content than generic web scraping. For everything else, Readability handles the extraction.</p>
+    <p>When you save a URL from a supported source &mdash; like arXiv, GitHub, Google Docs, LessWrong, YouTube, or Bluesky &mdash; Lion Reader&rsquo;s <a href="/demo/all?entry=plugins"><strong>smart content sources</strong></a> pull in cleaner, more complete content than a generic web save. For everything else, Lion Reader still extracts the readable article automatically.</p>
 
     <h3>Custom Metadata &amp; Organization</h3>
 
