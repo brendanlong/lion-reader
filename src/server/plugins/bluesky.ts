@@ -366,7 +366,10 @@ export function renderBlueskyPostHtml(post: PostView, postUrl: string): string {
 export function blueskyPostTitle(post: PostView): string {
   const firstLine = (post.record?.text ?? "").split("\n")[0].trim();
   if (firstLine) {
-    return firstLine.length > 100 ? `${firstLine.slice(0, 99)}…` : firstLine;
+    // Slice by code point, not UTF-16 unit, so truncation never leaves a lone
+    // surrogate half (e.g. cutting through an emoji).
+    const codePoints = [...firstLine];
+    return codePoints.length > 100 ? `${codePoints.slice(0, 99).join("")}…` : firstLine;
   }
   return `Post by ${authorLabel(post.author)}`;
 }
@@ -446,6 +449,19 @@ export const blueskyPlugin: UrlPlugin = {
   // handling (native RSS already works).
   matchUrl(url: URL): boolean {
     return parseBlueskyPostUrl(url) !== null;
+  },
+
+  // Bluesky's native RSS (bsky.app/profile/{handle}/rss) renders each post's
+  // embeds (quote posts, images, link cards, videos) as a bare placeholder, so
+  // new subscriptions default to full content — the savedArticle capability
+  // hydrates the real embedded content on open.
+  feedDefaultsToFullContent(feedUrl: URL): boolean {
+    const host = feedUrl.hostname.toLowerCase();
+    if (host !== "bsky.app" && host !== "www.bsky.app") {
+      return false;
+    }
+    const parts = feedUrl.pathname.split("/").filter(Boolean);
+    return parts.length === 3 && parts[0] === "profile" && parts[2] === "rss";
   },
 
   capabilities: {
