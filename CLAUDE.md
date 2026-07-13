@@ -128,10 +128,10 @@ See docs/diagrams/ for more detail. These diagrams are very helpful for quickly 
 
 Use the database views for frontend queries instead of manual joins:
 
-- **`user_feeds`**: Active subscriptions with feed data merged. Use for `subscriptions.list/get/export`. Already filters out unsubscribed entries and resolves title (custom or original).
-- **`visible_entries`**: Entries with visibility rules applied. Use for `entries.list/get/count`. Includes read/starred state and subscription_id. An entry is visible if a `user_entries` row exists for the `(user, entry)` pair AND (the entry is from an active subscription OR is starred OR is a saved article). Privacy gating happens when `user_entries` rows are inserted (subscribe-time / fetch-time), not in the view. See "Entry Visibility" in docs/DESIGN.md.
+- **`user_feeds`**: Active subscriptions with feed data merged, including the trigger-maintained `unread_count` (no aggregation needed). Use for the subscription-list surfaces (`subscriptions.list/get/export`); resolves title (custom or original) and filters out unsubscribed subscriptions. **Display-only** — link/ownership/scoping checks must query the `subscriptions` table directly, not this view (see "Database Views" in docs/DESIGN.md).
+- **`visible_entries`**: Entries with visibility rules applied. Use for `entries.list/get`. Each `user_entries` row links to its subscription via the denormalized `subscription_id`; an entry is visible if the row exists AND (its subscription is active OR it's starred OR it's a saved article — the saved arm gates on entry **type**, never `subscription_id IS NULL`). Privacy gating happens when `user_entries` rows are inserted (subscribe-time / fetch-time), not in the view. Unread **counts do not scan this view** — they read the denormalized counters (see `src/server/services/counts.ts` and "Unread counts" in docs/DESIGN.md). See also "Entry Visibility" in docs/DESIGN.md.
 
-These views were introduced in `migrations/0035_subscription_views.sql` (current `visible_entries` definition: `migrations/0090_drop_entry_scoring_columns.sql`) and have Drizzle schemas in `src/server/db/schema.ts`.
+These views were introduced in `migrations/0035_subscription_views.sql`; their current definitions live in `migrations/schema.sql` (the subscription-attribution rewrite was `0087`, the unread counters `0092`–`0093`) and have Drizzle schemas in `src/server/db/schema.ts`.
 
 ## API Conventions
 
