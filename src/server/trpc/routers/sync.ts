@@ -285,14 +285,23 @@ export const syncRouter = createTRPCRouter({
         //   Arm B1 — entries.updated_at for the user's SUBSCRIBED feeds. Catches
         //            content refetches that bump entries.updated_at WITHOUT
         //            touching the user_entries row (updateEntryContent) — the case
-        //            Arm A misses. Pre-filtered to feeds whose
-        //            last_entries_updated_at moved (it is stamped >= every
-        //            entry.updated_at in the feed, so it never drops a changed
-        //            entry), then seeks idx_entries_feed_updated_at.
+        //            Arm A misses. Drives from the user's subscriptions
+        //            (uq_subscriptions_user_feed) into idx_entries_feed_updated_at
+        //            per feed, seeking (feed_id, updated_at >= cursor) directly.
+        //            NOTE: we deliberately do NOT pre-filter on
+        //            feeds.last_entries_updated_at. It is stamped from the poll's
+        //            start-time `now`, while each changed entry's updated_at is a
+        //            later wall-clock read (createEntry/updateEntryContent write
+        //            after the fetch+parse), so entry.updated_at > the feed's
+        //            last_entries_updated_at by the fetch duration. A
+        //            `last_entries_updated_at >= cursor` pre-filter would then
+        //            wrongly prune a feed once the cursor advances past
+        //            last_entries_updated_at but not past the entries — silently
+        //            and permanently dropping the tail of a >MAX_ENTRIES same-poll
+        //            content burst from the delta. The per-feed index seek already
+        //            bounds the work; no pre-filter is needed.
         //   Arm B2 — same, for the user's saved-articles feed (no subscription
-        //            row, and saved feeds are never polled so their
-        //            last_entries_updated_at stays NULL — so it is keyed by the
-        //            feed id directly).
+        //            row; saved feeds are never polled), keyed by the feed id.
         //
         // Arms compare with `>=` so a tied-timestamp boundary row is still a
         // candidate; the outer query re-applies the exact `(GREATEST, id)` keyset
@@ -310,13 +319,6 @@ export const syncRouter = createTRPCRouter({
         const subscribedEntryCandidates = ctx.db
           .select({ entryId: userEntries.entryId })
           .from(subscriptions)
-          .innerJoin(
-            feeds,
-            and(
-              eq(feeds.id, subscriptions.feedId),
-              sql`${feeds.lastEntriesUpdatedAt} >= ${cursorTs}`
-            )
-          )
           .innerJoin(
             entries,
             and(eq(entries.feedId, subscriptions.feedId), sql`${entries.updatedAt} >= ${cursorTs}`)
