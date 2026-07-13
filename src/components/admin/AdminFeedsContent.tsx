@@ -99,7 +99,7 @@ function FeedStatusBadge({ feed }: { feed: FeedItem }) {
 
 function WebSubBadge() {
   return (
-    <span className="ui-text-xs inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">
+    <span className="ui-text-xs bg-info-subtle text-info-foreground inline-flex items-center rounded-full px-2 py-0.5 font-medium">
       WebSub
     </span>
   );
@@ -170,7 +170,7 @@ function FeedRow({ feed, onRetry, isRetrying }: FeedRowProps) {
               href={feed.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="ui-text-xs text-muted mt-0.5 inline-flex items-center gap-1 hover:text-zinc-700 dark:hover:text-zinc-200"
+              className="ui-text-xs text-muted hover:text-body mt-0.5 inline-flex items-center gap-1"
             >
               <span className="truncate">{truncateUrl(feed.url)}</span>
               <ExternalLinkIcon className="h-3 w-3 shrink-0" />
@@ -408,7 +408,7 @@ export default function AdminFeedsContent() {
       {/* Feeds List */}
       {feedsQuery.isLoading ? (
         <div className="flex items-center justify-center p-8">
-          <SpinnerIcon className="h-6 w-6 text-zinc-400" />
+          <SpinnerIcon className="text-faint h-6 w-6" />
         </div>
       ) : feedsQuery.isError ? (
         <div className="p-8 text-center">
@@ -441,7 +441,7 @@ export default function AdminFeedsContent() {
           {/* Loading indicator */}
           {feedsQuery.isFetchingNextPage && (
             <div className="flex items-center justify-center p-4">
-              <SpinnerIcon className="mr-2 h-4 w-4 text-zinc-400" />
+              <SpinnerIcon className="text-faint mr-2 h-4 w-4" />
               <span className="ui-text-sm text-muted">Loading more...</span>
             </div>
           )}

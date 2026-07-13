@@ -316,16 +316,16 @@ export function SubscribeContent() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <p className="text-strong font-medium">{feed.title || "Untitled Feed"}</p>
-                        <span className="ui-text-xs text-body inline-flex items-center rounded-full bg-zinc-100 px-2 py-0.5 font-medium dark:bg-zinc-700">
+                        <span className="ui-text-xs text-body bg-fill-muted inline-flex items-center rounded-full px-2 py-0.5 font-medium">
                           {getFeedTypeLabel(feed.type)}
                         </span>
                       </div>
                       <p className="ui-text-xs text-muted mt-1 truncate font-mono">{feed.url}</p>
                     </div>
                     {selectedFeedUrl === feed.url && isLoading ? (
-                      <SpinnerIcon className="h-5 w-5 text-zinc-500" />
+                      <SpinnerIcon className="text-faint h-5 w-5" />
                     ) : (
-                      <ChevronRightIcon className="h-5 w-5 text-zinc-400" />
+                      <ChevronRightIcon className="text-faint h-5 w-5" />
                     )}
                   </div>
                 </button>
@@ -340,7 +340,7 @@ export function SubscribeContent() {
                   href={feedBuilderUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-emphasis inline-flex items-center gap-1 underline hover:text-zinc-700 dark:hover:text-zinc-400"
+                  className="text-emphasis hover:text-body inline-flex items-center gap-1 underline"
                 >
                   Build a custom feed URL
                   <ExternalLinkIcon className="h-3.5 w-3.5" />

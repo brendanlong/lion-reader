@@ -31,7 +31,7 @@ export function KeyboardShortcutsSettings() {
           role="switch"
           aria-checked={enabled}
           onClick={() => setEnabled(!enabled)}
-          className={`focus:ring-focus relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-offset-2 focus:outline-none dark:focus:ring-offset-zinc-900 ${
+          className={`focus:ring-focus focus:ring-offset-surface relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-offset-2 focus:outline-none ${
             enabled ? "bg-primary-solid" : "bg-fill-muted"
           }`}
         >
@@ -48,7 +48,7 @@ export function KeyboardShortcutsSettings() {
       <CardSection>
         <button
           onClick={openShortcutsModal}
-          className="ui-text-sm text-body inline-flex items-center gap-2 font-medium transition-colors hover:text-zinc-900 dark:hover:text-zinc-50"
+          className="ui-text-sm text-body hover:text-strong inline-flex items-center gap-2 font-medium transition-colors"
         >
           <InfoCircleIcon className="h-4 w-4" />
           View all keyboard shortcuts

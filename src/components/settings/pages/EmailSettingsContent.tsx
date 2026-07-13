@@ -293,7 +293,7 @@ function IngestAddressRow({ address }: IngestAddressRowProps) {
             <button
               type="button"
               onClick={handleCopy}
-              className="text-muted hover:bg-surface-muted flex-shrink-0 rounded p-1 transition-colors hover:text-zinc-700 dark:hover:text-zinc-200"
+              className="text-muted hover:bg-surface-muted hover:text-body flex-shrink-0 rounded p-1 transition-colors"
               title="Copy email address"
             >
               {copied ? (
@@ -337,7 +337,7 @@ function IngestAddressRow({ address }: IngestAddressRowProps) {
               <button
                 type="button"
                 onClick={() => setIsEditing(true)}
-                className="text-faint rounded p-0.5 transition-colors hover:text-zinc-600 dark:hover:text-zinc-300"
+                className="text-faint hover:text-muted rounded p-0.5 transition-colors"
                 title="Edit label"
               >
                 <EditIcon className="h-3.5 w-3.5" />
@@ -434,7 +434,7 @@ function SpamPreferenceSection() {
             aria-checked={showSpam}
             onClick={handleToggle}
             disabled={preferencesQuery.isLoading || updateMutation.isPending}
-            className={`focus:ring-focus relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:focus:ring-offset-zinc-900 ${
+            className={`focus:ring-focus focus:ring-offset-surface relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${
               showSpam ? "bg-primary-solid" : "bg-fill-muted"
             }`}
           >

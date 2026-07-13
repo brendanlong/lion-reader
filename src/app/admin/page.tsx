@@ -20,7 +20,7 @@ export default function AdminPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center">
-      <SpinnerIcon className="h-6 w-6 text-zinc-400" />
+      <SpinnerIcon className="text-faint h-6 w-6" />
     </div>
   );
 }

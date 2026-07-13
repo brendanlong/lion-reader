@@ -307,7 +307,7 @@ function SaveContent() {
               needsDocsPermission || needsGoogleSignin || needsGoogleReauth ? (
                 <>
                   <div className="flex justify-center">
-                    <LockIcon className="h-8 w-8 text-blue-600 dark:text-blue-500" />
+                    <LockIcon className="text-info h-8 w-8" />
                   </div>
                   <Alert variant="error" className="mt-4 text-left">
                     {needsDocsPermission

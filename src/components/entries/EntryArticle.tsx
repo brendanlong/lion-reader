@@ -123,17 +123,14 @@ export function EntryArticle({
             <span className="font-medium">{source}</span>
             {author && author.toLowerCase().trim() !== source.toLowerCase().trim() && (
               <>
-                <span
-                  aria-hidden="true"
-                  className="hidden text-zinc-400 sm:inline dark:text-zinc-600"
-                >
+                <span aria-hidden="true" className="text-faint hidden sm:inline">
                   |
                 </span>
                 <span className="hidden sm:inline">by {author}</span>
                 <span className="sm:hidden">- {author}</span>
               </>
             )}
-            <span aria-hidden="true" className="hidden text-zinc-400 sm:inline dark:text-zinc-600">
+            <span aria-hidden="true" className="text-faint hidden sm:inline">
               |
             </span>
             <time dateTime={date.toISOString()} className="basis-full sm:basis-auto">
@@ -189,7 +186,7 @@ export function EntryArticle({
                 href={unsubscribeUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="ui-text-sm text-muted inline-flex min-h-[44px] items-center gap-2 font-medium transition-colors hover:text-zinc-700 active:text-zinc-800 dark:hover:text-zinc-300 dark:active:text-zinc-200"
+                className="ui-text-sm text-muted hover:text-body inline-flex min-h-[44px] items-center gap-2 font-medium transition-colors active:text-zinc-800 dark:active:text-zinc-200"
               >
                 <ExternalLinkIcon className="h-4 w-4" />
                 Unsubscribe

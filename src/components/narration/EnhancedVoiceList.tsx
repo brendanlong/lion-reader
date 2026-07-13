@@ -235,7 +235,7 @@ function VoiceItem({
                   e.stopPropagation();
                   onDelete();
                 }}
-                className="text-faint hover:bg-surface-muted rounded-md p-2 transition-colors hover:text-zinc-600 dark:hover:text-zinc-300"
+                className="text-faint hover:bg-surface-muted hover:text-muted rounded-md p-2 transition-colors"
                 title="Delete voice"
               >
                 <TrashIcon className="h-4 w-4" />
@@ -352,7 +352,7 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-8">
-        <SpinnerIcon className="h-6 w-6 text-zinc-400" />
+        <SpinnerIcon className="text-faint h-6 w-6" />
         <span className="ui-text-sm text-muted ml-2">Loading voices...</span>
       </div>
     );
@@ -431,7 +431,7 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
             <button
               type="button"
               onClick={handleDeleteAllVoices}
-              className="ui-text-xs text-muted underline hover:text-zinc-700 dark:hover:text-zinc-200"
+              className="ui-text-xs text-muted hover:text-body underline"
             >
               Delete All
             </button>

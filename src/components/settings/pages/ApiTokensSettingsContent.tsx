@@ -294,7 +294,7 @@ export default function ApiTokensSettingsContent() {
               >
                 <div className="flex items-center gap-2">
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-200 dark:bg-zinc-800">
-                    <CloseIcon className="h-4 w-4 text-zinc-400 dark:text-zinc-600" />
+                    <CloseIcon className="text-faint h-4 w-4" />
                   </div>
                   <div>
                     <p className="font-medium text-zinc-700 dark:text-zinc-400">

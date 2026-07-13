@@ -294,7 +294,7 @@ function ImportSection() {
 
       {importState.type === "parsing" && (
         <div className="flex items-center justify-center py-8">
-          <SpinnerIcon className="h-6 w-6 text-zinc-400" />
+          <SpinnerIcon className="text-faint h-6 w-6" />
           <span className="ui-text-sm text-muted ml-2">Parsing OPML file...</span>
         </div>
       )}
@@ -376,7 +376,7 @@ function ImportPreview({ feeds, onImport, onCancel, isImporting }: ImportPreview
       </div>
 
       <div className="border-edge-strong mb-4 max-h-64 overflow-y-auto rounded-md border">
-        <ul className="divide-y divide-zinc-200 dark:divide-zinc-700">
+        <ul className="divide-edge-strong divide-y">
           {displayedFeeds.map((feed, index) => (
             <li key={`${feed.xmlUrl}-${index}`} className="px-4 py-3">
               <p className="ui-text-sm text-strong font-medium">{feed.title || "Untitled Feed"}</p>
@@ -459,7 +459,7 @@ function ImportResults({ imported, skipped, failed, results, onReset }: ImportRe
 
           {showDetails && (
             <div className="border-edge-strong mt-2 max-h-64 overflow-y-auto rounded-md border">
-              <ul className="divide-y divide-zinc-200 dark:divide-zinc-700">
+              <ul className="divide-edge-strong divide-y">
                 {results.map((result, index) => (
                   <li key={`${result.url}-${index}`} className="px-4 py-2">
                     <div className="flex items-start justify-between">

@@ -166,7 +166,7 @@ function CreateTagForm({ onSuccess, onError }: CreateTagFormProps) {
           <span className="text-body">
             {TAG_COLORS.find((c) => c.value === color)?.name ?? "Select"}
           </span>
-          <ChevronDownIcon className="h-4 w-4 text-zinc-400" />
+          <ChevronDownIcon className="text-faint h-4 w-4" />
         </button>
 
         {showColorPicker && (
