@@ -68,7 +68,9 @@ export function DemoSidebar({ onClose }: DemoSidebarProps) {
           isActive={isAllActive}
           countElement={
             totalUnread > 0 ? (
-              <span className="ui-text-xs text-muted ml-2 shrink-0">({totalUnread})</span>
+              <span className="ui-text-xs text-muted ml-2 shrink-0 tabular-nums">
+                ({totalUnread})
+              </span>
             ) : undefined
           }
           onClick={onClose}
@@ -81,7 +83,9 @@ export function DemoSidebar({ onClose }: DemoSidebarProps) {
           isActive={isHighlightsActive}
           countElement={
             highlightCount > 0 ? (
-              <span className="ui-text-xs text-muted ml-2 shrink-0">({highlightCount})</span>
+              <span className="ui-text-xs text-muted ml-2 shrink-0 tabular-nums">
+                ({highlightCount})
+              </span>
             ) : undefined
           }
           onClick={onClose}

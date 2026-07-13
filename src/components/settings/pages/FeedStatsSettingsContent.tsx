@@ -220,7 +220,7 @@ function SummaryCard({ label, value, variant = "default" }: SummaryCardProps) {
   return (
     <div className="border-edge-strong rounded-lg border bg-zinc-50 p-4 dark:bg-zinc-800">
       <p className="ui-text-sm text-muted">{label}</p>
-      <p className={`ui-text-2xl font-semibold ${variantClasses[variant]}`}>{value}</p>
+      <p className={`ui-text-2xl font-semibold tabular-nums ${variantClasses[variant]}`}>{value}</p>
     </div>
   );
 }
@@ -350,7 +350,7 @@ function StatItem({ icon, label, value }: StatItemProps) {
   return (
     <div className="text-muted flex items-center gap-1.5">
       <span className="h-4 w-4 shrink-0">{icon}</span>
-      <span className="truncate">
+      <span className="truncate tabular-nums">
         <span className="text-body font-medium">{label}:</span> {value}
       </span>
     </div>

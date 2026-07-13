@@ -116,7 +116,7 @@ function UserRow({ user }: { user: User }) {
       )}
 
       {/* Stats row */}
-      <div className="ui-text-xs text-muted flex flex-wrap gap-x-4 gap-y-1">
+      <div className="ui-text-xs text-muted flex flex-wrap gap-x-4 gap-y-1 tabular-nums">
         <span>Member since {formatDate(user.createdAt)}</span>
         <span>Last active: {user.lastActiveAt ? formatDate(user.lastActiveAt) : "Never"}</span>
         <span>
