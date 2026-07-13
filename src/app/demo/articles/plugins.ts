@@ -8,17 +8,17 @@ const article: DemoArticle = {
   title: "Plugin System",
   author: null,
   summary:
-    "Extensible plugin architecture for integrating with LessWrong, Google Docs, ArXiv, and GitHub.",
+    "Extensible plugin architecture for integrating with LessWrong, Google Docs, ArXiv, GitHub, and Bluesky.",
   publishedAt: new Date("2026-01-20T12:00:00Z"),
   starred: false,
   heroImage: "/demo/plugins.png",
   heroImageAlt:
     "The Lion Reader lion with colorful modular puzzle pieces for different content sources snapping into place.",
-  summaryHtml: `<p>Lion Reader&rsquo;s plugin system uses a <strong>capability-based architecture</strong> to integrate with external content sources. Plugins declare <code>feed</code> and <code>savedArticle</code> capabilities, enabling custom feed processing and article fetching for platforms like <strong>LessWrong</strong>, <strong>Google Docs</strong>, <strong>ArXiv</strong>, and <strong>GitHub</strong>. Plugins are matched by hostname with O(1) lookup and fall back gracefully when they can&rsquo;t handle a URL.</p>`,
+  summaryHtml: `<p>Lion Reader&rsquo;s plugin system uses a <strong>capability-based architecture</strong> to integrate with external content sources. Plugins declare <code>feed</code> and <code>savedArticle</code> capabilities, enabling custom feed processing and article fetching for platforms like <strong>LessWrong</strong>, <strong>Google Docs</strong>, <strong>ArXiv</strong>, <strong>GitHub</strong>, and <strong>Bluesky</strong>. Plugins are matched by hostname with O(1) lookup and fall back gracefully when they can&rsquo;t handle a URL.</p>`,
   contentHtml: `
     <h2>Extensible Content Sources</h2>
 
-    <p>Not all content lives in standard RSS feeds. Research papers on <a href="https://arxiv.org/" target="_blank" rel="noopener noreferrer">ArXiv</a>, posts on <a href="https://www.lesswrong.com/" target="_blank" rel="noopener noreferrer">LessWrong</a>, documents in Google Docs, and code on GitHub each have their own formats and APIs. Lion Reader&rsquo;s plugin system provides a clean way to integrate with these platforms, so you can subscribe to feeds and save articles from them just like any other source.</p>
+    <p>Not all content lives in standard RSS feeds &mdash; and even when it does, the feed sometimes leaves out the good parts. Research papers on <a href="https://arxiv.org/" target="_blank" rel="noopener noreferrer">ArXiv</a>, posts on <a href="https://www.lesswrong.com/" target="_blank" rel="noopener noreferrer">LessWrong</a>, documents in Google Docs, code on GitHub, and posts on <a href="https://bsky.app/" target="_blank" rel="noopener noreferrer">Bluesky</a> each have their own formats and APIs. Lion Reader&rsquo;s plugin system provides a clean way to integrate with these platforms, so you can subscribe to feeds and save articles from them just like any other source.</p>
 
     <h3>Capability-Based Architecture</h3>
 
@@ -55,6 +55,12 @@ const article: DemoArticle = {
     </ul>
 
     <p>The plugin uses GitHub API authentication when available for higher rate limits, and handles rate limiting and missing content gracefully.</p>
+
+    <h3>Bluesky</h3>
+
+    <p>Bluesky publishes a standard RSS feed for every profile, so subscribing already works out of the box &mdash; but that feed collapses each post&rsquo;s embedded content (quote posts, images, link cards, and videos) down to a bare <em>&ldquo;contains quote post or other embedded content&rdquo;</em> placeholder. The Bluesky plugin fills that gap with a saved-article capability: it hydrates a post through the public <a href="https://atproto.com/" target="_blank" rel="noopener noreferrer">AT Protocol</a> appview &mdash; resolving the handle to a persistent identifier, then fetching the post &mdash; and renders the text (with links, mentions, and hashtags) alongside its embeds as clean HTML, no Readability needed.</p>
+
+    <p>Because those embeds are the whole point of most posts, a plugin can also declare that new subscriptions to a source should default to <strong>full content</strong>. Bluesky opts in, so fresh Bluesky subscriptions automatically hydrate each post&rsquo;s embedded content as you open it &mdash; you can still turn that off per subscription.</p>
 
     <h3>Adding New Plugins</h3>
 
