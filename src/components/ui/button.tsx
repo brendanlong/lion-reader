@@ -8,7 +8,7 @@ import type { ButtonHTMLAttributes, Ref } from "react";
 import { SpinnerIcon } from "@/components/ui/icon-button";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: "primary" | "secondary" | "ghost";
+  variant?: "primary" | "secondary" | "ghost" | "danger";
   size?: "sm" | "md" | "lg";
   loading?: boolean;
   ref?: Ref<HTMLButtonElement>;
@@ -32,6 +32,8 @@ export function Button({
     secondary:
       "border border-edge-input bg-surface text-strong hover:bg-surface-muted focus:ring-focus",
     ghost: "text-strong hover:bg-surface-muted focus:ring-focus",
+    danger:
+      "bg-danger-solid text-danger-solid-foreground hover:bg-danger-solid-hover focus:ring-danger",
   };
 
   // Ensure minimum 44px height for touch targets on mobile (WCAG touch target guidelines)

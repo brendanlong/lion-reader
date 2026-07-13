@@ -1,8 +1,12 @@
 # Lion Reader design system — colors & components
 
 The canonical, minimal set of theme colors and components, and the plan to finish
-moving the app onto it. Companion to the accent rationale in
-[`accent-exploration.md`](accent-exploration.md).
+moving the app onto it. The warm-amber accent rationale, with before/after
+screenshots across all three themes, is in the exploration PR
+([#1172](https://github.com/brendanlong/lion-reader/pull/1172)); those screenshots
+and other design assets live on the orphan
+[`assets`](https://github.com/brendanlong/lion-reader/tree/assets) branch so they
+stay out of `master`'s history.
 
 Principle: **one token per role, themed once.** A component never writes a raw
 Tailwind color (`bg-red-50 dark:bg-red-950`); it writes a role (`bg-danger-subtle`),

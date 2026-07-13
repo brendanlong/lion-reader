@@ -289,10 +289,10 @@ function TagItem({ tag, onSuccess, onError }: TagItemProps) {
             Cancel
           </Button>
           <Button
+            variant="danger"
             size="sm"
             onClick={handleDelete}
             loading={deleteMutation.isPending}
-            className="bg-danger-solid text-danger-solid-foreground hover:bg-danger-solid-hover focus:ring-danger"
           >
             Delete
           </Button>

@@ -171,12 +171,11 @@ export default function CompleteSignupPage() {
                 Cancel
               </Button>
               <Button
-                variant="primary"
+                variant="danger"
                 size="sm"
                 onClick={handleDelete}
                 loading={deleteMutation.isPending}
                 disabled={!isDeleteConfirmed || deleteMutation.isPending}
-                className="bg-danger-solid text-danger-solid-foreground hover:bg-danger-solid-hover"
               >
                 Delete account
               </Button>
