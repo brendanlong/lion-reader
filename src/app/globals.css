@@ -16,14 +16,17 @@
   --foreground: #171717;
 
   /* =================================
-     Accent Colors (links, highlights, focus rings, unread dots, selection)
+     Accent Colors (links, highlights, focus rings, selection)
      The single warm brand hue. Light mode: amber. The base tone is the AA-safe
      shade for link *text* on white; --accent-muted is the vivid tone for
-     dots/fills. Warm ⇒ inherently low-blue-light (see the dark theme).
+     fills. Warm ⇒ inherently low-blue-light (see the dark theme).
+     (Note: unread indicators are intentionally NEUTRAL, not accent — see
+     EntryListItem/StickyEntryControls; amber is reserved for the star icon
+     and interactive/primary surfaces.)
      ================================= */
   --accent: #b45309; /* amber-700 - AA on white (4.5:1) for link text */
   --accent-hover: #92400e; /* amber-800 */
-  --accent-muted: #f59e0b; /* amber-500 - unread dots, vivid fills */
+  --accent-muted: #f59e0b; /* amber-500 - vivid fills */
   --accent-subtle: #fffbeb; /* amber-50 */
   --accent-subtle-foreground: #92400e; /* amber-800 */
   --accent-border: #fde68a; /* amber-200 */
@@ -220,7 +223,7 @@
      danger red-400 (unlike the old red accent, which collided with it). */
   --accent: #f59e0b; /* amber-500 - warmer, closer to light mode (issue #1193) */
   --accent-hover: #fbbf24; /* amber-400 - brightens on hover */
-  --accent-muted: #f59e0b; /* amber-500 - unread dots */
+  --accent-muted: #f59e0b; /* amber-500 - vivid fills */
   --accent-subtle: rgba(120, 53, 15, 0.25); /* amber-900/25 */
   --accent-subtle-foreground: #fde68a; /* amber-200 */
   --accent-border: #92400e; /* amber-800 */
