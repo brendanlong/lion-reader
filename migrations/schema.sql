@@ -719,6 +719,8 @@ CREATE INDEX idx_entries_feed_published_coalesce ON public.entries USING btree (
 
 CREATE INDEX idx_entries_feed_type ON public.entries USING btree (feed_id, type);
 
+CREATE INDEX idx_entries_feed_updated_at ON public.entries USING btree (feed_id, updated_at);
+
 CREATE INDEX idx_entries_fetched ON public.entries USING btree (feed_id, fetched_at);
 
 CREATE INDEX idx_entries_last_seen ON public.entries USING btree (feed_id, last_seen_at) WHERE (type = 'web'::public.feed_type);

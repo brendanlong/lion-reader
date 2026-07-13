@@ -513,6 +513,10 @@ export const entries = pgTable(
     index("idx_entries_spam").on(table.feedId, table.isSpam),
     // For filtering by entry type
     index("idx_entries_type").on(table.type),
+    // sync.events / Wallabag delta: seek changed entries within a feed
+    // (feed_id = <subscribed/saved feed> AND updated_at >= cursor). Backs the
+    // entry-side arm of the sync.events UNION rewrite (#1105). Migration 0094.
+    index("idx_entries_feed_updated_at").on(table.feedId, table.updatedAt),
     // Expression indexes for entry list sorting (Drizzle can't express these, created via raw SQL):
     // - idx_entries_published_coalesce: (COALESCE(published_at, fetched_at) DESC, id DESC)
     //   Enables limit pushdown for "all entries" queries. Migration 0060.
