@@ -148,7 +148,7 @@ export const OfflineBanner = memo(function OfflineBanner({ className = "" }: Off
     return (
       <div
         role="alert"
-        className={`ui-text-sm bg-warning-solid text-warning-solid-foreground flex items-center justify-center gap-2 px-4 py-2 font-medium ${className}`}
+        className={`ui-text-sm bg-warning-banner text-warning-banner-foreground flex items-center justify-center gap-2 px-4 py-2 font-medium ${className}`}
       >
         <WifiOffIcon className="h-4 w-4" />
         <span>You are offline. Some features may not be available.</span>
@@ -160,7 +160,7 @@ export const OfflineBanner = memo(function OfflineBanner({ className = "" }: Off
   return (
     <div
       role="status"
-      className={`ui-text-sm bg-success-solid text-success-solid-foreground flex items-center justify-center gap-2 px-4 py-2 font-medium ${className}`}
+      className={`ui-text-sm bg-success-banner text-success-banner-foreground flex items-center justify-center gap-2 px-4 py-2 font-medium ${className}`}
     >
       <WifiOnIcon className="h-4 w-4" />
       <span>You are back online.</span>
