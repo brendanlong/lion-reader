@@ -258,7 +258,7 @@ export default function ApiTokensSettingsContent() {
 
       {/* Active Tokens List */}
       <div className="mb-6">
-        <h3 className="ui-text-sm text-body mb-3 font-medium">
+        <h3 className="ui-text-sm text-body mb-3 font-medium tabular-nums">
           Active Tokens ({activeTokens.length})
         </h3>
         <SettingsListContainer
@@ -283,7 +283,7 @@ export default function ApiTokensSettingsContent() {
       {/* Revoked/Expired Tokens */}
       {inactiveTokens.length > 0 && (
         <div>
-          <h3 className="ui-text-sm text-body mb-3 font-medium">
+          <h3 className="ui-text-sm text-body mb-3 font-medium tabular-nums">
             Revoked/Expired Tokens ({inactiveTokens.length})
           </h3>
           <div className="space-y-3">

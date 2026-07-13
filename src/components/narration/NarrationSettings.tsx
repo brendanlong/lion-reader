@@ -368,7 +368,7 @@ export function NarrationSettings() {
           <div>
             <label
               htmlFor="narration-rate"
-              className="ui-text-sm text-body mb-1.5 block font-medium"
+              className="ui-text-sm text-body mb-1.5 block font-medium tabular-nums"
             >
               Speed: {settings.rate.toFixed(1)}x
             </label>
@@ -395,7 +395,7 @@ export function NarrationSettings() {
             <div>
               <label
                 htmlFor="narration-pitch"
-                className="ui-text-sm text-body mb-1.5 block font-medium"
+                className="ui-text-sm text-body mb-1.5 block font-medium tabular-nums"
               >
                 Pitch: {settings.pitch.toFixed(1)}x
               </label>
