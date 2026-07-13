@@ -1,28 +1,31 @@
 /**
- * UUIDv7 ↔ signed 64-bit integer conversion for Google Reader API.
+ * ID conversions for the Google Reader API.
  *
  * Google Reader clients require signed 64-bit integer IDs. Lion Reader uses UUIDv7 (128-bit).
  *
- * Strategy: Derive int64 deterministically from UUIDv7 at runtime (no storage needed).
+ * **Item IDs** are a stored global serial (`entries.greader_item_id`): each entry
+ * carries a plain bigint, so formatting reads it directly and the reverse lookup
+ * (`greaderItemIdsToUuids`) is a `greader_item_id = ANY(...)` seek on a unique
+ * index — no derivation, no timestamp-window scan.
  *
- * UUIDv7 layout: [48-bit ms timestamp][4-bit version][12-bit rand_a][2-bit variant][62-bit rand_b]
+ * The **UUID→int64 projection** (`uuidToInt64`) remains only for the ids that are
+ * still derived at runtime: feed stream ids, tag sortids, and user ids (a later
+ * step migrates those too).
  *
- * We extract 48 bits of timestamp + 15 bits of randomness (from rand_a[0:11] + rand_b[0:3],
- * skipping version/variant markers) to produce a 63-bit positive signed integer.
+ * uuidToInt64 layout: UUIDv7 is [48-bit ms timestamp][4-bit version][12-bit
+ * rand_a][2-bit variant][62-bit rand_b]. We extract 48 bits of timestamp + 15
+ * bits of randomness (rand_a[0:11] + rand_b[0:3], skipping version/variant
+ * markers) to produce a 63-bit positive signed integer that is time-ordered,
+ * deterministic, and (for feed streams) reversible — the timestamp narrows a
+ * lookup to one millisecond and the random bits disambiguate.
  *
- * This is:
- * - Time-ordered — same sort order as the UUID
- * - Unique — 48-bit ms timestamp + 15 bits random = collision only if 32K+ entries in same ms
- * - Deterministic — same UUID always produces the same integer
- * - Reversible — timestamp narrows lookup to one millisecond, random bits disambiguate
- *
- * Clients send IDs in three formats (all must be parsed):
+ * Clients send item IDs in three formats (all must be parsed):
  * - Long hex: tag:google.com,2005:reader/item/000000000000001F
  * - Short hex: 000000000000001F
  * - Decimal string: 31
  */
 
-import { eq, and, gte, lte, sql } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import { entries, subscriptions } from "@/server/db/schema";
 import { getSavedFeedId } from "@/server/feed/saved-feed";
@@ -117,26 +120,9 @@ function extractRandomBits(id: bigint): bigint {
   return id & BigInt(0x7fff); // lower 15 bits
 }
 
-/** Exclusive upper bound of a 48-bit millisecond timestamp (2^48). */
-const MAX_TIMESTAMP_MS = BigInt(2) ** BigInt(48);
-
 /** Formats a 48-bit millisecond timestamp as its 12-hex-digit UUID prefix. */
 function timestampHex(timestampMs: bigint): string {
   return timestampMs.toString(16).padStart(12, "0");
-}
-
-/**
- * The lowest/highest UUID sharing a given 12-hex-digit timestamp prefix. Because
- * UUIDv7 text-orders by timestamp, `id BETWEEN floor(minTs) AND ceil(maxTs)` is
- * an index-seekable bound on the primary key that brackets every UUID in the
- * requested time window — turning a full index scan (the substring filter alone
- * can't use the index) into a range scan.
- */
-function uuidFloor(tsHex: string): string {
-  return `${tsHex.slice(0, 8)}-${tsHex.slice(8, 12)}-0000-0000-000000000000`;
-}
-function uuidCeil(tsHex: string): string {
-  return `${tsHex.slice(0, 8)}-${tsHex.slice(8, 12)}-ffff-ffff-ffffffffffff`;
 }
 
 /**
@@ -154,19 +140,13 @@ function uuidTimestampIn(column: typeof entries.id | typeof subscriptions.id, ts
 }
 
 /**
- * Batch converts Google Reader int64 IDs to UUIDv7 entry IDs.
- *
- * The int64 is a lossy projection of the UUID (48-bit timestamp + 15 random
- * bits), so we can't reconstruct the UUID directly — we fetch the candidate
- * UUIDs sharing each requested timestamp and disambiguate by the random bits in
- * JS. All distinct timestamps are matched in a SINGLE query: an earlier version
- * ran one query per distinct millisecond, which for a large sync page (e.g. 250
- * ids from stream/items/contents) became 250 sequential round-trips — the
- * dominant cost of the request. UUIDv7 encodes creation time at millisecond
- * resolution, so entries arriving over time rarely share one, making the old
- * grouping degenerate to one query per id.
+ * Resolves Google Reader item IDs (stored `entries.greader_item_id` serials) to
+ * their UUIDv7 entry IDs. Item ids are a plain stored bigint, so this is a
+ * single `greader_item_id = ANY(ids)` seek on the unique index — no timestamp
+ * math, no candidate disambiguation. Ids with no matching row (deleted, or a
+ * bogus value a client sent) are simply absent from the returned map.
  */
-export async function batchInt64ToUuid(
+export async function greaderItemIdsToUuids(
   db: typeof dbType,
   ids: bigint[]
 ): Promise<Map<bigint, string>> {
@@ -174,52 +154,13 @@ export async function batchInt64ToUuid(
 
   if (ids.length === 0) return result;
 
-  // Keep only ids whose extracted timestamp is a valid 48-bit millisecond value.
-  // `parseItemId` accepts negative and unbounded decimals, which would produce a
-  // timestamp outside [0, 2^48) and, in turn, an out-of-range hex that makes
-  // `uuidFloor`/`uuidCeil` emit a malformed uuid literal — Postgres would reject
-  // the whole query, poisoning the batch. Such ids can't correspond to any real
-  // UUIDv7 anyway, so we skip them (leaving them unresolved, as before).
-  const timestamps = ids.map(extractTimestamp);
-  const validTimestamps = timestamps.filter((ts) => ts >= BigInt(0) && ts < MAX_TIMESTAMP_MS);
-  if (validTimestamps.length === 0) return result;
-
-  // Distinct timestamp prefixes to match in one query.
-  const tsHexes = [...new Set(validTimestamps.map(timestampHex))];
-  let minTs = validTimestamps[0];
-  let maxTs = validTimestamps[0];
-  for (const ts of validTimestamps) {
-    if (ts < minTs) minTs = ts;
-    if (ts > maxTs) maxTs = ts;
-  }
-
-  // Match all candidates in a single query, then disambiguate by random bits.
-  // The BETWEEN bound makes the primary-key index seek the requested time window
-  // instead of scanning the whole index; the substring IN then selects the exact
-  // milliseconds within it. The per-timestamp cap of the old code (1000) is
-  // preserved in aggregate so a pathological millisecond can't blow up results.
-  const candidates = await db
-    .select({ id: entries.id })
+  const rows = await db
+    .select({ id: entries.id, greaderItemId: entries.greaderItemId })
     .from(entries)
-    .where(
-      and(
-        gte(entries.id, uuidFloor(timestampHex(minTs))),
-        lte(entries.id, uuidCeil(timestampHex(maxTs))),
-        uuidTimestampIn(entries.id, tsHexes)
-      )
-    )
-    .limit(tsHexes.length * 1000);
+    .where(inArray(entries.greaderItemId, ids));
 
-  // Index candidates by their derived int64 for O(1) lookup, then resolve each
-  // requested id. A collision (32K+ entries in one ms) is astronomically
-  // unlikely; last-writer-wins is acceptable there.
-  const byInt64 = new Map<bigint, string>();
-  for (const candidate of candidates) {
-    byInt64.set(uuidToInt64(candidate.id), candidate.id);
-  }
-  for (const id of ids) {
-    const uuid = byInt64.get(id);
-    if (uuid !== undefined) result.set(id, uuid);
+  for (const row of rows) {
+    result.set(row.greaderItemId, row.id);
   }
 
   return result;

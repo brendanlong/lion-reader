@@ -222,11 +222,22 @@ CREATE TABLE public.entries (
     full_content_original_sanitized text,
     full_content_cleaned_sanitized text,
     full_content_sanitized_version smallint,
+    greader_item_id bigint NOT NULL,
     CONSTRAINT entries_last_seen_only_fetched CHECK (((type = 'web'::public.feed_type) = (last_seen_at IS NOT NULL))),
     CONSTRAINT entries_saved_metadata_only_saved CHECK (((type = 'saved'::public.feed_type) OR ((site_name IS NULL) AND (image_url IS NULL)))),
     CONSTRAINT entries_spam_only_email CHECK (((type = 'email'::public.feed_type) OR ((spam_score IS NULL) AND (is_spam = false)))),
     CONSTRAINT entries_unsubscribe_only_email CHECK (((type = 'email'::public.feed_type) OR ((list_unsubscribe_mailto IS NULL) AND (list_unsubscribe_https IS NULL) AND (list_unsubscribe_post IS NULL))))
 );
+
+CREATE SEQUENCE public.entries_greader_item_id_seq
+    AS bigint
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.entries_greader_item_id_seq OWNED BY public.entries.greader_item_id;
 
 CREATE TABLE public.entry_summaries (
     id uuid NOT NULL,
@@ -550,7 +561,8 @@ CREATE VIEW public.visible_entries AS
     e.content_sanitized_version,
     e.full_content_original_sanitized,
     e.full_content_cleaned_sanitized,
-    e.full_content_sanitized_version
+    e.full_content_sanitized_version,
+    e.greader_item_id
    FROM ((public.user_entries ue
      JOIN public.entries e ON ((e.id = ue.entry_id)))
      LEFT JOIN public.subscriptions s ON ((s.id = ue.subscription_id)))
@@ -580,6 +592,8 @@ CREATE TABLE public.websub_subscriptions (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     unsubscribe_requested_at timestamp with time zone
 );
+
+ALTER TABLE ONLY public.entries ALTER COLUMN greader_item_id SET DEFAULT nextval('public.entries_greader_item_id_seq'::regclass);
 
 ALTER TABLE ONLY public.api_tokens
     ADD CONSTRAINT api_tokens_pkey PRIMARY KEY (id);
@@ -723,6 +737,8 @@ CREATE INDEX idx_entries_feed_type ON public.entries USING btree (feed_id, type)
 CREATE INDEX idx_entries_feed_updated_at ON public.entries USING btree (feed_id, updated_at);
 
 CREATE INDEX idx_entries_fetched ON public.entries USING btree (feed_id, fetched_at);
+
+CREATE UNIQUE INDEX idx_entries_greader_item_id ON public.entries USING btree (greader_item_id);
 
 CREATE INDEX idx_entries_last_seen ON public.entries USING btree (feed_id, last_seen_at) WHERE (type = 'web'::public.feed_type);
 

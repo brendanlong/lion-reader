@@ -94,6 +94,9 @@ export interface SearchEntriesParams {
 
 export interface EntryListItem {
   id: string;
+  // Google Reader item id (stored global serial). Ignored by the main app; used
+  // by the Google Reader compat layer to address entries as int64 ids.
+  greaderItemId: bigint;
   subscriptionId: string | null;
   feedId: string;
   type: "web" | "email" | "saved";
@@ -117,6 +120,8 @@ export interface EntryListItem {
  */
 export interface EntryFull {
   id: string;
+  // Google Reader item id (stored global serial); see EntryListItem.
+  greaderItemId: bigint;
   subscriptionId: string | null;
   feedId: string;
   type: "web" | "email" | "saved";
@@ -186,6 +191,7 @@ const MAX_LIMIT = 100;
  */
 interface EntryListRow {
   id: string;
+  greaderItemId: bigint;
   subscriptionId: string | null;
   feedId: string;
   type: "web" | "email" | "saved";
@@ -208,6 +214,7 @@ interface EntryListRow {
 function toEntryListItem(row: EntryListRow): EntryListItem {
   return {
     id: row.id,
+    greaderItemId: row.greaderItemId,
     subscriptionId: row.subscriptionId,
     feedId: row.feedId,
     type: row.type,
@@ -277,6 +284,7 @@ function encodeCursor(ts: string, entryId: string): string {
  */
 const entryFullSelectFields = {
   id: visibleEntries.id,
+  greaderItemId: visibleEntries.greaderItemId,
   feedId: visibleEntries.feedId,
   type: visibleEntries.type,
   url: visibleEntries.url,
@@ -654,6 +662,7 @@ export async function listEntries(
   const queryResults = await db
     .select({
       id: visibleEntries.id,
+      greaderItemId: visibleEntries.greaderItemId,
       feedId: visibleEntries.feedId,
       type: visibleEntries.type,
       url: visibleEntries.url,
@@ -777,6 +786,7 @@ async function searchEntries(
   const rankedSubquery = db
     .select({
       id: visibleEntries.id,
+      greaderItemId: visibleEntries.greaderItemId,
       feedId: visibleEntries.feedId,
       type: visibleEntries.type,
       url: visibleEntries.url,
@@ -804,6 +814,7 @@ async function searchEntries(
   const queryResults = await db
     .select({
       id: rankedSubquery.id,
+      greaderItemId: rankedSubquery.greaderItemId,
       feedId: rankedSubquery.feedId,
       type: rankedSubquery.type,
       url: rankedSubquery.url,
