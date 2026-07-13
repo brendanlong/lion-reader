@@ -9,7 +9,11 @@ export default function manifest(): MetadataRoute.Manifest {
     display: "standalone",
     orientation: "portrait",
     background_color: "#ffffff",
-    theme_color: "#f97316",
+    // Single-value fallback for contexts that don't honor the per-theme
+    // <meta name="theme-color"> (see ThemeProvider.tsx / layout viewport): the
+    // dark-grey top-bar color (--surface dark = zinc-900), which reads as
+    // intentional in both modes. Was a hardcoded orange that matched nothing.
+    theme_color: "#18181b",
     icons: [
       {
         src: "/android-chrome-192x192.png",

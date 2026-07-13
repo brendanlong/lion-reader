@@ -67,6 +67,38 @@ function EInkSystemThemeOverride() {
 }
 
 /**
+ * Syncs `<meta name="theme-color">` (the mobile status-bar / PWA toolbar color)
+ * to the resolved app theme's top-bar color, so the status bar blends with the
+ * `bg-surface` header instead of showing a fixed brand color (issue: the PWA
+ * status bar was a hardcoded orange that matched nothing).
+ *
+ * Uses `resolvedTheme` — the *app's* theme, not the OS `prefers-color-scheme` —
+ * so a user who forces dark on a light-scheme phone still gets the dark status
+ * bar. It overwrites every `theme-color` meta (including the media-scoped SSR
+ * defaults from `viewport.themeColor`) so the app theme always wins.
+ *
+ * Colors mirror `--surface`: white in light/e-paper, zinc-900 in dark.
+ */
+function ThemeColorMeta() {
+  const { resolvedTheme } = useTheme();
+
+  useEffect(() => {
+    const color = resolvedTheme === "dark" ? "#18181b" : "#ffffff";
+    const metas = document.querySelectorAll('meta[name="theme-color"]');
+    if (metas.length === 0) {
+      const meta = document.createElement("meta");
+      meta.name = "theme-color";
+      meta.content = color;
+      document.head.appendChild(meta);
+    } else {
+      metas.forEach((meta) => meta.setAttribute("content", color));
+    }
+  }, [resolvedTheme]);
+
+  return null;
+}
+
+/**
  * Theme provider that wraps the app with next-themes.
  *
  * Configuration:
@@ -89,6 +121,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
       storageKey="lion-reader-theme"
     >
       <EInkSystemThemeOverride />
+      <ThemeColorMeta />
       {children}
     </NextThemesProvider>
   );
