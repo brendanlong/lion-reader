@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Merriweather, Literata, Inter, Source_Sans_3 } from "next/font/google";
 import { defaultOpenGraph } from "@/lib/metadata";
 import { appUrl } from "@/server/config/env";
@@ -50,6 +50,17 @@ export const metadata: Metadata = {
     apple: "/apple-touch-icon.png",
   },
   openGraph: defaultOpenGraph,
+};
+
+// SSR default for the mobile status-bar / PWA toolbar color, matching the
+// `bg-surface` header per system preference. ThemeColorMeta (ThemeProvider) then
+// overrides this to the *resolved app theme* after hydration, so a forced theme
+// (e.g. dark on a light-scheme phone) still matches. See ThemeProvider.tsx.
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#18181b" },
+  ],
 };
 
 /**
