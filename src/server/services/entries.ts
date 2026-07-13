@@ -949,6 +949,13 @@ export async function getEntries(
  * `counts` is undefined otherwise; callers treat "no counts" as "counts didn't
  * change".
  *
+ * The two roles are carried by two columns (issue #1118 Part 2): `read_changed_at`
+ * is the last-writer-wins watermark and advances on every accepted write, while
+ * `updated_at` is the "meaningful change" timestamp that drives delta sync
+ * (`sync.events`, Wallabag `since`, both through `visible_entries.updated_at`) and
+ * moves ONLY on a real flip. So a same-value re-assert advances the watermark but
+ * leaves `updated_at` alone, and offline/polling clients don't re-fetch it.
+ *
  * Publishes an `entry_state_changed` SSE event for each entry whose value
  * actually flipped, so a user's other tabs/devices stay in sync regardless of
  * which surface (tRPC, MCP, Google Reader, Wallabag) issued the mark. Publishing
@@ -1003,9 +1010,18 @@ export async function markEntriesRead(
     (entry) => sql`(${entry.id}::uuid, ${(entry.changedAt ?? now).toISOString()}::timestamptz)`
   );
 
+  // `updated_at` is the "meaningful change" timestamp that drives delta sync
+  // (`sync.events` and Wallabag `since`, both via `visible_entries.updated_at =
+  // GREATEST(entry, user_entry)`), so it moves ONLY when the read value actually
+  // flips — a same-value re-assert must not re-deliver the entry to offline
+  // clients (issue #1118 Part 2). The last-writer-wins watermark
+  // (`read_changed_at`) is a SEPARATE column and still advances on every
+  // accepted write, so cross-device conflict resolution is unchanged.
   const updated = await db.execute<{ entry_id: string; old_read: boolean }>(sql`
     UPDATE user_entries AS ue
-    SET read = ${read}, updated_at = ${now}, read_changed_at = v.ts
+    SET read = ${read},
+        updated_at = CASE WHEN prev.read <> ${read} THEN ${now} ELSE ue.updated_at END,
+        read_changed_at = v.ts
     FROM (VALUES ${sql.join(rows, sql`, `)}) AS v(entry_id, ts)
     JOIN user_entries AS prev
       ON prev.user_id = ${userId}::uuid
@@ -1249,6 +1265,11 @@ export async function markAllEntriesRead(
  * flipped. `counts` is undefined otherwise; callers treat "no counts" as
  * "counts didn't change".
  *
+ * As in markEntriesRead (issue #1118 Part 2), `starred_changed_at` is the
+ * last-writer-wins watermark (advances on every accepted write) while `updated_at`
+ * is the delta-sync "meaningful change" timestamp and moves ONLY on a real flip,
+ * so a same-value re-assert never re-delivers the entry to offline/polling clients.
+ *
  * Publishes an `entry_state_changed` SSE event when the star state actually
  * changed, so a user's other tabs/devices stay in sync regardless of which
  * surface (tRPC, MCP, Google Reader, Wallabag) issued the change. Publishing
@@ -1280,9 +1301,16 @@ export async function updateEntryStarred(
   // statement (RETURNING only sees new values before PG 18's `old.*`), so we
   // can tell a real flip from a same-value watermark bump without a separate
   // pre-SELECT and its wider TOCTOU window.
+  // `updated_at` is the "meaningful change" timestamp that drives delta sync
+  // (see markEntriesRead), so it moves ONLY when the starred value actually
+  // flips — a same-value re-assert must not re-deliver the entry (issue #1118
+  // Part 2). The `starred_changed_at` last-writer-wins watermark is a separate
+  // column and still advances on every accepted write.
   const updated = await db.execute<{ old_starred: boolean }>(sql`
     UPDATE user_entries AS ue
-    SET starred = ${starred}, starred_changed_at = ${changedAt}, updated_at = ${new Date()}
+    SET starred = ${starred},
+        starred_changed_at = ${changedAt},
+        updated_at = CASE WHEN prev.starred <> ${starred} THEN ${new Date()} ELSE ue.updated_at END
     FROM user_entries AS prev
     WHERE ue.user_id = ${userId}::uuid
       AND ue.entry_id = ${entryId}::uuid
