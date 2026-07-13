@@ -54,12 +54,7 @@ export function UnsubscribeDialog({
         <Button ref={cancelButtonRef} variant="secondary" onClick={onCancel} disabled={isLoading}>
           Cancel
         </Button>
-        <Button
-          variant="primary"
-          onClick={onConfirm}
-          loading={isLoading}
-          className="bg-danger-solid hover:bg-danger-solid-hover focus:ring-danger"
-        >
+        <Button variant="danger" onClick={onConfirm} loading={isLoading}>
           Unsubscribe
         </Button>
       </DialogFooter>
