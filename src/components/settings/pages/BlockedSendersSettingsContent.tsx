@@ -79,7 +79,7 @@ function EmptyState() {
         <ProhibitionIcon className="text-faint h-6 w-6" />
       </div>
       <h3 className="ui-text-sm text-strong mt-4 font-medium">No blocked senders</h3>
-      <p className="ui-text-sm text-subtle mt-1">
+      <p className="ui-text-sm text-muted mt-1">
         When you unsubscribe from a newsletter, the sender will be added here to prevent future
         emails.
       </p>
@@ -153,7 +153,7 @@ function BlockedSenderRow({ sender }: BlockedSenderRowProps) {
           <p className="text-strong font-medium">{sender.senderEmail}</p>
 
           {/* Metadata */}
-          <div className="ui-text-sm text-subtle mt-1 flex flex-wrap gap-x-4 gap-y-1">
+          <div className="ui-text-sm text-muted mt-1 flex flex-wrap gap-x-4 gap-y-1">
             <span>Blocked {formatRelativeTime(sender.blockedAt)}</span>
             {sender.unsubscribeSentAt && (
               <span className="flex items-center gap-1">

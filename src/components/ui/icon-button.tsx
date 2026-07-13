@@ -48,7 +48,7 @@ export function IconButton({
 
   const variantStyles = {
     ghost:
-      "text-subtle hover:bg-zinc-100 hover:text-zinc-700 active:bg-zinc-200 dark:hover:bg-zinc-800 dark:hover:text-zinc-300 dark:active:bg-zinc-700",
+      "text-muted hover:bg-surface-muted hover:text-zinc-700 active:bg-zinc-200 dark:hover:text-zinc-300 dark:active:bg-zinc-700",
     subtle:
       "text-zinc-400 hover:bg-zinc-200 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-300",
   };

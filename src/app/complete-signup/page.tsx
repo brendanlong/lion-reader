@@ -139,7 +139,7 @@ export default function CompleteSignupPage() {
         {!showDeleteConfirm ? (
           <button
             onClick={() => setShowDeleteConfirm(true)}
-            className="ui-text-sm text-subtle w-full text-center underline hover:text-zinc-700 dark:hover:text-zinc-300"
+            className="ui-text-sm text-muted w-full text-center underline hover:text-zinc-700 dark:hover:text-zinc-300"
           >
             Delete my account instead
           </button>

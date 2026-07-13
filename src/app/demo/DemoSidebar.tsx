@@ -68,7 +68,7 @@ export function DemoSidebar({ onClose }: DemoSidebarProps) {
           isActive={isAllActive}
           countElement={
             totalUnread > 0 ? (
-              <span className="ui-text-xs text-subtle ml-2 shrink-0">({totalUnread})</span>
+              <span className="ui-text-xs text-muted ml-2 shrink-0">({totalUnread})</span>
             ) : undefined
           }
           onClick={onClose}
@@ -81,7 +81,7 @@ export function DemoSidebar({ onClose }: DemoSidebarProps) {
           isActive={isHighlightsActive}
           countElement={
             highlightCount > 0 ? (
-              <span className="ui-text-xs text-subtle ml-2 shrink-0">({highlightCount})</span>
+              <span className="ui-text-xs text-muted ml-2 shrink-0">({highlightCount})</span>
             ) : undefined
           }
           onClick={onClose}
@@ -114,7 +114,7 @@ export function DemoSidebar({ onClose }: DemoSidebarProps) {
                       e.stopPropagation();
                       toggleTag(tag.id);
                     }}
-                    className="text-subtle flex h-6 w-6 shrink-0 items-center justify-center hover:text-zinc-700 dark:hover:text-zinc-300"
+                    className="text-muted flex h-6 w-6 shrink-0 items-center justify-center hover:text-zinc-700 dark:hover:text-zinc-300"
                     aria-label={expanded ? "Collapse" : "Expand"}
                   >
                     {expanded ? <ChevronDownIcon /> : <ChevronRightIcon />}

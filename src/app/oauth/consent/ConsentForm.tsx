@@ -101,7 +101,7 @@ export function ConsentForm({
       </form>
 
       {/* Client ID info */}
-      <p className="ui-text-xs text-subtle mt-4 text-center">
+      <p className="ui-text-xs text-muted mt-4 text-center">
         Client ID: {clientId.length > 50 ? `${clientId.slice(0, 50)}...` : clientId}
       </p>
     </div>

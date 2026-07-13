@@ -183,7 +183,7 @@ export function NarrationSettings() {
           <AlertIcon className="text-faint mt-0.5 h-5 w-5 flex-shrink-0" />
           <div>
             <p className="ui-text-sm text-strong font-medium">Narration Unavailable</p>
-            <p className="ui-text-sm text-subtle mt-1">{supportInfo.reason}</p>
+            <p className="ui-text-sm text-muted mt-1">{supportInfo.reason}</p>
             <p className="ui-text-xs text-faint mt-2">
               Try using Chrome, Safari, or Edge for the best narration experience.
             </p>
@@ -199,14 +199,14 @@ export function NarrationSettings() {
       <div className="flex items-center justify-between">
         <div>
           <h3 className="ui-text-sm text-strong font-medium">Enable narration</h3>
-          <p className="ui-text-sm text-subtle mt-1">Listen to articles using text-to-speech.</p>
+          <p className="ui-text-sm text-muted mt-1">Listen to articles using text-to-speech.</p>
         </div>
         <button
           type="button"
           role="switch"
           aria-checked={settings.enabled}
           onClick={() => setSettings((prev) => ({ ...prev, enabled: !prev.enabled }))}
-          className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none dark:focus:ring-offset-zinc-900 ${
+          className={`focus:ring-focus relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-offset-2 focus:outline-none dark:focus:ring-offset-zinc-900 ${
             settings.enabled ? "bg-primary-solid" : "bg-fill-muted"
           }`}
         >
@@ -230,8 +230,8 @@ export function NarrationSettings() {
               <label
                 className={`relative flex cursor-pointer rounded-lg border p-4 transition-colors ${
                   settings.provider === "browser"
-                    ? "border-zinc-900 bg-zinc-50 dark:border-zinc-400 dark:bg-zinc-800"
-                    : "border-edge-strong hover:bg-surface-hover"
+                    ? "border-control-selected bg-zinc-50 dark:bg-zinc-800"
+                    : "border-edge-strong hover:bg-surface-muted"
                 }`}
               >
                 <input
@@ -246,17 +246,17 @@ export function NarrationSettings() {
                   <div
                     className={`mt-0.5 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border ${
                       settings.provider === "browser"
-                        ? "border-zinc-900 dark:border-zinc-400"
+                        ? "border-control-selected"
                         : "border-zinc-400 dark:border-zinc-500"
                     }`}
                   >
                     {settings.provider === "browser" && (
-                      <div className="h-2 w-2 rounded-full bg-zinc-900 dark:bg-zinc-400" />
+                      <div className="bg-control-selected h-2 w-2 rounded-full" />
                     )}
                   </div>
                   <div>
                     <span className="ui-text-sm text-strong block font-medium">Browser Voices</span>
-                    <span className="ui-text-xs text-subtle mt-0.5 block">
+                    <span className="ui-text-xs text-muted mt-0.5 block">
                       Uses your browser&apos;s built-in text-to-speech
                     </span>
                   </div>
@@ -267,8 +267,8 @@ export function NarrationSettings() {
               <label
                 className={`relative flex cursor-pointer rounded-lg border p-4 transition-colors ${
                   settings.provider === "piper"
-                    ? "border-zinc-900 bg-zinc-50 dark:border-zinc-400 dark:bg-zinc-800"
-                    : "border-edge-strong hover:bg-surface-hover"
+                    ? "border-control-selected bg-zinc-50 dark:bg-zinc-800"
+                    : "border-edge-strong hover:bg-surface-muted"
                 }`}
               >
                 <input
@@ -283,19 +283,19 @@ export function NarrationSettings() {
                   <div
                     className={`mt-0.5 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border ${
                       settings.provider === "piper"
-                        ? "border-zinc-900 dark:border-zinc-400"
+                        ? "border-control-selected"
                         : "border-zinc-400 dark:border-zinc-500"
                     }`}
                   >
                     {settings.provider === "piper" && (
-                      <div className="h-2 w-2 rounded-full bg-zinc-900 dark:bg-zinc-400" />
+                      <div className="bg-control-selected h-2 w-2 rounded-full" />
                     )}
                   </div>
                   <div>
                     <span className="ui-text-sm text-strong block font-medium">
                       Enhanced Voices
                     </span>
-                    <span className="ui-text-xs text-subtle mt-0.5 block">
+                    <span className="ui-text-xs text-muted mt-0.5 block">
                       Higher quality voices (requires download)
                     </span>
                   </div>
@@ -346,7 +346,7 @@ export function NarrationSettings() {
                   {isPreviewing ? "Stop" : "Preview"}
                 </Button>
               </div>
-              <p className="ui-text-xs text-subtle mt-1.5">
+              <p className="ui-text-xs text-muted mt-1.5">
                 Voices are provided by your browser. Chrome and Safari typically offer higher
                 quality voices.
               </p>
@@ -427,7 +427,7 @@ export function NarrationSettings() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="ui-text-sm text-body">Use AI text processing</p>
-                  <p className="ui-text-xs text-subtle">
+                  <p className="ui-text-xs text-muted">
                     Improves narration quality by expanding abbreviations and formatting content
                   </p>
                 </div>
@@ -441,7 +441,7 @@ export function NarrationSettings() {
                       useLlmNormalization: !prev.useLlmNormalization,
                     }))
                   }
-                  className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none dark:focus:ring-offset-zinc-900 ${
+                  className={`focus:ring-focus relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-offset-2 focus:outline-none dark:focus:ring-offset-zinc-900 ${
                     settings.useLlmNormalization ? "bg-primary-solid" : "bg-fill-muted"
                   }`}
                 >
@@ -464,9 +464,7 @@ export function NarrationSettings() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="ui-text-sm text-body">Highlight current paragraph</p>
-                <p className="ui-text-xs text-subtle">
-                  Visually highlight the paragraph being read
-                </p>
+                <p className="ui-text-xs text-muted">Visually highlight the paragraph being read</p>
               </div>
               <button
                 type="button"
@@ -475,7 +473,7 @@ export function NarrationSettings() {
                 onClick={() =>
                   setSettings((prev) => ({ ...prev, highlightEnabled: !prev.highlightEnabled }))
                 }
-                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none dark:focus:ring-offset-zinc-900 ${
+                className={`focus:ring-focus relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-offset-2 focus:outline-none dark:focus:ring-offset-zinc-900 ${
                   settings.highlightEnabled ? "bg-primary-solid" : "bg-fill-muted"
                 }`}
               >
@@ -492,7 +490,7 @@ export function NarrationSettings() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="ui-text-sm text-body">Auto-scroll to current paragraph</p>
-                <p className="ui-text-xs text-subtle">
+                <p className="ui-text-xs text-muted">
                   Automatically scroll the page to keep the current paragraph visible
                 </p>
               </div>
@@ -503,7 +501,7 @@ export function NarrationSettings() {
                 onClick={() =>
                   setSettings((prev) => ({ ...prev, autoScrollEnabled: !prev.autoScrollEnabled }))
                 }
-                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none dark:focus:ring-offset-zinc-900 ${
+                className={`focus:ring-focus relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-offset-2 focus:outline-none dark:focus:ring-offset-zinc-900 ${
                   settings.autoScrollEnabled ? "bg-primary-solid" : "bg-fill-muted"
                 }`}
               >
@@ -533,7 +531,7 @@ export function NarrationSettings() {
       {/* Media Session Info */}
       {settings.enabled && supportInfo.mediaSession && (
         <CardSection>
-          <div className="ui-text-xs text-subtle flex items-start gap-2">
+          <div className="ui-text-xs text-muted flex items-start gap-2">
             <InfoCircleIcon className="mt-0.5 h-4 w-4 flex-shrink-0" />
             <span>
               Your browser supports media controls. You can control playback using your keyboard

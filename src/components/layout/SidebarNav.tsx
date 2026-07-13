@@ -25,7 +25,7 @@ interface SidebarNavProps {
  */
 function CountBadge({ count }: { count: number }) {
   if (count === 0) return null;
-  return <span className="ui-text-xs text-subtle ml-2 shrink-0">({count})</span>;
+  return <span className="ui-text-xs text-muted ml-2 shrink-0">({count})</span>;
 }
 
 /**

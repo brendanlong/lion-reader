@@ -32,7 +32,7 @@ export function DemoEntryListSSR({ entries, backHref, title }: DemoEntryListSSRP
             <a
               key={entry.id}
               href={`${backHref}?entry=${entry.id}`}
-              className="group border-edge-input relative block cursor-pointer rounded-lg border bg-zinc-50 p-3 transition-colors hover:bg-zinc-100 active:bg-zinc-200 sm:p-4 dark:bg-zinc-800 dark:hover:bg-zinc-700/50 dark:active:bg-zinc-700"
+              className="group border-edge-input hover:bg-surface-muted relative block cursor-pointer rounded-lg border bg-zinc-50 p-3 transition-colors active:bg-zinc-200 sm:p-4 dark:bg-zinc-800 dark:active:bg-zinc-700"
             >
               <div className="flex items-start gap-3">
                 <div className="mt-1.5 shrink-0">
@@ -45,7 +45,7 @@ export function DemoEntryListSSR({ entries, backHref, title }: DemoEntryListSSRP
                   <h3 className="ui-text-sm text-strong line-clamp-2 font-medium">
                     {displayTitle}
                   </h3>
-                  <div className="ui-text-xs text-subtle mt-1 flex items-center gap-2">
+                  <div className="ui-text-xs text-muted mt-1 flex items-center gap-2">
                     <span className="truncate">{source}</span>
                     <span aria-hidden="true">&middot;</span>
                     <time dateTime={date.toISOString()} className="shrink-0">

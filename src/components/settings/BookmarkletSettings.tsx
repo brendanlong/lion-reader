@@ -132,7 +132,7 @@ export function BookmarkletSettings() {
 
         {showCode && (
           <div className="mt-4">
-            <p className="ui-text-sm text-subtle mb-2">
+            <p className="ui-text-sm text-muted mb-2">
               If you prefer, you can manually create a bookmark with this JavaScript code:
             </p>
             <div className="relative">

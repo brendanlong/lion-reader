@@ -116,7 +116,7 @@ function UserRow({ user }: { user: User }) {
       )}
 
       {/* Stats row */}
-      <div className="ui-text-xs text-subtle flex flex-wrap gap-x-4 gap-y-1">
+      <div className="ui-text-xs text-muted flex flex-wrap gap-x-4 gap-y-1">
         <span>Member since {formatDate(user.createdAt)}</span>
         <span>Last active: {user.lastActiveAt ? formatDate(user.lastActiveAt) : "Never"}</span>
         <span>
@@ -147,7 +147,7 @@ function EmptyState({ hasSearch }: { hasSearch: boolean }) {
       <h3 className="ui-text-sm text-strong font-medium">
         {hasSearch ? "No matching users" : "No users yet"}
       </h3>
-      <p className="ui-text-sm text-subtle mt-1">
+      <p className="ui-text-sm text-muted mt-1">
         {hasSearch ? "Try a different search term." : "No users have registered yet."}
       </p>
     </div>
@@ -293,7 +293,7 @@ export default function AdminUsersContent() {
           {usersQuery.isFetchingNextPage && (
             <div className="flex items-center justify-center p-4">
               <SpinnerIcon className="mr-2 h-4 w-4 text-zinc-400" />
-              <span className="ui-text-sm text-subtle">Loading more...</span>
+              <span className="ui-text-sm text-muted">Loading more...</span>
             </div>
           )}
 

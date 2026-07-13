@@ -61,9 +61,7 @@ function TagManagementContent() {
       {/* Tag list */}
       <CardSection>
         {tags.length === 0 ? (
-          <p className="ui-text-sm text-subtle">
-            No tags created yet. Create your first tag above.
-          </p>
+          <p className="ui-text-sm text-muted">No tags created yet. Create your first tag above.</p>
         ) : (
           <div className="space-y-3">
             {tags.map((tag) => (
@@ -161,7 +159,7 @@ function CreateTagForm({ onSuccess, onError }: CreateTagFormProps) {
         <button
           type="button"
           onClick={() => setShowColorPicker(!showColorPicker)}
-          className="ui-text-sm bg-surface border-edge-input hover:bg-surface-hover flex h-[38px] items-center gap-2 rounded-md border px-3 py-2 transition-colors"
+          className="ui-text-sm bg-surface border-edge-input hover:bg-surface-muted flex h-[38px] items-center gap-2 rounded-md border px-3 py-2 transition-colors"
           disabled={createMutation.isPending}
         >
           <ColorDot color={color} size="md" />
@@ -275,7 +273,7 @@ function TagItem({ tag, onSuccess, onError }: TagItemProps) {
           <ColorDot color={tag.color} size="lg" />
           <div>
             <p className="ui-text-sm text-strong font-medium">Delete &quot;{tag.name}&quot;?</p>
-            <p className="ui-text-xs text-subtle">
+            <p className="ui-text-xs text-muted">
               This will remove the tag from all {tag.feedCount} subscription
               {tag.feedCount !== 1 ? "s" : ""}.
             </p>
@@ -311,7 +309,7 @@ function TagItem({ tag, onSuccess, onError }: TagItemProps) {
             <button
               type="button"
               onClick={() => setShowColorPicker(!showColorPicker)}
-              className="border-edge-input flex items-center justify-center rounded-md border p-2 transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-700"
+              className="border-edge-input hover:bg-surface-muted flex items-center justify-center rounded-md border p-2 transition-colors"
               disabled={updateMutation.isPending}
             >
               <ColorDot color={editingValues.color} size="lg" />
@@ -359,7 +357,7 @@ function TagItem({ tag, onSuccess, onError }: TagItemProps) {
         <ColorDot color={tag.color} size="lg" />
         <div>
           <p className="ui-text-sm text-strong font-medium">{tag.name}</p>
-          <p className="ui-text-xs text-subtle">
+          <p className="ui-text-xs text-muted">
             {tag.feedCount} feed{tag.feedCount !== 1 ? "s" : ""}
           </p>
         </div>

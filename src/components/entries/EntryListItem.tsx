@@ -85,7 +85,7 @@ export function getItemClasses(read: boolean, selected: boolean): string {
   // Unread entries stand out as raised surface cards with a distinctly stronger
   // border (the only card/canvas separation available on e-paper, where every
   // fill is white).
-  return `${baseClasses} border-edge-input bg-surface hover:bg-surface-hover active:bg-zinc-100 dark:active:bg-zinc-700 epaper:border-zinc-500`;
+  return `${baseClasses} border-edge-input bg-surface hover:bg-surface-muted active:bg-zinc-100 dark:active:bg-zinc-700 epaper:border-zinc-500`;
 }
 
 /**
@@ -229,7 +229,7 @@ export const EntryListItem = memo(function EntryListItem({
           </div>
 
           {/* Meta Row: Source and Date */}
-          <div className="ui-text-xs text-subtle mt-1 flex items-center gap-2">
+          <div className="ui-text-xs text-muted mt-1 flex items-center gap-2">
             <span className="truncate">{source}</span>
             <span aria-hidden="true">·</span>
             <time dateTime={date.toISOString()} className="shrink-0">

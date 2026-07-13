@@ -308,8 +308,8 @@ export function SubscribeContent() {
                   disabled={isLoading}
                   className={`w-full rounded-lg border p-4 text-left transition-colors ${
                     selectedFeedUrl === feed.url
-                      ? "border-zinc-900 bg-zinc-50 dark:border-zinc-100 dark:bg-zinc-800"
-                      : "border-edge-strong bg-surface hover:bg-surface-hover hover:border-zinc-300 dark:hover:border-zinc-600"
+                      ? "border-control-selected bg-zinc-50 dark:bg-zinc-800"
+                      : "border-edge-strong bg-surface hover:bg-surface-muted hover:border-zinc-300 dark:hover:border-zinc-600"
                   } ${isLoading ? "cursor-not-allowed opacity-50" : ""}`}
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -320,7 +320,7 @@ export function SubscribeContent() {
                           {getFeedTypeLabel(feed.type)}
                         </span>
                       </div>
-                      <p className="ui-text-xs text-subtle mt-1 truncate font-mono">{feed.url}</p>
+                      <p className="ui-text-xs text-muted mt-1 truncate font-mono">{feed.url}</p>
                     </div>
                     {selectedFeedUrl === feed.url && isLoading ? (
                       <SpinnerIcon className="h-5 w-5 text-zinc-500" />
@@ -372,7 +372,7 @@ export function SubscribeContent() {
                     href={previewQuery.data.feed.siteUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="ui-text-sm text-subtle hover:underline"
+                    className="ui-text-sm text-muted hover:underline"
                   >
                     {new URL(previewQuery.data.feed.siteUrl).hostname}
                   </a>
@@ -384,7 +384,7 @@ export function SubscribeContent() {
               <p className="ui-text-sm text-muted mb-4">{previewQuery.data.feed.description}</p>
             )}
 
-            <p className="ui-text-xs text-subtle">
+            <p className="ui-text-xs text-muted">
               Feed URL: <span className="font-mono">{previewQuery.data?.feed.url}</span>
             </p>
           </Card>
@@ -409,7 +409,7 @@ export function SubscribeContent() {
                           )}
                         </div>
                         {entry.pubDate && (
-                          <span className="ui-text-xs text-subtle shrink-0">
+                          <span className="ui-text-xs text-muted shrink-0">
                             {formatDate(entry.pubDate)}
                           </span>
                         )}

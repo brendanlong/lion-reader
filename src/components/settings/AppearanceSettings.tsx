@@ -69,7 +69,7 @@ function OptionGroup<T extends string>({
           </OptionButton>
         ))}
       </div>
-      {description && <p className="ui-text-sm text-subtle mt-1">{description}</p>}
+      {description && <p className="ui-text-sm text-muted mt-1">{description}</p>}
     </div>
   );
 }
@@ -111,7 +111,7 @@ function TextPreview() {
 
   return (
     <div className="border-edge-strong rounded-lg border bg-white p-4 dark:bg-zinc-800">
-      <p className="ui-text-xs text-subtle mb-2 font-medium tracking-wide uppercase">Preview</p>
+      <p className="ui-text-xs text-muted mb-2 font-medium tracking-wide uppercase">Preview</p>
       <p className="text-body" style={style}>
         The quick brown fox jumps over the lazy dog. This sample text demonstrates how your articles
         will appear with the current settings. Adjusting the text size, font, and justification can

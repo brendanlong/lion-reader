@@ -183,7 +183,7 @@ export default function ApiTokensSettingsContent() {
                 placeholder="e.g., Claude Desktop, Browser Extension"
                 className="w-full"
               />
-              <p className="ui-text-xs text-subtle mt-1">
+              <p className="ui-text-xs text-muted mt-1">
                 A descriptive name to help you identify this token
               </p>
             </div>
@@ -195,7 +195,7 @@ export default function ApiTokensSettingsContent() {
                 {Object.entries(scopeLabels).map(([scope, { label, description }]) => (
                   <label
                     key={scope}
-                    className="border-edge hover:bg-surface-hover flex cursor-pointer items-start gap-3 rounded-lg border p-3"
+                    className="border-edge hover:bg-surface-muted flex cursor-pointer items-start gap-3 rounded-lg border p-3"
                   >
                     <input
                       type="checkbox"
@@ -205,7 +205,7 @@ export default function ApiTokensSettingsContent() {
                     />
                     <div className="flex-1">
                       <p className="text-strong font-medium">{label}</p>
-                      <p className="ui-text-xs text-subtle">{description}</p>
+                      <p className="ui-text-xs text-muted">{description}</p>
                     </div>
                   </label>
                 ))}
@@ -225,7 +225,7 @@ export default function ApiTokensSettingsContent() {
                 className="w-full"
                 min="1"
               />
-              <p className="ui-text-xs text-subtle mt-1">
+              <p className="ui-text-xs text-muted mt-1">
                 Leave empty for a token that never expires
               </p>
             </div>
@@ -300,7 +300,7 @@ export default function ApiTokensSettingsContent() {
                     <p className="font-medium text-zinc-700 dark:text-zinc-400">
                       {token.name || "Unnamed Token"}
                     </p>
-                    <p className="ui-text-xs text-subtle">
+                    <p className="ui-text-xs text-muted">
                       {token.revokedAt
                         ? `Revoked ${formatRelativeTime(new Date(token.revokedAt))}`
                         : `Expired ${formatRelativeTime(new Date(token.expiresAt!))}`}
@@ -359,7 +359,7 @@ function ActiveTokenCard({ token, onRevoke, isRevoking }: ActiveTokenCardProps) 
             </div>
           </div>
 
-          <div className="ui-text-xs text-subtle mt-2 flex flex-wrap gap-x-4 gap-y-1">
+          <div className="ui-text-xs text-muted mt-2 flex flex-wrap gap-x-4 gap-y-1">
             <span>
               Created:{" "}
               {new Date(token.createdAt).toLocaleDateString("en-US", {

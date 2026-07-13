@@ -89,7 +89,7 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
               sidebarCloseButton={
                 <button
                   onClick={() => setSidebarOpen(false)}
-                  className="text-subtle flex h-10 w-10 items-center justify-center rounded-md hover:bg-zinc-100 active:bg-zinc-200 lg:hidden dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
+                  className="text-muted hover:bg-surface-muted flex h-10 w-10 items-center justify-center rounded-md active:bg-zinc-200 lg:hidden dark:active:bg-zinc-700"
                   aria-label="Close navigation menu"
                 >
                   <CloseIcon className="h-5 w-5" />
@@ -98,7 +98,7 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
               mobileMenuButton={
                 <button
                   onClick={() => setSidebarOpen(true)}
-                  className="text-subtle flex h-10 w-10 items-center justify-center rounded-md hover:bg-zinc-100 active:bg-zinc-200 lg:hidden dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
+                  className="text-muted hover:bg-surface-muted flex h-10 w-10 items-center justify-center rounded-md active:bg-zinc-200 lg:hidden dark:active:bg-zinc-700"
                   aria-label="Open navigation menu"
                 >
                   <MenuIcon className="h-5 w-5" />
@@ -122,7 +122,7 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
                   <div className="relative">
                     <button
                       onClick={() => setUserMenuOpen(!userMenuOpen)}
-                      className="ui-text-sm border-edge-strong bg-surface text-body hover:bg-surface-hover flex min-h-[40px] items-center gap-2 rounded-md border px-3 transition-colors active:bg-zinc-100 dark:active:bg-zinc-700"
+                      className="ui-text-sm border-edge-strong bg-surface text-body hover:bg-surface-muted flex min-h-[40px] items-center gap-2 rounded-md border px-3 transition-colors active:bg-zinc-100 dark:active:bg-zinc-700"
                       aria-expanded={userMenuOpen}
                       aria-haspopup="true"
                     >
@@ -148,14 +148,14 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
                           <ClientLink
                             href="/settings"
                             onNavigate={() => setUserMenuOpen(false)}
-                            className="ui-text-sm text-body flex min-h-[44px] items-center px-4 hover:bg-zinc-100 active:bg-zinc-200 dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
+                            className="ui-text-sm text-body hover:bg-surface-muted flex min-h-[44px] items-center px-4 active:bg-zinc-200 dark:active:bg-zinc-700"
                           >
                             Settings
                           </ClientLink>
                           <ClientLink
                             href="/settings/sessions"
                             onNavigate={() => setUserMenuOpen(false)}
-                            className="ui-text-sm text-body flex min-h-[44px] items-center px-4 hover:bg-zinc-100 active:bg-zinc-200 dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
+                            className="ui-text-sm text-body hover:bg-surface-muted flex min-h-[44px] items-center px-4 active:bg-zinc-200 dark:active:bg-zinc-700"
                           >
                             Sessions
                           </ClientLink>
@@ -166,7 +166,7 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
                               handleLogout();
                             }}
                             disabled={logoutMutation.isPending}
-                            className="ui-text-sm text-body flex min-h-[44px] w-full items-center px-4 text-left hover:bg-zinc-100 active:bg-zinc-200 disabled:opacity-50 dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
+                            className="ui-text-sm text-body hover:bg-surface-muted flex min-h-[44px] w-full items-center px-4 text-left active:bg-zinc-200 disabled:opacity-50 dark:active:bg-zinc-700"
                           >
                             {logoutMutation.isPending ? "Signing out..." : "Sign out"}
                           </button>

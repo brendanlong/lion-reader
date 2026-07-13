@@ -169,7 +169,7 @@ function LoginForm() {
           <div className="border-edge-input w-full border-t" />
         </div>
         <div className="ui-text-sm relative flex justify-center">
-          <span className="bg-surface text-subtle px-2">Or continue with email</span>
+          <span className="bg-surface text-muted px-2">Or continue with email</span>
         </div>
       </div>
 

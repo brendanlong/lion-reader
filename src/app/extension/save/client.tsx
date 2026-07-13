@@ -33,7 +33,7 @@ export function ExtensionSaveClient({ status, error, url, canRetry }: Props) {
           <p className="text-muted mb-4">
             {error || "An error occurred while saving the article."}
           </p>
-          {url && <p className="ui-text-sm text-subtle mb-4 break-all">{url}</p>}
+          {url && <p className="ui-text-sm text-muted mb-4 break-all">{url}</p>}
           {canRetry && url && (
             <a
               href={`/extension/save?url=${encodeURIComponent(url)}`}

@@ -109,7 +109,7 @@ function IngestAddressesSection() {
     <section>
       <div className="mb-4 flex items-center justify-between">
         <h3 className="ui-text-sm text-strong font-medium">Ingest Addresses</h3>
-        <span className="ui-text-sm text-subtle">{addresses.length} / 5</span>
+        <span className="ui-text-sm text-muted">{addresses.length} / 5</span>
       </div>
 
       <SettingsListContainer
@@ -124,7 +124,7 @@ function IngestAddressesSection() {
             <></>
           ) : (
             <div className="p-6 text-center">
-              <p className="ui-text-sm text-subtle">
+              <p className="ui-text-sm text-muted">
                 No ingest addresses yet. Create one to start receiving newsletter emails.
               </p>
             </div>
@@ -293,7 +293,7 @@ function IngestAddressRow({ address }: IngestAddressRowProps) {
             <button
               type="button"
               onClick={handleCopy}
-              className="text-subtle flex-shrink-0 rounded p-1 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+              className="text-muted hover:bg-surface-muted flex-shrink-0 rounded p-1 transition-colors hover:text-zinc-700 dark:hover:text-zinc-200"
               title="Copy email address"
             >
               {copied ? (
@@ -424,7 +424,7 @@ function SpamPreferenceSection() {
         <div className="flex items-center justify-between">
           <div>
             <h4 className="ui-text-sm text-strong font-medium">Show spam entries</h4>
-            <p className="ui-text-sm text-subtle mt-1">
+            <p className="ui-text-sm text-muted mt-1">
               Display entries that were flagged as spam by our email provider.
             </p>
           </div>
@@ -434,7 +434,7 @@ function SpamPreferenceSection() {
             aria-checked={showSpam}
             onClick={handleToggle}
             disabled={preferencesQuery.isLoading || updateMutation.isPending}
-            className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:focus:ring-offset-zinc-900 ${
+            className={`focus:ring-focus relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:focus:ring-offset-zinc-900 ${
               showSpam ? "bg-primary-solid" : "bg-fill-muted"
             }`}
           >

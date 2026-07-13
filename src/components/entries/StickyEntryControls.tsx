@@ -70,7 +70,7 @@ export function StickyEntryControls({
           className={`flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full transition-colors ${
             starred
               ? "text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-950"
-              : "text-subtle hover:bg-zinc-100 dark:hover:bg-zinc-800"
+              : "text-muted hover:bg-surface-muted"
           }`}
           aria-label={starred ? "Remove from starred" : "Add to starred"}
         >
@@ -84,9 +84,7 @@ export function StickyEntryControls({
         <button
           onClick={onToggleRead}
           className={`flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full transition-colors ${
-            !read
-              ? "text-accent hover:bg-accent-subtle"
-              : "text-subtle hover:bg-zinc-100 dark:hover:bg-zinc-800"
+            !read ? "text-accent hover:bg-accent-subtle" : "text-muted hover:bg-surface-muted"
           }`}
           aria-label={read ? "Mark as unread" : "Mark as read"}
           title="Keyboard shortcut: m"

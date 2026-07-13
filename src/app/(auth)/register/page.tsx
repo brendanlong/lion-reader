@@ -185,7 +185,7 @@ function RegisterForm() {
               <div className="border-edge-input w-full border-t" />
             </div>
             <div className="ui-text-sm relative flex justify-center">
-              <span className="bg-surface text-subtle px-2">Or continue with email</span>
+              <span className="bg-surface text-muted px-2">Or continue with email</span>
             </div>
           </div>
 
@@ -233,7 +233,7 @@ function RegisterForm() {
         </>
       )}
 
-      <p className="ui-text-xs text-subtle mt-4 text-center">
+      <p className="ui-text-xs text-muted mt-4 text-center">
         By creating an account, you agree to our{" "}
         <Link href="/terms" className="underline hover:text-zinc-700 dark:hover:text-zinc-300">
           Terms of Service

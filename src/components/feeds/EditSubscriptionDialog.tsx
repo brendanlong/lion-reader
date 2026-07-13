@@ -146,7 +146,7 @@ function EditSubscriptionForm({
       <DialogTitle id="edit-subscription-title">Edit Subscription</DialogTitle>
 
       <DialogBody>
-        <p className="ui-text-sm text-subtle mb-4">
+        <p className="ui-text-sm text-muted mb-4">
           Feed: <span className="text-body font-medium">{currentTitle}</span>
         </p>
 
@@ -172,7 +172,7 @@ function EditSubscriptionForm({
         <div className="mb-2">
           <label className="ui-text-sm text-body mb-2 block font-medium">Tags</label>
           {tags.length === 0 ? (
-            <p className="ui-text-sm text-subtle">
+            <p className="ui-text-sm text-muted">
               No tags created yet. Create tags in{" "}
               <ClientLink href="/settings" className="text-strong underline">
                 Settings
@@ -191,7 +191,7 @@ function EditSubscriptionForm({
                     disabled={isPending}
                     className={`ui-text-sm flex items-center gap-1.5 rounded-full border px-3 py-1.5 transition-colors ${
                       isSelected
-                        ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
+                        ? "border-primary-solid bg-primary-solid text-primary-solid-foreground"
                         : "text-body border-edge-input bg-white hover:border-zinc-400 hover:bg-zinc-50 dark:bg-zinc-800 dark:hover:border-zinc-500 dark:hover:bg-zinc-700"
                     }`}
                   >

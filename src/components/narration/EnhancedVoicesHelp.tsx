@@ -78,7 +78,7 @@ function FAQItemComponent({
       >
         <span className="ui-text-sm text-body font-medium">{item.question}</span>
         <ChevronDownIcon
-          className={`text-subtle h-4 w-4 flex-shrink-0 transition-transform duration-200 ${
+          className={`text-muted h-4 w-4 flex-shrink-0 transition-transform duration-200 ${
             isOpen ? "rotate-180" : ""
           }`}
         />
@@ -126,15 +126,15 @@ export function EnhancedVoicesHelp() {
       <button
         type="button"
         onClick={() => setIsExpanded(!isExpanded)}
-        className="hover:bg-surface-hover flex w-full items-center justify-between px-4 py-3 text-left"
+        className="hover:bg-surface-muted flex w-full items-center justify-between px-4 py-3 text-left"
         aria-expanded={isExpanded}
       >
         <div className="flex items-center gap-2">
-          <QuestionCircleIcon className="text-subtle h-4 w-4" />
+          <QuestionCircleIcon className="text-muted h-4 w-4" />
           <span className="ui-text-sm text-body font-medium">Help with enhanced voices</span>
         </div>
         <ChevronDownIcon
-          className={`text-subtle h-4 w-4 transition-transform duration-200 ${
+          className={`text-muted h-4 w-4 transition-transform duration-200 ${
             isExpanded ? "rotate-180" : ""
           }`}
         />

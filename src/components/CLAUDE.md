@@ -64,21 +64,23 @@ The `ui-text-*` classes are defined in `src/app/globals.css` and provide respons
 | `text-strong`        | `text-zinc-900 dark:text-zinc-50`      | Headings, primary values                                                        |
 | `text-emphasis`      | `text-zinc-900 dark:text-zinc-200`     | `<strong>` inside muted prose                                                   |
 | `text-body`          | `text-zinc-700 dark:text-zinc-300`     | Body copy, labels                                                               |
-| `text-muted`         | `text-zinc-600 dark:text-zinc-400`     | Descriptions, secondary text                                                    |
-| `text-subtle`        | `text-zinc-500 dark:text-zinc-400`     | Metadata, hints                                                                 |
+| `text-muted`         | `text-zinc-600 dark:text-zinc-400`     | Descriptions, secondary text, metadata, hints                                   |
 | `text-faint`         | `text-zinc-400 dark:text-zinc-500`     | De-emphasized notes, placeholders                                               |
 | `bg-canvas`          | `bg-zinc-50 dark:bg-zinc-950`          | Page background behind the shell                                                |
 | `bg-surface`         | `bg-white dark:bg-zinc-900`            | Cards, inputs, controls                                                         |
-| `bg-surface-muted`   | `bg-zinc-100 dark:bg-zinc-800`         | Chips, skeletons                                                                |
+| `bg-surface-muted`   | `bg-zinc-100 dark:bg-zinc-800`         | Chips, skeletons, and hover fill (`hover:bg-surface-muted`) on controls/rows    |
 | `bg-surface-subtle`  | `bg-zinc-50 dark:bg-zinc-800/50`       | Note boxes, subtle fills                                                        |
-| `bg-surface-hover`   | `bg-zinc-50 dark:bg-zinc-800`          | Hover fill (as `hover:bg-surface-hover`) on secondary/ghost controls, list rows |
 | `bg-fill-muted`      | `bg-zinc-200 dark:bg-zinc-700`         | Skeleton pulses, toggle-off/progress/range tracks, thin dividers                |
 | `border-edge`        | `border-zinc-200 dark:border-zinc-800` | Card outlines (also `divide-edge`)                                              |
 | `border-edge-strong` | `border-zinc-200 dark:border-zinc-700` | Dividers, note-box borders                                                      |
 | `border-edge-input`  | `border-zinc-300 dark:border-zinc-700` | Input/control outlines                                                          |
 | `ring-focus`         | `ring-zinc-900 dark:ring-zinc-400`     | Focus rings (as `focus:ring-focus`); also `focus:border-focus`                  |
+| `control-selected`   | `zinc-900 dark:zinc-400`               | Selected/"on" outline: checkbox/radio/selected-card `border`/`ring`, radio dots |
 
-Tokens work under variants (`hover:bg-surface-hover`, `focus:ring-focus`), so interactive states use them too. Two remaining raw patterns are deliberately left un-tokenized because they're intentional variations, not drift: the ghost-button hover fill `hover:bg-zinc-100 dark:hover:bg-zinc-800` (one step stronger than `surface-hover` on purpose) and the `active:` press step `active:bg-zinc-100 dark:active:bg-zinc-700`.
+Tokens work under variants (`hover:bg-surface-muted`, `focus:ring-focus`), so interactive states use them too. Notes:
+
+- **Filled** "on"/selected controls (a solid pill/toggle, not an outline) use `bg-primary-solid text-primary-solid-foreground` — the same token as primary buttons. `control-selected` is only the neutral **outline/indicator** color; it shares `ring-focus`'s value today but is a separate token so the two roles can diverge.
+- The `active:` press step (`active:bg-zinc-100 dark:active:bg-zinc-700`) is deliberately left raw — it's the pressed state, one step darker than the `surface-muted` hover.
 
 ### Settings Sections
 

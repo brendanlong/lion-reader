@@ -56,7 +56,7 @@ function DefaultErrorFallback({
     <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
       <AlertIcon className="mb-4 h-12 w-12 text-red-400 dark:text-red-500" />
       <h2 className="ui-text-lg text-strong mb-2 font-semibold">Something went wrong</h2>
-      <p className="ui-text-sm text-subtle mb-4 max-w-sm">
+      <p className="ui-text-sm text-muted mb-4 max-w-sm">
         {message ?? "An unexpected error occurred. Please try again."}
       </p>
       {error && process.env.NODE_ENV === "development" && (

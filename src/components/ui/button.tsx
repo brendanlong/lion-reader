@@ -30,8 +30,8 @@ export function Button({
   const variantStyles = {
     primary: "btn-primary",
     secondary:
-      "border border-edge-input bg-surface text-strong hover:bg-surface-hover focus:ring-focus",
-    ghost: "text-strong hover:bg-zinc-100 focus:ring-focus dark:hover:bg-zinc-800",
+      "border border-edge-input bg-surface text-strong hover:bg-surface-muted focus:ring-focus",
+    ghost: "text-strong hover:bg-surface-muted focus:ring-focus",
   };
 
   // Ensure minimum 44px height for touch targets on mobile (WCAG touch target guidelines)

@@ -80,7 +80,7 @@ function TagListContent({
   };
 
   if (!hasTags) {
-    return <p className="ui-text-sm text-subtle px-3">No unread feeds</p>;
+    return <p className="ui-text-sm text-muted px-3">No unread feeds</p>;
   }
 
   return (
@@ -101,7 +101,7 @@ function TagListContent({
                   e.stopPropagation();
                   toggleExpanded(tag.id);
                 }}
-                className="text-subtle flex h-6 w-6 shrink-0 items-center justify-center hover:text-zinc-700 dark:hover:text-zinc-300"
+                className="text-muted flex h-6 w-6 shrink-0 items-center justify-center hover:text-zinc-700 dark:hover:text-zinc-300"
                 aria-label={expanded ? "Collapse" : "Expand"}
               >
                 {expanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
@@ -146,7 +146,7 @@ function TagListContent({
                 e.stopPropagation();
                 toggleExpanded("uncategorized");
               }}
-              className="text-subtle flex h-6 w-6 shrink-0 items-center justify-center hover:text-zinc-700 dark:hover:text-zinc-300"
+              className="text-muted flex h-6 w-6 shrink-0 items-center justify-center hover:text-zinc-700 dark:hover:text-zinc-300"
               aria-label={isExpanded("uncategorized") ? "Collapse" : "Expand"}
             >
               {isExpanded("uncategorized") ? <ChevronDownIcon /> : <ChevronRightIcon />}

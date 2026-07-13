@@ -126,9 +126,7 @@ function EmptyState() {
         <CheckIcon className="h-6 w-6 text-green-600 dark:text-green-400" />
       </div>
       <h3 className="ui-text-sm text-strong mt-4 font-medium">All feeds are working</h3>
-      <p className="ui-text-sm text-subtle mt-1">
-        None of your subscribed feeds have fetch errors.
-      </p>
+      <p className="ui-text-sm text-muted mt-1">None of your subscribed feeds have fetch errors.</p>
     </div>
   );
 }
@@ -179,7 +177,7 @@ function BrokenFeedRow({ feed, onUnsubscribe }: BrokenFeedRowProps) {
 
           {/* Feed URL */}
           {feed.url && feed.title && (
-            <p className="ui-text-sm text-subtle mt-0.5 truncate">{feed.url}</p>
+            <p className="ui-text-sm text-muted mt-0.5 truncate">{feed.url}</p>
           )}
 
           {/* Error Message */}
@@ -192,7 +190,7 @@ function BrokenFeedRow({ feed, onUnsubscribe }: BrokenFeedRowProps) {
           )}
 
           {/* Metadata */}
-          <div className="ui-text-sm text-subtle mt-2 flex flex-wrap gap-x-4 gap-y-1">
+          <div className="ui-text-sm text-muted mt-2 flex flex-wrap gap-x-4 gap-y-1">
             <span className="flex items-center gap-1">
               <AlertCircleIcon className="h-4 w-4 text-red-500" />
               {feed.consecutiveFailures} consecutive failure

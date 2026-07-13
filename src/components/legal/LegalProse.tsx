@@ -35,7 +35,7 @@ export function LegalPage({ title, lastUpdated, children }: LegalPageProps) {
             &larr; Back to Lion Reader
           </Link>
           <h1 className="text-strong mt-4 text-3xl font-bold tracking-tight">{title}</h1>
-          <p className="ui-text-sm text-subtle mt-2">Last updated: {lastUpdated}</p>
+          <p className="ui-text-sm text-muted mt-2">Last updated: {lastUpdated}</p>
         </div>
 
         <div className="prose prose-zinc dark:prose-invert max-w-none">{children}</div>

@@ -28,7 +28,7 @@ export function EntryListEmpty({ message, icon }: EntryListEmptyProps) {
   return (
     <div className="flex flex-col items-center justify-center py-12 text-center">
       {icon ?? <DefaultEmptyIcon className="text-faint mb-4 h-12 w-12" />}
-      <p className="ui-text-sm text-subtle">{message}</p>
+      <p className="ui-text-sm text-muted">{message}</p>
     </div>
   );
 }
@@ -50,7 +50,7 @@ export function EntryListError({ message, onRetry }: EntryListErrorProps) {
   return (
     <div className="flex flex-col items-center justify-center py-12 text-center">
       <AlertIcon className="mb-4 h-12 w-12 text-red-400 dark:text-red-500" />
-      <p className="ui-text-sm text-subtle mb-4">{message}</p>
+      <p className="ui-text-sm text-muted mb-4">{message}</p>
       <Button onClick={onRetry}>Try again</Button>
     </div>
   );
