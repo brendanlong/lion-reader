@@ -273,9 +273,17 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
               syncRetryTimeoutRef.current = null;
             }
             syncRetryDelayRef.current = INITIAL_SYNC_RETRY_DELAY_MS;
-            // Fully drained: the cursor is now current, so live events may
-            // resume advancing it (#1081).
-            if (!result.hasMore) {
+            // Un-freeze the cursor only when this sync fully drained AND no
+            // follow-up is queued — i.e. the scheduler is actually settling to
+            // idle. Gating on `!hasMore` alone is not enough: a sync started by
+            // a now-superseded connection can resolve while the current
+            // connection's catch-up is still queued as `pending` (it couldn't
+            // start behind the in-flight one). Marking caught-up there would let
+            // live events advance the cursor past the current connection's
+            // not-yet-drained gap, re-opening exactly the hole this closes
+            // (#1081). The queued follow-up runs next and marks caught-up when
+            // it settles with nothing pending.
+            if (!result.hasMore && !syncSchedulerStateRef.current.pending) {
               caughtUpRef.current = true;
             }
           } else {
