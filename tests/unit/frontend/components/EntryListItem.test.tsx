@@ -129,6 +129,16 @@ describe("EntryListItem", () => {
       expect(article.querySelectorAll("p")).toHaveLength(0);
     });
 
+    it("renders the summary in comfortable density but hides it in compact", () => {
+      const entry = createMockEntry({ summary: "Article summary text" });
+
+      const { rerender } = render(<EntryListItem entry={entry} density="comfortable" />);
+      expect(screen.getByText("Article summary text")).toBeInTheDocument();
+
+      rerender(<EntryListItem entry={entry} density="compact" />);
+      expect(screen.queryByText("Article summary text")).not.toBeInTheDocument();
+    });
+
     it("renders relative time for publishedAt", () => {
       const entry = createMockEntry({
         publishedAt: new Date("2024-06-15T10:00:00Z"), // 2 hours ago

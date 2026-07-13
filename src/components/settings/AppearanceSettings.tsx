@@ -14,7 +14,12 @@ import { useTheme } from "next-themes";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { useIsEInkDisplay } from "@/lib/theme/eink";
 import { useAppearance, useEntryTextStyles } from "@/lib/appearance/AppearanceProvider";
-import type { TextSize, TextJustification, FontFamily } from "@/lib/appearance/settings";
+import type {
+  TextSize,
+  TextJustification,
+  FontFamily,
+  ListDensity,
+} from "@/lib/appearance/settings";
 
 interface OptionButtonProps<T extends string> {
   value: T;
@@ -102,6 +107,11 @@ const FONT_OPTIONS: { value: FontFamily; label: string }[] = [
   { value: "source-sans", label: "Source Sans" },
 ];
 
+const LIST_DENSITY_OPTIONS: { value: ListDensity; label: string }[] = [
+  { value: "comfortable", label: "Comfortable" },
+  { value: "compact", label: "Compact" },
+];
+
 /**
  * Preview text for demonstrating text appearance settings.
  * Uses the same styling as actual article content.
@@ -177,6 +187,24 @@ export function AppearanceSettings() {
 
           <TextPreview />
         </div>
+      </SettingsSection>
+
+      {/* Entry List Section */}
+      <SettingsSection
+        title="Entry List"
+        description="Controls how densely entries are packed in the article list."
+      >
+        <OptionGroup
+          label="List Density"
+          description={
+            settings.listDensity === "compact"
+              ? "A single divided list with tighter spacing and no preview — best for scanning many entries."
+              : "Roomy bordered cards with a preview snippet — best for relaxed reading."
+          }
+          value={settings.listDensity}
+          options={LIST_DENSITY_OPTIONS}
+          onChange={(listDensity) => updateSettings({ listDensity })}
+        />
       </SettingsSection>
     </div>
   );

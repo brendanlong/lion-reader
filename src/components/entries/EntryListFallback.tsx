@@ -10,6 +10,7 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { findParentListPlaceholderData } from "@/lib/cache/entry-cache";
+import { useAppearance } from "@/lib/appearance/AppearanceProvider";
 import { EntryListItem } from "./EntryListItem";
 import { EntryListSkeleton } from "./EntryListSkeleton";
 import { EntryListLoadingMore } from "./EntryListStates";
@@ -54,6 +55,9 @@ export function EntryListFallback({
   onEntryClick,
 }: EntryListFallbackProps) {
   const queryClient = useQueryClient();
+  const {
+    settings: { listDensity },
+  } = useAppearance();
 
   // Try to find placeholder data from cached parent lists
   // Subscriptions are automatically looked up from cache for tag/uncategorized filtering
@@ -61,25 +65,29 @@ export function EntryListFallback({
 
   // No cached data - show skeleton
   if (!placeholderData || placeholderData.pages[0]?.items.length === 0) {
-    return <EntryListSkeleton count={skeletonCount} />;
+    return <EntryListSkeleton count={skeletonCount} density={listDensity} />;
   }
 
   // Show cached entries with a subtle loading indicator
   const entries = placeholderData.pages.flatMap((page) => page.items);
+  const listClassName = listDensity === "compact" ? "divide-edge divide-y" : "space-y-3";
 
   return (
-    <div className="space-y-3">
-      {entries.map((entry) => (
-        <EntryListItem
-          key={entry.id}
-          entry={entry}
-          onClick={onEntryClick}
-          selected={selectedEntryId === entry.id}
-          // Disable mutations during fallback - they'd update stale data
-          onToggleRead={undefined}
-          onToggleStar={undefined}
-        />
-      ))}
+    <div>
+      <div className={listClassName}>
+        {entries.map((entry) => (
+          <EntryListItem
+            key={entry.id}
+            entry={entry}
+            onClick={onEntryClick}
+            selected={selectedEntryId === entry.id}
+            // Disable mutations during fallback - they'd update stale data
+            onToggleRead={undefined}
+            onToggleStar={undefined}
+            density={listDensity}
+          />
+        ))}
+      </div>
 
       {/* Show loading indicator at the bottom */}
       <EntryListLoadingMore label="Loading entries..." />
