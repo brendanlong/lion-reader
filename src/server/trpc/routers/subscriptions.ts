@@ -36,6 +36,8 @@ import { getDomainFromUrl } from "@/server/feed/types";
 import { extractUserIdFromFeedUrl, fetchLessWrongUserById } from "@/server/feed/lesswrong";
 import { parseOpml, generateOpml, type OpmlFeed, type OpmlSubscription } from "@/server/feed/opml";
 import { createJob } from "@/server/jobs/queue";
+import { handleFetchFeed } from "@/server/jobs/handlers";
+import { shouldRefetchOnSubscribe } from "@/server/feed/scheduling";
 import { publishSubscriptionDeleted, publishSubscriptionUpdated } from "@/server/redis/pubsub";
 import { attemptUnsubscribe, getLatestUnsubscribeMailto } from "@/server/email/unsubscribe";
 import { logger } from "@/lib/logger";
@@ -216,18 +218,45 @@ export const subscriptionsRouter = createTRPCRouter({
       const userId = ctx.session.user.id;
       const feedUrl = input.url;
 
-      // Check if this exact URL already exists as a feed that's been fetched.
-      // If so, we can skip the network request entirely.
+      // Look up whether we already know this feed, and its fetch state.
       const existingFeed = await ctx.db
-        .select({ lastFetchedAt: feeds.lastFetchedAt })
+        .select({
+          id: feeds.id,
+          lastFetchedAt: feeds.lastFetchedAt,
+          nextFetchAt: feeds.nextFetchAt,
+          websubActive: feeds.websubActive,
+        })
         .from(feeds)
         .where(eq(feeds.url, feedUrl))
         .limit(1);
 
-      const canSkipFetch = existingFeed.length > 0 && existingFeed[0].lastFetchedAt !== null;
-
-      // Fetch and parse only if we don't already know this feed
-      const feedInput = canSkipFetch ? { url: feedUrl } : await fetchAndResolveFeed(feedUrl);
+      let feedInput: subscriptionsService.CreateSubscriptionFeedInput;
+      if (existingFeed.length === 0) {
+        // Brand-new feed: fetch and parse to resolve the feed URL + metadata.
+        // Its entries are populated by the background fetch job (there are none
+        // yet), so no forced refresh is needed here.
+        feedInput = await fetchAndResolveFeed(feedUrl);
+      } else {
+        feedInput = { url: feedUrl };
+        // Known feed: if its cached entries may be stale (WebSub feed whose last
+        // real poll has aged out, or a normal feed past its poll cadence), force
+        // a refresh through the shared fetch path before we grant visibility.
+        // This re-stamps the current entries to one generation so the subscribe
+        // populate (`last_seen_at >= last_entries_updated_at`) reflects ground
+        // truth — the current feed, excluding anything since removed (#1078).
+        if (shouldRefetchOnSubscribe(existingFeed[0])) {
+          try {
+            await handleFetchFeed({ feedId: existingFeed[0].id }, { inline: true });
+          } catch (err) {
+            // Best-effort: a failed refresh (feed down, parse error) must not
+            // block subscribing. We fall back to the cached entries.
+            logger.warn("Forced subscribe-time feed refresh failed; using cached entries", {
+              feedId: existingFeed[0].id,
+              err: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
+      }
 
       const result = await subscriptionsService.createSubscription(ctx.db, userId, feedInput);
       return formatSubscriptionResponse(result);
