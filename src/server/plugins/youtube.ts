@@ -143,8 +143,11 @@ export function synthesizeYouTubeSavedArticle(
     html: iframe + description,
     title: metadata.title,
     author: metadata.author,
-    // Canonical watch URL so youtu.be / shorts / live / embed forms all resolve
-    // to the same saved article (guid = normalized URL).
+    // The canonical watch URL for this video, used as the base for resolving
+    // relative URLs in the content. Note this does NOT change the saved
+    // article's guid/url: saveArticle keys those off the caller's original URL
+    // (normalizeSavedUrl(params.url)), so saving the same video via youtu.be vs.
+    // watch?v=... still produces distinct saved articles.
     canonicalUrl: `https://www.youtube.com/watch?v=${videoId}`,
   };
 }
