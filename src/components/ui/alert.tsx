@@ -14,9 +14,9 @@ export interface AlertProps {
 
 export function Alert({ variant = "info", children, className = "" }: AlertProps) {
   const variantStyles = {
-    error: "bg-red-50 text-red-800 dark:bg-red-950 dark:text-red-200",
-    success: "bg-green-50 text-green-800 dark:bg-green-950 dark:text-green-200",
-    warning: "bg-yellow-50 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-200",
+    error: "bg-danger-subtle text-danger-subtle-foreground",
+    success: "bg-success-subtle text-success-subtle-foreground",
+    warning: "bg-warning-subtle text-warning-subtle-foreground",
     info: "bg-info-subtle text-info-foreground",
   };
 

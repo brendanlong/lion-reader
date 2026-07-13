@@ -94,9 +94,7 @@ function AccountInfoSection() {
           <div className="bg-surface-muted h-5 w-32 animate-pulse rounded" />
         </div>
       ) : userQuery.error ? (
-        <p className="ui-text-sm text-red-600 dark:text-red-400">
-          Failed to load account information
-        </p>
+        <p className="ui-text-sm text-danger">Failed to load account information</p>
       ) : (
         <dl className="space-y-4">
           <div>
@@ -119,7 +117,7 @@ function AccountInfoSection() {
             <dt className="ui-text-sm text-muted font-medium">Email verified</dt>
             <dd className="ui-text-sm text-strong mt-1">
               {userQuery.data?.user.emailVerifiedAt ? (
-                <span className="inline-flex items-center text-green-600 dark:text-green-400">
+                <span className="text-success inline-flex items-center">
                   <CheckIcon className="mr-1 h-4 w-4" />
                   Verified
                 </span>

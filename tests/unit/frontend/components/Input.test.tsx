@@ -68,14 +68,14 @@ describe("Input", () => {
     it("applies error border styles", () => {
       render(<Input error="Error" id="error-field" />);
       const input = screen.getByRole("textbox");
-      expect(input).toHaveClass("border-red-500");
+      expect(input).toHaveClass("border-danger");
     });
 
     it("applies normal border styles when no error", () => {
       render(<Input id="normal-field" />);
       const input = screen.getByRole("textbox");
       expect(input).toHaveClass("border-edge-input");
-      expect(input).not.toHaveClass("border-red-500");
+      expect(input).not.toHaveClass("border-danger");
     });
 
     it("sets aria-invalid when error is present", () => {
@@ -105,7 +105,7 @@ describe("Input", () => {
     it("applies error text styles", () => {
       render(<Input error="Error text" id="field" />);
       const errorMessage = screen.getByText("Error text");
-      expect(errorMessage).toHaveClass("text-red-600");
+      expect(errorMessage).toHaveClass("text-danger");
     });
   });
 

@@ -282,7 +282,7 @@ export function SubscribeContent() {
           {/* Discovery Results Card */}
           <Card>
             <div className="mb-4 flex items-center gap-2">
-              <CheckCircleIcon className="h-5 w-5 text-green-600 dark:text-green-400" />
+              <CheckCircleIcon className="text-success h-5 w-5" />
               <h2 className="ui-text-lg text-strong font-semibold">
                 We found {discoveredFeeds.length} feed{discoveredFeeds.length !== 1 ? "s" : ""} on
                 this site

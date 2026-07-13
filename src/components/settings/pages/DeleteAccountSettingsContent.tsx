@@ -72,10 +72,8 @@ export default function DeleteAccountSettingsContent() {
   return (
     <div className="space-y-8">
       <section>
-        <h2 className="ui-text-lg mb-4 font-semibold text-red-600 dark:text-red-400">
-          Delete Account
-        </h2>
-        <div className="bg-surface rounded-lg border border-red-200 p-6 dark:border-red-900/50">
+        <h2 className="ui-text-lg text-danger mb-4 font-semibold">Delete Account</h2>
+        <div className="bg-surface border-danger-border rounded-lg border p-6">
           <p className="ui-text-sm text-muted">
             Permanently delete your account and all associated data. This action cannot be undone.
           </p>
@@ -87,7 +85,7 @@ export default function DeleteAccountSettingsContent() {
           <div className="mt-4">
             <Button
               onClick={handleOpenDialog}
-              className="bg-red-600 text-white hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-700"
+              className="bg-danger-solid text-danger-solid-foreground hover:bg-danger-solid-hover"
             >
               Delete account
             </Button>
@@ -141,7 +139,7 @@ export default function DeleteAccountSettingsContent() {
             onClick={handleDelete}
             loading={deleteAccountMutation.isPending}
             disabled={!isConfirmed}
-            className="bg-red-600 text-white hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-700"
+            className="bg-danger-solid text-danger-solid-foreground hover:bg-danger-solid-hover"
           >
             Delete my account
           </Button>

@@ -81,13 +81,13 @@ function getFeedDisplayTitle(feed: FeedItem): string {
 function FeedStatusBadge({ feed }: { feed: FeedItem }) {
   if (feed.consecutiveFailures > 0) {
     return (
-      <span className="ui-text-xs inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 font-medium text-red-700 dark:bg-red-900/30 dark:text-red-300">
+      <span className="ui-text-xs bg-danger-subtle text-danger inline-flex items-center rounded-full px-2 py-0.5 font-medium">
         {feed.consecutiveFailures} failure{feed.consecutiveFailures === 1 ? "" : "s"}
       </span>
     );
   }
   return (
-    <span className="ui-text-xs inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 font-medium text-green-700 dark:bg-green-900/30 dark:text-green-300">
+    <span className="ui-text-xs bg-success-subtle text-success inline-flex items-center rounded-full px-2 py-0.5 font-medium">
       Healthy
     </span>
   );
@@ -114,15 +114,15 @@ function ExpandableError({ error }: { error: string }) {
   const isLong = error.length > 120;
 
   return (
-    <div className="mt-2 rounded-md bg-red-50 px-3 py-2 dark:bg-red-900/20">
-      <p className="ui-text-sm text-red-700 dark:text-red-300">
+    <div className="bg-danger-subtle mt-2 rounded-md px-3 py-2">
+      <p className="ui-text-sm text-danger">
         <span className="font-medium">Error: </span>
         {expanded || !isLong ? error : error.slice(0, 120) + "..."}
       </p>
       {isLong && (
         <button
           onClick={() => setExpanded(!expanded)}
-          className="ui-text-xs mt-1 inline-flex items-center gap-0.5 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"
+          className="ui-text-xs text-danger hover:text-danger-hover mt-1 inline-flex items-center gap-0.5"
         >
           {expanded ? (
             <>
@@ -412,9 +412,7 @@ export default function AdminFeedsContent() {
         </div>
       ) : feedsQuery.isError ? (
         <div className="p-8 text-center">
-          <p className="ui-text-sm text-red-600 dark:text-red-400">
-            Failed to load feeds. Please try again.
-          </p>
+          <p className="ui-text-sm text-danger">Failed to load feeds. Please try again.</p>
           <Button
             variant="secondary"
             size="sm"

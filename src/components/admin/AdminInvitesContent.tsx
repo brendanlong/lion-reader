@@ -53,7 +53,7 @@ interface StatusBadgeProps {
 function StatusBadge({ status }: StatusBadgeProps) {
   const styles = {
     pending: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
-    used: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300",
+    used: "bg-success-subtle text-success",
     expired: "bg-surface-muted text-muted",
   };
 
@@ -168,7 +168,7 @@ function InviteRow({ invite, onRevoke, isRevoking }: InviteRowProps) {
             size="sm"
             onClick={() => onRevoke(invite.id)}
             loading={isRevoking}
-            className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-900/20 dark:hover:text-red-300"
+            className="text-danger hover:bg-danger-subtle hover:text-danger-hover"
           >
             Revoke
           </Button>
@@ -334,9 +334,7 @@ export default function AdminInvitesContent() {
         </div>
       ) : invitesQuery.isError ? (
         <div className="p-8 text-center">
-          <p className="ui-text-sm text-red-600 dark:text-red-400">
-            Failed to load invites. Please try again.
-          </p>
+          <p className="ui-text-sm text-danger">Failed to load invites. Please try again.</p>
           <Button
             variant="secondary"
             size="sm"

@@ -68,9 +68,7 @@ export function StickyEntryControls({
         <button
           onClick={onToggleStar}
           className={`flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full transition-colors ${
-            starred
-              ? "text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-950"
-              : "text-muted hover:bg-surface-muted"
+            starred ? "text-star hover:bg-warning-subtle" : "text-muted hover:bg-surface-muted"
           }`}
           aria-label={starred ? "Remove from starred" : "Add to starred"}
         >

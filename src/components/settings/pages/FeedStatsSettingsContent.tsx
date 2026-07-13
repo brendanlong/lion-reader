@@ -69,7 +69,7 @@ function getStatusBadge(feed: FeedStats): { text: string; className: string } {
   if (feed.consecutiveFailures > 0) {
     return {
       text: `${feed.consecutiveFailures} failure${feed.consecutiveFailures === 1 ? "" : "s"}`,
-      className: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
+      className: "bg-danger-subtle text-danger",
     };
   }
   if (feed.websubActive) {
@@ -80,7 +80,7 @@ function getStatusBadge(feed: FeedStats): { text: string; className: string } {
   }
   return {
     text: "OK",
-    className: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300",
+    className: "bg-success-subtle text-success",
   };
 }
 
@@ -212,8 +212,8 @@ interface SummaryCardProps {
 function SummaryCard({ label, value, variant = "default" }: SummaryCardProps) {
   const variantClasses = {
     default: "text-strong",
-    success: "text-green-600 dark:text-green-400",
-    error: "text-red-600 dark:text-red-400",
+    success: "text-success",
+    error: "text-danger",
     info: "text-purple-600 dark:text-purple-400",
   };
 
@@ -275,8 +275,8 @@ function FeedStatsRow({ feed }: FeedStatsRowProps) {
 
           {/* Error Message (if any) */}
           {feed.lastError && (
-            <div className="mt-2 rounded-md bg-red-50 px-3 py-2 dark:bg-red-900/20">
-              <p className="ui-text-sm text-red-700 dark:text-red-300">
+            <div className="bg-danger-subtle mt-2 rounded-md px-3 py-2">
+              <p className="ui-text-sm text-danger">
                 <span className="font-medium">Error:</span> {feed.lastError}
               </p>
             </div>

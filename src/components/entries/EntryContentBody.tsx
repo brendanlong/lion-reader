@@ -353,7 +353,7 @@ export function EntryContentBody({
             onClick={onToggleStar}
             className={
               starred
-                ? "bg-amber-500 text-white hover:bg-amber-600 dark:bg-amber-500 dark:text-white dark:hover:bg-amber-600"
+                ? "bg-warning-solid text-warning-solid-foreground hover:bg-warning-solid-hover"
                 : ""
             }
             aria-label={starred ? "Remove from starred" : "Add to starred"}
@@ -395,7 +395,7 @@ export function EntryContentBody({
               disabled={isFullContentFetching}
               className={
                 fullContentError
-                  ? "border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-950"
+                  ? "border-danger-border text-danger hover:bg-danger-subtle"
                   : fetchFullContent
                     ? "bg-accent-muted hover:bg-accent dark:bg-accent dark:hover:bg-accent-hover text-white dark:text-zinc-900"
                     : ""

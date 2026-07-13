@@ -28,7 +28,7 @@ export function ExtensionSaveClient({ status, error, url, canRetry }: Props) {
     return (
       <div className="bg-canvas flex min-h-screen items-center justify-center">
         <div className="max-w-md p-8 text-center">
-          <div className="mb-4 text-5xl text-red-500">!</div>
+          <div className="text-danger mb-4 text-5xl">!</div>
           <h1 className="ui-text-xl text-strong mb-2 font-semibold">Failed to Save</h1>
           <p className="text-muted mb-4">
             {error || "An error occurred while saving the article."}
@@ -54,7 +54,7 @@ export function ExtensionSaveClient({ status, error, url, canRetry }: Props) {
   return (
     <div className="bg-canvas flex min-h-screen items-center justify-center">
       <div className="p-8 text-center">
-        <div className="mb-4 text-5xl text-green-500">✓</div>
+        <div className="text-success mb-4 text-5xl">✓</div>
         <p className="text-muted">Article saved!</p>
       </div>
     </div>

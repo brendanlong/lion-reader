@@ -168,19 +168,19 @@ describe("StatusCard", () => {
     it("applies success variant styles", () => {
       render(<StatusCard variant="success">Success</StatusCard>);
       const card = screen.getByText("Success").closest("div");
-      expect(card).toHaveClass("border-green-200", "bg-green-50");
+      expect(card).toHaveClass("border-success-border", "bg-success-subtle");
     });
 
     it("applies warning variant styles", () => {
       render(<StatusCard variant="warning">Warning</StatusCard>);
       const card = screen.getByText("Warning").closest("div");
-      expect(card).toHaveClass("border-yellow-200", "bg-yellow-50");
+      expect(card).toHaveClass("border-warning-border", "bg-warning-subtle");
     });
 
     it("applies error variant styles", () => {
       render(<StatusCard variant="error">Error</StatusCard>);
       const card = screen.getByText("Error").closest("div");
-      expect(card).toHaveClass("border-red-200", "bg-red-50");
+      expect(card).toHaveClass("border-danger-border", "bg-danger-subtle");
     });
   });
 

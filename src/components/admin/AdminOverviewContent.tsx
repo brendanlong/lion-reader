@@ -53,9 +53,7 @@ export default function AdminOverviewContent() {
   if (overviewQuery.isError) {
     return (
       <div className="p-8 text-center">
-        <p className="ui-text-sm text-red-600 dark:text-red-400">
-          Failed to load overview. Please try again.
-        </p>
+        <p className="ui-text-sm text-danger">Failed to load overview. Please try again.</p>
         <Button
           variant="secondary"
           size="sm"
