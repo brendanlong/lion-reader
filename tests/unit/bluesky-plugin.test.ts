@@ -16,6 +16,7 @@ import {
   renderBlueskyPostHtml,
   blueskyPostTitle,
 } from "@/server/plugins/bluesky";
+import { feedDefaultsToFullContent } from "@/server/plugins";
 
 describe("parseBlueskyPostUrl", () => {
   it("parses a handle-based post URL", () => {
@@ -247,5 +248,36 @@ describe("blueskyPostTitle", () => {
 
   it("falls back to the author when there is no text", () => {
     expect(blueskyPostTitle({ uri: "at://x", author, record: { text: "" } })).toBe("Post by Sen");
+  });
+});
+
+describe("feedDefaultsToFullContent", () => {
+  it("defaults full content on for a Bluesky RSS feed URL", () => {
+    expect(
+      blueskyPlugin.feedDefaultsToFullContent!(new URL("https://bsky.app/profile/x.com/rss"))
+    ).toBe(true);
+    // via the registry resolver (plugin is registered on import)
+    expect(feedDefaultsToFullContent("https://bsky.app/profile/x.com/rss")).toBe(true);
+  });
+
+  it("does not default full content for post, profile, or other bsky URLs", () => {
+    expect(feedDefaultsToFullContent("https://bsky.app/profile/x.com")).toBe(false);
+    expect(feedDefaultsToFullContent("https://bsky.app/profile/x.com/post/abc")).toBe(false);
+    expect(feedDefaultsToFullContent("https://bsky.app/")).toBe(false);
+  });
+
+  it("does not default full content for unrelated feeds or invalid URLs", () => {
+    expect(feedDefaultsToFullContent("https://example.com/feed.xml")).toBe(false);
+    expect(feedDefaultsToFullContent("not a url")).toBe(false);
+    expect(feedDefaultsToFullContent(null)).toBe(false);
+  });
+
+  it("does not leave the surrogate half of a truncated emoji in the title", () => {
+    const author = { did: "did:plc:x", handle: "x.com" };
+    const text = "😀".repeat(120); // each emoji is a surrogate pair
+    const title = blueskyPostTitle({ uri: "at://x", author, record: { text } });
+    // No unpaired surrogate: the string round-trips through code points cleanly.
+    expect([...title].every((cp) => cp.codePointAt(0)! <= 0x10ffff)).toBe(true);
+    expect(title.endsWith("…")).toBe(true);
   });
 });

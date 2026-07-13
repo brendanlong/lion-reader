@@ -30,6 +30,18 @@ export interface UrlPlugin {
    * E.g., a LessWrong RSS feed builder tool.
    */
   feedBuilderUrl?: string;
+
+  /**
+   * Optional: whether new subscriptions to this *feed URL* (not an entry URL)
+   * should start with `fetch_full_content` enabled, so the reader hydrates each
+   * entry's full content automatically on open. For sources whose feed entries
+   * are truncated or drop embedded content — e.g. Bluesky's native RSS, which
+   * renders quote posts/images/link cards as a bare placeholder — but whose
+   * `savedArticle` capability can fetch the real content. Defaults to false when
+   * absent. Only applied on a fresh subscribe, never overriding a resubscribe's
+   * stored preference.
+   */
+  feedDefaultsToFullContent?(feedUrl: URL): boolean;
 }
 
 export interface PluginCapabilities {

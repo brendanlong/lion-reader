@@ -53,6 +53,24 @@ export function getFeedPlugin(url: string | URL | null | undefined) {
   return pluginRegistry.findWithCapability(parsed, "feed");
 }
 
+/**
+ * Whether new subscriptions to this feed URL should default `fetch_full_content`
+ * on (a plugin opt-in for sources whose feed entries are truncated or drop
+ * embedded content, e.g. Bluesky). Returns false for an invalid/unhandled URL.
+ */
+export function feedDefaultsToFullContent(url: string | URL | null | undefined): boolean {
+  if (!url) return false;
+
+  let parsed: URL;
+  try {
+    parsed = url instanceof URL ? url : new URL(url);
+  } catch {
+    return false;
+  }
+
+  return pluginRegistry.feedDefaultsToFullContent(parsed);
+}
+
 // Export registry and types
 export { pluginRegistry } from "./registry";
 export type * from "./types";
