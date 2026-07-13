@@ -657,7 +657,9 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
         .from(jobs)
         .where(and(eq(jobs.type, "fetch_feed"), sql`${jobs.payload}->>'feedId' = ${feedId}`));
       expect(job).toBeDefined();
-      expect((job.payload as { forceReprocess?: boolean }).forceReprocess).toBe(true);
+      expect(
+        typeof (job.payload as { forceReprocessRequestedAt?: string }).forceReprocessRequestedAt
+      ).toBe("string");
       expect(job.nextRunAt).not.toBeNull();
       expect(job.nextRunAt!.getTime()).toBeLessThanOrEqual(Date.now());
     });
