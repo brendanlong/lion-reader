@@ -10,10 +10,7 @@
 import { requireAuth } from "@/server/google-reader/auth";
 import { jsonResponse } from "@/server/google-reader/parse";
 import { formatUnreadCounts } from "@/server/google-reader/format";
-import {
-  listGreaderSubscriptions,
-  getGreaderNewestItemAt,
-} from "@/server/google-reader/subscriptions";
+import { getGreaderUnreadCounts } from "@/server/google-reader/subscriptions";
 import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
@@ -22,11 +19,11 @@ export async function GET(request: Request): Promise<Response> {
   const session = await requireAuth(request);
   if (session instanceof Response) return session;
 
-  // Counts and newest-item times are independent queries; run them concurrently.
-  const [subscriptions, newestItemAtById] = await Promise.all([
-    listGreaderSubscriptions(db, session.user.id),
-    getGreaderNewestItemAt(db, session.user.id),
-  ]);
+  // Per-feed counts and newest-item times come from a single query, so they see
+  // one consistent snapshot: a feed can't be counted (unread > 0) yet be absent
+  // from the newest-item map between two reads (issue #1092). Cheap now that the
+  // unread count is a trigger-maintained counter column rather than a scan.
+  const { subscriptions, newestItemAtById } = await getGreaderUnreadCounts(db, session.user.id);
 
   return jsonResponse(formatUnreadCounts(subscriptions, newestItemAtById));
 }

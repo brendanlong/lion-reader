@@ -197,20 +197,24 @@ interface GoogleReaderUnreadCount {
  * reading-list total exactly like a real feed — no special case here.
  *
  * `newestItemTimestampUsec` is the newest visible item's time (from
- * `getGreaderNewestItemAt`, keyed by the same feed-stream id), in microseconds.
+ * `getGreaderUnreadCounts`, keyed by the same feed-stream id), in microseconds.
  * Clients use it to decide whether a stream has new content since their last sync,
  * so it must reflect the actual newest item and stay stable when nothing changes.
  * The reading-list total carries the newest across all feeds.
  *
- * A feed with unread items normally has a visible entry, so the map is populated
- * for every line we emit. The counts and the newest map are two independent reads,
- * though, so a feed that gains its first visible entry between them can be counted
- * (unread > 0) yet still be absent from the map. `Date.now()` is the fallback for
- * that gap — deliberately, not "0": on such a miss content genuinely did just
- * arrive, so signalling "new" (and prompting one refetch) is correct, and it
- * reverts to the real, earlier item time on the next poll. "0" would instead read
- * as never-updated and risk the client *skipping* the new content — the original
- * bug from deriving this field off the saved feed's epoch `subscribedAt`.
+ * `getGreaderUnreadCounts` derives the counts and the newest map from a single
+ * query (issue #1092), so they share one snapshot: no read-time race can count a
+ * feed (unread > 0) while its newest is missing. The count and the newest still
+ * come from different sources within that snapshot, though — the count is the
+ * trigger-maintained `unread_count` counter, the newest is a live seek over
+ * `user_entries` — so the `Date.now()` fallback is not dead: it fires if the
+ * denormalized counter has **drifted above** the real entry set (count > 0 but no
+ * row to seek), the exact drift the daily `reconcile_counters` job repairs. It's
+ * deliberately not "0": in that case either content genuinely just arrived or the
+ * counter is transiently high, and signalling "new" (prompting one refetch) is
+ * safe — it reverts to the real item time once the counter reconciles. "0" would
+ * instead read as never-updated and risk the client *skipping* real content — the
+ * original bug from deriving this field off the saved feed's epoch `subscribedAt`.
  */
 export function formatUnreadCounts(
   subscriptions: Array<{ id: string; unreadCount: number }>,
