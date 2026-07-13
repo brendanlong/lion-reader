@@ -23,7 +23,6 @@ import {
   applySyncTagChanges,
   removeSyncTags,
   updateSubscriptionInCache,
-  findCachedSubscription,
   type CachedSubscription,
 } from "./count-cache";
 
@@ -194,16 +193,13 @@ export function handleSyncEvent(
     }
 
     case "subscription_deleted":
-      // Check if already removed (optimistic update from same tab).
-      // Check both the lookup map and infinite queries, since pre-existing
-      // subscriptions may only be in the infinite query caches.
-      {
-        const alreadyRemoved = !findCachedSubscription(queryClient, event.subscriptionId);
-
-        if (!alreadyRemoved) {
-          handleSubscriptionDeleted(utils, event.subscriptionId, queryClient, event.counts);
-        }
-      }
+      // handleSubscriptionDeleted is idempotent: it skips the structural removal
+      // when the subscription is already gone from cache (optimistic same-tab
+      // delete, or a never-cached subscription) but still applies the absolute
+      // counts and invalidates entries.list. Calling it unconditionally fixes
+      // the case where a delete for a never-cached subscription (common with
+      // tags collapsed) left inflated counts and stale entries (#1081).
+      handleSubscriptionDeleted(utils, event.subscriptionId, queryClient, event.counts);
       break;
 
     case "tag_created":

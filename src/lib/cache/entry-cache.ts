@@ -79,6 +79,60 @@ export function updateEntriesInListCache(
 }
 
 /**
+ * Re-asserts the authoritative per-entry read/starred state from the
+ * `entries.get` caches onto every `entries.list` cache.
+ *
+ * React Query's `infiniteQueryBehavior` snapshots the existing pages when a
+ * `fetchNextPage` begins and, on completion, replaces the query data with
+ * `snapshot + newPage` — silently dropping any `setQueryData` applied to the old
+ * pages while the fetch was in flight. j/k navigation routinely triggers this:
+ * opening an entry near the end auto-marks it read (a list `setQueryData`) at the
+ * same moment the container fires `fetchNextPage`, so the completing fetch
+ * reverts the entry to unread. Calling this after the fetch settles restores the
+ * correct state from `entries.get` (server-authoritative, timestamp-guarded, and
+ * kept in lockstep with the list by every mutation/SSE write). See #1081.
+ *
+ * Only touches list rows whose value actually differs, so unchanged item
+ * identities are preserved (keeps EntryListItem's memo effective).
+ *
+ * Residual limitation: a brand-new entry inserted into the list by an SSE
+ * `new_entry` during the fetch has no `entries.get` entry, so it can't be
+ * restored here; it reappears on the next navigation-triggered list refresh.
+ */
+export function reconcileListReadStarredFromEntryGet(queryClient: QueryClient): void {
+  const getQueries = queryClient.getQueriesData<{
+    entry: { id: string; read: boolean; starred: boolean };
+  }>({ queryKey: [["entries", "get"]] });
+
+  const authoritative = new Map<string, { read: boolean; starred: boolean }>();
+  for (const [, data] of getQueries) {
+    if (data?.entry) {
+      authoritative.set(data.entry.id, { read: data.entry.read, starred: data.entry.starred });
+    }
+  }
+  if (authoritative.size === 0) return;
+
+  queryClient.setQueriesData<InfiniteData>({ queryKey: [["entries", "list"]] }, (oldData) => {
+    if (!oldData?.pages) return oldData;
+
+    let changed = false;
+    const pages = oldData.pages.map((page) => ({
+      ...page,
+      items: page.items.map((entry) => {
+        const state = authoritative.get(entry.id);
+        if (state && (entry.read !== state.read || entry.starred !== state.starred)) {
+          changed = true;
+          return { ...entry, ...state };
+        }
+        return entry;
+      }),
+    }));
+
+    return changed ? { ...oldData, pages } : oldData;
+  });
+}
+
+/**
  * Affected scope info for targeted cache updates.
  */
 export interface AffectedScope {

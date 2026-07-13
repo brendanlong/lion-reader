@@ -8,10 +8,9 @@
 "use client";
 
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { removeSubscriptionFromCaches, setEntryRelatedCounts } from "@/lib/cache/operations";
+import { useUnsubscribeMutation } from "@/lib/hooks/useUnsubscribeMutation";
 import { getFeedDisplayName, formatRelativeTime, formatFutureTime } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { SettingsListContainer } from "@/components/settings/SettingsListContainer";
@@ -38,7 +37,6 @@ interface BrokenFeed {
 // ============================================================================
 
 export default function BrokenFeedsSettingsContent() {
-  const queryClient = useQueryClient();
   const [unsubscribeTarget, setUnsubscribeTarget] = useState<{
     id: string;
     title: string;
@@ -47,26 +45,13 @@ export default function BrokenFeedsSettingsContent() {
   const utils = trpc.useUtils();
   const brokenQuery = trpc.brokenFeeds.list.useQuery();
 
-  const unsubscribeMutation = trpc.subscriptions.delete.useMutation({
-    onMutate: (variables) => {
-      // Optimistically remove the subscription; counts come from onSuccess.
-      removeSubscriptionFromCaches(variables.id, queryClient);
-    },
-    onSuccess: (data) => {
-      if (data.counts) {
-        setEntryRelatedCounts(utils, data.counts, queryClient);
-      }
-      utils.entries.list.invalidate();
+  // The shared hook owns the cache choreography; this page additionally refreshes
+  // the broken-feeds list, closes the dialog, and toasts on success.
+  const unsubscribeMutation = useUnsubscribeMutation({
+    onSuccess: () => {
       utils.brokenFeeds.list.invalidate();
       setUnsubscribeTarget(null);
       toast.success("Unsubscribed from feed");
-    },
-    onError: () => {
-      toast.error("Failed to unsubscribe from feed");
-      // On error, invalidate to refetch correct state
-      utils.subscriptions.list.invalidate();
-      utils.tags.list.invalidate();
-      utils.entries.count.invalidate();
     },
   });
 

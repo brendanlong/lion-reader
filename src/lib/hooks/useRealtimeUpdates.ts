@@ -78,6 +78,16 @@ export interface UseRealtimeUpdatesResult {
  * (open/error) is tracked via the EventSource's own onopen/onerror, not a
  * data event.
  */
+/**
+ * Backoff bounds for retrying a failed catch-up sync while the SSE stream is
+ * connected (the polling phase already retries every POLL_INTERVAL_MS). Without
+ * this, a catch-up sync that fails on SSE `open` is never retried, so changes
+ * from other devices in the disconnected window stay wrong on an idle view
+ * (#1081).
+ */
+const INITIAL_SYNC_RETRY_DELAY_MS = 2_000;
+const MAX_SYNC_RETRY_DELAY_MS = 30_000;
+
 const SSE_EVENT_NAMES = [
   "new_entry",
   "entry_updated",
@@ -127,8 +137,18 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sseRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const syncRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const syncRetryDelayRef = useRef<number>(INITIAL_SYNC_RETRY_DELAY_MS);
   // Initialize with server-provided cursors (granular tracking per entity type)
   const cursorsRef = useRef<SyncCursors>(initialCursors);
+
+  // Whether the catch-up sync after the current connection opened has fully
+  // succeeded. While this is false (freshly (re)connected, or a catch-up sync is
+  // still failing/draining), live SSE events must NOT advance the persisted sync
+  // cursor: doing so would push the cursor past a not-yet-synced gap, making the
+  // pending catch-up query skip the gap's rows forever (#1081). The cache is
+  // still patched live regardless; only the cursor is frozen.
+  const caughtUpRef = useRef<boolean>(false);
 
   // Latest callbacks, readable from the stable dispatch closure below
   const handleEventRef = useRef<(event: MessageEvent) => void>(() => {});
@@ -158,7 +178,14 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
       const data = parseSyncEvent(event.data);
       if (!data) return;
 
-      cursorsRef.current = advanceCursors(cursorsRef.current, data);
+      // Only advance the persisted sync cursor from live events once the
+      // post-connect catch-up sync has succeeded. Before then the cursor must
+      // stay pinned at the pre-gap position so a still-pending (or retrying)
+      // catch-up query returns the disconnected-window rows instead of skipping
+      // them (#1081). The cache is patched live either way.
+      if (caughtUpRef.current) {
+        cursorsRef.current = advanceCursors(cursorsRef.current, data);
+      }
 
       // Delegate to shared handler for cache updates
       handleSyncEvent(utils, queryClient, data);
@@ -178,8 +205,12 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
    * cursors and double-apply delta-based cache updates (#897). Serialization is
    * handled by the scheduler glue below — always go through `requestSync`, never
    * call this directly.
+   *
+   * Returns `{ ok, hasMore }`: `ok` is false when the request failed (so the
+   * caller schedules a backoff retry and keeps the cursor frozen); `hasMore`
+   * mirrors the server's drain flag.
    */
-  const runSyncOnce = useCallback(async (): Promise<boolean> => {
+  const runSyncOnce = useCallback(async (): Promise<{ ok: boolean; hasMore: boolean }> => {
     try {
       const currentCursors = cursorsRef.current;
 
@@ -192,16 +223,18 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
         },
       });
 
-      // Process each event through the shared handler (same as SSE path)
+      // Process each event through the shared handler (same as SSE path). The
+      // catch-up sync always advances the cursor — it drains the authoritative
+      // server sequence, unlike live events which are gated by caughtUpRef.
       for (const event of result.events) {
         cursorsRef.current = advanceCursors(cursorsRef.current, event);
         handleSyncEvent(utils, queryClient, event);
       }
 
-      return result.hasMore;
+      return { ok: true, hasMore: result.hasMore };
     } catch (error) {
       console.error("Sync failed:", error);
-      return false;
+      return { ok: false, hasMore: false };
     }
   }, [utils, queryClient]);
 
@@ -221,15 +254,58 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
       // instead of being stuck behind an abandoned `running` flag.
       if (stateRef.current.phase === "disconnected") {
         syncSchedulerStateRef.current = INITIAL_SYNC_SCHEDULER_STATE;
+        // Drop any pending catch-up retry so it can't fire after disconnect.
+        if (syncRetryTimeoutRef.current) {
+          clearTimeout(syncRetryTimeoutRef.current);
+          syncRetryTimeoutRef.current = null;
+        }
+        syncRetryDelayRef.current = INITIAL_SYNC_RETRY_DELAY_MS;
         return;
       }
       const { state, startSync } = reduceSyncScheduler(syncSchedulerStateRef.current, event);
       syncSchedulerStateRef.current = state;
       if (startSync) {
-        void runSyncOnce().then((hasMore) => {
-          dispatchSchedulerEvent({ type: "completed", hasMore });
+        void runSyncOnce().then((result) => {
+          if (result.ok) {
+            // Success: cancel any pending retry and reset the backoff.
+            if (syncRetryTimeoutRef.current) {
+              clearTimeout(syncRetryTimeoutRef.current);
+              syncRetryTimeoutRef.current = null;
+            }
+            syncRetryDelayRef.current = INITIAL_SYNC_RETRY_DELAY_MS;
+            // Fully drained: the cursor is now current, so live events may
+            // resume advancing it (#1081).
+            if (!result.hasMore) {
+              caughtUpRef.current = true;
+            }
+          } else {
+            // Failure: retry with backoff. The cursor stays frozen (caughtUp is
+            // still false) so the retry re-queries the same unsynced gap.
+            scheduleSyncRetry();
+          }
+          // Report to the scheduler as not-more on failure so it settles to idle
+          // (or runs a queued follow-up); the backoff timer drives the retry.
+          dispatchSchedulerEvent({ type: "completed", hasMore: result.ok && result.hasMore });
         });
       }
+    }
+
+    /**
+     * Schedules a backoff retry of the catch-up sync after a failure. Coalesces
+     * with the scheduler, so a retry that lands while another sync is running
+     * just queues a single follow-up. No-ops once disconnected.
+     */
+    function scheduleSyncRetry(): void {
+      if (syncRetryTimeoutRef.current) {
+        clearTimeout(syncRetryTimeoutRef.current);
+      }
+      const delay = syncRetryDelayRef.current;
+      syncRetryDelayRef.current = Math.min(delay * 2, MAX_SYNC_RETRY_DELAY_MS);
+      syncRetryTimeoutRef.current = setTimeout(() => {
+        syncRetryTimeoutRef.current = null;
+        if (stateRef.current.phase === "disconnected") return;
+        requestSyncRef.current();
+      }, delay);
     }
 
     dispatchSchedulerEvent({ type: "request" });
@@ -318,6 +394,10 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
     }
 
     function openEventSource(): void {
+      // A new connection opens a fresh (possibly empty) gap: freeze the cursor
+      // until this connection's catch-up sync succeeds (#1081).
+      caughtUpRef.current = false;
+
       // Open the EventSource directly: a single connection per session.
       // SSE availability (the 503 case) is only checked on the error path,
       // so the happy path doesn't double the per-connect auth and DB work.
@@ -338,6 +418,11 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
 
       eventSource.onerror = () => {
         if (eventSourceRef.current !== eventSource) return;
+        // Any stream error opens a potential gap — including the browser's own
+        // silent auto-reconnect (which reuses this EventSource and fires onopen
+        // again without going through openEventSource). Freeze the cursor so the
+        // next catch-up covers whatever was missed (#1081).
+        caughtUpRef.current = false;
         dispatchEvent({
           type: "stream-error",
           closed: eventSource.readyState === EventSource.CLOSED,
@@ -392,6 +477,18 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
       dispatch({ type: "disconnect" });
     };
   }, [isAuthenticated, dispatch]);
+
+  // Clear the catch-up retry timer on unmount (the connection machine's
+  // teardown handles the reconnect/poll/SSE-retry timers, but the sync retry is
+  // hook glue outside the machine).
+  useEffect(() => {
+    return () => {
+      if (syncRetryTimeoutRef.current) {
+        clearTimeout(syncRetryTimeoutRef.current);
+        syncRetryTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   // Handle visibility change - reconnect (or sync, in polling mode) when the
   // tab becomes visible

@@ -58,7 +58,10 @@ export function ConnectionStatusIndicator({ status, onReconnect }: ConnectionSta
           <span className="text-muted">
             {status === "error" ? "Connection error" : "Disconnected"}
           </span>
-          {onReconnect && (
+          {/* Only offer Retry in the "error" state. The state machine ignores a
+              manual-reconnect while disconnected (unauthenticated/unmounted), so
+              a Retry button there does nothing (#1081). */}
+          {onReconnect && status === "error" && (
             <button onClick={onReconnect} className="text-strong ml-1 underline hover:no-underline">
               Retry
             </button>
