@@ -225,7 +225,7 @@ function FeedRow({ feed, onRetry, isRetrying }: FeedRowProps) {
 
 function StatItem({ label, value }: { label: string; value: string }) {
   return (
-    <span>
+    <span className="tabular-nums">
       <span className="text-body font-medium">{label}:</span> {value}
     </span>
   );
