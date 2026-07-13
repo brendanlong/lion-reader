@@ -126,7 +126,7 @@ function UserRow({ user }: { user: User }) {
           Subscriptions:{" "}
           <ClientLink
             href={`/admin/feeds?userEmail=${encodeURIComponent(user.email)}`}
-            className="text-blue-600 underline hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+            className="text-accent hover:text-accent-hover underline"
           >
             {user.subscriptionCount}
           </ClientLink>
@@ -262,7 +262,7 @@ export default function AdminUsersContent() {
       {/* Users List */}
       {usersQuery.isLoading ? (
         <div className="flex items-center justify-center p-8">
-          <SpinnerIcon className="h-6 w-6 text-zinc-400" />
+          <SpinnerIcon className="text-faint h-6 w-6" />
         </div>
       ) : usersQuery.isError ? (
         <div className="p-8 text-center">
@@ -290,7 +290,7 @@ export default function AdminUsersContent() {
           {/* Loading indicator */}
           {usersQuery.isFetchingNextPage && (
             <div className="flex items-center justify-center p-4">
-              <SpinnerIcon className="mr-2 h-4 w-4 text-zinc-400" />
+              <SpinnerIcon className="text-faint mr-2 h-4 w-4" />
               <span className="ui-text-sm text-muted">Loading more...</span>
             </div>
           )}

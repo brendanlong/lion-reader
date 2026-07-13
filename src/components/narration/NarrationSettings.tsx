@@ -206,7 +206,7 @@ export function NarrationSettings() {
           role="switch"
           aria-checked={settings.enabled}
           onClick={() => setSettings((prev) => ({ ...prev, enabled: !prev.enabled }))}
-          className={`focus:ring-focus relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-offset-2 focus:outline-none dark:focus:ring-offset-zinc-900 ${
+          className={`focus:ring-focus focus:ring-offset-surface relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-offset-2 focus:outline-none ${
             settings.enabled ? "bg-primary-solid" : "bg-fill-muted"
           }`}
         >
@@ -380,7 +380,7 @@ export function NarrationSettings() {
               step="0.1"
               value={settings.rate}
               onChange={handleRateChange}
-              className="bg-fill-muted h-2 w-full cursor-pointer appearance-none rounded-lg accent-zinc-900 dark:accent-zinc-400"
+              className="bg-fill-muted accent-control-selected h-2 w-full cursor-pointer appearance-none rounded-lg"
             />
             <div className="ui-text-xs text-faint mt-1 flex justify-between">
               <span>0.5x</span>
@@ -407,7 +407,7 @@ export function NarrationSettings() {
                 step="0.1"
                 value={settings.pitch}
                 onChange={handlePitchChange}
-                className="bg-fill-muted h-2 w-full cursor-pointer appearance-none rounded-lg accent-zinc-900 dark:accent-zinc-400"
+                className="bg-fill-muted accent-control-selected h-2 w-full cursor-pointer appearance-none rounded-lg"
               />
               <div className="ui-text-xs text-faint mt-1 flex justify-between">
                 <span>0.5x</span>
@@ -441,7 +441,7 @@ export function NarrationSettings() {
                       useLlmNormalization: !prev.useLlmNormalization,
                     }))
                   }
-                  className={`focus:ring-focus relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-offset-2 focus:outline-none dark:focus:ring-offset-zinc-900 ${
+                  className={`focus:ring-focus focus:ring-offset-surface relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-offset-2 focus:outline-none ${
                     settings.useLlmNormalization ? "bg-primary-solid" : "bg-fill-muted"
                   }`}
                 >
@@ -473,7 +473,7 @@ export function NarrationSettings() {
                 onClick={() =>
                   setSettings((prev) => ({ ...prev, highlightEnabled: !prev.highlightEnabled }))
                 }
-                className={`focus:ring-focus relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-offset-2 focus:outline-none dark:focus:ring-offset-zinc-900 ${
+                className={`focus:ring-focus focus:ring-offset-surface relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-offset-2 focus:outline-none ${
                   settings.highlightEnabled ? "bg-primary-solid" : "bg-fill-muted"
                 }`}
               >
@@ -501,7 +501,7 @@ export function NarrationSettings() {
                 onClick={() =>
                   setSettings((prev) => ({ ...prev, autoScrollEnabled: !prev.autoScrollEnabled }))
                 }
-                className={`focus:ring-focus relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-offset-2 focus:outline-none dark:focus:ring-offset-zinc-900 ${
+                className={`focus:ring-focus focus:ring-offset-surface relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-offset-2 focus:outline-none ${
                   settings.autoScrollEnabled ? "bg-primary-solid" : "bg-fill-muted"
                 }`}
               >

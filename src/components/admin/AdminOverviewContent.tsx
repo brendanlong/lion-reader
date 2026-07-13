@@ -45,7 +45,7 @@ export default function AdminOverviewContent() {
   if (overviewQuery.isLoading) {
     return (
       <div className="flex items-center justify-center p-8">
-        <SpinnerIcon className="h-6 w-6 text-zinc-400" />
+        <SpinnerIcon className="text-faint h-6 w-6" />
       </div>
     );
   }

@@ -36,7 +36,7 @@ function OptionButton<T extends string>({ selected, onClick, children }: OptionB
       className={`ui-text-sm rounded-md px-4 py-2 font-medium transition-colors ${
         selected
           ? "bg-primary-solid text-primary-solid-foreground"
-          : "bg-surface-muted text-body hover:bg-zinc-200 dark:hover:bg-zinc-700"
+          : "bg-surface-muted text-body hover:bg-fill-muted"
       }`}
     >
       {children}

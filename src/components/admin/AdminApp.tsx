@@ -116,7 +116,7 @@ function AdminTabNav() {
               className={`ui-text-sm block shrink-0 border-b-2 px-4 py-3 font-medium whitespace-nowrap transition-colors ${
                 isActive
                   ? "text-strong border-control-selected"
-                  : "text-muted border-transparent hover:border-zinc-300 hover:text-zinc-700 dark:hover:border-zinc-600 dark:hover:text-zinc-200"
+                  : "text-muted hover:text-body border-transparent hover:border-zinc-300 dark:hover:border-zinc-600"
               }`}
             >
               {tab.label}

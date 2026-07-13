@@ -75,7 +75,7 @@ function getStatusBadge(feed: FeedStats): { text: string; className: string } {
   if (feed.websubActive) {
     return {
       text: "WebSub Active",
-      className: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300",
+      className: "bg-info-subtle text-info-foreground",
     };
   }
   return {
@@ -183,7 +183,7 @@ export default function FeedStatsSettingsContent() {
             {/* Loading indicator */}
             {statsQuery.isFetchingNextPage && (
               <div className="flex items-center justify-center p-4">
-                <SpinnerIcon className="mr-2 h-4 w-4 text-zinc-400" />
+                <SpinnerIcon className="text-faint mr-2 h-4 w-4" />
                 <span className="ui-text-sm text-muted">Loading more...</span>
               </div>
             )}
@@ -214,7 +214,7 @@ function SummaryCard({ label, value, variant = "default" }: SummaryCardProps) {
     default: "text-strong",
     success: "text-success",
     error: "text-danger",
-    info: "text-purple-600 dark:text-purple-400",
+    info: "text-info",
   };
 
   return (

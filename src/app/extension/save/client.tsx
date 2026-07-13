@@ -42,7 +42,7 @@ export function ExtensionSaveClient({ status, error, url, canRetry }: Props) {
               Try Again
             </a>
           )}
-          <p className="ui-text-sm mt-6 text-zinc-400 dark:text-zinc-600">
+          <p className="ui-text-sm text-faint mt-6">
             You can close this tab and try again from the extension.
           </p>
         </div>
