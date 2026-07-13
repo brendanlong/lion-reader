@@ -72,6 +72,45 @@ to today on a normal screen.
 | --------------------------- | ------------------------- |
 | ![](img/current-epaper.png) | ![](img/amber-epaper.png) |
 
+## Links in an open entry
+
+Prose links are bound to `--accent` (confirmed at runtime — no `--tw-prose-links`
+override needed), so re-hueing the accent moves them automatically. This is where the
+dark-mode collision bites hardest: today an in-body hyperlink is `red-400`, so it reads
+like an error or a strikethrough mid-sentence.
+
+### Light — link text uses the AA-safe `amber-700` (≈4.5:1 on white)
+
+| Current (blue)                        | Amber (burnt)                       |
+| ------------------------------------- | ----------------------------------- |
+| ![](img/entry-link-current-light.png) | ![](img/entry-link-amber-light.png) |
+
+### Dark — red "error" link → amber "link"
+
+| Current (red)                        | Amber                              |
+| ------------------------------------ | ---------------------------------- |
+| ![](img/entry-link-current-dark.png) | ![](img/entry-link-amber-dark.png) |
+
+## AI summary card & settings — deliberately _not_ re-hued
+
+The summary card already rides on the tokenized `--info` (blue) role, not raw colour:
+
+![](img/summary-amber-light.png)
+
+Leaving it blue is a feature, not an oversight. With a warm brand accent, a **blue
+"assistant" box is now clearly differentiated** from the amber chrome — it reads as
+"informational / machine-generated," distinct from interactive amber and neutral
+surfaces. Giving AI its own hue (the common violet/purple convention) would add a
+fourth colour family to an already warm+cool+status palette; `--info` blue does the job.
+
+**Settings pages need no separate redesign.** They're built from `SettingsSection` +
+`Card` + the neutral tokens, so they inherit the accent re-hue automatically (selected
+rows, focus rings, primary buttons, toggles → amber) and the status-token cleanup in
+#1169 (the amber warning notes / green success states scattered in narration, API-token,
+and OPML settings all collapse onto the new `--warning`/`--success` tokens). The one
+thing to verify is the **warning-vs-accent amber proximity** in settings notes — that's
+the argument for nudging `--warning` toward yellow (open question below).
+
 ## Proposed accent tokens (illustrative values used above)
 
 ```css
