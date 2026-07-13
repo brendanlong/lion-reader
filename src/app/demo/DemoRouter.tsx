@@ -249,13 +249,13 @@ function DemoRouterContent() {
             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
               {/* Star button */}
               <Button
-                variant={selectedEntry.starred ? "primary" : "secondary"}
+                variant="secondary"
                 size="sm"
                 onClick={() => demoState.toggleStar(selectedEntry.id)}
                 aria-label={selectedEntry.starred ? "Remove from starred" : "Add to starred"}
               >
                 {selectedEntry.starred ? (
-                  <StarFilledIcon className="h-5 w-5" />
+                  <StarFilledIcon className="text-star h-5 w-5" />
                 ) : (
                   <StarIcon className="h-5 w-5" />
                 )}
@@ -264,7 +264,7 @@ function DemoRouterContent() {
 
               {/* Mark read/unread button */}
               <Button
-                variant={!selectedEntry.read ? "primary" : "secondary"}
+                variant="secondary"
                 size="sm"
                 onClick={() => demoState.toggleRead(selectedEntry.id)}
                 aria-label={selectedEntry.read ? "Mark as unread" : "Mark as read"}
