@@ -485,6 +485,31 @@ body {
 }
 
 /* =================================
+   Global Focus Indicator
+
+   Single source of truth for keyboard-focus visibility: every focusable
+   element gets the brand amber outline (--focus) so tabbing around the app
+   is consistently amber. Without this, elements that set no focus style of
+   their own (nav links, entry rows, icon buttons, links) fell back to the
+   browser default blue outline, so tabbing flickered blue↔amber depending on
+   which control had focus.
+
+   - `:focus-visible`, not `:focus`, so it only shows for keyboard navigation,
+     not mouse clicks.
+   - Lives in `@layer base` so a component that opts out with
+     `focus:outline-none` (utilities layer, always paired with its own
+     `focus:ring-focus`) wins — otherwise buttons/inputs would show both their
+     ring and this outline. Modern browsers follow the element's border-radius,
+     so rounded controls get a rounded outline for free.
+   ================================= */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+}
+
+/* =================================
    UI Typography Utilities
 
    Semantic classes for consistent UI text sizing.
