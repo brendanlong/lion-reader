@@ -59,7 +59,18 @@ function rowToJob(row: RawJobRow): Job {
  * Job payload types for different job types.
  */
 export interface JobPayloads {
-  fetch_feed: { feedId: string };
+  // `forceReprocessRequestedAt` is a one-shot request set by
+  // `scheduleFeedRefreshNow` (the interactive subscribe path forcing a refresh
+  // of a stale feed). Its presence makes the fetch reprocess and re-stamp
+  // visibility unconditionally so a brand-new subscriber is fanned out even when
+  // the feed hasn't changed. The value is the request time, used as an
+  // optimistic-concurrency token: the worker records it at claim and, on a
+  // successful run, consumes it via `finishJob({ consumeForceReprocess })` only
+  // if it hasn't changed since — a subscribe that re-arms the shared job
+  // mid-run bumps the token, so the consume leaves it in place and the fetch
+  // re-runs (covering the late subscriber) instead of dropping the request. A
+  // failed run keeps it so the retry re-forces.
+  fetch_feed: { feedId: string; forceReprocessRequestedAt?: string };
   renew_websub: Record<string, never>; // Empty payload - renews all expiring subscriptions
   process_opml_import: { importId: string }; // Process an OPML import in the background
   // Periodic feed fetch health check. Empty payload — alert cadence and
@@ -155,6 +166,24 @@ export interface FinishJobOptions {
   success: boolean;
   nextRunAt: Date;
   error?: string;
+  /**
+   * On a **successful** fetch_feed finish, consume the one-shot
+   * `forceReprocessRequestedAt` request (see {@link scheduleFeedRefreshNow}) with
+   * optimistic concurrency. Pass the token observed at claim (`claimedAt`, or
+   * `null` if the claimed job carried no request — an ordinary poll):
+   *
+   * - if the row's current `forceReprocessRequestedAt` still equals `claimedAt`,
+   *   the request is satisfied → it's removed and `nextRunAt` (normal cadence)
+   *   is used;
+   * - otherwise a request is pending that this run didn't satisfy (a subscribe
+   *   re-armed the shared job mid-run, or an ordinary poll finished while a
+   *   request landed) → it's left in place and `next_run_at` is set to now so
+   *   the forced refresh runs promptly.
+   *
+   * Ignored on a failed finish (the request is kept so the retry re-forces).
+   * Omit for non-fetch_feed jobs.
+   */
+  consumeForceReprocess?: { claimedAt: string | null };
   /**
    * The `running_since` value this worker last held (its lease token). When
    * provided, the finish is fenced on it: if another worker has since reclaimed
@@ -277,7 +306,7 @@ export async function claimJob(options: ClaimJobOptions = {}): Promise<Job | nul
  *   `expectedRunningSince` is supplied)
  */
 export async function finishJob(jobId: string, options: FinishJobOptions): Promise<Job | null> {
-  const { success, nextRunAt, error, expectedRunningSince } = options;
+  const { success, nextRunAt, error, consumeForceReprocess, expectedRunningSince } = options;
   const now = new Date();
 
   // Fence on the lease token when the caller holds one (see FinishJobOptions).
@@ -285,16 +314,38 @@ export async function finishJob(jobId: string, options: FinishJobOptions): Promi
     ? and(eq(jobs.id, jobId), eq(jobs.runningSince, expectedRunningSince))
     : eq(jobs.id, jobId);
 
+  // On a successful fetch_feed finish, optimistically consume the one-shot
+  // forceReprocess request (see FinishJobOptions.consumeForceReprocess). The
+  // comparison and rewrite happen in one atomic UPDATE so a subscribe that
+  // re-armed the shared job mid-run can't be clobbered: if the token is
+  // unchanged we consume it and use the normal cadence; otherwise we leave the
+  // pending request and pull the next run to now. `IS NOT DISTINCT FROM` makes
+  // the null (ordinary-poll) case null-safe.
+  const claimedAt = consumeForceReprocess?.claimedAt ?? null;
+  const tokenMatches = sql`${jobs.payload} ->> 'forceReprocessRequestedAt' IS NOT DISTINCT FROM ${claimedAt}`;
+  const nextRunAtExpr = consumeForceReprocess
+    ? sql`CASE WHEN ${tokenMatches} THEN ${nextRunAt}::timestamptz ELSE ${now}::timestamptz END`
+    : nextRunAt;
+  // Only strip the token when this run actually claimed one (claimedAt not null)
+  // and it still matches — otherwise leave any pending request untouched.
+  const payloadUpdate =
+    consumeForceReprocess && claimedAt !== null
+      ? {
+          payload: sql`CASE WHEN ${tokenMatches} THEN ${jobs.payload} - 'forceReprocessRequestedAt' ELSE ${jobs.payload} END`,
+        }
+      : {};
+
   const [job] = success
     ? await db
         .update(jobs)
         .set({
           runningSince: null,
           lastRunAt: now,
-          nextRunAt,
+          nextRunAt: nextRunAtExpr,
           lastError: null,
           consecutiveFailures: 0,
           updatedAt: now,
+          ...payloadUpdate,
         })
         .where(whereClause)
         .returning()
@@ -448,6 +499,46 @@ export async function updateFeedJobNextRun(feedId: string, nextRunAt: Date): Pro
   if (result.rows.length === 0) {
     return null;
   }
+
+  return rowToJob(result.rows[0]);
+}
+
+/**
+ * Schedules an immediate, force-reprocess fetch of a feed.
+ *
+ * Used by the interactive subscribe path to refresh a stale feed before a
+ * brand-new subscriber's entries are populated: it upserts the feed's single
+ * `fetch_feed` job to run now (or sooner, if it was already overdue) and stamps
+ * `forceReprocess` on the payload, so the worker fetches unconditionally,
+ * re-stamps visibility, and fans out `user_entries` even when the feed hasn't
+ * changed (see `handleFetchFeed`). Keeping it on the one per-feed job means
+ * concurrent subscribes to the same feed coalesce into a single fetch (the same
+ * single-flight guarantee `ensureFeedJob` relies on, issue #952), and it merges
+ * cleanly with any pending scheduled poll. The worker consumes the flag on a
+ * successful run.
+ *
+ * @param feedId The feed ID
+ * @returns The upserted job
+ */
+export async function scheduleFeedRefreshNow(feedId: string): Promise<Job> {
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const id = generateUuidv7();
+
+  const result = await db.execute<RawJobRow>(sql`
+    INSERT INTO ${jobs} (id, type, payload, next_run_at, created_at, updated_at)
+    VALUES (${id}, 'fetch_feed', ${JSON.stringify({ feedId, forceReprocessRequestedAt: nowIso })}::jsonb, ${now}, ${now}, ${now})
+    ON CONFLICT ((payload->>'feedId')) WHERE type = 'fetch_feed'
+    DO UPDATE SET
+      -- Run now, or keep an already-earlier (overdue) time.
+      next_run_at = LEAST(COALESCE(${jobs.nextRunAt}, ${now}), ${now}),
+      -- Stamp/refresh the request token, preserving feedId and any other keys.
+      -- A later request overwrites an earlier one with a strictly greater time,
+      -- which the finish-time compare-and-swap uses to detect a mid-run re-arm.
+      payload = ${jobs.payload} || jsonb_build_object('forceReprocessRequestedAt', ${nowIso}::text),
+      updated_at = ${now}
+    RETURNING *
+  `);
 
   return rowToJob(result.rows[0]);
 }

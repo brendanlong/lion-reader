@@ -396,6 +396,7 @@ function createWorker(config: WorkerConfig = {}): Worker {
       success: boolean;
       nextRunAt: Date;
       error?: string;
+      consumeForceReprocess?: { claimedAt: string | null };
     }): Promise<boolean> => {
       await lease.stop();
       const expectedRunningSince = lease.currentToken();
@@ -424,11 +425,17 @@ function createWorker(config: WorkerConfig = {}): Worker {
       });
 
       let result: JobHandlerResult;
+      // For a fetch_feed job, the one-shot forceReprocess token observed at claim
+      // (null for an ordinary poll). Passed to finishJob so a successful run can
+      // consume it with optimistic concurrency (see FinishJobOptions).
+      let consumeForceReprocess: { claimedAt: string | null } | undefined;
 
       switch (job.type) {
         case "fetch_feed": {
           const payload = getJobPayload<"fetch_feed">(job);
-          result = await handleFetchFeed(payload);
+          const claimedAt = payload.forceReprocessRequestedAt ?? null;
+          consumeForceReprocess = { claimedAt };
+          result = await handleFetchFeed(payload, { forceReprocess: claimedAt !== null });
           break;
         }
         case "renew_websub": {
@@ -468,11 +475,15 @@ function createWorker(config: WorkerConfig = {}): Worker {
 
       const duration = Date.now() - startTime;
 
-      // Finish the job (update its state for next run)
+      // Finish the job (update its state for next run). consumeForceReprocess is
+      // set only for fetch_feed; on a successful run finishJob uses it to consume
+      // the one-shot forceReprocess request (or re-run now if a subscribe
+      // re-armed the job mid-run).
       await finishWithLease({
         success: result.success,
         nextRunAt: result.nextRunAt,
         error: result.error,
+        consumeForceReprocess,
       });
 
       if (result.success) {

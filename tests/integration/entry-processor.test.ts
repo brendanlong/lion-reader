@@ -589,6 +589,254 @@ describe("Entry Processor", () => {
       expect(afterB?.lastSeenAt?.toISOString()).toBe(beforeB?.lastSeenAt?.toISOString());
     });
 
+    it("alwaysUpdateVisibility re-stamps last_seen_at and fans out on an unchanged fetch", async () => {
+      // The subscribe-time forced refresh sets alwaysUpdateVisibility so that an
+      // unchanged fetch still re-stamps every current entry to one generation and
+      // fans out user_entries — the visibility bookkeeping a normal unchanged
+      // poll deliberately skips (#1084). This is what lets a brand-new subscriber
+      // see ground truth (issue #1078).
+      const feed = await createTestFeed({ url: `https://example.com/aiv-${generateUuidv7()}.xml` });
+
+      const firstFetchedAt = new Date("2024-06-15T10:00:00Z");
+      const items = [
+        { guid: "aiv-a", title: "Entry A", content: "Content A" },
+        { guid: "aiv-b", title: "Entry B", content: "Content B" },
+      ];
+      await processEntries(
+        feed.id,
+        feed.type,
+        { title: "T", items },
+        { fetchedAt: firstFetchedAt }
+      );
+
+      // A subscriber that joins AFTER the first fetch has no user_entries yet.
+      const userId = generateUuidv7();
+      await db.insert(users).values({
+        id: userId,
+        email: `aiv-${userId}@test.com`,
+        passwordHash: "test-hash",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      await db.insert(subscriptions).values({
+        id: generateUuidv7(),
+        userId,
+        feedId: feed.id,
+        subscribedAt: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      // Re-fetch the identical feed (nothing changed) with alwaysUpdateVisibility.
+      const secondFetchedAt = new Date("2024-06-15T11:00:00Z");
+      const result = await processEntries(
+        feed.id,
+        feed.type,
+        { title: "T", items },
+        { fetchedAt: secondFetchedAt, alwaysUpdateVisibility: true }
+      );
+
+      // Nothing actually changed...
+      expect(result.hasChanges).toBe(false);
+      // ...but last_seen_at was re-stamped to this fetch for the current entries.
+      const afterA = await findEntryByGuid(feed.id, "aiv-a");
+      const afterB = await findEntryByGuid(feed.id, "aiv-b");
+      expect(afterA?.lastSeenAt?.toISOString()).toBe(secondFetchedAt.toISOString());
+      expect(afterB?.lastSeenAt?.toISOString()).toBe(secondFetchedAt.toISOString());
+
+      // ...and the late subscriber was fanned out despite no changes.
+      const rows = await db
+        .select({ entryId: userEntries.entryId })
+        .from(userEntries)
+        .where(eq(userEntries.userId, userId));
+      expect(rows).toHaveLength(2);
+    });
+
+    it("alwaysUpdateVisibility leaves a pushed-then-deleted entry below the new generation (#1078 privacy)", async () => {
+      // A WebSub feed pushed entry C (stamped above the poll generation). The
+      // publisher then removed C. A forced subscribe-time refresh (the current
+      // feed no longer lists C) must re-stamp the entries that ARE present to a
+      // new generation and leave C behind, so the `>=` subscribe populate — run
+      // with the refreshed last_entries_updated_at — excludes the removed entry.
+      const feed = await createTestFeed({ url: `https://example.com/del-${generateUuidv7()}.xml` });
+
+      const pollTime = new Date("2024-06-15T10:00:00Z");
+      await processEntries(
+        feed.id,
+        feed.type,
+        {
+          title: "T",
+          items: [
+            { guid: "del-a", title: "A", content: "A" },
+            { guid: "del-b", title: "B", content: "B" },
+          ],
+        },
+        { fetchedAt: pollTime }
+      );
+
+      // Entry C arrives by a hub push after the poll (stamped above pollTime).
+      const pushTime = new Date("2024-06-15T10:30:00Z");
+      await processEntries(
+        feed.id,
+        feed.type,
+        { title: "T", items: [{ guid: "del-c", title: "C", content: "C" }] },
+        { fetchedAt: pushTime }
+      );
+      const cBefore = await findEntryByGuid(feed.id, "del-c");
+      expect(cBefore?.lastSeenAt?.toISOString()).toBe(pushTime.toISOString());
+
+      // Forced subscribe-time refresh: the current feed no longer lists C.
+      const refreshTime = new Date("2024-06-15T11:00:00Z");
+      await processEntries(
+        feed.id,
+        feed.type,
+        {
+          title: "T",
+          items: [
+            { guid: "del-a", title: "A", content: "A" },
+            { guid: "del-b", title: "B", content: "B" },
+          ],
+        },
+        {
+          fetchedAt: refreshTime,
+          previousLastEntriesUpdatedAt: pollTime,
+          alwaysUpdateVisibility: true,
+        }
+      );
+
+      // A and B advance to the new generation; the removed C stays behind, so
+      // C.last_seen_at (pushTime) < the new generation (refreshTime) and `>=`
+      // with last_entries_updated_at = refreshTime would exclude it.
+      const aAfter = await findEntryByGuid(feed.id, "del-a");
+      const cAfter = await findEntryByGuid(feed.id, "del-c");
+      expect(aAfter?.lastSeenAt?.toISOString()).toBe(refreshTime.toISOString());
+      expect(cAfter?.lastSeenAt?.toISOString()).toBe(pushTime.toISOString());
+      expect(cAfter!.lastSeenAt!.getTime()).toBeLessThan(refreshTime.getTime());
+    });
+
+    it("does NOT fan out or re-stamp on an unchanged fetch without alwaysUpdateVisibility", async () => {
+      // Guards the #1084 optimization: a normal unchanged poll must leave
+      // last_seen_at alone and skip the fanout.
+      const feed = await createTestFeed({
+        url: `https://example.com/noaiv-${generateUuidv7()}.xml`,
+      });
+      const firstFetchedAt = new Date("2024-06-15T10:00:00Z");
+      const items = [{ guid: "noaiv-a", title: "Entry A", content: "Content A" }];
+      await processEntries(
+        feed.id,
+        feed.type,
+        { title: "T", items },
+        { fetchedAt: firstFetchedAt }
+      );
+
+      const userId = generateUuidv7();
+      await db.insert(users).values({
+        id: userId,
+        email: `noaiv-${userId}@test.com`,
+        passwordHash: "test-hash",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      await db.insert(subscriptions).values({
+        id: generateUuidv7(),
+        userId,
+        feedId: feed.id,
+        subscribedAt: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      const secondFetchedAt = new Date("2024-06-15T11:00:00Z");
+      await processEntries(
+        feed.id,
+        feed.type,
+        { title: "T", items },
+        { fetchedAt: secondFetchedAt }
+      );
+
+      const afterA = await findEntryByGuid(feed.id, "noaiv-a");
+      expect(afterA?.lastSeenAt?.toISOString()).toBe(firstFetchedAt.toISOString());
+      const rows = await db
+        .select({ entryId: userEntries.entryId })
+        .from(userEntries)
+        .where(eq(userEntries.userId, userId));
+      expect(rows).toHaveLength(0);
+    });
+
+    it("detects a pushed-then-removed entry as disappeared via `>=` (#1078)", async () => {
+      // A hub-pushed entry sits above last_entries_updated_at (last_seen_at =
+      // pushTime). When a later poll no longer lists it, disappeared detection
+      // must catch it (it used strict equality on the poll generation and missed
+      // push-stamped entries), so the poll registers hasChanges and the caller
+      // advances the generation past the stranded entry.
+      const feed = await createTestFeed({ url: `https://example.com/gte-${generateUuidv7()}.xml` });
+
+      const pollTime = new Date("2024-06-15T10:00:00Z");
+      await processEntries(
+        feed.id,
+        feed.type,
+        { title: "T", items: [{ guid: "gte-a", title: "A", content: "A" }] },
+        { fetchedAt: pollTime }
+      );
+
+      // Delta push of C, stamped above the poll generation.
+      const pushTime = new Date("2024-06-15T10:30:00Z");
+      await processEntries(
+        feed.id,
+        feed.type,
+        { title: "T", items: [{ guid: "gte-c", title: "C", content: "C" }] },
+        { fetchedAt: pushTime }
+      );
+
+      // Next poll: C is gone. Detection keys off previousLastEntriesUpdatedAt =
+      // pollTime; C is stamped at pushTime > pollTime, so only `>=` catches it.
+      const laterPoll = new Date("2024-06-15T11:00:00Z");
+      const result = await processEntries(
+        feed.id,
+        feed.type,
+        { title: "T", items: [{ guid: "gte-a", title: "A", content: "A" }] },
+        { fetchedAt: laterPoll, previousLastEntriesUpdatedAt: pollTime }
+      );
+
+      expect(result.disappearedCount).toBe(1);
+      expect(result.hasChanges).toBe(true);
+    });
+
+    it("writes last_seen_at monotonically (never regresses under a lower timestamp)", async () => {
+      // The subscribe-time inline refresh bypasses the job queue's per-feed
+      // serialization, so a lower-timestamped writer must not drag a stamp back
+      // below the feed's (forward-only) last_entries_updated_at — that would make
+      // the `>=` populate match nothing (#1078). Simulate an already-advanced
+      // stamp and an unchanged re-process at an earlier timestamp.
+      const feed = await createTestFeed({
+        url: `https://example.com/mono-${generateUuidv7()}.xml`,
+      });
+
+      const laterTime = new Date("2024-06-15T12:00:00Z");
+      await processEntries(
+        feed.id,
+        feed.type,
+        { title: "T", items: [{ guid: "mono-a", title: "A", content: "A" }] },
+        { fetchedAt: laterTime }
+      );
+      expect((await findEntryByGuid(feed.id, "mono-a"))?.lastSeenAt?.toISOString()).toBe(
+        laterTime.toISOString()
+      );
+
+      // Re-process the same (unchanged) entry at an EARLIER timestamp with
+      // alwaysUpdateVisibility — the monotonic guard must keep the later stamp.
+      const earlierTime = new Date("2024-06-15T10:00:00Z");
+      await processEntries(
+        feed.id,
+        feed.type,
+        { title: "T", items: [{ guid: "mono-a", title: "A", content: "A" }] },
+        { fetchedAt: earlierTime, alwaysUpdateVisibility: true }
+      );
+      expect((await findEntryByGuid(feed.id, "mono-a"))?.lastSeenAt?.toISOString()).toBe(
+        laterTime.toISOString()
+      );
+    });
+
     it("uses provided fetchedAt timestamp", async () => {
       const feed = await createTestFeed();
       const customFetchedAt = new Date("2024-06-15T10:00:00Z");

@@ -361,20 +361,40 @@ export interface CreateSubscriptionResult {
 }
 
 /**
+ * Options for {@link createSubscription}.
+ */
+export interface CreateSubscriptionOptions {
+  /**
+   * Skip the synchronous initial `user_entries` populate. The interactive
+   * subscribe path sets this when it has determined the feed is **stale** and is
+   * scheduling an immediate forced background refresh (`scheduleFeedRefreshNow`)
+   * instead: for a stale feed we can't know which entries are actually current
+   * without re-fetching, so populating from the cached entries could grant a new
+   * subscriber an entry the publisher has since removed. The forced fetch's
+   * fanout (`createUserEntriesForFeed`) populates the subscriber from ground
+   * truth a moment later, exactly as a brand-new feed's first fetch does.
+   */
+  skipInitialPopulate?: boolean;
+}
+
+/**
  * Creates a new subscription to a feed. Handles the full flow:
  * 1. Upserts the feed record (creates if new, uses existing otherwise)
  * 2. Ensures a background fetch job exists for the feed
  * 3. Checks subscription cap (with idempotent return if already subscribed)
  * 4. Upserts the subscription (creates new or reactivates soft-deleted)
  * 5. Populates initial user_entries so the user sees current feed content
+ *    (unless `skipInitialPopulate` — see {@link CreateSubscriptionOptions})
  *
  * Idempotent: if the user already has an active subscription, returns it.
  */
 export async function createSubscription(
   db: typeof dbType,
   userId: string,
-  feed: CreateSubscriptionFeedInput
+  feed: CreateSubscriptionFeedInput,
+  options: CreateSubscriptionOptions = {}
 ): Promise<CreateSubscriptionResult> {
+  const { skipInitialPopulate = false } = options;
   // 1. Upsert feed — insert if new, otherwise use existing
   const newFeedId = generateUuidv7();
   const now = new Date();
@@ -541,16 +561,36 @@ export async function createSubscription(
     //    a stale captured value would match zero rows and the new subscriber
     //    would see an empty feed until the next new entry (issue #952). The JOIN
     //    reads the current value atomically within this statement.
-    await tx.execute(sql`
-      INSERT INTO user_entries (user_id, entry_id, published_or_fetched_at, subscription_id, is_spam)
-      SELECT ${userId}, e.id, COALESCE(e.published_at, e.fetched_at), ${subscriptionId}, e.is_spam
-      FROM entries e
-      JOIN feeds f ON f.id = e.feed_id
-      WHERE e.feed_id = ${feedId}
-        AND f.last_entries_updated_at IS NOT NULL
-        AND e.last_seen_at = f.last_entries_updated_at
-      ON CONFLICT DO NOTHING
-    `);
+    //
+    //    `last_seen_at >= last_entries_updated_at` (not `=`) grants visibility to
+    //    entries currently in the feed. The interactive subscribe path forces a
+    //    refresh of a stale feed first (see the router), which re-stamps every
+    //    current entry to a single generation, so there `>=` behaves like `=`.
+    //    The `>` arm covers entries a WebSub hub pushed *since* the last poll:
+    //    a push stamps last_seen_at = pushTime but leaves last_entries_updated_at
+    //    at the last poll, so those entries would be invisible under strict
+    //    equality (issue #1078). For a non-WebSub feed nothing is ever stamped
+    //    above last_entries_updated_at, so `>=` is exactly `=` and behavior is
+    //    unchanged. Disappeared entries (not re-stamped by a later poll) fall
+    //    below last_entries_updated_at and stay excluded.
+    //
+    //    Skipped for a stale feed (skipInitialPopulate): the caller is scheduling
+    //    an immediate forced refresh whose fanout will populate this subscriber
+    //    from ground truth, so populating here from possibly-stale cached entries
+    //    (which could include an entry the publisher has since removed) is both
+    //    unnecessary and a potential over-share.
+    if (!skipInitialPopulate) {
+      await tx.execute(sql`
+        INSERT INTO user_entries (user_id, entry_id, published_or_fetched_at, subscription_id, is_spam)
+        SELECT ${userId}, e.id, COALESCE(e.published_at, e.fetched_at), ${subscriptionId}, e.is_spam
+        FROM entries e
+        JOIN feeds f ON f.id = e.feed_id
+        WHERE e.feed_id = ${feedId}
+          AND f.last_entries_updated_at IS NOT NULL
+          AND e.last_seen_at >= f.last_entries_updated_at
+        ON CONFLICT DO NOTHING
+      `);
+    }
 
     // Count unread entries (rowCount may be 0 for reactivations where entries already exist)
     const [{ count }] = await tx

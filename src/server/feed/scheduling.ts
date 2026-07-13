@@ -448,3 +448,46 @@ export function calculateJitter(intervalSeconds: number, randomValue: number): n
 export function getNextFetchTime(options: CalculateNextFetchOptions = {}): Date {
   return calculateNextFetch(options).nextFetchAt;
 }
+
+/**
+ * Whether the interactive subscribe flow should force a fresh fetch of an
+ * existing feed before granting a new subscriber visibility.
+ *
+ * The subscribe populate grants visibility to entries with
+ * `last_seen_at >= last_entries_updated_at`. That is ground truth right after a
+ * poll, but a WebSub feed's cached entries drift between polls: pushes add
+ * entries (and the publisher can remove them) without a full fetch confirming
+ * the current set. A forced refresh re-establishes ground truth; this decides
+ * when it's worth doing.
+ *
+ * - **Never fetched** → stale (nothing to show yet).
+ * - **WebSub feed** → stale once the last *real poll* is older than the cache
+ *   window. Pushes don't update `last_fetched_at`, so this measures time since
+ *   we last confirmed the full feed, and it bounds how long an entry the hub
+ *   pushed and the publisher then deleted could remain visible to a brand-new
+ *   subscriber. A feed polled within the window (e.g. right after the 24h backup
+ *   poll, or a popular feed another subscriber just refreshed) is skipped.
+ * - **Normal feed** → stale only once it's due for its next scheduled poll, so
+ *   an in-cadence feed is never refetched on subscribe. Normal feeds get no
+ *   pushes, so their cached set is already current as of the last poll.
+ *
+ * @param feed - Feed fetch-state fields
+ * @param now - Reference time (defaults to now)
+ */
+export function shouldRefetchOnSubscribe(
+  feed: {
+    lastFetchedAt: Date | null;
+    nextFetchAt: Date | null;
+    websubActive: boolean;
+  },
+  now: Date = new Date()
+): boolean {
+  if (feed.lastFetchedAt === null) {
+    return true;
+  }
+  if (feed.websubActive) {
+    const cacheWindowMs = getMinFetchIntervalSeconds() * 1000;
+    return now.getTime() - feed.lastFetchedAt.getTime() >= cacheWindowMs;
+  }
+  return feed.nextFetchAt === null || now.getTime() >= feed.nextFetchAt.getTime();
+}
