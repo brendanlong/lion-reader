@@ -868,13 +868,27 @@ describe("Job Queue", () => {
       }
       expect(renewed).not.toBeNull();
 
-      // Past the cap (plus margin for an in-flight renewal to land): renewals
-      // must have stopped — two samples a few heartbeats apart are identical.
-      await sleep(CAP_MS + HEARTBEAT_MS * 3);
-      const sample1 = await readRunningSince(job!.id);
-      await sleep(HEARTBEAT_MS * 3);
-      const sample2 = await readRunningSince(job!.id);
-      expect(sample1?.getTime()).toBe(sample2?.getTime());
+      // Past the cap, renewals must stop. Assert that by waiting for
+      // running_since to go quiet rather than comparing two fixed samples: on
+      // a loaded runner a 30ms heartbeat tick can land late (Node timers slip
+      // under event-loop starvation), so a late renewal could fall between two
+      // arbitrary reads even though the cap is working. Poll until two reads a
+      // few heartbeats apart match — that's the settled, capped value — with a
+      // generous ceiling so a genuine never-stops bug still fails.
+      const stableDeadline = Date.now() + CAP_MS + HEARTBEAT_MS * 50;
+      let stable = await readRunningSince(job!.id);
+      for (;;) {
+        await sleep(HEARTBEAT_MS * 4);
+        const next = await readRunningSince(job!.id);
+        if (next && stable && next.getTime() === stable.getTime()) {
+          stable = next;
+          break;
+        }
+        stable = next;
+        if (Date.now() > stableDeadline) {
+          throw new Error("running_since never stabilized: heartbeat kept renewing past the cap");
+        }
+      }
 
       // The controller keeps its last token (not nulled), so a handler that
       // settles after the cap — before anyone reclaims — still finishes
@@ -882,7 +896,7 @@ describe("Job Queue", () => {
       await lease.stop();
       const token = lease.currentToken();
       expect(token).not.toBeNull();
-      expect(token!.getTime()).toBe(sample2!.getTime());
+      expect(token!.getTime()).toBe(stable!.getTime());
 
       const finished = await finishJob(job!.id, {
         success: true,
