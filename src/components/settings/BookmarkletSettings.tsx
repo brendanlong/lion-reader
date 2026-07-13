@@ -61,7 +61,7 @@ export function BookmarkletSettings() {
             href="https://chromewebstore.google.com/detail/lion-reader/mpjddkjjkckmclaifjfokjppfoenmlpl"
             target="_blank"
             rel="noopener noreferrer"
-            className="ui-text-sm border-info-border bg-info-subtle text-info-subtle-foreground hover:border-info hover:bg-info-subtle inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 font-medium shadow-sm transition-all hover:shadow"
+            className="ui-text-sm inline-flex items-center gap-2 rounded-lg border border-blue-300 bg-blue-50 px-4 py-2.5 font-medium text-blue-800 shadow-sm transition-all hover:border-blue-400 hover:bg-blue-100 hover:shadow dark:border-blue-700 dark:bg-blue-950 dark:text-blue-200 dark:hover:border-blue-600 dark:hover:bg-blue-900"
           >
             <ChromeIcon className="h-4 w-4" />
             Install Chrome Extension
@@ -70,7 +70,7 @@ export function BookmarkletSettings() {
             href="https://addons.mozilla.org/en-US/firefox/addon/lion-reader/"
             target="_blank"
             rel="noopener noreferrer"
-            className="ui-text-sm border-warning-border bg-warning-subtle text-warning-subtle-foreground hover:border-warning hover:bg-warning-subtle inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 font-medium shadow-sm transition-all hover:shadow"
+            className="ui-text-sm inline-flex items-center gap-2 rounded-lg border border-orange-300 bg-orange-50 px-4 py-2.5 font-medium text-orange-800 shadow-sm transition-all hover:border-orange-400 hover:bg-orange-100 hover:shadow dark:border-orange-700 dark:bg-orange-950 dark:text-orange-200 dark:hover:border-orange-600 dark:hover:bg-orange-900"
           >
             <FirefoxIcon className="h-4 w-4" />
             Install Firefox Extension
