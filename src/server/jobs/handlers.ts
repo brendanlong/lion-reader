@@ -474,12 +474,14 @@ async function processSuccessfulFetch(
     ? { fetched: 0, failed: 0 }
     : await fetchFullContentForNewEntries(feed.id, newEntryIds);
 
-  // Push-reliability telemetry: this handler only runs for scheduled/backup
-  // polls (hub pushes go through ingestWebsubNotification, not here). If push
-  // were working, the hub would already have delivered these entries, so any
-  // new entry a backup poll finds on a feed we believed push was covering is a
-  // push miss. Record it per hub for later analysis (see websub-hub-stats.ts).
-  if ((feed.websubActive ?? false) && feed.hubUrl && newEntries.length > 0) {
+  // Push-reliability telemetry: for scheduled/backup polls only (hub pushes go
+  // through ingestWebsubNotification, not here). If push were working, the hub
+  // would already have delivered these entries, so any new entry a backup poll
+  // finds on a feed we believed push was covering is a push miss. Record it per
+  // hub for later analysis (see websub-hub-stats.ts). Skipped for an inline
+  // subscribe-time refresh: it's a user-triggered fetch, not a scheduled backup
+  // poll, so crediting/faulting the hub from it would skew the tally.
+  if (!inline && (feed.websubActive ?? false) && feed.hubUrl && newEntries.length > 0) {
     await recordBackupPollNewEntries(
       feed.hubUrl,
       newEntries.map((e) => e.newEntryData?.publishedAt),

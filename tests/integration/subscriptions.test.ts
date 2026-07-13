@@ -594,28 +594,54 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       expect(userEntriesResult).toHaveLength(2);
     });
 
-    it("subscribes to a known-but-never-fetched feed even when the forced refresh fails", async () => {
+    it("runs feed discovery for a known-but-never-fetched feed (unresolved URL)", async () => {
       const userId = await createTestUser();
 
+      // A row with lastFetchedAt=null can be an unresolved/raw URL (e.g. inserted
+      // by Google Reader quickadd or OPML import that may be an HTML page), so the
+      // subscribe path must still run feed discovery rather than trusting the URL
+      // as a feed. Discovery fetches the URL, which isn't reachable in tests, so
+      // it throws — surfacing as a subscribe error, as before.
       const feedUrl = "https://example.com/never-fetched.xml";
       await createTestFeed({
         url: feedUrl,
-        lastFetchedAt: null, // never polled → shouldRefetchOnSubscribe is true
+        lastFetchedAt: null,
         lastEntriesUpdatedAt: null,
       });
 
-      const ctx = createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(createAuthContext(userId));
+      await expect(caller.subscriptions.create({ url: feedUrl })).rejects.toThrow();
+    });
 
-      // A known feed (row already exists) triggers a forced refresh, but the URL
-      // isn't reachable in tests. The refresh is best-effort: it's caught and we
-      // fall back to the cached entries, so subscribing still succeeds (rather
-      // than failing the whole subscribe on a transient fetch error). There are
-      // no entries yet, so the subscription is created empty; the background
-      // fetch job populates it later.
+    it("subscribes to a known stale feed even when the forced refresh fails", async () => {
+      const userId = await createTestUser();
+
+      // A previously-fetched feed (lastFetchedAt set) that is now due for a poll
+      // triggers a best-effort forced refresh. The URL isn't reachable in tests,
+      // so the refresh throws — but it's caught and we fall back to the cached
+      // entries, so subscribing still succeeds rather than failing on a transient
+      // fetch error.
+      const feedUrl = "https://example.com/known-stale.xml";
+      const fetchTime = new Date("2024-01-01T10:00:00Z");
+      const feedId = await createTestFeed({
+        url: feedUrl,
+        lastFetchedAt: fetchTime,
+        lastEntriesUpdatedAt: fetchTime,
+        nextFetchAt: new Date("2024-01-01T11:00:00Z"), // long past → stale
+      });
+      const entryId = await createTestEntry(feedId, {
+        guid: "known-stale-a",
+        fetchedAt: fetchTime,
+        lastSeenAt: fetchTime,
+      });
+
+      const caller = createCaller(createAuthContext(userId));
       const result = await caller.subscriptions.create({ url: feedUrl });
-      expect(result.unreadCount).toBe(0);
-      expect(await getUserEntriesCount(userId)).toBe(0);
+
+      // Falls back to the cached entry rather than throwing.
+      expect(result.unreadCount).toBe(1);
+      const entryIds = (await getUserEntries(userId)).map((e) => e.entryId);
+      expect(entryIds).toEqual([entryId]);
     });
 
     it("handles feed where all entries have disappeared (no current entries)", async () => {
