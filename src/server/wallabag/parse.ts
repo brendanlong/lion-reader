@@ -2,6 +2,9 @@
  * Wallabag API Request Parsing and Response Helpers
  */
 
+import { TRPCError } from "@trpc/server";
+import { getHTTPStatusCodeFromError } from "@trpc/server/http";
+
 /**
  * Creates a JSON response.
  */
@@ -19,6 +22,22 @@ export function jsonResponse(data: unknown, status = 200): Response {
  */
 export function errorResponse(error: string, description: string, status = 400): Response {
   return jsonResponse({ error, error_description: description }, status);
+}
+
+/**
+ * Converts a thrown service-layer {@link TRPCError} into a Wallabag error
+ * envelope, but only for **client** errors (4xx). Services throw TRPCErrors for
+ * expected user-input failures — e.g. saving a URL that 404s
+ * (`SAVED_ARTICLE_FETCH_ERROR`) — and letting those bubble unhandled out of a
+ * route handler turns them into an unhandled 500 that Next.js reports to Sentry.
+ * Returns a Response for a 4xx TRPCError, or `null` for anything else (5xx
+ * TRPCErrors and non-TRPC errors) so genuine bugs still propagate to Sentry.
+ */
+export function clientErrorResponse(error: unknown): Response | null {
+  if (!(error instanceof TRPCError)) return null;
+  const status = getHTTPStatusCodeFromError(error);
+  if (status < 400 || status >= 500) return null;
+  return errorResponse(error.code, error.message, status);
 }
 
 /**

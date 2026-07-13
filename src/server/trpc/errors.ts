@@ -128,7 +128,11 @@ const errorCodeToTRPCCode: Record<
   TOKEN_CREATION_FAILED: "INTERNAL_SERVER_ERROR",
   FEED_FETCH_ERROR: "INTERNAL_SERVER_ERROR",
   PARSE_ERROR: "INTERNAL_SERVER_ERROR",
-  SAVED_ARTICLE_FETCH_ERROR: "INTERNAL_SERVER_ERROR",
+  // A failed fetch of a user-provided URL (404, DNS failure, connection reset,
+  // …) is a client/input error, not a server bug — the user gave us a URL we
+  // can't retrieve. Classify as 4xx so it isn't reported to Sentry (the timing
+  // middleware only exempts client codes) and callers get a proper client error.
+  SAVED_ARTICLE_FETCH_ERROR: "BAD_REQUEST",
   CONTENT_TOO_LARGE: "BAD_REQUEST",
   MAX_SUBSCRIPTIONS_REACHED: "BAD_REQUEST",
   SITE_BLOCKED: "BAD_GATEWAY",
