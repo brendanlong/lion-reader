@@ -16,15 +16,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { findEntryInListCache } from "@/lib/cache/entry-cache";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
 import { ScrollContainer } from "@/components/layout/ScrollContainerContext";
-import { Button } from "@/components/ui/button";
-import {
-  ArrowLeftIcon,
-  StarIcon,
-  StarFilledIcon,
-  CircleIcon,
-  CircleFilledIcon,
-  ExternalLinkIcon,
-} from "@/components/ui/icon-button";
+import { ArrowLeftIcon, ExternalLinkIcon } from "@/components/ui/icon-button";
+import { StarButton, ReadToggleButton } from "@/components/entries/EntryStateButtons";
 import { EntryContentSkeleton, ContentSkeleton } from "./EntryContentStates";
 import { getDomain } from "@/lib/format";
 import { formatDate } from "./EntryContentHelpers";
@@ -149,36 +142,9 @@ export function EntryContentFallback({ entryId, onBack }: EntryContentFallbackPr
 
           {/* Action buttons - Star and Read are functional, others show shimmer */}
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-            {/* Star button - functional */}
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={handleStarToggle}
-              aria-label={cachedEntry.starred ? "Remove from starred" : "Add to starred"}
-            >
-              {cachedEntry.starred ? (
-                <StarFilledIcon className="text-star h-5 w-5" />
-              ) : (
-                <StarIcon className="h-5 w-5" />
-              )}
-              <span className="ml-2">{cachedEntry.starred ? "Starred" : "Star"}</span>
-            </Button>
-
-            {/* Mark read/unread button - functional */}
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={handleReadToggle}
-              aria-label={cachedEntry.read ? "Mark as unread" : "Mark as read"}
-              title="Keyboard shortcut: m"
-            >
-              {cachedEntry.read ? (
-                <CircleIcon className="h-4 w-4" />
-              ) : (
-                <CircleFilledIcon className="h-4 w-4" />
-              )}
-              <span className="ml-2">{cachedEntry.read ? "Read" : "Unread"}</span>
-            </Button>
+            {/* Star + Read/Unread toggles - functional (shared with the real reader) */}
+            <StarButton starred={cachedEntry.starred} onToggle={handleStarToggle} />
+            <ReadToggleButton read={cachedEntry.read} onToggle={handleReadToggle} />
 
             {/* Shimmer for buttons that need full entry data */}
             {/* Full content button */}
