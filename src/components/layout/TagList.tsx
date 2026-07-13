@@ -101,7 +101,7 @@ function TagListContent({
                   e.stopPropagation();
                   toggleExpanded(tag.id);
                 }}
-                className="text-muted flex h-6 w-6 shrink-0 items-center justify-center hover:text-zinc-700 dark:hover:text-zinc-300"
+                className="text-muted hover:text-body flex h-6 w-6 shrink-0 items-center justify-center"
                 aria-label={expanded ? "Collapse" : "Expand"}
               >
                 {expanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
@@ -146,7 +146,7 @@ function TagListContent({
                 e.stopPropagation();
                 toggleExpanded("uncategorized");
               }}
-              className="text-muted flex h-6 w-6 shrink-0 items-center justify-center hover:text-zinc-700 dark:hover:text-zinc-300"
+              className="text-muted hover:text-body flex h-6 w-6 shrink-0 items-center justify-center"
               aria-label={isExpanded("uncategorized") ? "Collapse" : "Expand"}
             >
               {isExpanded("uncategorized") ? <ChevronDownIcon /> : <ChevronRightIcon />}

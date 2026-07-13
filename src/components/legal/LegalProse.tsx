@@ -28,10 +28,7 @@ export function LegalPage({ title, lastUpdated, children }: LegalPageProps) {
     <div className="bg-canvas min-h-screen px-4 py-12">
       <main className="mx-auto max-w-3xl">
         <div className="mb-8">
-          <Link
-            href="/"
-            className="ui-text-sm text-muted hover:text-zinc-900 dark:hover:text-zinc-100"
-          >
+          <Link href="/" className="ui-text-sm text-muted hover:text-strong">
             &larr; Back to Lion Reader
           </Link>
           <h1 className="text-strong mt-4 text-3xl font-bold tracking-tight">{title}</h1>

@@ -61,7 +61,7 @@ export function BookmarkletSettings() {
             href="https://chromewebstore.google.com/detail/lion-reader/mpjddkjjkckmclaifjfokjppfoenmlpl"
             target="_blank"
             rel="noopener noreferrer"
-            className="ui-text-sm inline-flex items-center gap-2 rounded-lg border border-blue-300 bg-blue-50 px-4 py-2.5 font-medium text-blue-800 shadow-sm transition-all hover:border-blue-400 hover:bg-blue-100 hover:shadow dark:border-blue-700 dark:bg-blue-950 dark:text-blue-200 dark:hover:border-blue-600 dark:hover:bg-blue-900"
+            className="ui-text-sm border-info-border bg-info-subtle text-info-subtle-foreground hover:border-info hover:bg-info-subtle inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 font-medium shadow-sm transition-all hover:shadow"
           >
             <ChromeIcon className="h-4 w-4" />
             Install Chrome Extension
@@ -122,7 +122,7 @@ export function BookmarkletSettings() {
         <button
           type="button"
           onClick={() => setShowCode(!showCode)}
-          className="ui-text-sm text-body inline-flex items-center gap-2 font-medium transition-colors hover:text-zinc-900 dark:hover:text-zinc-50"
+          className="ui-text-sm text-body hover:text-strong inline-flex items-center gap-2 font-medium transition-colors"
         >
           <ChevronRightIcon
             className={`h-4 w-4 transition-transform ${showCode ? "rotate-90" : ""}`}

@@ -36,7 +36,7 @@ export interface ClientLinkProps extends Omit<
  *
  * @example
  * ```tsx
- * <ClientLink href="/settings" className="text-blue-600">
+ * <ClientLink href="/settings" className="text-accent">
  *   Settings
  * </ClientLink>
  * ```

@@ -88,7 +88,7 @@ export function UnifiedSettingsContent() {
       <div className="mb-8">
         <ClientLink
           href="/all"
-          className="ui-text-sm text-muted mb-4 inline-flex items-center hover:text-zinc-700 dark:hover:text-zinc-200"
+          className="ui-text-sm text-muted hover:text-body mb-4 inline-flex items-center"
         >
           <ChevronLeftIcon className="mr-1 h-4 w-4" />
           Back to feeds
@@ -109,7 +109,7 @@ export function UnifiedSettingsContent() {
                     className={`ui-text-sm block rounded-md px-3 py-2 font-medium whitespace-nowrap transition-colors ${
                       isActive
                         ? "bg-surface-muted text-strong"
-                        : "text-muted hover:bg-surface-muted hover:text-zinc-900 dark:hover:text-zinc-50"
+                        : "text-muted hover:bg-surface-muted hover:text-strong"
                     }`}
                   >
                     {link.label}
