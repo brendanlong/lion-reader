@@ -16,11 +16,10 @@ import { normalizeUrl } from "@/lib/url";
 import { fetchHtmlPage, HttpFetchError, ContentTooLargeError } from "@/server/http/fetch";
 import { processMarkdown } from "@/server/markdown";
 import { usageLimitsConfig } from "@/server/config/env";
-import { extractTextFromHtml } from "@/server/http/html";
 import { absolutizeUrls } from "@/server/feed/content-cleaner";
 import { cleanContentInWorker, sanitizeEntryHtmlInWorker } from "@/server/worker-thread/pool";
 import { getOrCreateSavedFeed, getSavedFeedId, SAVED_FEED_TITLE } from "@/server/feed/saved-feed";
-import { generateSummary } from "@/server/html/strip-html";
+import { generateSummary, stripHtml } from "@/server/html/strip-html";
 import { withSanitizedEntryContentAsync } from "@/server/html/sanitize-entry";
 import { logger } from "@/lib/logger";
 import { publishNewEntry, publishEntryUpdatedFromEntry } from "@/server/redis/pubsub";
@@ -863,15 +862,13 @@ export async function saveArticle(
     // Compare content quality to avoid overwriting good content with bad
     // (e.g., private Google Doc fetched with auth, refetched without)
     if (!params.force) {
-      const oldTextLength = oldEntry.contentCleaned
-        ? extractTextFromHtml(oldEntry.contentCleaned).length
-        : 0;
+      const oldTextLength = oldEntry.contentCleaned ? stripHtml(oldEntry.contentCleaned).length : 0;
 
       const newTextLength = pluginContent
-        ? extractTextFromHtml(pluginContent.html).length
+        ? stripHtml(pluginContent.html).length
         : cleaned
           ? cleaned.textContent.length
-          : extractTextFromHtml(html).length;
+          : stripHtml(html).length;
 
       // Reject if new content is significantly shorter AND short in absolute terms
       // This catches error pages and access-denied pages while allowing legitimate edits

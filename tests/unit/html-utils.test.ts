@@ -3,7 +3,8 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { escapeHtml, extractTextFromHtml } from "@/server/http/html";
+import { escapeHtml } from "@/server/http/html";
+import { stripHtml } from "@/server/html/strip-html";
 
 describe("escapeHtml", () => {
   it("should escape ampersands", () => {
@@ -30,10 +31,10 @@ describe("escapeHtml", () => {
   });
 });
 
-describe("extractTextFromHtml", () => {
+describe("stripHtml", () => {
   it("should extract text from simple HTML", () => {
     const html = "<p>Hello <strong>world</strong>!</p>";
-    expect(extractTextFromHtml(html)).toBe("Hello world!");
+    expect(stripHtml(html)).toBe("Hello world!");
   });
 
   it("should remove script tags and their content", () => {
@@ -43,7 +44,7 @@ describe("extractTextFromHtml", () => {
         <p>Visible content</p>
       </div>
     `;
-    expect(extractTextFromHtml(html)).toBe("Visible content");
+    expect(stripHtml(html)).toBe("Visible content");
   });
 
   it("should remove style tags and their content", () => {
@@ -53,12 +54,12 @@ describe("extractTextFromHtml", () => {
         <p>Visible text</p>
       </div>
     `;
-    expect(extractTextFromHtml(html)).toBe("Visible text");
+    expect(stripHtml(html)).toBe("Visible text");
   });
 
   it("should collapse whitespace", () => {
     const html = "<p>Multiple    spaces\n\nand\nnewlines</p>";
-    expect(extractTextFromHtml(html)).toBe("Multiple spaces and newlines");
+    expect(stripHtml(html)).toBe("Multiple spaces and newlines");
   });
 
   it("should handle nested elements", () => {
@@ -69,17 +70,17 @@ describe("extractTextFromHtml", () => {
         <p>Second paragraph.</p>
       </article>
     `;
-    expect(extractTextFromHtml(html)).toBe("Title First paragraph here. Second paragraph.");
+    expect(stripHtml(html)).toBe("Title First paragraph here. Second paragraph.");
   });
 
   it("should handle empty HTML", () => {
-    expect(extractTextFromHtml("")).toBe("");
-    expect(extractTextFromHtml("<div></div>")).toBe("");
+    expect(stripHtml("")).toBe("");
+    expect(stripHtml("<div></div>")).toBe("");
   });
 
   it("should decode HTML entities", () => {
     const html = "<p>&lt;Hello&gt; &amp; &quot;world&quot;</p>";
-    expect(extractTextFromHtml(html)).toBe('<Hello> & "world"');
+    expect(stripHtml(html)).toBe('<Hello> & "world"');
   });
 
   it("should handle full HTML document", () => {
@@ -94,7 +95,7 @@ describe("extractTextFromHtml", () => {
         </body>
       </html>
     `;
-    const result = extractTextFromHtml(html);
+    const result = stripHtml(html);
     expect(result).toContain("Main content here");
     expect(result).toContain("Navigation");
     expect(result).toContain("Footer");
