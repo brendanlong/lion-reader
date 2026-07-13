@@ -659,13 +659,13 @@ The registry indexes plugins by hostname for O(1) lookup, then calls the plugin'
 
 ### Available Plugins
 
-| Plugin          | Capabilities           | Description                                                                                                                         |
-| --------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| **LessWrong**   | `feed`, `savedArticle` | GraphQL API for posts/comments, user profile feeds                                                                                  |
-| **Google Docs** | `savedArticle`         | Fetch Google Docs content via API                                                                                                   |
-| **ArXiv**       | `savedArticle`         | Fetch ArXiv paper content                                                                                                           |
-| **GitHub**      | `savedArticle`         | Fetch GitHub content                                                                                                                |
-| **YouTube**     | `feed`                 | Polling floor (1h) to avoid per-IP rate limiting; synthesizes entry content (embedded player + description) from Media RSS metadata |
+| Plugin          | Capabilities           | Description                                                                                                                                                                                                                                                                                                                      |
+| --------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **LessWrong**   | `feed`, `savedArticle` | GraphQL API for posts/comments, user profile feeds                                                                                                                                                                                                                                                                               |
+| **Google Docs** | `savedArticle`         | Fetch Google Docs content via API                                                                                                                                                                                                                                                                                                |
+| **ArXiv**       | `savedArticle`         | Fetch ArXiv paper content                                                                                                                                                                                                                                                                                                        |
+| **GitHub**      | `savedArticle`         | Fetch GitHub content                                                                                                                                                                                                                                                                                                             |
+| **YouTube**     | `feed`, `savedArticle` | Feed: polling floor (1h) to avoid per-IP rate limiting; synthesizes entry content (embedded player + description) from Media RSS metadata. SavedArticle: saving a watch/`youtu.be`/shorts/live URL synthesizes the same embed-plus-description body from the watch page's metadata (Readability would fail on the JS watch page) |
 
 ---
 

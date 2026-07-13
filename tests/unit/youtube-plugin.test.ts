@@ -11,10 +11,16 @@ import { describe, it, expect } from "vitest";
 import {
   youtubePlugin,
   youtubeDescriptionToHtml,
+  synthesizeYouTubeSavedArticle,
   YOUTUBE_MIN_FETCH_INTERVAL_SECONDS,
 } from "@/server/plugins/youtube";
 import { getFeedPlugin } from "@/server/plugins";
-import { extractYouTubeVideoId, normalizeYouTubeEmbedUrl } from "@/server/html/youtube-embed";
+import {
+  extractYouTubeVideoId,
+  normalizeYouTubeEmbedUrl,
+  YOUTUBE_IFRAME_ALLOW,
+  YOUTUBE_IFRAME_SANDBOX,
+} from "@/server/html/youtube-embed";
 import type { ParsedEntry } from "@/server/feed/types";
 
 describe("youtubePlugin.matchUrl", () => {
@@ -34,10 +40,20 @@ describe("youtubePlugin.matchUrl", () => {
     ).toBe(true);
   });
 
-  it("does not match non-feed YouTube URLs", () => {
-    expect(youtubePlugin.matchUrl(new URL("https://www.youtube.com/watch?v=abc123"))).toBe(false);
+  it("matches video-page URLs (handled by the savedArticle capability)", () => {
+    expect(youtubePlugin.matchUrl(new URL("https://www.youtube.com/watch?v=dQw4w9WgXcQ"))).toBe(
+      true
+    );
+    expect(youtubePlugin.matchUrl(new URL("https://youtu.be/dQw4w9WgXcQ"))).toBe(true);
+    expect(youtubePlugin.matchUrl(new URL("https://www.youtube.com/shorts/dQw4w9WgXcQ"))).toBe(
+      true
+    );
+  });
+
+  it("does not match channel/other non-video pages or a bare feed URL", () => {
     expect(youtubePlugin.matchUrl(new URL("https://www.youtube.com/@somechannel"))).toBe(false);
     expect(youtubePlugin.matchUrl(new URL("https://www.youtube.com/feeds/videos.xml"))).toBe(false);
+    expect(youtubePlugin.matchUrl(new URL("https://www.youtube.com/watch?v=notanid!"))).toBe(false);
   });
 });
 
@@ -61,8 +77,19 @@ describe("getFeedPlugin resolution for YouTube", () => {
     );
   });
 
-  it("does not resolve non-feed YouTube URLs", () => {
-    expect(getFeedPlugin("https://www.youtube.com/watch?v=abc123")).toBeNull();
+  it("resolves video-page URLs but exposes no page→feed transform for them", () => {
+    // matchUrl now also matches video pages (for the savedArticle capability),
+    // so getFeedPlugin resolves the plugin — but the feed sub-capabilities used
+    // on page URLs (transformToFeedUrl, cleanEntryContent) are undefined, so
+    // treating a watch URL as a feed source is a no-op.
+    const plugin = getFeedPlugin("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+    expect(plugin?.name).toBe("youtube");
+    expect(plugin?.capabilities.feed.transformToFeedUrl).toBeUndefined();
+    expect(plugin?.capabilities.feed.cleanEntryContent).toBeUndefined();
+  });
+
+  it("does not resolve non-video YouTube pages", () => {
+    expect(getFeedPlugin("https://www.youtube.com/@somechannel")).toBeNull();
   });
 });
 
@@ -194,5 +221,89 @@ describe("youtubePlugin buildEntryContent", () => {
       "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
     );
     expect(html).not.toContain("<script>");
+  });
+});
+
+describe("synthesizeYouTubeSavedArticle", () => {
+  // A minimal watch-page stand-in with the metadata the extractor reads: the
+  // Open Graph title/description, the microdata author, and the full
+  // player-JSON description (whose newlines survive JSON-parsing).
+  const watchPageHtml = (opts: {
+    title?: string;
+    author?: string;
+    ogDescription?: string;
+    shortDescription?: string;
+  }) => {
+    const parts: string[] = ["<html><head>"];
+    if (opts.title) parts.push(`<meta property="og:title" content="${opts.title}">`);
+    if (opts.ogDescription)
+      parts.push(`<meta property="og:description" content="${opts.ogDescription}">`);
+    parts.push('<span itemprop="author">');
+    if (opts.author) parts.push(`<link itemprop="name" content="${opts.author}">`);
+    parts.push("</span></head><body>");
+    if (opts.shortDescription !== undefined) {
+      parts.push(
+        `<script>var x = {"shortDescription":${JSON.stringify(opts.shortDescription)}};</script>`
+      );
+    }
+    parts.push("</body></html>");
+    return parts.join("");
+  };
+
+  it("synthesizes an embed plus title, author, and full description", () => {
+    const result = synthesizeYouTubeSavedArticle(
+      "dQw4w9WgXcQ",
+      watchPageHtml({
+        title: "Rick Astley - Never Gonna Give You Up",
+        author: "Rick Astley",
+        ogDescription: "Truncated…",
+        shortDescription: "The official video.\n\nSecond paragraph with https://example.com/link",
+      })
+    );
+
+    expect(result.html).toContain('src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ"');
+    expect(result.html).toContain('title="Rick Astley - Never Gonna Give You Up"');
+    // Prefers the full shortDescription over the truncated og:description.
+    expect(result.html).toContain("<p>The official video.</p>");
+    expect(result.html).toContain('<a href="https://example.com/link">');
+    expect(result.html).not.toContain("Truncated");
+    expect(result.title).toBe("Rick Astley - Never Gonna Give You Up");
+    expect(result.author).toBe("Rick Astley");
+    expect(result.canonicalUrl).toBe("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+  });
+
+  it("falls back to og:description when no player JSON is present", () => {
+    const result = synthesizeYouTubeSavedArticle(
+      "dQw4w9WgXcQ",
+      watchPageHtml({ title: "Title", ogDescription: "A short description." })
+    );
+    expect(result.html).toContain("<p>A short description.</p>");
+  });
+
+  it("escapes an XSS attempt in the title attribute", () => {
+    const result = synthesizeYouTubeSavedArticle(
+      "dQw4w9WgXcQ",
+      watchPageHtml({ title: '"><script>alert(1)</script>' })
+    );
+    expect(result.html).not.toContain("<script>");
+  });
+
+  it("produces a working embed with no description when metadata is missing", () => {
+    const result = synthesizeYouTubeSavedArticle("dQw4w9WgXcQ", "<html></html>");
+    expect(result.html).toContain("/embed/dQw4w9WgXcQ");
+    expect(result.html).not.toContain("<p>");
+    expect(result.title).toBeNull();
+    expect(result.author).toBeNull();
+  });
+
+  it("produces a titleless embed when the watch page couldn't be fetched", () => {
+    const result = synthesizeYouTubeSavedArticle("dQw4w9WgXcQ", null);
+    expect(result.html).toBe(
+      '<iframe src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ"' +
+        ' width="560" height="315"' +
+        ` sandbox="${YOUTUBE_IFRAME_SANDBOX}" allow="${YOUTUBE_IFRAME_ALLOW}"` +
+        ' allowfullscreen loading="lazy"></iframe>'
+    );
+    expect(result.title).toBeNull();
   });
 });
