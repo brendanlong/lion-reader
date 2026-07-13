@@ -396,6 +396,7 @@ function createWorker(config: WorkerConfig = {}): Worker {
       success: boolean;
       nextRunAt: Date;
       error?: string;
+      payload?: Record<string, unknown>;
     }): Promise<boolean> => {
       await lease.stop();
       const expectedRunningSince = lease.currentToken();
@@ -424,11 +425,22 @@ function createWorker(config: WorkerConfig = {}): Worker {
       });
 
       let result: JobHandlerResult;
+      // Payload to write back on finish (consumes one-shot flags). Undefined
+      // leaves the payload unchanged.
+      let finishPayload: Record<string, unknown> | undefined;
 
       switch (job.type) {
         case "fetch_feed": {
           const payload = getJobPayload<"fetch_feed">(job);
-          result = await handleFetchFeed(payload);
+          result = await handleFetchFeed(payload, {
+            forceReprocess: payload.forceReprocess ?? false,
+          });
+          // Consume the one-shot force flag on a successful run so ordinary
+          // scheduled polls don't keep reprocessing; keep it on failure so the
+          // retry re-forces.
+          if (payload.forceReprocess && result.success) {
+            finishPayload = { feedId: payload.feedId };
+          }
           break;
         }
         case "renew_websub": {
@@ -473,6 +485,7 @@ function createWorker(config: WorkerConfig = {}): Worker {
         success: result.success,
         nextRunAt: result.nextRunAt,
         error: result.error,
+        payload: finishPayload,
       });
 
       if (result.success) {

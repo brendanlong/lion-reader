@@ -18,6 +18,7 @@ import {
   listJobs,
   ensureFeedJob,
   updateFeedJobNextRun,
+  scheduleFeedRefreshNow,
   claimFeedJob,
   claimSingletonJob,
   renewJobLease,
@@ -675,6 +676,53 @@ describe("Job Queue", () => {
 
       expect(updated).not.toBeNull();
       expect(updated!.nextRunAt!.getTime()).toBe(newTime.getTime());
+    });
+
+    it("scheduleFeedRefreshNow creates a force-reprocess job set to run now", async () => {
+      const feedId = generateUuidv7();
+      const job = await scheduleFeedRefreshNow(feedId);
+
+      expect(job.type).toBe("fetch_feed");
+      const payload = getJobPayload<"fetch_feed">(job);
+      expect(payload.feedId).toBe(feedId);
+      expect(payload.forceReprocess).toBe(true);
+      expect(job.nextRunAt!.getTime()).toBeLessThanOrEqual(Date.now());
+
+      // Single-flight: still exactly one job for the feed.
+      expect(await listJobs({ type: "fetch_feed" })).toHaveLength(1);
+    });
+
+    it("scheduleFeedRefreshNow pulls an already-scheduled job forward and sets the flag", async () => {
+      const feedId = generateUuidv7();
+      const future = new Date(Date.now() + 3 * 60 * 60 * 1000);
+      await createJob({ type: "fetch_feed", payload: { feedId }, nextRunAt: future });
+
+      const job = await scheduleFeedRefreshNow(feedId);
+
+      // Coalesced onto the existing single job, pulled forward, flag merged in,
+      // feedId preserved.
+      expect(await listJobs({ type: "fetch_feed" })).toHaveLength(1);
+      expect(job.nextRunAt!.getTime()).toBeLessThanOrEqual(Date.now());
+      const payload = getJobPayload<"fetch_feed">(job);
+      expect(payload.feedId).toBe(feedId);
+      expect(payload.forceReprocess).toBe(true);
+    });
+
+    it("finishJob consumes the forceReprocess flag when a payload is provided", async () => {
+      const feedId = generateUuidv7();
+      await scheduleFeedRefreshNow(feedId);
+      const claimed = await claimJob();
+      expect(getJobPayload<"fetch_feed">(claimed!).forceReprocess).toBe(true);
+
+      // Simulate the worker consuming the one-shot flag on a successful run.
+      const finished = await finishJob(claimed!.id, {
+        success: true,
+        nextRunAt: new Date(Date.now() + 60 * 60 * 1000),
+        payload: { feedId },
+      });
+
+      expect(getJobPayload<"fetch_feed">(finished!).forceReprocess).toBeUndefined();
+      expect(getJobPayload<"fetch_feed">(finished!).feedId).toBe(feedId);
     });
   });
 

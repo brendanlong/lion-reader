@@ -35,8 +35,7 @@ import { discoverFeeds } from "@/server/feed/discovery";
 import { getDomainFromUrl } from "@/server/feed/types";
 import { extractUserIdFromFeedUrl, fetchLessWrongUserById } from "@/server/feed/lesswrong";
 import { parseOpml, generateOpml, type OpmlFeed, type OpmlSubscription } from "@/server/feed/opml";
-import { createJob } from "@/server/jobs/queue";
-import { handleFetchFeed } from "@/server/jobs/handlers";
+import { createJob, scheduleFeedRefreshNow } from "@/server/jobs/queue";
 import { shouldRefetchOnSubscribe } from "@/server/feed/scheduling";
 import { publishSubscriptionDeleted, publishSubscriptionUpdated } from "@/server/redis/pubsub";
 import { attemptUnsubscribe, getLatestUnsubscribeMailto } from "@/server/email/unsubscribe";
@@ -231,6 +230,9 @@ export const subscriptionsRouter = createTRPCRouter({
         .limit(1);
 
       let feedInput: subscriptionsService.CreateSubscriptionFeedInput;
+      // Feed id to force-refresh in the background after the subscription is
+      // created (set only when a known feed is stale — see below).
+      let staleFeedId: string | null = null;
       if (existingFeed.length === 0 || existingFeed[0].lastFetchedAt === null) {
         // Brand-new feed, or a feed row that has never been successfully fetched
         // (e.g. a raw URL inserted by Google Reader `quickadd` / OPML import that
@@ -243,28 +245,32 @@ export const subscriptionsRouter = createTRPCRouter({
       } else {
         const existing = existingFeed[0];
         feedInput = { url: feedUrl };
-        // Known feed (already fetched, so feed.url is a validated feed URL): if
+        // Known feed (already fetched, so feed.url is a validated feed URL). If
         // its cached entries may be stale (WebSub feed whose last real poll has
-        // aged out, or a normal feed past its poll cadence), force a refresh
-        // through the shared fetch path before we grant visibility. This
-        // re-stamps the current entries to one generation so the subscribe
-        // populate (`last_seen_at >= last_entries_updated_at`) reflects ground
-        // truth — the current feed, excluding anything since removed (#1078).
+        // aged out, or a normal feed past its poll cadence), we can't know the
+        // current set without re-fetching. Rather than fetch on the request path,
+        // skip the synchronous populate and schedule an immediate forced
+        // background refresh (below), whose fanout populates this subscriber from
+        // ground truth — excluding anything the publisher has since removed
+        // (#1078). Fresh feeds skip the refresh and are populated synchronously.
         if (shouldRefetchOnSubscribe(existing)) {
-          try {
-            await handleFetchFeed({ feedId: existing.id }, { inline: true });
-          } catch (err) {
-            // Best-effort: a failed refresh (feed down, parse error) must not
-            // block subscribing. We fall back to the cached entries.
-            logger.warn("Forced subscribe-time feed refresh failed; using cached entries", {
-              feedId: existing.id,
-              err: err instanceof Error ? err.message : String(err),
-            });
-          }
+          staleFeedId = existing.id;
         }
       }
 
-      const result = await subscriptionsService.createSubscription(ctx.db, userId, feedInput);
+      const result = await subscriptionsService.createSubscription(ctx.db, userId, feedInput, {
+        skipInitialPopulate: staleFeedId !== null,
+      });
+
+      // For a stale feed with a newly created (or reactivated) subscription,
+      // trigger the forced background refresh. The job queue is single-flight per
+      // feed, so concurrent subscribes coalesce into one fetch (and it merges
+      // with any pending scheduled poll). Skipped when the subscription was
+      // already active — nothing to populate.
+      if (staleFeedId !== null && !result.alreadyActive) {
+        await scheduleFeedRefreshNow(staleFeedId);
+      }
+
       return formatSubscriptionResponse(result);
     }),
 
