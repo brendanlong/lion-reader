@@ -7,9 +7,16 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
+import {
+  users,
+  feeds,
+  entries,
+  subscriptions,
+  userEntries,
+  jobs,
+} from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
@@ -613,14 +620,16 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       await expect(caller.subscriptions.create({ url: feedUrl })).rejects.toThrow();
     });
 
-    it("subscribes to a known stale feed even when the forced refresh fails", async () => {
+    it("defers population and schedules a forced refresh for a stale feed", async () => {
       const userId = await createTestUser();
 
       // A previously-fetched feed (lastFetchedAt set) that is now due for a poll
-      // triggers a best-effort forced refresh. The URL isn't reachable in tests,
-      // so the refresh throws — but it's caught and we fall back to the cached
-      // entries, so subscribing still succeeds rather than failing on a transient
-      // fetch error.
+      // is stale: its cached entries can't be trusted as the current set. The
+      // subscribe path skips the synchronous populate and schedules an immediate
+      // forced background refresh instead; the refresh's fanout populates the
+      // subscriber from ground truth once the worker runs it. So subscribing
+      // succeeds immediately with no entries yet (and never touches the network
+      // on the request path).
       const feedUrl = "https://example.com/known-stale.xml";
       const fetchTime = new Date("2024-01-01T10:00:00Z");
       const feedId = await createTestFeed({
@@ -629,7 +638,7 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
         lastEntriesUpdatedAt: fetchTime,
         nextFetchAt: new Date("2024-01-01T11:00:00Z"), // long past → stale
       });
-      const entryId = await createTestEntry(feedId, {
+      await createTestEntry(feedId, {
         guid: "known-stale-a",
         fetchedAt: fetchTime,
         lastSeenAt: fetchTime,
@@ -638,10 +647,19 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       const caller = createCaller(createAuthContext(userId));
       const result = await caller.subscriptions.create({ url: feedUrl });
 
-      // Falls back to the cached entry rather than throwing.
-      expect(result.unreadCount).toBe(1);
-      const entryIds = (await getUserEntries(userId)).map((e) => e.entryId);
-      expect(entryIds).toEqual([entryId]);
+      // No synchronous populate — entries arrive via the background refresh.
+      expect(result.unreadCount).toBe(0);
+      expect(await getUserEntriesCount(userId)).toBe(0);
+
+      // A forced-reprocess fetch job was scheduled to run now.
+      const [job] = await db
+        .select({ payload: jobs.payload, nextRunAt: jobs.nextRunAt })
+        .from(jobs)
+        .where(and(eq(jobs.type, "fetch_feed"), sql`${jobs.payload}->>'feedId' = ${feedId}`));
+      expect(job).toBeDefined();
+      expect((job.payload as { forceReprocess?: boolean }).forceReprocess).toBe(true);
+      expect(job.nextRunAt).not.toBeNull();
+      expect(job.nextRunAt!.getTime()).toBeLessThanOrEqual(Date.now());
     });
 
     it("handles feed where all entries have disappeared (no current entries)", async () => {

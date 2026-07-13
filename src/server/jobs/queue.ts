@@ -59,7 +59,13 @@ function rowToJob(row: RawJobRow): Job {
  * Job payload types for different job types.
  */
 export interface JobPayloads {
-  fetch_feed: { feedId: string };
+  // `forceReprocess` is a one-shot flag set by `scheduleFeedRefreshNow` (the
+  // interactive subscribe path forcing a refresh of a stale feed). It makes the
+  // fetch reprocess and re-stamp visibility unconditionally so a brand-new
+  // subscriber is fanned out even when the feed hasn't changed. The worker
+  // clears it on a successful run so ordinary scheduled polls don't keep
+  // reprocessing; a failed run keeps it so the retry re-forces.
+  fetch_feed: { feedId: string; forceReprocess?: boolean };
   renew_websub: Record<string, never>; // Empty payload - renews all expiring subscriptions
   process_opml_import: { importId: string }; // Process an OPML import in the background
   // Periodic feed fetch health check. Empty payload — alert cadence and
@@ -155,6 +161,12 @@ export interface FinishJobOptions {
   success: boolean;
   nextRunAt: Date;
   error?: string;
+  /**
+   * Replacement payload to write on finish. Used to consume a one-shot payload
+   * flag (e.g. `fetch_feed.forceReprocess`) on a successful run so it doesn't
+   * persist into the next scheduled run. Omit to leave the payload unchanged.
+   */
+  payload?: Record<string, unknown>;
   /**
    * The `running_since` value this worker last held (its lease token). When
    * provided, the finish is fenced on it: if another worker has since reclaimed
@@ -277,13 +289,17 @@ export async function claimJob(options: ClaimJobOptions = {}): Promise<Job | nul
  *   `expectedRunningSince` is supplied)
  */
 export async function finishJob(jobId: string, options: FinishJobOptions): Promise<Job | null> {
-  const { success, nextRunAt, error, expectedRunningSince } = options;
+  const { success, nextRunAt, error, payload, expectedRunningSince } = options;
   const now = new Date();
 
   // Fence on the lease token when the caller holds one (see FinishJobOptions).
   const whereClause = expectedRunningSince
     ? and(eq(jobs.id, jobId), eq(jobs.runningSince, expectedRunningSince))
     : eq(jobs.id, jobId);
+
+  // Optionally rewrite the payload (e.g. to consume a one-shot flag). Left
+  // unchanged when not provided.
+  const payloadUpdate = payload !== undefined ? { payload } : {};
 
   const [job] = success
     ? await db
@@ -295,6 +311,7 @@ export async function finishJob(jobId: string, options: FinishJobOptions): Promi
           lastError: null,
           consecutiveFailures: 0,
           updatedAt: now,
+          ...payloadUpdate,
         })
         .where(whereClause)
         .returning()
@@ -308,6 +325,7 @@ export async function finishJob(jobId: string, options: FinishJobOptions): Promi
           // For failure, increment consecutive_failures
           consecutiveFailures: sql`${jobs.consecutiveFailures} + 1`,
           updatedAt: now,
+          ...payloadUpdate,
         })
         .where(whereClause)
         .returning();
@@ -448,6 +466,43 @@ export async function updateFeedJobNextRun(feedId: string, nextRunAt: Date): Pro
   if (result.rows.length === 0) {
     return null;
   }
+
+  return rowToJob(result.rows[0]);
+}
+
+/**
+ * Schedules an immediate, force-reprocess fetch of a feed.
+ *
+ * Used by the interactive subscribe path to refresh a stale feed before a
+ * brand-new subscriber's entries are populated: it upserts the feed's single
+ * `fetch_feed` job to run now (or sooner, if it was already overdue) and stamps
+ * `forceReprocess` on the payload, so the worker fetches unconditionally,
+ * re-stamps visibility, and fans out `user_entries` even when the feed hasn't
+ * changed (see `handleFetchFeed`). Keeping it on the one per-feed job means
+ * concurrent subscribes to the same feed coalesce into a single fetch (the same
+ * single-flight guarantee `ensureFeedJob` relies on, issue #952), and it merges
+ * cleanly with any pending scheduled poll. The worker consumes the flag on a
+ * successful run.
+ *
+ * @param feedId The feed ID
+ * @returns The upserted job
+ */
+export async function scheduleFeedRefreshNow(feedId: string): Promise<Job> {
+  const now = new Date();
+  const id = generateUuidv7();
+
+  const result = await db.execute<RawJobRow>(sql`
+    INSERT INTO ${jobs} (id, type, payload, next_run_at, created_at, updated_at)
+    VALUES (${id}, 'fetch_feed', ${JSON.stringify({ feedId, forceReprocess: true })}::jsonb, ${now}, ${now}, ${now})
+    ON CONFLICT ((payload->>'feedId')) WHERE type = 'fetch_feed'
+    DO UPDATE SET
+      -- Run now, or keep an already-earlier (overdue) time.
+      next_run_at = LEAST(COALESCE(${jobs.nextRunAt}, ${now}), ${now}),
+      -- Merge the flag in, preserving feedId and any other keys.
+      payload = ${jobs.payload} || '{"forceReprocess":true}'::jsonb,
+      updated_at = ${now}
+    RETURNING *
+  `);
 
   return rowToJob(result.rows[0]);
 }
