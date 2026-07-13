@@ -102,7 +102,7 @@ export function WallabagApiSettings() {
             <div className="flex flex-col gap-3">
               <a
                 href={wallabagDeepLink}
-                className="bg-accent hover:bg-accent-hover inline-flex items-center gap-2 rounded-md px-4 py-2 font-medium text-white transition-colors"
+                className="btn-primary inline-flex items-center gap-2 rounded-md px-4 py-2 font-medium"
               >
                 <MobileIcon className="h-4 w-4" />
                 Open in Wallabag App
