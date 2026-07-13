@@ -152,9 +152,7 @@ function SessionCard({ session, onRevoke, isRevoking }: SessionCardProps) {
   return (
     <div
       className={`rounded-lg border p-3 sm:p-4 ${
-        session.isCurrent
-          ? "border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950"
-          : "border-edge bg-surface"
+        session.isCurrent ? "border-success-border bg-success-subtle" : "border-edge bg-surface"
       }`}
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -174,7 +172,7 @@ function SessionCard({ session, onRevoke, isRevoking }: SessionCardProps) {
                 {browser} on {platform}
               </p>
               {session.isCurrent && (
-                <span className="ui-text-xs mt-0.5 inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 font-medium text-green-800 dark:bg-green-900 dark:text-green-200">
+                <span className="ui-text-xs bg-success-subtle text-success-subtle-foreground mt-0.5 inline-flex items-center rounded-full px-2 py-0.5 font-medium">
                   Current session
                 </span>
               )}
@@ -201,7 +199,7 @@ function SessionCard({ session, onRevoke, isRevoking }: SessionCardProps) {
             size="sm"
             onClick={() => onRevoke(session.id)}
             disabled={isRevoking}
-            className="w-full text-red-600 hover:bg-red-50 hover:text-red-700 sm:w-auto dark:text-red-400 dark:hover:bg-red-950 dark:hover:text-red-300"
+            className="text-danger hover:bg-danger-subtle hover:text-danger-hover w-full sm:w-auto"
           >
             Revoke
           </Button>

@@ -268,7 +268,7 @@ function TagItem({ tag, onSuccess, onError }: TagItemProps) {
 
   if (showDeleteConfirm) {
     return (
-      <div className="flex items-center justify-between rounded-md border border-red-200 bg-red-50 p-4 dark:border-red-900 dark:bg-red-950/30">
+      <div className="border-danger-border bg-danger-subtle flex items-center justify-between rounded-md border p-4">
         <div className="flex items-center gap-3">
           <ColorDot color={tag.color} size="lg" />
           <div>
@@ -292,7 +292,7 @@ function TagItem({ tag, onSuccess, onError }: TagItemProps) {
             size="sm"
             onClick={handleDelete}
             loading={deleteMutation.isPending}
-            className="bg-red-600 text-white hover:bg-red-700 focus:ring-red-600 dark:bg-red-600 dark:hover:bg-red-700"
+            className="bg-danger-solid text-danger-solid-foreground hover:bg-danger-solid-hover focus:ring-danger"
           >
             Delete
           </Button>
@@ -371,7 +371,7 @@ function TagItem({ tag, onSuccess, onError }: TagItemProps) {
           size="sm"
           onClick={() => setShowDeleteConfirm(true)}
           title="Delete tag"
-          className="px-2 text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950/20 dark:hover:text-red-300"
+          className="text-danger hover:bg-danger-subtle hover:text-danger-hover px-2"
         >
           <TrashIcon className="h-4 w-4" />
         </Button>

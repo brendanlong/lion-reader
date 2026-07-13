@@ -35,19 +35,19 @@ describe("Alert", () => {
     it("applies error variant styles", () => {
       render(<Alert variant="error">Error message</Alert>);
       const alert = screen.getByRole("alert");
-      expect(alert).toHaveClass("bg-red-50", "text-red-800");
+      expect(alert).toHaveClass("bg-danger-subtle", "text-danger-subtle-foreground");
     });
 
     it("applies success variant styles", () => {
       render(<Alert variant="success">Success message</Alert>);
       const alert = screen.getByRole("alert");
-      expect(alert).toHaveClass("bg-green-50", "text-green-800");
+      expect(alert).toHaveClass("bg-success-subtle", "text-success-subtle-foreground");
     });
 
     it("applies warning variant styles", () => {
       render(<Alert variant="warning">Warning message</Alert>);
       const alert = screen.getByRole("alert");
-      expect(alert).toHaveClass("bg-yellow-50", "text-yellow-800");
+      expect(alert).toHaveClass("bg-warning-subtle", "text-warning-subtle-foreground");
     });
 
     it("applies info variant styles", () => {
@@ -77,7 +77,7 @@ describe("Alert", () => {
         </Alert>
       );
       const alert = screen.getByRole("alert");
-      expect(alert).toHaveClass("bg-red-50", "mt-4");
+      expect(alert).toHaveClass("bg-danger-subtle", "mt-4");
     });
   });
 

@@ -170,13 +170,13 @@ function VoiceItem({
             {isDownloading ? (
               <ProgressBar progress={progress} size={voice.sizeBytes} />
             ) : isDownloaded ? (
-              <div className="ui-text-xs mt-1 flex items-center gap-1 text-green-600 dark:text-green-400">
+              <div className="ui-text-xs text-success mt-1 flex items-center gap-1">
                 <CheckIcon className="h-3.5 w-3.5" />
                 Downloaded
               </div>
             ) : hasError ? (
               <div className="mt-1 space-y-1">
-                <div className="ui-text-xs flex items-center gap-1 text-red-600 dark:text-red-400">
+                <div className="ui-text-xs text-danger flex items-center gap-1">
                   <AlertCircleIcon className="h-3.5 w-3.5" />
                   {errorInfo.message}
                 </div>
@@ -362,13 +362,13 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
     <div className="space-y-3">
       {/* Error message */}
       {error && (
-        <div className="rounded-md bg-red-50 p-3 dark:bg-red-900/20">
-          <div className="ui-text-xs flex items-start gap-2 text-red-800 dark:text-red-200">
+        <div className="bg-danger-subtle rounded-md p-3">
+          <div className="ui-text-xs text-danger-subtle-foreground flex items-start gap-2">
             <AlertCircleIcon className="mt-0.5 h-4 w-4 flex-shrink-0" />
             <div className="flex-1 space-y-1">
               <p>{error}</p>
               {lastErrorInfo?.suggestion && (
-                <p className="text-red-600 dark:text-red-300">{lastErrorInfo.suggestion}</p>
+                <p className="text-danger">{lastErrorInfo.suggestion}</p>
               )}
             </div>
             <div className="flex items-center gap-2">
@@ -376,7 +376,7 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
                 <button
                   type="button"
                   onClick={retryDownload}
-                  className="text-red-600 underline hover:text-red-800 dark:text-red-300 dark:hover:text-red-100"
+                  className="text-danger hover:text-danger-hover underline"
                 >
                   Retry
                 </button>
@@ -384,7 +384,7 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
               <button
                 type="button"
                 onClick={clearError}
-                className="text-red-600 hover:text-red-800 dark:text-red-300 dark:hover:text-red-100"
+                className="text-danger hover:text-danger-hover"
               >
                 <CloseIcon className="h-4 w-4" />
               </button>
@@ -395,7 +395,7 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
 
       {/* Storage limit warning */}
       {isStorageLimitExceeded && (
-        <div className="ui-text-xs flex items-start gap-2 rounded-md bg-amber-50 p-3 text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+        <div className="ui-text-xs bg-warning-subtle text-warning-subtle-foreground flex items-start gap-2 rounded-md p-3">
           <AlertIcon className="mt-0.5 h-4 w-4 flex-shrink-0" />
           <span className="flex-1">
             Voice storage exceeds 200 MB. Consider removing unused voices to free up space.

@@ -299,7 +299,7 @@ function OAuthCallbackContent() {
 
       {errorMessage ? (
         <div className="text-center">
-          <p className="ui-text-sm mb-4 text-red-600 dark:text-red-400">{errorMessage}</p>
+          <p className="ui-text-sm text-danger mb-4">{errorMessage}</p>
           <p className="ui-text-sm text-muted">
             Redirecting to {isSaveMode ? "save" : isLinkMode ? "settings" : "login"} page...
           </p>

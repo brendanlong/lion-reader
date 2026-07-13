@@ -77,6 +77,25 @@ The `ui-text-*` classes are defined in `src/app/globals.css` and provide respons
 | `ring-focus`         | `ring-zinc-900 dark:ring-zinc-400`     | Focus rings (as `focus:ring-focus`); also `focus:border-focus`                  |
 | `control-selected`   | `zinc-900 dark:zinc-400`               | Selected/"on" outline: checkbox/radio/selected-card `border`/`ring`, radio dots |
 
+#### Status colors (danger / success / warning / info / star)
+
+**Never hand-roll a raw `red/green/amber/yellow` pair for a status.** Each status role is tokenized the same way as the neutrals — one utility class per role, covering light, dark, and e-paper — themed in `globals.css` and exposed via `@theme inline`. Dark mode keeps status hues conventional (a red error stays red); e-paper darkens each so it survives grayscale. The base on-surface text and `-subtle-foreground` tokens meet WCAG AA on their backgrounds in all three themes (this is why success text is `green-700`, not the AA-failing `green-600`).
+
+| Token role                      | Danger (red)                    | Success (green)                   | Warning (amber)                   | Use for                                                   |
+| ------------------------------- | ------------------------------- | --------------------------------- | --------------------------------- | --------------------------------------------------------- |
+| `text-{role}`                   | `text-danger`                   | `text-success`                    | `text-warning`                    | Status text/icon on a normal surface (AA)                 |
+| `text-{role}-hover`             | `text-danger-hover`             | `text-success-hover`              | `text-warning-hover`              | `hover:`/link hover for status text                       |
+| `bg-{role}-subtle`              | `bg-danger-subtle`              | `bg-success-subtle`               | `bg-warning-subtle`               | Subtle status card/alert/badge fill (also `hover:` fills) |
+| `text-{role}-subtle-foreground` | `text-danger-subtle-foreground` | `text-success-subtle-foreground`  | `text-warning-subtle-foreground`  | Text on a `-subtle` fill (AA)                             |
+| `border-{role}-border`          | `border-danger-border`          | `border-success-border`           | `border-warning-border`           | Border of a subtle status card/alert                      |
+| `bg-{role}-solid` (+ `-hover`)  | `bg-danger-solid`               | `bg-success-solid`                | `bg-warning-solid`                | Solid status button/dot/banner; hover via `-solid-hover`  |
+| `text-{role}-solid-foreground`  | `text-danger-solid-foreground`  | `text-success-solid-foreground`   | `text-warning-solid-foreground`   | Text/icon on a `-solid` fill                              |
+| `border-{role}` / `ring-{role}` | `border-danger` / `ring-danger` | `border-success` / `ring-success` | `border-warning` / `ring-warning` | Input-error border + focus ring                           |
+
+- **`info`** is the pre-existing blue trio (`text-info-foreground`, `bg-info-subtle`, `border-info-border`, `text-info-subtle-foreground`, …) — unchanged.
+- **`star`**: `text-star` (+ `hover:text-star-hover`, `bg-star`) is the formalized amber favorite/star color. Use it only for the star/favorite icon; amber used for alerts/offline/"unsaved changes" is `warning`, not `star`.
+- `StatusCard`, `Alert`, and the `Input` error state are already token-driven — reuse them instead of rebuilding a colored box.
+
 Tokens work under variants (`hover:bg-surface-muted`, `focus:ring-focus`), so interactive states use them too. Notes:
 
 - **Filled** "on"/selected controls (a solid pill/toggle, not an outline) use `bg-primary-solid text-primary-solid-foreground` — the same token as primary buttons. `control-selected` is only the neutral **outline/indicator** color; it shares `ring-focus`'s value today but is a separate token so the two roles can diverge.

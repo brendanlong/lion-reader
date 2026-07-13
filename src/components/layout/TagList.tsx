@@ -199,7 +199,7 @@ function TagListSkeleton() {
  * Error fallback for TagList.
  */
 function TagListError() {
-  return <p className="ui-text-sm px-3 text-red-600 dark:text-red-400">Failed to load feeds</p>;
+  return <p className="ui-text-sm text-danger px-3">Failed to load feeds</p>;
 }
 
 /**

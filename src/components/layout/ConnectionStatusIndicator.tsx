@@ -43,8 +43,8 @@ export function ConnectionStatusIndicator({ status, onReconnect }: ConnectionSta
       {status === "connecting" && (
         <>
           <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-yellow-400 opacity-75" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-yellow-500" />
+            <span className="bg-warning-solid absolute inline-flex h-full w-full animate-ping rounded-full opacity-75" />
+            <span className="bg-warning-solid relative inline-flex h-2 w-2 rounded-full" />
           </span>
           <span className="text-muted">Connecting...</span>
         </>
@@ -53,7 +53,7 @@ export function ConnectionStatusIndicator({ status, onReconnect }: ConnectionSta
       {(status === "disconnected" || status === "error") && (
         <>
           <span className="relative flex h-2 w-2">
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+            <span className="bg-danger-solid relative inline-flex h-2 w-2 rounded-full" />
           </span>
           <span className="text-muted">
             {status === "error" ? "Connection error" : "Disconnected"}

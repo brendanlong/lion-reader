@@ -517,7 +517,7 @@ export function NarrationSettings() {
 
           {/* Firefox Warning */}
           {isFirefoxBrowser && (
-            <div className="ui-text-xs flex items-start gap-2 rounded-md bg-amber-50 p-3 text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+            <div className="ui-text-xs bg-warning-subtle text-warning-subtle-foreground flex items-start gap-2 rounded-md p-3">
               <AlertIcon className="mt-0.5 h-4 w-4 flex-shrink-0" />
               <span>
                 Firefox has limited support for pausing narration. When you pause and resume,

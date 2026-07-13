@@ -268,11 +268,9 @@ function SaveContent() {
           {activeMutation.isSuccess && (
             <div className="mt-6">
               <div className="flex justify-center">
-                <CheckIcon className="h-8 w-8 text-green-600 dark:text-green-500" />
+                <CheckIcon className="text-success h-8 w-8" />
               </div>
-              <p className="ui-text-sm mt-3 font-medium text-green-700 dark:text-green-400">
-                Saved successfully!
-              </p>
+              <p className="ui-text-sm text-success mt-3 font-medium">Saved successfully!</p>
               {articleTitle && (
                 <p className="ui-text-sm text-muted mt-2 line-clamp-2">{articleTitle}</p>
               )}
@@ -290,7 +288,7 @@ function SaveContent() {
               {isAuthError ? (
                 <>
                   <div className="flex justify-center">
-                    <LockIcon className="h-8 w-8 text-amber-600 dark:text-amber-500" />
+                    <LockIcon className="text-warning h-8 w-8" />
                   </div>
                   <Alert variant="warning" className="mt-4 text-left">
                     Your session has expired. Please sign in again to save this article.
@@ -349,7 +347,7 @@ function SaveContent() {
                 <>
                   {/* General Error */}
                   <div className="flex justify-center">
-                    <CloseIcon className="h-8 w-8 text-red-600 dark:text-red-500" />
+                    <CloseIcon className="text-danger h-8 w-8" />
                   </div>
                   <Alert variant="error" className="mt-4 text-left">
                     {activeMutation.error?.message ||

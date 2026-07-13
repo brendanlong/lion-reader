@@ -275,7 +275,7 @@ function IngestAddressRow({ address }: IngestAddressRowProps) {
           <Button
             onClick={handleDelete}
             loading={deleteMutation.isPending}
-            className="bg-red-600 hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-700"
+            className="bg-danger-solid hover:bg-danger-solid-hover"
           >
             Delete
           </Button>
@@ -297,7 +297,7 @@ function IngestAddressRow({ address }: IngestAddressRowProps) {
               title="Copy email address"
             >
               {copied ? (
-                <CheckIcon className="h-4 w-4 text-green-600 dark:text-green-400" />
+                <CheckIcon className="text-success h-4 w-4" />
               ) : (
                 <CopyIcon className="h-4 w-4" />
               )}
@@ -361,7 +361,7 @@ function IngestAddressRow({ address }: IngestAddressRowProps) {
           variant="ghost"
           size="sm"
           onClick={() => setShowDeleteConfirm(true)}
-          className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950 dark:hover:text-red-300"
+          className="text-danger hover:bg-danger-subtle hover:text-danger-hover"
         >
           Delete
         </Button>

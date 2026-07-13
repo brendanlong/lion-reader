@@ -212,7 +212,7 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
               isDragging
                 ? "bg-surface-muted border-zinc-500 dark:border-zinc-400"
                 : selectedFile
-                  ? "border-green-500 bg-green-50 dark:border-green-600 dark:bg-green-900/20"
+                  ? "border-success bg-success-subtle"
                   : "border-edge-input hover:bg-surface-muted hover:border-zinc-400 dark:hover:border-zinc-500"
             }`}
           >
@@ -226,7 +226,7 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
 
             {selectedFile ? (
               <div className="flex flex-col items-center">
-                <DocumentIcon className="h-10 w-10 text-green-600 dark:text-green-500" />
+                <DocumentIcon className="text-success h-10 w-10" />
                 <p className="text-strong mt-2 font-medium">{selectedFile.name}</p>
                 <p className="ui-text-sm text-muted">{formatFileSize(selectedFile.size)}</p>
                 <p className="ui-text-xs text-faint mt-2">

@@ -56,7 +56,7 @@ export function ConsentForm({
         <ul className="space-y-2">
           {scopes.map((scope) => (
             <li key={scope.name} className="flex items-start gap-2">
-              <CheckIcon className="mt-0.5 h-4 w-4 shrink-0 text-green-600 dark:text-green-400" />
+              <CheckIcon className="text-success mt-0.5 h-4 w-4 shrink-0" />
               <span className="ui-text-sm text-body">{scope.description}</span>
             </li>
           ))}
@@ -64,9 +64,9 @@ export function ConsentForm({
       </div>
 
       {/* Warning */}
-      <div className="mb-6 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900/50 dark:bg-amber-900/20">
-        <WarningTriangleIcon className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
-        <p className="ui-text-sm text-amber-800 dark:text-amber-200">
+      <div className="border-warning-border bg-warning-subtle mb-6 flex items-start gap-2 rounded-lg border p-3">
+        <WarningTriangleIcon className="text-warning mt-0.5 h-4 w-4 shrink-0" />
+        <p className="ui-text-sm text-warning-subtle-foreground">
           Only authorize applications you trust. You can revoke access at any time in Settings.
         </p>
       </div>

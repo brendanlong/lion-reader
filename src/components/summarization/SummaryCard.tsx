@@ -73,29 +73,29 @@ export function SummaryCard({
   // Show error state
   if (error) {
     return (
-      <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/20">
+      <div className="border-danger-border bg-danger-subtle mb-6 rounded-lg border p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <SparklesIcon className="h-5 w-5 text-red-600 dark:text-red-400" />
-            <span className="ui-text-sm font-medium text-red-900 dark:text-red-100">
+            <SparklesIcon className="text-danger h-5 w-5" />
+            <span className="ui-text-sm text-danger-subtle-foreground font-medium">
               Summary generation failed
             </span>
           </div>
           {onClose && (
             <button
               onClick={onClose}
-              className="rounded p-1 text-red-600 hover:bg-red-100 dark:text-red-400 dark:hover:bg-red-800/50"
+              className="text-danger hover:bg-danger-subtle rounded p-1"
               aria-label="Close"
             >
               <CloseIcon className="h-4 w-4" />
             </button>
           )}
         </div>
-        <p className="ui-text-sm mt-2 text-red-700 dark:text-red-300">{error}</p>
+        <p className="ui-text-sm text-danger mt-2">{error}</p>
         {onRegenerate && (
           <button
             onClick={onRegenerate}
-            className="ui-text-sm mt-3 font-medium text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+            className="ui-text-sm text-danger hover:text-danger-hover mt-3 font-medium"
           >
             Try again
           </button>

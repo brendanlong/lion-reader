@@ -121,7 +121,7 @@ export function GroqApiKeySettings() {
         <div className="flex items-center gap-3">
           {hasKey ? (
             <>
-              <span className="ui-text-sm inline-flex items-center text-green-600 dark:text-green-400">
+              <span className="ui-text-sm text-success inline-flex items-center">
                 <CheckIcon className="mr-1 h-4 w-4" />
                 API key configured
               </span>
@@ -353,7 +353,7 @@ export function SummarizationApiKeySettings() {
             <div className="flex items-center gap-3">
               {hasKey ? (
                 <>
-                  <span className="ui-text-sm inline-flex items-center text-green-600 dark:text-green-400">
+                  <span className="ui-text-sm text-success inline-flex items-center">
                     <CheckIcon className="mr-1 h-4 w-4" />
                     API key configured
                   </span>

@@ -70,7 +70,7 @@ export function BookmarkletSettings() {
             href="https://addons.mozilla.org/en-US/firefox/addon/lion-reader/"
             target="_blank"
             rel="noopener noreferrer"
-            className="ui-text-sm inline-flex items-center gap-2 rounded-lg border border-orange-300 bg-orange-50 px-4 py-2.5 font-medium text-orange-800 shadow-sm transition-all hover:border-orange-400 hover:bg-orange-100 hover:shadow dark:border-orange-700 dark:bg-orange-950 dark:text-orange-200 dark:hover:border-orange-600 dark:hover:bg-orange-900"
+            className="ui-text-sm border-warning-border bg-warning-subtle text-warning-subtle-foreground hover:border-warning hover:bg-warning-subtle inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 font-medium shadow-sm transition-all hover:shadow"
           >
             <FirefoxIcon className="h-4 w-4" />
             Install Firefox Extension
@@ -94,7 +94,7 @@ export function BookmarkletSettings() {
           href="#"
           onClick={(e) => e.preventDefault()}
           draggable
-          className="ui-text-sm inline-flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 font-medium text-amber-800 shadow-sm transition-all hover:border-amber-400 hover:bg-amber-100 hover:shadow active:scale-95 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200 dark:hover:border-amber-600 dark:hover:bg-amber-900"
+          className="ui-text-sm border-warning-border bg-warning-subtle text-warning-subtle-foreground hover:border-warning hover:bg-warning-subtle inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 font-medium shadow-sm transition-all hover:shadow active:scale-95"
         >
           <BookmarkIcon className="h-4 w-4" />
           Save to Lion Reader

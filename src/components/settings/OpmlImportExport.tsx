@@ -433,17 +433,17 @@ function ImportResults({ imported, skipped, failed, results, onReset }: ImportRe
       </Alert>
 
       <div className="mb-4 grid grid-cols-3 gap-4">
-        <div className="rounded-md bg-green-50 p-3 dark:bg-green-950/20">
-          <p className="ui-text-2xl font-bold text-green-600 dark:text-green-400">{imported}</p>
-          <p className="ui-text-xs text-green-600 dark:text-green-400">Imported</p>
+        <div className="bg-success-subtle rounded-md p-3">
+          <p className="ui-text-2xl text-success font-bold">{imported}</p>
+          <p className="ui-text-xs text-success">Imported</p>
         </div>
-        <div className="rounded-md bg-yellow-50 p-3 dark:bg-yellow-950/20">
-          <p className="ui-text-2xl font-bold text-yellow-600 dark:text-yellow-400">{skipped}</p>
-          <p className="ui-text-xs text-yellow-600 dark:text-yellow-400">Skipped</p>
+        <div className="bg-warning-subtle rounded-md p-3">
+          <p className="ui-text-2xl text-warning font-bold">{skipped}</p>
+          <p className="ui-text-xs text-warning">Skipped</p>
         </div>
-        <div className="rounded-md bg-red-50 p-3 dark:bg-red-950/20">
-          <p className="ui-text-2xl font-bold text-red-600 dark:text-red-400">{failed}</p>
-          <p className="ui-text-xs text-red-600 dark:text-red-400">Failed</p>
+        <div className="bg-danger-subtle rounded-md p-3">
+          <p className="ui-text-2xl text-danger font-bold">{failed}</p>
+          <p className="ui-text-xs text-danger">Failed</p>
         </div>
       </div>
 
@@ -469,18 +469,16 @@ function ImportResults({ imported, skipped, failed, results, onReset }: ImportRe
                         </p>
                         <p className="ui-text-xs text-muted truncate">{result.url}</p>
                         {result.error && (
-                          <p className="ui-text-xs mt-1 text-red-600 dark:text-red-400">
-                            {result.error}
-                          </p>
+                          <p className="ui-text-xs text-danger mt-1">{result.error}</p>
                         )}
                       </div>
                       <span
                         className={`ui-text-xs ml-2 shrink-0 rounded-full px-2 py-0.5 font-medium ${
                           result.status === "imported"
-                            ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                            ? "bg-success-subtle text-success"
                             : result.status === "skipped"
-                              ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
-                              : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                              ? "bg-warning-subtle text-warning"
+                              : "bg-danger-subtle text-danger"
                         }`}
                       >
                         {result.status}

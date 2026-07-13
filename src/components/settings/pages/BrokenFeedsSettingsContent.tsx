@@ -122,8 +122,8 @@ export default function BrokenFeedsSettingsContent() {
 function EmptyState() {
   return (
     <div className="p-8 text-center">
-      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
-        <CheckIcon className="h-6 w-6 text-green-600 dark:text-green-400" />
+      <div className="bg-success-subtle mx-auto flex h-12 w-12 items-center justify-center rounded-full">
+        <CheckIcon className="text-success h-6 w-6" />
       </div>
       <h3 className="ui-text-sm text-strong mt-4 font-medium">All feeds are working</h3>
       <p className="ui-text-sm text-muted mt-1">None of your subscribed feeds have fetch errors.</p>
@@ -182,8 +182,8 @@ function BrokenFeedRow({ feed, onUnsubscribe }: BrokenFeedRowProps) {
 
           {/* Error Message */}
           {feed.lastError && (
-            <div className="mt-2 rounded-md bg-red-50 px-3 py-2 dark:bg-red-900/20">
-              <p className="ui-text-sm text-red-700 dark:text-red-300">
+            <div className="bg-danger-subtle mt-2 rounded-md px-3 py-2">
+              <p className="ui-text-sm text-danger">
                 <span className="font-medium">Error:</span> {feed.lastError}
               </p>
             </div>
@@ -192,7 +192,7 @@ function BrokenFeedRow({ feed, onUnsubscribe }: BrokenFeedRowProps) {
           {/* Metadata */}
           <div className="ui-text-sm text-muted mt-2 flex flex-wrap gap-x-4 gap-y-1">
             <span className="flex items-center gap-1">
-              <AlertCircleIcon className="h-4 w-4 text-red-500" />
+              <AlertCircleIcon className="text-danger h-4 w-4" />
               {feed.consecutiveFailures} consecutive failure
               {feed.consecutiveFailures === 1 ? "" : "s"}
             </span>
@@ -213,7 +213,7 @@ function BrokenFeedRow({ feed, onUnsubscribe }: BrokenFeedRowProps) {
             variant="secondary"
             size="sm"
             onClick={() => onUnsubscribe(feed.subscriptionId, displayName)}
-            className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-900/20 dark:hover:text-red-300"
+            className="text-danger hover:bg-danger-subtle hover:text-danger-hover"
           >
             Unsubscribe
           </Button>

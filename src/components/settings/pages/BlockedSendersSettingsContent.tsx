@@ -157,7 +157,7 @@ function BlockedSenderRow({ sender }: BlockedSenderRowProps) {
             <span>Blocked {formatRelativeTime(sender.blockedAt)}</span>
             {sender.unsubscribeSentAt && (
               <span className="flex items-center gap-1">
-                <CheckIcon className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />
+                <CheckIcon className="text-success h-3.5 w-3.5" />
                 Unsubscribe sent
               </span>
             )}

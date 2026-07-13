@@ -144,8 +144,8 @@ export default function CompleteSignupPage() {
             Delete my account instead
           </button>
         ) : (
-          <div className="rounded-md border border-red-200 bg-red-50 p-4 dark:border-red-900 dark:bg-red-950">
-            <p className="ui-text-sm mb-3 text-red-800 dark:text-red-200">
+          <div className="border-danger-border bg-danger-subtle rounded-md border p-4">
+            <p className="ui-text-sm text-danger-subtle-foreground mb-3">
               This will permanently delete your account and all associated data. Type{" "}
               <span className="font-semibold">delete</span> to confirm.
             </p>
@@ -176,7 +176,7 @@ export default function CompleteSignupPage() {
                 onClick={handleDelete}
                 loading={deleteMutation.isPending}
                 disabled={!isDeleteConfirmed || deleteMutation.isPending}
-                className="bg-red-600 text-white hover:bg-red-700 dark:bg-red-600 dark:text-white dark:hover:bg-red-700"
+                className="bg-danger-solid text-danger-solid-foreground hover:bg-danger-solid-hover"
               >
                 Delete account
               </Button>

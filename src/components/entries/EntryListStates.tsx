@@ -49,7 +49,7 @@ export interface EntryListErrorProps {
 export function EntryListError({ message, onRetry }: EntryListErrorProps) {
   return (
     <div className="flex flex-col items-center justify-center py-12 text-center">
-      <AlertIcon className="mb-4 h-12 w-12 text-red-400 dark:text-red-500" />
+      <AlertIcon className="text-danger mb-4 h-12 w-12" />
       <p className="ui-text-sm text-muted mb-4">{message}</p>
       <Button onClick={onRetry}>Try again</Button>
     </div>

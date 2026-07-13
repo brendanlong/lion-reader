@@ -207,8 +207,8 @@ export const EntryListItem = memo(function EntryListItem({
                 // the padding with an equal negative margin so layout is unchanged.
                 className={`-m-[14px] flex shrink-0 items-center justify-center rounded-full p-[14px] transition-colors ${
                   starred
-                    ? "text-amber-500 hover:text-amber-600 dark:text-amber-400 dark:hover:text-amber-300"
-                    : "text-zinc-300 opacity-0 group-hover:opacity-100 hover:text-amber-400 dark:text-zinc-600 dark:hover:text-amber-400"
+                    ? "text-star hover:text-star-hover"
+                    : "hover:text-star text-zinc-300 opacity-0 group-hover:opacity-100 dark:text-zinc-600"
                 }`}
                 aria-label={starred ? "Remove from starred" : "Add to starred"}
                 title={starred ? "Remove from starred" : "Add to starred"}
@@ -221,7 +221,7 @@ export const EntryListItem = memo(function EntryListItem({
               </button>
             ) : (
               starred && (
-                <span className="shrink-0 text-amber-500 dark:text-amber-400" aria-label="Starred">
+                <span className="text-star shrink-0" aria-label="Starred">
                   <StarFilledIcon className="h-4 w-4" />
                 </span>
               )

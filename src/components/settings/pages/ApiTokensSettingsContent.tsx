@@ -381,9 +381,7 @@ function ActiveTokenCard({ token, onRevoke, isRevoking }: ActiveTokenCardProps) 
                 })}
               </span>
             )}
-            {!token.lastUsedAt && (
-              <span className="text-amber-600 dark:text-amber-400">Never used</span>
-            )}
+            {!token.lastUsedAt && <span className="text-warning">Never used</span>}
           </div>
         </div>
 
@@ -392,7 +390,7 @@ function ActiveTokenCard({ token, onRevoke, isRevoking }: ActiveTokenCardProps) 
           size="sm"
           onClick={() => onRevoke(token.id)}
           disabled={isRevoking}
-          className="w-full text-red-600 hover:bg-red-50 hover:text-red-700 sm:w-auto dark:text-red-400 dark:hover:bg-red-950 dark:hover:text-red-300"
+          className="text-danger hover:bg-danger-subtle hover:text-danger-hover w-full sm:w-auto"
         >
           Revoke
         </Button>

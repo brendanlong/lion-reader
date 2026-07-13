@@ -254,7 +254,7 @@ function DemoRouterContent() {
                 onClick={() => demoState.toggleStar(selectedEntry.id)}
                 className={
                   selectedEntry.starred
-                    ? "bg-amber-500 text-white hover:bg-amber-600 dark:bg-amber-500 dark:text-white dark:hover:bg-amber-600"
+                    ? "bg-warning-solid text-warning-solid-foreground hover:bg-warning-solid-hover"
                     : ""
                 }
                 aria-label={selectedEntry.starred ? "Remove from starred" : "Add to starred"}
