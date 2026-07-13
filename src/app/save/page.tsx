@@ -260,11 +260,7 @@ function SaveContent() {
               <p className="ui-text-sm text-muted mt-3">
                 {shareType === "file" ? "Uploading file..." : "Saving article..."}
               </p>
-              {urlToSave && (
-                <p className="ui-text-xs mt-2 truncate text-zinc-500 dark:text-zinc-500">
-                  {urlToSave}
-                </p>
-              )}
+              {urlToSave && <p className="ui-text-xs text-muted mt-2 truncate">{urlToSave}</p>}
             </div>
           )}
 
@@ -280,9 +276,7 @@ function SaveContent() {
               {articleTitle && (
                 <p className="ui-text-sm text-muted mt-2 line-clamp-2">{articleTitle}</p>
               )}
-              <p className="ui-text-xs mt-4 text-zinc-500 dark:text-zinc-500">
-                Closing in {countdown}...
-              </p>
+              <p className="ui-text-xs text-muted mt-4">Closing in {countdown}...</p>
               <Button variant="secondary" className="mt-3 w-full" onClick={handleClose}>
                 Close Now
               </Button>
@@ -301,9 +295,7 @@ function SaveContent() {
                   <Alert variant="warning" className="mt-4 text-left">
                     Your session has expired. Please sign in again to save this article.
                   </Alert>
-                  <p className="ui-text-xs mt-2 truncate text-zinc-500 dark:text-zinc-500">
-                    {urlToSave}
-                  </p>
+                  <p className="ui-text-xs text-muted mt-2 truncate">{urlToSave}</p>
                   <div className="mt-4 flex gap-2">
                     <Button variant="secondary" className="flex-1" onClick={handleClose}>
                       Close
@@ -326,9 +318,7 @@ function SaveContent() {
                         ? "Your Google account session has expired. Please reconnect to access private Google Docs."
                         : "This is a private Google Doc. You need to sign in with Google to save it."}
                   </Alert>
-                  <p className="ui-text-xs mt-2 truncate text-zinc-500 dark:text-zinc-500">
-                    {urlToSave}
-                  </p>
+                  <p className="ui-text-xs text-muted mt-2 truncate">{urlToSave}</p>
                   <div className="mt-4 flex gap-2">
                     <Button variant="secondary" className="flex-1" onClick={handleClose}>
                       Close
@@ -365,11 +355,7 @@ function SaveContent() {
                     {activeMutation.error?.message ||
                       (shareType === "file" ? "Failed to upload file" : "Failed to save article")}
                   </Alert>
-                  {urlToSave && (
-                    <p className="ui-text-xs mt-2 truncate text-zinc-500 dark:text-zinc-500">
-                      {urlToSave}
-                    </p>
-                  )}
+                  {urlToSave && <p className="ui-text-xs text-muted mt-2 truncate">{urlToSave}</p>}
                   <div className="mt-4 flex gap-2">
                     <Button variant="secondary" className="flex-1" onClick={handleClose}>
                       Close

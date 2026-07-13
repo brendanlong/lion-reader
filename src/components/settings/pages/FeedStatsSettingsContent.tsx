@@ -184,7 +184,7 @@ export default function FeedStatsSettingsContent() {
             {statsQuery.isFetchingNextPage && (
               <div className="flex items-center justify-center p-4">
                 <SpinnerIcon className="mr-2 h-4 w-4 text-zinc-400" />
-                <span className="ui-text-sm text-subtle">Loading more...</span>
+                <span className="ui-text-sm text-muted">Loading more...</span>
               </div>
             )}
 
@@ -219,7 +219,7 @@ function SummaryCard({ label, value, variant = "default" }: SummaryCardProps) {
 
   return (
     <div className="border-edge-strong rounded-lg border bg-zinc-50 p-4 dark:bg-zinc-800">
-      <p className="ui-text-sm text-subtle">{label}</p>
+      <p className="ui-text-sm text-muted">{label}</p>
       <p className={`ui-text-2xl font-semibold ${variantClasses[variant]}`}>{value}</p>
     </div>
   );
@@ -236,7 +236,7 @@ function EmptyState() {
         <RssIcon className="text-faint h-6 w-6" />
       </div>
       <h3 className="ui-text-sm text-strong mt-4 font-medium">No feeds subscribed</h3>
-      <p className="ui-text-sm text-subtle mt-1">
+      <p className="ui-text-sm text-muted mt-1">
         Subscribe to some feeds to see their statistics here.
       </p>
     </div>
@@ -271,7 +271,7 @@ function FeedStatsRow({ feed }: FeedStatsRowProps) {
           </div>
 
           {/* Feed URL */}
-          {feed.url && <p className="ui-text-sm text-subtle mt-0.5 truncate">{feed.url}</p>}
+          {feed.url && <p className="ui-text-sm text-muted mt-0.5 truncate">{feed.url}</p>}
 
           {/* Error Message (if any) */}
           {feed.lastError && (
@@ -348,7 +348,7 @@ interface StatItemProps {
 
 function StatItem({ icon, label, value }: StatItemProps) {
   return (
-    <div className="text-subtle flex items-center gap-1.5">
+    <div className="text-muted flex items-center gap-1.5">
       <span className="h-4 w-4 shrink-0">{icon}</span>
       <span className="truncate">
         <span className="text-body font-medium">{label}:</span> {value}

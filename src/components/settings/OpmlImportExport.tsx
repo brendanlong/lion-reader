@@ -255,7 +255,7 @@ function ImportSection() {
   return (
     <Card>
       <h3 className="ui-text-sm text-strong mb-2 font-medium">Import from OPML</h3>
-      <p className="ui-text-sm text-subtle mb-4">
+      <p className="ui-text-sm text-muted mb-4">
         Import your feed subscriptions from another RSS reader by uploading an OPML file.
       </p>
 
@@ -268,7 +268,7 @@ function ImportSection() {
       {importState.type === "idle" && (
         <div
           className={`relative rounded-lg border-2 border-dashed p-8 text-center transition-colors ${
-            isDragOver ? "border-accent bg-accent-subtle" : "border-zinc-300 dark:border-zinc-700"
+            isDragOver ? "border-accent bg-accent-subtle" : "border-edge-input"
           }`}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
@@ -287,9 +287,7 @@ function ImportSection() {
               Drag and drop your OPML file here, or{" "}
               <span className="text-accent font-medium">browse</span>
             </p>
-            <p className="ui-text-xs mt-1 text-zinc-500 dark:text-zinc-500">
-              Supports .opml and .xml files up to 5MB
-            </p>
+            <p className="ui-text-xs text-muted mt-1">Supports .opml and .xml files up to 5MB</p>
           </div>
         </div>
       )}
@@ -318,7 +316,7 @@ function ImportSection() {
           </div>
           {importState.type === "importing" && importQuery.data && (
             <div className="mb-2">
-              <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
+              <div className="bg-fill-muted h-2 w-full overflow-hidden rounded-full">
                 <div
                   className="bg-accent h-full transition-all duration-300"
                   style={{
@@ -326,7 +324,7 @@ function ImportSection() {
                   }}
                 />
               </div>
-              <p className="ui-text-xs text-subtle mt-1">
+              <p className="ui-text-xs text-muted mt-1">
                 {importQuery.data.importedCount +
                   importQuery.data.skippedCount +
                   importQuery.data.failedCount}{" "}
@@ -334,7 +332,7 @@ function ImportSection() {
               </p>
             </div>
           )}
-          <p className="ui-text-xs text-subtle">
+          <p className="ui-text-xs text-muted">
             This may take a moment depending on the number of feeds.
           </p>
         </div>
@@ -382,7 +380,7 @@ function ImportPreview({ feeds, onImport, onCancel, isImporting }: ImportPreview
           {displayedFeeds.map((feed, index) => (
             <li key={`${feed.xmlUrl}-${index}`} className="px-4 py-3">
               <p className="ui-text-sm text-strong font-medium">{feed.title || "Untitled Feed"}</p>
-              <p className="ui-text-xs text-subtle mt-0.5 truncate">{feed.xmlUrl}</p>
+              <p className="ui-text-xs text-muted mt-0.5 truncate">{feed.xmlUrl}</p>
               {feed.category && feed.category.length > 0 && (
                 <p className="ui-text-xs text-faint mt-1">Folder: {feed.category.join(" / ")}</p>
               )}
@@ -469,7 +467,7 @@ function ImportResults({ imported, skipped, failed, results, onReset }: ImportRe
                         <p className="ui-text-sm text-strong truncate font-medium">
                           {result.title || "Untitled Feed"}
                         </p>
-                        <p className="ui-text-xs text-subtle truncate">{result.url}</p>
+                        <p className="ui-text-xs text-muted truncate">{result.url}</p>
                         {result.error && (
                           <p className="ui-text-xs mt-1 text-red-600 dark:text-red-400">
                             {result.error}
@@ -545,7 +543,7 @@ function ExportSection() {
   return (
     <Card>
       <h3 className="ui-text-sm text-strong mb-2 font-medium">Export to OPML</h3>
-      <p className="ui-text-sm text-subtle mb-4">
+      <p className="ui-text-sm text-muted mb-4">
         Download your subscriptions as an OPML file to import into another RSS reader.
       </p>
 

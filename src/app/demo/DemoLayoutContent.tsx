@@ -56,7 +56,7 @@ export function DemoLayoutContent({ children }: DemoLayoutContentProps) {
               sidebarCloseButton={
                 <button
                   onClick={() => setSidebarOpen(false)}
-                  className="text-subtle flex h-10 w-10 items-center justify-center rounded-md hover:bg-zinc-100 active:bg-zinc-200 lg:hidden dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
+                  className="text-muted hover:bg-surface-muted flex h-10 w-10 items-center justify-center rounded-md active:bg-zinc-200 lg:hidden dark:active:bg-zinc-700"
                   aria-label="Close navigation menu"
                 >
                   <CloseIcon className="h-5 w-5" />
@@ -65,7 +65,7 @@ export function DemoLayoutContent({ children }: DemoLayoutContentProps) {
               mobileMenuButton={
                 <button
                   onClick={() => setSidebarOpen(true)}
-                  className="text-subtle flex h-10 w-10 items-center justify-center rounded-md hover:bg-zinc-100 active:bg-zinc-200 lg:hidden dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
+                  className="text-muted hover:bg-surface-muted flex h-10 w-10 items-center justify-center rounded-md active:bg-zinc-200 lg:hidden dark:active:bg-zinc-700"
                   aria-label="Open navigation menu"
                 >
                   <MenuIcon className="h-5 w-5" />
@@ -81,7 +81,7 @@ export function DemoLayoutContent({ children }: DemoLayoutContentProps) {
                   </Link>
                   <Link
                     href="/login"
-                    className="ui-text-sm border-edge-strong bg-surface text-body inline-flex min-h-[40px] items-center gap-1.5 rounded-md border px-3 font-medium transition-colors hover:bg-zinc-50 active:bg-zinc-100 dark:hover:bg-zinc-800 dark:active:bg-zinc-700"
+                    className="ui-text-sm border-edge-strong bg-surface text-body hover:bg-surface-muted inline-flex min-h-[40px] items-center gap-1.5 rounded-md border px-3 font-medium transition-colors active:bg-zinc-100 dark:active:bg-zinc-700"
                   >
                     Sign In
                   </Link>

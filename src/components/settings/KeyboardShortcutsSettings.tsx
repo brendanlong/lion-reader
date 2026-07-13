@@ -22,7 +22,7 @@ export function KeyboardShortcutsSettings() {
       <div className="flex items-center justify-between">
         <div>
           <h3 className="ui-text-sm text-strong font-medium">Enable keyboard shortcuts</h3>
-          <p className="ui-text-sm text-subtle mt-1">
+          <p className="ui-text-sm text-muted mt-1">
             Use keyboard shortcuts to navigate entries and perform actions quickly.
           </p>
         </div>
@@ -31,8 +31,8 @@ export function KeyboardShortcutsSettings() {
           role="switch"
           aria-checked={enabled}
           onClick={() => setEnabled(!enabled)}
-          className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:outline-none dark:focus:ring-offset-zinc-900 ${
-            enabled ? "bg-primary-solid" : "bg-zinc-200 dark:bg-zinc-700"
+          className={`focus:ring-focus relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-offset-2 focus:outline-none dark:focus:ring-offset-zinc-900 ${
+            enabled ? "bg-primary-solid" : "bg-fill-muted"
           }`}
         >
           <span

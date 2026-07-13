@@ -170,7 +170,7 @@ function FeedRow({ feed, onRetry, isRetrying }: FeedRowProps) {
               href={feed.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="ui-text-xs text-subtle mt-0.5 inline-flex items-center gap-1 hover:text-zinc-700 dark:hover:text-zinc-200"
+              className="ui-text-xs text-muted mt-0.5 inline-flex items-center gap-1 hover:text-zinc-700 dark:hover:text-zinc-200"
             >
               <span className="truncate">{truncateUrl(feed.url)}</span>
               <ExternalLinkIcon className="h-3 w-3 shrink-0" />
@@ -197,7 +197,7 @@ function FeedRow({ feed, onRetry, isRetrying }: FeedRowProps) {
       {feed.lastError && <ExpandableError error={feed.lastError} />}
 
       {/* Stats grid */}
-      <div className="ui-text-xs text-subtle mt-3 grid grid-cols-2 gap-x-6 gap-y-1.5 sm:grid-cols-3 lg:grid-cols-4">
+      <div className="ui-text-xs text-muted mt-3 grid grid-cols-2 gap-x-6 gap-y-1.5 sm:grid-cols-3 lg:grid-cols-4">
         <StatItem
           label="Last fetched"
           value={feed.lastFetchedAt ? formatRelativeTime(new Date(feed.lastFetchedAt)) : "Never"}
@@ -244,7 +244,7 @@ function EmptyState({ hasFilters }: { hasFilters: boolean }) {
       <h3 className="ui-text-sm text-strong mt-4 font-medium">
         {hasFilters ? "No matching feeds" : "No feeds"}
       </h3>
-      <p className="ui-text-sm text-subtle mt-1">
+      <p className="ui-text-sm text-muted mt-1">
         {hasFilters ? "Try adjusting your filters." : "No feeds have been added to the system yet."}
       </p>
     </div>
@@ -391,7 +391,7 @@ export default function AdminFeedsContent() {
               type="checkbox"
               checked={hasSubscribers}
               onChange={(e) => setHasSubscribers(e.target.checked)}
-              className="text-accent focus:ring-accent h-4 w-4 rounded border-zinc-300 dark:border-zinc-700 dark:bg-zinc-800"
+              className="text-accent focus:ring-accent border-edge-input h-4 w-4 rounded dark:bg-zinc-800"
             />
             Has subscribers
           </label>
@@ -444,7 +444,7 @@ export default function AdminFeedsContent() {
           {feedsQuery.isFetchingNextPage && (
             <div className="flex items-center justify-center p-4">
               <SpinnerIcon className="mr-2 h-4 w-4 text-zinc-400" />
-              <span className="ui-text-sm text-subtle">Loading more...</span>
+              <span className="ui-text-sm text-muted">Loading more...</span>
             </div>
           )}
 

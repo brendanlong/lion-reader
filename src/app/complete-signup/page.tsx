@@ -78,7 +78,7 @@ export default function CompleteSignupPage() {
             type="checkbox"
             checked={acceptedTos}
             onChange={(e) => setAcceptedTos(e.target.checked)}
-            className="text-strong mt-0.5 h-5 w-5 shrink-0 rounded border-zinc-300 focus:ring-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:ring-zinc-400"
+            className="text-strong border-edge-input focus:ring-focus mt-0.5 h-5 w-5 shrink-0 rounded dark:bg-zinc-800"
           />
           <span className="ui-text-sm text-body">
             I have read and agree to the{" "}
@@ -98,7 +98,7 @@ export default function CompleteSignupPage() {
             type="checkbox"
             checked={acceptedPrivacy}
             onChange={(e) => setAcceptedPrivacy(e.target.checked)}
-            className="text-strong mt-0.5 h-5 w-5 shrink-0 rounded border-zinc-300 focus:ring-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:ring-zinc-400"
+            className="text-strong border-edge-input focus:ring-focus mt-0.5 h-5 w-5 shrink-0 rounded dark:bg-zinc-800"
           />
           <span className="ui-text-sm text-body">
             I have read and agree to the{" "}
@@ -118,7 +118,7 @@ export default function CompleteSignupPage() {
             type="checkbox"
             checked={confirmedNotInEu}
             onChange={(e) => setConfirmedNotInEu(e.target.checked)}
-            className="text-strong mt-0.5 h-5 w-5 shrink-0 rounded border-zinc-300 focus:ring-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:ring-zinc-400"
+            className="text-strong border-edge-input focus:ring-focus mt-0.5 h-5 w-5 shrink-0 rounded dark:bg-zinc-800"
           />
           <span className="ui-text-sm text-body">
             I confirm that I am not located in the European Union
@@ -139,7 +139,7 @@ export default function CompleteSignupPage() {
         {!showDeleteConfirm ? (
           <button
             onClick={() => setShowDeleteConfirm(true)}
-            className="ui-text-sm text-subtle w-full text-center underline hover:text-zinc-700 dark:hover:text-zinc-300"
+            className="ui-text-sm text-muted w-full text-center underline hover:text-zinc-700 dark:hover:text-zinc-300"
           >
             Delete my account instead
           </button>

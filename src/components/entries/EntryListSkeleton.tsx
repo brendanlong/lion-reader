@@ -28,26 +28,26 @@ const EntryListItemSkeleton = memo(function EntryListItemSkeleton({
       <div className="flex items-start gap-3">
         {/* Read indicator skeleton */}
         <div className="mt-1.5 shrink-0">
-          <div className="h-2.5 w-2.5 animate-pulse rounded-full bg-zinc-200 dark:bg-zinc-700" />
+          <div className="bg-fill-muted h-2.5 w-2.5 animate-pulse rounded-full" />
         </div>
 
         <div className="min-w-0 flex-1">
           {/* Title skeleton */}
           <div className="flex items-start justify-between gap-2">
-            <div className="h-5 w-3/4 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700" />
+            <div className="bg-fill-muted h-5 w-3/4 animate-pulse rounded" />
           </div>
 
           {/* Meta row skeleton (feed name and date) */}
           <div className="mt-1 flex items-center gap-2">
-            <div className="h-3 w-24 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700" />
-            <div className="h-3 w-16 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700" />
+            <div className="bg-fill-muted h-3 w-24 animate-pulse rounded" />
+            <div className="bg-fill-muted h-3 w-16 animate-pulse rounded" />
           </div>
 
           {/* Summary skeleton */}
           <div className="mt-2 space-y-1.5">
-            <div className="h-4 w-full animate-pulse rounded bg-zinc-200 dark:bg-zinc-700" />
+            <div className="bg-fill-muted h-4 w-full animate-pulse rounded" />
             <div
-              className={`h-4 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700 ${
+              className={`bg-fill-muted h-4 animate-pulse rounded ${
                 hasLongSummary ? "w-4/5" : "w-1/2"
               }`}
             />

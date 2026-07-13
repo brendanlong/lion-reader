@@ -239,7 +239,7 @@ function DemoRouterContent() {
           backButton={
             <ClientLink
               href={backHref}
-              className="ui-text-sm text-muted mb-4 -ml-2 inline-flex min-h-[44px] items-center gap-2 rounded-md px-2 transition-colors hover:bg-zinc-100 hover:text-zinc-900 active:bg-zinc-200 sm:mb-6 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 dark:active:bg-zinc-700"
+              className="ui-text-sm text-muted hover:bg-surface-muted mb-4 -ml-2 inline-flex min-h-[44px] items-center gap-2 rounded-md px-2 transition-colors hover:text-zinc-900 active:bg-zinc-200 sm:mb-6 dark:hover:text-zinc-100 dark:active:bg-zinc-700"
             >
               <ArrowLeftIcon className="h-4 w-4" />
               <span>Back to list</span>
@@ -329,7 +329,7 @@ function DemoRouterContent() {
                     </Link>
                     <Link
                       href="/login"
-                      className="ui-text-base bg-surface text-strong inline-flex h-12 w-full items-center justify-center rounded-md border border-zinc-300 px-6 font-medium transition-colors hover:bg-zinc-50 sm:w-auto dark:border-zinc-700 dark:hover:bg-zinc-800"
+                      className="ui-text-base bg-surface text-strong border-edge-input hover:bg-surface-muted inline-flex h-12 w-full items-center justify-center rounded-md border px-6 font-medium transition-colors sm:w-auto"
                     >
                       Sign in
                     </Link>

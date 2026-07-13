@@ -54,7 +54,7 @@ function StatusBadge({ status }: StatusBadgeProps) {
   const styles = {
     pending: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
     used: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300",
-    expired: "bg-surface-muted text-subtle",
+    expired: "bg-surface-muted text-muted",
   };
 
   return (
@@ -104,7 +104,7 @@ function CreatedInviteDisplay({ inviteUrl, onDismiss }: CreatedInviteProps) {
         </div>
         <button
           onClick={onDismiss}
-          className="ui-text-sm text-subtle self-start underline hover:text-zinc-700 dark:hover:text-zinc-200"
+          className="ui-text-sm text-muted self-start underline hover:text-zinc-700 dark:hover:text-zinc-200"
         >
           Dismiss
         </button>
@@ -142,7 +142,7 @@ function InviteRow({ invite, onRevoke, isRevoking }: InviteRowProps) {
           <code className="ui-text-sm text-muted">{truncateToken(invite.token)}</code>
         </div>
 
-        <div className="ui-text-xs text-subtle mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5">
+        <div className="ui-text-xs text-muted mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5">
           <span>Created: {formatDate(invite.createdAt)}</span>
           <span>Expires: {formatDate(invite.expiresAt)}</span>
           {invite.usedAt && <span>Used: {formatDate(invite.usedAt)}</span>}
@@ -150,7 +150,7 @@ function InviteRow({ invite, onRevoke, isRevoking }: InviteRowProps) {
 
         {invite.status === "used" && invite.usedByEmail && (
           <p className="ui-text-sm mt-1">
-            <span className="text-subtle">Used by: </span>
+            <span className="text-muted">Used by: </span>
             <ClientLink
               href={`/admin/users?search=${encodeURIComponent(invite.usedByEmail)}`}
               className="text-blue-600 underline hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
@@ -188,7 +188,7 @@ function EmptyState({ hasSearch }: { hasSearch: boolean }) {
       <h3 className="ui-text-sm text-strong font-medium">
         {hasSearch ? "No matching invites" : "No invites yet"}
       </h3>
-      <p className="ui-text-sm text-subtle mt-1">
+      <p className="ui-text-sm text-muted mt-1">
         {hasSearch ? "Try a different search term." : "Generate an invite to get started."}
       </p>
     </div>
@@ -366,7 +366,7 @@ export default function AdminInvitesContent() {
           {invitesQuery.isFetchingNextPage && (
             <div className="flex items-center justify-center p-4">
               <SpinnerIcon className="mr-2 h-4 w-4 text-zinc-400" />
-              <span className="ui-text-sm text-subtle">Loading more...</span>
+              <span className="ui-text-sm text-muted">Loading more...</span>
             </div>
           )}
 

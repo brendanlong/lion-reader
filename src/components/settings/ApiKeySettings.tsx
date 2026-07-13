@@ -390,7 +390,7 @@ export function SummarizationApiKeySettings() {
               value={currentModel ?? defaultModelId}
               onChange={handleModelChange}
               disabled={updatePreferences.isPending || modelsQuery.isLoading}
-              className="ui-text-sm bg-surface text-strong block w-full rounded-md border border-zinc-300 px-3 py-2 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+              className="ui-text-sm bg-surface text-strong border-edge-input focus:border-focus focus:ring-focus block w-full rounded-md border px-3 py-2 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
             >
               {modelsQuery.isLoading ? (
                 <option value={currentModel ?? defaultModelId}>Loading models...</option>
@@ -412,7 +412,7 @@ export function SummarizationApiKeySettings() {
                   <option value={currentModel}>{currentModel}</option>
                 )}
             </select>
-            <p className="ui-text-xs text-subtle mt-1.5">
+            <p className="ui-text-xs text-muted mt-1.5">
               Choose the Anthropic model used for generating article summaries. Sonnet models offer
               the best balance of quality and cost.
             </p>
@@ -485,7 +485,7 @@ export function SummarizationApiKeySettings() {
                 )}
               </div>
             )}
-            <p className="ui-text-xs text-subtle mt-1.5">
+            <p className="ui-text-xs text-muted mt-1.5">
               Maximum number of words for generated summaries.
             </p>
           </div>
@@ -507,9 +507,9 @@ export function SummarizationApiKeySettings() {
                   value={promptInput}
                   onChange={(e) => setPromptInput(e.target.value)}
                   disabled={updatePreferences.isPending}
-                  className="ui-text-sm bg-surface text-strong block w-full rounded-md border border-zinc-300 px-3 py-2 font-mono focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+                  className="ui-text-sm bg-surface text-strong border-edge-input focus:border-focus focus:ring-focus block w-full rounded-md border px-3 py-2 font-mono focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                 />
-                <p className="ui-text-xs text-subtle">
+                <p className="ui-text-xs text-muted">
                   Available template variables: <InlineCode>{"{{content}}"}</InlineCode>,{" "}
                   <InlineCode>{"{{title}}"}</InlineCode>, <InlineCode>{"{{maxWords}}"}</InlineCode>.
                   The response should be wrapped in <InlineCode>{"<summary>"}</InlineCode> tags.
@@ -561,7 +561,7 @@ export function SummarizationApiKeySettings() {
                 )}
               </div>
             )}
-            <p className="ui-text-xs text-subtle mt-1.5">
+            <p className="ui-text-xs text-muted mt-1.5">
               Override the default prompt sent to the AI model when generating summaries.
             </p>
           </div>

@@ -116,7 +116,7 @@ function UserRow({ user }: { user: User }) {
       )}
 
       {/* Stats row */}
-      <div className="ui-text-xs text-subtle flex flex-wrap gap-x-4 gap-y-1">
+      <div className="ui-text-xs text-muted flex flex-wrap gap-x-4 gap-y-1">
         <span>Member since {formatDate(user.createdAt)}</span>
         <span>Last active: {user.lastActiveAt ? formatDate(user.lastActiveAt) : "Never"}</span>
         <span>
@@ -147,7 +147,7 @@ function EmptyState({ hasSearch }: { hasSearch: boolean }) {
       <h3 className="ui-text-sm text-strong font-medium">
         {hasSearch ? "No matching users" : "No users yet"}
       </h3>
-      <p className="ui-text-sm text-subtle mt-1">
+      <p className="ui-text-sm text-muted mt-1">
         {hasSearch ? "Try a different search term." : "No users have registered yet."}
       </p>
     </div>
@@ -248,7 +248,7 @@ export default function AdminUsersContent() {
             id="user-sort"
             value={sort}
             onChange={(e) => setSort(e.target.value as UserSort)}
-            className="ui-text-sm bg-surface text-strong block rounded-md border border-zinc-300 px-3 py-2 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 focus:outline-none dark:border-zinc-700 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+            className="ui-text-sm bg-surface text-strong border-edge-input focus:border-focus focus:ring-focus block rounded-md border px-3 py-2 focus:ring-2 focus:ring-offset-2 focus:outline-none"
           >
             {SORT_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
@@ -293,7 +293,7 @@ export default function AdminUsersContent() {
           {usersQuery.isFetchingNextPage && (
             <div className="flex items-center justify-center p-4">
               <SpinnerIcon className="mr-2 h-4 w-4 text-zinc-400" />
-              <span className="ui-text-sm text-subtle">Loading more...</span>
+              <span className="ui-text-sm text-muted">Loading more...</span>
             </div>
           )}
 

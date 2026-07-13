@@ -26,7 +26,7 @@ function StatCard({
 }) {
   return (
     <div className="border-edge bg-surface rounded-lg border p-4">
-      <p className="ui-text-xs text-subtle">{label}</p>
+      <p className="ui-text-xs text-muted">{label}</p>
       <p className="ui-text-lg text-strong mt-1 font-semibold">
         {typeof value === "number" ? value.toLocaleString() : value}
       </p>

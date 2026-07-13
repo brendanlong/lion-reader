@@ -189,14 +189,12 @@ export function LinkedAccounts() {
 
         {/* Show message if no providers available */}
         {enabledProviders.length === 0 && linkedAccounts.length === 0 && (
-          <p className="ui-text-sm text-subtle">
-            No OAuth providers are configured on this server.
-          </p>
+          <p className="ui-text-sm text-muted">No OAuth providers are configured on this server.</p>
         )}
       </div>
 
       {!hasPassword && linkedAccounts.length > 0 && (
-        <p className="ui-text-xs text-subtle mt-4">
+        <p className="ui-text-xs text-muted mt-4">
           Tip: Add a password to your account so you can unlink OAuth providers if needed.
         </p>
       )}
@@ -229,7 +227,7 @@ function LinkedAccountItem({ account, canUnlink, isUnlinking, onUnlink }: Linked
         <ProviderIcon provider={account.provider} />
         <div>
           <p className="ui-text-sm text-strong font-medium">{name}</p>
-          <p className="ui-text-xs text-subtle">Linked on {linkedDate}</p>
+          <p className="ui-text-xs text-muted">Linked on {linkedDate}</p>
         </div>
       </div>
       <Button
@@ -260,12 +258,12 @@ function LinkableProviderItem({ provider, isLinking, onLink }: LinkableProviderI
   const name = providerNames[provider];
 
   return (
-    <div className="flex items-center justify-between rounded-md border border-dashed border-zinc-300 p-4 dark:border-zinc-600">
+    <div className="border-edge-input flex items-center justify-between rounded-md border border-dashed p-4">
       <div className="flex items-center gap-3">
         <ProviderIcon provider={provider} muted />
         <div>
           <p className="ui-text-sm text-muted font-medium">{name}</p>
-          <p className="ui-text-xs text-zinc-500 dark:text-zinc-500">Not connected</p>
+          <p className="ui-text-xs text-muted">Not connected</p>
         </div>
       </div>
       <Button

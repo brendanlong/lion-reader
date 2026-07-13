@@ -132,7 +132,7 @@ export function BookmarkletSettings() {
 
         {showCode && (
           <div className="mt-4">
-            <p className="ui-text-sm text-subtle mb-2">
+            <p className="ui-text-sm text-muted mb-2">
               If you prefer, you can manually create a bookmark with this JavaScript code:
             </p>
             <div className="relative">
@@ -144,7 +144,7 @@ export function BookmarkletSettings() {
                 onClick={() => {
                   navigator.clipboard.writeText(bookmarkletHref);
                 }}
-                className="ui-text-xs absolute top-2 right-2 rounded border border-zinc-300 bg-white px-2 py-1 font-medium text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600 dark:hover:text-zinc-100"
+                className="ui-text-xs border-edge-input absolute top-2 right-2 rounded border bg-white px-2 py-1 font-medium text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600 dark:hover:text-zinc-100"
               >
                 Copy
               </button>

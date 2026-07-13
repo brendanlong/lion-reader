@@ -77,7 +77,7 @@ export interface CardDescriptionProps {
 }
 
 export function CardDescription({ children, className = "" }: CardDescriptionProps) {
-  return <p className={`ui-text-sm text-subtle mt-1 ${className}`}>{children}</p>;
+  return <p className={`ui-text-sm text-muted mt-1 ${className}`}>{children}</p>;
 }
 
 /**

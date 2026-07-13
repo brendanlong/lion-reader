@@ -9,7 +9,7 @@ import Link from "next/link";
 export function AuthFooter() {
   return (
     <footer className="border-edge mt-8 border-t pt-6">
-      <p className="ui-text-xs text-center text-zinc-500 dark:text-zinc-500">
+      <p className="ui-text-xs text-muted text-center">
         <Link
           href="/terms"
           className="hover:text-zinc-900 hover:underline dark:hover:text-zinc-300"
@@ -24,7 +24,7 @@ export function AuthFooter() {
           Privacy Policy
         </Link>
       </p>
-      <p className="ui-text-xs mt-2 text-center text-zinc-500 dark:text-zinc-500">
+      <p className="ui-text-xs text-muted mt-2 text-center">
         Created by{" "}
         <a
           href="https://www.brendanlong.com"

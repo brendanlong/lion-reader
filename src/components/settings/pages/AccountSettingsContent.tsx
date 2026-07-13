@@ -100,11 +100,11 @@ function AccountInfoSection() {
       ) : (
         <dl className="space-y-4">
           <div>
-            <dt className="ui-text-sm text-subtle font-medium">Email</dt>
+            <dt className="ui-text-sm text-muted font-medium">Email</dt>
             <dd className="ui-text-sm text-strong mt-1">{userQuery.data?.user.email}</dd>
           </div>
           <div>
-            <dt className="ui-text-sm text-subtle font-medium">Member since</dt>
+            <dt className="ui-text-sm text-muted font-medium">Member since</dt>
             <dd className="ui-text-sm text-strong mt-1">
               {userQuery.data?.user.createdAt
                 ? new Date(userQuery.data.user.createdAt).toLocaleDateString("en-US", {
@@ -116,7 +116,7 @@ function AccountInfoSection() {
             </dd>
           </div>
           <div>
-            <dt className="ui-text-sm text-subtle font-medium">Email verified</dt>
+            <dt className="ui-text-sm text-muted font-medium">Email verified</dt>
             <dd className="ui-text-sm text-strong mt-1">
               {userQuery.data?.user.emailVerifiedAt ? (
                 <span className="inline-flex items-center text-green-600 dark:text-green-400">
@@ -124,7 +124,7 @@ function AccountInfoSection() {
                   Verified
                 </span>
               ) : (
-                <span className="text-subtle">Not verified</span>
+                <span className="text-muted">Not verified</span>
               )}
             </dd>
           </div>

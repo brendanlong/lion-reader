@@ -119,7 +119,7 @@ export function Sidebar({ onClose }: SidebarProps) {
 
         {/* Divider with unread toggle */}
         <div className="border-edge-strong mx-3 flex items-center gap-2 border-t pt-2">
-          <span className="ui-text-xs text-subtle flex-1 font-medium">Feeds</span>
+          <span className="ui-text-xs text-muted flex-1 font-medium">Feeds</span>
           <SidebarUnreadToggle unreadOnly={sidebarUnreadOnly} onToggle={toggleSidebarUnreadOnly} />
         </div>
 

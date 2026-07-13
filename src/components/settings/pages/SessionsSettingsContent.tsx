@@ -86,7 +86,7 @@ export default function SessionsSettingsContent() {
     <div>
       <div className="mb-4 flex items-center justify-between">
         <h2 className="ui-text-lg text-strong font-semibold">Active Sessions</h2>
-        <span className="ui-text-sm text-subtle">
+        <span className="ui-text-sm text-muted">
           {sessionsQuery.data?.sessions.length ?? 0} active
         </span>
       </div>
@@ -178,11 +178,11 @@ function SessionCard({ session, onRevoke, isRevoking }: SessionCardProps) {
                   Current session
                 </span>
               )}
-              <p className="ui-text-sm text-subtle">{session.ipAddress || "Unknown IP"}</p>
+              <p className="ui-text-sm text-muted">{session.ipAddress || "Unknown IP"}</p>
             </div>
           </div>
 
-          <div className="ui-text-xs text-subtle mt-2 flex flex-wrap gap-x-4 gap-y-1">
+          <div className="ui-text-xs text-muted mt-2 flex flex-wrap gap-x-4 gap-y-1">
             <span>Last active: {formatRelativeTime(lastActive)}</span>
             <span>
               Created:{" "}

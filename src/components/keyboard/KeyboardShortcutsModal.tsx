@@ -109,7 +109,7 @@ export function KeyboardShortcutsModal({ isOpen, onClose }: KeyboardShortcutsMod
       <DialogBody className="space-y-6">
         {SHORTCUT_SECTIONS.map((section) => (
           <div key={section.title}>
-            <h3 className="ui-text-sm text-subtle mb-3 font-medium">{section.title}</h3>
+            <h3 className="ui-text-sm text-muted mb-3 font-medium">{section.title}</h3>
             <div className="space-y-2">
               {section.shortcuts.map((shortcut) => (
                 <div key={shortcut.description} className="flex items-center justify-between py-1">
@@ -131,7 +131,7 @@ export function KeyboardShortcutsModal({ isOpen, onClose }: KeyboardShortcutsMod
 
       {/* Footer */}
       <DialogFooter className="border-edge-strong flex-col items-stretch border-t pt-4">
-        <p className="ui-text-xs text-subtle mb-4">
+        <p className="ui-text-xs text-muted mb-4">
           Keyboard shortcuts can be disabled in Settings.
         </p>
         <div className="flex justify-end">

@@ -53,5 +53,5 @@ export const EntryContentRenderer = React.memo(function EntryContentRenderer({
     );
   }
 
-  return <p className="text-subtle italic">No content available.</p>;
+  return <p className="text-muted italic">No content available.</p>;
 });

@@ -115,8 +115,8 @@ function AdminTabNav() {
               href={tab.href}
               className={`ui-text-sm block shrink-0 border-b-2 px-4 py-3 font-medium whitespace-nowrap transition-colors ${
                 isActive
-                  ? "text-strong border-zinc-900 dark:border-zinc-50"
-                  : "text-subtle border-transparent hover:border-zinc-300 hover:text-zinc-700 dark:hover:border-zinc-600 dark:hover:text-zinc-200"
+                  ? "text-strong border-control-selected"
+                  : "text-muted border-transparent hover:border-zinc-300 hover:text-zinc-700 dark:hover:border-zinc-600 dark:hover:text-zinc-200"
               }`}
             >
               {tab.label}
@@ -213,7 +213,7 @@ export function AdminApp({ children }: AdminAppProps) {
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <p className="ui-text-sm text-subtle">Verifying credentials...</p>
+        <p className="ui-text-sm text-muted">Verifying credentials...</p>
       </div>
     );
   }

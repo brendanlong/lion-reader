@@ -116,7 +116,7 @@ describe("CardDescription", () => {
   it("applies description styles", () => {
     render(<CardDescription>Styled description</CardDescription>);
     const description = screen.getByText("Styled description");
-    expect(description).toHaveClass("text-subtle", "mt-1");
+    expect(description).toHaveClass("text-muted", "mt-1");
   });
 
   it("applies custom className", () => {

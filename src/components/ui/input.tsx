@@ -26,7 +26,7 @@ export function Input({ label, error, id, className = "", ref, ...props }: Input
         className={`ui-text-sm bg-surface text-strong block w-full rounded-md border px-3 py-2 placeholder:text-zinc-400 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:placeholder:text-zinc-500 ${
           error
             ? "border-red-500 focus:border-red-500 focus:ring-red-500 dark:border-red-500"
-            : "border-zinc-300 focus:border-zinc-900 focus:ring-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+            : "border-edge-input focus:border-focus focus:ring-focus"
         } ${className}`}
         aria-invalid={error ? "true" : undefined}
         aria-describedby={error ? `${id}-error` : undefined}

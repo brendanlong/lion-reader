@@ -43,7 +43,7 @@ export function SettingsListContainer<T>({
   skeletonHeight,
   footer,
 }: SettingsListContainerProps<T>) {
-  const defaultEmpty = <p className="ui-text-sm text-subtle text-center">{emptyMessage}</p>;
+  const defaultEmpty = <p className="ui-text-sm text-muted text-center">{emptyMessage}</p>;
 
   const resolvedEmptyState = emptyState ?? defaultEmpty;
 
