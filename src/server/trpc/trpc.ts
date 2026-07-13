@@ -19,7 +19,7 @@ import {
   type RateLimitType,
 } from "@/server/rate-limit";
 import { signupConfig } from "@/server/config/env";
-import { errors } from "./errors";
+import { errors, getAppErrorCode, isExpectedClientError } from "./errors";
 import {
   ADMIN_COOKIE_NAME,
   validateAdminSessionToken,
@@ -39,11 +39,7 @@ const t = initTRPC
     transformer: superjson,
     errorFormatter({ shape, error }) {
       // Extract our custom app error code from cause (set by createError in errors.ts)
-      const cause = error.cause;
-      const appErrorCode =
-        cause && typeof cause === "object" && "code" in cause
-          ? (cause as { code: string }).code
-          : undefined;
+      const appErrorCode = getAppErrorCode(error);
 
       return {
         ...shape,
@@ -92,10 +88,13 @@ const timingMiddleware = t.middleware(async ({ path, type, next, ctx }) => {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
     const isTRPCError = error instanceof TRPCError;
 
-    // Only log unexpected errors (not client errors like UNAUTHORIZED, NOT_FOUND)
+    // Only log unexpected errors (not client errors like UNAUTHORIZED, NOT_FOUND,
+    // nor expected upstream conditions like SITE_BLOCKED that map to a 5xx status
+    // but aren't server bugs — see isExpectedClientError)
     if (
       !isTRPCError ||
-      !["UNAUTHORIZED", "NOT_FOUND", "BAD_REQUEST", "FORBIDDEN"].includes(error.code)
+      (!["UNAUTHORIZED", "NOT_FOUND", "BAD_REQUEST", "FORBIDDEN"].includes(error.code) &&
+        !isExpectedClientError(error))
     ) {
       logger.error("tRPC request failed", {
         path,

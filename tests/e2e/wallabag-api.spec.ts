@@ -265,12 +265,13 @@ test.describe("Wallabag API happy path", () => {
         headers: auth,
         form: { url },
       });
-      expect(res.status()).toBeGreaterThanOrEqual(400);
-      expect(res.status()).toBeLessThan(500);
+      // A 404 fetch of a user-provided URL is a client error, not a server bug:
+      // exactly 400, not a 500 (which would be reported to Sentry).
+      expect(res.status()).toBe(400);
       // Wallabag error envelope, so clients can display why the save failed.
       const body = await res.json();
-      expect(body).toHaveProperty("error");
-      expect(body).toHaveProperty("error_description");
+      expect(body.error).toBe("BAD_REQUEST");
+      expect(typeof body.error_description).toBe("string");
     } finally {
       await close();
     }

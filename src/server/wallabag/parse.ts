@@ -4,6 +4,7 @@
 
 import { TRPCError } from "@trpc/server";
 import { getHTTPStatusCodeFromError } from "@trpc/server/http";
+import { isExpectedClientError } from "@/server/trpc/errors";
 
 /**
  * Creates a JSON response.
@@ -30,13 +31,17 @@ export function errorResponse(error: string, description: string, status = 400):
  * expected user-input failures — e.g. saving a URL that 404s
  * (`SAVED_ARTICLE_FETCH_ERROR`) — and letting those bubble unhandled out of a
  * route handler turns them into an unhandled 500 that Next.js reports to Sentry.
- * Returns a Response for a 4xx TRPCError, or `null` for anything else (5xx
- * TRPCErrors and non-TRPC errors) so genuine bugs still propagate to Sentry.
+ * Returns a Response for a client (4xx) TRPCError — plus a few expected upstream
+ * conditions that map to 5xx but aren't server bugs (e.g. `SITE_BLOCKED`, the
+ * target site refusing our fetch bot; see `isExpectedClientError`). Returns
+ * `null` for anything else (genuine 5xx TRPCErrors and non-TRPC errors) so those
+ * still propagate to Sentry.
  */
 export function clientErrorResponse(error: unknown): Response | null {
   if (!(error instanceof TRPCError)) return null;
   const status = getHTTPStatusCodeFromError(error);
-  if (status < 400 || status >= 500) return null;
+  const isClientError = (status >= 400 && status < 500) || isExpectedClientError(error);
+  if (!isClientError) return null;
   return errorResponse(error.code, error.message, status);
 }
 
