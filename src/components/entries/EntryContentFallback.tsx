@@ -154,11 +154,6 @@ export function EntryContentFallback({ entryId, onBack }: EntryContentFallbackPr
               variant={cachedEntry.starred ? "primary" : "secondary"}
               size="sm"
               onClick={handleStarToggle}
-              className={
-                cachedEntry.starred
-                  ? "bg-warning-solid text-warning-solid-foreground hover:bg-warning-solid-hover"
-                  : ""
-              }
               aria-label={cachedEntry.starred ? "Remove from starred" : "Add to starred"}
             >
               {cachedEntry.starred ? (

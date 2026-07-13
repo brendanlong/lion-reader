@@ -252,11 +252,6 @@ function DemoRouterContent() {
                 variant={selectedEntry.starred ? "primary" : "secondary"}
                 size="sm"
                 onClick={() => demoState.toggleStar(selectedEntry.id)}
-                className={
-                  selectedEntry.starred
-                    ? "bg-warning-solid text-warning-solid-foreground hover:bg-warning-solid-hover"
-                    : ""
-                }
                 aria-label={selectedEntry.starred ? "Remove from starred" : "Add to starred"}
               >
                 {selectedEntry.starred ? (
@@ -290,11 +285,6 @@ function DemoRouterContent() {
                   setShowSummaryForEntry(
                     showSummaryForEntry === selectedEntry.id ? null : selectedEntry.id
                   )
-                }
-                className={
-                  showSummaryForEntry === selectedEntry.id
-                    ? "bg-accent-muted hover:bg-accent dark:bg-accent dark:hover:bg-accent-hover text-white dark:text-zinc-900"
-                    : ""
                 }
                 aria-label={
                   showSummaryForEntry === selectedEntry.id ? "Hide summary" : "Show AI summary"
