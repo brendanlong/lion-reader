@@ -24,7 +24,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc/client";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
 import { refreshEntryLists } from "@/lib/hooks/useEntryListRefreshOnNavigate";
-import { reconcileListReadStarredFromEntryGet } from "@/lib/cache/entry-cache";
+import { snapshotEntryGetStates, reconcileListFromChangedEntryGets } from "@/lib/cache/entry-cache";
 import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
 import { useKeyboardShortcutsContext } from "@/components/keyboard/KeyboardShortcutsProvider";
 import { useKeyboardShortcuts } from "@/lib/hooks/useKeyboardShortcuts";
@@ -70,12 +70,15 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
     });
 
   // Wrap fetchNextPage so every next-page fetch (keyboard- or scroll-triggered)
-  // re-asserts read/starred state from entries.get after it settles — the
-  // completing fetch would otherwise clobber writes applied to the old pages
-  // mid-fetch (e.g. auto-mark-read from j/k). See #1081.
+  // re-asserts read/starred state that changed during the fetch — the completing
+  // fetch would otherwise clobber writes applied to the old pages mid-fetch (e.g.
+  // auto-mark-read from j/k). Snapshot entries.get state at fetch start and
+  // diff after settle, so only genuinely-mid-fetch changes are re-applied (not
+  // stale gets, e.g. after mark_all_read). See #1081.
   const fetchNextPageAndReconcile = useCallback(() => {
+    const before = snapshotEntryGetStates(queryClient);
     return fetchNextPage().then((result) => {
-      reconcileListReadStarredFromEntryGet(queryClient);
+      reconcileListFromChangedEntryGets(queryClient, before);
       return result;
     });
   }, [fetchNextPage, queryClient]);
