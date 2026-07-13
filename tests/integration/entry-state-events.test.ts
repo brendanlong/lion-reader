@@ -148,6 +148,7 @@ async function getUserEntryRow(userId: string, entryId: string) {
       starred: userEntries.starred,
       readChangedAt: userEntries.readChangedAt,
       starredChangedAt: userEntries.starredChangedAt,
+      updatedAt: userEntries.updatedAt,
     })
     .from(userEntries)
     .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, entryId)));
@@ -225,6 +226,10 @@ describe("markEntriesRead SSE publishing", () => {
     const t2 = new Date("2026-01-01T00:00:05Z");
     await entriesService.markEntriesRead(db, userId, [{ id: entryId, changedAt: t1 }], true);
 
+    // Capture updated_at (the delta-sync "meaningful change" timestamp) after
+    // the real flip so we can assert the re-assert leaves it untouched.
+    const before = await getUserEntryRow(userId, entryId);
+
     const channel = getUserEventsChannel(userId);
     await subscriber.subscribe(channel);
 
@@ -243,9 +248,12 @@ describe("markEntriesRead SSE publishing", () => {
       expect(result.counts).toBeUndefined();
     });
 
-    // The re-assert advanced the LWW watermark even though nothing flipped.
+    // The re-assert advanced the LWW watermark even though nothing flipped...
     const row = await getUserEntryRow(userId, entryId);
     expect(row.readChangedAt).toEqual(t2);
+    // ...but updated_at did NOT move, so delta sync (sync.events / Wallabag
+    // `since`) won't re-deliver the entry (issue #1118 Part 2).
+    expect(row.updatedAt).toEqual(before.updatedAt);
   });
 
   it("keeps multi-device last-writer-wins intact across a redundant re-assert (issue #1118)", async () => {
@@ -350,6 +358,10 @@ describe("updateEntryStarred SSE publishing", () => {
     const t2 = new Date("2026-01-01T00:00:05Z");
     await entriesService.updateEntryStarred(db, userId, entryId, true, t1);
 
+    // Capture updated_at (the delta-sync "meaningful change" timestamp) after
+    // the real flip so we can assert the re-assert leaves it untouched.
+    const before = await getUserEntryRow(userId, entryId);
+
     const channel = getUserEventsChannel(userId);
     await subscriber.subscribe(channel);
 
@@ -362,9 +374,12 @@ describe("updateEntryStarred SSE publishing", () => {
       expect(result.counts).toBeUndefined();
     });
 
-    // The re-assert advanced the LWW watermark even though nothing flipped.
+    // The re-assert advanced the LWW watermark even though nothing flipped...
     const row = await getUserEntryRow(userId, entryId);
     expect(row.starredChangedAt).toEqual(t2);
+    // ...but updated_at did NOT move, so delta sync won't re-deliver the entry
+    // (issue #1118 Part 2).
+    expect(row.updatedAt).toEqual(before.updatedAt);
   });
 
   it("keeps multi-device last-writer-wins intact across a redundant re-assert (issue #1118)", async () => {

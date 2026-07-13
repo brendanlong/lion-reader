@@ -154,6 +154,17 @@ only when present; absent counts mean the cached counts are already correct. The
 same rule gates the server's `entry_state_changed` SSE publish, so re-asserts
 emit no event at all.
 
+**Meaningful change vs. row touched** (issue #1118 Part 2): the offline/polling
+**delta-sync** path (`sync.events`, and Wallabag `since`) is driven by
+`visible_entries.updated_at = GREATEST(entries.updated_at, user_entries.updated_at)`,
+which is a **separate signal** from the `read_changed_at`/`starred_changed_at`
+last-write-wins watermarks. A same-value re-assert advances the watermark (so
+last-writer-wins stays correct) but the mark-read/star UPDATEs only bump
+`user_entries.updated_at` when the value actually flips. So a re-assert doesn't
+churn delta sync either — an offline client re-syncing after a resync-style
+re-mark won't re-fetch entries whose visible state is unchanged. Genuine flips
+bump `updated_at` and re-deliver as before.
+
 ## Key Files
 
 | File                                               | Purpose                                                            |
