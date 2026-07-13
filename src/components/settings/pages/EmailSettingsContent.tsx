@@ -272,11 +272,7 @@ function IngestAddressRow({ address }: IngestAddressRowProps) {
           >
             Cancel
           </Button>
-          <Button
-            onClick={handleDelete}
-            loading={deleteMutation.isPending}
-            className="bg-danger-solid hover:bg-danger-solid-hover"
-          >
+          <Button variant="danger" onClick={handleDelete} loading={deleteMutation.isPending}>
             Delete
           </Button>
         </DialogFooter>

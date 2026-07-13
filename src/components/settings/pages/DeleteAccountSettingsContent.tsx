@@ -83,10 +83,7 @@ export default function DeleteAccountSettingsContent() {
             account data.
           </p>
           <div className="mt-4">
-            <Button
-              onClick={handleOpenDialog}
-              className="bg-danger-solid text-danger-solid-foreground hover:bg-danger-solid-hover"
-            >
+            <Button variant="danger" onClick={handleOpenDialog}>
               Delete account
             </Button>
           </div>
@@ -136,10 +133,10 @@ export default function DeleteAccountSettingsContent() {
             Cancel
           </Button>
           <Button
+            variant="danger"
             onClick={handleDelete}
             loading={deleteAccountMutation.isPending}
             disabled={!isConfirmed}
-            className="bg-danger-solid text-danger-solid-foreground hover:bg-danger-solid-hover"
           >
             Delete my account
           </Button>
