@@ -696,6 +696,69 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
     });
   });
 
+  describe("Full content by default (plugin opt-in)", () => {
+    it("defaults fetchFullContent on for a Bluesky RSS feed", async () => {
+      const userId = await createTestUser();
+      const feedUrl = "https://bsky.app/profile/someone.bsky.social/rss";
+      const fetchTime = new Date("2024-01-01T10:00:00Z");
+      await createTestFeed({
+        url: feedUrl,
+        title: "Someone",
+        lastFetchedAt: fetchTime,
+        lastEntriesUpdatedAt: fetchTime,
+      });
+
+      const caller = createCaller(createAuthContext(userId));
+      const result = await caller.subscriptions.create({ url: feedUrl });
+
+      expect(result.fetchFullContent).toBe(true);
+    });
+
+    it("leaves fetchFullContent off for an ordinary feed", async () => {
+      const userId = await createTestUser();
+      const feedUrl = "https://example.com/ordinary.xml";
+      const fetchTime = new Date("2024-01-01T10:00:00Z");
+      await createTestFeed({
+        url: feedUrl,
+        title: "Ordinary",
+        lastFetchedAt: fetchTime,
+        lastEntriesUpdatedAt: fetchTime,
+      });
+
+      const caller = createCaller(createAuthContext(userId));
+      const result = await caller.subscriptions.create({ url: feedUrl });
+
+      expect(result.fetchFullContent).toBe(false);
+    });
+
+    it("does not override a resubscribe's stored preference", async () => {
+      const userId = await createTestUser();
+      const feedUrl = "https://bsky.app/profile/optout.bsky.social/rss";
+      const fetchTime = new Date("2024-01-01T10:00:00Z");
+      await createTestFeed({
+        url: feedUrl,
+        title: "Opt Out",
+        lastFetchedAt: fetchTime,
+        lastEntriesUpdatedAt: fetchTime,
+      });
+
+      const caller = createCaller(createAuthContext(userId));
+      const first = await caller.subscriptions.create({ url: feedUrl });
+      expect(first.fetchFullContent).toBe(true);
+
+      // User turns it off, unsubscribes, then resubscribes.
+      await db
+        .update(subscriptions)
+        .set({ fetchFullContent: false })
+        .where(eq(subscriptions.id, first.id));
+      await caller.subscriptions.delete({ id: first.id });
+
+      const second = await caller.subscriptions.create({ url: feedUrl });
+      expect(second.id).toBe(first.id);
+      expect(second.fetchFullContent).toBe(false);
+    });
+  });
+
   describe("Absolute counts on create/delete", () => {
     async function seedFeedWithUnread(url: string, count: number): Promise<string> {
       const fetchTime = new Date("2024-01-01T10:00:00Z");

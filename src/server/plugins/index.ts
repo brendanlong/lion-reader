@@ -11,6 +11,7 @@ import { googleDocsPlugin } from "./google-docs";
 import { arxivPlugin } from "./arxiv";
 import { githubPlugin } from "./github";
 import { youtubePlugin } from "./youtube";
+import { blueskyPlugin } from "./bluesky";
 import { logger } from "@/lib/logger";
 
 // Register all available plugins at module load time
@@ -19,6 +20,7 @@ pluginRegistry.register(googleDocsPlugin);
 pluginRegistry.register(arxivPlugin);
 pluginRegistry.register(githubPlugin);
 pluginRegistry.register(youtubePlugin);
+pluginRegistry.register(blueskyPlugin);
 
 logger.info("Plugins registered", {
   plugins: [
@@ -27,6 +29,7 @@ logger.info("Plugins registered", {
     arxivPlugin.name,
     githubPlugin.name,
     youtubePlugin.name,
+    blueskyPlugin.name,
   ],
 });
 
@@ -48,6 +51,24 @@ export function getFeedPlugin(url: string | URL | null | undefined) {
   }
 
   return pluginRegistry.findWithCapability(parsed, "feed");
+}
+
+/**
+ * Whether new subscriptions to this feed URL should default `fetch_full_content`
+ * on (a plugin opt-in for sources whose feed entries are truncated or drop
+ * embedded content, e.g. Bluesky). Returns false for an invalid/unhandled URL.
+ */
+export function feedDefaultsToFullContent(url: string | URL | null | undefined): boolean {
+  if (!url) return false;
+
+  let parsed: URL;
+  try {
+    parsed = url instanceof URL ? url : new URL(url);
+  } catch {
+    return false;
+  }
+
+  return pluginRegistry.feedDefaultsToFullContent(parsed);
 }
 
 // Export registry and types
