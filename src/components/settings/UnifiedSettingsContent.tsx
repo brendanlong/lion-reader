@@ -108,7 +108,7 @@ export function UnifiedSettingsContent() {
                     href={link.href}
                     className={`ui-text-sm block rounded-md px-3 py-2 font-medium whitespace-nowrap transition-colors ${
                       isActive
-                        ? "bg-surface-muted text-strong"
+                        ? "bg-primary-solid text-primary-solid-foreground"
                         : "text-muted hover:bg-surface-muted hover:text-strong"
                     }`}
                   >
