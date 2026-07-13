@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { eq } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
   users,
@@ -144,6 +144,46 @@ async function createTestEntry(
     fetchedAt: now,
     publishedAt: options.publishedAt ?? now,
     lastSeenAt: now,
+    createdAt: options.createdAt ?? now,
+    updatedAt: options.updatedAt ?? now,
+  });
+  return entryId;
+}
+
+async function createSavedFeed(userId: string): Promise<string> {
+  const feedId = generateUuidv7();
+  const now = new Date();
+  await db.insert(feeds).values({
+    id: feedId,
+    type: "saved",
+    userId,
+    url: null,
+    title: "Saved Articles",
+    // Saved feeds are never polled: last_entries_updated_at stays NULL.
+    lastEntriesUpdatedAt: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return feedId;
+}
+
+async function createSavedEntry(
+  savedFeedId: string,
+  options: { title?: string; createdAt?: Date; updatedAt?: Date } = {}
+): Promise<string> {
+  const entryId = generateUuidv7();
+  const now = new Date();
+  await db.insert(entries).values({
+    id: entryId,
+    feedId: savedFeedId,
+    type: "saved",
+    guid: `guid-${entryId}`,
+    title: options.title ?? `Saved ${entryId}`,
+    contentHash: `hash-${entryId}`,
+    fetchedAt: now,
+    publishedAt: options.createdAt ?? now,
+    // Saved entries must have last_seen_at NULL (entries_last_seen_only_fetched).
+    lastSeenAt: null,
     createdAt: options.createdAt ?? now,
     updatedAt: options.updatedAt ?? now,
   });
@@ -959,6 +999,239 @@ describe("sync.events", () => {
       });
 
       expect(result.events.filter((e) => ENTRY_EVENT_TYPES.has(e.type))).toHaveLength(0);
+    });
+  });
+
+  // ==========================================================================
+  // Index-driven candidate union (#1105)
+  //
+  // The delta is split into arms that each hit an index instead of scanning the
+  // user's whole history on a cross-table GREATEST. These tests exercise the
+  // arm that Arm A (user_entries.updated_at) can't cover on its own: an
+  // entries.updated_at bump with a STALE user_entries.updated_at, across the
+  // subscribed-feed arm (B1) and the saved-articles arm (B2), plus the plan
+  // shape that guards the indexes stay in use.
+  // ==========================================================================
+
+  describe("entry-side changes (#1105)", () => {
+    // Timestamps: the entry + user_entry are created well before the cursor, the
+    // cursor sits in the middle, and only entries.updated_at moves after it —
+    // user_entries.updated_at stays stale, so only the entry-side arm can find it.
+    const OLD = new Date("2025-01-01T00:00:00.000Z");
+    const CURSOR = new Date("2025-06-01T00:00:00.000Z");
+    const NEW = new Date("2025-06-02T00:00:00.000Z");
+
+    it("delivers a content refetch (entries.updated_at bumped, user_entries stale) via the subscribed-feed arm", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/refetch.xml");
+      await createTestSubscription(userId, feedId);
+
+      const entryId = await createTestEntry(feedId, {
+        title: "Original Title",
+        createdAt: OLD,
+        updatedAt: OLD,
+      });
+      await createUserEntry(userId, entryId, { read: true, updatedAt: OLD });
+
+      // A content refetch bumps entries.updated_at AND the feed's
+      // last_entries_updated_at (handlers.ts sets it on hasChanges), but never
+      // touches the user_entries row — exactly what updateEntryContent does.
+      await db
+        .update(entries)
+        .set({ title: "Updated Title", updatedAt: NEW })
+        .where(eq(entries.id, entryId));
+      await db.update(feeds).set({ lastEntriesUpdatedAt: NEW }).where(eq(feeds.id, feedId));
+
+      const result = await createCaller(createAuthContext(userId)).sync.events({
+        cursors: { entries: CURSOR.toISOString() },
+      });
+
+      const updated = result.events.filter((e) => e.type === "entry_updated");
+      expect(updated).toHaveLength(1);
+      expect(updated[0]).toMatchObject({
+        type: "entry_updated",
+        entryId,
+        metadata: expect.objectContaining({ title: "Updated Title" }),
+      });
+      // The stale-but-read state must NOT surface as a state change.
+      expect(result.events.filter((e) => e.type === "entry_state_changed")).toHaveLength(0);
+    });
+
+    it("still delivers the refetch even though the feed's last_entries_updated_at moved (pre-filter is a superset)", async () => {
+      // Guard the Arm B1 pre-filter: last_entries_updated_at is always stamped
+      // >= every entry.updated_at in the feed, so a `>= cursor` pre-filter can
+      // never drop a changed entry. Here both are just past the cursor.
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/refetch-boundary.xml");
+      await createTestSubscription(userId, feedId);
+      const entryId = await createTestEntry(feedId, { createdAt: OLD, updatedAt: OLD });
+      await createUserEntry(userId, entryId, { updatedAt: OLD });
+
+      await db.update(entries).set({ updatedAt: NEW }).where(eq(entries.id, entryId));
+      await db.update(feeds).set({ lastEntriesUpdatedAt: NEW }).where(eq(feeds.id, feedId));
+
+      const result = await createCaller(createAuthContext(userId)).sync.events({
+        cursors: { entries: CURSOR.toISOString() },
+      });
+      expect(result.events.filter((e) => e.type === "entry_updated")).toHaveLength(1);
+    });
+
+    it("delivers a saved-article content update via the saved arm (no subscription row)", async () => {
+      const userId = await createTestUser();
+      const savedFeedId = await createSavedFeed(userId);
+      const entryId = await createSavedEntry(savedFeedId, {
+        title: "Saved Original",
+        createdAt: OLD,
+        updatedAt: OLD,
+      });
+      // Saved articles have no subscription; the user_entries row alone grants
+      // visibility (subscription_id NULL).
+      await createUserEntry(userId, entryId, { read: true, updatedAt: OLD });
+
+      // Later full-content fetch bumps entries.updated_at; the saved feed is never
+      // polled so its last_entries_updated_at stays NULL — the saved arm keys on
+      // the feed id, not last_entries_updated_at.
+      await db
+        .update(entries)
+        .set({ title: "Saved Updated", updatedAt: NEW })
+        .where(eq(entries.id, entryId));
+
+      const result = await createCaller(createAuthContext(userId)).sync.events({
+        cursors: { entries: CURSOR.toISOString() },
+      });
+
+      const updated = result.events.filter((e) => e.type === "entry_updated");
+      expect(updated).toHaveLength(1);
+      expect(updated[0]).toMatchObject({ type: "entry_updated", entryId });
+    });
+
+    it("delivers a content refetch for a STARRED entry on an unsubscribed feed (visible via starred)", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/starred-orphan-refetch.xml");
+      await createTestSubscription(userId, feedId);
+      // Soft-delete the subscription: the row still exists, so Arm B1 (which
+      // drives from subscriptions without the unsubscribed filter) still reaches
+      // the feed, and the outer visibility predicate keeps it because it's starred.
+      await db
+        .update(subscriptions)
+        .set({ unsubscribedAt: NEW })
+        .where(eq(subscriptions.userId, userId));
+
+      const entryId = await createTestEntry(feedId, { createdAt: OLD, updatedAt: OLD });
+      await createUserEntry(userId, entryId, { starred: true, updatedAt: OLD });
+
+      await db.update(entries).set({ updatedAt: NEW }).where(eq(entries.id, entryId));
+      await db.update(feeds).set({ lastEntriesUpdatedAt: NEW }).where(eq(feeds.id, feedId));
+
+      const result = await createCaller(createAuthContext(userId)).sync.events({
+        cursors: { entries: CURSOR.toISOString() },
+      });
+      expect(result.events.filter((e) => e.type === "entry_updated")).toHaveLength(1);
+    });
+
+    it("does NOT deliver a content refetch for a non-starred entry on an unsubscribed feed", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/unsub-refetch.xml");
+      await createTestSubscription(userId, feedId);
+      await db
+        .update(subscriptions)
+        .set({ unsubscribedAt: NEW })
+        .where(eq(subscriptions.userId, userId));
+
+      const entryId = await createTestEntry(feedId, { createdAt: OLD, updatedAt: OLD });
+      await createUserEntry(userId, entryId, { updatedAt: OLD });
+
+      await db.update(entries).set({ updatedAt: NEW }).where(eq(entries.id, entryId));
+      await db.update(feeds).set({ lastEntriesUpdatedAt: NEW }).where(eq(feeds.id, feedId));
+
+      const result = await createCaller(createAuthContext(userId)).sync.events({
+        cursors: { entries: CURSOR.toISOString() },
+      });
+      expect(result.events.filter((e) => ENTRY_EVENT_TYPES.has(e.type))).toHaveLength(0);
+    });
+
+    // The whole point of #1105: each candidate arm must SEEK an index, not scan
+    // the user's whole history. These EXPLAINs mirror the arms built in
+    // src/server/trpc/routers/sync.ts — keep them in sync. enable_seqscan=off
+    // makes the planner reveal whether the predicate is index-serviceable at all
+    // (on tiny test data it would otherwise seq-scan regardless of the index).
+    it("candidate arms seek their indexes, not a full scan (EXPLAIN)", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/explain.xml");
+      await createTestSubscription(userId, feedId);
+      const savedFeedId = await createSavedFeed(userId);
+      // Give both feeds volume with everything before the cursor, so the
+      // (feed_id, updated_at) index — which seeks straight past the stale rows —
+      // is strictly cheaper than the (feed_id, id) index that must scan + filter.
+      for (let i = 0; i < 40; i++) {
+        const e = await createTestEntry(feedId, { updatedAt: OLD });
+        await createUserEntry(userId, e, { updatedAt: OLD });
+        const s = await createSavedEntry(savedFeedId, { updatedAt: OLD });
+        await createUserEntry(userId, s, { updatedAt: OLD });
+      }
+      await db.execute(sql`ANALYZE user_entries`);
+      await db.execute(sql`ANALYZE entries`);
+      await db.execute(sql`ANALYZE feeds`);
+      await db.execute(sql`ANALYZE subscriptions`);
+
+      const cursorTs = sql`${CURSOR.toISOString()}::timestamptz`;
+
+      // Arm A — user_entries.updated_at
+      const armA = db
+        .select({ entryId: userEntries.entryId })
+        .from(userEntries)
+        .where(and(eq(userEntries.userId, userId), sql`${userEntries.updatedAt} >= ${cursorTs}`));
+
+      // Arm B1 — entries.updated_at within subscribed feeds
+      const armB1 = db
+        .select({ entryId: userEntries.entryId })
+        .from(subscriptions)
+        .innerJoin(
+          feeds,
+          and(eq(feeds.id, subscriptions.feedId), sql`${feeds.lastEntriesUpdatedAt} >= ${cursorTs}`)
+        )
+        .innerJoin(
+          entries,
+          and(eq(entries.feedId, subscriptions.feedId), sql`${entries.updatedAt} >= ${cursorTs}`)
+        )
+        .innerJoin(
+          userEntries,
+          and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, subscriptions.userId))
+        )
+        .where(eq(subscriptions.userId, userId));
+
+      // Arm B2 — entries.updated_at within the saved feed
+      const armB2 = db
+        .select({ entryId: userEntries.entryId })
+        .from(userEntries)
+        .innerJoin(
+          entries,
+          and(
+            eq(entries.id, userEntries.entryId),
+            eq(entries.feedId, savedFeedId),
+            sql`${entries.updatedAt} >= ${cursorTs}`
+          )
+        )
+        .where(eq(userEntries.userId, userId));
+
+      const explainOf = async (query: { getSQL: () => ReturnType<typeof sql> }) =>
+        db.transaction(async (tx) => {
+          await tx.execute(sql`SET LOCAL enable_seqscan = off`);
+          const explain = await tx.execute(sql`EXPLAIN ${query.getSQL()}`);
+          return explain.rows.map((r) => r["QUERY PLAN"] as string).join("\n");
+        });
+
+      const planA = await explainOf(armA);
+      expect(planA).toContain("idx_user_entries_updated_at");
+      expect(planA).not.toContain("Seq Scan");
+
+      const planB1 = await explainOf(armB1);
+      expect(planB1).toContain("idx_entries_feed_updated_at");
+      expect(planB1).not.toContain("Seq Scan");
+
+      const planB2 = await explainOf(armB2);
+      expect(planB2).toContain("idx_entries_feed_updated_at");
+      expect(planB2).not.toContain("Seq Scan");
     });
   });
 });
