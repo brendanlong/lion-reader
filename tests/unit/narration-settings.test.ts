@@ -1,8 +1,7 @@
 /**
- * Unit tests for narration settings loading and migration.
+ * Unit tests for narration settings loading.
  *
- * Tests the pure logic of settings parsing and migration from
- * old formats (voiceUri) to new formats (voiceId, provider).
+ * Tests the pure logic of settings parsing, validation, and merging with defaults.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
@@ -107,41 +106,6 @@ describe("loadNarrationSettings", () => {
 
       const settings = loadNarrationSettings();
       expect(settings.pitch).toBe(0.8);
-    });
-  });
-
-  describe("migration from voiceUri to voiceId", () => {
-    it("migrates voiceUri to voiceId when voiceId is not present", () => {
-      localStorageMock.setItem(
-        "lion-reader-narration-settings",
-        JSON.stringify({ voiceUri: "old-voice-uri" })
-      );
-
-      const settings = loadNarrationSettings();
-      expect(settings.voiceId).toBe("old-voice-uri");
-    });
-
-    it("prefers voiceId over voiceUri when both are present", () => {
-      localStorageMock.setItem(
-        "lion-reader-narration-settings",
-        JSON.stringify({
-          voiceUri: "old-voice-uri",
-          voiceId: "new-voice-id",
-        })
-      );
-
-      const settings = loadNarrationSettings();
-      expect(settings.voiceId).toBe("new-voice-id");
-    });
-
-    it("handles null voiceUri gracefully", () => {
-      localStorageMock.setItem(
-        "lion-reader-narration-settings",
-        JSON.stringify({ voiceUri: null })
-      );
-
-      const settings = loadNarrationSettings();
-      expect(settings.voiceId).toBeNull();
     });
   });
 

@@ -37,12 +37,6 @@ export interface NarrationSettings {
   voiceId: string | null;
 
   /**
-   * @deprecated Use voiceId instead. Kept for backwards compatibility.
-   * Will be migrated to voiceId on load.
-   */
-  voiceUri?: string | null;
-
-  /**
    * Playback rate multiplier (0.5 - 2.0, default 1.0).
    */
   rate: number;
@@ -129,17 +123,9 @@ export function loadNarrationSettings(): NarrationSettings {
       return DEFAULT_NARRATION_SETTINGS;
     }
 
-    const parsed = JSON.parse(stored) as Partial<NarrationSettings> & { voiceUri?: string | null };
+    const parsed = JSON.parse(stored) as Partial<NarrationSettings>;
 
-    // Handle migration from voiceUri to voiceId
-    // If voiceId is not present but voiceUri is, use voiceUri as voiceId
-    let voiceId: string | null = null;
-    if (typeof parsed.voiceId === "string") {
-      voiceId = parsed.voiceId;
-    } else if (typeof parsed.voiceUri === "string") {
-      // Migration: use old voiceUri as voiceId
-      voiceId = parsed.voiceUri;
-    }
+    const voiceId = typeof parsed.voiceId === "string" ? parsed.voiceId : null;
 
     // Validate provider value
     const validProviders = ["browser", "piper"] as const;
@@ -197,7 +183,7 @@ export function loadNarrationSettings(): NarrationSettings {
  * ```ts
  * saveNarrationSettings({
  *   enabled: true,
- *   voiceUri: "com.apple.voice.compact.en-US.Samantha",
+ *   voiceId: "com.apple.voice.compact.en-US.Samantha",
  *   rate: 1.25,
  *   pitch: 1.0,
  * });
