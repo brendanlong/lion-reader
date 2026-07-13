@@ -348,18 +348,22 @@ export function EntryContentBody({
         <div ref={actionButtonsRef} className="flex flex-wrap items-center gap-2 sm:gap-3">
           {/* Star button */}
           <Button
-            variant={starred ? "primary" : "secondary"}
+            variant="secondary"
             size="sm"
             onClick={onToggleStar}
             aria-label={starred ? "Remove from starred" : "Add to starred"}
           >
-            {starred ? <StarFilledIcon className="h-5 w-5" /> : <StarIcon className="h-5 w-5" />}
+            {starred ? (
+              <StarFilledIcon className="text-star h-5 w-5" />
+            ) : (
+              <StarIcon className="h-5 w-5" />
+            )}
             <span className="ml-2">{starred ? "Starred" : "Star"}</span>
           </Button>
 
           {/* Mark read/unread button */}
           <Button
-            variant={!read ? "primary" : "secondary"}
+            variant="secondary"
             size="sm"
             onClick={onToggleRead}
             aria-label={read ? "Mark as unread" : "Mark as read"}
