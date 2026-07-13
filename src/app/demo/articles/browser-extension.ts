@@ -36,7 +36,7 @@ const article: DemoArticle = {
 
     <h3>Google Docs Support</h3>
 
-    <p>When you save a Google Docs URL, the extension detects it automatically and prompts for the necessary OAuth permissions. Once granted, Lion Reader fetches the document content directly from the Google Docs API via its <a href="/demo/all?entry=plugins">Plugin System</a>, preserving formatting and structure far better than a regular web page save.</p>
+    <p>When you save a Google Docs URL, the extension detects it automatically and prompts for the necessary OAuth permissions. Once granted, Lion Reader fetches the document content directly from Google Docs via its <a href="/demo/all?entry=plugins">smart content sources</a>, preserving formatting and structure far better than a regular web page save.</p>
 
     <h3>Installation</h3>
 
