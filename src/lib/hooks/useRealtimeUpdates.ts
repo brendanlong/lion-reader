@@ -150,6 +150,15 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
   // still patched live regardless; only the cursor is frozen.
   const caughtUpRef = useRef<boolean>(false);
 
+  // Monotonic generation bumped every time the cursor is frozen (a new/errored
+  // connection). A catch-up sync captures the epoch when it starts and may only
+  // mark caught-up if the epoch is unchanged when it settles — i.e. no freeze
+  // happened in between. Without this, a sync started by a now-superseded
+  // connection could resolve (while the current connection's catch-up hasn't
+  // even been requested yet) and un-freeze the cursor prematurely, re-opening
+  // the very gap this closes (#1081).
+  const syncEpochRef = useRef<number>(0);
+
   // Latest callbacks, readable from the stable dispatch closure below
   const handleEventRef = useRef<(event: MessageEvent) => void>(() => {});
   const requestSyncRef = useRef<() => void>(() => {});
@@ -265,6 +274,9 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
       const { state, startSync } = reduceSyncScheduler(syncSchedulerStateRef.current, event);
       syncSchedulerStateRef.current = state;
       if (startSync) {
+        // Capture the connection epoch this sync starts under; only un-freeze if
+        // no freeze (reconnect/stream-error) happened before it settled.
+        const syncEpoch = syncEpochRef.current;
         void runSyncOnce().then((result) => {
           if (result.ok) {
             // Success: cancel any pending retry and reset the backoff.
@@ -273,17 +285,19 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
               syncRetryTimeoutRef.current = null;
             }
             syncRetryDelayRef.current = INITIAL_SYNC_RETRY_DELAY_MS;
-            // Un-freeze the cursor only when this sync fully drained AND no
-            // follow-up is queued — i.e. the scheduler is actually settling to
-            // idle. Gating on `!hasMore` alone is not enough: a sync started by
-            // a now-superseded connection can resolve while the current
-            // connection's catch-up is still queued as `pending` (it couldn't
-            // start behind the in-flight one). Marking caught-up there would let
-            // live events advance the cursor past the current connection's
-            // not-yet-drained gap, re-opening exactly the hole this closes
-            // (#1081). The queued follow-up runs next and marks caught-up when
-            // it settles with nothing pending.
-            if (!result.hasMore && !syncSchedulerStateRef.current.pending) {
+            // Un-freeze the cursor only when this sync fully drained, no
+            // follow-up is queued (the scheduler is settling to idle), AND the
+            // epoch is unchanged (no reconnect/stream-error opened a fresh gap
+            // while this sync ran, and this sync belongs to the current
+            // connection — not a superseded one whose late success would
+            // un-freeze past the current connection's not-yet-drained gap).
+            // Otherwise the queued follow-up / next connection's catch-up marks
+            // caught-up when it settles cleanly (#1081).
+            if (
+              !result.hasMore &&
+              !syncSchedulerStateRef.current.pending &&
+              syncEpoch === syncEpochRef.current
+            ) {
               caughtUpRef.current = true;
             }
           } else {
@@ -403,8 +417,11 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
 
     function openEventSource(): void {
       // A new connection opens a fresh (possibly empty) gap: freeze the cursor
-      // until this connection's catch-up sync succeeds (#1081).
+      // until this connection's catch-up sync succeeds, and bump the epoch so an
+      // in-flight sync from the previous connection can't mark us caught-up
+      // (#1081).
       caughtUpRef.current = false;
+      syncEpochRef.current += 1;
 
       // Open the EventSource directly: a single connection per session.
       // SSE availability (the 503 case) is only checked on the error path,
@@ -428,9 +445,11 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
         if (eventSourceRef.current !== eventSource) return;
         // Any stream error opens a potential gap — including the browser's own
         // silent auto-reconnect (which reuses this EventSource and fires onopen
-        // again without going through openEventSource). Freeze the cursor so the
-        // next catch-up covers whatever was missed (#1081).
+        // again without going through openEventSource). Freeze the cursor (and
+        // bump the epoch) so the next catch-up covers whatever was missed and no
+        // in-flight sync from before the error can mark us caught-up (#1081).
         caughtUpRef.current = false;
+        syncEpochRef.current += 1;
         dispatchEvent({
           type: "stream-error",
           closed: eventSource.readyState === EventSource.CLOSED,

@@ -34,10 +34,17 @@ replaces the data with `snapshot + newPage` — silently dropping any
 `fetchNextPage` fires), so the completing fetch would revert the entry to unread.
 Every next-page fetch (keyboard- and scroll-triggered, in both
 `EntryListContainer` and `UnifiedEntriesContent`) therefore calls
-`reconcileListReadStarredFromEntryGet` after it settles, re-asserting the
-authoritative read/starred state from `entries.get` onto the list caches. (A
-brand-new SSE-inserted entry has no `entries.get` entry and can't be restored
-this way; it reappears on the next navigation refresh.)
+`snapshotEntryGetStates` **before** starting the fetch and
+`reconcileListFromChangedEntryGets` **after** it settles, re-asserting onto the
+list only the entries whose `entries.get` read/starred state **changed during
+the fetch window**. It is a diff, not a blanket re-assert, because `entries.get`
+is not universally in lockstep with the list — `mark_all_read` invalidates
+`entries.list` but never touches `entries.get`, so a blanket re-assert would
+resurrect a stale get (e.g. a prefetched-unread entry that mark-all-read marked
+read) into the freshly-refetched list. A clobber can only affect writes made
+after the fetch started, so restricting to mid-fetch changes captures exactly
+those. (A brand-new SSE-inserted entry has no `entries.get` entry and can't be
+restored this way; it reappears on the next navigation refresh.)
 
 ## Cache Helpers (`src/lib/cache/`)
 

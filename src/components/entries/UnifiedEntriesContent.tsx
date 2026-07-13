@@ -30,7 +30,7 @@ import { extractParamsFromPathname } from "@/lib/navigation";
 import { type ViewType } from "@/lib/hooks/viewPreferences";
 import { trpc } from "@/lib/trpc/client";
 import { findCachedSubscription } from "@/lib/cache/count-cache";
-import { reconcileListReadStarredFromEntryGet } from "@/lib/cache/entry-cache";
+import { snapshotEntryGetStates, reconcileListFromChangedEntryGets } from "@/lib/cache/entry-cache";
 import { type EntryType } from "@/lib/hooks/useEntryMutations";
 
 /**
@@ -365,11 +365,14 @@ function UnifiedEntriesContentInner() {
       entriesQuery.hasNextPage &&
       !entriesQuery.isFetchingNextPage
     ) {
-      // Re-assert read/starred from entries.get after the fetch settles: the
-      // completing next-page fetch replaces the pages snapshot and would clobber
-      // writes applied mid-fetch, e.g. auto-mark-read from swipe/j-k (#1081).
+      // Re-assert read/starred that changed during the fetch: the completing
+      // next-page fetch replaces the pages snapshot and would clobber writes
+      // applied mid-fetch, e.g. auto-mark-read from swipe/j-k. Snapshot before,
+      // diff after, so stale gets (e.g. after mark_all_read) aren't resurrected
+      // (#1081).
+      const before = snapshotEntryGetStates(queryClient);
       void entriesQuery.fetchNextPage().then(() => {
-        reconcileListReadStarredFromEntryGet(queryClient);
+        reconcileListFromChangedEntryGets(queryClient, before);
       });
     }
     prevDistanceToEnd.current = distanceToEnd;
