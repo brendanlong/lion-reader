@@ -12,6 +12,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import type { EntryListData } from "@/lib/hooks/types";
 import { useScrollContainer } from "@/components/layout/ScrollContainerContext";
+import { useAppearance } from "@/lib/appearance/AppearanceProvider";
 import { EntryListItem } from "./EntryListItem";
 import { EntryListSkeleton } from "./EntryListSkeleton";
 import {
@@ -128,6 +129,9 @@ export function EntryList({
 }: EntryListProps) {
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useScrollContainer();
+  const {
+    settings: { listDensity },
+  } = useAppearance();
 
   const {
     isLoading,
@@ -175,7 +179,7 @@ export function EntryList({
   // Initial loading state - only show skeleton if we have no entries to display
   // (placeholder data from parent lists provides entries even while loading)
   if (isLoading && allEntries.length === 0) {
-    return <EntryListSkeleton count={5} />;
+    return <EntryListSkeleton count={5} density={listDensity} />;
   }
 
   // Error state
@@ -193,19 +197,26 @@ export function EntryList({
     return <EntryListEmpty message={emptyMessage} />;
   }
 
+  // Compact density: a single divided list (dividers survive e-paper via the
+  // darker `--edge`). Comfortable: gapped bordered cards.
+  const listClassName = listDensity === "compact" ? "divide-edge divide-y" : "space-y-3";
+
   return (
-    <div className="space-y-3">
-      {allEntries.map((entry) => (
-        <EntryListItem
-          key={entry.id}
-          entry={entry}
-          onClick={onEntryClick}
-          onMouseDown={onEntryMouseDown}
-          selected={selectedEntryId === entry.id}
-          onToggleRead={onToggleRead}
-          onToggleStar={onToggleStar}
-        />
-      ))}
+    <div>
+      <div className={listClassName}>
+        {allEntries.map((entry) => (
+          <EntryListItem
+            key={entry.id}
+            entry={entry}
+            onClick={onEntryClick}
+            onMouseDown={onEntryMouseDown}
+            selected={selectedEntryId === entry.id}
+            onToggleRead={onToggleRead}
+            onToggleStar={onToggleStar}
+            density={listDensity}
+          />
+        ))}
+      </div>
 
       {/* Load more trigger element */}
       <div ref={loadMoreRef} className="h-1" />

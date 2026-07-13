@@ -10,6 +10,7 @@
 import { memo } from "react";
 import { formatRelativeTime } from "@/lib/format";
 import type { EntryType } from "@/lib/hooks/useEntryMutations";
+import type { ListDensity } from "@/lib/appearance/settings";
 import { StarIcon, StarFilledIcon } from "@/components/ui/icon-button";
 
 /**
@@ -58,18 +59,39 @@ interface EntryListItemProps {
    * Callback when the star indicator is clicked.
    */
   onToggleStar?: (entryId: string, currentlyStarred: boolean) => void;
+
+  /**
+   * List density. In "compact" mode the item drops its per-card border/rounding
+   * and roomy padding in favor of a tighter row (the surrounding list supplies
+   * `divide-edge` separators). Defaults to "comfortable".
+   */
+  density?: ListDensity;
 }
 
 /**
- * Get the appropriate CSS classes for the entry item based on read and selected state.
+ * Get the appropriate CSS classes for the entry item based on read, selected,
+ * and density state.
+ *
+ * The unread/read/selected *color* language is identical across densities — only
+ * the padding and border treatment change. In "compact" mode items are borderless
+ * rows in a single `divide-edge` list (see EntryList), so the per-card borders
+ * (including the e-paper `border-zinc-500` fallback) are dropped; the darker
+ * e-paper divider handles row separation instead.
  */
-export function getItemClasses(read: boolean, selected: boolean): string {
-  const baseClasses =
-    "group relative cursor-pointer rounded-lg border p-3 transition-colors sm:p-4";
+export function getItemClasses(
+  read: boolean,
+  selected: boolean,
+  density: ListDensity = "comfortable"
+): string {
+  const compact = density === "compact";
+  const baseClasses = compact
+    ? "group relative cursor-pointer px-3 py-2.5 transition-colors sm:px-4"
+    : "group relative cursor-pointer rounded-lg border p-3 transition-colors sm:p-4";
 
   if (selected) {
-    // Selected state takes priority - accent ring indicator
-    return `${baseClasses} border-accent ring-2 ring-accent ring-offset-1 dark:ring-offset-zinc-900 ${
+    // Selected state takes priority - accent ring indicator. In compact mode the
+    // ring stands in for the border the cards would otherwise carry.
+    return `${baseClasses} ${compact ? "" : "border-accent "}ring-2 ring-accent ring-offset-1 dark:ring-offset-zinc-900 ${
       read ? "bg-canvas" : "bg-surface"
     }`;
   }
@@ -79,13 +101,15 @@ export function getItemClasses(read: boolean, selected: boolean): string {
     // faint hairline border, so they read as "already handled". They lift to a
     // surface fill on hover to signal they're still clickable (the surface
     // tokens already carry their own dark-mode values).
-    return `${baseClasses} border-edge bg-canvas hover:bg-surface active:bg-surface-muted`;
+    const readClasses = `${baseClasses} bg-canvas hover:bg-surface active:bg-surface-muted`;
+    return compact ? readClasses : `${readClasses} border-edge`;
   }
 
   // Unread entries stand out as raised surface cards with a distinctly stronger
   // border (the only card/canvas separation available on e-paper, where every
   // fill is white).
-  return `${baseClasses} border-edge-input bg-surface hover:bg-surface-muted active:bg-zinc-100 dark:active:bg-zinc-700 epaper:border-zinc-500`;
+  const unreadClasses = `${baseClasses} bg-surface hover:bg-surface-muted active:bg-zinc-100 dark:active:bg-zinc-700`;
+  return compact ? unreadClasses : `${unreadClasses} border-edge-input epaper:border-zinc-500`;
 }
 
 /**
@@ -99,6 +123,7 @@ export const EntryListItem = memo(function EntryListItem({
   selected = false,
   onToggleRead,
   onToggleStar,
+  density = "comfortable",
 }: EntryListItemProps) {
   const {
     id,
@@ -153,7 +178,7 @@ export const EntryListItem = memo(function EntryListItem({
       onMouseDown={handleMouseDown}
       onKeyDown={handleKeyDown}
       data-entry-id={id}
-      className={getItemClasses(read, selected)}
+      className={getItemClasses(read, selected, density)}
       aria-label={`${read ? "Read" : "Unread"}${selected ? ", selected" : ""} article: ${displayTitle} from ${source}`}
     >
       <div className="flex items-start gap-3">
@@ -237,8 +262,10 @@ export const EntryListItem = memo(function EntryListItem({
             </time>
           </div>
 
-          {/* Preview */}
-          {summary && <p className="ui-text-sm text-muted mt-2 line-clamp-2">{summary}</p>}
+          {/* Preview (hidden in compact density to pack more items per screen) */}
+          {summary && density !== "compact" && (
+            <p className="ui-text-sm text-muted mt-2 line-clamp-2">{summary}</p>
+          )}
         </div>
       </div>
     </article>

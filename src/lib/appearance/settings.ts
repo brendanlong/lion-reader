@@ -27,6 +27,15 @@ export type TextJustification = "left" | "justify";
 export type FontFamily = "system" | "merriweather" | "literata" | "inter" | "source-sans";
 
 /**
+ * List density options for the entry list.
+ *
+ * - "comfortable": roomy bordered cards (the default reading view).
+ * - "compact": a single divided list with tighter padding and no excerpt, for
+ *   scanning/triaging many items at once.
+ */
+export type ListDensity = "comfortable" | "compact";
+
+/**
  * User preferences for text appearance.
  *
  * Note: Theme (dark/light mode) is managed by next-themes, not here.
@@ -46,6 +55,11 @@ export interface AppearanceSettings {
    * Font family for entry content.
    */
   fontFamily: FontFamily;
+
+  /**
+   * Vertical density of the entry list.
+   */
+  listDensity: ListDensity;
 }
 
 /**
@@ -55,6 +69,7 @@ const DEFAULT_APPEARANCE_SETTINGS: AppearanceSettings = {
   textSize: "medium",
   textJustification: "left",
   fontFamily: "system",
+  listDensity: "comfortable",
 };
 
 /**
@@ -94,6 +109,7 @@ function loadAppearanceSettings(): AppearanceSettings {
       "inter",
       "source-sans",
     ];
+    const validListDensities: ListDensity[] = ["comfortable", "compact"];
 
     return {
       textSize: validTextSizes.includes(parsed.textSize as TextSize)
@@ -105,6 +121,9 @@ function loadAppearanceSettings(): AppearanceSettings {
       fontFamily: validFontFamilies.includes(parsed.fontFamily as FontFamily)
         ? (parsed.fontFamily as FontFamily)
         : DEFAULT_APPEARANCE_SETTINGS.fontFamily,
+      listDensity: validListDensities.includes(parsed.listDensity as ListDensity)
+        ? (parsed.listDensity as ListDensity)
+        : DEFAULT_APPEARANCE_SETTINGS.listDensity,
     };
   } catch {
     // If parsing fails, return defaults
