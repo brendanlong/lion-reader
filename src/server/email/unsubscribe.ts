@@ -167,9 +167,6 @@ async function sendUnsubscribeEmail(mailtoUrl: string): Promise<void> {
  * @throws Error if the request fails
  */
 async function sendUnsubscribePost(url: string): Promise<void> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), HTTPS_TIMEOUT_MS);
-
   try {
     logger.info("Sending RFC 8058 one-click unsubscribe POST", { url });
 
@@ -182,7 +179,7 @@ async function sendUnsubscribePost(url: string): Promise<void> {
         "User-Agent": USER_AGENT,
       },
       body: "List-Unsubscribe=One-Click",
-      signal: controller.signal,
+      signal: AbortSignal.timeout(HTTPS_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -197,7 +194,7 @@ async function sendUnsubscribePost(url: string): Promise<void> {
       logger.info("One-click unsubscribe POST successful", { url, status: response.status });
     }
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
+    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
       logger.warn("One-click unsubscribe POST timed out", { url });
       throw new Error("Unsubscribe request timed out");
     }
@@ -207,8 +204,6 @@ async function sendUnsubscribePost(url: string): Promise<void> {
       error: error instanceof Error ? error.message : String(error),
     });
     throw error;
-  } finally {
-    clearTimeout(timeoutId);
   }
 }
 

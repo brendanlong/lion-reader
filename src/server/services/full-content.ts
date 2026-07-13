@@ -383,7 +383,7 @@ function getErrorMessage(error: unknown): string {
   }
 
   if (error instanceof Error) {
-    if (error.name === "AbortError") {
+    if (error.name === "TimeoutError" || error.name === "AbortError") {
       return "Request timed out";
     }
     return error.message;

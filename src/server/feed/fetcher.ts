@@ -353,19 +353,13 @@ export async function fetchFeed(
   let currentUrl = url;
 
   for (let redirectCount = 0; redirectCount <= maxRedirects; redirectCount++) {
-    // Create abort controller for timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
-
     try {
       const response = await fetchWithSsrfProtection(currentUrl, {
         method: "GET",
         headers,
-        signal: controller.signal,
+        signal: AbortSignal.timeout(timeout),
         redirect: "manual", // Handle redirects manually to track permanent ones
       });
-
-      clearTimeout(timeoutId);
 
       // Handle redirects
       if (isRedirect(response.status)) {
@@ -489,10 +483,11 @@ export async function fetchFeed(
         permanent: false,
       };
     } catch (error) {
-      clearTimeout(timeoutId);
-
       // Handle abort (timeout)
-      if (error instanceof Error && error.name === "AbortError") {
+      if (
+        error instanceof Error &&
+        (error.name === "TimeoutError" || error.name === "AbortError")
+      ) {
         return {
           status: "network_error",
           message: `Request timed out after ${timeout}ms`,

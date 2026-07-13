@@ -153,9 +153,6 @@ async function getFileMetadata(
   fileId: string,
   accessToken: string
 ): Promise<DriveFileMetadata | null> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
-
   try {
     const url = `${GOOGLE_DRIVE_API_ENDPOINT}/${fileId}?fields=id,name,mimeType`;
 
@@ -166,7 +163,7 @@ async function getFileMetadata(
         Authorization: `Bearer ${accessToken}`,
         "User-Agent": USER_AGENT,
       },
-      signal: controller.signal,
+      signal: AbortSignal.timeout(API_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -186,7 +183,7 @@ async function getFileMetadata(
     const data = (await response.json()) as DriveFileMetadata;
     return data;
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
+    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
       logger.warn("Drive API request timed out", { fileId });
     } else {
       logger.warn("Drive API request error", {
@@ -195,8 +192,6 @@ async function getFileMetadata(
       });
     }
     return null;
-  } finally {
-    clearTimeout(timeout);
   }
 }
 
@@ -204,9 +199,6 @@ async function getFileMetadata(
  * Downloads a file from Google Drive as raw bytes.
  */
 async function downloadFile(fileId: string, accessToken: string): Promise<ArrayBuffer | null> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
-
   try {
     const url = `${GOOGLE_DRIVE_API_ENDPOINT}/${fileId}?alt=media`;
 
@@ -216,7 +208,7 @@ async function downloadFile(fileId: string, accessToken: string): Promise<ArrayB
         Authorization: `Bearer ${accessToken}`,
         "User-Agent": USER_AGENT,
       },
-      signal: controller.signal,
+      signal: AbortSignal.timeout(API_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -229,7 +221,7 @@ async function downloadFile(fileId: string, accessToken: string): Promise<ArrayB
 
     return await response.arrayBuffer();
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
+    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
       logger.warn("Download request timed out", { fileId });
     } else {
       logger.warn("Download request error", {
@@ -238,8 +230,6 @@ async function downloadFile(fileId: string, accessToken: string): Promise<ArrayB
       });
     }
     return null;
-  } finally {
-    clearTimeout(timeout);
   }
 }
 

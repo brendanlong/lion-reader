@@ -242,15 +242,12 @@ const RAW_FETCH_TIMEOUT_MS = 30000;
  * so the read is size-limited and time-limited to avoid OOM/hangs on large files.
  */
 async function fetchRawContent(rawUrl: string): Promise<string | null> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), RAW_FETCH_TIMEOUT_MS);
-
   try {
     const response = await fetch(rawUrl, {
       headers: {
         "User-Agent": USER_AGENT,
       },
-      signal: controller.signal,
+      signal: AbortSignal.timeout(RAW_FETCH_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -269,8 +266,6 @@ async function fetchRawContent(rawUrl: string): Promise<string | null> {
       error: error instanceof Error ? error.message : String(error),
     });
     return null;
-  } finally {
-    clearTimeout(timeoutId);
   }
 }
 

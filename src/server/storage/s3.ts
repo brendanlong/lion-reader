@@ -288,8 +288,6 @@ export async function fetchAndUploadImage(
   }
 
   const timeout = options.timeout || 30000;
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeout);
 
   try {
     const headers: Record<string, string> = {
@@ -305,7 +303,7 @@ export async function fetchAndUploadImage(
     const response = await fetchWithSsrfProtection(imageUrl, {
       method: "GET",
       headers,
-      signal: controller.signal,
+      signal: AbortSignal.timeout(timeout),
     });
 
     if (!response.ok) {
@@ -333,7 +331,7 @@ export async function fetchAndUploadImage(
       prefix: options.prefix,
     });
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
+    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
       logger.warn("Image fetch timed out", { url: imageUrl });
     } else if (error instanceof ContentTooLargeError) {
       logger.warn("Image too large, skipping", {
@@ -347,7 +345,5 @@ export async function fetchAndUploadImage(
       });
     }
     return null;
-  } finally {
-    clearTimeout(timeoutId);
   }
 }

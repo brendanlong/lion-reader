@@ -437,8 +437,6 @@ export async function subscribeToHub(feed: Feed): Promise<SubscribeToHubResult> 
   }
 
   // POST subscription request to hub
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), HUB_REQUEST_TIMEOUT_MS);
   try {
     const response = await fetchWithSsrfProtection(feed.hubUrl, {
       method: "POST",
@@ -452,7 +450,7 @@ export async function subscribeToHub(feed: Feed): Promise<SubscribeToHubResult> 
         "hub.secret": secret,
         "hub.verify": "async",
       }).toString(),
-      signal: controller.signal,
+      signal: AbortSignal.timeout(HUB_REQUEST_TIMEOUT_MS),
     });
 
     // Hub should return 202 Accepted for async verification
@@ -510,8 +508,6 @@ export async function subscribeToHub(feed: Feed): Promise<SubscribeToHubResult> 
     });
 
     return { success: false, subscriptionId, error: errorMessage };
-  } finally {
-    clearTimeout(timeoutId);
   }
 }
 
