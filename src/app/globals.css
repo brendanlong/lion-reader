@@ -208,17 +208,17 @@
 
   /* Dark mode: amber accent — warm ⇒ low-blue-light, and distinct from the
      danger red-400 (unlike the old red accent, which collided with it). */
-  --accent: #fbbf24; /* amber-400 */
-  --accent-hover: #fcd34d; /* amber-300 */
+  --accent: #f59e0b; /* amber-500 - warmer, closer to light mode (issue #1193) */
+  --accent-hover: #fbbf24; /* amber-400 - brightens on hover */
   --accent-muted: #f59e0b; /* amber-500 - unread dots */
   --accent-subtle: rgba(120, 53, 15, 0.25); /* amber-900/25 */
   --accent-subtle-foreground: #fde68a; /* amber-200 */
   --accent-border: #92400e; /* amber-800 */
 
   /* Dark mode: amber primary with dark text so it doesn't glare */
-  --primary-solid: #fbbf24; /* amber-400 */
+  --primary-solid: #f59e0b; /* amber-500 */
   --primary-solid-foreground: #18181b; /* zinc-900 */
-  --primary-solid-hover: #fcd34d; /* amber-300 */
+  --primary-solid-hover: #fbbf24; /* amber-400 */
 
   /* Dark mode: neutral info colors for readability */
   --info: #a1a1aa; /* zinc-400 */
@@ -275,8 +275,8 @@
   --edge: #27272a; /* zinc-800 */
   --edge-strong: #3f3f46; /* zinc-700 */
   --edge-input: #3f3f46; /* zinc-700 */
-  --focus: #fbbf24; /* amber-400 - the brand accent */
-  --control-selected: #fbbf24; /* amber-400 */
+  --focus: #f59e0b; /* amber-500 - the brand accent */
+  --control-selected: #f59e0b; /* amber-500 */
 }
 
 /* =================================
@@ -399,17 +399,17 @@
     --foreground: #ededed;
 
     /* Dark mode: amber accent (mirrors .dark) — warm, low-blue, distinct from danger red */
-    --accent: #fbbf24; /* amber-400 */
-    --accent-hover: #fcd34d; /* amber-300 */
+    --accent: #f59e0b; /* amber-500 - warmer, closer to light mode (issue #1193) */
+    --accent-hover: #fbbf24; /* amber-400 - brightens on hover */
     --accent-muted: #f59e0b; /* amber-500 */
     --accent-subtle: rgba(120, 53, 15, 0.25); /* amber-900/25 */
     --accent-subtle-foreground: #fde68a; /* amber-200 */
     --accent-border: #92400e; /* amber-800 */
 
     /* Dark mode: amber primary with dark text so it doesn't glare */
-    --primary-solid: #fbbf24; /* amber-400 */
+    --primary-solid: #f59e0b; /* amber-500 */
     --primary-solid-foreground: #18181b; /* zinc-900 */
-    --primary-solid-hover: #fcd34d; /* amber-300 */
+    --primary-solid-hover: #fbbf24; /* amber-400 */
 
     /* Dark mode: neutral info colors for readability */
     --info: #a1a1aa; /* zinc-400 */
@@ -464,8 +464,8 @@
     --edge: #27272a; /* zinc-800 */
     --edge-strong: #3f3f46; /* zinc-700 */
     --edge-input: #3f3f46; /* zinc-700 */
-    --focus: #fbbf24; /* amber-400 - the brand accent */
-    --control-selected: #fbbf24; /* amber-400 */
+    --focus: #f59e0b; /* amber-500 - the brand accent */
+    --control-selected: #f59e0b; /* amber-500 */
   }
 }
 
@@ -477,6 +477,11 @@ body {
      inline style on the prose element (see AppearanceProvider), so they still
      win here; only UI chrome is affected. */
   font-family: var(--font-sans), system-ui, sans-serif;
+  /* Theme native form controls (checkbox/radio/range/progress) to the brand
+     accent so a checked checkbox isn't the browser default blue. accent-color
+     inherits, so this is the single source of truth — controls don't set it
+     per-call-site. (issue #1193) */
+  accent-color: var(--control-selected);
 }
 
 /* =================================
