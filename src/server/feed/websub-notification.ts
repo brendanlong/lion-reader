@@ -78,11 +78,16 @@ export async function ingestWebsubNotification(feed: Feed, bodyText: string): Pr
       offloadSanitize: true,
     });
 
-    // Update feed timestamps and any refreshed metadata
+    // Refresh feed metadata, but deliberately do NOT touch `last_fetched_at`: a
+    // push is not a full poll, so `last_fetched_at` must keep meaning "last time
+    // we fetched the whole feed". The subscribe-time staleness check keys off it
+    // (a WebSub feed becomes stale as its last real poll ages), and feed-health
+    // monitoring counts only real fetches. We also leave `last_entries_updated_at`
+    // untouched so pushed entries stay stamped above it and remain visible to new
+    // subscribers via the `>=` populate (issue #1078).
     await db
       .update(feeds)
       .set({
-        lastFetchedAt: now,
         updatedAt: now,
         title: parsedFeed.title || feed.title,
         description: parsedFeed.description || feed.description,

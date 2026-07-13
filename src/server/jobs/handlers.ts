@@ -25,6 +25,7 @@ import { fetchFullContent, persistFullContentResult } from "../services/full-con
 import { fetchFeed, type FetchFeedResult, type RedirectInfo } from "../feed/fetcher";
 import type { WebSubLinkHeaders } from "../feed/link-header";
 import { parseFeed } from "../feed/parser";
+import { parseFeedInWorker } from "../worker-thread/pool";
 import { processEntries } from "../feed/entry-processor";
 import { calculateNextFetch } from "../feed/scheduling";
 import {
@@ -192,6 +193,32 @@ async function fetchFullContentForNewEntries(
 }
 
 /**
+ * Options for `handleFetchFeed`.
+ */
+export interface HandleFetchFeedOptions {
+  /**
+   * Run the fetch synchronously on an app-server request path (the interactive
+   * subscribe flow) rather than on the background worker. This is the shared
+   * fetch path used to refresh a stale feed at subscribe time so a new
+   * subscriber sees ground truth. `inline` mode:
+   *
+   * - fetches **unconditionally** (no If-None-Match / If-Modified-Since) and
+   *   bypasses the body-hash short-circuit, so the feed is always parsed and
+   *   processed and the visibility timestamps are always refreshed — even when
+   *   the content is byte-identical to the last poll (a WebSub feed that pushed
+   *   then dropped an entry looks byte-identical, but the drop must be applied);
+   * - re-stamps every current entry's `last_seen_at` to this fetch and advances
+   *   `last_entries_updated_at` (`alwaysUpdateVisibility`), re-establishing a
+   *   single visibility generation for the `>=` subscribe populate;
+   * - parses and sanitizes off the event loop (worker pool) so a large body
+   *   doesn't block the request;
+   * - skips on-demand full-content fetching (latency); the next scheduled poll
+   *   or an entry open handles it.
+   */
+  inline?: boolean;
+}
+
+/**
  * Handler for fetch_feed jobs.
  * Fetches a feed, processes entries, and returns the next fetch time.
  *
@@ -199,14 +226,17 @@ async function fetchFullContentForNewEntries(
  * by the job enable/disable mechanism. If a job is running, the feed has subscribers.
  *
  * @param payload - The job payload containing the feedId
+ * @param options - See {@link HandleFetchFeedOptions} (`inline` subscribe-time refresh)
  * @returns Job handler result with next run time
  */
 export async function handleFetchFeed(
-  payload: JobPayloads["fetch_feed"]
+  payload: JobPayloads["fetch_feed"],
+  options: HandleFetchFeedOptions = {}
 ): Promise<JobHandlerResult> {
   const { feedId } = payload;
+  const { inline = false } = options;
 
-  logger.debug("Starting feed fetch", { feedId });
+  logger.debug("Starting feed fetch", { feedId, inline });
 
   // Start metrics timer for feed fetch
   const endFeedFetchTimer = startFeedFetchTimer();
@@ -242,16 +272,18 @@ export async function handleFetchFeed(
     .from(subscriptions)
     .where(and(eq(subscriptions.feedId, feedId), isNull(subscriptions.unsubscribedAt)));
 
-  // Fetch the feed with conditional GET headers
+  // Fetch the feed with conditional GET headers. An inline (subscribe-time)
+  // refresh fetches unconditionally so it always gets the full current feed back
+  // (a 304 would carry no body to re-establish visibility from).
   const fetchResult = await fetchFeed(feed.url, {
-    etag: feed.etag ?? undefined,
-    lastModified: feed.lastModifiedHeader ?? undefined,
+    etag: inline ? undefined : (feed.etag ?? undefined),
+    lastModified: inline ? undefined : (feed.lastModifiedHeader ?? undefined),
     feedId,
     subscriberCount,
   });
 
   // Process the result based on status
-  const handlerResult = await processFetchResult(feed, fetchResult);
+  const handlerResult = await processFetchResult(feed, fetchResult, inline);
 
   // Map handler result to metrics status
   const metricsStatus: FeedFetchStatus = getMetricsStatus(fetchResult, handlerResult);
@@ -306,6 +338,9 @@ function getMetricsStatus(
  * @param redirects - The redirect chain from the fetch
  * @param websubLinks - WebSub hub and self URLs from HTTP Link headers
  * @param now - Current timestamp
+ * @param inline - Whether this is an inline (subscribe-time) refresh; see
+ *   `HandleFetchFeedOptions.inline`. Parses/sanitizes off the event loop,
+ *   skips full-content fetching, and re-stamps all current entries' visibility.
  * @returns Job handler result with next run time
  */
 async function processSuccessfulFetch(
@@ -315,15 +350,19 @@ async function processSuccessfulFetch(
   bodyHash: string,
   redirects: RedirectInfo[],
   websubLinks: WebSubLinkHeaders,
-  now: Date
+  now: Date,
+  inline = false
 ): Promise<JobHandlerResult> {
-  // Decode to string for parsing (we only get here when hash differs, so content changed)
+  // Decode to string for parsing. Inline (subscribe-path) fetches also reach
+  // here on an unchanged body; the worker parse below keeps a large body off the
+  // request event loop.
   const bodyText = body.toString("utf-8");
 
-  // Parse the feed content
+  // Parse the feed content. Inline runs on an app request path, so parse in the
+  // worker pool to avoid blocking the event loop (the worker does the same).
   let parsedFeed;
   try {
-    parsedFeed = parseFeed(bodyText);
+    parsedFeed = inline ? await parseFeedInWorker(bodyText) : parseFeed(bodyText);
   } catch (error) {
     // Parsing failed - treat as error
     // Also clear any redirect tracking since the destination doesn't have a valid feed
@@ -418,13 +457,22 @@ async function processSuccessfulFetch(
     previousLastEntriesUpdatedAt: feed.lastEntriesUpdatedAt,
     feedUrl: feed.url ?? undefined,
     feedTitle: resolvedFeedTitle,
+    // Inline runs on a request path (subscribe): keep sanitization off the event
+    // loop, and re-stamp all current entries' visibility so the new subscriber's
+    // `>=` populate sees exactly the current feed.
+    offloadSanitize: inline,
+    alwaysUpdateVisibility: inline,
   });
 
-  // Fetch full content for new entries if any subscriber has fetchFullContent enabled
-  // This is done after processEntries so entries exist in the database
+  // Fetch full content for new entries if any subscriber has fetchFullContent
+  // enabled. This is done after processEntries so entries exist in the database.
+  // Skipped on the inline subscribe path to keep subscribe latency down — the
+  // next scheduled poll (or opening the entry) fetches full content.
   const newEntries = processResult.entries.filter((e) => e.isNew);
   const newEntryIds = newEntries.map((e) => e.id);
-  const fullContentResult = await fetchFullContentForNewEntries(feed.id, newEntryIds);
+  const fullContentResult = inline
+    ? { fetched: 0, failed: 0 }
+    : await fetchFullContentForNewEntries(feed.id, newEntryIds);
 
   // Push-reliability telemetry: this handler only runs for scheduled/backup
   // polls (hub pushes go through ingestWebsubNotification, not here). If push
@@ -455,9 +503,12 @@ async function processSuccessfulFetch(
 
   // Update feed metadata including WebSub hub discovery
 
-  // Only update lastEntriesUpdatedAt when entries actually changed (new, updated, or disappeared)
-  // This timestamp must match entries.lastSeenAt for entries currently in the feed
-  const lastEntriesUpdatedAt = processResult.hasChanges ? now : feed.lastEntriesUpdatedAt;
+  // Only update lastEntriesUpdatedAt when entries actually changed (new, updated,
+  // or disappeared), so unchanged polls don't churn. An inline subscribe-time
+  // refresh advances it unconditionally: it re-stamped every current entry's
+  // last_seen_at to `now` (alwaysUpdateVisibility), so lastEntriesUpdatedAt must
+  // move to `now` too to keep the "current generation" invariant those two share.
+  const lastEntriesUpdatedAt = processResult.hasChanges || inline ? now : feed.lastEntriesUpdatedAt;
 
   // Determine the new hub URL state
   // If the feed content has a hub URL, use it; otherwise clear it
@@ -586,7 +637,11 @@ function generateBodyHash(body: Buffer): string {
  * @param result - The fetch result
  * @returns Job handler result with next run time
  */
-async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<JobHandlerResult> {
+async function processFetchResult(
+  feed: Feed,
+  result: FetchFeedResult,
+  inline = false
+): Promise<JobHandlerResult> {
   const now = new Date();
 
   switch (result.status) {
@@ -594,7 +649,11 @@ async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<
       // Check if body is unchanged by comparing hashes
       const bodyHash = generateBodyHash(result.body);
 
-      if (feed.bodyHash === bodyHash) {
+      // An inline subscribe-time refresh must always re-process so it can
+      // re-stamp the current entries' visibility (the body can be byte-identical
+      // to the last poll yet a WebSub push may have desynced last_seen_at, or an
+      // entry may need to be dropped from the current generation).
+      if (!inline && feed.bodyHash === bodyHash) {
         // Feed body unchanged - skip parsing and entry processing
         // But still check for permanent redirects (we know the content was valid before)
         const permanentRedirectUrl = feed.url
@@ -655,7 +714,8 @@ async function processFetchResult(feed: Feed, result: FetchFeedResult): Promise<
         bodyHash,
         result.redirects,
         result.websubLinks,
-        now
+        now,
+        inline
       );
     }
 

@@ -94,6 +94,8 @@ async function createTestFeed(options: {
   title?: string;
   lastFetchedAt?: Date | null;
   lastEntriesUpdatedAt?: Date | null;
+  nextFetchAt?: Date | null;
+  websubActive?: boolean;
 }): Promise<string> {
   const feedId = generateUuidv7();
   const now = new Date();
@@ -104,6 +106,11 @@ async function createTestFeed(options: {
     title: options.title ?? `Test Feed ${feedId}`,
     lastFetchedAt: options.lastFetchedAt ?? null,
     lastEntriesUpdatedAt: options.lastEntriesUpdatedAt ?? null,
+    // Default to "not due for a poll" so the subscribe flow doesn't attempt a
+    // real network refresh (shouldRefetchOnSubscribe → false). Tests that
+    // exercise the forced-refresh path override nextFetchAt/websubActive.
+    nextFetchAt: options.nextFetchAt ?? new Date(now.getTime() + 60 * 60 * 1000),
+    websubActive: options.websubActive ?? false,
     createdAt: now,
     updatedAt: now,
   });
@@ -413,6 +420,55 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       expect(entryIds).toContain(entryDId);
       expect(entryIds).toContain(entryEId);
     });
+
+    it("includes entries a WebSub hub pushed since the last poll (issue #1078)", async () => {
+      // A WebSub push stamps last_seen_at = pushTime but leaves the feed's
+      // last_entries_updated_at at the last poll, so a pushed entry sits *above*
+      // last_entries_updated_at. Strict equality would hide it (empty feed for a
+      // push-active feed); the `>=` populate must include it.
+      const userId = await createTestUser();
+
+      const feedUrl = "https://example.com/websub-feed.xml";
+      const pollTime = new Date("2024-01-01T10:00:00Z");
+      const pushTime = new Date("2024-01-01T11:00:00Z"); // a hub push after the poll
+
+      // WebSub feed, freshly polled so the subscribe flow does NOT force a
+      // network refresh (shouldRefetchOnSubscribe → false).
+      const feedId = await createTestFeed({
+        url: feedUrl,
+        lastFetchedAt: new Date(), // recent real poll
+        lastEntriesUpdatedAt: pollTime,
+        websubActive: true,
+      });
+
+      // Entries present in the last poll.
+      const entryAId = await createTestEntry(feedId, {
+        guid: "entry-A",
+        fetchedAt: pollTime,
+        lastSeenAt: pollTime,
+      });
+      const entryBId = await createTestEntry(feedId, {
+        guid: "entry-B",
+        fetchedAt: pollTime,
+        lastSeenAt: pollTime,
+      });
+      // Entry delivered by a hub push after the poll (last_seen_at > lastEntriesUpdatedAt).
+      const entryCId = await createTestEntry(feedId, {
+        guid: "entry-C",
+        fetchedAt: pushTime,
+        lastSeenAt: pushTime,
+      });
+
+      const caller = createCaller(createAuthContext(userId));
+      const result = await caller.subscriptions.create({ url: feedUrl });
+
+      expect(result.unreadCount).toBe(3);
+      const entryIds = (await getUserEntries(userId)).map((e) => e.entryId).sort();
+      expect(entryIds).toHaveLength(3);
+      expect(entryIds).toContain(entryAId);
+      expect(entryIds).toContain(entryBId);
+      expect(entryIds).toContain(entryCId);
+    });
   });
 
   describe("Edge cases", () => {
@@ -538,27 +594,28 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       expect(userEntriesResult).toHaveLength(2);
     });
 
-    it("handles feed with no fetches yet (lastFetchedAt is null)", async () => {
+    it("subscribes to a known-but-never-fetched feed even when the forced refresh fails", async () => {
       const userId = await createTestUser();
 
       const feedUrl = "https://example.com/never-fetched.xml";
       await createTestFeed({
         url: feedUrl,
-        lastFetchedAt: null,
+        lastFetchedAt: null, // never polled → shouldRefetchOnSubscribe is true
         lastEntriesUpdatedAt: null,
       });
 
-      // This scenario would normally trigger the "slow path" in the router
-      // but for this test we're verifying the database state
       const ctx = createAuthContext(userId);
       const caller = createCaller(ctx);
 
-      // Note: This will actually trigger a network fetch in the real implementation,
-      // but for this test we're just verifying that when lastFetchedAt is null,
-      // the fast path is not taken. The subscriptions.create will fail because
-      // we can't actually fetch the URL in tests, but that's okay - we're testing
-      // the condition check.
-      await expect(caller.subscriptions.create({ url: feedUrl })).rejects.toThrow();
+      // A known feed (row already exists) triggers a forced refresh, but the URL
+      // isn't reachable in tests. The refresh is best-effort: it's caught and we
+      // fall back to the cached entries, so subscribing still succeeds (rather
+      // than failing the whole subscribe on a transient fetch error). There are
+      // no entries yet, so the subscription is created empty; the background
+      // fetch job populates it later.
+      const result = await caller.subscriptions.create({ url: feedUrl });
+      expect(result.unreadCount).toBe(0);
+      expect(await getUserEntriesCount(userId)).toBe(0);
     });
 
     it("handles feed where all entries have disappeared (no current entries)", async () => {

@@ -535,6 +535,18 @@ export async function createSubscription(
     //    a stale captured value would match zero rows and the new subscriber
     //    would see an empty feed until the next new entry (issue #952). The JOIN
     //    reads the current value atomically within this statement.
+    //
+    //    `last_seen_at >= last_entries_updated_at` (not `=`) grants visibility to
+    //    entries currently in the feed. The interactive subscribe path forces a
+    //    refresh of a stale feed first (see the router), which re-stamps every
+    //    current entry to a single generation, so there `>=` behaves like `=`.
+    //    The `>` arm covers entries a WebSub hub pushed *since* the last poll:
+    //    a push stamps last_seen_at = pushTime but leaves last_entries_updated_at
+    //    at the last poll, so those entries would be invisible under strict
+    //    equality (issue #1078). For a non-WebSub feed nothing is ever stamped
+    //    above last_entries_updated_at, so `>=` is exactly `=` and behavior is
+    //    unchanged. Disappeared entries (not re-stamped by a later poll) fall
+    //    below last_entries_updated_at and stay excluded.
     await tx.execute(sql`
       INSERT INTO user_entries (user_id, entry_id, published_or_fetched_at, subscription_id, is_spam)
       SELECT ${userId}, e.id, COALESCE(e.published_at, e.fetched_at), ${subscriptionId}, e.is_spam
@@ -542,7 +554,7 @@ export async function createSubscription(
       JOIN feeds f ON f.id = e.feed_id
       WHERE e.feed_id = ${feedId}
         AND f.last_entries_updated_at IS NOT NULL
-        AND e.last_seen_at = f.last_entries_updated_at
+        AND e.last_seen_at >= f.last_entries_updated_at
       ON CONFLICT DO NOTHING
     `);
 

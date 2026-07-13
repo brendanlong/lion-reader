@@ -77,6 +77,24 @@ export interface ProcessEntriesOptions {
    * email ingest), which already run off the request path. See CLAUDE.md.
    */
   offloadSanitize?: boolean;
+  /**
+   * Run the visibility bookkeeping (re-stamp `last_seen_at` for every entry in
+   * this fetch + fan out `user_entries`) even when nothing changed. A normal
+   * poll skips this on an unchanged fetch to avoid rewriting every row of the
+   * largest table on every poll (issue #1084), so `last_seen_at` only advances
+   * when entries actually change.
+   *
+   * The subscribe-time forced refresh (see `handleFetchFeed`'s `inline` mode)
+   * sets this so that ALL entries currently in the feed are re-stamped to this
+   * fetch's timestamp, re-establishing a single visibility "generation". A new
+   * subscriber is then populated via `last_seen_at >= last_entries_updated_at`
+   * and sees exactly the current feed — including nothing a WebSub push left
+   * stranded above the last poll's timestamp, and excluding anything a push
+   * added and the publisher has since removed (it isn't re-stamped, so it falls
+   * below the new generation). Only used on the rare subscribe path, so the
+   * write churn is acceptable.
+   */
+  alwaysUpdateVisibility?: boolean;
 }
 
 /**
@@ -651,6 +669,7 @@ export async function processEntries(
     feedUrl,
     feedTitle,
     offloadSanitize = false,
+    alwaysUpdateVisibility = false,
   } = options;
 
   // Derive GUIDs from all items first, so we only query for entries we need
@@ -740,10 +759,16 @@ export async function processEntries(
   const newEntryIds = results.filter((r) => r.isNew).map((r) => r.id);
   const hasChanges = newCount > 0 || updatedCount > 0 || disappearedCount > 0;
 
+  // The visibility bookkeeping (re-stamp last_seen_at + fan out user_entries)
+  // normally runs only when the feed changed, so steady-state feeds pay nothing.
+  // The subscribe-time forced refresh sets alwaysUpdateVisibility to run it on an
+  // unchanged fetch too, re-stamping the whole current feed to this fetch's
+  // timestamp (see the option's doc comment).
+  const shouldUpdateVisibility = hasChanges || alwaysUpdateVisibility;
+
   // Update lastSeenAt for all entries in this fetch (web feeds only)
-  // This happens when there are changes (new, updated, or disappeared entries)
   // The timestamp used here should match feeds.lastEntriesUpdatedAt
-  if (isFetchedType && hasChanges) {
+  if (isFetchedType && shouldUpdateVisibility) {
     await updateEntriesLastSeenAt(allEntryIds, fetchedAt);
   }
 
@@ -757,11 +782,12 @@ export async function processEntries(
   // matches by content_hash and is reported isNew:false, so it would never be
   // fanned out again and stayed invisible to every subscriber (issue #952).
   //
-  // Runs whenever the feed changed (new/updated/disappeared). Unchanged polls
-  // skip it, so steady-state feeds pay nothing; a feed with any activity heals
-  // its orphans. Existing subscribers already have rows for existing entries;
-  // new subscribers get rows at subscription time.
-  if (hasChanges && allEntryIds.length > 0) {
+  // Runs whenever the feed changed (new/updated/disappeared), or on a forced
+  // subscribe-time refresh (alwaysUpdateVisibility). Unchanged polls skip it, so
+  // steady-state feeds pay nothing; a feed with any activity heals its orphans.
+  // Existing subscribers already have rows for existing entries; new subscribers
+  // get rows at subscription time.
+  if (shouldUpdateVisibility && allEntryIds.length > 0) {
     await createUserEntriesForFeed(feedId, allEntryIds);
   }
 
