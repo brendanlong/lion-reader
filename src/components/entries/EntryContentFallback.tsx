@@ -151,13 +151,13 @@ export function EntryContentFallback({ entryId, onBack }: EntryContentFallbackPr
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             {/* Star button - functional */}
             <Button
-              variant={cachedEntry.starred ? "primary" : "secondary"}
+              variant="secondary"
               size="sm"
               onClick={handleStarToggle}
               aria-label={cachedEntry.starred ? "Remove from starred" : "Add to starred"}
             >
               {cachedEntry.starred ? (
-                <StarFilledIcon className="h-5 w-5" />
+                <StarFilledIcon className="text-star h-5 w-5" />
               ) : (
                 <StarIcon className="h-5 w-5" />
               )}
