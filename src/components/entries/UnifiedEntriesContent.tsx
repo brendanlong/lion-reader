@@ -30,6 +30,7 @@ import { extractParamsFromPathname } from "@/lib/navigation";
 import { type ViewType } from "@/lib/hooks/viewPreferences";
 import { trpc } from "@/lib/trpc/client";
 import { findCachedSubscription } from "@/lib/cache/count-cache";
+import { snapshotEntryGetStates, reconcileListFromChangedEntryGets } from "@/lib/cache/entry-cache";
 import { type EntryType } from "@/lib/hooks/useEntryMutations";
 
 /**
@@ -260,6 +261,7 @@ function EntryListTitle({ routeInfo }: { routeInfo: RouteInfo }) {
  */
 function UnifiedEntriesContentInner() {
   const routeInfo = useRouteInfo();
+  const queryClient = useQueryClient();
   const { showUnreadOnly } = useUrlViewPreferences();
   const { openEntryId, setOpenEntryId, closeEntry } = useEntryUrlState();
 
@@ -363,10 +365,18 @@ function UnifiedEntriesContentInner() {
       entriesQuery.hasNextPage &&
       !entriesQuery.isFetchingNextPage
     ) {
-      entriesQuery.fetchNextPage();
+      // Re-assert read/starred that changed during the fetch: the completing
+      // next-page fetch replaces the pages snapshot and would clobber writes
+      // applied mid-fetch, e.g. auto-mark-read from swipe/j-k. Snapshot before,
+      // diff after, so stale gets (e.g. after mark_all_read) aren't resurrected
+      // (#1081).
+      const before = snapshotEntryGetStates(queryClient);
+      void entriesQuery.fetchNextPage().then(() => {
+        reconcileListFromChangedEntryGets(queryClient, before);
+      });
     }
     prevDistanceToEnd.current = distanceToEnd;
-  }, [distanceToEnd, entriesQuery]);
+  }, [distanceToEnd, entriesQuery, queryClient]);
 
   // Navigation callbacks - just update URL, React re-renders
   const handleSwipeNext = useMemo(() => {

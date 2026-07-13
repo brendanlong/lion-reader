@@ -1077,9 +1077,34 @@ describe("handleSyncEvent - subscription_deleted", () => {
     expect(remaining?.pages[0]?.items.some((s) => s.id === "sub-preexisting")).toBe(false);
   });
 
-  it("is a no-op when subscription not in any cache (treated as already removed)", () => {
-    // When the subscription is not in the lookup map or any infinite query,
-    // the handler treats it as "already removed" and skips processing.
+  it("still applies counts + invalidates entries.list when the subscription is not cached (#1081)", () => {
+    // A delete for a subscription that was never cached (e.g. tags collapsed, so
+    // its per-tag subscriptions.list was never loaded) must NOT be skipped: the
+    // event still carries absolute counts and the deleted feed's entries must be
+    // dropped from the list. Only the structural removal is skipped.
+    setUtilsData(utils.entries.count, {}, { unread: 22 });
+
+    handleSyncEvent(
+      utils,
+      queryClient,
+      createSubscriptionDeletedEvent({
+        subscriptionId: "sub-unknown",
+        counts: {
+          all: { unread: 12 },
+          starred: { unread: 1 },
+          subscriptions: [],
+          tags: [],
+        },
+      })
+    );
+
+    // Absolute counts from the event are applied even though nothing was removed.
+    expect(getEntriesCount({})?.unread).toBe(12);
+    // entries.list is invalidated so the deleted feed's entries are re-filtered.
+    expect(invalidatedProcedures(invalidateSpy)).toContain("entries.list");
+  });
+
+  it("invalidates count caches + entries.list for an uncached subscription with no counts (sync catch-up)", () => {
     invalidateSpy.mockClear();
     handleSyncEvent(
       utils,
@@ -1089,8 +1114,12 @@ describe("handleSyncEvent - subscription_deleted", () => {
       })
     );
 
-    // No invalidations should occur (the alreadyRemoved check returns true)
-    expect(invalidateSpy).not.toHaveBeenCalled();
+    // No counts on the event → invalidate the count caches and entries.list
+    // rather than silently doing nothing.
+    const paths = invalidatedProcedures(invalidateSpy);
+    expect(paths).toContain("tags.list");
+    expect(paths).toContain("entries.count");
+    expect(paths).toContain("entries.list");
   });
 });
 

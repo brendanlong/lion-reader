@@ -20,8 +20,11 @@
 "use client";
 
 import { useMemo, useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc/client";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
+import { refreshEntryLists } from "@/lib/hooks/useEntryListRefreshOnNavigate";
+import { snapshotEntryGetStates, reconcileListFromChangedEntryGets } from "@/lib/cache/entry-cache";
 import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
 import { useKeyboardShortcutsContext } from "@/components/keyboard/KeyboardShortcutsProvider";
 import { useKeyboardShortcuts } from "@/lib/hooks/useKeyboardShortcuts";
@@ -42,6 +45,7 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
   const { showUnreadOnly, sortOrder, toggleShowUnreadOnly } = useUrlViewPreferences();
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
   const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
   const scrollContainerRef = useScrollContainer();
 
   // False during SSR + first client render. The smart (cache-reading) fallback
@@ -65,29 +69,27 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
       throwOnError: true,
     });
 
-  // Flatten entries from all pages
-  const entries = useMemo(
-    () =>
-      data?.pages.flatMap((page) =>
-        page.items.map((entry) => ({
-          id: entry.id,
-          feedId: entry.feedId,
-          subscriptionId: entry.subscriptionId,
-          type: entry.type,
-          url: entry.url,
-          title: entry.title,
-          author: entry.author,
-          summary: entry.summary,
-          publishedAt: entry.publishedAt,
-          fetchedAt: entry.fetchedAt,
-          read: entry.read,
-          starred: entry.starred,
-          feedTitle: entry.feedTitle,
-          siteName: entry.siteName,
-        }))
-      ) ?? [],
-    [data?.pages]
-  );
+  // Wrap fetchNextPage so every next-page fetch (keyboard- or scroll-triggered)
+  // re-asserts read/starred state that changed during the fetch — the completing
+  // fetch would otherwise clobber writes applied to the old pages mid-fetch (e.g.
+  // auto-mark-read from j/k). Snapshot entries.get state at fetch start and
+  // diff after settle, so only genuinely-mid-fetch changes are re-applied (not
+  // stale gets, e.g. after mark_all_read). See #1081.
+  const fetchNextPageAndReconcile = useCallback(() => {
+    const before = snapshotEntryGetStates(queryClient);
+    return fetchNextPage().then((result) => {
+      reconcileListFromChangedEntryGets(queryClient, before);
+      return result;
+    });
+  }, [fetchNextPage, queryClient]);
+
+  // Flatten entries from all pages. Pass the cached items straight through
+  // rather than remapping into fresh object literals: React Query's structural
+  // sharing preserves the identity of unchanged items across cache updates, so
+  // forwarding them directly lets EntryListItem's `memo` skip re-rendering every
+  // row when a single entry changes (a remap would allocate new objects for all
+  // N rows and defeat the memo). See #1081.
+  const entries = useMemo(() => data?.pages.flatMap((page) => page.items) ?? [], [data?.pages]);
 
   // Compute next/previous entry IDs for keyboard navigation
   // Also compute how close we are to the pagination boundary
@@ -118,10 +120,10 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
       hasNextPage &&
       !isFetchingNextPage
     ) {
-      fetchNextPage();
+      void fetchNextPageAndReconcile();
     }
     prevDistanceToEnd.current = distanceToEnd;
-  }, [distanceToEnd, hasNextPage, isFetchingNextPage, fetchNextPage]);
+  }, [distanceToEnd, hasNextPage, isFetchingNextPage, fetchNextPageAndReconcile]);
 
   // Scroll to last viewed entry when returning from entry view to list
   // We track the previous openEntryId to know which entry to scroll to
@@ -196,7 +198,10 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
     enabled: keyboardShortcutsEnabled,
     onToggleRead: toggleRead,
     onToggleStar: toggleStar,
-    onRefresh: () => utils.entries.list.invalidate(),
+    // Route the `r` refresh through the shared helper so it cancels in-flight
+    // fetches on inactive lists first (a completing fetch would clear the
+    // staleness flag), matching navigation/sidebar refreshes (#1081).
+    onRefresh: () => void refreshEntryLists(queryClient),
     onToggleUnreadOnly: toggleShowUnreadOnly,
     onNavigateNext: goToNextEntry,
     onNavigatePrevious: goToPreviousEntry,
@@ -210,10 +215,10 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
       errorMessage: undefined,
       isFetchingNextPage,
       hasNextPage: hasNextPage ?? false,
-      fetchNextPage,
+      fetchNextPage: fetchNextPageAndReconcile,
       refetch,
     }),
-    [isLoading, isFetchingNextPage, hasNextPage, fetchNextPage, refetch]
+    [isLoading, isFetchingNextPage, hasNextPage, fetchNextPageAndReconcile, refetch]
   );
 
   // Deterministic skeleton on the server + first client render so hydration

@@ -26,6 +26,26 @@ refreshes the list (read entries stay visible under the reader). The sidebar
 calls the same `refreshEntryLists` when a link matching the current pathname
 is clicked, so clicking the current list acts as an explicit refresh.
 
+**`fetchNextPage` clobber guard (#1081):** React Query's `infiniteQueryBehavior`
+snapshots the existing pages when a `fetchNextPage` starts and, on completion,
+replaces the data with `snapshot + newPage` — silently dropping any
+`setQueryData` applied to the old pages mid-fetch. j/k navigation triggers this
+(opening an entry near the end auto-marks it read at the same moment
+`fetchNextPage` fires), so the completing fetch would revert the entry to unread.
+Every next-page fetch (keyboard- and scroll-triggered, in both
+`EntryListContainer` and `UnifiedEntriesContent`) therefore calls
+`snapshotEntryGetStates` **before** starting the fetch and
+`reconcileListFromChangedEntryGets` **after** it settles, re-asserting onto the
+list only the entries whose `entries.get` read/starred state **changed during
+the fetch window**. It is a diff, not a blanket re-assert, because `entries.get`
+is not universally in lockstep with the list — `mark_all_read` invalidates
+`entries.list` but never touches `entries.get`, so a blanket re-assert would
+resurrect a stale get (e.g. a prefetched-unread entry that mark-all-read marked
+read) into the freshly-refetched list. A clobber can only affect writes made
+after the fetch started, so restricting to mid-fetch changes captures exactly
+those. (A brand-new SSE-inserted entry has no `entries.get` entry and can't be
+restored this way; it reappears on the next navigation refresh.)
+
 ## Cache Helpers (`src/lib/cache/`)
 
 | File                | Role                                                                                                                                                                                                    |
@@ -77,6 +97,11 @@ Tag mutations (`tags.create/update/delete`) invalidate/patch via their component
 
 **Key principle:** SSE events patch caches directly and must NOT trigger `entries.*` refetches (enforced by e2e tests via `recordTrpcProcedures`). Counts are always set to absolute server-provided values (idempotent — duplicate SSE/sync delivery can't drift them). The **one deliberate exception** is `mark_all_read`: mark-all-read is unbounded, so patching every entry (or shipping every id) isn't worth it, and the event invalidates `entries.list` instead — refetching a list the user just cleared is an acceptable rare cost.
 
+**Catch-up sync after (re)connect (#1081):** on SSE `open`, `useRealtimeUpdates` runs a catch-up sync against `sync.events` from the current cursors. Two invariants keep it from losing changes made while disconnected:
+
+- **Retry on failure.** A failed catch-up sync is retried with exponential backoff (2s→30s) even in the `connected` phase (the `polling` phase already retries every 30s). A single failure used to be swallowed as "done", stranding the gap forever on an idle view.
+- **Cursor freeze until caught up.** Live SSE events patch the cache immediately but do **not** advance the persisted sync cursor until the connection's catch-up sync has fully succeeded (`caughtUpRef`). Otherwise a live event would push the cursor past the not-yet-synced gap, making the pending/retrying catch-up query skip the gap's rows. The catch-up sync itself always advances the cursor (it drains the authoritative server sequence). Any stream error (including the browser's silent EventSource auto-reconnect) re-freezes the cursor so the next catch-up re-covers whatever was missed.
+
 | SSE Event              | Cache Updates                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `new_entry`            | Direct: absolute counts via `setEntryRelatedCounts`; inserts the event's `entry` payload into matching `entries.list` caches via `insertEntryIntoListCaches` (sorted position; tag/uncategorized membership from the cached subscription — conservatively skipped when uncached; skips search/unknown-filter caches and entries beyond the loaded pagination window). Spam entries carry no payload. The catch-up sync path sets `read`/`starred` for entries that changed state on another device; the live path omits them. Idempotent (absolute counts, insert deduped by ID). |
@@ -85,7 +110,7 @@ Tag mutations (`tags.create/update/delete`) invalidate/patch via their component
 | `mark_all_read`        | A `markAllRead` happened on another tab/device. Invalidate `entries.list`, `entries.count`, `tags.list`, `subscriptions.list` — the same thing the acting tab does on success. This is the **one** SSE event that deliberately refetches `entries.list`: mark-all-read is unbounded, so patching every entry (or shipping every id) isn't worth it, and refetching a list the user just cleared is an acceptable, rare cost. Advances the entries cursor so a reconnect catch-up doesn't re-deliver every marked entry.                                                           |
 | `subscription_created` | Add to `subscriptions.list`; absolute counts from server `counts` (live path). The sync.events catch-up path omits `counts`, so the client invalidates `tags.list` + `entries.count` instead.                                                                                                                                                                                                                                                                                                                                                                                     |
 | `subscription_updated` | Patch subscription in lookup map/list caches; invalidate `tags.list` + `subscriptions.list` (tag membership may have changed).                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `subscription_deleted` | Remove from `subscriptions.list`; absolute counts (live path) or invalidate `tags.list` + `entries.count` (catch-up). Always invalidates `entries.list`.                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `subscription_deleted` | Remove from `subscriptions.list`; absolute counts (live path) or invalidate `tags.list` + `entries.count` (catch-up). The count update **and** `entries.list` invalidation always run — even when the subscription isn't cached (optimistically removed, or never loaded with tags collapsed); only the structural removal is gated on the subscription being cached (#1081).                                                                                                                                                                                                     |
 | `tag_created`          | `applySyncTagChanges` — add to `tags.list`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `tag_updated`          | `applySyncTagChanges` — patch in `tags.list`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `tag_deleted`          | `removeSyncTags` — remove from `tags.list`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
@@ -167,17 +192,18 @@ bump `updated_at` and re-deliver as before.
 
 ## Key Files
 
-| File                                               | Purpose                                                            |
-| -------------------------------------------------- | ------------------------------------------------------------------ |
-| `src/lib/cache/*` (see table above)                | Cache operations, entry/count helpers, SSE event dispatch          |
-| `src/lib/hooks/useEntryMutations.ts`               | Entry mutations with optimistic updates + timestamp tracking       |
-| `src/lib/hooks/useEntryListRefreshOnNavigate.ts`   | Navigation-triggered entry list invalidation (pathname change)     |
-| `src/lib/hooks/useRealtimeUpdates.ts`              | SSE/polling glue feeding the connection machine                    |
-| `src/lib/events/connection-state.ts`               | Pure connection state machine (reconnect/backoff/polling fallback) |
-| `src/lib/events/cursors.ts`                        | Pure sync-cursor bookkeeping                                       |
-| `src/components/entries/EntryListContainer.tsx`    | Stateful entry list container (query, pagination, keyboard nav)    |
-| `src/components/entries/UnifiedEntriesContent.tsx` | Unified entry page with navigation and pagination                  |
-| `src/components/layout/Sidebar.tsx`                | Subscription delete with optimistic update                         |
+| File                                               | Purpose                                                             |
+| -------------------------------------------------- | ------------------------------------------------------------------- |
+| `src/lib/cache/*` (see table above)                | Cache operations, entry/count helpers, SSE event dispatch           |
+| `src/lib/hooks/useEntryMutations.ts`               | Entry mutations with optimistic updates + timestamp tracking        |
+| `src/lib/hooks/useEntryListRefreshOnNavigate.ts`   | Navigation-triggered entry list invalidation (pathname change)      |
+| `src/lib/hooks/useRealtimeUpdates.ts`              | SSE/polling glue feeding the connection machine                     |
+| `src/lib/events/connection-state.ts`               | Pure connection state machine (reconnect/backoff/polling fallback)  |
+| `src/lib/events/cursors.ts`                        | Pure sync-cursor bookkeeping                                        |
+| `src/components/entries/EntryListContainer.tsx`    | Stateful entry list container (query, pagination, keyboard nav)     |
+| `src/components/entries/UnifiedEntriesContent.tsx` | Unified entry page with navigation and pagination                   |
+| `src/components/layout/Sidebar.tsx`                | Subscription delete via `useUnsubscribeMutation`                    |
+| `src/lib/hooks/useUnsubscribeMutation.ts`          | Shared `subscriptions.delete` choreography (sidebar + broken feeds) |
 
 ## Adding New Cache Updates
 
