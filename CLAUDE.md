@@ -36,6 +36,22 @@ it stops both servers and deletes its temp dir + env files:
 pnpm services            # run in the BACKGROUND; leave it running
 ```
 
+**Ownership when using subagents:** the persistent **main agent** owns `pnpm
+services` — it starts it and keeps it running (restarting if it dies).
+**Subagents must not run `pnpm services` themselves**: a subagent's background
+tasks are torn down when the subagent finishes, which kills the DB out from under
+later work (and can orphan the Postgres/Redis processes). A subagent should assume
+the services are already up and just use the `*:local` scripts below — they read
+the `.env.local-services*` files the main agent's `pnpm services` wrote. So before
+delegating DB-dependent work to a subagent, the main agent must have `pnpm
+services` running; if it dies mid-run, the subagent should report back rather than
+start its own, and the main agent restarts it.
+
+> Background tasks are also periodically SIGTERM'd by the harness — even for the
+> main agent (see [clawed-abode#424](https://github.com/brendanlong/clawed-abode/issues/424)) —
+> so treat a mid-run DB-connection error as "restart `pnpm services` and retry",
+> not a code failure.
+
 Then, in the foreground, use the `*:local` variants (they layer the generated env
 file over `.env.test` so it wins, via `dotenv -o`):
 
