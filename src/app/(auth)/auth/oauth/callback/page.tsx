@@ -16,7 +16,6 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
-import { setSessionCookie } from "@/lib/session-cookie";
 import { broadcastOAuthComplete } from "@/lib/oauth-channel";
 import { SpinnerIcon } from "@/components/ui/icon-button";
 
@@ -143,8 +142,8 @@ function OAuthCallbackContent() {
   // Login mutations
   const googleCallbackMutation = trpc.auth.googleCallback.useMutation({
     onSuccess: (data) => {
-      // Store the session token in a cookie
-      setSessionCookie(data.sessionToken);
+      // The server set the httpOnly session cookie (+ readable marker) on the
+      // callback response; nothing to persist client-side.
       cleanupOAuthState();
       // New users need to complete signup confirmation first
       const redirectTo = data.isNewUser ? "/complete-signup" : "/all";
@@ -162,7 +161,8 @@ function OAuthCallbackContent() {
 
   const appleCallbackMutation = trpc.auth.appleCallback.useMutation({
     onSuccess: (data) => {
-      setSessionCookie(data.sessionToken);
+      // The server set the httpOnly session cookie (+ readable marker) on the
+      // callback response; nothing to persist client-side.
       cleanupOAuthState();
       // New users need to complete signup confirmation first
       const redirectTo = data.isNewUser ? "/complete-signup" : "/all";

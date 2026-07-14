@@ -24,6 +24,7 @@ import { users, oauthAccounts } from "@/server/db/schema";
 import { signupConfig, ALL_SIGNUP_PROVIDERS } from "@/server/config/env";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { createSession, revokeSessionByToken } from "@/server/auth/session";
+import { setSessionCookie, clearSessionCookie } from "@/server/auth/session-cookie";
 import { extractClientInfo } from "@/server/http/client-ip";
 import { getEnabledProviders } from "@/server/auth/oauth/config";
 import {
@@ -126,6 +127,7 @@ async function validateOAuthCallback<T>(validateFn: () => Promise<T>): Promise<T
 async function handleOAuthCallback(
   db: Parameters<typeof createSession>[0],
   headers: Headers,
+  resHeaders: Headers | undefined,
   oauthResult: { userId: string; email: string; createdAt: Date; isNewUser: boolean }
 ): Promise<{
   user: { id: string; email: string; createdAt: Date };
@@ -139,6 +141,10 @@ async function handleOAuthCallback(
     userAgent,
     ipAddress,
   });
+
+  // Set the httpOnly session cookie for the browser (the returned sessionToken
+  // stays in the body for REST/OpenAPI clients that read it directly).
+  setSessionCookie(resHeaders, token);
 
   return {
     user: {
@@ -229,6 +235,10 @@ export const authRouter = createTRPCRouter({
       // Auto-subscribe to announcement feed (fire-and-forget, errors are caught internally)
       void subscribeToAnnouncementFeed(ctx.db, result.user.userId);
 
+      // Set the httpOnly session cookie for the browser (the returned sessionToken
+      // stays in the body for REST/OpenAPI clients that read it directly).
+      setSessionCookie(ctx.resHeaders, result.token);
+
       return {
         user: {
           id: result.user.userId,
@@ -315,6 +325,10 @@ export const authRouter = createTRPCRouter({
         userAgent,
         ipAddress,
       });
+
+      // Set the httpOnly session cookie for the browser (the returned sessionToken
+      // stays in the body for REST/OpenAPI clients that read it directly).
+      setSessionCookie(ctx.resHeaders, token);
 
       return {
         user: {
@@ -472,7 +486,7 @@ export const authRouter = createTRPCRouter({
         inviteToken,
       });
 
-      return handleOAuthCallback(ctx.db, ctx.headers, oauthResult);
+      return handleOAuthCallback(ctx.db, ctx.headers, ctx.resHeaders, oauthResult);
     }),
 
   /**
@@ -615,7 +629,7 @@ export const authRouter = createTRPCRouter({
         inviteToken,
       });
 
-      return handleOAuthCallback(ctx.db, ctx.headers, oauthResult);
+      return handleOAuthCallback(ctx.db, ctx.headers, ctx.resHeaders, oauthResult);
     }),
 
   /**
@@ -728,7 +742,7 @@ export const authRouter = createTRPCRouter({
         inviteToken,
       });
 
-      return handleOAuthCallback(ctx.db, ctx.headers, oauthResult);
+      return handleOAuthCallback(ctx.db, ctx.headers, ctx.resHeaders, oauthResult);
     }),
 
   /**
@@ -914,6 +928,9 @@ export const authRouter = createTRPCRouter({
       if (ctx.sessionToken) {
         await revokeSessionByToken(ctx.sessionToken);
       }
+
+      // Clear the httpOnly session cookie (+ readable marker) for the browser.
+      clearSessionCookie(ctx.resHeaders);
 
       return { success: true };
     }),

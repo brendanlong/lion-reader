@@ -127,13 +127,18 @@ export async function createPasswordUser(
   return { id, email, password };
 }
 
-/** Sets the session cookie so the browser context is logged in as the user. */
+/**
+ * Sets the httpOnly session cookie so the browser context is logged in as the
+ * user (mirrors what the server sets on login — see src/server/auth/session-cookie.ts).
+ */
 export async function loginAs(
   context: BrowserContext,
   user: TestUser,
   baseURL: string
 ): Promise<void> {
-  await context.addCookies([{ name: "session", value: user.sessionToken, url: baseURL }]);
+  await context.addCookies([
+    { name: "session", value: user.sessionToken, url: baseURL, httpOnly: true },
+  ]);
 }
 
 export interface TestFeed {
