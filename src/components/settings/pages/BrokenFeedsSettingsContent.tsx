@@ -17,6 +17,7 @@ import { SettingsListContainer } from "@/components/settings/SettingsListContain
 import { CheckIcon, AlertCircleIcon } from "@/components/ui/icon-button";
 import { UnsubscribeDialog } from "@/components/feeds/UnsubscribeDialog";
 import { FileFeedIssueDialog } from "@/components/feeds/FileFeedIssueDialog";
+import type { FeedIssueInput } from "@/lib/github-issue";
 
 // ============================================================================
 // Types
@@ -37,13 +38,9 @@ interface BrokenFeed {
 // Main Component
 // ============================================================================
 
-interface IssueTarget {
-  displayName: string;
-  title: string | null;
-  url: string | null;
-  lastError: string | null;
-  consecutiveFailures: number;
-}
+// The feed fields needed to prefill a GitHub issue, plus the resolved display
+// name. Reuses FeedIssueInput so the two stay in sync automatically.
+type IssueTarget = FeedIssueInput & { displayName: string };
 
 export default function BrokenFeedsSettingsContent() {
   const [unsubscribeTarget, setUnsubscribeTarget] = useState<{
