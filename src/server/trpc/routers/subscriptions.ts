@@ -6,7 +6,8 @@
  */
 
 import { z } from "zod";
-import { eq, and, isNull, sql, inArray } from "drizzle-orm";
+import { eq, and, isNull, sql, inArray, type SQL } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 
 import {
   createTRPCRouter,
@@ -377,12 +378,9 @@ export const subscriptionsRouter = createTRPCRouter({
       // Update the subscription and return key fields (WHERE clause ensures ownership)
       const now = new Date();
       const updateData: {
-        updatedAt: Date;
         customTitle?: string | null;
         fetchFullContent?: boolean;
-      } = {
-        updatedAt: now,
-      };
+      } = {};
 
       if (input.customTitle !== undefined) {
         updateData.customTitle = input.customTitle;
@@ -391,11 +389,35 @@ export const subscriptionsRouter = createTRPCRouter({
         updateData.fetchFullContent = input.fetchFullContent;
       }
 
+      // "Meaningful change vs row touched" (issue #1160, mirroring #1118 for
+      // entries): `updated_at` drives the subscription delta-sync cursor
+      // (sync.events tracks MAX(subscriptions.updated_at)) and, below, gates
+      // the subscription_updated publish — so it must move only when a
+      // user-visible field actually changes. The self-join on `prev` captures
+      // the pre-update values in the UPDATE itself, so a concurrent update
+      // can't slip into a pre-SELECT's TOCTOU window; a re-save with identical
+      // settings writes the row but leaves updated_at alone.
+      const prev = alias(subscriptions, "prev");
+      const changedFragments: SQL[] = [];
+      if (input.customTitle !== undefined) {
+        changedFragments.push(sql`${prev.customTitle} IS DISTINCT FROM ${input.customTitle}`);
+      }
+      if (input.fetchFullContent !== undefined) {
+        changedFragments.push(sql`${prev.fetchFullContent} <> ${input.fetchFullContent}`);
+      }
+      const meaningfulChange =
+        changedFragments.length > 0 ? sql`(${sql.join(changedFragments, sql` OR `)})` : sql`false`;
+
       const updateResult = await ctx.db
         .update(subscriptions)
-        .set(updateData)
+        .set({
+          ...updateData,
+          updatedAt: sql`CASE WHEN ${meaningfulChange} THEN ${now} ELSE ${prev.updatedAt} END`,
+        })
+        .from(prev)
         .where(
           and(
+            eq(prev.id, subscriptions.id),
             eq(subscriptions.id, input.id),
             eq(subscriptions.userId, userId),
             isNull(subscriptions.unsubscribedAt)
@@ -407,6 +429,7 @@ export const subscriptionsRouter = createTRPCRouter({
           customTitle: subscriptions.customTitle,
           fetchFullContent: subscriptions.fetchFullContent,
           subscribedAt: subscriptions.subscribedAt,
+          changed: sql<boolean>`${meaningfulChange}`,
         });
 
       if (updateResult.length === 0) {
@@ -472,20 +495,24 @@ export const subscriptionsRouter = createTRPCRouter({
       }));
       const unreadCount = unreadResult[0]?.count ?? 0;
 
-      // Publish SSE event for other tabs/devices
-      publishSubscriptionUpdated(
-        userId,
-        subscription.id,
-        now,
-        subscriptionTagsList,
-        subscription.customTitle
-      ).catch((err) => {
-        logger.error("Failed to publish subscription_updated event", {
-          err,
+      // Publish SSE event for other tabs/devices — only when something
+      // actually changed. A no-op re-save (identical customTitle /
+      // fetchFullContent) must not notify other tabs (issue #1160).
+      if (subscription.changed) {
+        publishSubscriptionUpdated(
           userId,
-          subscriptionId: subscription.id,
+          subscription.id,
+          now,
+          subscriptionTagsList,
+          subscription.customTitle
+        ).catch((err) => {
+          logger.error("Failed to publish subscription_updated event", {
+            err,
+            userId,
+            subscriptionId: subscription.id,
+          });
         });
-      });
+      }
 
       // Return flat format
       return {
@@ -911,30 +938,44 @@ export const subscriptionsRouter = createTRPCRouter({
       if (input.tagIds.length === 0) {
         // Clear tags atomically: the delete + updated_at bump must land together
         // so a crash can't leave the associations half-removed (issue #952).
-        await ctx.db.transaction(async (tx) => {
-          await tx.delete(subscriptionTags).where(eq(subscriptionTags.subscriptionId, input.id));
+        // The delete's RETURNING is the race-free record of the prior tag set:
+        // when there was nothing to clear, the tag set didn't meaningfully
+        // change, so updated_at stays put (no delta-sync cursor churn) and no
+        // subscription_updated is published (issue #1160).
+        const changed = await ctx.db.transaction(async (tx) => {
+          const deleted = await tx
+            .delete(subscriptionTags)
+            .where(eq(subscriptionTags.subscriptionId, input.id))
+            .returning({ tagId: subscriptionTags.tagId });
+
+          if (deleted.length === 0) {
+            return false;
+          }
 
           // Update subscription's updated_at for sync cursor tracking
           await tx
             .update(subscriptions)
             .set({ updatedAt: now })
             .where(eq(subscriptions.id, input.id));
+          return true;
         });
 
         // Publish SSE event with empty tags
-        publishSubscriptionUpdated(
-          userId,
-          input.id,
-          now,
-          [],
-          existingSubscription[0].customTitle
-        ).catch((err) => {
-          logger.error("Failed to publish subscription_updated event", {
-            err,
+        if (changed) {
+          publishSubscriptionUpdated(
             userId,
-            subscriptionId: input.id,
+            input.id,
+            now,
+            [],
+            existingSubscription[0].customTitle
+          ).catch((err) => {
+            logger.error("Failed to publish subscription_updated event", {
+              err,
+              userId,
+              subscriptionId: input.id,
+            });
           });
-        });
+        }
 
         return {};
       }
@@ -960,9 +1001,14 @@ export const subscriptionsRouter = createTRPCRouter({
       // Replace tags atomically: delete-then-insert (+updated_at bump) must be
       // one unit, or a crash/concurrent call between them could leave the
       // subscription untagged or with a partial tag set (issue #952).
-      await ctx.db.transaction(async (tx) => {
-        // Delete all existing tags for the subscription
-        await tx.delete(subscriptionTags).where(eq(subscriptionTags.subscriptionId, input.id));
+      const changed = await ctx.db.transaction(async (tx) => {
+        // Delete all existing tags for the subscription. The RETURNING captures
+        // the prior tag set race-free (no pre-SELECT TOCTOU window) so we can
+        // tell a real change from a re-apply of the identical set (issue #1160).
+        const deleted = await tx
+          .delete(subscriptionTags)
+          .where(eq(subscriptionTags.subscriptionId, input.id))
+          .returning({ tagId: subscriptionTags.tagId });
 
         // Insert new subscription_tags entries
         await tx.insert(subscriptionTags).values(
@@ -973,33 +1019,47 @@ export const subscriptionsRouter = createTRPCRouter({
           }))
         );
 
+        // Re-applying the identical tag set is not a meaningful change: skip
+        // the updated_at bump so the delta-sync cursor doesn't move (and skip
+        // the publish below).
+        const previousTagIds = new Set(deleted.map((d) => d.tagId));
+        if (
+          previousTagIds.size === validTagIds.size &&
+          input.tagIds.every((id) => previousTagIds.has(id))
+        ) {
+          return false;
+        }
+
         // Update subscription's updated_at for sync cursor tracking
         await tx
           .update(subscriptions)
           .set({ updatedAt: now })
           .where(eq(subscriptions.id, input.id));
+        return true;
       });
 
       // Publish SSE event with new tags
-      const tagsList = userTags.map((t) => ({
-        id: t.id,
-        name: t.name,
-        color: t.color,
-      }));
+      if (changed) {
+        const tagsList = userTags.map((t) => ({
+          id: t.id,
+          name: t.name,
+          color: t.color,
+        }));
 
-      publishSubscriptionUpdated(
-        userId,
-        input.id,
-        now,
-        tagsList,
-        existingSubscription[0].customTitle
-      ).catch((err) => {
-        logger.error("Failed to publish subscription_updated event", {
-          err,
+        publishSubscriptionUpdated(
           userId,
-          subscriptionId: input.id,
+          input.id,
+          now,
+          tagsList,
+          existingSubscription[0].customTitle
+        ).catch((err) => {
+          logger.error("Failed to publish subscription_updated event", {
+            err,
+            userId,
+            subscriptionId: input.id,
+          });
         });
-      });
+      }
 
       return {};
     }),
