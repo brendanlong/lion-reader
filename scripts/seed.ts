@@ -18,6 +18,7 @@ import { Pool } from "pg";
 
 import { generateUuidv7 } from "../src/lib/uuidv7";
 import * as schema from "../src/server/db/schema";
+import { timestamptzRawParserConfig } from "../src/server/db/temporal";
 
 const connectionString = process.env.DATABASE_URL;
 
@@ -26,7 +27,8 @@ if (!connectionString) {
   process.exit(1);
 }
 
-const pool = new Pool({ connectionString });
+// Match the app pool so temporalTimestamp columns decode (see temporal.ts).
+const pool = new Pool({ connectionString, types: timestamptzRawParserConfig });
 const db = drizzle(pool, { schema });
 
 // Generate a content hash for entries

@@ -16,6 +16,7 @@ import { and, eq } from "drizzle-orm";
 import Redis from "ioredis";
 import type { BrowserContext, Page } from "@playwright/test";
 import * as schema from "../../src/server/db/schema";
+import { timestamptzRawParserConfig } from "../../src/server/db/temporal";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 
 // Includes $client so a TestDb satisfies the app's `typeof db` and can be
@@ -36,7 +37,12 @@ function requireEnv(name: string): string {
 }
 
 export function getDb(): TestDb {
-  pool ??= new Pool({ connectionString: requireEnv("DATABASE_URL"), max: 5 });
+  pool ??= new Pool({
+    connectionString: requireEnv("DATABASE_URL"),
+    max: 5,
+    // Match the app pool so temporalTimestamp columns decode (see temporal.ts).
+    types: timestamptzRawParserConfig,
+  });
   return drizzle(pool, { schema });
 }
 
@@ -222,10 +228,11 @@ export async function createUnreadEntry(
     })
     .returning();
 
+  // publishedOrFetchedAt is filled by the user_entries_fill_denormalized trigger
+  // (COALESCE(published_at, fetched_at)), matching the production write paths.
   await db.insert(schema.userEntries).values({
     userId,
     entryId: id,
-    publishedOrFetchedAt: now,
   });
 
   return {
@@ -290,7 +297,8 @@ export async function createSavedArticle(
     })
     .returning();
 
-  await db.insert(schema.userEntries).values({ userId, entryId: id, publishedOrFetchedAt: now });
+  // publishedOrFetchedAt is filled by the user_entries_fill_denormalized trigger.
+  await db.insert(schema.userEntries).values({ userId, entryId: id });
 
   return {
     savedFeedId: feedId,

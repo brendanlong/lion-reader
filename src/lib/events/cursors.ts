@@ -14,7 +14,22 @@
  * *within* a tied-timestamp group (keyset pagination, same as `listEntries`).
  */
 
+import { Temporal } from "temporal-polyfill";
+
 import type { SyncEvent } from "./schemas";
+
+/**
+ * Compares two ISO-8601 cursor timestamps as instants: -1, 0, or 1. Both come
+ * from the server (`Temporal.Instant.toString()`, microsecond precision). A
+ * `new Date()` comparison would truncate to milliseconds and miss sub-ms
+ * differences, so a newer event sharing a millisecond with the cursor would fail
+ * to advance it (#683). Comparing instants (not strings) is also robust across
+ * the format change: a legacy `to_char` cursor (always 6 fractional digits) and
+ * a Temporal cursor (trailing zeros trimmed) for the same moment compare equal.
+ */
+function compareTimestamps(a: string, b: string): number {
+  return Temporal.Instant.compare(Temporal.Instant.from(a), Temporal.Instant.from(b));
+}
 
 /**
  * Largest possible UUID. Used as the entries id tiebreaker for `mark_all_read`,
@@ -103,11 +118,12 @@ function advanceEntriesCursor(cursors: SyncCursors, event: SyncEvent): SyncCurso
   const afterId = entryEventAfterId(event);
   const current = cursors.entries;
 
-  if (!current || new Date(updatedAt) > new Date(current)) {
+  const cmp = current ? compareTimestamps(updatedAt, current) : 1;
+  if (cmp > 0) {
     // Newer timestamp: reset the keyset to this event.
     return { ...cursors, entries: updatedAt, entriesAfterId: afterId };
   }
-  if (updatedAt === current) {
+  if (cmp === 0) {
     // Same timestamp group: advance the id tiebreaker forward only.
     // UUIDs are lowercase, so string ordering matches Postgres uuid ordering.
     if (!cursors.entriesAfterId || afterId > cursors.entriesAfterId) {
@@ -133,7 +149,7 @@ export function advanceCursors(cursors: SyncCursors, event: SyncEvent): SyncCurs
   }
 
   const currentCursor = cursors[cursorType];
-  if (!currentCursor || new Date(event.updatedAt) > new Date(currentCursor)) {
+  if (!currentCursor || compareTimestamps(event.updatedAt, currentCursor) > 0) {
     return { ...cursors, [cursorType]: event.updatedAt };
   }
   return cursors;

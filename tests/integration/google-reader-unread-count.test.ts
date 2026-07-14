@@ -112,11 +112,12 @@ async function addEntry(opts: {
     updatedAt: opts.fetchedAt,
   });
   if (opts.withUserEntry) {
+    // publishedOrFetchedAt is filled by the user_entries_fill_denormalized
+    // trigger (COALESCE(published_at, fetched_at)).
     await db.insert(userEntries).values({
       userId: opts.userId,
       entryId,
       read: opts.read,
-      publishedOrFetchedAt: opts.publishedAt ?? opts.fetchedAt,
     });
   }
 }
