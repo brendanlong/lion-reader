@@ -91,6 +91,30 @@ describe("UnifiedEntriesContent not-found guards", () => {
     expect(await screen.findByText("Subscription not found")).toBeInTheDocument();
   });
 
+  it("renders the feed's site link beneath the title when subscriptions.get returns a siteUrl", async () => {
+    mockPathname.mockReturnValue("/subscription/sub-1");
+    renderUnified(
+      baseHandlers({
+        "subscriptions.get": () => ({
+          id: "sub-1",
+          type: "web" as const,
+          url: "https://announcements.lionreader.com/changelog.xml",
+          title: "Lion Reader Announcements",
+          originalTitle: "Lion Reader Announcements",
+          description: null,
+          siteUrl: "https://announcements.lionreader.com/",
+          subscribedAt: new Date(),
+          unreadCount: 0,
+          tags: [],
+          fetchFullContent: false,
+        }),
+      })
+    );
+
+    const link = await screen.findByRole("link", { name: /announcements\.lionreader\.com/ });
+    expect(link).toHaveAttribute("href", "https://announcements.lionreader.com/");
+  });
+
   it("surfaces a transient subscriptions.get error to the ErrorBoundary, not a not-found message", async () => {
     mockPathname.mockReturnValue("/subscription/sub-1");
     renderUnified(
