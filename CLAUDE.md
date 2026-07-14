@@ -117,7 +117,7 @@ See docs/diagrams/ for more detail. These diagrams are very helpful for quickly 
 ## Database Conventions
 
 - **IDs**: UUIDv7, generated in TypeScript via `generateUuidv7()` from `@/lib/uuidv7`. `gen_uuidv7()` is not available in our Postgres version.
-- **Timestamps**: `timestamptz`, store UTC
+- **Timestamps**: `timestamptz`, store UTC. Read as JS `Date` (millisecond precision) by default. Where microseconds matter — keyset cursors built from timestamps — use the `temporalTimestamp` Drizzle column type or `parseTimestamptz`/`.mapWith(parseTimestamptz)` from `src/server/db/temporal.ts` to read a full-precision `Temporal.Instant`; the app pool returns the raw `timestamptz` string (not a truncating `Date`) so this works without `to_char`. See "Pagination" in docs/DESIGN.md (#680, #683).
 - **Soft deletes**: Use `deleted_at`/`unsubscribed_at` patterns
 - **Upserts**: Prefer `onConflictDoNothing()`/`onConflictDoUpdate()` over check-then-act
 - **Migrations**: Must be backward-compatible with the previous release (expand/contract) — they run in Fly's `release_command` before the canary deploy, so old code runs against the new schema during rollout and on rollback. See "Migration Compatibility" in docs/DESIGN.md.

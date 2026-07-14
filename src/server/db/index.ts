@@ -4,6 +4,7 @@ import * as Sentry from "@sentry/nextjs";
 
 import { logger } from "@/lib/logger";
 import * as schema from "./schema";
+import { timestamptzRawParserConfig } from "./temporal";
 
 const connectionString = process.env.DATABASE_URL;
 
@@ -11,8 +12,16 @@ if (!connectionString) {
   throw new Error("DATABASE_URL environment variable is not set");
 }
 
+// By default node-postgres parses `timestamptz` into a JS Date, which truncates
+// Postgres's microsecond precision to milliseconds and silently corrupted keyset
+// cursors built from timestamps (#680, #683). timestamptzRawParserConfig returns
+// the raw Postgres string instead: Drizzle's built-in `timestamp` columns still
+// map it to a Date (unchanged), while precision-sensitive reads decode it to a
+// full-precision Temporal.Instant (see src/server/db/temporal.ts). Scoped to this
+// pool's clients, not global, so unrelated pg consumers keep the default behaviour.
 export const pool = new Pool({
   connectionString,
+  types: timestamptzRawParserConfig,
   // Default pg pool is 10, which can cause request queuing under moderate concurrency.
   // Fly.io managed Postgres allows 300 connections; with 2 app + 1 worker + 1 discord
   // process, peak usage during deploys (3 app) is ~3×20 + 10 + 10 = 80, well under limit.
