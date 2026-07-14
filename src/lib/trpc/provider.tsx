@@ -13,6 +13,7 @@ import { httpBatchLink, TRPCClientError } from "@trpc/client";
 import superjson from "superjson";
 import { trpc } from "./client";
 import { getQueryClient } from "./query-client";
+import { clearSessionCookie, hasSessionCookie } from "@/lib/session-cookie";
 
 /**
  * Check if an error is a tRPC UNAUTHORIZED error indicating invalid session.
@@ -36,14 +37,6 @@ function isSignupConfirmationRequired(error: unknown): boolean {
 }
 
 /**
- * Check if the user currently has a session cookie.
- */
-function hasSessionCookie(): boolean {
-  if (typeof document === "undefined") return false;
-  return document.cookie.split(";").some((c) => c.trim().startsWith("session="));
-}
-
-/**
  * Clear the session cookie and redirect to login.
  * Uses a flag to prevent multiple redirects from concurrent failed requests.
  * Only triggers if the user is currently logged in (has a session cookie).
@@ -63,7 +56,7 @@ function handleUnauthorizedError() {
   isLoggingOut = true;
 
   // Clear the session cookie
-  document.cookie = "session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+  clearSessionCookie();
 
   // Redirect to login with current path as redirect target
   const currentPath = window.location.pathname + window.location.search;

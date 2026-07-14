@@ -15,6 +15,7 @@
 import { Suspense, useEffect, useState, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
+import { clearSessionCookie } from "@/lib/session-cookie";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { SpinnerIcon, CheckIcon, LockIcon, CloseIcon } from "@/components/ui/icon-button";
@@ -209,7 +210,7 @@ function SaveContent() {
   // Handle sign in - clears any stale session and redirects to login
   const handleSignIn = () => {
     // Clear any existing session cookie (it's invalid anyway)
-    document.cookie = "session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+    clearSessionCookie();
     // Store the URL to save after login
     if (urlToSave) {
       sessionStorage.setItem("pendingSaveUrl", urlToSave);
