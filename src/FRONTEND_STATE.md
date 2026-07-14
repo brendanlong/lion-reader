@@ -91,7 +91,7 @@ restored this way; it reappears on the next navigation refresh.)
 
 Tag mutations (`tags.create/update/delete`) invalidate/patch via their components; the corresponding SSE events keep other tabs in sync.
 
-**No-op re-saves publish nothing (issue #1160):** `subscriptions.update` with an identical `customTitle`/`fetchFullContent`, and `subscriptions.setTags` with the identical tag set, do not emit `subscription_updated` and do not bump `subscriptions.updated_at` (so the `sync.events` subscription cursor doesn't move). Other tabs therefore only see `subscription_updated` for genuine changes — the acting tab still updates its own cache via the mutation response/invalidation as listed above. This mirrors the entry-level "row written vs. value flipped" rule (issue #1118; see "Row Written vs. Value Flipped" in docs/DESIGN.md).
+**No-op re-saves publish nothing (issue #1160):** `subscriptions.update` with an identical `customTitle`/`fetchFullContent`, and `subscriptions.setTags` with the identical tag set, do not emit `subscription_updated` and do not bump `subscriptions.updated_at` (so the `sync.events` subscription cursor doesn't move). Other tabs therefore only see `subscription_updated` for genuine changes — the acting tab still updates its own cache via the mutation response/invalidation as listed above. This mirrors the entry-level "row written vs. value flipped" rule (issue #1118; see "Row Written vs. Value Flipped" in src/server/CLAUDE.md).
 
 ## Real-Time Updates
 

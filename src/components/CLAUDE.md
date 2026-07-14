@@ -1,6 +1,6 @@
 # Components
 
-@docs/diagrams/frontend-data-flow.d2
+This file governs the React components in `src/components/`. Data-flow diagram: `docs/diagrams/frontend-data-flow.d2`. Cache/query contract: `src/FRONTEND_STATE.md`.
 
 ## UI Components
 
@@ -126,3 +126,7 @@ Some icons should remain as local components in their files:
 
 - **Icons with `suppressHydrationWarning`** - Icons that depend on localStorage state (e.g., UnreadToggle) need this attribute on SVG elements, which shared icons don't support
 - **Single-use custom icons** - Icons specific to one feature (e.g., empty state illustrations, media player skip icons) should stay local with a comment explaining why
+
+## Narration OS Media Controls
+
+Narration plays through the Web Speech API (browser voices) or the Web Audio API (Piper enhanced voices), neither of which the browser treats as media playback — so setting `navigator.mediaSession` metadata alone surfaces no OS controls (lock screen / notification widget, Bluetooth & media-key buttons), especially in an installed PWA. To make them appear, a **silent looping `<audio>` element** (`src/lib/narration/silent-audio.ts`, a runtime-generated silent WAV data URI) is played while narration is active; that element is what the browser recognizes as media, which surfaces the controls and routes hardware buttons into our action handlers. `src/lib/narration/media-session.ts` is provider-agnostic (plain `play`/`pause`/`stop`/`prev`/`next` callbacks) and the `useMediaSession` hook (`src/components/narration/`) keeps metadata, action handlers, and playback state in sync for **both** providers. Artwork falls back to the PWA manifest icons when no per-article image is supplied.

@@ -5,7 +5,7 @@
  * routers and the MCP tools stay in sync. Both surfaces mark entries read and
  * star/unstar via the same services, so both must emit the same SSE events for
  * multi-tab/device sync — extracting this here keeps the mcp-scoped endpoints
- * mirroring the MCP tools exactly (see DESIGN.md).
+ * mirroring the MCP tools exactly (see src/server/auth/CLAUDE.md).
  *
  * All publishing is fire-and-forget: SSE is best-effort and must never block or
  * fail the mutation response.
