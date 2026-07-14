@@ -4,15 +4,20 @@
  * See issue #951: authorization-code consumption was check-then-act (two
  * concurrent token requests could both redeem the same code, violating the
  * OAuth 2.1 single-use requirement), and refresh-token rotation had no
- * reuse detection. Both are now atomic UPDATE ... WHERE ... RETURNING claims,
- * and replaying a rotated refresh token revokes the whole grant.
+ * reuse detection. Both are now atomic UPDATE ... WHERE ... RETURNING claims.
+ *
+ * Replaying a rotated refresh token outside a short grace window revokes the
+ * leaked token's rotation chain (not every token for the user+client, which
+ * would sign out unrelated devices sharing a client_id). Within the grace window
+ * the replay is treated as benign concurrency (racing parallel refreshes) and
+ * the live successor is left intact.
  */
 
 import { describe, it, expect, afterAll } from "vitest";
 import crypto from "crypto";
-import { inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { users, oauthClients } from "../../src/server/db/schema";
+import { users, oauthClients, oauthRefreshTokens } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import {
   createAuthorizationCode,
@@ -23,6 +28,19 @@ import {
   revokeClientToken,
 } from "../../src/server/oauth/service";
 import { getIssuer, getResourceIdentifier } from "../../src/server/oauth/config";
+import { hashToken } from "../../src/server/oauth/utils";
+
+/**
+ * Backdate a refresh token's revocation so a subsequent replay falls outside the
+ * rotation reuse grace window and is treated as a genuine leak rather than a
+ * benign concurrent refresh.
+ */
+async function backdateRevocation(refreshTokenPlaintext: string): Promise<void> {
+  await db
+    .update(oauthRefreshTokens)
+    .set({ revokedAt: new Date(Date.now() - 60_000) })
+    .where(eq(oauthRefreshTokens.tokenHash, hashToken(refreshTokenPlaintext)));
+}
 
 const createdUserIds: string[] = [];
 const createdClientIds: string[] = [];
@@ -154,9 +172,33 @@ describe("rotateRefreshToken", () => {
 
     const successes = results.filter((r) => r !== null);
     expect(successes).toHaveLength(1);
+
+    // The winner's tokens must survive the losing requests. The losers present
+    // the just-revoked token, but that's benign concurrency (within the grace
+    // window), not reuse — so it must not revoke the winner's fresh chain.
+    const winner = successes[0]!;
+    expect(await validateAccessToken(winner.accessToken)).not.toBeNull();
+    expect(await rotateRefreshToken(winner.refreshToken, clientId)).not.toBeNull();
   });
 
-  it("revokes the whole grant when a rotated refresh token is replayed", async () => {
+  it("treats an immediate replay as benign concurrency and does not revoke the chain", async () => {
+    const userId = await createTestUser();
+    const clientId = await createTestClient();
+    const tokens = await createTokens({ clientId, userId, scopes: ["mcp"] });
+
+    const rotated = await rotateRefreshToken(tokens.refreshToken, clientId);
+    expect(rotated).not.toBeNull();
+
+    // An immediate replay (indistinguishable from a racing concurrent refresh)
+    // is declined but must NOT trigger reuse revocation of the live successor.
+    const replay = await rotateRefreshToken(tokens.refreshToken, clientId);
+    expect(replay).toBeNull();
+
+    expect(await validateAccessToken(rotated!.accessToken)).not.toBeNull();
+    expect(await rotateRefreshToken(rotated!.refreshToken, clientId)).not.toBeNull();
+  });
+
+  it("revokes the whole grant when a rotated refresh token is replayed after the grace window", async () => {
     const userId = await createTestUser();
     const clientId = await createTestClient();
     const tokens = await createTokens({ clientId, userId, scopes: ["mcp"] });
@@ -165,13 +207,42 @@ describe("rotateRefreshToken", () => {
     expect(rotated).not.toBeNull();
     expect(await validateAccessToken(rotated!.accessToken)).not.toBeNull();
 
-    // Replaying the already-rotated token indicates the token leaked
+    // Backdate the revocation so the replay looks like a genuine stale-token
+    // leak (outside the concurrency grace window), not a racing refresh.
+    await backdateRevocation(tokens.refreshToken);
+
     const replay = await rotateRefreshToken(tokens.refreshToken, clientId);
     expect(replay).toBeNull();
 
     // Reuse detection revoked the successor tokens too
     expect(await validateAccessToken(rotated!.accessToken)).toBeNull();
     expect(await rotateRefreshToken(rotated!.refreshToken, clientId)).toBeNull();
+  });
+
+  it("scopes reuse revocation to the leaked chain, sparing sibling grants for the same user+client", async () => {
+    // Two independent grants for the same user+client — e.g. two Wallabag
+    // devices, which all share client_id "wallabag". A reuse event on one must
+    // not sign the other out.
+    const userId = await createTestUser();
+    const clientId = await createTestClient();
+    const grantA = await createTokens({ clientId, userId, scopes: ["mcp"] });
+    const grantB = await createTokens({ clientId, userId, scopes: ["mcp"] });
+
+    // Rotate grant A once, then replay its original token after the grace window
+    // so it registers as a genuine leak.
+    const rotatedA = await rotateRefreshToken(grantA.refreshToken, clientId);
+    expect(rotatedA).not.toBeNull();
+    await backdateRevocation(grantA.refreshToken);
+    const replay = await rotateRefreshToken(grantA.refreshToken, clientId);
+    expect(replay).toBeNull();
+
+    // Grant A's whole chain is dead...
+    expect(await validateAccessToken(rotatedA!.accessToken)).toBeNull();
+    expect(await rotateRefreshToken(rotatedA!.refreshToken, clientId)).toBeNull();
+
+    // ...but the sibling grant B is untouched.
+    expect(await validateAccessToken(grantB.accessToken)).not.toBeNull();
+    expect(await rotateRefreshToken(grantB.refreshToken, clientId)).not.toBeNull();
   });
 
   it("does not revoke the grant for an unknown refresh token", async () => {
