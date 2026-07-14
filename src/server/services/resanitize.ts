@@ -57,6 +57,7 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import { entries } from "@/server/db/schema";
 import { SANITIZER_VERSION } from "@/server/html/sanitize";
+import { shouldMaterializeFullContentOriginal } from "@/server/html/sanitize-entry";
 
 /**
  * Sentinel "not applicable" version for a family with no raw content: larger
@@ -127,6 +128,35 @@ export function selectStaleEntriesForResanitize(
     .where(keysetFilter ? and(staleFilter, keysetFilter) : staleFilter)
     .orderBy(sql`${RESANITIZE_STALENESS_KEY} DESC`, desc(entries.id))
     .limit(limit);
+}
+
+/**
+ * Sanitize one family's raw columns into the `{ original, cleaned }` shape
+ * that `persistResanitizedFamily` persists, applying the lazy full-content
+ * rule (`shouldMaterializeFullContentOriginal` in `@/server/html/sanitize-entry`):
+ * for the full-content family, the original's sanitized copy is materialized
+ * only when cleaned is NULL (i.e. only when original is the serving variant) —
+ * when cleaned exists, original comes back NULL without paying the whole-page
+ * sanitize. The content family always materializes both variants (the frontend
+ * has a user-facing original/cleaned toggle for feed content).
+ *
+ * Shared by the read-path self-heal (`resolveSanitizedFamily`) and the bulk
+ * re-sanitize script so both converge stale rows to the same lazy shape.
+ * `sanitize` is injected so each caller uses its own execution strategy
+ * (worker-pool offload on request paths).
+ */
+export async function sanitizeFamilyFromRaw(
+  family: "content" | "fullContent",
+  raw: { original: string | null; cleaned: string | null },
+  sanitize: (html: string | null) => Promise<string | null>
+): Promise<{ original: string | null; cleaned: string | null }> {
+  const materializeOriginal =
+    family === "content" || shouldMaterializeFullContentOriginal(raw.cleaned);
+  const [original, cleaned] = await Promise.all([
+    materializeOriginal ? sanitize(raw.original) : Promise.resolve<string | null>(null),
+    sanitize(raw.cleaned),
+  ]);
+  return { original, cleaned };
 }
 
 /**

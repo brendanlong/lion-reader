@@ -33,11 +33,28 @@ describe("withSanitizedEntryContent", () => {
     });
 
     expect(result.fullContentSanitizedVersion).toBe(SANITIZER_VERSION);
+    // No cleaned content, so original is the serving variant and IS sanitized.
+    expect(result.fullContentOriginalSanitized).toContain("body");
     expect(result.fullContentOriginalSanitized).not.toContain("<script>");
     expect(result.fullContentCleanedSanitized).toBeNull();
     // Content family was not written, so it isn't stamped.
     expect(result.contentSanitizedVersion).toBeUndefined();
     expect("contentOriginalSanitized" in result).toBe(false);
+  });
+
+  it("does NOT materialize full-content original when cleaned exists (lazy rule)", () => {
+    // The full-content serving rule is strictly `cleaned ?? original`, so when
+    // cleaned exists the whole-page original must not be sanitized/persisted —
+    // its sanitized column is NULL at the current version (issue #1117).
+    const result = withSanitizedEntryContent({
+      fullContentOriginal: "<article><script>x</script>whole raw page</article>",
+      fullContentCleaned: "<p>cleaned<script>y</script></p>",
+    });
+
+    expect(result.fullContentSanitizedVersion).toBe(SANITIZER_VERSION);
+    expect(result.fullContentOriginalSanitized).toBeNull();
+    expect(result.fullContentCleanedSanitized).toContain("cleaned");
+    expect(result.fullContentCleanedSanitized).not.toContain("<script>");
   });
 
   it("stamps both families when both are written", () => {
@@ -50,6 +67,13 @@ describe("withSanitizedEntryContent", () => {
 
     expect(result.contentSanitizedVersion).toBe(SANITIZER_VERSION);
     expect(result.fullContentSanitizedVersion).toBe(SANITIZER_VERSION);
+    // The content family always materializes BOTH variants (the frontend has a
+    // user-facing original/cleaned toggle for feed content); only the
+    // full-content original is lazy.
+    expect(result.contentOriginalSanitized).toBe("<p>a</p>");
+    expect(result.contentCleanedSanitized).toBe("<p>b</p>");
+    expect(result.fullContentOriginalSanitized).toBeNull();
+    expect(result.fullContentCleanedSanitized).toBe("<p>d</p>");
   });
 
   it("preserves the other fields it is given (passthrough)", () => {

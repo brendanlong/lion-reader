@@ -34,7 +34,7 @@ import {
   type UnreadCounts,
 } from "./counts";
 import { publishMarkReadStateChanges, publishStarredStateChange } from "./entry-events";
-import { persistResanitizedFamily } from "./resanitize";
+import { persistResanitizedFamily, sanitizeFamilyFromRaw } from "./resanitize";
 import {
   buildEntrySubscriptionFilter,
   buildEntryFilterConditions,
@@ -444,14 +444,19 @@ export async function resolveSanitizedFamily(
         };
   const [raw] = await db.select(rawColumns).from(entries).where(eq(entries.id, entryId)).limit(1);
 
-  // Offload large bodies to a worker thread: this runs on the read request path
-  // and, right after a SANITIZER_VERSION bump, can fire for many entries at once
-  // as stored rows are healed, so it must not block the app-server event loop.
-  const [original, cleaned] = await Promise.all([
-    sanitizeEntryHtmlInWorker(raw?.original ?? null),
-    sanitizeEntryHtmlInWorker(raw?.cleaned ?? null),
-  ]);
-  const resolved = { original, cleaned };
+  // Sanitize the family's serving variant(s), offloading large bodies to a
+  // worker thread: this runs on the read request path and, right after a
+  // SANITIZER_VERSION bump, can fire for many entries at once as stored rows
+  // are healed, so it must not block the app-server event loop. For the
+  // full-content family the original is sanitized lazily — only when cleaned
+  // is NULL (see sanitizeFamilyFromRaw) — so healing a stale row converges it
+  // to the lazy shape (original sanitized column NULL) instead of
+  // re-materializing a whole-page sanitized copy nothing reads.
+  const resolved = await sanitizeFamilyFromRaw(
+    family,
+    { original: raw?.original ?? null, cleaned: raw?.cleaned ?? null },
+    sanitizeEntryHtmlInWorker
+  );
 
   // Persist the healed columns (fire-and-forget; a failed backfill must not fail
   // the read) under the shared version + content-hash CAS guard, so a re-sanitize

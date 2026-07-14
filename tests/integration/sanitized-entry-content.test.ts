@@ -252,6 +252,110 @@ describe("entries.get sanitized content", () => {
     expect(row?.version).toBeNull();
   });
 
+  it("heals a stale full-content family to the lazy shape (original not re-materialized)", async () => {
+    const { userId, feedId } = await seedSubscribedUser();
+    const entryId = generateUuidv7();
+    const now = new Date();
+    // Pre-lazy-rule row left stale by a version bump: both full-content raws
+    // present and both sanitized copies eagerly materialized at the previous
+    // version. Reading it must re-sanitize only the serving variant (cleaned)
+    // and persist NULL for the original's sanitized column — converging the
+    // row to the lazy shape instead of re-materializing a whole-page sanitized
+    // copy nothing reads (issue #1117).
+    await db.insert(entries).values({
+      id: entryId,
+      feedId,
+      type: "web",
+      guid: `guid-${entryId}`,
+      title: "Stale full content",
+      contentCleaned: "<p>feed body</p>",
+      contentCleanedSanitized: "<p>feed body</p>",
+      contentSanitizedVersion: SANITIZER_VERSION,
+      fullContentOriginal: "<article>whole raw page<script>alert(1)</script></article>",
+      fullContentCleaned: '<p onclick="evil()">full cleaned<script>alert(2)</script></p>',
+      fullContentOriginalSanitized: "<article>OLD_EAGER_ORIGINAL</article>",
+      fullContentCleanedSanitized: "<p>OLD_CLEANED</p>",
+      fullContentSanitizedVersion: SANITIZER_VERSION - 1,
+      fullContentHash: `fullhash-${entryId}`,
+      fullContentFetchedAt: now,
+      contentHash: `hash-${entryId}`,
+      fetchedAt: now,
+      publishedAt: now,
+      lastSeenAt: now,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await makeEntryVisible(userId, entryId);
+
+    const caller = createCaller(createAuthContext(userId));
+    const { entry } = await caller.entries.get({ id: entryId });
+
+    // The serving variant is re-sanitized from raw; the original comes back
+    // NULL (not materialized). Consumers fall back `cleaned ?? original`.
+    expect(entry.fullContentCleaned).toContain("full cleaned");
+    expect(entry.fullContentCleaned).not.toContain("<script>");
+    expect(entry.fullContentCleaned).not.toContain("onclick");
+    expect(entry.fullContentOriginal).toBeNull();
+
+    // The heal persists the lazy shape (fire-and-forget).
+    await eventually(async () => {
+      const [row] = await db
+        .select({
+          originalSanitized: entries.fullContentOriginalSanitized,
+          cleanedSanitized: entries.fullContentCleanedSanitized,
+          version: entries.fullContentSanitizedVersion,
+        })
+        .from(entries)
+        .where(eq(entries.id, entryId));
+      return (
+        row?.version === SANITIZER_VERSION &&
+        row?.originalSanitized === null &&
+        (row?.cleanedSanitized ?? "").includes("full cleaned")
+      );
+    });
+  });
+
+  it("serves a pre-cleanup current-version full-content row as stored (both variants)", async () => {
+    const { userId, feedId } = await seedSubscribedUser();
+    const entryId = generateUuidv7();
+    const now = new Date();
+    // A row the 0100 cleanup migration didn't touch conceptually can't exist
+    // (it nulls all eager copies), but during rollout an old release may still
+    // eagerly materialize both variants at the current version. The fast path
+    // (version current) must serve such a row exactly as stored — no lazy-rule
+    // rewrite, no heal, no wasted sanitize.
+    await db.insert(entries).values({
+      id: entryId,
+      feedId,
+      type: "web",
+      guid: `guid-${entryId}`,
+      title: "Pre-cleanup full content",
+      contentCleaned: "<p>feed body</p>",
+      contentCleanedSanitized: "<p>feed body</p>",
+      contentSanitizedVersion: SANITIZER_VERSION,
+      fullContentOriginal: "<article>raw page</article>",
+      fullContentCleaned: "<p>raw cleaned</p>",
+      fullContentOriginalSanitized: "<article>STORED_ORIGINAL_SENTINEL</article>",
+      fullContentCleanedSanitized: "<p>STORED_CLEANED_SENTINEL</p>",
+      fullContentSanitizedVersion: SANITIZER_VERSION,
+      fullContentHash: `fullhash-${entryId}`,
+      fullContentFetchedAt: now,
+      contentHash: `hash-${entryId}`,
+      fetchedAt: now,
+      publishedAt: now,
+      lastSeenAt: now,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await makeEntryVisible(userId, entryId);
+
+    const caller = createCaller(createAuthContext(userId));
+    const { entry } = await caller.entries.get({ id: entryId });
+
+    expect(entry.fullContentOriginal).toBe("<article>STORED_ORIGINAL_SENTINEL</article>");
+    expect(entry.fullContentCleaned).toBe("<p>STORED_CLEANED_SENTINEL</p>");
+  });
+
   // The services-layer getEntry/getEntries are the read path for MCP get_entry,
   // Google Reader, and Wallabag — they must serve sanitized content too, not
   // just the tRPC router (issue #956).

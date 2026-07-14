@@ -227,6 +227,10 @@ export async function persistFullContentResult(
   // Sanitize the fetched full content once: stored in the *_sanitized columns
   // so reads are fast. The raw page HTML / Readability output is untrusted
   // and rendered via dangerouslySetInnerHTML, so it must not be served raw.
+  // The chokepoint applies the lazy full-content rule: when contentCleaned
+  // exists, the (whole raw page) original is not sanitized at all and its
+  // sanitized column is persisted NULL — cleaned is the serving variant (see
+  // shouldMaterializeFullContentOriginal in @/server/html/sanitize-entry).
   const fullContentValues = {
     fullContentOriginal: result.contentOriginal ?? null,
     fullContentCleaned: result.contentCleaned ?? null,
