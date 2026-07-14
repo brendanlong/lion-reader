@@ -123,4 +123,32 @@ describe("greaderItemIdsToUuids", () => {
     const resolved = await greaderItemIdsToUuids(db, []);
     expect(resolved.size).toBe(0);
   });
+
+  it("skips ids outside the bigint range without poisoning the batch", async () => {
+    // parseItemId accepts unbounded hex/decimal input (e.g. 16 hex f's =
+    // 2^64-1). A parameter beyond Postgres's bigint range would make Postgres
+    // reject the whole query, so such ids must be skipped — and valid ids in
+    // the same batch still resolve.
+    const feedId = await createFeed();
+    const real = await insertEntry(feedId);
+
+    const unsigned64Max = BigInt(2) ** BigInt(64) - BigInt(1); // "ffffffffffffffff"
+    const belowInt64Min = -(BigInt(2) ** BigInt(63)) - BigInt(1);
+
+    const resolved = await greaderItemIdsToUuids(db, [
+      unsigned64Max,
+      real.greaderItemId,
+      belowInt64Min,
+    ]);
+
+    expect(resolved.get(real.greaderItemId)).toBe(real.id);
+    expect(resolved.has(unsigned64Max)).toBe(false);
+    expect(resolved.has(belowInt64Min)).toBe(false);
+    expect(resolved.size).toBe(1);
+  });
+
+  it("returns an empty map when every id is out of range", async () => {
+    const resolved = await greaderItemIdsToUuids(db, [BigInt(2) ** BigInt(64)]);
+    expect(resolved.size).toBe(0);
+  });
 });

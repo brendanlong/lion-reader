@@ -139,12 +139,22 @@ function uuidTimestampIn(column: typeof entries.id | typeof subscriptions.id, ts
   return sql`SUBSTRING(${column}::text, 1, 8) || SUBSTRING(${column}::text, 10, 4) IN (${list})`;
 }
 
+/** Signed 64-bit integer bounds (Postgres bigint range). */
+const INT64_MIN = -(BigInt(2) ** BigInt(63));
+const INT64_MAX = BigInt(2) ** BigInt(63) - BigInt(1);
+
 /**
  * Resolves Google Reader item IDs (stored `entries.greader_item_id` serials) to
  * their UUIDv7 entry IDs. Item ids are a plain stored bigint, so this is a
  * single `greader_item_id = ANY(ids)` seek on the unique index — no timestamp
  * math, no candidate disambiguation. Ids with no matching row (deleted, or a
  * bogus value a client sent) are simply absent from the returned map.
+ *
+ * Ids outside the signed 64-bit range are skipped before querying: `parseItemId`
+ * accepts unbounded hex/decimal input (e.g. 16 hex f's = 2^64-1), and a
+ * parameter that exceeds Postgres's bigint range makes Postgres reject the
+ * whole query — poisoning the batch. Such ids can't match a stored serial
+ * anyway, so they're simply left unresolved.
  */
 export async function greaderItemIdsToUuids(
   db: typeof dbType,
@@ -152,12 +162,13 @@ export async function greaderItemIdsToUuids(
 ): Promise<Map<bigint, string>> {
   const result = new Map<bigint, string>();
 
-  if (ids.length === 0) return result;
+  const validIds = ids.filter((id) => id >= INT64_MIN && id <= INT64_MAX);
+  if (validIds.length === 0) return result;
 
   const rows = await db
     .select({ id: entries.id, greaderItemId: entries.greaderItemId })
     .from(entries)
-    .where(inArray(entries.greaderItemId, ids));
+    .where(inArray(entries.greaderItemId, validIds));
 
   for (const row of rows) {
     result.set(row.greaderItemId, row.id);
