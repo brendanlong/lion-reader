@@ -63,7 +63,7 @@ export function DiscordBotSettings() {
   return (
     <SettingsSection
       title="Discord Bot"
-      description="Save articles to Lion Reader by reacting to Discord messages. When you react to a message containing a URL, the article will be saved to your account."
+      description="Save articles to Lion Reader by reacting to Discord messages, or by sending a link to the bot in a DM. When you react to (or DM the bot) a message containing a URL, the article will be saved to your account."
     >
       {/* Invite Button */}
       <div className="mt-6">
@@ -115,6 +115,7 @@ export function DiscordBotSettings() {
             ) : (
               "Add the configured emoji reaction to any message containing a URL"
             )}
+            . You can also send or forward a message with a link directly to the bot in a DM.
           </li>
           <li>
             <strong className="text-emphasis">Look for the reaction</strong> -{" "}

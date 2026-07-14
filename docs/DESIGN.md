@@ -66,7 +66,7 @@ To render these diagrams, use the [D2 CLI](https://d2lang.com/) or [D2 Playgroun
    │  ┌─────────────────┐   ┌──────────────────┐
    │  │  Worker (min 1) │   │  Discord Bot     │
    │  │  feed fetching, │   │  save via emoji  │
-   │  │  background jobs│   │  reactions       │
+   │  │  background jobs│   │  reactions or DM │
    │  └────────┬────────┘   └────────┬─────────┘
    │           │                     │
    ▼           ▼                     ▼
@@ -105,7 +105,7 @@ not embedded in the app servers.
 | ----------------- | ----------------------------------------------------- |
 | **App Server**    | HTTP API, SSE connections                             |
 | **Worker**        | Background job execution (feed fetching)              |
-| **Discord Bot**   | Save articles via emoji reactions in Discord          |
+| **Discord Bot**   | Save articles via emoji reactions or DMs in Discord   |
 | **Postgres**      | Persistent storage, job queue (pg-boss style)         |
 | **Redis**         | Session cache, rate limiting, pub/sub for real-time   |
 | **Email Service** | Inbound email processing for newsletter subscriptions |
