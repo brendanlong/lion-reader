@@ -342,7 +342,7 @@ test.describe("Wallabag API happy path", () => {
     }
   });
 
-  test("tags/domain_name/sort filters are honored, not silently ignored (#1062)", async ({
+  test("tags/domain_name unsupported filters return empty; sort is accepted (#1062)", async ({
     request,
   }) => {
     const { access_token } = await getTokens(request);
@@ -358,36 +358,22 @@ test.describe("Wallabag API happy path", () => {
         ).json()
       ).id;
 
-      // tags: we don't support tags on saved articles, so any tag filter returns
-      // an empty result rather than an unfiltered list.
-      const tagged = await request.get("/api/wallabag/api/entries?tags=foo&detail=metadata", {
-        headers: auth,
-      });
-      expect(tagged.status()).toBe(200);
-      const taggedBody = await tagged.json();
-      expect(taggedBody._embedded.items).toHaveLength(0);
-      expect(taggedBody.total).toBe(0);
+      // tags and domain_name are unsupported filters: rather than silently ignore
+      // them (returning an unfiltered list) or run an un-indexed per-user scan, we
+      // return an empty result.
+      for (const query of [`tags=foo`, `domain_name=${domain}`]) {
+        const res = await request.get(`/api/wallabag/api/entries?${query}&detail=metadata`, {
+          headers: auth,
+        });
+        expect(res.status(), query).toBe(200);
+        const body = await res.json();
+        expect(body._embedded.items, query).toHaveLength(0);
+        expect(body.total, query).toBe(0);
+      }
 
-      // domain_name: the article's host matches; a different host does not.
-      const matchDomain = await request.get(
-        `/api/wallabag/api/entries?domain_name=${domain}&detail=metadata`,
-        { headers: auth }
-      );
-      expect(matchDomain.status()).toBe(200);
-      expect((await matchDomain.json())._embedded.items.map((e: { id: number }) => e.id)).toContain(
-        id
-      );
-
-      const otherDomain = await request.get(
-        "/api/wallabag/api/entries?domain_name=nope.example&detail=metadata",
-        { headers: auth }
-      );
-      expect(
-        (await otherDomain.json())._embedded.items.map((e: { id: number }) => e.id)
-      ).not.toContain(id);
-
-      // sort=updated and sort=archived are accepted (not 500) and still return
-      // the article.
+      // All three sort fields are accepted (not 500) and return the article.
+      // `updated` is approximated as `created` (no un-indexed GREATEST sort), but
+      // still yields the article — the client just gets it in created order.
       for (const sort of ["updated", "archived", "created"]) {
         const sorted = await request.get(
           `/api/wallabag/api/entries?sort=${sort}&detail=metadata&perPage=100`,
