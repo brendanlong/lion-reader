@@ -309,7 +309,21 @@ export async function startDiscordBot(): Promise<void> {
   // Handle direct messages: a URL sent (or forwarded) to the bot in a DM is
   // saved just like a save-emoji reaction, and the DM is reacted to the same way.
   client.on("messageCreate", async (message) => {
-    if (message.author.bot) return;
+    // Diagnostic: confirm DM messageCreate events are actually being delivered
+    // to the gateway. Logged for DMs only (guildId null) to avoid spamming a
+    // line per guild message. If a DM to the bot produces no such line, the
+    // event isn't reaching us (intent/partial/gateway issue), not a handler bug.
+    if (!message.guildId) {
+      logger.info("Discord messageCreate received (DM)", {
+        messageId: message.id,
+        channelType: message.channel?.type,
+        authorBot: message.author?.bot ?? null,
+        contentLength: message.content?.length ?? 0,
+        snapshotCount: message.messageSnapshots?.size ?? 0,
+      });
+    }
+
+    if (message.author?.bot) return;
     // Only DMs — guild messages are handled via the save-emoji reaction, not by
     // treating every posted link as a save.
     if (message.guildId) return;
@@ -356,6 +370,11 @@ export async function startDiscordBot(): Promise<void> {
     logger.info("Discord bot started", {
       tag: client?.user?.tag,
       saveEmoji: DISCORD_SAVE_EMOJI,
+      // Diagnostic: the gateway intents actually negotiated by the running
+      // process. Confirms whether DirectMessages (required to receive DM
+      // messageCreate) is active in the deployed build.
+      intents: client?.options.intents.toArray(),
+      partials: client?.options.partials?.map((p) => Partials[p]),
     });
   });
 
