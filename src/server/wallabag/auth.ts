@@ -21,6 +21,7 @@ import { users } from "@/server/db/schema";
 import { validateAccessToken, createTokens, rotateRefreshToken } from "@/server/oauth/service";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
 import { isSignupConfirmed } from "@/server/auth/confirmation";
+import { logger } from "@/lib/logger";
 import type { User } from "@/server/db/schema";
 
 /**
@@ -48,6 +49,12 @@ export async function passwordGrant(
   const user = await db.select().from(users).where(eq(users.email, username)).limit(1);
 
   if (user.length === 0) {
+    logger.warn("Wallabag password grant failed", {
+      component: "wallabag",
+      grantType: "password",
+      clientId,
+      reason: "user_not_found",
+    });
     return null;
   }
 
@@ -55,12 +62,26 @@ export async function passwordGrant(
 
   // Check if user has a password
   if (!foundUser.passwordHash) {
+    logger.warn("Wallabag password grant failed", {
+      component: "wallabag",
+      grantType: "password",
+      clientId,
+      userId: foundUser.id,
+      reason: "no_password",
+    });
     return null;
   }
 
   // Verify password
   const isValid = await argon2.verify(foundUser.passwordHash, password);
   if (!isValid) {
+    logger.warn("Wallabag password grant failed", {
+      component: "wallabag",
+      grantType: "password",
+      clientId,
+      userId: foundUser.id,
+      reason: "invalid_password",
+    });
     return null;
   }
 
@@ -72,6 +93,13 @@ export async function passwordGrant(
     clientId,
     userId: foundUser.id,
     scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
+  });
+
+  logger.info("Wallabag password grant succeeded", {
+    component: "wallabag",
+    grantType: "password",
+    clientId,
+    userId: foundUser.id,
   });
 
   return {
@@ -92,8 +120,24 @@ export async function refreshTokenGrant(
 ): Promise<WallabagTokenResponse | null> {
   const tokens = await rotateRefreshToken(refreshToken, clientId);
   if (!tokens) {
+    // Rotation returned null: the presented refresh token was unknown, expired,
+    // or already-rotated (reuse). This is the key "flaky sync" signal — a client
+    // that suddenly can't refresh. rotateRefreshToken logs the reuse case with
+    // the user/family it revoked; here we just record the outcome.
+    logger.warn("Wallabag refresh grant failed", {
+      component: "wallabag",
+      grantType: "refresh_token",
+      clientId,
+      reason: "invalid_or_revoked",
+    });
     return null;
   }
+
+  logger.info("Wallabag refresh grant succeeded", {
+    component: "wallabag",
+    grantType: "refresh_token",
+    clientId,
+  });
 
   return {
     access_token: tokens.accessToken,
@@ -150,6 +194,15 @@ export async function requireAuth(
 ): Promise<{ userId: string; email: string } | Response> {
   const auth = await authenticateRequest(request);
   if (!auth) {
+    // Distinguish a client that sent no Bearer at all (misconfigured) from one
+    // that sent a token we rejected (expired — normal churn as clients lazily
+    // refresh — or revoked, e.g. by reuse detection). Logged at info because an
+    // expired-token 401 is expected traffic, not an error.
+    const hasBearer = request.headers.get("authorization")?.startsWith("Bearer ") ?? false;
+    logger.info("Wallabag request unauthenticated", {
+      component: "wallabag",
+      reason: hasBearer ? "invalid_token" : "missing_bearer",
+    });
     return new Response(
       JSON.stringify({ error: "invalid_grant", error_description: "Unauthorized" }),
       {
@@ -159,6 +212,11 @@ export async function requireAuth(
     );
   }
   if (!auth.scopes.includes(OAUTH_SCOPES.READER_FULL_ACCESS)) {
+    logger.warn("Wallabag request rejected: insufficient scope", {
+      component: "wallabag",
+      userId: auth.userId,
+      scopes: auth.scopes,
+    });
     return new Response(
       JSON.stringify({
         error: "insufficient_scope",
@@ -173,6 +231,10 @@ export async function requireAuth(
   // Mirror confirmedProtectedProcedure / the MCP endpoint: a user who hasn't
   // completed signup confirmation (ToS, Privacy, EU check) can't use the API.
   if (!isSignupConfirmed(auth.user)) {
+    logger.warn("Wallabag request rejected: signup not confirmed", {
+      component: "wallabag",
+      userId: auth.userId,
+    });
     return new Response(
       JSON.stringify({
         error: "access_denied",
