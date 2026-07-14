@@ -36,7 +36,7 @@ export function DemoEntryListSSR({ entries, backHref, title }: DemoEntryListSSRP
             >
               <div className="flex items-start gap-3">
                 <div className="mt-1.5 shrink-0">
-                  <span className="bg-strong block h-2.5 w-2.5 rounded-full" aria-hidden="true" />
+                  <span className="bg-body block h-2.5 w-2.5 rounded-full" aria-hidden="true" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <h3 className="ui-text-sm text-body line-clamp-2 font-medium">{displayTitle}</h3>

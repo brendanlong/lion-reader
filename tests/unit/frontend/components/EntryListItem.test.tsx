@@ -169,7 +169,7 @@ describe("EntryListItem", () => {
       // Color lives on the inner dot span; the button is the 44px touch target.
       // Unread is a neutral filled dot (amber is reserved for the star); read is
       // a hollow outline. See the unread/star color language in globals.css.
-      expect(button.querySelector("span")).toHaveClass("bg-strong");
+      expect(button.querySelector("span")).toHaveClass("bg-body");
     });
 
     it("shows empty indicator for read entries", () => {
