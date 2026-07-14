@@ -30,8 +30,8 @@ export function Button({
   const variantStyles = {
     primary: "btn-primary",
     secondary:
-      "border border-edge-input bg-surface text-strong hover:bg-surface-muted focus:ring-focus",
-    ghost: "text-strong hover:bg-surface-muted focus:ring-focus",
+      "border border-edge-input bg-surface text-body hover:bg-surface-muted focus:ring-focus",
+    ghost: "text-body hover:bg-surface-muted focus:ring-focus",
     danger:
       "bg-danger-solid text-danger-solid-foreground hover:bg-danger-solid-hover focus:ring-danger",
   };

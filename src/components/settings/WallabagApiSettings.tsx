@@ -62,7 +62,7 @@ export function WallabagApiSettings() {
     >
       {/* Supported Clients */}
       <div className="mt-6">
-        <h3 className="ui-text-sm text-strong font-medium">Compatible Apps</h3>
+        <h3 className="ui-text-sm text-body font-medium">Compatible Apps</h3>
         <ul className="ui-text-sm text-muted mt-2 list-inside list-disc space-y-1">
           <li>
             <TextLink
@@ -85,7 +85,7 @@ export function WallabagApiSettings() {
       {/* Quick Setup: QR Code + Deep Link */}
       {wallabagDeepLink && (
         <CardSection>
-          <h3 className="ui-text-sm text-strong font-medium">Quick Setup</h3>
+          <h3 className="ui-text-sm text-body font-medium">Quick Setup</h3>
           <p className="ui-text-sm text-muted mt-1">
             Scan this QR code with your phone or tap the button below to auto-configure the Wallabag
             Android app. You&apos;ll need to enter your password, and fix the username if the{" "}
@@ -118,23 +118,21 @@ export function WallabagApiSettings() {
 
       {/* Manual Setup Instructions */}
       <CardSection>
-        <h3 className="ui-text-sm text-strong font-medium">Manual Setup</h3>
+        <h3 className="ui-text-sm text-body font-medium">Manual Setup</h3>
         <p className="ui-text-sm text-muted mt-1">
           In the Wallabag app, go to Settings and enter the following:
         </p>
         <ul className="ui-text-sm text-muted mt-3 space-y-2">
           <li>
-            <strong className="text-emphasis">Server URL:</strong>{" "}
-            <InlineCode>{serverUrl}</InlineCode>
+            <strong className="text-body">Server URL:</strong> <InlineCode>{serverUrl}</InlineCode>
             <CopyButton value={serverUrl} className="ml-2 px-1.5 py-0.5" title="Copy server URL" />
           </li>
           <li>
-            <strong className="text-emphasis">Client ID:</strong> <InlineCode>wallabag</InlineCode>
+            <strong className="text-body">Client ID:</strong> <InlineCode>wallabag</InlineCode>
             <CopyButton value="wallabag" className="ml-2 px-1.5 py-0.5" title="Copy client ID" />
           </li>
           <li>
-            <strong className="text-emphasis">Client Secret:</strong>{" "}
-            <InlineCode>wallabag</InlineCode>
+            <strong className="text-body">Client Secret:</strong> <InlineCode>wallabag</InlineCode>
             <CopyButton
               value="wallabag"
               className="ml-2 px-1.5 py-0.5"
@@ -142,7 +140,7 @@ export function WallabagApiSettings() {
             />
           </li>
           <li>
-            <strong className="text-emphasis">Username:</strong>{" "}
+            <strong className="text-body">Username:</strong>{" "}
             {email ? (
               <>
                 <InlineCode>{email}</InlineCode>
@@ -153,7 +151,7 @@ export function WallabagApiSettings() {
             )}
           </li>
           <li>
-            <strong className="text-emphasis">Password:</strong> Your Lion Reader password
+            <strong className="text-body">Password:</strong> Your Lion Reader password
           </li>
         </ul>
       </CardSection>

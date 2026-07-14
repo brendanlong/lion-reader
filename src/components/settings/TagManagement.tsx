@@ -272,7 +272,7 @@ function TagItem({ tag, onSuccess, onError }: TagItemProps) {
         <div className="flex items-center gap-3">
           <ColorDot color={tag.color} size="lg" />
           <div>
-            <p className="ui-text-sm text-strong font-medium">Delete &quot;{tag.name}&quot;?</p>
+            <p className="ui-text-sm text-body font-medium">Delete &quot;{tag.name}&quot;?</p>
             <p className="ui-text-xs text-muted">
               This will remove the tag from all {tag.feedCount} subscription
               {tag.feedCount !== 1 ? "s" : ""}.
@@ -329,7 +329,7 @@ function TagItem({ tag, onSuccess, onError }: TagItemProps) {
             type="text"
             value={editingValues.name}
             onChange={(e) => setEditingValues({ ...editingValues, name: e.target.value })}
-            className="ui-text-sm bg-surface text-strong border-edge-input focus:border-focus focus:ring-focus flex-1 rounded-md border px-3 py-1.5 focus:ring-2 focus:ring-offset-2 focus:outline-none"
+            className="ui-text-sm bg-surface text-body border-edge-input focus:border-focus focus:ring-focus flex-1 rounded-md border px-3 py-1.5 focus:ring-2 focus:ring-offset-2 focus:outline-none"
             disabled={updateMutation.isPending}
             autoFocus
           />
@@ -356,7 +356,7 @@ function TagItem({ tag, onSuccess, onError }: TagItemProps) {
       <div className="flex items-center gap-3">
         <ColorDot color={tag.color} size="lg" />
         <div>
-          <p className="ui-text-sm text-strong font-medium">{tag.name}</p>
+          <p className="ui-text-sm text-body font-medium">{tag.name}</p>
           <p className="ui-text-xs text-muted">
             {tag.feedCount} feed{tag.feedCount !== 1 ? "s" : ""}
           </p>

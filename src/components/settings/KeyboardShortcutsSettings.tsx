@@ -21,7 +21,7 @@ export function KeyboardShortcutsSettings() {
       {/* Enable/Disable Toggle */}
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="ui-text-sm text-strong font-medium">Enable keyboard shortcuts</h3>
+          <h3 className="ui-text-sm text-body font-medium">Enable keyboard shortcuts</h3>
           <p className="ui-text-sm text-muted mt-1">
             Use keyboard shortcuts to navigate entries and perform actions quickly.
           </p>
@@ -48,7 +48,7 @@ export function KeyboardShortcutsSettings() {
       <CardSection>
         <button
           onClick={openShortcutsModal}
-          className="ui-text-sm text-body hover:text-strong inline-flex items-center gap-2 font-medium transition-colors"
+          className="ui-text-sm text-body hover:text-body inline-flex items-center gap-2 font-medium transition-colors"
         >
           <InfoCircleIcon className="h-4 w-4" />
           View all keyboard shortcuts

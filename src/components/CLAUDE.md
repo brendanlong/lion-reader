@@ -61,9 +61,7 @@ The `ui-text-*` classes are defined in `src/app/globals.css` and provide respons
 
 | Token                | Replaces                               | Use for                                                                         |
 | -------------------- | -------------------------------------- | ------------------------------------------------------------------------------- |
-| `text-strong`        | `text-zinc-900 dark:text-zinc-50`      | Headings, primary values                                                        |
-| `text-emphasis`      | `text-zinc-900 dark:text-zinc-200`     | `<strong>` inside muted prose                                                   |
-| `text-body`          | `text-zinc-700 dark:text-zinc-300`     | Body copy, labels                                                               |
+| `text-body`          | `text-zinc-700 dark:text-zinc-300`     | Headings, primary values, `<strong>`, body copy, labels                         |
 | `text-muted`         | `text-zinc-600 dark:text-zinc-400`     | Descriptions, secondary text, metadata, hints                                   |
 | `text-faint`         | `text-zinc-400 dark:text-zinc-500`     | De-emphasized notes, placeholders                                               |
 | `bg-canvas`          | `bg-zinc-50 dark:bg-zinc-950`          | Page background behind the shell                                                |

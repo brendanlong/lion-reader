@@ -188,9 +188,9 @@ describe("EntryListItem", () => {
 
       const { rerender } = render(<EntryListItem entry={unreadEntry} />);
       const unreadTitle = screen.getByText("Unread");
-      // Unread titles are bold and use the strongest text tone to stand out
+      // Unread titles are bold and use the body text tone to stand out
       expect(unreadTitle).toHaveClass("font-semibold");
-      expect(unreadTitle).toHaveClass("text-strong");
+      expect(unreadTitle).toHaveClass("text-body");
 
       rerender(<EntryListItem entry={readEntry} />);
       const readTitle = screen.getByText("Read");

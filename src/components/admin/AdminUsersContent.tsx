@@ -102,7 +102,7 @@ function UserRow({ user }: { user: User }) {
     <div className="border-edge flex flex-col gap-2 border-b p-4 last:border-b-0">
       {/* Email and ID */}
       <div className="flex flex-wrap items-center gap-2">
-        <span className="ui-text-sm text-strong font-medium">{user.email}</span>
+        <span className="ui-text-sm text-body font-medium">{user.email}</span>
         <code className="ui-text-xs text-faint font-mono">{truncateId(user.id)}</code>
       </div>
 
@@ -144,7 +144,7 @@ function UserRow({ user }: { user: User }) {
 function EmptyState({ hasSearch }: { hasSearch: boolean }) {
   return (
     <div className="p-8 text-center">
-      <h3 className="ui-text-sm text-strong font-medium">
+      <h3 className="ui-text-sm text-body font-medium">
         {hasSearch ? "No matching users" : "No users yet"}
       </h3>
       <p className="ui-text-sm text-muted mt-1">
@@ -227,7 +227,7 @@ export default function AdminUsersContent() {
     <div>
       {/* Header */}
       <div className="mb-6">
-        <h2 className="ui-text-lg text-strong font-semibold">Users</h2>
+        <h2 className="ui-text-lg text-body font-semibold">Users</h2>
       </div>
 
       {/* Search + sort */}
@@ -248,7 +248,7 @@ export default function AdminUsersContent() {
             id="user-sort"
             value={sort}
             onChange={(e) => setSort(e.target.value as UserSort)}
-            className="ui-text-sm bg-surface text-strong border-edge-input focus:border-focus focus:ring-focus block rounded-md border px-3 py-2 focus:ring-2 focus:ring-offset-2 focus:outline-none"
+            className="ui-text-sm bg-surface text-body border-edge-input focus:border-focus focus:ring-focus block rounded-md border px-3 py-2 focus:ring-2 focus:ring-offset-2 focus:outline-none"
           >
             {SORT_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>

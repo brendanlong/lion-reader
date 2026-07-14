@@ -23,7 +23,7 @@ export function Input({ label, error, id, className = "", ref, ...props }: Input
       <input
         ref={ref}
         id={id}
-        className={`ui-text-sm bg-surface text-strong placeholder:text-faint block w-full rounded-md border px-3 py-2 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${
+        className={`ui-text-sm bg-surface text-body placeholder:text-faint block w-full rounded-md border px-3 py-2 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${
           error
             ? "border-danger focus:border-danger focus:ring-danger"
             : "border-edge-input focus:border-focus focus:ring-focus"

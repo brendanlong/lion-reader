@@ -54,7 +54,7 @@ export function SubscriptionItem({
         onNavigate={onClose}
         onPrefetch={onPrefetch}
         className={`ui-text-sm flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 transition-colors ${
-          isActive ? "bg-surface-muted text-strong" : "text-body hover:bg-surface-muted"
+          isActive ? "bg-surface-muted text-body" : "text-body hover:bg-surface-muted"
         }`}
       >
         <span className="truncate pr-8">{displayTitle}</span>

@@ -227,7 +227,7 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
             {selectedFile ? (
               <div className="flex flex-col items-center">
                 <DocumentIcon className="text-success h-10 w-10" />
-                <p className="text-strong mt-2 font-medium">{selectedFile.name}</p>
+                <p className="text-body mt-2 font-medium">{selectedFile.name}</p>
                 <p className="ui-text-sm text-muted">{formatFileSize(selectedFile.size)}</p>
                 <p className="ui-text-xs text-faint mt-2">
                   Click or drop a different file to replace
@@ -236,7 +236,7 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
             ) : (
               <div className="flex flex-col items-center">
                 <UploadIcon className="text-faint h-10 w-10" />
-                <p className="text-strong mt-2 font-medium">Drop file here or click to browse</p>
+                <p className="text-body mt-2 font-medium">Drop file here or click to browse</p>
                 <p className="ui-text-sm text-muted">.docx, .html, .md up to 10MB</p>
               </div>
             )}

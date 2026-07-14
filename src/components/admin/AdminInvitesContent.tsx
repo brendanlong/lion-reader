@@ -92,7 +92,7 @@ function CreatedInviteDisplay({ inviteUrl, onDismiss }: CreatedInviteProps) {
   return (
     <StatusCard variant="info" className="mb-6">
       <div className="flex flex-col gap-2">
-        <p className="ui-text-sm text-strong font-medium">Invite created successfully</p>
+        <p className="ui-text-sm text-body font-medium">Invite created successfully</p>
         <div className="flex items-center gap-2">
           <code className="ui-text-sm flex-1 truncate rounded bg-white/60 px-2 py-1 dark:bg-zinc-800/60">
             {inviteUrl}
@@ -185,7 +185,7 @@ function InviteRow({ invite, onRevoke, isRevoking }: InviteRowProps) {
 function EmptyState({ hasSearch }: { hasSearch: boolean }) {
   return (
     <div className="p-8 text-center">
-      <h3 className="ui-text-sm text-strong font-medium">
+      <h3 className="ui-text-sm text-body font-medium">
         {hasSearch ? "No matching invites" : "No invites yet"}
       </h3>
       <p className="ui-text-sm text-muted mt-1">
@@ -300,7 +300,7 @@ export default function AdminInvitesContent() {
     <div>
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
-        <h2 className="ui-text-lg text-strong font-semibold">Invites</h2>
+        <h2 className="ui-text-lg text-body font-semibold">Invites</h2>
         <Button
           onClick={() => createInviteMutation.mutate({})}
           loading={createInviteMutation.isPending}

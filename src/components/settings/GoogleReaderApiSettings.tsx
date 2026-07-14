@@ -40,7 +40,7 @@ export function GoogleReaderApiSettings() {
     >
       {/* Supported Clients */}
       <div className="mt-6">
-        <h3 className="ui-text-sm text-strong font-medium">Compatible Apps</h3>
+        <h3 className="ui-text-sm text-body font-medium">Compatible Apps</h3>
         <p className="ui-text-sm text-muted mt-1">
           Any app that supports the Google Reader API should work, including:
         </p>
@@ -83,14 +83,14 @@ export function GoogleReaderApiSettings() {
 
       {/* Setup Instructions */}
       <CardSection>
-        <h3 className="ui-text-sm text-strong font-medium">Setup</h3>
+        <h3 className="ui-text-sm text-body font-medium">Setup</h3>
         <p className="ui-text-sm text-muted mt-1">
           In your app&apos;s account settings, choose &ldquo;FreshRSS&rdquo; as the service type,
           then enter:
         </p>
         <ul className="ui-text-sm text-muted mt-3 space-y-2">
           <li>
-            <strong className="text-emphasis">Server URL:</strong>{" "}
+            <strong className="text-body">Server URL:</strong>{" "}
             <InlineCode>{baseUrl}/api/greader.php</InlineCode>
             <CopyButton
               value={`${baseUrl}/api/greader.php`}
@@ -99,10 +99,10 @@ export function GoogleReaderApiSettings() {
             />
           </li>
           <li>
-            <strong className="text-emphasis">Email:</strong> Your Lion Reader email address
+            <strong className="text-body">Email:</strong> Your Lion Reader email address
           </li>
           <li>
-            <strong className="text-emphasis">Password:</strong> Your Lion Reader password
+            <strong className="text-body">Password:</strong> Your Lion Reader password
           </li>
         </ul>
       </CardSection>

@@ -47,7 +47,7 @@ export default async function CompleteSignupLayout({ children }: CompleteSignupL
       <div className="bg-canvas flex min-h-screen flex-col items-center justify-center px-4 py-12">
         <div className="w-full max-w-md">
           <div className="mb-8 text-center">
-            <h1 className="ui-text-2xl text-strong font-bold">Lion Reader</h1>
+            <h1 className="ui-text-2xl text-body font-bold">Lion Reader</h1>
             <p className="ui-text-sm text-muted mt-2">Complete your account setup</p>
           </div>
 

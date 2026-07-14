@@ -94,7 +94,7 @@ export function KeyboardShortcutsModal({ isOpen, onClose }: KeyboardShortcutsMod
     >
       {/* Header */}
       <DialogHeader className="flex items-center justify-between">
-        <h2 id="shortcuts-title" className="ui-text-lg text-strong font-semibold">
+        <h2 id="shortcuts-title" className="ui-text-lg text-body font-semibold">
           Keyboard Shortcuts
         </h2>
         <IconButton

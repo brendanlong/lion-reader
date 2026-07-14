@@ -107,12 +107,12 @@ export function EntryArticle({
                 href={url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="ui-text-xl sm:ui-text-2xl hover:text-accent text-strong block leading-tight font-bold transition-colors md:text-3xl"
+                className="ui-text-xl sm:ui-text-2xl hover:text-accent text-body block leading-tight font-bold transition-colors md:text-3xl"
               >
                 {title}
               </a>
             ) : (
-              <h1 className="ui-text-xl sm:ui-text-2xl text-strong leading-tight font-bold md:text-3xl">
+              <h1 className="ui-text-xl sm:ui-text-2xl text-body leading-tight font-bold md:text-3xl">
                 {title}
               </h1>
             )}

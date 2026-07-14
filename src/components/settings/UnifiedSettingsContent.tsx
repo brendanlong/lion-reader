@@ -93,7 +93,7 @@ export function UnifiedSettingsContent() {
           <ChevronLeftIcon className="mr-1 h-4 w-4" />
           Back to feeds
         </ClientLink>
-        <h1 className="ui-text-2xl text-strong font-bold">Settings</h1>
+        <h1 className="ui-text-2xl text-body font-bold">Settings</h1>
       </div>
 
       <div className="flex flex-col gap-8 md:flex-row">
@@ -109,7 +109,7 @@ export function UnifiedSettingsContent() {
                     className={`ui-text-sm block rounded-md px-3 py-2 font-medium whitespace-nowrap transition-colors ${
                       isActive
                         ? "bg-primary-solid text-primary-solid-foreground"
-                        : "text-muted hover:bg-surface-muted hover:text-strong"
+                        : "text-muted hover:bg-surface-muted hover:text-body"
                     }`}
                   >
                     {link.label}

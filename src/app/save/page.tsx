@@ -229,7 +229,7 @@ function SaveContent() {
       <div className="bg-canvas flex min-h-screen flex-col items-center justify-center p-4">
         <div className="border-edge bg-surface w-full max-w-sm rounded-lg border p-6 shadow-sm">
           <div className="text-center">
-            <h1 className="ui-text-lg text-strong font-semibold">Save to Lion Reader</h1>
+            <h1 className="ui-text-lg text-body font-semibold">Save to Lion Reader</h1>
             <Alert variant="error" className="mt-4">
               {shareError
                 ? errorMessages[shareError] || "An error occurred."
@@ -248,7 +248,7 @@ function SaveContent() {
     <div className="bg-canvas flex min-h-screen flex-col items-center justify-center p-4">
       <div className="border-edge bg-surface w-full max-w-sm rounded-lg border p-6 shadow-sm">
         <div className="text-center">
-          <h1 className="ui-text-lg text-strong font-semibold">Save to Lion Reader</h1>
+          <h1 className="ui-text-lg text-body font-semibold">Save to Lion Reader</h1>
 
           {/* Saving State (includes idle and pending) */}
           {(activeMutation.isIdle || activeMutation.isPending) && (
