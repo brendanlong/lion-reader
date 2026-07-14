@@ -20,6 +20,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { EntryPageLayout, TitleSkeleton, TitleText } from "./EntryPageLayout";
 import { EntryContent } from "./EntryContent";
 import { EntryListContainer } from "./EntryListContainer";
+import { FeedSiteLink } from "@/components/feeds/FeedSiteLink";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { NotFoundCard } from "@/components/ui/not-found-card";
 import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
@@ -191,7 +192,8 @@ function useRouteInfo(): RouteInfo {
  * Title component for subscription pages. Non-suspending (to avoid React's
  * 300ms fallback throttle): renders a deterministic skeleton until hydrated,
  * then the title from subscriptions.get, falling back to the sidebar list cache
- * so the real title shows even before subscriptions.get resolves.
+ * so the real title shows even before subscriptions.get resolves. Renders the
+ * feed's website link beneath the title when the feed advertises one.
  */
 function SubscriptionTitle({ subscriptionId }: { subscriptionId: string }) {
   const isHydrated = useIsHydrated();
@@ -204,17 +206,18 @@ function SubscriptionTitle({ subscriptionId }: { subscriptionId: string }) {
   if (!isHydrated) {
     return <TitleSkeleton />;
   }
-  if (subscription) {
-    return (
-      <TitleText>{subscription.title ?? subscription.originalTitle ?? "Untitled Feed"}</TitleText>
-    );
+  // Prefer the freshly fetched subscription; fall back to the sidebar list cache
+  // so the real title shows even before subscriptions.get resolves.
+  const sub = subscription ?? findCachedSubscription(queryClient, subscriptionId);
+  if (!sub) {
+    return <TitleSkeleton />;
   }
-  // Not loaded yet — show the title from the sidebar list cache if present.
-  const cached = findCachedSubscription(queryClient, subscriptionId);
-  if (cached) {
-    return <TitleText>{cached.title ?? cached.originalTitle ?? "Untitled Feed"}</TitleText>;
-  }
-  return <TitleSkeleton />;
+  return (
+    <div className="min-w-0">
+      <TitleText>{sub.title ?? sub.originalTitle ?? "Untitled Feed"}</TitleText>
+      <FeedSiteLink siteUrl={sub.siteUrl} className="mt-0.5" />
+    </div>
+  );
 }
 
 /**

@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
 import { Card } from "@/components/ui/card";
+import { FeedSiteLink } from "@/components/feeds/FeedSiteLink";
 import {
   CheckCircleIcon,
   SpinnerIcon,
@@ -367,16 +368,7 @@ export function SubscribeContent() {
                 <h2 className="ui-text-xl text-strong font-semibold">
                   {previewQuery.data?.feed.title ?? "Untitled Feed"}
                 </h2>
-                {previewQuery.data?.feed.siteUrl && (
-                  <a
-                    href={previewQuery.data.feed.siteUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="ui-text-sm text-muted hover:underline"
-                  >
-                    {new URL(previewQuery.data.feed.siteUrl).hostname}
-                  </a>
-                )}
+                <FeedSiteLink siteUrl={previewQuery.data?.feed.siteUrl} className="mt-0.5" />
               </div>
             </div>
 
