@@ -146,7 +146,7 @@ describe("sanitizeEntryHtml", () => {
       expect(out).toContain('colspan="2"');
     });
 
-    it("strips non-YouTube iframes (phishing/tracking surface)", () => {
+    it("strips iframes from non-allow-listed hosts (phishing/tracking surface)", () => {
       const out =
         sanitizeEntryHtml(
           '<iframe src="https://evil.example/fake-login" allowfullscreen></iframe>'
@@ -228,6 +228,50 @@ describe("sanitizeEntryHtml", () => {
       expect(
         sanitizeEntryHtml('<iframe src="https://www.youtube.com.evil.com/embed/x"></iframe>')
       ).toBe("");
+    });
+  });
+
+  describe("other allow-listed embed providers (issue #922)", () => {
+    it("keeps a Vimeo embed with a forced sandbox", () => {
+      const out =
+        sanitizeEntryHtml(
+          '<iframe src="https://player.vimeo.com/video/76979871?h=abc" width="640" height="360"></iframe>'
+        ) ?? "";
+      expect(out).toContain('src="https://player.vimeo.com/video/76979871?h=abc"');
+      expect(out).toContain('sandbox="allow-scripts');
+      expect(out).toContain('loading="lazy"');
+      expect(out).toContain('width="640"');
+    });
+
+    it("keeps a Spotify embed", () => {
+      const out =
+        sanitizeEntryHtml(
+          '<iframe src="https://open.spotify.com/embed/track/4cOdK2wGLETKBW3PvgPWqT"></iframe>'
+        ) ?? "";
+      expect(out).toContain('src="https://open.spotify.com/embed/track/4cOdK2wGLETKBW3PvgPWqT"');
+    });
+
+    it("keeps a SoundCloud player pointing at SoundCloud", () => {
+      const out =
+        sanitizeEntryHtml(
+          '<iframe src="https://w.soundcloud.com/player/?url=https%3A%2F%2Fapi.soundcloud.com%2Ftracks%2F123"></iframe>'
+        ) ?? "";
+      expect(out).toContain("w.soundcloud.com/player/");
+      expect(out).toContain("api.soundcloud.com");
+    });
+
+    it("keeps a Bandcamp EmbeddedPlayer", () => {
+      const out =
+        sanitizeEntryHtml(
+          '<iframe src="https://bandcamp.com/EmbeddedPlayer/album=123/size=large/"></iframe>'
+        ) ?? "";
+      expect(out).toContain("bandcamp.com/EmbeddedPlayer/album=123/size=large/");
+    });
+
+    it("keeps a CodePen embed", () => {
+      const out =
+        sanitizeEntryHtml('<iframe src="https://codepen.io/team/embed/abcDEF"></iframe>') ?? "";
+      expect(out).toContain('src="https://codepen.io/team/embed/abcDEF"');
     });
   });
 });
