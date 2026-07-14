@@ -190,8 +190,10 @@ function normalizeBandcampEmbedUrl(src: string): string | null {
 }
 
 // --- CodePen ---------------------------------------------------------------
-// https://codepen.io/{user}/embed[/preview]/{slug}
-const CODEPEN_HOSTS = new Set(["codepen.io", "cdpn.io"]);
+// https://codepen.io/{user}/embed[/preview]/{slug}. Only codepen.io serves this
+// embed path shape; cdpn.io (CodePen's debug/fullpage host) uses a different
+// path structure, so it's deliberately not accepted here.
+const CODEPEN_HOSTS = new Set(["codepen.io"]);
 const CODEPEN_PATH_RE = /^\/[A-Za-z0-9_-]+\/embed\/(?:preview\/)?[A-Za-z0-9]+\/?$/;
 const CODEPEN_PARAMS = new Set(["default-tab", "theme-id", "height", "editable"]);
 function normalizeCodePenEmbedUrl(src: string): string | null {
