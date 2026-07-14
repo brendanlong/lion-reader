@@ -19,6 +19,7 @@ import {
 } from "drizzle-orm";
 import type { db as dbType, DbOrTx } from "@/server/db";
 import { entries, feeds, userEntries, subscriptions, visibleEntries } from "@/server/db/schema";
+import { parseTimestamptzOrNull } from "@/server/db/temporal";
 import { isValidUuid } from "@/lib/uuidv7";
 import { SANITIZER_VERSION } from "@/server/html/sanitize";
 import { sanitizeEntryHtmlInWorker } from "@/server/worker-thread/pool";
@@ -650,9 +651,18 @@ export async function listEntries(
       ? visibleEntries.readChangedAt
       : visibleEntries.publishedOrFetchedAt;
 
-  // Raw ISO string version of sortColumn with microsecond precision.
-  // Used for cursor encoding to avoid JavaScript Date truncation.
-  const sortTsRawExpr = sql<string>`to_char(${sortColumn} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
+  // Full-precision sort key for cursor encoding. The pool hands back Postgres's
+  // raw microsecond string for timestamptz (see parseTimestamptz); mapWith decodes
+  // it to a Temporal.Instant so the cursor never loses the microseconds a JS Date
+  // would truncate — which corrupted keyset pagination (#680, #683).
+  //
+  // Null-tolerant: the "archived" sort (Wallabag) orders by readChangedAt WITHOUT
+  // the readChanged view's isNotNull filter, so a row can have a null sort key.
+  // That path is offset-paginated and ignores nextCursor, but the decoder still
+  // runs on every row — matching the old to_char(NULL) → NULL behaviour. For the
+  // cursor-paginated sorts (published is NOT NULL; readChanged filters non-null)
+  // the sort key is always present.
+  const sortTsInstant = sql`${sortColumn}`.mapWith(parseTimestamptzOrNull);
 
   // Cursor condition
   // Pass timestamp string directly to Postgres (::timestamptz) to preserve
@@ -707,7 +717,7 @@ export async function listEntries(
       siteName: visibleEntries.siteName,
       feedTitle: feeds.title,
       readChangedAt: visibleEntries.readChangedAt,
-      sortTsRaw: sortTsRawExpr,
+      sortTs: sortTsInstant,
     })
     .from(visibleEntries)
     .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
@@ -723,7 +733,11 @@ export async function listEntries(
   let nextCursor: string | undefined;
   if (hasMore && resultEntries.length > 0) {
     const lastEntry = resultEntries[resultEntries.length - 1];
-    nextCursor = encodeCursor(lastEntry.sortTsRaw, lastEntry.id);
+    // sortTs is only null for the offset-paginated "archived" sort (which ignores
+    // nextCursor); the cursor-paginated sorts always have a non-null sort key.
+    if (lastEntry.sortTs) {
+      nextCursor = encodeCursor(lastEntry.sortTs.toString(), lastEntry.id);
+    }
   }
 
   return { items, nextCursor };

@@ -100,6 +100,7 @@
     "sentence-splitter": "^5.0.1",
     "sonner": "^2.0.7",
     "superjson": "^2.2.6",
+    "temporal-polyfill": "^0.3.2",
     "trpc-to-openapi": "^3.2.0",
     "tsx": "^4.22.4",
     "undici": "8.5.0",

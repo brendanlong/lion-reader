@@ -486,6 +486,16 @@ Cursor-based pagination everywhere:
   the Google Reader `continuation` token, and some clients concatenate query params
   without URL-encoding, where a `+` from standard base64 would arrive as a space and
   corrupt the cursor.
+- **Timestamp cursors keep microsecond precision.** A JavaScript `Date` truncates to
+  milliseconds, so a cursor read back as a `Date` lands in the gap between rows that
+  share a millisecond and silently drops or re-delivers them (#680). The app pool
+  overrides node-postgres's `timestamptz` (OID 1184) parser to hand back Postgres's
+  raw string instead of a `Date`, and the sync/list cursor paths decode it to a
+  `Temporal.Instant` (via `parseTimestamptz` / the `temporalTimestamp` Drizzle column
+  type in `src/server/db/temporal.ts`) — full precision, no `to_char` boilerplate. The
+  cursor string is `Temporal.Instant.toString()` (ISO-8601, trailing-zero-trimmed), and
+  the client compares cursors with `Temporal.Instant.compare` (not `new Date`), which is
+  robust across the format change from the legacy fixed-6-digit `to_char` output (#683).
 
 ### Rate Limiting
 

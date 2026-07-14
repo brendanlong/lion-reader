@@ -493,6 +493,31 @@ describe("Entries", () => {
       });
       expect(recentlyRead.items.map((e) => e.id)).toEqual([readId]);
     });
+
+    // #683: the cursor sort key is decoded to a Temporal.Instant per row. For the
+    // archived sort a row's readChangedAt can be NULL, so decoding must be
+    // null-tolerant (no throw) and a NULL boundary row must not produce a cursor.
+    it("sortBy=archived tolerates a NULL sort key with pagination (no crash, no cursor)", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/feed.xml");
+      await createTestSubscription(userId, feedId);
+
+      // Two never-read entries: both readChangedAt NULL.
+      const aId = await createTestEntry(feedId, { title: "A" });
+      const bId = await createTestEntry(feedId, { title: "B" });
+      await createUserEntry(userId, aId, { readChangedAt: undefined });
+      await createUserEntry(userId, bId, { readChangedAt: undefined });
+      await db
+        .update(userEntries)
+        .set({ readChangedAt: null })
+        .where(eq(userEntries.userId, userId));
+
+      // limit:1 forces hasMore with a NULL-sort-key boundary row. Must not throw,
+      // and the offset-paginated archived sort emits no keyset cursor.
+      const page = await listEntries(db, { userId, sortBy: "archived", limit: 1, showSpam: false });
+      expect(page.items).toHaveLength(1);
+      expect(page.nextCursor).toBeUndefined();
+    });
   });
 
   describe("get", () => {

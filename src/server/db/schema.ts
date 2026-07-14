@@ -21,6 +21,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import type { ParagraphMapEntry } from "@/lib/narration/paragraph-map";
+import { temporalTimestamp } from "./temporal";
 
 /**
  * Postgres citext (case-insensitive text). Behaves as a plain string in
@@ -726,7 +727,9 @@ export const userEntries = pgTable(
     // user_entries_fill_denormalized trigger) to enable a single (user_id, sort_key, id)
     // index that covers the timeline list query's filter + sort. The DB enforces
     // NOT NULL; left optional here so callers may rely on the trigger to fill it.
-    publishedOrFetchedAt: timestamp("published_or_fetched_at", { withTimezone: true }),
+    // temporalTimestamp so reads keep microsecond precision — this is the timeline
+    // cursor sort key, where a Date's millisecond truncation corrupts pagination.
+    publishedOrFetchedAt: temporalTimestamp("published_or_fetched_at"),
 
     // Direct 1:1 subscription attribution (issue #1117). NULL = saved/uploaded
     // article (per-user feed with no subscription row). Filled inline by the bulk
@@ -842,7 +845,7 @@ export const visibleEntries = pgView("visible_entries", {
   subscriptionId: uuid("subscription_id"), // nullable - null for orphaned starred entries
   unsubscribeUrl: text("unsubscribe_url"), // extracted from email HTML body
   readChangedAt: timestamp("read_changed_at", { withTimezone: true }),
-  publishedOrFetchedAt: timestamp("published_or_fetched_at", { withTimezone: true }).notNull(), // denormalized timeline sort key
+  publishedOrFetchedAt: temporalTimestamp("published_or_fetched_at").notNull(), // denormalized timeline sort key (temporalTimestamp: µs-precise cursor sort key)
   contentOriginalSanitized: text("content_original_sanitized"),
   contentCleanedSanitized: text("content_cleaned_sanitized"),
   contentSanitizedVersion: smallint("content_sanitized_version"),
