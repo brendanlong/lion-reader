@@ -175,7 +175,7 @@ jobs:
           # Extract the text content
           # Sonnet 5 always emits a thinking block first, so select the text block
           # explicitly instead of assuming it's .content[0]
-          BODY=$(echo "$RESPONSE" | jq -r '[.content[] | select(.type == "text") | .text] | join("")')
+          BODY=$(echo "$RESPONSE" | jq -r '[(.content // [])[] | select(.type == "text") | .text] | join("")')
 
           if [ -z "$BODY" ]; then
             echo "Error: Empty response from Claude API"
