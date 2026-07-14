@@ -5,7 +5,7 @@
  * Handles clients, authorization codes, tokens, and consent.
  */
 
-import { eq, and, isNull, gt } from "drizzle-orm";
+import { eq, and, isNull, gt, inArray, sql } from "drizzle-orm";
 import { db } from "@/server/db";
 import {
   oauthClients,
@@ -494,8 +494,24 @@ export async function rotateRefreshToken(
 /**
  * Rotation-reuse detection: if a rotation attempt failed because the token was
  * already revoked (but is otherwise valid and unexpired), someone is replaying
- * an old refresh token. Revoke all active tokens for that user+client so the
- * leaked chain is dead no matter which copy the attacker holds.
+ * an old refresh token. Revoke the leaked token's rotation **chain** (the family
+ * descending from it) so that chain is dead no matter which copy the replayer
+ * holds.
+ *
+ * The blast radius is deliberately the family, **not** every token the user holds
+ * for this client. Revoking user+client-wide is over-broad: because every
+ * Wallabag credential is minted under the single shared client_id "wallabag"
+ * (see wallabag/auth.ts), a user+client-wide revoke signs the user out of *every*
+ * Wallabag device on a single stale-token replay — which is exactly the flaky
+ * "had to re-set-up / re-login" behavior we were seeing. OAuth 2.1 rotation
+ * guidance (RFC 9700 §4.14.2) scopes reuse revocation to the token family/grant,
+ * which is what we do here.
+ *
+ * The chain is strictly linear — each rotation atomically claims exactly one
+ * predecessor and stamps its `replaced_by_id` — so walking `replaced_by_id`
+ * forward from the presented (already-revoked) token reaches whichever branch is
+ * currently active. Ancestors are already revoked (rotation revokes as it goes),
+ * so only the forward descendants can still be live.
  */
 async function handlePossibleRefreshTokenReuse(
   tokenHash: string,
@@ -515,31 +531,51 @@ async function handlePossibleRefreshTokenReuse(
     return;
   }
 
-  console.warn(
-    `OAuth refresh token reuse detected for user ${presented.userId}, client ${clientId}; revoking all tokens for the grant`
-  );
+  // Walk the rotation chain forward from the presented token via replaced_by_id.
+  const familyRows = (
+    await db.execute(sql`
+      WITH RECURSIVE family AS (
+        SELECT id, replaced_by_id, access_token_id
+        FROM oauth_refresh_tokens
+        WHERE id = ${presented.id}
+        UNION ALL
+        SELECT rt.id, rt.replaced_by_id, rt.access_token_id
+        FROM oauth_refresh_tokens rt
+        JOIN family f ON rt.id = f.replaced_by_id
+      )
+      SELECT id, access_token_id FROM family
+    `)
+  ).rows as Array<{ id: string; access_token_id: string | null }>;
 
-  await db
+  const refreshIds = familyRows.map((r) => r.id);
+  const accessIds = familyRows
+    .map((r) => r.access_token_id)
+    .filter((id): id is string => id !== null);
+
+  const revokedRefresh = await db
     .update(oauthRefreshTokens)
     .set({ revokedAt: now })
-    .where(
-      and(
-        eq(oauthRefreshTokens.userId, presented.userId),
-        eq(oauthRefreshTokens.clientId, clientId),
-        isNull(oauthRefreshTokens.revokedAt)
-      )
-    );
+    .where(and(inArray(oauthRefreshTokens.id, refreshIds), isNull(oauthRefreshTokens.revokedAt)))
+    .returning({ id: oauthRefreshTokens.id });
 
-  await db
-    .update(oauthAccessTokens)
-    .set({ revokedAt: now })
-    .where(
-      and(
-        eq(oauthAccessTokens.userId, presented.userId),
-        eq(oauthAccessTokens.clientId, clientId),
-        isNull(oauthAccessTokens.revokedAt)
-      )
-    );
+  let revokedAccessCount = 0;
+  if (accessIds.length > 0) {
+    const revokedAccess = await db
+      .update(oauthAccessTokens)
+      .set({ revokedAt: now })
+      .where(and(inArray(oauthAccessTokens.id, accessIds), isNull(oauthAccessTokens.revokedAt)))
+      .returning({ id: oauthAccessTokens.id });
+    revokedAccessCount = revokedAccess.length;
+  }
+
+  logger.warn("OAuth refresh token reuse detected; revoked leaked rotation chain", {
+    component: "oauth",
+    userId: presented.userId,
+    clientId,
+    familySize: refreshIds.length,
+    refreshTokensRevoked: revokedRefresh.length,
+    accessTokensRevoked: revokedAccessCount,
+  });
 }
 
 /**
