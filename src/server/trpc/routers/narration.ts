@@ -7,6 +7,7 @@
 
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
+import { createHash } from "node:crypto";
 
 import { createTRPCRouter, confirmedProtectedProcedure as protectedProcedure } from "../trpc";
 import { errors } from "../errors";
@@ -19,6 +20,7 @@ import {
   isGroqAvailable,
 } from "@/server/services/narration";
 import { buildAlignedNarration } from "@/lib/narration/paragraph-map";
+import { selectDisplayedContent } from "@/lib/narration/select-content";
 import { getUserApiKeys } from "@/server/auth/session";
 import { logger } from "@/lib/logger";
 import {
@@ -51,6 +53,13 @@ const generateInputSchema = z.object({
    * Defaults to true if not specified.
    */
   useLlmNormalization: z.boolean().optional().default(true),
+  /**
+   * Which content variant the client is displaying, so narration reads (and
+   * highlights against) exactly what's on screen. Default false/false =
+   * cleaned feed content.
+   */
+  showFullContent: z.boolean().optional().default(false),
+  showOriginal: z.boolean().optional().default(false),
 });
 
 // ============================================================================
@@ -121,8 +130,8 @@ export const narrationRouter = createTRPCRouter({
           id: entries.id,
           contentCleaned: entries.contentCleaned,
           contentOriginal: entries.contentOriginal,
-          contentHash: entries.contentHash,
           fullContentCleaned: entries.fullContentCleaned,
+          fullContentOriginal: entries.fullContentOriginal,
         })
         .from(entries)
         .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
@@ -134,10 +143,17 @@ export const narrationRouter = createTRPCRouter({
       }
 
       const entry = entryResult[0];
-      // Prefer full content (fetched from URL) over feed content for narration
+      // Narrate exactly the variant the user is viewing (same selector the
+      // renderer uses), so the paragraph map's element indices line up with the
+      // displayed DOM.
       const sourceContent =
-        entry.fullContentCleaned || entry.contentCleaned || entry.contentOriginal || "";
-      const contentHash = entry.contentHash;
+        selectDisplayedContent(entry, {
+          showFullContent: input.showFullContent,
+          showOriginal: input.showOriginal,
+        }) ?? "";
+      // Key the narration cache by the exact content being narrated, so
+      // different variants of the same entry don't collide.
+      const contentHash = createHash("sha256").update(sourceContent, "utf8").digest("hex");
 
       // Handle empty content
       if (!sourceContent.trim()) {

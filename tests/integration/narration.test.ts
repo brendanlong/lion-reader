@@ -18,12 +18,18 @@
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
+import { createHash } from "node:crypto";
 import { db } from "../../src/server/db";
 import { users, feeds, entries, userEntries, narrationContent } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
 import { splitNarrationParagraphs } from "../../src/lib/narration/paragraph-map";
+
+/** The narration cache key: sha256 of the exact content being narrated. */
+function narrationHash(content: string): string {
+  return createHash("sha256").update(content, "utf8").digest("hex");
+}
 
 async function createTestUser(): Promise<string> {
   const userId = generateUuidv7();
@@ -38,10 +44,10 @@ async function createTestUser(): Promise<string> {
   return userId;
 }
 
-async function createTestFeedAndEntry(
-  contentHash: string,
-  contentCleaned: string
-): Promise<string> {
+async function createTestFeedAndEntry(content: {
+  contentCleaned?: string;
+  contentOriginal?: string;
+}): Promise<string> {
   const feedId = generateUuidv7();
   const entryId = generateUuidv7();
   const now = new Date();
@@ -61,8 +67,11 @@ async function createTestFeedAndEntry(
     type: "web",
     guid: `guid-${entryId}`,
     title: "Test Entry",
-    contentCleaned,
-    contentHash,
+    contentCleaned: content.contentCleaned ?? null,
+    contentOriginal: content.contentOriginal ?? null,
+    // Entry content hash is unrelated to the narration cache key (which now
+    // hashes the exact narrated content); any stable value works here.
+    contentHash: `entry-${entryId}`,
     fetchedAt: now,
     publishedAt: now,
     lastSeenAt: now,
@@ -151,11 +160,9 @@ describe("narration.generate cached read path", () => {
   });
 
   it("returns the persisted paragraph map verbatim on a cache hit", async () => {
-    const contentHash = `hash-${generateUuidv7()}`;
-    const entryId = await createTestFeedAndEntry(
-      contentHash,
-      "<p>First</p><p>Second</p><p>Third</p>"
-    );
+    const contentCleaned = "<p>First</p><p>Second</p><p>Third</p>";
+    const contentHash = narrationHash(contentCleaned);
+    const entryId = await createTestFeedAndEntry({ contentCleaned });
     await createUserEntry(userId, entryId);
 
     // A stored map that is deliberately NOT what naive reconstruction would
@@ -182,13 +189,13 @@ describe("narration.generate cached read path", () => {
   });
 
   it("re-derives an aligned map for a legacy row with no stored map", async () => {
-    const contentHash = `hash-${generateUuidv7()}`;
     // A <br><br>-formatted block: the second <p> holds two paragraphs, exactly
     // the shape that used to desync highlighting.
     const contentCleaned = ["<p>Intro.</p>", "<p>Line one.", "<br /><br />", "Line two.</p>"].join(
       "\n"
     );
-    const entryId = await createTestFeedAndEntry(contentHash, contentCleaned);
+    const contentHash = narrationHash(contentCleaned);
+    const entryId = await createTestFeedAndEntry({ contentCleaned });
     await createUserEntry(userId, entryId);
 
     // Legacy cached row: narration text present, paragraph_map NULL.
@@ -215,5 +222,32 @@ describe("narration.generate cached read path", () => {
       { n: 1, o: 1 },
       { n: 2, o: 1 },
     ]);
+  });
+});
+
+describe("narration.generate narrates the displayed variant", () => {
+  let userId: string;
+
+  beforeEach(async () => {
+    userId = await createTestUser();
+    createdUserIds.push(userId);
+  });
+
+  // No Groq key in the unit/integration env, so generate() takes the fallback
+  // (plain-text) path — its narration text is exactly the selected variant's
+  // text, which lets us assert *which* variant was narrated.
+  it("narrates cleaned content by default and original content when showOriginal is set", async () => {
+    const entryId = await createTestFeedAndEntry({
+      contentCleaned: "<p>Cleaned body paragraph.</p>",
+      contentOriginal: "<p>Original body paragraph.</p>",
+    });
+    await createUserEntry(userId, entryId);
+    const caller = createCaller(createAuthContext(userId));
+
+    const cleaned = await caller.narration.generate({ id: entryId });
+    expect(cleaned.narration).toBe("Cleaned body paragraph.");
+
+    const original = await caller.narration.generate({ id: entryId, showOriginal: true });
+    expect(original.narration).toBe("Original body paragraph.");
   });
 });

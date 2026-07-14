@@ -30,6 +30,13 @@ export interface UseNarrationConfig {
    * generated client-side without a server call.
    */
   content?: string | null;
+  /**
+   * Which content variant is currently on screen. Forwarded to the server so
+   * LLM narration reads (and highlights against) the same variant the user
+   * sees. Defaults to false/false (cleaned feed content) when omitted.
+   */
+  showFullContent?: boolean;
+  showOriginal?: boolean;
 }
 
 /**
