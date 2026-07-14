@@ -5,7 +5,7 @@
  * countEntries, and markAllRead.
  */
 
-import { eq, and, isNull, notInArray, type SQL, type SQLWrapper } from "drizzle-orm";
+import { eq, and, isNull, notInArray, sql, type SQL, type SQLWrapper } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import { subscriptionTags, subscriptions, tags, visibleEntries } from "@/server/db/schema";
 
@@ -215,4 +215,21 @@ export function buildEntryFilterConditions(params: EntryConditionParams): SQL[] 
   }
 
   return conditions;
+}
+
+/**
+ * Builds a condition that filters entries to those whose URL hostname matches
+ * `domainName` (case-insensitive), backing the Wallabag `domain_name` query
+ * parameter.
+ *
+ * Postgres has no URL parser, so we pull the authority host out of the URL with
+ * a POSIX regex — `scheme://HOST[:port][/path...]` — and `substring(... from
+ * pattern)` returns the first parenthesized group. This matches what
+ * `extractDomain` (`new URL().hostname`) produces for the entry's response
+ * `domain_name`, so the filter and the reported field agree. A URL that fails to
+ * match the pattern (or a NULL url) yields NULL, which the `=` comparison drops
+ * — the correct behavior for a domain filter.
+ */
+export function buildDomainNameCondition(domainName: string): SQL {
+  return sql`lower(substring(${visibleEntries.url} from '^[a-zA-Z][a-zA-Z0-9+.-]*://([^/:?#]+)')) = lower(${domainName})`;
 }

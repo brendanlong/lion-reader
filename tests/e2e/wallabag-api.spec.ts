@@ -341,6 +341,69 @@ test.describe("Wallabag API happy path", () => {
       await b.close();
     }
   });
+
+  test("tags/domain_name/sort filters are honored, not silently ignored (#1062)", async ({
+    request,
+  }) => {
+    const { access_token } = await getTokens(request);
+    const auth = { Authorization: `Bearer ${access_token}` };
+
+    const { url, close } = await startArticleServer();
+    const domain = new URL(url).hostname; // 127.0.0.1
+    let id: number | undefined;
+    try {
+      id = (
+        await (
+          await request.post("/api/wallabag/api/entries", { headers: auth, form: { url } })
+        ).json()
+      ).id;
+
+      // tags: we don't support tags on saved articles, so any tag filter returns
+      // an empty result rather than an unfiltered list.
+      const tagged = await request.get("/api/wallabag/api/entries?tags=foo&detail=metadata", {
+        headers: auth,
+      });
+      expect(tagged.status()).toBe(200);
+      const taggedBody = await tagged.json();
+      expect(taggedBody._embedded.items).toHaveLength(0);
+      expect(taggedBody.total).toBe(0);
+
+      // domain_name: the article's host matches; a different host does not.
+      const matchDomain = await request.get(
+        `/api/wallabag/api/entries?domain_name=${domain}&detail=metadata`,
+        { headers: auth }
+      );
+      expect(matchDomain.status()).toBe(200);
+      expect((await matchDomain.json())._embedded.items.map((e: { id: number }) => e.id)).toContain(
+        id
+      );
+
+      const otherDomain = await request.get(
+        "/api/wallabag/api/entries?domain_name=nope.example&detail=metadata",
+        { headers: auth }
+      );
+      expect(
+        (await otherDomain.json())._embedded.items.map((e: { id: number }) => e.id)
+      ).not.toContain(id);
+
+      // sort=updated and sort=archived are accepted (not 500) and still return
+      // the article.
+      for (const sort of ["updated", "archived", "created"]) {
+        const sorted = await request.get(
+          `/api/wallabag/api/entries?sort=${sort}&detail=metadata&perPage=100`,
+          { headers: auth }
+        );
+        expect(sorted.status(), `sort=${sort}`).toBe(200);
+        expect(
+          (await sorted.json())._embedded.items.map((e: { id: number }) => e.id),
+          `sort=${sort}`
+        ).toContain(id);
+      }
+    } finally {
+      if (id) await request.delete(`/api/wallabag/api/entries/${id}`, { headers: auth });
+      await close();
+    }
+  });
 });
 
 /**

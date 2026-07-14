@@ -23,6 +23,7 @@ import {
   markAllEntriesRead,
   markEntriesRead,
   listEntries,
+  countTotalEntries,
 } from "../../src/server/services/entries";
 
 // ============================================================================
@@ -139,6 +140,7 @@ async function createTestEntry(
   options: {
     guid?: string;
     title?: string;
+    url?: string;
     contentCleaned?: string;
     publishedAt?: Date;
     isSpam?: boolean;
@@ -159,6 +161,7 @@ async function createTestEntry(
     type,
     guid,
     title: options.title ?? `Entry ${entryId}`,
+    url: options.url,
     contentCleaned: options.contentCleaned ?? `Content for ${options.title ?? entryId}`,
     contentHash: `hash-${entryId}`,
     fetchedAt: options.publishedAt ?? now,
@@ -462,6 +465,131 @@ describe("Entries", () => {
       );
       // The untouched entry stays out of the delta.
       expect(after.items.map((e) => e.id)).not.toContain(untouchedId);
+    });
+  });
+
+  describe("list with sortBy (Wallabag `sort` field)", () => {
+    it("sortBy=updated orders by last-modified (GREATEST(entry, user_entry))", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/feed.xml");
+      await createTestSubscription(userId, feedId);
+
+      // Publish order is a, b, c (a oldest). Modify order will be the reverse of
+      // publish order so sortBy=updated diverges from the default published sort.
+      const aId = await createTestEntry(feedId, {
+        title: "A",
+        publishedAt: new Date("2026-01-01T00:00:00Z"),
+      });
+      const bId = await createTestEntry(feedId, {
+        title: "B",
+        publishedAt: new Date("2026-01-02T00:00:00Z"),
+      });
+      const cId = await createTestEntry(feedId, {
+        title: "C",
+        publishedAt: new Date("2026-01-03T00:00:00Z"),
+      });
+      for (const id of [aId, bId, cId]) await createUserEntry(userId, id);
+
+      // Pin entries.updated_at old for all three so the user_entries.updated_at
+      // side of GREATEST(entry, user_entry) drives the "updated" sort.
+      await db
+        .update(entries)
+        .set({ updatedAt: new Date("2026-01-01T00:00:00Z") })
+        .where(inArray(entries.id, [aId, bId, cId]));
+
+      // Bump user_entries.updated_at in the order a (newest) → c (oldest).
+      await db
+        .update(userEntries)
+        .set({ updatedAt: new Date("2026-02-03T00:00:00Z") })
+        .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, aId)));
+      await db
+        .update(userEntries)
+        .set({ updatedAt: new Date("2026-02-02T00:00:00Z") })
+        .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, bId)));
+      await db
+        .update(userEntries)
+        .set({ updatedAt: new Date("2026-02-01T00:00:00Z") })
+        .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, cId)));
+
+      const result = await listEntries(db, { userId, sortBy: "updated", showSpam: false });
+      // Most-recently-modified first: a, b, c — the reverse of the published sort.
+      expect(result.items.map((e) => e.id)).toEqual([aId, bId, cId]);
+    });
+
+    it("sortBy=archived orders by read-change time and keeps never-read entries", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/feed.xml");
+      await createTestSubscription(userId, feedId);
+
+      const readId = await createTestEntry(feedId, { title: "Read" });
+      const unreadId = await createTestEntry(feedId, { title: "Unread" });
+      // Unread entry: no read-state change (readChangedAt NULL).
+      await createUserEntry(userId, readId);
+      await createUserEntry(userId, unreadId, { readChangedAt: undefined });
+      await db
+        .update(userEntries)
+        .set({ readChangedAt: null })
+        .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, unreadId)));
+
+      // sortBy=archived must NOT drop the never-read entry (unlike readChanged).
+      const archived = await listEntries(db, { userId, sortBy: "archived", showSpam: false });
+      expect(archived.items.map((e) => e.id).sort()).toEqual([readId, unreadId].sort());
+
+      // sortBy=readChanged (recently-read view) DOES exclude the never-read entry.
+      const recentlyRead = await listEntries(db, {
+        userId,
+        sortBy: "readChanged",
+        showSpam: false,
+      });
+      expect(recentlyRead.items.map((e) => e.id)).toEqual([readId]);
+    });
+  });
+
+  describe("list/count with domainName (Wallabag `domain_name`)", () => {
+    it("filters entries to those whose URL hostname matches", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/feed.xml");
+      await createTestSubscription(userId, feedId);
+
+      const exampleId = await createTestEntry(feedId, {
+        title: "Example",
+        url: "https://example.com/article?ref=1",
+      });
+      const exampleUpperId = await createTestEntry(feedId, {
+        title: "ExampleUpper",
+        // Uppercase host + port: the hostname match is case-insensitive and ignores the port.
+        url: "https://EXAMPLE.com:8443/other",
+      });
+      const otherId = await createTestEntry(feedId, {
+        title: "Other",
+        url: "https://other.org/story",
+      });
+      const noUrlId = await createTestEntry(feedId, { title: "NoUrl" });
+      for (const id of [exampleId, exampleUpperId, otherId, noUrlId]) {
+        await createUserEntry(userId, id);
+      }
+
+      const result = await listEntries(db, {
+        userId,
+        domainName: "example.com",
+        showSpam: false,
+      });
+      expect(result.items.map((e) => e.id).sort()).toEqual([exampleId, exampleUpperId].sort());
+
+      // countTotalEntries applies the same filter so pagination totals agree.
+      const total = await countTotalEntries(db, userId, {
+        domainName: "example.com",
+        showSpam: false,
+      });
+      expect(total).toBe(2);
+
+      // A non-matching domain returns nothing.
+      const none = await listEntries(db, {
+        userId,
+        domainName: "nope.example",
+        showSpam: false,
+      });
+      expect(none.items).toHaveLength(0);
     });
   });
 

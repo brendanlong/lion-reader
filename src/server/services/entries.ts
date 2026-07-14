@@ -37,6 +37,7 @@ import { persistResanitizedFamily } from "./resanitize";
 import {
   buildEntrySubscriptionFilter,
   buildEntryFilterConditions,
+  buildDomainNameCondition,
   buildTaggedSubscriptionIdsSubquery,
   buildUncategorizedSubscriptionIdsSubquery,
 } from "./entry-filters";
@@ -58,7 +59,12 @@ export interface ListEntriesParams {
   starredOnly?: boolean;
   unstarredOnly?: boolean;
   sortOrder?: "newest" | "oldest";
-  sortBy?: "published" | "readChanged"; // Which column to sort by (default: published)
+  // Which column to sort by (default: published). "published" = publish/fetch
+  // time; "readChanged" = read-state-change time (the recently-read view, which
+  // also excludes never-read entries); "updated" = last-modified
+  // (GREATEST(entry, user_entry); Wallabag sort=updated); "archived" = read-state
+  // -change time WITHOUT the recently-read exclusion (Wallabag sort=archived).
+  sortBy?: "published" | "readChanged" | "updated" | "archived";
   cursor?: string;
   offset?: number; // Skip this many rows (for page/offset-based compat APIs like Wallabag). Mutually exclusive with cursor.
   limit?: number;
@@ -66,6 +72,7 @@ export interface ListEntriesParams {
   publishedAfter?: Date; // Only entries published/fetched after this timestamp
   publishedBefore?: Date; // Only entries published/fetched before this timestamp
   updatedAfter?: Date; // Only entries modified at/after this timestamp (GREATEST(entry.updated_at, user_entries.updated_at); powers Wallabag `since` delta sync)
+  domainName?: string; // Only entries whose URL hostname matches (Wallabag `domain_name`)
   showSpam: boolean;
 }
 
@@ -89,6 +96,7 @@ export interface SearchEntriesParams {
   publishedAfter?: Date;
   publishedBefore?: Date;
   updatedAfter?: Date; // Only entries modified at/after this timestamp (see ListEntriesParams.updatedAfter)
+  domainName?: string; // Only entries whose URL hostname matches (Wallabag `domain_name`)
   showSpam: boolean;
 }
 
@@ -607,25 +615,34 @@ export async function listEntries(
     conditions.push(sql`${visibleEntries.updatedAt} >= ${params.updatedAfter}`);
   }
 
-  // Recently Read: exclude entries that were never explicitly read-state-changed
+  // Domain filter (Wallabag `domain_name`): match the URL hostname.
+  if (params.domainName) {
+    conditions.push(buildDomainNameCondition(params.domainName));
+  }
+
+  // Recently Read: exclude entries that were never explicitly read-state-changed.
+  // This exclusion is specific to that view (sortBy=readChanged); the Wallabag
+  // "archived" sort orders by the same column but keeps unarchived entries.
   if (params.sortBy === "readChanged") {
     conditions.push(isNotNull(visibleEntries.readChangedAt));
   }
 
-  // Sort column - readChanged sorts by when read state was last changed.
-  // The default "published" sort uses the denormalized user_entries sort key so the
-  // planner can serve filter + sort from idx_user_entries_published_or_fetched.
+  // Sort column:
+  //  - "published" (default) uses the denormalized user_entries sort key so the
+  //    planner can serve filter + sort from idx_user_entries_published_or_fetched.
+  //  - "readChanged"/"archived" sort by when read state was last changed.
+  //  - "updated" sorts by GREATEST(entry.updated_at, user_entries.updated_at)
+  //    (Wallabag sort=updated — last-modified, including read/star flips).
   const sortColumn =
-    params.sortBy === "readChanged"
+    params.sortBy === "readChanged" || params.sortBy === "archived"
       ? visibleEntries.readChangedAt
-      : visibleEntries.publishedOrFetchedAt;
+      : params.sortBy === "updated"
+        ? visibleEntries.updatedAt
+        : visibleEntries.publishedOrFetchedAt;
 
   // Raw ISO string version of sortColumn with microsecond precision.
   // Used for cursor encoding to avoid JavaScript Date truncation.
-  const sortTsRawExpr =
-    params.sortBy === "readChanged"
-      ? sql<string>`to_char(${visibleEntries.readChangedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`
-      : sql<string>`to_char(${visibleEntries.publishedOrFetchedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
+  const sortTsRawExpr = sql<string>`to_char(${sortColumn} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
 
   // Cursor condition
   // Pass timestamp string directly to Postgres (::timestamptz) to preserve
@@ -761,6 +778,9 @@ async function searchEntries(
   }
   if (params.updatedAfter) {
     conditions.push(sql`${visibleEntries.updatedAt} >= ${params.updatedAfter}`);
+  }
+  if (params.domainName) {
+    conditions.push(buildDomainNameCondition(params.domainName));
   }
 
   // Cursor for search results (based on rank)
@@ -1490,6 +1510,7 @@ export async function countTotalEntries(
     starredOnly?: boolean;
     unstarredOnly?: boolean;
     updatedAfter?: Date;
+    domainName?: string;
     showSpam: boolean;
   }
 ): Promise<number> {
@@ -1519,6 +1540,9 @@ export async function countTotalEntries(
 
   if (params.updatedAfter) {
     conditions.push(sql`${visibleEntries.updatedAt} >= ${params.updatedAfter}`);
+  }
+  if (params.domainName) {
+    conditions.push(buildDomainNameCondition(params.domainName));
   }
 
   // One row per (user, entry), so count(*) is exact (see countEntries).
