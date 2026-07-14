@@ -687,6 +687,13 @@
       "when": 1782953100000,
       "tag": "0098_drop_wallabag_id",
       "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1782953200000,
+      "tag": "0099_lz4_toast_compression",
+      "breakpoints": true
     }
   ]
 }
