@@ -393,6 +393,8 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
         const result = await generateMutation.mutateAsync({
           id,
           useLlmNormalization: settings.useLlmNormalization,
+          showFullContent: showFullContent ?? false,
+          showOriginal: showOriginal ?? false,
         });
         narration = result.narration;
         // Store the paragraph map from server for index translation during highlighting
@@ -517,9 +519,13 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     narratorRef.current.stop();
   }, [isSupported, usePiper]);
 
-  // Reset narration state when article or voice changes (render-time pattern
-  // avoids cascading renders from calling setState inside an effect)
-  const narrationResetKey = `${id}:${settings.voiceId}`;
+  // Reset narration state when the article, voice, or displayed content variant
+  // changes (render-time pattern avoids cascading renders from calling setState
+  // inside an effect). The variant is part of the key because narration text and
+  // its paragraph map are variant-specific: replaying a cached "cleaned"
+  // narration while the DOM now shows "full"/"original" would highlight the
+  // wrong elements. Resetting forces the next play to re-narrate what's on screen.
+  const narrationResetKey = `${id}:${settings.voiceId}:${showFullContent ?? false}:${showOriginal ?? false}`;
   const [prevNarrationResetKey, setPrevNarrationResetKey] = useState(narrationResetKey);
   if (narrationResetKey !== prevNarrationResetKey) {
     setPrevNarrationResetKey(narrationResetKey);
@@ -527,18 +533,19 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     setNarrationText(null);
   }
 
-  // Clear audio cache and refs when article or voice changes
+  // Clear audio cache and refs when the article, voice, or displayed content
+  // variant changes
   useEffect(() => {
-    // Stop and clear the streaming player when article or voice changes
+    // Stop and clear the streaming player
     if (streamingPlayerRef.current) {
       streamingPlayerRef.current.stop();
       streamingPlayerRef.current.clearCache();
     }
     // Reset playback tracking
     hasTrackedPlaybackRef.current = false;
-    // Clear paragraph map when article changes
+    // Clear paragraph map (it's specific to the previous article/variant)
     paragraphMapRef.current = [];
-  }, [id, settings.voiceId]);
+  }, [id, settings.voiceId, showFullContent, showOriginal]);
 
   // Clean up on unmount
   useEffect(() => {
