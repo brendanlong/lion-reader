@@ -20,7 +20,9 @@ import { SANITIZER_VERSION } from "../../src/server/html/sanitize";
 import {
   selectStaleEntriesForResanitize,
   persistResanitizedFamily,
+  sanitizeFamilyFromRaw,
 } from "../../src/server/services/resanitize";
+import { sanitizeEntryHtml } from "../../src/server/html/sanitize";
 
 const STALE_VERSION = SANITIZER_VERSION - 1;
 
@@ -52,6 +54,8 @@ async function seedStaleEntry(
   opts: {
     version?: number | null;
     full?: boolean;
+    /** Also seed a raw full_content_original (with `full`), plus stale eager sanitized copies. */
+    fullOriginal?: boolean;
     contentSanitized?: string | null;
   } = {}
 ): Promise<string> {
@@ -69,8 +73,12 @@ async function seedStaleEntry(
     contentSanitizedVersion: version,
     // Content-only by default: no full-content raw, NULL full version/hash.
     fullContentCleaned: opts.full ? `<p>full-${id}<script>alert(2)</script></p>` : null,
-    fullContentSanitizedVersion: opts.full ? version : null,
-    fullContentHash: opts.full ? `fullhash-${id}` : null,
+    fullContentOriginal: opts.fullOriginal
+      ? `<article>page-${id}<script>alert(3)</script></article>`
+      : null,
+    fullContentOriginalSanitized: opts.fullOriginal ? `<article>OLD_EAGER-${id}</article>` : null,
+    fullContentSanitizedVersion: opts.full || opts.fullOriginal ? version : null,
+    fullContentHash: opts.full || opts.fullOriginal ? `fullhash-${id}` : null,
     contentHash: `hash-${id}`,
     fetchedAt: now,
     publishedAt: now,
@@ -123,6 +131,35 @@ describe("selectStaleEntriesForResanitize", () => {
     // the staleness query targets the whole table forever.
     const feedId = await seedFeed();
     await seedStaleEntry(feedId, { version: SANITIZER_VERSION });
+
+    const rows = await selectStaleEntriesForResanitize(db, 10);
+
+    expect(rows).toHaveLength(0);
+  });
+
+  it("does NOT re-select a row converged to the lazy full-content shape (no heal loop)", async () => {
+    // The lazy shape (issue #1117): raw full_content_original AND
+    // full_content_cleaned populated, full_content_cleaned_sanitized stored,
+    // full_content_original_sanitized deliberately NULL, version current. A
+    // NULL original_sanitized at the current version means "not materialized",
+    // NOT "stale" — the staleness key is purely version-based — so this row
+    // must never be re-selected for healing/bulk resanitize. Otherwise every
+    // heal would produce the lazy shape only to be re-selected forever
+    // (heal → NULL original_sanitized → "stale" → heal …). Pins that invariant
+    // against future changes to RESANITIZE_STALENESS_KEY or the read path.
+    const feedId = await seedFeed();
+    const id = await seedStaleEntry(feedId, {
+      version: SANITIZER_VERSION,
+      full: true,
+      fullOriginal: true,
+    });
+    await db
+      .update(entries)
+      .set({
+        fullContentOriginalSanitized: null,
+        fullContentCleanedSanitized: `<p>full-${id}</p>`,
+      })
+      .where(eq(entries.id, id));
 
     const rows = await selectStaleEntriesForResanitize(db, 10);
 
@@ -280,6 +317,81 @@ describe("persistResanitizedFamily", () => {
     const row = await getVersions(id);
     expect(row.contentVersion).toBe(STALE_VERSION); // version untouched
     expect(row.contentSanitized).toBeNull(); // stale output not written
+  });
+
+  it("converges a stale full-content row with cleaned to the lazy shape (bulk-script flow)", async () => {
+    // Mirrors scripts/resanitize-bulk.ts resanitizeRow: select the stale row,
+    // sanitize its full-content family via the shared sanitizeFamilyFromRaw
+    // (which applies the lazy rule — original's sanitized copy is NULL when
+    // cleaned exists), persist under the CAS. The pre-existing eager
+    // full_content_original_sanitized copy must NOT be re-materialized.
+    const feedId = await seedFeed();
+    const id = await seedStaleEntry(feedId, { full: true, fullOriginal: true });
+
+    const [row] = await selectStaleEntriesForResanitize(db, 10);
+    expect(row.id).toBe(id);
+
+    const sanitized = await sanitizeFamilyFromRaw(
+      "fullContent",
+      { original: row.fullContentOriginal, cleaned: row.fullContentCleaned },
+      async (html) => sanitizeEntryHtml(html)
+    );
+    expect(sanitized.original).toBeNull();
+    expect(sanitized.cleaned).toContain(`full-${id}`);
+    expect(sanitized.cleaned).not.toContain("<script>");
+
+    const persisted = await persistResanitizedFamily(
+      db,
+      id,
+      "fullContent",
+      sanitized,
+      row.fullContentHash
+    );
+    expect(persisted).toBe(true);
+
+    const [after] = await db
+      .select({
+        originalSanitized: entries.fullContentOriginalSanitized,
+        cleanedSanitized: entries.fullContentCleanedSanitized,
+        version: entries.fullContentSanitizedVersion,
+      })
+      .from(entries)
+      .where(eq(entries.id, id));
+    expect(after.version).toBe(SANITIZER_VERSION);
+    expect(after.originalSanitized).toBeNull();
+    expect(after.cleanedSanitized).toContain(`full-${id}`);
+  });
+
+  it("still sanitizes the full-content original when there is no cleaned", async () => {
+    // Readability-failed / plugin skipReadability shape: original is the
+    // serving variant, so it IS sanitized and materialized.
+    const feedId = await seedFeed();
+    const id = await seedStaleEntry(feedId, { fullOriginal: true });
+
+    const [row] = await selectStaleEntriesForResanitize(db, 10);
+    expect(row.id).toBe(id);
+
+    const sanitized = await sanitizeFamilyFromRaw(
+      "fullContent",
+      { original: row.fullContentOriginal, cleaned: row.fullContentCleaned },
+      async (html) => sanitizeEntryHtml(html)
+    );
+    expect(sanitized.original).toContain(`page-${id}`);
+    expect(sanitized.original).not.toContain("<script>");
+    expect(sanitized.cleaned).toBeNull();
+  });
+
+  it("materializes both variants for the content family", async () => {
+    // The content family has a user-facing original/cleaned toggle, so both
+    // variants stay eagerly sanitized — the lazy rule is full-content only.
+    const sanitized = await sanitizeFamilyFromRaw(
+      "content",
+      { original: "<p>orig<script>x</script></p>", cleaned: "<p>clean</p>" },
+      async (html) => sanitizeEntryHtml(html)
+    );
+    expect(sanitized.original).toContain("orig");
+    expect(sanitized.original).not.toContain("<script>");
+    expect(sanitized.cleaned).toBe("<p>clean</p>");
   });
 
   it("skips a row already at a newer version (no downgrade)", async () => {
