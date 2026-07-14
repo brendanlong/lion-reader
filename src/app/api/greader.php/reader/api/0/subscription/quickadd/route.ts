@@ -11,7 +11,7 @@
 
 import { requireAuth } from "@/server/google-reader/auth";
 import { parseFormData, jsonResponse, errorResponse } from "@/server/google-reader/parse";
-import { uuidToInt64 } from "@/server/google-reader/id";
+import { feedStreamId } from "@/server/google-reader/id";
 import * as subscriptionsService from "@/server/services/subscriptions";
 import { db } from "@/server/db";
 import { eq, isNull, and } from "drizzle-orm";
@@ -57,9 +57,9 @@ export async function POST(request: Request): Promise<Response> {
         .limit(1);
 
       if (existingSub.length > 0) {
-        // Already subscribed — return existing subscription. Only the title is
-        // used in the response; the unread count is a free counter read now
-        // (issue #1117, step 5b), so there's nothing to skip.
+        // Already subscribed — return existing subscription. The stream id is the
+        // row's stored greader_stream_id serial (already selected above); the
+        // title comes from getSubscription (resolves custom/original title).
         const sub = await subscriptionsService.getSubscription(
           db,
           session.user.id,
@@ -68,7 +68,7 @@ export async function POST(request: Request): Promise<Response> {
         return jsonResponse({
           query: feedUrl,
           numResults: 1,
-          streamId: `feed/${uuidToInt64(sub.id).toString()}`,
+          streamId: feedStreamId(existingSub[0].greaderStreamId),
           streamName: sub.title ?? feedUrl,
         });
       }
@@ -90,22 +90,26 @@ export async function POST(request: Request): Promise<Response> {
       });
     }
 
-    // Create subscription
+    // Create subscription, returning the DB-assigned greader_stream_id serial for
+    // the response stream id.
     const subscriptionId = generateUuidv7();
     const now = new Date();
-    await db.insert(subscriptions).values({
-      id: subscriptionId,
-      userId: session.user.id,
-      feedId,
-      subscribedAt: now,
-      createdAt: now,
-      updatedAt: now,
-    });
+    const [created] = await db
+      .insert(subscriptions)
+      .values({
+        id: subscriptionId,
+        userId: session.user.id,
+        feedId,
+        subscribedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning({ greaderStreamId: subscriptions.greaderStreamId });
 
     return jsonResponse({
       query: feedUrl,
       numResults: 1,
-      streamId: `feed/${uuidToInt64(subscriptionId).toString()}`,
+      streamId: feedStreamId(created.greaderStreamId),
       streamName: feedUrl,
     });
   } catch (err) {

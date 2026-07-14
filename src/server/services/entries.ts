@@ -97,6 +97,13 @@ export interface EntryListItem {
   // Google Reader item id (stored global serial). Ignored by the main app; used
   // by the Google Reader compat layer to address entries as int64 ids.
   greaderItemId: bigint;
+  // Google Reader feed stream ids (stored serials), used only by the compat
+  // layer to build each item's origin stream: the entry's subscription
+  // (null for saved/uploaded and orphaned-starred entries) and its feed (used
+  // for saved articles, which have no subscription — issue #730). Stripped from
+  // main-app and MCP responses.
+  subscriptionGreaderStreamId: bigint | null;
+  feedGreaderStreamId: bigint;
   subscriptionId: string | null;
   feedId: string;
   type: "web" | "email" | "saved";
@@ -122,6 +129,9 @@ export interface EntryFull {
   id: string;
   // Google Reader item id (stored global serial); see EntryListItem.
   greaderItemId: bigint;
+  // Google Reader feed stream ids (stored serials); see EntryListItem.
+  subscriptionGreaderStreamId: bigint | null;
+  feedGreaderStreamId: bigint;
   subscriptionId: string | null;
   feedId: string;
   type: "web" | "email" | "saved";
@@ -192,6 +202,8 @@ const MAX_LIMIT = 100;
 interface EntryListRow {
   id: string;
   greaderItemId: bigint;
+  subscriptionGreaderStreamId: bigint | null;
+  feedGreaderStreamId: bigint;
   subscriptionId: string | null;
   feedId: string;
   type: "web" | "email" | "saved";
@@ -215,6 +227,8 @@ function toEntryListItem(row: EntryListRow): EntryListItem {
   return {
     id: row.id,
     greaderItemId: row.greaderItemId,
+    subscriptionGreaderStreamId: row.subscriptionGreaderStreamId,
+    feedGreaderStreamId: row.feedGreaderStreamId,
     subscriptionId: row.subscriptionId,
     feedId: row.feedId,
     type: row.type,
@@ -285,6 +299,11 @@ function encodeCursor(ts: string, entryId: string): string {
 const entryFullSelectFields = {
   id: visibleEntries.id,
   greaderItemId: visibleEntries.greaderItemId,
+  // Google Reader feed stream ids (compat layer only). The subscription's comes
+  // from the view's LEFT JOIN (null for saved/orphaned); the feed's from the
+  // feeds join every entry read performs (used for saved articles).
+  subscriptionGreaderStreamId: visibleEntries.subscriptionGreaderStreamId,
+  feedGreaderStreamId: feeds.greaderStreamId,
   feedId: visibleEntries.feedId,
   type: visibleEntries.type,
   url: visibleEntries.url,
@@ -663,6 +682,8 @@ export async function listEntries(
     .select({
       id: visibleEntries.id,
       greaderItemId: visibleEntries.greaderItemId,
+      subscriptionGreaderStreamId: visibleEntries.subscriptionGreaderStreamId,
+      feedGreaderStreamId: feeds.greaderStreamId,
       feedId: visibleEntries.feedId,
       type: visibleEntries.type,
       url: visibleEntries.url,
@@ -787,6 +808,8 @@ async function searchEntries(
     .select({
       id: visibleEntries.id,
       greaderItemId: visibleEntries.greaderItemId,
+      subscriptionGreaderStreamId: visibleEntries.subscriptionGreaderStreamId,
+      feedGreaderStreamId: feeds.greaderStreamId,
       feedId: visibleEntries.feedId,
       type: visibleEntries.type,
       url: visibleEntries.url,
@@ -815,6 +838,8 @@ async function searchEntries(
     .select({
       id: rankedSubquery.id,
       greaderItemId: rankedSubquery.greaderItemId,
+      subscriptionGreaderStreamId: rankedSubquery.subscriptionGreaderStreamId,
+      feedGreaderStreamId: rankedSubquery.feedGreaderStreamId,
       feedId: rankedSubquery.feedId,
       type: rankedSubquery.type,
       url: rankedSubquery.url,
