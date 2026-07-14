@@ -15,6 +15,7 @@
 import * as Sentry from "@sentry/nextjs";
 import {
   Client,
+  GatewayDispatchEvents,
   GatewayIntentBits,
   MessageFlags,
   Partials,
@@ -22,6 +23,7 @@ import {
   Routes,
   SlashCommandBuilder,
   type ChatInputCommandInteraction,
+  type GatewayMessageCreateDispatchData,
   type Message,
   type User,
   type PartialUser,
@@ -309,20 +311,6 @@ export async function startDiscordBot(): Promise<void> {
   // Handle direct messages: a URL sent (or forwarded) to the bot in a DM is
   // saved just like a save-emoji reaction, and the DM is reacted to the same way.
   client.on("messageCreate", async (message) => {
-    // Diagnostic: confirm DM messageCreate events are actually being delivered
-    // to the gateway. Logged for DMs only (guildId null) to avoid spamming a
-    // line per guild message. If a DM to the bot produces no such line, the
-    // event isn't reaching us (intent/partial/gateway issue), not a handler bug.
-    if (!message.guildId) {
-      logger.info("Discord messageCreate received (DM)", {
-        messageId: message.id,
-        channelType: message.channel?.type,
-        authorBot: message.author?.bot ?? null,
-        contentLength: message.content?.length ?? 0,
-        snapshotCount: message.messageSnapshots?.size ?? 0,
-      });
-    }
-
     if (message.author?.bot) return;
     // Only DMs — guild messages are handled via the save-emoji reaction, not by
     // treating every posted link as a save.
@@ -340,6 +328,37 @@ export async function startDiscordBot(): Promise<void> {
       });
     }
   });
+
+  // Recover DMs whose channel isn't cached yet.
+  //
+  // discord.js can't build a DM channel object from a raw MESSAGE_CREATE payload
+  // (it lacks the channel type/recipients needed to disambiguate a DM from a
+  // group DM), so if the DM channel isn't already in its cache it silently drops
+  // the `messageCreate` event entirely — even with the Channel partial enabled.
+  // In practice this means the *first* DM in a channel after the bot restarts
+  // (before the user has run any slash command, which would cache the channel)
+  // never reaches the handler above. See the createChannel path in discord.js.
+  //
+  // The raw gateway dispatch fires regardless, so we use it as a fallback: for a
+  // DM whose channel isn't cached, fetch the channel (which caches it) and the
+  // message, then run the same handler. A cached channel means `messageCreate`
+  // already handled it, so we skip — this only pays the fetch cost on the cold
+  // first hit, and every later DM flows through the normal path above.
+  const dmRecoveryClient = client;
+  dmRecoveryClient.ws.on(
+    GatewayDispatchEvents.MessageCreate,
+    (data: GatewayMessageCreateDispatchData) => {
+      if (data.guild_id) return; // DMs only
+      if (data.author?.bot) return;
+      // Cached channel → the normal messageCreate path handled it. This check
+      // runs before discord.js processes the packet (raw dispatch fires first),
+      // and an uncached DM channel is never cached by that failed processing, so
+      // a cache miss here reliably means messageCreate was (or will be) dropped.
+      if (dmRecoveryClient.channels.cache.has(data.channel_id)) return;
+
+      void recoverUncachedDirectMessage(dmRecoveryClient, data);
+    }
+  );
 
   // Watchdog: `client.login()` below resolves on token handshake, not on a live
   // gateway. If `clientReady` hasn't fired within this window the bot is logged
@@ -592,6 +611,35 @@ async function handleDirectMessage(message: Message): Promise<void> {
   }
 
   await saveUrlsAndReact(message, urls, resolved, message.author);
+}
+
+/**
+ * Recover a DM that discord.js dropped because its channel wasn't cached (see
+ * the `ws.on(MESSAGE_CREATE)` registration for why). Fetches the channel (which
+ * caches it, so subsequent DMs use the normal `messageCreate` path) and the
+ * message, then runs the normal DM handler.
+ */
+async function recoverUncachedDirectMessage(
+  client: Client,
+  data: GatewayMessageCreateDispatchData
+): Promise<void> {
+  try {
+    const channel = await client.channels.fetch(data.channel_id);
+    if (!channel?.isTextBased()) return;
+    const message = await channel.messages.fetch(data.id);
+    logger.info("Recovered DM from uncached channel via raw gateway event", {
+      messageId: message.id,
+      channelId: channel.id,
+    });
+    await handleDirectMessage(message);
+  } catch (error) {
+    // Mirrors the messageCreate handler: never let a rejection crash the bot.
+    Sentry.captureException(error);
+    logger.error("Failed to recover uncached direct message", {
+      messageId: data.id,
+      error,
+    });
+  }
 }
 
 /**
