@@ -137,6 +137,35 @@ describe("selectStaleEntriesForResanitize", () => {
     expect(rows).toHaveLength(0);
   });
 
+  it("does NOT re-select a row converged to the lazy full-content shape (no heal loop)", async () => {
+    // The lazy shape (issue #1117): raw full_content_original AND
+    // full_content_cleaned populated, full_content_cleaned_sanitized stored,
+    // full_content_original_sanitized deliberately NULL, version current. A
+    // NULL original_sanitized at the current version means "not materialized",
+    // NOT "stale" — the staleness key is purely version-based — so this row
+    // must never be re-selected for healing/bulk resanitize. Otherwise every
+    // heal would produce the lazy shape only to be re-selected forever
+    // (heal → NULL original_sanitized → "stale" → heal …). Pins that invariant
+    // against future changes to RESANITIZE_STALENESS_KEY or the read path.
+    const feedId = await seedFeed();
+    const id = await seedStaleEntry(feedId, {
+      version: SANITIZER_VERSION,
+      full: true,
+      fullOriginal: true,
+    });
+    await db
+      .update(entries)
+      .set({
+        fullContentOriginalSanitized: null,
+        fullContentCleanedSanitized: `<p>full-${id}</p>`,
+      })
+      .where(eq(entries.id, id));
+
+    const rows = await selectStaleEntriesForResanitize(db, 10);
+
+    expect(rows).toHaveLength(0);
+  });
+
   it("selects a row whose full-content family is stale while content is fresh", async () => {
     const feedId = await seedFeed();
     // Full content present but at a stale version, content family already fresh.
