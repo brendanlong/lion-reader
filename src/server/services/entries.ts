@@ -37,7 +37,6 @@ import { persistResanitizedFamily } from "./resanitize";
 import {
   buildEntrySubscriptionFilter,
   buildEntryFilterConditions,
-  buildDomainNameCondition,
   buildTaggedSubscriptionIdsSubquery,
   buildUncategorizedSubscriptionIdsSubquery,
 } from "./entry-filters";
@@ -60,11 +59,13 @@ export interface ListEntriesParams {
   unstarredOnly?: boolean;
   sortOrder?: "newest" | "oldest";
   // Which column to sort by (default: published). "published" = publish/fetch
-  // time; "readChanged" = read-state-change time (the recently-read view, which
-  // also excludes never-read entries); "updated" = last-modified
-  // (GREATEST(entry, user_entry); Wallabag sort=updated); "archived" = read-state
-  // -change time WITHOUT the recently-read exclusion (Wallabag sort=archived).
-  sortBy?: "published" | "readChanged" | "updated" | "archived";
+  // time (index-backed); "readChanged" = read-state-change time (the recently-read
+  // view, which also excludes never-read entries); "archived" = read-state-change
+  // time WITHOUT the recently-read exclusion (Wallabag sort=archived). All three
+  // are served by an existing index; there is deliberately no "updated"
+  // (GREATEST(entry, user_entry)) sort — it can't be index-served (see #1070), so
+  // the Wallabag route approximates sort=updated as the default published sort.
+  sortBy?: "published" | "readChanged" | "archived";
   cursor?: string;
   offset?: number; // Skip this many rows (for page/offset-based compat APIs like Wallabag). Mutually exclusive with cursor.
   limit?: number;
@@ -72,7 +73,6 @@ export interface ListEntriesParams {
   publishedAfter?: Date; // Only entries published/fetched after this timestamp
   publishedBefore?: Date; // Only entries published/fetched before this timestamp
   updatedAfter?: Date; // Only entries modified at/after this timestamp (GREATEST(entry.updated_at, user_entries.updated_at); powers Wallabag `since` delta sync)
-  domainName?: string; // Only entries whose URL hostname matches (Wallabag `domain_name`)
   showSpam: boolean;
 }
 
@@ -96,7 +96,6 @@ export interface SearchEntriesParams {
   publishedAfter?: Date;
   publishedBefore?: Date;
   updatedAfter?: Date; // Only entries modified at/after this timestamp (see ListEntriesParams.updatedAfter)
-  domainName?: string; // Only entries whose URL hostname matches (Wallabag `domain_name`)
   showSpam: boolean;
 }
 
@@ -615,11 +614,6 @@ export async function listEntries(
     conditions.push(sql`${visibleEntries.updatedAt} >= ${params.updatedAfter}`);
   }
 
-  // Domain filter (Wallabag `domain_name`): match the URL hostname.
-  if (params.domainName) {
-    conditions.push(buildDomainNameCondition(params.domainName));
-  }
-
   // Recently Read: exclude entries that were never explicitly read-state-changed.
   // This exclusion is specific to that view (sortBy=readChanged); the Wallabag
   // "archived" sort orders by the same column but keeps unarchived entries.
@@ -627,18 +621,15 @@ export async function listEntries(
     conditions.push(isNotNull(visibleEntries.readChangedAt));
   }
 
-  // Sort column:
+  // Sort column (all choices are served by an existing index):
   //  - "published" (default) uses the denormalized user_entries sort key so the
   //    planner can serve filter + sort from idx_user_entries_published_or_fetched.
-  //  - "readChanged"/"archived" sort by when read state was last changed.
-  //  - "updated" sorts by GREATEST(entry.updated_at, user_entries.updated_at)
-  //    (Wallabag sort=updated — last-modified, including read/star flips).
+  //  - "readChanged"/"archived" sort by when read state was last changed
+  //    (idx_user_entries_read_changed_at).
   const sortColumn =
     params.sortBy === "readChanged" || params.sortBy === "archived"
       ? visibleEntries.readChangedAt
-      : params.sortBy === "updated"
-        ? visibleEntries.updatedAt
-        : visibleEntries.publishedOrFetchedAt;
+      : visibleEntries.publishedOrFetchedAt;
 
   // Raw ISO string version of sortColumn with microsecond precision.
   // Used for cursor encoding to avoid JavaScript Date truncation.
@@ -778,9 +769,6 @@ async function searchEntries(
   }
   if (params.updatedAfter) {
     conditions.push(sql`${visibleEntries.updatedAt} >= ${params.updatedAfter}`);
-  }
-  if (params.domainName) {
-    conditions.push(buildDomainNameCondition(params.domainName));
   }
 
   // Cursor for search results (based on rank)
@@ -1510,7 +1498,6 @@ export async function countTotalEntries(
     starredOnly?: boolean;
     unstarredOnly?: boolean;
     updatedAfter?: Date;
-    domainName?: string;
     showSpam: boolean;
   }
 ): Promise<number> {
@@ -1540,9 +1527,6 @@ export async function countTotalEntries(
 
   if (params.updatedAfter) {
     conditions.push(sql`${visibleEntries.updatedAt} >= ${params.updatedAfter}`);
-  }
-  if (params.domainName) {
-    conditions.push(buildDomainNameCondition(params.domainName));
   }
 
   // One row per (user, entry), so count(*) is exact (see countEntries).

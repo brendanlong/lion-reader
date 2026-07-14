@@ -5,7 +5,7 @@
  * countEntries, and markAllRead.
  */
 
-import { eq, and, isNull, notInArray, sql, type SQL, type SQLWrapper } from "drizzle-orm";
+import { eq, and, isNull, notInArray, type SQL, type SQLWrapper } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import { subscriptionTags, subscriptions, tags, visibleEntries } from "@/server/db/schema";
 
@@ -215,27 +215,4 @@ export function buildEntryFilterConditions(params: EntryConditionParams): SQL[] 
   }
 
   return conditions;
-}
-
-/**
- * Builds a condition that filters entries to those whose URL hostname matches
- * `domainName` (case-insensitive), backing the Wallabag `domain_name` query
- * parameter.
- *
- * Postgres has no URL parser, so we pull the authority host out of the URL with
- * a POSIX regex and `substring(... from pattern)` returns the first *capturing*
- * group. The pattern reproduces `new URL().hostname` semantics — which is what
- * `extractDomain` uses for the entry's reported `domain_name`, so the filter and
- * the reported field agree:
- *   `scheme://` then optional userinfo `(?:...@)?` (dropped, matching hostname)
- *   then the host — either a bracketed IPv6 literal `[...]` (brackets kept, as
- *   hostname does) or a reg-name/IPv4 up to the first `:`/`/`/`?`/`#` (so the
- *   port is dropped). A URL that fails to match (or a NULL url) yields NULL,
- *   which the `=` comparison drops — the correct behavior for a domain filter.
- *
- * The `\[`/`\]` bracket escapes are doubled (`\\[`, `\\]`) because a JS template
- * literal collapses `\[` to `[` before Postgres ever sees the pattern.
- */
-export function buildDomainNameCondition(domainName: string): SQL {
-  return sql`lower(substring(${visibleEntries.url} from '^[a-zA-Z][a-zA-Z0-9+.-]*://(?:[^/?#@]*@)?(\\[[^\\]]+\\]|[^/:?#]+)')) = lower(${domainName})`;
 }
