@@ -25,7 +25,8 @@ export async function GET(request: Request): Promise<Response> {
   const userTags = await db
     .select({ name: tags.name, greaderSortid: tags.greaderSortid })
     .from(tags)
-    .where(and(eq(tags.userId, auth.userId), isNull(tags.deletedAt)));
+    .where(and(eq(tags.userId, auth.userId), isNull(tags.deletedAt)))
+    .orderBy(tags.name);
 
   return jsonResponse(formatTags(userTags));
 }
