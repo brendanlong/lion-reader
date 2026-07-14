@@ -165,7 +165,7 @@ jobs:
               --arg input "$INPUT" \
               '{
                 model: "claude-sonnet-5",
-                max_tokens: 1024,
+                max_tokens: 50000,
                 messages: [{
                   role: "user",
                   content: $input
@@ -173,7 +173,9 @@ jobs:
               }')")
 
           # Extract the text content
-          BODY=$(echo "$RESPONSE" | jq -r '.content[0].text // empty')
+          # Sonnet 5 always emits a thinking block first, so select the text block
+          # explicitly instead of assuming it's .content[0]
+          BODY=$(echo "$RESPONSE" | jq -r '[.content[] | select(.type == "text") | .text] | join("")')
 
           if [ -z "$BODY" ]; then
             echo "Error: Empty response from Claude API"
