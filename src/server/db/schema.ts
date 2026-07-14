@@ -20,6 +20,7 @@ import {
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+import type { ParagraphMapEntry } from "@/lib/narration/paragraph-map";
 
 /**
  * Postgres citext (case-insensitive text). Behaves as a plain string in
@@ -949,6 +950,12 @@ export const narrationContent = pgTable("narration_content", {
   contentHash: text("content_hash").unique().notNull(), // SHA256 of source content
 
   contentNarration: text("content_narration"), // null until generated
+  // Paragraph map for highlighting (narration paragraph index -> data-para-id).
+  // Persisted alongside the narration so cache hits return the exact map built
+  // at generation time instead of reconstructing it heuristically. Null for
+  // rows generated before this column existed (read path falls back to
+  // re-deriving from source content).
+  paragraphMap: jsonb("paragraph_map").$type<ParagraphMapEntry[]>(),
   generatedAt: timestamp("generated_at", { withTimezone: true }),
 
   // Error tracking for retry logic

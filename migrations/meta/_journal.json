@@ -659,6 +659,13 @@
       "when": 1782952700000,
       "tag": "0094_entries_feed_updated_at_index",
       "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1782952800000,
+      "tag": "0095_narration_paragraph_map",
+      "breakpoints": true
     }
   ]
 }

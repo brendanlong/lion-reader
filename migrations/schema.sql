@@ -310,7 +310,8 @@ CREATE TABLE public.narration_content (
     generated_at timestamp with time zone,
     error text,
     error_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    paragraph_map jsonb
 );
 
 CREATE TABLE public.oauth_access_tokens (
