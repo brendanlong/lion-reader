@@ -19,7 +19,7 @@ import { feedStreamIdToSubscriptionUuid } from "@/server/google-reader/id";
 import { parseStreamId } from "@/server/google-reader/streams";
 import { resolveTagByName } from "@/server/google-reader/tags";
 import { db } from "@/server/db";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, sql } from "drizzle-orm";
 import { subscriptions, subscriptionTags } from "@/server/db/schema";
 import * as tagsService from "@/server/services/tags";
 
@@ -60,7 +60,10 @@ export async function POST(request: Request): Promise<Response> {
       // This is handled by quickadd, so return success if already subscribed
       const existingSubId = await feedStreamIdToSubscriptionUuid(db, userId, subscriptionInt64);
       if (existingSubId) {
-        // Already subscribed — apply any tag/title changes
+        // Already subscribed — apply any tag/title changes. The IS DISTINCT
+        // FROM guard makes a same-title re-save match no row, so updated_at
+        // doesn't move and the subscription delta-sync cursor doesn't churn
+        // when a client re-asserts the title it already has (issue #1160).
         if (title) {
           await db
             .update(subscriptions)
@@ -69,7 +72,8 @@ export async function POST(request: Request): Promise<Response> {
               and(
                 eq(subscriptions.id, existingSubId),
                 eq(subscriptions.userId, userId),
-                isNull(subscriptions.unsubscribedAt)
+                isNull(subscriptions.unsubscribedAt),
+                sql`${subscriptions.customTitle} IS DISTINCT FROM ${title}`
               )
             );
         }
@@ -89,7 +93,8 @@ export async function POST(request: Request): Promise<Response> {
         return errorResponse("Subscription not found", 404);
       }
 
-      // Apply title change
+      // Apply title change — only when it actually differs, so a same-title
+      // re-save doesn't bump updated_at / churn the delta-sync cursor (#1160)
       if (title) {
         await db
           .update(subscriptions)
@@ -98,7 +103,8 @@ export async function POST(request: Request): Promise<Response> {
             and(
               eq(subscriptions.id, subscriptionId),
               eq(subscriptions.userId, userId),
-              isNull(subscriptions.unsubscribedAt)
+              isNull(subscriptions.unsubscribedAt),
+              sql`${subscriptions.customTitle} IS DISTINCT FROM ${title}`
             )
           );
       }
