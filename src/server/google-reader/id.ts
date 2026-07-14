@@ -9,6 +9,8 @@
  * UUID→int64 projection and no timestamp-window candidate scan.
  *
  * - **Item ids** (`entries.greader_item_id`): reversed by `greaderItemIdsToUuids`.
+ *   The Wallabag API exposes the same serial as its entry id
+ *   (src/server/wallabag/id.ts).
  * - **Feed stream ids** (`subscriptions.greader_stream_id` /
  *   `feeds.greader_stream_id`): reversed by `feedStreamIdToSubscriptionUuid` /
  *   `resolveFeedStream`. Both tables draw from the same sequence so their ids are
@@ -77,8 +79,12 @@ export function parseItemId(id: string): bigint {
 const INT64_MIN = -(BigInt(2) ** BigInt(63));
 const INT64_MAX = BigInt(2) ** BigInt(63) - BigInt(1);
 
-/** Whether an id fits in Postgres's signed bigint range (else it can't match a stored serial). */
-function isInt64(id: bigint): boolean {
+/**
+ * Whether an id fits in Postgres's signed bigint range (else it can't match a
+ * stored serial). Also used by the Wallabag id resolution, which seeks the same
+ * stored serials (src/server/wallabag/id.ts).
+ */
+export function isInt64(id: bigint): boolean {
   return id >= INT64_MIN && id <= INT64_MAX;
 }
 

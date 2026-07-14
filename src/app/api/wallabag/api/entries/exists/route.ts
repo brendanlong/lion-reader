@@ -14,7 +14,7 @@
 
 import { requireAuth } from "@/server/wallabag/auth";
 import { jsonResponse, errorResponse } from "@/server/wallabag/parse";
-import { uuidToWallabagId } from "@/server/wallabag/format";
+import { entryIdToWallabagId } from "@/server/wallabag/id";
 import * as savedService from "@/server/services/saved";
 import { db } from "@/server/db";
 
@@ -37,7 +37,12 @@ export async function GET(request: Request): Promise<Response> {
   if (entryId) {
     const result: Record<string, unknown> = { exists: true };
     if (returnId) {
-      result.id = uuidToWallabagId(entryId);
+      // The Wallabag id is the entry's stored serial; skip it in the (racy,
+      // effectively impossible) case the entry vanished since the URL lookup.
+      const wallabagId = await entryIdToWallabagId(db, entryId);
+      if (wallabagId !== null) {
+        result.id = wallabagId;
+      }
     }
     return jsonResponse(result);
   }

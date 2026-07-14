@@ -516,16 +516,13 @@ export const entries = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 
-    // Wallabag API integer ID - Postgres generated column from SHA-256 of UUID
-    // Matches TypeScript uuidToWallabagId() in src/server/wallabag/format.ts
-    wallabagId: integer("wallabag_id").generatedAlwaysAs(
-      sql`(('x' || left(encode(sha256(id::text::bytea), 'hex'), 8))::bit(32)::int & x'7fffffff'::int)`
-    ),
-
-    // Google Reader item ID - global bigint serial. The DB assigns it from a
-    // sequence default, so inserts omit it (the .default tells Drizzle it's
-    // optional-on-insert). Item ids are stored, not derived from the UUID; see
-    // src/server/google-reader/id.ts.
+    // Google Reader / Wallabag item ID - global bigint serial. The DB assigns
+    // it from a sequence default, so inserts omit it (the .default tells
+    // Drizzle it's optional-on-insert). Item ids are stored, not derived from
+    // the UUID; see src/server/google-reader/id.ts and
+    // src/server/wallabag/id.ts. (The legacy hash-derived wallabag_id
+    // generated column still exists in the DB, unreferenced, until a follow-up
+    // migration drops it — expand/contract.)
     greaderItemId: bigint("greader_item_id", { mode: "bigint" })
       .notNull()
       .default(sql`nextval('entries_greader_item_id_seq'::regclass)`),
@@ -847,7 +844,6 @@ export const visibleEntries = pgView("visible_entries", {
   subscriptionId: uuid("subscription_id"), // nullable - null for orphaned starred entries
   unsubscribeUrl: text("unsubscribe_url"), // extracted from email HTML body
   readChangedAt: timestamp("read_changed_at", { withTimezone: true }),
-  wallabagId: integer("wallabag_id"), // Wallabag API integer ID (generated column from entries table)
   publishedOrFetchedAt: timestamp("published_or_fetched_at", { withTimezone: true }).notNull(), // denormalized timeline sort key
   contentOriginalSanitized: text("content_original_sanitized"),
   contentCleanedSanitized: text("content_cleaned_sanitized"),
@@ -857,6 +853,7 @@ export const visibleEntries = pgView("visible_entries", {
   fullContentSanitizedVersion: smallint("full_content_sanitized_version"),
   // NOT NULL in reality (entries.greader_item_id is NOT NULL); typed non-null so
   // it flows into EntryListItem/EntryFull's non-null greaderItemId without a cast.
+  // Doubles as the Wallabag entry id (reversed by resolveWallabagEntry).
   greaderItemId: bigint("greader_item_id", { mode: "bigint" }).notNull(),
   // The entry's subscription Google Reader stream id (subscriptions.greader_stream_id
   // via the view's LEFT JOIN; migration 0097). NULL for saved/uploaded articles
