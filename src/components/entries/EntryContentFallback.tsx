@@ -86,7 +86,7 @@ export function EntryContentFallback({ entryId, onBack }: EntryContentFallbackPr
         {onBack && (
           <button
             onClick={onBack}
-            className="ui-text-sm text-muted hover:bg-surface-muted hover:text-strong mb-4 -ml-2 inline-flex min-h-[44px] items-center gap-2 rounded-md px-2 transition-colors active:bg-zinc-200 sm:mb-6 dark:active:bg-zinc-700"
+            className="ui-text-sm text-muted hover:bg-surface-muted hover:text-body mb-4 -ml-2 inline-flex min-h-[44px] items-center gap-2 rounded-md px-2 transition-colors active:bg-zinc-200 sm:mb-6 dark:active:bg-zinc-700"
           >
             <ArrowLeftIcon className="h-4 w-4" />
             <span>Back to list</span>
@@ -106,12 +106,12 @@ export function EntryContentFallback({ entryId, onBack }: EntryContentFallbackPr
                     href={url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="ui-text-xl sm:ui-text-2xl hover:text-accent text-strong block leading-tight font-bold transition-colors md:text-3xl"
+                    className="ui-text-xl sm:ui-text-2xl hover:text-accent text-body block leading-tight font-bold transition-colors md:text-3xl"
                   >
                     {title}
                   </a>
                 ) : (
-                  <h1 className="ui-text-xl sm:ui-text-2xl text-strong leading-tight font-bold md:text-3xl">
+                  <h1 className="ui-text-xl sm:ui-text-2xl text-body leading-tight font-bold md:text-3xl">
                     {title}
                   </h1>
                 )}

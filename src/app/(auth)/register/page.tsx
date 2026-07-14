@@ -130,7 +130,7 @@ function RegisterForm() {
   if (isLoadingConfig) {
     return (
       <div>
-        <h2 className="ui-text-xl text-strong mb-6 font-semibold">Create your account</h2>
+        <h2 className="ui-text-xl text-body mb-6 font-semibold">Create your account</h2>
         <div className="text-muted text-center">Loading...</div>
       </div>
     );
@@ -142,14 +142,14 @@ function RegisterForm() {
   if (effectiveProviders.length === 0) {
     return (
       <div>
-        <h2 className="ui-text-xl text-strong mb-6 font-semibold">Invite Required</h2>
+        <h2 className="ui-text-xl text-body mb-6 font-semibold">Invite Required</h2>
         <Alert variant="error" className="mb-4">
           This instance requires an invite to sign up. Please contact an administrator to request an
           invite.
         </Alert>
         <p className="ui-text-sm text-muted mt-6 text-center">
           Already have an account?{" "}
-          <Link href="/login" className="text-strong font-medium hover:underline">
+          <Link href="/login" className="text-body font-medium hover:underline">
             Sign in
           </Link>
         </p>
@@ -161,7 +161,7 @@ function RegisterForm() {
 
   return (
     <div>
-      <h2 className="ui-text-xl text-strong mb-6 font-semibold">Create your account</h2>
+      <h2 className="ui-text-xl text-body mb-6 font-semibold">Create your account</h2>
 
       {errors.form && (
         <Alert variant="error" className="mb-4">
@@ -246,7 +246,7 @@ function RegisterForm() {
 
       <p className="ui-text-sm text-muted mt-6 text-center">
         Already have an account?{" "}
-        <Link href="/login" className="text-strong font-medium hover:underline">
+        <Link href="/login" className="text-body font-medium hover:underline">
           Sign in
         </Link>
       </p>

@@ -390,7 +390,7 @@ export function SummarizationApiKeySettings() {
               value={currentModel ?? defaultModelId}
               onChange={handleModelChange}
               disabled={updatePreferences.isPending || modelsQuery.isLoading}
-              className="ui-text-sm bg-surface text-strong border-edge-input focus:border-focus focus:ring-focus block w-full rounded-md border px-3 py-2 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+              className="ui-text-sm bg-surface text-body border-edge-input focus:border-focus focus:ring-focus block w-full rounded-md border px-3 py-2 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
             >
               {modelsQuery.isLoading ? (
                 <option value={currentModel ?? defaultModelId}>Loading models...</option>
@@ -507,7 +507,7 @@ export function SummarizationApiKeySettings() {
                   value={promptInput}
                   onChange={(e) => setPromptInput(e.target.value)}
                   disabled={updatePreferences.isPending}
-                  className="ui-text-sm bg-surface text-strong border-edge-input focus:border-focus focus:ring-focus block w-full rounded-md border px-3 py-2 font-mono focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                  className="ui-text-sm bg-surface text-body border-edge-input focus:border-focus focus:ring-focus block w-full rounded-md border px-3 py-2 font-mono focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                 />
                 <p className="ui-text-xs text-muted">
                   Available template variables: <InlineCode>{"{{content}}"}</InlineCode>,{" "}

@@ -174,7 +174,7 @@ function EditSubscriptionForm({
           {tags.length === 0 ? (
             <p className="ui-text-sm text-muted">
               No tags created yet. Create tags in{" "}
-              <ClientLink href="/settings" className="text-strong underline">
+              <ClientLink href="/settings" className="text-body underline">
                 Settings
               </ClientLink>
               .

@@ -67,7 +67,7 @@ export function DiscordBotSettings() {
     >
       {/* Invite Button */}
       <div className="mt-6">
-        <h3 className="ui-text-sm text-strong font-medium">Add Bot to Server</h3>
+        <h3 className="ui-text-sm text-body font-medium">Add Bot to Server</h3>
         <p className="ui-text-sm text-muted mt-1">
           Invite the Lion Reader bot to your Discord server to enable saving articles.
         </p>
@@ -94,14 +94,14 @@ export function DiscordBotSettings() {
 
       {/* Usage Instructions */}
       <CardSection>
-        <h3 className="ui-text-sm text-strong font-medium">How to Use</h3>
+        <h3 className="ui-text-sm text-body font-medium">How to Use</h3>
         <ol className="ui-text-sm text-muted mt-2 list-inside list-decimal space-y-2">
           <li>
-            <strong className="text-emphasis">Link your account</strong> - Sign in to Lion Reader
-            with Discord, or use <InlineCode>/link</InlineCode> with an API token
+            <strong className="text-body">Link your account</strong> - Sign in to Lion Reader with
+            Discord, or use <InlineCode>/link</InlineCode> with an API token
           </li>
           <li>
-            <strong className="text-emphasis">React to messages</strong> -{" "}
+            <strong className="text-body">React to messages</strong> -{" "}
             {emoji ? (
               <>
                 React with{" "}
@@ -118,7 +118,7 @@ export function DiscordBotSettings() {
             . You can also send or forward a message with a link directly to the bot in a DM.
           </li>
           <li>
-            <strong className="text-emphasis">Look for the reaction</strong> -{" "}
+            <strong className="text-body">Look for the reaction</strong> -{" "}
             {successEmoji ? (
               <>
                 The bot will react with{" "}
@@ -146,7 +146,7 @@ export function DiscordBotSettings() {
             )}
           </li>
           <li>
-            <strong className="text-emphasis">Check your Saved</strong> - The article will appear in
+            <strong className="text-body">Check your Saved</strong> - The article will appear in
             your Saved section
           </li>
         </ol>
@@ -154,18 +154,18 @@ export function DiscordBotSettings() {
 
       {/* Bot Commands */}
       <NoteBox className="mt-6">
-        <h3 className="ui-text-sm text-strong font-medium">Bot Commands</h3>
+        <h3 className="ui-text-sm text-body font-medium">Bot Commands</h3>
         <dl className="ui-text-sm text-muted mt-2 space-y-2">
           <div>
-            <dt className="text-emphasis inline font-mono">/status</dt>
+            <dt className="text-body inline font-mono">/status</dt>
             <dd className="ml-2 inline">- Check if your Discord account is linked</dd>
           </div>
           <div>
-            <dt className="text-emphasis inline font-mono">/link [token]</dt>
+            <dt className="text-body inline font-mono">/link [token]</dt>
             <dd className="ml-2 inline">- Link your account using an API token</dd>
           </div>
           <div>
-            <dt className="text-emphasis inline font-mono">/unlink</dt>
+            <dt className="text-body inline font-mono">/unlink</dt>
             <dd className="ml-2 inline">- Remove your linked API token</dd>
           </div>
         </dl>

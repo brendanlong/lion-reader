@@ -111,9 +111,7 @@
      ================================= */
 
   /* Text tones, strongest to faintest */
-  --text-strong: #18181b; /* zinc-900 - headings, primary values */
-  --text-emphasis: #18181b; /* zinc-900 - <strong> inside muted prose (dimmer than strong in dark) */
-  --text-body: #3f3f46; /* zinc-700 - body copy, labels */
+  --text-body: #3f3f46; /* zinc-700 - headings, primary values, body copy, labels */
   --text-muted: #52525b; /* zinc-600 - descriptions, secondary text, metadata, hints */
   --text-faint: #a1a1aa; /* zinc-400 - de-emphasized notes, placeholders */
 
@@ -195,8 +193,6 @@
   --color-warning-banner-foreground: var(--warning-banner-foreground);
   --color-star: var(--star);
   --color-star-hover: var(--star-hover);
-  --color-strong: var(--text-strong);
-  --color-emphasis: var(--text-emphasis);
   --color-body: var(--text-body);
   --color-muted: var(--text-muted);
   --color-faint: var(--text-faint);
@@ -279,9 +275,7 @@
   --star-hover: #fcd34d; /* amber-300 */
 
   /* Dark mode: neutral semantic colors */
-  --text-strong: #fafafa; /* zinc-50 */
-  --text-emphasis: #e4e4e7; /* zinc-200 - dimmer than strong so bold prose doesn't glare */
-  --text-body: #d4d4d8; /* zinc-300 */
+  --text-body: #d4d4d8; /* zinc-300 - headings, primary values, body copy, labels */
   --text-muted: #a1a1aa; /* zinc-400 */
   --text-faint: #71717a; /* zinc-500 */
   --canvas: #09090b; /* zinc-950 */
@@ -379,10 +373,11 @@
   --star: #b45309; /* amber-700 - a filled star grays to a dark-mid tone, distinct from an unstarred outline */
   --star-hover: #92400e; /* amber-800 */
 
-  /* Text tones shifted darker than light mode: e-ink can't render faint grays */
-  --text-strong: #000000;
-  --text-emphasis: #000000;
-  --text-body: #18181b; /* zinc-900 */
+  /* Text tones shifted darker than light mode: e-ink can't render faint grays.
+     Titles/primary values fold into --text-body here (issue #1227), and body
+     text is pure black — e-ink renders true black best and the theme wants the
+     extra contrast. */
+  --text-body: #000000; /* headings, primary values, body copy, labels */
   --text-muted: #3f3f46; /* zinc-700 */
   --text-faint: #71717a; /* zinc-500 */
 
@@ -398,17 +393,17 @@
 /* Darken Tailwind Typography's prose palette to match the e-paper text tones */
 .epaper .prose {
   --tw-prose-body: var(--text-body);
-  --tw-prose-headings: var(--text-strong);
+  --tw-prose-headings: var(--text-body);
   --tw-prose-lead: var(--text-body);
-  --tw-prose-links: var(--text-strong);
-  --tw-prose-bold: var(--text-strong);
+  --tw-prose-links: var(--text-body);
+  --tw-prose-bold: var(--text-body);
   --tw-prose-counters: var(--text-muted);
   --tw-prose-bullets: var(--text-muted);
   --tw-prose-hr: var(--edge);
   --tw-prose-quotes: var(--text-body);
   --tw-prose-quote-borders: var(--edge);
   --tw-prose-captions: var(--text-muted);
-  --tw-prose-code: var(--text-strong);
+  --tw-prose-code: var(--text-body);
   --tw-prose-th-borders: var(--edge);
   --tw-prose-td-borders: var(--edge);
 }
@@ -476,9 +471,7 @@
     --star-hover: #fcd34d; /* amber-300 */
 
     /* Dark mode: neutral semantic colors */
-    --text-strong: #fafafa; /* zinc-50 */
-    --text-emphasis: #e4e4e7; /* zinc-200 - dimmer than strong so bold prose doesn't glare */
-    --text-body: #d4d4d8; /* zinc-300 */
+    --text-body: #d4d4d8; /* zinc-300 - headings, primary values, body copy, labels */
     --text-muted: #a1a1aa; /* zinc-400 */
     --text-faint: #71717a; /* zinc-500 */
     --canvas: #09090b; /* zinc-950 */

@@ -28,10 +28,10 @@ export function LegalPage({ title, lastUpdated, children }: LegalPageProps) {
     <div className="bg-canvas min-h-screen px-4 py-12">
       <main className="mx-auto max-w-3xl">
         <div className="mb-8">
-          <Link href="/" className="ui-text-sm text-muted hover:text-strong">
+          <Link href="/" className="ui-text-sm text-muted hover:text-body">
             &larr; Back to Lion Reader
           </Link>
-          <h1 className="text-strong mt-4 text-3xl font-bold tracking-tight">{title}</h1>
+          <h1 className="text-body mt-4 text-3xl font-bold tracking-tight">{title}</h1>
           <p className="ui-text-sm text-muted mt-2">Last updated: {lastUpdated}</p>
         </div>
 
@@ -52,7 +52,7 @@ export interface LegalSectionProps {
 export function LegalSection({ title, children }: LegalSectionProps) {
   return (
     <section className="mb-8">
-      <h2 className="ui-text-xl text-strong font-semibold">{title}</h2>
+      <h2 className="ui-text-xl text-body font-semibold">{title}</h2>
       {children}
     </section>
   );
@@ -69,7 +69,7 @@ export interface LegalSubsectionProps {
 export function LegalSubsection({ title, children }: LegalSubsectionProps) {
   return (
     <div>
-      <h3 className="text-emphasis font-medium">{title}</h3>
+      <h3 className="text-body font-medium">{title}</h3>
       {children}
     </div>
   );

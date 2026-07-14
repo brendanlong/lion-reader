@@ -159,7 +159,7 @@ function FeedRow({ feed, onRetry, isRetrying }: FeedRowProps) {
         <div className="min-w-0 flex-1">
           {/* Title and badges */}
           <div className="flex flex-wrap items-center gap-2">
-            <p className="ui-text-sm text-strong font-medium">{displayTitle}</p>
+            <p className="ui-text-sm text-body font-medium">{displayTitle}</p>
             <FeedStatusBadge feed={feed} />
             {feed.websubActive && <WebSubBadge />}
           </div>
@@ -241,7 +241,7 @@ function EmptyState({ hasFilters }: { hasFilters: boolean }) {
       <div className="bg-surface-muted mx-auto flex h-12 w-12 items-center justify-center rounded-full">
         <RssIcon className="text-faint h-6 w-6" />
       </div>
-      <h3 className="ui-text-sm text-strong mt-4 font-medium">
+      <h3 className="ui-text-sm text-body mt-4 font-medium">
         {hasFilters ? "No matching feeds" : "No feeds"}
       </h3>
       <p className="ui-text-sm text-muted mt-1">
@@ -364,7 +364,7 @@ export default function AdminFeedsContent() {
     <div>
       {/* Header */}
       <div className="mb-6">
-        <h2 className="ui-text-lg text-strong font-semibold">Feed Health</h2>
+        <h2 className="ui-text-lg text-body font-semibold">Feed Health</h2>
       </div>
 
       {/* Filter Controls */}

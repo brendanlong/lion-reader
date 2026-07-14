@@ -124,7 +124,7 @@ export default function ApiTokensSettingsContent() {
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="ui-text-lg text-strong font-semibold">API Tokens</h2>
+        <h2 className="ui-text-lg text-body font-semibold">API Tokens</h2>
         {!showCreateForm && (
           <Button onClick={() => setShowCreateForm(true)} size="sm">
             Create New Token
@@ -171,7 +171,7 @@ export default function ApiTokensSettingsContent() {
       {/* Create Token Form */}
       {showCreateForm && (
         <Card className="mb-6">
-          <h3 className="text-strong mb-4 font-medium">Create New Token</h3>
+          <h3 className="text-body mb-4 font-medium">Create New Token</h3>
 
           <div className="space-y-4">
             {/* Token Name */}
@@ -204,7 +204,7 @@ export default function ApiTokensSettingsContent() {
                       className="text-accent focus:ring-focus border-edge-input mt-1 h-4 w-4 rounded dark:bg-zinc-800"
                     />
                     <div className="flex-1">
-                      <p className="text-strong font-medium">{label}</p>
+                      <p className="text-body font-medium">{label}</p>
                       <p className="ui-text-xs text-muted">{description}</p>
                     </div>
                   </label>
@@ -345,7 +345,7 @@ function ActiveTokenCard({ token, onRevoke, isRevoking }: ActiveTokenCardProps) 
             </div>
 
             <div className="min-w-0 flex-1">
-              <p className="text-strong font-medium">{token.name || "Unnamed Token"}</p>
+              <p className="text-body font-medium">{token.name || "Unnamed Token"}</p>
               <div className="mt-1 flex flex-wrap gap-1">
                 {token.scopes.map((scope) => (
                   <span

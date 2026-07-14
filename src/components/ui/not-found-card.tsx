@@ -21,7 +21,7 @@ export function NotFoundCard({ title, message }: NotFoundCardProps) {
         <div className="bg-danger-subtle mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full">
           <AlertIcon className="text-danger h-6 w-6" />
         </div>
-        <h2 className="ui-text-lg text-strong mb-2 font-medium">{title}</h2>
+        <h2 className="ui-text-lg text-body mb-2 font-medium">{title}</h2>
         <p className="ui-text-sm text-muted">{message}</p>
       </div>
     </div>

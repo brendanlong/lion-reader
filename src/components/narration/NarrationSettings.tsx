@@ -182,7 +182,7 @@ export function NarrationSettings() {
         <div className="flex items-start gap-3">
           <AlertIcon className="text-faint mt-0.5 h-5 w-5 flex-shrink-0" />
           <div>
-            <p className="ui-text-sm text-strong font-medium">Narration Unavailable</p>
+            <p className="ui-text-sm text-body font-medium">Narration Unavailable</p>
             <p className="ui-text-sm text-muted mt-1">{supportInfo.reason}</p>
             <p className="ui-text-xs text-faint mt-2">
               Try using Chrome, Safari, or Edge for the best narration experience.
@@ -198,7 +198,7 @@ export function NarrationSettings() {
       {/* Enable/Disable Toggle */}
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="ui-text-sm text-strong font-medium">Enable narration</h3>
+          <h3 className="ui-text-sm text-body font-medium">Enable narration</h3>
           <p className="ui-text-sm text-muted mt-1">Listen to articles using text-to-speech.</p>
         </div>
         <button
@@ -224,7 +224,7 @@ export function NarrationSettings() {
         <CardSection className="space-y-6">
           {/* Voice Provider Selection */}
           <div>
-            <h3 className="ui-text-sm text-strong mb-3 font-medium">Voice Provider</h3>
+            <h3 className="ui-text-sm text-body mb-3 font-medium">Voice Provider</h3>
             <div className="space-y-3">
               {/* Browser Voices Option */}
               <label
@@ -255,7 +255,7 @@ export function NarrationSettings() {
                     )}
                   </div>
                   <div>
-                    <span className="ui-text-sm text-strong block font-medium">Browser Voices</span>
+                    <span className="ui-text-sm text-body block font-medium">Browser Voices</span>
                     <span className="ui-text-xs text-muted mt-0.5 block">
                       Uses your browser&apos;s built-in text-to-speech
                     </span>
@@ -292,9 +292,7 @@ export function NarrationSettings() {
                     )}
                   </div>
                   <div>
-                    <span className="ui-text-sm text-strong block font-medium">
-                      Enhanced Voices
-                    </span>
+                    <span className="ui-text-sm text-body block font-medium">Enhanced Voices</span>
                     <span className="ui-text-xs text-muted mt-0.5 block">
                       Higher quality voices (requires download)
                     </span>
@@ -319,7 +317,7 @@ export function NarrationSettings() {
                   value={settings.voiceId || ""}
                   onChange={handleVoiceChange}
                   disabled={isLoadingVoices}
-                  className="ui-text-sm bg-surface text-strong border-edge-input focus:border-focus focus:ring-focus block flex-1 rounded-md border px-3 py-2 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                  className="ui-text-sm bg-surface text-body border-edge-input focus:border-focus focus:ring-focus block flex-1 rounded-md border px-3 py-2 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {isLoadingVoices ? (
                     <option value="">Loading voices...</option>
@@ -421,7 +419,7 @@ export function NarrationSettings() {
           {/* Processing Settings - only shown if AI text processing is available */}
           {isAiTextProcessingAvailable && (
             <div className="space-y-4">
-              <h3 className="ui-text-sm text-strong font-medium">Processing</h3>
+              <h3 className="ui-text-sm text-body font-medium">Processing</h3>
 
               {/* LLM Normalization Toggle */}
               <div className="flex items-center justify-between">
@@ -458,7 +456,7 @@ export function NarrationSettings() {
 
           {/* Highlighting Settings */}
           <div className="space-y-4">
-            <h3 className="ui-text-sm text-strong font-medium">Highlighting</h3>
+            <h3 className="ui-text-sm text-body font-medium">Highlighting</h3>
 
             {/* Highlight Current Paragraph Toggle */}
             <div className="flex items-center justify-between">

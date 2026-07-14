@@ -29,7 +29,7 @@ export function ExtensionSaveClient({ status, error, url, canRetry }: Props) {
       <div className="bg-canvas flex min-h-screen items-center justify-center">
         <div className="max-w-md p-8 text-center">
           <div className="text-danger mb-4 text-5xl">!</div>
-          <h1 className="ui-text-xl text-strong mb-2 font-semibold">Failed to Save</h1>
+          <h1 className="ui-text-xl text-body mb-2 font-semibold">Failed to Save</h1>
           <p className="text-muted mb-4">
             {error || "An error occurred while saving the article."}
           </p>

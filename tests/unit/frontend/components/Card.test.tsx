@@ -97,7 +97,7 @@ describe("CardTitle", () => {
   it("applies title styles", () => {
     render(<CardTitle>Styled Title</CardTitle>);
     const title = screen.getByRole("heading");
-    expect(title).toHaveClass("font-semibold", "text-strong");
+    expect(title).toHaveClass("font-semibold", "text-body");
   });
 
   it("applies custom className", () => {

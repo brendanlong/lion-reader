@@ -183,7 +183,7 @@ export interface DialogTitleProps {
 
 export function DialogTitle({ children, id, className = "" }: DialogTitleProps) {
   return (
-    <h2 id={id} className={`ui-text-lg text-strong font-semibold ${className}`}>
+    <h2 id={id} className={`ui-text-lg text-body font-semibold ${className}`}>
       {children}
     </h2>
   );
