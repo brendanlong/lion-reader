@@ -227,6 +227,15 @@ CREATE TABLE public.entries (
     CONSTRAINT entries_spam_only_email CHECK (((type = 'email'::public.feed_type) OR ((spam_score IS NULL) AND (is_spam = false)))),
     CONSTRAINT entries_unsubscribe_only_email CHECK (((type = 'email'::public.feed_type) OR ((list_unsubscribe_mailto IS NULL) AND (list_unsubscribe_https IS NULL) AND (list_unsubscribe_post IS NULL))))
 );
+ALTER TABLE ONLY public.entries ALTER COLUMN content_original SET COMPRESSION lz4;
+ALTER TABLE ONLY public.entries ALTER COLUMN summary SET COMPRESSION lz4;
+ALTER TABLE ONLY public.entries ALTER COLUMN content_cleaned SET COMPRESSION lz4;
+ALTER TABLE ONLY public.entries ALTER COLUMN full_content_original SET COMPRESSION lz4;
+ALTER TABLE ONLY public.entries ALTER COLUMN full_content_cleaned SET COMPRESSION lz4;
+ALTER TABLE ONLY public.entries ALTER COLUMN content_original_sanitized SET COMPRESSION lz4;
+ALTER TABLE ONLY public.entries ALTER COLUMN content_cleaned_sanitized SET COMPRESSION lz4;
+ALTER TABLE ONLY public.entries ALTER COLUMN full_content_original_sanitized SET COMPRESSION lz4;
+ALTER TABLE ONLY public.entries ALTER COLUMN full_content_cleaned_sanitized SET COMPRESSION lz4;
 
 CREATE SEQUENCE public.entries_greader_item_id_seq
     AS bigint
@@ -260,6 +269,7 @@ CREATE TABLE public.entry_summaries (
     max_words integer,
     prompt_hash text
 );
+ALTER TABLE ONLY public.entry_summaries ALTER COLUMN summary_text SET COMPRESSION lz4;
 
 CREATE TABLE public.feeds (
     id uuid NOT NULL,
@@ -332,6 +342,7 @@ CREATE TABLE public.narration_content (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     paragraph_map jsonb
 );
+ALTER TABLE ONLY public.narration_content ALTER COLUMN content_narration SET COMPRESSION lz4;
 
 CREATE TABLE public.oauth_access_tokens (
     id uuid NOT NULL,
