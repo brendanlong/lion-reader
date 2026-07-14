@@ -31,12 +31,8 @@ import { trpc } from "@/lib/trpc/client";
 import { ArticleNarrator, type NarrationState } from "@/lib/narration/ArticleNarrator";
 import { useNarrationSettings } from "@/lib/narration/settings";
 import { findVoiceByUri, waitForVoices } from "@/lib/narration/voices";
-import {
-  setupMediaSession,
-  clearMediaSession,
-  createMediaSessionStateHandler,
-} from "@/lib/narration/media-session";
 import { isNarrationSupported } from "@/lib/narration/feature-detection";
+import { useMediaSession } from "./useMediaSession";
 import { trackNarrationPlaybackStarted } from "@/lib/telemetry";
 import { getPiperTTSProvider } from "@/lib/narration/piper-tts-provider";
 import { isEnhancedVoice } from "@/lib/narration/enhanced-voices";
@@ -91,7 +87,6 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
 
   // Refs
   const narratorRef = useRef<ArticleNarrator | null>(null);
-  const mediaSessionUnsubscribeRef = useRef<(() => void) | null>(null);
 
   // Streaming audio player for Piper TTS (sentence-level buffering)
   const streamingPlayerRef = useRef<StreamingAudioPlayer | null>(null);
@@ -137,31 +132,6 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
       narratorRef.current = null;
     };
   }, [isSupported, usePiper]);
-
-  // Set up Media Session when we have narration text (browser voices only for now)
-  useEffect(() => {
-    if (!isSupported || !narrationText || !narratorRef.current || usePiper) return;
-
-    // Set up Media Session
-    setupMediaSession({
-      articleTitle: title,
-      feedTitle: feedTitle,
-      narrator: narratorRef.current,
-      artwork,
-    });
-
-    // Subscribe to state changes for Media Session updates
-    const stateHandler = createMediaSessionStateHandler();
-    mediaSessionUnsubscribeRef.current = narratorRef.current.onStateChange(stateHandler);
-
-    return () => {
-      clearMediaSession();
-      if (mediaSessionUnsubscribeRef.current) {
-        mediaSessionUnsubscribeRef.current();
-        mediaSessionUnsubscribeRef.current = null;
-      }
-    };
-  }, [isSupported, narrationText, title, feedTitle, artwork, usePiper]);
 
   // Apply user settings when they change (browser voices only)
   useEffect(() => {
@@ -556,9 +526,27 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
         streamingPlayerRef.current.stop();
         streamingPlayerRef.current.clearCache();
       }
-      clearMediaSession();
     };
   }, []);
+
+  // Expose OS-level media controls (lock screen, notification, Bluetooth/media
+  // keys) while narration is active. Works for both browser voices and Piper by
+  // driving the provider-agnostic play/pause/skip callbacks above. A session
+  // exists once narration text has been generated for this article.
+  useMediaSession({
+    active: isSupported && narrationText !== null,
+    title,
+    feedTitle,
+    artwork,
+    status: state.status,
+    controls: {
+      play,
+      pause,
+      stop,
+      previousTrack: skipBackward,
+      nextTrack: skipForward,
+    },
+  });
 
   return {
     state,
