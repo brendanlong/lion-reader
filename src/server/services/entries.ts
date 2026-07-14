@@ -58,7 +58,14 @@ export interface ListEntriesParams {
   starredOnly?: boolean;
   unstarredOnly?: boolean;
   sortOrder?: "newest" | "oldest";
-  sortBy?: "published" | "readChanged"; // Which column to sort by (default: published)
+  // Which column to sort by (default: published). "published" = publish/fetch
+  // time (index-backed); "readChanged" = read-state-change time (the recently-read
+  // view, which also excludes never-read entries); "archived" = read-state-change
+  // time WITHOUT the recently-read exclusion (Wallabag sort=archived). All three
+  // are served by an existing index; there is deliberately no "updated"
+  // (GREATEST(entry, user_entry)) sort — it can't be index-served (see #1070), so
+  // the Wallabag route approximates sort=updated as the default published sort.
+  sortBy?: "published" | "readChanged" | "archived";
   cursor?: string;
   offset?: number; // Skip this many rows (for page/offset-based compat APIs like Wallabag). Mutually exclusive with cursor.
   limit?: number;
@@ -626,25 +633,26 @@ export async function listEntries(
     conditions.push(sql`${visibleEntries.updatedAt} >= ${params.updatedAfter}`);
   }
 
-  // Recently Read: exclude entries that were never explicitly read-state-changed
+  // Recently Read: exclude entries that were never explicitly read-state-changed.
+  // This exclusion is specific to that view (sortBy=readChanged); the Wallabag
+  // "archived" sort orders by the same column but keeps unarchived entries.
   if (params.sortBy === "readChanged") {
     conditions.push(isNotNull(visibleEntries.readChangedAt));
   }
 
-  // Sort column - readChanged sorts by when read state was last changed.
-  // The default "published" sort uses the denormalized user_entries sort key so the
-  // planner can serve filter + sort from idx_user_entries_published_or_fetched.
+  // Sort column (all choices are served by an existing index):
+  //  - "published" (default) uses the denormalized user_entries sort key so the
+  //    planner can serve filter + sort from idx_user_entries_published_or_fetched.
+  //  - "readChanged"/"archived" sort by when read state was last changed
+  //    (idx_user_entries_read_changed_at).
   const sortColumn =
-    params.sortBy === "readChanged"
+    params.sortBy === "readChanged" || params.sortBy === "archived"
       ? visibleEntries.readChangedAt
       : visibleEntries.publishedOrFetchedAt;
 
   // Raw ISO string version of sortColumn with microsecond precision.
   // Used for cursor encoding to avoid JavaScript Date truncation.
-  const sortTsRawExpr =
-    params.sortBy === "readChanged"
-      ? sql<string>`to_char(${visibleEntries.readChangedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`
-      : sql<string>`to_char(${visibleEntries.publishedOrFetchedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
+  const sortTsRawExpr = sql<string>`to_char(${sortColumn} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
 
   // Cursor condition
   // Pass timestamp string directly to Postgres (::timestamptz) to preserve

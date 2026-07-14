@@ -7,12 +7,17 @@
  * Query parameters for GET:
  * - archive: 0|1 - filter by archived (read) state
  * - starred: 0|1 - filter by starred state
- * - sort: created|updated|archived - sort field (default: created)
+ * - sort: created|updated|archived - sort field (default: created). `created` and
+ *   `archived` are index-backed; `updated` (last-modified) would require an
+ *   un-indexed GREATEST sort (see #1070) so it is approximated as `created`.
  * - order: asc|desc - sort order (default: desc)
  * - page: number - page number (default: 1)
  * - perPage: number - items per page (default: 30, max: 100)
- * - tags: string - comma-separated tag names
+ * - tags: string - comma-separated tag names (unsupported: saved articles carry
+ *   no tags, so any tag filter returns an empty result rather than being ignored)
  * - since: number - unix timestamp, return entries modified since
+ * - domain_name: string - filter by domain (unsupported: matching it would mean a
+ *   per-row regex over the URL with no index, so any domain filter returns empty)
  * - detail: metadata|full - level of detail (default: full)
  *
  * POST body:
@@ -49,6 +54,18 @@ export async function GET(request: Request): Promise<Response> {
   if (auth instanceof Response) return auth;
   const url = new URL(request.url);
   const params = parseEntryListParams(url);
+  const baseUrl = `${url.origin}/api/wallabag/api/entries`;
+
+  // Two filters we deliberately don't support, each answered with an empty result
+  // rather than a silently-unfiltered list (issue #1062):
+  //  - `tags`: Lion Reader tags are per-subscription, and saved articles (the
+  //    Wallabag surface) have no subscription, so nothing can carry a tag.
+  //  - `domain_name`: matching a domain means a per-row regex over the entry URL
+  //    with no index — a potential per-user table scan (DB CPU is expensive), and
+  //    not worth it for a rarely-used compat knob (issue #1070 has the analysis).
+  if (params.tags.length > 0 || params.domainName) {
+    return jsonResponse(createPaginatedResponse([], params.page, params.perPage, 0, baseUrl));
+  }
 
   // Scope to saved articles only — the Wallabag API is a read-it-later interface.
   // The read/starred/since filters are shared by the page query and the count so
@@ -67,6 +84,14 @@ export async function GET(request: Request): Promise<Response> {
     updatedAfter: params.since ? new Date(params.since * 1000) : undefined,
   };
 
+  // Wallabag `sort` field → listEntries sort column. `created` (default) is our
+  // publish/fetch-time sort; `archived` sorts by when read state last changed
+  // (our closest analogue to Wallabag's archived_at). `updated` (last-modified)
+  // would need an un-indexed GREATEST(entry, user_entry) sort with no LIMIT
+  // pushdown (issue #1070), so we approximate it as the default `created` sort
+  // rather than risk a per-user scan.
+  const sortBy = params.sort === "archived" ? "archived" : "published";
+
   // Serve the requested page with a single indexed query via LIMIT/OFFSET, and
   // fetch the total count in parallel (Wallabag needs it for page metadata).
   const [result, total] = await Promise.all([
@@ -76,6 +101,7 @@ export async function GET(request: Request): Promise<Response> {
       limit: params.perPage,
       offset: (params.page - 1) * params.perPage,
       sortOrder: params.order === "asc" ? "oldest" : "newest",
+      sortBy,
     }),
     entriesService.countTotalEntries(db, auth.userId, filter),
   ]);
@@ -97,7 +123,6 @@ export async function GET(request: Request): Promise<Response> {
     formattedItems = result.items.map(formatEntryListItem);
   }
 
-  const baseUrl = `${url.origin}/api/wallabag/api/entries`;
   return jsonResponse(
     createPaginatedResponse(formattedItems, params.page, params.perPage, total, baseUrl)
   );

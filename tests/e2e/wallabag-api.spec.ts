@@ -341,6 +341,55 @@ test.describe("Wallabag API happy path", () => {
       await b.close();
     }
   });
+
+  test("tags/domain_name unsupported filters return empty; sort is accepted (#1062)", async ({
+    request,
+  }) => {
+    const { access_token } = await getTokens(request);
+    const auth = { Authorization: `Bearer ${access_token}` };
+
+    const { url, close } = await startArticleServer();
+    const domain = new URL(url).hostname; // 127.0.0.1
+    let id: number | undefined;
+    try {
+      id = (
+        await (
+          await request.post("/api/wallabag/api/entries", { headers: auth, form: { url } })
+        ).json()
+      ).id;
+
+      // tags and domain_name are unsupported filters: rather than silently ignore
+      // them (returning an unfiltered list) or run an un-indexed per-user scan, we
+      // return an empty result.
+      for (const query of [`tags=foo`, `domain_name=${domain}`]) {
+        const res = await request.get(`/api/wallabag/api/entries?${query}&detail=metadata`, {
+          headers: auth,
+        });
+        expect(res.status(), query).toBe(200);
+        const body = await res.json();
+        expect(body._embedded.items, query).toHaveLength(0);
+        expect(body.total, query).toBe(0);
+      }
+
+      // All three sort fields are accepted (not 500) and return the article.
+      // `updated` is approximated as `created` (no un-indexed GREATEST sort), but
+      // still yields the article — the client just gets it in created order.
+      for (const sort of ["updated", "archived", "created"]) {
+        const sorted = await request.get(
+          `/api/wallabag/api/entries?sort=${sort}&detail=metadata&perPage=100`,
+          { headers: auth }
+        );
+        expect(sorted.status(), `sort=${sort}`).toBe(200);
+        expect(
+          (await sorted.json())._embedded.items.map((e: { id: number }) => e.id),
+          `sort=${sort}`
+        ).toContain(id);
+      }
+    } finally {
+      if (id) await request.delete(`/api/wallabag/api/entries/${id}`, { headers: auth });
+      await close();
+    }
+  });
 });
 
 /**
