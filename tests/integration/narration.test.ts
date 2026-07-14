@@ -144,8 +144,16 @@ function createAuthContext(userId: string): Context {
 }
 
 const createdUserIds: string[] = [];
+// narration_content is keyed by a content_hash derived from fixed test content,
+// not the per-test user, so it isn't cleaned up by deleting users. Track the
+// hashes we insert and delete them, or a second run against the same DB collides
+// on the content_hash unique constraint (issue #1210).
+const createdNarrationHashes: string[] = [];
 
 afterAll(async () => {
+  for (const contentHash of createdNarrationHashes) {
+    await db.delete(narrationContent).where(eq(narrationContent.contentHash, contentHash));
+  }
   for (const userId of createdUserIds) {
     await db.delete(users).where(eq(users.id, userId));
   }
@@ -172,6 +180,7 @@ describe("narration.generate cached read path", () => {
       { n: 0, o: 0 },
       { n: 1, o: 2 },
     ];
+    createdNarrationHashes.push(contentHash);
     await db.insert(narrationContent).values({
       id: generateUuidv7(),
       contentHash,
@@ -200,6 +209,7 @@ describe("narration.generate cached read path", () => {
 
     // Legacy cached row: narration text present, paragraph_map NULL.
     const cachedNarration = "Intro.\n\nLine one.\n\nLine two.";
+    createdNarrationHashes.push(contentHash);
     await db.insert(narrationContent).values({
       id: generateUuidv7(),
       contentHash,
@@ -237,10 +247,14 @@ describe("narration.generate narrates the displayed variant", () => {
   // (plain-text) path — its narration text is exactly the selected variant's
   // text, which lets us assert *which* variant was narrated.
   it("narrates cleaned content by default and original content when showOriginal is set", async () => {
-    const entryId = await createTestFeedAndEntry({
-      contentCleaned: "<p>Cleaned body paragraph.</p>",
-      contentOriginal: "<p>Original body paragraph.</p>",
-    });
+    const contentCleaned = "<p>Cleaned body paragraph.</p>";
+    const contentOriginal = "<p>Original body paragraph.</p>";
+    // generate() inserts a placeholder narration_content row on a cache miss
+    // (keyed by the hash of the narrated content), so both variants must be
+    // cleaned up too — the check-then-insert doesn't collide on re-run, but we
+    // still don't want to leave rows behind (issue #1210).
+    createdNarrationHashes.push(narrationHash(contentCleaned), narrationHash(contentOriginal));
+    const entryId = await createTestFeedAndEntry({ contentCleaned, contentOriginal });
     await createUserEntry(userId, entryId);
     const caller = createCaller(createAuthContext(userId));
 
