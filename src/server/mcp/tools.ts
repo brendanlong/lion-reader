@@ -76,6 +76,22 @@ export function toMcpError(error: unknown): unknown {
 }
 
 /**
+ * Strips the Google Reader-internal `greaderItemId` from an entry before it
+ * reaches an MCP response. The field is a bigint, which the transports'
+ * `JSON.stringify` can't serialize (it throws), and it's meaningless to MCP
+ * clients — only the Google Reader compat layer consumes it. The tRPC/REST
+ * surfaces strip it via their Zod output schemas; MCP serializes service
+ * results directly, so it must be dropped here.
+ */
+function stripGreaderItemId<T extends { greaderItemId: bigint }>(
+  entry: T
+): Omit<T, "greaderItemId"> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { greaderItemId, ...rest } = entry;
+  return rest;
+}
+
+/**
  * Derives the advertised MCP inputSchema from the Zod schema so the schema
  * clients see is exactly the one the handler enforces.
  */
@@ -234,11 +250,12 @@ function buildTools(): Tool[] {
       inputSchema: toInputSchema(listEntriesArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(listEntriesArgs, args);
-        return entriesService.listEntries(db, {
+        const result = await entriesService.listEntries(db, {
           userId,
           ...params,
           showSpam: false, // Default to hiding spam for MCP
         });
+        return { ...result, items: result.items.map(stripGreaderItemId) };
       },
     },
 
@@ -248,7 +265,8 @@ function buildTools(): Tool[] {
       inputSchema: toInputSchema(getEntryArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(getEntryArgs, args);
-        return entriesService.getEntry(db, userId, params.entryId);
+        const entry = await entriesService.getEntry(db, userId, params.entryId);
+        return entry ? stripGreaderItemId(entry) : entry;
       },
     },
 

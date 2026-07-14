@@ -26,7 +26,7 @@ import {
   textResponse,
   errorResponse,
 } from "@/server/google-reader/parse";
-import { batchInt64ToUuid } from "@/server/google-reader/id";
+import { greaderItemIdsToUuids } from "@/server/google-reader/id";
 import { isState } from "@/server/google-reader/streams";
 import * as entriesService from "@/server/services/entries";
 import { db } from "@/server/db";
@@ -53,8 +53,8 @@ export async function POST(request: Request): Promise<Response> {
   const addTags = params.getAll("a");
   const removeTags = params.getAll("r");
 
-  // Resolve int64 IDs to UUIDs
-  const uuidMap = await batchInt64ToUuid(db, itemIds);
+  // Resolve item IDs to UUIDs
+  const uuidMap = await greaderItemIdsToUuids(db, itemIds);
   const entryUuids = Array.from(uuidMap.values());
 
   if (entryUuids.length === 0) {
