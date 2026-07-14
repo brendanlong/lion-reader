@@ -217,7 +217,7 @@ export const EntryListItem = memo(function EntryListItem({
           <div className="flex items-start justify-between gap-2">
             <h3
               className={`ui-text-sm line-clamp-2 ${
-                read ? "text-muted font-normal" : "text-strong font-semibold"
+                read ? "text-muted font-normal" : "text-body font-semibold"
               }`}
             >
               {displayTitle}

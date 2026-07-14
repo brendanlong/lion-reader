@@ -55,7 +55,7 @@ function DefaultErrorFallback({
   return (
     <div className="flex flex-col items-center justify-center py-12 text-center" role="alert">
       <AlertIcon className="text-danger mb-4 h-12 w-12" />
-      <h2 className="ui-text-lg text-strong mb-2 font-semibold">Something went wrong</h2>
+      <h2 className="ui-text-lg text-body mb-2 font-semibold">Something went wrong</h2>
       <p className="ui-text-sm text-muted mb-4 max-w-sm">
         {message ?? "An unexpected error occurred. Please try again."}
       </p>

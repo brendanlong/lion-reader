@@ -15,7 +15,7 @@ export function AboutSection() {
           href="https://www.brendanlong.com"
           target="_blank"
           rel="noopener noreferrer"
-          className="text-strong hover:underline"
+          className="text-body hover:underline"
         >
           Brendan Long
         </a>{" "}
@@ -24,7 +24,7 @@ export function AboutSection() {
           href="https://www.brendanlong.com/claude-wrote-me-a-400-commit-rss-reader-app.html"
           target="_blank"
           rel="noopener noreferrer"
-          className="text-strong hover:underline"
+          className="text-body hover:underline"
         >
           Claude
         </a>
@@ -36,7 +36,7 @@ export function AboutSection() {
           href="https://github.com/brendanlong/lion-reader"
           target="_blank"
           rel="noopener noreferrer"
-          className="text-strong hover:underline"
+          className="text-body hover:underline"
         >
           GitHub
         </a>

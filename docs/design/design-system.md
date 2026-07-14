@@ -24,15 +24,18 @@ Grouped by role. "×N themes" values live in `globals.css`; representative light
 shown. A ✅ means it already exists on `master`; ⛽ means it changes in the accent
 migration (Phase 1); ➕ means new.
 
-### Neutrals — text (4 + 1)
+### Neutrals — text (3)
 
-| Token                | Use                                                                 |
-| -------------------- | ------------------------------------------------------------------- |
-| `--text-strong` ✅   | headings, primary values                                            |
-| `--text-body` ✅     | body copy, labels                                                   |
-| `--text-muted` ✅    | secondary text, metadata, hints                                     |
-| `--text-faint` ✅    | de-emphasized notes, placeholders                                   |
-| `--text-emphasis` ✅ | `<strong>` inside muted prose (only diverges from `strong` in dark) |
+`--text-strong` and `--text-emphasis` were removed and folded into `--text-body`
+(issue #1227): near-black titles/unread indicators read as too harsh, so headings
+and primary values now share the softer body tone. The e-paper theme keeps its
+intentional near-black harshness via its own darker `--text-body` value.
+
+| Token             | Use                                                     |
+| ----------------- | ------------------------------------------------------- |
+| `--text-body` ✅  | headings, primary values, `<strong>`, body copy, labels |
+| `--text-muted` ✅ | secondary text, metadata, hints                         |
+| `--text-faint` ✅ | de-emphasized notes, placeholders                       |
 
 ### Neutrals — surfaces & edges (5 + 3)
 

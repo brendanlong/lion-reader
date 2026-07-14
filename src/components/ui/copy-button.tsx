@@ -72,7 +72,7 @@ interface CodeBlockProps {
 export function CodeBlock({ code, className = "" }: CodeBlockProps) {
   return (
     <div className={`relative ${className}`}>
-      <pre className="ui-text-xs border-edge-strong bg-surface-muted text-emphasis overflow-x-auto rounded-md border p-3 pr-20 font-mono">
+      <pre className="ui-text-xs border-edge-strong bg-surface-muted text-body overflow-x-auto rounded-md border p-3 pr-20 font-mono">
         <code>{code}</code>
       </pre>
       <CopyButton value={code} className="absolute top-2 right-2 px-2 py-1" />

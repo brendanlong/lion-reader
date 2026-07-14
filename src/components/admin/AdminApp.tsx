@@ -77,7 +77,7 @@ function AdminLoginForm({ onLogin }: { onLogin: () => void }) {
   return (
     <div className="flex min-h-screen items-center justify-center px-4">
       <Card className="w-full max-w-sm">
-        <h1 className="ui-text-lg text-strong mb-6 text-center font-bold">Admin Login</h1>
+        <h1 className="ui-text-lg text-body mb-6 text-center font-bold">Admin Login</h1>
         <form onSubmit={handleSubmit} className="space-y-4">
           <Input
             id="admin-secret"
@@ -115,7 +115,7 @@ function AdminTabNav() {
               href={tab.href}
               className={`ui-text-sm block shrink-0 border-b-2 px-4 py-3 font-medium whitespace-nowrap transition-colors ${
                 isActive
-                  ? "text-strong border-control-selected"
+                  ? "text-body border-control-selected"
                   : "text-muted hover:text-body border-transparent hover:border-zinc-300 dark:hover:border-zinc-600"
               }`}
             >
@@ -136,7 +136,7 @@ function AdminShell({ onLogout, children }: { onLogout: () => void; children: Re
     <div className="min-h-screen">
       {/* Header */}
       <header className="border-edge flex items-center justify-between border-b px-6 py-4">
-        <h1 className="ui-text-lg text-strong font-bold">Lion Reader Admin</h1>
+        <h1 className="ui-text-lg text-body font-bold">Lion Reader Admin</h1>
         <Button variant="ghost" size="sm" onClick={onLogout}>
           Logout
         </Button>

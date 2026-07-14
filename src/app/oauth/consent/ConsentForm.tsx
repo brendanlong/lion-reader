@@ -42,7 +42,7 @@ export function ConsentForm({
         <div className="bg-surface-muted mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full">
           <ShieldCheckIcon className="text-muted h-8 w-8" />
         </div>
-        <h2 className="ui-text-lg text-strong font-semibold">Authorize {clientName}</h2>
+        <h2 className="ui-text-lg text-body font-semibold">Authorize {clientName}</h2>
         <p className="ui-text-sm text-muted mt-2">
           This application wants to access your Lion Reader account
         </p>
@@ -50,9 +50,7 @@ export function ConsentForm({
 
       {/* Requested permissions */}
       <div className="border-edge-strong bg-surface-subtle mb-6 rounded-lg border p-4">
-        <h3 className="ui-text-sm text-strong mb-3 font-medium">
-          This will allow {clientName} to:
-        </h3>
+        <h3 className="ui-text-sm text-body mb-3 font-medium">This will allow {clientName} to:</h3>
         <ul className="space-y-2">
           {scopes.map((scope) => (
             <li key={scope.name} className="flex items-start gap-2">

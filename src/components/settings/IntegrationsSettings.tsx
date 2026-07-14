@@ -58,14 +58,14 @@ export function IntegrationsSettings() {
     >
       {/* Claude Code */}
       <div className="mt-6">
-        <h3 className="ui-text-sm text-strong font-medium">Claude Code</h3>
+        <h3 className="ui-text-sm text-body font-medium">Claude Code</h3>
         <p className="ui-text-sm text-muted mt-1">Run this command in your terminal:</p>
         <CodeBlock code={claudeCodeCommand} className="mt-3" />
       </div>
 
       {/* Claude.ai */}
       <CardSection>
-        <h3 className="ui-text-sm text-strong font-medium">Claude.ai</h3>
+        <h3 className="ui-text-sm text-body font-medium">Claude.ai</h3>
         <div className="mt-2">
           <Alert variant="warning">
             The claude.ai <strong>web</strong> connector is currently broken due to a bug on
@@ -84,14 +84,14 @@ export function IntegrationsSettings() {
         <ol className="ui-text-sm text-muted mt-2 list-inside list-decimal space-y-2">
           <li>Click your name in the bottom-left corner</li>
           <li>
-            Go to <strong className="text-emphasis">Settings</strong> &rarr;{" "}
-            <strong className="text-emphasis">Connectors</strong>
+            Go to <strong className="text-body">Settings</strong> &rarr;{" "}
+            <strong className="text-body">Connectors</strong>
           </li>
           <li>
-            Click <strong className="text-emphasis">Add Custom Connector</strong>
+            Click <strong className="text-body">Add Custom Connector</strong>
           </li>
           <li>
-            Enter Name: <strong className="text-emphasis">Lion Reader</strong>
+            Enter Name: <strong className="text-body">Lion Reader</strong>
           </li>
           <li>
             Enter Remote MCP server URL: <InlineCode>{mcpUrl}</InlineCode>
@@ -102,7 +102,7 @@ export function IntegrationsSettings() {
 
       {/* Claude Desktop */}
       <CardSection>
-        <h3 className="ui-text-sm text-strong font-medium">Claude Desktop</h3>
+        <h3 className="ui-text-sm text-body font-medium">Claude Desktop</h3>
         <p className="ui-text-sm text-muted mt-1">
           Add this to your <InlineCode>claude_desktop_config.json</InlineCode>:
         </p>

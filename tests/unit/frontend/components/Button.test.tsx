@@ -39,13 +39,13 @@ describe("Button", () => {
     it("applies secondary variant styles", () => {
       render(<Button variant="secondary">Secondary</Button>);
       const button = screen.getByRole("button");
-      expect(button).toHaveClass("border", "bg-surface", "text-strong");
+      expect(button).toHaveClass("border", "bg-surface", "text-body");
     });
 
     it("applies ghost variant styles", () => {
       render(<Button variant="ghost">Ghost</Button>);
       const button = screen.getByRole("button");
-      expect(button).toHaveClass("text-strong");
+      expect(button).toHaveClass("text-body");
       expect(button).not.toHaveClass("btn-primary", "bg-surface");
     });
   });

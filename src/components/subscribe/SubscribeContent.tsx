@@ -216,7 +216,7 @@ export function SubscribeContent() {
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-4 sm:p-6">
-      <h1 className="ui-text-xl sm:ui-text-2xl text-strong mb-4 font-bold sm:mb-6">
+      <h1 className="ui-text-xl sm:ui-text-2xl text-body mb-4 font-bold sm:mb-6">
         Subscribe to Feed
       </h1>
 
@@ -284,7 +284,7 @@ export function SubscribeContent() {
           <Card>
             <div className="mb-4 flex items-center gap-2">
               <CheckCircleIcon className="text-success h-5 w-5" />
-              <h2 className="ui-text-lg text-strong font-semibold">
+              <h2 className="ui-text-lg text-body font-semibold">
                 We found {discoveredFeeds.length} feed{discoveredFeeds.length !== 1 ? "s" : ""} on
                 this site
               </h2>
@@ -316,7 +316,7 @@ export function SubscribeContent() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <p className="text-strong font-medium">{feed.title || "Untitled Feed"}</p>
+                        <p className="text-body font-medium">{feed.title || "Untitled Feed"}</p>
                         <span className="ui-text-xs text-body bg-fill-muted inline-flex items-center rounded-full px-2 py-0.5 font-medium">
                           {getFeedTypeLabel(feed.type)}
                         </span>
@@ -341,7 +341,7 @@ export function SubscribeContent() {
                   href={feedBuilderUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-emphasis hover:text-body inline-flex items-center gap-1 underline"
+                  className="text-body hover:text-body inline-flex items-center gap-1 underline"
                 >
                   Build a custom feed URL
                   <ExternalLinkIcon className="h-3.5 w-3.5" />
@@ -365,7 +365,7 @@ export function SubscribeContent() {
           <Card>
             <div className="mb-4 flex items-start justify-between">
               <div>
-                <h2 className="ui-text-xl text-strong font-semibold">
+                <h2 className="ui-text-xl text-body font-semibold">
                   {previewQuery.data?.feed.title ?? "Untitled Feed"}
                 </h2>
                 <FeedSiteLink siteUrl={previewQuery.data?.feed.siteUrl} className="mt-0.5" />
@@ -385,7 +385,7 @@ export function SubscribeContent() {
           {previewQuery.data?.feed.sampleEntries &&
             previewQuery.data.feed.sampleEntries.length > 0 && (
               <Card padding="none">
-                <h3 className="ui-text-sm border-edge text-strong border-b px-4 py-3 font-medium">
+                <h3 className="ui-text-sm border-edge text-body border-b px-4 py-3 font-medium">
                   Recent Entries
                 </h3>
                 <ul className="divide-edge divide-y">
@@ -393,7 +393,7 @@ export function SubscribeContent() {
                     <li key={entry.guid ?? index} className="px-4 py-3">
                       <div className="flex items-start justify-between gap-4">
                         <div className="min-w-0 flex-1">
-                          <p className="text-strong font-medium">{entry.title ?? "Untitled"}</p>
+                          <p className="text-body font-medium">{entry.title ?? "Untitled"}</p>
                           {entry.summary && (
                             <p className="ui-text-sm text-muted mt-1 line-clamp-2">
                               {entry.summary}

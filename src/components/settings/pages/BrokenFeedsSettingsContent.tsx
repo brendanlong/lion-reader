@@ -76,7 +76,7 @@ export default function BrokenFeedsSettingsContent() {
     <div>
       {/* Page Header */}
       <div className="mb-6">
-        <h2 className="ui-text-lg text-strong font-semibold">Broken Feeds</h2>
+        <h2 className="ui-text-lg text-body font-semibold">Broken Feeds</h2>
         <p className="ui-text-sm text-muted mt-1">
           These feeds have failed to fetch recently. You can retry fetching immediately or wait for
           the next scheduled attempt.
@@ -133,7 +133,7 @@ function EmptyState() {
       <div className="bg-success-subtle mx-auto flex h-12 w-12 items-center justify-center rounded-full">
         <CheckIcon className="text-success h-6 w-6" />
       </div>
-      <h3 className="ui-text-sm text-strong mt-4 font-medium">All feeds are working</h3>
+      <h3 className="ui-text-sm text-body mt-4 font-medium">All feeds are working</h3>
       <p className="ui-text-sm text-muted mt-1">None of your subscribed feeds have fetch errors.</p>
     </div>
   );
@@ -182,7 +182,7 @@ function BrokenFeedRow({ feed, onUnsubscribe, onFileIssue }: BrokenFeedRowProps)
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 flex-1">
           {/* Feed Title */}
-          <p className="text-strong font-medium">{displayName}</p>
+          <p className="text-body font-medium">{displayName}</p>
 
           {/* Feed URL */}
           {feed.url && feed.title && (

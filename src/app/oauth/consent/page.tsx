@@ -123,7 +123,7 @@ function ConsentLayout({ children }: { children: React.ReactNode }) {
     <div className="bg-canvas flex min-h-screen flex-col items-center justify-center px-4 py-12">
       <div className="w-full max-w-md">
         <div className="mb-8 text-center">
-          <h1 className="ui-text-2xl text-strong font-bold">Lion Reader</h1>
+          <h1 className="ui-text-2xl text-body font-bold">Lion Reader</h1>
           <p className="ui-text-sm text-muted mt-2">Authorization Request</p>
         </div>
         <div className="border-edge bg-surface rounded-lg border p-6 shadow-sm">{children}</div>
@@ -138,7 +138,7 @@ function ErrorMessage({ title, message }: { title: string; message: string }) {
       <div className="bg-danger-subtle mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full">
         <WarningTriangleIcon className="text-danger h-6 w-6" />
       </div>
-      <h2 className="ui-text-lg text-strong font-semibold">{title}</h2>
+      <h2 className="ui-text-lg text-body font-semibold">{title}</h2>
       <p className="ui-text-sm text-muted mt-2">{message}</p>
     </div>
   );

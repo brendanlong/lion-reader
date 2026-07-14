@@ -243,7 +243,7 @@ describe("DialogTitle", () => {
   it("applies title styles", () => {
     render(<DialogTitle>Styled Title</DialogTitle>);
     const title = screen.getByRole("heading");
-    expect(title).toHaveClass("font-semibold", "text-strong");
+    expect(title).toHaveClass("font-semibold", "text-body");
   });
 
   it("applies custom id", () => {

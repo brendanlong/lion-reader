@@ -99,11 +99,11 @@ function AccountInfoSection() {
         <dl className="space-y-4">
           <div>
             <dt className="ui-text-sm text-muted font-medium">Email</dt>
-            <dd className="ui-text-sm text-strong mt-1">{userQuery.data?.user.email}</dd>
+            <dd className="ui-text-sm text-body mt-1">{userQuery.data?.user.email}</dd>
           </div>
           <div>
             <dt className="ui-text-sm text-muted font-medium">Member since</dt>
-            <dd className="ui-text-sm text-strong mt-1">
+            <dd className="ui-text-sm text-body mt-1">
               {userQuery.data?.user.createdAt
                 ? new Date(userQuery.data.user.createdAt).toLocaleDateString("en-US", {
                     year: "numeric",
@@ -115,7 +115,7 @@ function AccountInfoSection() {
           </div>
           <div>
             <dt className="ui-text-sm text-muted font-medium">Email verified</dt>
-            <dd className="ui-text-sm text-strong mt-1">
+            <dd className="ui-text-sm text-body mt-1">
               {userQuery.data?.user.emailVerifiedAt ? (
                 <span className="text-success inline-flex items-center">
                   <CheckIcon className="mr-1 h-4 w-4" />

@@ -47,7 +47,7 @@ export default function EmailSettingsContent() {
     <div className="space-y-8">
       {/* Page Header */}
       <div>
-        <h2 className="ui-text-lg text-strong font-semibold">Email Subscriptions</h2>
+        <h2 className="ui-text-lg text-body font-semibold">Email Subscriptions</h2>
         <p className="ui-text-sm text-muted mt-1">
           Create ingest addresses to subscribe to email newsletters. Emails sent to these addresses
           will appear as entries in your feeds.
@@ -108,7 +108,7 @@ function IngestAddressesSection() {
   return (
     <section>
       <div className="mb-4 flex items-center justify-between">
-        <h3 className="ui-text-sm text-strong font-medium">Ingest Addresses</h3>
+        <h3 className="ui-text-sm text-body font-medium">Ingest Addresses</h3>
         <span className="ui-text-sm text-muted tabular-nums">{addresses.length} / 5</span>
       </div>
 
@@ -283,7 +283,7 @@ function IngestAddressRow({ address }: IngestAddressRowProps) {
         <div className="min-w-0 flex-1">
           {/* Email Address */}
           <div className="flex items-center gap-2">
-            <code className="ui-text-sm bg-surface-muted text-emphasis rounded px-2 py-1 break-all">
+            <code className="ui-text-sm bg-surface-muted text-body rounded px-2 py-1 break-all">
               {address.email}
             </code>
             <button
@@ -415,11 +415,11 @@ function SpamPreferenceSection() {
 
   return (
     <section>
-      <h3 className="ui-text-sm text-strong mb-4 font-medium">Preferences</h3>
+      <h3 className="ui-text-sm text-body mb-4 font-medium">Preferences</h3>
       <Card>
         <div className="flex items-center justify-between">
           <div>
-            <h4 className="ui-text-sm text-strong font-medium">Show spam entries</h4>
+            <h4 className="ui-text-sm text-body font-medium">Show spam entries</h4>
             <p className="ui-text-sm text-muted mt-1">
               Display entries that were flagged as spam by our email provider.
             </p>
