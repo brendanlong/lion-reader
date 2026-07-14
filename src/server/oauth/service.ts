@@ -579,6 +579,16 @@ async function handlePossibleRefreshTokenReuse(
   // revoked a moment ago was almost certainly just rotated by a racing refresh
   // from the same client, not replayed by an attacker. Skip revocation so the
   // winner's live successor survives.
+  //
+  // `now` is deliberately the *request-start* time (captured at the top of
+  // rotateRefreshToken), not a fresh timestamp sampled here: it measures how long
+  // after revocation this request began presenting the token, i.e. whether it was
+  // initiated concurrently with the rotation. That's exactly what we want — a
+  // request that genuinely started alongside the winner stays inside the window
+  // even if it's then delayed (DB contention, GC) for seconds before reaching
+  // this check. Re-sampling the clock here would instead measure wall-time-to-
+  // arrival and wrongly flag a slow-but-concurrent loser as reuse, revoking the
+  // winner's fresh chain — the very flake this fixes. Keep the start-time anchor.
   if (now.getTime() - presented.revokedAt.getTime() <= REFRESH_ROTATION_REUSE_GRACE_MS) {
     return;
   }
