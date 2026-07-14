@@ -153,6 +153,35 @@ export function updateMediaSessionPlaybackState(status: NarrationStatus): void {
 }
 
 /**
+ * Starts the silent audio loop immediately.
+ *
+ * Call this synchronously from within the user gesture that begins narration, so
+ * the browser grants the media session before any async work (e.g. LLM narration
+ * generation) consumes the gesture's autoplay activation — otherwise the later
+ * `startSilentAudio()` from {@link updateMediaSessionPlaybackState} can be
+ * rejected by autoplay policy and the OS controls never appear. Safe to call
+ * before metadata is set; {@link updateMediaSessionPlaybackState} keeps it going
+ * once playback begins. If playback never starts (generation fails), release it
+ * with {@link stopMediaSessionAudio} or {@link clearMediaSession}.
+ */
+export function primeMediaSessionAudio(): void {
+  if (!isMediaSessionSupported()) {
+    return;
+  }
+  startSilentAudio();
+}
+
+/**
+ * Stops the silent audio loop without clearing metadata/action handlers.
+ *
+ * Used to release a session primed by {@link primeMediaSessionAudio} when
+ * narration generation fails before playback actually begins.
+ */
+export function stopMediaSessionAudio(): void {
+  stopSilentAudio();
+}
+
+/**
  * Clears the media session when leaving an article.
  *
  * Stops the silent audio loop, resets playback state, clears metadata, and

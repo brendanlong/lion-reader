@@ -144,6 +144,29 @@ describe("updateMediaSessionPlaybackState", () => {
   });
 });
 
+describe("primeMediaSessionAudio / stopMediaSessionAudio", () => {
+  it("starts the silent audio without registering metadata or handlers", async () => {
+    const { primeMediaSessionAudio } = await loadModule();
+
+    primeMediaSessionAudio();
+
+    expect(window.HTMLMediaElement.prototype.play).toHaveBeenCalled();
+    // Priming must not register controls or metadata — it only holds the session
+    // open within the user gesture until generation finishes.
+    expect(mediaSession.metadata).toBeNull();
+    expect(mediaSession.setActionHandler).not.toHaveBeenCalled();
+  });
+
+  it("releases a primed session's silent audio", async () => {
+    const { primeMediaSessionAudio, stopMediaSessionAudio } = await loadModule();
+
+    primeMediaSessionAudio();
+    stopMediaSessionAudio();
+
+    expect(window.HTMLMediaElement.prototype.pause).toHaveBeenCalled();
+  });
+});
+
 describe("clearMediaSession", () => {
   it("tears down metadata, handlers, and the silent audio", async () => {
     const { setupMediaSession, updateMediaSessionPlaybackState, clearMediaSession } =

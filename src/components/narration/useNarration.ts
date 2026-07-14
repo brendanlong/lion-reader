@@ -32,6 +32,7 @@ import { ArticleNarrator, type NarrationState } from "@/lib/narration/ArticleNar
 import { useNarrationSettings } from "@/lib/narration/settings";
 import { findVoiceByUri, waitForVoices } from "@/lib/narration/voices";
 import { isNarrationSupported } from "@/lib/narration/feature-detection";
+import { primeMediaSessionAudio, stopMediaSessionAudio } from "@/lib/narration/media-session";
 import { useMediaSession } from "./useMediaSession";
 import { trackNarrationPlaybackStarted } from "@/lib/telemetry";
 import { getPiperTTSProvider } from "@/lib/narration/piper-tts-provider";
@@ -224,6 +225,12 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   const play = useCallback(async () => {
     if (!isSupported) return;
 
+    // Start the OS media session's silent audio within this user gesture, before
+    // any async narration generation, so the browser grants it while the gesture's
+    // autoplay activation is still valid (issue #410). It's released below if
+    // generation fails; on success the media-session effects keep it going.
+    primeMediaSessionAudio();
+
     // Handle Piper provider with StreamingAudioPlayer
     if (usePiper && settings.voiceId) {
       const player = getOrCreateStreamingPlayer();
@@ -303,10 +310,15 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
 
           // Start playback
           await player.play();
+        } else {
+          // Nothing to narrate — release the primed media-session audio.
+          stopMediaSessionAudio();
         }
       } catch (error) {
         console.error("Failed to generate narration:", error);
         setState((prev) => ({ ...prev, status: "idle" }));
+        // Release the media-session audio primed within the play() gesture.
+        stopMediaSessionAudio();
       } finally {
         setIsLoading(false);
       }
@@ -390,10 +402,15 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
         narrator.play(voice, settings.rate, settings.pitch);
         // Track playback start with the current provider
         trackNarrationPlaybackStarted(settings.provider);
+      } else {
+        // Nothing to narrate — release the primed media-session audio.
+        stopMediaSessionAudio();
       }
     } catch (error) {
       console.error("Failed to generate narration:", error);
       setState((prev) => ({ ...prev, status: "idle" }));
+      // Release the media-session audio primed within the play() gesture.
+      stopMediaSessionAudio();
     } finally {
       setIsLoading(false);
     }
