@@ -2,4 +2,4 @@
 layout: home
 ---
 
-Also see the [changelog](/changelog/) for weekly summaries of changes ([RSS](/changelog.xml)).
+For weekly summaries of changes, see the [GitHub releases](https://github.com/brendanlong/lion-reader/releases) ([RSS](https://github.com/brendanlong/lion-reader/releases.atom)).
