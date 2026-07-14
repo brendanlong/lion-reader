@@ -16,6 +16,8 @@ import { Button } from "@/components/ui/button";
 import { SettingsListContainer } from "@/components/settings/SettingsListContainer";
 import { CheckIcon, AlertCircleIcon } from "@/components/ui/icon-button";
 import { UnsubscribeDialog } from "@/components/feeds/UnsubscribeDialog";
+import { FileFeedIssueDialog } from "@/components/feeds/FileFeedIssueDialog";
+import type { FeedIssueInput } from "@/lib/github-issue";
 
 // ============================================================================
 // Types
@@ -36,11 +38,16 @@ interface BrokenFeed {
 // Main Component
 // ============================================================================
 
+// The feed fields needed to prefill a GitHub issue, plus the resolved display
+// name. Reuses FeedIssueInput so the two stay in sync automatically.
+type IssueTarget = FeedIssueInput & { displayName: string };
+
 export default function BrokenFeedsSettingsContent() {
   const [unsubscribeTarget, setUnsubscribeTarget] = useState<{
     id: string;
     title: string;
   } | null>(null);
+  const [issueTarget, setIssueTarget] = useState<IssueTarget | null>(null);
 
   const utils = trpc.useUtils();
   const brokenQuery = trpc.brokenFeeds.list.useQuery();
@@ -57,6 +64,10 @@ export default function BrokenFeedsSettingsContent() {
 
   const handleUnsubscribe = (subscriptionId: string, title: string) => {
     setUnsubscribeTarget({ id: subscriptionId, title });
+  };
+
+  const handleFileIssue = (target: IssueTarget) => {
+    setIssueTarget(target);
   };
 
   const feeds = brokenQuery.data?.items ?? [];
@@ -80,7 +91,12 @@ export default function BrokenFeedsSettingsContent() {
         errorMessage="Failed to load broken feeds. Please try again."
         emptyState={<EmptyState />}
         renderItem={(feed) => (
-          <BrokenFeedRow key={feed.feedId} feed={feed} onUnsubscribe={handleUnsubscribe} />
+          <BrokenFeedRow
+            key={feed.feedId}
+            feed={feed}
+            onUnsubscribe={handleUnsubscribe}
+            onFileIssue={handleFileIssue}
+          />
         )}
       />
 
@@ -95,6 +111,13 @@ export default function BrokenFeedsSettingsContent() {
           }
         }}
         onCancel={() => setUnsubscribeTarget(null)}
+      />
+
+      {/* File Issue Dialog */}
+      <FileFeedIssueDialog
+        isOpen={issueTarget !== null}
+        feed={issueTarget}
+        onClose={() => setIssueTarget(null)}
       />
     </div>
   );
@@ -123,9 +146,10 @@ function EmptyState() {
 interface BrokenFeedRowProps {
   feed: BrokenFeed;
   onUnsubscribe: (subscriptionId: string, title: string) => void;
+  onFileIssue: (target: IssueTarget) => void;
 }
 
-function BrokenFeedRow({ feed, onUnsubscribe }: BrokenFeedRowProps) {
+function BrokenFeedRow({ feed, onUnsubscribe, onFileIssue }: BrokenFeedRowProps) {
   const [isRetrying, setIsRetrying] = useState(false);
 
   const utils = trpc.useUtils();
@@ -190,9 +214,24 @@ function BrokenFeedRow({ feed, onUnsubscribe }: BrokenFeedRowProps) {
         </div>
 
         {/* Action Buttons */}
-        <div className="flex shrink-0 gap-2">
+        <div className="flex shrink-0 flex-wrap gap-2">
           <Button variant="secondary" size="sm" onClick={handleRetry} loading={isRetrying}>
             Retry Now
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() =>
+              onFileIssue({
+                displayName,
+                title: feed.title,
+                url: feed.url,
+                lastError: feed.lastError,
+                consecutiveFailures: feed.consecutiveFailures,
+              })
+            }
+          >
+            Report Issue
           </Button>
           <Button
             variant="secondary"
