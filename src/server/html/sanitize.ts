@@ -19,11 +19,12 @@ import sanitizeHtml from "sanitize-html";
 import { logger } from "@/lib/logger";
 import { EMBED_CANONICAL_HOSTNAMES, normalizeEmbed } from "./embed-providers";
 import { convertMathJaxChtmlToMathml } from "./mathjax-chtml";
+import { extractInlineSvg, reinsertInlineSvg } from "./sanitize-svg";
 
 /**
  * Version of the sanitization config. Bump this whenever `SANITIZE_OPTIONS`
  * (allowed tags/attributes/schemes or `transformTags`) or the pre-sanitization
- * transforms (`convertMathJaxChtmlToMathml`) change.
+ * transforms (`convertMathJaxChtmlToMathml`, `extractInlineSvg`) change.
  *
  * Sanitized entry HTML is persisted in the database (`entries.*_sanitized`,
  * stamped with `*_sanitized_version`; see `withSanitizedEntryContent` in
@@ -33,7 +34,7 @@ import { convertMathJaxChtmlToMathml } from "./mathjax-chtml";
  * stale and transparently re-sanitizes it on next read instead of serving stale
  * output.
  */
-export const SANITIZER_VERSION = 7;
+export const SANITIZER_VERSION = 8;
 
 // Tags allowed in entry content. Superset of sanitize-html's defaults covering
 // the formatting, table, and media elements real articles use. `script` and
@@ -343,5 +344,26 @@ export function sanitizeEntryHtml(html: string | null | undefined): string | nul
       error: error instanceof Error ? error.message : String(error),
     });
   }
-  return sanitizeHtml(transformed, SANITIZE_OPTIONS);
+
+  // Inline SVG can't be sanitized by sanitize-html (its HTML-mode parser
+  // case-folds camelCase SVG attributes like `viewBox`, breaking them). So we
+  // pull each top-level <svg> out of the body, replacing it with an opaque
+  // placeholder token that sanitize-html passes through as inert text, and
+  // re-insert the separately-sanitized SVG afterwards (issue #923). Cheap no-op
+  // (string check) when there's no <svg>. Degrades to "SVG stripped" on error.
+  let extraction: ReturnType<typeof extractInlineSvg> | null = null;
+  try {
+    extraction = extractInlineSvg(transformed);
+    transformed = extraction.html;
+  } catch (error) {
+    logger.warn("Failed to extract inline SVG; sanitizing without it", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    extraction = null;
+  }
+
+  const sanitized = sanitizeHtml(transformed, SANITIZE_OPTIONS);
+  return extraction && extraction.svgs.length > 0
+    ? reinsertInlineSvg(sanitized, extraction)
+    : sanitized;
 }
