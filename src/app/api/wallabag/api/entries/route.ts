@@ -40,6 +40,7 @@ import {
 } from "@/server/wallabag/format";
 import * as entriesService from "@/server/services/entries";
 import * as savedService from "@/server/services/saved";
+import { entryIdToWallabagId } from "@/server/wallabag/id";
 import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
@@ -132,7 +133,16 @@ export async function POST(request: Request): Promise<Response> {
       await entriesService.updateEntryStarred(db, auth.userId, article.id, true);
     }
 
-    return jsonResponse(formatSavedArticle(article));
+    // SavedArticle doesn't carry the entry serial (it's returned verbatim by
+    // MCP save_article, which must stay bigint-free), so look it up — a
+    // primary-key seek on the entry we just saved.
+    const wallabagId = await entryIdToWallabagId(db, article.id);
+    if (wallabagId === null) {
+      // Only possible if the entry was deleted between the save and this seek.
+      return errorResponse("not_found", "Entry not found", 404);
+    }
+
+    return jsonResponse(formatSavedArticle(article, wallabagId));
   } catch (error) {
     // saveArticle throws a TRPCError when the user-provided URL can't be fetched
     // (e.g. a 404 from a mistyped/markdown-artifact URL). Return that as a clean
