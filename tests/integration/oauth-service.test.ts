@@ -174,6 +174,30 @@ describe("rotateRefreshToken", () => {
     expect(await rotateRefreshToken(rotated!.refreshToken, clientId)).toBeNull();
   });
 
+  it("scopes reuse revocation to the leaked chain, sparing sibling grants for the same user+client", async () => {
+    // Two independent grants for the same user+client — e.g. two Wallabag
+    // devices, which all share client_id "wallabag". A reuse event on one must
+    // not sign the other out.
+    const userId = await createTestUser();
+    const clientId = await createTestClient();
+    const grantA = await createTokens({ clientId, userId, scopes: ["mcp"] });
+    const grantB = await createTokens({ clientId, userId, scopes: ["mcp"] });
+
+    // Rotate grant A once, then replay its original (now-rotated) token.
+    const rotatedA = await rotateRefreshToken(grantA.refreshToken, clientId);
+    expect(rotatedA).not.toBeNull();
+    const replay = await rotateRefreshToken(grantA.refreshToken, clientId);
+    expect(replay).toBeNull();
+
+    // Grant A's whole chain is dead...
+    expect(await validateAccessToken(rotatedA!.accessToken)).toBeNull();
+    expect(await rotateRefreshToken(rotatedA!.refreshToken, clientId)).toBeNull();
+
+    // ...but the sibling grant B is untouched.
+    expect(await validateAccessToken(grantB.accessToken)).not.toBeNull();
+    expect(await rotateRefreshToken(grantB.refreshToken, clientId)).not.toBeNull();
+  });
+
   it("does not revoke the grant for an unknown refresh token", async () => {
     const userId = await createTestUser();
     const clientId = await createTestClient();
