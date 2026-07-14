@@ -17,12 +17,8 @@
 import sanitizeHtml from "sanitize-html";
 
 import { logger } from "@/lib/logger";
+import { EMBED_CANONICAL_HOSTNAMES, normalizeEmbed } from "./embed-providers";
 import { convertMathJaxChtmlToMathml } from "./mathjax-chtml";
-import {
-  normalizeYouTubeEmbedUrl,
-  YOUTUBE_IFRAME_ALLOW,
-  YOUTUBE_IFRAME_SANDBOX,
-} from "./youtube-embed";
 
 /**
  * Version of the sanitization config. Bump this whenever `SANITIZE_OPTIONS`
@@ -37,7 +33,7 @@ import {
  * stale and transparently re-sanitizes it on next read instead of serving stale
  * output.
  */
-export const SANITIZER_VERSION = 6;
+export const SANITIZER_VERSION = 7;
 
 // Tags allowed in entry content. Superset of sanitize-html's defaults covering
 // the formatting, table, and media elements real articles use. `script` and
@@ -124,13 +120,14 @@ const ALLOWED_TAGS = [
   "audio",
   "video",
   "track",
-  // `iframe` is allowed ONLY for YouTube embeds (issue #1115). An unrestricted
-  // cross-origin iframe would let a feed embed an arbitrary page full-bleed
-  // inside the reader's trusted UI (phishing / tracking surface), so the
-  // `transformTags.iframe` hook validates the src as a YouTube embed URL and
-  // normalizes it to youtube-nocookie.com with a forced `sandbox`; anything
-  // else loses its src and is dropped by `exclusiveFilter`.
-  // `allowedIframeHostnames` backstops the same rule.
+  // `iframe` is allowed ONLY for allow-listed media-embed providers (issue
+  // #922; originally YouTube-only in #1115). An unrestricted cross-origin iframe
+  // would let a feed embed an arbitrary page full-bleed inside the reader's
+  // trusted UI (phishing / tracking surface), so the `transformTags.iframe` hook
+  // validates the src against `normalizeEmbed` (YouTube, Vimeo, Spotify,
+  // SoundCloud, Bandcamp, CodePen), rewrites it to the provider's canonical host
+  // with a forced per-provider `sandbox`; anything else loses its src and is
+  // dropped by `exclusiveFilter`. `allowedIframeHostnames` backstops the rule.
   "iframe",
 ];
 
@@ -272,10 +269,10 @@ const SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
   },
   allowProtocolRelative: true,
   // Defense in depth for iframes: even if the transform below were bypassed,
-  // sanitize-html strips the src of any iframe not pointing at this hostname
-  // (every surviving src is normalized to it), and src-less iframes are then
-  // removed entirely by `exclusiveFilter`.
-  allowedIframeHostnames: ["www.youtube-nocookie.com"],
+  // sanitize-html strips the src of any iframe not pointing at one of these
+  // canonical provider hostnames (every surviving src is normalized to one of
+  // them), and src-less iframes are then removed entirely by `exclusiveFilter`.
+  allowedIframeHostnames: [...EMBED_CANONICAL_HOSTNAMES],
   exclusiveFilter: (frame) => frame.tag === "iframe" && !frame.attribs.src,
   transformTags: {
     // External links open in a new tab with a safe rel (was the old
@@ -298,14 +295,14 @@ const SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
     },
     // Lazy-load all images.
     img: (tagName, attribs) => ({ tagName, attribs: { ...attribs, loading: "lazy" } }),
-    // Iframes: only YouTube embeds survive. The src is validated and rewritten
-    // to the privacy-enhanced youtube-nocookie.com host with a filtered query
+    // Iframes: only allow-listed embed providers survive. The src is validated
+    // and rewritten to the provider's canonical host with a filtered query
     // string, and sandbox/allow/loading are forced regardless of what the feed
-    // supplied. A non-YouTube iframe has all attributes dropped here, then the
+    // supplied. An unrecognized iframe has all attributes dropped here, then the
     // src-less shell is removed by `exclusiveFilter`.
     iframe: (tagName, attribs) => {
-      const src = normalizeYouTubeEmbedUrl(attribs.src);
-      if (!src) return { tagName, attribs: {} };
+      const embed = normalizeEmbed(attribs.src);
+      if (!embed) return { tagName, attribs: {} };
       const kept: Record<string, string> = {};
       for (const attr of ["width", "height", "title"]) {
         if (attribs[attr] !== undefined) kept[attr] = attribs[attr];
@@ -314,9 +311,9 @@ const SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
         tagName,
         attribs: {
           ...kept,
-          src,
-          sandbox: YOUTUBE_IFRAME_SANDBOX,
-          allow: YOUTUBE_IFRAME_ALLOW,
+          src: embed.src,
+          sandbox: embed.sandbox,
+          allow: embed.allow,
           allowfullscreen: "",
           loading: "lazy",
         },
