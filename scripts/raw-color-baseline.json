@@ -52,6 +52,7 @@
   "src/components/feeds/EditSubscriptionDialog.tsx\tdark:hover:border-zinc-500",
   "src/components/feeds/EditSubscriptionDialog.tsx\thover:bg-zinc-50",
   "src/components/feeds/EditSubscriptionDialog.tsx\thover:border-zinc-400",
+  "src/components/feeds/FileFeedIssueDialog.tsx\tdark:bg-zinc-800",
   "src/components/narration/EnhancedVoiceList.tsx\tbg-zinc-50",
   "src/components/narration/EnhancedVoiceList.tsx\tborder-zinc-400",
   "src/components/narration/EnhancedVoiceList.tsx\tdark:bg-zinc-800",
