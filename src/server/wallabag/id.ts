@@ -10,6 +10,10 @@
  * unique-index seek. Wallabag clients re-synced from scratch when ids
  * switched from hashes to serials — accepted, matching the Google Reader
  * id migration.
+ *
+ * Serials are exposed as JSON numbers (Wallabag ids are plain integers), which
+ * is exact while they stay under 2^53 — they increment by 1 from a shared
+ * sequence, so that bound is not reachable in practice.
  */
 
 import { eq, and } from "drizzle-orm";
