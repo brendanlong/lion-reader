@@ -465,6 +465,36 @@ describe("Entries", () => {
     });
   });
 
+  describe("list with sortBy (Wallabag `sort` field)", () => {
+    it("sortBy=archived orders by read-change time and keeps never-read entries", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/feed.xml");
+      await createTestSubscription(userId, feedId);
+
+      const readId = await createTestEntry(feedId, { title: "Read" });
+      const unreadId = await createTestEntry(feedId, { title: "Unread" });
+      // Unread entry: no read-state change (readChangedAt NULL).
+      await createUserEntry(userId, readId);
+      await createUserEntry(userId, unreadId, { readChangedAt: undefined });
+      await db
+        .update(userEntries)
+        .set({ readChangedAt: null })
+        .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, unreadId)));
+
+      // sortBy=archived must NOT drop the never-read entry (unlike readChanged).
+      const archived = await listEntries(db, { userId, sortBy: "archived", showSpam: false });
+      expect(archived.items.map((e) => e.id).sort()).toEqual([readId, unreadId].sort());
+
+      // sortBy=readChanged (recently-read view) DOES exclude the never-read entry.
+      const recentlyRead = await listEntries(db, {
+        userId,
+        sortBy: "readChanged",
+        showSpam: false,
+      });
+      expect(recentlyRead.items.map((e) => e.id)).toEqual([readId]);
+    });
+  });
+
   describe("get", () => {
     it("gets a single entry with full content", async () => {
       const userId = await createTestUser();
