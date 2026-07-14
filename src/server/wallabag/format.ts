@@ -3,32 +3,17 @@
  *
  * Transforms Lion Reader data into the JSON format expected by Wallabag clients.
  *
- * Wallabag entries have numeric integer IDs. We derive a deterministic
- * 32-bit positive integer from UUIDv7 to avoid needing a mapping table.
- * This uses a different strategy than Google Reader (which needs 64-bit)
- * because Wallabag IDs are simpler integers.
+ * Wallabag entries have numeric integer IDs. Every id a client sees is a
+ * stored serial (issue #1117): entry ids are `entries.greader_item_id` (the
+ * same global serial the Google Reader API uses for item ids, carried on
+ * `EntryFull`/`EntryListItem` as `greaderItemId`), tag ids are
+ * `tags.greader_sortid`, and the user id is `users.greader_user_id`. Only
+ * entry ids are ever reversed (see src/server/wallabag/id.ts); tag and user
+ * ids are opaque.
  */
 
-import { createHash } from "crypto";
 import type { EntryFull, EntryListItem } from "@/server/services/entries";
 import type { SavedArticle } from "@/server/services/saved";
-import type { ListTagsResult } from "@/server/services/tags";
-
-// ============================================================================
-// ID Conversion
-// ============================================================================
-
-/**
- * Converts a UUIDv7 to a stable positive integer ID for Wallabag.
- *
- * Uses first 4 bytes of SHA-256 hash of the UUID, masked to 31 bits
- * to ensure a positive signed 32-bit integer.
- */
-export function uuidToWallabagId(uuid: string): number {
-  const hash = createHash("sha256").update(uuid).digest();
-  // Read first 4 bytes as unsigned 32-bit integer, mask to 31 bits for positive value
-  return hash.readUInt32BE(0) & 0x7fffffff;
-}
 
 // ============================================================================
 // Entry Formatting
@@ -95,6 +80,8 @@ function formatDate(date: Date | null): string | null {
  */
 interface WallabagEntryInput {
   id: string;
+  /** Wallabag integer id — the entry's stored serial (`entries.greader_item_id`). */
+  wallabagId: number;
   url: string | null;
   title: string | null;
   content: string | null;
@@ -109,13 +96,13 @@ interface WallabagEntryInput {
 
 /**
  * Builds a Wallabag entry from the varying fields, deriving the constant and
- * computed ones (id hash, archived/starred flags, domain, reading time). This is
- * the single place the Wallabag entry shape is assembled, so the three format*
+ * computed ones (archived/starred flags, domain, reading time). This is the
+ * single place the Wallabag entry shape is assembled, so the three format*
  * helpers below can't drift.
  */
 function buildWallabagEntry(input: WallabagEntryInput): WallabagEntry {
   return {
-    id: uuidToWallabagId(input.id),
+    id: input.wallabagId,
     url: input.url,
     title: input.title,
     content: input.content,
@@ -143,6 +130,7 @@ function buildWallabagEntry(input: WallabagEntryInput): WallabagEntry {
 export function formatEntryFull(entry: EntryFull): WallabagEntry {
   return buildWallabagEntry({
     id: entry.id,
+    wallabagId: Number(entry.greaderItemId),
     url: entry.url,
     title: entry.title,
     content: entry.contentCleaned ?? entry.contentOriginal ?? entry.summary ?? null,
@@ -162,6 +150,7 @@ export function formatEntryFull(entry: EntryFull): WallabagEntry {
 export function formatEntryListItem(entry: EntryListItem): WallabagEntry {
   return buildWallabagEntry({
     id: entry.id,
+    wallabagId: Number(entry.greaderItemId),
     url: entry.url,
     title: entry.title,
     content: entry.summary ?? null,
@@ -176,11 +165,15 @@ export function formatEntryListItem(entry: EntryListItem): WallabagEntry {
 }
 
 /**
- * Formats a saved article as a Wallabag entry.
+ * Formats a saved article as a Wallabag entry. `SavedArticle` deliberately
+ * doesn't carry the entry serial (it's returned verbatim by MCP save_article,
+ * which must stay bigint-free), so the caller passes the Wallabag id looked up
+ * via `entryIdToWallabagId`.
  */
-export function formatSavedArticle(article: SavedArticle): WallabagEntry {
+export function formatSavedArticle(article: SavedArticle, wallabagId: number): WallabagEntry {
   return buildWallabagEntry({
     id: article.id,
+    wallabagId,
     url: article.url,
     title: article.title,
     content: article.contentCleaned ?? article.excerpt ?? null,
@@ -205,11 +198,15 @@ export interface WallabagTag {
 }
 
 /**
- * Formats tags for Wallabag.
+ * Formats tags for Wallabag. A tag's id is its stored serial
+ * (`tags.greader_sortid`), opaque to clients — the Wallabag surface never
+ * reverses tag ids (the tags route is list-only).
  */
-export function formatTags(tagsResult: ListTagsResult): WallabagTag[] {
-  return tagsResult.items.map((tag) => ({
-    id: uuidToWallabagId(tag.id),
+export function formatTags(
+  userTags: Array<{ name: string; greaderSortid: bigint }>
+): WallabagTag[] {
+  return userTags.map((tag) => ({
+    id: Number(tag.greaderSortid),
     label: tag.name,
     slug: tag.name.toLowerCase().replace(/\s+/g, "-"),
   }));
