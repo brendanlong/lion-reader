@@ -1,7 +1,12 @@
 /**
  * Discord Bot for Lion Reader
  *
- * Saves articles when users react to messages with a configured emoji.
+ * Saves articles when users:
+ * - React to a message with the configured save emoji, or
+ * - Send/forward a message containing a URL directly to the bot in a DM.
+ *
+ * Either way the bot reacts to the message with the success/error emoji.
+ *
  * Users can link their account either by:
  * 1. Signing in with Discord on the web app (OAuth)
  * 2. Using /link with an API token
@@ -59,12 +64,35 @@ const IGNORED_DOMAINS = new Set([
   "giphy.com",
 ]);
 
+/**
+ * Gather all text that might contain URLs from a message, including the content
+ * of any forwarded messages (Discord delivers a forward's text in
+ * `messageSnapshots`, not `message.content`).
+ */
+function gatherMessageText(message: Message): string {
+  const parts: string[] = [];
+  if (message.content) parts.push(message.content);
+  for (const snapshot of message.messageSnapshots.values()) {
+    if (snapshot.content) parts.push(snapshot.content);
+  }
+  // Embeds (e.g. link previews on a forwarded post) can carry the canonical URL.
+  for (const embed of message.embeds) {
+    if (embed.url) parts.push(embed.url);
+  }
+  for (const snapshot of message.messageSnapshots.values()) {
+    for (const embed of snapshot.embeds) {
+      if (embed.url) parts.push(embed.url);
+    }
+  }
+  return parts.join("\n");
+}
+
 function extractUrls(content: string): string[] {
   if (!content) return [];
 
   const matches = content.match(URL_REGEX) || [];
 
-  return matches
+  const urls = matches
     .map((url) => url.replace(/[.,;:!?)]+$/, ""))
     .filter((url) => {
       try {
@@ -80,6 +108,10 @@ function extractUrls(content: string): string[] {
         return false;
       }
     });
+
+  // Dedupe: the same URL commonly appears in both the message text and its
+  // embed/forward snapshot, and we don't want to save it twice.
+  return [...new Set(urls)];
 }
 
 // ============================================================================
@@ -175,11 +207,14 @@ export async function startDiscordBot(): Promise<void> {
       GatewayIntentBits.Guilds,
       GatewayIntentBits.GuildMessages,
       GatewayIntentBits.GuildMessageReactions,
+      GatewayIntentBits.DirectMessages,
       GatewayIntentBits.MessageContent,
     ],
     // User partial: guild reaction payloads carry the full member, but DM
     // reactions from uncached users are silently dropped without it.
-    partials: [Partials.Message, Partials.Reaction, Partials.User],
+    // Channel partial: DM channels aren't cached, so messageCreate/reaction
+    // events for DMs are dropped without it.
+    partials: [Partials.Message, Partials.Reaction, Partials.User, Partials.Channel],
   });
 
   // Gateway diagnostics. `client.login()` resolves as soon as the token
@@ -266,6 +301,27 @@ export async function startDiscordBot(): Promise<void> {
       Sentry.captureException(error);
       logger.error("Discord save-reaction handler failed", {
         messageId: reaction.message.id,
+        error,
+      });
+    }
+  });
+
+  // Handle direct messages: a URL sent (or forwarded) to the bot in a DM is
+  // saved just like a save-emoji reaction, and the DM is reacted to the same way.
+  client.on("messageCreate", async (message) => {
+    if (message.author.bot) return;
+    // Only DMs — guild messages are handled via the save-emoji reaction, not by
+    // treating every posted link as a save.
+    if (message.guildId) return;
+
+    try {
+      await handleDirectMessage(message);
+    } catch (error) {
+      // Same rationale as interactionCreate: a rejection here would otherwise
+      // crash the whole bot process.
+      Sentry.captureException(error);
+      logger.error("Discord direct-message handler failed", {
+        messageId: message.id,
         error,
       });
     }
@@ -374,7 +430,8 @@ async function handleLinkCommand(
   await interaction.reply({
     content:
       `Your Lion Reader account is now linked via API token. ` +
-      `React to any message containing a URL with ${DISCORD_SAVE_EMOJI} to save it.`,
+      `React to any message containing a URL with ${DISCORD_SAVE_EMOJI}, ` +
+      `or send/forward a link to me in a DM, to save it.`,
     flags: MessageFlags.Ephemeral,
   });
 
@@ -426,7 +483,7 @@ async function handleStatusCommand(
   if (resolved) {
     const methodText = resolved.method === "oauth" ? "Discord OAuth" : "API token";
     await interaction.reply({
-      content: `Your account is linked via ${methodText}. React to messages with ${DISCORD_SAVE_EMOJI} to save articles.`,
+      content: `Your account is linked via ${methodText}. React to messages with ${DISCORD_SAVE_EMOJI}, or send/forward a link to me in a DM, to save articles.`,
       flags: MessageFlags.Ephemeral,
     });
   } else {
@@ -469,7 +526,7 @@ async function handleSaveReaction(
   }
 
   // Extract URLs
-  const urls = extractUrls(message.content);
+  const urls = extractUrls(gatherMessageText(message));
   if (urls.length === 0) {
     logger.info("Save reaction message contained no URLs", {
       messageId: message.id,
@@ -478,7 +535,57 @@ async function handleSaveReaction(
     return;
   }
 
-  // Save each URL
+  await saveUrlsAndReact(message, urls, resolved, user);
+}
+
+/**
+ * Handle a direct message to the bot: save any URLs it contains (or that were
+ * forwarded to the bot) and react to the DM the same way as a save reaction.
+ */
+async function handleDirectMessage(message: Message): Promise<void> {
+  const urls = extractUrls(gatherMessageText(message));
+  if (urls.length === 0) {
+    // No URL to save — stay silent rather than replying to every chit-chat DM.
+    logger.info("Direct message contained no URLs", {
+      messageId: message.id,
+      contentLength: message.content?.length ?? 0,
+    });
+    return;
+  }
+
+  // Look up Lion Reader user
+  const resolved = await resolveUser(message.author.id);
+  if (!resolved) {
+    logger.info("Ignoring direct message from unlinked Discord user", {
+      discordId: message.author.id,
+    });
+    // They sent a link but we can't save it — tell them how to link, rather
+    // than staying silent.
+    try {
+      await message.reply(
+        "Your Discord account isn't linked to Lion Reader yet. " +
+          "Sign in with Discord on the Lion Reader website, or use `/link` with an API token."
+      );
+    } catch (error) {
+      logger.warn("Failed to reply to unlinked DM", { error });
+    }
+    return;
+  }
+
+  await saveUrlsAndReact(message, urls, resolved, message.author);
+}
+
+/**
+ * Save each URL for the resolved user and react to the message with the
+ * success/error emoji based on the results. Shared by the save-reaction and
+ * direct-message paths so both surfaces behave identically.
+ */
+async function saveUrlsAndReact(
+  message: Message,
+  urls: string[],
+  resolved: ResolvedUser,
+  user: User | PartialUser
+): Promise<void> {
   let hasSuccess = false;
   let hasFailure = false;
 
