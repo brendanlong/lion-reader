@@ -18,6 +18,7 @@ import {
 } from "@/lib/format";
 import { Alert } from "@/components/ui/alert";
 import { Card } from "@/components/ui/card";
+import { FeedSiteLink } from "@/components/feeds/FeedSiteLink";
 import { SettingsListSkeleton } from "@/components/settings/SettingsListSkeleton";
 import {
   RssIcon,
@@ -272,6 +273,9 @@ function FeedStatsRow({ feed }: FeedStatsRowProps) {
 
           {/* Feed URL */}
           {feed.url && <p className="ui-text-sm text-muted mt-0.5 truncate">{feed.url}</p>}
+
+          {/* Site link (feed's website) */}
+          <FeedSiteLink siteUrl={feed.siteUrl} className="mt-0.5" />
 
           {/* Error Message (if any) */}
           {feed.lastError && (
