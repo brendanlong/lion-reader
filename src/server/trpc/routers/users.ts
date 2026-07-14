@@ -17,6 +17,7 @@ import {
 import { errors } from "../errors";
 import { sessions, users, oauthAccounts } from "@/server/db/schema";
 import { revokeSession, invalidateUserSessionCaches } from "@/server/auth/session";
+import { clearSessionCookie } from "@/server/auth/session-cookie";
 import { encryptApiKey, isEncryptionConfigured } from "@/lib/encryption";
 import { deleteUser } from "@/server/services/users";
 
@@ -499,6 +500,9 @@ export const usersRouter = createTRPCRouter({
       const userId = ctx.session.user.id;
 
       await deleteUser(ctx.db, userId);
+
+      // Clear the httpOnly session cookie (+ readable marker) for the browser.
+      clearSessionCookie(ctx.resHeaders);
 
       return { success: true };
     }),

@@ -11,7 +11,6 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
-import { clearSessionCookie } from "@/lib/session-cookie";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
@@ -37,7 +36,7 @@ export default function CompleteSignupPage() {
 
   const deleteMutation = trpc.users["me.deleteAccount"].useMutation({
     onSuccess: () => {
-      clearSessionCookie();
+      // The server cleared the httpOnly session cookie (+ marker) on the delete response.
       window.location.href = "/login";
     },
     onError: (err) => {

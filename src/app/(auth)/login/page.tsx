@@ -10,7 +10,6 @@ import { useState, useMemo, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
-import { setSessionCookie } from "@/lib/session-cookie";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
@@ -93,9 +92,9 @@ function LoginForm() {
   }, [oauthError]);
 
   const loginMutation = trpc.auth.login.useMutation({
-    onSuccess: (data) => {
-      // Store the session token in a cookie (must match context.ts "session" cookie name)
-      setSessionCookie(data.sessionToken);
+    onSuccess: () => {
+      // The server set the httpOnly session cookie (+ readable marker) on the
+      // login response; nothing to persist client-side.
 
       // Get the redirect URL from query params or default to /all
       const redirectTo = searchParams.get("redirect") ?? "/all";
