@@ -49,6 +49,14 @@ export interface Context {
    */
   sessionToken: string | null;
   /**
+   * Mutable response headers for the browser tRPC path (the fetch adapter merges
+   * these into the HTTP response). Used to set/clear the httpOnly session cookie
+   * on login/logout (see src/server/auth/session-cookie.ts). Absent on the
+   * REST/OpenAPI path (that adapter doesn't supply it), where auth clients read
+   * the token from the response body instead, so cookie writes there are no-ops.
+   */
+  resHeaders?: Headers;
+  /**
    * Rate limit response headers (set by rate limiting middleware).
    * Applied to the response after processing.
    */
@@ -97,6 +105,9 @@ function getToken(headers: Headers): string | null {
  */
 export async function createContext(opts: FetchCreateContextFnOptions): Promise<Context> {
   const { req } = opts;
+  // Present on the browser tRPC fetch path; undefined on the REST/OpenAPI path
+  // (its adapter uses a Node res shim and doesn't pass resHeaders through).
+  const resHeaders = opts.resHeaders as Headers | undefined;
 
   // Extract token from request
   const token = getToken(req.headers);
@@ -110,6 +121,7 @@ export async function createContext(opts: FetchCreateContextFnOptions): Promise<
       scopes: [],
       sessionToken: null,
       headers: req.headers,
+      resHeaders,
     };
   }
 
@@ -124,6 +136,7 @@ export async function createContext(opts: FetchCreateContextFnOptions): Promise<
       scopes: [], // Session auth has full access, scopes not used
       sessionToken: token,
       headers: req.headers,
+      resHeaders,
     };
   }
 
@@ -172,6 +185,7 @@ export async function createContext(opts: FetchCreateContextFnOptions): Promise<
       scopes: (apiTokenData.token.scopes ?? []) as ApiTokenScope[],
       sessionToken: token,
       headers: req.headers,
+      resHeaders,
     };
   }
 
@@ -184,5 +198,6 @@ export async function createContext(opts: FetchCreateContextFnOptions): Promise<
     scopes: [],
     sessionToken: null,
     headers: req.headers,
+    resHeaders,
   };
 }
