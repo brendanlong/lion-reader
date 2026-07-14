@@ -9,16 +9,8 @@ plugins:
   - jekyll-feed
   - jekyll-seo-tag
 
-collections:
-  changelog:
-    output: true
-    permalink: /changelog/:year/:month/:day/:title/
-
 feed:
   path: feed.xml
-  collections:
-    changelog:
-      path: changelog.xml
 
 permalink: /:year/:month/:day/:title/
 
