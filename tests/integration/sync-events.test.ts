@@ -1236,4 +1236,77 @@ describe("sync.events", () => {
       expect(planB2).not.toContain("Seq Scan");
     });
   });
+
+  // ==========================================================================
+  // Microsecond precision (#680, #683)
+  // ==========================================================================
+  //
+  // Postgres stores timestamps at microsecond precision. The sync cursor must
+  // preserve those microseconds end-to-end: a JavaScript Date read (millisecond
+  // precision) truncates them, landing the cursor in the gap between rows that
+  // share a millisecond and silently dropping or re-delivering entries. The pool
+  // returns the raw timestamptz string and the router decodes it to a
+  // Temporal.Instant, so the microseconds survive.
+  describe("microsecond precision", () => {
+    it("sync.cursors preserves the microseconds of the newest change", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/us-cursor.xml");
+      await createTestSubscription(userId, feedId);
+      const entryId = await createTestEntry(feedId);
+      await createUserEntry(userId, entryId);
+
+      // Stamp a microsecond-precise updated_at that a millisecond Date cannot
+      // represent (…123456, where 456 is sub-millisecond). The cursor is
+      // GREATEST(entries.updated_at, user_entries.updated_at), so pin the entry's
+      // updated_at older and let the user_entries change be the newest.
+      const micros = "2026-03-04T05:06:07.123456Z";
+      await db.execute(
+        sql`UPDATE entries SET updated_at = '2026-03-04T05:06:07.000000Z'::timestamptz WHERE id = ${entryId}::uuid`
+      );
+      await db.execute(
+        sql`UPDATE user_entries SET updated_at = ${micros}::timestamptz WHERE entry_id = ${entryId}::uuid`
+      );
+
+      const cursorResult = await createCaller(createAuthContext(userId)).sync.cursors();
+      expect(cursorResult.entries).toBe(micros);
+    });
+
+    it("sync.events emits microsecond-precise timestamps that advance the cursor", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/us-events.xml");
+      await createTestSubscription(userId, feedId);
+      const entryId = await createTestEntry(feedId);
+      await createUserEntry(userId, entryId);
+
+      // Two changes in the same millisecond, differing only in microseconds.
+      // (No trailing zeros — Temporal.Instant.toString() trims them, so these are
+      // the exact strings the router emits.)
+      const older = "2026-03-04T05:06:07.100207Z";
+      const newer = "2026-03-04T05:06:07.100803Z";
+      const pinned = "2026-03-04T05:06:07.100700Z";
+      await db.execute(
+        sql`UPDATE entries SET updated_at = ${older}::timestamptz WHERE id = ${entryId}::uuid`
+      );
+      await db.execute(
+        sql`UPDATE user_entries SET updated_at = ${newer}::timestamptz WHERE entry_id = ${entryId}::uuid`
+      );
+
+      // A cursor pinned to the microsecond just before `newer` must still surface
+      // the change — a millisecond-truncated comparison would have already passed it.
+      const result = await createCaller(createAuthContext(userId)).sync.events({
+        cursors: { entries: pinned },
+      });
+      const stateEvents = result.events.filter((e) => e.type === "entry_state_changed");
+      expect(stateEvents).toHaveLength(1);
+      expect(stateEvents[0].updatedAt).toBe(newer);
+
+      // The emitted timestamp advances the keyset cursor forward (it is strictly
+      // after the pinned cursor at microsecond precision).
+      const advanced = advanceCursors(
+        { entries: pinned, entriesAfterId: null, subscriptions: null, tags: null },
+        stateEvents[0]
+      );
+      expect(advanced.entries).toBe(newer);
+    });
+  });
 });

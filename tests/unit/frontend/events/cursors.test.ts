@@ -129,6 +129,42 @@ describe("advanceCursors", () => {
     expect(advanceCursors(EMPTY_CURSORS, importEvent())).toBe(EMPTY_CURSORS);
   });
 
+  // #683: cursors carry microsecond precision. A new Date() comparison truncates
+  // to milliseconds, so an event newer by microseconds within the same
+  // millisecond would fail to advance the cursor. Temporal.Instant.compare fixes
+  // this — the sub-millisecond-newer event must move the cursor forward.
+  it("advances the cursor for an event newer by microseconds within the same millisecond", () => {
+    const cursors = advanceCursors(EMPTY_CURSORS, subscriptionEvent("2026-01-01T00:00:00.000500Z"));
+    const next = advanceCursors(cursors, subscriptionEvent("2026-01-01T00:00:00.000800Z"));
+    expect(next.subscriptions).toBe("2026-01-01T00:00:00.000800Z");
+  });
+
+  it("does not advance the cursor for an event older by microseconds within the same millisecond", () => {
+    const cursors = advanceCursors(EMPTY_CURSORS, subscriptionEvent("2026-01-01T00:00:00.000800Z"));
+    expect(advanceCursors(cursors, subscriptionEvent("2026-01-01T00:00:00.000500Z"))).toBe(cursors);
+  });
+
+  it("advances the entries keyset for an entry event newer by microseconds", () => {
+    const cursors = advanceCursors(EMPTY_CURSORS, entryEvent("2026-01-01T00:00:00.000100Z", "a"));
+    const next = advanceCursors(cursors, entryEvent("2026-01-01T00:00:00.000200Z", "a"));
+    expect(next.entries).toBe("2026-01-01T00:00:00.000200Z");
+  });
+
+  // A legacy to_char cursor always had 6 fractional digits; Temporal trims
+  // trailing zeros. Comparing as instants (not strings) keeps a same-moment event
+  // in the tied-timestamp group so its id tiebreaker still advances (#683).
+  it("treats a trailing-zero-trimmed event as equal to a legacy 6-digit cursor", () => {
+    const legacy: SyncCursors = {
+      entries: "2026-01-01T00:00:00.123000Z",
+      entriesAfterId: "a",
+      subscriptions: null,
+      tags: null,
+    };
+    const next = advanceCursors(legacy, entryEvent("2026-01-01T00:00:00.123Z", "b"));
+    expect(next.entriesAfterId).toBe("b");
+    expect(next.entries).toBe("2026-01-01T00:00:00.123000Z");
+  });
+
   describe("entries keyset (ts, entriesAfterId)", () => {
     const T = "2026-01-01T00:00:00.000000Z";
 
