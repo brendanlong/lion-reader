@@ -390,6 +390,53 @@ test.describe("Wallabag API happy path", () => {
       await close();
     }
   });
+
+  test("archive via PATCH with a .json format suffix marks the entry read (#1229)", async ({
+    request,
+  }) => {
+    const { access_token } = await getTokens(request);
+    const auth = { Authorization: `Bearer ${access_token}` };
+
+    const { url, close } = await startArticleServer();
+    let id: number | undefined;
+    try {
+      id = (
+        await (
+          await request.post("/api/wallabag/api/entries", { headers: auth, form: { url } })
+        ).json()
+      ).id;
+
+      // The Wallabag Android app (and others) append a `.json` format suffix to
+      // the single-entry endpoint. That must resolve the same as the bare id —
+      // otherwise the archive silently 404s and the entry reappears on re-sync.
+      const patchRes = await request.patch(`/api/wallabag/api/entries/${id}.json`, {
+        headers: auth,
+        form: { archive: "1" },
+      });
+      expect(patchRes.status()).toBe(200);
+      expect((await patchRes.json()).is_archived).toBe(1);
+
+      // It's gone from the unread (archive=0) list and present in the archived
+      // (archive=1) list — the read state actually persisted.
+      const unread = await request.get(
+        "/api/wallabag/api/entries?archive=0&detail=metadata&perPage=100",
+        { headers: auth }
+      );
+      expect((await unread.json())._embedded.items.map((e: { id: number }) => e.id)).not.toContain(
+        id
+      );
+      const archived = await request.get(
+        "/api/wallabag/api/entries?archive=1&detail=metadata&perPage=100",
+        { headers: auth }
+      );
+      expect((await archived.json())._embedded.items.map((e: { id: number }) => e.id)).toContain(
+        id
+      );
+    } finally {
+      if (id) await request.delete(`/api/wallabag/api/entries/${id}`, { headers: auth });
+      await close();
+    }
+  });
 });
 
 /**
