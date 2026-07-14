@@ -229,6 +229,44 @@ write when it was updated within the last minute to avoid write/index churn.
 
 Session tokens are 32 random bytes, base64url encoded. We store SHA-256 hash in database (never the raw token).
 
+### Session Cookie (`Secure`, and the `httpOnly: false` trade-off)
+
+The `session` cookie carries the raw token to the server on every request. It is
+written with `path=/; SameSite=Lax; Max-Age=30d`, and — the security-relevant part
+— **`Secure` on any HTTPS origin** so the 30-day token is never transmitted over
+cleartext HTTP (a stray `http://` link, a misconfig, or a downgrade before HSTS
+pins). There are two families of write sites, kept consistent:
+
+- **Server-set** (OAuth redirect flow, `createSessionResponse` in
+  `src/server/auth/oauth/callback-helpers.ts`): `secure: NODE_ENV === "production"`.
+- **Client-set** (email login + OAuth callback page, which receive the token in a
+  tRPC mutation _body_ and set the cookie in JS): centralized in
+  `src/lib/session-cookie.ts` (`setSessionCookie`/`clearSessionCookie`/`hasSessionCookie`),
+  which adds `; secure` whenever `location.protocol === "https:"`. Keying off the
+  actual transport (not a build flag) means a `Secure` cookie is never emitted on a
+  plain-HTTP dev origin, where the browser would silently drop it.
+
+**`httpOnly: false` is deliberate and is an accepted, documented risk.** The cookie
+must be JS-readable/-writable because the SPA manages the session client-side: login
+and OAuth are tRPC mutations that return the token in their response body for JS to
+persist; the shared error handler reads the cookie (`hasSessionCookie`) to decide
+whether a `401` means "log out and redirect" vs. "a failed login attempt"; and
+logout/account-deletion clear it in JS. Moving to a server-set `httpOnly` cookie
+would mean dropping token-in-body from the login/OAuth mutations (setting `Set-Cookie`
+from the tRPC response instead) **and** replacing the `hasSessionCookie` heuristic
+with a separate non-sensitive "logged-in" marker — a larger refactor of the
+PWA/shallow-routing flow that a prior attempt broke, so it is intentionally left as
+possible future work, not done here.
+
+The consequence: session confidentiality rests entirely on the app having **zero
+XSS**. Because entry bodies (and AI summaries) are rendered via
+`dangerouslySetInnerHTML`, **`sanitizeEntryHtml` (`src/server/html/sanitize.ts`) is
+security-critical, not merely defense-in-depth** — a sanitizer bypass is a direct
+path to session-token theft and full account takeover. Treat any change to the
+sanitizer allow-list or its pre-sanitization transforms accordingly (see "Sanitizing
+untrusted HTML" in CLAUDE.md). The `admin` cookie, which has no client-side
+management need, is `httpOnly: true` (`src/app/api/admin/session/route.ts`).
+
 ### Token Scopes & Authorization
 
 Authorization is **fail-closed** for tokens. There are four credential types:
