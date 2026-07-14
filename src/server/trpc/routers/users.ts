@@ -501,7 +501,7 @@ export const usersRouter = createTRPCRouter({
 
       await deleteUser(ctx.db, userId);
 
-      // Clear the httpOnly session cookie (+ readable marker) for the browser.
+      // Clear the httpOnly session cookie for the browser.
       clearSessionCookie(ctx.resHeaders);
 
       return { success: true };

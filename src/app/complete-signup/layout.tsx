@@ -10,6 +10,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { TRPCProvider } from "@/lib/trpc/provider";
+import { AuthErrorHandler } from "@/components/app/AuthErrorHandler";
 import { validateSession } from "@/server/auth/session";
 
 interface CompleteSignupLayoutProps {
@@ -40,6 +41,9 @@ export default async function CompleteSignupLayout({ children }: CompleteSignupL
 
   return (
     <TRPCProvider>
+      {/* Authenticated surface: a dead session mid-page should redirect to /login,
+          like the SPA. The signup-confirmation branch self-guards this path. */}
+      <AuthErrorHandler />
       <div className="bg-canvas flex min-h-screen flex-col items-center justify-center px-4 py-12">
         <div className="w-full max-w-md">
           <div className="mb-8 text-center">

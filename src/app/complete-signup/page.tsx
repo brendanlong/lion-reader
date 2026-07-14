@@ -36,7 +36,7 @@ export default function CompleteSignupPage() {
 
   const deleteMutation = trpc.users["me.deleteAccount"].useMutation({
     onSuccess: () => {
-      // The server cleared the httpOnly session cookie (+ marker) on the delete response.
+      // The server cleared the httpOnly session cookie on the delete response.
       window.location.href = "/login";
     },
     onError: (err) => {

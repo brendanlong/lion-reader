@@ -254,18 +254,18 @@ management and no other cookie:
 **Detecting a dead session without reading the cookie.** Because the token is
 httpOnly, the client can't read it to tell "logged in" from "a login attempt just
 failed". It doesn't need to: the auth-error redirect (`<AuthErrorHandler>`,
-`src/components/app/AuthErrorHandler.tsx`) is mounted **only inside the authenticated
-app SPA** (`(app)/layout.tsx`), whose server component has already redirected
-unauthenticated/unconfirmed users away. So any request the client makes there is from
-a genuinely logged-in user, and an `UNAUTHORIZED` response is treated
-**unconditionally** as "the session died → redirect to `/login`" — no cookie, no
-marker, no per-procedure check. The auth/`/save`/`/demo` surfaces mount `TRPCProvider`
-(generic wiring) but **not** the handler, so their own expected 401s (a failed login,
-the bookmarklet's sign-in prompt) are handled locally and never trigger a global
-redirect loop. A stale httpOnly cookie after a dead-session 401 is inert — the server
-rejects it and it is overwritten on the next login. This makes the model fully
-retroactive: an existing session that dies converges on the next request with no
-client state to migrate.
+`src/components/app/AuthErrorHandler.tsx`) is mounted **only on the authenticated
+surfaces** — the app SPA (`(app)/layout.tsx`) and `/complete-signup` — whose server
+layouts have already redirected unauthenticated users away before the client mounts.
+So any request the client makes there is from a genuinely logged-in user, and an
+`UNAUTHORIZED` response is treated **unconditionally** as "the session died → redirect
+to `/login`" — no cookie, no marker, no per-procedure check. The auth/`/save`/`/demo`
+surfaces mount `TRPCProvider` (generic wiring) but **not** the handler, so their own
+expected 401s (a failed login, the bookmarklet's sign-in prompt) are handled locally
+and never trigger a global redirect loop. A stale httpOnly cookie after a dead-session
+401 is inert — the server rejects it and it is overwritten on the next login. This
+makes the model fully retroactive: an existing session that dies converges on the next
+request with no client state to migrate.
 
 Making the token httpOnly removes the XSS→session-token-theft path (an XSS on the
 `dangerouslySetInnerHTML`-rendered entry body can no longer read the cookie).
