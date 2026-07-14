@@ -105,6 +105,13 @@ export const users = pgTable(
     savedUnreadCount: integer("saved_unread_count").notNull().default(0),
     starredUnreadCount: integer("starred_unread_count").notNull().default(0),
 
+    // Opaque Google Reader user id / userProfileId (issue #1117, migration 0097).
+    // Drawn from the shared greader_id_seq; DB-assigned via a sequence default, so
+    // inserts omit it. Never reversed, so no index.
+    greaderUserId: bigint("greader_user_id", { mode: "bigint" })
+      .notNull()
+      .default(sql`nextval('greader_id_seq'::regclass)`),
+
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -405,11 +412,21 @@ export const feeds = pgTable(
     redirectUrl: text("redirect_url"), // URL we're being redirected to (301/308)
     redirectFirstSeenAt: timestamp("redirect_first_seen_at", { withTimezone: true }), // When redirect was first observed
 
+    // Google Reader feed stream id (issue #1117, migration 0097). Only the
+    // per-user saved-articles feed is exposed as a stream, but every feed gets one
+    // from the shared greader_id_seq so the value space stays disjoint from
+    // subscriptions (resolveFeedStream tries subscriptions first, then the saved
+    // feed). DB-assigned via a sequence default, so inserts omit it.
+    greaderStreamId: bigint("greader_stream_id", { mode: "bigint" })
+      .notNull()
+      .default(sql`nextval('greader_id_seq'::regclass)`),
+
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     index("idx_feeds_next_fetch").on(table.nextFetchAt),
+    uniqueIndex("idx_feeds_greader_stream_id").on(table.greaderStreamId),
     // Email and saved feeds require user_id, other feeds must not have it
     check("feed_type_user_id", sql`(type IN ('email', 'saved')) = (user_id IS NOT NULL)`),
     // Unique constraint for email feeds: one feed per (user, sender)
@@ -568,6 +585,13 @@ export const tags = pgTable(
     name: text("name").notNull(),
     color: text("color"), // hex color for UI (e.g., "#ff6b6b")
 
+    // Opaque Google Reader folder sortid (issue #1117, migration 0097). Drawn
+    // from the shared greader_id_seq; DB-assigned via a sequence default, so
+    // inserts omit it. Never reversed, so no index.
+    greaderSortid: bigint("greader_sortid", { mode: "bigint" })
+      .notNull()
+      .default(sql`nextval('greader_id_seq'::regclass)`),
+
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }), // Soft delete for sync tracking
@@ -641,6 +665,14 @@ export const subscriptions = pgTable(
     unreadCount: integer("unread_count").notNull().default(0),
     starredUnreadCount: integer("starred_unread_count").notNull().default(0),
 
+    // Google Reader feed stream id (issue #1117, migration 0097). Backs the
+    // feed/{int} stream id and the subscription sortid; reversed by
+    // feedStreamIdToSubscriptionUuid / resolveFeedStream with a unique-index seek.
+    // Drawn from the shared greader_id_seq; DB-assigned via a sequence default.
+    greaderStreamId: bigint("greader_stream_id", { mode: "bigint" })
+      .notNull()
+      .default(sql`nextval('greader_id_seq'::regclass)`),
+
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -648,6 +680,7 @@ export const subscriptions = pgTable(
     // Unique constraint on user + feed
     unique("uq_subscriptions_user_feed").on(table.userId, table.feedId),
     index("idx_subscriptions_feed").on(table.feedId),
+    uniqueIndex("idx_subscriptions_greader_stream_id").on(table.greaderStreamId),
   ]
 );
 
@@ -763,6 +796,9 @@ export const userFeeds = pgView("user_feeds", {
   siteUrl: text("site_url"),
   description: text("description"),
   unreadCount: integer("unread_count").notNull(), // trigger-maintained counter (migration 0092)
+  // Google Reader feed stream id (subscriptions.greader_stream_id, migration
+  // 0097). Display-only compat id; stripped from main-app/MCP responses.
+  greaderStreamId: bigint("greader_stream_id", { mode: "bigint" }).notNull(),
 }).existing();
 
 /**
@@ -822,6 +858,11 @@ export const visibleEntries = pgView("visible_entries", {
   // NOT NULL in reality (entries.greader_item_id is NOT NULL); typed non-null so
   // it flows into EntryListItem/EntryFull's non-null greaderItemId without a cast.
   greaderItemId: bigint("greader_item_id", { mode: "bigint" }).notNull(),
+  // The entry's subscription Google Reader stream id (subscriptions.greader_stream_id
+  // via the view's LEFT JOIN; migration 0097). NULL for saved/uploaded articles
+  // and orphaned starred entries — the Google Reader layer falls back to the
+  // feed's stream id for saved entries. Compat id; stripped from main-app/MCP.
+  subscriptionGreaderStreamId: bigint("subscription_greader_stream_id", { mode: "bigint" }),
 }).existing();
 
 // ============================================================================

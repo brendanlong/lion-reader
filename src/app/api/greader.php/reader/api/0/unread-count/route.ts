@@ -23,7 +23,10 @@ export async function GET(request: Request): Promise<Response> {
   // one consistent snapshot: a feed can't be counted (unread > 0) yet be absent
   // from the newest-item map between two reads (issue #1092). Cheap now that the
   // unread count is a trigger-maintained counter column rather than a scan.
-  const { subscriptions, newestItemAtById } = await getGreaderUnreadCounts(db, session.user.id);
+  const { subscriptions, newestItemAtByStreamId } = await getGreaderUnreadCounts(
+    db,
+    session.user.id
+  );
 
-  return jsonResponse(formatUnreadCounts(subscriptions, newestItemAtById));
+  return jsonResponse(formatUnreadCounts(subscriptions, newestItemAtByStreamId));
 }

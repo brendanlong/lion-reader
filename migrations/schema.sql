@@ -239,6 +239,14 @@ CREATE SEQUENCE public.entries_greader_item_id_seq
 
 ALTER SEQUENCE public.entries_greader_item_id_seq OWNED BY public.entries.greader_item_id;
 
+CREATE SEQUENCE public.greader_id_seq
+    AS bigint
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
 CREATE TABLE public.entry_summaries (
     id uuid NOT NULL,
     content_hash text NOT NULL,
@@ -280,6 +288,7 @@ CREATE TABLE public.feeds (
     redirect_first_seen_at timestamp with time zone,
     last_fetch_entry_count integer,
     last_fetch_size_bytes integer,
+    greader_stream_id bigint DEFAULT nextval('public.greader_id_seq'::regclass) NOT NULL,
     CONSTRAINT feed_type_user_id CHECK (((type = ANY (ARRAY['email'::public.feed_type, 'saved'::public.feed_type])) = (user_id IS NOT NULL)))
 );
 
@@ -451,7 +460,8 @@ CREATE TABLE public.subscriptions (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     fetch_full_content boolean DEFAULT false NOT NULL,
     unread_count integer DEFAULT 0 NOT NULL,
-    starred_unread_count integer DEFAULT 0 NOT NULL
+    starred_unread_count integer DEFAULT 0 NOT NULL,
+    greader_stream_id bigint DEFAULT nextval('public.greader_id_seq'::regclass) NOT NULL
 );
 
 CREATE TABLE public.tags (
@@ -461,7 +471,8 @@ CREATE TABLE public.tags (
     color text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    deleted_at timestamp with time zone
+    deleted_at timestamp with time zone,
+    greader_sortid bigint DEFAULT nextval('public.greader_id_seq'::regclass) NOT NULL
 );
 
 CREATE TABLE public.user_entries (
@@ -492,7 +503,8 @@ CREATE VIEW public.user_feeds AS
     f.url,
     f.site_url,
     f.description,
-    s.unread_count
+    s.unread_count,
+    s.greader_stream_id
    FROM (public.subscriptions s
      JOIN public.feeds f ON ((f.id = s.feed_id)))
   WHERE (s.unsubscribed_at IS NULL);
@@ -516,7 +528,8 @@ CREATE TABLE public.users (
     not_eu_agreed_at timestamp with time zone,
     last_active_at timestamp with time zone,
     saved_unread_count integer DEFAULT 0 NOT NULL,
-    starred_unread_count integer DEFAULT 0 NOT NULL
+    starred_unread_count integer DEFAULT 0 NOT NULL,
+    greader_user_id bigint DEFAULT nextval('public.greader_id_seq'::regclass) NOT NULL
 );
 
 CREATE VIEW public.visible_entries AS
@@ -562,7 +575,8 @@ CREATE VIEW public.visible_entries AS
     e.full_content_original_sanitized,
     e.full_content_cleaned_sanitized,
     e.full_content_sanitized_version,
-    e.greader_item_id
+    e.greader_item_id,
+    s.greader_stream_id AS subscription_greader_stream_id
    FROM ((public.user_entries ue
      JOIN public.entries e ON ((e.id = ue.entry_id)))
      LEFT JOIN public.subscriptions s ON ((s.id = ue.subscription_id)))
@@ -762,6 +776,8 @@ CREATE INDEX idx_entries_wallabag_id ON public.entries USING btree (wallabag_id)
 
 CREATE INDEX idx_entry_summaries_prompt_version ON public.entry_summaries USING btree (prompt_version) WHERE (summary_text IS NOT NULL);
 
+CREATE UNIQUE INDEX idx_feeds_greader_stream_id ON public.feeds USING btree (greader_stream_id);
+
 CREATE INDEX idx_feeds_next_fetch ON public.feeds USING btree (next_fetch_at);
 
 CREATE INDEX idx_feeds_type ON public.feeds USING btree (type);
@@ -817,6 +833,8 @@ CREATE INDEX idx_subscription_tags_tag ON public.subscription_tags USING btree (
 CREATE INDEX idx_subscriptions_feed ON public.subscriptions USING btree (feed_id);
 
 CREATE INDEX idx_subscriptions_feed_active ON public.subscriptions USING btree (feed_id) WHERE (unsubscribed_at IS NULL);
+
+CREATE UNIQUE INDEX idx_subscriptions_greader_stream_id ON public.subscriptions USING btree (greader_stream_id);
 
 CREATE INDEX idx_subscriptions_user_active ON public.subscriptions USING btree (user_id) WHERE (unsubscribed_at IS NULL);
 

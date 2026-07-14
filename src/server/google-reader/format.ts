@@ -5,11 +5,10 @@
  * by Google Reader clients.
  */
 
-import { uuidToInt64, int64ToLongFormId, subscriptionToStreamId, feedStreamId } from "./id";
+import { int64ToLongFormId, feedStreamId } from "./id";
 import { stateStreamId, labelStreamId } from "./streams";
+import type { GreaderSubscription } from "./subscriptions";
 import type { EntryFull } from "@/server/services/entries";
-import type { Subscription } from "@/server/services/subscriptions";
-import type { ListTagsResult } from "@/server/services/tags";
 
 // ============================================================================
 // Item (Entry) Formatting
@@ -38,8 +37,8 @@ interface GoogleReaderItem {
  * Formats a full entry (with content) as a Google Reader item.
  */
 export function formatEntryAsItem(entry: EntryFull): GoogleReaderItem {
-  // Item ids are a stored global serial (entries.greader_item_id), not derived
-  // from the UUID. Feed stream ids / tag sortids / user ids still use uuidToInt64.
+  // Item ids and feed stream ids are stored serials (issue #1117), read straight
+  // off the entry — no UUID projection.
   const itemId = entry.greaderItemId;
   const publishedTs = entry.publishedAt
     ? Math.floor(entry.publishedAt.getTime() / 1000)
@@ -89,20 +88,21 @@ export function formatEntryAsItem(entry: EntryFull): GoogleReaderItem {
 /**
  * The `feed/{int64}` stream an entry belongs to, or null if it has none. Regular
  * entries use their subscription's stream id; saved articles (no subscription)
- * use their saved-feed id (the synthetic "Saved Articles" subscription — issue
- * #730). Shared by item formatting and the stream/items/ids item refs so both
- * address saved articles the same way.
+ * use their saved-feed stream id (the synthetic "Saved Articles" subscription —
+ * issue #730). Both ids are stored serials carried on the entry. Shared by item
+ * formatting and the stream/items/ids item refs so both address saved articles
+ * the same way.
  */
 export function entryFeedStreamId(entry: {
-  subscriptionId: string | null;
-  feedId: string;
+  subscriptionGreaderStreamId: bigint | null;
+  feedGreaderStreamId: bigint;
   type: "web" | "email" | "saved";
 }): string | null {
-  if (entry.subscriptionId) {
-    return subscriptionToStreamId(entry.subscriptionId);
+  if (entry.subscriptionGreaderStreamId !== null) {
+    return feedStreamId(entry.subscriptionGreaderStreamId);
   }
   if (entry.type === "saved") {
-    return feedStreamId(entry.feedId);
+    return feedStreamId(entry.feedGreaderStreamId);
   }
   return null;
 }
@@ -123,19 +123,20 @@ interface GoogleReaderSubscription {
 }
 
 /**
- * Formats a subscription as a Google Reader subscription object.
+ * Formats a subscription as a Google Reader subscription object. The stream id
+ * and sortid are the subscription's stored serial (`greader_stream_id`); the
+ * synthetic saved-articles subscription carries the saved feed's serial (issue
+ * #730), so no special case is needed here.
  */
-export function formatSubscription(sub: Subscription): GoogleReaderSubscription {
-  const int64Id = uuidToInt64(sub.id);
-
+export function formatSubscription(sub: GreaderSubscription): GoogleReaderSubscription {
   return {
-    id: feedStreamId(sub.id),
+    id: feedStreamId(sub.greaderStreamId),
     title: sub.title ?? "",
     categories: sub.tags.map((tag) => ({
       id: labelStreamId(tag.name),
       label: tag.name,
     })),
-    sortid: int64Id.toString(16).padStart(16, "0"),
+    sortid: sub.greaderStreamId.toString(16).padStart(16, "0"),
     firstitemmsec: sub.subscribedAt.getTime().toString(),
     url: sub.url ?? "",
     htmlUrl: sub.siteUrl ?? sub.url ?? "",
@@ -156,8 +157,15 @@ interface GoogleReaderTag {
 /**
  * Formats tags as Google Reader tag list.
  * Includes system tags (reading-list, starred) and user labels.
+ *
+ * Each label's opaque sortid is the tag's stored serial (`tags.greader_sortid`);
+ * sortids are never reversed, so the caller passes just the name + serial rather
+ * than the general `Tag` (which would drag a bigint into the main-app/MCP tag
+ * responses).
  */
-export function formatTagList(tagsResult: ListTagsResult): GoogleReaderTag[] {
+export function formatTagList(
+  userTags: Array<{ name: string; greaderSortid: bigint }>
+): GoogleReaderTag[] {
   const result: GoogleReaderTag[] = [];
 
   // System tags
@@ -171,10 +179,10 @@ export function formatTagList(tagsResult: ListTagsResult): GoogleReaderTag[] {
   });
 
   // User labels (tags)
-  for (const tag of tagsResult.items) {
+  for (const tag of userTags) {
     result.push({
       id: labelStreamId(tag.name),
-      sortid: uuidToInt64(tag.id).toString(16).padStart(16, "0"),
+      sortid: tag.greaderSortid.toString(16).padStart(16, "0"),
       type: "folder",
     });
   }
@@ -219,8 +227,8 @@ interface GoogleReaderUnreadCount {
  * original bug from deriving this field off the saved feed's epoch `subscribedAt`.
  */
 export function formatUnreadCounts(
-  subscriptions: Array<{ id: string; unreadCount: number }>,
-  newestItemAtById: Map<string, Date>
+  subscriptions: Array<{ streamId: string; unreadCount: number }>,
+  newestItemAtByStreamId: Map<string, Date>
 ): {
   max: number;
   unreadcounts: GoogleReaderUnreadCount[];
@@ -233,9 +241,9 @@ export function formatUnreadCounts(
   let newestOverallMs = 0;
   for (const sub of subscriptions) {
     if (sub.unreadCount > 0) {
-      const newestMs = newestItemAtById.get(sub.id)?.getTime() ?? Date.now();
+      const newestMs = newestItemAtByStreamId.get(sub.streamId)?.getTime() ?? Date.now();
       unreadcounts.push({
-        id: feedStreamId(sub.id),
+        id: `feed/${sub.streamId}`,
         count: sub.unreadCount,
         newestItemTimestampUsec: toUsec(newestMs),
       });
@@ -263,11 +271,12 @@ export function formatUnreadCounts(
 // User Info Formatting
 // ============================================================================
 
-export function formatUserInfo(userId: string, email: string) {
+export function formatUserInfo(greaderUserId: bigint, email: string) {
+  const idStr = greaderUserId.toString();
   return {
-    userId: uuidToInt64(userId).toString(),
+    userId: idStr,
     userName: email,
-    userProfileId: uuidToInt64(userId).toString(),
+    userProfileId: idStr,
     userEmail: email,
     isBloggerUser: false,
     signupTimeSec: 0,

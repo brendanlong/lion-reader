@@ -76,18 +76,22 @@ export function toMcpError(error: unknown): unknown {
 }
 
 /**
- * Strips the Google Reader-internal `greaderItemId` from an entry before it
- * reaches an MCP response. The field is a bigint, which the transports'
- * `JSON.stringify` can't serialize (it throws), and it's meaningless to MCP
- * clients — only the Google Reader compat layer consumes it. The tRPC/REST
- * surfaces strip it via their Zod output schemas; MCP serializes service
- * results directly, so it must be dropped here.
+ * Strips the Google Reader-internal compat ids (`greaderItemId` and the feed
+ * stream serials) from an entry before it reaches an MCP response. They are
+ * bigints, which the transports' `JSON.stringify` can't serialize (it throws),
+ * and they're meaningless to MCP clients — only the Google Reader compat layer
+ * consumes them. The tRPC/REST surfaces strip them via their Zod output schemas;
+ * MCP serializes service results directly, so they must be dropped here.
  */
-function stripGreaderItemId<T extends { greaderItemId: bigint }>(
-  entry: T
-): Omit<T, "greaderItemId"> {
+function stripGreaderIds<
+  T extends {
+    greaderItemId: bigint;
+    subscriptionGreaderStreamId: bigint | null;
+    feedGreaderStreamId: bigint;
+  },
+>(entry: T): Omit<T, "greaderItemId" | "subscriptionGreaderStreamId" | "feedGreaderStreamId"> {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { greaderItemId, ...rest } = entry;
+  const { greaderItemId, subscriptionGreaderStreamId, feedGreaderStreamId, ...rest } = entry;
   return rest;
 }
 
@@ -255,7 +259,7 @@ function buildTools(): Tool[] {
           ...params,
           showSpam: false, // Default to hiding spam for MCP
         });
-        return { ...result, items: result.items.map(stripGreaderItemId) };
+        return { ...result, items: result.items.map(stripGreaderIds) };
       },
     },
 
@@ -266,7 +270,7 @@ function buildTools(): Tool[] {
       handler: async (db, userId, args) => {
         const params = parseArgs(getEntryArgs, args);
         const entry = await entriesService.getEntry(db, userId, params.entryId);
-        return entry ? stripGreaderItemId(entry) : entry;
+        return entry ? stripGreaderIds(entry) : entry;
       },
     },
 
