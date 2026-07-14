@@ -25,13 +25,23 @@ import { passwordGrant, refreshTokenGrant } from "@/server/wallabag/auth";
 import { parseBody } from "@/server/wallabag/parse";
 import { jsonResponse, errorResponse } from "@/server/wallabag/parse";
 import { checkRouteRateLimit, checkAccountRouteRateLimit } from "@/server/rate-limit";
+import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request): Promise<Response> {
   // Per-IP limit first (cheap, rejects floods before parsing).
   const rateLimitResponse = await checkRouteRateLimit(request, "expensive", { json: true });
-  if (rateLimitResponse) return rateLimitResponse;
+  if (rateLimitResponse) {
+    // Setup/sync surfaces the token endpoint through the strict per-IP
+    // `expensive` bucket; a 429 here (e.g. several devices behind one NAT, or a
+    // client retrying) reads to the user as flaky setup. Log it so we can tell.
+    logger.warn("Wallabag token request rate-limited", {
+      component: "wallabag",
+      bucket: "expensive_per_ip",
+    });
+    return rateLimitResponse;
+  }
 
   const body = await parseBody(request);
 
@@ -49,7 +59,14 @@ export async function POST(request: Request): Promise<Response> {
     // Per-account limit: throttles distributed, IP-rotating brute-force against
     // a single account, shared with the tRPC login and Google Reader paths.
     const accountRateLimitResponse = await checkAccountRouteRateLimit(username, { json: true });
-    if (accountRateLimitResponse) return accountRateLimitResponse;
+    if (accountRateLimitResponse) {
+      logger.warn("Wallabag token request rate-limited", {
+        component: "wallabag",
+        bucket: "expensive_per_account",
+        grantType: "password",
+      });
+      return accountRateLimitResponse;
+    }
 
     const result = await passwordGrant(username, password, clientId);
     if (!result) {

@@ -5,8 +5,8 @@
  * Handles clients, authorization codes, tokens, and consent.
  */
 
-import { eq, and, isNull, gt } from "drizzle-orm";
-import { db } from "@/server/db";
+import { eq, and, isNull, gt, inArray, sql } from "drizzle-orm";
+import { db, type DbOrTx } from "@/server/db";
 import {
   oauthClients,
   oauthAuthorizationCodes,
@@ -307,8 +307,15 @@ interface CreateTokensParams {
 
 /**
  * Creates a new access token and refresh token pair.
+ *
+ * Accepts an optional transaction/executor so callers that mint tokens as part
+ * of a larger atomic operation (e.g. refresh rotation) can enroll the inserts in
+ * their transaction. Defaults to the pooled `db`.
  */
-export async function createTokens(params: CreateTokensParams): Promise<TokenPair> {
+export async function createTokens(
+  params: CreateTokensParams,
+  executor: DbOrTx = db
+): Promise<TokenPair> {
   const accessToken = generateToken();
   const refreshToken = generateToken();
   const accessTokenHash = hashToken(accessToken);
@@ -321,7 +328,7 @@ export async function createTokens(params: CreateTokensParams): Promise<TokenPai
   const refreshTokenExpiry = getRefreshTokenExpiry();
 
   // Insert access token
-  await db.insert(oauthAccessTokens).values({
+  await executor.insert(oauthAccessTokens).values({
     id: accessTokenId,
     tokenHash: accessTokenHash,
     clientId: params.clientId,
@@ -332,7 +339,7 @@ export async function createTokens(params: CreateTokensParams): Promise<TokenPai
   });
 
   // Insert refresh token
-  await db.insert(oauthRefreshTokens).values({
+  await executor.insert(oauthRefreshTokens).values({
     id: refreshTokenId,
     tokenHash: refreshTokenHash,
     clientId: params.clientId,
@@ -411,9 +418,16 @@ async function updateAccessTokenLastUsed(tokenId: string): Promise<void> {
  *
  * The presented token is claimed with an atomic UPDATE ... WHERE revoked_at IS
  * NULL, so concurrent requests with the same token can't both rotate it.
- * Presenting an already-rotated (revoked but unexpired) token is treated as
- * rotation reuse — evidence the token leaked — and revokes every active token
- * for that user+client pair, per OAuth 2.1 refresh token rotation guidance.
+ * Presenting an already-rotated (revoked but unexpired) token *outside* a short
+ * grace window is treated as rotation reuse — evidence the token leaked — and
+ * revokes the leaked token's rotation chain (see handlePossibleRefreshTokenReuse).
+ *
+ * The claim, old-token revocation, successor creation, and chain link all run in
+ * a single transaction. That's not just tidiness: if the successor were created
+ * and the process died before `replaced_by_id` was stamped, the successor would
+ * be live but unreachable from the chain walk, so reuse detection could never
+ * revoke it. Wrapping the whole sequence means either the fully-linked successor
+ * exists or nothing does, and a failure leaves the presented token valid to retry.
  */
 export async function rotateRefreshToken(
   refreshToken: string,
@@ -422,80 +436,126 @@ export async function rotateRefreshToken(
   const tokenHash = hashToken(refreshToken);
   const now = new Date();
 
-  // Atomically claim (revoke) the presented refresh token
-  const claimed = await db
-    .update(oauthRefreshTokens)
-    .set({ revokedAt: now })
-    .where(
-      and(
-        eq(oauthRefreshTokens.tokenHash, tokenHash),
-        eq(oauthRefreshTokens.clientId, clientId),
-        isNull(oauthRefreshTokens.revokedAt),
-        gt(oauthRefreshTokens.expiresAt, now)
-      )
-    )
-    .returning();
-
-  if (claimed.length === 0) {
-    await handlePossibleRefreshTokenReuse(tokenHash, clientId, now);
-    return null;
-  }
-
-  const oldRefreshToken = claimed[0];
-
-  // Revoke the old access token if it exists
-  if (oldRefreshToken.accessTokenId) {
-    await db
-      .update(oauthAccessTokens)
+  const newTokens = await db.transaction(async (tx) => {
+    // Atomically claim (revoke) the presented refresh token
+    const claimed = await tx
+      .update(oauthRefreshTokens)
       .set({ revokedAt: now })
-      .where(eq(oauthAccessTokens.id, oldRefreshToken.accessTokenId));
-  }
+      .where(
+        and(
+          eq(oauthRefreshTokens.tokenHash, tokenHash),
+          eq(oauthRefreshTokens.clientId, clientId),
+          isNull(oauthRefreshTokens.revokedAt),
+          gt(oauthRefreshTokens.expiresAt, now)
+        )
+      )
+      .returning();
 
-  // Preserve the token's own audience across rotation, migrating only the
-  // legacy bare-origin MCP audience to the canonical /api/mcp identifier. That
-  // migration lets the legacy origin alias age out instead of self-perpetuating
-  // (see getAcceptedResourceIdentifiers), but it must not blanket-stamp every
-  // rotated token with the MCP audience: the Wallabag compat API shares this
-  // rotation path and mints tokens with a null resource, so forcing the MCP
-  // identifier would mislabel a Wallabag credential as MCP-audienced. Anything
-  // that isn't the legacy origin (the canonical MCP identifier, or a null
-  // Wallabag audience) is carried forward unchanged.
-  const existingResource = oldRefreshToken.resource;
-  const reboundResource =
-    existingResource !== null && isResourceForThisServer(existingResource, getIssuer())
-      ? getResourceIdentifier()
-      : existingResource;
-  const newTokens = await createTokens({
-    clientId: oldRefreshToken.clientId,
-    userId: oldRefreshToken.userId,
-    scopes: oldRefreshToken.scopes,
-    resource: reboundResource,
+    if (claimed.length === 0) {
+      // Nothing claimed — roll back (a no-op) and let the caller run reuse
+      // detection outside the transaction.
+      return null;
+    }
+
+    const oldRefreshToken = claimed[0];
+
+    // Revoke the old access token if it exists
+    if (oldRefreshToken.accessTokenId) {
+      await tx
+        .update(oauthAccessTokens)
+        .set({ revokedAt: now })
+        .where(eq(oauthAccessTokens.id, oldRefreshToken.accessTokenId));
+    }
+
+    // Preserve the token's own audience across rotation, migrating only the
+    // legacy bare-origin MCP audience to the canonical /api/mcp identifier. That
+    // migration lets the legacy origin alias age out instead of self-perpetuating
+    // (see getAcceptedResourceIdentifiers), but it must not blanket-stamp every
+    // rotated token with the MCP audience: the Wallabag compat API shares this
+    // rotation path and mints tokens with a null resource, so forcing the MCP
+    // identifier would mislabel a Wallabag credential as MCP-audienced. Anything
+    // that isn't the legacy origin (the canonical MCP identifier, or a null
+    // Wallabag audience) is carried forward unchanged.
+    const existingResource = oldRefreshToken.resource;
+    const reboundResource =
+      existingResource !== null && isResourceForThisServer(existingResource, getIssuer())
+        ? getResourceIdentifier()
+        : existingResource;
+    const created = await createTokens(
+      {
+        clientId: oldRefreshToken.clientId,
+        userId: oldRefreshToken.userId,
+        scopes: oldRefreshToken.scopes,
+        resource: reboundResource,
+      },
+      tx
+    );
+
+    // Link the rotation chain on the old token
+    const newRefreshTokenHash = hashToken(created.refreshToken);
+    const [newRefreshToken] = await tx
+      .select({ id: oauthRefreshTokens.id })
+      .from(oauthRefreshTokens)
+      .where(eq(oauthRefreshTokens.tokenHash, newRefreshTokenHash))
+      .limit(1);
+
+    if (newRefreshToken) {
+      await tx
+        .update(oauthRefreshTokens)
+        .set({ replacedById: newRefreshToken.id })
+        .where(eq(oauthRefreshTokens.id, oldRefreshToken.id));
+    }
+
+    return created;
   });
 
-  // Link the rotation chain on the old token
-  const newRefreshTokenHash = hashToken(newTokens.refreshToken);
-  const newRefreshTokenResult = await db
-    .select({ id: oauthRefreshTokens.id })
-    .from(oauthRefreshTokens)
-    .where(eq(oauthRefreshTokens.tokenHash, newRefreshTokenHash))
-    .limit(1);
-
-  const newRefreshTokenId = newRefreshTokenResult[0]?.id;
-  if (newRefreshTokenId) {
-    await db
-      .update(oauthRefreshTokens)
-      .set({ replacedById: newRefreshTokenId })
-      .where(eq(oauthRefreshTokens.id, oldRefreshToken.id));
+  if (!newTokens) {
+    // The claim matched nothing: the token was unknown, expired, or already
+    // rotated. The last case is either a genuine reuse (leak) or a benign
+    // concurrent refresh racing the winner — handlePossibleRefreshTokenReuse
+    // distinguishes them by how long ago the token was revoked.
+    await handlePossibleRefreshTokenReuse(tokenHash, clientId, now);
+    return null;
   }
 
   return newTokens;
 }
 
 /**
+ * Grace window for rotation reuse detection. A rotated (revoked) refresh token
+ * presented again within this window of its revocation is treated as a **benign
+ * concurrent rotation**, not a leak: the common case is a client firing several
+ * API calls in parallel, each triggering a refresh with the same token — exactly
+ * one wins and the losers present the just-revoked token milliseconds later. If
+ * that were treated as reuse we'd revoke the winner's freshly-minted chain and
+ * leave the client with no valid tokens on *every* concurrent refresh (this was
+ * empirically the dominant cause of flaky Wallabag sync, since its clients batch
+ * requests). A genuine stolen-token replay lands well outside this window and is
+ * still caught. Kept short to bound the window in which a real replay is missed.
+ */
+const REFRESH_ROTATION_REUSE_GRACE_MS = 10_000;
+
+/**
  * Rotation-reuse detection: if a rotation attempt failed because the token was
  * already revoked (but is otherwise valid and unexpired), someone is replaying
- * an old refresh token. Revoke all active tokens for that user+client so the
- * leaked chain is dead no matter which copy the attacker holds.
+ * an old refresh token. Revoke the leaked token's rotation **chain** (the family
+ * descending from it) so that chain is dead no matter which copy the replayer
+ * holds.
+ *
+ * The blast radius is deliberately the family, **not** every token the user holds
+ * for this client. Revoking user+client-wide is over-broad: because every
+ * Wallabag credential is minted under the single shared client_id "wallabag"
+ * (see wallabag/auth.ts), a user+client-wide revoke signs the user out of *every*
+ * Wallabag device on a single stale-token replay — which is exactly the flaky
+ * "had to re-set-up / re-login" behavior we were seeing. OAuth 2.1 rotation
+ * guidance (RFC 9700 §4.14.2) scopes reuse revocation to the token family/grant,
+ * which is what we do here.
+ *
+ * The chain is strictly linear — each rotation atomically claims exactly one
+ * predecessor and stamps its `replaced_by_id` — so walking `replaced_by_id`
+ * forward from the presented (already-revoked) token reaches whichever branch is
+ * currently active. Ancestors are already revoked (rotation revokes as it goes),
+ * so only the forward descendants can still be live.
  */
 async function handlePossibleRefreshTokenReuse(
   tokenHash: string,
@@ -515,31 +575,69 @@ async function handlePossibleRefreshTokenReuse(
     return;
   }
 
-  console.warn(
-    `OAuth refresh token reuse detected for user ${presented.userId}, client ${clientId}; revoking all tokens for the grant`
-  );
+  // Benign-concurrency grace (see REFRESH_ROTATION_REUSE_GRACE_MS): a token
+  // revoked a moment ago was almost certainly just rotated by a racing refresh
+  // from the same client, not replayed by an attacker. Skip revocation so the
+  // winner's live successor survives.
+  //
+  // `now` is deliberately the *request-start* time (captured at the top of
+  // rotateRefreshToken), not a fresh timestamp sampled here: it measures how long
+  // after revocation this request began presenting the token, i.e. whether it was
+  // initiated concurrently with the rotation. That's exactly what we want — a
+  // request that genuinely started alongside the winner stays inside the window
+  // even if it's then delayed (DB contention, GC) for seconds before reaching
+  // this check. Re-sampling the clock here would instead measure wall-time-to-
+  // arrival and wrongly flag a slow-but-concurrent loser as reuse, revoking the
+  // winner's fresh chain — the very flake this fixes. Keep the start-time anchor.
+  if (now.getTime() - presented.revokedAt.getTime() <= REFRESH_ROTATION_REUSE_GRACE_MS) {
+    return;
+  }
 
-  await db
+  // Walk the rotation chain forward from the presented token via replaced_by_id.
+  const familyRows = (
+    await db.execute(sql`
+      WITH RECURSIVE family AS (
+        SELECT id, replaced_by_id, access_token_id
+        FROM oauth_refresh_tokens
+        WHERE id = ${presented.id}
+        UNION ALL
+        SELECT rt.id, rt.replaced_by_id, rt.access_token_id
+        FROM oauth_refresh_tokens rt
+        JOIN family f ON rt.id = f.replaced_by_id
+      )
+      SELECT id, access_token_id FROM family
+    `)
+  ).rows as Array<{ id: string; access_token_id: string | null }>;
+
+  const refreshIds = familyRows.map((r) => r.id);
+  const accessIds = familyRows
+    .map((r) => r.access_token_id)
+    .filter((id): id is string => id !== null);
+
+  const revokedRefresh = await db
     .update(oauthRefreshTokens)
     .set({ revokedAt: now })
-    .where(
-      and(
-        eq(oauthRefreshTokens.userId, presented.userId),
-        eq(oauthRefreshTokens.clientId, clientId),
-        isNull(oauthRefreshTokens.revokedAt)
-      )
-    );
+    .where(and(inArray(oauthRefreshTokens.id, refreshIds), isNull(oauthRefreshTokens.revokedAt)))
+    .returning({ id: oauthRefreshTokens.id });
 
-  await db
-    .update(oauthAccessTokens)
-    .set({ revokedAt: now })
-    .where(
-      and(
-        eq(oauthAccessTokens.userId, presented.userId),
-        eq(oauthAccessTokens.clientId, clientId),
-        isNull(oauthAccessTokens.revokedAt)
-      )
-    );
+  let revokedAccessCount = 0;
+  if (accessIds.length > 0) {
+    const revokedAccess = await db
+      .update(oauthAccessTokens)
+      .set({ revokedAt: now })
+      .where(and(inArray(oauthAccessTokens.id, accessIds), isNull(oauthAccessTokens.revokedAt)))
+      .returning({ id: oauthAccessTokens.id });
+    revokedAccessCount = revokedAccess.length;
+  }
+
+  logger.warn("OAuth refresh token reuse detected; revoked leaked rotation chain", {
+    component: "oauth",
+    userId: presented.userId,
+    clientId,
+    familySize: refreshIds.length,
+    refreshTokensRevoked: revokedRefresh.length,
+    accessTokensRevoked: revokedAccessCount,
+  });
 }
 
 /**
