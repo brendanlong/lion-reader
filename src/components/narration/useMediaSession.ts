@@ -68,6 +68,15 @@ export function useMediaSession({
     controlsRef.current = controls;
   }, [controls]);
 
+  // Keep the latest status in a ref so the setup effect can re-assert playback
+  // state (and restart the silent audio) when it re-runs for a metadata change
+  // mid-playback, without depending on `status` (which would tear down and
+  // re-register handlers on every play/pause/buffer flip).
+  const statusRef = useRef(status);
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
+
   // Set up / tear down the session and its metadata.
   useEffect(() => {
     if (!active) return;
@@ -82,6 +91,12 @@ export function useMediaSession({
         nextTrack: () => controlsRef.current.nextTrack(),
       }
     );
+    // Re-assert playback state so the silent audio is (re)started even when this
+    // effect re-runs mid-playback because the title/feed/artwork changed — its
+    // cleanup stopped the silent audio, and the status effect below won't re-run
+    // if `status` is unchanged. Without this the OS controls would silently
+    // disappear on a title change while narration keeps playing.
+    updateMediaSessionPlaybackState(statusRef.current);
 
     return () => {
       clearMediaSession();
