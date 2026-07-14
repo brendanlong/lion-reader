@@ -131,6 +131,28 @@ describe("MCP tool argument validation", () => {
     expect(Array.isArray(result.items)).toBe(true);
   });
 
+  it("returns JSON-serializable results with no greaderItemId leak", async () => {
+    // Both MCP transports serialize tool results with plain JSON.stringify,
+    // which throws on bigint. Entries carry the Google Reader-internal
+    // greaderItemId (a bigint); list_entries/get_entry must strip it — this
+    // mirrors what the tRPC/REST output schemas do on those surfaces.
+    const list = (await tool("list_entries").handler(db, userId, {})) as {
+      items: Array<Record<string, unknown>>;
+    };
+    expect(list.items.length).toBeGreaterThan(0);
+    for (const item of list.items) {
+      expect(item).not.toHaveProperty("greaderItemId");
+    }
+    expect(() => JSON.stringify(list)).not.toThrow();
+
+    const entry = (await tool("get_entry").handler(db, userId, { entryId })) as Record<
+      string,
+      unknown
+    >;
+    expect(entry).not.toHaveProperty("greaderItemId");
+    expect(() => JSON.stringify(entry)).not.toThrow();
+  });
+
   it("uses the authenticated userId, ignoring any userId in args", async () => {
     // The entry is visible to `userId` only. Passing userId in args (the old
     // injection channel) must not switch the acting user.
