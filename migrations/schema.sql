@@ -215,7 +215,6 @@ CREATE TABLE public.entries (
     full_content_error text,
     full_content_hash text,
     unsubscribe_url text,
-    wallabag_id integer GENERATED ALWAYS AS ((((('x'::text || "left"(encode(sha256(((id)::text)::bytea), 'hex'::text), 8)))::bit(32))::integer & ('01111111111111111111111111111111'::"bit")::integer)) STORED,
     content_original_sanitized text,
     content_cleaned_sanitized text,
     content_sanitized_version smallint,
@@ -567,7 +566,6 @@ CREATE VIEW public.visible_entries AS
     s.id AS subscription_id,
     e.unsubscribe_url,
     ue.read_changed_at,
-    e.wallabag_id,
     ue.published_or_fetched_at,
     e.content_original_sanitized,
     e.content_cleaned_sanitized,
@@ -771,8 +769,6 @@ END) DESC, id DESC);
 CREATE INDEX idx_entries_spam ON public.entries USING btree (feed_id, is_spam);
 
 CREATE INDEX idx_entries_type ON public.entries USING btree (type);
-
-CREATE INDEX idx_entries_wallabag_id ON public.entries USING btree (wallabag_id);
 
 CREATE INDEX idx_entry_summaries_prompt_version ON public.entry_summaries USING btree (prompt_version) WHERE (summary_text IS NOT NULL);
 
