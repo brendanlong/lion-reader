@@ -10,6 +10,7 @@ import { useState, useMemo, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
+import { setSessionCookie } from "@/lib/session-cookie";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
@@ -94,7 +95,7 @@ function LoginForm() {
   const loginMutation = trpc.auth.login.useMutation({
     onSuccess: (data) => {
       // Store the session token in a cookie (must match context.ts "session" cookie name)
-      document.cookie = `session=${data.sessionToken}; path=/; max-age=${30 * 24 * 60 * 60}; samesite=lax`;
+      setSessionCookie(data.sessionToken);
 
       // Get the redirect URL from query params or default to /all
       const redirectTo = searchParams.get("redirect") ?? "/all";
