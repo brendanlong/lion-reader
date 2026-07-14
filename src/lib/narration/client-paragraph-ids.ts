@@ -9,9 +9,15 @@
  */
 
 import { BLOCK_ELEMENTS } from "./block-elements";
+import {
+  buildAlignedNarration,
+  type NarrationElement,
+  type ParagraphMapEntry,
+} from "./paragraph-map";
 
 // Re-export for backwards compatibility
 export { BLOCK_ELEMENTS };
+export type { ParagraphMapEntry };
 
 /**
  * Result of adding paragraph IDs to HTML content.
@@ -175,17 +181,6 @@ export function createMemoizedAddParagraphIds(
 }
 
 /**
- * Paragraph mapping entry for highlighting support.
- * Maps a narration paragraph index to the original HTML element index.
- */
-export interface ParagraphMapEntry {
-  /** Narration paragraph index */
-  n: number;
-  /** Original HTML element index (corresponds to data-para-id) */
-  o: number;
-}
-
-/**
  * Result of converting HTML to narration input on the client side.
  */
 export interface ClientNarrationResult {
@@ -320,7 +315,7 @@ function getElementNarrationText(el: Element): string {
  * @example
  * const result = htmlToClientNarration('<p>Hello</p><img src="x" alt="photo"><p>World</p>');
  * // result.narrationText: "Hello\n\nImage: photo\n\nWorld"
- * // result.paragraphMap: [{ n: 0, o: [0] }, { n: 1, o: [1] }, { n: 2, o: [2] }]
+ * // result.paragraphMap: [{ n: 0, o: 0 }, { n: 1, o: 1 }, { n: 2, o: 2 }]
  * // result.processedHtml: '<p data-para-id="para-0">Hello</p>...'
  */
 export function htmlToClientNarration(html: string): ClientNarrationResult {
@@ -384,29 +379,23 @@ export function htmlToClientNarration(html: string): ClientNarrationResult {
     return 0;
   });
 
-  const narrationParagraphs: string[] = [];
-  const paragraphMap: ParagraphMapEntry[] = [];
-
-  // Process each element: add data-para-id and extract narration text
+  // Process each element: add data-para-id and collect its narration text.
+  // Every combined element gets a data-para-id (matching its document-order
+  // index) so the rendered DOM has a highlight target for each block; empty
+  // elements simply contribute no narration paragraph.
+  const elements: NarrationElement[] = [];
   combinedElements.forEach((el, elementIndex) => {
-    const id = `para-${elementIndex}`;
-    el.setAttribute("data-para-id", id);
-
-    const text = getElementNarrationText(el);
-
-    // Only add non-empty text to narration
-    if (text) {
-      const narrationIndex = narrationParagraphs.length;
-      narrationParagraphs.push(text);
-      paragraphMap.push({
-        n: narrationIndex,
-        o: elementIndex,
-      });
-    }
+    el.setAttribute("data-para-id", `para-${elementIndex}`);
+    elements.push({ o: elementIndex, text: getElementNarrationText(el) });
   });
 
+  // Build the narration text and paragraph map together so the map has exactly
+  // one entry per player paragraph even when a single block's text spans
+  // multiple blank-line-separated paragraphs (see `./paragraph-map`).
+  const { narrationText, paragraphMap } = buildAlignedNarration(elements);
+
   return {
-    narrationText: narrationParagraphs.join("\n\n"),
+    narrationText,
     paragraphMap,
     processedHtml: container.innerHTML,
   };

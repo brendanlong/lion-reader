@@ -22,6 +22,7 @@
  */
 
 import { isFirefox } from "./feature-detection";
+import { splitNarrationParagraphs } from "./paragraph-map";
 import {
   DEFAULT_RATE,
   DEFAULT_PITCH,
@@ -109,11 +110,10 @@ export class ArticleNarrator {
    * @param narrationText - The text content to narrate
    */
   loadArticle(narrationText: string): void {
-    // Split by double newlines (paragraph breaks), trim, and filter empty
-    this.paragraphs = narrationText
-      .split(/\n\n+/)
-      .map((p) => p.trim())
-      .filter((p) => p.length > 0);
+    // Split by double newlines (paragraph breaks), trim, and filter empty.
+    // Uses the shared splitter so paragraph indices align with the paragraph
+    // map built by `buildAlignedNarration` (see `./paragraph-map`).
+    this.paragraphs = splitNarrationParagraphs(narrationText);
 
     this.currentIndex = 0;
     this.stop(); // Reset any current playback

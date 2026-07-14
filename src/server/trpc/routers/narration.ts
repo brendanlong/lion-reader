@@ -17,8 +17,8 @@ import {
   generateNarration,
   htmlToNarrationInput,
   isGroqAvailable,
-  type ParagraphMapEntry,
 } from "@/server/services/narration";
+import { buildAlignedNarration } from "@/lib/narration/paragraph-map";
 import { getUserApiKeys } from "@/server/auth/session";
 import { logger } from "@/lib/logger";
 import {
@@ -178,23 +178,17 @@ export const narrationRouter = createTRPCRouter({
       // Return cached narration if available
       if (narrationRecord.contentNarration) {
         trackNarrationGenerated(true, "llm");
-        // Regenerate paragraph mapping from the source content
-        // We need this because we don't cache the mapping in the database
-        const { paragraphs } = htmlToNarrationInput(sourceContent);
-        // Count paragraphs in cached narration to build the mapping
-        const cachedParagraphs = narrationRecord.contentNarration
-          .split(/\n\n+/)
-          .filter((p) => p.trim().length > 0);
-        // Build mapping: assume 1:1 correspondence with non-empty input paragraphs
-        // This works because the LLM maintains paragraph order
-        const paragraphMap: ParagraphMapEntry[] = [];
-        let narrationIdx = 0;
-        for (const p of paragraphs) {
-          if (narrationIdx < cachedParagraphs.length) {
-            paragraphMap.push({ n: narrationIdx, o: p.id });
-            narrationIdx++;
-          }
-        }
+        // Prefer the paragraph map persisted at generation time — it is the only
+        // map guaranteed to align with the cached narration text. Legacy rows
+        // (generated before the paragraph_map column existed) have no stored
+        // map, so re-derive a best-effort one from the source content. This is
+        // aligned to the player's paragraph split (unlike the old positional
+        // reconstruction) and self-heals as those rows are regenerated.
+        const paragraphMap =
+          narrationRecord.paragraphMap ??
+          buildAlignedNarration(
+            htmlToNarrationInput(sourceContent).paragraphs.map((p) => ({ o: p.id, text: p.text }))
+          ).paragraphMap;
         return {
           narration: narrationRecord.contentNarration,
           cached: true,
@@ -209,13 +203,11 @@ export const narrationRouter = createTRPCRouter({
 
       // If user disabled LLM normalization, Groq is not configured, or we had a recent error, fall back to plain text
       if (!input.useLlmNormalization || !isGroqAvailable(userGroqApiKey) || !canRetryLLM) {
-        // Generate narration with paragraph mapping using the same path as LLM
-        const { paragraphs } = htmlToNarrationInput(sourceContent);
-        const paragraphMap: ParagraphMapEntry[] = paragraphs.map((p, idx) => ({
-          n: idx,
-          o: p.id,
-        }));
-        const fallbackText = paragraphs.map((p) => p.text).join("\n\n");
+        // Generate a fallback (plain-text) narration with a paragraph map aligned
+        // to the player's paragraph split.
+        const { narrationText: fallbackText, paragraphMap } = buildAlignedNarration(
+          htmlToNarrationInput(sourceContent).paragraphs.map((p) => ({ o: p.id, text: p.text }))
+        );
         trackNarrationGenerated(false, "fallback");
         return {
           narration: fallbackText,
@@ -247,11 +239,14 @@ export const narrationRouter = createTRPCRouter({
           };
         }
 
-        // Cache in narration_content table, clear any previous error
+        // Cache in narration_content table, clear any previous error.
+        // Persist the paragraph map so future cache hits return the exact
+        // alignment produced here instead of reconstructing it.
         await ctx.db
           .update(narrationContent)
           .set({
             contentNarration: result.text,
+            paragraphMap: result.paragraphMap,
             generatedAt: new Date(),
             error: null,
             errorAt: null,
@@ -287,13 +282,10 @@ export const narrationRouter = createTRPCRouter({
           })
           .where(eq(narrationContent.id, narrationRecord.id));
 
-        // Fall back to plain text with paragraph mapping
-        const { paragraphs } = htmlToNarrationInput(sourceContent);
-        const paragraphMap: ParagraphMapEntry[] = paragraphs.map((p, idx) => ({
-          n: idx,
-          o: p.id,
-        }));
-        const fallbackText = paragraphs.map((p) => p.text).join("\n\n");
+        // Fall back to plain text with a paragraph map aligned to the split
+        const { narrationText: fallbackText, paragraphMap } = buildAlignedNarration(
+          htmlToNarrationInput(sourceContent).paragraphs.map((p) => ({ o: p.id, text: p.text }))
+        );
         trackNarrationGenerated(false, "fallback");
         return {
           narration: fallbackText,
