@@ -29,7 +29,7 @@ import {
   errorResponse,
 } from "@/server/google-reader/parse";
 import { formatEntryAsItem } from "@/server/google-reader/format";
-import { batchInt64ToUuid } from "@/server/google-reader/id";
+import { greaderItemIdsToUuids } from "@/server/google-reader/id";
 import * as entriesService from "@/server/services/entries";
 import { db } from "@/server/db";
 
@@ -69,8 +69,8 @@ export async function POST(request: Request): Promise<Response> {
     });
   }
 
-  // Batch resolve int64 IDs to UUIDs
-  const uuidMap = await batchInt64ToUuid(db, itemIds);
+  // Batch resolve item IDs to UUIDs
+  const uuidMap = await greaderItemIdsToUuids(db, itemIds);
 
   // Fetch full entries in a single bulk query (mirrors the Wallabag route)
   // rather than one getEntry per id. getEntries returns entries in the order of
