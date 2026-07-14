@@ -5,7 +5,7 @@
  *
  * The newest value must be the newest entry the user can actually see (has a
  * `user_entries` row for), INCLUDING read entries, and the result must include the
- * synthetic saved feed keyed by its feed id. Deriving the count and the newest from
+ * synthetic saved feed keyed by its stream serial. Deriving the count and the newest from
  * one statement also means they can never disagree about whether a feed has content
  * (issue #1092). These are real-DB concerns (the visibility join, the read-inclusive
  * max, the shared snapshot), so they're verified against Postgres here rather than
@@ -19,9 +19,13 @@ import { users, feeds, entries, userEntries, subscriptions } from "../../src/ser
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { getGreaderUnreadCounts } from "../../src/server/google-reader/subscriptions";
 
-/** Newest-item map for a user, extracted from the combined unread-counts result. */
+/**
+ * Newest-item map for a user, extracted from the combined unread-counts result.
+ * Keyed by the Google Reader feed stream serial (issue #1117), which Postgres
+ * hands back as a decimal string.
+ */
 async function getNewest(userId: string): Promise<Map<string, Date>> {
-  return (await getGreaderUnreadCounts(db, userId)).newestItemAtById;
+  return (await getGreaderUnreadCounts(db, userId)).newestItemAtByStreamId;
 }
 
 const createdUserIds: string[] = [];
@@ -52,7 +56,9 @@ async function createUser(): Promise<string> {
   return id;
 }
 
-async function createSubscribedFeed(userId: string): Promise<{ feedId: string; subId: string }> {
+async function createSubscribedFeed(
+  userId: string
+): Promise<{ feedId: string; subId: string; streamId: string }> {
   const feedId = generateUuidv7();
   const subId = generateUuidv7();
   const now = new Date();
@@ -63,21 +69,23 @@ async function createSubscribedFeed(userId: string): Promise<{ feedId: string; s
     createdAt: now,
     updatedAt: now,
   });
-  await db
+  const [sub] = await db
     .insert(subscriptions)
-    .values({ id: subId, userId, feedId, subscribedAt: now, createdAt: now, updatedAt: now });
+    .values({ id: subId, userId, feedId, subscribedAt: now, createdAt: now, updatedAt: now })
+    .returning({ greaderStreamId: subscriptions.greaderStreamId });
   createdFeedIds.push(feedId);
-  return { feedId, subId };
+  return { feedId, subId, streamId: sub.greaderStreamId.toString() };
 }
 
-async function createSavedFeed(userId: string): Promise<string> {
+async function createSavedFeed(userId: string): Promise<{ feedId: string; streamId: string }> {
   const feedId = generateUuidv7();
   const now = new Date();
-  await db
+  const [feed] = await db
     .insert(feeds)
-    .values({ id: feedId, type: "saved", userId, createdAt: now, updatedAt: now });
+    .values({ id: feedId, type: "saved", userId, createdAt: now, updatedAt: now })
+    .returning({ greaderStreamId: feeds.greaderStreamId });
   createdFeedIds.push(feedId);
-  return feedId;
+  return { feedId, streamId: feed.greaderStreamId.toString() };
 }
 
 /** Inserts an entry and (optionally) the user's user_entries row for it. */
@@ -118,7 +126,7 @@ const T = (iso: string): Date => new Date(iso);
 describe("getGreaderUnreadCounts", () => {
   it("returns the newest visible entry per subscription, counting read entries", async () => {
     const userId = await createUser();
-    const { feedId, subId } = await createSubscribedFeed(userId);
+    const { feedId, streamId } = await createSubscribedFeed(userId);
 
     // Older unread entry, and a NEWER but already-read entry. The read one is the
     // newest item in the stream, so it must win (read state is ignored).
@@ -142,12 +150,12 @@ describe("getGreaderUnreadCounts", () => {
     });
 
     const map = await getNewest(userId);
-    expect(map.get(subId)?.toISOString()).toBe("2026-05-01T00:00:00.000Z");
+    expect(map.get(streamId)?.toISOString()).toBe("2026-05-01T00:00:00.000Z");
   });
 
   it("ignores entries the user has no user_entries row for (privacy gating)", async () => {
     const userId = await createUser();
-    const { feedId, subId } = await createSubscribedFeed(userId);
+    const { feedId, streamId } = await createSubscribedFeed(userId);
 
     // The newest entry in the feed predates the user and has NO user_entries row,
     // so it must not count; the newest VISIBLE entry is the older one.
@@ -171,12 +179,12 @@ describe("getGreaderUnreadCounts", () => {
     });
 
     const map = await getNewest(userId);
-    expect(map.get(subId)?.toISOString()).toBe("2026-02-01T00:00:00.000Z");
+    expect(map.get(streamId)?.toISOString()).toBe("2026-02-01T00:00:00.000Z");
   });
 
   it("uses COALESCE(published_at, fetched_at) — fetched_at when published_at is null", async () => {
     const userId = await createUser();
-    const { feedId, subId } = await createSubscribedFeed(userId);
+    const { feedId, streamId } = await createSubscribedFeed(userId);
     await addEntry({
       userId,
       feedId,
@@ -188,12 +196,12 @@ describe("getGreaderUnreadCounts", () => {
     });
 
     const map = await getNewest(userId);
-    expect(map.get(subId)?.toISOString()).toBe("2026-06-15T10:00:00.000Z");
+    expect(map.get(streamId)?.toISOString()).toBe("2026-06-15T10:00:00.000Z");
   });
 
-  it("includes the saved feed keyed by its feed id", async () => {
+  it("includes the saved feed keyed by its stream serial", async () => {
     const userId = await createUser();
-    const savedFeedId = await createSavedFeed(userId);
+    const { feedId: savedFeedId, streamId } = await createSavedFeed(userId);
     await addEntry({
       userId,
       feedId: savedFeedId,
@@ -214,15 +222,15 @@ describe("getGreaderUnreadCounts", () => {
     });
 
     const map = await getNewest(userId);
-    expect(map.get(savedFeedId)?.toISOString()).toBe("2026-07-07T07:07:00.000Z");
+    expect(map.get(streamId)?.toISOString()).toBe("2026-07-07T07:07:00.000Z");
   });
 
   it("omits a subscription with no visible entries", async () => {
     const userId = await createUser();
-    const { subId } = await createSubscribedFeed(userId);
+    const { streamId } = await createSubscribedFeed(userId);
     // No entries / user_entries at all.
     const map = await getNewest(userId);
-    expect(map.has(subId)).toBe(false);
+    expect(map.has(streamId)).toBe(false);
   });
 
   // Regression for issue #1092: the endpoint used to read the per-feed counts and
@@ -233,7 +241,7 @@ describe("getGreaderUnreadCounts", () => {
   // the count is > 0 there is a newest entry, and both reflect the same entry.
   it("returns count and newest for the same feed from one snapshot (issue #1092)", async () => {
     const userId = await createUser();
-    const { feedId, subId } = await createSubscribedFeed(userId);
+    const { feedId, streamId } = await createSubscribedFeed(userId);
     await addEntry({
       userId,
       feedId,
@@ -244,18 +252,18 @@ describe("getGreaderUnreadCounts", () => {
       withUserEntry: true,
     });
 
-    const { subscriptions, newestItemAtById } = await getGreaderUnreadCounts(db, userId);
-    const sub = subscriptions.find((s) => s.id === subId);
+    const { subscriptions, newestItemAtByStreamId } = await getGreaderUnreadCounts(db, userId);
+    const sub = subscriptions.find((s) => s.streamId === streamId);
     // The count is > 0 and the newest map has this feed — the pair a client relies
     // on to decide a stream has new content, guaranteed consistent by the single
     // query. (Two independent reads could have returned the count without the map.)
     expect(sub?.unreadCount).toBe(1);
-    expect(newestItemAtById.get(subId)?.toISOString()).toBe("2026-10-10T00:00:00.000Z");
+    expect(newestItemAtByStreamId.get(streamId)?.toISOString()).toBe("2026-10-10T00:00:00.000Z");
   });
 
   it("reports the trigger-maintained unread count, excluding read entries", async () => {
     const userId = await createUser();
-    const { feedId, subId } = await createSubscribedFeed(userId);
+    const { feedId, streamId } = await createSubscribedFeed(userId);
     // Two unread + one read entry → count is 2, matching subscriptions.unread_count.
     await addEntry({
       userId,
@@ -286,12 +294,12 @@ describe("getGreaderUnreadCounts", () => {
     });
 
     const { subscriptions } = await getGreaderUnreadCounts(db, userId);
-    expect(subscriptions.find((s) => s.id === subId)?.unreadCount).toBe(2);
+    expect(subscriptions.find((s) => s.streamId === streamId)?.unreadCount).toBe(2);
   });
 
   it("reports the saved feed count from users.saved_unread_count", async () => {
     const userId = await createUser();
-    const savedFeedId = await createSavedFeed(userId);
+    const { feedId: savedFeedId, streamId } = await createSavedFeed(userId);
     await addEntry({
       userId,
       feedId: savedFeedId,
@@ -303,13 +311,13 @@ describe("getGreaderUnreadCounts", () => {
     });
 
     const { subscriptions } = await getGreaderUnreadCounts(db, userId);
-    expect(subscriptions.find((s) => s.id === savedFeedId)?.unreadCount).toBe(1);
+    expect(subscriptions.find((s) => s.streamId === streamId)?.unreadCount).toBe(1);
   });
 
   it("does not leak newest times across users", async () => {
     const userA = await createUser();
     const userB = await createUser();
-    const { feedId, subId } = await createSubscribedFeed(userA);
+    const { feedId, streamId } = await createSubscribedFeed(userA);
     // Entry exists in the feed and userB somehow has a row, but userA has none for it.
     await addEntry({
       userId: userB,
@@ -322,6 +330,6 @@ describe("getGreaderUnreadCounts", () => {
     });
 
     const mapA = await getNewest(userA);
-    expect(mapA.has(subId)).toBe(false);
+    expect(mapA.has(streamId)).toBe(false);
   });
 });

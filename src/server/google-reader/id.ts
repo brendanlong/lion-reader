@@ -1,65 +1,32 @@
 /**
  * ID conversions for the Google Reader API.
  *
- * Google Reader clients require signed 64-bit integer IDs. Lion Reader uses UUIDv7 (128-bit).
+ * Google Reader clients require signed 64-bit integer IDs. Lion Reader uses
+ * UUIDv7 (128-bit) internally, so every id a client sees is a stored serial
+ * (issue #1117): each entry, subscription, feed, tag, and user carries a plain
+ * bigint drawn from a Postgres sequence, so formatting reads it directly and the
+ * reversible ids (item ids, feed stream ids) are unique-index seeks — no runtime
+ * UUID→int64 projection and no timestamp-window candidate scan.
  *
- * **Item IDs** are a stored global serial (`entries.greader_item_id`): each entry
- * carries a plain bigint, so formatting reads it directly and the reverse lookup
- * (`greaderItemIdsToUuids`) is a `greader_item_id = ANY(...)` seek on a unique
- * index — no derivation, no timestamp-window scan.
+ * - **Item ids** (`entries.greader_item_id`): reversed by `greaderItemIdsToUuids`.
+ * - **Feed stream ids** (`subscriptions.greader_stream_id` /
+ *   `feeds.greader_stream_id`): reversed by `feedStreamIdToSubscriptionUuid` /
+ *   `resolveFeedStream`. Both tables draw from the same sequence so their ids are
+ *   globally unique — a `feed/{int}` resolves to at most one of {subscription,
+ *   saved feed}.
+ * - **Tag sortids** (`tags.greader_sortid`) and **user ids**
+ *   (`users.greader_user_id`) are opaque (never reversed) and read directly at
+ *   format time.
  *
- * The **UUID→int64 projection** (`uuidToInt64`) remains only for the ids that are
- * still derived at runtime: feed stream ids, tag sortids, and user ids (a later
- * step migrates those too).
- *
- * uuidToInt64 layout: UUIDv7 is [48-bit ms timestamp][4-bit version][12-bit
- * rand_a][2-bit variant][62-bit rand_b]. We extract 48 bits of timestamp + 15
- * bits of randomness (rand_a[0:11] + rand_b[0:3], skipping version/variant
- * markers) to produce a 63-bit positive signed integer that is time-ordered,
- * deterministic, and (for feed streams) reversible — the timestamp narrows a
- * lookup to one millisecond and the random bits disambiguate.
- *
- * Clients send item IDs in three formats (all must be parsed):
+ * Clients send ids in three formats (all parsed by `parseItemId`):
  * - Long hex: tag:google.com,2005:reader/item/000000000000001F
  * - Short hex: 000000000000001F
  * - Decimal string: 31
  */
 
-import { eq, and, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
-import { entries, subscriptions } from "@/server/db/schema";
-import { getSavedFeedId } from "@/server/feed/saved-feed";
-
-/**
- * Converts a UUIDv7 string to a signed 63-bit integer (as bigint).
- *
- * Extracts 48-bit timestamp + 15 bits of randomness, producing a 63-bit positive value.
- */
-export function uuidToInt64(uuid: string): bigint {
-  // Remove hyphens and parse as hex bytes
-  const hex = uuid.replace(/-/g, "");
-  // bytes[0..5] = 48-bit timestamp
-  // bytes[6] high nibble = version (skip), low nibble = rand_a[0:3]
-  // bytes[7] = rand_a[4:11]
-  // bytes[8] high 2 bits = variant (skip), low 6 bits = rand_b[0:5]
-
-  // Extract 48-bit timestamp (bytes 0-5)
-  const timestampHex = hex.slice(0, 12);
-  const timestamp = BigInt("0x" + timestampHex);
-
-  // Extract 12 bits of rand_a (low nibble of byte 6 + byte 7)
-  const randAHex = hex.slice(13, 16); // skip version nibble at position 12
-  const randA = BigInt("0x" + randAHex);
-
-  // Extract 3 bits from rand_b (bits 0-2 of byte 8, after variant)
-  const byte8 = parseInt(hex.slice(16, 18), 16);
-  const randB3 = BigInt(byte8 & 0x3f) >> BigInt(3); // top 3 bits of the 6-bit portion
-
-  // Combine: 48 bits timestamp + 12 bits rand_a + 3 bits rand_b = 63 bits
-  const result = (timestamp << BigInt(15)) | (randA << BigInt(3)) | randB3;
-
-  return result;
-}
+import { entries, feeds, subscriptions } from "@/server/db/schema";
 
 /**
  * Formats an int64 as a long-form Google Reader item ID.
@@ -106,42 +73,14 @@ export function parseItemId(id: string): bigint {
   throw new Error(`Invalid Google Reader item ID format: ${id}`);
 }
 
-/**
- * Extracts the 48-bit millisecond timestamp from an int64 ID.
- */
-function extractTimestamp(id: bigint): bigint {
-  return id >> BigInt(15);
-}
-
-/**
- * Extracts the 15-bit random portion from an int64 ID.
- */
-function extractRandomBits(id: bigint): bigint {
-  return id & BigInt(0x7fff); // lower 15 bits
-}
-
-/** Formats a 48-bit millisecond timestamp as its 12-hex-digit UUID prefix. */
-function timestampHex(timestampMs: bigint): string {
-  return timestampMs.toString(16).padStart(12, "0");
-}
-
-/**
- * Builds a SQL condition matching UUIDs whose timestamp-prefix hex is in the
- * given set. UUIDs are stored as text like "xxxxxxxx-xxxx-...". The first 12 hex
- * digits (positions 1-8 and 10-13, skipping the hyphen) encode the 48-bit
- * millisecond timestamp.
- */
-function uuidTimestampIn(column: typeof entries.id | typeof subscriptions.id, tsHexes: string[]) {
-  const list = sql.join(
-    tsHexes.map((h) => sql`${h}`),
-    sql`, `
-  );
-  return sql`SUBSTRING(${column}::text, 1, 8) || SUBSTRING(${column}::text, 10, 4) IN (${list})`;
-}
-
 /** Signed 64-bit integer bounds (Postgres bigint range). */
 const INT64_MIN = -(BigInt(2) ** BigInt(63));
 const INT64_MAX = BigInt(2) ** BigInt(63) - BigInt(1);
+
+/** Whether an id fits in Postgres's signed bigint range (else it can't match a stored serial). */
+function isInt64(id: bigint): boolean {
+  return id >= INT64_MIN && id <= INT64_MAX;
+}
 
 /**
  * Resolves Google Reader item IDs (stored `entries.greader_item_id` serials) to
@@ -162,7 +101,7 @@ export async function greaderItemIdsToUuids(
 ): Promise<Map<bigint, string>> {
   const result = new Map<bigint, string>();
 
-  const validIds = ids.filter((id) => id >= INT64_MIN && id <= INT64_MAX);
+  const validIds = ids.filter(isInt64);
   if (validIds.length === 0) return result;
 
   const rows = await db
@@ -178,26 +117,16 @@ export async function greaderItemIdsToUuids(
 }
 
 /**
- * Builds a Google Reader feed stream ID ("feed/{int64}") from any feed-like
- * UUID. Regular feeds are addressed by their *subscription* UUID (the
- * subscription-centric model), while the per-user saved-articles feed has no
- * subscription and is addressed by its own `feeds.id`. Both are just UUIDv7s
- * projected to a 63-bit int, so the same encoding works for either.
+ * Builds a Google Reader feed stream ID ("feed/{int64}") from a stored stream
+ * serial (`subscriptions.greader_stream_id` for a real subscription, or
+ * `feeds.greader_stream_id` for the per-user saved-articles feed — issue #730).
  */
-export function feedStreamId(uuid: string): string {
-  return `feed/${uuidToInt64(uuid).toString()}`;
+export function feedStreamId(streamId: bigint): string {
+  return `feed/${streamId.toString()}`;
 }
 
 /**
- * Converts a subscription UUIDv7 to a Google Reader feed stream ID.
- * Format: "feed/{int64}"
- */
-export function subscriptionToStreamId(subscriptionId: string): string {
-  return feedStreamId(subscriptionId);
-}
-
-/**
- * Converts a Google Reader feed stream ID to a subscription int64.
+ * Converts a Google Reader feed stream ID to its int64.
  * Input: "feed/{int64}" -> bigint
  */
 export function parseFeedStreamId(streamId: string): bigint {
@@ -208,30 +137,26 @@ export function parseFeedStreamId(streamId: string): bigint {
 }
 
 /**
- * Looks up a subscription UUID from a Google Reader feed stream int64 ID.
+ * Looks up a subscription UUID from a Google Reader feed stream int64 ID — a
+ * single unique-index seek on `subscriptions.greader_stream_id`, scoped to the
+ * user. Returns null when nothing matches (unknown id, another user's
+ * subscription, or an id outside the bigint range — a client can send an
+ * arbitrarily large `feed/{n}`, which would otherwise poison the query).
  */
 export async function feedStreamIdToSubscriptionUuid(
   db: typeof dbType,
   userId: string,
   streamId: bigint
 ): Promise<string | null> {
-  const randomBits = extractRandomBits(streamId);
-  const tsHex = timestampHex(extractTimestamp(streamId));
+  if (!isInt64(streamId)) return null;
 
-  const candidates = await db
+  const [row] = await db
     .select({ id: subscriptions.id })
     .from(subscriptions)
-    .where(and(eq(subscriptions.userId, userId), uuidTimestampIn(subscriptions.id, [tsHex])))
-    .limit(100);
+    .where(and(eq(subscriptions.userId, userId), eq(subscriptions.greaderStreamId, streamId)))
+    .limit(1);
 
-  for (const candidate of candidates) {
-    const candidateInt64 = uuidToInt64(candidate.id);
-    if (extractRandomBits(candidateInt64) === randomBits) {
-      return candidate.id;
-    }
-  }
-
-  return null;
+  return row?.id ?? null;
 }
 
 /**
@@ -247,23 +172,29 @@ export type FeedStreamResolution =
 /**
  * Resolves a `feed/{int64}` stream ID to either a subscription or the user's
  * saved-articles feed. Tries subscriptions first (the common case); if none
- * matches, checks whether the int64 is the saved feed's own id. Returns null
- * when it matches nothing the user owns.
+ * matches, checks the user's saved feed. Subscriptions and feeds draw their
+ * stream ids from the same sequence, so the two seeks can never both match.
+ * Returns null when it matches nothing the user owns.
  */
 export async function resolveFeedStream(
   db: typeof dbType,
   userId: string,
   streamId: bigint
 ): Promise<FeedStreamResolution | null> {
+  if (!isInt64(streamId)) return null;
+
   const subscriptionId = await feedStreamIdToSubscriptionUuid(db, userId, streamId);
   if (subscriptionId) {
     return { kind: "subscription", subscriptionId };
   }
 
-  const savedFeedId = await getSavedFeedId(db, userId);
-  if (savedFeedId && uuidToInt64(savedFeedId) === streamId) {
-    return { kind: "saved", feedId: savedFeedId };
-  }
+  const [saved] = await db
+    .select({ id: feeds.id })
+    .from(feeds)
+    .where(
+      and(eq(feeds.userId, userId), eq(feeds.type, "saved"), eq(feeds.greaderStreamId, streamId))
+    )
+    .limit(1);
 
-  return null;
+  return saved ? { kind: "saved", feedId: saved.id } : null;
 }

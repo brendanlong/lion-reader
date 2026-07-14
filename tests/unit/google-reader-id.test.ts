@@ -1,16 +1,18 @@
 /**
- * Unit tests for Google Reader ID conversion functions.
+ * Unit tests for the Google Reader ID formatting/parsing helpers.
  *
- * Tests the UUIDv7 ↔ int64 conversion, ID parsing, and formatting.
+ * Every id a client sees is now a stored serial (issue #1117), so these cover
+ * only the pure format ↔ parse conversions; the reverse lookups
+ * (greaderItemIdsToUuids, feedStreamIdToSubscriptionUuid, resolveFeedStream) hit
+ * the DB and are covered by integration tests.
  */
 
 import { describe, it, expect } from "vitest";
 import {
-  uuidToInt64,
   int64ToLongFormId,
   int64ToShortHex,
   parseItemId,
-  subscriptionToStreamId,
+  feedStreamId,
   parseFeedStreamId,
 } from "../../src/server/google-reader/id";
 import {
@@ -19,51 +21,6 @@ import {
   labelStreamId,
   isState,
 } from "../../src/server/google-reader/streams";
-
-describe("uuidToInt64", () => {
-  it("produces the expected 63-bit integer", () => {
-    const uuid = "0191a2b3-c4d5-7e6f-8a9b-0c1d2e3f4a5b";
-    const result = uuidToInt64(uuid);
-    expect(result).toBe(BigInt("56525179323085689"));
-  });
-
-  it("is deterministic — same UUID produces same int64", () => {
-    const uuid = "0191a2b3-c4d5-7e6f-8a9b-0c1d2e3f4a5b";
-    const result1 = uuidToInt64(uuid);
-    const result2 = uuidToInt64(uuid);
-    expect(result1).toBe(result2);
-  });
-
-  it("different UUIDs produce different int64 values", () => {
-    // These UUIDs differ in rand_a (byte 7) which is within the 15 extracted random bits
-    const uuid1 = "0191a2b3-c4d5-7e6f-8a9b-0c1d2e3f4a5b";
-    const uuid2 = "0191a2b3-c4d5-7e7f-8a9b-0c1d2e3f4a5b";
-    expect(uuidToInt64(uuid1)).toBe(BigInt("56525179323085689"));
-    expect(uuidToInt64(uuid2)).toBe(BigInt("56525179323085817"));
-  });
-
-  it("UUIDs differing only in non-extracted bits may collide (known limitation)", () => {
-    // UUIDs that differ only in the lower bits of rand_b (beyond the 15 extracted bits)
-    // may produce the same int64 — this is an acceptable tradeoff for 63-bit IDs
-    const uuid1 = "0191a2b3-c4d5-7e6f-8a9b-0c1d2e3f4a5b";
-    const uuid2 = "0191a2b3-c4d5-7e6f-8a9b-0c1d2e3f4a5c";
-    // These may or may not collide depending on which bits differ
-    // This test documents the behavior, not asserts it
-    const result1 = uuidToInt64(uuid1);
-    const result2 = uuidToInt64(uuid2);
-    expect(typeof result1).toBe("bigint");
-    expect(typeof result2).toBe("bigint");
-  });
-
-  it("preserves time ordering — later UUID produces larger int64", () => {
-    // UUID with earlier timestamp
-    const uuid1 = "01000000-0000-7000-8000-000000000000";
-    // UUID with later timestamp
-    const uuid2 = "02000000-0000-7000-8000-000000000000";
-    expect(uuidToInt64(uuid1)).toBe(BigInt("36028797018963968"));
-    expect(uuidToInt64(uuid2)).toBe(BigInt("72057594037927936"));
-  });
-});
 
 describe("int64ToLongFormId", () => {
   it("formats as a Google Reader long-form item ID", () => {
@@ -144,11 +101,15 @@ describe("parseItemId", () => {
   });
 });
 
-describe("subscriptionToStreamId", () => {
-  it("formats as feed/{int64}", () => {
-    const uuid = "0191a2b3-c4d5-7e6f-8a9b-0c1d2e3f4a5b";
-    const result = subscriptionToStreamId(uuid);
-    expect(result).toBe("feed/56525179323085689");
+describe("feedStreamId", () => {
+  it("formats a stream serial as feed/{int64}", () => {
+    expect(feedStreamId(BigInt("56525179323085689"))).toBe("feed/56525179323085689");
+    expect(feedStreamId(BigInt(1))).toBe("feed/1");
+  });
+
+  it("round-trips through parseFeedStreamId", () => {
+    const streamId = BigInt(987654321);
+    expect(parseFeedStreamId(feedStreamId(streamId))).toBe(streamId);
   });
 });
 

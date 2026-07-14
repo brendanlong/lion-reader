@@ -10,13 +10,22 @@
  * the helpers here, so the saved feed is materialized in exactly one place.
  */
 
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
-import { users } from "@/server/db/schema";
+import { feeds, subscriptions, users } from "@/server/db/schema";
 import * as subscriptionsService from "@/server/services/subscriptions";
 import type { ListEntriesParams } from "@/server/services/entries";
-import { getSavedFeedId, SAVED_FEED_TITLE } from "@/server/feed/saved-feed";
+import { SAVED_FEED_TITLE } from "@/server/feed/saved-feed";
 import { resolveFeedStream } from "./id";
+
+/**
+ * A subscription plus its Google Reader feed stream serial
+ * (`subscriptions.greader_stream_id`, or the saved feed's for the synthetic
+ * saved subscription). The compat id is kept off the shared `Subscription` type
+ * — which flows to the main app and MCP, where a bigint can't be JSON-serialized
+ * — and attached only here where the Google Reader layer needs it.
+ */
+export type GreaderSubscription = subscriptionsService.Subscription & { greaderStreamId: bigint };
 
 /**
  * An entries-service feed filter fragment. Both `listEntries` and
@@ -72,13 +81,27 @@ export async function resolveFeedStreamFilter(
 export async function listGreaderSubscriptions(
   db: typeof dbType,
   userId: string
-): Promise<subscriptionsService.Subscription[]> {
-  const [all, saved] = await Promise.all([
+): Promise<GreaderSubscription[]> {
+  // Fetch the subscriptions, their stream serials, and the saved feed together.
+  // The stream serial is kept off the shared Subscription type (see
+  // GreaderSubscription), so it's read here and zipped on by id.
+  const [all, streamIds, saved] = await Promise.all([
     subscriptionsService.listAllSubscriptions(db, userId),
+    db
+      .select({ id: subscriptions.id, greaderStreamId: subscriptions.greaderStreamId })
+      .from(subscriptions)
+      .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt))),
     getSavedSubscription(db, userId),
   ]);
 
-  return saved ? [...all, saved] : all;
+  const streamIdById = new Map(streamIds.map((s) => [s.id, s.greaderStreamId]));
+  const withStreamIds: GreaderSubscription[] = all.map((sub) => ({
+    ...sub,
+    // Present for every active subscription (both queries filter the same set).
+    greaderStreamId: streamIdById.get(sub.id) ?? BigInt(0),
+  }));
+
+  return saved ? [...withStreamIds, saved] : withStreamIds;
 }
 
 /**
@@ -95,9 +118,17 @@ export async function listGreaderSubscriptions(
 async function getSavedSubscription(
   db: typeof dbType,
   userId: string
-): Promise<subscriptionsService.Subscription | null> {
-  const feedId = await getSavedFeedId(db, userId);
-  if (!feedId) return null;
+): Promise<GreaderSubscription | null> {
+  // The saved feed's own greader_stream_id is its Google Reader feed stream id
+  // (it has no subscription row — issue #730). Fetch it together with the row's
+  // existence; a user who has never saved anything has no saved feed and gets no
+  // synthetic subscription.
+  const [feedRow] = await db
+    .select({ id: feeds.id, greaderStreamId: feeds.greaderStreamId })
+    .from(feeds)
+    .where(and(eq(feeds.userId, userId), eq(feeds.type, "saved")))
+    .limit(1);
+  if (!feedRow) return null;
 
   // The saved badge is the trigger-maintained users.saved_unread_count
   // counter (migration 0092) — a single-row read, so there's no wasted work
@@ -109,7 +140,8 @@ async function getSavedSubscription(
   const unread = row?.unread ?? 0;
 
   return {
-    id: feedId,
+    id: feedRow.id,
+    greaderStreamId: feedRow.greaderStreamId,
     type: "saved",
     url: null,
     title: SAVED_FEED_TITLE,
@@ -125,10 +157,11 @@ async function getSavedSubscription(
 
 /**
  * Per-feed unread count and newest visible item time for the Google Reader
- * unread-count endpoint, both keyed by the id `formatUnreadCounts` emits: the real
- * subscription id, or the saved feed's id for the synthetic saved feed (issue
- * #730). Returned as the `{ subscriptions, newestItemAtById }` pair that endpoint
- * feeds straight into `formatUnreadCounts`.
+ * unread-count endpoint, both keyed by the feed stream serial `formatUnreadCounts`
+ * emits `feed/{n}` from: the subscription's `greader_stream_id`, or the saved
+ * feed's for the synthetic saved feed (issue #730). Returned as the
+ * `{ subscriptions, newestItemAtByStreamId }` pair that endpoint feeds straight
+ * into `formatUnreadCounts`.
  *
  * The two used to be separate reads (subscription counts + a per-feed newest map),
  * which opened a benign TOCTOU: a feed gaining its first visible entry between the
@@ -156,11 +189,15 @@ export async function getGreaderUnreadCounts(
   db: typeof dbType,
   userId: string
 ): Promise<{
-  subscriptions: Array<{ id: string; unreadCount: number }>;
-  newestItemAtById: Map<string, Date>;
+  subscriptions: Array<{ streamId: string; unreadCount: number }>;
+  newestItemAtByStreamId: Map<string, Date>;
 }> {
+  // Key both arms by the Google Reader feed stream id — the subscription's
+  // greader_stream_id, or the saved feed's — so the result feeds straight into
+  // formatUnreadCounts, which emits `feed/{streamId}`. Postgres returns bigint
+  // (int8) as a decimal string, which is exactly what the wire id needs.
   const result = await db.execute(sql`
-    SELECT s.id AS stream_id, s.unread_count AS unread, latest.newest AS newest
+    SELECT s.greader_stream_id AS stream_id, s.unread_count AS unread, latest.newest AS newest
     FROM subscriptions s
     LEFT JOIN LATERAL (
       SELECT ue.published_or_fetched_at AS newest
@@ -174,7 +211,7 @@ export async function getGreaderUnreadCounts(
 
     UNION ALL
 
-    SELECT f.id AS stream_id, u.saved_unread_count AS unread, latest.newest AS newest
+    SELECT f.greader_stream_id AS stream_id, u.saved_unread_count AS unread, latest.newest AS newest
     FROM feeds f
     JOIN users u ON u.id = f.user_id
     LEFT JOIN LATERAL (
@@ -188,16 +225,16 @@ export async function getGreaderUnreadCounts(
     WHERE f.type = 'saved' AND f.user_id = ${userId}::uuid
   `);
 
-  const subscriptions: Array<{ id: string; unreadCount: number }> = [];
-  const newestItemAtById = new Map<string, Date>();
+  const subscriptions: Array<{ streamId: string; unreadCount: number }> = [];
+  const newestItemAtByStreamId = new Map<string, Date>();
   for (const row of result.rows as Array<{
     stream_id: string;
     unread: number;
     newest: Date | null;
   }>) {
-    subscriptions.push({ id: row.stream_id, unreadCount: row.unread });
-    if (row.newest) newestItemAtById.set(row.stream_id, new Date(row.newest));
+    subscriptions.push({ streamId: row.stream_id, unreadCount: row.unread });
+    if (row.newest) newestItemAtByStreamId.set(row.stream_id, new Date(row.newest));
   }
 
-  return { subscriptions, newestItemAtById };
+  return { subscriptions, newestItemAtByStreamId };
 }
