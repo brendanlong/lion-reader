@@ -9,10 +9,13 @@ import Groq from "groq-sdk";
 import { z } from "zod";
 import { logger } from "@/lib/logger";
 import { htmlToNarrationInput } from "@/lib/narration/html-to-narration-input";
+import { buildAlignedNarration, type ParagraphMapEntry } from "@/lib/narration/paragraph-map";
+import type { NarrationInputParagraph } from "@/lib/narration/html-to-narration-input";
 import { trackNarrationHighlightFallback } from "@/server/metrics/metrics";
 
 // Re-export pure functions for backward compatibility
 export { htmlToNarrationInput };
+export type { ParagraphMapEntry };
 
 /**
  * Schema for a single paragraph from the LLM.
@@ -113,14 +116,21 @@ function getGroqClient(userApiKey?: string | null): Groq | null {
 }
 
 /**
- * Paragraph mapping entry for highlighting support.
- * Maps a narration paragraph index to the original HTML element index.
+ * Builds a fallback narration result (plain input text, no LLM) with a paragraph
+ * map aligned to how the player splits paragraphs. Shared by every fallback arm
+ * (no Groq key, empty/invalid LLM response).
  */
-export interface ParagraphMapEntry {
-  /** Narration paragraph index */
-  n: number;
-  /** Original HTML element index (corresponds to data-para-id) */
-  o: number;
+function buildFallbackNarration(
+  inputParagraphs: NarrationInputParagraph[]
+): GenerateNarrationResult {
+  const { narrationText, paragraphMap } = buildAlignedNarration(
+    inputParagraphs.map((p) => ({ o: p.id, text: p.text }))
+  );
+  return {
+    text: narrationText,
+    source: "fallback",
+    paragraphMap,
+  };
 }
 
 /**
@@ -173,17 +183,7 @@ export async function generateNarration(
   if (!client) {
     logger.debug("Groq API key not configured, using fallback text conversion");
     trackNarrationHighlightFallback();
-    // Build paragraph map from input paragraphs (1:1 mapping for fallback)
-    const paragraphMap: ParagraphMapEntry[] = inputParagraphs.map((p, idx) => ({
-      n: idx,
-      o: p.id,
-    }));
-    const fallbackText = inputParagraphs.map((p) => p.text).join("\n\n");
-    return {
-      text: fallbackText,
-      source: "fallback",
-      paragraphMap,
-    };
+    return buildFallbackNarration(inputParagraphs);
   }
 
   try {
@@ -212,17 +212,7 @@ export async function generateNarration(
     if (!rawOutput) {
       logger.warn("Groq returned empty response, using fallback");
       trackNarrationHighlightFallback();
-      // Build paragraph map from input paragraphs (1:1 mapping for fallback)
-      const paragraphMap: ParagraphMapEntry[] = inputParagraphs.map((p, idx) => ({
-        n: idx,
-        o: p.id,
-      }));
-      const fallbackText = inputParagraphs.map((p) => p.text).join("\n\n");
-      return {
-        text: fallbackText,
-        source: "fallback",
-        paragraphMap,
-      };
+      return buildFallbackNarration(inputParagraphs);
     }
 
     // Parse and validate JSON output
@@ -236,17 +226,7 @@ export async function generateNarration(
         rawOutput: rawOutput.substring(0, 200), // Log first 200 chars for debugging
       });
       trackNarrationHighlightFallback();
-      // Build paragraph map from input paragraphs (1:1 mapping for fallback)
-      const paragraphMap: ParagraphMapEntry[] = inputParagraphs.map((p, idx) => ({
-        n: idx,
-        o: p.id,
-      }));
-      const fallbackText = inputParagraphs.map((p) => p.text).join("\n\n");
-      return {
-        text: fallbackText,
-        source: "fallback",
-        paragraphMap,
-      };
+      return buildFallbackNarration(inputParagraphs);
     }
 
     // Build a Map from LLM output: id → text
@@ -257,39 +237,24 @@ export async function generateNarration(
       }
     }
 
-    // For each input paragraph, look up in LLM output map
-    // Track the paragraph mapping as we build the final output
-    const finalParagraphs: string[] = [];
-    const paragraphMap: ParagraphMapEntry[] = [];
-
-    for (const inputPara of inputParagraphs) {
+    // For each input paragraph, pick the LLM's rewrite (falling back to the
+    // original input text when the LLM omitted that id). An empty string means
+    // the LLM deliberately dropped the paragraph (junk/garbage) — it produces
+    // no narration paragraph and no map entry. `buildAlignedNarration` filters
+    // empties and, crucially, keeps the map aligned to the player's paragraph
+    // split even if a rewrite contains blank-line breaks.
+    const elements = inputParagraphs.map((inputPara) => {
       const llmText = llmTextMap.get(inputPara.id);
+      return {
+        o: inputPara.id,
+        text: llmText !== undefined ? llmText : inputPara.text,
+      };
+    });
 
-      if (llmText !== undefined) {
-        // Found in LLM output
-        if (llmText !== "") {
-          // Non-empty text → use it, track the mapping
-          paragraphMap.push({
-            n: finalParagraphs.length,
-            o: inputPara.id,
-          });
-          finalParagraphs.push(llmText);
-        }
-        // Empty string → skip (don't include in output, no mapping entry)
-      } else {
-        // Not found or id is NaN → fall back to original input text
-        if (inputPara.text !== "") {
-          paragraphMap.push({
-            n: finalParagraphs.length,
-            o: inputPara.id,
-          });
-          finalParagraphs.push(inputPara.text);
-        }
-      }
-    }
+    const { narrationText, paragraphMap } = buildAlignedNarration(elements);
 
     return {
-      text: finalParagraphs.join("\n\n"),
+      text: narrationText,
       source: "llm",
       paragraphMap,
     };
