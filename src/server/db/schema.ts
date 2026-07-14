@@ -520,9 +520,7 @@ export const entries = pgTable(
     // it from a sequence default, so inserts omit it (the .default tells
     // Drizzle it's optional-on-insert). Item ids are stored, not derived from
     // the UUID; see src/server/google-reader/id.ts and
-    // src/server/wallabag/id.ts. (The legacy hash-derived wallabag_id
-    // generated column still exists in the DB, unreferenced, until a follow-up
-    // migration drops it — expand/contract.)
+    // src/server/wallabag/id.ts.
     greaderItemId: bigint("greader_item_id", { mode: "bigint" })
       .notNull()
       .default(sql`nextval('entries_greader_item_id_seq'::regclass)`),

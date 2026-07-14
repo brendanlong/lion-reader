@@ -680,6 +680,13 @@
       "when": 1782953000000,
       "tag": "0097_greader_stream_sortid_userid",
       "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1782953100000,
+      "tag": "0098_drop_wallabag_id",
+      "breakpoints": true
     }
   ]
 }
