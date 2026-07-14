@@ -15,7 +15,6 @@
 import { Suspense, useEffect, useState, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
-import { clearSessionCookie } from "@/lib/session-cookie";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { SpinnerIcon, CheckIcon, LockIcon, CloseIcon } from "@/components/ui/icon-button";
@@ -207,10 +206,9 @@ function SaveContent() {
   const needsGoogleSignin = errorMessage === "NEEDS_GOOGLE_SIGNIN";
   const needsGoogleReauth = errorMessage === "NEEDS_GOOGLE_REAUTH";
 
-  // Handle sign in - clears any stale session and redirects to login
+  // Handle sign in - redirects to login (a stale httpOnly session cookie is inert
+  // and is overwritten on the next login)
   const handleSignIn = () => {
-    // Clear any existing session cookie (it's invalid anyway)
-    clearSessionCookie();
     // Store the URL to save after login
     if (urlToSave) {
       sessionStorage.setItem("pendingSaveUrl", urlToSave);

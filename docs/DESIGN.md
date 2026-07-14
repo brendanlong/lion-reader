@@ -229,43 +229,50 @@ write when it was updated within the last minute to avoid write/index churn.
 
 Session tokens are 32 random bytes, base64url encoded. We store SHA-256 hash in database (never the raw token).
 
-### Session Cookie (`Secure`, and the `httpOnly: false` trade-off)
+### Session Cookie (`HttpOnly` + `Secure`)
 
 The `session` cookie carries the raw token to the server on every request. It is
-written with `path=/; SameSite=Lax; Max-Age=30d`, and — the security-relevant part
-— **`Secure` on any HTTPS origin** so the 30-day token is never transmitted over
-cleartext HTTP (a stray `http://` link, a misconfig, or a downgrade before HSTS
-pins). There are two families of write sites, kept consistent:
+`HttpOnly`, `Secure` in production, `SameSite=Lax`, `Path=/`, `Max-Age=30d`, so the
+30-day token is **never reachable by JS** and is never sent over cleartext HTTP
+(issue #1088). The **server is its sole writer** — there is no client-side token
+management and no other cookie:
 
-- **Server-set** (OAuth redirect flow, `createSessionResponse` in
-  `src/server/auth/oauth/callback-helpers.ts`): `secure: NODE_ENV === "production"`.
-- **Client-set** (email login + OAuth callback page, which receive the token in a
-  tRPC mutation _body_ and set the cookie in JS): centralized in
-  `src/lib/session-cookie.ts` (`setSessionCookie`/`clearSessionCookie`/`hasSessionCookie`),
-  which adds `; secure` whenever `location.protocol === "https:"`. Keying off the
-  actual transport (not a build flag) means a `Secure` cookie is never emitted on a
-  plain-HTTP dev origin, where the browser would silently drop it.
+- **tRPC path (browsers).** `auth.login` / `auth.register` / `auth.googleCallback`
+  / `auth.appleCallback` create the session and emit `Set-Cookie` on the response
+  via the fetch adapter's `resHeaders` (threaded onto the tRPC context, see
+  `src/server/auth/session-cookie.ts`); `auth.logout` and `users."me.deleteAccount"`
+  clear it the same way. The browser applies the `Set-Cookie` from the mutation
+  response, so `router.refresh()` immediately re-renders server components against
+  the new cookie. Those mutations still **return the token in their body** for the
+  REST/OpenAPI surface (`POST /api/v1/auth/login`, etc.), whose non-browser clients
+  use it as a bearer token — that adapter doesn't supply `resHeaders`, so the cookie
+  write is a no-op there and only the body token is used.
+- **OAuth redirect flow** (`createSessionResponse` in
+  `src/server/auth/oauth/callback-helpers.ts`) sets the same `HttpOnly; Secure`
+  cookie directly on the redirect `NextResponse`.
 
-**`httpOnly: false` is deliberate and is an accepted, documented risk.** The cookie
-must be JS-readable/-writable because the SPA manages the session client-side: login
-and OAuth are tRPC mutations that return the token in their response body for JS to
-persist; the shared error handler reads the cookie (`hasSessionCookie`) to decide
-whether a `401` means "log out and redirect" vs. "a failed login attempt"; and
-logout/account-deletion clear it in JS. Moving to a server-set `httpOnly` cookie
-would mean dropping token-in-body from the login/OAuth mutations (setting `Set-Cookie`
-from the tRPC response instead) **and** replacing the `hasSessionCookie` heuristic
-with a separate non-sensitive "logged-in" marker — a larger refactor of the
-PWA/shallow-routing flow that a prior attempt broke, so it is intentionally left as
-possible future work, not done here.
+**Detecting a dead session without reading the cookie.** Because the token is
+httpOnly, the client can't read it to tell "logged in" from "a login attempt just
+failed". It doesn't need to: the auth-error redirect (`<AuthErrorHandler>`,
+`src/components/app/AuthErrorHandler.tsx`) is mounted **only on the authenticated
+surfaces** — the app SPA (`(app)/layout.tsx`) and `/complete-signup` — whose server
+layouts have already redirected unauthenticated users away before the client mounts.
+So any request the client makes there is from a genuinely logged-in user, and an
+`UNAUTHORIZED` response is treated **unconditionally** as "the session died → redirect
+to `/login`" — no cookie, no marker, no per-procedure check. The auth/`/save`/`/demo`
+surfaces mount `TRPCProvider` (generic wiring) but **not** the handler, so their own
+expected 401s (a failed login, the bookmarklet's sign-in prompt) are handled locally
+and never trigger a global redirect loop. A stale httpOnly cookie after a dead-session
+401 is inert — the server rejects it and it is overwritten on the next login. This
+makes the model fully retroactive: an existing session that dies converges on the next
+request with no client state to migrate.
 
-The consequence: session confidentiality rests entirely on the app having **zero
-XSS**. Because entry bodies (and AI summaries) are rendered via
-`dangerouslySetInnerHTML`, **`sanitizeEntryHtml` (`src/server/html/sanitize.ts`) is
-security-critical, not merely defense-in-depth** — a sanitizer bypass is a direct
-path to session-token theft and full account takeover. Treat any change to the
-sanitizer allow-list or its pre-sanitization transforms accordingly (see "Sanitizing
-untrusted HTML" in CLAUDE.md). The `admin` cookie, which has no client-side
-management need, is `httpOnly: true` (`src/app/api/admin/session/route.ts`).
+Making the token httpOnly removes the XSS→session-token-theft path (an XSS on the
+`dangerouslySetInnerHTML`-rendered entry body can no longer read the cookie).
+`sanitizeEntryHtml` (`src/server/html/sanitize.ts`) remains **security-critical**
+defense against XSS (see "Sanitizing untrusted HTML" in CLAUDE.md), but a bypass is
+no longer a one-step account takeover via the session cookie. The `admin` cookie is
+likewise `httpOnly: true` (`src/app/api/admin/session/route.ts`).
 
 ### Token Scopes & Authorization
 

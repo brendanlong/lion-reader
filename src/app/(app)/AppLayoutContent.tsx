@@ -12,7 +12,6 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { ClientLink } from "@/components/ui/client-link";
-import { clearSessionCookie } from "@/lib/session-cookie";
 import {
   CloseIcon,
   MenuIcon,
@@ -50,8 +49,7 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
 
   const logoutMutation = trpc.auth.logout.useMutation({
     onSuccess: () => {
-      // Clear the session cookie
-      clearSessionCookie();
+      // The server cleared the httpOnly session cookie on the logout response.
       // Drop all cached data before the next login. The browser QueryClient and
       // the subscription lookup map are module-level singletons that outlive the
       // session, so without this a different account signing in on the same tab

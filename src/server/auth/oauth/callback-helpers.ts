@@ -119,15 +119,13 @@ export async function createSessionResponse(
     options?.redirectStatus
   );
 
-  // Set session cookie (30 days).
-  // `secure` in production so the JS-accessible token is never sent over cleartext
-  // HTTP; `httpOnly: false` is a documented, accepted trade-off (client-side session
-  // management for the SPA/PWA flow) — see "Session cookie" in docs/DESIGN.md.
+  // Set session cookie (30 days). The token is `httpOnly` so it is never exposed
+  // to JS (issue #1088); `secure` in production. See docs/DESIGN.md "Session Cookie".
   response.cookies.set("session", token, {
     path: "/",
     maxAge: 30 * 24 * 60 * 60,
     sameSite: "lax",
-    httpOnly: false, // Allow JS access for client-side session management
+    httpOnly: true,
     secure: process.env.NODE_ENV === "production",
   });
 

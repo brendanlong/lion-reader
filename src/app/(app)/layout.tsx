@@ -20,6 +20,7 @@
 import { redirect } from "next/navigation";
 import { TRPCProvider } from "@/lib/trpc/provider";
 import { createHydrationHelpersForRequest, isAuthenticated, isConfirmed } from "@/lib/trpc/server";
+import { AuthErrorHandler } from "@/components/app/AuthErrorHandler";
 import { AppLayoutContent } from "./AppLayoutContent";
 
 interface AppLayoutProps {
@@ -77,6 +78,8 @@ export default async function AppLayout({ children }: AppLayoutProps) {
   // Next.js runs the page.tsx files for prefetching.
   return (
     <TRPCProvider>
+      {/* Redirect on session death / signup-confirmation — SPA-only (see component) */}
+      <AuthErrorHandler />
       <HydrateClient>
         <AppLayoutContent initialCursors={initialCursors} />
         {/* Page files run for prefetching but their output is hidden */}
