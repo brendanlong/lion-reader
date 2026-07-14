@@ -5,7 +5,7 @@
 /**
  * AuthErrorHandler is the cache-subscription that turns an auth error from any
  * tRPC call inside the authenticated SPA into a navigation — the kind of realtime
- * cache code CLAUDE.md says to test rather than review. These tests drive a real
+ * cache code tests/CLAUDE.md says to test rather than review. These tests drive a real
  * tRPC query through the mock link (see component-test-helpers), have it fail with
  * a crafted error, and assert the resulting `window.location` navigation:
  *

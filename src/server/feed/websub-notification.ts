@@ -73,7 +73,8 @@ export async function ingestWebsubNotification(feed: Feed, bodyText: string): Pr
       // same title a later entries.list refetch would return.
       feedTitle: parsedFeed.title || feed.title,
       // WebSub ingest runs in the Next.js app process on the request path, so
-      // offload large-body sanitization to the worker pool (CLAUDE.md). The feed
+      // offload large-body sanitization to the worker pool (see
+      // src/server/html/CLAUDE.md). The feed
       // worker's own polling path keeps the default synchronous sanitize.
       offloadSanitize: true,
     });

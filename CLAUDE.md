@@ -1,18 +1,16 @@
 # Lion Reader Development Guidelines
 
-## Primary documentation
+## Documentation Map
 
-Aggressively keep this up-to-date if you notice anything outdated!
+Deep subsystem knowledge lives in per-directory `CLAUDE.md` files (loaded automatically when you work on files there) — aggressively keep them, this file, and `docs/DESIGN.md` up-to-date if you notice anything outdated:
 
-- @docs/DESIGN.md - Aggressively keep this up-to-date if you notice anything outdated!
-- @docs/diagrams/ - Flow diagrams for various systems
+- `docs/DESIGN.md` - High-level architecture and design decisions. **Read it before design/architecture work** (deliberately not `@`-inlined).
+- `docs/diagrams/` - D2 flow diagrams for the major systems; great for orienting quickly.
+- `docs/references/` - Reference docs for external tools. Consult before editing related configs.
+- `docs/DEPLOYMENT.md` - Fly.io deployment/provisioning guide.
+- Per-directory guides: `src/server/CLAUDE.md` (data model, services, compat-API ids), `src/server/html/CLAUDE.md` (sanitization), `src/server/feed/CLAUDE.md` (fetching/WebSub), `src/server/auth/CLAUDE.md` (sessions/scopes), `src/server/oauth/CLAUDE.md` (OAuth server/MCP auth), `src/server/http/CLAUDE.md` (SSRF-safe fetching), `src/CLAUDE.md` + `src/components/CLAUDE.md` (frontend), `tests/CLAUDE.md` (testing).
 
 ALWAYS read the relevant documentation before working.
-
-## Reference documentation
-
-- @docs/references/ - Reference docs for external tools. Consult before editing related configs.
-- docs/DEPLOYMENT.md - Fly.io deployment/provisioning guide
 
 ## Commands
 
@@ -63,21 +61,13 @@ Notes:
 - Always write tests for the intended behavior of functions, not the actual behavior. If the actual behavior is wrong and the issue is pre-existing, write the test correctly, mark it skipped, and file a GitHub issue on brendanlong/lion-reader (labels: `bug`, `reported-by-claude`)
 - Don't create barrel files, prefer direct imports within our code
 
-## Frontend Testing
+## Testing
 
-The realtime SSE/cache-update code is the hardest part of the app to verify by review — always test it instead:
-
-- **Cache logic** (`src/lib/cache/`): pure functions, unit-tested in `tests/unit/frontend/cache/` against a real `QueryClient` and real tRPC query utils built by `createRealTrpcUtils` in `tests/utils/cache-test-helpers.ts` (no internal mocks). Add cases there when changing cache operations or event handling.
-- **Connection management** (`src/lib/events/connection-state.ts`, `cursors.ts`): pure state machine + cursor bookkeeping behind `useRealtimeUpdates`, unit-tested in `tests/unit/frontend/events/` (reconnect backoff, polling fallback on 503, visibility handling). Change the machine, not the hook glue, when adjusting connection behavior.
-- **Component ↔ tRPC integration** (components that embed `useQuery`/`useMutation`): rendered in jsdom via `renderWithTrpc` in `tests/utils/component-test-helpers.tsx`, which wraps the component in the real `trpc.Provider` + `QueryClientProvider` but swaps the HTTP link for a terminating **mock link** that resolves each procedure from a `{ "router.procedure": handler }` map (no MSW, no internal mocks). The returned `calls`/`callsFor(path)` let a test assert which procedures ran with which input. See `tests/unit/frontend/components/{EntryContent,EditSubscriptionDialog,Sidebar}.test.tsx`. Because there's no HTTP layer, handler return values reach hooks un-serialized (Dates stay Dates); provide handlers for **every** procedure the subtree issues (unhandled paths error loudly).
-- **SSE → cache → UI pipeline**: covered by `tests/e2e/` Playwright tests, which seed the test DB directly, publish real Redis pub/sub events, and assert the UI updates **without** refetching (`recordTrpcProcedures` in `tests/e2e/helpers.ts`). When changing the realtime flow, run `pnpm test:e2e` and add scenarios using those helpers.
-- **The minimal-request invariant**: SSE events must patch the React Query cache directly, never trigger `entries.*` refetches. `src/FRONTEND_STATE.md` is the contract for which queries get direct updates vs invalidation — read and update it when changing queries, mutations, or SSE handling.
-
-For manual verification, use the Playwright MCP browser tools (`mcp__Playwright__browser_*`) if available — navigate, take accessibility snapshots, click, and screenshot interactively against a dev server (or https://lionreader.com/demo for auth-free checks). `pnpm test:e2e` starts the app server on port 4983 against the test database; you can also seed data with the helpers and inspect pages with Playwright directly.
+See `tests/CLAUDE.md` for the testing playbook — especially before touching the realtime SSE/cache-update code, which must be tested, not reviewed. `src/FRONTEND_STATE.md` is the contract for queries/mutations/cache updates.
 
 ## UI Components
 
-See src/components/CLAUDE.md for UI component guidelines, available components, and icons.
+See `src/components/CLAUDE.md` for UI component guidelines, available components, and icons.
 
 ## Git
 
@@ -112,31 +102,22 @@ tests/integration/ # Real DB via docker-compose (no mocks)
 tests/e2e/       # Playwright browser tests (real server + DB + Redis)
 ```
 
-See docs/diagrams/ for more detail. These diagrams are very helpful for quickly understanding the codebase.
-
 ## Database Conventions
 
 - **IDs**: UUIDv7, generated in TypeScript via `generateUuidv7()` from `@/lib/uuidv7`. `gen_uuidv7()` is not available in our Postgres version.
-- **Timestamps**: `timestamptz`, store UTC. Read as JS `Date` (millisecond precision) by default. Where microseconds matter — keyset cursors built from timestamps — use the `temporalTimestamp` Drizzle column type or `parseTimestamptz`/`.mapWith(parseTimestamptz)` from `src/server/db/temporal.ts` to read a full-precision `Temporal.Instant`; the app pool returns the raw `timestamptz` string (not a truncating `Date`) so this works without `to_char`. See "Pagination" in docs/DESIGN.md (#680, #683).
+- **Timestamps**: `timestamptz`, store UTC. Read as JS `Date` (millisecond precision) by default. Where microseconds matter — keyset cursors built from timestamps — use the `temporalTimestamp` Drizzle column type or `parseTimestamptz` from `src/server/db/temporal.ts` (see "Ordering & Pagination Mechanics" in `src/server/CLAUDE.md`; #680, #683).
 - **Soft deletes**: Use `deleted_at`/`unsubscribed_at` patterns
 - **Upserts**: Prefer `onConflictDoNothing()`/`onConflictDoUpdate()` over check-then-act
 - **Migrations**: Must be backward-compatible with the previous release (expand/contract) — they run in Fly's `release_command` before the canary deploy, so old code runs against the new schema during rollout and on rollback. See "Migration Compatibility" in docs/DESIGN.md.
 - **Background jobs**: Postgres-based queue
 - **Caching/SSE**: Redis available for caching and coordinating SSE
-
-### Subscription Views
-
-Use the database views for frontend queries instead of manual joins:
-
-- **`user_feeds`**: Active subscriptions with feed data merged, including the trigger-maintained `unread_count` (no aggregation needed). Use for the subscription-list surfaces (`subscriptions.list/get/export`); resolves title (custom or original) and filters out unsubscribed subscriptions. **Display-only** — link/ownership/scoping checks must query the `subscriptions` table directly, not this view (see "Database Views" in docs/DESIGN.md).
-- **`visible_entries`**: Entries with visibility rules applied. Use for `entries.list/get`. Each `user_entries` row links to its subscription via the denormalized `subscription_id`; an entry is visible if the row exists AND (its subscription is active OR it's starred OR it's a saved article — the saved arm gates on entry **type**, never `subscription_id IS NULL`). Privacy gating happens when `user_entries` rows are inserted (subscribe-time / fetch-time), not in the view. Unread **counts do not scan this view** — they read the denormalized counters (see `src/server/services/counts.ts` and "Unread counts" in docs/DESIGN.md). See also "Entry Visibility" in docs/DESIGN.md.
-
-These views were introduced in `migrations/0035_subscription_views.sql`; their current definitions live in `migrations/schema.sql` (the subscription-attribution rewrite was `0087`, the unread counters `0092`–`0093`) and have Drizzle schemas in `src/server/db/schema.ts`.
+- **Views**: use `user_feeds` / `visible_entries` for frontend queries instead of manual joins — semantics and gotchas in `src/server/CLAUDE.md`.
 
 ## API Conventions
 
 - **Pagination**: Always cursor-based (never offset)
 - **tRPC naming**: `noun.verb` (e.g., `entries.list`, `entries.markRead`)
+- **Authorization**: tRPC procedures are session-only by default; token access is explicit opt-in (see `src/server/auth/CLAUDE.md`)
 
 ## Services Layer
 
@@ -151,12 +132,7 @@ Don't try to invalidate the cache or look things up in the cache. Pass data down
 
 ## Outgoing HTTP Requests
 
-Always use our custom user agent.
-
-```typescript
-import { USER_AGENT, buildUserAgent } from "@/server/http/user-agent";
-headers: { "User-Agent": USER_AGENT }
-```
+Always use our custom user agent (`USER_AGENT`/`buildUserAgent` from `@/server/http/user-agent`), and fetch user-influenced URLs only through `fetchWithSsrfProtection` (see `src/server/http/CLAUDE.md`).
 
 ## Parsing
 
@@ -167,18 +143,6 @@ Prefer SAX-style parsing unless the algorithm requires a DOM.
 - DOM required (Readability): `linkedom`
 - Parse once, pass parsed structure through code
 
-### Sanitizing untrusted HTML
+## Sanitizing Untrusted HTML
 
-Entry bodies (and AI summaries) are rendered via `dangerouslySetInnerHTML`, so untrusted HTML is sanitized **on the server, on the read path** with `sanitizeEntryHtml` from `@/server/html/sanitize` (a `sanitize-html` wrapper — pure Node, no DOM/jsdom). **This sanitizer is security-critical**: it is the primary XSS defense on a surface that renders untrusted HTML, so treat every change to `SANITIZE_OPTIONS`/the pre-sanitization transforms as security-sensitive. (The `session` cookie is `httpOnly` — see "Session Cookie" in docs/DESIGN.md — so an XSS here is no longer a one-step session-token theft, but XSS remains a serious vulnerability regardless.) The client renders trusted HTML and ships no sanitizer. The chokepoints live in the **services layer**: `toFullEntry`/`getEntry`/`getEntries` in `src/server/services/entries.ts` (covering tRPC `entries.get` + `entries.fetchFullContent`, MCP `get_entry`, Google Reader, and Wallabag) and summary generation in `summarization.ts`. Do **not** reintroduce a client-side sanitizer — the old `isomorphic-dompurify` pulled `jsdom` into the production server bundle. Feed `summary`/`title`/`author` are rendered as escaped text, not HTML; keep them that way.
-
-`sanitizeEntryHtml` also runs a pre-sanitization transform, `convertMathJaxChtmlToMathml` from `@/server/html/mathjax-chtml`: some sources (notably LessWrong) deliver math pre-rendered as MathJax v3 CHTML (`<mjx-*>` elements + a `<style>` block, where each glyph is an empty `<mjx-c class="mjx-c1D465 …">` whose character lives in CSS). The sanitizer drops `<style>` and unknown tags, so that math would otherwise vanish entirely; the transform rewrites the CHTML tree to presentation MathML (already on the allow-list, renders natively) before sanitization. It's a cheap no-op (string check) for the common case with no embedded math. To avoid building a DOM for the whole (possibly large) body, it does a single SAX pass (`htmlparser2`) to locate each `<mjx-container>`'s byte range, splices the surrounding HTML through **verbatim**, and parses a DOM (`htmlparser2` → `domhandler`, serialized back with `dom-serializer`) only for the container substrings it actually rewrites — so only the math pays for structural reconstruction (issue #1054; the earlier `linkedom` parse+serialize of the entire document was ~4× the sanitize cost on math-heavy content).
-
-Inline **SVG** gets its own pre/post-sanitization pass, `extractInlineSvg`/`reinsertInlineSvg` from `@/server/html/sanitize-svg` (issue #923). `sanitize-html`'s HTML-mode parser **case-folds** tag/attribute names, which breaks SVG's camelCase (`viewBox`, `preserveAspectRatio`, `linearGradient`…), and disabling case-folding is a global option that would break matching for the surrounding HTML — so `sanitize-html` can't safely keep SVG and simply drops it. Instead, `extractInlineSvg` locates each top-level `<svg>` by byte range in a single `htmlparser2` HTML-mode pass, re-parses each subtree in **XML mode** (camelCase preserved, no HTML auto-closing), sanitizes it against a constrained, case-preserving allow-list derived from DOMPurify's SVG profile (minus `style`, `use`, `<foreignObject>`, animation elements, and `on*`/`javascript:` — `href`/`xlink:href` are scheme-validated per element), and replaces the SVG with an opaque per-call-nonced placeholder token that `sanitize-html` passes through as inert text. After `sanitize-html` runs on the placeholder'd body, `reinsertInlineSvg` substitutes the already-sanitized SVG back in — so the SVG's own allow-list is its only gate, deliberately bypassing `sanitize-html`. Cheap no-op (string check) when there's no `<svg>`, and degrades to "SVG stripped" (the plain `sanitize-html` drop) on any error.
-
-Sanitizing a large body is the dominant cost of `entries.get` (~50ms per ~700KB, ×4 fields), so sanitized output is **persisted in the database** (`entries.content_*_sanitized` / `full_content_*_sanitized`, each stamped with `content_sanitized_version` / `full_content_sanitized_version`). Every write path funnels its insert/update through `withSanitizedEntryContent` from `@/server/html/sanitize-entry` — the single place that derives the sanitized columns from raw content — so the invariant can't be forgotten at a new write site. The **full-content family is sanitized lazily** (issue #1117): its serving rule is strictly `fullContentCleaned ?? fullContentOriginal` (no user-facing original/cleaned toggle, unlike feed content), so `full_content_original_sanitized` — a sanitized copy of the entire raw fetched page — is materialized **only when `full_content_cleaned` is NULL** (Readability failed, or a plugin skipped it). When cleaned exists, the column is deliberately NULL _at the current version_ — "not materialized", not "stale" — so the version-based staleness machinery needs no special case; the rule lives in `shouldMaterializeFullContentOriginal` (sanitize-entry.ts) and is applied by both chokepoints, the read-path heal, and the bulk re-sanitize (via `sanitizeFamilyFromRaw` in `resanitize.ts`); migration 0100 nulled the pre-existing eager copies. The **content family still materializes both variants** — the frontend has a user-facing original/cleaned toggle for feed content (`hasBothVersions` in `EntryContentBody.tsx`), so `content_original_sanitized` is genuinely served even when cleaned exists. The read path (`resolveSanitizedContent` in `src/server/services/entries.ts`) serves the stored value when its version is **at or beyond** `SANITIZER_VERSION`, and otherwise re-sanitizes from the raw columns and self-heals (fire-and-forget persist). It first short-circuits a family that has **no raw content**: ordinary feed/email inserts leave the full-content family's raw columns and `full_content_sanitized_version` NULL, so without this the _first_ read of nearly every entry (and every read after a `SANITIZER_VERSION` bump) would needlessly take the heal path for an empty family — a wasted SELECT, two no-op sanitizes, and a version-stamping UPDATE. The read query selects a `hasContentRaw`/`hasFullContentRaw` boolean per family (`original IS NOT NULL OR cleaned IS NOT NULL`) and `resolveSanitizedFamily` returns the stored (NULL) sanitized columns unchanged when it's false — matching the bulk-resanitize staleness query, which treats a no-raw family as not stale (`RESANITIZE_NA`). Both the read-path heal and the bulk re-sanitize script persist through the shared `persistResanitizedFamily` (in `resanitize.ts`), whose write is guarded by a two-part compare-and-swap — the stored version must still be **strictly older** than `SANITIZER_VERSION` (`version IS NULL OR version < SANITIZER_VERSION`, the `isSanitizedFamilyStale` predicate) **and** the family's content hash must still match the raw we sanitized from — so a re-sanitize computed from now-stale raw can never clobber newer content (this closes the read→sanitize→write TOCTOU, e.g. an old-release writer swapping content during a version-bump rollout). Strictly-less-than, not `!=`, so an old release running after a rollback (or during an expand/contract rollout) never **downgrades** a row a newer release already wrote at a higher version. **Bump `SANITIZER_VERSION` in `sanitize.ts` whenever `SANITIZE_OPTIONS` _or_ the pre-sanitization transforms (`convertMathJaxChtmlToMathml`, `extractInlineSvg`) change** — that marks every row stale so it is re-sanitized on next read (raw content is retained precisely so this works without a re-fetch).
-
-**When bumping, consider offering a SQL "fast-forward" for rows the change provably can't affect** — but only when you can _guarantee_ byte-identical output. Most bumps are narrow: they change behavior only for content containing a detectable marker (e.g. the v4→v5 iframe removal and the v6→v7 embed-provider allow-list expansion both affect only content with an `iframe` tag; the v7→v8 inline-SVG support affects only content containing `<svg`; every MathJax-transform bump affects only content containing `<mjx-container`/`mjx-`). For a row whose raw content matches none of the current-and-intervening markers, `sanitize_new(raw) == sanitize_old(raw)`, so you can stamp the new version straight onto it and let the read-path heal / bulk re-sanitize script spend CPU only on the rows that actually changed. Rules: (1) verify the marker set covers **every** delta between the row's stored version and the new one — audit the git history of `sanitize.ts`/the transforms, not just the latest bump; (2) match markers case-insensitively (`NOT ILIKE`, since `<IFRAME>`/`<MJX-…>` are valid) and against the **raw** columns per family, gated on the family actually having raw content; (3) pin the stored-version range to the versions you analyzed (`BETWEEN …`), never a bare `< SANITIZER_VERSION`; (4) set **only** the `*_sanitized_version` column — never `updated_at`, or every touched row floods `visible_entries.updated_at` and every subscriber's delta sync (there are no triggers on `entries`, so a raw update is otherwise side-effect-free and emits no SSE); (5) batch by `id` — the version columns are indexed by `idx_entries_resanitize`, so it's a non-HOT update. Skip the fast-forward and let the bulk script do the full work whenever correctness can't be guaranteed.
-
-Because `sanitize-html` is synchronous and CPU-bound (tens of ms on large bodies), **app-server request paths offload sanitization to the piscina worker pool** for bodies over ~10 KB: `withSanitizedEntryContentAsync` (the async twin of the chokepoint, backed by `sanitizeEntryHtmlInWorker` in `@/server/worker-thread/pool`) is used by saved articles and on-demand full-content fetch, and the read-path self-heal calls `sanitizeEntryHtmlInWorker` directly — so a large or post-`SANITIZER_VERSION`-bump sanitize never blocks the event loop that serves UI. Small bodies stay inline (the thread hop isn't worth it). The worker bundle (`dist/worker-thread.js` in prod) embeds a build-time snapshot of the sanitizer rules, so a **stale bundle** would sanitize with old rules while the main process stamps rows at the current `SANITIZER_VERSION` — silently persisting under-sanitized HTML the version gate never revisits. To prevent that, the pool probes the bundle's version once at first use (`getVerifiedPool` in `pool.ts`) and, on any mismatch, tears the pool down and disables offload so every sanitize runs **inline with current rules** (loud error logged); so rebuild the worker bundle (`build:all`) whenever you bump `SANITIZER_VERSION`. The **WebSub content-notification ingest** (`ingestWebsubNotification` → `processEntries`) also runs in the app process on the request path, so `processEntries` takes an `offloadSanitize` flag (threaded down to `createEntry`/`updateEntryContent`, default false) that the WebSub path sets true; a fat push doesn't block the event loop. **Background jobs deliberately keep the synchronous `withSanitizedEntryContent`** — feed fetching and email ingest already run off the request path, so offloading would be pure overhead (`persistFullContentResult` takes `offloadSanitize`, defaulting on but set false by the feed worker; the feed-poll `processEntries` leaves `offloadSanitize` at its default false). Readability (Mozilla's article extraction over a linkedom DOM) is CPU-bound the same way, so the same request paths run it through the worker pool: saved articles and on-demand full-content fetch both call `cleanContentInWorker` (`fetchFullContent` takes an `offloadClean` flag, defaulting on but set false by the feed worker, mirroring `persistFullContentResult`'s `offloadSanitize`). `cleanContentInWorker({ sanitizeCleaned: true })` also fuses the cleaned-HTML sanitize into the same worker task so those writes don't ship the string across the thread boundary twice; the fused result is reused via `withSanitizedEntryContentAsync`'s `presanitized` hint, which still routes through the chokepoint. (MathJax CHTML→MathML conversion used to dominate math-heavy sanitize cost; issue #1054 cut it ~4× by parsing only the `<mjx-container>` substrings instead of the whole body — see the pre-sanitization transform note above.)
-
-The read-path heal only fixes entries someone actually opens, so after a `SANITIZER_VERSION` bump the long tail of never-opened stale entries is converged by **manually running the bulk re-sanitize script** (`scripts/resanitize-bulk.ts`, from a throwaway box against the production database — see its header for usage). There used to be a `resanitize_entries` background job that trickled through the stale set on the worker, but it cost too much database CPU and was removed (issue #1116). The script pages the stale set via `selectStaleEntriesForResanitize` (in `src/server/services/resanitize.ts`) and persists under the same compare-and-swap guard the read path uses. The staleness query is backed by the `idx_entries_resanitize` expression index over `RESANITIZE_STALENESS_KEY` (DESC, then `id` DESC), which seeks straight to the stalest rows (highest stale version, newest id) — the key is `LEAST` of each content family's version **only if that family has raw content** (else a large sentinel), so it's `< SANITIZER_VERSION` iff a _populated_ family is behind — crucial because ordinary writes leave `full_content_sanitized_version` NULL, and counting that as stale would drag the whole table into the stale set forever. Keep `RESANITIZE_STALENESS_KEY` (resanitize.ts) structurally in sync with the index expression (migration 0085) or the planner won't use it; an EXPLAIN test guards this.
+Entry HTML sanitization is **security-critical** (entry bodies are rendered via `dangerouslySetInnerHTML`; the sanitizer is the primary XSS defense). It happens **server-side in the services layer** — never add a client-side sanitizer, and never render feed-controlled text as HTML. Read `src/server/html/CLAUDE.md` before touching anything sanitization-related, and bump `SANITIZER_VERSION` per its rules whenever sanitizer behavior changes.

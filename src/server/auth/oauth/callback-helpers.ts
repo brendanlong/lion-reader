@@ -120,7 +120,8 @@ export async function createSessionResponse(
   );
 
   // Set session cookie (30 days). The token is `httpOnly` so it is never exposed
-  // to JS (issue #1088); `secure` in production. See docs/DESIGN.md "Session Cookie".
+  // to JS (issue #1088); `secure` in production. See "Session Cookie" in
+  // src/server/auth/CLAUDE.md.
   response.cookies.set("session", token, {
     path: "/",
     maxAge: 30 * 24 * 60 * 60,

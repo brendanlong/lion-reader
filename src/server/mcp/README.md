@@ -1,6 +1,6 @@
 # Lion Reader MCP Server
 
-Model Context Protocol (MCP) server exposing Lion Reader to AI assistants. See the [Design Document](../../../docs/DESIGN.md#mcp-server) for architecture and the full tool list; tools are defined in `tools.ts` (shared by both transports) and call the services layer (`src/server/services/`).
+Model Context Protocol (MCP) server exposing Lion Reader to AI assistants. See the [Design Document](../../../docs/DESIGN.md#mcp-server) for architecture; tools are defined in `tools.ts` (shared by both transports) and call the services layer (`src/server/services/`).
 
 ## Transports
 
