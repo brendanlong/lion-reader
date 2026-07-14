@@ -18,6 +18,7 @@ import { NarrationHighlightStyles } from "@/components/narration/NarrationHighli
 import { useNarration } from "@/components/narration/useNarration";
 import { useNarrationHighlight } from "@/components/narration/useNarrationHighlight";
 import { processHtmlForHighlighting } from "@/lib/narration/client-paragraph-ids";
+import { selectDisplayedContent } from "@/lib/narration/select-content";
 import { useNarrationSettings } from "@/lib/narration/settings";
 import { useEntryTextStyles } from "@/lib/appearance/AppearanceProvider";
 import { useImagePrefetch } from "@/lib/hooks/useImagePrefetch";
@@ -172,7 +173,7 @@ export function EntryContentBody({
   const hasFullContent = Boolean(
     (fullContentCleaned || fullContentOriginal) && fullContentFetchedAt && !fullContentError
   );
-  const showFullContent = fetchFullContent && hasFullContent;
+  const showFullContent = Boolean(fetchFullContent && hasFullContent);
 
   // Check if both feed content versions are available for toggle
   // Only show this toggle when NOT showing full content
@@ -180,21 +181,21 @@ export function EntryContentBody({
 
   // Select content based on state
   // Priority: full content (if enabled and available) > cleaned feed content > original feed content
-  let contentToDisplay: string | null;
-  if (showFullContent) {
-    contentToDisplay = fullContentCleaned ?? fullContentOriginal ?? null;
-  } else if (showOriginal) {
-    contentToDisplay = contentOriginal;
-  } else {
-    contentToDisplay = contentCleaned ?? contentOriginal;
-  }
+  const contentToDisplay = selectDisplayedContent(
+    { fullContentCleaned, fullContentOriginal, contentCleaned, contentOriginal },
+    { showFullContent, showOriginal }
+  );
 
-  // Set up narration with highlighting support
+  // Set up narration with highlighting support. Pass the current view state so
+  // the server narrates (and maps highlights against) exactly the variant on
+  // screen, not a fixed full/cleaned/original priority.
   const narration = useNarration({
     id: articleId,
     title,
     feedTitle: source,
     content: contentToDisplay,
+    showFullContent,
+    showOriginal,
   });
 
   const { highlightedParagraphIds } = useNarrationHighlight({

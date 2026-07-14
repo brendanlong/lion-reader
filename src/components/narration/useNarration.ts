@@ -74,7 +74,7 @@ export type { UseNarrationConfig, UseNarrationReturn };
  * @returns Object with narration state and control functions
  */
 export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
-  const { id, title, feedTitle, artwork, content } = config;
+  const { id, title, feedTitle, artwork, content, showFullContent, showOriginal } = config;
 
   // State
   const [state, setState] = useState<NarrationState>(DEFAULT_NARRATION_STATE);
@@ -309,6 +309,8 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
           const result = await generateMutation.mutateAsync({
             id,
             useLlmNormalization: settings.useLlmNormalization,
+            showFullContent: showFullContent ?? false,
+            showOriginal: showOriginal ?? false,
           });
           narration = result.narration;
           // Store the paragraph map from server for index translation during highlighting
@@ -438,6 +440,8 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     generateMutation,
     id,
     content,
+    showFullContent,
+    showOriginal,
     getOrCreateStreamingPlayer,
   ]);
 
