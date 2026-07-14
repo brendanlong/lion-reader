@@ -1,87 +1,103 @@
 /**
  * Media Session API Integration for Lion Reader's Narration Feature
  *
- * Enables OS-level playback controls:
- * - Lock screen controls (iOS/Android)
+ * Enables OS-level playback controls when narration is active:
+ * - Lock screen / notification media controls (iOS/Android, incl. installed PWA)
  * - Keyboard media keys (play/pause, prev/next)
- * - Headphone buttons
- * - Notification center media controls
+ * - Headphone / Bluetooth device buttons
+ *
+ * Narration plays through the Web Speech API (browser voices) or the Web Audio
+ * API (Piper enhanced voices). Neither registers as media playback, so the OS
+ * won't show media controls just because we set `mediaSession.metadata`. A silent
+ * looping audio element (see `./silent-audio`) is played while narration is
+ * active to make the browser treat narration as "media", which is what surfaces
+ * the controls and routes hardware buttons to our action handlers.
+ *
+ * This module is provider-agnostic: callers pass plain control callbacks, so the
+ * same integration works for both browser voices and Piper TTS.
  *
  * Usage:
  * ```typescript
- * import { setupMediaSession, clearMediaSession } from "@/lib/narration/media-session";
+ * setupMediaSession(
+ *   { articleTitle: "Article Title", feedTitle: "Feed Name", artwork },
+ *   { play, pause, stop, previousTrack, nextTrack },
+ * );
  *
- * // When starting narration
- * setupMediaSession({
- *   articleTitle: "Article Title",
- *   feedTitle: "Feed Name",
- *   narrator: articleNarrator,
- *   artwork: "https://example.com/icon.png" // optional
- * });
+ * // Keep the OS controls in sync with playback:
+ * updateMediaSessionPlaybackState("playing");
  *
- * // When leaving the article
+ * // When leaving the article:
  * clearMediaSession();
  * ```
  */
 
 import { isMediaSessionSupported } from "./feature-detection";
-import type { ArticleNarrator } from "./ArticleNarrator";
+import type { NarrationStatus } from "./ArticleNarrator";
+import { startSilentAudio, stopSilentAudio } from "./silent-audio";
 
 /**
- * Options for setting up the media session.
+ * Provider-agnostic playback controls invoked by OS media buttons.
+ *
+ * These map directly onto the narration hook's controls so both browser voices
+ * and Piper TTS share one integration.
  */
-export interface MediaSessionOptions {
+export interface MediaSessionControls {
+  /** Resume/start playback (OS "play" button, media key). */
+  play: () => void;
+  /** Pause playback (OS "pause" button, media key). */
+  pause: () => void;
+  /** Stop playback entirely. */
+  stop: () => void;
+  /** Skip to the previous paragraph (prev-track button). */
+  previousTrack: () => void;
+  /** Skip to the next paragraph (next-track button). */
+  nextTrack: () => void;
+}
+
+/**
+ * Metadata describing the currently-narrated article.
+ */
+export interface MediaSessionMetadataInput {
   /** Title of the article being narrated */
   articleTitle: string;
-  /** Name of the feed the article is from */
+  /** Name of the feed/site the article is from */
   feedTitle: string;
-  /** The ArticleNarrator instance to control */
-  narrator: ArticleNarrator;
   /** Optional URL to artwork/icon to display in media controls */
   artwork?: string;
 }
 
 /**
- * Playback state for the media session.
+ * The narration statuses that keep an OS media session active. `idle` tears it
+ * down; the rest keep the silent loop playing so the controls persist.
  */
-type MediaSessionPlaybackState = "playing" | "paused" | "none";
+const ACTIVE_STATUSES: ReadonlySet<NarrationStatus> = new Set<NarrationStatus>([
+  "loading",
+  "playing",
+  "paused",
+]);
 
 /**
  * Sets up the Media Session API for OS-level playback controls.
  *
- * This function:
- * - Sets metadata (title, artist, album, artwork)
- * - Registers action handlers (play, pause, stop, prev, next)
- * - Enables lock screen and keyboard media key controls
+ * Sets metadata (title, artist, album, artwork) and registers action handlers.
+ * Playback state (and the silent-audio element that makes the controls appear)
+ * is driven separately by {@link updateMediaSessionPlaybackState}.
  *
- * If the Media Session API is not supported, this function does nothing
- * (graceful degradation).
+ * No-op when the Media Session API is unsupported (graceful degradation).
  *
- * @param options - Configuration for the media session
- *
- * @example
- * ```typescript
- * const narrator = new ArticleNarrator();
- * narrator.loadArticle("...");
- *
- * setupMediaSession({
- *   articleTitle: "How to Build a Feed Reader",
- *   feedTitle: "Tech Blog",
- *   narrator,
- * });
- *
- * narrator.play();
- * updateMediaSessionState("playing");
- * ```
+ * @param metadata - What to display in the OS controls
+ * @param controls - Callbacks invoked by the OS media buttons
  */
-export function setupMediaSession(options: MediaSessionOptions): void {
+export function setupMediaSession(
+  metadata: MediaSessionMetadataInput,
+  controls: MediaSessionControls
+): void {
   if (!isMediaSessionSupported()) {
     return;
   }
 
-  const { articleTitle, feedTitle, narrator, artwork } = options;
+  const { articleTitle, feedTitle, artwork } = metadata;
 
-  // Set up metadata for the media session
   const artworkArray: MediaImage[] = artwork
     ? [
         { src: artwork, sizes: "96x96", type: "image/png" },
@@ -100,150 +116,66 @@ export function setupMediaSession(options: MediaSessionOptions): void {
     artwork: artworkArray,
   });
 
-  // Register action handlers
-  // Play: Resume narration
-  navigator.mediaSession.setActionHandler("play", () => {
-    narrator.resume();
-    updateMediaSessionState("playing");
-  });
-
-  // Pause: Pause narration
-  navigator.mediaSession.setActionHandler("pause", () => {
-    narrator.pause();
-    updateMediaSessionState("paused");
-  });
-
-  // Stop: Stop narration completely
-  navigator.mediaSession.setActionHandler("stop", () => {
-    narrator.stop();
-    updateMediaSessionState("none");
-  });
-
-  // Previous track: Skip to previous paragraph
-  navigator.mediaSession.setActionHandler("previoustrack", () => {
-    narrator.skipBackward();
-  });
-
-  // Next track: Skip to next paragraph
-  navigator.mediaSession.setActionHandler("nexttrack", () => {
-    narrator.skipForward();
-  });
-
-  // Initialize playback state
-  navigator.mediaSession.playbackState = "none";
+  navigator.mediaSession.setActionHandler("play", () => controls.play());
+  navigator.mediaSession.setActionHandler("pause", () => controls.pause());
+  navigator.mediaSession.setActionHandler("stop", () => controls.stop());
+  navigator.mediaSession.setActionHandler("previoustrack", () => controls.previousTrack());
+  navigator.mediaSession.setActionHandler("nexttrack", () => controls.nextTrack());
 }
 
 /**
- * Updates the media session playback state.
+ * Synchronizes the OS media session with the current narration status and drives
+ * the silent audio element that keeps the controls visible.
  *
- * Call this whenever the narration state changes to keep the OS
- * media controls in sync with the actual playback state.
+ * - `loading` / `playing` / `paused`: keeps the silent loop playing so the OS
+ *   session stays active, and reflects play vs. pause on the controls.
+ * - `idle`: stops the silent loop, deactivating the OS session.
  *
- * @param state - The current playback state
+ * Call this whenever narration status changes. Reachability from a user gesture
+ * (or sticky activation) matters for the first `loading`/`playing` transition so
+ * autoplay policies allow the silent audio to start.
  *
- * @example
- * ```typescript
- * // When play is pressed
- * narrator.play();
- * updateMediaSessionState("playing");
- *
- * // When paused
- * narrator.pause();
- * updateMediaSessionState("paused");
- *
- * // When stopped or article ends
- * narrator.stop();
- * updateMediaSessionState("none");
- * ```
+ * @param status - The current narration status
  */
-function updateMediaSessionState(state: MediaSessionPlaybackState): void {
+export function updateMediaSessionPlaybackState(status: NarrationStatus): void {
   if (!isMediaSessionSupported()) {
     return;
   }
 
-  navigator.mediaSession.playbackState = state;
+  if (ACTIVE_STATUSES.has(status)) {
+    // Keep (or start) the silent loop so the OS treats narration as media.
+    startSilentAudio();
+    navigator.mediaSession.playbackState = status === "paused" ? "paused" : "playing";
+  } else {
+    stopSilentAudio();
+    navigator.mediaSession.playbackState = "none";
+  }
 }
 
 /**
  * Clears the media session when leaving an article.
  *
- * This function:
- * - Resets the playback state to "none"
- * - Clears the metadata
- * - Removes all action handlers
- *
- * Call this when navigating away from an article to clean up
- * the media session and prevent stale controls from appearing.
- *
- * @example
- * ```typescript
- * // In a React component's cleanup
- * useEffect(() => {
- *   setupMediaSession({ ... });
- *
- *   return () => {
- *     clearMediaSession();
- *   };
- * }, []);
- * ```
+ * Stops the silent audio loop, resets playback state, clears metadata, and
+ * removes all action handlers so stale controls don't linger.
  */
 export function clearMediaSession(): void {
+  // Always stop the silent loop, even if the Media Session API itself is
+  // unsupported, so the element never keeps looping.
+  stopSilentAudio();
+
   if (!isMediaSessionSupported()) {
     return;
   }
 
-  // Reset playback state
   navigator.mediaSession.playbackState = "none";
-
-  // Clear metadata
   navigator.mediaSession.metadata = null;
 
-  // Remove all action handlers by setting them to null
   const actions: MediaSessionAction[] = ["play", "pause", "stop", "previoustrack", "nexttrack"];
-
   for (const action of actions) {
     try {
       navigator.mediaSession.setActionHandler(action, null);
     } catch {
-      // Some browsers may throw if the action is not supported
-      // We can safely ignore this
+      // Some browsers throw for unsupported actions; safe to ignore.
     }
   }
-}
-
-/**
- * Creates a state change callback that automatically updates the media session.
- *
- * This is a convenience function that returns a callback suitable for use with
- * `ArticleNarrator.onStateChange()`. It maps narration status to media session
- * playback state.
- *
- * @returns A callback function for ArticleNarrator.onStateChange()
- *
- * @example
- * ```typescript
- * const narrator = new ArticleNarrator();
- * const unsubscribe = narrator.onStateChange(createMediaSessionStateHandler());
- *
- * // Later, clean up
- * unsubscribe();
- * ```
- */
-export function createMediaSessionStateHandler(): (state: {
-  status: "idle" | "loading" | "playing" | "paused";
-}) => void {
-  return (state) => {
-    switch (state.status) {
-      case "playing":
-        updateMediaSessionState("playing");
-        break;
-      case "paused":
-        updateMediaSessionState("paused");
-        break;
-      case "idle":
-      case "loading":
-        updateMediaSessionState("none");
-        break;
-    }
-  };
 }
