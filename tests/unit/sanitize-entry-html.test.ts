@@ -107,10 +107,138 @@ describe("sanitizeEntryHtml", () => {
     });
   });
 
-  describe("SVG is dropped (not safely supportable via sanitize-html)", () => {
-    it("removes svg and its contents", () => {
-      const out = sanitizeEntryHtml('<p>x</p><svg><circle r="5"/></svg>') ?? "";
-      expect(out).toBe("<p>x</p>");
+  describe("inline SVG (issue #923)", () => {
+    it("keeps a safe inline SVG with camelCase attributes intact", () => {
+      const out =
+        sanitizeEntryHtml(
+          '<p>x</p><svg viewBox="0 0 10 10"><linearGradient id="g">' +
+            '<stop offset="0" stop-color="red"/></linearGradient>' +
+            '<circle cx="5" cy="5" r="5" preserveAspectRatio="none" fill="url(#g)"/></svg>'
+        ) ?? "";
+      expect(out).toContain("<p>x</p>");
+      expect(out).toContain("<svg");
+      // camelCase must survive verbatim (case-folding would break rendering).
+      expect(out).toContain("viewBox=");
+      expect(out).toContain("<linearGradient");
+      expect(out).toContain("preserveAspectRatio=");
+      expect(out).not.toContain("viewbox=");
+    });
+
+    it("does not disturb surrounding uppercase HTML", () => {
+      const out =
+        sanitizeEntryHtml('<DIV CLASS="wrap"><svg><rect width="4" height="4"/></svg></DIV>') ?? "";
+      // Uppercase HTML still gets folded/matched by sanitize-html as usual.
+      expect(out).toContain('<div class="wrap">');
+      expect(out).toContain("<rect");
+    });
+
+    it("removes <script> inside svg", () => {
+      const out = sanitizeEntryHtml('<svg><script>alert(1)</script><circle r="5"/></svg>') ?? "";
+      expect(out).not.toContain("script");
+      expect(out).toContain("<circle");
+    });
+
+    it("strips on* event handlers on svg elements", () => {
+      const out =
+        sanitizeEntryHtml(
+          '<svg onload="alert(1)"><rect onclick="evil()" width="1" height="1"/></svg>'
+        ) ?? "";
+      expect(out).not.toContain("onload");
+      expect(out).not.toContain("onclick");
+      expect(out).not.toContain("alert");
+    });
+
+    it("removes <foreignObject> and its arbitrary HTML", () => {
+      const out =
+        sanitizeEntryHtml(
+          "<svg><foreignObject><img src=x onerror=alert(1)></foreignObject></svg>"
+        ) ?? "";
+      expect(out.toLowerCase()).not.toContain("foreignobject");
+      expect(out).not.toContain("onerror");
+      expect(out).not.toContain("<img");
+    });
+
+    it("drops <use> entirely (external-reference risk)", () => {
+      const out =
+        sanitizeEntryHtml('<svg><use href="javascript:alert(1)"/><use xlink:href="#ok"/></svg>') ??
+        "";
+      expect(out).not.toContain("use");
+      expect(out).not.toContain("javascript");
+    });
+
+    it("drops animation elements (no attributeName=href vector)", () => {
+      const out =
+        sanitizeEntryHtml(
+          '<svg><a><animate attributeName="href" values="javascript:alert(1)"/></a></svg>'
+        ) ?? "";
+      expect(out).not.toContain("animate");
+      expect(out).not.toContain("javascript");
+    });
+
+    it("strips javascript: hrefs on svg <a> but keeps safe links", () => {
+      const out =
+        sanitizeEntryHtml(
+          '<svg><a href="javascript:alert(1)"><text>a</text></a>' +
+            '<a xlink:href="https://ok.com"><text>b</text></a></svg>'
+        ) ?? "";
+      expect(out).not.toContain("javascript");
+      expect(out).toContain('xlink:href="https://ok.com"');
+    });
+
+    it("forces safe rel/target on external svg <a> links (anti reverse-tabnabbing)", () => {
+      const out =
+        sanitizeEntryHtml('<svg><a href="https://ok.com"><text>x</text></a></svg>') ?? "";
+      expect(out).toContain('target="_blank"');
+      expect(out).toContain('rel="noopener noreferrer"');
+      // In-document fragment links are not external and stay untouched.
+      const frag = sanitizeEntryHtml('<svg><a href="#sec"><text>y</text></a></svg>') ?? "";
+      expect(frag).not.toContain("target=");
+    });
+
+    it("decodes entity-obfuscated javascript: hrefs before checking", () => {
+      const out =
+        sanitizeEntryHtml('<svg><a href="jav&#x09;ascript:alert(1)"><text>x</text></a></svg>') ??
+        "";
+      expect(out).not.toContain("javascript");
+    });
+
+    it("allows http/data image refs but blocks javascript:", () => {
+      const out =
+        sanitizeEntryHtml(
+          '<svg><image href="https://ex.com/a.png"/><image href="data:image/png;base64,iVBOR"/>' +
+            '<image href="javascript:alert(1)"/></svg>'
+        ) ?? "";
+      expect(out).toContain('href="https://ex.com/a.png"');
+      expect(out).toContain("data:image/png;base64");
+      expect(out).not.toContain("javascript");
+    });
+
+    it("allows only same-document #fragment refs on template elements", () => {
+      const out =
+        sanitizeEntryHtml(
+          '<svg><linearGradient href="https://evil.com/x"/><radialGradient href="#tmpl"/></svg>'
+        ) ?? "";
+      expect(out).not.toContain("evil.com");
+      expect(out).toContain('href="#tmpl"');
+    });
+
+    it("drops style attributes (CSS policy, matching HTML)", () => {
+      const out = sanitizeEntryHtml('<svg><circle r="5" style="fill:red"/></svg>') ?? "";
+      expect(out).not.toContain("style");
+    });
+
+    it("handles multiple SVGs and an unclosed SVG", () => {
+      const two =
+        sanitizeEntryHtml(
+          '<svg><circle r="1"/></svg><p>mid</p><svg><rect width="2" height="2"/></svg>'
+        ) ?? "";
+      expect(two).toContain("<circle");
+      expect(two).toContain("<p>mid</p>");
+      expect(two).toContain("<rect");
+
+      const unclosed = sanitizeEntryHtml('<p>a</p><svg><circle r="1">') ?? "";
+      expect(unclosed).toContain("<p>a</p>");
+      expect(unclosed).toContain("<circle");
     });
   });
 
