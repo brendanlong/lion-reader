@@ -12,9 +12,7 @@ Suspense's 300ms `FALLBACK_THROTTLE_MS` makes interaction-triggered swaps on a w
 
 ## Frontend State Management
 
-When working on queries, mutations, or cache invalidation, read and update:
-
-**@src/FRONTEND_STATE.md**
+When working on queries, mutations, or cache invalidation, read and update **`src/FRONTEND_STATE.md`** (deliberately not `@`-inlined — read it when relevant).
 
 This document lists all tRPC queries and mutations, their invalidation patterns, and how they interact across components. It must be kept in sync when:
 
