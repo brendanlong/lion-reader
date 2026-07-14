@@ -8,17 +8,17 @@ const article: DemoArticle = {
   title: "Discord Bot",
   author: null,
   summary:
-    "Save articles to Lion Reader directly from Discord by reacting to messages with a lion emoji.",
+    "Save articles to Lion Reader directly from Discord by reacting to messages with a lion emoji, or by sending a link to the bot in a DM.",
   publishedAt: new Date("2026-01-18T01:20:31Z"),
   starred: false,
   heroImage: "/demo/discord-bot.png",
   heroImageAlt:
     "The Lion Reader lion beside a chat bubble where an article is saved with the book-reading Lion Reader emoji reaction, with a saluting lion emoji confirming.",
-  summaryHtml: `<p>The Lion Reader Discord bot automatically saves articles when users react to messages with a lion emoji. After linking accounts through Discord OAuth or API tokens, the bot provides instant visual feedback using custom emojis to confirm successful saves or indicate errors.</p>`,
+  summaryHtml: `<p>The Lion Reader Discord bot automatically saves articles when users react to messages with a lion emoji or send a link to the bot in a DM. After linking accounts through Discord OAuth or API tokens, the bot provides instant visual feedback using custom emojis to confirm successful saves or indicate errors.</p>`,
   contentHtml: `
     <h2>Save Articles from Discord</h2>
 
-    <p>The Lion Reader Discord bot lets you save articles without leaving <a href="https://discord.com/" target="_blank" rel="noopener noreferrer">Discord</a>. When someone shares a link in a channel, just react to the message with the save emoji and the article is automatically saved to your Lion Reader account. The bot extracts URLs from message content, fetches the article, and adds it to your Saved articles.</p>
+    <p>The Lion Reader Discord bot lets you save articles without leaving <a href="https://discord.com/" target="_blank" rel="noopener noreferrer">Discord</a>. When someone shares a link in a channel, just react to the message with the save emoji and the article is automatically saved to your Lion Reader account. You can also send or forward a message with a link directly to the bot in a DM. Either way, the bot extracts URLs from the message content, fetches the article, and adds it to your Saved articles.</p>
 
     <h3>Custom Lion Reader Emojis</h3>
 
@@ -56,8 +56,8 @@ const article: DemoArticle = {
     <h3>How It Works</h3>
 
     <ol>
-      <li>React to any message containing a URL with the save emoji (default: <span style="font-size: 1.25rem;">&#x1F981;</span>)</li>
-      <li>The bot extracts URLs from the message, filtering out Discord CDN links, Tenor, Giphy, and media file URLs</li>
+      <li>React to any message containing a URL with the save emoji (default: <span style="font-size: 1.25rem;">&#x1F981;</span>), or send or forward a message with a link directly to the bot in a DM</li>
+      <li>The bot extracts URLs from the message (including forwarded content), filtering out Discord CDN links, Tenor, Giphy, and media file URLs</li>
       <li>Each URL is saved using the same <code>saveArticle</code> service as the web UI and <a href="/demo/all?entry=mcp-server">MCP server</a></li>
       <li>The bot reacts with <img src="/emojis/saluting-lion-reader.png" alt="saluting lion" style="display: inline; margin: 0; width: 1.25em; height: 1.25em; vertical-align: middle;" /> on success or <img src="/emojis/crying-lion-reader.png" alt="crying lion" style="display: inline; margin: 0; width: 1.25em; height: 1.25em; vertical-align: middle;" /> on failure</li>
     </ol>
