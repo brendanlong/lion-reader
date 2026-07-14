@@ -485,7 +485,7 @@ export const entries = pgTable(
     // Last time this entry was seen in a feed fetch (web only, NULL for email/saved).
     // Written monotonically. Used for subscribe-time visibility: an entry is
     // current when last_seen_at >= feeds.last_entries_updated_at (see the
-    // subscribe populate and "Entry Visibility" in docs/DESIGN.md).
+    // subscribe populate and "Entry Visibility" in src/server/CLAUDE.md).
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
 
     // Version tracking

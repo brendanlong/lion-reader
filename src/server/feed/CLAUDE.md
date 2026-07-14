@@ -1,0 +1,41 @@
+# Feed Fetching & WebSub (`src/server/feed/`)
+
+This file governs feed fetching, scheduling, entry processing, and WebSub push. Pipeline diagram: `docs/diagrams/feed-fetcher.d2`. All outbound fetches must go through `fetchWithSsrfProtection` (see `src/server/http/CLAUDE.md`) and send our custom User-Agent.
+
+## Polling Strategy
+
+1. Check `next_fetch_at` - is it time?
+2. Check `consecutive_failures` - apply exponential backoff if needed (max 7 days)
+3. Make HTTP request with `If-None-Match` / `If-Modified-Since` headers
+4. Handle response:
+   - 304 Not Modified: update `next_fetch_at`, done
+   - 200 OK: parse feed, process entries
+   - 301 Permanent Redirect: track, update URL after 7-day wait period (HTTP-to-HTTPS applied immediately)
+   - 302/307 Temporary Redirect: follow without updating URL
+   - 429 Too Many Requests / 5xx: treated as a failure with exponential backoff; when a `Retry-After` header is present it is honored as a floor on the backoff (`max(retryAfterSeconds, backoff)`, capped at the 7-day max), so we never poll earlier than the server asked. 429 backoff is additionally capped at 6 hours (`RATE_LIMIT_MAX_BACKOFF_SECONDS`) — rate limiting means "slow down right now", not "this feed is broken", and the per-IP blocks behind it last hours, not days, so a chronically rate-limited feed must not be starved at the 7-day max (a larger `Retry-After` still wins over the cap)
+   - 4xx/5xx: increment failures, backoff. This includes a 404/410 with no tracked redirect: a single 404 is **not** proof the feed is gone (YouTube returns 404 for all of its feeds for a few hours most days — issue #1114), so instead of jumping straight to a 7-day next fetch, the ordinary backoff ladder applies — it converges to the same 7-day cadence if the 404 persists, and one success resets it. A 404/410 with a tracked redirect URL still applies the redirect immediately
+5. Calculate `next_fetch_at` based on Cache-Control (10min with cache hint, 60min default min, 7day max). A URL plugin can raise the minimum for its source (`FeedCapability.minFetchIntervalSeconds`): YouTube serves `max-age=900` but rate-limits RSS fetches per IP, so its plugin floors polling at 1 hour
+
+## WebSub Push & Backup Polling
+
+When a feed advertises a hub, we subscribe via WebSub and drop the feed to a 24h **backup poll** cadence (`reason: "websub_backup"`), trusting the hub to push new content in real time. A hub can silently stop delivering while we still believe it's active, so two mechanisms bound how long a dead hub can keep a feed stale:
+
+A content push (`ingestWebsubNotification`) processes the pushed entries but **does not** advance `feeds.last_fetched_at` or `feeds.last_entries_updated_at`: a push isn't a full fetch (it can be a delta), so `last_fetched_at` must keep meaning "last time we fetched the whole feed" and `last_entries_updated_at` must keep marking the last poll's generation. Leaving both alone is what makes pushed entries (`last_seen_at > last_entries_updated_at`) visible to new subscribers via the `>=` populate, lets `shouldRefetchOnSubscribe` treat a WebSub feed as stale once its last real poll ages past the cache window, and keeps feed-health monitoring counting only real fetches (see "Entry Visibility" in `src/server/CLAUDE.md`). It **does** clear `feeds.body_hash`, so the next poll can't short-circuit on an unchanged-body match and skip re-processing — important when the publisher removes a pushed entry and the feed body returns byte-identical to the last poll; the re-processing poll then re-stamps the current set and its disappeared-entry detection (which matches `last_seen_at >= previousLastEntriesUpdatedAt`, so it catches push-stamped entries above the pointer) drops the removed one from the generation. `entries.last_seen_at` is written **monotonically** (advance-only), so a subscribe-time inline refresh racing a worker poll of the same feed can't regress a stamp below the (forward-only) `last_entries_updated_at`.
+
+- **Lease clamp** (`MAX_LEASE_SECONDS`, 14 days, `src/server/feed/websub.ts`): we honor at most a 14-day lease regardless of what the hub grants, so we re-verify the subscription — and re-confirm the hub is still delivering — at least that often. We don't request a shorter lease; we just renew earlier. This bounds the quiet-feed case, where a silently-dropped subscription produces no new content to reveal the breakage.
+
+- **Backup-poll push-reliability tally** (`websub_hub_stats`, `src/server/feed/websub-hub-stats.ts`): this handler (`processSuccessfulFetch`) only runs for scheduled/backup polls — hub pushes go through `ingestWebsubNotification` instead — so any **new** entry a backup poll finds on a feed we believed push was covering is a push miss. We tally, per hub URL, how new articles first reached us: `articles_announced_by_hub` (pushed), `articles_announced_by_backup` (a confirmed miss), and `articles_near_miss` (found by backup but published within a 15-min grace window, or with an unknown date — too recent to confidently blame the hub, e.g. a publish-time race). This is purely observational today: nothing reads it to change fetch behavior; it exists so a chronically-broken hub (e.g. Google's `pubsubhubbub.appspot.com`, which accepts pings but never pushes) becomes visible in aggregate and can be dealt with later.
+
+### Non-disruptive renewal
+
+Renewing an already-active subscription must not disrupt it while the hub re-verifies. `subscribeToHub` keeps the row `active` and just re-requests the lease; it does **not** flip the row to `pending`, and the `callback_secret` **never rotates** for a given row — it re-sends the existing secret as `hub.secret`. Because the hub and we always hold the same secret, a verification GET (which carries no request identifier we could correlate to a specific subscribe) can never leave them out of sync, and content pushes are never dropped during a renewal. Only `applyVerificationChallenge` advancing `expires_at` on the next verification takes the row back out of the sweep's stale window.
+
+Because the row stays `active` with its `expires_at` unadvanced, the hourly renewal sweep keeps finding it and retries the hub POST — a transient failure (deploy restart dropping the callback, brief network fault) no longer tears the subscription down. Staleness is measured directly from `expires_at`: once a subscription is more than `RENEWAL_STALL_GRACE_MS` (6 h) past expiry — the hub accepted our (re)subscribe but never verified — the sweep reverts it to polling via a **compare-and-swap** (`revertStalledSubscription`, conditional on the row being still `active` and still stale) so a verification that raced the sweep isn't clobbered. Measuring from `expires_at` rather than a separate "renewal started" timestamp means a verification that lands late, or an old release renewing without our bookkeeping, self-corrects with no extra state: it advances `expires_at`, removing the row from the stale window. Reverting to polling lets the next fetch resubscribe cleanly (a fresh subscription that flips `websub_active` only on verification); a late verification for the abandoned cycle is declined because `applyVerificationChallenge` refuses to activate an `unsubscribed` row. This closes the wedge where a hub that accepts the resubscribe but never verifies left the feed permanently `pending` and silently push-dead (issue #1079).
+
+## Sanitization on the fetch path
+
+Feed fetching and email ingest run on the worker, off the request path, so they deliberately use the **synchronous** sanitize chokepoint (`withSanitizedEntryContent`) — worker-pool offload would be pure overhead. The WebSub notification ingest runs in the app process on the request path and sets `offloadSanitize: true`. See `src/server/html/CLAUDE.md` for the full rules.
+
+## Feed Fetch Health
+
+The `monitor_feed_health` singleton job (worker, every 15 minutes) enforces "at least one feed must fetch successfully every N minutes" (default 120, `FEED_HEALTH_MAX_SUCCESS_AGE_MINUTES`) — zero successes anywhere means fetching is broken globally (worker stuck, fetch/parse regression, egress failure), which per-feed failure tracking doesn't surface. See `src/server/feed/health.ts` and "Observability" in `docs/DESIGN.md` for the healthchecks.io/Prometheus wiring.

@@ -74,7 +74,8 @@ export interface ProcessEntriesOptions {
    * Offload large-body HTML sanitization to the worker pool instead of running
    * it inline. Set on app-server request paths (WebSub ingest) so a fat push
    * doesn't block the event loop; left false for background jobs (feed worker,
-   * email ingest), which already run off the request path. See CLAUDE.md.
+   * email ingest), which already run off the request path. See
+   * src/server/html/CLAUDE.md.
    */
   offloadSanitize?: boolean;
   /**
@@ -108,7 +109,7 @@ export interface ProcessEntriesOptions {
  *
  * `pubDate` is deliberately NOT hashed: `updateEntryContent` never rewrites
  * `published_at` because it is denormalized into `user_entries.published_or_fetched_at`
- * (the frozen timeline sort key, see DESIGN.md), so propagating a date change on
+ * (the frozen timeline sort key, see src/server/CLAUDE.md), so propagating a date change on
  * update would require a cross-table update over every subscriber row. Hashing
  * `pubDate` would therefore only trigger updates that can't take effect. Future
  * dates are instead clamped once at insert time (see `clampPublishedAt`).
