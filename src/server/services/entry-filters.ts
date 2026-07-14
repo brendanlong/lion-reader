@@ -223,13 +223,19 @@ export function buildEntryFilterConditions(params: EntryConditionParams): SQL[] 
  * parameter.
  *
  * Postgres has no URL parser, so we pull the authority host out of the URL with
- * a POSIX regex — `scheme://HOST[:port][/path...]` — and `substring(... from
- * pattern)` returns the first parenthesized group. This matches what
- * `extractDomain` (`new URL().hostname`) produces for the entry's response
- * `domain_name`, so the filter and the reported field agree. A URL that fails to
- * match the pattern (or a NULL url) yields NULL, which the `=` comparison drops
- * — the correct behavior for a domain filter.
+ * a POSIX regex and `substring(... from pattern)` returns the first *capturing*
+ * group. The pattern reproduces `new URL().hostname` semantics — which is what
+ * `extractDomain` uses for the entry's reported `domain_name`, so the filter and
+ * the reported field agree:
+ *   `scheme://` then optional userinfo `(?:...@)?` (dropped, matching hostname)
+ *   then the host — either a bracketed IPv6 literal `[...]` (brackets kept, as
+ *   hostname does) or a reg-name/IPv4 up to the first `:`/`/`/`?`/`#` (so the
+ *   port is dropped). A URL that fails to match (or a NULL url) yields NULL,
+ *   which the `=` comparison drops — the correct behavior for a domain filter.
+ *
+ * The `\[`/`\]` bracket escapes are doubled (`\\[`, `\\]`) because a JS template
+ * literal collapses `\[` to `[` before Postgres ever sees the pattern.
  */
 export function buildDomainNameCondition(domainName: string): SQL {
-  return sql`lower(substring(${visibleEntries.url} from '^[a-zA-Z][a-zA-Z0-9+.-]*://([^/:?#]+)')) = lower(${domainName})`;
+  return sql`lower(substring(${visibleEntries.url} from '^[a-zA-Z][a-zA-Z0-9+.-]*://(?:[^/?#@]*@)?(\\[[^\\]]+\\]|[^/:?#]+)')) = lower(${domainName})`;
 }

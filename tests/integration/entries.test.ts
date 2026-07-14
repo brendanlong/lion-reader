@@ -560,12 +560,17 @@ describe("Entries", () => {
         // Uppercase host + port: the hostname match is case-insensitive and ignores the port.
         url: "https://EXAMPLE.com:8443/other",
       });
+      const exampleUserinfoId = await createTestEntry(feedId, {
+        title: "ExampleUserinfo",
+        // Userinfo is stripped, matching new URL().hostname.
+        url: "https://user:pass@example.com/x",
+      });
       const otherId = await createTestEntry(feedId, {
         title: "Other",
         url: "https://other.org/story",
       });
       const noUrlId = await createTestEntry(feedId, { title: "NoUrl" });
-      for (const id of [exampleId, exampleUpperId, otherId, noUrlId]) {
+      for (const id of [exampleId, exampleUpperId, exampleUserinfoId, otherId, noUrlId]) {
         await createUserEntry(userId, id);
       }
 
@@ -574,14 +579,29 @@ describe("Entries", () => {
         domainName: "example.com",
         showSpam: false,
       });
-      expect(result.items.map((e) => e.id).sort()).toEqual([exampleId, exampleUpperId].sort());
+      expect(result.items.map((e) => e.id).sort()).toEqual(
+        [exampleId, exampleUpperId, exampleUserinfoId].sort()
+      );
 
       // countTotalEntries applies the same filter so pagination totals agree.
       const total = await countTotalEntries(db, userId, {
         domainName: "example.com",
         showSpam: false,
       });
-      expect(total).toBe(2);
+      expect(total).toBe(3);
+
+      // Bracketed IPv6 literal host (brackets preserved, like new URL().hostname).
+      const ipv6Id = await createTestEntry(feedId, {
+        title: "Ipv6",
+        url: "https://[2001:db8::1]:8443/x",
+      });
+      await createUserEntry(userId, ipv6Id);
+      const ipv6 = await listEntries(db, {
+        userId,
+        domainName: "[2001:db8::1]",
+        showSpam: false,
+      });
+      expect(ipv6.items.map((e) => e.id)).toEqual([ipv6Id]);
 
       // A non-matching domain returns nothing.
       const none = await listEntries(db, {
