@@ -613,6 +613,9 @@ app/
 - `components/feeds/` - Feed list, add feed dialog
 - `components/narration/` - Audio playback controls
 - `components/saved/` - Saved article views
+
+**Narration OS media controls.** Narration plays through the Web Speech API (browser voices) or the Web Audio API (Piper enhanced voices), neither of which the browser treats as media playback — so setting `navigator.mediaSession` metadata alone surfaces no OS controls (lock screen / notification widget, Bluetooth & media-key buttons), especially in an installed PWA. To make them appear, a **silent looping `<audio>` element** (`src/lib/narration/silent-audio.ts`, a runtime-generated silent WAV data URI) is played while narration is active; that element is what the browser recognizes as media, which surfaces the controls and routes hardware buttons into our action handlers. `src/lib/narration/media-session.ts` is provider-agnostic (plain `play`/`pause`/`stop`/`prev`/`next` callbacks) and the `useMediaSession` hook (`src/components/narration/`) keeps metadata, action handlers, and playback state in sync for **both** providers. Artwork falls back to the PWA manifest icons when no per-article image is supplied.
+
 - `components/settings/` - Settings page components
 - `components/subscribe/` - Subscription flow components
 - `components/summarization/` - AI summary display
