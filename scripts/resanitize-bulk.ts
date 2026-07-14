@@ -82,6 +82,7 @@ import { SANITIZER_VERSION } from "../src/server/html/sanitize";
 import {
   isSanitizedFamilyStale,
   persistResanitizedFamily,
+  sanitizeFamilyFromRaw,
   selectStaleEntriesForResanitize,
 } from "../src/server/services/resanitize";
 import {
@@ -207,30 +208,30 @@ async function resanitizeRow(row: StaleRow): Promise<RowOutcome> {
 
     const contentHasRaw = row.contentOriginal !== null || row.contentCleaned !== null;
     if (contentHasRaw && isSanitizedFamilyStale(row.contentSanitizedVersion)) {
-      const [original, cleaned] = await Promise.all([
-        sanitizeEntryHtmlInWorker(row.contentOriginal),
-        sanitizeEntryHtmlInWorker(row.contentCleaned),
-      ]);
-      content = await persistResanitizedFamily(
-        db,
-        row.id,
+      const sanitized = await sanitizeFamilyFromRaw(
         "content",
-        { original, cleaned },
-        row.contentHash
+        { original: row.contentOriginal, cleaned: row.contentCleaned },
+        sanitizeEntryHtmlInWorker
       );
+      content = await persistResanitizedFamily(db, row.id, "content", sanitized, row.contentHash);
     }
 
     const fullHasRaw = row.fullContentOriginal !== null || row.fullContentCleaned !== null;
     if (fullHasRaw && isSanitizedFamilyStale(row.fullContentSanitizedVersion)) {
-      const [original, cleaned] = await Promise.all([
-        sanitizeEntryHtmlInWorker(row.fullContentOriginal),
-        sanitizeEntryHtmlInWorker(row.fullContentCleaned),
-      ]);
+      // sanitizeFamilyFromRaw applies the lazy full-content rule: when cleaned
+      // exists, the original's sanitized copy comes back NULL (not sanitized at
+      // all), so old eagerly-materialized rows converge to the lazy shape here
+      // instead of re-materializing whole-page sanitized copies nothing reads.
+      const sanitized = await sanitizeFamilyFromRaw(
+        "fullContent",
+        { original: row.fullContentOriginal, cleaned: row.fullContentCleaned },
+        sanitizeEntryHtmlInWorker
+      );
       fullContent = await persistResanitizedFamily(
         db,
         row.id,
         "fullContent",
-        { original, cleaned },
+        sanitized,
         row.fullContentHash
       );
     }

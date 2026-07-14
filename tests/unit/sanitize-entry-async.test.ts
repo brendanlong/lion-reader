@@ -36,6 +36,25 @@ describe("withSanitizedEntryContentAsync", () => {
     expect(async).toEqual(sync);
   });
 
+  it("matches the sync helper for the lazy full-content-with-cleaned case", async () => {
+    // When cleaned exists, both helpers must persist NULL for the original's
+    // sanitized column (the lazy rule) — byte-identical output either way.
+    const values = { fullContentOriginal: UNSAFE, fullContentCleaned: "<p>cleaned</p>" };
+    const async = await withSanitizedEntryContentAsync({ ...values });
+    const sync = withSanitizedEntryContent({ ...values });
+    expect(async).toEqual(sync);
+    expect(async.fullContentOriginalSanitized).toBeNull();
+    expect(async.fullContentCleanedSanitized).toBe("<p>cleaned</p>");
+  });
+
+  it("ignores a full-content original hint when cleaned exists (lazy rule wins)", async () => {
+    const result = await withSanitizedEntryContentAsync(
+      { fullContentOriginal: UNSAFE, fullContentCleaned: "<p>cleaned</p>" },
+      { fullContentOriginalSanitized: "SENTINEL" }
+    );
+    expect(result.fullContentOriginalSanitized).toBeNull();
+  });
+
   it("stamps only the families whose raw fields are present", async () => {
     const result = await withSanitizedEntryContentAsync({ contentOriginal: "<p>a</p>" });
     expect("contentOriginalSanitized" in result).toBe(true);

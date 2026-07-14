@@ -20,6 +20,14 @@
  * current write site does. The sanitized columns for a family are derived only
  * when at least one of its raw fields is present in the object, so a write that
  * touches one family leaves the other untouched.
+ *
+ * The full-content family is sanitized **lazily** (issue #1117): its serving
+ * rule is strictly `fullContentCleaned ?? fullContentOriginal` (there is no
+ * user-facing original/cleaned toggle for full content, unlike the content
+ * family), so `full_content_original_sanitized` — a sanitized copy of an entire
+ * raw fetched page — is materialized only when it is actually the serving
+ * variant, i.e. when `fullContentCleaned` is NULL. See
+ * `shouldMaterializeFullContentOriginal`.
  */
 
 import { sanitizeEntryHtmlInWorker } from "@/server/worker-thread/pool";
@@ -42,6 +50,30 @@ interface SanitizedEntryContent {
 }
 
 /**
+ * The lazy full-content rule (issue #1117): `full_content_original_sanitized`
+ * is materialized only when it is the serving variant — i.e. when
+ * `full_content_cleaned` is NULL (Readability produced nothing, or a plugin's
+ * `skipReadability` returned original-only). Every read path serves
+ * `fullContentCleaned ?? fullContentOriginal` with no user-facing toggle
+ * (unlike the content family's original/cleaned toggle), so when cleaned
+ * exists, a sanitized copy of the whole raw fetched page is dead weight: pure
+ * storage plus a whole-page sanitize on every write and every
+ * `SANITIZER_VERSION` bump. When cleaned exists the column is deliberately
+ * NULL *at the current version* — "not materialized", not "stale" — so the
+ * version-based staleness machinery needs no special case.
+ *
+ * Shared by the write chokepoints below, the read-path heal
+ * (`resolveSanitizedFamily`), and the bulk re-sanitize path
+ * (`sanitizeFamilyFromRaw` in `@/server/services/resanitize`) so the rule
+ * can't drift between them.
+ */
+export function shouldMaterializeFullContentOriginal(
+  fullContentCleaned: string | null | undefined
+): boolean {
+  return fullContentCleaned == null;
+}
+
+/**
  * Augment an entry insert/update payload with the sanitized columns derived from
  * whichever raw content families it writes. Spread/return shape matches Drizzle
  * `.values()` / `.set()`.
@@ -58,7 +90,13 @@ export function withSanitizedEntryContent<const T extends RawEntryContent>(
   }
 
   if ("fullContentOriginal" in values || "fullContentCleaned" in values) {
-    result.fullContentOriginalSanitized = sanitizeEntryHtml(values.fullContentOriginal ?? null);
+    // Lazy full-content rule: skip the (expensive, whole-raw-page) original
+    // sanitize entirely when cleaned exists — cleaned is the serving variant.
+    result.fullContentOriginalSanitized = shouldMaterializeFullContentOriginal(
+      values.fullContentCleaned
+    )
+      ? sanitizeEntryHtml(values.fullContentOriginal ?? null)
+      : null;
     result.fullContentCleanedSanitized = sanitizeEntryHtml(values.fullContentCleaned ?? null);
     result.fullContentSanitizedVersion = SANITIZER_VERSION;
   }
@@ -136,12 +174,18 @@ export async function withSanitizedEntryContentAsync<const T extends RawEntryCon
   }
 
   if ("fullContentOriginal" in values || "fullContentCleaned" in values) {
+    // Lazy full-content rule (see shouldMaterializeFullContentOriginal): when
+    // cleaned exists, persist NULL for the original's sanitized column without
+    // sanitizing (and without honoring any hint for it) — cleaned is the
+    // serving variant, so a sanitized whole-page original would never be read.
     const [original, cleaned] = await Promise.all([
-      sanitize(
-        values.fullContentOriginal,
-        presanitized.fullContentOriginalSanitized,
-        "fullContentOriginal" in values
-      ),
+      shouldMaterializeFullContentOriginal(values.fullContentCleaned)
+        ? sanitize(
+            values.fullContentOriginal,
+            presanitized.fullContentOriginalSanitized,
+            "fullContentOriginal" in values
+          )
+        : Promise.resolve<string | null>(null),
       sanitize(
         values.fullContentCleaned,
         presanitized.fullContentCleanedSanitized,
