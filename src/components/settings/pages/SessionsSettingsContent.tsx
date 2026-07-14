@@ -85,7 +85,7 @@ export default function SessionsSettingsContent() {
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="ui-text-lg text-strong font-semibold">Active Sessions</h2>
+        <h2 className="ui-text-lg text-body font-semibold">Active Sessions</h2>
         <span className="ui-text-sm text-muted">
           {sessionsQuery.data?.sessions.length ?? 0} active
         </span>
@@ -168,7 +168,7 @@ function SessionCard({ session, onRevoke, isRevoking }: SessionCardProps) {
             </div>
 
             <div className="min-w-0 flex-1">
-              <p className="text-strong font-medium">
+              <p className="text-body font-medium">
                 {browser} on {platform}
               </p>
               {session.isCurrent && (

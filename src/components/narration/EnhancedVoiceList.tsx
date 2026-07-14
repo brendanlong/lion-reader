@@ -162,7 +162,7 @@ function VoiceItem({
           {/* Voice info */}
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className="ui-text-sm text-strong font-medium">{voice.displayName}</span>
+              <span className="ui-text-sm text-body font-medium">{voice.displayName}</span>
               <span className="ui-text-xs text-muted">- {voice.description}</span>
             </div>
 

@@ -69,7 +69,7 @@ export function FileFeedIssueDialog({ isOpen, feed, onClose }: FileFeedIssueDial
         <div className="border-edge-strong bg-surface-subtle space-y-2 rounded-md border p-3">
           <div>
             <p className="ui-text-xs text-muted">Feed</p>
-            <p className="text-strong ui-text-sm font-medium break-words">{feed.displayName}</p>
+            <p className="text-body ui-text-sm font-medium break-words">{feed.displayName}</p>
           </div>
           {feed.url && (
             <div>

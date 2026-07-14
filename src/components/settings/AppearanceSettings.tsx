@@ -61,7 +61,7 @@ function OptionGroup<T extends string>({
 }: OptionGroupProps<T>) {
   return (
     <div>
-      <label className="ui-text-sm text-strong block font-medium">{label}</label>
+      <label className="ui-text-sm text-body block font-medium">{label}</label>
       <div className="mt-2 flex flex-wrap gap-2">
         {options.map((option) => (
           <OptionButton

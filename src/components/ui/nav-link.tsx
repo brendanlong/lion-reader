@@ -57,7 +57,7 @@ export function NavLink({
       onNavigate={onClick}
       onPrefetch={onPrefetch}
       className={`ui-text-sm flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 font-medium transition-colors ${
-        isActive ? "bg-surface-muted text-strong" : "text-body hover:bg-surface-muted"
+        isActive ? "bg-surface-muted text-body" : "text-body hover:bg-surface-muted"
       } ${className}`}
     >
       <span className="truncate">{children}</span>
@@ -109,7 +109,7 @@ export function NavLinkWithIcon({
       onNavigate={onClick}
       onPrefetch={onPrefetch}
       className={`ui-text-sm flex min-h-[44px] flex-1 items-center gap-2 rounded-md px-3 py-2 transition-colors ${
-        isActive ? "bg-surface-muted text-strong" : "text-body hover:bg-surface-muted"
+        isActive ? "bg-surface-muted text-body" : "text-body hover:bg-surface-muted"
       } ${className}`}
     >
       {icon && <span className="shrink-0">{icon}</span>}

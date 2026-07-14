@@ -254,7 +254,7 @@ function ImportSection() {
 
   return (
     <Card>
-      <h3 className="ui-text-sm text-strong mb-2 font-medium">Import from OPML</h3>
+      <h3 className="ui-text-sm text-body mb-2 font-medium">Import from OPML</h3>
       <p className="ui-text-sm text-muted mb-4">
         Import your feed subscriptions from another RSS reader by uploading an OPML file.
       </p>
@@ -379,7 +379,7 @@ function ImportPreview({ feeds, onImport, onCancel, isImporting }: ImportPreview
         <ul className="divide-edge-strong divide-y">
           {displayedFeeds.map((feed, index) => (
             <li key={`${feed.xmlUrl}-${index}`} className="px-4 py-3">
-              <p className="ui-text-sm text-strong font-medium">{feed.title || "Untitled Feed"}</p>
+              <p className="ui-text-sm text-body font-medium">{feed.title || "Untitled Feed"}</p>
               <p className="ui-text-xs text-muted mt-0.5 truncate">{feed.xmlUrl}</p>
               {feed.category && feed.category.length > 0 && (
                 <p className="ui-text-xs text-faint mt-1">Folder: {feed.category.join(" / ")}</p>
@@ -464,7 +464,7 @@ function ImportResults({ imported, skipped, failed, results, onReset }: ImportRe
                   <li key={`${result.url}-${index}`} className="px-4 py-2">
                     <div className="flex items-start justify-between">
                       <div className="min-w-0 flex-1">
-                        <p className="ui-text-sm text-strong truncate font-medium">
+                        <p className="ui-text-sm text-body truncate font-medium">
                           {result.title || "Untitled Feed"}
                         </p>
                         <p className="ui-text-xs text-muted truncate">{result.url}</p>
@@ -540,7 +540,7 @@ function ExportSection() {
 
   return (
     <Card>
-      <h3 className="ui-text-sm text-strong mb-2 font-medium">Export to OPML</h3>
+      <h3 className="ui-text-sm text-body mb-2 font-medium">Export to OPML</h3>
       <p className="ui-text-sm text-muted mb-4">
         Download your subscriptions as an OPML file to import into another RSS reader.
       </p>

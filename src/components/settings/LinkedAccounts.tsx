@@ -226,7 +226,7 @@ function LinkedAccountItem({ account, canUnlink, isUnlinking, onUnlink }: Linked
       <div className="flex items-center gap-3">
         <ProviderIcon provider={account.provider} />
         <div>
-          <p className="ui-text-sm text-strong font-medium">{name}</p>
+          <p className="ui-text-sm text-body font-medium">{name}</p>
           <p className="ui-text-xs text-muted">Linked on {linkedDate}</p>
         </div>
       </div>

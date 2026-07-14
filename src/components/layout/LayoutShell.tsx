@@ -51,7 +51,7 @@ export function LayoutShell({
       >
         {/* Sidebar header */}
         <div className="border-edge flex h-14 items-center justify-between border-b px-4">
-          <ClientLink href={sidebarTitleHref} className="ui-text-lg text-strong font-semibold">
+          <ClientLink href={sidebarTitleHref} className="ui-text-lg text-body font-semibold">
             Lion Reader
           </ClientLink>
           {sidebarCloseButton}

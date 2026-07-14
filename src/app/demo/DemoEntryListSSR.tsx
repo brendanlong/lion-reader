@@ -20,7 +20,7 @@ export function DemoEntryListSSR({ entries, backHref, title }: DemoEntryListSSRP
   return (
     <div className="mx-auto max-w-3xl px-4 py-4 sm:p-6">
       <div className="mb-4 flex items-center justify-between sm:mb-6">
-        <h1 className="ui-text-xl sm:ui-text-2xl text-strong font-bold">{title}</h1>
+        <h1 className="ui-text-xl sm:ui-text-2xl text-body font-bold">{title}</h1>
       </div>
       <div className="space-y-3">
         {entries.map((entry) => {
@@ -39,9 +39,7 @@ export function DemoEntryListSSR({ entries, backHref, title }: DemoEntryListSSRP
                   <span className="bg-strong block h-2.5 w-2.5 rounded-full" aria-hidden="true" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <h3 className="ui-text-sm text-strong line-clamp-2 font-medium">
-                    {displayTitle}
-                  </h3>
+                  <h3 className="ui-text-sm text-body line-clamp-2 font-medium">{displayTitle}</h3>
                   <div className="ui-text-xs text-muted mt-1 flex items-center gap-2">
                     <span className="truncate">{source}</span>
                     <span aria-hidden="true">&middot;</span>

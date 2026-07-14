@@ -82,7 +82,7 @@ export function StickyEntryControls({
         <button
           onClick={onToggleRead}
           className={`flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full transition-colors ${
-            !read ? "text-strong hover:bg-surface-muted" : "text-muted hover:bg-surface-muted"
+            !read ? "text-body hover:bg-surface-muted" : "text-muted hover:bg-surface-muted"
           }`}
           aria-label={read ? "Mark as unread" : "Mark as read"}
           title="Keyboard shortcut: m"

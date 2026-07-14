@@ -65,7 +65,7 @@ export interface CardTitleProps {
 }
 
 export function CardTitle({ children, className = "" }: CardTitleProps) {
-  return <h3 className={`ui-text-base text-strong font-semibold ${className}`}>{children}</h3>;
+  return <h3 className={`ui-text-base text-body font-semibold ${className}`}>{children}</h3>;
 }
 
 /**

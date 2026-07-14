@@ -29,7 +29,7 @@ export function TitleSkeleton() {
  * Title text component - renders the h1 with proper styling.
  */
 export function TitleText({ children }: { children: ReactNode }) {
-  return <h1 className="ui-text-xl sm:ui-text-2xl text-strong font-bold">{children}</h1>;
+  return <h1 className="ui-text-xl sm:ui-text-2xl text-body font-bold">{children}</h1>;
 }
 
 interface EntryPageLayoutProps {

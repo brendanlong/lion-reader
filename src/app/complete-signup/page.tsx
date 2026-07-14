@@ -64,7 +64,7 @@ export default function CompleteSignupPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="ui-text-lg text-strong font-semibold">Before you continue</h2>
+        <h2 className="ui-text-lg text-body font-semibold">Before you continue</h2>
         <p className="ui-text-sm text-muted mt-1">
           Please review and accept the following to complete your account setup.
         </p>
@@ -78,7 +78,7 @@ export default function CompleteSignupPage() {
             type="checkbox"
             checked={acceptedTos}
             onChange={(e) => setAcceptedTos(e.target.checked)}
-            className="text-strong border-edge-input focus:ring-focus mt-0.5 h-5 w-5 shrink-0 rounded dark:bg-zinc-800"
+            className="text-body border-edge-input focus:ring-focus mt-0.5 h-5 w-5 shrink-0 rounded dark:bg-zinc-800"
           />
           <span className="ui-text-sm text-body">
             I have read and agree to the{" "}
@@ -86,7 +86,7 @@ export default function CompleteSignupPage() {
               href="/terms"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-strong hover:text-body underline"
+              className="text-body hover:text-body underline"
             >
               Terms of Service
             </a>
@@ -98,7 +98,7 @@ export default function CompleteSignupPage() {
             type="checkbox"
             checked={acceptedPrivacy}
             onChange={(e) => setAcceptedPrivacy(e.target.checked)}
-            className="text-strong border-edge-input focus:ring-focus mt-0.5 h-5 w-5 shrink-0 rounded dark:bg-zinc-800"
+            className="text-body border-edge-input focus:ring-focus mt-0.5 h-5 w-5 shrink-0 rounded dark:bg-zinc-800"
           />
           <span className="ui-text-sm text-body">
             I have read and agree to the{" "}
@@ -106,7 +106,7 @@ export default function CompleteSignupPage() {
               href="/privacy"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-strong hover:text-body underline"
+              className="text-body hover:text-body underline"
             >
               Privacy Policy
             </a>
@@ -118,7 +118,7 @@ export default function CompleteSignupPage() {
             type="checkbox"
             checked={confirmedNotInEu}
             onChange={(e) => setConfirmedNotInEu(e.target.checked)}
-            className="text-strong border-edge-input focus:ring-focus mt-0.5 h-5 w-5 shrink-0 rounded dark:bg-zinc-800"
+            className="text-body border-edge-input focus:ring-focus mt-0.5 h-5 w-5 shrink-0 rounded dark:bg-zinc-800"
           />
           <span className="ui-text-sm text-body">
             I confirm that I am not located in the European Union

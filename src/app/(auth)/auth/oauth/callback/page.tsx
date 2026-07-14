@@ -288,7 +288,7 @@ function OAuthCallbackContent() {
 
   return (
     <div className="flex flex-col items-center justify-center">
-      <h2 className="ui-text-xl text-strong mb-6 font-semibold">
+      <h2 className="ui-text-xl text-body mb-6 font-semibold">
         {errorMessage
           ? isSaveMode
             ? "Permission Error"
@@ -307,7 +307,7 @@ function OAuthCallbackContent() {
         </div>
       ) : (
         <div className="flex flex-col items-center gap-4">
-          <SpinnerIcon className="text-strong h-8 w-8" />
+          <SpinnerIcon className="text-body h-8 w-8" />
           <p className="ui-text-sm text-muted">
             Please wait while we complete{" "}
             {isSaveMode

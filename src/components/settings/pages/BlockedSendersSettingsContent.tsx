@@ -46,7 +46,7 @@ export default function BlockedSendersSettingsContent() {
     <div>
       {/* Page Header */}
       <div className="mb-6">
-        <h2 className="ui-text-lg text-strong font-semibold">Blocked Senders</h2>
+        <h2 className="ui-text-lg text-body font-semibold">Blocked Senders</h2>
         <p className="ui-text-sm text-muted mt-1">
           These senders were blocked when you unsubscribed from their newsletters. Emails from
           blocked senders are automatically rejected.
@@ -78,7 +78,7 @@ function EmptyState() {
       <div className="bg-surface-muted mx-auto flex h-12 w-12 items-center justify-center rounded-full">
         <ProhibitionIcon className="text-faint h-6 w-6" />
       </div>
-      <h3 className="ui-text-sm text-strong mt-4 font-medium">No blocked senders</h3>
+      <h3 className="ui-text-sm text-body mt-4 font-medium">No blocked senders</h3>
       <p className="ui-text-sm text-muted mt-1">
         When you unsubscribe from a newsletter, the sender will be added here to prevent future
         emails.
@@ -150,7 +150,7 @@ function BlockedSenderRow({ sender }: BlockedSenderRowProps) {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 flex-1">
           {/* Sender Email */}
-          <p className="text-strong font-medium">{sender.senderEmail}</p>
+          <p className="text-body font-medium">{sender.senderEmail}</p>
 
           {/* Metadata */}
           <div className="ui-text-sm text-muted mt-1 flex flex-wrap gap-x-4 gap-y-1">

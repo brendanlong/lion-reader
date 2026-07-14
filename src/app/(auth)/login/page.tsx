@@ -140,7 +140,7 @@ function LoginForm() {
 
   return (
     <div>
-      <h2 className="ui-text-xl text-strong mb-6 font-semibold">Sign in to your account</h2>
+      <h2 className="ui-text-xl text-body mb-6 font-semibold">Sign in to your account</h2>
 
       {registered && (
         <Alert variant="success" className="mb-4">
@@ -206,7 +206,7 @@ function LoginForm() {
       {!signupConfigData?.requiresInvite && (
         <p className="ui-text-sm text-muted mt-6 text-center">
           Don&apos;t have an account?{" "}
-          <Link href="/register" className="text-strong font-medium hover:underline">
+          <Link href="/register" className="text-body font-medium hover:underline">
             Create one
           </Link>
         </p>

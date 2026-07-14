@@ -52,7 +52,7 @@ export function BookmarkletSettings() {
     >
       {/* Browser Extensions */}
       <div className="mt-6">
-        <h3 className="ui-text-sm text-strong font-medium">Browser Extensions</h3>
+        <h3 className="ui-text-sm text-body font-medium">Browser Extensions</h3>
         <p className="ui-text-sm text-muted mt-1">
           The easiest way to save articles from your browser.
         </p>
@@ -80,7 +80,7 @@ export function BookmarkletSettings() {
 
       {/* Bookmarklet Section */}
       <CardSection>
-        <h3 className="ui-text-sm text-strong font-medium">Bookmarklet (Other Browsers)</h3>
+        <h3 className="ui-text-sm text-body font-medium">Bookmarklet (Other Browsers)</h3>
         <p className="ui-text-sm text-muted mt-1">
           For Safari and other browsers, use the bookmarklet.
         </p>
@@ -103,12 +103,12 @@ export function BookmarkletSettings() {
 
       {/* Installation Instructions */}
       <NoteBox className="mt-6">
-        <h3 className="ui-text-sm text-strong font-medium">Installation Instructions</h3>
+        <h3 className="ui-text-sm text-body font-medium">Installation Instructions</h3>
         <ol className="ui-text-sm text-muted mt-2 list-inside list-decimal space-y-2">
           <li>Make sure your browser&apos;s bookmarks bar is visible</li>
           <li>
-            Drag the <strong className="text-emphasis">&quot;Save to Lion Reader&quot;</strong>{" "}
-            button above to your bookmarks bar
+            Drag the <strong className="text-body">&quot;Save to Lion Reader&quot;</strong> button
+            above to your bookmarks bar
           </li>
           <li>
             When you find an article you want to save, click the bookmarklet in your bookmarks bar
@@ -122,7 +122,7 @@ export function BookmarkletSettings() {
         <button
           type="button"
           onClick={() => setShowCode(!showCode)}
-          className="ui-text-sm text-body hover:text-strong inline-flex items-center gap-2 font-medium transition-colors"
+          className="ui-text-sm text-body hover:text-body inline-flex items-center gap-2 font-medium transition-colors"
         >
           <ChevronRightIcon
             className={`h-4 w-4 transition-transform ${showCode ? "rotate-90" : ""}`}
@@ -136,7 +136,7 @@ export function BookmarkletSettings() {
               If you prefer, you can manually create a bookmark with this JavaScript code:
             </p>
             <div className="relative">
-              <pre className="ui-text-xs border-edge-strong bg-surface-muted text-emphasis overflow-x-auto rounded-md border p-3 font-mono">
+              <pre className="ui-text-xs border-edge-strong bg-surface-muted text-body overflow-x-auto rounded-md border p-3 font-mono">
                 <code className="break-all whitespace-pre-wrap">{bookmarkletHref}</code>
               </pre>
               <button

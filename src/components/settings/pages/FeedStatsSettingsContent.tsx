@@ -146,7 +146,7 @@ export default function FeedStatsSettingsContent() {
     <div>
       {/* Page Header */}
       <div className="mb-6">
-        <h2 className="ui-text-lg text-strong font-semibold">Feed Statistics</h2>
+        <h2 className="ui-text-lg text-body font-semibold">Feed Statistics</h2>
         <p className="ui-text-sm text-muted mt-1">
           View fetch status and statistics for all your subscribed feeds.
         </p>
@@ -212,7 +212,7 @@ interface SummaryCardProps {
 
 function SummaryCard({ label, value, variant = "default" }: SummaryCardProps) {
   const variantClasses = {
-    default: "text-strong",
+    default: "text-body",
     success: "text-success",
     error: "text-danger",
     info: "text-info",
@@ -236,7 +236,7 @@ function EmptyState() {
       <div className="bg-surface-muted mx-auto flex h-12 w-12 items-center justify-center rounded-full">
         <RssIcon className="text-faint h-6 w-6" />
       </div>
-      <h3 className="ui-text-sm text-strong mt-4 font-medium">No feeds subscribed</h3>
+      <h3 className="ui-text-sm text-body mt-4 font-medium">No feeds subscribed</h3>
       <p className="ui-text-sm text-muted mt-1">
         Subscribe to some feeds to see their statistics here.
       </p>
@@ -263,7 +263,7 @@ function FeedStatsRow({ feed }: FeedStatsRowProps) {
         <div className="min-w-0 flex-1">
           {/* Feed Title and Status */}
           <div className="flex items-center gap-2">
-            <p className="text-strong font-medium">{displayName}</p>
+            <p className="text-body font-medium">{displayName}</p>
             <span
               className={`ui-text-xs inline-flex items-center rounded-full px-2 py-0.5 font-medium ${statusBadge.className}`}
             >
