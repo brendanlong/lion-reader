@@ -702,6 +702,91 @@ describe("htmlToClientNarration", () => {
     });
   });
 
+  describe("paragraph map alignment with internal blank lines", () => {
+    // Regression for the highlight-desync bug: articles that encode paragraphs
+    // as <br><br> inside a single block (common on old CMS pages, e.g. the
+    // Crittenden Automotive Library) produce block narration text that itself
+    // contains blank lines. The player splits narration on \n\n, so such a block
+    // becomes several player paragraphs — but the map used to record only ONE
+    // entry per block, so every highlight after the first multi-paragraph block
+    // shifted onto the wrong element. Clean per-<p> articles (e.g. LessWrong)
+    // never hit this, which is why they highlighted correctly.
+    const splitParagraphs = (text: string): string[] =>
+      text
+        .split(/\n\n+/)
+        .map((p) => p.trim())
+        .filter((p) => p.length > 0);
+
+    it("keeps map length equal to the player's paragraph count for a <br><br> block", () => {
+      const html = [
+        "<p>Intro sentence.</p>",
+        "<blockquote>First quote paragraph.",
+        "<br /><br />",
+        "Second quote paragraph.</blockquote>",
+        "<p>Outro sentence.</p>",
+      ].join("\n");
+      const result = htmlToClientNarration(html);
+
+      // The blockquote (para-1) yields two player paragraphs, both mapping to it.
+      const segments = splitParagraphs(result.narrationText);
+      expect(segments).toEqual([
+        "Intro sentence.",
+        "First quote paragraph.",
+        "Second quote paragraph.",
+        "Outro sentence.",
+      ]);
+      expect(result.paragraphMap).toEqual([
+        { n: 0, o: 0 },
+        { n: 1, o: 1 },
+        { n: 2, o: 1 },
+        { n: 3, o: 2 },
+      ]);
+      // The invariant that was violated before the fix.
+      expect(result.paragraphMap.length).toBe(segments.length);
+    });
+
+    it("every narration paragraph points at a data-para-id present in the DOM", () => {
+      // A giant block holding most of the article via <br><br>, plus a nested
+      // heading in a table and a trailing standalone image — the shape that
+      // desynced in production.
+      const html = [
+        "<table><tr><th><h2>Article Title</h2></th></tr></table>",
+        "<p>Byline<br />2 May 2017",
+        "<br /><br />",
+        "How many times have we heard this?",
+        "<br /><br />",
+        "<b>Section Heading</b>",
+        "<br /><br />",
+        "The body continues here.</p>",
+        '<img src="x.png" alt="Site Logo" />',
+      ].join("\n");
+      const result = htmlToClientNarration(html);
+
+      const segments = splitParagraphs(result.narrationText);
+      // Map is one-to-one with the player's paragraphs.
+      expect(result.paragraphMap.length).toBe(segments.length);
+      result.paragraphMap.forEach((entry, i) => expect(entry.n).toBe(i));
+
+      // Every mapped element index resolves to a real data-para-id in the HTML.
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(`<div>${result.processedHtml}</div>`, "text/html");
+      const container = doc.body.firstElementChild!;
+      for (const mapping of result.paragraphMap) {
+        expect(container.querySelector(`[data-para-id="para-${mapping.o}"]`)).not.toBeNull();
+      }
+
+      // The four paragraphs from the single big <p> all map to the same element.
+      const bigBlockEntries = result.paragraphMap.filter((_, i) =>
+        ["Byline", "How many times", "Section Heading", "The body continues"].some((s) =>
+          segments[i].includes(s)
+        )
+      );
+      expect(bigBlockEntries.length).toBe(4);
+      const uniqueTargets = new Set(bigBlockEntries.map((e) => e.o));
+      expect(uniqueTargets.size).toBe(1);
+    });
+  });
+
   describe("blockquote handling", () => {
     it("includes blockquote text in narration", () => {
       const html = "<blockquote>A famous quote goes here.</blockquote>";

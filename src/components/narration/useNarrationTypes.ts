@@ -6,6 +6,7 @@
 
 import type { NarrationState } from "@/lib/narration/ArticleNarrator";
 import type { PlaybackStatus } from "@/lib/narration/streaming-audio-player";
+import { splitNarrationParagraphs } from "@/lib/narration/paragraph-map";
 
 // ============================================================================
 // Configuration Types
@@ -75,12 +76,13 @@ export const DEFAULT_NARRATION_STATE: NarrationState = {
 
 /**
  * Splits narration text into paragraphs.
+ *
+ * Delegates to the shared {@link splitNarrationParagraphs} so the player's
+ * paragraph indexing stays identical to how `buildAlignedNarration` chunks the
+ * text and builds the paragraph map (see `@/lib/narration/paragraph-map`).
  */
 export function splitIntoParagraphs(text: string): string[] {
-  return text
-    .split(/\n\n+/)
-    .map((p) => p.trim())
-    .filter((p) => p.length > 0);
+  return splitNarrationParagraphs(text);
 }
 
 /**
