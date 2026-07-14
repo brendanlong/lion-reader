@@ -1,4 +1,4 @@
-name: Weekly Changelog
+name: Weekly Release
 
 on:
   schedule:
@@ -9,30 +9,32 @@ permissions:
   contents: write
 
 jobs:
-  changelog:
+  release:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v7.0.0
         with:
           fetch-depth: 0
-          token: ${{ secrets.PUSH_TOKEN }}
 
-      - name: Get commits and PRs since last changelog
+      - name: Get commits and PRs since last release
         id: commits
         env:
           GH_TOKEN: ${{ secrets.PUSH_TOKEN }}
         run: |
-          # Find the date of the most recent changelog post
-          LAST_POST=$(ls blog/_changelog/*.md 2>/dev/null | sort | tail -1)
-          if [ -n "$LAST_POST" ]; then
-            # Extract date from filename (YYYY-MM-DD-title.md)
-            SINCE_DATE=$(basename "$LAST_POST" | grep -oP '^\d{4}-\d{2}-\d{2}')
-            # Save previous changelog content so the model can avoid repeating it
-            cat "$LAST_POST" > /tmp/previous_changelog.txt
+          REPO="${GITHUB_REPOSITORY}"
+
+          # Use the most recent GitHub release as the "since" marker. Its
+          # creation date bounds the commit/PR window, and its body is fed back
+          # to the model so it doesn't repeat the previous week's notes.
+          LATEST_TAG=$(gh release list --repo "$REPO" --limit 1 --json tagName --jq '.[0].tagName // empty')
+          if [ -n "$LATEST_TAG" ]; then
+            SINCE_DATE=$(gh release view "$LATEST_TAG" --repo "$REPO" --json createdAt --jq '.createdAt' | cut -dT -f1)
+            gh release view "$LATEST_TAG" --repo "$REPO" --json body --jq '.body // ""' > /tmp/previous_changelog.txt
           else
-            # No changelog posts yet — use 30 days ago
+            # No releases yet — use 30 days ago
             SINCE_DATE=$(date -d '30 days ago' +%Y-%m-%d)
+            : > /tmp/previous_changelog.txt
           fi
           echo "since=$SINCE_DATE" >> "$GITHUB_OUTPUT"
 
@@ -48,7 +50,6 @@ jobs:
           fi
 
           # Get merged PRs since that date
-          REPO="${GITHUB_REPOSITORY}"
           PRS=$(gh pr list --repo "$REPO" --state merged \
             --search "merged:>=$SINCE_DATE" \
             --json number,title,url,mergedAt \
@@ -76,7 +77,7 @@ jobs:
             echo "" > /tmp/open_issues.txt
           fi
 
-      - name: Generate changelog with Claude
+      - name: Generate release notes with Claude
         if: steps.commits.outputs.has_commits == 'true'
         id: generate
         env:
@@ -91,9 +92,9 @@ jobs:
 
           # Build the prompt
           PROMPT=$(cat <<'PROMPT_EOF'
-          You are writing a changelog entry for Lion Reader, an open-source RSS reader.
+          You are writing release notes for Lion Reader, an open-source RSS reader.
 
-          Below are the git commits and merged pull requests since the last changelog post. Write a brief, friendly summary of user-visible changes. Guidelines:
+          Below are the git commits and merged pull requests since the last release. Write a brief, friendly summary of user-visible changes. Guidelines:
 
           - Focus on HIGH-LEVEL user-visible changes only (new features, UI improvements, bug fixes users would notice)
           - Ignore internal refactors, CI changes, dependency bumps, code cleanup, and work-in-progress commits
@@ -108,14 +109,12 @@ jobs:
             - Don't over-link — one link per bullet point is usually enough
             - Don't link to commits directly; prefer PR links when available
           - Do NOT include raw commit hashes in the text
-          - Do NOT repeat anything already covered in the previous changelog post (provided below). Some commits/PRs may overlap with the previous period — skip those entirely.
+          - Do NOT repeat anything already covered in the previous release notes (provided below). Some commits/PRs may overlap with the previous period — skip those entirely.
 
           Useful links for context (include where relevant):
           - Lion Reader app: https://lionreader.com
           - Announcements blog: https://announcements.lionreader.com
           - Announcements RSS feed: https://announcements.lionreader.com/feed.xml
-          - Changelog page: https://announcements.lionreader.com/changelog/
-          - Changelog RSS feed: https://announcements.lionreader.com/changelog.xml
           PROMPT_EOF
           )
 
@@ -152,7 +151,7 @@ jobs:
           if [ -n "$PREV_CHANGELOG" ]; then
             INPUT="${INPUT}
 
-          Previous changelog post (do not repeat anything from this):
+          Previous release notes (do not repeat anything from this):
           ${PREV_CHANGELOG}"
           fi
 
@@ -192,30 +191,10 @@ jobs:
           echo "skip=false" >> "$GITHUB_OUTPUT"
           echo "date=${TODAY}" >> "$GITHUB_OUTPUT"
 
-          # Write the post file
-          FILENAME="blog/_changelog/${TODAY}-changelog.md"
-          mkdir -p blog/_changelog
-          {
-            echo "---"
-            echo "title: \"Changelog: week of $(date +'%B %-d, %Y')\""
-            echo "date: ${TODAY}"
-            echo "author: Lion Reader"
-            echo "---"
-            echo ""
-            echo "$BODY"
-          } > "$FILENAME"
-
-          echo "Created $FILENAME"
-          cat "$FILENAME"
-
-      - name: Commit and push
-        if: steps.commits.outputs.has_commits == 'true' && steps.generate.outputs.skip != 'true'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add blog/_changelog/
-          git commit -m "Add weekly changelog post for $(date +%Y-%m-%d)"
-          git push
+          # Release notes = the generated body
+          printf '%s\n' "$BODY" > /tmp/release_notes.md
+          echo "Generated release notes:"
+          cat /tmp/release_notes.md
 
       - name: Create GitHub release
         if: steps.commits.outputs.has_commits == 'true' && steps.generate.outputs.skip != 'true'
@@ -225,13 +204,8 @@ jobs:
           DATE="${{ steps.generate.outputs.date }}"   # YYYY-MM-DD
           TAG="v${DATE//-/.}"                          # vYYYY.MM.DD
           TITLE="Week of $(date -d "$DATE" +'%B %-d, %Y')"
-          FILENAME="blog/_changelog/${DATE}-changelog.md"
 
-          # Release notes = the changelog body (everything after the frontmatter)
-          awk 'BEGIN{c=0} /^---[[:space:]]*$/{c++; next} c>=2{print}' "$FILENAME" \
-            | sed '/./,$!d' > /tmp/release_notes.md
-
-          # Target the commit we just pushed so the release points at the code it describes
+          # Target the current master commit so the release points at the code it describes
           gh release create "$TAG" \
             --target "$(git rev-parse HEAD)" \
             --title "$TITLE" \
