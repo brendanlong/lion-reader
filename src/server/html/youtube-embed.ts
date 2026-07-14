@@ -1,7 +1,8 @@
 /**
- * YouTube embed URL handling, shared by the sanitizer (which validates and
- * normalizes iframes found in feed content) and the YouTube plugin (which
- * synthesizes embed iframes for YouTube's own feeds).
+ * YouTube embed URL handling, shared by the sanitizer's embed allow-list
+ * (`embed-providers.ts`, which registers YouTube as one provider and validates
+ * iframes found in feed content) and the YouTube plugin (which synthesizes
+ * embed iframes for YouTube's own feeds).
  *
  * Iframes are the sanitizer's only cross-origin escape hatch, so everything
  * here is allow-list based: only known YouTube embed hosts and the /embed/
