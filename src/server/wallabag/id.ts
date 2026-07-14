@@ -39,12 +39,19 @@ export interface ResolvedWallabagEntry {
  * entries its user can see. Returns null for unknown/invisible entries and for
  * values that can't be a stored serial (non-numeric, or beyond bigint range —
  * which Postgres would reject as a parameter).
+ *
+ * Real Wallabag routes are `/api/entries/{entry}.{_format}` (the Android app and
+ * others append a `.json` suffix), so a trailing `.json`/`.xml` format suffix is
+ * stripped before resolution — otherwise `123.json` parses as neither a serial
+ * nor a UUID and archiving/starring/deleting silently 404s (issue #1229).
  */
 export async function resolveWallabagEntry(
   db: typeof dbType,
   userId: string,
   entryParam: string
 ): Promise<ResolvedWallabagEntry | null> {
+  entryParam = entryParam.replace(/\.(json|xml)$/i, "");
+
   const selection = { id: visibleEntries.id, greaderItemId: visibleEntries.greaderItemId };
 
   let rows: Array<{ id: string; greaderItemId: bigint }>;
