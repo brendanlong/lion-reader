@@ -142,8 +142,8 @@ function OAuthCallbackContent() {
   // Login mutations
   const googleCallbackMutation = trpc.auth.googleCallback.useMutation({
     onSuccess: (data) => {
-      // The server set the httpOnly session cookie (+ readable marker) on the
-      // callback response; nothing to persist client-side.
+      // The server set the httpOnly session cookie on the callback response;
+      // nothing to persist client-side.
       cleanupOAuthState();
       // New users need to complete signup confirmation first
       const redirectTo = data.isNewUser ? "/complete-signup" : "/all";
@@ -161,8 +161,8 @@ function OAuthCallbackContent() {
 
   const appleCallbackMutation = trpc.auth.appleCallback.useMutation({
     onSuccess: (data) => {
-      // The server set the httpOnly session cookie (+ readable marker) on the
-      // callback response; nothing to persist client-side.
+      // The server set the httpOnly session cookie on the callback response;
+      // nothing to persist client-side.
       cleanupOAuthState();
       // New users need to complete signup confirmation first
       const redirectTo = data.isNewUser ? "/complete-signup" : "/all";

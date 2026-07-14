@@ -49,8 +49,8 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
 
   const logoutMutation = trpc.auth.logout.useMutation({
     onSuccess: () => {
-      // The server cleared the httpOnly session cookie (+ marker) on the logout
-      // response. Drop all cached data before the next login. The browser QueryClient and
+      // The server cleared the httpOnly session cookie on the logout response.
+      // Drop all cached data before the next login. The browser QueryClient and
       // the subscription lookup map are module-level singletons that outlive the
       // session, so without this a different account signing in on the same tab
       // (SPA navigation, no full reload) would be served the previous user's

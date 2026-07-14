@@ -93,8 +93,8 @@ function LoginForm() {
 
   const loginMutation = trpc.auth.login.useMutation({
     onSuccess: () => {
-      // The server set the httpOnly session cookie (+ readable marker) on the
-      // login response; nothing to persist client-side.
+      // The server set the httpOnly session cookie on the login response;
+      // nothing to persist client-side.
 
       // Get the redirect URL from query params or default to /all
       const redirectTo = searchParams.get("redirect") ?? "/all";

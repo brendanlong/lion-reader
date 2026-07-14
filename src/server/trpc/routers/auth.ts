@@ -929,7 +929,7 @@ export const authRouter = createTRPCRouter({
         await revokeSessionByToken(ctx.sessionToken);
       }
 
-      // Clear the httpOnly session cookie (+ readable marker) for the browser.
+      // Clear the httpOnly session cookie for the browser.
       clearSessionCookie(ctx.resHeaders);
 
       return { success: true };
