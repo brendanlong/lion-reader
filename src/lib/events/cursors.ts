@@ -32,18 +32,20 @@ function compareTimestamps(a: string, b: string): number {
 }
 
 /**
- * Largest possible UUID. Used as the entries id tiebreaker for `mark_all_read`,
- * which carries no single entry id: advancing past `(T, MAX_UUID)` skips every
- * entry tied at timestamp T (they were all just marked read), so a catch-up
- * doesn't re-deliver them one by one.
+ * Largest possible UUID. Fallback id tiebreaker for `mark_all_read` events
+ * that don't carry `entryId` (published by servers predating the field):
+ * advancing past `(T, MAX_UUID)` skips every entry tied at timestamp T, so a
+ * catch-up doesn't re-deliver the marked entries one by one.
  *
- * Known limitation (pre-existing, not introduced by the keyset): if an unrelated
- * new entry is inserted at the *exact* same microsecond timestamp T as the
- * mark-all-read and its live `new_entry` is missed, this sentinel makes a
- * later catch-up skip it (`GREATEST = T AND id > MAX_UUID` is false). The old
- * timestamp-only strict-`>` cursor had the identical blind spot. Collisions at
- * µs precision are vanishingly rare, and `mark_all_read` already invalidates the
- * entry lists, so the entry reappears on the next list refresh regardless.
+ * Known limitation of this fallback (#1102): if an unrelated new entry lands
+ * on the same timestamp T as the mark-all-read (both stamps come from JS
+ * `new Date()`, so a collision needs only the same *millisecond*) and its live
+ * `new_entry` is missed, the sentinel makes a later catch-up skip it too
+ * (`GREATEST = T AND id > MAX_UUID` is always false). Current servers instead
+ * send the largest marked entry id, which excludes exactly the marked rows
+ * while still admitting the tied newcomer (see entryEventAfterId). Either way
+ * `mark_all_read` also invalidates the entry lists, so a skipped entry
+ * reappears on the next list refetch.
  */
 const MAX_UUID = "ffffffff-ffff-ffff-ffff-ffffffffffff";
 
@@ -93,7 +95,8 @@ export function cursorTypeForEvent(event: SyncEvent): keyof SyncCursors | null {
 
 /**
  * The entries-cursor id tiebreaker an event advances to. Per-entry events carry
- * their own id; mark_all_read has none and advances past the whole tied group.
+ * their own id; mark_all_read carries the LARGEST id among the entries it
+ * marked read.
  */
 function entryEventAfterId(event: SyncEvent): string {
   switch (event.type) {
@@ -101,8 +104,17 @@ function entryEventAfterId(event: SyncEvent): string {
     case "entry_updated":
     case "entry_state_changed":
       return event.entryId;
+    case "mark_all_read":
+      // Advancing to the largest marked id skips every row the mark-all-read
+      // stamped at this timestamp (no catch-up re-delivery), but — unlike the
+      // MAX_UUID sentinel — keeps the cursor *inside* the tied-timestamp
+      // group: an unrelated entry written in the same millisecond has a
+      // UUIDv7 id above every earlier-created marked entry, so a catch-up can
+      // still deliver it when its live event was missed (#1102). Events from
+      // servers predating the field fall back to skipping the whole group.
+      return event.entryId ?? MAX_UUID;
     default:
-      // mark_all_read (the only other event mapped to the entries cursor).
+      // Unreachable: only the entries-cursor events above are passed here.
       return MAX_UUID;
   }
 }

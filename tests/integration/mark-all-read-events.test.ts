@@ -169,7 +169,7 @@ function waitForMessage(channel: string, timeoutMs = 5000): Promise<string> {
 }
 
 describe("entries.markAllRead SSE publishing", () => {
-  it("publishes a mark_all_read signal carrying a cursor timestamp", async () => {
+  it("publishes a mark_all_read signal carrying a cursor timestamp and the max marked id", async () => {
     const userId = generateUuidv7();
     await db.insert(users).values({
       id: userId,
@@ -178,7 +178,7 @@ describe("entries.markAllRead SSE publishing", () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     });
-    await seedUnreadEntries(userId, 3);
+    const entryIds = await seedUnreadEntries(userId, 3);
 
     const channel = getUserEventsChannel(userId);
     await subscriber.subscribe(channel);
@@ -193,6 +193,10 @@ describe("entries.markAllRead SSE publishing", () => {
     // updatedAt is the mark-all-read timestamp used to advance the entries cursor.
     expect(typeof event.updatedAt).toBe("string");
     expect(Number.isNaN(Date.parse(event.updatedAt))).toBe(false);
+    // entryId is the LARGEST marked entry id: the client's keyset cursor lands
+    // exactly past the marked rows, so a catch-up skips them without also
+    // skipping an unrelated entry written in the same millisecond (#1102).
+    expect(event.entryId).toBe([...entryIds].sort().at(-1));
   });
 
   it("publishes no event when nothing was unread", async () => {
