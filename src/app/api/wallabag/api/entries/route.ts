@@ -173,9 +173,9 @@ export async function POST(request: Request): Promise<Response> {
   } catch (error) {
     // The Wallabag Android app's offline save queue only advances an item on a
     // 2xx response; any error keeps it queued, retried forever, AND halts every
-    // newer queued save behind it (a poison item — #1254). So for a *permanent*
-    // client-side failure (oversized page, 404, blocked site, feed URL, private
-    // doc needing auth) we can't return the 4xx — we save a labeled placeholder
+    // newer queued save behind it (a poison item — #1254). So for a client-side
+    // save failure (oversized page, 404, blocked site, feed URL, private doc
+    // needing auth) we can't return the 4xx — we save a labeled placeholder
     // entry (URL as title, reason as body) and return it with 200, which drains
     // the queue and tells the user in-app why the save failed.
     //
@@ -183,7 +183,10 @@ export async function POST(request: Request): Promise<Response> {
     // client/upstream failure, not our bug" signal (a 4xx, or an expected
     // upstream 5xx like SITE_BLOCKED). A genuine server bug returns null and
     // still throws → 500, so the app legitimately retries it once we've fixed
-    // the cause.
+    // the cause. Note this also placeholders the *transient* client-coded
+    // failures (UPSTREAM_RATE_LIMITED, SITE_BLOCKED); a plain app re-share won't
+    // then heal them (see the trade-off note on savePlaceholderArticle) — but
+    // draining the queue beats leaving it jammed for every other save.
     if (clientErrorResponse(error) !== null) {
       const placeholder = await savedService.savePlaceholderArticle(db, auth.userId, {
         url: articleUrl,

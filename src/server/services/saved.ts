@@ -1182,6 +1182,18 @@ export async function saveArticle(
  * idempotent by URL), uses the URL as its title, and the failure reason as its
  * body. Interactive callers (tRPC/MCP) must keep surfacing the real error
  * instead of calling this.
+ *
+ * Trade-off (accepted): because the placeholder is stored under `guid =
+ * normalized URL`, a later *no-refetch* save of the same URL — a plain re-share
+ * to the Wallabag app, or MCP `save_article` — matches it and returns the
+ * placeholder rather than re-fetching, so it does NOT auto-heal into the real
+ * article. This mainly bites the transient failure codes we still treat as
+ * client errors (`UPSTREAM_RATE_LIMITED`, `SITE_BLOCKED`): a save that failed
+ * only momentarily leaves a placeholder that a plain re-share won't replace. It
+ * is recoverable — the web `saved.save` path defaults `refetch: true` and heals
+ * it, and deleting the placeholder then re-sharing fetches fresh — but a bare
+ * app re-share won't. We accept this because the alternative (a jammed queue
+ * that blocks *every* newer save) is worse. See #1254.
  */
 export async function savePlaceholderArticle(
   db: typeof dbType,
