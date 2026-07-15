@@ -192,7 +192,7 @@ export async function generateNarration(
 
     const response = await client.chat.completions.create({
       model: "openai/gpt-oss-20b",
-      // Mechanical text-normalization task — minimal reasoning keeps latency and
+      // Mechanical text normalization task — minimal reasoning keeps latency and
       // token cost close to the old llama-3.1-8b-instant model. gpt-oss emits any
       // reasoning in a separate `reasoning` field, so `message.content` is still
       // the clean JSON we parse below.
