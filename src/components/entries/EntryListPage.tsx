@@ -70,12 +70,13 @@ export async function EntryListPage({ pathname, searchParams, children }: EntryL
   const urlParams = new URLSearchParams();
   if (params.unreadOnly) urlParams.set("unreadOnly", String(params.unreadOnly));
   if (params.sort) urlParams.set("sort", String(params.sort));
-  const { unreadOnly, sortOrder } = parseViewPreferencesFromParams(urlParams, {
+  if (typeof params.q === "string") urlParams.set("q", params.q);
+  const { unreadOnly, sortOrder, searchQuery } = parseViewPreferencesFromParams(urlParams, {
     unreadOnly: defaults.unreadOnly,
   });
 
   // Build input using shared function to ensure cache key matches client
-  const input = buildEntriesListInput(filters, { unreadOnly, sortOrder });
+  const input = buildEntriesListInput(filters, { unreadOnly, sortOrder, searchQuery });
 
   // Prefetch the entry list and related data
   void trpc.entries.list.prefetchInfinite(input);

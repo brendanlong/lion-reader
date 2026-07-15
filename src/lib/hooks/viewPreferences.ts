@@ -54,10 +54,19 @@ export function parseViewPreferencesFromParams(
 ): {
   unreadOnly: boolean;
   sortOrder: "newest" | "oldest";
+  searchQuery: string | undefined;
 } {
-  // Parse unreadOnly - explicit "false" means show all, anything else uses default
+  // Parse the full-text search query - empty/whitespace means "not searching"
+  const searchQuery = searchParams?.get("q")?.trim() || undefined;
+
+  // Parse unreadOnly - explicit "false" means show all, anything else uses default.
+  // While searching, the default flips to showing everything: a search is
+  // usually for something already read, and silently searching only unread
+  // entries would hide the results the user is looking for.
   const unreadOnlyParam = searchParams?.get("unreadOnly");
-  const defaultUnreadOnly = defaults?.unreadOnly ?? DEFAULT_PREFERENCES.showUnreadOnly;
+  const defaultUnreadOnly = searchQuery
+    ? false
+    : (defaults?.unreadOnly ?? DEFAULT_PREFERENCES.showUnreadOnly);
   const unreadOnly =
     unreadOnlyParam === "false" ? false : unreadOnlyParam === "true" ? true : defaultUnreadOnly;
 
@@ -70,5 +79,5 @@ export function parseViewPreferencesFromParams(
         ? "newest"
         : DEFAULT_PREFERENCES.sortOrder;
 
-  return { unreadOnly, sortOrder };
+  return { unreadOnly, sortOrder, searchQuery };
 }

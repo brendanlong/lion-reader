@@ -15,7 +15,7 @@
 
 import { useCallback, useMemo } from "react";
 import { useSearchParams, usePathname } from "next/navigation";
-import { clientReplace } from "@/lib/navigation";
+import { clientPush, clientReplace } from "@/lib/navigation";
 import { parseViewPreferencesFromParams } from "./viewPreferences";
 import { getDefaultViewPreferences } from "@/lib/queries/entries-list-input";
 
@@ -42,6 +42,16 @@ export interface UseUrlViewPreferencesResult {
    * Toggle the sortOrder preference (updates URL).
    */
   toggleSortOrder: () => void;
+
+  /**
+   * Active full-text search query (`?q=` URL param); undefined when not searching.
+   */
+  searchQuery: string | undefined;
+
+  /**
+   * Set or clear the search query (updates URL). Pass null/empty to clear.
+   */
+  setSearchQuery: (query: string | null) => void;
 }
 
 /**
@@ -67,13 +77,18 @@ export interface UseUrlViewPreferencesResult {
 export function useUrlViewPreferences(): UseUrlViewPreferencesResult {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const defaultUnreadOnly = getDefaultViewPreferences(pathname).unreadOnly;
+  const routeDefaultUnreadOnly = getDefaultViewPreferences(pathname).unreadOnly;
 
   // Get current values from URL
-  const { unreadOnly, sortOrder } = useMemo(
-    () => parseViewPreferencesFromParams(searchParams, { unreadOnly: defaultUnreadOnly }),
-    [searchParams, defaultUnreadOnly]
+  const { unreadOnly, sortOrder, searchQuery } = useMemo(
+    () => parseViewPreferencesFromParams(searchParams, { unreadOnly: routeDefaultUnreadOnly }),
+    [searchParams, routeDefaultUnreadOnly]
   );
+
+  // While searching, the effective unreadOnly default flips to false (see
+  // parseViewPreferencesFromParams) — use the same default when deciding
+  // whether the param can be dropped from the URL.
+  const defaultUnreadOnly = searchQuery ? false : routeDefaultUnreadOnly;
 
   // Helper to update URL with new params
   const updateUrl = useCallback(
@@ -115,13 +130,38 @@ export function useUrlViewPreferences(): UseUrlViewPreferencesResult {
     updateUrl({ sort: sortOrder === "newest" ? "oldest" : "newest" });
   }, [updateUrl, sortOrder]);
 
+  const setSearchQuery = useCallback(
+    (query: string | null) => {
+      const trimmed = query?.trim() ?? "";
+      const params = new URLSearchParams(searchParams?.toString() ?? "");
+      if (trimmed) {
+        params.set("q", trimmed);
+      } else {
+        params.delete("q");
+      }
+      const queryString = params.toString();
+      const url = queryString ? `${pathname}?${queryString}` : pathname;
+      // Entering a search pushes a history entry so Back exits the search;
+      // refining or clearing one replaces, so each keystroke-level tweak
+      // doesn't pile up in history.
+      if (trimmed && !searchQuery) {
+        clientPush(url);
+      } else {
+        clientReplace(url);
+      }
+    },
+    [pathname, searchParams, searchQuery]
+  );
+
   return useMemo(
     () => ({
       showUnreadOnly: unreadOnly,
       toggleShowUnreadOnly,
       sortOrder,
       toggleSortOrder,
+      searchQuery,
+      setSearchQuery,
     }),
-    [unreadOnly, toggleShowUnreadOnly, sortOrder, toggleSortOrder]
+    [unreadOnly, toggleShowUnreadOnly, sortOrder, toggleSortOrder, searchQuery, setSearchQuery]
   );
 }
