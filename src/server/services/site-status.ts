@@ -48,7 +48,7 @@ export interface AnnouncementState {
 export interface Announcement {
   /**
    * Deterministic id derived from `message` + `level`. The banner stores the
-   * dismissed id in localStorage, so the same text keeps the same id (a dismiss
+   * dismissed id in a cookie, so the same text keeps the same id (a dismiss
    * sticks across no-op saves) while a changed message yields a new id and the
    * banner re-appears.
    */
