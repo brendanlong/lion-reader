@@ -43,11 +43,12 @@ function tagEvent(updatedAt: string): SyncEvent {
   };
 }
 
-function markAllReadEvent(updatedAt: string): SyncEvent {
+function markAllReadEvent(updatedAt: string, entryId?: string): SyncEvent {
   return {
     type: "mark_all_read",
     timestamp: updatedAt,
     updatedAt,
+    ...(entryId !== undefined ? { entryId } : {}),
   };
 }
 
@@ -189,7 +190,24 @@ describe("advanceCursors", () => {
       expect(advanceCursors(cursors, entryEvent(T, "a"))).toBe(cursors);
     });
 
-    it("advances past the whole tied group for mark_all_read (max id sentinel)", () => {
+    // #1102: mark_all_read carries the LARGEST marked entry id, so the cursor
+    // lands exactly past the marked rows instead of past the whole tied group.
+    // A same-millisecond unrelated entry (UUIDv7 id above every earlier-created
+    // marked entry) stays after the cursor and is still delivered by catch-up.
+    it("advances to the max marked id for mark_all_read, keeping later tied ids syncable", () => {
+      const cursors = advanceCursors(EMPTY_CURSORS, entryEvent(T, "b"));
+      const next = advanceCursors(cursors, markAllReadEvent(T, "d"));
+      expect(next.entries).toBe(T);
+      expect(next.entriesAfterId).toBe("d");
+    });
+
+    it("does not move the tiebreaker backward for a mark_all_read with a smaller max id", () => {
+      const cursors = advanceCursors(EMPTY_CURSORS, entryEvent(T, "e"));
+      expect(advanceCursors(cursors, markAllReadEvent(T, "c"))).toBe(cursors);
+    });
+
+    it("falls back to skipping the whole tied group when mark_all_read has no entryId", () => {
+      // Events from servers predating the entryId field (#1102).
       const cursors = advanceCursors(EMPTY_CURSORS, entryEvent(T, "b"));
       const next = advanceCursors(cursors, markAllReadEvent(T));
       expect(next.entries).toBe(T);
