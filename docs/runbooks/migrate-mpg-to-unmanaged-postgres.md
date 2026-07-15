@@ -76,12 +76,24 @@ The worker writes continuously, so a rehearsal copy is _not_ a valid final copy.
 
 ```bash
 fly machine list -a lion-reader   # note the app, worker, and discord machine ids
+
+# The app group has auto_start_machines = true, so the Fly proxy will WAKE a
+# stopped app machine as soon as a request arrives — mid-copy, pointed at
+# whichever DATABASE_URL is current. Disable autostart for the window:
+fly machine update <app-id> --autostart=false -y -a lion-reader
+
 fly machine stop <app-id> <worker-id> <discord-id> -a lion-reader
+
+# Confirm all three actually show "stopped" before dumping — a machine still
+# draining writes to MPG after the dump snapshot starts means lost writes:
+fly machine list -a lion-reader
 
 # attach (next step) fails if DATABASE_URL already exists; machines are stopped,
 # so --stage avoids any deploy/restart churn
 fly secrets unset DATABASE_URL -a lion-reader --stage
 ```
+
+(worker/discord have no HTTP service, so a plain stop is enough for them.)
 
 ## 4. Provision the app user and copy the data
 
@@ -93,6 +105,10 @@ fly postgres attach lion-reader-pg -a lion-reader --database-name lion_reader
 # Two tunnels: old MPG on 16543 (may still be running from §1), new flex on 16544
 fly mpg proxy k1v53olme1nr8q6p --local-port 16543 &
 fly proxy 16544:5432 -a lion-reader-pg &
+
+# Gate on both tunnels being up — a backgrounded proxy that isn't ready yet (or a
+# port collision) would fail the pipe mid-stream:
+pg_isready -h 127.0.0.1 -p 16543 && pg_isready -h 127.0.0.1 -p 16544
 
 # Copy. Use the creds from the MPG URL (§1) on the left, and the user/password/db
 # from the attach output on the right — only the hosts are replaced.
@@ -124,6 +140,10 @@ done
 ## 5. Restart and verify (downtime ends)
 
 ```bash
+# Re-enable proxy autostart on the app machine (the next `fly deploy` would also
+# reset this from fly.toml, but don't leave it to chance)
+fly machine update <app-id> --autostart -y -a lion-reader
+
 fly machine start <app-id> <worker-id> <discord-id> -a lion-reader
 
 curl -s https://lionreader.com/api/health   # expect database + redis healthy
