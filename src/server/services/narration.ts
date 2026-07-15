@@ -209,7 +209,12 @@ export async function generateNarration(
       ],
       response_format: { type: "json_object" }, // Request JSON output
       temperature: 0.1, // Low temperature for consistency
-      max_tokens: 8000,
+      // Output must echo back every rewritten paragraph for the whole article,
+      // and (unlike the old non-reasoning llama-3.1-8b) gpt-oss spends some of
+      // this budget on reasoning tokens even at "low" effort. Keep the cap high
+      // so long articles don't truncate into the (uncached, repeatedly-retried)
+      // fallback path. We only pay for tokens actually generated.
+      max_completion_tokens: 16000,
     });
 
     const rawOutput = response.choices[0]?.message?.content;
