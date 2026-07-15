@@ -17,6 +17,13 @@ import { createServer } from "node:http";
 import { maybeCompressResponse } from "../src/server/http/compression";
 import { stripOauthSurfaceTrailingSlash } from "../src/server/http/trailing-slash";
 import { startMetricsServer, stopMetricsServer } from "../src/server/metrics/server";
+import {
+  startMaintenancePoller,
+  getCurrentMaintenance,
+  evaluateRequest,
+  renderMaintenanceHtml,
+  maintenanceJsonBody,
+} from "../src/server/maintenance/server-gate";
 import { getResourceCleanup } from "../src/server/shutdown";
 import { logger } from "../src/lib/logger";
 
@@ -42,6 +49,10 @@ app.prepare().then(() => {
   const handle = app.getRequestHandler();
   const upgrade = app.getUpgradeHandler();
 
+  // Poll Redis for the maintenance flag so the per-request check below stays
+  // synchronous (no await on the hot path).
+  startMaintenancePoller();
+
   const server = createServer((req, res) => {
     // OAuth/MCP endpoints must answer trailing-slash URLs in place instead of
     // Next's default 308 (server-to-server OAuth clients don't follow
@@ -51,6 +62,29 @@ app.prepare().then(() => {
     if (req.url) {
       req.url = stripOauthSurfaceTrailingSlash(req.url);
     }
+
+    // Maintenance mode: short-circuit everything except the exempt surfaces
+    // (demo, admin, health, static). Demo stays up because it never touches the
+    // database, which is the whole point during a DB migration.
+    const maintenance = getCurrentMaintenance();
+    if (maintenance.enabled) {
+      const pathname = (req.url || "/").split("?")[0];
+      const decision = evaluateRequest(pathname, req.headers.cookie, req.headers.authorization);
+      if (decision !== "allow") {
+        res.statusCode = 503;
+        res.setHeader("Retry-After", "3600");
+        res.setHeader("Cache-Control", "no-store");
+        if (decision === "block-api") {
+          res.setHeader("Content-Type", "application/json; charset=utf-8");
+          res.end(maintenanceJsonBody(maintenance.message));
+        } else {
+          res.setHeader("Content-Type", "text/html; charset=utf-8");
+          res.end(renderMaintenanceHtml(maintenance.message));
+        }
+        return;
+      }
+    }
+
     maybeCompressResponse(req, res);
     handle(req, res);
   });

@@ -33,6 +33,7 @@ import { db } from "@/server/db";
 import { oauthAccounts } from "@/server/db/schema";
 import { saveArticle } from "@/server/services/saved";
 import { validateApiToken } from "@/server/auth/api-token";
+import { getMaintenance } from "@/server/services/site-status";
 import { getRedisClient } from "@/server/redis";
 import { logger } from "@/lib/logger";
 import {
@@ -45,6 +46,20 @@ import {
 
 // Redis key prefix for storing Discord user -> API token mappings
 const REDIS_KEY_PREFIX = "discord:token:";
+
+/** Shown to users when the bot is paused for maintenance. */
+const MAINTENANCE_REPLY =
+  "🛠️ Lion Reader is temporarily down for maintenance — please try again shortly.";
+
+/**
+ * Whether maintenance mode is active. Every DB-touching handler consults this
+ * before doing any work, so during a database migration the bot stays connected
+ * but does nothing that would hit Postgres. The read is cached in-process, so
+ * this adds no per-event Redis load.
+ */
+async function isUnderMaintenance(): Promise<boolean> {
+  return (await getMaintenance()).enabled;
+}
 
 // How long after login() to wait for the gateway `clientReady` event before
 // warning that the bot connected but isn't receiving events.
@@ -264,6 +279,10 @@ export async function startDiscordBot(): Promise<void> {
     const { commandName, user } = interaction;
 
     try {
+      if (await isUnderMaintenance()) {
+        await interaction.reply({ content: MAINTENANCE_REPLY, flags: MessageFlags.Ephemeral });
+        return;
+      }
       if (commandName === "link") {
         await handleLinkCommand(interaction, user);
       } else if (commandName === "unlink") {
@@ -543,6 +562,13 @@ async function handleSaveReaction(
   partialMessage: Message | { partial: true; fetch: () => Promise<Message> },
   user: User | PartialUser
 ): Promise<void> {
+  // Paused for maintenance — don't touch the database. Reactions are a
+  // low-signal surface, so skip silently rather than DMing the user.
+  if (await isUnderMaintenance()) {
+    logger.info("Ignoring save reaction: maintenance mode active", { discordId: user.id });
+    return;
+  }
+
   // Look up Lion Reader user
   const resolved = await resolveUser(user.id);
   if (!resolved) {
@@ -588,6 +614,20 @@ async function handleDirectMessage(message: Message): Promise<void> {
       messageId: message.id,
       contentLength: message.content?.length ?? 0,
     });
+    return;
+  }
+
+  // Paused for maintenance — they sent a link, so tell them to retry instead of
+  // touching the database.
+  if (await isUnderMaintenance()) {
+    logger.info("Ignoring direct message: maintenance mode active", {
+      discordId: message.author.id,
+    });
+    try {
+      await message.reply(MAINTENANCE_REPLY);
+    } catch (error) {
+      logger.warn("Failed to reply to DM during maintenance", { error });
+    }
     return;
   }
 

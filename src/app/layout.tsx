@@ -3,6 +3,8 @@ import { Geist, Geist_Mono, Merriweather, Literata, Inter, Source_Sans_3 } from 
 import { defaultOpenGraph } from "@/lib/metadata";
 import { appUrl } from "@/server/config/env";
 import { ThemeProvider } from "@/lib/theme/ThemeProvider";
+import { AnnouncementBanner } from "@/components/layout/AnnouncementBanner";
+import { getAnnouncement } from "@/server/services/site-status";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -140,11 +142,15 @@ if ('serviceWorker' in navigator) {
 }
 `;
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Global announcement banner (admin-controlled, Redis-backed). Fetched here so
+  // it renders on every route including the demo and logged-out surfaces.
+  const announcement = await getAnnouncement();
+
   return (
     // Font variables live on <html> (not <body>) so the entry text-appearance
     // custom properties, which are set on documentElement by the head script
@@ -162,7 +168,10 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: swScript }} />
       </head>
       <body className="antialiased">
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider>
+          <AnnouncementBanner announcement={announcement} />
+          {children}
+        </ThemeProvider>
       </body>
     </html>
   );

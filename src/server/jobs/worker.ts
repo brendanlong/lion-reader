@@ -37,6 +37,7 @@ import type { Job } from "../db/schema";
 import { logger as appLogger } from "@/lib/logger";
 import * as Sentry from "@sentry/nextjs";
 import { trackJobProcessed } from "../metrics/metrics";
+import { getMaintenance } from "../services/site-status";
 import { createWorkerCore, type WorkerLogger, type Worker } from "./worker-core";
 
 // Re-export types for backwards compatibility
@@ -372,6 +373,28 @@ function createWorker(config: WorkerConfig = {}): Worker {
     claimSingleton: claimSingletonJob,
   });
 
+  // Maintenance-mode guard: while maintenance is on, claim nothing so the worker
+  // never touches Postgres (maintenance is used during DB migrations). Returning
+  // null makes the core loop simply sleep(pollIntervalMs) and poll again; the
+  // process stays alive and resumes automatically when the flag clears. The
+  // maintenance read is cached in-process, so this adds no per-claim Redis load.
+  let maintenancePaused = false;
+  const guardedClaimJob = async (options?: { types?: JobType[] }): Promise<Job | null> => {
+    const { enabled } = await getMaintenance();
+    if (enabled) {
+      if (!maintenancePaused) {
+        maintenancePaused = true;
+        logger.warn("Maintenance mode active — worker paused, not claiming jobs");
+      }
+      return null;
+    }
+    if (maintenancePaused) {
+      maintenancePaused = false;
+      logger.info("Maintenance mode cleared — worker resumed");
+    }
+    return claimJob(options);
+  };
+
   /**
    * Processes a single job using the real handlers.
    */
@@ -566,7 +589,7 @@ function createWorker(config: WorkerConfig = {}): Worker {
     jobTimeoutMs,
     jobTypes,
     logger,
-    claimJob,
+    claimJob: guardedClaimJob,
     processJob,
     onJobError: (job, error) => {
       Sentry.captureException(error, {

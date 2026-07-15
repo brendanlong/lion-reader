@@ -1,5 +1,7 @@
 [
   "accent-height",
+  "border-box",
+  "border-color",
   "border-radius",
   "fill-opacity",
   "fill-rule",
