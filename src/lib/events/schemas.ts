@@ -360,6 +360,10 @@ const announcementChangedEventSchema = z
       .object({
         id: z.string(),
         message: z.string(),
+        // Must stay in sync with ANNOUNCEMENT_LEVELS in
+        // src/server/services/site-status.ts (can't import it here — server
+        // only). A new level added there but not here would make this parse
+        // reject the whole event and the banner would silently not update.
         level: z.enum(["info", "warning"]),
       })
       .nullable(),

@@ -3,9 +3,15 @@
  *
  * A closeable bar rendered at the very top of every page (from the root layout).
  * The announcement is fetched server-side and passed in as a prop, so this needs
- * no client API call. Dismissal is stored in localStorage keyed by the
- * announcement's message-derived id: dismissing sticks for that exact message,
- * but a new/changed announcement gets a new id and re-appears.
+ * no client API call. Dismissal is keyed by the announcement's message-derived
+ * id: dismissing sticks for that exact message, but a new/changed announcement
+ * gets a new id and re-appears.
+ *
+ * The dismissed id lives in a **cookie** (not localStorage) so the server can
+ * read it and render the banner already-hidden — otherwise a dismissed banner
+ * flashes back on every reload (the server can't read localStorage) and the
+ * SSR/client render diverge. The server passes the cookie value as
+ * `initialDismissedId`.
  */
 
 "use client";
@@ -13,9 +19,21 @@
 import { useCallback, useState } from "react";
 import { CloseIcon } from "@/components/ui/icon-button";
 import { useLiveAnnouncement } from "@/lib/site-status/announcement-store";
+import { ANNOUNCEMENT_DISMISSED_COOKIE } from "@/lib/site-status/announcement-cookie";
 import type { AnnouncementLevel } from "@/server/services/site-status";
 
-const STORAGE_KEY = "lion-reader:announcement-dismissed";
+/** One year — dismissal should persist. */
+const COOKIE_MAX_AGE_SECONDS = 365 * 24 * 60 * 60;
+
+function persistDismissedId(id: string): void {
+  try {
+    const secure = window.location.protocol === "https:" ? "; Secure" : "";
+    document.cookie = `${ANNOUNCEMENT_DISMISSED_COOKIE}=${encodeURIComponent(id)}; path=/; max-age=${COOKIE_MAX_AGE_SECONDS}; SameSite=Lax${secure}`;
+  } catch {
+    // document.cookie can throw in sandboxed contexts — the state update below
+    // still hides the banner for this session.
+  }
+}
 
 const LEVEL_STYLES: Record<AnnouncementLevel, string> = {
   info: "bg-info-subtle text-info-subtle-foreground border-info-border",
@@ -59,35 +77,26 @@ export function AnnouncementBannerView({
 
 export interface AnnouncementBannerProps {
   announcement: { id: string; message: string; level: AnnouncementLevel } | null;
+  /** The dismissed announcement id from the cookie (read server-side). */
+  initialDismissedId: string | null;
 }
 
-export function AnnouncementBanner({ announcement }: AnnouncementBannerProps) {
+export function AnnouncementBanner({ announcement, initialDismissedId }: AnnouncementBannerProps) {
   // Live override from SSE (`announcement_changed`). `undefined` means no live
   // update has arrived, so we use the server-rendered initial value; `null`
   // means a live update cleared it (hide the banner).
   const live = useLiveAnnouncement();
   const current = live === undefined ? announcement : live;
 
-  // Lazy init (SSR-safe): read the dismissed id once. Matches the localStorage
-  // pattern in useKeyboardShortcutsEnabled.ts.
-  const [dismissedId, setDismissedId] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    try {
-      return localStorage.getItem(STORAGE_KEY);
-    } catch {
-      return null;
-    }
-  });
+  // Seeded from the cookie the server already read, so the first client render
+  // matches the SSR output (no hydration mismatch, no flash of a dismissed
+  // banner). Updated locally when the user dismisses a live-pushed announcement.
+  const [dismissedId, setDismissedId] = useState<string | null>(initialDismissedId);
 
   const dismiss = useCallback(() => {
     if (!current) return;
     setDismissedId(current.id);
-    try {
-      localStorage.setItem(STORAGE_KEY, current.id);
-    } catch {
-      // localStorage unavailable (private browsing) — banner stays hidden for
-      // this session via the state update above.
-    }
+    persistDismissedId(current.id);
   }, [current]);
 
   if (!current || dismissedId === current.id) return null;

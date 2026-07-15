@@ -1,9 +1,11 @@
 import type { Metadata, Viewport } from "next";
+import { cookies } from "next/headers";
 import { Geist, Geist_Mono, Merriweather, Literata, Inter, Source_Sans_3 } from "next/font/google";
 import { defaultOpenGraph } from "@/lib/metadata";
 import { appUrl } from "@/server/config/env";
 import { ThemeProvider } from "@/lib/theme/ThemeProvider";
 import { AnnouncementBanner } from "@/components/layout/AnnouncementBanner";
+import { ANNOUNCEMENT_DISMISSED_COOKIE } from "@/lib/site-status/announcement-cookie";
 import { getAnnouncement } from "@/server/services/site-status";
 import "./globals.css";
 
@@ -148,8 +150,11 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   // Global announcement banner (admin-controlled, Redis-backed). Fetched here so
-  // it renders on every route including the demo and logged-out surfaces.
-  const announcement = await getAnnouncement();
+  // it renders on every route including the demo and logged-out surfaces. The
+  // dismissed id is read from a cookie (not localStorage) so the server can hide
+  // an already-dismissed banner and it never flashes back on reload.
+  const [announcement, cookieStore] = await Promise.all([getAnnouncement(), cookies()]);
+  const dismissedId = cookieStore.get(ANNOUNCEMENT_DISMISSED_COOKIE)?.value ?? null;
 
   return (
     // Font variables live on <html> (not <body>) so the entry text-appearance
@@ -169,7 +174,7 @@ export default async function RootLayout({
       </head>
       <body className="antialiased">
         <ThemeProvider>
-          <AnnouncementBanner announcement={announcement} />
+          <AnnouncementBanner announcement={announcement} initialDismissedId={dismissedId} />
           {children}
         </ThemeProvider>
       </body>
