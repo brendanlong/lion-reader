@@ -8,13 +8,13 @@ const article: DemoArticle = {
   title: "Appearance & Themes",
   author: null,
   summary:
-    "Customize fonts, text size, alignment, and switch between light, a sleep-friendly low-blue-light dark theme, and an e-paper theme for e-ink screens.",
+    "Customize fonts, text size, alignment, and list density, and switch between light, a sleep-friendly low-blue-light dark theme, and an e-paper theme for e-ink screens.",
   publishedAt: new Date("2025-12-28T12:00:00Z"),
   starred: false,
   heroImage: "/demo/appearance.png",
   heroImageAlt:
     "The Lion Reader lion holding a card split into a light half with a sun and a dark half with a moon, with a paintbrush and color swatches.",
-  summaryHtml: `<p>Lion Reader offers extensive reading customization: <strong>dark mode</strong> with sleep-friendly warm amber tones to reduce blue light, an <strong>e-paper theme</strong> optimized for e-ink displays, typography controls including font family and size options, and Progressive Web App support for native-like installation on any device.</p>`,
+  summaryHtml: `<p>Lion Reader offers extensive reading customization: <strong>dark mode</strong> with sleep-friendly warm amber tones to reduce blue light, an <strong>e-paper theme</strong> optimized for e-ink displays, typography controls (font family, size, alignment), list density options, and Progressive Web App support for native-like installation.</p>`,
   contentHtml: `
     <p>Reading comfort is personal. What works for one person might strain another&rsquo;s eyes. That&rsquo;s why Lion Reader gives you comprehensive control over how your content appears, letting you create the perfect reading environment for your preferences and lighting conditions.</p>
 
@@ -24,7 +24,7 @@ const article: DemoArticle = {
 
     <h3>Sleep-friendly dark mode</h3>
 
-    <p>Lion Reader&rsquo;s dark theme is designed for late-night reading. Rather than the usual blue-accented dark mode, it deliberately minimizes blue light: the accent is a warm <strong>amber</strong> (amber-500, <code>#f59e0b</code>) &mdash; the same warm hue that brands the light theme &mdash; and informational highlights use neutral <strong>zinc</strong> grays (zinc-400, <code>#a1a1aa</code>) instead of blue. Only semantic status colors keep their conventional hues, so an error is still unmistakably red.</p>
+    <p>Lion Reader&rsquo;s dark theme is designed for late-night reading. Rather than the usual blue-accented dark mode, it deliberately minimizes blue light: the accent is a warm <strong>amber</strong> &mdash; the same warm hue used throughout the light theme &mdash; and highlights use neutral grays instead of blue.</p>
 
     <p>The motivation is simple: blue light in the evening is the wavelength most associated with suppressing melatonin, the hormone that helps you wind down for sleep. By steering the dark theme toward warm and neutral tones, Lion Reader aims to be gentler on your eyes and your circadian rhythm when you&rsquo;re reading in bed with the lights off. This is a design choice to reduce blue light, not a medical claim &mdash; but if you read at night, it&rsquo;s one less thing keeping you awake.</p>
 
@@ -43,6 +43,10 @@ const article: DemoArticle = {
     </ul>
 
     <p>Text size options range from small to extra-large, with responsive scaling across all screen sizes. Choose left-aligned or justified text alignment based on your preference. All settings save locally and apply instantly as you adjust them.</p>
+
+    <h3>List Density</h3>
+
+    <p>Choose how much your article list shows at once. <strong>Comfortable</strong>, the default, lays each article out as a roomy card with a preview snippet &mdash; best for relaxed reading. <strong>Compact</strong> switches to a tighter list without previews, so you can scan and triage many more entries at a glance.</p>
 
     <h3>Progressive Web App</h3>
 
