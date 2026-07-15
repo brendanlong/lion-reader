@@ -144,6 +144,10 @@ export class StreamingAudioPlayer {
 
   // Playback state
   private isPaused = false;
+  // True when the user paused while a chunk was still generating (no audio
+  // source to resume). Resume restarts playback from the current position
+  // instead of trying to resume a non-existent source.
+  private pausedWhileBuffering = false;
   private currentSentenceEndCallback: (() => void) | null = null;
 
   constructor(
@@ -200,8 +204,16 @@ export class StreamingAudioPlayer {
 
     if (this.status === "paused") {
       this.isPaused = false;
-      this.resumePlayback();
-      this.setStatus("playing");
+      if (this.pausedWhileBuffering) {
+        // We paused mid-generation, so there's no audio source to resume.
+        // Restart from the current position — this replays the cached chunk if
+        // generation finished while paused, or regenerates it otherwise.
+        this.pausedWhileBuffering = false;
+        await this.startPlaybackFrom(this.position);
+      } else {
+        this.resumePlayback();
+        this.setStatus("playing");
+      }
       return;
     }
 
@@ -215,13 +227,22 @@ export class StreamingAudioPlayer {
 
   /**
    * Pause playback.
+   *
+   * Works both while audio is playing and while a chunk is still generating
+   * (buffering). When buffering, we cancel the in-flight generation and
+   * remember the position so resume can restart from here.
    */
   pause(): void {
-    if (this.status !== "playing") return;
-
-    this.isPaused = true;
-    this.pausePlayback();
-    this.setStatus("paused");
+    if (this.status === "playing") {
+      this.isPaused = true;
+      this.pausePlayback();
+      this.setStatus("paused");
+    } else if (this.status === "buffering") {
+      this.isPaused = true;
+      this.pausedWhileBuffering = true;
+      this.cancelBuffering();
+      this.setStatus("paused");
+    }
   }
 
   /**
@@ -231,6 +252,7 @@ export class StreamingAudioPlayer {
     this.cancelBuffering();
     this.stopPlayback();
     this.isPaused = false;
+    this.pausedWhileBuffering = false;
     this.position = { paragraph: 0, sentence: 0 };
     this.setStatus("idle");
     this.notifyPositionChange();
