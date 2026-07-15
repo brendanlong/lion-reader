@@ -21,7 +21,7 @@ import {
   getUserEventsChannel,
 } from "../../src/server/redis/pubsub";
 import { getBulkEntryRelatedCounts } from "../../src/server/services/counts";
-import { markAllEntriesRead } from "../../src/server/services/entries";
+import { markAllEntriesRead, markEntriesRead } from "../../src/server/services/entries";
 import {
   getDb,
   createConfirmedUser,
@@ -64,7 +64,12 @@ async function seedAndOpenAll(
   page: Page,
   baseURL: string,
   channelFor: (setup: { user: TestUser; taggedFeed: TestFeed }) => string,
-  options: { starSecondPost?: boolean; expandTag?: boolean } = {}
+  options: {
+    starSecondPost?: boolean;
+    expandTag?: boolean;
+    /** Extra seeding that must land before the page loads (and caches fill). */
+    beforeLogin?: (seeded: { user: TestUser; taggedFeed: TestFeed }) => Promise<void>;
+  } = {}
 ): Promise<RealtimeSetup> {
   const db = getDb();
   const user = await createConfirmedUser(db);
@@ -93,6 +98,8 @@ async function seedAndOpenAll(
     userId: user.id,
     title: "Untagged post",
   });
+
+  await options.beforeLogin?.({ user, taggedFeed });
 
   await loginAs(page.context(), user, baseURL);
   const trpcCalls = recordTrpcProcedures(page);
@@ -327,6 +334,56 @@ test("entry_state_changed event syncs read state and counts across lists without
   await expect(links.starred).toContainText("(1)");
   await expect(links.uncategorized).toContainText("(1)");
 
+  expect(refetchProcedures(trpcCalls)).toEqual([]);
+});
+
+// Regression test for #1237: an entry marked unread on another device (or via
+// MCP) must appear in the open unread list even though this client has it in
+// NO cached list — it was already read when the list was fetched, so the
+// server omitted it. The entry_state_changed event carries a list-item payload
+// (like new_entry) that the client inserts directly; no refetch.
+test("entry_state_changed event inserts an entry marked unread elsewhere into the open list", async ({
+  page,
+  baseURL,
+}) => {
+  const db = getDb();
+
+  // Seed an already-read entry BEFORE the page loads, so the unread-only /all
+  // list never contains it and no cache holds a copy to restore from.
+  let hiddenPost: TestEntry | undefined;
+  const { user, taggedFeed, trpcCalls } = await seedAndOpenAll(
+    page,
+    baseURL!,
+    ({ user }) => getUserEventsChannel(user.id),
+    {
+      beforeLogin: async (seeded) => {
+        hiddenPost = await createUnreadEntry(db, {
+          feedId: seeded.taggedFeed.feedId,
+          userId: seeded.user.id,
+          title: "Hidden post",
+        });
+        await markEntryRead(db, seeded.user.id, hiddenPost.id);
+      },
+    }
+  );
+  const links = sidebarLinks(page, taggedFeed);
+
+  await expect(links.allItems).toContainText("(3)");
+  await expect(page.locator('[aria-label*="article: Hidden post"]')).toBeHidden();
+
+  trpcCalls.length = 0;
+
+  // "Another device" marks it unread through the real service — the exact code
+  // path the tRPC mutation, MCP tools, and compat routes hit — which publishes
+  // entry_state_changed with absolute counts AND the entry's list payload.
+  await markEntriesRead(db, user.id, [{ id: hiddenPost!.id }], false);
+
+  // The entry appears in the open list purely from the event payload...
+  await expect(page.locator('[aria-label*="article: Hidden post"]')).toBeVisible();
+  // ...counts update from the event's absolute values...
+  await expect(links.allItems).toContainText("(4)");
+  await expect(links.subscriptionRow).toContainText("(3)");
+  // ...and nothing was refetched.
   expect(refetchProcedures(trpcCalls)).toEqual([]);
 });
 

@@ -203,6 +203,16 @@ const entryStateChangedEventSchema = z.object({
   counts: unreadCountsSchema,
   timestamp: timestampWithDefault,
   updatedAt: z.string(),
+  // List-item data, present when the entry flipped to unread (and isn't spam),
+  // so a client that doesn't have the entry in any cached list can insert it
+  // into the lists it now belongs to — the same way new_entry payloads make
+  // new entries appear live (issue #1237). Absent for entries becoming read
+  // (nothing to insert) and on events from servers predating this field; the
+  // client then falls back to restoring from another cached list's copy.
+  subscriptionId: z.string().nullable().optional(),
+  feedId: z.string().optional(),
+  feedType: z.enum(["web", "email", "saved"]).optional(),
+  entry: newEntryListDataSchema.optional(),
 });
 
 const markAllReadEventSchema = z.object({

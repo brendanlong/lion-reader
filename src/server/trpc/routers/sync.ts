@@ -516,6 +516,20 @@ export const syncRouter = createTRPCRouter({
               counts: stateChangedCounts,
               timestamp: row.maxUpdatedAt.toString(),
               updatedAt: row.maxUpdatedAt.toString(),
+              // Unread entries carry list-item data so a client that doesn't
+              // have the entry in any cached list can insert it into the lists
+              // it now belongs to, mirroring the live SSE path and the
+              // new_entry payload (issue #1237). Read entries carry none
+              // (nothing to insert), and spam gets no payload for the same
+              // reason as new_entry (the default entries.list filters it).
+              ...(!row.read && !row.isSpam
+                ? {
+                    subscriptionId: row.subscriptionId,
+                    feedId: row.feedId,
+                    feedType: row.feedType,
+                    entry: toNewEntryListData(row, row.feedTitle),
+                  }
+                : {}),
               _sortTime: row.maxUpdatedAt,
             });
           }

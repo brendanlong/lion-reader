@@ -119,9 +119,34 @@ export function handleSyncEvent(
 
       // An entry that became unread (here or on another device) belongs in
       // unreadOnly caches that don't contain it (fetched while it was read);
-      // the in-place update above can't add rows.
+      // the in-place update above can't add rows. Prefer the event's list-item
+      // payload — it lets the entry appear even when no cached list holds a
+      // copy (e.g. marked unread on another device or via MCP), the same way
+      // new_entry payloads make new entries appear live (issue #1237). Events
+      // without a payload (older servers, star/unstar of an unread entry, or
+      // a failed payload lookup) fall back to another cached list's copy.
       if (!event.read) {
-        restoreUnreadEntriesToListCaches(queryClient, [event.entryId]);
+        if (event.entry && event.feedId && event.feedType) {
+          insertEntryIntoListCaches(queryClient, {
+            id: event.entryId,
+            subscriptionId: event.subscriptionId ?? null,
+            feedId: event.feedId,
+            type: event.feedType,
+            url: event.entry.url,
+            title: event.entry.title,
+            author: event.entry.author,
+            summary: event.entry.summary,
+            publishedAt: event.entry.publishedAt ? new Date(event.entry.publishedAt) : null,
+            fetchedAt: new Date(event.entry.fetchedAt),
+            updatedAt: new Date(event.updatedAt),
+            read: event.read,
+            starred: event.starred,
+            feedTitle: event.entry.feedTitle,
+            siteName: event.entry.siteName,
+          });
+        } else {
+          restoreUnreadEntriesToListCaches(queryClient, [event.entryId]);
+        }
       }
 
       // Set all counts from the server directly — no delta estimation needed.
