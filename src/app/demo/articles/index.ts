@@ -16,8 +16,9 @@ import keyboardShortcuts from "./keyboard-shortcuts";
 import performance from "./performance";
 
 // Organization & Search
+// (The full-text search article is unlisted while search is disabled, #1249 —
+// restore src/app/demo/articles/search.ts from git history when re-enabling.)
 import tags from "./tags";
-import search from "./search";
 import opml from "./opml";
 
 // Integrations & Sync
@@ -52,7 +53,6 @@ export const DEMO_ARTICLES: DemoArticle[] = [
   performance,
   // Organization & Search
   tags,
-  search,
   opml,
   // Integrations & Sync
   googleReaderApi,

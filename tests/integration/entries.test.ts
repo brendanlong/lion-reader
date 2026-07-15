@@ -363,7 +363,9 @@ describe("Entries", () => {
       expect(seen.sort()).toEqual([entryIdA, entryIdB].sort());
     });
 
-    it("returns a single row per entry in search results", async () => {
+    // Skipped while search is disabled (#1249) — intended behavior once
+    // ENTRY_SEARCH_ENABLED is flipped back on.
+    it.skip("returns a single row per entry in search results", async () => {
       const userId = await createTestUser();
       const { entryIdB } = await createOverlappingSubscriptions(userId, {
         title: "Distributed Systems Consensus",
@@ -569,6 +571,21 @@ describe("Entries", () => {
   });
 
   describe("list with query", () => {
+    it("rejects search queries while search is disabled (#1249)", async () => {
+      const userId = await createTestUser();
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      await expect(caller.entries.list({ query: "anything" })).rejects.toThrow(
+        "Search is temporarily disabled"
+      );
+    });
+  });
+
+  // Search is temporarily disabled until the full-text index lands (#1249):
+  // these tests describe the intended behavior once ENTRY_SEARCH_ENABLED is
+  // flipped back on — un-skip them when re-enabling.
+  describe.skip("list with query (search enabled, #1249)", () => {
     it("searches entries by title", async () => {
       const userId = await createTestUser();
       const feedId = await createTestFeed("https://example.com/feed.xml");

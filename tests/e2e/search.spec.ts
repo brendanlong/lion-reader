@@ -5,6 +5,11 @@
  * the `?q=` URL param, which scopes the entries.list query to the current
  * view's filters and flips the unread-only default to "show all" (a search is
  * usually for something already read).
+ *
+ * Search is TEMPORARILY DISABLED until the full-text index lands (#1249):
+ * the enabled-behavior tests below are skipped (un-skip them when flipping
+ * ENTRY_SEARCH_ENABLED back on), and the active test verifies the disabled
+ * state — no search affordances, and `?q=` deep links degrade gracefully.
  */
 
 import { test, expect } from "@playwright/test";
@@ -22,7 +27,43 @@ test.afterAll(async () => {
   await closeTestConnections();
 });
 
-test("searches entries from the header toggle and clears back to the list", async ({
+test("hides the search UI and ignores ?q= deep links while search is disabled (#1249)", async ({
+  page,
+  baseURL,
+}) => {
+  const db = getDb();
+  const user = await createConfirmedUser(db);
+  const feed = await createSubscribedFeed(db, user.id);
+
+  await createUnreadEntry(db, {
+    feedId: feed.feedId,
+    userId: user.id,
+    title: "Quantum computing breakthrough",
+  });
+  await createUnreadEntry(db, {
+    feedId: feed.feedId,
+    userId: user.id,
+    title: "Gardening tips for spring",
+  });
+
+  await loginAs(page.context(), user, baseURL!);
+  await page.goto("/all");
+  await expect(page.locator('[aria-label*="article: Gardening tips"]')).toBeVisible();
+
+  // No search toggle in the header, and `/` doesn't open a search bar.
+  await expect(page.getByRole("button", { name: "Search entries" })).toHaveCount(0);
+  await page.keyboard.press("/");
+  await expect(page.getByRole("searchbox", { name: "Search entries" })).toHaveCount(0);
+
+  // A lingering ?q= deep link renders the plain (unfiltered) list instead of
+  // erroring: the param is ignored, so both entries stay visible.
+  await page.goto("/all?q=quantum");
+  await expect(page.locator('[aria-label*="article: Quantum computing"]')).toBeVisible();
+  await expect(page.locator('[aria-label*="article: Gardening tips"]')).toBeVisible();
+  await expect(page.getByRole("searchbox", { name: "Search entries" })).toHaveCount(0);
+});
+
+test.skip("searches entries from the header toggle and clears back to the list", async ({
   page,
   baseURL,
 }) => {
@@ -77,7 +118,10 @@ test("searches entries from the header toggle and clears back to the list", asyn
   await expect(page.locator('[aria-label*="article: Quantum error"]')).toBeHidden();
 });
 
-test("scopes search to the current view and supports the / shortcut", async ({ page, baseURL }) => {
+test.skip("scopes search to the current view and supports the / shortcut", async ({
+  page,
+  baseURL,
+}) => {
   const db = getDb();
   const user = await createConfirmedUser(db);
   const feedA = await createSubscribedFeed(db, user.id);
@@ -115,7 +159,7 @@ test("scopes search to the current view and supports the / shortcut", async ({ p
   await expect(page.locator('[aria-label*="article: Quantum news from feed A"]')).toBeVisible();
 });
 
-test("loads search results directly from a ?q= deep link", async ({ page, baseURL }) => {
+test.skip("loads search results directly from a ?q= deep link", async ({ page, baseURL }) => {
   const db = getDb();
   const user = await createConfirmedUser(db);
   const feed = await createSubscribedFeed(db, user.id);

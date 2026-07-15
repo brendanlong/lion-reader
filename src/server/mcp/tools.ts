@@ -109,13 +109,10 @@ function toInputSchema(schema: z.ZodType): Tool["inputSchema"] {
 // Argument Schemas
 // ============================================================================
 
+// NOTE: full-text search (`query`) is temporarily removed from this schema
+// while search is disabled (#1249) — advertising a parameter that always
+// errors would just make agents retry it. Restore the arg when re-enabling.
 const listEntriesArgs = z.object({
-  query: z
-    .string()
-    .optional()
-    .describe(
-      "Optional full-text search query (searches both title and content, results ranked by relevance)"
-    ),
   subscriptionId: uuidSchema.optional().describe("Filter by subscription ID"),
   tagId: uuidSchema.optional().describe("Filter by tag ID"),
   uncategorized: z.boolean().optional().describe("Show only uncategorized entries"),
@@ -124,10 +121,7 @@ const listEntriesArgs = z.object({
   readOnly: z.boolean().optional().describe("Show only read entries"),
   starredOnly: z.boolean().optional().describe("Show only starred entries"),
   unstarredOnly: z.boolean().optional().describe("Show only unstarred entries"),
-  sortOrder: z
-    .enum(["newest", "oldest"])
-    .optional()
-    .describe("Sort order (default: newest). Ignored when query is provided."),
+  sortOrder: z.enum(["newest", "oldest"]).optional().describe("Sort order (default: newest)"),
   limit: z
     .number()
     .int()
@@ -250,7 +244,7 @@ function buildTools(): Tool[] {
     {
       name: "list_entries",
       description:
-        "List feed entries with filters and pagination. Optionally perform full-text search with the query parameter (searches both title and content, results ranked by relevance). Without query, returns entries sorted by time. Returns summaries (title, snippet) without full content.",
+        "List feed entries with filters and pagination, sorted by time. Returns summaries (title, snippet) without full content.",
       inputSchema: toInputSchema(listEntriesArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(listEntriesArgs, args);

@@ -21,6 +21,7 @@ import type { db as dbType, DbOrTx } from "@/server/db";
 import { entries, feeds, userEntries, subscriptions, visibleEntries } from "@/server/db/schema";
 import { parseTimestamptzOrNull } from "@/server/db/temporal";
 import { isValidUuid } from "@/lib/uuidv7";
+import { ENTRY_SEARCH_ENABLED } from "@/lib/feature-flags";
 import { SANITIZER_VERSION } from "@/server/html/sanitize";
 import { sanitizeEntryHtmlInWorker } from "@/server/worker-thread/pool";
 import { logger } from "@/lib/logger";
@@ -48,7 +49,7 @@ import {
 
 export interface ListEntriesParams {
   userId: string;
-  query?: string; // Optional full-text search query (searches title and content)
+  query?: string; // Optional full-text search query — currently rejected (search disabled, #1249)
   subscriptionId?: string;
   tagId?: string;
   uncategorized?: boolean;
@@ -576,6 +577,11 @@ export async function listEntries(
 
   // If query is provided, delegate to search implementation
   if (params.query) {
+    // Full-text search is disabled until the entries table has a search index
+    // (#1249) — without one every search tokenizes the user's entire history.
+    if (!ENTRY_SEARCH_ENABLED) {
+      throw errors.validation("Search is temporarily disabled on this server");
+    }
     return searchEntries(db, {
       ...params,
       query: params.query,
