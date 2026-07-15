@@ -284,10 +284,12 @@ export function updateEntriesReadStatus(
  * Inserts entries that just became unread into the cached lists that lack
  * them (they were read when those caches were fetched, so the server omitted
  * them from unreadOnly results). The entry's full row is taken from whichever
- * list cache contains it; entries in no list cache are skipped — no cached
- * view is missing them. Insertion is deduped and filter-targeted by
- * insertEntryIntoListCaches, so caches that already show the entry are
- * untouched.
+ * list cache contains it; entries in no list cache are skipped — for the
+ * acting tab's own mutation no cached view is missing them, and for SSE
+ * events the entry_state_changed payload covers the uncached case (the event
+ * handler only falls back here when the payload is absent; issue #1237).
+ * Insertion is deduped and filter-targeted by insertEntryIntoListCaches, so
+ * caches that already show the entry are untouched.
  *
  * @param queryClient - React Query client for cache access
  * @param entryIds - Entries that changed to unread

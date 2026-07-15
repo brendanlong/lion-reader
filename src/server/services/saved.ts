@@ -998,7 +998,7 @@ export async function saveArticle(
     // Both are absent when the article was already unread (a re-save flips
     // nothing) — nothing to publish then.
     if (readChanged.length > 0 && readCounts) {
-      publishMarkReadStateChanges(userId, readChanged, readCounts);
+      publishMarkReadStateChanges(db, userId, readChanged, readCounts);
     }
 
     logger.info("Refetched saved article", {
