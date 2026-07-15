@@ -28,7 +28,9 @@ Lion Reader was already fast, but it's noticeably faster now, and it updates liv
 
 ## Cleaned-up styles and an e-paper mode
 
-The whole interface got a visual refresh: a warm amber accent color, better contrast for read/unread states and buttons, clearer keyboard focus indicators, and a new compact density option for the entry list.
+The whole interface got a visual refresh: a warm amber accent color, better contrast for read/unread states and buttons, and clearer keyboard focus indicators.
+
+There's a new **compact mode** for the entry list: a List Density setting under Settings → Appearance lets you trade the roomy preview cards for a tighter list that fits about twice as many articles on screen — handy for triaging a busy feed. Like text size and font, it's saved per browser, so your phone and desktop can each use whichever density fits.
 
 There's also a new **e-paper theme** built for e-ink devices like Kindles, Kobos, and Onyx Boox readers — pure white background, high contrast, and colors that stay readable in grayscale. With your theme set to Auto, Lion Reader will even detect e-readers and switch automatically. See [Appearance & Themes](https://lionreader.com/demo/all?entry=appearance) for the full set of options.
 
