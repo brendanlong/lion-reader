@@ -10,6 +10,14 @@ Business logic lives in pure service functions in `src/server/services/` — fun
 
 Entry content served by `getEntry`/`getEntries`/`toFullEntry` is **sanitized in the services layer** (see `src/server/html/CLAUDE.md`), so every consumer gets the same guarantee.
 
+## Site Status (announcement banner + maintenance mode)
+
+Two admin-controlled global flags live in **Redis, not Postgres** (`src/server/services/site-status.ts`): a site-wide **announcement banner** and a **maintenance mode** kill switch. Redis is deliberate — maintenance mode is meant to be turned on _while Postgres is being migrated/locked_, so the code that reads it must not depend on the DB. Both reads are fail-safe (Redis down ⇒ no banner, maintenance = the `MAINTENANCE_MODE` env override only) and cached in-process for a few seconds so the hot paths issue no per-request Redis round-trip.
+
+- **Maintenance gate** (`src/server/maintenance/server-gate.ts`) runs in the **custom HTTP server** (`scripts/server.ts`) — the single choke point every request passes through before Next.js. A background poller keeps the flag in a module variable so the per-request `evaluateRequest(pathname, cookie)` check is synchronous. When on, everything returns a 503 (HTML page / JSON body) **except** the demo (`/demo`, no DB), the admin panel + its session route (`/admin`, `/api/admin`), the health check, legal pages, `/`, and static assets; `/api/trpc` stays open only to a valid `admin_session` cookie so the admin can toggle it back off. `evaluateRequest` is pure and unit-tested (`tests/unit/maintenance-gate.test.ts`).
+- The **worker** (`src/server/jobs/worker.ts`) wraps its `claimJob` to return null while maintenance is on (no Postgres access; the loop just sleeps and resumes automatically), and the **Discord bot** (`src/server/discord/bot.ts`) short-circuits its DB-touching handlers. All three process groups (app/worker/discord) read the same Redis flag.
+- Admin control is the `getSiteStatus` / `setAnnouncement` / `setMaintenance` endpoints on `adminRouter`; the banner is rendered SSR from the root layout via `getAnnouncement()` (see `src/components/layout/AnnouncementBanner.tsx`).
+
 ## Subscription Views
 
 Use the database views for frontend queries instead of manual joins:
