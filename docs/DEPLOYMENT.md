@@ -91,31 +91,44 @@ You should see your new app listed.
 
 ## Database Provisioning (Postgres)
 
-Lion Reader uses PostgreSQL for all persistent data.
+Lion Reader uses PostgreSQL for all persistent data. Production runs **unmanaged
+Fly Postgres (flex), single node** — chosen over Fly Managed Postgres in July 2026
+for performance-per-dollar (see `docs/runbooks/migrate-mpg-to-unmanaged-postgres.md`
+for the rationale, the migration procedure, and the operational duties this implies:
+Fly does not support or upgrade unmanaged clusters).
 
 ### 1. Create a Postgres Cluster
 
 ```bash
 flyctl postgres create \
-  --name lion-reader-db \
+  --name lion-reader-pg \
   --region lax \
-  --vm-size shared-cpu-1x \
+  --flex \
+  --vm-size shared-cpu-8x \
+  --vm-memory 4096 \
   --initial-cluster-size 1 \
-  --volume-size 10
+  --volume-size 10 \
+  --enable-backups
 ```
 
 **Options explained:**
 
 - `--name`: Name for your Postgres app (must be unique)
 - `--region`: Should match your app's `primary_region` in `fly.toml`
-- `--vm-size`: `shared-cpu-1x` is sufficient for MVP (~$7/month)
-- `--initial-cluster-size`: 1 for MVP, increase for HA
-- `--volume-size`: 10GB is plenty for MVP
+- `--vm-size`/`--vm-memory`: shared CPU quotas are pooled per machine, so
+  `shared-cpu-8x` gives Postgres a 50%-of-a-core sustained floor with burst to 8
+  cores (~$27/month at 4GB) — better burst behavior than a dedicated
+  `performance-1x` core at ~$32/month. Save the superuser password it prints.
+- `--initial-cluster-size`: 1 (deliberate — flex multi-node uses repmgr, which has
+  a poor failure-mode track record; WAL backups are the safety net)
+- `--volume-size`: 10GB is plenty
+- `--enable-backups`: WAL-based backups to a Tigris bucket (PITR via
+  `fly postgres backup restore`), on top of daily volume snapshots
 
 ### 2. Attach Postgres to Your App
 
 ```bash
-flyctl postgres attach lion-reader-db --app lion-reader
+flyctl postgres attach lion-reader-pg --app lion-reader
 ```
 
 This automatically:
@@ -128,7 +141,7 @@ This automatically:
 
 ```bash
 # Connect to the database
-flyctl postgres connect -a lion-reader-db
+flyctl postgres connect -a lion-reader-pg
 
 # Run a quick test
 \conninfo
@@ -387,19 +400,19 @@ flyctl scale count 3 --process-group app
 **Connect to database:**
 
 ```bash
-flyctl postgres connect -a lion-reader-db
+flyctl postgres connect -a lion-reader-pg
 ```
 
 **Manual backup:**
 
 ```bash
-flyctl postgres backup create -a lion-reader-db
+flyctl postgres backup create -a lion-reader-pg
 ```
 
 **List backups:**
 
 ```bash
-flyctl postgres backup list -a lion-reader-db
+flyctl postgres backup list -a lion-reader-pg
 ```
 
 ### Viewing Logs
@@ -457,7 +470,7 @@ This usually means database migrations failed.
 flyctl logs | grep -i migration
 
 # Connect to database and check state
-flyctl postgres connect -a lion-reader-db
+flyctl postgres connect -a lion-reader-pg
 ```
 
 **"Health check failed"**
@@ -484,7 +497,7 @@ flyctl secrets list
 # Should show DATABASE_URL
 
 # Re-attach if needed
-flyctl postgres attach lion-reader-db
+flyctl postgres attach lion-reader-pg
 ```
 
 **"Authentication failed"**
@@ -492,8 +505,8 @@ flyctl postgres attach lion-reader-db
 The database user credentials may be wrong. Detach and reattach:
 
 ```bash
-flyctl postgres detach lion-reader-db
-flyctl postgres attach lion-reader-db
+flyctl postgres detach lion-reader-pg
+flyctl postgres attach lion-reader-pg
 ```
 
 ### Redis Connection Issues
@@ -593,14 +606,16 @@ bot). Only `app` is behind the HTTP load balancer; all three share Postgres and 
        +-------------+     +-------------+
 ```
 
-## Cost Estimate (MVP)
+## Cost Estimate (current production shape, July 2026)
 
-| Resource        | Size                 | Estimated Cost    |
-| --------------- | -------------------- | ----------------- |
-| App VM          | shared-cpu-1x, 512MB | ~$5/month         |
-| Postgres        | shared-cpu-1x, 10GB  | ~$7/month         |
-| Redis (Upstash) | Pay-as-you-go        | ~$0-5/month       |
-| **Total**       |                      | **~$12-17/month** |
+| Resource        | Size                            | Estimated Cost    |
+| --------------- | ------------------------------- | ----------------- |
+| App VMs         | 2× shared-cpu-2x, 512MB         | ~$8/month         |
+| Worker VM       | shared-cpu-1x, 512MB            | ~$3.50/month      |
+| Discord VM      | shared-cpu-1x, 256MB            | ~$2/month         |
+| Postgres        | shared-cpu-8x, 4GB, 10GB volume | ~$28/month        |
+| Redis (Upstash) | Pay-as-you-go                   | ~$0-5/month       |
+| **Total**       |                                 | **~$42-47/month** |
 
 Costs vary by usage. Check [fly.io/docs/about/pricing](https://fly.io/docs/about/pricing/) for current rates.
 
