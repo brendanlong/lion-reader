@@ -17,6 +17,7 @@
  * - tag_deleted: User deleted a tag
  * - import_progress: OPML import progress update
  * - import_completed: OPML import completed
+ * - announcement_changed: Global announcement banner changed (broadcast to all)
  *
  * Heartbeat: Sent every 30 seconds as a comment (: heartbeat)
  */
@@ -24,6 +25,7 @@
 import { db } from "@/server/db";
 import { subscriptions } from "@/server/db/schema";
 import { validateSession } from "@/server/auth/session";
+import { extractBearerToken } from "@/server/auth/bearer";
 import { getSavedFeedId } from "@/server/feed/saved-feed";
 import {
   getNewEntryRelatedCounts,
@@ -34,8 +36,10 @@ import {
   createPubSubSubscription,
   getFeedEventsChannel,
   getUserEventsChannel,
+  getSiteStatusChannel,
   parseFeedEvent,
   parseUserEvent,
+  parseSiteStatusEvent,
   checkRedisHealth,
   type PubSubSubscription,
   type UserEvent,
@@ -66,9 +70,9 @@ const HEARTBEAT_INTERVAL_MS = 30_000;
  */
 function getSessionToken(headers: Headers): string | null {
   // Check Authorization header first (for API clients)
-  const authHeader = headers.get("authorization");
-  if (authHeader?.startsWith("Bearer ")) {
-    return authHeader.slice(7);
+  const bearerToken = extractBearerToken(headers.get("authorization"));
+  if (bearerToken) {
+    return bearerToken;
   }
 
   // Check cookie (for browser clients)
@@ -200,6 +204,9 @@ export async function GET(req: Request): Promise<Response> {
 
   // Get the user-specific events channel
   const userEventsChannel = getUserEventsChannel(userId);
+
+  // The single global site-status channel (announcement banner broadcasts).
+  const siteStatusChannel = getSiteStatusChannel();
 
   // Holds the active connection's cleanup so the stream's cancel() callback can
   // release Redis channels even when no abort event fires (some runtimes cancel
@@ -357,6 +364,19 @@ export async function GET(req: Request): Promise<Response> {
        * shared subscriber connection).
        */
       function handleMessage(channel: string, message: string): void {
+        // Handle global site-status events (announcement banner). Broadcast on a
+        // single channel to every connection; forwarded to the client as-is.
+        if (channel === siteStatusChannel) {
+          const event = parseSiteStatusEvent(message);
+          if (!event) return;
+          enqueueSend(() => {
+            const cursor = new Date().toISOString();
+            send(`event: ${event.type}\nid: ${cursor}\ndata: ${JSON.stringify(event)}\n\n`);
+            trackSSEEventSent(event.type);
+          });
+          return;
+        }
+
         // Handle user events (subscriptions, tags, imports, entry state)
         if (channel === userEventsChannel) {
           const event = parseUserEvent(message);
@@ -478,7 +498,7 @@ export async function GET(req: Request): Promise<Response> {
         // - Saved feed channel (if user has a saved feed)
         const feedIds = Array.from(feedSubscriptionMap.keys());
         const feedChannels = feedIds.map(getFeedEventsChannel);
-        const allChannels = [userEventsChannel, ...feedChannels];
+        const allChannels = [userEventsChannel, siteStatusChannel, ...feedChannels];
 
         // Add saved feed channel if it exists
         if (savedFeedId) {
