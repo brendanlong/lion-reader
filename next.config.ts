@@ -147,6 +147,30 @@ const nextConfig: NextConfig = {
       // ever switches the Node server output to ESM.
       config.externals.push("jsdom");
     }
+    // Silence known-benign "Critical dependency" warnings from Sentry's Node SDK.
+    // @sentry/node pulls in OpenTelemetry auto-instrumentation, which uses
+    // require-in-the-middle / @prisma/instrumentation to hook module loads via
+    // dynamic require(). webpack can't statically resolve those, so it emits a
+    // "Critical dependency" warning (with a long import trace) for each otel
+    // instrumentation version — dozens of lines of build noise for third-party
+    // code we can't change. Scope the ignore to those packages so warnings from
+    // our own code still surface.
+    config.ignoreWarnings = [
+      ...(config.ignoreWarnings ?? []),
+      {
+        module: /@opentelemetry\/instrumentation/,
+        message: /Critical dependency: the request of a dependency is an expression/,
+      },
+      {
+        module: /require-in-the-middle/,
+        message:
+          /Critical dependency: require function is used in a way in which dependencies cannot be statically extracted/,
+      },
+      {
+        module: /@prisma\/instrumentation/,
+        message: /Critical dependency: the request of a dependency is an expression/,
+      },
+    ];
     config.devtool = "source-map";
     return config;
   },

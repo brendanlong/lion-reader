@@ -47,6 +47,14 @@ RUN node scripts/copy-onnx-wasm.mjs
 # Set environment for build
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
+
+# Git commit SHA for the build. The alpine builder has no git, so next.config.ts's
+# `git rev-parse` fallback fails ("git: not found") and the SHA is baked in as
+# undefined — it's surfaced in the outgoing User-Agent. Pass it explicitly from CI
+# (fly deploy --build-arg GIT_COMMIT_SHA=...) so the value is correct and the noisy
+# "git: not found" line disappears. Empty locally, where the git fallback works.
+ARG GIT_COMMIT_SHA=""
+ENV GIT_COMMIT_SHA=$GIT_COMMIT_SHA
 # Dummy URLs for build - modules check these exist but don't connect
 ENV DATABASE_URL="postgresql://build:build@localhost:5432/build"
 ENV REDIS_URL="redis://localhost:6379"
