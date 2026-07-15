@@ -26,10 +26,12 @@ import { generateUuidv7 } from "@/lib/uuidv7";
 import {
   getMaintenanceRaw,
   getAnnouncementRaw,
+  getAnnouncement,
   setMaintenance,
   setAnnouncement,
   ANNOUNCEMENT_LEVELS,
 } from "@/server/services/site-status";
+import { publishAnnouncementChanged } from "@/server/redis/pubsub";
 
 // ============================================================================
 // CONSTANTS
@@ -880,6 +882,10 @@ const siteStatusEndpoints = {
     .output(z.object({ success: z.boolean() }))
     .mutation(async ({ input }) => {
       await setAnnouncement(input);
+      // Broadcast the change so open clients update the banner live (no reload).
+      // getAnnouncement() reflects the just-written value (setAnnouncement busts
+      // the cache) and resolves the message-derived id, or null when disabled.
+      await publishAnnouncementChanged(await getAnnouncement());
       return { success: true };
     }),
 

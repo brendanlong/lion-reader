@@ -25,6 +25,7 @@ import {
   updateSubscriptionInCache,
   type CachedSubscription,
 } from "./count-cache";
+import { setLiveAnnouncement } from "@/lib/site-status/announcement-store";
 
 // Re-export SyncEvent type from the shared schema (single source of truth)
 import type { SyncEvent } from "@/lib/events/schemas";
@@ -247,6 +248,13 @@ export function handleSyncEvent(
     case "import_completed":
       utils.imports.get.invalidate({ id: event.importId });
       utils.imports.list.invalidate();
+      break;
+
+    case "announcement_changed":
+      // Global banner change — update the module store the root-layout banner
+      // subscribes to. No React Query cache is involved (the banner isn't a
+      // query); null clears it.
+      setLiveAnnouncement(event.announcement);
       break;
   }
 }
