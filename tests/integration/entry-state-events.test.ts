@@ -68,12 +68,19 @@ async function seedUser(): Promise<string> {
   return userId;
 }
 
-async function seedEntry(userId: string): Promise<string> {
+async function seedEntry(
+  userId: string,
+  options: { isSpam?: boolean; type?: "web" | "email" } = {}
+): Promise<string> {
+  // Spam is only valid on email entries (entries_spam_only_email constraint).
+  const type = options.type ?? (options.isSpam ? "email" : "web");
   const now = new Date();
   const feedId = generateUuidv7();
   await db.insert(feeds).values({
     id: feedId,
-    type: "web",
+    type,
+    // Email feeds are per-user (feed_type_user_id constraint)
+    userId: type === "email" ? userId : null,
     url: `https://example.com/${feedId}`,
     title: "Test Feed",
     lastFetchedAt: now,
@@ -95,15 +102,17 @@ async function seedEntry(userId: string): Promise<string> {
   await db.insert(entries).values({
     id: entryId,
     feedId,
-    type: "web",
+    type,
     guid: `guid-${entryId}`,
     title: "Entry",
     contentHash: `hash-${entryId}`,
     fetchedAt: now,
     publishedAt: now,
-    lastSeenAt: now,
+    // last_seen_at is web-only (entries_last_seen_only_fetched constraint)
+    lastSeenAt: type === "web" ? now : null,
     createdAt: now,
     updatedAt: now,
+    isSpam: options.isSpam ?? false,
   });
   // starred_changed_at is NOT NULL (defaults to now()); seed an explicitly-old
   // value so the positive tests' default changedAt (now) wins the guard.
@@ -199,6 +208,68 @@ describe("markEntriesRead SSE publishing", () => {
     expect(event.entryId).toBe(entryId);
     expect(event.read).toBe(true);
     expect(event.counts.all.unread).toBe(0);
+  });
+
+  it("omits the entry list payload when an entry flips to read", async () => {
+    const userId = await seedUser();
+    const entryId = await seedEntry(userId);
+
+    const channel = getUserEventsChannel(userId);
+    await subscriber.subscribe(channel);
+    const messagePromise = waitForMessage(channel);
+
+    await entriesService.markEntriesRead(db, userId, [{ id: entryId }], true);
+
+    // Nothing to insert client-side for a read flip, so no payload is fetched.
+    const event = JSON.parse(await messagePromise);
+    expect(event.read).toBe(true);
+    expect(event.entry).toBeUndefined();
+    expect(event.feedId).toBeUndefined();
+  });
+
+  it("attaches the entry list payload when an entry flips to unread (#1237)", async () => {
+    const userId = await seedUser();
+    const entryId = await seedEntry(userId);
+    await entriesService.markEntriesRead(db, userId, [{ id: entryId }], true);
+
+    const channel = getUserEventsChannel(userId);
+    await subscriber.subscribe(channel);
+    const messagePromise = waitForMessage(channel);
+
+    await entriesService.markEntriesRead(db, userId, [{ id: entryId }], false);
+
+    // The payload mirrors new_entry so a client with the entry in no cached
+    // list can insert it into the lists it now belongs to.
+    const event = JSON.parse(await messagePromise);
+    expect(event.type).toBe("entry_state_changed");
+    expect(event.entryId).toBe(entryId);
+    expect(event.read).toBe(false);
+    expect(event.feedType).toBe("web");
+    expect(typeof event.feedId).toBe("string");
+    expect(typeof event.subscriptionId).toBe("string");
+    expect(event.entry).toMatchObject({
+      title: "Entry",
+      feedTitle: "Test Feed",
+    });
+    expect(typeof event.entry.fetchedAt).toBe("string");
+  });
+
+  it("omits the payload for a spam entry flipping to unread", async () => {
+    const userId = await seedUser();
+    const entryId = await seedEntry(userId, { isSpam: true });
+    await entriesService.markEntriesRead(db, userId, [{ id: entryId }], true);
+
+    const channel = getUserEventsChannel(userId);
+    await subscriber.subscribe(channel);
+    const messagePromise = waitForMessage(channel);
+
+    await entriesService.markEntriesRead(db, userId, [{ id: entryId }], false);
+
+    // The default entries.list filters spam, so a client-side insert would
+    // show a row the server never returns (same rule as new_entry).
+    const event = JSON.parse(await messagePromise);
+    expect(event.read).toBe(false);
+    expect(event.entry).toBeUndefined();
   });
 
   it("does not publish when an idempotent replay changes nothing", async () => {

@@ -1140,7 +1140,7 @@ export async function markEntriesRead(
   // themselves after the commit, so a rolled-back mark can't emit a phantom
   // event (see the function doc).
   if (options.publish !== false && changed.length > 0 && counts) {
-    publishMarkReadStateChanges(userId, changed, counts);
+    publishMarkReadStateChanges(db, userId, changed, counts);
   }
 
   return { entries, changed, counts };

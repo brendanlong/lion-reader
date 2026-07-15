@@ -119,6 +119,13 @@ const userEventSchema = z.discriminatedUnion("type", [
     counts: unreadCountsSchema,
     timestamp: z.string(),
     updatedAt: z.string(),
+    // List-item data, attached when the entry flipped to unread (and isn't
+    // spam), so clients can insert it into cached lists it's missing from —
+    // mirroring the new_entry payload (issue #1237).
+    subscriptionId: z.string().nullable().optional(),
+    feedId: z.string().optional(),
+    feedType: z.enum(["web", "email", "saved"]).optional(),
+    entry: newEntryListDataSchema.optional(),
   }),
   // Mark-all-read signal. Mark-all-read is unbounded, so instead of shipping
   // every affected id (or one entry_state_changed per entry, which would storm
@@ -553,6 +560,18 @@ export async function publishImportCompleted(
 }
 
 /**
+ * List-item context for an entry_state_changed event, attached when the entry
+ * flipped to unread so clients can insert it into cached lists it's missing
+ * from (issue #1237). See publishMarkReadStateChanges for where it's built.
+ */
+export interface EntryStateListData {
+  subscriptionId: string | null;
+  feedId: string;
+  feedType: "web" | "email" | "saved";
+  entry: NewEntryListData;
+}
+
+/**
  * Publishes an entry_state_changed event when read/starred state changes.
  * This notifies all of the user's SSE connections for multi-tab/device sync.
  *
@@ -562,6 +581,7 @@ export async function publishImportCompleted(
  * @param starred - Current starred state
  * @param updatedAt - The database updated_at timestamp for cursor tracking
  * @param counts - Absolute unread counts for all affected lists
+ * @param listData - List-item context, present when the entry flipped to unread
  * @returns The number of subscribers that received the message (0 if Redis unavailable)
  */
 export async function publishEntryStateChanged(
@@ -570,7 +590,8 @@ export async function publishEntryStateChanged(
   read: boolean,
   starred: boolean,
   updatedAt: Date,
-  counts: z.infer<typeof unreadCountsSchema>
+  counts: z.infer<typeof unreadCountsSchema>,
+  listData?: EntryStateListData
 ): Promise<number> {
   const client = getPublisherClient();
   if (!client) {
@@ -585,6 +606,7 @@ export async function publishEntryStateChanged(
     counts,
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
+    ...(listData ?? {}),
   };
   const channel = getUserEventsChannel(userId);
   return client.publish(channel, JSON.stringify(event));
