@@ -9,6 +9,7 @@
 
 import { test, expect } from "@playwright/test";
 import { publishAnnouncementChanged, getSiteStatusChannel } from "../../src/server/redis/pubsub";
+import { setAnnouncement } from "../../src/server/services/site-status";
 import {
   getDb,
   createConfirmedUser,
@@ -61,4 +62,43 @@ test("announcement_changed event shows and clears the banner live without refetc
     (p) => p.startsWith("entries.") || p.startsWith("tags.") || p.startsWith("subscriptions.")
   );
   expect(refetches).toEqual([]);
+});
+
+test("dismissing the banner persists across reloads and isn't re-rendered by the server", async ({
+  page,
+  context,
+  baseURL,
+}) => {
+  const user = await createConfirmedUser(getDb());
+  await loginAs(context, user, baseURL!);
+
+  // Unique message so the SSR HTML check below can't match anything else.
+  const message = `E2E dismiss-persist ${Date.now()}`;
+  await setAnnouncement({ enabled: true, message, level: "info" });
+
+  const banner = page.getByRole("status").filter({ hasText: message });
+
+  // Reload until the SSR banner appears (past the site-status read cache).
+  await expect(async () => {
+    await page.goto("/all");
+    await expect(banner).toBeVisible({ timeout: 1500 });
+  }).toPass({ timeout: 20_000 });
+
+  // Dismiss it — this writes the dismissed id to a cookie.
+  await page.getByRole("button", { name: "Dismiss announcement" }).click();
+  await expect(banner).toBeHidden();
+  const cookies = await context.cookies();
+  expect(cookies.find((c) => c.name === "lion_announcement_dismissed")?.value).toBeTruthy();
+
+  // Reload: the server reads the cookie and must NOT re-render the (still-active)
+  // banner — no flash back. Assert the banner's rendered markup (its dismiss
+  // button's aria-label, a static string only present in the HTML when the
+  // banner actually renders) is absent from the SSR HTML — not just hidden after
+  // hydration. (The announcement prop, message included, is always serialized
+  // into the React Flight payload, so we can't grep the message text.)
+  const response = await page.goto("/all");
+  expect(await response!.text()).not.toContain("Dismiss announcement");
+  await expect(banner).toBeHidden();
+
+  await setAnnouncement({ enabled: false, message: "", level: "info" });
 });
