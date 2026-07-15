@@ -23,6 +23,13 @@ import {
   userEntries,
 } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
+import {
+  getMaintenanceRaw,
+  getAnnouncementRaw,
+  setMaintenance,
+  setAnnouncement,
+  ANNOUNCEMENT_LEVELS,
+} from "@/server/services/site-status";
 
 // ============================================================================
 // CONSTANTS
@@ -807,6 +814,103 @@ const overviewEndpoints = {
 } as const;
 
 // ============================================================================
+// SITE STATUS ENDPOINTS (announcement banner + maintenance mode)
+// ============================================================================
+
+/** Max length for admin-entered banner / maintenance messages. */
+const SITE_STATUS_MESSAGE_MAX = 1000;
+
+const siteStatusEndpoints = {
+  /**
+   * Read the current announcement + maintenance configuration (raw stored
+   * values, including disabled state) so the admin form can prefill.
+   */
+  getSiteStatus: adminProcedure
+    .meta({
+      openapi: {
+        method: "GET",
+        path: "/admin/site-status",
+        tags: ["Admin"],
+        summary: "Get announcement banner and maintenance mode status",
+      },
+    })
+    .input(z.object({}).optional())
+    .output(
+      z.object({
+        maintenance: z.object({
+          enabled: z.boolean(),
+          message: z.string(),
+        }),
+        announcement: z.object({
+          enabled: z.boolean(),
+          message: z.string(),
+          level: z.enum(ANNOUNCEMENT_LEVELS),
+        }),
+      })
+    )
+    .query(async () => {
+      const [maintenance, announcement] = await Promise.all([
+        getMaintenanceRaw(),
+        getAnnouncementRaw(),
+      ]);
+      return { maintenance, announcement };
+    }),
+
+  /**
+   * Set the site-wide announcement banner. `enabled=false` (or an empty
+   * message) hides it. The message is what determines the banner id, so
+   * changing the text re-shows the banner to users who dismissed the old one.
+   */
+  setAnnouncement: adminProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/admin/site-status/announcement",
+        tags: ["Admin"],
+        summary: "Set the announcement banner",
+      },
+    })
+    .input(
+      z.object({
+        enabled: z.boolean(),
+        message: z.string().max(SITE_STATUS_MESSAGE_MAX),
+        level: z.enum(ANNOUNCEMENT_LEVELS),
+      })
+    )
+    .output(z.object({ success: z.boolean() }))
+    .mutation(async ({ input }) => {
+      await setAnnouncement(input);
+      return { success: true };
+    }),
+
+  /**
+   * Enable or disable maintenance mode. When enabled, the custom server serves
+   * a maintenance page for everything except the demo + admin panel + health
+   * check, and the worker and Discord bot pause. Intended for DB migrations.
+   */
+  setMaintenance: adminProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/admin/site-status/maintenance",
+        tags: ["Admin"],
+        summary: "Enable or disable maintenance mode",
+      },
+    })
+    .input(
+      z.object({
+        enabled: z.boolean(),
+        message: z.string().max(SITE_STATUS_MESSAGE_MAX).optional(),
+      })
+    )
+    .output(z.object({ success: z.boolean() }))
+    .mutation(async ({ input }) => {
+      await setMaintenance(input);
+      return { success: true };
+    }),
+} as const;
+
+// ============================================================================
 // ROUTER
 // ============================================================================
 
@@ -819,4 +923,6 @@ export const adminRouter = createTRPCRouter({
   ...feedHealthEndpoints,
   // Users
   ...userEndpoints,
+  // Site status (announcement banner + maintenance mode)
+  ...siteStatusEndpoints,
 });

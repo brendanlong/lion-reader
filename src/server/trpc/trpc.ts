@@ -25,6 +25,7 @@ import {
   validateAdminSessionToken,
   validateAdminSecret,
 } from "@/server/auth/admin-session";
+import { extractBearerToken } from "@/server/auth/bearer";
 import { logger } from "@/lib/logger";
 import * as Sentry from "@sentry/nextjs";
 
@@ -424,12 +425,9 @@ const adminMiddleware = t.middleware(({ ctx, next }) => {
   }
 
   // Fallback: check Bearer token (for programmatic access)
-  const authHeader = ctx.headers.get("authorization");
-  if (authHeader) {
-    const match = authHeader.match(/^Bearer\s+(.+)$/i);
-    if (match?.[1] && validateAdminSecret(match[1])) {
-      return next({ ctx });
-    }
+  const bearerToken = extractBearerToken(ctx.headers.get("authorization"));
+  if (bearerToken && validateAdminSecret(bearerToken)) {
+    return next({ ctx });
   }
 
   throw errors.adminUnauthorized();

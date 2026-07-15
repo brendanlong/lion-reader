@@ -22,6 +22,7 @@
   "src/components/admin/AdminApp.tsx\thover:border-zinc-300",
   "src/components/admin/AdminFeedsContent.tsx\tdark:bg-zinc-800",
   "src/components/admin/AdminInvitesContent.tsx\tdark:bg-zinc-800/60",
+  "src/components/admin/AdminStatusContent.tsx\tdark:bg-zinc-800",
   "src/components/auth/OAuthSignInButton.tsx\tdark:hover:bg-zinc-200",
   "src/components/auth/OAuthSignInButton.tsx\thover:bg-zinc-800",
   "src/components/entries/EntryArticle.tsx\tactive:text-zinc-800",
