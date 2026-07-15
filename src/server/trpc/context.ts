@@ -9,6 +9,7 @@ import { type FetchCreateContextFnOptions } from "@trpc/server/adapters/fetch";
 import { db, type Database } from "@/server/db";
 import { validateSession, type SessionData } from "@/server/auth/session";
 import { validateApiToken, type ApiTokenData, type ApiTokenScope } from "@/server/auth/api-token";
+import { extractBearerToken } from "@/server/auth/bearer";
 
 // Re-export types for use in other modules
 /**
@@ -69,9 +70,9 @@ export interface Context {
  */
 function getToken(headers: Headers): string | null {
   // Check Authorization header first (for API clients and extensions)
-  const authHeader = headers.get("authorization");
-  if (authHeader?.startsWith("Bearer ")) {
-    return authHeader.slice(7);
+  const bearerToken = extractBearerToken(headers.get("authorization"));
+  if (bearerToken) {
+    return bearerToken;
   }
 
   // Check cookie (for browser clients)

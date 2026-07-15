@@ -19,6 +19,7 @@ import {
   validateAdminSessionToken,
   validateAdminSecret,
 } from "@/server/auth/admin-session";
+import { extractBearerToken } from "@/server/auth/bearer";
 import { logger } from "@/lib/logger";
 
 export type GateDecision = "allow" | "block-page" | "block-api";
@@ -55,19 +56,6 @@ const EXEMPT_EXACT = new Set([
 /** A path is treated as a static asset when it ends in a common file extension. */
 const STATIC_EXT =
   /\.(?:ico|png|jpg|jpeg|gif|svg|webp|avif|css|js|mjs|map|woff2?|ttf|otf|eot|json|txt|xml|wasm)$/i;
-
-/**
- * Extract the token from an `Authorization: Bearer <token>` header. Parsed
- * without a backtracking regex — `/^Bearer\s+(.+)$/` is ambiguous (both `\s+`
- * and `.+` match spaces) and can go quadratic on a crafted header (ReDoS). A
- * single left-to-right scan for the first whitespace is linear and safe.
- */
-function extractBearerToken(authHeader: string): string | null {
-  const wsIdx = authHeader.search(/\s/); // single \s, no quantifier → no backtracking
-  if (wsIdx === -1) return null;
-  if (authHeader.slice(0, wsIdx).toLowerCase() !== "bearer") return null;
-  return authHeader.slice(wsIdx + 1).trim() || null;
-}
 
 /**
  * Whether the request carries a valid admin credential. Mirrors `adminMiddleware`
