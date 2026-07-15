@@ -21,6 +21,7 @@ export type EntryType = "web" | "email" | "saved";
  * All optional fields should be explicitly undefined (not omitted) for cache key matching.
  */
 export interface EntriesListInput {
+  query: string | undefined;
   subscriptionId: string | undefined;
   tagId: string | undefined;
   uncategorized: boolean | undefined;
@@ -56,6 +57,8 @@ export interface EntriesListFilters {
 export interface EntriesListViewPreferences {
   unreadOnly: boolean;
   sortOrder: "newest" | "oldest";
+  /** Full-text search query (`?q=` URL param); undefined when not searching. */
+  searchQuery?: string;
 }
 
 /**
@@ -77,21 +80,28 @@ export function buildEntriesListInput(
   preferences: EntriesListViewPreferences,
   limit: number = 10
 ): EntriesListInput {
+  // Normalize the search query: empty/whitespace means "not searching".
+  const query = preferences.searchQuery?.trim() || undefined;
+  // The backend ignores sortOrder when a query is provided (results are ranked
+  // by relevance), so canonicalize it while searching — a lingering ?sort=
+  // param must not fragment the cache key for the same search.
+  const sortOrder = query ? "newest" : preferences.sortOrder;
   // Construct the input with explicit property order and explicit undefined values.
   // This ensures the object structure is identical regardless of where it's constructed.
   // NOTE: direction is required for tRPC infinite query cache key matching.
   // Direction depends on sort order: "newest" fetches forward, "oldest" fetches backward.
   return {
+    query,
     subscriptionId: filters.subscriptionId,
     tagId: filters.tagId,
     uncategorized: filters.uncategorized,
     unreadOnly: preferences.unreadOnly,
     starredOnly: filters.starredOnly,
-    sortOrder: preferences.sortOrder,
+    sortOrder,
     sortBy: filters.sortBy,
     type: filters.type,
     limit,
-    direction: preferences.sortOrder === "newest" ? "forward" : "backward",
+    direction: sortOrder === "newest" ? "forward" : "backward",
   };
 }
 
