@@ -110,8 +110,14 @@ function entryEventAfterId(event: SyncEvent): string {
       // MAX_UUID sentinel — keeps the cursor *inside* the tied-timestamp
       // group: an unrelated entry written in the same millisecond has a
       // UUIDv7 id above every earlier-created marked entry, so a catch-up can
-      // still deliver it when its live event was missed (#1102). Events from
-      // servers predating the field fall back to skipping the whole group.
+      // still deliver it when its live event was missed (#1102). That ordering
+      // comes from the UUIDv7 millisecond timestamp prefix (our generator has
+      // no intra-ms counter — sub-timestamp bits are random), so a marked
+      // entry *created in the same millisecond* as the mark-all-read can
+      // still randomly out-sort the newcomer; that residual, like the
+      // fallback below, is covered by the entries.list invalidation the event
+      // also triggers. Events from servers predating the field fall back to
+      // skipping the whole group.
       return event.entryId ?? MAX_UUID;
     default:
       // Unreachable: only the entries-cursor events above are passed here.
