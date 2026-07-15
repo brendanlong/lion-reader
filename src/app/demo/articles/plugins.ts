@@ -46,7 +46,34 @@ const article: DemoArticle = {
 
     <h3>Math that actually renders</h3>
 
-    <p>The same approach &mdash; fixing up what other people publish &mdash; goes beyond individual sites. Some feeds ship equations as pre-rendered MathJax markup where the actual symbols live in stylesheets rather than the text, so most readers strip them and sentences arrive with all the variables missing. Lion Reader converts that markup into native <a href="https://developer.mozilla.org/en-US/docs/Web/MathML" target="_blank" rel="noopener noreferrer">MathML</a>, which modern browsers render crisply with no JavaScript &mdash; and feeds that already publish MathML come through as-is. Either way, the math just shows up.</p>
+    <p>The same approach &mdash; fixing up what other people publish &mdash; goes beyond individual sites. Some feeds ship equations as pre-rendered MathJax markup where the actual symbols live in stylesheets rather than the text, so most readers strip them and sentences arrive with all the variables missing. Lion Reader converts that markup into native <a href="https://developer.mozilla.org/en-US/docs/Web/MathML" target="_blank" rel="noopener noreferrer">MathML</a>, which modern browsers render crisply with no JavaScript &mdash; and feeds that already publish MathML come through as-is. Either way, the math just shows up. Like this &mdash; the equation below is MathML rendered natively by your browser:</p>
+
+    <math display="block">
+      <mrow>
+        <mi>x</mi>
+        <mo>=</mo>
+        <mfrac>
+          <mrow>
+            <mo>&minus;</mo>
+            <mi>b</mi>
+            <mo>&plusmn;</mo>
+            <msqrt>
+              <mrow>
+                <msup><mi>b</mi><mn>2</mn></msup>
+                <mo>&minus;</mo>
+                <mn>4</mn>
+                <mi>a</mi>
+                <mi>c</mi>
+              </mrow>
+            </msqrt>
+          </mrow>
+          <mrow>
+            <mn>2</mn>
+            <mi>a</mi>
+          </mrow>
+        </mfrac>
+      </mrow>
+    </math>
 
     <h3>More over time</h3>
 
