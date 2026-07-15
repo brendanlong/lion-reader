@@ -27,10 +27,10 @@ import {
  */
 export function useEntriesListInput(): EntriesListInput {
   const pathname = usePathname();
-  const { showUnreadOnly, sortOrder } = useUrlViewPreferences();
+  const { showUnreadOnly, sortOrder, searchQuery } = useUrlViewPreferences();
 
   return useMemo(() => {
     const filters = getFiltersFromPathname(pathname);
-    return buildEntriesListInput(filters, { unreadOnly: showUnreadOnly, sortOrder });
-  }, [pathname, showUnreadOnly, sortOrder]);
+    return buildEntriesListInput(filters, { unreadOnly: showUnreadOnly, sortOrder, searchQuery });
+  }, [pathname, showUnreadOnly, sortOrder, searchQuery]);
 }
