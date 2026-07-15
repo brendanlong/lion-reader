@@ -251,27 +251,48 @@ test.describe("Wallabag API happy path", () => {
     }
   });
 
-  test("saving an unfetchable URL returns a clean 4xx, not a 500", async ({ request }) => {
+  test("saving an unfetchable URL saves a labeled placeholder with 200 (#1254)", async ({
+    request,
+  }) => {
     const { access_token } = await getTokens(request);
     const auth = { Authorization: `Bearer ${access_token}` };
 
     // A reachable server that 404s every path — mirrors the real report where a
-    // user saved a mistyped URL (a markdown link with a trailing `)`), which the
-    // remote returned 404 for. This must surface as a client error, not an
-    // unhandled 500 that gets reported to Sentry.
+    // user saved a mistyped URL. The Wallabag Android app's offline queue only
+    // advances on a 2xx and otherwise retries the failed item forever, halting
+    // every newer queued save behind it. So a permanent client-side failure must
+    // NOT return the 4xx (which poisons the queue): it saves a labeled
+    // placeholder entry and returns 200 so the queue drains and the user sees
+    // why the save failed.
     const { url, close } = await start404Server();
     try {
       const res = await request.post("/api/wallabag/api/entries", {
         headers: auth,
         form: { url },
       });
-      // A 404 fetch of a user-provided URL is a client error, not a server bug:
-      // exactly 400, not a 500 (which would be reported to Sentry).
-      expect(res.status()).toBe(400);
-      // Wallabag error envelope, so clients can display why the save failed.
-      const body = await res.json();
-      expect(body.error).toBe("BAD_REQUEST");
-      expect(typeof body.error_description).toBe("string");
+      // 200 with a real, labeled placeholder entry — not a 4xx.
+      expect(res.status()).toBe(200);
+      const saved = await res.json();
+      expect(typeof saved.id).toBe("number");
+      expect(saved.url).toBe(url);
+      // URL as the title; the reason lives in the body.
+      expect(saved.title).toBe(url);
+      expect(saved.content).toContain("save this page");
+
+      // It's a real entry: it shows up in the list and can be deleted.
+      const listRes = await request.get("/api/wallabag/api/entries", { headers: auth });
+      const ids = (await listRes.json())._embedded.items.map((e: { id: number }) => e.id);
+      expect(ids).toContain(saved.id);
+
+      // Re-saving the same failing URL is idempotent (no duplicate entry).
+      const again = await request.post("/api/wallabag/api/entries", {
+        headers: auth,
+        form: { url },
+      });
+      expect(again.status()).toBe(200);
+      expect((await again.json()).id).toBe(saved.id);
+
+      await request.delete(`/api/wallabag/api/entries/${saved.id}`, { headers: auth });
     } finally {
       await close();
     }

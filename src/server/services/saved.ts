@@ -27,6 +27,7 @@ import { absolutizeUrls } from "@/server/feed/content-cleaner";
 import { cleanContentInWorker, sanitizeEntryHtmlInWorker } from "@/server/worker-thread/pool";
 import { getOrCreateSavedFeed, getSavedFeedId, SAVED_FEED_TITLE } from "@/server/feed/saved-feed";
 import { generateSummary, stripHtml } from "@/server/html/strip-html";
+import { escapeHtml } from "@/server/http/html";
 import { withSanitizedEntryContentAsync } from "@/server/html/sanitize-entry";
 import { logger } from "@/lib/logger";
 import { publishNewEntry, publishEntryUpdatedFromEntry } from "@/server/redis/pubsub";
@@ -1161,6 +1162,79 @@ export async function saveArticle(
   });
 
   return { ...saved, outcome: "created" };
+}
+
+/**
+ * Save a placeholder entry recording that a URL could **not** be fetched/saved.
+ *
+ * This exists only for the Wallabag POST surface. The Wallabag Android app's
+ * offline save queue advances an item only on a 2xx response; any error keeps
+ * the item queued and retried forever AND halts every newer queued save behind
+ * it (a poison item — see #1254). So when a save fails for a *permanent*
+ * client-side reason (oversized page, 404, blocked site, feed URL, …) the
+ * Wallabag route can't just return the 4xx — it saves this labeled placeholder
+ * and returns 200, which drains the queue and tells the user in-app why the save
+ * failed. Genuine 5xx server bugs are deliberately NOT turned into placeholders
+ * (the caller still throws), so the app legitimately retries them once the bug
+ * is fixed.
+ *
+ * The entry keeps the original URL (so it stays clickable and the save is
+ * idempotent by URL), uses the URL as its title, and the failure reason as its
+ * body. Interactive callers (tRPC/MCP) must keep surfacing the real error
+ * instead of calling this.
+ *
+ * Trade-off (accepted): because the placeholder is stored under `guid =
+ * normalized URL`, a later *no-refetch* save of the same URL — a plain re-share
+ * to the Wallabag app, or MCP `save_article` — matches it and returns the
+ * placeholder rather than re-fetching, so it does NOT auto-heal into the real
+ * article. This mainly bites the transient failure codes we still treat as
+ * client errors (`UPSTREAM_RATE_LIMITED`, `SITE_BLOCKED`): a save that failed
+ * only momentarily leaves a placeholder that a plain re-share won't replace. It
+ * is recoverable — the web `saved.save` path defaults `refetch: true` and heals
+ * it, and deleting the placeholder then re-sharing fetches fresh — but a bare
+ * app re-share won't. We accept this because the alternative (a jammed queue
+ * that blocks *every* newer save) is worse. See #1254.
+ */
+export async function savePlaceholderArticle(
+  db: typeof dbType,
+  userId: string,
+  params: { url: string; reason: string }
+): Promise<SaveArticleResult> {
+  const normalizedUrl = normalizeSavedUrl(params.url);
+  const savedFeedId = await getOrCreateSavedFeed(db, userId);
+
+  // The placeholder body is our own short, trusted text; escape the reason (it
+  // embeds the failing URL / upstream message) so it can't inject markup. It's
+  // sanitized again at write time by insertSavedEntry regardless.
+  const body = `<p>Lion Reader couldn't save this page.</p><p>${escapeHtml(params.reason)}</p>`;
+  const contentHash = generateContentHash(params.url, body);
+
+  const saved = await insertSavedEntry(db, userId, savedFeedId, {
+    guid: normalizedUrl,
+    url: normalizedUrl,
+    title: params.url,
+    author: null,
+    contentOriginal: body,
+    contentCleaned: body,
+    summary: params.reason,
+    siteName: null,
+    imageUrl: null,
+    contentHash,
+  });
+
+  if (saved) {
+    logger.info("Saved placeholder for failed article save", {
+      entryId: saved.id,
+      url: normalizedUrl,
+    });
+    return { ...saved, outcome: "created" };
+  }
+
+  // The (feed_id, guid) already exists: this URL was previously saved (a real
+  // article or an earlier placeholder), or two queued retries raced. Return the
+  // existing entry idempotently instead of a unique-violation. The no-refetch
+  // saveArticle path re-selects and version-heals it exactly as we need.
+  return saveArticle(db, userId, { url: params.url });
 }
 
 /**

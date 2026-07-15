@@ -29,6 +29,7 @@
  * - content: string - optional content override
  */
 
+import { TRPCError } from "@trpc/server";
 import { requireAuth } from "@/server/wallabag/auth";
 import {
   jsonResponse,
@@ -37,6 +38,7 @@ import {
   parseEntryListParams,
   parseBody,
 } from "@/server/wallabag/parse";
+import { getAppErrorCode } from "@/server/trpc/errors";
 import {
   formatEntryFull,
   formatEntryListItem,
@@ -169,12 +171,46 @@ export async function POST(request: Request): Promise<Response> {
 
     return jsonResponse(formatSavedArticle(article, wallabagId));
   } catch (error) {
-    // saveArticle throws a TRPCError when the user-provided URL can't be fetched
-    // (e.g. a 404 from a mistyped/markdown-artifact URL). Return that as a clean
-    // Wallabag error envelope instead of an unhandled 500 that hits Sentry;
-    // genuine server errors (null) still propagate.
-    const clientError = clientErrorResponse(error);
-    if (clientError) return clientError;
+    // The Wallabag Android app's offline save queue only advances an item on a
+    // 2xx response; any error keeps it queued, retried forever, AND halts every
+    // newer queued save behind it (a poison item — #1254). So for a client-side
+    // save failure (oversized page, 404, blocked site, feed URL, private doc
+    // needing auth) we can't return the 4xx — we save a labeled placeholder
+    // entry (URL as title, reason as body) and return it with 200, which drains
+    // the queue and tells the user in-app why the save failed.
+    //
+    // `clientErrorResponse` returning non-null is exactly the "expected
+    // client/upstream failure, not our bug" signal (a 4xx, or an expected
+    // upstream 5xx like SITE_BLOCKED). A genuine server bug returns null and
+    // still throws → 500, so the app legitimately retries it once we've fixed
+    // the cause. Note this also placeholders the *transient* client-coded
+    // failures (UPSTREAM_RATE_LIMITED, SITE_BLOCKED); a plain app re-share won't
+    // then heal them (see the trade-off note on savePlaceholderArticle) — but
+    // draining the queue beats leaving it jammed for every other save.
+    if (clientErrorResponse(error) !== null) {
+      const placeholder = await savedService.savePlaceholderArticle(db, auth.userId, {
+        url: articleUrl,
+        reason: describeSaveFailure(error),
+      });
+      const wallabagId = await entryIdToWallabagId(db, placeholder.id);
+      if (wallabagId === null) {
+        return errorResponse("not_found", "Entry not found", 404);
+      }
+      return jsonResponse(formatSavedArticle(placeholder, wallabagId));
+    }
     throw error;
   }
+}
+
+/**
+ * Human-readable reason for a failed save, used as the placeholder entry body.
+ * Most service errors already carry a user-facing message; `URL_IS_FEED` is a
+ * bare machine code, so translate it into advice.
+ */
+function describeSaveFailure(error: unknown): string {
+  if (getAppErrorCode(error) === "URL_IS_FEED") {
+    return "This looks like a feed URL. Subscribe to it in Lion Reader instead of saving it.";
+  }
+  if (error instanceof TRPCError) return error.message;
+  return "The page could not be fetched.";
 }
