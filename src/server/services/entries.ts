@@ -1312,10 +1312,11 @@ export async function markAllEntriesRead(
     // The largest marked entry id rides along so the client's entries keyset
     // cursor lands exactly past the marked rows rather than past the whole
     // tied-timestamp group: an unrelated entry written in the same millisecond
-    // as `updatedAt` has a UUIDv7 id above every earlier-created marked entry,
-    // so a catch-up sync can still deliver it if its live event was missed
-    // (#1102). UUIDs are lowercase, so string comparison matches Postgres uuid
-    // ordering.
+    // as `updatedAt` has a UUIDv7 id above every earlier-created marked entry
+    // (the ordering comes from the UUIDv7 ms-timestamp prefix; marked entries
+    // exist before the mark-all-read), so a catch-up sync can still deliver it
+    // if its live event was missed (#1102). UUIDs are lowercase, so string
+    // comparison matches Postgres uuid ordering.
     const maxEntryId = entryIds.reduce((max, id) => (id > max ? id : max));
     void publishMarkAllRead(params.userId, updatedAt, maxEntryId).catch(() => {
       // Ignore publish errors - SSE is best-effort

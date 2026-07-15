@@ -998,6 +998,7 @@ describe("sync.events", () => {
       }
       markedIds.sort();
       const maxMarkedId = markedIds[markedIds.length - 1];
+      const seededAtMs = Date.now();
 
       const caller = createCaller(createAuthContext(userId));
       const result = await caller.entries.markAllRead({});
@@ -1011,8 +1012,13 @@ describe("sync.events", () => {
       const t = tRows[0].t;
       const tiedDate = new Date(t.epochMilliseconds);
 
-      // An unrelated new entry lands at exactly T. Generated after the marked
-      // entries, its UUIDv7 id sorts above all of them.
+      // An unrelated new entry lands at exactly T. Its id must sort above the
+      // marked ids, which UUIDv7's ms-timestamp prefix guarantees only when it
+      // is generated in a strictly LATER millisecond than the marked entries —
+      // wait one out so the test can't flake if the prologue ran within 1ms.
+      while (Date.now() <= seededAtMs) {
+        await new Promise((resolve) => setTimeout(resolve, 1));
+      }
       const newcomerId = await createTestEntry(feedId, {
         createdAt: tiedDate,
         updatedAt: tiedDate,
