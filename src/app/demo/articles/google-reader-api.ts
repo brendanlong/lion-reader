@@ -63,7 +63,7 @@ const article: DemoArticle = {
 
     <p>The Google Reader API is implemented as a set of Next.js route handlers under <code>/api/greader.php/reader/api/0/</code> (with authentication at <code>/api/greader.php/accounts/ClientLogin</code>). Rather than duplicating business logic, each endpoint is a thin translation layer that converts between the Google Reader wire format and Lion Reader&rsquo;s existing services layer. This means behavior is identical whether you&rsquo;re reading through the web UI, the <a href="/demo/all?entry=mcp-server">MCP server</a>, the <a href="/demo/all?entry=wallabag-api">Wallabag API</a>, or a third-party app.</p>
 
-    <p>One interesting challenge is ID mapping. Google Reader clients expect signed 64-bit integer IDs, but Lion Reader uses UUIDv7 (128-bit). The API derives a deterministic 63-bit integer from each UUID by extracting the 48-bit timestamp and 15 bits of randomness. This preserves time-ordering (so clients sort correctly) and is fully reversible without any extra storage.</p>
+    <p>One interesting challenge is ID mapping. Google Reader clients expect signed 64-bit integer IDs, but Lion Reader uses UUIDv7 (128-bit) internally. Every id a client sees &mdash; items, feeds, tags, users &mdash; is a stored integer serial kept alongside the UUID, so the ids are stable and map back to the real records with a simple indexed lookup.</p>
   `,
 };
 
