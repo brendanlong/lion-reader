@@ -232,6 +232,11 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
   // (cached entries from parent lists) inline instead of suspending. Resolved/
   // cached data skips this and renders the real list on first paint. Placeholder
   // rows are clickable since the fallback lives here with the list's handlers.
+  // Search results can't be approximated from cached lists (membership depends
+  // on the query), so a pending search shows a plain skeleton instead.
+  if (isLoading && entries.length === 0 && queryInput.query) {
+    return <EntryListSkeleton count={5} />;
+  }
   if (isLoading && entries.length === 0) {
     return (
       <EntryListFallback

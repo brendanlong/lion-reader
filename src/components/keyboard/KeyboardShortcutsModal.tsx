@@ -52,6 +52,7 @@ const SHORTCUT_SECTIONS: ShortcutSection[] = [
       { keys: ["u"], description: "Toggle show/hide read items" },
       { keys: ["v"], description: "Open original URL in new tab" },
       { keys: ["r"], description: "Refresh current view" },
+      { keys: ["/"], description: "Search entries" },
     ],
   },
   {

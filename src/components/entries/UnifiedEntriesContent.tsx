@@ -265,7 +265,7 @@ function EntryListTitle({ routeInfo }: { routeInfo: RouteInfo }) {
 function UnifiedEntriesContentInner() {
   const routeInfo = useRouteInfo();
   const queryClient = useQueryClient();
-  const { showUnreadOnly } = useUrlViewPreferences();
+  const { showUnreadOnly, searchQuery } = useUrlViewPreferences();
   const { openEntryId, setOpenEntryId, closeEntry } = useEntryUrlState();
 
   // Get query input based on current URL - shared with EntryListContainer
@@ -432,13 +432,14 @@ function UnifiedEntriesContentInner() {
   ) : null;
 
   // Entry list - renders its own inline loading fallback (no Suspense)
-  const entryListSlot = (
-    <EntryListContainer
-      emptyMessage={
-        showUnreadOnly ? emptyMessages.emptyMessageUnread : emptyMessages.emptyMessageAll
-      }
-    />
-  );
+  const emptyMessage = searchQuery
+    ? showUnreadOnly
+      ? `No unread entries matching "${searchQuery}". Toggle to search read items too.`
+      : `No entries matching "${searchQuery}".`
+    : showUnreadOnly
+      ? emptyMessages.emptyMessageUnread
+      : emptyMessages.emptyMessageAll;
+  const entryListSlot = <EntryListContainer emptyMessage={emptyMessage} />;
 
   return (
     <EntryPageLayout
