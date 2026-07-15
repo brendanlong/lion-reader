@@ -14,7 +14,7 @@ const article: DemoArticle = {
   heroImage: "/demo/google-reader-api.png",
   heroImageAlt:
     "The Lion Reader lion syncing with a phone and a desktop feed reader via two-way arrows.",
-  summaryHtml: `<p>Lion Reader now includes a <strong>Google Reader-compatible API</strong>, allowing you to sync your subscriptions, read state, starred articles, and tags with popular third-party RSS reader apps like Reeder, NetNewsWire, FocusReader, Read You, and NewsFlash. The API uses your existing Lion Reader credentials and requires no additional setup beyond pointing your app at your Lion Reader server.</p>`,
+  summaryHtml: `<p>Lion Reader supports the <strong>Google Reader API</strong>, enabling sync with third-party RSS apps like Reeder Classic, NetNewsWire, and NewsFlash. Compatible apps sync subscriptions, read state, starred and saved articles, tags, and unread counts. To set up, select <strong>FreshRSS</strong> as the service type in your app and enter your Lion Reader credentials.</p>`,
   contentHtml: `
     <h2>Use Your Favorite RSS App</h2>
 
@@ -42,6 +42,7 @@ const article: DemoArticle = {
       <li><strong>Subscriptions</strong> &mdash; All your feeds appear in the app, and you can subscribe or unsubscribe from within the app</li>
       <li><strong>Read state</strong> &mdash; Mark articles as read on your phone and they&rsquo;re read everywhere</li>
       <li><strong>Starred articles</strong> &mdash; Star articles from any client and they sync across all your devices</li>
+      <li><strong>Saved articles</strong> &mdash; Articles you <a href="/demo/all?entry=save-for-later">save for later</a> appear as a special &ldquo;Saved Articles&rdquo; subscription, so your read-it-later list comes along too</li>
       <li><strong>Tags/folders</strong> &mdash; Your Lion Reader tags appear as folders in compatible apps, and you can create, rename, and delete them</li>
       <li><strong>Unread counts</strong> &mdash; See accurate unread counts per subscription and per folder</li>
     </ul>
