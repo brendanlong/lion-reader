@@ -140,6 +140,13 @@ export function EntryPageLayout({
         <div className="mb-4 flex items-center justify-between sm:mb-6">
           {titleSlot}
           <div className="flex gap-2">
+            <StateToggleButton
+              icon={<SearchIcon className="h-5 w-5" />}
+              label="Search"
+              ariaLabel={showSearchBar ? "Close search bar" : "Search entries"}
+              isPressed={showSearchBar}
+              onToggle={handleSearchToggle}
+            />
             {/* While searching, hide the controls that don't apply to search
                 results: mark-all-read acts on the whole view (not just the
                 matches), and search results are relevance-ranked (sort order
@@ -155,13 +162,6 @@ export function EntryPageLayout({
               <SortToggle sortOrder={sortOrder} onToggle={toggleSortOrder} />
             )}
             <UnreadToggle showUnreadOnly={showUnreadOnly} onToggle={toggleShowUnreadOnly} />
-            <StateToggleButton
-              icon={<SearchIcon className="h-5 w-5" />}
-              label="Search"
-              ariaLabel={showSearchBar ? "Close search bar" : "Search entries"}
-              isPressed={showSearchBar}
-              onToggle={handleSearchToggle}
-            />
           </div>
         </div>
 
