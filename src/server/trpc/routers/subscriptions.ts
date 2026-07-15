@@ -25,23 +25,22 @@ import {
   tags,
   subscriptionTags,
   blockedSenders,
-  opmlImports,
   userFeeds,
   visibleEntries,
-  type OpmlImportFeedData,
 } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { parseFeedInWorker } from "@/server/worker-thread/pool";
 import { discoverFeeds } from "@/server/feed/discovery";
 import { getDomainFromUrl } from "@/server/feed/types";
 import { extractUserIdFromFeedUrl, fetchLessWrongUserById } from "@/server/feed/lesswrong";
-import { parseOpml, generateOpml, type OpmlFeed, type OpmlSubscription } from "@/server/feed/opml";
-import { createJob, scheduleFeedRefreshNow } from "@/server/jobs/queue";
+import { generateOpml, OpmlParseError, type OpmlSubscription } from "@/server/feed/opml";
+import { scheduleFeedRefreshNow } from "@/server/jobs/queue";
 import { shouldRefetchOnSubscribe } from "@/server/feed/scheduling";
 import { publishSubscriptionDeleted, publishSubscriptionUpdated } from "@/server/redis/pubsub";
 import { attemptUnsubscribe, getLatestUnsubscribeMailto } from "@/server/email/unsubscribe";
 import { logger } from "@/lib/logger";
 import * as subscriptionsService from "@/server/services/subscriptions";
+import { importOpml } from "@/server/services/imports";
 import { getSubscriptionDeletionCounts } from "@/server/services/counts";
 import { unreadCountsSchema } from "@/lib/events/schemas";
 
@@ -705,109 +704,14 @@ export const subscriptionsRouter = createTRPCRouter({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const userId = ctx.session.user.id;
-
-      // Step 1: Parse the OPML content
-      let opmlFeeds: OpmlFeed[];
       try {
-        opmlFeeds = await parseOpml(input.opml);
+        return await importOpml(ctx.db, ctx.session.user.id, input.opml);
       } catch (error) {
-        throw errors.validation(
-          `Failed to parse OPML: ${error instanceof Error ? error.message : "Invalid OPML format"}`
-        );
-      }
-
-      if (opmlFeeds.length === 0) {
-        // Create a completed import record with no feeds
-        const importId = generateUuidv7();
-        const now = new Date();
-
-        await ctx.db.insert(opmlImports).values({
-          id: importId,
-          userId,
-          status: "completed",
-          totalFeeds: 0,
-          importedCount: 0,
-          skippedCount: 0,
-          failedCount: 0,
-          feedsData: [],
-          results: [],
-          completedAt: now,
-          createdAt: now,
-          updatedAt: now,
-        });
-
-        return {
-          importId,
-          totalFeeds: 0,
-        };
-      }
-
-      // Step 2: Deduplicate feeds by URL, merging categories
-      // This ensures a feed in 5 tags counts as 1 import, not 5
-      const feedsByUrl = new Map<string, OpmlImportFeedData>();
-      for (const feed of opmlFeeds) {
-        const existing = feedsByUrl.get(feed.xmlUrl);
-        if (existing) {
-          // Merge categories (use first level of category path as tag)
-          if (feed.category && feed.category.length > 0) {
-            const tagName = feed.category[0]; // Use first level as tag
-            if (!existing.category) {
-              existing.category = [tagName];
-            } else if (!existing.category.includes(tagName)) {
-              existing.category.push(tagName);
-            }
-          }
-          // Use title from first occurrence (don't overwrite)
-        } else {
-          feedsByUrl.set(feed.xmlUrl, {
-            xmlUrl: feed.xmlUrl,
-            title: feed.title,
-            htmlUrl: feed.htmlUrl,
-            // Use first level of category path as tag name
-            category: feed.category && feed.category.length > 0 ? [feed.category[0]] : undefined,
-          });
+        if (error instanceof OpmlParseError) {
+          throw errors.validation(`Failed to parse OPML: ${error.message}`);
         }
+        throw error;
       }
-
-      const feedsData = Array.from(feedsByUrl.values());
-
-      // Step 3: Create import record
-      const importId = generateUuidv7();
-      const now = new Date();
-
-      await ctx.db.insert(opmlImports).values({
-        id: importId,
-        userId,
-        status: "pending",
-        totalFeeds: feedsData.length, // Use deduplicated count
-        importedCount: 0,
-        skippedCount: 0,
-        failedCount: 0,
-        feedsData,
-        results: [],
-        createdAt: now,
-        updatedAt: now,
-      });
-
-      // Step 4: Queue background job to process the import
-      await createJob({
-        type: "process_opml_import",
-        payload: { importId },
-        nextRunAt: now, // Run immediately
-      });
-
-      logger.info("OPML import queued", {
-        importId,
-        userId,
-        totalFeeds: feedsData.length,
-        originalCount: opmlFeeds.length, // Log original for debugging
-      });
-
-      return {
-        importId,
-        totalFeeds: feedsData.length, // Return deduplicated count
-      };
     }),
 
   /**
