@@ -45,6 +45,22 @@ export class HttpFetchError extends Error {
 }
 
 /**
+ * Error thrown when a page fetch returns a content type we don't treat as an
+ * article (e.g. a feed served as `application/rss+xml`). Carries the offending
+ * content type so callers can decide whether the URL is actually a feed and
+ * route the user to Subscribe instead of failing the save.
+ */
+export class InvalidContentTypeError extends Error {
+  constructor(
+    public readonly contentType: string,
+    public readonly url: string
+  ) {
+    super(`Invalid content type: ${contentType}`);
+    this.name = "InvalidContentTypeError";
+  }
+}
+
+/**
  * Error thrown when a response body exceeds the maximum allowed size.
  * Checked during streaming to avoid loading the full body into memory.
  */
@@ -325,7 +341,7 @@ export async function fetchHtmlPage(
     !contentType.includes("text/html") &&
     !contentType.includes("application/xhtml+xml")
   ) {
-    throw new Error(`Invalid content type: ${contentType}`);
+    throw new InvalidContentTypeError(contentType, url);
   }
 
   const content = await readResponseWithSizeLimit(response, maxSizeBytes, url);
