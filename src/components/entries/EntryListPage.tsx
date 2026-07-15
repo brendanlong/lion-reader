@@ -70,7 +70,10 @@ export async function EntryListPage({ pathname, searchParams, children }: EntryL
   const urlParams = new URLSearchParams();
   if (params.unreadOnly) urlParams.set("unreadOnly", String(params.unreadOnly));
   if (params.sort) urlParams.set("sort", String(params.sort));
-  if (typeof params.q === "string") urlParams.set("q", params.q);
+  // A repeated ?q= arrives as an array; take the first occurrence to match
+  // the client's URLSearchParams.get("q") so the prefetch cache key agrees.
+  const qParam = Array.isArray(params.q) ? params.q[0] : params.q;
+  if (typeof qParam === "string") urlParams.set("q", qParam);
   const { unreadOnly, sortOrder, searchQuery } = parseViewPreferencesFromParams(urlParams, {
     unreadOnly: defaults.unreadOnly,
   });
