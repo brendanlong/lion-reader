@@ -116,6 +116,23 @@ describe("evaluateRequest", () => {
         evaluateRequest("/api/trpc/admin.getSiteStatus", undefined, "Bearer wrong-secret")
       ).toBe("block-api");
     });
+
+    it("tolerates extra whitespace / tab between Bearer and the secret", () => {
+      for (const auth of [
+        "Bearer   test-admin-secret-for-gate",
+        "Bearer\ttest-admin-secret-for-gate",
+        "bearer test-admin-secret-for-gate  ",
+      ]) {
+        expect(evaluateRequest("/api/trpc/admin.getSiteStatus", undefined, auth)).toBe("allow");
+      }
+    });
+
+    it("resolves a crafted whitespace-heavy Authorization header quickly (no ReDoS)", () => {
+      const evil = `Bearer ${" ".repeat(100_000)}\n`;
+      const start = Date.now();
+      expect(evaluateRequest("/api/trpc/admin.getSiteStatus", undefined, evil)).toBe("block-api");
+      expect(Date.now() - start).toBeLessThan(100);
+    });
   });
 });
 
