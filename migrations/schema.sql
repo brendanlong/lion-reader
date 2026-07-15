@@ -222,6 +222,7 @@ CREATE TABLE public.entries (
     full_content_cleaned_sanitized text,
     full_content_sanitized_version smallint,
     greader_item_id bigint NOT NULL,
+    is_placeholder boolean DEFAULT false NOT NULL,
     CONSTRAINT entries_last_seen_only_fetched CHECK (((type = 'web'::public.feed_type) = (last_seen_at IS NOT NULL))),
     CONSTRAINT entries_saved_metadata_only_saved CHECK (((type = 'saved'::public.feed_type) OR ((site_name IS NULL) AND (image_url IS NULL)))),
     CONSTRAINT entries_spam_only_email CHECK (((type = 'email'::public.feed_type) OR ((spam_score IS NULL) AND (is_spam = false)))),
