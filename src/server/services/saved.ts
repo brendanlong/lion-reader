@@ -20,7 +20,7 @@ import {
   ContentTooLargeError,
   InvalidContentTypeError,
 } from "@/server/http/fetch";
-import { detectFeedType } from "@/server/feed/parser";
+import { parseFeed } from "@/server/feed/parser";
 import { processMarkdown } from "@/server/markdown";
 import { usageLimitsConfig } from "@/server/config/env";
 import { absolutizeUrls } from "@/server/feed/content-cleaner";
@@ -529,9 +529,11 @@ const UNAMBIGUOUS_FEED_CONTENT_TYPES = [
  * Decide whether a URL that failed a page fetch on its content type is actually
  * a feed (so the caller can route the user to Subscribe instead of failing the
  * save). Unambiguous feed content types short-circuit; ambiguous XML/JSON
- * (`text/xml`, `application/xml`, `application/json`, which also covers sitemaps
- * and plain APIs) is confirmed with a single feed-sniffing fetch. Only reached
- * on the rare feed-share path, so the common article save stays a single fetch.
+ * (`text/xml`, `application/xml`, `application/json`) is confirmed by fetching
+ * and actually parsing it as a feed — so a sitemap (`<urlset>`) or a plain JSON
+ * API (no JSON Feed `version`/`items`) is correctly rejected rather than
+ * misrouted to Subscribe. Only reached on the rare feed-rejection path, so the
+ * common article save stays a single fetch.
  */
 async function urlIsDirectFeed(url: string, contentType: string): Promise<boolean> {
   const normalized = contentType.toLowerCase();
@@ -540,9 +542,12 @@ async function urlIsDirectFeed(url: string, contentType: string): Promise<boolea
   }
   try {
     const { text } = await fetchRawUrl(url);
-    return detectFeedType(text) !== "unknown";
+    // parseFeed throws for unknown formats and for structurally-invalid feeds
+    // (a sitemap, a plain JSON object, etc.) — exactly what we want to exclude.
+    parseFeed(text);
+    return true;
   } catch {
-    // If we can't fetch/parse it, treat it as not-a-feed and let the original
+    // Not fetchable or not a real feed: treat as not-a-feed and let the original
     // fetch error surface.
     return false;
   }
