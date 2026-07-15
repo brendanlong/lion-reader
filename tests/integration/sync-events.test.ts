@@ -19,6 +19,7 @@ import {
 } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
+import { parseTimestamptz } from "../../src/server/db/temporal";
 import { advanceCursors, type SyncCursors } from "../../src/lib/events/cursors";
 import type { SyncEvent } from "../../src/lib/events/schemas";
 import type { Context } from "../../src/server/trpc/context";
@@ -975,6 +976,94 @@ describe("sync.events", () => {
       expect(deliveredIds.length).toBe(total);
       expect([...deliveredIds].every((id) => allIds.has(id))).toBe(true);
     }, 30000);
+
+    // #1102: the mark_all_read event advances the client's keyset to
+    // (T, maxMarkedId) — exactly past the marked rows — instead of the old
+    // (T, MAX_UUID) sentinel that skipped the WHOLE tied-timestamp group. An
+    // unrelated entry written in the same millisecond as the mark-all-read
+    // (whose live new_entry was missed) must still be delivered by catch-up,
+    // while none of the marked rows re-deliver.
+    it("delivers an unrelated entry written in the same instant as a mark-all-read (#1102)", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/mark-all-tied.xml");
+      await createTestSubscription(userId, feedId);
+
+      // Three unread entries; mark-all-read stamps them all with one
+      // millisecond-precision timestamp T (markAllEntriesRead's `new Date()`).
+      const markedIds: string[] = [];
+      for (let i = 0; i < 3; i++) {
+        const id = await createTestEntry(feedId);
+        await createUserEntry(userId, id);
+        markedIds.push(id);
+      }
+      markedIds.sort();
+      const maxMarkedId = markedIds[markedIds.length - 1];
+      const seededAtMs = Date.now();
+
+      const caller = createCaller(createAuthContext(userId));
+      const result = await caller.entries.markAllRead({});
+      expect(result.count).toBe(3);
+
+      // Read T back at full precision — the GREATEST value the marked rows now share.
+      const tRows = await db
+        .select({ t: sql`${userEntries.updatedAt}`.mapWith(parseTimestamptz) })
+        .from(userEntries)
+        .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, maxMarkedId)));
+      const t = tRows[0].t;
+      const tiedDate = new Date(t.epochMilliseconds);
+
+      // An unrelated new entry lands at exactly T. Its id must sort above the
+      // marked ids, which UUIDv7's ms-timestamp prefix guarantees only when it
+      // is generated in a strictly LATER millisecond than the marked entries —
+      // wait one out so the test can't flake if the prologue ran within 1ms.
+      while (Date.now() <= seededAtMs) {
+        await new Promise((resolve) => setTimeout(resolve, 1));
+      }
+      const newcomerId = await createTestEntry(feedId, {
+        createdAt: tiedDate,
+        updatedAt: tiedDate,
+      });
+      await createUserEntry(userId, newcomerId, { updatedAt: tiedDate });
+      expect(newcomerId > maxMarkedId).toBe(true);
+
+      // Advance the entries keyset exactly as the client does from the
+      // mark_all_read event, which carries T and the max marked id.
+      const cursors = advanceCursors(
+        { entries: null, entriesAfterId: null, subscriptions: null, tags: null },
+        {
+          type: "mark_all_read",
+          timestamp: t.toString(),
+          updatedAt: t.toString(),
+          entryId: maxMarkedId,
+        }
+      );
+      const catchUp = await caller.sync.events({
+        cursors: {
+          entries: cursors.entries ?? undefined,
+          entriesAfterId: cursors.entriesAfterId ?? undefined,
+        },
+      });
+
+      // The tied newcomer is delivered (as new_entry, plus the accompanying
+      // entry_state_changed for its fresh user_entries row); none of the
+      // marked rows re-deliver.
+      const entryEvents = catchUp.events.filter((e) => ENTRY_EVENT_TYPES.has(e.type));
+      expect(entryEvents.length).toBeGreaterThan(0);
+      for (const event of entryEvents) {
+        expect("entryId" in event ? event.entryId : null).toBe(newcomerId);
+      }
+      expect(entryEvents.some((e) => e.type === "new_entry")).toBe(true);
+
+      // Contrast: the pre-#1102 MAX_UUID sentinel skipped the whole tied group,
+      // permanently hiding the newcomer from catch-up.
+      const sentinelCatchUp = await caller.sync.events({
+        cursors: {
+          entries: cursors.entries ?? undefined,
+          entriesAfterId: "ffffffff-ffff-ffff-ffff-ffffffffffff",
+        },
+      });
+      expect(sentinelCatchUp.events.filter((e) => ENTRY_EVENT_TYPES.has(e.type))).toHaveLength(0);
+    });
   });
 
   // ==========================================================================

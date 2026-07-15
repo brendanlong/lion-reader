@@ -138,6 +138,14 @@ const userEventSchema = z.discriminatedUnion("type", [
     userId: z.string(),
     timestamp: z.string(),
     updatedAt: z.string(),
+    // The largest entry id among the marked rows. The client advances its
+    // entries keyset cursor to (updatedAt, entryId): every marked row sorts at
+    // or below it (no catch-up re-delivery), while an unrelated entry written
+    // in the same millisecond — whose UUIDv7 id sorts above every
+    // earlier-created marked entry — stays past the cursor, so a catch-up can
+    // still deliver it (#1102). Optional so events published by a previous
+    // release still parse during a rolling deploy.
+    entryId: z.string().optional(),
   }),
   z.object({
     type: z.literal("tag_created"),
@@ -625,9 +633,17 @@ export async function publishEntryStateChanged(
  * @param userId - The ID of the user whose entries were marked read
  * @param updatedAt - The mark-all-read timestamp, used to advance the entries
  *   sync cursor so a reconnect catch-up doesn't re-deliver every marked entry
+ * @param maxEntryId - The largest entry id among the marked rows; together with
+ *   `updatedAt` it forms the exact keyset position past the marked rows, so the
+ *   cursor doesn't also skip an unrelated entry written in the same
+ *   millisecond (#1102)
  * @returns The number of subscribers that received the message (0 if Redis unavailable)
  */
-export async function publishMarkAllRead(userId: string, updatedAt: Date): Promise<number> {
+export async function publishMarkAllRead(
+  userId: string,
+  updatedAt: Date,
+  maxEntryId: string
+): Promise<number> {
   const client = getPublisherClient();
   if (!client) {
     return 0;
@@ -637,6 +653,7 @@ export async function publishMarkAllRead(userId: string, updatedAt: Date): Promi
     userId,
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
+    entryId: maxEntryId,
   };
   const channel = getUserEventsChannel(userId);
   return client.publish(channel, JSON.stringify(event));
