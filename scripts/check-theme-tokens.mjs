@@ -155,9 +155,11 @@ function isStructural(value) {
 /** Parse the `@theme inline { … }` block and return the set of `--color-*` names. */
 function readThemeColors() {
   const css = fs.readFileSync(GLOBALS_CSS, "utf8");
-  const start = css.indexOf("@theme inline");
-  if (start === -1) throw new Error("No `@theme inline` block in globals.css");
-  const open = css.indexOf("{", start);
+  // Anchor on the block's opening brace (not a bare textual mention) so a comment
+  // referencing `@theme inline` can't misdirect the parser.
+  const at = css.match(/@theme\s+inline\s*\{/);
+  if (!at) throw new Error("No `@theme inline { … }` block in globals.css");
+  const open = at.index + at[0].length - 1;
   let depth = 0;
   let end = open;
   for (let i = open; i < css.length; i++) {
@@ -210,7 +212,10 @@ function collect(themeColors) {
         const prop = m[1];
         let value = m[2];
         if (value.startsWith("[")) continue; // arbitrary value
-        value = value.replace(/\/\d{1,3}$/, ""); // strip /opacity
+        // Strip any opacity modifier: `/50`, `/12.5`, or an arbitrary `/[0.5]`
+        // (the char class stops at `[`, leaving a trailing `surface/`). Token
+        // names never contain `/`, so the part before it is the token.
+        value = value.split("/")[0];
         if (!value) continue;
         if (PALETTE_SHADE.test(value)) continue; // governed by check:colors
         if (KEYWORDS.has(value.toLowerCase())) continue;
