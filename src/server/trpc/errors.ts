@@ -37,6 +37,7 @@ const ErrorCodes = {
 
   // Validation errors (400)
   VALIDATION_ERROR: "VALIDATION_ERROR",
+  URL_IS_FEED: "URL_IS_FEED",
   INVALID_EMAIL: "INVALID_EMAIL",
   WEAK_PASSWORD: "WEAK_PASSWORD",
   EMAIL_ALREADY_EXISTS: "EMAIL_ALREADY_EXISTS",
@@ -109,6 +110,7 @@ const errorCodeToTRPCCode: Record<
   BLOCKED_SENDER_NOT_FOUND: "NOT_FOUND",
   TOKEN_NOT_FOUND: "NOT_FOUND",
   VALIDATION_ERROR: "BAD_REQUEST",
+  URL_IS_FEED: "BAD_REQUEST",
   INVALID_EMAIL: "BAD_REQUEST",
   WEAK_PASSWORD: "BAD_REQUEST",
   EMAIL_ALREADY_EXISTS: "BAD_REQUEST",
@@ -214,6 +216,15 @@ export const errors = {
 
   validation: (message: string, details?: Record<string, unknown>) =>
     createError(ErrorCodes.VALIDATION_ERROR, message, details),
+
+  /**
+   * The URL a caller tried to save is actually a feed, not an article. The
+   * message is the machine-readable token `URL_IS_FEED` (tRPC does not ship the
+   * `cause` to clients, so the web share/save UI matches on the message — same
+   * pattern as the NEEDS_GOOGLE_* codes) so the PWA can route the user to the
+   * Subscribe page instead of failing the save.
+   */
+  urlIsFeed: (url: string) => createError(ErrorCodes.URL_IS_FEED, "URL_IS_FEED", { url }),
 
   emailExists: () =>
     createError(ErrorCodes.EMAIL_ALREADY_EXISTS, "An account with this email already exists"),

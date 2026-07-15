@@ -8,7 +8,8 @@
 
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
@@ -44,7 +45,12 @@ type Step = "input" | "discovery" | "preview";
 
 export function SubscribeContent() {
   const queryClient = useQueryClient();
-  const [url, setUrl] = useState("");
+  // A shared URL (e.g. from the PWA share target, which routes feeds here as
+  // /subscribe?url=...) pre-fills the field. useSearchParams is consistent
+  // across SSR and hydration, so initializing state from it avoids a mismatch.
+  const searchParams = useSearchParams();
+  const sharedUrl = searchParams.get("url");
+  const [url, setUrl] = useState(sharedUrl ?? "");
   const [urlError, setUrlError] = useState<string | undefined>();
   const [step, setStep] = useState<Step>("input");
   const [discoveredFeeds, setDiscoveredFeeds] = useState<DiscoveredFeed[]>([]);
@@ -162,6 +168,19 @@ export function SubscribeContent() {
     }
     // If preview failed for other reasons (network error, etc.), the error will be shown via previewQuery.error
   };
+
+  // When the field was pre-filled from a shared URL, auto-run the preview once
+  // so the user lands straight on the feed preview / discovery step. The ref
+  // guard keeps this from firing again as they edit the field afterwards.
+  const autoPreviewedRef = useRef(false);
+  useEffect(() => {
+    if (!autoPreviewedRef.current && sharedUrl && step === "input") {
+      autoPreviewedRef.current = true;
+      void handlePreview();
+    }
+    // handlePreview is intentionally excluded — this runs once, guarded by the ref.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sharedUrl, step]);
 
   const handleSelectFeed = async (feedUrl: string) => {
     setSelectedFeedUrl(feedUrl);
