@@ -115,16 +115,20 @@ export function NarrationControlsImpl({
   const { status, currentParagraph, totalParagraphs } = state;
   const isPlaying = status === "playing";
   const isPaused = status === "paused";
-  // Consider "loading" as active when we already have paragraphs (buffering mid-playback)
-  // vs initial generation (no paragraphs yet)
+  // "loading" once we already have paragraphs means we're generating the next
+  // chunk mid-playback. The controls stay live here so the user can pause or
+  // skip while a chunk generates. Before any paragraphs exist we're still doing
+  // the initial narration generation, where there's nothing yet to control.
   const isBufferingMidPlayback = status === "loading" && totalParagraphs > 0;
+  const isInitialLoading = (isLoading || status === "loading") && !isBufferingMidPlayback;
   const isActive = isPlaying || isPaused || isBufferingMidPlayback;
 
   /**
-   * Handle play/pause button click.
+   * Handle play/pause button click. Pausing works while a chunk is generating
+   * (buffering) as well as during normal playback.
    */
   const handlePlayPause = () => {
-    if (isPlaying) {
+    if (isPlaying || isBufferingMidPlayback) {
       pause();
     } else {
       play();
@@ -135,11 +139,13 @@ export function NarrationControlsImpl({
   let mainButtonLabel: string;
   let mainButtonIcon: React.ReactNode;
 
-  // Show loading state for both initial generation and mid-playback buffering
-  const showLoadingState = isLoading || isBufferingMidPlayback;
-
-  if (showLoadingState) {
+  if (isInitialLoading) {
     mainButtonLabel = "Generating...";
+    mainButtonIcon = <SpinnerIcon className="h-5 w-5" />;
+  } else if (isBufferingMidPlayback) {
+    // A chunk is generating, but playback is active — keep the spinner as an
+    // activity indicator while letting the button pause.
+    mainButtonLabel = "Pause";
     mainButtonIcon = <SpinnerIcon className="h-5 w-5" />;
   } else if (isPlaying) {
     mainButtonLabel = "Pause";
@@ -160,7 +166,7 @@ export function NarrationControlsImpl({
           variant="ghost"
           size="sm"
           onClick={skipBackward}
-          disabled={showLoadingState || currentParagraph === 0}
+          disabled={currentParagraph === 0}
           aria-label="Previous paragraph"
           className="min-w-[36px] px-2"
         >
@@ -173,7 +179,7 @@ export function NarrationControlsImpl({
         variant="secondary"
         size="sm"
         onClick={handlePlayPause}
-        disabled={showLoadingState}
+        disabled={isInitialLoading}
         aria-label={mainButtonLabel}
       >
         {mainButtonIcon}
@@ -186,7 +192,7 @@ export function NarrationControlsImpl({
           variant="ghost"
           size="sm"
           onClick={skipForward}
-          disabled={showLoadingState || currentParagraph >= totalParagraphs - 1}
+          disabled={currentParagraph >= totalParagraphs - 1}
           aria-label="Next paragraph"
           className="min-w-[36px] px-2"
         >
