@@ -14,7 +14,7 @@ const article: DemoArticle = {
   heroImage: "/demo/plugins.png",
   heroImageAlt:
     "The Lion Reader lion with colorful modular puzzle pieces for different content sources snapping into place.",
-  summaryHtml: `<p>Some of the best content on the web doesn&rsquo;t fit neatly into a plain feed &mdash; and even when it does, the feed often leaves out the parts you wanted. Lion Reader has built-in support for popular sources like <strong>arXiv</strong>, <strong>GitHub</strong>, <strong>Google Docs</strong>, <strong>LessWrong</strong>, <strong>YouTube</strong>, and <strong>Bluesky</strong>, so their content comes through complete and easy to read whether you subscribe or save it for later.</p>`,
+  summaryHtml: `<p>Lion Reader enhances RSS by pulling in <strong>complete content</strong> from sources like LessWrong, YouTube, arXiv, GitHub, Google Docs, and Bluesky &mdash; restoring embedded media, full text, and proper math rendering that standard feeds strip out. Paste any link and Lion Reader handles the rest automatically.</p>`,
   contentHtml: `
     <h2>Content from anywhere, made readable</h2>
 
@@ -43,6 +43,37 @@ const article: DemoArticle = {
     <h3>Bluesky</h3>
 
     <p>Subscribe to any Bluesky profile and read their posts right in your feed. Normally Bluesky hides the best part of a post &mdash; quoted posts, images, and link cards show up as a bare &ldquo;contains embedded content&rdquo; note &mdash; but Lion Reader fills those back in so you see the whole thing. New Bluesky subscriptions turn this on automatically, and you can switch it off per subscription if you&rsquo;d rather keep posts short.</p>
+
+    <h3>Math that actually renders</h3>
+
+    <p>The same approach &mdash; fixing up what other people publish &mdash; goes beyond individual sites. Some feeds ship equations as pre-rendered MathJax markup where the actual symbols live in stylesheets rather than the text, so most readers strip them and sentences arrive with all the variables missing. Lion Reader converts that markup into native <a href="https://developer.mozilla.org/en-US/docs/Web/MathML" target="_blank" rel="noopener noreferrer">MathML</a>, which modern browsers render crisply with no JavaScript &mdash; and feeds that already publish MathML come through as-is. Either way, the math just shows up. Like this &mdash; the equation below is MathML rendered natively by your browser:</p>
+
+    <math display="block">
+      <mrow>
+        <mi>x</mi>
+        <mo>=</mo>
+        <mfrac>
+          <mrow>
+            <mo>&minus;</mo>
+            <mi>b</mi>
+            <mo>&plusmn;</mo>
+            <msqrt>
+              <mrow>
+                <msup><mi>b</mi><mn>2</mn></msup>
+                <mo>&minus;</mo>
+                <mn>4</mn>
+                <mi>a</mi>
+                <mi>c</mi>
+              </mrow>
+            </msqrt>
+          </mrow>
+          <mrow>
+            <mn>2</mn>
+            <mi>a</mi>
+          </mrow>
+        </mfrac>
+      </mrow>
+    </math>
 
     <h3>More over time</h3>
 
