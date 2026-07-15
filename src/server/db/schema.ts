@@ -525,6 +525,14 @@ export const entries = pgTable(
     greaderItemId: bigint("greader_item_id", { mode: "bigint" })
       .notNull()
       .default(sql`nextval('entries_greader_item_id_seq'::regclass)`),
+
+    // True for a saved-article *placeholder*: a stand-in entry (URL as title,
+    // failure reason as body) the Wallabag POST surface writes when an article
+    // can't be fetched (#1254). Lets saveArticle always refetch a placeholder on
+    // re-save so a transiently-failed URL self-heals into real content, while a
+    // real saved article keeps returning instantly (#1256). Cleared by any
+    // successful real save.
+    isPlaceholder: boolean("is_placeholder").notNull().default(false),
   },
   (table) => [
     // Unique constraint on feed + guid

@@ -19,7 +19,11 @@ import { users, entries, userEntries, feeds } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
-import { saveArticle, savedArticleExistsByUrl } from "../../src/server/services/saved";
+import {
+  saveArticle,
+  savePlaceholderArticle,
+  savedArticleExistsByUrl,
+} from "../../src/server/services/saved";
 import { markEntriesRead } from "../../src/server/services/entries";
 
 // ============================================================================
@@ -1341,6 +1345,138 @@ describe("Saved Articles API", () => {
         .from(feeds)
         .where(and(eq(feeds.type, "saved"), eq(feeds.userId, userId)));
       expect(savedFeeds).toHaveLength(0);
+    });
+  });
+
+  describe("savePlaceholderArticle self-heal (#1256)", () => {
+    const realHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head><title>Real Article Title</title></head>
+        <body>
+          <article>
+            <p>This is the real article content, fetched successfully on re-save.</p>
+            <p>It has plenty of text so it comfortably passes any quality checks.</p>
+            <p>This paragraph exists only to push the body well past 500 characters
+            so the "reject if worse" guard would normally have something to compare
+            against — though for a placeholder that guard is skipped entirely.</p>
+          </article>
+        </body>
+      </html>
+    `;
+
+    async function isPlaceholderFlag(entryId: string): Promise<boolean> {
+      const [row] = await db
+        .select({ isPlaceholder: entries.isPlaceholder })
+        .from(entries)
+        .where(eq(entries.id, entryId))
+        .limit(1);
+      return row.isPlaceholder;
+    }
+
+    it("marks the placeholder entry with is_placeholder = true", async () => {
+      const userId = await createTestUser();
+      const url = "https://example.com/placeholder-marked";
+
+      const placeholder = await savePlaceholderArticle(db, userId, {
+        url,
+        reason: "The site blocked us.",
+      });
+
+      expect(placeholder.outcome).toBe("created");
+      expect(await isPlaceholderFlag(placeholder.id)).toBe(true);
+    });
+
+    it("always refetches a placeholder on a no-refetch re-save, replacing it with real content", async () => {
+      const userId = await createTestUser();
+      const url = "https://example.com/placeholder-heals";
+
+      // A transient failure leaves a placeholder.
+      const placeholder = await savePlaceholderArticle(db, userId, {
+        url,
+        reason: "Rate limited.",
+      });
+      expect(await isPlaceholderFlag(placeholder.id)).toBe(true);
+
+      // A plain re-share (no refetch) must NOT short-circuit on the placeholder —
+      // it refetches and replaces it with the real article.
+      const healed = await saveArticle(db, userId, { url, html: realHtml });
+
+      expect(healed.outcome).toBe("updated");
+      expect(healed.id).toBe(placeholder.id); // same entry, healed in place
+      expect(healed.title).toBe("Real Article Title");
+      expect(await isPlaceholderFlag(healed.id)).toBe(false);
+
+      // The served body is now the real content, not the placeholder text.
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+      const fetched = await caller.entries.get({ id: healed.id });
+      expect(fetched.entry.contentCleaned).toContain("real article content");
+      expect(fetched.entry.contentCleaned).not.toContain("couldn't save");
+    });
+
+    it("skips the quality guard when replacing a placeholder (any real content wins)", async () => {
+      const userId = await createTestUser();
+      const url = "https://example.com/placeholder-short-content";
+
+      await savePlaceholderArticle(db, userId, { url, reason: "Blocked." });
+
+      // Short real content that would trip the "reject if worse" guard on a real
+      // article. Because the existing row is a placeholder, the guard is skipped
+      // and this must succeed rather than throw REFETCH_CONTENT_WORSE.
+      const shortHtml =
+        "<html><head><title>Short But Real</title></head><body><p>Tiny real body.</p></body></html>";
+      const healed = await saveArticle(db, userId, { url, html: shortHtml });
+
+      expect(healed.outcome).toBe("updated");
+      expect(healed.title).toBe("Short But Real");
+      expect(await isPlaceholderFlag(healed.id)).toBe(false);
+    });
+
+    it("returns a real saved article instantly on re-save (no refetch, not a placeholder)", async () => {
+      const userId = await createTestUser();
+      const url = "https://example.com/real-not-refetched";
+
+      // A genuinely saved article (not a placeholder).
+      const first = await saveArticle(db, userId, { url, html: realHtml });
+      expect(first.outcome).toBe("created");
+      expect(await isPlaceholderFlag(first.id)).toBe(false);
+
+      // A no-refetch re-save returns it as-is without refetching (outcome
+      // "existing"), even though we pass different HTML — proving the common
+      // re-share path is unaffected by the placeholder always-refetch change.
+      const again = await saveArticle(db, userId, {
+        url,
+        html: "<html><head><title>Should Be Ignored</title></head><body>x</body></html>",
+      });
+      expect(again.outcome).toBe("existing");
+      expect(again.title).toBe("Real Article Title");
+    });
+
+    it("does not loop when a placeholder re-save fails again (savePlaceholderArticle stays idempotent)", async () => {
+      const userId = await createTestUser();
+      const url = "https://example.com/placeholder-refail";
+
+      const first = await savePlaceholderArticle(db, userId, {
+        url,
+        reason: "First failure.",
+      });
+
+      // A second placeholder save of the same URL (e.g. the re-fetch failed
+      // again) must return the existing placeholder idempotently, not throw or
+      // recurse into a refetch.
+      const second = await savePlaceholderArticle(db, userId, {
+        url,
+        reason: "Second failure.",
+      });
+
+      expect(second.id).toBe(first.id);
+      expect(second.outcome).toBe("existing");
+      expect(await isPlaceholderFlag(second.id)).toBe(true);
+
+      // Exactly one entry row exists for this URL.
+      const rows = await db.select({ id: entries.id }).from(entries).where(eq(entries.guid, url));
+      expect(rows).toHaveLength(1);
     });
   });
 });

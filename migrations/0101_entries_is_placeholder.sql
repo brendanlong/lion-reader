@@ -1,0 +1,21 @@
+-- Mark saved-article placeholder entries so a re-save can always refetch them
+-- (issue #1256).
+--
+-- The Wallabag POST surface saves a labeled *placeholder* entry (URL as title,
+-- failure reason as body, 200) when an article can't be fetched, so the app's
+-- offline queue drains instead of jamming on a poison item (#1254/#1255). A
+-- placeholder is keyed by `guid = normalized URL`, so a later no-refetch save of
+-- the same URL (a plain Wallabag re-share or MCP save_article) matched it and
+-- returned it without re-fetching — so a transiently-failed URL never healed.
+--
+-- This boolean lets saveArticle tell a placeholder from a real saved article, so
+-- it can always refetch a placeholder on re-save (healing it into real content)
+-- while a real article keeps returning instantly. savePlaceholderArticle sets it
+-- true; any successful real save clears it.
+--
+-- Additive, NOT NULL DEFAULT false → expand/contract-compatible: the previous
+-- release ignores the column, and release_command runs before the canary, so
+-- old code runs against the new schema during rollout and on rollback. No
+-- backfill needed — existing placeholders (if any) simply stay unmarked, which
+-- only means they don't get the new always-refetch treatment (acceptable).
+ALTER TABLE entries ADD COLUMN is_placeholder boolean NOT NULL DEFAULT false;
