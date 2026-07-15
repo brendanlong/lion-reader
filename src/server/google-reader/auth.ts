@@ -15,6 +15,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/server/db";
 import { users } from "@/server/db/schema";
 import { createSession, validateSession, type SessionData } from "@/server/auth/session";
+import { extractBearerToken } from "@/server/auth/bearer";
 import { isSignupConfirmed } from "@/server/auth/confirmation";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
 
@@ -87,9 +88,9 @@ export function extractAuthToken(request: Request): string | null {
   }
 
   // Bearer {token}
-  const bearerMatch = authHeader.match(/^Bearer\s+(.+)$/i);
-  if (bearerMatch) {
-    return bearerMatch[1];
+  const bearerToken = extractBearerToken(authHeader);
+  if (bearerToken) {
+    return bearerToken;
   }
 
   return null;

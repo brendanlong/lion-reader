@@ -18,6 +18,7 @@ import * as argon2 from "argon2";
 import { eq } from "drizzle-orm";
 import { db } from "@/server/db";
 import { users } from "@/server/db/schema";
+import { extractBearerToken } from "@/server/auth/bearer";
 import { validateAccessToken, createTokens, rotateRefreshToken } from "@/server/oauth/service";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
 import { isSignupConfirmed } from "@/server/auth/confirmation";
@@ -155,12 +156,11 @@ export async function refreshTokenGrant(
 async function authenticateRequest(
   request: Request
 ): Promise<{ userId: string; email: string; scopes: string[]; user: User } | null> {
-  const authHeader = request.headers.get("authorization");
-  if (!authHeader?.startsWith("Bearer ")) {
+  const token = extractBearerToken(request.headers.get("authorization"));
+  if (!token) {
     return null;
   }
 
-  const token = authHeader.slice(7);
   const tokenData = await validateAccessToken(token);
   if (!tokenData) {
     return null;
@@ -198,7 +198,7 @@ export async function requireAuth(
     // that sent a token we rejected (expired — normal churn as clients lazily
     // refresh — or revoked, e.g. by reuse detection). Logged at info because an
     // expired-token 401 is expected traffic, not an error.
-    const hasBearer = request.headers.get("authorization")?.startsWith("Bearer ") ?? false;
+    const hasBearer = extractBearerToken(request.headers.get("authorization")) !== null;
     logger.info("Wallabag request unauthenticated", {
       component: "wallabag",
       reason: hasBearer ? "invalid_token" : "missing_bearer",
