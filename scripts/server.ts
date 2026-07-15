@@ -69,7 +69,7 @@ app.prepare().then(() => {
     const maintenance = getCurrentMaintenance();
     if (maintenance.enabled) {
       const pathname = (req.url || "/").split("?")[0];
-      const decision = evaluateRequest(pathname, req.headers.cookie);
+      const decision = evaluateRequest(pathname, req.headers.cookie, req.headers.authorization);
       if (decision !== "allow") {
         res.statusCode = 503;
         res.setHeader("Retry-After", "3600");

@@ -60,6 +60,21 @@ describe("evaluateRequest", () => {
     }
   });
 
+  it("blocks API routes even when they end in a static-looking suffix", () => {
+    // The Wallabag compat API and others hit Postgres but end in .json/.xml/etc.
+    // These must NOT be treated as static assets during maintenance.
+    for (const path of [
+      "/api/wallabag/api/entries.json",
+      "/api/wallabag/api/tags.json",
+      "/api/wallabag/api/user.json",
+      "/api/entries.json",
+      "/api/search.json",
+      "/api/version.json",
+    ]) {
+      expect(evaluateRequest(path)).toBe("block-api");
+    }
+  });
+
   it("does not treat a page path that merely contains /demo as exempt", () => {
     expect(evaluateRequest("/not-demo")).toBe("block-page");
     expect(evaluateRequest("/admins")).toBe("block-page");
@@ -84,6 +99,22 @@ describe("evaluateRequest", () => {
       const token = createAdminSessionToken();
       const cookie = `foo=bar; ${ADMIN_COOKIE_NAME}=${token}; other=1`;
       expect(evaluateRequest("/api/trpc/admin.getSiteStatus", cookie)).toBe("allow");
+    });
+
+    it("allows /api/trpc with a valid Bearer admin secret", () => {
+      expect(
+        evaluateRequest(
+          "/api/trpc/admin.getSiteStatus",
+          undefined,
+          "Bearer test-admin-secret-for-gate"
+        )
+      ).toBe("allow");
+    });
+
+    it("blocks /api/trpc with an invalid Bearer secret", () => {
+      expect(
+        evaluateRequest("/api/trpc/admin.getSiteStatus", undefined, "Bearer wrong-secret")
+      ).toBe("block-api");
     });
   });
 });

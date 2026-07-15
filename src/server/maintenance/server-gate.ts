@@ -14,7 +14,11 @@
  */
 
 import { getMaintenance, type MaintenanceState } from "@/server/services/site-status";
-import { ADMIN_COOKIE_NAME, validateAdminSessionToken } from "@/server/auth/admin-session";
+import {
+  ADMIN_COOKIE_NAME,
+  validateAdminSessionToken,
+  validateAdminSecret,
+} from "@/server/auth/admin-session";
 import { logger } from "@/lib/logger";
 
 export type GateDecision = "allow" | "block-page" | "block-api";
@@ -52,37 +56,56 @@ const EXEMPT_EXACT = new Set([
 const STATIC_EXT =
   /\.(?:ico|png|jpg|jpeg|gif|svg|webp|avif|css|js|mjs|map|woff2?|ttf|otf|eot|json|txt|xml|wasm)$/i;
 
-function hasValidAdminCookie(cookieHeader: string | undefined): boolean {
-  if (!cookieHeader) return false;
-  for (const part of cookieHeader.split(/;\s*/)) {
-    const eq = part.indexOf("=");
-    if (eq === -1) continue;
-    const name = part.slice(0, eq);
-    if (name !== ADMIN_COOKIE_NAME) continue;
-    const value = part.slice(eq + 1);
-    if (value && validateAdminSessionToken(value)) return true;
+/**
+ * Whether the request carries a valid admin credential. Mirrors `adminMiddleware`
+ * (src/server/trpc/trpc.ts): either the `admin_session` cookie or a
+ * `Bearer <ALLOWLIST_SECRET>` header, so programmatic admins aren't locked out.
+ */
+function hasValidAdminAuth(cookieHeader?: string, authHeader?: string): boolean {
+  if (cookieHeader) {
+    for (const part of cookieHeader.split(/;\s*/)) {
+      const eq = part.indexOf("=");
+      if (eq === -1) continue;
+      if (part.slice(0, eq) !== ADMIN_COOKIE_NAME) continue;
+      const value = part.slice(eq + 1);
+      if (value && validateAdminSessionToken(value)) return true;
+    }
+  }
+  if (authHeader) {
+    const match = authHeader.match(/^Bearer\s+(.+)$/i);
+    if (match?.[1] && validateAdminSecret(match[1])) return true;
   }
   return false;
 }
 
 /**
  * Decide what to do with a request while maintenance is active. Pure — takes the
- * pathname and raw Cookie header, returns the decision. Unit-tested.
+ * pathname and the raw Cookie/Authorization headers, returns the decision.
+ * Unit-tested.
  */
-export function evaluateRequest(pathname: string, cookieHeader?: string): GateDecision {
+export function evaluateRequest(
+  pathname: string,
+  cookieHeader?: string,
+  authHeader?: string
+): GateDecision {
   if (EXEMPT_EXACT.has(pathname)) return "allow";
   if (EXEMPT_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
     return "allow";
   }
-  if (STATIC_EXT.test(pathname)) return "allow";
 
   const isApi = pathname === "/api" || pathname.startsWith("/api/");
 
-  // The main tRPC endpoint stays open ONLY to a valid admin session, so the
+  // The main tRPC endpoint stays open ONLY to a valid admin credential, so the
   // admin panel can read status and toggle maintenance back off.
   if (pathname === "/api/trpc" || pathname.startsWith("/api/trpc/")) {
-    return hasValidAdminCookie(cookieHeader) ? "allow" : "block-api";
+    return hasValidAdminAuth(cookieHeader, authHeader) ? "allow" : "block-api";
   }
+
+  // Static assets stay up — but ONLY off the API surface. Several authenticated
+  // API routes end in a static-looking suffix (the Wallabag compat API uses
+  // `.json`), and those must be blocked, so this check runs after the API
+  // decisions and never applies under `/api/`.
+  if (!isApi && STATIC_EXT.test(pathname)) return "allow";
 
   return isApi ? "block-api" : "block-page";
 }
