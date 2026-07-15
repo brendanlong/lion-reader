@@ -20,6 +20,7 @@ import {
   unreadCountsSchema,
   type NewEntryListData,
 } from "@/lib/events/schemas";
+import { ANNOUNCEMENT_LEVELS, type Announcement } from "@/server/services/site-status";
 
 // ============================================================================
 // Event Schemas (single source of truth for both publishing and parsing)
@@ -180,6 +181,31 @@ const userEventSchema = z.discriminatedUnion("type", [
   }),
 ]);
 
+/**
+ * Zod schema for the global site-status events channel. Currently just the
+ * announcement banner: a single broadcast channel (not per-user) so an admin
+ * change reaches every connected client. Kept a discriminated union so more
+ * global signals can be added later.
+ */
+const siteStatusEventSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("announcement_changed"),
+    // The active announcement (with its message-derived id), or null when it
+    // was disabled/cleared so clients hide the banner.
+    announcement: z
+      .object({
+        id: z.string(),
+        message: z.string(),
+        level: z.enum(ANNOUNCEMENT_LEVELS),
+      })
+      .nullable(),
+    timestamp: z.string(),
+  }),
+]);
+
+/** Union type for all site-status events. */
+export type SiteStatusEvent = z.infer<typeof siteStatusEventSchema>;
+
 // ============================================================================
 // Derived Types (all derived from Zod schemas above)
 // ============================================================================
@@ -232,6 +258,16 @@ export function getFeedEventsChannel(feedId: string): string {
  */
 export function getUserEventsChannel(userId: string): string {
   return `user:${userId}:events`;
+}
+
+/**
+ * Returns the name of the single global site-status channel. Not scoped to a
+ * user — every SSE connection subscribes to it so an admin's announcement change
+ * is broadcast to all clients (ref-counted on the shared subscriber, so it's one
+ * Redis SUBSCRIBE per process regardless of connection count).
+ */
+export function getSiteStatusChannel(): string {
+  return "site-status:events";
 }
 
 /**
@@ -768,6 +804,28 @@ export async function publishSavedFeedCreated(userId: string, feedId: string): P
   return client.publish(channel, JSON.stringify(event));
 }
 
+/**
+ * Publishes an announcement_changed event to the global site-status channel
+ * when an admin changes the announcement banner. Pass the resolved announcement
+ * (with its id) or null when it was disabled/cleared.
+ *
+ * @returns The number of subscribers that received the message (0 if Redis unavailable)
+ */
+export async function publishAnnouncementChanged(
+  announcement: Announcement | null
+): Promise<number> {
+  const client = getPublisherClient();
+  if (!client) {
+    return 0;
+  }
+  const event: SiteStatusEvent = {
+    type: "announcement_changed",
+    announcement,
+    timestamp: new Date().toISOString(),
+  };
+  return client.publish(getSiteStatusChannel(), JSON.stringify(event));
+}
+
 // ============================================================================
 // Shared Subscriber (one Redis connection per process, in-process fan-out)
 // ============================================================================
@@ -983,6 +1041,21 @@ export function parseFeedEvent(message: string): FeedEvent | null {
 export function parseUserEvent(message: string): UserEvent | null {
   try {
     const result = userEventSchema.safeParse(JSON.parse(message));
+    return result.success ? result.data : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Parses a JSON message from the global site-status channel.
+ *
+ * @param message - The JSON string message from Redis
+ * @returns The parsed SiteStatusEvent or null if parsing fails
+ */
+export function parseSiteStatusEvent(message: string): SiteStatusEvent | null {
+  try {
+    const result = siteStatusEventSchema.safeParse(JSON.parse(message));
     return result.success ? result.data : null;
   } catch {
     return null;

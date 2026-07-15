@@ -347,10 +347,38 @@ const coreEventSchema = z.discriminatedUnion("type", [
   tagDeletedEventSchema,
 ]);
 
+/**
+ * Global announcement-banner change, broadcast on the site-status channel (not
+ * per-user). `announcement` is null when the banner was disabled/cleared. Kept
+ * out of `coreEventSchema`/`serverSyncEventSchema` because it's an SSE-only
+ * global signal, not part of the per-user entries/subscriptions/tags sync.
+ */
+const announcementChangedEventSchema = z
+  .object({
+    type: z.literal("announcement_changed"),
+    announcement: z
+      .object({
+        id: z.string(),
+        message: z.string(),
+        // Must stay in sync with ANNOUNCEMENT_LEVELS in
+        // src/server/services/site-status.ts (can't import it here — server
+        // only). A new level added there but not here would make this parse
+        // reject the whole event and the banner would silently not update.
+        level: z.enum(["info", "warning"]),
+      })
+      .nullable(),
+    timestamp: timestampWithDefault,
+    // Carried only to keep every SyncEvent uniform (cursor bookkeeping reads
+    // `updatedAt`); this event never advances a cursor. Defaults to `timestamp`.
+    updatedAt: z.string().optional(),
+  })
+  .transform((event) => ({ ...event, updatedAt: event.updatedAt ?? event.timestamp }));
+
 export const syncEventSchema = z.union([
   coreEventSchema,
   importProgressEventSchema,
   importCompletedEventSchema,
+  announcementChangedEventSchema,
 ]);
 
 /**

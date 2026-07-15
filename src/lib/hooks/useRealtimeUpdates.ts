@@ -101,6 +101,7 @@ const SSE_EVENT_NAMES = [
   "tag_deleted",
   "import_progress",
   "import_completed",
+  "announcement_changed",
 ] as const;
 
 /**
