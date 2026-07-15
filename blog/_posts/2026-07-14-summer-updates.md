@@ -36,7 +36,7 @@ There's also a new **e-paper theme** built for e-ink devices like Kindles, Kobos
 
 - **YouTube feeds** now render as playable inline videos
 - **New Bluesky plugin** fetches full post content instead of truncated embeds
-- **Math rendering**: articles with equations now render them natively as MathML
+- **Math rendering**: articles with MathJax equations now render them natively as MathML
 - **[Discord bot](https://lionreader.com/demo/all?entry=discord-bot)**: save articles by DMing or forwarding a link to the bot
 - **Lion Reader is now MIT licensed** — the full source is at [github.com/brendanlong/lion-reader](https://github.com/brendanlong/lion-reader)
 
