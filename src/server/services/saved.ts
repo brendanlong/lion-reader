@@ -256,6 +256,8 @@ interface InsertSavedEntryParams {
   siteName: string | null;
   imageUrl: string | null;
   contentHash: string;
+  /** True for a failed-save placeholder entry (see savePlaceholderArticle). */
+  isPlaceholder?: boolean;
 }
 
 /**
@@ -306,6 +308,7 @@ async function insertSavedEntry(
       summary: params.summary,
       siteName: params.siteName,
       imageUrl: params.imageUrl,
+      isPlaceholder: params.isPlaceholder ?? false,
       publishedAt: null,
       fetchedAt: now,
       contentHash: params.contentHash,
@@ -838,6 +841,63 @@ export async function savedArticleExistsByUrl(
   return existing[0]?.id ?? null;
 }
 
+/**
+ * Re-select an already-saved article for this (user, normalized URL) and shape
+ * it into a {@link SaveArticleResult} with outcome `"existing"`, version-healing
+ * the sanitized body off the event loop (raw content must not leave the service
+ * layer). Returns null if no such row exists.
+ *
+ * Shared by {@link saveArticle}'s post-conflict idempotent return and
+ * {@link savePlaceholderArticle}'s conflict fallback — both of which need the
+ * existing row **without** triggering a refetch (savePlaceholderArticle must
+ * not, since a placeholder now always refetches on the normal saveArticle path).
+ */
+async function selectExistingSavedArticle(
+  db: typeof dbType,
+  userId: string,
+  savedFeedId: string,
+  normalizedUrl: string
+): Promise<SaveArticleResult | null> {
+  const [row] = await db
+    .select({ entry: entries, userState: userEntries })
+    .from(entries)
+    .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
+    .where(
+      and(
+        eq(entries.feedId, savedFeedId),
+        eq(entries.guid, normalizedUrl),
+        eq(userEntries.userId, userId)
+      )
+    )
+    .limit(1);
+  if (!row) {
+    return null;
+  }
+  const { entry, userState } = row;
+  // Version-check + worker-offload + self-heal rather than a synchronous
+  // re-sanitize of a possibly-stale body (matches the no-refetch path).
+  const { cleaned } = await resolveSanitizedFamily(db, entry.id, "content", {
+    originalSanitized: entry.contentOriginalSanitized,
+    cleanedSanitized: entry.contentCleanedSanitized,
+    version: entry.contentSanitizedVersion,
+    hasRaw: entry.contentOriginal !== null || entry.contentCleaned !== null,
+  });
+  return {
+    id: entry.id,
+    url: entry.url!,
+    title: entry.title,
+    siteName: entry.siteName,
+    author: entry.author,
+    imageUrl: entry.imageUrl,
+    contentCleaned: cleaned,
+    excerpt: entry.summary,
+    read: userState.read,
+    starred: userState.starred,
+    savedAt: entry.fetchedAt,
+    outcome: "existing",
+  };
+}
+
 export async function saveArticle(
   db: typeof dbType,
   userId: string,
@@ -869,7 +929,13 @@ export async function saveArticle(
   let existingEntry: (typeof existing)[0] | null = null;
 
   if (existing.length > 0) {
-    if (!params.refetch) {
+    // A placeholder (a failed-save stand-in, see savePlaceholderArticle) always
+    // refetches on re-save so a transiently-failed URL self-heals into the real
+    // article — even for the no-refetch callers (a plain Wallabag re-share, MCP
+    // save_article). A real saved article still returns instantly unless the
+    // caller opted into refetch. See #1256.
+    const isPlaceholder = existing[0].entry.isPlaceholder;
+    if (!params.refetch && !isPlaceholder) {
       const { entry, userState } = existing[0];
       // Serve the stored sanitized body, healing it off the event loop if the
       // stored SANITIZER_VERSION is behind (raw content must not leave the
@@ -896,7 +962,7 @@ export async function saveArticle(
         outcome: "existing",
       };
     }
-    // refetch=true: continue to fetch new content and compare
+    // refetch=true (or a placeholder): continue to fetch new content and compare
     existingEntry = existing[0];
   }
 
@@ -977,9 +1043,15 @@ export async function saveArticle(
     const { entry: oldEntry, userState } = existingEntry;
     const now = new Date();
 
+    // A placeholder body is intentionally tiny (URL + failure reason), so the
+    // "reject if new content is worse" guard would reject nearly every real
+    // article that replaces it. Replacing a placeholder with any real content
+    // should always win — treat it as force-equivalent (#1256).
+    const skipQualityGuard = params.force || oldEntry.isPlaceholder;
+
     // Compare content quality to avoid overwriting good content with bad
     // (e.g., private Google Doc fetched with auth, refetched without)
-    if (!params.force) {
+    if (!skipQualityGuard) {
       const oldTextLength = oldEntry.contentCleaned ? stripHtml(oldEntry.contentCleaned).length : 0;
 
       const newTextLength = pluginContent
@@ -1029,6 +1101,9 @@ export async function saveArticle(
         imageUrl: metadata.imageUrl,
         contentHash,
         updatedAt: now,
+        // A successful real save clears the placeholder mark (no-op when the
+        // entry was already a real article). See #1256.
+        isPlaceholder: false,
       },
       presanitizedCleaned
     );
@@ -1114,45 +1189,12 @@ export async function saveArticle(
   // guid) between our existence check above and the insert. Return the existing
   // article idempotently instead of surfacing a unique-violation 500 (#952).
   if (!saved) {
-    const [row] = await db
-      .select({ entry: entries, userState: userEntries })
-      .from(entries)
-      .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
-      .where(
-        and(
-          eq(entries.feedId, savedFeedId),
-          eq(entries.guid, normalizedUrl),
-          eq(userEntries.userId, userId)
-        )
-      )
-      .limit(1);
-    if (!row) {
+    const existingResult = await selectExistingSavedArticle(db, userId, savedFeedId, normalizedUrl);
+    if (!existingResult) {
       // Should not happen: the insert only aborts on an existing row.
       throw new Error(`Saved article vanished after conflict: ${normalizedUrl}`);
     }
-    const { entry, userState } = row;
-    // See the no-refetch path above: version-check + worker-offload + self-heal
-    // rather than a synchronous re-sanitize of a possibly-stale body.
-    const { cleaned } = await resolveSanitizedFamily(db, entry.id, "content", {
-      originalSanitized: entry.contentOriginalSanitized,
-      cleanedSanitized: entry.contentCleanedSanitized,
-      version: entry.contentSanitizedVersion,
-      hasRaw: entry.contentOriginal !== null || entry.contentCleaned !== null,
-    });
-    return {
-      id: entry.id,
-      url: entry.url!,
-      title: entry.title,
-      siteName: entry.siteName,
-      author: entry.author,
-      imageUrl: entry.imageUrl,
-      contentCleaned: cleaned,
-      excerpt: entry.summary,
-      read: userState.read,
-      starred: userState.starred,
-      savedAt: entry.fetchedAt,
-      outcome: "existing",
-    };
+    return existingResult;
   }
 
   logger.info("Saved article", {
@@ -1180,20 +1222,19 @@ export async function saveArticle(
  *
  * The entry keeps the original URL (so it stays clickable and the save is
  * idempotent by URL), uses the URL as its title, and the failure reason as its
- * body. Interactive callers (tRPC/MCP) must keep surfacing the real error
- * instead of calling this.
+ * body. It is flagged `is_placeholder = true` (see below). Interactive callers
+ * (tRPC/MCP) must keep surfacing the real error instead of calling this.
  *
- * Trade-off (accepted): because the placeholder is stored under `guid =
- * normalized URL`, a later *no-refetch* save of the same URL — a plain re-share
- * to the Wallabag app, or MCP `save_article` — matches it and returns the
- * placeholder rather than re-fetching, so it does NOT auto-heal into the real
- * article. This mainly bites the transient failure codes we still treat as
- * client errors (`UPSTREAM_RATE_LIMITED`, `SITE_BLOCKED`): a save that failed
- * only momentarily leaves a placeholder that a plain re-share won't replace. It
- * is recoverable — the web `saved.save` path defaults `refetch: true` and heals
- * it, and deleting the placeholder then re-sharing fetches fresh — but a bare
- * app re-share won't. We accept this because the alternative (a jammed queue
- * that blocks *every* newer save) is worse. See #1254.
+ * Self-heal (#1256): the placeholder is stored under `guid = normalized URL`, so
+ * a later save of the same URL matches it. Because it's flagged, {@link
+ * saveArticle} always **refetches** a placeholder on re-save (even for the
+ * no-refetch callers — a plain Wallabag re-share, MCP `save_article`) and, on
+ * success, replaces it with the real article. So a transiently-failed URL
+ * (`UPSTREAM_RATE_LIMITED`, `SITE_BLOCKED`) heals on the next re-share instead of
+ * being stuck behind the placeholder. Only *this* function's own conflict
+ * fallback (below) returns the existing placeholder without refetching, so a
+ * re-fetch that fails *again* still drains the Wallabag queue with a 200 rather
+ * than looping.
  */
 export async function savePlaceholderArticle(
   db: typeof dbType,
@@ -1220,6 +1261,7 @@ export async function savePlaceholderArticle(
     siteName: null,
     imageUrl: null,
     contentHash,
+    isPlaceholder: true,
   });
 
   if (saved) {
@@ -1232,9 +1274,20 @@ export async function savePlaceholderArticle(
 
   // The (feed_id, guid) already exists: this URL was previously saved (a real
   // article or an earlier placeholder), or two queued retries raced. Return the
-  // existing entry idempotently instead of a unique-violation. The no-refetch
-  // saveArticle path re-selects and version-heals it exactly as we need.
-  return saveArticle(db, userId, { url: params.url });
+  // existing entry idempotently instead of a unique-violation.
+  //
+  // Deliberately re-select directly rather than calling saveArticle: a
+  // placeholder now always *refetches* on the saveArticle path, and a refetch
+  // that fails again would throw here — breaking this surface's contract of
+  // draining the Wallabag queue with a 200. (This is reached only after our own
+  // insert lost a race with an existing row, so a fresh fetch here would be
+  // wasted work anyway.)
+  const existingResult = await selectExistingSavedArticle(db, userId, savedFeedId, normalizedUrl);
+  if (!existingResult) {
+    // Should not happen: the insert only aborts on an existing row.
+    throw new Error(`Saved placeholder vanished after conflict: ${normalizedUrl}`);
+  }
+  return existingResult;
 }
 
 /**
