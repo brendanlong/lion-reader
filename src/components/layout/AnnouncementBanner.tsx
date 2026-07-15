@@ -12,6 +12,7 @@
 
 import { useCallback, useState } from "react";
 import { CloseIcon } from "@/components/ui/icon-button";
+import { useLiveAnnouncement } from "@/lib/site-status/announcement-store";
 import type { AnnouncementLevel } from "@/server/services/site-status";
 
 const STORAGE_KEY = "lion-reader:announcement-dismissed";
@@ -61,6 +62,12 @@ export interface AnnouncementBannerProps {
 }
 
 export function AnnouncementBanner({ announcement }: AnnouncementBannerProps) {
+  // Live override from SSE (`announcement_changed`). `undefined` means no live
+  // update has arrived, so we use the server-rendered initial value; `null`
+  // means a live update cleared it (hide the banner).
+  const live = useLiveAnnouncement();
+  const current = live === undefined ? announcement : live;
+
   // Lazy init (SSR-safe): read the dismissed id once. Matches the localStorage
   // pattern in useKeyboardShortcutsEnabled.ts.
   const [dismissedId, setDismissedId] = useState<string | null>(() => {
@@ -73,23 +80,19 @@ export function AnnouncementBanner({ announcement }: AnnouncementBannerProps) {
   });
 
   const dismiss = useCallback(() => {
-    if (!announcement) return;
-    setDismissedId(announcement.id);
+    if (!current) return;
+    setDismissedId(current.id);
     try {
-      localStorage.setItem(STORAGE_KEY, announcement.id);
+      localStorage.setItem(STORAGE_KEY, current.id);
     } catch {
       // localStorage unavailable (private browsing) — banner stays hidden for
       // this session via the state update above.
     }
-  }, [announcement]);
+  }, [current]);
 
-  if (!announcement || dismissedId === announcement.id) return null;
+  if (!current || dismissedId === current.id) return null;
 
   return (
-    <AnnouncementBannerView
-      message={announcement.message}
-      level={announcement.level}
-      onDismiss={dismiss}
-    />
+    <AnnouncementBannerView message={current.message} level={current.level} onDismiss={dismiss} />
   );
 }
