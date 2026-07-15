@@ -154,10 +154,11 @@ export default function PrivacyPolicyPage() {
             <LegalSubsection title="Audio Narration (Groq) — Optional">
               <LegalParagraph>
                 <strong>This feature is optional and disabled by default.</strong> When you enable
-                AI text processing in narration settings, article content is sent to Groq (using
-                their Llama 3.1 8B model) to convert it into speakable text. This preprocessing
-                expands abbreviations, formats numbers for speech, and improves pronunciation. The
-                processed text is cached on our servers to avoid repeated processing.
+                AI text processing in narration settings, article content is sent to Groq (running
+                the open-weights GPT-OSS 20B model) to convert it into speakable text. This
+                preprocessing expands abbreviations, formats numbers for speech, and improves
+                pronunciation. The processed text is cached on our servers to avoid repeated
+                processing.
               </LegalParagraph>
               <LegalParagraph>
                 When AI processing is disabled, we use simple HTML-to-text conversion that happens

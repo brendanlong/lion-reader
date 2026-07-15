@@ -1,7 +1,7 @@
 /**
  * Narration service for LLM-based text preprocessing.
  *
- * Uses Groq (Llama 3.1 8B) to convert article HTML to narration-ready text
+ * Uses Groq (GPT-OSS 20B) to convert article HTML to narration-ready text
  * for text-to-speech. Falls back to simple HTML stripping when Groq is unavailable.
  */
 
@@ -191,7 +191,12 @@ export async function generateNarration(
     const userPrompt = JSON.stringify({ paragraphs: inputParagraphs });
 
     const response = await client.chat.completions.create({
-      model: "llama-3.1-8b-instant",
+      model: "openai/gpt-oss-20b",
+      // Mechanical text normalization task — minimal reasoning keeps latency and
+      // token cost close to the old llama-3.1-8b-instant model. gpt-oss emits any
+      // reasoning in a separate `reasoning` field, so `message.content` is still
+      // the clean JSON we parse below.
+      reasoning_effort: "low",
       messages: [
         {
           role: "system",
@@ -204,7 +209,12 @@ export async function generateNarration(
       ],
       response_format: { type: "json_object" }, // Request JSON output
       temperature: 0.1, // Low temperature for consistency
-      max_tokens: 8000,
+      // Output must echo back every rewritten paragraph for the whole article,
+      // and (unlike the old non-reasoning llama-3.1-8b) gpt-oss spends some of
+      // this budget on reasoning tokens even at "low" effort. Keep the cap high
+      // so long articles don't truncate into the (uncached, repeatedly-retried)
+      // fallback path. We only pay for tokens actually generated.
+      max_completion_tokens: 16000,
     });
 
     const rawOutput = response.choices[0]?.message?.content;
