@@ -24,12 +24,14 @@ import AdminOverviewContent from "@/components/admin/AdminOverviewContent";
 import AdminInvitesContent from "@/components/admin/AdminInvitesContent";
 import AdminFeedsContent from "@/components/admin/AdminFeedsContent";
 import AdminUsersContent from "@/components/admin/AdminUsersContent";
+import AdminStatusContent from "@/components/admin/AdminStatusContent";
 
 const adminTabs = [
   { href: "/admin/overview", label: "Overview" },
   { href: "/admin/invites", label: "Invites" },
   { href: "/admin/feeds", label: "Feed Health" },
   { href: "/admin/users", label: "Users" },
+  { href: "/admin/status", label: "Status" },
 ];
 
 /**
@@ -169,6 +171,8 @@ function AdminContentRouter() {
       return <AdminFeedsContent />;
     case "/admin/users":
       return <AdminUsersContent />;
+    case "/admin/status":
+      return <AdminStatusContent />;
     default:
       return <AdminOverviewContent />;
   }

@@ -420,6 +420,10 @@ Practically, this means using the expand/contract pattern:
 - **Expand** (safe in one release): add nullable columns or columns with defaults, add tables, add indexes, create views alongside old ones
 - **Contract** (requires two releases): to drop or rename a column/table, first ship a release whose code no longer references it; only then ship the migration that removes it. A rename is an add + dual-write/backfill + drop across releases, never a single `ALTER ... RENAME`.
 
+### Maintenance Mode
+
+For a heavier migration that can't be made backward-compatible (a data backfill, a non-expand/contract change), an admin can flip **maintenance mode** from `/admin` → Status. It is a **Redis** flag (not Postgres — the DB may be the thing being migrated) read by every process group. The custom server (`scripts/server.ts`) then serves a self-contained 503 maintenance page/JSON for all traffic except the demo (no DB), the admin panel, and the health check; the worker stops claiming jobs and the Discord bot stops responding. Turning it off resumes everything with no redeploy. A `MAINTENANCE_MODE` env var is an additional force-on fallback. There's also a Redis-backed, closeable **announcement banner** (info/warning) shown site-wide for known-issue notices. See "Site Status" in `src/server/CLAUDE.md`.
+
 ### Local Development
 
 Docker Compose provides Postgres and Redis for local development. See README for setup instructions (and "Local Services" in the root CLAUDE.md for the no-Docker path).
