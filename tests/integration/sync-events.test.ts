@@ -443,6 +443,48 @@ describe("sync.events", () => {
         read: true,
         starred: true,
       });
+      // Read entries carry no list payload — there's nothing to insert.
+      expect(stateEvents[0]).not.toHaveProperty("entry");
+    });
+
+    it("attaches the entry list payload to entry_state_changed for unread entries (#1237)", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/unread-payload-feed.xml");
+      const subscriptionId = await createTestSubscription(userId, feedId);
+
+      const entryCreatedAt = new Date("2024-01-01");
+      const entryId = await createTestEntry(feedId, {
+        title: "Payload Entry",
+        createdAt: entryCreatedAt,
+        updatedAt: entryCreatedAt,
+      });
+      await createUserEntry(userId, entryId, { read: true, updatedAt: entryCreatedAt });
+
+      const cursorResult = await createCaller(createAuthContext(userId)).sync.cursors();
+
+      // Marked unread on another device while this client was offline.
+      await db
+        .update(userEntries)
+        .set({ read: false, updatedAt: new Date() })
+        .where(eq(userEntries.entryId, entryId));
+
+      const result = await createCaller(createAuthContext(userId)).sync.events({
+        cursors: { entries: cursorResult.entries! },
+      });
+
+      // The payload mirrors new_entry, so a client with the entry in no cached
+      // list can insert it into the lists it now belongs to.
+      const stateEvents = result.events.filter((e) => e.type === "entry_state_changed");
+      expect(stateEvents).toHaveLength(1);
+      expect(stateEvents[0]).toMatchObject({
+        type: "entry_state_changed",
+        entryId,
+        read: false,
+        subscriptionId,
+        feedId,
+        feedType: "web",
+        entry: expect.objectContaining({ title: "Payload Entry" }),
+      });
     });
 
     it("returns both metadata and state events when both change", async () => {

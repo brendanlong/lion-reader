@@ -507,6 +507,158 @@ describe("handleSyncEvent - entry_state_changed", () => {
     expect(copies.every((e) => e.read === false)).toBe(true);
   });
 
+  it("inserts an entry cached in NO list from the event's list payload (#1237)", () => {
+    // The entry was marked unread on another device (or via MCP) and this
+    // client holds it in no list cache at all — every list was fetched while
+    // it was read and filtered out. restoreUnreadEntriesToListCaches has no
+    // copy to work from; the event's list-item payload (mirroring new_entry)
+    // is what makes it appear.
+    queryClient.setQueryData(
+      [["entries", "list"], { input: { unreadOnly: true, limit: 25 }, type: "infinite" }],
+      {
+        pages: [
+          {
+            items: [DEFAULT_ENTRIES.find((e) => e.id === "entry-1")],
+            nextCursor: undefined,
+          },
+        ],
+        pageParams: [undefined],
+      }
+    );
+    expect(findEntryInQueryClient("entry-uncached")).toBeUndefined();
+
+    handleSyncEvent(
+      utils,
+      queryClient,
+      createEntryStateChangedEvent({
+        entryId: "entry-uncached",
+        read: false,
+        starred: false,
+        subscriptionId: "sub-1",
+        feedId: "feed-1",
+        feedType: "web",
+        updatedAt: "2024-07-01T00:00:00.000Z",
+        entry: {
+          url: "https://example.com/uncached",
+          title: "Uncached Entry",
+          author: null,
+          summary: null,
+          publishedAt: "2024-06-02T12:00:00.000Z",
+          fetchedAt: "2024-06-02T12:00:00.000Z",
+          siteName: null,
+          feedTitle: "Feed One",
+        },
+      })
+    );
+
+    // Inserted in sorted position in the unreadOnly cache (06-02 > entry-1's 06-01)
+    const unreadList = queryClient.getQueryData<{
+      pages: Array<{ items: Array<{ id: string }> }>;
+    }>([["entries", "list"], { input: { unreadOnly: true, limit: 25 }, type: "infinite" }]);
+    const ids = unreadList?.pages.flatMap((p) => p.items.map((i) => i.id));
+    expect(ids).toEqual(["entry-uncached", "entry-1"]);
+
+    const inserted = findEntryInQueryClient("entry-uncached");
+    expect(inserted).toMatchObject({
+      id: "entry-uncached",
+      subscriptionId: "sub-1",
+      feedId: "feed-1",
+      type: "web",
+      title: "Uncached Entry",
+      feedTitle: "Feed One",
+      read: false,
+      starred: false,
+    });
+    // Date strings from the event become Date objects like a real list response
+    expect(inserted?.publishedAt).toBeInstanceOf(Date);
+    expect(inserted?.fetchedAt).toBeInstanceOf(Date);
+    expect(inserted?.updatedAt).toBeInstanceOf(Date);
+  });
+
+  it("is idempotent: applying the same payload event twice inserts one row", () => {
+    const event = createEntryStateChangedEvent({
+      entryId: "entry-uncached",
+      read: false,
+      starred: false,
+      subscriptionId: "sub-1",
+      feedId: "feed-1",
+      feedType: "web",
+      entry: {
+        url: null,
+        title: "Uncached Entry",
+        author: null,
+        summary: null,
+        publishedAt: "2024-06-02T12:00:00.000Z",
+        fetchedAt: "2024-06-02T12:00:00.000Z",
+        siteName: null,
+        feedTitle: "Feed One",
+      },
+    });
+
+    handleSyncEvent(utils, queryClient, event);
+    handleSyncEvent(utils, queryClient, event);
+
+    const copies = getEntriesFromQueryClient().filter((e) => e.id === "entry-uncached");
+    expect(copies).toHaveLength(1);
+  });
+
+  it("inserts an unread starred payload entry into starredOnly caches too", () => {
+    queryClient.setQueryData(
+      [["entries", "list"], { input: { starredOnly: true, limit: 25 }, type: "infinite" }],
+      {
+        pages: [{ items: [], nextCursor: undefined }],
+        pageParams: [undefined],
+      }
+    );
+
+    handleSyncEvent(
+      utils,
+      queryClient,
+      createEntryStateChangedEvent({
+        entryId: "entry-uncached",
+        read: false,
+        starred: true,
+        subscriptionId: "sub-1",
+        feedId: "feed-1",
+        feedType: "web",
+        entry: {
+          url: null,
+          title: "Starred Uncached Entry",
+          author: null,
+          summary: null,
+          publishedAt: "2024-06-02T12:00:00.000Z",
+          fetchedAt: "2024-06-02T12:00:00.000Z",
+          siteName: null,
+          feedTitle: "Feed One",
+        },
+      })
+    );
+
+    const starredList = queryClient.getQueryData<{
+      pages: Array<{ items: Array<{ id: string; starred: boolean }> }>;
+    }>([["entries", "list"], { input: { starredOnly: true, limit: 25 }, type: "infinite" }]);
+    const ids = starredList?.pages.flatMap((p) => p.items.map((i) => i.id));
+    expect(ids).toEqual(["entry-uncached"]);
+  });
+
+  it("does not insert a payload-less unread event for an entry in no cache (older server)", () => {
+    const before = getEntriesFromQueryClient().length;
+
+    handleSyncEvent(
+      utils,
+      queryClient,
+      createEntryStateChangedEvent({
+        entryId: "entry-uncached",
+        read: false,
+        starred: false,
+      })
+    );
+
+    // Nothing to insert from — the entry appears on the next navigation refresh.
+    expect(getEntriesFromQueryClient()).toHaveLength(before);
+    expect(findEntryInQueryClient("entry-uncached")).toBeUndefined();
+  });
+
   it("updates read status in entries.list", () => {
     handleSyncEvent(
       utils,
