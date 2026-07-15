@@ -98,6 +98,11 @@ export function useNarrationKeyboardShortcuts(options: UseNarrationKeyboardShort
 
   const isPlaying = status === "playing";
   const isPaused = status === "paused";
+  // "loading" with paragraphs already loaded means a chunk is generating
+  // mid-playback; controls stay live so the user can pause/skip while it does.
+  const isBufferingMidPlayback = status === "loading" && totalParagraphs > 0;
+  // The narration is controllable (not doing the initial pre-playback generation).
+  const isControllable = isPlaying || isPaused || isBufferingMidPlayback;
 
   // Base enabled condition: shortcuts enabled, modal not open, narration supported
   const baseEnabled = keyboardShortcutsEnabled && !isModalOpen && isSupported;
@@ -107,7 +112,7 @@ export function useNarrationKeyboardShortcuts(options: UseNarrationKeyboardShort
     "p",
     (e) => {
       e.preventDefault();
-      if (isPlaying) {
+      if (isPlaying || isBufferingMidPlayback) {
         pause();
       } else {
         play();
@@ -117,7 +122,7 @@ export function useNarrationKeyboardShortcuts(options: UseNarrationKeyboardShort
       enabled: baseEnabled && !isLoading,
       enableOnFormTags: false,
     },
-    [isPlaying, isLoading, play, pause, baseEnabled]
+    [isPlaying, isBufferingMidPlayback, isLoading, play, pause, baseEnabled]
   );
 
   // Shift+N - Skip to next paragraph
@@ -129,13 +134,10 @@ export function useNarrationKeyboardShortcuts(options: UseNarrationKeyboardShort
     },
     {
       enabled:
-        baseEnabled &&
-        !isLoading &&
-        (isPlaying || isPaused) &&
-        currentParagraph < totalParagraphs - 1,
+        baseEnabled && !isLoading && isControllable && currentParagraph < totalParagraphs - 1,
       enableOnFormTags: false,
     },
-    [skipForward, isLoading, isPlaying, isPaused, currentParagraph, totalParagraphs, baseEnabled]
+    [skipForward, isLoading, isControllable, currentParagraph, totalParagraphs, baseEnabled]
   );
 
   // Shift+P - Skip to previous paragraph
@@ -146,9 +148,9 @@ export function useNarrationKeyboardShortcuts(options: UseNarrationKeyboardShort
       skipBackward();
     },
     {
-      enabled: baseEnabled && !isLoading && (isPlaying || isPaused) && currentParagraph > 0,
+      enabled: baseEnabled && !isLoading && isControllable && currentParagraph > 0,
       enableOnFormTags: false,
     },
-    [skipBackward, isLoading, isPlaying, isPaused, currentParagraph, baseEnabled]
+    [skipBackward, isLoading, isControllable, currentParagraph, baseEnabled]
   );
 }

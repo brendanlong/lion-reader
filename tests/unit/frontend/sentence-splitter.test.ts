@@ -5,7 +5,12 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { splitIntoSentences, splitIntoSentencesWithInfo } from "@/lib/narration/sentence-splitter";
+import {
+  splitIntoSentences,
+  splitIntoSentencesWithInfo,
+  splitLongSentence,
+  MAX_CHUNK_CHARS,
+} from "@/lib/narration/sentence-splitter";
 
 describe("splitIntoSentences", () => {
   describe("basic sentence splitting", () => {
@@ -133,6 +138,59 @@ describe("splitIntoSentences", () => {
       // Sentences should be trimmed but internal spacing preserved
       expect(sentences[0]).toContain("First  sentence");
     });
+  });
+});
+
+describe("long sentence chunking", () => {
+  // A real single-sentence paragraph that sounded rushed under Piper TTS
+  // (395 chars, comma-separated clauses) — see the "In this post I will show…"
+  // paragraph in the fork-around-and-find-out-part-2 post.
+  const LONG_SENTENCE =
+    "In this post I will show that controls rule out obvious alternative readings about block 5, that knight forks are mostly assembled compositionally (check plus queen attack) rather than holistically, and give causal evidence via ablations that tie the fork’s decodability to one specific attention head, ending on one potential confound that threatens to completely reshape what our results mean.";
+
+  it("leaves sentences within the limit unchanged", () => {
+    const short = "This is a perfectly reasonable length sentence.";
+    expect(short.length).toBeLessThanOrEqual(MAX_CHUNK_CHARS);
+    expect(splitLongSentence(short)).toEqual([short]);
+  });
+
+  it("splits an over-long sentence into multiple chunks under the limit", () => {
+    const chunks = splitLongSentence(LONG_SENTENCE);
+
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const chunk of chunks) {
+      expect(chunk.length).toBeLessThanOrEqual(MAX_CHUNK_CHARS);
+    }
+  });
+
+  it("splits at clause boundaries, preserving all words in order", () => {
+    const chunks = splitLongSentence(LONG_SENTENCE);
+
+    // Every word from the original survives, in order, when rejoined.
+    const originalWords = LONG_SENTENCE.split(/\s+/);
+    const chunkedWords = chunks.join(" ").split(/\s+/);
+    expect(chunkedWords).toEqual(originalWords);
+  });
+
+  it("splits a very long run-on clause at word boundaries", () => {
+    // No clause punctuation at all, so it can only break on words.
+    const runOn = Array.from({ length: 60 }, (_, i) => `word${i}`).join(" ");
+    expect(runOn.length).toBeGreaterThan(MAX_CHUNK_CHARS);
+
+    const chunks = splitLongSentence(runOn);
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const chunk of chunks) {
+      expect(chunk.length).toBeLessThanOrEqual(MAX_CHUNK_CHARS);
+    }
+    expect(chunks.join(" ")).toBe(runOn);
+  });
+
+  it("applies chunking through splitIntoSentences", () => {
+    const chunks = splitIntoSentences(LONG_SENTENCE);
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const chunk of chunks) {
+      expect(chunk.length).toBeLessThanOrEqual(MAX_CHUNK_CHARS);
+    }
   });
 });
 
