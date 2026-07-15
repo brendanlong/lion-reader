@@ -44,6 +44,15 @@ function SaveContent() {
     onSuccess: (data) => {
       setArticleTitle(data.article.title);
     },
+    onError: (error) => {
+      // The shared URL is actually a feed, not an article — send the user to the
+      // Subscribe page pre-filled with it instead of failing the save. The
+      // server signals this via the machine-readable `URL_IS_FEED` message (tRPC
+      // doesn't ship the error `cause` to the client).
+      if (error.message === "URL_IS_FEED" && urlToSave) {
+        window.location.replace(`/subscribe?url=${encodeURIComponent(urlToSave)}`);
+      }
+    },
   });
 
   const uploadFileMutation = trpc.saved.uploadFile.useMutation({
@@ -197,6 +206,10 @@ function SaveContent() {
     requestGoogleDocsAccessMutation.mutate({});
   };
 
+  // The shared URL turned out to be a feed; we're redirecting to /subscribe.
+  // Keep showing a spinner rather than flashing the error card.
+  const isFeedRedirect = activeMutation.error?.message === "URL_IS_FEED";
+
   // Check if error is an auth error (session expired, revoked, etc.)
   const isAuthError = activeMutation.error?.data?.code === "UNAUTHORIZED";
 
@@ -250,14 +263,18 @@ function SaveContent() {
         <div className="text-center">
           <h1 className="ui-text-lg text-body font-semibold">Save to Lion Reader</h1>
 
-          {/* Saving State (includes idle and pending) */}
-          {(activeMutation.isIdle || activeMutation.isPending) && (
+          {/* Saving State (includes idle, pending, and the feed→subscribe redirect) */}
+          {(activeMutation.isIdle || activeMutation.isPending || isFeedRedirect) && (
             <div className="mt-6">
               <div className="flex justify-center">
                 <SpinnerIcon className="text-muted h-8 w-8" />
               </div>
               <p className="ui-text-sm text-muted mt-3">
-                {shareType === "file" ? "Uploading file..." : "Saving article..."}
+                {isFeedRedirect
+                  ? "This is a feed — opening Subscribe..."
+                  : shareType === "file"
+                    ? "Uploading file..."
+                    : "Saving article..."}
               </p>
               {urlToSave && <p className="ui-text-xs text-muted mt-2 truncate">{urlToSave}</p>}
             </div>
@@ -281,7 +298,7 @@ function SaveContent() {
           )}
 
           {/* Error State */}
-          {activeMutation.isError && (
+          {activeMutation.isError && !isFeedRedirect && (
             <div className="mt-6">
               {/* Authentication Required */}
               {isAuthError ? (

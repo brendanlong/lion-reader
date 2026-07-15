@@ -13,7 +13,14 @@ import type { db as dbType } from "@/server/db";
 import { entries, userEntries } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { normalizeUrl } from "@/lib/url";
-import { fetchHtmlPage, HttpFetchError, ContentTooLargeError } from "@/server/http/fetch";
+import {
+  fetchHtmlPage,
+  fetchUrl as fetchRawUrl,
+  HttpFetchError,
+  ContentTooLargeError,
+  InvalidContentTypeError,
+} from "@/server/http/fetch";
+import { parseFeed } from "@/server/feed/parser";
 import { processMarkdown } from "@/server/markdown";
 import { usageLimitsConfig } from "@/server/config/env";
 import { absolutizeUrls } from "@/server/feed/content-cleaner";
@@ -508,6 +515,44 @@ async function fetchPrivateGoogleDocWithAuth(
   }
 }
 
+/**
+ * Content types that are unambiguously a feed. When a page fetch is rejected
+ * with one of these, we can route to Subscribe without a second fetch.
+ */
+const UNAMBIGUOUS_FEED_CONTENT_TYPES = [
+  "application/rss+xml",
+  "application/atom+xml",
+  "application/feed+json",
+];
+
+/**
+ * Decide whether a URL that failed a page fetch on its content type is actually
+ * a feed (so the caller can route the user to Subscribe instead of failing the
+ * save). Unambiguous feed content types short-circuit; ambiguous XML/JSON
+ * (`text/xml`, `application/xml`, `application/json`) is confirmed by fetching
+ * and actually parsing it as a feed — so a sitemap (`<urlset>`) or a plain JSON
+ * API (no JSON Feed `version`/`items`) is correctly rejected rather than
+ * misrouted to Subscribe. Only reached on the rare feed-rejection path, so the
+ * common article save stays a single fetch.
+ */
+async function urlIsDirectFeed(url: string, contentType: string): Promise<boolean> {
+  const normalized = contentType.toLowerCase();
+  if (UNAMBIGUOUS_FEED_CONTENT_TYPES.some((type) => normalized.includes(type))) {
+    return true;
+  }
+  try {
+    const { text } = await fetchRawUrl(url);
+    // parseFeed throws for unknown formats and for structurally-invalid feeds
+    // (a sitemap, a plain JSON object, etc.) — exactly what we want to exclude.
+    parseFeed(text);
+    return true;
+  } catch {
+    // Not fetchable or not a real feed: treat as not-a-feed and let the original
+    // fetch error surface.
+    return false;
+  }
+}
+
 /** True for errors created by errors.contentTooLarge. */
 function isContentTooLargeError(error: unknown): boolean {
   return (
@@ -699,6 +744,14 @@ async function acquireArticleContent(
       }
       if (error.isBlocked()) {
         throw errors.siteBlocked(fetchUrl, error.status);
+      }
+    }
+    // A feed shared to the PWA lands here (feeds are served as XML/JSON, which
+    // the page fetch rejects). If it's really a feed, signal the caller to route
+    // to Subscribe instead of failing the save.
+    if (error instanceof InvalidContentTypeError) {
+      if (await urlIsDirectFeed(fetchUrl, error.contentType)) {
+        throw errors.urlIsFeed(fetchUrl);
       }
     }
     throw errors.savedArticleFetchError(
