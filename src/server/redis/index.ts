@@ -29,6 +29,20 @@ export function getRedisClient(): Redis | null {
   }
 
   redisInitialized = true;
+
+  // During `next build`, route modules are imported and the root layout's
+  // getAnnouncement() runs while prerendering static pages. REDIS_URL is set to a
+  // dummy value (see Dockerfile) that nothing listens on, so eagerly creating a
+  // client here (lazyConnect: false) makes ioredis spew hundreds of
+  // "[ioredis] Unhandled error event: AggregateError" lines as the connection
+  // retries against a dead address — thousands of lines of build-log noise.
+  // Skip Redis during the build phase: every consumer already treats a null
+  // client as "Redis unavailable" and falls back safely (e.g. getSiteStatus
+  // returns no announcement). At runtime NEXT_PHASE is unset, so this is a no-op.
+  if (process.env.NEXT_PHASE === "phase-production-build") {
+    return null;
+  }
+
   const redisUrl = process.env.REDIS_URL;
 
   if (!redisUrl) {

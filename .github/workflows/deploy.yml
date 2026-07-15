@@ -47,6 +47,9 @@ jobs:
         uses: superfly/flyctl-actions/setup-flyctl@master
 
       - name: Deploy to Fly.io
-        run: flyctl deploy --remote-only
+        # Pass the deployed commit SHA as a build arg: the alpine builder has no
+        # git, so next.config.ts's `git rev-parse` fallback can't resolve it.
+        # Short SHA to match the previous git-derived value baked into User-Agent.
+        run: flyctl deploy --remote-only --build-arg GIT_COMMIT_SHA="$(git rev-parse --short HEAD)"
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
