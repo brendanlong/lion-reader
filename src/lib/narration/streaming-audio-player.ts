@@ -139,15 +139,24 @@ export class StreamingAudioPlayer {
   // Buffering state
   private isBuffering = false;
   private bufferingCancelled = false;
+  // Monotonic id bumped by cancelBuffering() every time in-flight generation is
+  // invalidated (pause/skip/stop). Each generation captures the current value
+  // and discards its result if the id has since changed. This is more robust
+  // than the shared `bufferingCancelled` boolean, which a newly-started
+  // generation resets to false — resurrecting an already-cancelled generation
+  // and causing double caching/playback on fast pause→resume or skip.
+  private bufferGeneration = 0;
   private currentGenerationParagraph: number | null = null;
   private currentGenerationSentence: number | null = null;
 
   // Playback state
   private isPaused = false;
-  // True when the user paused while a chunk was still generating (no audio
-  // source to resume). Resume restarts playback from the current position
-  // instead of trying to resume a non-existent source.
-  private pausedWhileBuffering = false;
+  // True when a resume must restart playback from the current position rather
+  // than resume a paused audio source, because there is no source to resume:
+  // either we paused mid-generation (buffering), or we skipped while paused
+  // (which stops and discards the paused buffer). Restarting replays the cached
+  // chunk if one exists, or regenerates it.
+  private resumeByRestart = false;
   private currentSentenceEndCallback: (() => void) | null = null;
 
   constructor(
@@ -204,11 +213,11 @@ export class StreamingAudioPlayer {
 
     if (this.status === "paused") {
       this.isPaused = false;
-      if (this.pausedWhileBuffering) {
-        // We paused mid-generation, so there's no audio source to resume.
-        // Restart from the current position — this replays the cached chunk if
-        // generation finished while paused, or regenerates it otherwise.
-        this.pausedWhileBuffering = false;
+      if (this.resumeByRestart) {
+        // No paused audio source to resume (we paused mid-generation or skipped
+        // while paused). Restart from the current position — replays the cached
+        // chunk if it exists, or regenerates it.
+        this.resumeByRestart = false;
         await this.startPlaybackFrom(this.position);
       } else {
         this.resumePlayback();
@@ -239,7 +248,7 @@ export class StreamingAudioPlayer {
       this.setStatus("paused");
     } else if (this.status === "buffering") {
       this.isPaused = true;
-      this.pausedWhileBuffering = true;
+      this.resumeByRestart = true;
       this.cancelBuffering();
       this.setStatus("paused");
     }
@@ -252,7 +261,7 @@ export class StreamingAudioPlayer {
     this.cancelBuffering();
     this.stopPlayback();
     this.isPaused = false;
-    this.pausedWhileBuffering = false;
+    this.resumeByRestart = false;
     this.position = { paragraph: 0, sentence: 0 };
     this.setStatus("idle");
     this.notifyPositionChange();
@@ -280,6 +289,11 @@ export class StreamingAudioPlayer {
     if (this.status === "playing" || this.status === "buffering") {
       await this.startPlaybackFrom(this.position);
     } else {
+      // Paused: stopPlayback() discarded the paused buffer, so resume must
+      // restart from the new position rather than resume a stale source.
+      if (this.status === "paused") {
+        this.resumeByRestart = true;
+      }
       this.notifyPositionChange();
     }
   }
@@ -299,6 +313,11 @@ export class StreamingAudioPlayer {
     if (this.status === "playing" || this.status === "buffering") {
       await this.startPlaybackFrom(this.position);
     } else {
+      // Paused: stopPlayback() discarded the paused buffer, so resume must
+      // restart from the new position rather than resume a stale source.
+      if (this.status === "paused") {
+        this.resumeByRestart = true;
+      }
       this.notifyPositionChange();
     }
   }
@@ -435,13 +454,16 @@ export class StreamingAudioPlayer {
     this.currentGenerationParagraph = paragraphIndex;
     this.currentGenerationSentence = sentenceIndex;
     this.bufferingCancelled = false;
+    const generation = this.bufferGeneration;
 
     try {
       const sentenceText = paragraphCache.sentences[sentenceIndex];
       const buffer = await this.generateAudio(sentenceText, this.config.voiceId);
 
-      // Check if we were cancelled
-      if (this.bufferingCancelled) {
+      // Discard the result if this generation was superseded (cancelled by a
+      // pause/skip/stop while it was in flight, even if a newer generation has
+      // since reset `bufferingCancelled`).
+      if (generation !== this.bufferGeneration) {
         return;
       }
 
@@ -460,7 +482,7 @@ export class StreamingAudioPlayer {
         this.startBuffering();
       }
     } catch (error) {
-      if (!this.bufferingCancelled) {
+      if (generation === this.bufferGeneration) {
         this.callbacks.onError?.(error instanceof Error ? error : new Error(String(error)));
         this.setStatus("idle");
       }
@@ -614,6 +636,9 @@ export class StreamingAudioPlayer {
   private cancelBuffering(): void {
     this.bufferingCancelled = true;
     this.isBuffering = false;
+    // Invalidate any in-flight generation so its result is discarded even if a
+    // subsequently-started generation resets `bufferingCancelled`.
+    this.bufferGeneration++;
   }
 
   /**
@@ -689,6 +714,7 @@ export class StreamingAudioPlayer {
     // Generate the sentence
     this.currentGenerationParagraph = targetParagraph;
     this.currentGenerationSentence = targetSentence;
+    const generation = this.bufferGeneration;
 
     try {
       const paragraphCache = this.getOrCreateParagraphCache(targetParagraph);
@@ -701,7 +727,10 @@ export class StreamingAudioPlayer {
 
       const buffer = await this.generateAudio(sentenceText, this.config.voiceId);
 
-      if (this.bufferingCancelled) {
+      // Discard if this generation was superseded (cancelled while in flight);
+      // a stale generation must not cache or continue the loop, or two buffer
+      // loops end up running at once after a skip.
+      if (generation !== this.bufferGeneration) {
         this.isBuffering = false;
         return;
       }
@@ -722,7 +751,9 @@ export class StreamingAudioPlayer {
       // Continue trying to buffer
       this.currentGenerationParagraph = null;
       this.currentGenerationSentence = null;
-      if (!this.bufferingCancelled) {
+      // Only retry if this generation is still current (not cancelled by a
+      // pause/skip/stop while it was in flight).
+      if (generation === this.bufferGeneration) {
         await this.sleep(500);
         this.bufferLoop();
       } else {
