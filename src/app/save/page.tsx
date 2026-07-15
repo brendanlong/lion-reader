@@ -50,7 +50,7 @@ function SaveContent() {
       // server signals this via the machine-readable `URL_IS_FEED` message (tRPC
       // doesn't ship the error `cause` to the client).
       if (error.message === "URL_IS_FEED" && urlToSave) {
-        window.location.replace(`/subscribe?url=${encodeURIComponent(urlToSave)}&shared=true`);
+        window.location.replace(`/subscribe?url=${encodeURIComponent(urlToSave)}`);
       }
     },
   });

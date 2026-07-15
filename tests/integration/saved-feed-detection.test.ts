@@ -34,6 +34,16 @@ const SITEMAP_BODY = `<?xml version="1.0" encoding="UTF-8"?>
 const HTML_BODY = `<!doctype html><html><head><title>An Article</title></head>
 <body><article><h1>An Article</h1><p>${"Some real body text. ".repeat(40)}</p></article></body></html>`;
 
+// A valid JSON Feed vs. a plain JSON API response, both served as
+// application/json (the ambiguous branch): the feed must route to Subscribe, the
+// API must not.
+const JSON_FEED_BODY = JSON.stringify({
+  version: "https://jsonfeed.org/version/1.1",
+  title: "Example JSON Feed",
+  items: [{ id: "1", title: "First post" }],
+});
+const JSON_API_BODY = JSON.stringify({ data: [1, 2, 3], ok: true });
+
 let server: Server;
 let baseUrl: string;
 
@@ -52,6 +62,12 @@ beforeAll(async () => {
       // Ambiguous content type, non-feed body → normal save-fetch error, not a feed.
       res.writeHead(200, { "Content-Type": "application/xml" });
       res.end(SITEMAP_BODY);
+    } else if (path === "/json-feed") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON_FEED_BODY);
+    } else if (path === "/json-api") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON_API_BODY);
     } else if (path === "/article") {
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       res.end(HTML_BODY);
@@ -102,6 +118,23 @@ describe("saveArticle feed detection", () => {
     const userId = await createTestUser();
     const promise = saveArticle(db, userId, { url: `${baseUrl}/sitemap.xml` });
     // Not a feed → the original fetch failure surfaces, not URL_IS_FEED.
+    await expect(promise).rejects.toThrow();
+    await promise.catch((error) => {
+      expect(error.message).not.toBe("URL_IS_FEED");
+      expect(getAppErrorCode(error)).toBe("SAVED_ARTICLE_FETCH_ERROR");
+    });
+  });
+
+  it("throws URL_IS_FEED for a valid JSON Feed served as application/json", async () => {
+    const userId = await createTestUser();
+    await expect(saveArticle(db, userId, { url: `${baseUrl}/json-feed` })).rejects.toThrow(
+      "URL_IS_FEED"
+    );
+  });
+
+  it("does not treat a plain JSON API response as a feed", async () => {
+    const userId = await createTestUser();
+    const promise = saveArticle(db, userId, { url: `${baseUrl}/json-api` });
     await expect(promise).rejects.toThrow();
     await promise.catch((error) => {
       expect(error.message).not.toBe("URL_IS_FEED");
