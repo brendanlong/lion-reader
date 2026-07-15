@@ -32,7 +32,7 @@ const article: DemoArticle = {
 
     <p>The first time you save an article, the extension opens a tab to authenticate with your Lion Reader account. Once logged in, the article is saved and the extension receives a scoped API token for future saves. From then on, saving is instant &mdash; the extension calls the Lion Reader API directly without needing to open any tabs.</p>
 
-    <p>Saved articles appear in your <strong>Saved</strong> section in the sidebar, fully integrated with the rest of Lion Reader. You can star them, <a href="/demo/all?entry=tags">tag them</a>, <a href="/demo/all?entry=search">search</a> across them, read them with <a href="/demo/all?entry=text-to-speech">text-to-speech</a>, and generate <a href="/demo/all?entry=ai-summaries">AI summaries</a> &mdash; everything you can do with <a href="/demo/all?entry=rss-atom">RSS entries</a>.</p>
+    <p>Saved articles appear in your <strong>Saved</strong> section in the sidebar, fully integrated with the rest of Lion Reader. You can star them, <a href="/demo/all?entry=tags">tag them</a>, read them with <a href="/demo/all?entry=text-to-speech">text-to-speech</a>, and generate <a href="/demo/all?entry=ai-summaries">AI summaries</a> &mdash; everything you can do with <a href="/demo/all?entry=rss-atom">RSS entries</a>.</p>
 
     <h3>Google Docs Support</h3>
 

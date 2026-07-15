@@ -87,7 +87,7 @@ const SUBSCRIPTION_CONFIG: Record<string, { title: string; tagId: string; descri
   organization: {
     title: "Organization & Search",
     tagId: "features",
-    description: "Tags, full-text search, and OPML import/export for organizing your feeds.",
+    description: "Tags and OPML import/export for organizing your feeds.",
   },
   integrations: {
     title: "Integrations & Sync",
