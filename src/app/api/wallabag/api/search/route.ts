@@ -16,12 +16,20 @@ import { jsonResponse, errorResponse, parseEntryListParams } from "@/server/wall
 import { formatEntryListItem, createPaginatedResponse } from "@/server/wallabag/format";
 import * as entriesService from "@/server/services/entries";
 import { db } from "@/server/db";
+import { ENTRY_SEARCH_ENABLED } from "@/lib/feature-flags";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request): Promise<Response> {
   const auth = await requireAuth(request);
   if (auth instanceof Response) return auth;
+
+  // Full-text search is temporarily disabled (#1249). Return a clear client
+  // error here instead of letting the service's TRPCError surface as a 500.
+  if (!ENTRY_SEARCH_ENABLED) {
+    return errorResponse("invalid_request", "Search is temporarily disabled on this server", 400);
+  }
+
   const url = new URL(request.url);
 
   const term = url.searchParams.get("term");

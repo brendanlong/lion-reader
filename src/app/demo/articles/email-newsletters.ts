@@ -18,7 +18,7 @@ const article: DemoArticle = {
 
     <h3>How It Works</h3>
 
-    <p>When you create an ingest address, you can label it for organization (e.g., &ldquo;Tech Newsletters&rdquo; or &ldquo;Personal&rdquo;). Subscribe to newsletters using this address just like you would with your regular email. When newsletters arrive, Lion Reader processes them via <a href="https://www.mailgun.com/" target="_blank" rel="noopener noreferrer">Mailgun</a> webhook integration, verifies HMAC signatures for security, deduplicates by Message-ID, and converts the content into regular feed entries with a full reading experience. You can star entries, mark them read, <a href="/demo/all?entry=search">search</a> across content, and organize them with <a href="/demo/all?entry=tags">tags</a> &mdash; everything you can do with <a href="/demo/all?entry=rss-atom">RSS feeds</a>.</p>
+    <p>When you create an ingest address, you can label it for organization (e.g., &ldquo;Tech Newsletters&rdquo; or &ldquo;Personal&rdquo;). Subscribe to newsletters using this address just like you would with your regular email. When newsletters arrive, Lion Reader processes them via <a href="https://www.mailgun.com/" target="_blank" rel="noopener noreferrer">Mailgun</a> webhook integration, verifies HMAC signatures for security, deduplicates by Message-ID, and converts the content into regular feed entries with a full reading experience. You can star entries, mark them read, and organize them with <a href="/demo/all?entry=tags">tags</a> &mdash; everything you can do with <a href="/demo/all?entry=rss-atom">RSS feeds</a>.</p>
 
     <h3>Security &amp; Spam Protection</h3>
 
