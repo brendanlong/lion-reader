@@ -6,6 +6,7 @@ node_modules/
 out/
 build/
 dist/
+native/*/target/
 
 # Lock files
 pnpm-lock.yaml

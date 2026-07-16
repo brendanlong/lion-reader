@@ -22,8 +22,7 @@ import { fetchWithSsrfProtection } from "@/server/http/ssrf";
 import { usageLimitsConfig } from "@/server/config/env";
 import { stripHtml } from "@/server/html/strip-html";
 import { USER_AGENT } from "@/server/http/user-agent";
-import { detectFeedType } from "@/server/feed/parser";
-import { parseFeedInWorker } from "@/server/worker-thread/pool";
+import { detectFeedType, parseFeedAsync } from "@/server/feed/parser";
 import { discoverFeeds, getCommonFeedUrls, type DiscoveredFeed } from "@/server/feed/discovery";
 import { getDomainFromUrl, type ParsedEntry, type ParsedFeed } from "@/server/feed/types";
 import { pluginRegistry, getFeedPlugin } from "@/server/plugins";
@@ -172,7 +171,7 @@ async function tryFetchAsFeed(
 
     // Try to parse to get the title
     try {
-      const parsed = await parseFeedInWorker(text);
+      const parsed = await parseFeedAsync(text);
       return {
         url,
         type: feedType,
@@ -337,7 +336,7 @@ export const feedsRouter = createTRPCRouter({
       // Step 3: Parse the feed
       let parsedFeed: ParsedFeed;
       try {
-        parsedFeed = await parseFeedInWorker(feedContent);
+        parsedFeed = await parseFeedAsync(feedContent);
       } catch (error) {
         throw errors.parseError(error instanceof Error ? error.message : "Invalid feed format");
       }

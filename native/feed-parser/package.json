@@ -1,0 +1,12 @@
+{
+  "name": "@lion-reader/feed-parser",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Native (Rust) RSS/Atom/OPML feed parsing: quick-xml SAX ports of the old htmlparser2 parsers behind N-API calls.",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "scripts": {
+    "build": "node build.mjs",
+    "build:debug": "node build.mjs --debug"
+  }
+}

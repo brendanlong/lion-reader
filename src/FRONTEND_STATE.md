@@ -92,6 +92,7 @@ restored this way; it reappears on the next navigation refresh.)
 | `subscriptions.delete`  | `Sidebar`, Broken feeds                  | Optimistic remove (`onMutate`); set absolute `counts` from response + invalidate `entries.list` (`onSuccess`) |
 | `subscriptions.setTags` | `EditSubscriptionDialog`                 | (handled by dialog close)                                                                                     |
 | `subscriptions.import`  | `OpmlImportExport`                       | Toast + navigate; `import_progress`/`import_completed` SSE events invalidate `imports.*`                      |
+| `imports.preview`       | `OpmlImportExport`                       | None (pure server-side OPML parse for the preview list; no cached data changes)                               |
 
 Tag mutations (`tags.create/update/delete`) invalidate/patch via their components; the corresponding SSE events keep other tabs in sync.
 

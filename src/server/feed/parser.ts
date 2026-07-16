@@ -9,6 +9,7 @@ import type { ParsedFeed } from "./types";
 import type { FeedParseResult } from "./streaming/types";
 import {
   parseFeed as parseFeedInternal,
+  parseFeedAsync as parseFeedAsyncInternal,
   parseFeedWithFormat as parseFeedWithFormatInternal,
   detectFeedType as detectFeedTypeInternal,
   UnknownFeedFormatError,
@@ -58,6 +59,25 @@ export function detectFeedType(content: string): "rss" | "atom" | "json" | "unkn
  */
 export function parseFeed(content: string): ParsedFeed {
   const result = parseFeedInternal(content);
+  return resultToParsedFeed(result);
+}
+
+/**
+ * Async form of `parseFeed` for app-server request paths: RSS/Atom parsing
+ * runs on the libuv thread pool (via the native `@lion-reader/feed-parser`
+ * module), so a large feed never blocks the event loop that serves UI
+ * requests; small feeds parse inline (the async hop costs more than the
+ * parse). Background jobs (the feed poller) deliberately use the synchronous
+ * `parseFeed` — they already run off the request path, so the async hop
+ * would be pure overhead.
+ *
+ * @param content - The feed content as a string
+ * @returns A ParsedFeed object with normalized feed data
+ * @throws UnknownFeedFormatError if the feed format cannot be detected
+ * @throws Error if the feed is invalid (missing required elements)
+ */
+export async function parseFeedAsync(content: string): Promise<ParsedFeed> {
+  const result = await parseFeedAsyncInternal(content);
   return resultToParsedFeed(result);
 }
 

@@ -1,0 +1,28 @@
+[package]
+name = "lion-reader-feed-parser"
+version = "1.0.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+# Standalone workspace so this crate doesn't accidentally join a parent
+# workspace. Like the sanitizer, the pure parsing logic lives in ./core so
+# `cargo test -p lion-reader-feed-parser-core` can link without Node's N-API
+# symbols; this crate is only the napi wrapper.
+[workspace]
+members = ["core"]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+lion-reader-feed-parser-core = { path = "core" }
+napi = { version = "2", default-features = false, features = ["napi8"] }
+napi-derive = "2"
+
+[build-dependencies]
+napi-build = "2"
+
+[profile.release]
+lto = true
+opt-level = 3

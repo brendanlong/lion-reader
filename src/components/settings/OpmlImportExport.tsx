@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { Card } from "@/components/ui/card";
 import { UploadIcon, DownloadIcon, SpinnerIcon } from "@/components/ui/icon-button";
-import { parseOpml, type OpmlFeed } from "@/server/feed/opml";
+import type { OpmlFeed } from "@/server/feed/opml";
 
 // ============================================================================
 // Types
@@ -169,40 +169,48 @@ function ImportSection() {
     },
   });
 
-  const handleFileSelect = useCallback(async (file: File) => {
-    setError(null);
-    setBaseState({ type: "parsing" });
+  // OPML parsing happens server-side (imports.preview): the parser is a
+  // native module, so it can't run in the browser bundle — and shouldn't;
+  // parsing isn't UI work.
+  const previewMutation = trpc.imports.preview.useMutation();
 
-    // Validate file type
-    if (!file.name.endsWith(".opml") && !file.name.endsWith(".xml")) {
-      setError("Please select an OPML or XML file");
-      setBaseState({ type: "idle" });
-      return;
-    }
+  const handleFileSelect = useCallback(
+    async (file: File) => {
+      setError(null);
+      setBaseState({ type: "parsing" });
 
-    // Validate file size (5MB max)
-    if (file.size > 5 * 1024 * 1024) {
-      setError("File is too large (max 5MB)");
-      setBaseState({ type: "idle" });
-      return;
-    }
-
-    try {
-      const content = await file.text();
-      const feeds = await parseOpml(content);
-
-      if (feeds.length === 0) {
-        setError("No feeds found in the OPML file");
+      // Validate file type
+      if (!file.name.endsWith(".opml") && !file.name.endsWith(".xml")) {
+        setError("Please select an OPML or XML file");
         setBaseState({ type: "idle" });
         return;
       }
 
-      setBaseState({ type: "preview", feeds, opmlContent: content });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to parse OPML file");
-      setBaseState({ type: "idle" });
-    }
-  }, []);
+      // Validate file size (5MB max)
+      if (file.size > 5 * 1024 * 1024) {
+        setError("File is too large (max 5MB)");
+        setBaseState({ type: "idle" });
+        return;
+      }
+
+      try {
+        const content = await file.text();
+        const { feeds } = await previewMutation.mutateAsync({ opml: content });
+
+        if (feeds.length === 0) {
+          setError("No feeds found in the OPML file");
+          setBaseState({ type: "idle" });
+          return;
+        }
+
+        setBaseState({ type: "preview", feeds, opmlContent: content });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to parse OPML file");
+        setBaseState({ type: "idle" });
+      }
+    },
+    [previewMutation]
+  );
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
