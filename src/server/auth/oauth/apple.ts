@@ -15,6 +15,7 @@
  */
 
 import { generateState } from "arctic";
+import { createRemoteJWKSet, jwtVerify } from "jose";
 import { getAppleProvider, getAppleClientId, isProviderEnabled } from "./config";
 import { redis } from "@/server/redis";
 
@@ -24,9 +25,28 @@ import { redis } from "@/server/redis";
 const APPLE_ISSUER = "https://appleid.apple.com";
 
 /**
+ * Apple's JWKS endpoint. Apple signs id_tokens with rotating RS256 keys published
+ * here; `jose` fetches and caches them (fixed, trusted host — not user-influenced).
+ */
+const APPLE_JWKS_URL = new URL("https://appleid.apple.com/auth/keys");
+
+/**
  * Clock-skew allowance (seconds) when checking the id_token `exp` claim.
  */
 const CLOCK_SKEW_SECONDS = 60;
+
+/**
+ * Lazily-created remote JWKS resolver (cached across requests; `jose` handles key
+ * caching and rotation internally). Created on first use so importing this module
+ * doesn't open a network handle.
+ */
+let appleJwks: ReturnType<typeof createRemoteJWKSet> | null = null;
+function getAppleJwks(): ReturnType<typeof createRemoteJWKSet> {
+  if (!appleJwks) {
+    appleJwks = createRemoteJWKSet(APPLE_JWKS_URL);
+  }
+  return appleJwks;
+}
 
 // ============================================================================
 // Constants
@@ -191,65 +211,48 @@ async function consumeState(state: string): Promise<AppleStateData | null> {
 // ============================================================================
 
 /**
- * Decodes and validates the claims of an Apple JWT id_token.
+ * Verifies an Apple JWT id_token and returns its claims.
  *
- * The token is obtained via a direct server-to-Apple TLS `authorization_code`
- * exchange (`apple.validateAuthorizationCode`), so its authenticity is guaranteed
- * by that transport — an attacker has no position to substitute a forged token on
- * that channel. What that transport does NOT establish is that the token was minted
- * *for us*, so we validate the registered claims here to prevent token/audience
- * confusion and replay:
+ * Full verification via `jose`:
+ *   - signature against Apple's published JWKS (defeats a forged token)
  *   - `iss` must be Apple's issuer
- *   - `aud` must be our configured client ID
+ *   - `aud` must be our configured client ID (defeats token/audience confusion)
  *   - `exp` must be in the future (with a small clock-skew allowance)
  *
- * (Full JWKS signature verification would be strictly stronger, but is redundant
- * given the TLS-authenticated code exchange and would add a per-login key fetch.)
+ * The token also arrives over a direct server-to-Apple TLS `authorization_code`
+ * exchange, but we do not rely on that alone — the claims and signature are checked.
  *
  * @param idToken - The JWT id_token from Apple
- * @returns The decoded, claim-validated payload
- * @throws Error if the token is malformed or its claims don't validate
+ * @returns The verified payload
+ * @throws Error if the token is malformed, forged, expired, or minted for another client
  */
-function decodeAppleIdToken(idToken: string): AppleJWTPayload {
-  const parts = idToken.split(".");
-  if (parts.length !== 3) {
-    throw new Error("Invalid id_token format");
-  }
-
-  // Decode the payload (second part)
-  const payload = parts[1];
-  const decoded = Buffer.from(payload, "base64url").toString("utf8");
-
-  const claims = JSON.parse(decoded) as AppleJWTPayload;
-
-  // Validate issuer
-  if (claims.iss !== APPLE_ISSUER) {
-    throw new Error("Apple id_token has an unexpected issuer");
-  }
-
-  // Validate audience against our configured client ID
+async function verifyAppleIdToken(idToken: string): Promise<AppleJWTPayload> {
   const expectedAud = getAppleClientId();
-  if (!expectedAud || claims.aud !== expectedAud) {
-    throw new Error("Apple id_token audience does not match this application");
+  if (!expectedAud) {
+    throw new Error("Apple OAuth is not configured");
   }
 
-  // Validate expiry (exp is in seconds since epoch)
-  const nowSeconds = Date.now() / 1000;
-  if (typeof claims.exp !== "number" || claims.exp + CLOCK_SKEW_SECONDS < nowSeconds) {
-    throw new Error("Apple id_token has expired");
+  const { payload } = await jwtVerify(idToken, getAppleJwks(), {
+    issuer: APPLE_ISSUER,
+    audience: expectedAud,
+    clockTolerance: CLOCK_SKEW_SECONDS,
+  });
+
+  if (typeof payload.sub !== "string") {
+    throw new Error("Apple id_token is missing a subject");
   }
 
-  return claims;
+  return payload as unknown as AppleJWTPayload;
 }
 
 /**
- * Extracts user info from Apple's id_token
+ * Verifies Apple's id_token and extracts user info from it.
  *
  * @param idToken - The JWT id_token from Apple
  * @returns Parsed user information
  */
-function extractUserInfoFromToken(idToken: string): AppleUserInfo {
-  const payload = decodeAppleIdToken(idToken);
+async function extractUserInfoFromToken(idToken: string): Promise<AppleUserInfo> {
+  const payload = await verifyAppleIdToken(idToken);
 
   // Parse email_verified - Apple may send as string "true"/"false" or boolean
   let emailVerified: boolean | undefined;
@@ -352,8 +355,8 @@ export async function validateAppleCallback(
   // Apple returns an id_token that contains user info
   const idToken = tokens.idToken();
 
-  // Extract user info from the id_token
-  const userInfo = extractUserInfoFromToken(idToken);
+  // Verify and extract user info from the id_token
+  const userInfo = await extractUserInfoFromToken(idToken);
 
   // Parse first-auth user data if provided
   // Apple sends this as a JSON string in the callback on first authorization only
