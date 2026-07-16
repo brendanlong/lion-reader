@@ -111,6 +111,29 @@ describe("useSwipeGesture", () => {
     expect(onSwipeLeft).not.toHaveBeenCalled();
   });
 
+  it("blocks an edge-zone swipe even when zoom edge-gating would allow it", () => {
+    // Zoomed 2x and panned fully left: isSwipeNavigationAllowed("right") is
+    // true, but a rightward swipe starting inside the 32px screen-edge strip
+    // is still treated as the OS back gesture and dropped — the edge-zone
+    // check deliberately takes precedence (#1260).
+    Object.defineProperty(document.documentElement, "clientWidth", {
+      configurable: true,
+      value: 400,
+    });
+    Object.defineProperty(window, "visualViewport", {
+      configurable: true,
+      value: { offsetLeft: 0, width: 200 },
+    });
+    try {
+      const { onSwipeRight, handlers } = setup();
+      handlers.onTouchStart(touchEvent([{ clientX: 10, clientY: 0 }]));
+      handlers.onTouchEnd(touchEvent([], [{ clientX: 150, clientY: 0 }]));
+      expect(onSwipeRight).not.toHaveBeenCalled();
+    } finally {
+      delete (document.documentElement as unknown as { clientWidth?: number }).clientWidth;
+    }
+  });
+
   it("fires onSwipeRight for a rightward swipe starting away from the edge", () => {
     const { onSwipeRight, handlers } = setup();
     handlers.onTouchStart(touchEvent([{ clientX: RIGHT, clientY: 0 }]));
