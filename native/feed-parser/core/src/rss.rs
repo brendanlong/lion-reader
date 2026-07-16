@@ -390,6 +390,71 @@ mod tests {
     }
 
     #[test]
+    fn unclosed_comment_or_cdata_keeps_content_parsed_before_it() {
+        // htmlparser2 treated an unclosed comment/CDATA as swallowing the
+        // rest of the input without erroring; the parse keeps whatever came
+        // before. quick-xml reports these as EOF SyntaxErrors, which run_sax
+        // maps to a graceful end-of-input.
+        let xml = r#"<rss version="2.0">
+          <channel>
+            <title>Feed</title>
+            <item><title>Post</title><guid>p1</guid></item>
+            <!-- unclosed comment swallows the rest
+            <item><title>Never seen</title></item>
+        "#;
+        let feed = parse_rss(xml).unwrap();
+        assert_eq!(feed.title.as_deref(), Some("Feed"));
+        assert_eq!(feed.entries.len(), 1);
+        assert_eq!(feed.entries[0].guid.as_deref(), Some("p1"));
+
+        let xml = r#"<rss><channel><title>Feed</title><item><guid>p1</guid></item><description><![CDATA[never closed"#;
+        let feed = parse_rss(xml).unwrap();
+        assert_eq!(feed.title.as_deref(), Some("Feed"));
+        assert_eq!(feed.entries.len(), 1);
+    }
+
+    #[test]
+    fn truncated_feed_implicitly_closes_open_elements() {
+        // htmlparser2 fired onclosetag for every still-open element at EOF,
+        // so a truncated feed keeps its last partially-written entry.
+        let feed = parse_rss("<rss><channel><title>Feed").unwrap();
+        assert_eq!(feed.title.as_deref(), Some("Feed"));
+        assert!(feed.entries.is_empty());
+
+        let feed = parse_rss("<rss><channel><title>Feed</title><item><title>Post").unwrap();
+        assert_eq!(feed.title.as_deref(), Some("Feed"));
+        assert_eq!(feed.entries.len(), 1);
+        assert_eq!(feed.entries[0].title.as_deref(), Some("Post"));
+    }
+
+    #[test]
+    fn end_tag_dispatch_matches_htmlparser2_stack_semantics() {
+        // An end tag closes down to its nearest open match (</item> closes
+        // the unclosed <title> first)...
+        let feed =
+            parse_rss("<rss><channel><item><title>Post</item><item><guid>g2</guid></item>")
+                .unwrap();
+        assert_eq!(feed.entries.len(), 2);
+        assert_eq!(feed.entries[0].title.as_deref(), Some("Post"));
+        assert_eq!(feed.entries[1].guid.as_deref(), Some("g2"));
+
+        // ...and an end tag with no open match is ignored entirely, so the
+        // text buffer keeps accumulating across it.
+        let feed = parse_rss(
+            "<rss><channel><item><description>foo</p>bar</description></item></channel></rss>",
+        )
+        .unwrap();
+        assert_eq!(feed.entries[0].summary.as_deref(), Some("foobar"));
+        assert_eq!(feed.entries[0].content.as_deref(), Some("foobar"));
+
+        // A deep close (</channel> while inside an item title) captures the
+        // title and pushes the entry on the way out.
+        let feed = parse_rss("<rss><channel><item><title>Post</channel></rss>").unwrap();
+        assert_eq!(feed.entries.len(), 1);
+        assert_eq!(feed.entries[0].title.as_deref(), Some("Post"));
+    }
+
+    #[test]
     fn handles_unclosed_link_tags() {
         let xml = r#"<rss version="2.0">
           <channel>
