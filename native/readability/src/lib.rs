@@ -52,12 +52,51 @@ fn build_config(options: Option<&ExtractOptions>) -> Config {
     cfg
 }
 
+/// Maximum DOM nesting depth handed to the extractor. dom_smoothie's scoring
+/// passes are super-linear in nesting depth (measured: depth 2000 ≈ 7s,
+/// 3000 ≈ 22s, 5000 doesn't finish in a minute) and extraction runs on
+/// attacker-controlled feed HTML, so pathological nesting must fail fast to
+/// the raw-content fallback — the old JS pipeline got this for free by
+/// overflowing the call stack (caught and mapped to null). Real articles
+/// nest a few dozen levels; Blink flattens the tree beyond 512.
+const MAX_DOM_DEPTH: usize = 512;
+
+/// Iterative max-depth walk over the parsed document (recursion here would
+/// hit the same stack problem we're guarding against).
+fn exceeds_max_depth(reader: &Readability) -> bool {
+    let mut stack: Vec<(_, usize)> = vec![(reader.doc.root(), 1)];
+    while let Some((node, depth)) = stack.pop() {
+        if depth > MAX_DOM_DEPTH {
+            return true;
+        }
+        if let Some(child) = node.first_child() {
+            stack.push((child, depth + 1));
+        }
+        if let Some(sibling) = node.next_sibling() {
+            stack.push((sibling, depth));
+        }
+    }
+    false
+}
+
 fn run_extract(html: &str, options: Option<&ExtractOptions>) -> Result<Option<ExtractedArticle>> {
+    // A panic inside the extractor (dom_smoothie has a couple of
+    // partial_cmp().unwrap() sites on f32 scores) would otherwise unwind
+    // across the N-API boundary and abort the whole Node process; treat it
+    // as an ordinary extraction failure instead.
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| extract_inner(html, options)))
+        .unwrap_or(Ok(None))
+}
+
+fn extract_inner(html: &str, options: Option<&ExtractOptions>) -> Result<Option<ExtractedArticle>> {
     // No document URL: relative-URL resolution (including <base href>) is done
     // by the caller's absolutizeUrls post-pass, exactly as with the old
     // linkedom pipeline, so URL policy stays in one place.
     let mut reader = Readability::new(html, None, Some(build_config(options)))
         .map_err(|e| Error::new(Status::GenericFailure, format!("readability init failed: {e}")))?;
+    if exceeds_max_depth(&reader) {
+        return Ok(None);
+    }
     let probably_readable = reader.is_probably_readable();
     match reader.parse() {
         Ok(article) => Ok(Some(ExtractedArticle {
