@@ -64,6 +64,7 @@ export async function GET(request: NextRequest) {
       provider: "discord",
       providerAccountId: userInfo.id,
       email: userInfo.email,
+      emailVerified: userInfo.verified === true,
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
       expiresAt: tokens.expiresAt,

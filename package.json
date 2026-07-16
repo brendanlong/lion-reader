@@ -84,6 +84,7 @@
     "html-rewriter-wasm": "^0.4.1",
     "htmlparser2": "^10.1.0",
     "ioredis": "^5.11.1",
+    "jose": "6.2.3",
     "linkedom": "^0.18.12",
     "mammoth": "^1.12.0",
     "marked": "^18.0.4",

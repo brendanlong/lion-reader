@@ -1,6 +1,15 @@
 packages:
   - .
 
+# Supply-chain: only resolve package versions that have been on the registry for at
+# least this many minutes (10080 = 7 days), giving a compromised release time to be
+# caught and yanked before it reaches us. pnpm skips in-window versions and picks the
+# newest one that has cleared the cooldown, so `pnpm add`/`update` need no special
+# handling. Set here (not per-machine global config) so everyone resolves identically.
+# We deliberately keep this applied to every package — high-usage, high-frequency
+# deps are the most attractive targets, so there's no minimumReleaseAgeExclude.
+minimumReleaseAge: 10080
+
 ignoredBuiltDependencies:
   - sharp
   - unrs-resolver

@@ -10,7 +10,7 @@
  */
 
 import crypto from "crypto";
-import { eq, and, isNull, gt, sql } from "drizzle-orm";
+import { eq, and, isNull, ne, gt, sql } from "drizzle-orm";
 import { db, type Database } from "@/server/db";
 import { sessions, users, type User, type Session } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
@@ -575,6 +575,55 @@ export async function revokeSessionByToken(token: string): Promise<boolean> {
 
   // Drizzle returns affected row count
   return result.rowCount !== null && result.rowCount > 0;
+}
+
+/**
+ * Revokes all of a user's active sessions except one, and clears their Redis
+ * caches. Used after a password change so a stolen/lingering session on another
+ * device can't outlive the credential it was created under — the current session
+ * (the one performing the change) is kept alive.
+ *
+ * @param userId - The user whose other sessions to revoke
+ * @param exceptSessionId - The session ID to keep active
+ * @returns The number of sessions revoked
+ */
+export async function revokeOtherUserSessions(
+  userId: string,
+  exceptSessionId: string
+): Promise<number> {
+  const revokeFilter = and(
+    eq(sessions.userId, userId),
+    isNull(sessions.revokedAt),
+    ne(sessions.id, exceptSessionId)
+  );
+
+  // Capture the token hashes first so we can evict their cache entries after
+  // the DB revoke (the cached copy still validates until its key is deleted).
+  const toRevoke = await db
+    .select({ tokenHash: sessions.tokenHash })
+    .from(sessions)
+    .where(revokeFilter);
+
+  if (toRevoke.length === 0) {
+    return 0;
+  }
+
+  await db.update(sessions).set({ revokedAt: new Date() }).where(revokeFilter);
+
+  const redis = getRedisClient();
+  if (redis) {
+    try {
+      const pipeline = redis.pipeline();
+      for (const session of toRevoke) {
+        pipeline.del(getCacheKey(session.tokenHash));
+      }
+      await pipeline.exec();
+    } catch (err) {
+      console.error("Failed to invalidate revoked session caches:", err);
+    }
+  }
+
+  return toRevoke.length;
 }
 
 /**
