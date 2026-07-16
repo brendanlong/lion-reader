@@ -16,7 +16,6 @@ import next from "next";
 import { createServer } from "node:http";
 import { maybeCompressResponse } from "../src/server/http/compression";
 import { stripOauthSurfaceTrailingSlash } from "../src/server/http/trailing-slash";
-import { startMetricsServer, stopMetricsServer } from "../src/server/metrics/server";
 import {
   startMaintenancePoller,
   getCurrentMaintenance,
@@ -115,9 +114,6 @@ app.prepare().then(() => {
     });
   });
 
-  // Start internal metrics server for Prometheus scraping (port 9091)
-  startMetricsServer(9091);
-
   // Graceful shutdown: stop accepting connections, let in-flight requests
   // drain, sever long-lived connections (SSE streams never end on their own —
   // destroying their sockets aborts the requests, which unsubscribes them
@@ -141,15 +137,15 @@ app.prepare().then(() => {
     server.close(() => {
       void (async () => {
         try {
-          // Close DB pool / Redis / metrics registered by instrumentation.ts
-          // (the Next.js runtime's module graph — a separate copy from this
-          // bundle's modules in production).
+          // Close DB pool / Redis / metrics server, all registered by
+          // instrumentation.ts in the Next.js runtime module graph (a separate
+          // copy from this bundle's modules in production). The metrics server
+          // (port 9091) is started AND stopped there so it shares the registry
+          // the route handlers write to — see src/instrumentation.ts.
           const cleanup = getResourceCleanup();
           if (cleanup) {
             await cleanup();
           }
-          // Stop this bundle's metrics server copy, whichever bound the port.
-          await stopMetricsServer();
           logger.info("Graceful shutdown complete");
           process.exit(0);
         } catch (error) {
