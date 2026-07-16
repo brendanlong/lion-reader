@@ -10,10 +10,10 @@
  * is just a regular session token with a different transport mechanism.
  */
 
-import * as argon2 from "argon2";
 import { eq } from "drizzle-orm";
 import { db } from "@/server/db";
 import { users } from "@/server/db/schema";
+import { verifyPassword } from "@/server/auth/password";
 import { createSession, validateSession, type SessionData } from "@/server/auth/session";
 import { extractBearerToken } from "@/server/auth/bearer";
 import { isSignupConfirmed } from "@/server/auth/confirmation";
@@ -40,6 +40,10 @@ export async function clientLogin(
   const user = await db.select().from(users).where(eq(users.email, email)).limit(1);
 
   if (user.length === 0) {
+    // Equalize timing: run argon2 against a decoy so a non-existent account
+    // isn't measurably faster than a real password check (no enumeration
+    // oracle, #1267).
+    await verifyPassword(null, password);
     return null;
   }
 
@@ -47,11 +51,13 @@ export async function clientLogin(
 
   // Check if user has a password
   if (!foundUser.passwordHash) {
+    // Equalize timing for OAuth-only (passwordless) accounts too (#1267).
+    await verifyPassword(null, password);
     return null;
   }
 
   // Verify password
-  const isValid = await argon2.verify(foundUser.passwordHash, password);
+  const isValid = await verifyPassword(foundUser.passwordHash, password);
   if (!isValid) {
     return null;
   }

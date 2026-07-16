@@ -14,10 +14,10 @@
  * require pre-registration — any valid user credentials work.
  */
 
-import * as argon2 from "argon2";
 import { eq } from "drizzle-orm";
 import { db } from "@/server/db";
 import { users } from "@/server/db/schema";
+import { verifyPassword } from "@/server/auth/password";
 import { extractBearerToken } from "@/server/auth/bearer";
 import { validateAccessToken, createTokens, rotateRefreshToken } from "@/server/oauth/service";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
@@ -50,6 +50,10 @@ export async function passwordGrant(
   const user = await db.select().from(users).where(eq(users.email, username)).limit(1);
 
   if (user.length === 0) {
+    // Equalize timing: run argon2 against a decoy so a non-existent account
+    // isn't measurably faster than a real password check (no enumeration
+    // oracle, #1267).
+    await verifyPassword(null, password);
     logger.warn("Wallabag password grant failed", {
       component: "wallabag",
       grantType: "password",
@@ -63,6 +67,8 @@ export async function passwordGrant(
 
   // Check if user has a password
   if (!foundUser.passwordHash) {
+    // Equalize timing for OAuth-only (passwordless) accounts too (#1267).
+    await verifyPassword(null, password);
     logger.warn("Wallabag password grant failed", {
       component: "wallabag",
       grantType: "password",
@@ -74,7 +80,7 @@ export async function passwordGrant(
   }
 
   // Verify password
-  const isValid = await argon2.verify(foundUser.passwordHash, password);
+  const isValid = await verifyPassword(foundUser.passwordHash, password);
   if (!isValid) {
     logger.warn("Wallabag password grant failed", {
       component: "wallabag",
