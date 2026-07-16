@@ -1,22 +1,13 @@
 packages:
   - .
 
-# Supply-chain: don't install a package version until it has been on the registry
-# for this many minutes (10080 = 7 days), so a compromised release has time to be
-# caught and yanked before it reaches us. Codified here (rather than left to each
-# machine's global pnpm config) so every contributor and CI resolves identically.
-# A frozen-lockfile install skips resolution, so this only gates adding/updating deps.
-#
-# Note: high-usage, high-frequency packages are the *most* attractive supply-chain
-# targets, so we deliberately do NOT exempt any package from the cooldown (no
-# minimumReleaseAgeExclude). If a churny transitive dep (e.g. browserslist /
-# caniuse-lite) lands a release inside the window and blocks `pnpm add`/install,
-# nudge the lockfile back to a cooldown-cleared version — don't exclude it:
-#   1. temporarily add `<pkg>: <older-version>` under `overrides:` below
-#   2. run `pnpm install --config.minimumReleaseAge=0` once to rewrite the lockfile
-#   3. remove the override again — pnpm keeps the now-locked mature version and
-#      won't re-upgrade it, so future `pnpm update` can move forward once newer
-#      releases have themselves cleared the window (nothing stays pinned forever).
+# Supply-chain: only resolve package versions that have been on the registry for at
+# least this many minutes (10080 = 7 days), giving a compromised release time to be
+# caught and yanked before it reaches us. pnpm skips in-window versions and picks the
+# newest one that has cleared the cooldown, so `pnpm add`/`update` need no special
+# handling. Set here (not per-machine global config) so everyone resolves identically.
+# We deliberately keep this applied to every package — high-usage, high-frequency
+# deps are the most attractive targets, so there's no minimumReleaseAgeExclude.
 minimumReleaseAge: 10080
 
 ignoredBuiltDependencies:
