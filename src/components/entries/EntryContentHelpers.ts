@@ -49,6 +49,37 @@ export function detectSwipeDirection(
 }
 
 /**
+ * Width (CSS px) of the strip along each screen edge reserved for the
+ * OS/browser back-forward navigation gesture (iOS edge swipe, Android gesture
+ * nav). Covers the system zones on both platforms: ~20pt on iOS, 24-32dp on
+ * Android.
+ */
+const EDGE_GESTURE_ZONE_PX = 32;
+
+/**
+ * Whether a swipe is (likely) the OS/browser back-forward navigation gesture:
+ * a rightward swipe starting against the left screen edge, or a leftward swipe
+ * starting against the right edge. Some browsers (notably installed PWAs)
+ * deliver the full touch sequence for these gestures *and* perform history
+ * navigation, so also treating them as an article swipe navigates twice —
+ * opening (and auto-marking read) the adjacent article before the browser's
+ * history-back lands on the list (#1260).
+ *
+ * Returns false when the viewport width is unknown (<= 0) so navigation is
+ * never blocked outright.
+ */
+export function isEdgeGestureSwipe(
+  direction: "left" | "right",
+  startX: number,
+  viewportWidth: number
+): boolean {
+  if (viewportWidth <= 0) return false;
+  return direction === "right"
+    ? startX <= EDGE_GESTURE_ZONE_PX
+    : startX >= viewportWidth - EDGE_GESTURE_ZONE_PX;
+}
+
+/**
  * Tolerance (CSS px) for treating the visual viewport as flush against a layout
  * viewport edge; absorbs sub-pixel rounding from pinch-zoom.
  */
