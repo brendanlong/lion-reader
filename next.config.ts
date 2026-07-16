@@ -77,20 +77,15 @@ const withPWAConfig = withPWA({
 
 // Security response headers applied to every route (defense-in-depth). Entry
 // bodies render via `dangerouslySetInnerHTML`, so the server-side sanitizer is
-// the sole XSS gate; these headers make a future sanitizer regression a
-// non-event (CSP blocks plugins/base-tag injection) and stop the app from being
-// framed (clickjacking).
+// the primary XSS gate; these headers make a future sanitizer regression a
+// non-event and stop the app from being framed (clickjacking).
 //
-// The CSP intentionally omits `default-src`/`script-src`: locking those down
-// requires a per-request nonce/hash for the two inline <script>s in layout.tsx,
-// which the static `headers()` config can't emit. We still ship the directives
-// that are safe without a nonce. `frame-ancestors` has no X-Frame-Options
-// equivalent for allow-lists, but we send both so older browsers are covered.
+// The Content-Security-Policy is NOT set here: it carries a per-request nonce
+// for the inline <script>s in layout.tsx, which a static `headers()` value
+// can't emit, so it is set in `src/proxy.ts` (policy in `src/server/http/csp.ts`).
+// `X-Frame-Options` duplicates the CSP's `frame-ancestors 'none'` for browsers
+// that predate it.
 const securityHeaders: { key: string; value: string }[] = [
-  {
-    key: "Content-Security-Policy",
-    value: ["frame-ancestors 'none'", "object-src 'none'", "base-uri 'self'"].join("; "),
-  },
   { key: "X-Frame-Options", value: "DENY" },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },

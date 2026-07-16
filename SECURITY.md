@@ -44,14 +44,22 @@ Entry bodies, saved articles, and AI summaries are rendered with
 - The allowlist deliberately excludes `script`/`style`/`on*`/`form`/`base`/`meta`,
   restricts URL schemes, forces `rel=noopener`, and treats SVG/MathML as mXSS-prone.
   Changes here need a security review.
-- **Defense-in-depth headers** (`securityHeaders` in `next.config.ts`, mirrored on
-  the maintenance short-circuit in `scripts/server.ts`) add a CSP
-  (`frame-ancestors 'none'; object-src 'none'; base-uri 'self'`), `X-Frame-Options`,
-  `X-Content-Type-Options: nosniff`, `Referrer-Policy`, and (prod) HSTS. The CSP
-  does **not** yet lock down `script-src`/`default-src` — that needs a per-request
-  nonce/hash for the two inline `<script>`s in `layout.tsx` — so the sanitizer is
-  still the sole gate against injected `<script>`; the CSP only backstops
-  clickjacking, plugin/object injection, and `<base>` hijacking.
+- **Defense-in-depth headers**: `securityHeaders` in `next.config.ts` sets
+  `X-Frame-Options`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, and
+  (prod) HSTS. The **Content-Security-Policy** is set per-request in
+  `src/proxy.ts` with the policy built in `src/server/http/csp.ts`: it locks
+  `script-src` down to a random per-request nonce (`'strict-dynamic'`), sets
+  `default-src 'self'`, restricts `frame-src` to the sanitizer's allow-listed
+  embed hosts, and keeps `frame-ancestors 'none'` / `object-src 'none'` /
+  `base-uri 'self'`. The nonce is threaded to the inline `<script>`s in
+  `layout.tsx` (and next-themes) via the `x-nonce` request header, so an
+  injected `<script>` (or inline event handler) that survives a sanitizer
+  regression is blocked by the browser instead of executing — the sanitizer is
+  the primary XSS gate, the CSP is the backstop. Directive rationale lives in
+  `csp.ts`; the maintenance short-circuit in `scripts/server.ts` carries its own
+  static, script-less CSP (it bypasses Next and has no scripts). `/sw.js` is
+  deliberately CSP-exempt (the service worker's own fetches for runtime caching
+  of cross-origin images would be broken by the app's `connect-src`).
 
 ## 2. SSRF-safe outbound fetching
 
