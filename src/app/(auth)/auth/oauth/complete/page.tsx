@@ -21,6 +21,7 @@ import { Suspense, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { broadcastOAuthComplete } from "@/lib/oauth-channel";
 import { SpinnerIcon } from "@/components/ui/icon-button";
+import { safeRedirectPath } from "@/lib/safe-redirect";
 
 export default function OAuthCompletePage() {
   return (
@@ -39,7 +40,9 @@ function OAuthCompleteContent() {
     if (hasProcessed.current) return;
     hasProcessed.current = true;
 
-    const redirectTo = searchParams.get("redirect") ?? "/all";
+    // Sanitize to a same-origin path to prevent an open redirect (this value is
+    // also broadcast to other tabs, so an off-site URL must never pass through).
+    const redirectTo = safeRedirectPath(searchParams.get("redirect"));
 
     // Broadcast OAuth completion for PWAs listening in other windows/tabs
     broadcastOAuthComplete(redirectTo);

@@ -15,8 +15,18 @@
  */
 
 import { generateState } from "arctic";
-import { getAppleProvider, isProviderEnabled } from "./config";
+import { getAppleProvider, getAppleClientId, isProviderEnabled } from "./config";
 import { redis } from "@/server/redis";
+
+/**
+ * Apple's OpenID issuer, per https://appleid.apple.com/.well-known/openid-configuration
+ */
+const APPLE_ISSUER = "https://appleid.apple.com";
+
+/**
+ * Clock-skew allowance (seconds) when checking the id_token `exp` claim.
+ */
+const CLOCK_SKEW_SECONDS = 60;
 
 // ============================================================================
 // Constants
@@ -181,11 +191,24 @@ async function consumeState(state: string): Promise<AppleStateData | null> {
 // ============================================================================
 
 /**
- * Decodes an Apple JWT id_token to extract user information
- * Note: We don't verify the signature here as arctic already validates the tokens
+ * Decodes and validates the claims of an Apple JWT id_token.
+ *
+ * The token is obtained via a direct server-to-Apple TLS `authorization_code`
+ * exchange (`apple.validateAuthorizationCode`), so its authenticity is guaranteed
+ * by that transport — an attacker has no position to substitute a forged token on
+ * that channel. What that transport does NOT establish is that the token was minted
+ * *for us*, so we validate the registered claims here to prevent token/audience
+ * confusion and replay:
+ *   - `iss` must be Apple's issuer
+ *   - `aud` must be our configured client ID
+ *   - `exp` must be in the future (with a small clock-skew allowance)
+ *
+ * (Full JWKS signature verification would be strictly stronger, but is redundant
+ * given the TLS-authenticated code exchange and would add a per-login key fetch.)
  *
  * @param idToken - The JWT id_token from Apple
- * @returns The decoded payload
+ * @returns The decoded, claim-validated payload
+ * @throws Error if the token is malformed or its claims don't validate
  */
 function decodeAppleIdToken(idToken: string): AppleJWTPayload {
   const parts = idToken.split(".");
@@ -197,7 +220,26 @@ function decodeAppleIdToken(idToken: string): AppleJWTPayload {
   const payload = parts[1];
   const decoded = Buffer.from(payload, "base64url").toString("utf8");
 
-  return JSON.parse(decoded) as AppleJWTPayload;
+  const claims = JSON.parse(decoded) as AppleJWTPayload;
+
+  // Validate issuer
+  if (claims.iss !== APPLE_ISSUER) {
+    throw new Error("Apple id_token has an unexpected issuer");
+  }
+
+  // Validate audience against our configured client ID
+  const expectedAud = getAppleClientId();
+  if (!expectedAud || claims.aud !== expectedAud) {
+    throw new Error("Apple id_token audience does not match this application");
+  }
+
+  // Validate expiry (exp is in seconds since epoch)
+  const nowSeconds = Date.now() / 1000;
+  if (typeof claims.exp !== "number" || claims.exp + CLOCK_SKEW_SECONDS < nowSeconds) {
+    throw new Error("Apple id_token has expired");
+  }
+
+  return claims;
 }
 
 /**

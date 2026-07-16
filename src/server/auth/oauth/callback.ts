@@ -36,6 +36,17 @@ export interface ProcessOAuthCallbackParams {
    * sends email on first auth, but we can look up the user by providerAccountId).
    */
   email?: string;
+  /**
+   * Whether the provider asserts this email address is verified.
+   *
+   * OAuth sign-in is currently the only way an email gets verified in this app, so
+   * we refuse to trust an unverified provider email: linking by email or creating a
+   * new account with it requires `emailVerified === true`. Returning users matched
+   * by `providerAccountId` (no email needed) are unaffected. Each provider maps its
+   * own claim onto this (`email_verified` for Google, `email_verified` in Apple's
+   * id_token, `verified` for Discord).
+   */
+  emailVerified: boolean;
   /** OAuth access token */
   accessToken: string;
   /** OAuth refresh token (if provided) */
@@ -86,6 +97,7 @@ export async function processOAuthCallback(
     provider,
     providerAccountId,
     email: rawEmail,
+    emailVerified,
     accessToken,
     refreshToken,
     expiresAt,
@@ -145,6 +157,17 @@ export async function processOAuthCallback(
   if (!rawEmail) {
     throw new Error("Email not provided. Please try signing in again and grant email permission.");
   }
+
+  // From here on we trust the email (to link into an existing account or to create a
+  // new one). Refuse to do so unless the provider says it's verified — otherwise an
+  // attacker with an unverified provider account bearing a victim's address could be
+  // linked into the victim's account (account takeover).
+  if (!emailVerified) {
+    throw new Error(
+      "Your email address is not verified with this provider. Please verify it and try again."
+    );
+  }
+
   const email = rawEmail.toLowerCase();
 
   // Check if email matches existing user

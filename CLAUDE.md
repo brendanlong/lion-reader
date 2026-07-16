@@ -4,6 +4,7 @@
 
 Deep subsystem knowledge lives in per-directory `CLAUDE.md` files (loaded automatically when you work on files there) — aggressively keep them, this file, and `docs/DESIGN.md` up-to-date if you notice anything outdated:
 
+- `SECURITY.md` - Map of the **security-critical** code (XSS/SSRF/auth/cross-user isolation) and the invariant each area must uphold. **Reviewers and anyone touching auth, sanitization, outbound fetches, the compat/OAuth/MCP APIs, or cross-user data paths must read it first.**
 - `docs/DESIGN.md` - High-level architecture and design decisions. **Read it before design/architecture work** (deliberately not `@`-inlined).
 - `docs/diagrams/` - D2 flow diagrams for the major systems; great for orienting quickly.
 - `docs/references/` - Reference docs for external tools. Consult before editing related configs.
