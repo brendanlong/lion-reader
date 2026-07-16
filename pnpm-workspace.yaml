@@ -8,10 +8,15 @@ packages:
 # A frozen-lockfile install skips resolution, so this only gates adding/updating deps.
 #
 # Note: high-usage, high-frequency packages are the *most* attractive supply-chain
-# targets, so we deliberately do NOT exempt any package from the cooldown. When a
-# churny transitive dep (browserslist/caniuse-lite) lands a release inside the
-# window and blocks `pnpm add`, pin it a notch back via `overrides` below to the
-# newest version that has cleared the cooldown — never exclude it.
+# targets, so we deliberately do NOT exempt any package from the cooldown (no
+# minimumReleaseAgeExclude). If a churny transitive dep (e.g. browserslist /
+# caniuse-lite) lands a release inside the window and blocks `pnpm add`/install,
+# nudge the lockfile back to a cooldown-cleared version — don't exclude it:
+#   1. temporarily add `<pkg>: <older-version>` under `overrides:` below
+#   2. run `pnpm install --config.minimumReleaseAge=0` once to rewrite the lockfile
+#   3. remove the override again — pnpm keeps the now-locked mature version and
+#      won't re-upgrade it, so future `pnpm update` can move forward once newer
+#      releases have themselves cleared the window (nothing stays pinned forever).
 minimumReleaseAge: 10080
 
 ignoredBuiltDependencies:
@@ -25,12 +30,6 @@ onlyBuiltDependencies:
   - protobufjs
 
 overrides:
-  # Pinned a notch back so the lockfile stays inside the minimumReleaseAge cooldown
-  # above (their latest releases land inside the 7-day window and would otherwise
-  # block `pnpm add`). Bump these to the newest cooldown-cleared version when
-  # convenient — they're just browser-target data, so being a few days behind is fine.
-  browserslist: 4.28.5
-  caniuse-lite: 1.0.30001803
   trpc-to-openapi>h3: ^1.15.9
   serialize-javascript: ^7.0.5
   "@modelcontextprotocol/sdk>hono": ^4.12.21
