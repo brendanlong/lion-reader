@@ -291,17 +291,24 @@ function buildRateLimitResponse(
  * Checks rate limit for a route handler request and returns a 429 Response if exceeded.
  * Returns null if the request is allowed.
  *
+ * Pass `options.userId` for routes that have already authenticated the caller so
+ * the bucket is keyed per user (`user:<id>`), matching the tRPC middleware — a
+ * per-IP key would let everyone behind a shared NAT/proxy share (and exhaust)
+ * one bucket, and let a single user reset their limit by rotating source IPs.
+ * Leave it unset only on pre-authentication endpoints (login / OAuth token
+ * exchange), where there is no user yet and per-IP is the correct key.
+ *
  * @param request - The incoming request
  * @param type - Type of rate limit to apply
- * @param options - Options for the response format
+ * @param options - Response format and the authenticated user id (if any)
  * @returns A 429 Response if rate limited, or null if allowed
  */
 export async function checkRouteRateLimit(
   request: Request,
   type: RateLimitType = "default",
-  options: { json?: boolean } = {}
+  options: { json?: boolean; userId?: string | null } = {}
 ): Promise<Response | null> {
-  const identifier = getClientIdentifier(null, request.headers);
+  const identifier = getClientIdentifier(options.userId ?? null, request.headers);
   const result = await checkRateLimit(identifier, type);
 
   if (!result.allowed) {

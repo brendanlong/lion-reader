@@ -30,8 +30,12 @@ export async function POST(request: Request): Promise<Response> {
   if (session instanceof Response) return session;
 
   // OPML import queues a subscribe job per feed — the tRPC equivalent is an
-  // "expensive" procedure, so rate-limit this compat path the same way.
-  const rateLimited = await checkRouteRateLimit(request, "expensive");
+  // "expensive" procedure, so rate-limit this compat path the same way. Key the
+  // bucket per user (the caller is authenticated), matching the tRPC middleware
+  // rather than falling back to a per-IP key.
+  const rateLimited = await checkRouteRateLimit(request, "expensive", {
+    userId: session.user.id,
+  });
   if (rateLimited) return rateLimited;
 
   const opml = await request.text();

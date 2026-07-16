@@ -28,7 +28,11 @@ export async function POST(request: Request): Promise<Response> {
   // Creating a feed schedules an immediate fetch — the tRPC subscribe path is an
   // "expensive" procedure, so rate-limit this compat path the same way to stop an
   // authenticated client from enqueuing many immediate feed fetches (issue #1266).
-  const rateLimited = await checkRouteRateLimit(request, "expensive");
+  // Key the bucket per user (the caller is authenticated), matching the tRPC
+  // middleware rather than falling back to a per-IP key.
+  const rateLimited = await checkRouteRateLimit(request, "expensive", {
+    userId: session.user.id,
+  });
   if (rateLimited) return rateLimited;
 
   const params = await parseFormData(request);
