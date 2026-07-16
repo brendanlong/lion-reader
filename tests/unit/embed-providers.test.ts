@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalizeEmbed } from "@lion-reader/sanitizer";
+import { normalizeEmbed, embedCanonicalHostnames } from "@lion-reader/sanitizer";
 
 /**
  * The iframe embed allow-list now lives in the native sanitizer
@@ -8,14 +8,7 @@ import { normalizeEmbed } from "@lion-reader/sanitizer";
  */
 
 /** Canonical hostnames every surviving embed src is rewritten to (embeds.rs). */
-const EMBED_CANONICAL_HOSTNAMES = [
-  "www.youtube-nocookie.com",
-  "player.vimeo.com",
-  "open.spotify.com",
-  "w.soundcloud.com",
-  "bandcamp.com",
-  "codepen.io",
-];
+const EMBED_CANONICAL_HOSTNAMES = embedCanonicalHostnames();
 
 describe("normalizeEmbed", () => {
   it("returns null for empty/unrecognized srcs", () => {
@@ -140,6 +133,21 @@ describe("normalizeEmbed", () => {
       const host = new URL(out!.src).hostname;
       expect(EMBED_CANONICAL_HOSTNAMES).toContain(host);
     }
+  });
+
+  it("exposes exactly the six canonical embed hosts (CSP frame-src source of truth)", () => {
+    // src/server/http/csp.ts builds `frame-src` from this list, so it must
+    // stay the set the sanitizer actually rewrites embeds to.
+    expect([...embedCanonicalHostnames()].sort()).toEqual(
+      [
+        "bandcamp.com",
+        "codepen.io",
+        "open.spotify.com",
+        "player.vimeo.com",
+        "w.soundcloud.com",
+        "www.youtube-nocookie.com",
+      ].sort()
+    );
   });
 
   it("accepts the iframe srcs the YouTube plugin synthesizes (sync guard)", () => {
