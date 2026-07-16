@@ -1,10 +1,15 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "entry": ["src/server/worker-thread/worker.ts"],
-  "ignore": [
-    "extension/**",
-    "src/lib/stubs/**",
-    "worker/index.ts",
-    "src/app/demo/articles/scoring.ts"
-  ]
+  "workspaces": {
+    ".": {
+      "entry": ["src/server/worker-thread/worker.ts"],
+      "ignore": [
+        "extension/**",
+        "src/lib/stubs/**",
+        "worker/index.ts",
+        "src/app/demo/articles/scoring.ts"
+      ]
+    },
+    "native/sanitizer": {}
+  }
 }

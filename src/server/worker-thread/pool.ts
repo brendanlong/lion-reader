@@ -18,10 +18,13 @@ import { availableParallelism } from "os";
 import Piscina from "piscina";
 
 import { logger } from "@/lib/logger";
-import { sanitizeEntryHtml, SANITIZER_VERSION } from "@/server/html/sanitize";
+import {
+  sanitizeEntryHtml,
+  sanitizeEntryHtmlAsync,
+  SANITIZER_VERSION,
+} from "@/server/html/sanitize";
 import {
   cleanedContentSchema,
-  sanitizeEntryHtmlResultSchema,
   sanitizerVersionResultSchema,
   serializedParsedFeedSchema,
   deserializeParsedFeed,
@@ -29,11 +32,12 @@ import {
 import type { CleanedContent, CleanContentOptions, ParsedFeed } from "./types";
 
 /**
- * Bodies at or below this size are sanitized inline on the calling thread:
- * sanitize-html runs in well under a millisecond for them, so the fixed cost of
- * copying the string across the thread boundary (and scheduling a task) isn't
- * worth paying. Larger bodies (tens of ms of blocking) are offloaded so they
- * never stall UI-serving requests on the app-server event loop. ~10 KB.
+ * Bodies at or below this size are sanitized synchronously on the calling
+ * thread: the native sanitizer runs in well under a millisecond for them, so
+ * the fixed cost of scheduling a libuv-thread-pool task (and copying the
+ * string across the N-API boundary twice) isn't worth paying. Larger bodies
+ * run async on the libuv pool so they never stall UI-serving requests on the
+ * app-server event loop. ~10 KB.
  */
 const SANITIZE_INLINE_MAX_CHARS = 10 * 1024;
 
@@ -253,45 +257,28 @@ export async function cleanContentInWorker(
 }
 
 /**
- * Sanitize entry-content HTML, offloading to a worker thread for large bodies
- * so the sanitize-html pass never blocks the main event loop on UI-serving
- * requests. Small bodies (≤ SANITIZE_INLINE_MAX_CHARS) and environments without
- * a pool run inline. Drop-in async form of `sanitizeEntryHtml`.
+ * Sanitize entry-content HTML without blocking the main event loop for large
+ * bodies. Drop-in async form of `sanitizeEntryHtml`.
+ *
+ * The native sanitizer runs the pipeline on the libuv thread pool for bodies
+ * above the inline threshold, so this no longer involves the piscina pool at
+ * all (no string structured-clone, no bundle-version concerns — the same
+ * .node module serves every thread). Small bodies run synchronously, which
+ * is cheaper than scheduling a task.
  *
  * Intended for app-server request paths (saved articles, on-demand full-content
  * fetch, read-path re-sanitize). Background jobs (feed fetching, email ingest)
- * deliberately sanitize inline — they already run off the request path, so the
- * extra thread hop and string copy would be pure overhead.
+ * deliberately use the synchronous `sanitizeEntryHtml` — they already run off
+ * the request path, so the async hop would be pure overhead.
  */
 export async function sanitizeEntryHtmlInWorker(
   html: string | null | undefined
 ): Promise<string | null> {
   if (!html) return null;
-
-  // Small bodies sanitize inline (cheaper than the thread hop), so skip the pool
-  // — and its version probe — entirely for them.
   if (html.length <= SANITIZE_INLINE_MAX_CHARS) {
     return sanitizeEntryHtml(html);
   }
-
-  const p = await getVerifiedPool();
-  if (!p) {
-    return sanitizeEntryHtml(html);
-  }
-
-  try {
-    const result = await p.run({ type: "sanitizeEntryHtml", html });
-    return sanitizeEntryHtmlResultSchema.parse(result).sanitized;
-  } catch (error) {
-    // A task-level failure (worker crash/OOM on a pathological body, bad result)
-    // must not fail the caller — the read-path self-heal calls this, so a
-    // rejection would turn entries.get into a 500. Fall back to inline, matching
-    // the pool-unavailable path above.
-    logger.warn("Worker sanitize failed; falling back to inline sanitize", {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return sanitizeEntryHtml(html);
-  }
+  return sanitizeEntryHtmlAsync(html);
 }
 
 /**

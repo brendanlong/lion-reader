@@ -1,33 +1,26 @@
 import { describe, it, expect } from "vitest";
 
-import { extractInlineSvg, reinsertInlineSvg } from "@/server/html/sanitize-svg";
+import { sanitizeEntryHtml } from "@/server/html/sanitize";
 
-/** Convenience: extract + immediately reinsert, i.e. the full round-trip. */
-function roundTrip(html: string): string {
-  const extraction = extractInlineSvg(html);
-  return reinsertInlineSvg(extraction.html, extraction);
+/**
+ * Inline-SVG sanitization now lives in the native sanitizer
+ * (native/sanitizer/core/src/svg.rs) and runs inside `sanitizeEntryHtml`
+ * (extract → sanitize → placeholder → main pass → reinsert). These tests
+ * exercise the pipeline end-to-end; the extraction/placeholder internals are
+ * covered by the Rust unit tests.
+ */
+function sanitize(html: string): string {
+  return sanitizeEntryHtml(html) ?? "";
 }
 
-describe("extractInlineSvg", () => {
+describe("inline SVG through sanitizeEntryHtml", () => {
   it("is a no-op when there is no <svg>", () => {
     const html = "<p>hello <b>world</b></p>";
-    const extraction = extractInlineSvg(html);
-    expect(extraction.html).toBe(html);
-    expect(extraction.svgs).toHaveLength(0);
-  });
-
-  it("replaces the svg with an opaque placeholder that carries no markup", () => {
-    const extraction = extractInlineSvg('<p>x</p><svg><circle r="1"/></svg>');
-    expect(extraction.svgs).toHaveLength(1);
-    // The placeholder left in the HTML must not contain angle brackets, so
-    // sanitize-html treats it as inert text.
-    const withoutPrefix = extraction.html.replace("<p>x</p>", "");
-    expect(withoutPrefix).not.toContain("<");
-    expect(withoutPrefix).not.toContain("svg");
+    expect(sanitize(html)).toBe(html);
   });
 
   it("round-trips a safe SVG, preserving camelCase attribute names", () => {
-    const out = roundTrip(
+    const out = sanitize(
       '<svg viewBox="0 0 10 10" xmlns="http://www.w3.org/2000/svg">' +
         '<clipPath id="c"><rect width="10" height="10"/></clipPath>' +
         '<circle cx="5" cy="5" r="5" clip-path="url(#c)"/></svg>'
@@ -39,7 +32,7 @@ describe("extractInlineSvg", () => {
   });
 
   it("drops disallowed elements with their whole subtree", () => {
-    const out = roundTrip(
+    const out = sanitize(
       '<svg><script>alert(1)</script><foreignObject><div>hi</div></foreignObject><circle r="1"/></svg>'
     );
     expect(out).not.toContain("script");
@@ -49,7 +42,7 @@ describe("extractInlineSvg", () => {
   });
 
   it("strips event handlers and style attributes", () => {
-    const out = roundTrip(
+    const out = sanitize(
       '<svg onload="x()"><rect style="fill:red" onclick="y()" width="1" height="1"/></svg>'
     );
     expect(out).not.toContain("onload");
@@ -58,42 +51,28 @@ describe("extractInlineSvg", () => {
   });
 
   it("preserves the byte-verbatim text between and around SVGs", () => {
-    const extraction = extractInlineSvg(
-      'A<svg><circle r="1"/></svg>B<svg><rect width="1" height="1"/></svg>C'
-    );
-    expect(extraction.nonce.startsWith("inlineph")).toBe(true);
-    // The non-SVG text (A, B, C) must be untouched around the two placeholders.
-    expect(extraction.html.startsWith("A")).toBe(true);
-    expect(extraction.html).toContain("B");
-    expect(extraction.html.endsWith("C")).toBe(true);
-    expect(extraction.svgs).toHaveLength(2);
-    expect(roundTrip('A<svg><circle r="1"/></svg>B')).toBe('A<svg><circle r="1"/></svg>B');
+    const out = sanitize('A<svg><circle r="1"/></svg>B<svg><rect width="1" height="1"/></svg>C');
+    // SVG subtrees are re-serialized with attributes in sorted order (the
+    // parse loses source order); the surrounding text is byte-verbatim.
+    expect(out).toBe('A<svg><circle r="1"/></svg>B<svg><rect height="1" width="1"/></svg>C');
   });
 
-  it("uses a fresh nonce each call (unforgeable placeholder)", () => {
-    const a = extractInlineSvg('<svg><circle r="1"/></svg>');
-    const b = extractInlineSvg('<svg><circle r="1"/></svg>');
-    expect(a.nonce).not.toBe(b.nonce);
+  it("does not let feed content forge a placeholder token", () => {
+    // A feed guessing the placeholder shape gets inert text, never SVG —
+    // the nonce is random per call.
+    const guess = "inlineph000000000000000000000000";
+    const out = sanitize(`<p>${guess}0${guess}</p><svg><circle r="1"/></svg>`);
+    expect(out).toContain(`<p>${guess}0${guess}</p>`);
+    expect(out).toContain("<circle");
   });
 
   it("handles nested <svg> as a single top-level subtree", () => {
-    const extraction = extractInlineSvg('<svg><svg><circle r="1"/></svg></svg>');
-    expect(extraction.svgs).toHaveLength(1);
-    expect(extraction.svgs[0]).toContain("<circle");
-  });
-});
-
-describe("reinsertInlineSvg", () => {
-  it("substitutes each placeholder with its sanitized SVG", () => {
-    const extraction = extractInlineSvg('<div><svg><circle r="1"/></svg></div>');
-    // Simulate sanitize-html having kept the placeholder text inside the div.
-    const sanitizedShell = extraction.html;
-    const final = reinsertInlineSvg(sanitizedShell, extraction);
-    expect(final).toBe('<div><svg><circle r="1"/></svg></div>');
+    const out = sanitize('<svg><svg><circle r="1"/></svg></svg>');
+    expect(out).toContain("<circle");
   });
 
-  it("is a no-op when there were no SVGs", () => {
-    const extraction = extractInlineSvg("<p>x</p>");
-    expect(reinsertInlineSvg("<p>x</p>", extraction)).toBe("<p>x</p>");
+  it("substituted SVG survives inside surrounding sanitized HTML", () => {
+    const out = sanitize('<div onclick="x"><svg><circle r="1"/></svg></div>');
+    expect(out).toBe('<div><svg><circle r="1"/></svg></div>');
   });
 });

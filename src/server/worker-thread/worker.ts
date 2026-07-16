@@ -15,12 +15,7 @@ import { workerRequestSchema, serializeParsedFeed } from "./types";
 import type { CleanedContent as RawCleanedContent } from "@/server/feed/content-cleaner";
 import type { CleanedContent, SerializedParsedFeed } from "./types";
 
-type TaskResult =
-  | CleanedContent
-  | SerializedParsedFeed
-  | { sanitized: string | null }
-  | { version: number }
-  | null;
+type TaskResult = CleanedContent | SerializedParsedFeed | { version: number } | null;
 
 export default function handleTask(raw: unknown): TaskResult {
   const request = workerRequestSchema.parse(raw);
@@ -41,11 +36,9 @@ export default function handleTask(raw: unknown): TaskResult {
     case "parseFeed":
       return serializeParsedFeed(parseFeed(request.content));
 
-    case "sanitizeEntryHtml":
-      return { sanitized: sanitizeEntryHtml(request.html) };
-
-    // Report the sanitizer version compiled into this bundle so the main thread
-    // can detect a stale worker build (see getWorkerSanitizerVersion).
+    // Report the sanitizer version this worker runs (read from the shared
+    // native module at runtime, so it always matches the main process; the
+    // probe now mainly proves the worker loads and speaks the protocol).
     case "sanitizerVersion":
       return { version: SANITIZER_VERSION };
   }
