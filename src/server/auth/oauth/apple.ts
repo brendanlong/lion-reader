@@ -15,8 +15,38 @@
  */
 
 import { generateState } from "arctic";
-import { getAppleProvider, isProviderEnabled } from "./config";
+import { createRemoteJWKSet, jwtVerify } from "jose";
+import { getAppleProvider, getAppleClientId, isProviderEnabled } from "./config";
 import { redis } from "@/server/redis";
+
+/**
+ * Apple's OpenID issuer, per https://appleid.apple.com/.well-known/openid-configuration
+ */
+const APPLE_ISSUER = "https://appleid.apple.com";
+
+/**
+ * Apple's JWKS endpoint. Apple signs id_tokens with rotating RS256 keys published
+ * here; `jose` fetches and caches them (fixed, trusted host — not user-influenced).
+ */
+const APPLE_JWKS_URL = new URL("https://appleid.apple.com/auth/keys");
+
+/**
+ * Clock-skew allowance (seconds) when checking the id_token `exp` claim.
+ */
+const CLOCK_SKEW_SECONDS = 60;
+
+/**
+ * Lazily-created remote JWKS resolver (cached across requests; `jose` handles key
+ * caching and rotation internally). Created on first use so importing this module
+ * doesn't open a network handle.
+ */
+let appleJwks: ReturnType<typeof createRemoteJWKSet> | null = null;
+function getAppleJwks(): ReturnType<typeof createRemoteJWKSet> {
+  if (!appleJwks) {
+    appleJwks = createRemoteJWKSet(APPLE_JWKS_URL);
+  }
+  return appleJwks;
+}
 
 // ============================================================================
 // Constants
@@ -181,33 +211,48 @@ async function consumeState(state: string): Promise<AppleStateData | null> {
 // ============================================================================
 
 /**
- * Decodes an Apple JWT id_token to extract user information
- * Note: We don't verify the signature here as arctic already validates the tokens
+ * Verifies an Apple JWT id_token and returns its claims.
+ *
+ * Full verification via `jose`:
+ *   - signature against Apple's published JWKS (defeats a forged token)
+ *   - `iss` must be Apple's issuer
+ *   - `aud` must be our configured client ID (defeats token/audience confusion)
+ *   - `exp` must be in the future (with a small clock-skew allowance)
+ *
+ * The token also arrives over a direct server-to-Apple TLS `authorization_code`
+ * exchange, but we do not rely on that alone — the claims and signature are checked.
  *
  * @param idToken - The JWT id_token from Apple
- * @returns The decoded payload
+ * @returns The verified payload
+ * @throws Error if the token is malformed, forged, expired, or minted for another client
  */
-function decodeAppleIdToken(idToken: string): AppleJWTPayload {
-  const parts = idToken.split(".");
-  if (parts.length !== 3) {
-    throw new Error("Invalid id_token format");
+async function verifyAppleIdToken(idToken: string): Promise<AppleJWTPayload> {
+  const expectedAud = getAppleClientId();
+  if (!expectedAud) {
+    throw new Error("Apple OAuth is not configured");
   }
 
-  // Decode the payload (second part)
-  const payload = parts[1];
-  const decoded = Buffer.from(payload, "base64url").toString("utf8");
+  const { payload } = await jwtVerify(idToken, getAppleJwks(), {
+    issuer: APPLE_ISSUER,
+    audience: expectedAud,
+    clockTolerance: CLOCK_SKEW_SECONDS,
+  });
 
-  return JSON.parse(decoded) as AppleJWTPayload;
+  if (typeof payload.sub !== "string") {
+    throw new Error("Apple id_token is missing a subject");
+  }
+
+  return payload as unknown as AppleJWTPayload;
 }
 
 /**
- * Extracts user info from Apple's id_token
+ * Verifies Apple's id_token and extracts user info from it.
  *
  * @param idToken - The JWT id_token from Apple
  * @returns Parsed user information
  */
-function extractUserInfoFromToken(idToken: string): AppleUserInfo {
-  const payload = decodeAppleIdToken(idToken);
+async function extractUserInfoFromToken(idToken: string): Promise<AppleUserInfo> {
+  const payload = await verifyAppleIdToken(idToken);
 
   // Parse email_verified - Apple may send as string "true"/"false" or boolean
   let emailVerified: boolean | undefined;
@@ -310,8 +355,8 @@ export async function validateAppleCallback(
   // Apple returns an id_token that contains user info
   const idToken = tokens.idToken();
 
-  // Extract user info from the id_token
-  const userInfo = extractUserInfoFromToken(idToken);
+  // Verify and extract user info from the id_token
+  const userInfo = await extractUserInfoFromToken(idToken);
 
   // Parse first-auth user data if provided
   // Apple sends this as a JSON string in the callback on first authorization only

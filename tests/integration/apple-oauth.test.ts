@@ -13,6 +13,7 @@
 
 import { describe, it, expect, beforeEach, afterAll, vi, beforeAll, afterEach } from "vitest";
 import { eq, and } from "drizzle-orm";
+import { generateKeyPair, exportJWK, SignJWT } from "jose";
 import { db } from "../../src/server/db";
 import { users, sessions, oauthAccounts } from "../../src/server/db/schema";
 import { redis } from "../../src/server/redis";
@@ -22,42 +23,28 @@ import * as argon2 from "argon2";
 // Default mock Apple user info (embedded in JWT)
 const mockAppleUserSub = "apple-user-123.abc.def";
 const mockAppleEmail = "test@example.com";
+const APPLE_ISSUER = "https://appleid.apple.com";
+const APPLE_AUD = "test-apple-client-id";
+const APPLE_KID = "test-key";
+
+// The signed id_token the mocked arctic returns. Set (with a real signature over
+// a test key) in beforeEach; individual tests overwrite it to exercise the real
+// jose verification path (bad signature / issuer / audience / expiry).
+const { appleMock } = vi.hoisted(() => ({ appleMock: { idToken: "" } }));
 
 // Mock the arctic library
 vi.mock("arctic", () => {
-  // Helper to create a mock JWT id_token (defined inside mock to avoid hoisting issues)
-  function mockCreateIdToken(payload: Record<string, unknown>): string {
-    const header = { alg: "RS256", kid: "test-key" };
-    const headerB64 = Buffer.from(JSON.stringify(header)).toString("base64url");
-    const payloadB64 = Buffer.from(JSON.stringify(payload)).toString("base64url");
-    const signature = "mock-signature";
-    return `${headerB64}.${payloadB64}.${signature}`;
-  }
-
   // Create a mock class for Apple that can be instantiated with `new`
   class MockApple {
     createAuthorizationURL(state: string) {
       return new URL(`https://appleid.apple.com/auth/authorize?state=${state}`);
     }
     validateAuthorizationCode() {
-      const idToken = mockCreateIdToken({
-        iss: "https://appleid.apple.com",
-        aud: "test-client-id",
-        exp: Math.floor(Date.now() / 1000) + 3600,
-        iat: Math.floor(Date.now() / 1000),
-        sub: "apple-user-123.abc.def",
-        email: "test@example.com",
-        email_verified: "true",
-        is_private_email: "false",
-        auth_time: Math.floor(Date.now() / 1000),
-        nonce_supported: true,
-      });
-
       return {
         accessToken: () => "mock-apple-access-token",
         hasRefreshToken: () => true,
         refreshToken: () => "mock-apple-refresh-token",
-        idToken: () => idToken,
+        idToken: () => appleMock.idToken,
         accessTokenExpiresAt: () => new Date(Date.now() + 3600000),
       };
     }
@@ -80,10 +67,47 @@ vi.mock("arctic", () => {
   };
 });
 
+// A real RSA key that "Apple" signs id_tokens with; its public half is served from
+// a stubbed JWKS endpoint so jose's signature verification runs for real.
+let testPrivateKey: Awaited<ReturnType<typeof generateKeyPair>>["privateKey"];
+// A second key NOT in the JWKS — used to forge a bad-signature token.
+let wrongPrivateKey: Awaited<ReturnType<typeof generateKeyPair>>["privateKey"];
+let realFetch: typeof globalThis.fetch;
+
+interface SignOverrides {
+  iss?: string;
+  aud?: string;
+  exp?: number;
+  sub?: string;
+  email?: string;
+  emailVerified?: string;
+}
+
+async function signAppleIdToken(
+  overrides: SignOverrides = {},
+  key: () => typeof testPrivateKey = () => testPrivateKey
+): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  return new SignJWT({
+    email: overrides.email ?? mockAppleEmail,
+    email_verified: overrides.emailVerified ?? "true",
+    is_private_email: "false",
+    auth_time: now,
+    nonce_supported: true,
+  })
+    .setProtectedHeader({ alg: "RS256", kid: APPLE_KID })
+    .setIssuer(overrides.iss ?? APPLE_ISSUER)
+    .setAudience(overrides.aud ?? APPLE_AUD)
+    .setSubject(overrides.sub ?? mockAppleUserSub)
+    .setIssuedAt(now)
+    .setExpirationTime(overrides.exp ?? now + 3600)
+    .sign(key());
+}
+
 describe("Apple OAuth", () => {
   // Setup environment for Apple OAuth
-  beforeAll(() => {
-    process.env.APPLE_CLIENT_ID = "test-apple-client-id";
+  beforeAll(async () => {
+    process.env.APPLE_CLIENT_ID = APPLE_AUD;
     process.env.APPLE_TEAM_ID = "test-team-id";
     process.env.APPLE_KEY_ID = "test-key-id";
     // Mock private key in PEM format
@@ -93,6 +117,34 @@ OF/2NxApJCzGCEDdfSp6VQO30hyhRANCAAQRWz+jn65BtOMvdyHKcvjBeBSDZH2r
 1RTwjmYSi9R/zpBnuQ4EiMnCqfMPWiZqB4QdbAd0E7oH50VpuZ1P087G
 -----END PRIVATE KEY-----`;
     process.env.NEXT_PUBLIC_APP_URL = "http://localhost:3000";
+
+    // Generate a real signing key and serve its public half from a stubbed Apple
+    // JWKS endpoint, so jose's signature verification runs against a known key.
+    const keyPair = await generateKeyPair("RS256", { extractable: true });
+    testPrivateKey = keyPair.privateKey;
+    const publicJwk = await exportJWK(keyPair.publicKey);
+    publicJwk.kid = APPLE_KID;
+    publicJwk.alg = "RS256";
+    publicJwk.use = "sig";
+    const jwks = { keys: [publicJwk] };
+
+    const wrongPair = await generateKeyPair("RS256", { extractable: true });
+    wrongPrivateKey = wrongPair.privateKey;
+
+    realFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+      const url =
+        input instanceof URL ? input.href : input instanceof Request ? input.url : String(input);
+      if (url.includes("appleid.apple.com/auth/keys")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(jwks), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          })
+        );
+      }
+      return realFetch(input, init);
+    });
   });
 
   afterAll(() => {
@@ -100,10 +152,13 @@ OF/2NxApJCzGCEDdfSp6VQO30hyhRANCAAQRWz+jn65BtOMvdyHKcvjBeBSDZH2r
     delete process.env.APPLE_TEAM_ID;
     delete process.env.APPLE_KEY_ID;
     delete process.env.APPLE_PRIVATE_KEY;
+    vi.unstubAllGlobals();
   });
 
   // Clean up tables before each test
   beforeEach(async () => {
+    // Default to a valid, correctly-signed id_token; negative tests overwrite it.
+    appleMock.idToken = await signAppleIdToken();
     await db.delete(sessions);
     await db.delete(oauthAccounts);
     await db.delete(users);
@@ -350,6 +405,44 @@ OF/2NxApJCzGCEDdfSp6VQO30hyhRANCAAQRWz+jn65BtOMvdyHKcvjBeBSDZH2r
       // Verify extracted info
       expect(result.userInfo.sub).toBe(mockAppleUserSub);
       expect(result.userInfo.email).toBe(mockAppleEmail);
+    });
+
+    it("rejects an id_token with a mismatched audience", async () => {
+      appleMock.idToken = await signAppleIdToken({ aud: "some-other-clients-id" });
+      await redis.setex("oauth:apple:state:bad-aud-state", 600, "valid");
+
+      const { validateAppleCallback } = await import("../../src/server/auth/oauth/apple");
+
+      await expect(validateAppleCallback("mock-auth-code", "bad-aud-state")).rejects.toThrow(/aud/);
+    });
+
+    it("rejects an id_token with an unexpected issuer", async () => {
+      appleMock.idToken = await signAppleIdToken({ iss: "https://evil.example.com" });
+      await redis.setex("oauth:apple:state:bad-iss-state", 600, "valid");
+
+      const { validateAppleCallback } = await import("../../src/server/auth/oauth/apple");
+
+      await expect(validateAppleCallback("mock-auth-code", "bad-iss-state")).rejects.toThrow(/iss/);
+    });
+
+    it("rejects an expired id_token", async () => {
+      appleMock.idToken = await signAppleIdToken({ exp: Math.floor(Date.now() / 1000) - 3600 });
+      await redis.setex("oauth:apple:state:expired-state", 600, "valid");
+
+      const { validateAppleCallback } = await import("../../src/server/auth/oauth/apple");
+
+      await expect(validateAppleCallback("mock-auth-code", "expired-state")).rejects.toThrow(/exp/);
+    });
+
+    it("rejects an id_token signed by a key not in Apple's JWKS", async () => {
+      appleMock.idToken = await signAppleIdToken({}, () => wrongPrivateKey);
+      await redis.setex("oauth:apple:state:bad-sig-state", 600, "valid");
+
+      const { validateAppleCallback } = await import("../../src/server/auth/oauth/apple");
+
+      await expect(validateAppleCallback("mock-auth-code", "bad-sig-state")).rejects.toThrow(
+        /signature/i
+      );
     });
   });
 });

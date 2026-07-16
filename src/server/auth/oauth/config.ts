@@ -174,6 +174,14 @@ export function getAppleProvider(): Apple | null {
 }
 
 /**
+ * Get the configured Apple client ID (the expected `aud` claim in Apple id_tokens).
+ * Returns undefined if Apple OAuth is not configured.
+ */
+export function getAppleClientId(): string | undefined {
+  return appleConfig.clientId;
+}
+
+/**
  * Get Discord OAuth provider instance
  * Returns null if Discord OAuth is not configured
  */
