@@ -4,21 +4,37 @@
  *
  * Item ids are now a stored global serial (`entries.greader_item_id`), assigned
  * by a sequence default at insert time. Resolution is a single
- * `greader_item_id = ANY(ids)` seek on the unique index — no timestamp math, no
- * candidate disambiguation. These tests insert entries, read back the serials
- * the DB assigned, and lock in that the resolver round-trips them, skips unknown
- * ids, dedupes repeats, and returns an empty map for no input.
+ * `greader_item_id = ANY(ids)` seek, run through `visible_entries` so it is
+ * scoped to the requesting user — no timestamp math, no candidate
+ * disambiguation. These tests insert entries (with a `user_entries` row so they
+ * are visible), read back the serials the DB assigned, and lock in that the
+ * resolver round-trips them, skips unknown ids, dedupes repeats, refuses another
+ * user's entries, and returns an empty map for no input.
  */
 
 import { describe, it, expect, afterAll } from "vitest";
-import { inArray, eq } from "drizzle-orm";
+import { inArray, eq, and } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { feeds, entries } from "../../src/server/db/schema";
+import { feeds, entries, users, userEntries, subscriptions } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { greaderItemIdsToUuids } from "../../src/server/google-reader/id";
 
+const createdUserIds: string[] = [];
 const createdFeedIds: string[] = [];
 const createdEntryIds: string[] = [];
+
+async function createUser(): Promise<string> {
+  const userId = generateUuidv7();
+  await db.insert(users).values({
+    id: userId,
+    email: `greader-id-${userId}@test.com`,
+    passwordHash: "test-hash",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+  createdUserIds.push(userId);
+  return userId;
+}
 
 async function createFeed(): Promise<string> {
   const feedId = generateUuidv7();
@@ -32,8 +48,15 @@ async function createFeed(): Promise<string> {
   return feedId;
 }
 
-/** Inserts an entry (letting the DB assign greader_item_id) and returns the id + assigned serial. */
-async function insertEntry(feedId: string): Promise<{ id: string; greaderItemId: bigint }> {
+/**
+ * Inserts an entry (letting the DB assign greader_item_id) and makes it visible
+ * to `userId` via an active subscription + `user_entries` row. Returns the id +
+ * assigned serial.
+ */
+async function insertEntry(
+  feedId: string,
+  userId: string
+): Promise<{ id: string; greaderItemId: bigint }> {
   const id = generateUuidv7();
   const when = new Date();
   await db.insert(entries).values({
@@ -48,6 +71,20 @@ async function insertEntry(feedId: string): Promise<{ id: string; greaderItemId:
     lastSeenAt: when,
   });
   createdEntryIds.push(id);
+
+  await db
+    .insert(subscriptions)
+    .values({ id: generateUuidv7(), userId, feedId })
+    .onConflictDoNothing();
+  const [sub] = await db
+    .select({ id: subscriptions.id })
+    .from(subscriptions)
+    .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, feedId)));
+  await db
+    .insert(userEntries)
+    .values({ userId, entryId: id, subscriptionId: sub.id })
+    .onConflictDoNothing();
+
   const [row] = await db
     .select({ greaderItemId: entries.greaderItemId })
     .from(entries)
@@ -62,18 +99,22 @@ afterAll(async () => {
   if (createdFeedIds.length) {
     await db.delete(feeds).where(inArray(feeds.id, createdFeedIds));
   }
+  if (createdUserIds.length) {
+    await db.delete(users).where(inArray(users.id, createdUserIds));
+  }
 });
 
 describe("greaderItemIdsToUuids", () => {
   it("round-trips many stored item ids in one query", async () => {
+    const userId = await createUser();
     const feedId = await createFeed();
     const inserted: Array<{ id: string; greaderItemId: bigint }> = [];
     for (let i = 0; i < 50; i++) {
-      inserted.push(await insertEntry(feedId));
+      inserted.push(await insertEntry(feedId, userId));
     }
 
     const ids = inserted.map((e) => e.greaderItemId);
-    const resolved = await greaderItemIdsToUuids(db, ids);
+    const resolved = await greaderItemIdsToUuids(db, userId, ids);
 
     expect(resolved.size).toBe(inserted.length);
     for (const entry of inserted) {
@@ -82,34 +123,50 @@ describe("greaderItemIdsToUuids", () => {
   });
 
   it("assigns a distinct greader_item_id per entry", async () => {
+    const userId = await createUser();
     const feedId = await createFeed();
-    const a = await insertEntry(feedId);
-    const b = await insertEntry(feedId);
+    const a = await insertEntry(feedId, userId);
+    const b = await insertEntry(feedId, userId);
     expect(a.greaderItemId).not.toBe(b.greaderItemId);
 
-    const resolved = await greaderItemIdsToUuids(db, [a.greaderItemId, b.greaderItemId]);
+    const resolved = await greaderItemIdsToUuids(db, userId, [a.greaderItemId, b.greaderItemId]);
     expect(resolved.get(a.greaderItemId)).toBe(a.id);
     expect(resolved.get(b.greaderItemId)).toBe(b.id);
   });
 
   it("skips ids with no matching entry", async () => {
+    const userId = await createUser();
     const feedId = await createFeed();
-    const real = await insertEntry(feedId);
+    const real = await insertEntry(feedId, userId);
     // A serial well beyond anything the sequence has handed out.
     const missingId = real.greaderItemId + BigInt(1_000_000_000);
 
-    const resolved = await greaderItemIdsToUuids(db, [real.greaderItemId, missingId]);
+    const resolved = await greaderItemIdsToUuids(db, userId, [real.greaderItemId, missingId]);
 
     expect(resolved.get(real.greaderItemId)).toBe(real.id);
     expect(resolved.has(missingId)).toBe(false);
     expect(resolved.size).toBe(1);
   });
 
-  it("dedupes repeated ids", async () => {
+  it("does not resolve an item id another user owns (visibility scoping)", async () => {
+    const owner = await createUser();
+    const other = await createUser();
     const feedId = await createFeed();
-    const entry = await insertEntry(feedId);
+    const entry = await insertEntry(feedId, owner);
 
-    const resolved = await greaderItemIdsToUuids(db, [
+    // Owner can resolve it; a different user gets nothing for the same serial.
+    const ownerResolved = await greaderItemIdsToUuids(db, owner, [entry.greaderItemId]);
+    expect(ownerResolved.get(entry.greaderItemId)).toBe(entry.id);
+    const otherResolved = await greaderItemIdsToUuids(db, other, [entry.greaderItemId]);
+    expect(otherResolved.size).toBe(0);
+  });
+
+  it("dedupes repeated ids", async () => {
+    const userId = await createUser();
+    const feedId = await createFeed();
+    const entry = await insertEntry(feedId, userId);
+
+    const resolved = await greaderItemIdsToUuids(db, userId, [
       entry.greaderItemId,
       entry.greaderItemId,
       entry.greaderItemId,
@@ -120,7 +177,8 @@ describe("greaderItemIdsToUuids", () => {
   });
 
   it("returns an empty map for no ids", async () => {
-    const resolved = await greaderItemIdsToUuids(db, []);
+    const userId = await createUser();
+    const resolved = await greaderItemIdsToUuids(db, userId, []);
     expect(resolved.size).toBe(0);
   });
 
@@ -129,13 +187,14 @@ describe("greaderItemIdsToUuids", () => {
     // 2^64-1). A parameter beyond Postgres's bigint range would make Postgres
     // reject the whole query, so such ids must be skipped — and valid ids in
     // the same batch still resolve.
+    const userId = await createUser();
     const feedId = await createFeed();
-    const real = await insertEntry(feedId);
+    const real = await insertEntry(feedId, userId);
 
     const unsigned64Max = BigInt(2) ** BigInt(64) - BigInt(1); // "ffffffffffffffff"
     const belowInt64Min = -(BigInt(2) ** BigInt(63)) - BigInt(1);
 
-    const resolved = await greaderItemIdsToUuids(db, [
+    const resolved = await greaderItemIdsToUuids(db, userId, [
       unsigned64Max,
       real.greaderItemId,
       belowInt64Min,
@@ -148,7 +207,8 @@ describe("greaderItemIdsToUuids", () => {
   });
 
   it("returns an empty map when every id is out of range", async () => {
-    const resolved = await greaderItemIdsToUuids(db, [BigInt(2) ** BigInt(64)]);
+    const userId = await createUser();
+    const resolved = await greaderItemIdsToUuids(db, userId, [BigInt(2) ** BigInt(64)]);
     expect(resolved.size).toBe(0);
   });
 });

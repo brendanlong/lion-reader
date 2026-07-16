@@ -162,8 +162,8 @@ export async function POST(request: Request): Promise<Response> {
 
     // SavedArticle doesn't carry the entry serial (it's returned verbatim by
     // MCP save_article, which must stay bigint-free), so look it up — a
-    // primary-key seek on the entry we just saved.
-    const wallabagId = await entryIdToWallabagId(db, article.id);
+    // user-scoped seek on the entry we just saved.
+    const wallabagId = await entryIdToWallabagId(db, auth.userId, article.id);
     if (wallabagId === null) {
       // Only possible if the entry was deleted between the save and this seek.
       return errorResponse("not_found", "Entry not found", 404);
@@ -192,7 +192,7 @@ export async function POST(request: Request): Promise<Response> {
         url: articleUrl,
         reason: describeSaveFailure(error),
       });
-      const wallabagId = await entryIdToWallabagId(db, placeholder.id);
+      const wallabagId = await entryIdToWallabagId(db, auth.userId, placeholder.id);
       if (wallabagId === null) {
         return errorResponse("not_found", "Entry not found", 404);
       }

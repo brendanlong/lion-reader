@@ -80,11 +80,20 @@ describe("entryIdToWallabagId", () => {
     const userId = await createTestUser();
     const { entryId, serial } = await createTestSavedArticle(userId);
 
-    expect(await entryIdToWallabagId(db, entryId)).toBe(Number(serial));
+    expect(await entryIdToWallabagId(db, userId, entryId)).toBe(Number(serial));
   });
 
   it("returns null for an unknown entry", async () => {
-    expect(await entryIdToWallabagId(db, generateUuidv7())).toBeNull();
+    const userId = await createTestUser();
+    expect(await entryIdToWallabagId(db, userId, generateUuidv7())).toBeNull();
+  });
+
+  it("returns null for another user's entry (visibility scoping)", async () => {
+    const owner = await createTestUser();
+    const other = await createTestUser();
+    const { entryId } = await createTestSavedArticle(owner);
+
+    expect(await entryIdToWallabagId(db, other, entryId)).toBeNull();
   });
 });
 
