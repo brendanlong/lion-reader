@@ -30,6 +30,11 @@ import {
   createErrorRedirect,
   handleSignupError,
 } from "@/server/auth/oauth/callback-helpers";
+import {
+  readOAuthStateCookie,
+  oauthStateCookieMatches,
+  clearOAuthStateCookie,
+} from "@/server/auth/oauth/state-cookie";
 
 /**
  * Handle Google OAuth redirect callback
@@ -71,6 +76,21 @@ export async function GET(request: NextRequest) {
 
     const { userInfo, tokens, scopes, mode, returnUrl } = googleResult;
 
+    // Bind the callback to the browser that started the flow (login CSRF, issue #1263):
+    // the state cookie set when the auth URL was generated must match the returned state.
+    // `extension-save` is exempt because its auth URL is generated in a Server Component
+    // (src/app/extension/save/page.tsx), which Next.js forbids from setting cookies — that
+    // flow re-authorizes an already-logged-in user's own account rather than logging anyone
+    // in, so it isn't the login-CSRF vector. Every other mode is generated on the tRPC path
+    // (via setOAuthStateCookie) and is enforced. The `mode` is known only after the Redis
+    // state is consumed above, so this check necessarily runs post-validation.
+    if (
+      mode !== "extension-save" &&
+      !oauthStateCookieMatches(readOAuthStateCookie(request), state)
+    ) {
+      return createErrorRedirect(appUrl, "invalid_state");
+    }
+
     // Handle save/link/extension-save modes - user is already logged in, just update OAuth account
     if (mode === "save" || mode === "link" || mode === "extension-save") {
       // Find existing OAuth account for this Google user
@@ -100,7 +120,9 @@ export async function GET(request: NextRequest) {
         } else {
           errorRedirect = "/settings?link_error=callback_failed";
         }
-        return NextResponse.redirect(`${appUrl}${errorRedirect}`);
+        const response = NextResponse.redirect(`${appUrl}${errorRedirect}`);
+        clearOAuthStateCookie(response);
+        return response;
       }
 
       // Update OAuth account with new tokens and scopes
@@ -115,14 +137,18 @@ export async function GET(request: NextRequest) {
         .where(eq(oauthAccounts.id, existingOAuthAccount[0].id));
 
       // Redirect based on mode (no session cookie needed - user already logged in)
+      let response: NextResponse;
       if (mode === "extension-save" && returnUrl) {
         // Redirect back to the extension save page with the original URL
-        return NextResponse.redirect(`${appUrl}${returnUrl}`);
+        response = NextResponse.redirect(`${appUrl}${returnUrl}`);
       } else if (mode === "save") {
-        return NextResponse.redirect(`${appUrl}/save`);
+        response = NextResponse.redirect(`${appUrl}/save`);
       } else {
-        return NextResponse.redirect(`${appUrl}/settings?linked=google`);
+        response = NextResponse.redirect(`${appUrl}/settings?linked=google`);
       }
+      // Clear the one-time state binding cookie (issue #1263).
+      clearOAuthStateCookie(response);
+      return response;
     }
 
     // Login mode - normal OAuth login/signup flow

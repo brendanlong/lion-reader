@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { Geist, Geist_Mono, Merriweather, Literata, Inter, Source_Sans_3 } from "next/font/google";
 import { defaultOpenGraph } from "@/lib/metadata";
 import { appUrl } from "@/server/config/env";
@@ -153,8 +153,17 @@ export default async function RootLayout({
   // it renders on every route including the demo and logged-out surfaces. The
   // dismissed id is read from a cookie (not localStorage) so the server can hide
   // an already-dismissed banner and it never flashes back on reload.
-  const [announcement, cookieStore] = await Promise.all([getAnnouncement(), cookies()]);
+  const [announcement, cookieStore, headerStore] = await Promise.all([
+    getAnnouncement(),
+    cookies(),
+    headers(),
+  ]);
   const dismissedId = cookieStore.get(ANNOUNCEMENT_DISMISSED_COOKIE)?.value ?? null;
+  // Per-request CSP nonce, generated in src/proxy.ts (issue #1275). Every
+  // inline <script> must carry it or the CSP blocks the script — that includes
+  // next-themes' theme script, which gets it via ThemeProvider below. Absent
+  // only if the proxy didn't run, in which case the response has no CSP either.
+  const nonce = headerStore.get("x-nonce") ?? undefined;
 
   return (
     // Font variables live on <html> (not <body>) so the entry text-appearance
@@ -169,11 +178,22 @@ export default async function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} ${merriweather.variable} ${literata.variable} ${inter.variable} ${sourceSans.variable}`}
     >
       <head>
-        <script dangerouslySetInnerHTML={{ __html: textAppearanceScript }} />
-        <script dangerouslySetInnerHTML={{ __html: swScript }} />
+        {/* suppressHydrationWarning: browsers blank the nonce content attribute
+            after parsing (nonce hiding), so hydration would see nonce="" and
+            warn on every load. The scripts have executed by then either way. */}
+        <script
+          nonce={nonce}
+          suppressHydrationWarning
+          dangerouslySetInnerHTML={{ __html: textAppearanceScript }}
+        />
+        <script
+          nonce={nonce}
+          suppressHydrationWarning
+          dangerouslySetInnerHTML={{ __html: swScript }}
+        />
       </head>
       <body className="antialiased">
-        <ThemeProvider>
+        <ThemeProvider nonce={nonce}>
           <AnnouncementBanner announcement={announcement} initialDismissedId={dismissedId} />
           {children}
         </ThemeProvider>

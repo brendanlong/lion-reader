@@ -177,6 +177,9 @@ function createMcpServer(userId: string): Server {
     try {
       result = await tool.handler(db, userId, args ?? {});
     } catch (error) {
+      // Log the original error server-side; toMcpError replaces internal error
+      // messages with a generic string so detail isn't echoed to clients (#1266).
+      logger.error("MCP tool execution error", { tool: name, userId, error });
       throw toMcpError(error);
     }
 

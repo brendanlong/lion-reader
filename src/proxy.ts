@@ -1,12 +1,21 @@
 /**
  * Next.js Proxy (middleware)
  *
- * Two jobs:
+ * Three jobs:
  *
- * 1. The claude.ai OAuth workaround: rewriting POST/OPTIONS `/register` to the
+ * 1. The per-request Content-Security-Policy nonce (issue #1275): a locked-down
+ *    `script-src` needs a fresh nonce on every response, which the static
+ *    `headers()` config in `next.config.ts` can't produce. This is Next's
+ *    documented CSP pattern: generate the nonce here and put the policy on the
+ *    *request* headers — Next.js extracts the nonce from the forwarded
+ *    `Content-Security-Policy` request header and stamps it onto its own
+ *    framework/chunk `<script>` tags, and `src/app/layout.tsx` reads `x-nonce`
+ *    for the app's inline scripts — then set the same policy on the *response*.
+ *    Policy contents and directive rationale live in `src/server/http/csp.ts`.
+ * 2. The claude.ai OAuth workaround: rewriting POST/OPTIONS `/register` to the
  *    Dynamic Client Registration handler at `/oauth/register` (see the big
  *    comment in `proxy()`).
- * 2. Optional request logging for debugging remote MCP connectors: when
+ * 3. Optional request logging for debugging remote MCP connectors: when
  *    `LOG_MCP_REQUESTS=true`, one structured line per request — host, method,
  *    path, redacted query, user-agent, whether an Authorization header was
  *    present. This is how we see exactly what claude.ai sends — most importantly
@@ -14,7 +23,7 @@
  *    #986 / the connector header-drop bug), AND whether it hits any path we don't
  *    expect (the "wrong URL" / origin-root-fallback failure modes).
  *
- * The matcher runs on all requests (minus static assets) so job 2 can see
+ * The matcher runs on all requests (minus static assets) so job 3 can see
  * unexpected paths, but logging is gated: nothing is logged unless
  * `LOG_MCP_REQUESTS=true`, and even then only for (a) **every** request to the
  * dedicated MCP host (`MCP_HOST`) — full visibility on the debug host — and
@@ -34,6 +43,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { mcpConfig } from "@/server/config/env";
+import { buildContentSecurityPolicy, generateCspNonce } from "@/server/http/csp";
 
 /**
  * Query params that are safe to log (client_id, PKCE code_challenge, state,
@@ -127,6 +137,25 @@ export function proxy(request: NextRequest) {
     logRequest(request);
   }
 
+  // The service worker script deliberately gets NO CSP. A service worker's
+  // fetches are governed by the CSP served on the worker script itself, and
+  // the runtime-caching config in next.config.ts fetches cross-origin entry
+  // images (and Google Fonts) from *inside* the worker — the app policy's
+  // `connect-src` would silently break that caching. Pages control what the
+  // SW can be asked to fetch via their own CSP.
+  if (request.nextUrl.pathname === "/sw.js") {
+    return NextResponse.next();
+  }
+
+  // Per-request CSP nonce (issue #1275). `set` overwrites any client-supplied
+  // `x-nonce`/`Content-Security-Policy` request header, so the values Next.js
+  // and the layout read are always ours.
+  const nonce = generateCspNonce();
+  const csp = buildContentSecurityPolicy(nonce);
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-nonce", nonce);
+  requestHeaders.set("Content-Security-Policy", csp);
+
   // ==========================================================================
   // HACK: claude.ai OAuth "root path" workaround — `/register` is METHOD-SPLIT.
   //
@@ -157,25 +186,30 @@ export function proxy(request: NextRequest) {
   //   https://github.com/anthropics/claude-ai-mcp/issues/341  (tracking bug)
   //   https://github.com/anthropics/claude-ai-mcp/issues/82   (root-path synthesis)
   // ==========================================================================
+  let response: NextResponse;
   if (
     request.nextUrl.pathname === "/register" &&
     (request.method === "POST" || request.method === "OPTIONS")
   ) {
     const dcrUrl = request.nextUrl.clone();
     dcrUrl.pathname = "/oauth/register";
-    return NextResponse.rewrite(dcrUrl);
+    response = NextResponse.rewrite(dcrUrl, { request: { headers: requestHeaders } });
+  } else {
+    // GET /register (and anything else) falls through to the normal route.
+    response = NextResponse.next({ request: { headers: requestHeaders } });
   }
-
-  // GET /register (and anything else) falls through to the normal route.
-  return NextResponse.next();
+  response.headers.set("Content-Security-Policy", csp);
+  return response;
 }
 
 /**
- * Run the proxy on all requests except static assets. The broad matcher is what
- * lets `LOG_MCP_REQUESTS` capture requests to unexpected paths on the MCP host
- * (the "wrong URL" failure mode); `shouldLog` keeps ordinary app traffic out of
- * the logs, and the proxy is otherwise a pass-through save for the `/register`
- * rewrite. Static assets are excluded so middleware doesn't run per-asset.
+ * Run the proxy on all requests except Next's build assets. The broad matcher
+ * is what lets `LOG_MCP_REQUESTS` capture requests to unexpected paths on the
+ * MCP host (the "wrong URL" failure mode), and it also puts the nonce'd CSP on
+ * every response — including API/JSON responses, where a CSP is inert but
+ * hardens any content-type-confusion angle. `_next/static`/`_next/image` are
+ * excluded so middleware doesn't run per-asset (a CSP on those subresources is
+ * meaningless); `/sw.js` is matched but bypassed inside `proxy()` (see there).
  */
 export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],

@@ -46,6 +46,22 @@ Entry bodies, saved articles, and AI summaries are rendered with
 - The allowlist deliberately excludes `script`/`style`/`on*`/`form`/`base`/`meta`,
   restricts URL schemes, forces `rel=noopener`, and treats SVG/MathML as mXSS-prone.
   Changes here need a security review.
+- **Defense-in-depth headers**: `securityHeaders` in `next.config.ts` sets
+  `X-Frame-Options`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, and
+  (prod) HSTS. The **Content-Security-Policy** is set per-request in
+  `src/proxy.ts` with the policy built in `src/server/http/csp.ts`: it locks
+  `script-src` down to a random per-request nonce (`'strict-dynamic'`), sets
+  `default-src 'self'`, restricts `frame-src` to the sanitizer's allow-listed
+  embed hosts, and keeps `frame-ancestors 'none'` / `object-src 'none'` /
+  `base-uri 'self'`. The nonce is threaded to the inline `<script>`s in
+  `layout.tsx` (and next-themes) via the `x-nonce` request header, so an
+  injected `<script>` (or inline event handler) that survives a sanitizer
+  regression is blocked by the browser instead of executing — the sanitizer is
+  the primary XSS gate, the CSP is the backstop. Directive rationale lives in
+  `csp.ts`; the maintenance short-circuit in `scripts/server.ts` carries its own
+  static, script-less CSP (it bypasses Next and has no scripts). `/sw.js` is
+  deliberately CSP-exempt (the service worker's own fetches for runtime caching
+  of cross-origin images would be broken by the app's `connect-src`).
 
 ## 2. SSRF-safe outbound fetching
 
@@ -56,11 +72,16 @@ Entry bodies, saved articles, and AI summaries are rendered with
   Do not call `fetch`/`undici` directly on a URL that a user or feed can influence.
 - The guard pins DNS to defeat rebinding, re-validates every redirect hop, blocks
   private/loopback/link-local/cloud-metadata ranges and all literal-IP encodings,
-  rejects non-http schemes, and enforces size + timeout limits.
+  rejects non-http(s) schemes via an explicit allowlist enforced on the initial URL
+  and every redirect hop (not left to the underlying fetch), and enforces size +
+  timeout limits.
 - Applies to: feed polling/discovery, WebSub hub subscribe, full-content/save
-  fetches, and content-source plugins. Plugin fetches to hardcoded public hosts
-  (`github.ts`, `arxiv.ts`, `lesswrong.ts`, Google Docs/Drive) currently use raw
-  `fetch`; keep their hosts hardcoded, or route them through the guard.
+  fetches, and content-source plugins. The content-source plugins that fetch
+  hardcoded public hosts (`plugins/github.ts`, `plugins/bluesky.ts`,
+  `feed/arxiv.ts`, `feed/lesswrong.ts`, Google Docs/Drive) route through the guard
+  too, so a future refactor that makes one of those hosts user-influenced can't
+  silently regress into SSRF (#1265). Keep it that way; don't call `fetch`/`undici`
+  directly on any content-source URL.
 
 ## 3. WebSub (feed push)
 
@@ -84,10 +105,26 @@ Entry bodies, saved articles, and AI summaries are rendered with
   (`revokeOtherUserSessions`).
 - Password-accepting endpoints are rate-limited per-IP **and** per-account (the
   account bucket degrades to in-memory, not fully open, during a Redis outage).
+- Password-accepting endpoints (tRPC `auth.login`, Google Reader `ClientLogin`,
+  Wallabag password grant) verify via `verifyPassword`
+  (`src/server/auth/password.ts`), which runs a decoy `argon2.verify` for a
+  missing/passwordless user so response timing can't be used to enumerate valid
+  emails (#1267). **Don't reintroduce an early return that skips argon2.**
 - **OAuth sign-in is the only email-verification path**, so the shared OAuth
   processor (`src/server/auth/oauth/callback.ts`) **refuses to link or create an
   account from an unverified provider email** (`emailVerified` must be true).
   Apple id_tokens are claim-validated (iss/aud/exp) in `oauth/apple.ts`.
+- **OAuth `state` is bound to the initiating browser** to stop login CSRF /
+  session fixation (#1263): generating an auth URL sets a short-lived `HttpOnly`
+  state cookie (`oauth/state-cookie.ts`), and the browser-facing callback routes
+  (`src/app/api/v1/auth/oauth/*/callback`) require it to equal the returned
+  `state` (`oauthStateCookieMatches`, fail-closed on a missing cookie). Apple's
+  form_post is a cross-site POST, so its cookie is `SameSite=None; Secure` (Lax
+  would be withheld); Google/Discord stay `SameSite=Lax`. **Keep this check** — the
+  Redis `state` lookup alone does not tie the callback to any browser. (Google's
+  `extension-save` mode is exempt — its URL is built in a Server Component that
+  can't set cookies, and it re-auths an already-logged-in user, not a login; see
+  `src/server/auth/CLAUDE.md`.)
 
 ## 5. Token scopes & tRPC authorization
 
@@ -135,12 +172,13 @@ IDs) · **Code:** `src/app/api/wallabag/`, `src/app/api/greader.php/`,
   authenticate via hashed-token lookup (no string compare).
 - Clients address entries/feeds by **integer serials stored in the DB**
   (`greader_item_id`, `greader_stream_id`, …). The serial↔UUID lookups are
-  necessary because these protocols mandate integer IDs. **The resolved id must
-  always be re-scoped to the authenticated user** — `resolveWallabagEntry` /
-  `resolveFeedStream` do this through `visible_entries`/user predicates. A couple
-  of item-id resolvers (`greaderItemIdsToUuids`, `entryIdToWallabagId`) are
-  globally unscoped and safe **only** because their callers re-scope; do not add a
-  caller that trusts their output directly.
+  necessary because these protocols mandate integer IDs. **Every serial↔UUID
+  resolver is scoped to the authenticated user** — `resolveWallabagEntry` /
+  `resolveFeedStream`, and (since #1268) `greaderItemIdsToUuids` /
+  `entryIdToWallabagId`, all seek through `visible_entries`/user predicates, so a
+  resolved id is guaranteed visible to the caller. Keep it that way: a new
+  resolver that reverses a client-supplied serial must take a `userId` and scope
+  its lookup, never seek the shared `entries` table unscoped.
 
 ## 9. Webhooks & SSR
 

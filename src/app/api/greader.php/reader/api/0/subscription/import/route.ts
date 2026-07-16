@@ -30,8 +30,12 @@ export async function POST(request: Request): Promise<Response> {
   if (session instanceof Response) return session;
 
   // OPML import queues a subscribe job per feed — the tRPC equivalent is an
-  // "expensive" procedure, so rate-limit this compat path the same way.
-  const rateLimited = await checkRouteRateLimit(request, "expensive");
+  // "expensive" procedure, so rate-limit this compat path the same way. Key the
+  // bucket per user (the caller is authenticated), matching the tRPC middleware
+  // rather than falling back to a per-IP key.
+  const rateLimited = await checkRouteRateLimit(request, "expensive", {
+    userId: session.user.id,
+  });
   if (rateLimited) return rateLimited;
 
   const opml = await request.text();
@@ -52,8 +56,9 @@ export async function POST(request: Request): Promise<Response> {
     if (err instanceof OpmlParseError) {
       return errorResponse(`Failed to parse OPML: ${err.message}`, 400);
     }
+    // Log the detail server-side but return a generic message — internal error
+    // text must not be echoed to clients (issue #1266).
     console.error("Failed to import OPML:", err);
-    const message = err instanceof Error ? err.message : "Unknown error";
-    return errorResponse(`Failed to import OPML: ${message}`, 500);
+    return errorResponse("Failed to import OPML", 500);
   }
 }

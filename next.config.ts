@@ -75,6 +75,32 @@ const withPWAConfig = withPWA({
   },
 });
 
+// Security response headers applied to every route (defense-in-depth). Entry
+// bodies render via `dangerouslySetInnerHTML`, so the server-side sanitizer is
+// the primary XSS gate; these headers make a future sanitizer regression a
+// non-event and stop the app from being framed (clickjacking).
+//
+// The Content-Security-Policy is NOT set here: it carries a per-request nonce
+// for the inline <script>s in layout.tsx, which a static `headers()` value
+// can't emit, so it is set in `src/proxy.ts` (policy in `src/server/http/csp.ts`).
+// `X-Frame-Options` duplicates the CSP's `frame-ancestors 'none'` for browsers
+// that predate it.
+const securityHeaders: { key: string; value: string }[] = [
+  { key: "X-Frame-Options", value: "DENY" },
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  // HSTS only in production: sending it over plaintext dev/HTTP would pin
+  // localhost to HTTPS. Fly.io terminates TLS and serves everything over HTTPS.
+  ...(process.env.NODE_ENV === "production"
+    ? [
+        {
+          key: "Strict-Transport-Security",
+          value: "max-age=63072000; includeSubDomains",
+        },
+      ]
+    : []),
+];
+
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["127.0.0.1", "localhost"],
   // Disable Next.js's built-in gzip compression. Our custom server applies
@@ -88,6 +114,11 @@ const nextConfig: NextConfig = {
   // Cache static assets for 1 day to reduce unnecessary requests
   async headers() {
     return [
+      {
+        // Security headers on every response (defense-in-depth).
+        source: "/:path*",
+        headers: securityHeaders,
+      },
       {
         // Match common static assets in public/
         source: "/:path*.(ico|png|svg|jpg|jpeg|gif|webp|woff|woff2|ttf|otf|eot)",

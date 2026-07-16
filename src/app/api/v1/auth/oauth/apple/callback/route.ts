@@ -22,6 +22,7 @@ import {
   createErrorRedirect,
   handleSignupError,
 } from "@/server/auth/oauth/callback-helpers";
+import { readOAuthStateCookie, oauthStateCookieMatches } from "@/server/auth/oauth/state-cookie";
 
 // Apple uses POST with form_post response mode, so we need 303 status to convert POST to GET
 const REDIRECT_STATUS = 303;
@@ -53,6 +54,13 @@ export async function POST(request: NextRequest) {
     // Validate required fields
     if (!code || !state) {
       return createErrorRedirect(appUrl, "callback_failed", REDIRECT_STATUS);
+    }
+
+    // Bind the callback to the browser that started the flow (login CSRF, issue #1263):
+    // the state cookie set when the auth URL was generated must match the returned state.
+    // Apple posts the callback cross-site, so the cookie is SameSite=None (see state-cookie.ts).
+    if (!oauthStateCookieMatches(readOAuthStateCookie(request), state)) {
+      return createErrorRedirect(appUrl, "invalid_state", REDIRECT_STATUS);
     }
 
     // Parse user data if provided (only on first auth)
