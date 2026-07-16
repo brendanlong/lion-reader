@@ -11,6 +11,7 @@ import { z } from "zod";
 import { logger } from "@/lib/logger";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { HttpFetchError } from "@/server/http/fetch";
+import { fetchWithSsrfProtection } from "@/server/http/ssrf";
 
 // ============================================================================
 // Constants
@@ -307,7 +308,7 @@ const POST_QUERY = `
  */
 async function fetchLessWrongPost(postId: string): Promise<LessWrongPostContent | null> {
   try {
-    const response = await fetch(LESSWRONG_GRAPHQL_ENDPOINT, {
+    const response = await fetchWithSsrfProtection(LESSWRONG_GRAPHQL_ENDPOINT, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -444,7 +445,7 @@ const COMMENT_QUERY = `
  */
 async function fetchLessWrongComment(commentId: string): Promise<LessWrongCommentContent | null> {
   try {
-    const response = await fetch(LESSWRONG_GRAPHQL_ENDPOINT, {
+    const response = await fetchWithSsrfProtection(LESSWRONG_GRAPHQL_ENDPOINT, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -643,7 +644,7 @@ const USER_BY_SLUG_QUERY = `
  */
 export async function fetchLessWrongUserBySlug(slug: string): Promise<LessWrongUser | null> {
   try {
-    const response = await fetch(LESSWRONG_GRAPHQL_ENDPOINT, {
+    const response = await fetchWithSsrfProtection(LESSWRONG_GRAPHQL_ENDPOINT, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -806,7 +807,7 @@ const USER_BY_ID_QUERY = `
  */
 export async function fetchLessWrongUserById(userId: string): Promise<LessWrongUser | null> {
   try {
-    const response = await fetch(LESSWRONG_GRAPHQL_ENDPOINT, {
+    const response = await fetchWithSsrfProtection(LESSWRONG_GRAPHQL_ENDPOINT, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -942,7 +943,7 @@ export async function fetchLessWrongPostMetadata(
   postId: string
 ): Promise<LessWrongPostMetadata | null> {
   try {
-    const response = await fetch(LESSWRONG_GRAPHQL_ENDPOINT, {
+    const response = await fetchWithSsrfProtection(LESSWRONG_GRAPHQL_ENDPOINT, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
