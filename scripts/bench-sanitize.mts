@@ -3,15 +3,13 @@
  *
  * Run with: pnpm tsx scripts/bench-sanitize.mts
  *
- * Measures the full pipeline (convertMathJaxChtmlToMathml + sanitize-html) plus
- * component costs, across representative document sizes, and compares against a
- * few candidate optimizations.
+ * Measures the full native pipeline (MathJax CHTML→MathML + inline-SVG +
+ * lol_html allow-list pass, one N-API call) across representative document
+ * sizes, both synchronously and via the async libuv-thread-pool form.
  */
 
 import { readFileSync } from "node:fs";
-import sanitizeHtml from "sanitize-html";
-import { sanitizeEntryHtml } from "@/server/html/sanitize";
-import { convertMathJaxChtmlToMathml } from "@/server/html/mathjax-chtml";
+import { sanitizeEntryHtml, sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
 
 // ---------------------------------------------------------------------------
 // Content generators — synthesize realistic article HTML at various sizes.
@@ -70,54 +68,23 @@ const corpus: Record<string, string> = {
 // ---------------------------------------------------------------------------
 
 function bench(name: string, fn: () => void, iterations: number): number {
-  // Warmup
   for (let i = 0; i < Math.min(iterations, 20); i++) fn();
   if (globalThis.gc) globalThis.gc();
   const start = process.hrtime.bigint();
   for (let i = 0; i < iterations; i++) fn();
   const end = process.hrtime.bigint();
-  const totalMs = Number(end - start) / 1e6;
-  const perMs = totalMs / iterations;
+  const perMs = Number(end - start) / 1e6 / iterations;
   console.log(`  ${name.padEnd(42)} ${perMs.toFixed(3)} ms/op  (${iterations} iters)`);
   return perMs;
 }
 
-function memBench(name: string, fn: () => void, iterations: number): void {
-  if (globalThis.gc) globalThis.gc();
-  const before = process.memoryUsage().heapUsed;
-  const sink: unknown[] = [];
-  for (let i = 0; i < iterations; i++) sink.push(fn());
-  const after = process.memoryUsage().heapUsed;
-  const perOp = (after - before) / iterations;
-  console.log(`  ${name.padEnd(42)} ${(perOp / 1024).toFixed(1)} KB/op retained (rough)`);
-  void sink;
-}
-
-// ---------------------------------------------------------------------------
-// Precompiled-options variant: build sanitize-html option-derived structures
-// once. sanitize-html has no public API for this, but we can at least avoid
-// re-merging defaults each call by passing a frozen options object (it still
-// re-derives internal maps). We measure the ceiling by a raw parse+serialize.
-// ---------------------------------------------------------------------------
-
-import { Parser } from "htmlparser2";
-
-function parseOnlyCost(html: string): void {
-  let count = 0;
-  const parser = new Parser({
-    onopentag() {
-      count++;
-    },
-    ontext() {
-      count++;
-    },
-    onclosetag() {
-      count++;
-    },
-  });
-  parser.write(html);
-  parser.end();
-  if (count < 0) throw new Error("unreachable");
+async function benchAsync(name: string, fn: () => Promise<void>, iterations: number) {
+  for (let i = 0; i < Math.min(iterations, 20); i++) await fn();
+  const start = process.hrtime.bigint();
+  for (let i = 0; i < iterations; i++) await fn();
+  const end = process.hrtime.bigint();
+  const perMs = Number(end - start) / 1e6 / iterations;
+  console.log(`  ${name.padEnd(42)} ${perMs.toFixed(3)} ms/op  (${iterations} iters)`);
 }
 
 // ---------------------------------------------------------------------------
@@ -136,28 +103,23 @@ for (const [name, html] of Object.entries(corpus)) {
   console.log(`  ${name.padEnd(12)} ${(Buffer.byteLength(html) / 1024).toFixed(1)} KB`);
 }
 
-console.log("\n=== Full pipeline: sanitizeEntryHtml ===");
+console.log("\n=== Full pipeline: sanitizeEntryHtml (sync) ===");
 for (const [name, html] of Object.entries(corpus)) {
   bench(`sanitizeEntryHtml[${name}]`, () => sanitizeEntryHtml(html), ITERS[name]);
 }
 
-console.log("\n=== Component breakdown ===");
+console.log("\n=== Full pipeline: sanitizeEntryHtmlAsync (libuv pool) ===");
 for (const [name, html] of Object.entries(corpus)) {
-  const iters = ITERS[name];
-  console.log(` -- ${name} --`);
-  bench(`mathjax-precheck+convert`, () => convertMathJaxChtmlToMathml(html), iters);
-  bench(`sanitize-html only`, () => sanitizeHtml(html), iters);
-  bench(`parse-only (htmlparser2)`, () => parseOnlyCost(html), iters);
+  await benchAsync(
+    `sanitizeEntryHtmlAsync[${name}]`,
+    async () => {
+      await sanitizeEntryHtmlAsync(html);
+    },
+    ITERS[name]
+  );
 }
 
 console.log("\n=== Per-call fixed overhead (tiny input) ===");
-// Isolates option-processing setup cost from parse/serialize.
-bench(`sanitizeHtml('<p>x</p>')`, () => sanitizeHtml("<p>x</p>"), 20000);
 bench(`sanitizeEntryHtml('<p>x</p>')`, () => sanitizeEntryHtml("<p>x</p>"), 20000);
-
-console.log("\n=== Rough retained memory ===");
-for (const [name, html] of Object.entries(corpus)) {
-  memBench(`sanitizeEntryHtml[${name}]`, () => sanitizeEntryHtml(html), Math.min(ITERS[name], 50));
-}
 
 console.log("\nDone.");

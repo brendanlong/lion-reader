@@ -21,7 +21,9 @@ FROM base AS deps
 # Copy package files
 # pnpm-workspace.yaml holds our dependency overrides (security pins) and build
 # settings, so pnpm must see it here for --frozen-lockfile to resolve correctly.
+# native/sanitizer is a workspace package, so its manifest must be present too.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY native/sanitizer/package.json ./native/sanitizer/package.json
 
 # Install all dependencies (including devDependencies for building)
 # Use --ignore-scripts because postinstall needs files not yet copied
@@ -43,6 +45,15 @@ COPY . .
 
 # Run postinstall script (copies ONNX WASM files to public/)
 RUN node scripts/copy-onnx-wasm.mjs
+
+# Build the native (Rust) sanitizer for this image's platform (musl). Rust is
+# only needed in this stage; the runner just receives the compiled .node file.
+# Cache mounts keep crate downloads and incremental build artifacts across
+# builds (build.mjs copies the artifact out of target/ to sanitizer.node).
+RUN apk add --no-cache rust cargo
+RUN --mount=type=cache,id=cargo-registry,target=/root/.cargo/registry \
+    --mount=type=cache,id=cargo-target,target=/app/native/sanitizer/target \
+    pnpm build:native
 
 # Set environment for build
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -112,6 +123,13 @@ COPY --from=builder /app/package.json ./package.json
 
 # Copy production node_modules (already pruned in builder)
 COPY --from=builder /app/node_modules ./node_modules
+
+# The native sanitizer: node_modules/@lion-reader/sanitizer is a pnpm
+# workspace symlink into this directory, so it must exist in the runner.
+COPY --from=builder /app/native/sanitizer/package.json ./native/sanitizer/package.json
+COPY --from=builder /app/native/sanitizer/index.js ./native/sanitizer/index.js
+COPY --from=builder /app/native/sanitizer/index.d.ts ./native/sanitizer/index.d.ts
+COPY --from=builder /app/native/sanitizer/sanitizer.node ./native/sanitizer/sanitizer.node
 
 # Copy built Next.js app
 COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next

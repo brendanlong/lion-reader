@@ -127,8 +127,10 @@ describe("sanitizeEntryHtml", () => {
     it("does not disturb surrounding uppercase HTML", () => {
       const out =
         sanitizeEntryHtml('<DIV CLASS="wrap"><svg><rect width="4" height="4"/></svg></DIV>') ?? "";
-      // Uppercase HTML still gets folded/matched by sanitize-html as usual.
-      expect(out).toContain('<div class="wrap">');
+      // Uppercase HTML is matched case-insensitively; lol_html passes the
+      // original bytes through untouched (HTML tag/attribute names are
+      // case-insensitive, so this renders identically).
+      expect(out).toContain('<DIV CLASS="wrap">');
       expect(out).toContain("<rect");
     });
 
@@ -186,8 +188,7 @@ describe("sanitizeEntryHtml", () => {
     });
 
     it("forces safe rel/target on external svg <a> links (anti reverse-tabnabbing)", () => {
-      const out =
-        sanitizeEntryHtml('<svg><a href="https://ok.com"><text>x</text></a></svg>') ?? "";
+      const out = sanitizeEntryHtml('<svg><a href="https://ok.com"><text>x</text></a></svg>') ?? "";
       expect(out).toContain('target="_blank"');
       expect(out).toContain('rel="noopener noreferrer"');
       // In-document fragment links are not external and stay untouched.

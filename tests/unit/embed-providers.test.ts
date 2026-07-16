@@ -1,10 +1,24 @@
 import { describe, it, expect } from "vitest";
-import { normalizeEmbed, EMBED_CANONICAL_HOSTNAMES } from "@/server/html/embed-providers";
+import { normalizeEmbed } from "@lion-reader/sanitizer";
+
+/**
+ * The iframe embed allow-list now lives in the native sanitizer
+ * (native/sanitizer/core/src/embeds.rs); these tests exercise it through the
+ * exported `normalizeEmbed` binding. Keep in sync with the Rust unit tests.
+ */
+
+/** Canonical hostnames every surviving embed src is rewritten to (embeds.rs). */
+const EMBED_CANONICAL_HOSTNAMES = [
+  "www.youtube-nocookie.com",
+  "player.vimeo.com",
+  "open.spotify.com",
+  "w.soundcloud.com",
+  "bandcamp.com",
+  "codepen.io",
+];
 
 describe("normalizeEmbed", () => {
   it("returns null for empty/unrecognized srcs", () => {
-    expect(normalizeEmbed(null)).toBeNull();
-    expect(normalizeEmbed(undefined)).toBeNull();
     expect(normalizeEmbed("")).toBeNull();
     expect(normalizeEmbed("https://evil.example/fake-login")).toBeNull();
     expect(normalizeEmbed("javascript:alert(1)")).toBeNull();
@@ -126,5 +140,14 @@ describe("normalizeEmbed", () => {
       const host = new URL(out!.src).hostname;
       expect(EMBED_CANONICAL_HOSTNAMES).toContain(host);
     }
+  });
+
+  it("accepts the iframe srcs the YouTube plugin synthesizes (sync guard)", () => {
+    // src/server/plugins/youtube.ts builds embeds on the canonical host, so
+    // the sanitizer's (Rust) rules must keep accepting them or plugin-made
+    // embeds would be stripped on the read path.
+    const out = normalizeEmbed("https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ");
+    expect(out?.provider).toBe("YouTube");
+    expect(out?.src).toBe("https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ");
   });
 });

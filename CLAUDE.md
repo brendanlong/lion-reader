@@ -146,4 +146,4 @@ Prefer SAX-style parsing unless the algorithm requires a DOM.
 
 ## Sanitizing Untrusted HTML
 
-Entry HTML sanitization is **security-critical** (entry bodies are rendered via `dangerouslySetInnerHTML`; the sanitizer is the primary XSS defense). It happens **server-side in the services layer** — never add a client-side sanitizer, and never render feed-controlled text as HTML. Read `src/server/html/CLAUDE.md` before touching anything sanitization-related, and bump `SANITIZER_VERSION` per its rules whenever sanitizer behavior changes.
+Entry HTML sanitization is **security-critical** (entry bodies are rendered via `dangerouslySetInnerHTML`; the sanitizer is the primary XSS defense). It happens **server-side in the services layer** — never add a client-side sanitizer, and never render feed-controlled text as HTML. The sanitizer itself is a native Rust module (`native/sanitizer/`, built with `pnpm build:native` — required before running tests or the app). Read `src/server/html/CLAUDE.md` before touching anything sanitization-related, and bump `SANITIZER_VERSION` (in `native/sanitizer/core/src/lib.rs`) per its rules whenever sanitizer behavior changes.
