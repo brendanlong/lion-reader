@@ -74,6 +74,15 @@ app.prepare().then(() => {
         res.statusCode = 503;
         res.setHeader("Retry-After", "3600");
         res.setHeader("Cache-Control", "no-store");
+        // These responses short-circuit before Next's handler, so they miss the
+        // security headers configured in next.config.ts. Set the framing/sniffing
+        // protections here too so maintenance-mode pages aren't a coverage gap.
+        res.setHeader("X-Frame-Options", "DENY");
+        res.setHeader("X-Content-Type-Options", "nosniff");
+        res.setHeader(
+          "Content-Security-Policy",
+          "frame-ancestors 'none'; object-src 'none'; base-uri 'self'"
+        );
         if (decision === "block-api") {
           res.setHeader("Content-Type", "application/json; charset=utf-8");
           res.end(maintenanceJsonBody(maintenance.message));
