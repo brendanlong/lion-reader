@@ -30,7 +30,8 @@ user-influenced URLs and must never be usable to reach internal services.
 
 ## 1. Untrusted HTML sanitization — primary XSS defense
 
-**Docs:** `src/server/html/CLAUDE.md` · **Code:** `src/server/html/`
+**Docs:** `src/server/html/CLAUDE.md` · **Code:** `src/server/html/`,
+`native/sanitizer/` (the Rust sanitizer — allow-lists and transforms live there)
 
 Entry bodies, saved articles, and AI summaries are rendered with
 `dangerouslySetInnerHTML`. The server-side sanitizer is the **sole** XSS gate.
@@ -39,8 +40,9 @@ Entry bodies, saved articles, and AI summaries are rendered with
   (services layer), never on the client.** New render sinks
   (`dangerouslySetInnerHTML`) must render only already-sanitized content.
 - **Never render feed-controlled text (titles, author names, feed names) as HTML.**
-- **Bump `SANITIZER_VERSION` whenever sanitizer behavior changes** (see the html
-  doc for the rule) and rebuild the worker bundle.
+- **Bump `SANITIZER_VERSION` (native/sanitizer/core/src/lib.rs) whenever
+  sanitizer behavior changes** (see the html doc for the rule) and rebuild the
+  native module (`pnpm build:native`).
 - The allowlist deliberately excludes `script`/`style`/`on*`/`form`/`base`/`meta`,
   restricts URL schemes, forces `rel=noopener`, and treats SVG/MathML as mXSS-prone.
   Changes here need a security review.

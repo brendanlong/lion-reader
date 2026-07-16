@@ -1,0 +1,26 @@
+[package]
+name = "lion-reader-sanitizer"
+version = "1.0.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+# The pure-logic core lives in ./core so `cargo test -p lion-reader-sanitizer-core`
+# can link without Node's N-API symbols; this crate is only the napi wrapper.
+[workspace]
+members = ["core"]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+lion-reader-sanitizer-core = { path = "core" }
+napi = { version = "2", default-features = false, features = ["napi8"] }
+napi-derive = "2"
+
+[build-dependencies]
+napi-build = "2"
+
+[profile.release]
+lto = true
+opt-level = 3

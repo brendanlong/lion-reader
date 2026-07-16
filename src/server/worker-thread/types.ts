@@ -35,19 +35,11 @@ const parseFeedRequestSchema = z.object({
   content: z.string(),
 });
 
-// Sanitize an entry-content HTML string in the worker, keeping the (potentially
-// tens-of-ms) sanitize-html pass off the main event loop. Used by
-// sanitizeEntryHtmlInWorker for bodies above the inline-size threshold.
-const sanitizeEntryHtmlRequestSchema = z.object({
-  type: z.literal("sanitizeEntryHtml"),
-  html: z.string(),
-});
-
-// Ask the worker which SANITIZER_VERSION its bundle was built with. The
-// worker-thread bundle embeds a snapshot of the sanitizer rules at build time,
-// so a stale bundle would sanitize with out-of-date rules while the main process
-// stamps rows with the current version. Callers compare the returned version to
-// the main process's to detect a stale build. See getWorkerSanitizerVersion.
+// Ask the worker which SANITIZER_VERSION it runs. Both the main process and
+// the worker read the version from the shared native sanitizer module at
+// runtime, so a mismatch is no longer expected — the probe remains as a
+// sanity check that the worker bundle loads and speaks the task protocol.
+// See getWorkerSanitizerVersion.
 const sanitizerVersionRequestSchema = z.object({
   type: z.literal("sanitizerVersion"),
 });
@@ -55,7 +47,6 @@ const sanitizerVersionRequestSchema = z.object({
 export const workerRequestSchema = z.discriminatedUnion("type", [
   cleanContentRequestSchema,
   parseFeedRequestSchema,
-  sanitizeEntryHtmlRequestSchema,
   sanitizerVersionRequestSchema,
 ]);
 
@@ -79,10 +70,6 @@ export const cleanedContentSchema = z.object({
 });
 
 export type CleanedContent = z.infer<typeof cleanedContentSchema>;
-
-export const sanitizeEntryHtmlResultSchema = z.object({
-  sanitized: z.string().nullable(),
-});
 
 export const sanitizerVersionResultSchema = z.object({
   version: z.number(),

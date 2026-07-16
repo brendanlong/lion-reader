@@ -1,5 +1,8 @@
 packages:
   - .
+  # Native (Rust) sanitizer - loader + typings; the .node binary is built by
+  # `pnpm build:native` (cargo), not by pnpm.
+  - native/sanitizer
 
 # Supply-chain: only resolve package versions that have been on the registry for at
 # least this many minutes (10080 = 7 days), giving a compromised release time to be
