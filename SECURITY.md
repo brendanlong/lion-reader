@@ -97,6 +97,17 @@ Entry bodies, saved articles, and AI summaries are rendered with
   processor (`src/server/auth/oauth/callback.ts`) **refuses to link or create an
   account from an unverified provider email** (`emailVerified` must be true).
   Apple id_tokens are claim-validated (iss/aud/exp) in `oauth/apple.ts`.
+- **OAuth `state` is bound to the initiating browser** to stop login CSRF /
+  session fixation (#1263): generating an auth URL sets a short-lived `HttpOnly`
+  state cookie (`oauth/state-cookie.ts`), and the browser-facing callback routes
+  (`src/app/api/v1/auth/oauth/*/callback`) require it to equal the returned
+  `state` (`oauthStateCookieMatches`, fail-closed on a missing cookie). Apple's
+  form_post is a cross-site POST, so its cookie is `SameSite=None; Secure` (Lax
+  would be withheld); Google/Discord stay `SameSite=Lax`. **Keep this check** — the
+  Redis `state` lookup alone does not tie the callback to any browser. (Google's
+  `extension-save` mode is exempt — its URL is built in a Server Component that
+  can't set cookies, and it re-auths an already-logged-in user, not a login; see
+  `src/server/auth/CLAUDE.md`.)
 
 ## 5. Token scopes & tRPC authorization
 
