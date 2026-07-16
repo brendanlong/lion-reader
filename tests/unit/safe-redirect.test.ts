@@ -30,6 +30,15 @@ describe("safeRedirectPath", () => {
     expect(safeRedirectPath("/\\/evil.com")).toBe("/all");
   });
 
+  it("rejects paths that collapse to protocol-relative after resolution", () => {
+    // "/..//evil.com" resolves same-origin against the base but its pathname
+    // becomes "//evil.com" — a protocol-relative (off-site) URL when re-resolved.
+    expect(safeRedirectPath("/..//evil.com")).toBe("/all");
+    expect(safeRedirectPath("/../..//evil.com")).toBe("/all");
+    expect(safeRedirectPath("/./..//evil.com")).toBe("/all");
+    expect(safeRedirectPath("/%2e%2e//evil.com")).toBe("/all");
+  });
+
   it("rejects values that don't start with a path separator", () => {
     expect(safeRedirectPath("all")).toBe("/all");
     expect(safeRedirectPath("evil.com")).toBe("/all");

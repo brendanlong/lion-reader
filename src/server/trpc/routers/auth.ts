@@ -479,7 +479,7 @@ export const authRouter = createTRPCRouter({
         provider: "google",
         providerAccountId: userInfo.sub,
         email: userInfo.email,
-        emailVerified: userInfo.email_verified,
+        emailVerified: userInfo.email_verified === true,
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
         expiresAt: tokens.expiresAt,

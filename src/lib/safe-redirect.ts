@@ -30,7 +30,15 @@ export function safeRedirectPath(target: string | null | undefined, fallback = "
     if (resolved.origin !== base) {
       return fallback;
     }
-    return `${resolved.pathname}${resolved.search}${resolved.hash}`;
+    // Re-check the *resolved* path: segment collapsing can turn an input like
+    // "/..//evil.com" (which resolves same-origin against the base) into the
+    // protocol-relative "//evil.com", which a browser then treats as off-site.
+    // The returned string is what gets re-resolved by router.push, so guard it.
+    const path = `${resolved.pathname}${resolved.search}${resolved.hash}`;
+    if (!path.startsWith("/") || path.startsWith("//") || path.startsWith("/\\")) {
+      return fallback;
+    }
+    return path;
   } catch {
     return fallback;
   }
