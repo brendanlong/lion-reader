@@ -62,12 +62,6 @@ export async function GET(request: NextRequest) {
       return createErrorRedirect(appUrl);
     }
 
-    // Bind the callback to the browser that started the flow (login CSRF, issue #1263):
-    // the state cookie set when the auth URL was generated must match the returned state.
-    if (!oauthStateCookieMatches(readOAuthStateCookie(request), state)) {
-      return createErrorRedirect(appUrl, "invalid_state");
-    }
-
     // Validate the OAuth callback
     let googleResult;
     try {
@@ -81,6 +75,21 @@ export async function GET(request: NextRequest) {
     }
 
     const { userInfo, tokens, scopes, mode, returnUrl } = googleResult;
+
+    // Bind the callback to the browser that started the flow (login CSRF, issue #1263):
+    // the state cookie set when the auth URL was generated must match the returned state.
+    // `extension-save` is exempt because its auth URL is generated in a Server Component
+    // (src/app/extension/save/page.tsx), which Next.js forbids from setting cookies — that
+    // flow re-authorizes an already-logged-in user's own account rather than logging anyone
+    // in, so it isn't the login-CSRF vector. Every other mode is generated on the tRPC path
+    // (via setOAuthStateCookie) and is enforced. The `mode` is known only after the Redis
+    // state is consumed above, so this check necessarily runs post-validation.
+    if (
+      mode !== "extension-save" &&
+      !oauthStateCookieMatches(readOAuthStateCookie(request), state)
+    ) {
+      return createErrorRedirect(appUrl, "invalid_state");
+    }
 
     // Handle save/link/extension-save modes - user is already logged in, just update OAuth account
     if (mode === "save" || mode === "link" || mode === "extension-save") {
