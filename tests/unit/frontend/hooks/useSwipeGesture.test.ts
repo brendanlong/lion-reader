@@ -111,26 +111,48 @@ describe("useSwipeGesture", () => {
     expect(onSwipeLeft).not.toHaveBeenCalled();
   });
 
-  it("blocks an edge-zone swipe even when zoom edge-gating would allow it", () => {
-    // Zoomed 2x and panned fully left: isSwipeNavigationAllowed("right") is
-    // true, but a rightward swipe starting inside the 32px screen-edge strip
-    // is still treated as the OS back gesture and dropped — the edge-zone
-    // check deliberately takes precedence (#1260).
+  // The edge-gesture zone is physical: 32 *screen* px, however far that is in
+  // layout px under pinch-zoom. Both tests zoom 2x panned fully left, where
+  // zoom edge-gating (isSwipeNavigationAllowed) permits a rightward swipe.
+  function setupZoomed2xAtLeftEdge() {
     Object.defineProperty(document.documentElement, "clientWidth", {
       configurable: true,
       value: 400,
     });
     Object.defineProperty(window, "visualViewport", {
       configurable: true,
-      value: { offsetLeft: 0, width: 200 },
+      value: { offsetLeft: 0, width: 200, scale: 2 },
     });
+    return () => {
+      delete (document.documentElement as unknown as { clientWidth?: number }).clientWidth;
+    };
+  }
+
+  it("blocks a zoomed swipe starting inside the physical edge zone (OS back gesture)", () => {
+    const restore = setupZoomed2xAtLeftEdge();
     try {
       const { onSwipeRight, handlers } = setup();
+      // clientX=10 is 20 physical px from the screen edge — inside the zone.
       handlers.onTouchStart(touchEvent([{ clientX: 10, clientY: 0 }]));
       handlers.onTouchEnd(touchEvent([], [{ clientX: 150, clientY: 0 }]));
       expect(onSwipeRight).not.toHaveBeenCalled();
     } finally {
-      delete (document.documentElement as unknown as { clientWidth?: number }).clientWidth;
+      restore();
+    }
+  });
+
+  it("allows a zoomed swipe outside the physical zone even within 32 layout px", () => {
+    const restore = setupZoomed2xAtLeftEdge();
+    try {
+      const { onSwipeRight, handlers } = setup();
+      // clientX=20 is only 20 layout px from the edge, but 40 physical px —
+      // outside the OS gesture zone, so this legitimate zoomed "previous
+      // article" swipe must not be blocked.
+      handlers.onTouchStart(touchEvent([{ clientX: 20, clientY: 0 }]));
+      handlers.onTouchEnd(touchEvent([], [{ clientX: 150, clientY: 0 }]));
+      expect(onSwipeRight).toHaveBeenCalledOnce();
+    } finally {
+      restore();
     }
   });
 

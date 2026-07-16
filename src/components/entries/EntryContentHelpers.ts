@@ -57,6 +57,22 @@ export function detectSwipeDirection(
 const EDGE_GESTURE_ZONE_PX = 32;
 
 /**
+ * Convert a touch's layout-viewport clientX into its physical distance (screen
+ * CSS px) from the left edge of the screen.
+ *
+ * The OS back-forward gesture zone is a fixed *physical* strip, but touch
+ * clientX is in *layout* px: when pinch-zoomed it's offset by the pan and one
+ * layout px spans `scale` screen px, so a layout-px edge zone would grow with
+ * zoom (40% of the screen per side at 5x). Falls back to clientX when the
+ * visualViewport API is unavailable (scale 1, no pan — the two are identical).
+ */
+export function getScreenX(clientX: number): number {
+  const vv = typeof window !== "undefined" ? window.visualViewport : null;
+  if (!vv) return clientX;
+  return (clientX - vv.offsetLeft) * vv.scale;
+}
+
+/**
  * Whether a swipe is (likely) the OS/browser back-forward navigation gesture:
  * a rightward swipe starting against the left screen edge, or a leftward swipe
  * starting against the right edge. Some browsers (notably installed PWAs)
@@ -65,18 +81,20 @@ const EDGE_GESTURE_ZONE_PX = 32;
  * opening (and auto-marking read) the adjacent article before the browser's
  * history-back lands on the list (#1260).
  *
- * Returns false when the viewport width is unknown (<= 0) so navigation is
- * never blocked outright.
+ * Both coordinates are physical screen CSS px: `startScreenX` from
+ * getScreenX(), `screenWidth` from window.innerWidth (the layout viewport
+ * width, which pinch-zoom doesn't change). Returns false when the width is
+ * unknown (<= 0) so navigation is never blocked outright.
  */
 export function isEdgeGestureSwipe(
   direction: "left" | "right",
-  startX: number,
-  viewportWidth: number
+  startScreenX: number,
+  screenWidth: number
 ): boolean {
-  if (viewportWidth <= 0) return false;
+  if (screenWidth <= 0) return false;
   return direction === "right"
-    ? startX <= EDGE_GESTURE_ZONE_PX
-    : startX >= viewportWidth - EDGE_GESTURE_ZONE_PX;
+    ? startScreenX <= EDGE_GESTURE_ZONE_PX
+    : startScreenX >= screenWidth - EDGE_GESTURE_ZONE_PX;
 }
 
 /**
