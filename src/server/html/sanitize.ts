@@ -73,16 +73,32 @@ export function sanitizeEntryHtml(html: string | null | undefined): string | nul
 }
 
 /**
+ * Bodies at or below this size are sanitized synchronously on the calling
+ * thread: the native sanitizer runs in well under a millisecond for them, so
+ * the fixed cost of scheduling a libuv-thread-pool task (and copying the
+ * string across the N-API boundary twice) isn't worth paying. ~10 KB.
+ */
+const SANITIZE_INLINE_MAX_CHARS = 10 * 1024;
+
+/**
  * Async form of {@link sanitizeEntryHtml}: the native pipeline runs on the
- * libuv thread pool, so a large body never blocks the event loop that
- * serves UI requests. Replaces the old piscina worker-pool offload for
- * sanitization (Readability cleaning still uses the pool — see
- * `@/server/worker-thread/pool`).
+ * libuv thread pool for bodies above the inline threshold, so a large body
+ * never blocks the event loop that serves UI requests; small bodies run
+ * synchronously, which is cheaper than scheduling a task.
+ *
+ * Intended for app-server request paths (saved articles, on-demand
+ * full-content fetch, read-path re-sanitize). Background jobs (feed
+ * fetching, email ingest) deliberately use the synchronous
+ * {@link sanitizeEntryHtml} — they already run off the request path, so the
+ * async hop would be pure overhead.
  */
 export async function sanitizeEntryHtmlAsync(
   html: string | null | undefined
 ): Promise<string | null> {
   if (!html) return null;
+  if (html.length <= SANITIZE_INLINE_MAX_CHARS) {
+    return sanitizeEntryHtml(html);
+  }
   const result = await nativeSanitizeEntryHtmlAsync(html);
   logWarnings(result.warnings);
   return result.html;

@@ -7,7 +7,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "../db";
 import { feeds, type Feed } from "../db/schema";
-import { parseFeedInWorker } from "../worker-thread/pool";
+import { parseFeedAsync } from "./parser";
 import { processEntries } from "./entry-processor";
 import { recordHubAnnouncedEntries } from "./websub-hub-stats";
 import { WEBSUB_BACKUP_POLL_INTERVAL_SECONDS } from "./scheduling";
@@ -54,7 +54,7 @@ export async function ingestWebsubNotification(feed: Feed, bodyText: string): Pr
   // Parse the pushed feed content
   let parsedFeed;
   try {
-    parsedFeed = await parseFeedInWorker(bodyText);
+    parsedFeed = await parseFeedAsync(bodyText);
   } catch (error) {
     logger.warn("WebSub notification with invalid feed content", {
       feedId,

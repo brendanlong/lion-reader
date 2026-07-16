@@ -23,8 +23,8 @@ import {
 import { parseFeed } from "@/server/feed/parser";
 import { processMarkdown } from "@/server/markdown";
 import { usageLimitsConfig } from "@/server/config/env";
-import { absolutizeUrls } from "@/server/feed/content-cleaner";
-import { cleanContentInWorker, sanitizeEntryHtmlInWorker } from "@/server/worker-thread/pool";
+import { absolutizeUrls, cleanContentSanitizedAsync } from "@/server/feed/content-cleaner";
+import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
 import { getOrCreateSavedFeed, getSavedFeedId, SAVED_FEED_TITLE } from "@/server/feed/saved-feed";
 import { generateSummary, stripHtml } from "@/server/html/strip-html";
 import { escapeHtml } from "@/server/http/html";
@@ -293,7 +293,7 @@ async function insertSavedEntry(
   // re-running sanitize-html on every read. Offloaded to the libuv thread
   // pool for large bodies (this runs on the app-server request path);
   // `presanitized` reuses any sanitization the caller already computed
-  // (e.g. by cleanContentInWorker) instead of repeating it.
+  // (e.g. by cleanContentSanitizedAsync) instead of repeating it.
   const values = await withSanitizedEntryContentAsync(
     {
       id: entryId,
@@ -983,7 +983,7 @@ export async function saveArticle(
     ? null
     : // sanitizeCleaned: also sanitize the cleaned HTML, so persisting it
       // below can reuse the result instead of sanitizing again.
-      await cleanContentInWorker(html, { url: contentUrl }, { sanitizeCleaned: true });
+      await cleanContentSanitizedAsync(html, { url: contentUrl });
 
   // Generate excerpt - prefer frontmatter summary for Markdown content
   let excerpt: string | null = null;
@@ -1013,7 +1013,7 @@ export async function saveArticle(
     cleaned?.content ??
     (pluginContent ? absolutizeUrls(pluginContent.html, contentUrl) : null);
 
-  // Reuse the sanitized cleaned HTML cleanContentInWorker already produced,
+  // Reuse the sanitized cleaned HTML cleanContentSanitizedAsync already produced,
   // but only when the content we're about to store is exactly that cleaned
   // output (not markdown/plugin content, which took a different branch above).
   // Leave the hint value `undefined` if there isn't one so the chokepoint
@@ -1362,7 +1362,7 @@ export async function createUploadedArticle(
 
   // Original and cleaned are the same string here, so sanitize once (off the
   // event loop for large uploads) and reuse it for both columns.
-  const contentSanitized = await sanitizeEntryHtmlInWorker(params.contentHtml);
+  const contentSanitized = await sanitizeEntryHtmlAsync(params.contentHtml);
   const saved = await insertSavedEntry(
     db,
     userId,

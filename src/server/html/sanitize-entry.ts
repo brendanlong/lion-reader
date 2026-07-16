@@ -30,8 +30,7 @@
  * `shouldMaterializeFullContentOriginal`.
  */
 
-import { sanitizeEntryHtmlInWorker } from "@/server/worker-thread/pool";
-import { sanitizeEntryHtml, SANITIZER_VERSION } from "./sanitize";
+import { sanitizeEntryHtml, sanitizeEntryHtmlAsync, SANITIZER_VERSION } from "./sanitize";
 
 interface RawEntryContent {
   contentOriginal?: string | null;
@@ -107,8 +106,8 @@ export function withSanitizedEntryContent<const T extends RawEntryContent>(
 /**
  * Pre-sanitized values a caller has already computed (via the same
  * `sanitizeEntryHtml`) and wants to reuse instead of paying to sanitize again —
- * e.g. the cleaned HTML that `cleanContentInWorker({ sanitizeCleaned: true })`
- * sanitized inside its worker task. A field's value, when not `undefined`, MUST
+ * e.g. the cleaned HTML that `cleanContentSanitizedAsync` sanitized alongside
+ * the extraction. A field's value, when not `undefined`, MUST
  * equal `sanitizeEntryHtml(values.<field>)`. A hint is honored only when both
  * the value is present (not `undefined`; an explicit `null` is a valid "sanitized
  * to null") AND the corresponding raw field is present in `values` — so a hint
@@ -125,8 +124,8 @@ interface PresanitizedEntryContent {
 
 /**
  * Async form of `withSanitizedEntryContent` that offloads large-body
- * sanitization to a worker thread (see `sanitizeEntryHtmlInWorker`), keeping the
- * sanitize-html pass off the main event loop on app-server request paths. Small
+ * sanitization to the libuv thread pool (see `sanitizeEntryHtmlAsync`), keeping
+ * the sanitize pass off the main event loop on app-server request paths. Small
  * bodies still run inline. Use this from UI-serving code paths (saved articles,
  * on-demand full-content fetch, read-path re-sanitize); background jobs should
  * keep using the synchronous `withSanitizedEntryContent`.
@@ -153,7 +152,7 @@ export async function withSanitizedEntryContentAsync<const T extends RawEntryCon
   ): Promise<string | null> =>
     reuse !== undefined && rawKeyPresent
       ? Promise.resolve(reuse)
-      : sanitizeEntryHtmlInWorker(raw ?? null);
+      : sanitizeEntryHtmlAsync(raw ?? null);
 
   if ("contentOriginal" in values || "contentCleaned" in values) {
     const [original, cleaned] = await Promise.all([

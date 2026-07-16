@@ -351,6 +351,32 @@ describe("parseRss", () => {
       expect(result.entries[1].pubDate).toEqual(new Date("2024-01-02T12:00:00Z"));
     });
 
+    it("keeps content parsed before an unclosed comment", () => {
+      // An unclosed <!-- comment swallows the rest of the input; everything
+      // before it must survive (htmlparser2 behaved this way, and the native
+      // parser maps quick-xml's EOF syntax errors to a graceful end-of-input).
+      const xml = `<rss version="2.0">
+        <channel>
+          <title>Feed</title>
+          <item><title>Post</title><guid>p1</guid></item>
+          <!-- unclosed comment swallows the rest
+          <item><title>Never seen</title></item>`;
+
+      const result = parseRss(xml);
+
+      expect(result.title).toBe("Feed");
+      expect(result.entries).toHaveLength(1);
+      expect(result.entries[0].guid).toBe("p1");
+    });
+
+    it("implicitly closes open elements at end of input (truncated feed)", () => {
+      const result = parseRss(`<rss><channel><title>Feed</title><item><title>Post`);
+
+      expect(result.title).toBe("Feed");
+      expect(result.entries).toHaveLength(1);
+      expect(result.entries[0].title).toBe("Post");
+    });
+
     it("handles unclosed title tags", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <rss version="2.0">

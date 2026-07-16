@@ -12,6 +12,8 @@ import { createTRPCRouter, confirmedProtectedProcedure as protectedProcedure } f
 import { errors } from "../errors";
 import { uuidSchema } from "../validation";
 import { opmlImports } from "@/server/db/schema";
+import { parseOpmlAsync, OpmlParseError } from "@/server/feed/opml";
+import { MAX_OPML_BYTES } from "@/server/services/imports";
 
 // ============================================================================
 // Output Schemas
@@ -60,11 +62,48 @@ const importSummarySchema = z.object({
   completedAt: z.date().nullable(),
 });
 
+/**
+ * A feed parsed out of an uploaded OPML file, for the import preview UI.
+ */
+const opmlPreviewFeedSchema = z.object({
+  xmlUrl: z.string(),
+  title: z.string().optional(),
+  htmlUrl: z.string().optional(),
+  category: z.array(z.string()).optional(),
+});
+
 // ============================================================================
 // Router
 // ============================================================================
 
 export const importsRouter = createTRPCRouter({
+  /**
+   * Parse an OPML file and return the feeds it lists, without importing
+   * anything. Backs the import preview UI — parsing happens server-side (on
+   * the libuv thread pool) so the browser bundle carries no XML parser and
+   * the app-server event loop isn't blocked by a large upload.
+   */
+  preview: protectedProcedure
+    .input(
+      z.object({
+        opml: z
+          .string()
+          .min(1, "OPML content is required")
+          .max(MAX_OPML_BYTES, "OPML file too large (max 5MB)"),
+      })
+    )
+    .output(z.object({ feeds: z.array(opmlPreviewFeedSchema) }))
+    .mutation(async ({ input }) => {
+      try {
+        return { feeds: await parseOpmlAsync(input.opml) };
+      } catch (error) {
+        if (error instanceof OpmlParseError) {
+          throw errors.validation(`Failed to parse OPML: ${error.message}`);
+        }
+        throw error;
+      }
+    }),
+
   /**
    * Get a specific import by ID.
    *

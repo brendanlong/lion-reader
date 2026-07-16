@@ -55,6 +55,7 @@ RUN apk add --no-cache rust cargo
 RUN --mount=type=cache,id=cargo-registry,target=/root/.cargo/registry \
     --mount=type=cache,id=cargo-target,target=/app/native/sanitizer/target \
     --mount=type=cache,id=cargo-target-readability,target=/app/native/readability/target \
+    --mount=type=cache,id=cargo-target-feed-parser,target=/app/native/feed-parser/target \
     pnpm build:native
 
 # Set environment for build
@@ -87,9 +88,6 @@ RUN pnpm build:server
 
 # Build worker bundle (single optimized JS file)
 RUN pnpm build:worker
-
-# Build worker-thread bundle (piscina entry point for CPU-intensive tasks)
-RUN pnpm build:worker-thread
 
 # Build Discord bot bundle (single optimized JS file)
 RUN pnpm build:discord-bot
@@ -128,8 +126,8 @@ COPY --from=builder /app/package.json ./package.json
 # Copy production node_modules (already pruned in builder)
 COPY --from=builder /app/node_modules ./node_modules
 
-# The native modules: node_modules/@lion-reader/{sanitizer,readability} are
-# pnpm workspace symlinks into these directories, so they must exist in the
+# The native modules: node_modules/@lion-reader/{sanitizer,readability,feed-parser}
+# are pnpm workspace symlinks into these directories, so they must exist in the
 # runner.
 COPY --from=builder /app/native/sanitizer/package.json ./native/sanitizer/package.json
 COPY --from=builder /app/native/sanitizer/index.js ./native/sanitizer/index.js
@@ -139,6 +137,10 @@ COPY --from=builder /app/native/readability/package.json ./native/readability/pa
 COPY --from=builder /app/native/readability/index.js ./native/readability/index.js
 COPY --from=builder /app/native/readability/index.d.ts ./native/readability/index.d.ts
 COPY --from=builder /app/native/readability/readability.node ./native/readability/readability.node
+COPY --from=builder /app/native/feed-parser/package.json ./native/feed-parser/package.json
+COPY --from=builder /app/native/feed-parser/index.js ./native/feed-parser/index.js
+COPY --from=builder /app/native/feed-parser/index.d.ts ./native/feed-parser/index.d.ts
+COPY --from=builder /app/native/feed-parser/feed-parser.node ./native/feed-parser/feed-parser.node
 
 # Copy built Next.js app
 COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
@@ -149,7 +151,6 @@ COPY --from=builder --chown=nextjs:nodejs /app/migrations ./migrations
 # Copy bundled scripts (no longer need tsx, tsconfig, or src/)
 COPY --from=builder /app/dist/server.js ./dist/server.js
 COPY --from=builder /app/dist/worker.js ./dist/worker.js
-COPY --from=builder /app/dist/worker-thread.js ./dist/worker-thread.js
 COPY --from=builder /app/dist/migrate.js ./dist/migrate.js
 COPY --from=builder /app/dist/discord-bot.js ./dist/discord-bot.js
 

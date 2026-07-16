@@ -11,8 +11,11 @@ import { eq } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import { entries, narrationContent } from "@/server/db/schema";
 import { fetchHtmlPage, HttpFetchError } from "@/server/http/fetch";
-import { cleanContent, absolutizeUrls } from "@/server/feed/content-cleaner";
-import { cleanContentInWorker } from "@/server/worker-thread/pool";
+import {
+  cleanContent,
+  cleanContentSanitizedAsync,
+  absolutizeUrls,
+} from "@/server/feed/content-cleaner";
 import {
   withSanitizedEntryContent,
   withSanitizedEntryContentAsync,
@@ -35,7 +38,7 @@ export interface FetchFullContentResult {
   contentCleaned?: string;
   /**
    * The sanitized form of `contentCleaned`, when cleaning ran through
-   * `cleanContentInWorker` with the sanitize included (offloadClean path).
+   * `cleanContentSanitizedAsync` (offloadClean path).
    * Persisted via `persistFullContentResult` as a `presanitized` hint so the
    * sanitize isn't repeated. `undefined` when cleaning ran inline or no
    * cleaned content exists.
@@ -75,7 +78,7 @@ export async function fetchFullContent(
     resolveUrl: string
   ): Promise<{ content: string; contentSanitized?: string | null } | null> =>
     offloadClean
-      ? cleanContentInWorker(html, { url: resolveUrl }, { sanitizeCleaned: true })
+      ? cleanContentSanitizedAsync(html, { url: resolveUrl })
       : Promise.resolve(cleanContent(html, { url: resolveUrl }));
 
   try {

@@ -12,7 +12,11 @@
  */
 
 import { XMLBuilder } from "fast-xml-parser";
-import { parseOpml as parseOpmlInternal, OpmlParseError } from "./streaming/opml-parser";
+import {
+  parseOpml as parseOpmlInternal,
+  parseOpmlAsync as parseOpmlAsyncInternal,
+  OpmlParseError,
+} from "./streaming/opml-parser";
 
 /**
  * A feed parsed from OPML.
@@ -77,6 +81,16 @@ export interface OpmlMetadata {
  */
 export function parseOpml(xml: string): OpmlFeed[] {
   const result = parseOpmlInternal(xml);
+  return result.feeds as OpmlFeed[];
+}
+
+/**
+ * Async form of `parseOpml` for app-server request paths: the native parser
+ * runs on the libuv thread pool, so a large OPML upload never blocks the
+ * event loop that serves UI requests (small inputs parse inline).
+ */
+export async function parseOpmlAsync(xml: string): Promise<OpmlFeed[]> {
+  const result = await parseOpmlAsyncInternal(xml);
   return result.feeds as OpmlFeed[];
 }
 

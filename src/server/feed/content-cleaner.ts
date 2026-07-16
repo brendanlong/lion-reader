@@ -12,6 +12,7 @@ import { extractArticle, extractArticleAsync } from "@lion-reader/readability";
 import type { ExtractedArticle, ExtractOptions } from "@lion-reader/readability";
 import { HTMLRewriter } from "html-rewriter-wasm";
 import { logger } from "@/lib/logger";
+import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -343,7 +344,7 @@ export function cleanContent(
  * large pages never block the event loop. Small inputs run synchronously —
  * the native extractor finishes in well under a millisecond for them, so the
  * fixed cost of scheduling a thread-pool task isn't worth paying (mirroring
- * `sanitizeEntryHtmlInWorker`).
+ * `sanitizeEntryHtmlAsync`).
  *
  * Intended for app-server request paths (saved articles, on-demand
  * full-content fetch). Background jobs (feed fetching, email ingest)
@@ -371,9 +372,29 @@ export async function cleanContentAsync(
 }
 
 /**
+ * `cleanContentAsync` plus a sanitize of the cleaned output (also async, via
+ * the native sanitizer), so a caller that persists the cleaned content
+ * doesn't sanitize it again — the result is returned as `contentSanitized`
+ * and handed to `withSanitizedEntryContentAsync` as a `presanitized` hint.
+ * Each step is one native call; composing them costs a single extra N-API
+ * string copy (~1% of the work), which is why there's no fused native task.
+ *
+ * Same audience as `cleanContentAsync`: app-server request paths (saved
+ * articles, on-demand full-content fetch).
+ */
+export async function cleanContentSanitizedAsync(
+  html: string,
+  options: CleanContentOptions = {}
+): Promise<(CleanedContent & { contentSanitized: string | null }) | null> {
+  const cleaned = await cleanContentAsync(html, options);
+  if (!cleaned) return null;
+  return { ...cleaned, contentSanitized: await sanitizeEntryHtmlAsync(cleaned.content) };
+}
+
+/**
  * Inputs at or below this size run the extractor synchronously in
  * `cleanContentAsync` instead of scheduling a libuv-thread-pool task. ~10 KB,
- * same rationale and value as `SANITIZE_INLINE_MAX_CHARS` in the worker pool.
+ * same rationale and value as the sanitizer's inline threshold.
  */
 const CLEAN_INLINE_MAX_CHARS = 10 * 1024;
 

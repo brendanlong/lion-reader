@@ -52,8 +52,8 @@ logger.info("Starting standalone worker", {
   flyMachineId: process.env.FLY_MACHINE_ID,
   // Thread identity: worker threads share the parent's pid, so pid alone can't
   // distinguish "second OS process on this machine" from "this bundle was
-  // loaded inside another process's worker thread (e.g. a wrong piscina
-  // bundle)". isMainThread=false means the latter.
+  // loaded inside another process's worker thread (a wrongly-resolved thread
+  // bootstrap)". isMainThread=false means the latter.
   isMainThread,
   threadId,
 });
