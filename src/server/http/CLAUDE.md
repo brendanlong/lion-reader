@@ -1,6 +1,6 @@
 # Outbound HTTP & SSRF Protection (`src/server/http/`)
 
-This file governs the outbound-HTTP helpers: SSRF-protected fetching (`ssrf.ts`), user agent (`user-agent.ts`), CORS, compression, client IP, and the OAuth-surface trailing-slash handling (`trailing-slash.ts` — see `src/server/oauth/CLAUDE.md` for why it exists).
+This file governs the outbound-HTTP helpers: SSRF-protected fetching (`ssrf.ts`), user agent (`user-agent.ts`), CORS, compression, client IP, and the OAuth-surface trailing-slash handling (`trailing-slash.ts` — see `src/server/oauth/CLAUDE.md` for why it exists). One inbound-response concern also lives here: the Content-Security-Policy builder (`csp.ts`, security-critical — the XSS backstop behind the sanitizer). The policy is applied per-request with a fresh `script-src` nonce by `src/proxy.ts`; directive rationale is documented in `csp.ts` itself, the header wiring in SECURITY.md.
 
 Every outgoing request must send our custom User-Agent (`USER_AGENT`/`buildUserAgent` from `@/server/http/user-agent`).
 
