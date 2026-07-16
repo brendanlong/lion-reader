@@ -73,6 +73,18 @@ pub struct NormalizedEmbed {
     pub allow: String,
 }
 
+/// The canonical hostnames every surviving embed src is rewritten to. The
+/// CSP (`src/server/http/csp.ts`) uses this to double-enforce the embed
+/// host allow-list in `frame-src`, so it must stay the same list the
+/// sanitizer rewrites to — exporting it here keeps one source of truth.
+#[napi]
+pub fn embed_canonical_hostnames() -> Vec<String> {
+    core::embeds::EMBED_CANONICAL_HOSTNAMES
+        .iter()
+        .map(|host| host.to_string())
+        .collect()
+}
+
 /// Validates an untrusted iframe src against the allow-listed embed
 /// providers and returns the normalized embed, or null if the iframe should
 /// be dropped. Exposed for tests and TS callers that synthesize embeds.

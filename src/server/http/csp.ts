@@ -14,7 +14,7 @@
  * the two conceptually in sync when changing directives here.
  */
 
-import { EMBED_CANONICAL_HOSTNAMES } from "@/server/html/embed-providers";
+import { embedCanonicalHostnames } from "@lion-reader/sanitizer";
 
 /**
  * Builds the Content-Security-Policy header value for a request.
@@ -64,7 +64,9 @@ import { EMBED_CANONICAL_HOSTNAMES } from "@/server/html/embed-providers";
  */
 export function buildContentSecurityPolicy(nonce: string): string {
   const isDev = process.env.NODE_ENV === "development";
-  const frameSrc = EMBED_CANONICAL_HOSTNAMES.map((host) => `https://${host}`).join(" ");
+  const frameSrc = embedCanonicalHostnames()
+    .map((host) => `https://${host}`)
+    .join(" ");
   return [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' 'wasm-unsafe-eval'${

@@ -34,6 +34,13 @@ export function sanitizeEntryHtml(html: string): SanitizeOutput;
  */
 export function sanitizeEntryHtmlAsync(html: string): Promise<SanitizeOutput>;
 
+/**
+ * The canonical hostnames every surviving embed src is rewritten to. The
+ * CSP (`src/server/http/csp.ts`) double-enforces this list in `frame-src`,
+ * so it shares this single source of truth with the sanitizer.
+ */
+export function embedCanonicalHostnames(): string[];
+
 /** A normalized, safe-to-render embed derived from an untrusted iframe src. */
 export interface NormalizedEmbed {
   src: string;
