@@ -39,6 +39,20 @@ describe("sanitizeEntryHtml", () => {
       const out = sanitizeEntryHtml("<svg><script>alert(1)</script></svg>");
       expect(out).not.toContain("script");
     });
+
+    it("drops markup hidden inside rawtext/RCDATA elements (mXSS)", () => {
+      // Inside title/xmp/noembed/noframes/noscript/plaintext the tokenizer
+      // reads the contents as text, so an unwrap would re-emit them verbatim
+      // and the browser would re-parse them as a live <img onerror>. The whole
+      // subtree must be dropped instead.
+      for (const tag of ["title", "xmp", "noembed", "noframes", "noscript", "plaintext"]) {
+        const out =
+          sanitizeEntryHtml(`<p>ok</p><${tag}><img src=x onerror=alert(1)></${tag}>`) ?? "";
+        expect(out).not.toContain("onerror");
+        expect(out).not.toContain("<img");
+        expect(out).toContain("<p>ok</p>");
+      }
+    });
   });
 
   describe("link and image transforms (formerly the DOMPurify hook)", () => {
