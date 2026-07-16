@@ -39,10 +39,14 @@ import { EMBED_CANONICAL_HOSTNAMES } from "@/server/html/embed-providers";
  *   audio unlock. `http:` also covers plain-HTTP local dev.
  * - `connect-src`: same-origin covers tRPC, SSE, and the Sentry `/monitoring`
  *   tunnel. The external hosts are the TTS narration downloads: Piper voice
- *   models from Hugging Face (`huggingface.co` redirects to `cdn-lfs*.huggingface.co`
- *   / `*.hf.co` CDNs, and CSP checks every hop of a redirect chain) and the
- *   Piper phonemizer wasm/data from jsdelivr (`CUSTOM_WASM_PATHS` in
- *   `src/lib/narration/piper-tts-provider.ts`). Dev needs `ws:` for HMR.
+ *   models from Hugging Face and the Piper phonemizer wasm/data from jsdelivr
+ *   (`CUSTOM_WASM_PATHS` in `src/lib/narration/piper-tts-provider.ts`). CSP
+ *   checks every hop of a redirect chain, and `huggingface.co/…/resolve/…`
+ *   302s to its storage CDNs — `cdn-lfs*.huggingface.co` historically, Xet
+ *   hosts like `cas-bridge.xethub.hf.co` today. A CSP host wildcard
+ *   suffix-matches subdomains at ANY depth (unlike TLS certs), so
+ *   `https://*.hf.co` covers the multi-label Xet hosts. Dev needs `ws:` for
+ *   HMR.
  * - `worker-src`: the service worker is same-origin; the ONNX runtime spawns
  *   its threading helper workers from `blob:` URLs.
  * - `frame-src`: exactly the sanitizer's allow-listed embed providers — every
@@ -52,7 +56,11 @@ import { EMBED_CANONICAL_HOSTNAMES } from "@/server/html/embed-providers";
  *   pre-existing baseline (plugins, `<base>` hijacking, clickjacking).
  * - `form-action` is deliberately absent: Chrome checks post-submit redirects
  *   against it, which would break the OAuth consent flow (form POST to self,
- *   then 302 to the client's external `redirect_uri`).
+ *   then 302 to the client's external `redirect_uri`). Note `form-action`
+ *   does NOT fall back to `default-src` — omitted means form submissions are
+ *   unrestricted. That's acceptable here because the sanitizer strips
+ *   `<form>` from entry HTML, so an injected exfiltration form can't reach
+ *   the DOM in the first place.
  */
 export function buildContentSecurityPolicy(nonce: string): string {
   const isDev = process.env.NODE_ENV === "development";
@@ -78,10 +86,10 @@ export function buildContentSecurityPolicy(nonce: string): string {
 }
 
 /**
- * Generates the per-request CSP nonce: 128 bits of randomness, base64-encoded
- * (the header grammar requires base64url charset; standard base64 is a subset
- * browsers accept, and the value round-trips verbatim between the header and
- * the `nonce` attributes).
+ * Generates the per-request CSP nonce: 128 bits of randomness, base64-encoded.
+ * The header grammar (`base64-value`) accepts both standard base64 and
+ * base64url characters, and the value round-trips verbatim between the header
+ * and the `nonce` attributes.
  */
 export function generateCspNonce(): string {
   const bytes = new Uint8Array(16);
