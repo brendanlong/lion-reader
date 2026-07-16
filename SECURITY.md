@@ -93,6 +93,11 @@ Entry bodies, saved articles, and AI summaries are rendered with
   (`revokeOtherUserSessions`).
 - Password-accepting endpoints are rate-limited per-IP **and** per-account (the
   account bucket degrades to in-memory, not fully open, during a Redis outage).
+- Password-accepting endpoints (tRPC `auth.login`, Google Reader `ClientLogin`,
+  Wallabag password grant) verify via `verifyPassword`
+  (`src/server/auth/password.ts`), which runs a decoy `argon2.verify` for a
+  missing/passwordless user so response timing can't be used to enumerate valid
+  emails (#1267). **Don't reintroduce an early return that skips argon2.**
 - **OAuth sign-in is the only email-verification path**, so the shared OAuth
   processor (`src/server/auth/oauth/callback.ts`) **refuses to link or create an
   account from an unverified provider email** (`emailVerified` must be true).
