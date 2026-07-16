@@ -1,9 +1,11 @@
 /**
  * Worker thread pool for CPU-intensive operations.
  *
- * Provides async wrappers around cleanContent and parseFeed that run the
- * actual work in a piscina worker thread, keeping the main event loop free
- * for handling API requests.
+ * Provides an async wrapper around parseFeed that runs the actual work in a
+ * piscina worker thread, keeping the main event loop free for handling API
+ * requests. (Content cleaning and sanitization are native modules now and
+ * run on the libuv thread pool instead — see cleanContentInWorker and
+ * sanitizeEntryHtmlInWorker below.)
  *
  * - Lazy-initialised on first call (no threads spawned at import time)
  * - Graceful fallback to inline execution if the pool cannot be created
@@ -18,18 +20,31 @@ import { availableParallelism } from "os";
 import Piscina from "piscina";
 
 import { logger } from "@/lib/logger";
+import { cleanContentAsync } from "@/server/feed/content-cleaner";
+import type {
+  CleanContentOptions,
+  CleanedContent as RawCleanedContent,
+} from "@/server/feed/content-cleaner";
 import {
   sanitizeEntryHtml,
   sanitizeEntryHtmlAsync,
   SANITIZER_VERSION,
 } from "@/server/html/sanitize";
 import {
-  cleanedContentSchema,
   sanitizerVersionResultSchema,
   serializedParsedFeedSchema,
   deserializeParsedFeed,
 } from "./types";
-import type { CleanedContent, CleanContentOptions, ParsedFeed } from "./types";
+import type { ParsedFeed } from "./types";
+
+/**
+ * Return shape of `cleanContentInWorker`: the cleaned content, plus the
+ * sanitized form of it when the caller requested `sanitizeCleaned` (so a
+ * caller that persists the cleaned content doesn't sanitize it again).
+ */
+export type CleanedContent = RawCleanedContent & {
+  contentSanitized?: string | null;
+};
 
 /**
  * Bodies at or below this size are sanitized synchronously on the calling
@@ -224,36 +239,34 @@ async function getVerifiedPool(): Promise<Piscina | null> {
 // ---------------------------------------------------------------------------
 
 /**
- * Clean HTML content using Mozilla Readability (runs in a worker thread).
+ * Clean HTML content using the Readability algorithm without blocking the
+ * main event loop for large pages. Drop-in async form of `cleanContent`.
  *
- * Drop-in async replacement for the synchronous `cleanContent` from
- * `@/server/feed/content-cleaner`. Falls back to inline execution if
- * the worker pool is unavailable.
+ * Extraction is a native module (dom_smoothie) now, so this no longer
+ * involves the piscina pool at all: `cleanContentAsync` runs the extractor
+ * on the libuv thread pool (no string structured-clone, no bundle-version
+ * concerns — the same .node module serves every thread), and the optional
+ * sanitize of the cleaned output goes through `sanitizeEntryHtmlInWorker`
+ * (also native). The old fused clean+sanitize piscina task existed to avoid
+ * shipping the cleaned string across the thread boundary twice; with both
+ * steps native, each hop is a single N-API string copy (~1% of the work),
+ * so plain composition replaces the fusion.
+ *
+ * Intended for app-server request paths (saved articles, on-demand
+ * full-content fetch). Background jobs (feed fetching, email ingest)
+ * deliberately use the synchronous `cleanContent` — they already run off the
+ * request path, so the async hop would be pure overhead.
  */
 export async function cleanContentInWorker(
   html: string,
   options?: CleanContentOptions,
   extra?: { sanitizeCleaned?: boolean }
 ): Promise<CleanedContent | null> {
-  const p = await getVerifiedPool();
-  if (!p) {
-    const { cleanContent } = await import("@/server/feed/content-cleaner");
-    const cleaned = cleanContent(html, options);
-    if (!cleaned) return null;
-    // Match the worker's fused-sanitize behaviour on the inline fallback path.
-    return extra?.sanitizeCleaned
-      ? { ...cleaned, contentSanitized: sanitizeEntryHtml(cleaned.content) }
-      : cleaned;
-  }
-
-  const result = await p.run({
-    type: "cleanContent",
-    html,
-    options,
-    sanitizeCleaned: extra?.sanitizeCleaned,
-  });
-  if (result === null) return null;
-  return cleanedContentSchema.parse(result);
+  const cleaned = await cleanContentAsync(html, options);
+  if (!cleaned) return null;
+  return extra?.sanitizeCleaned
+    ? { ...cleaned, contentSanitized: await sanitizeEntryHtmlInWorker(cleaned.content) }
+    : cleaned;
 }
 
 /**

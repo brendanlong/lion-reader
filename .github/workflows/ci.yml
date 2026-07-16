@@ -74,7 +74,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build native sanitizer
+      - name: Build native modules
         run: pnpm build:native
 
       - name: Run unit tests
@@ -144,7 +144,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build native sanitizer
+      - name: Build native modules
         run: pnpm build:native
 
       - name: Run integration tests
@@ -190,7 +190,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build native sanitizer
+      - name: Build native modules
         run: pnpm build:native
 
       - name: Install Playwright browsers

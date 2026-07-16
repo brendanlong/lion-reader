@@ -51,7 +51,13 @@ const buildOptions = {
   //   bootstrap, silently booting a rogue job worker inside this process and
   //   hanging every offloaded task
   // We bundle everything else for a smaller, faster deployment
-  external: ["argon2", "html-rewriter-wasm", "piscina", "@lion-reader/sanitizer"],
+  external: [
+    "argon2",
+    "html-rewriter-wasm",
+    "piscina",
+    "@lion-reader/sanitizer",
+    "@lion-reader/readability",
+  ],
 
   // Source maps for debugging production issues
   sourcemap: true,

@@ -42,7 +42,7 @@ const buildOptions = {
   // piscina resolves its thread bootstrap via __dirname; bundled it would load
   // dist/worker.js (the job worker) into its threads (see build-worker.mjs).
   // Everything else (linkedom, @mozilla/readability, htmlparser2, etc.) is bundled.
-  external: ["html-rewriter-wasm", "piscina", "@lion-reader/sanitizer"],
+  external: ["html-rewriter-wasm", "piscina", "@lion-reader/sanitizer", "@lion-reader/readability"],
 
   sourcemap: true,
   minify: true,

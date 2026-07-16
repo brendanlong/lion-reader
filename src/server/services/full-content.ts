@@ -34,10 +34,11 @@ export interface FetchFullContentResult {
   /** The Readability-cleaned HTML content */
   contentCleaned?: string;
   /**
-   * The sanitized form of `contentCleaned`, when Readability ran in the worker
-   * pool with the sanitize fused in (offloadClean path). Persisted via
-   * `persistFullContentResult` as a `presanitized` hint so the sanitize isn't
-   * repeated. `undefined` when cleaning ran inline or no cleaned content exists.
+   * The sanitized form of `contentCleaned`, when cleaning ran through
+   * `cleanContentInWorker` with the sanitize included (offloadClean path).
+   * Persisted via `persistFullContentResult` as a `presanitized` hint so the
+   * sanitize isn't repeated. `undefined` when cleaning ran inline or no
+   * cleaned content exists.
    */
   contentCleanedSanitized?: string | null;
   /** Error message if the fetch failed */
@@ -53,12 +54,12 @@ export interface FetchFullContentResult {
  * 3. Returns both the original HTML and the cleaned content
  *
  * @param url - The article URL to fetch
- * @param options.offloadClean - Run Readability in the worker-thread pool (with
- *   the cleaned-HTML sanitize fused in) instead of inline on the calling thread.
- *   On by default; the background feed worker passes false because it already
- *   runs off the request path, so the thread hop is pure overhead. App-server
- *   callers (fetchAndStoreFullContent) keep the default so the CPU-bound
- *   Readability pass never stalls the UI-serving event loop.
+ * @param options.offloadClean - Run extraction on the libuv thread pool (with
+ *   the cleaned-HTML sanitize included) instead of inline on the calling
+ *   thread. On by default; the background feed worker passes false because it
+ *   already runs off the request path, so the async hop is pure overhead.
+ *   App-server callers (fetchAndStoreFullContent) keep the default so the
+ *   extraction pass never stalls the UI-serving event loop.
  * @returns The fetch result with content or error
  */
 export async function fetchFullContent(
@@ -66,9 +67,9 @@ export async function fetchFullContent(
   options: { offloadClean?: boolean } = {}
 ): Promise<FetchFullContentResult> {
   const { offloadClean = true } = options;
-  // Run Readability either in the worker pool (fusing the cleaned-HTML sanitize
-  // so persistFullContentResult can reuse it) or inline, per offloadClean. The
-  // inline path has no `contentSanitized` (only the worker fuses the sanitize).
+  // Run extraction either on the libuv thread pool (with the cleaned-HTML
+  // sanitize included so persistFullContentResult can reuse it) or inline, per
+  // offloadClean. The inline path has no `contentSanitized`.
   const runClean = (
     html: string,
     resolveUrl: string

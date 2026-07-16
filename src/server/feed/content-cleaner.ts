@@ -1,13 +1,16 @@
 /**
- * Content cleaning module using Mozilla Readability.
+ * Content cleaning module using the Readability algorithm.
  *
- * Extracts and cleans article content from HTML using the Readability algorithm,
- * which removes navigation, ads, and other non-content elements.
+ * Extracts and cleans article content from HTML, removing navigation, ads,
+ * and other non-content elements. The extraction engine is the native
+ * @lion-reader/readability module (dom_smoothie, a Rust port of Mozilla
+ * Readability) — ~5x faster and ~10x lighter than the old
+ * linkedom + @mozilla/readability pipeline.
  */
 
-import { Readability, isProbablyReaderable } from "@mozilla/readability";
+import { extractArticle, extractArticleAsync } from "@lion-reader/readability";
+import type { ExtractedArticle, ExtractOptions } from "@lion-reader/readability";
 import { HTMLRewriter } from "html-rewriter-wasm";
-import { parseHTML } from "linkedom";
 import { logger } from "@/lib/logger";
 
 const encoder = new TextEncoder();
@@ -321,87 +324,131 @@ export function cleanContent(
   html: string,
   options: CleanContentOptions = {}
 ): CleanedContent | null {
-  const { url, minContentLength = 140, minCleanedLength = 50 } = options;
+  if (!passesMinContentLength(html, options)) return null;
 
-  // Skip very short content
+  try {
+    return finishCleaned(extractArticle(html, EXTRACT_OPTIONS), html, options);
+  } catch (error) {
+    // Log the error but don't throw - return null to indicate failure
+    logger.warn("Readability parsing error", {
+      url: options.url,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+/**
+ * Async form of `cleanContent`: extraction runs on the libuv thread pool so
+ * large pages never block the event loop. Small inputs run synchronously —
+ * the native extractor finishes in well under a millisecond for them, so the
+ * fixed cost of scheduling a thread-pool task isn't worth paying (mirroring
+ * `sanitizeEntryHtmlInWorker`).
+ *
+ * Intended for app-server request paths (saved articles, on-demand
+ * full-content fetch). Background jobs (feed fetching, email ingest)
+ * deliberately use the synchronous `cleanContent` — they already run off the
+ * request path, so the async hop would be pure overhead.
+ */
+export async function cleanContentAsync(
+  html: string,
+  options: CleanContentOptions = {}
+): Promise<CleanedContent | null> {
+  if (!passesMinContentLength(html, options)) return null;
+  if (html.length <= CLEAN_INLINE_MAX_CHARS) {
+    return cleanContent(html, options);
+  }
+
+  try {
+    return finishCleaned(await extractArticleAsync(html, EXTRACT_OPTIONS), html, options);
+  } catch (error) {
+    logger.warn("Readability parsing error", {
+      url: options.url,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+/**
+ * Inputs at or below this size run the extractor synchronously in
+ * `cleanContentAsync` instead of scheduling a libuv-thread-pool task. ~10 KB,
+ * same rationale and value as `SANITIZE_INLINE_MAX_CHARS` in the worker pool.
+ */
+const CLEAN_INLINE_MAX_CHARS = 10 * 1024;
+
+const EXTRACT_OPTIONS: ExtractOptions = {
+  // Keep styling classes that might be important for code blocks etc.
+  keepClasses: true,
+  // Character threshold for content detection
+  charThreshold: 100,
+};
+
+/** Shared pre-gate: skip very short content. */
+function passesMinContentLength(html: string, options: CleanContentOptions): boolean {
+  const { minContentLength = 140 } = options;
   if (html.length < minContentLength) {
     logger.debug("Content too short for Readability", {
       length: html.length,
       minContentLength,
     });
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Shared post-processing for the sync and async extraction paths: quality
+ * gates, URL absolutization, and mapping to the CleanedContent shape.
+ */
+function finishCleaned(
+  article: ExtractedArticle | null,
+  html: string,
+  options: CleanContentOptions
+): CleanedContent | null {
+  const { url, minCleanedLength = 50 } = options;
+
+  if (!article) {
+    logger.debug("Readability failed to parse content", { url });
     return null;
   }
 
-  try {
-    // Parse HTML into a DOM using linkedom (faster than JSDOM)
-    // Note: linkedom doesn't support URL-based base resolution, but we handle that
-    // separately in absolutizeUrls() after Readability processes the content
-    // Wrap fragments in a full HTML document structure for proper parsing
-    const trimmedHtml = html.trim().toLowerCase();
-    const isFullDocument = trimmedHtml.startsWith("<!doctype") || trimmedHtml.startsWith("<html");
-    const htmlToParse = isFullDocument ? html : `<!DOCTYPE html><html><body>${html}</body></html>`;
-    const { document } = parseHTML(htmlToParse);
+  // The fast is-probably-readable heuristic is informational only — the old
+  // pipeline also continued on a negative result (feed content might still
+  // be extractable), so extraction always ran; keep the log for parity.
+  if (!article.probablyReadable) {
+    logger.debug("Content is probably not readable", { url });
+  }
 
-    // Check if the content is likely readable
-    // This is a fast heuristic check before running the full algorithm
-    if (!isProbablyReaderable(document)) {
-      logger.debug("Content is probably not readable", { url });
-      // Continue anyway - feed content might still be extractable
-    }
+  // Ensure we have content
+  if (!article.content || article.content.trim().length === 0) {
+    logger.debug("Readability returned empty content", { url });
+    return null;
+  }
 
-    // Create a clone of the document for Readability
-    // (Readability modifies the DOM in place)
-    const reader = new Readability(document, {
-      // Keep styling classes that might be important for code blocks etc.
-      keepClasses: true,
-      // Character threshold for content detection
-      charThreshold: 100,
-    });
-
-    const article = reader.parse();
-
-    if (!article) {
-      logger.debug("Readability failed to parse content", { url });
-      return null;
-    }
-
-    // Ensure we have content
-    if (!article.content || article.content.trim().length === 0) {
-      logger.debug("Readability returned empty content", { url });
-      return null;
-    }
-
-    // Check if cleaned content is unrealistically short (e.g., JS-heavy pages)
-    const textContent = article.textContent?.trim() ?? "";
-    if (textContent.length < minCleanedLength) {
-      logger.debug("Readability extracted content too short", {
-        url,
-        textLength: textContent.length,
-        minCleanedLength,
-      });
-      return null;
-    }
-
-    // Absolutize relative URLs in the cleaned content if we have a base URL.
-    // Extract <base href> from the raw HTML since Readability strips it.
-    const effectiveUrl = url ? extractBaseHref(html, url) : undefined;
-    const content = effectiveUrl ? absolutizeUrls(article.content, effectiveUrl) : article.content;
-
-    return {
-      content,
-      textContent,
-      excerpt: article.excerpt ?? "",
-      title: article.title ?? null,
-      byline: article.byline ?? null,
-    };
-  } catch (error) {
-    // Log the error but don't throw - return null to indicate failure
-    logger.warn("Readability parsing error", {
+  // Check if cleaned content is unrealistically short (e.g., JS-heavy pages)
+  const textContent = article.textContent.trim();
+  if (textContent.length < minCleanedLength) {
+    logger.debug("Readability extracted content too short", {
       url,
-      error: error instanceof Error ? error.message : String(error),
+      textLength: textContent.length,
+      minCleanedLength,
     });
     return null;
   }
+
+  // Absolutize relative URLs in the cleaned content if we have a base URL.
+  // Extract <base href> from the raw HTML since Readability strips it.
+  const effectiveUrl = url ? extractBaseHref(html, url) : undefined;
+  const content = effectiveUrl ? absolutizeUrls(article.content, effectiveUrl) : article.content;
+
+  return {
+    content,
+    textContent,
+    excerpt: article.excerpt ?? "",
+    title: article.title ?? null,
+    byline: article.byline ?? null,
+  };
 }
 
 /**

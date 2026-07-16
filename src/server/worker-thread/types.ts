@@ -13,23 +13,6 @@ import type { ParsedFeed, ParsedEntry } from "@/server/feed/types";
 // Requests (main thread → worker)
 // ---------------------------------------------------------------------------
 
-const cleanContentOptionsSchema = z.object({
-  url: z.string().optional(),
-  minContentLength: z.number().optional(),
-  minCleanedLength: z.number().optional(),
-});
-
-const cleanContentRequestSchema = z.object({
-  type: z.literal("cleanContent"),
-  html: z.string(),
-  options: cleanContentOptionsSchema.optional(),
-  // When true, the worker also sanitizes the cleaned HTML (via the same
-  // sanitizeEntryHtml the write path uses) and returns it as `contentSanitized`,
-  // so a caller that will persist the cleaned content doesn't pay a second
-  // cross-thread round-trip to sanitize it. See cleanContentInWorker.
-  sanitizeCleaned: z.boolean().optional(),
-});
-
 const parseFeedRequestSchema = z.object({
   type: z.literal("parseFeed"),
   content: z.string(),
@@ -45,31 +28,15 @@ const sanitizerVersionRequestSchema = z.object({
 });
 
 export const workerRequestSchema = z.discriminatedUnion("type", [
-  cleanContentRequestSchema,
   parseFeedRequestSchema,
   sanitizerVersionRequestSchema,
 ]);
 
 export type WorkerRequest = z.infer<typeof workerRequestSchema>;
-export type CleanContentOptions = z.infer<typeof cleanContentOptionsSchema>;
 
 // ---------------------------------------------------------------------------
 // Responses (worker → main thread)
 // ---------------------------------------------------------------------------
-
-export const cleanedContentSchema = z.object({
-  content: z.string(),
-  textContent: z.string(),
-  excerpt: z.string(),
-  title: z.string().nullable(),
-  byline: z.string().nullable(),
-  // Present only when the request set `sanitizeCleaned`: sanitizeEntryHtml(content),
-  // computed in the worker so it can be reused without re-sanitizing on the main
-  // thread. Absent otherwise.
-  contentSanitized: z.string().nullable().optional(),
-});
-
-export type CleanedContent = z.infer<typeof cleanedContentSchema>;
 
 export const sanitizerVersionResultSchema = z.object({
   version: z.number(),

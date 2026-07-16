@@ -290,10 +290,10 @@ async function insertSavedEntry(
   const entryId = generateUuidv7();
 
   // Sanitize at write time so entries.get serves saved articles without
-  // re-running sanitize-html on every read. Offloaded to a worker thread for
-  // large bodies (this runs on the app-server request path); `presanitized`
-  // reuses any sanitization the caller already computed (e.g. in the
-  // cleanContent worker) instead of repeating it.
+  // re-running sanitize-html on every read. Offloaded to the libuv thread
+  // pool for large bodies (this runs on the app-server request path);
+  // `presanitized` reuses any sanitization the caller already computed
+  // (e.g. by cleanContentInWorker) instead of repeating it.
   const values = await withSanitizedEntryContentAsync(
     {
       id: entryId,
@@ -976,14 +976,13 @@ export async function saveArticle(
   const metadata = extractMetadata(html, contentUrl);
 
   // Run Readability for clean content (skip for plugins that request it, or
-  // for Markdown). Runs in a worker thread so large pages don't block the
-  // event loop.
+  // for Markdown). Extraction runs on the libuv thread pool so large pages
+  // don't block the event loop.
   const shouldSkipReadability = Boolean(pluginContent?.skipReadability) || markdownResult !== null;
   const cleaned = shouldSkipReadability
     ? null
-    : // sanitizeCleaned: also sanitize the cleaned HTML in the same worker task,
-      // so persisting it below doesn't ship the string back across the thread
-      // boundary a second time just to sanitize it.
+    : // sanitizeCleaned: also sanitize the cleaned HTML, so persisting it
+      // below can reuse the result instead of sanitizing again.
       await cleanContentInWorker(html, { url: contentUrl }, { sanitizeCleaned: true });
 
   // Generate excerpt - prefer frontmatter summary for Markdown content
@@ -1014,12 +1013,12 @@ export async function saveArticle(
     cleaned?.content ??
     (pluginContent ? absolutizeUrls(pluginContent.html, contentUrl) : null);
 
-  // Reuse the sanitized cleaned HTML the cleanContent worker already produced,
+  // Reuse the sanitized cleaned HTML cleanContentInWorker already produced,
   // but only when the content we're about to store is exactly that cleaned
   // output (not markdown/plugin content, which took a different branch above).
-  // Leave the hint value `undefined` if the worker didn't return one (e.g. an
-  // older bundle) so the chokepoint sanitizes normally rather than persisting a
-  // spurious NULL sanitized column.
+  // Leave the hint value `undefined` if there isn't one so the chokepoint
+  // sanitizes normally rather than persisting a spurious NULL sanitized
+  // column.
   const presanitizedCleaned: { contentCleanedSanitized?: string | null } =
     cleaned && finalContentCleaned === cleaned.content
       ? { contentCleanedSanitized: cleaned.contentSanitized }
