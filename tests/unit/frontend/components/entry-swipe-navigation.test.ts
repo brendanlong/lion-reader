@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   detectSwipeDirection,
   getViewportEdges,
+  isEdgeGestureSwipe,
   isSwipeNavigationAllowed,
   type ViewportEdges,
 } from "@/components/entries/EntryContentHelpers";
@@ -22,6 +23,37 @@ describe("detectSwipeDirection", () => {
 
   it("ignores mostly-vertical movement (scrolling)", () => {
     expect(detectSwipeDirection({ x: 100, y: 0 }, { x: 160, y: 100 })).toBeNull();
+  });
+});
+
+describe("isEdgeGestureSwipe", () => {
+  const WIDTH = 400;
+
+  it("flags a rightward swipe starting against the left screen edge (browser back gesture)", () => {
+    expect(isEdgeGestureSwipe("right", 0, WIDTH)).toBe(true);
+    expect(isEdgeGestureSwipe("right", 32, WIDTH)).toBe(true);
+  });
+
+  it("flags a leftward swipe starting against the right screen edge (browser forward gesture)", () => {
+    expect(isEdgeGestureSwipe("left", WIDTH, WIDTH)).toBe(true);
+    expect(isEdgeGestureSwipe("left", WIDTH - 32, WIDTH)).toBe(true);
+  });
+
+  it("allows swipes starting away from the screen edges", () => {
+    expect(isEdgeGestureSwipe("right", 33, WIDTH)).toBe(false);
+    expect(isEdgeGestureSwipe("left", WIDTH - 33, WIDTH)).toBe(false);
+  });
+
+  it("allows a swipe moving away from the edge it started against", () => {
+    // Leftward swipe from the left edge / rightward from the right edge are
+    // not system gestures.
+    expect(isEdgeGestureSwipe("left", 10, WIDTH)).toBe(false);
+    expect(isEdgeGestureSwipe("right", WIDTH - 10, WIDTH)).toBe(false);
+  });
+
+  it("never blocks when the viewport width is unknown", () => {
+    expect(isEdgeGestureSwipe("right", 0, 0)).toBe(false);
+    expect(isEdgeGestureSwipe("left", 0, 0)).toBe(false);
   });
 });
 

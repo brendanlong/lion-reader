@@ -2,6 +2,7 @@ import { useCallback, useRef } from "react";
 import {
   detectSwipeDirection,
   getViewportEdges,
+  isEdgeGestureSwipe,
   isSwipeNavigationAllowed,
   type ViewportEdges,
 } from "@/components/entries/EntryContentHelpers";
@@ -66,6 +67,13 @@ export function useSwipeGesture({
         y: touch.clientY,
       });
       if (!direction) return;
+
+      // A swipe that begins against a screen edge is the OS/browser
+      // back-forward gesture. The browser handles it via history navigation
+      // (some browsers deliver the touch events anyway), so also treating it
+      // as an article swipe would navigate twice — opening and auto-marking
+      // read the adjacent article before the history-back lands (#1260).
+      if (isEdgeGestureSwipe(direction, start.x, window.innerWidth)) return;
 
       // When the article is pinch-zoomed, only navigate if the swipe started
       // against the edge it moves toward; otherwise the user is panning around

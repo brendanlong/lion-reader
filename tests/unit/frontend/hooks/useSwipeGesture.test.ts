@@ -96,6 +96,28 @@ describe("useSwipeGesture", () => {
     expect(onSwipeLeft).toHaveBeenCalledOnce();
   });
 
+  it("ignores a rightward swipe starting at the left screen edge (browser back gesture)", () => {
+    const { onSwipeRight, handlers } = setup();
+    // jsdom's window.innerWidth defaults to 1024; x=10 is inside the edge zone.
+    handlers.onTouchStart(touchEvent([{ clientX: 10, clientY: 0 }]));
+    handlers.onTouchEnd(touchEvent([], [{ clientX: 150, clientY: 0 }]));
+    expect(onSwipeRight).not.toHaveBeenCalled();
+  });
+
+  it("ignores a leftward swipe starting at the right screen edge (browser forward gesture)", () => {
+    const { onSwipeLeft, handlers } = setup();
+    handlers.onTouchStart(touchEvent([{ clientX: window.innerWidth - 10, clientY: 0 }]));
+    handlers.onTouchEnd(touchEvent([], [{ clientX: window.innerWidth - 150, clientY: 0 }]));
+    expect(onSwipeLeft).not.toHaveBeenCalled();
+  });
+
+  it("fires onSwipeRight for a rightward swipe starting away from the edge", () => {
+    const { onSwipeRight, handlers } = setup();
+    handlers.onTouchStart(touchEvent([{ clientX: RIGHT, clientY: 0 }]));
+    handlers.onTouchEnd(touchEvent([], [{ clientX: LEFT, clientY: 0 }]));
+    expect(onSwipeRight).toHaveBeenCalledOnce();
+  });
+
   it("keeps the flag set on touchcancel while a finger remains down", () => {
     const { onSwipeLeft, handlers } = setup();
     handlers.onTouchStart(touchEvent([{ clientX: LEFT, clientY: 0 }]));
