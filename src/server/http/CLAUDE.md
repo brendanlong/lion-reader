@@ -8,6 +8,7 @@ Every outgoing request must send our custom User-Agent (`USER_AGENT`/`buildUserA
 
 All server-side fetches that target user-influenced URLs (feed preview/discover, feed fetching, full-content fetching, WebSub hub callbacks) are guarded against Server-Side Request Forgery to private/internal networks. The shared helper `fetchWithSsrfProtection(url, init)` in `src/server/http/ssrf.ts` performs the fetch and:
 
+0. Rejects any URL whose scheme is not `http:`/`https:` via an explicit allowlist (`assertAllowedScheme`), so `file:`/`ftp:`/`gopher:`/`data:` etc. are blocked by the guard itself rather than left to whatever the underlying fetch happens to accept. Enforced on the initial URL **and every redirect hop**, in both the dispatcher path and the `ALLOW_PRIVATE_NETWORK_FETCH` path.
 1. Rejects literal private/reserved IP hosts up front (e.g. `http://169.254.169.254/`, `http://127.0.0.1/`, IPv4-mapped IPv6 literals, decimal-encoded IPs which WHATWG `URL` normalizes to dotted form). undici skips the custom DNS lookup for IP literals, so they must be checked here.
 2. Attaches a custom undici dispatcher whose DNS `lookup` resolves the hostname, blocks if **any** resolved address is private, and connects only to the vetted address — closing the DNS-rebinding TOCTOU gap.
 
