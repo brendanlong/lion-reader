@@ -487,6 +487,20 @@
   }
 }
 
+/* Disable the browser's horizontal-overscroll actions: Chrome Android's
+   overscroll history navigation (a rightward drag anywhere on the page shows
+   a back arrow and navigates on release — it competes with our in-app
+   swipe-to-previous-article and can double-navigate, #1260) and the
+   horizontal rubber-band/stretch bounce. OS-level edge-swipe back gestures
+   (iOS Safari/PWA, Android gesture nav) are system gestures unaffected by
+   this, so swipe-back-to-list still works there. Set on both html and body:
+   the spec propagates the root's value to the viewport, falling back to
+   body, and browsers have historically disagreed on which one they read. */
+html,
+body {
+  overscroll-behavior-x: none;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
