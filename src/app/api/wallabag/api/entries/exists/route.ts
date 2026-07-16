@@ -39,7 +39,7 @@ export async function GET(request: Request): Promise<Response> {
     if (returnId) {
       // The Wallabag id is the entry's stored serial; skip it in the (racy,
       // effectively impossible) case the entry vanished since the URL lookup.
-      const wallabagId = await entryIdToWallabagId(db, entryId);
+      const wallabagId = await entryIdToWallabagId(db, auth.userId, entryId);
       if (wallabagId !== null) {
         result.id = wallabagId;
       }

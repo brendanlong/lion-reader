@@ -18,6 +18,7 @@ import {
   createErrorRedirect,
   handleSignupError,
 } from "@/server/auth/oauth/callback-helpers";
+import { readOAuthStateCookie, oauthStateCookieMatches } from "@/server/auth/oauth/state-cookie";
 
 /**
  * Handle Discord OAuth redirect callback
@@ -43,6 +44,12 @@ export async function GET(request: NextRequest) {
     // Validate required fields
     if (!code || !state) {
       return createErrorRedirect(appUrl);
+    }
+
+    // Bind the callback to the browser that started the flow (login CSRF, issue #1263):
+    // the state cookie set when the auth URL was generated must match the returned state.
+    if (!oauthStateCookieMatches(readOAuthStateCookie(request), state)) {
+      return createErrorRedirect(appUrl, "invalid_state");
     }
 
     // Validate the OAuth callback

@@ -11,6 +11,7 @@ import * as argon2 from "argon2";
 import { eq, and, sql } from "drizzle-orm";
 
 import { checkAccountRateLimit } from "@/server/rate-limit";
+import { verifyPassword } from "@/server/auth/password";
 
 import {
   createTRPCRouter,
@@ -25,6 +26,7 @@ import { signupConfig, ALL_SIGNUP_PROVIDERS } from "@/server/config/env";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { createSession, revokeSessionByToken } from "@/server/auth/session";
 import { setSessionCookie, clearSessionCookie } from "@/server/auth/session-cookie";
+import { setOAuthStateCookie } from "@/server/auth/oauth/state-cookie";
 import { extractClientInfo } from "@/server/http/client-ip";
 import { getEnabledProviders } from "@/server/auth/oauth/config";
 import {
@@ -299,19 +301,25 @@ export const authRouter = createTRPCRouter({
       const user = await ctx.db.select().from(users).where(eq(users.email, email)).limit(1);
 
       if (user.length === 0) {
-        // User not found - use same error as wrong password to prevent enumeration
+        // User not found - use same error as wrong password to prevent
+        // enumeration. Run argon2 against a decoy so the response isn't
+        // measurably faster than a real password check either (no timing
+        // enumeration oracle, #1267).
+        await verifyPassword(null, password);
         throw errors.invalidCredentials();
       }
 
       const foundUser = user[0];
 
-      // Check if user has a password (they might be OAuth-only in the future)
+      // Check if user has a password (they might be OAuth-only in the future).
+      // Equalize timing for passwordless accounts too (#1267).
       if (!foundUser.passwordHash) {
+        await verifyPassword(null, password);
         throw errors.invalidCredentials();
       }
 
       // Verify password
-      const isValidPassword = await argon2.verify(foundUser.passwordHash, password);
+      const isValidPassword = await verifyPassword(foundUser.passwordHash, password);
 
       if (!isValidPassword) {
         throw errors.invalidCredentials();
@@ -405,7 +413,7 @@ export const authRouter = createTRPCRouter({
         state: z.string(),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       if (!isGoogleOAuthEnabled()) {
         throw errors.oauthProviderNotConfigured("Google");
       }
@@ -416,6 +424,10 @@ export const authRouter = createTRPCRouter({
         undefined, // returnUrl
         input?.inviteToken // inviteToken
       );
+
+      // Bind the state to this browser so the callback can't be replayed against
+      // another user (login CSRF, issue #1263).
+      setOAuthStateCookie(ctx.resHeaders, result.state);
 
       return {
         url: result.url,
@@ -527,12 +539,16 @@ export const authRouter = createTRPCRouter({
         state: z.string(),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       if (!isAppleOAuthEnabled()) {
         throw errors.oauthProviderNotConfigured("Apple");
       }
 
       const result = await createAppleAuthUrl(input?.inviteToken);
+
+      // Bind the state to this browser (login CSRF, issue #1263). Apple's callback is a
+      // cross-site POST (form_post), so the cookie must be SameSite=None to be sent.
+      setOAuthStateCookie(ctx.resHeaders, result.state, "none");
 
       return {
         url: result.url,
@@ -669,12 +685,16 @@ export const authRouter = createTRPCRouter({
         state: z.string(),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       if (!isDiscordOAuthEnabled()) {
         throw errors.oauthProviderNotConfigured("Discord");
       }
 
       const result = await createDiscordAuthUrl(input?.inviteToken);
+
+      // Bind the state to this browser so the callback can't be replayed against
+      // another user (login CSRF, issue #1263).
+      setOAuthStateCookie(ctx.resHeaders, result.state);
 
       return {
         url: result.url,
@@ -1362,6 +1382,10 @@ export const authRouter = createTRPCRouter({
         [GOOGLE_DOCS_READONLY_SCOPE, GOOGLE_DRIVE_SCOPE],
         "save"
       );
+
+      // Bind the state to this browser so the callback can't be replayed against
+      // another user (login CSRF, issue #1263).
+      setOAuthStateCookie(ctx.resHeaders, result.state);
 
       // Return the URL with a note that this is for incremental auth
       // The state should be stored by the client to verify the callback

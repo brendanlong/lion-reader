@@ -13,6 +13,13 @@ import { useIsEInkDisplay } from "./eink";
 
 interface ThemeProviderProps {
   children: ReactNode;
+  /**
+   * CSP nonce for next-themes' inline theme script (it runs blocking in
+   * <head> to apply the theme class before first paint). Without it the
+   * nonce-based `script-src` set in src/proxy.ts blocks the script and the
+   * theme flashes/breaks. Passed from the root layout.
+   */
+  nonce?: string;
 }
 
 /**
@@ -110,7 +117,7 @@ function ThemeColorMeta() {
  * - disableTransitionOnChange: Prevents flash by disabling CSS transitions during theme change
  * - storageKey: Uses our existing localStorage key for backwards compatibility
  */
-export function ThemeProvider({ children }: ThemeProviderProps) {
+export function ThemeProvider({ children, nonce }: ThemeProviderProps) {
   return (
     <NextThemesProvider
       attribute="class"
@@ -119,6 +126,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
       themes={["light", "dark", "epaper"]}
       disableTransitionOnChange
       storageKey="lion-reader-theme"
+      nonce={nonce}
     >
       <EInkSystemThemeOverride />
       <ThemeColorMeta />

@@ -111,6 +111,54 @@ class SsrfBlockedError extends Error {
 }
 
 /**
+ * Error thrown when a request targets a URL whose scheme is not http(s).
+ *
+ * Shares the `SsrfBlockedError` name so callers/error handlers that classify
+ * SSRF rejections by `err.name` treat a blocked scheme the same as a blocked
+ * address.
+ */
+class SsrfBlockedSchemeError extends Error {
+  constructor(
+    public readonly url: string,
+    public readonly scheme: string
+  ) {
+    super(`Blocked request to non-http(s) scheme "${scheme}" (${url})`);
+    this.name = "SsrfBlockedError";
+  }
+}
+
+/**
+ * Schemes the SSRF guard permits. Everything else (file:, ftp:, gopher:, data:,
+ * etc.) is rejected up front so the guarantee holds regardless of what the
+ * underlying fetch implementation happens to accept.
+ */
+const ALLOWED_PROTOCOLS: ReadonlySet<string> = new Set(["http:", "https:"]);
+
+/**
+ * Rejects any URL whose scheme is not http(s), fail-closed.
+ *
+ * SECURITY.md §2 promises the guard "rejects non-http schemes". The IP-range and
+ * DNS-pinning checks assume an http(s) host, and today non-http schemes are only
+ * rejected *implicitly* by the underlying `fetch`. Enforcing an explicit allowlist
+ * here — on the initial URL and every redirect hop — makes that guarantee real and
+ * independent of the fetch transport. An unparseable URL is treated as disallowed.
+ *
+ * @throws SsrfBlockedError if the URL's scheme is not http: or https:
+ */
+export function assertAllowedScheme(url: string): void {
+  let protocol: string;
+  try {
+    protocol = new URL(url).protocol;
+  } catch {
+    // Unparseable URL — fail closed rather than hand it to the fetch impl.
+    throw new SsrfBlockedSchemeError(url, "unparseable");
+  }
+  if (!ALLOWED_PROTOCOLS.has(protocol)) {
+    throw new SsrfBlockedSchemeError(url, protocol);
+  }
+}
+
+/**
  * Custom DNS lookup that validates every resolved address against the block list.
  *
  * Follows the Node `dns.lookup` callback contract for both the single-address and
@@ -202,6 +250,15 @@ export function assertNotPrivateIpLiteral(url: string): void {
 }
 
 /**
+ * Full per-hop validator for the DNS-pinning path: rejects non-http(s) schemes and
+ * literal private/internal IP hosts. Runs on the initial URL and every redirect hop.
+ */
+export function assertAllowedUrl(url: string): void {
+  assertAllowedScheme(url);
+  assertNotPrivateIpLiteral(url);
+}
+
+/**
  * Maximum redirects to follow before giving up. Matches undici/browser defaults.
  */
 const MAX_REDIRECTS = 20;
@@ -245,9 +302,10 @@ function originOf(url: string): string {
  * and method-downgrade behavior can be unit-tested without a live server.
  *
  * `validateHop` runs on the initial URL and on every redirect target *before*
- * connecting — this is where the literal-IP check lives, closing the bypass where
- * undici follows a redirect to an IP literal (e.g. `http://169.254.169.254/`)
- * without running its custom DNS lookup.
+ * connecting — this is where the scheme allowlist and literal-IP check live,
+ * closing the bypass where undici follows a redirect to an IP literal (e.g.
+ * `http://169.254.169.254/`) without running its custom DNS lookup, and rejecting
+ * non-http(s) schemes regardless of what the fetch impl would accept.
  */
 export async function followRedirects(
   url: string,
@@ -332,7 +390,10 @@ export async function followRedirects(
  * Performs a fetch with SSRF protection. Use this instead of `fetch` for any
  * request whose URL is user-influenced.
  *
- * Two layers of protection, applied to the initial request and every redirect hop:
+ * Layers of protection, applied to the initial request and every redirect hop:
+ * 0. Non-http(s) schemes (file:, ftp:, gopher:, data:, …) are rejected up front by
+ *    an explicit allowlist, in both the protected and ALLOW_PRIVATE_NETWORK_FETCH
+ *    paths, so the guarantee doesn't depend on the underlying fetch implementation.
  * 1. Literal IP hosts (e.g. http://169.254.169.254/) are checked up front and
  *    rejected here — undici bypasses the custom DNS lookup for IP literals.
  * 2. Hostnames are validated at connection time by the attached undici dispatcher,
@@ -357,8 +418,8 @@ export async function followRedirects(
  * (dev/test), the literal/DNS checks are skipped and Node's global fetch is used,
  * but redirects are still followed by the same loop.
  *
- * @throws SsrfBlockedError if the URL (or any redirect hop) targets a literal
- *   private/internal IP
+ * @throws SsrfBlockedError if the URL (or any redirect hop) uses a non-http(s)
+ *   scheme or targets a literal private/internal IP
  * @example
  * const res = await fetchWithSsrfProtection(url, { headers, signal });
  */
@@ -376,14 +437,17 @@ export async function fetchWithSsrfProtection(url: string, init: RequestInit): P
       // one; cast so callers keep using standard Response types.
       (hopUrl, hopInit) =>
         undiciFetch(hopUrl, { ...hopInit, dispatcher }) as unknown as Promise<Response>,
-      assertNotPrivateIpLiteral
+      assertAllowedUrl
     );
   }
 
+  // Private-network fetching is allowed (dev/test), so the literal/DNS checks are
+  // skipped — but the scheme allowlist is not: a non-http(s) scheme is rejected in
+  // both modes so the guarantee is independent of the underlying fetch.
   return followRedirects(
     url,
     init,
     (hopUrl, hopInit) => fetch(hopUrl, hopInit as RequestInit),
-    () => {}
+    assertAllowedScheme
   );
 }

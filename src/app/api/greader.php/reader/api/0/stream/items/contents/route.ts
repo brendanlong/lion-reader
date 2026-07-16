@@ -70,7 +70,7 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   // Batch resolve item IDs to UUIDs
-  const uuidMap = await greaderItemIdsToUuids(db, itemIds);
+  const uuidMap = await greaderItemIdsToUuids(db, session.user.id, itemIds);
 
   // Fetch full entries in a single bulk query (mirrors the Wallabag route)
   // rather than one getEntry per id. getEntries returns entries in the order of

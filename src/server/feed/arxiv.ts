@@ -12,6 +12,7 @@
 
 import { logger } from "@/lib/logger";
 import { FEED_FETCH_TIMEOUT_MS } from "@/server/http/fetch";
+import { fetchWithSsrfProtection } from "@/server/http/ssrf";
 import { USER_AGENT } from "@/server/http/user-agent";
 
 // ============================================================================
@@ -120,7 +121,7 @@ async function checkArxivHtmlExists(url: string): Promise<ArxivHtmlCheckResult |
 
   try {
     // Use HEAD request to check if HTML version exists without downloading it
-    const response = await fetch(htmlUrl, {
+    const response = await fetchWithSsrfProtection(htmlUrl, {
       method: "HEAD",
       headers: {
         "User-Agent": USER_AGENT,

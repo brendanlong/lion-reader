@@ -2,6 +2,7 @@ import type { UrlPlugin, SavedArticleContent } from "./types";
 import { logger } from "@/lib/logger";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { readResponseWithSizeLimit } from "@/server/http/fetch";
+import { fetchWithSsrfProtection } from "@/server/http/ssrf";
 import { escapeHtml } from "@/server/http/html";
 import { githubConfig, usageLimitsConfig } from "@/server/config/env";
 import { marked } from "marked";
@@ -176,7 +177,7 @@ function getApiHeaders(): HeadersInit {
  * Fetch a gist by ID.
  */
 async function fetchGist(gistId: string): Promise<GistResponse | null> {
-  const response = await fetch(`https://api.github.com/gists/${gistId}`, {
+  const response = await fetchWithSsrfProtection(`https://api.github.com/gists/${gistId}`, {
     headers: getApiHeaders(),
   });
 
@@ -210,7 +211,7 @@ async function fetchRepoContents(
     url += `?ref=${encodeURIComponent(ref)}`;
   }
 
-  const response = await fetch(url, {
+  const response = await fetchWithSsrfProtection(url, {
     headers: getApiHeaders(),
   });
 
@@ -243,7 +244,7 @@ const RAW_FETCH_TIMEOUT_MS = 30000;
  */
 async function fetchRawContent(rawUrl: string): Promise<string | null> {
   try {
-    const response = await fetch(rawUrl, {
+    const response = await fetchWithSsrfProtection(rawUrl, {
       headers: {
         "User-Agent": USER_AGENT,
       },
