@@ -28,7 +28,7 @@
 
 import { and, eq, inArray } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
-import { entries, feeds, subscriptions } from "@/server/db/schema";
+import { feeds, subscriptions, visibleEntries } from "@/server/db/schema";
 
 /**
  * Formats an int64 as a long-form Google Reader item ID.
@@ -90,10 +90,14 @@ export function isInt64(id: bigint): boolean {
 
 /**
  * Resolves Google Reader item IDs (stored `entries.greader_item_id` serials) to
- * their UUIDv7 entry IDs. Item ids are a plain stored bigint, so this is a
- * single `greader_item_id = ANY(ids)` seek on the unique index — no timestamp
- * math, no candidate disambiguation. Ids with no matching row (deleted, or a
- * bogus value a client sent) are simply absent from the returned map.
+ * their UUIDv7 entry IDs, **scoped to the requesting user**. Item ids are a
+ * plain stored bigint, so this is a single `greader_item_id = ANY(ids)` seek —
+ * no timestamp math, no candidate disambiguation. The seek runs through
+ * `visible_entries`, so an item id another user owns (or one the user can't see)
+ * resolves to nothing, exactly like `resolveWallabagEntry` / `resolveFeedStream`
+ * — the resolved UUIDs are safe to read content off of directly. Ids with no
+ * visible matching row (deleted, invisible, or a bogus value a client sent) are
+ * simply absent from the returned map.
  *
  * Ids outside the signed 64-bit range are skipped before querying: `parseItemId`
  * accepts unbounded hex/decimal input (e.g. 16 hex f's = 2^64-1), and a
@@ -103,6 +107,7 @@ export function isInt64(id: bigint): boolean {
  */
 export async function greaderItemIdsToUuids(
   db: typeof dbType,
+  userId: string,
   ids: bigint[]
 ): Promise<Map<bigint, string>> {
   const result = new Map<bigint, string>();
@@ -111,9 +116,9 @@ export async function greaderItemIdsToUuids(
   if (validIds.length === 0) return result;
 
   const rows = await db
-    .select({ id: entries.id, greaderItemId: entries.greaderItemId })
-    .from(entries)
-    .where(inArray(entries.greaderItemId, validIds));
+    .select({ id: visibleEntries.id, greaderItemId: visibleEntries.greaderItemId })
+    .from(visibleEntries)
+    .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.greaderItemId, validIds)));
 
   for (const row of rows) {
     result.set(row.greaderItemId, row.id);
