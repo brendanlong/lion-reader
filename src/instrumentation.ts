@@ -26,10 +26,20 @@ export async function register() {
 
     const { logger } = await import("./lib/logger");
 
-    // The internal Prometheus metrics server (port 9091) is started by the
-    // custom server (scripts/server.ts), NOT here: in production this module
-    // and the custom server bundle are separate module graphs, so starting it
-    // in both places would try to bind the port twice.
+    // Start the internal Prometheus metrics server (port 9091) HERE, in the
+    // Next.js runtime module graph — NOT in the custom server (scripts/server.ts).
+    // The HTTP request metrics (http_requests_total / http_request_duration_seconds)
+    // are observed by the tRPC and REST route handlers, which run in THIS module
+    // graph. In production the custom server bundle is a separate module graph
+    // with its own copy of the metrics registry, so starting the metrics server
+    // there scraped an orphaned registry: the HTTP metrics (recorded into this
+    // graph's registry) never appeared, while business/default metrics happened
+    // to work because they're collected inside the scrape handler itself.
+    // Colocating the server with the route handlers means one registry holds
+    // everything the app process emits. The worker/discord processes are single
+    // bundles and keep starting their own metrics servers in their scripts.
+    const { startMetricsServer, stopMetricsServer } = await import("./server/metrics/server");
+    startMetricsServer(9091);
 
     // Register resource cleanup for graceful shutdown. The custom server
     // (scripts/server.ts) owns the signal handlers and the HTTP server; it
@@ -39,6 +49,10 @@ export async function register() {
     const { registerResourceCleanup } = await import("./server/shutdown");
     registerResourceCleanup(async () => {
       logger.info("Closing shared resources...");
+
+      // Stop serving metrics scrapes first — a scrape runs DB queries
+      // (collectAllMetrics), so it must stop before the pool below closes.
+      await stopMetricsServer();
 
       // Flush buffered Sentry events first (errors captured during the
       // connection drain are the ones most worth keeping). No-op without a
