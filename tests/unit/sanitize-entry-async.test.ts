@@ -1,14 +1,14 @@
 /**
- * Unit tests for the worker-offloading write-path sanitizer helpers.
+ * Unit tests for the thread-pool-offloading write-path sanitizer helpers.
  *
- * These assert that the async, worker-offloading path produces byte-identical
+ * These assert that the async, thread-pool-offloading path produces byte-identical
  * output to the synchronous chokepoint (`withSanitizedEntryContent`), so moving
  * sanitization off the event loop can never change what gets stored, and that
  * the `presanitized` reuse hook is honored.
  *
  * All inputs are small (< the 10 KB inline threshold), so these run on the
- * inline fallback path and never spawn a worker thread — the offloaded path is
- * proven equivalent by tests/unit/worker-thread-tasks.test.ts.
+ * inline fallback path and never schedule a thread-pool task — the offloaded
+ * path is the same native pipeline behind one async call.
  */
 
 import { describe, it, expect } from "vitest";
@@ -16,8 +16,7 @@ import {
   withSanitizedEntryContent,
   withSanitizedEntryContentAsync,
 } from "@/server/html/sanitize-entry";
-import { sanitizeEntryHtml } from "@/server/html/sanitize";
-import { sanitizeEntryHtmlInWorker } from "@/server/worker-thread/pool";
+import { sanitizeEntryHtml, sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
 
 const UNSAFE = '<p onclick="evil()">hi<script>alert(1)</script></p>';
 
@@ -111,14 +110,14 @@ describe("withSanitizedEntryContentAsync", () => {
   });
 });
 
-describe("sanitizeEntryHtmlInWorker", () => {
+describe("sanitizeEntryHtmlAsync", () => {
   it("returns null for nullish/empty input", async () => {
-    expect(await sanitizeEntryHtmlInWorker(null)).toBeNull();
-    expect(await sanitizeEntryHtmlInWorker(undefined)).toBeNull();
-    expect(await sanitizeEntryHtmlInWorker("")).toBeNull();
+    expect(await sanitizeEntryHtmlAsync(null)).toBeNull();
+    expect(await sanitizeEntryHtmlAsync(undefined)).toBeNull();
+    expect(await sanitizeEntryHtmlAsync("")).toBeNull();
   });
 
   it("matches sanitizeEntryHtml for small inputs (inline path)", async () => {
-    expect(await sanitizeEntryHtmlInWorker(UNSAFE)).toBe(sanitizeEntryHtml(UNSAFE));
+    expect(await sanitizeEntryHtmlAsync(UNSAFE)).toBe(sanitizeEntryHtml(UNSAFE));
   });
 });

@@ -154,10 +154,10 @@ const nextConfig: NextConfig = {
   //   params (e.g. `limit`) when generating the OpenAPI document.
   serverExternalPackages: [
     "html-rewriter-wasm",
-    "piscina",
     "trpc-to-openapi",
     "@lion-reader/sanitizer",
     "@lion-reader/readability",
+    "@lion-reader/feed-parser",
   ],
   // Handle piper-tts-web which has conditional Node.js code (require('fs'))
   // that the bundler tries to resolve even though it only runs in Node.js

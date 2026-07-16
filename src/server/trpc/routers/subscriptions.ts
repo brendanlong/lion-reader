@@ -29,7 +29,7 @@ import {
   visibleEntries,
 } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
-import { parseFeedInWorker } from "@/server/worker-thread/pool";
+import { parseFeedAsync } from "@/server/feed/parser";
 import { discoverFeeds } from "@/server/feed/discovery";
 import { getDomainFromUrl } from "@/server/feed/types";
 import { extractUserIdFromFeedUrl, fetchLessWrongUserById } from "@/server/feed/lesswrong";
@@ -155,7 +155,7 @@ async function fetchAndResolveFeed(inputUrl: string): Promise<{
 
   let parsedFeed;
   try {
-    parsedFeed = await parseFeedInWorker(feedContent);
+    parsedFeed = await parseFeedAsync(feedContent);
   } catch {
     throw errors.validation("Could not parse feed - make sure it's a valid RSS or Atom feed");
   }

@@ -1,37 +1,20 @@
 /**
- * RSS 2.0 feed parser using SAX-style parsing.
- * Parses RSS feeds from a string, returning entries synchronously.
+ * RSS 2.0 / RSS 1.0 (RDF) feed parser.
+ *
+ * The SAX state machine is the native `@lion-reader/feed-parser` module
+ * (`native/feed-parser/core/src/rss.rs`, a direct port of the old
+ * htmlparser2 parser that used to live here). Date parsing stays in this
+ * file: the native side returns raw date strings and `toFeedParseResult`
+ * replays the original pubDate/dc:date selection with `parseRssDate`, so the
+ * V8-`new Date()`-based semantics are preserved exactly.
  */
 
-import { Parser } from "htmlparser2";
-import type { ParsedEntry, SyndicationHints } from "../types";
+import {
+  parseRss as nativeParseRss,
+  parseRssAsync as nativeParseRssAsync,
+} from "@lion-reader/feed-parser";
 import type { FeedParseResult } from "./types";
-import { VALID_UPDATE_PERIODS, type UpdatePeriod } from "./syndication";
-
-/**
- * State machine states for RSS parsing.
- */
-type RssParserState =
-  | "initial"
-  | "in_channel"
-  | "in_item"
-  | "in_channel_title"
-  | "in_channel_link"
-  | "in_channel_description"
-  | "in_channel_ttl"
-  | "in_channel_sy_updatePeriod"
-  | "in_channel_sy_updateFrequency"
-  | "in_image"
-  | "in_image_url"
-  | "in_item_title"
-  | "in_item_link"
-  | "in_item_description"
-  | "in_item_content_encoded"
-  | "in_item_guid"
-  | "in_item_author"
-  | "in_item_dc_creator"
-  | "in_item_pubDate"
-  | "in_item_dc_date";
+import { PARSE_INLINE_MAX_CHARS, toFeedParseResult } from "./native-result";
 
 /**
  * Parses an RSS feed from a string.
@@ -40,319 +23,19 @@ type RssParserState =
  * @returns Parsed feed metadata and entries
  */
 export function parseRss(content: string): FeedParseResult {
-  // Feed metadata
-  let title: string | undefined;
-  let description: string | undefined;
-  let siteUrl: string | undefined;
-  let iconUrl: string | undefined;
-  let hubUrl: string | undefined;
-  let selfUrl: string | undefined;
-  let ttlMinutes: number | undefined;
-  let syndication: SyndicationHints | undefined;
-  let syUpdatePeriod: string | undefined;
-  let syUpdateFrequency: number | undefined;
+  return toFeedParseResult(nativeParseRss(content), parseRssDate);
+}
 
-  // Current item being parsed
-  let currentItem: Partial<ParsedEntry> | null = null;
-  let currentItemContentEncoded: string | undefined;
-
-  // Parser state
-  let state: RssParserState = "initial";
-  let textBuffer = "";
-  let isRdf = false;
-
-  // Collected entries
-  const entries: ParsedEntry[] = [];
-
-  // Parse error
-  let parseError: Error | null = null;
-
-  const parser = new Parser(
-    {
-      onopentag(name, attribs) {
-        const tagName = name.toLowerCase();
-
-        // Before processing the new tag, capture any pending text content
-        // from the current state. This handles malformed XML where elements
-        // aren't properly closed (e.g., <link>http://example.com<pubdate>...)
-        const trimmedText = textBuffer.trim();
-        if (trimmedText) {
-          // htmlparser2 already decodes entities (decodeEntities: true) in text
-          // nodes, while leaving CDATA content literal — so escaped HTML in a
-          // <description> body and literal CDATA both arrive correctly without a
-          // second decode pass. Decoding again here would corrupt code samples
-          // by turning escaped `&lt;tag&gt;` text into real tags.
-          const decodedText = trimmedText;
-
-          // Channel-level text capture for unclosed elements
-          if (state === "in_channel_link") {
-            siteUrl = decodedText;
-            state = "in_channel";
-          } else if (state === "in_channel_title") {
-            title = decodedText;
-            state = "in_channel";
-          } else if (state === "in_channel_description") {
-            description = decodedText;
-            state = "in_channel";
-          }
-
-          // Item-level text capture for unclosed elements
-          if (currentItem) {
-            if (state === "in_item_link") {
-              currentItem.link = decodedText;
-              state = "in_item";
-            } else if (state === "in_item_title") {
-              currentItem.title = decodedText;
-              state = "in_item";
-            } else if (state === "in_item_pubDate") {
-              const date = parseRssDate(decodedText);
-              if (date) {
-                currentItem.pubDate = date;
-              }
-              state = "in_item";
-            } else if (state === "in_item_dc_date") {
-              if (!currentItem.pubDate) {
-                const date = parseRssDate(decodedText);
-                if (date) {
-                  currentItem.pubDate = date;
-                }
-              }
-              state = "in_item";
-            } else if (state === "in_item_guid") {
-              currentItem.guid = decodedText;
-              state = "in_item";
-            } else if (state === "in_item_description") {
-              currentItem.summary = decodedText;
-              if (!currentItemContentEncoded) {
-                currentItem.content = decodedText;
-              }
-              state = "in_item";
-            } else if (state === "in_item_content_encoded") {
-              currentItemContentEncoded = decodedText;
-              currentItem.content = decodedText;
-              state = "in_item";
-            } else if (state === "in_item_author") {
-              if (!currentItem.author) {
-                currentItem.author = decodedText;
-              }
-              state = "in_item";
-            } else if (state === "in_item_dc_creator") {
-              currentItem.author = decodedText;
-              state = "in_item";
-            }
-          }
-        }
-
-        if (tagName === "rdf:rdf") {
-          isRdf = true;
-          state = "in_channel";
-        }
-
-        if (tagName === "channel") {
-          state = "in_channel";
-        }
-
-        if (tagName === "item") {
-          state = "in_item";
-          currentItem = {};
-          currentItemContentEncoded = undefined;
-        }
-
-        // Channel-level elements
-        if (state === "in_channel" || (isRdf && state === "initial")) {
-          if (tagName === "title") state = "in_channel_title";
-          else if (tagName === "link" && !attribs.rel) state = "in_channel_link";
-          else if (tagName === "description") state = "in_channel_description";
-          else if (tagName === "ttl") state = "in_channel_ttl";
-          else if (tagName === "sy:updateperiod") state = "in_channel_sy_updatePeriod";
-          else if (tagName === "sy:updatefrequency") state = "in_channel_sy_updateFrequency";
-          else if (tagName === "image") state = "in_image";
-
-          if (tagName === "atom:link") {
-            const rel = attribs.rel;
-            const href = attribs.href;
-            if (rel === "hub" && href) hubUrl = href;
-            if (rel === "self" && href) selfUrl = href;
-          }
-        }
-
-        if (state === "in_image" && tagName === "url") {
-          state = "in_image_url";
-        }
-
-        if (state === "in_item" && currentItem) {
-          if (tagName === "title") state = "in_item_title";
-          else if (tagName === "link") state = "in_item_link";
-          else if (tagName === "description") state = "in_item_description";
-          else if (tagName === "content:encoded") state = "in_item_content_encoded";
-          else if (tagName === "guid") state = "in_item_guid";
-          else if (tagName === "author") state = "in_item_author";
-          else if (tagName === "dc:creator") state = "in_item_dc_creator";
-          else if (tagName === "pubdate") state = "in_item_pubDate";
-          else if (tagName === "dc:date") state = "in_item_dc_date";
-        }
-
-        textBuffer = "";
-      },
-
-      ontext(text) {
-        textBuffer += text;
-      },
-
-      onclosetag(name) {
-        const tagName = name.toLowerCase();
-        const trimmedText = textBuffer.trim();
-        // See the note in onopentag: entities are already decoded by htmlparser2.
-        const decodedText = trimmedText || undefined;
-
-        // Channel-level elements
-        if (state === "in_channel_title") {
-          title = decodedText;
-          state = "in_channel";
-        } else if (state === "in_channel_link") {
-          siteUrl = decodedText;
-          state = "in_channel";
-        } else if (state === "in_channel_description") {
-          description = decodedText;
-          state = "in_channel";
-        } else if (state === "in_channel_ttl") {
-          if (decodedText) {
-            const parsed = parseInt(decodedText, 10);
-            if (!isNaN(parsed) && parsed > 0) {
-              ttlMinutes = parsed;
-            }
-          }
-          state = "in_channel";
-        } else if (state === "in_channel_sy_updatePeriod") {
-          if (decodedText) {
-            const normalized = decodedText.toLowerCase() as UpdatePeriod;
-            if (VALID_UPDATE_PERIODS.includes(normalized)) {
-              syUpdatePeriod = normalized;
-            }
-          }
-          state = "in_channel";
-        } else if (state === "in_channel_sy_updateFrequency") {
-          if (decodedText) {
-            const parsed = parseInt(decodedText, 10);
-            if (!isNaN(parsed) && parsed > 0) {
-              syUpdateFrequency = parsed;
-            }
-          }
-          state = "in_channel";
-        } else if (state === "in_image_url") {
-          iconUrl = decodedText;
-          state = "in_image";
-        } else if (state === "in_image" && tagName === "image") {
-          state = "in_channel";
-        }
-
-        // Item-level elements
-        if (currentItem) {
-          if (state === "in_item_title") {
-            currentItem.title = decodedText;
-            state = "in_item";
-          } else if (state === "in_item_link") {
-            currentItem.link = decodedText;
-            state = "in_item";
-          } else if (state === "in_item_description") {
-            currentItem.summary = decodedText;
-            if (!currentItemContentEncoded) {
-              currentItem.content = decodedText;
-            }
-            state = "in_item";
-          } else if (state === "in_item_content_encoded") {
-            currentItemContentEncoded = decodedText;
-            currentItem.content = decodedText;
-            state = "in_item";
-          } else if (state === "in_item_guid") {
-            currentItem.guid = decodedText;
-            state = "in_item";
-          } else if (state === "in_item_author") {
-            if (!currentItem.author) {
-              currentItem.author = decodedText;
-            }
-            state = "in_item";
-          } else if (state === "in_item_dc_creator") {
-            currentItem.author = decodedText;
-            state = "in_item";
-          } else if (state === "in_item_pubDate") {
-            if (decodedText) {
-              const date = parseRssDate(decodedText);
-              if (date) {
-                currentItem.pubDate = date;
-              }
-            }
-            state = "in_item";
-          } else if (state === "in_item_dc_date") {
-            if (!currentItem.pubDate && decodedText) {
-              const date = parseRssDate(decodedText);
-              if (date) {
-                currentItem.pubDate = date;
-              }
-            }
-            state = "in_item";
-          }
-        }
-
-        // End of item - add to entries
-        if (tagName === "item" && currentItem) {
-          entries.push(currentItem as ParsedEntry);
-          currentItem = null;
-          state = isRdf ? "initial" : "in_channel";
-        }
-
-        if (tagName === "channel") {
-          state = isRdf ? "initial" : "initial";
-        }
-
-        textBuffer = "";
-      },
-
-      onerror(error) {
-        parseError = error;
-      },
-    },
-    {
-      xmlMode: true,
-      // Decode entities in text/attributes natively. CDATA stays literal, so
-      // both entity-escaped HTML bodies and CDATA-wrapped HTML decode to the
-      // correct single-escaped form (no manual double-decode). See decodedText.
-      decodeEntities: true,
-      lowerCaseTags: true,
-      lowerCaseAttributeNames: true,
-    }
-  );
-
-  // Parse the content
-  parser.write(content);
-  parser.end();
-
-  if (parseError) {
-    throw parseError;
+/**
+ * Async form of `parseRss`: the native parser runs on the libuv thread pool,
+ * so a large feed never blocks the event loop. Small inputs run
+ * synchronously (the async hop costs more than the parse).
+ */
+export async function parseRssAsync(content: string): Promise<FeedParseResult> {
+  if (content.length <= PARSE_INLINE_MAX_CHARS) {
+    return parseRss(content);
   }
-
-  // Build syndication object if present
-  if (syUpdatePeriod !== undefined || syUpdateFrequency !== undefined) {
-    syndication = {};
-    if (syUpdatePeriod) {
-      syndication.updatePeriod = syUpdatePeriod as UpdatePeriod;
-    }
-    if (syUpdateFrequency) {
-      syndication.updateFrequency = syUpdateFrequency;
-    }
-  }
-
-  return {
-    title,
-    description,
-    siteUrl,
-    iconUrl,
-    hubUrl,
-    selfUrl,
-    ttlMinutes,
-    syndication,
-    entries,
-  };
+  return toFeedParseResult(await nativeParseRssAsync(content), parseRssDate);
 }
 
 function parseRssDate(dateString: string): Date | undefined {
