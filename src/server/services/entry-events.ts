@@ -135,3 +135,31 @@ export function publishStarredStateChange(
     // Ignore publish errors - SSE is best-effort
   });
 }
+
+/**
+ * Publishes an entry_state_changed event for each entry affected by a bulk
+ * star/unstar, carrying the absolute counts so other tabs set them directly.
+ * Mirrors {@link publishStarredStateChange} but for the batched
+ * (`updateEntriesStarred`) path — counts are already array-shaped, so no
+ * per-entry normalization is needed.
+ */
+export function publishStarredStateChanges(
+  userId: string,
+  entries: Array<Pick<MarkReadEntryState, "id" | "read" | "starred" | "updatedAt">>,
+  counts: BulkUnreadCounts
+): void {
+  void Promise.all(
+    entries.map((entry) =>
+      publishEntryStateChanged(
+        userId,
+        entry.id,
+        entry.read,
+        entry.starred,
+        entry.updatedAt,
+        counts
+      ).catch(() => {
+        // Ignore publish errors - SSE is best-effort
+      })
+    )
+  );
+}

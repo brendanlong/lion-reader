@@ -476,3 +476,69 @@ describe("updateEntryStarred SSE publishing", () => {
     expect(row.starredChangedAt).toEqual(t2);
   });
 });
+
+describe("updateEntriesStarred (bulk) SSE publishing", () => {
+  it("stars multiple entries in one call and publishes an event per flip", async () => {
+    const userId = await seedUser();
+    const entryA = await seedEntry(userId);
+    const entryB = await seedEntry(userId);
+
+    const channel = getUserEventsChannel(userId);
+    await subscriber.subscribe(channel);
+    const first = waitForMessage(channel);
+
+    const {
+      entries: state,
+      changed,
+      counts,
+    } = await entriesService.updateEntriesStarred(db, userId, [entryA, entryB], true);
+    expect(state.every((e) => e.starred)).toBe(true);
+    expect(changed.map((e) => e.id).sort()).toEqual([entryA, entryB].sort());
+    // Both entries are now starred, so the starred badge reflects both.
+    expect(counts?.starred.unread).toBe(2);
+
+    const event = JSON.parse(await first);
+    expect(event.type).toBe("entry_state_changed");
+    expect([entryA, entryB]).toContain(event.entryId);
+    expect(event.starred).toBe(true);
+    expect(event.counts.starred.unread).toBe(2);
+
+    // Both rows were actually written.
+    expect((await getUserEntryRow(userId, entryA)).starred).toBe(true);
+    expect((await getUserEntryRow(userId, entryB)).starred).toBe(true);
+  });
+
+  it("rejects more than 1000 entries", async () => {
+    const userId = await seedUser();
+    const ids = Array.from({ length: 1001 }, () => generateUuidv7());
+    await expect(entriesService.updateEntriesStarred(db, userId, ids, true)).rejects.toThrow(
+      /Maximum 1000 entries/
+    );
+  });
+
+  it("does not publish or compute counts when re-asserting already-starred entries (issue #1118)", async () => {
+    const userId = await seedUser();
+    const entryId = await seedEntry(userId);
+
+    const t1 = new Date("2026-01-01T00:00:01Z");
+    const t2 = new Date("2026-01-01T00:00:05Z");
+    await entriesService.updateEntriesStarred(db, userId, [entryId], true, t1);
+
+    const before = await getUserEntryRow(userId, entryId);
+
+    const channel = getUserEventsChannel(userId);
+    await subscriber.subscribe(channel);
+
+    // A fresh changedAt advances the watermark, but the value doesn't flip, so
+    // nothing is published and no counts are computed.
+    await expectNoMessage(channel, async () => {
+      const result = await entriesService.updateEntriesStarred(db, userId, [entryId], true, t2);
+      expect(result.changed).toHaveLength(0);
+      expect(result.counts).toBeUndefined();
+    });
+
+    const row = await getUserEntryRow(userId, entryId);
+    expect(row.starredChangedAt).toEqual(t2);
+    expect(row.updatedAt).toEqual(before.updatedAt);
+  });
+});
