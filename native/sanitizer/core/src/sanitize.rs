@@ -55,9 +55,27 @@ const ALLOWED_TAGS: &[&str] = &[
     "mstyle", "merror", "maction",
 ];
 
-/// Disallowed tags whose text content is dropped along with them
-/// (sanitize-html's `nonTextTags` default).
-const DROP_WITH_CONTENT: &[&str] = &["script", "style", "textarea", "option"];
+/// Disallowed tags whose content is dropped along with them, rather than
+/// unwrapped (children kept).
+///
+/// This is `sanitize-html`'s `nonTextTags` default (`script`/`style`/
+/// `textarea`/`option`) **plus every other element the HTML tokenizer treats
+/// as raw text / RCDATA / escapable-raw-text**. That second set is critical
+/// for XSS safety, not cosmetic: inside `<title>`/`<xmp>`/`<noembed>`/
+/// `<noframes>`/`<noscript>`/`<plaintext>` the tokenizer reads the contents
+/// as a single *text* run, so lol_html's `*` element handler never fires on
+/// any markup in there. If we merely unwrapped the element, lol_html would
+/// re-emit that text **verbatim** (it is a raw text chunk, not parsed
+/// content), and since it is no longer inside a rawtext element the browser
+/// re-parses it as live markup — e.g. `<title><img src=x onerror=alert(1)>`
+/// would round-trip to an executing `<img>`. Dropping the whole subtree
+/// closes that mutation-XSS path. (`iframe` is also a rawtext element but is
+/// allow-listed and handled separately in `handle_iframe`, so it never
+/// reaches here.)
+const DROP_WITH_CONTENT: &[&str] = &[
+    "script", "style", "textarea", "option", "title", "xmp", "noembed", "noframes", "noscript",
+    "plaintext",
+];
 
 /// Global attributes allowed on any element (`data-*` handled separately).
 const GLOBAL_ATTRS: &[&str] = &["class", "id", "title", "dir", "lang"];
@@ -73,7 +91,10 @@ const MATHML_ATTRS: &[&str] = &[
 ];
 
 const SAFE_SCHEMES: &[&str] = &["http", "https", "mailto", "tel"];
-const IMAGE_SCHEMES: &[&str] = &["http", "https", "mailto", "tel", "data"];
+// img/source src (and srcset candidates): http/https + data URIs (feeds embed
+// base64 images). Deliberately NOT mailto/tel — matches the old
+// `allowedSchemesByTag` for img/source exactly.
+const IMAGE_SCHEMES: &[&str] = &["http", "https", "data"];
 
 fn tag_allowed(tag: &str) -> bool {
     ALLOWED_TAGS.contains(&tag)
@@ -367,6 +388,34 @@ mod tests {
     #[test]
     fn style_content_dropped() {
         assert_eq!(sanitize("<style>p{}</style><p>x</p>"), "<p>x</p>");
+    }
+
+    #[test]
+    fn rawtext_element_content_is_dropped_not_unwrapped() {
+        // Inside a rawtext/RCDATA element the tokenizer reads markup as text,
+        // so unwrapping would re-emit it verbatim and the browser would
+        // re-parse it as a live element (mXSS). All such non-allow-listed
+        // elements must drop their whole subtree.
+        for tag in ["title", "xmp", "noembed", "noframes", "noscript", "plaintext", "textarea"] {
+            let input = format!("<p>ok</p><{tag}><img src=x onerror=alert(1)></{tag}>");
+            let out = sanitize(&input);
+            assert!(
+                !out.contains("onerror") && !out.contains("<img"),
+                "tag {tag}: {out}"
+            );
+            assert!(out.starts_with("<p>ok</p>"), "tag {tag}: {out}");
+        }
+    }
+
+    #[test]
+    fn img_src_rejects_mailto_tel_but_keeps_data() {
+        // img/source src is http/https/data only (parity with the old
+        // allowedSchemesByTag) — mailto/tel are not image sources.
+        assert_eq!(sanitize(r#"<img src="mailto:x@y.com">"#), r#"<img loading="lazy">"#);
+        assert_eq!(
+            sanitize(r#"<img src="data:image/png;base64,AAA=">"#),
+            r#"<img src="data:image/png;base64,AAA=" loading="lazy">"#
+        );
     }
 
     #[test]

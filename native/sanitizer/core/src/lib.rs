@@ -64,7 +64,15 @@ pub fn sanitize_entry_html(html: &str, warnings: &mut Vec<String>) -> Result<Str
         }
     };
 
-    let sanitized = sanitize::sanitize_html_pass(body)?;
+    // The allow-list pass is the security-critical step; on any internal
+    // panic it must fail CLOSED (drop the whole body) rather than risk
+    // emitting partially-processed output. `catch_unwind` mirrors the
+    // math/SVG stages above; a returned Err propagates to the caller as a
+    // thrown JS error (never unsanitized HTML).
+    let sanitized = match std::panic::catch_unwind(|| sanitize::sanitize_html_pass(body)) {
+        Ok(result) => result?,
+        Err(_) => return Err("sanitize pass panicked".to_string()),
+    };
 
     Ok(match extraction {
         Some(extraction) if !extraction.svgs.is_empty() => {
