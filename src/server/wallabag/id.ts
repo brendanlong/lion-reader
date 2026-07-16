@@ -18,7 +18,7 @@
 
 import { eq, and } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
-import { entries, visibleEntries } from "@/server/db/schema";
+import { visibleEntries } from "@/server/db/schema";
 import { isInt64 } from "@/server/google-reader/id";
 
 const UUID_PATTERN =
@@ -77,20 +77,25 @@ export async function resolveWallabagEntry(
 }
 
 /**
- * Looks up the Wallabag integer id for a known entry UUID — a primary-key seek
- * on `entries`. Used where a route already holds a verified entry id (a
- * just-saved article, an exists-by-URL hit) but the service result doesn't
- * carry the serial (`SavedArticle` stays bigint-free for the MCP/tRPC surfaces
- * that return it verbatim). Returns null if the entry vanished meanwhile.
+ * Looks up the Wallabag integer id for a known entry UUID, **scoped to the
+ * requesting user** via `visible_entries`. Used where a route already holds a
+ * verified entry id (a just-saved article, an exists-by-URL hit) but the service
+ * result doesn't carry the serial (`SavedArticle` stays bigint-free for the
+ * MCP/tRPC surfaces that return it verbatim). The user scope keeps this
+ * consistent with `resolveWallabagEntry` — the serial is only ever read for an
+ * entry the user can see, so a caller can't be tricked into returning another
+ * user's serial. Returns null if the entry vanished (or was never visible)
+ * meanwhile.
  */
 export async function entryIdToWallabagId(
   db: typeof dbType,
+  userId: string,
   entryId: string
 ): Promise<number | null> {
   const [row] = await db
-    .select({ greaderItemId: entries.greaderItemId })
-    .from(entries)
-    .where(eq(entries.id, entryId))
+    .select({ greaderItemId: visibleEntries.greaderItemId })
+    .from(visibleEntries)
+    .where(and(eq(visibleEntries.userId, userId), eq(visibleEntries.id, entryId)))
     .limit(1);
 
   return row ? Number(row.greaderItemId) : null;
