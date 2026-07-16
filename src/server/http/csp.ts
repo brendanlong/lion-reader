@@ -26,7 +26,12 @@ import { embedCanonicalHostnames } from "@lion-reader/sanitizer";
  *   (Next.js chunk loading, dynamic `import()` of the ONNX runtime). `'self'`
  *   is a fallback for pre-CSP3 browsers, which ignore `'strict-dynamic'`.
  *   `'wasm-unsafe-eval'` is required to compile WebAssembly (ONNX runtime and
- *   Piper phonemizer for TTS narration). Dev additionally needs
+ *   Piper phonemizer for TTS narration) but deliberately NOT `'unsafe-eval'`:
+ *   runtime `eval`/`new Function` stays blocked. onnxruntime-web is pinned to
+ *   its CPU-only `./wasm` build (a bundler alias in `next.config.ts`) precisely
+ *   because the default WebGPU/WebNN "JSEP" build's Embind init calls
+ *   `new Function`, which would trip this policy; do not "fix" a resulting CSP
+ *   eval warning by adding `'unsafe-eval'`. Dev additionally needs
  *   `'unsafe-eval'` for React Refresh / HMR.
  * - `style-src 'unsafe-inline'`: inline styles are pervasive (React `style`
  *   props, next-themes, sonner, `NarrationHighlightStyles`, sanitized entry
