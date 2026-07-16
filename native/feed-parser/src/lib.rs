@@ -31,8 +31,17 @@ pub struct RawParsedEntry {
     pub link: Option<String>,
     pub title: Option<String>,
     pub author: Option<String>,
+    /// Absent when `content_is_summary` is set — the caller reuses `summary`.
     pub content: Option<String>,
     pub summary: Option<String>,
+    /// True when the entry's content is byte-identical to its summary (the
+    /// common description-only RSS / summary-only Atom case). The string is
+    /// then shipped across the N-API boundary once, as `summary`, instead of
+    /// being materialized as two separate JS strings — for feeds that deliver
+    /// whole articles in `<description>`, that halves the dominant cost of
+    /// the parse (V8 string creation) and the resulting JS fields share one
+    /// string.
+    pub content_is_summary: bool,
     /// Media RSS `media:description` (plain text; Atom/YouTube feeds).
     pub media_description: Option<String>,
     /// Media RSS `media:thumbnail` URL, first one found.
@@ -77,13 +86,21 @@ pub struct RawOpmlResult {
 }
 
 fn convert_entry(entry: core::types::ParsedEntry) -> RawParsedEntry {
+    // See `content_is_summary`: comparing the two Rust strings (a memcmp) is
+    // orders of magnitude cheaper than creating a redundant JS string.
+    let content_is_summary = entry.content.is_some() && entry.content == entry.summary;
     RawParsedEntry {
         guid: entry.guid,
         link: entry.link,
         title: entry.title,
         author: entry.author,
-        content: entry.content,
+        content: if content_is_summary {
+            None
+        } else {
+            entry.content
+        },
         summary: entry.summary,
+        content_is_summary,
         media_description: entry.media_description,
         media_thumbnail_url: entry.media_thumbnail_url,
         date_candidates: entry

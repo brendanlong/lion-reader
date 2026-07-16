@@ -72,7 +72,9 @@ export function toFeedParseResult(
       link: entry.link,
       title: entry.title,
       author: entry.author,
-      content: entry.content,
+      // contentIsSummary: identical content crosses the boundary once (as
+      // summary) and is reused here, so both fields share one JS string.
+      content: entry.contentIsSummary ? entry.summary : entry.content,
       summary: entry.summary,
       mediaDescription: entry.mediaDescription,
       mediaThumbnailUrl: entry.mediaThumbnailUrl,

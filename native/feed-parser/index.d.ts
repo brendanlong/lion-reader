@@ -19,8 +19,17 @@ export interface RawParsedEntry {
   link?: string;
   title?: string;
   author?: string;
+  /** Absent when `contentIsSummary` is set — reuse `summary`. */
   content?: string;
   summary?: string;
+  /**
+   * True when the entry's content is identical to its summary (the common
+   * description-only RSS / summary-only Atom case). The string then crosses
+   * the N-API boundary once, as `summary`, and the caller assigns
+   * `content = summary` — halving V8 string creation for feeds that deliver
+   * whole articles in `<description>`.
+   */
+  contentIsSummary: boolean;
   /** Media RSS `media:description` (plain text; Atom/YouTube feeds). */
   mediaDescription?: string;
   /** Media RSS `media:thumbnail` URL, first one found. */
