@@ -1,17 +1,16 @@
 /**
  * Unit tests for the piscina worker-thread task dispatcher (`handleTask`).
  *
- * Calling `handleTask` directly (no thread spawned) deterministically covers the
- * task logic that runs inside the pool: the `sanitizeEntryHtml` offload task and
- * the fused-sanitize option on `cleanContent`. The pool wrapper
- * (`sanitizeEntryHtmlInWorker`) only forwards these results, so proving the task
- * output equals the inline `sanitizeEntryHtml` here is what guarantees the
- * offloaded path can't diverge from the synchronous one.
+ * Calling `handleTask` directly (no thread spawned) deterministically covers
+ * the task logic that runs inside the pool: the fused-sanitize option on
+ * `cleanContent` and the sanitizer-version probe. (Standalone sanitization no
+ * longer goes through the pool — the native sanitizer runs it on the libuv
+ * thread pool; see sanitizeEntryHtmlInWorker.)
  */
 
 import { describe, it, expect } from "vitest";
 import handleTask from "@/server/worker-thread/worker";
-import { sanitizeEntryHtml } from "@/server/html/sanitize";
+import { sanitizeEntryHtml, SANITIZER_VERSION } from "@/server/html/sanitize";
 import type { CleanedContent } from "@/server/worker-thread/types";
 
 const READABLE_ARTICLE =
@@ -22,26 +21,6 @@ const READABLE_ARTICLE =
   '<script>alert("xss")</script></article></body></html>';
 
 describe("worker-thread handleTask", () => {
-  describe("sanitizeEntryHtml task", () => {
-    it("produces exactly the same output as the inline sanitizeEntryHtml", () => {
-      const html =
-        '<p onclick="evil()">hi<script>alert(1)</script></p><a href="https://x.com">x</a>';
-      const result = handleTask({ type: "sanitizeEntryHtml", html }) as {
-        sanitized: string | null;
-      };
-      expect(result.sanitized).toBe(sanitizeEntryHtml(html));
-      expect(result.sanitized).not.toContain("<script>");
-      expect(result.sanitized).not.toContain("onclick");
-    });
-
-    it("returns null for empty input (matching sanitizeEntryHtml)", () => {
-      const result = handleTask({ type: "sanitizeEntryHtml", html: "" }) as {
-        sanitized: string | null;
-      };
-      expect(result.sanitized).toBeNull();
-    });
-  });
-
   describe("cleanContent task fused sanitize", () => {
     it("returns contentSanitized === sanitizeEntryHtml(content) when sanitizeCleaned is set", () => {
       const result = handleTask({
@@ -63,6 +42,13 @@ describe("worker-thread handleTask", () => {
 
       expect(result).not.toBeNull();
       expect(result!.contentSanitized).toBeUndefined();
+    });
+  });
+
+  describe("sanitizerVersion probe", () => {
+    it("reports the same version as the main process (shared native module)", () => {
+      const result = handleTask({ type: "sanitizerVersion" }) as { version: number };
+      expect(result.version).toBe(SANITIZER_VERSION);
     });
   });
 });

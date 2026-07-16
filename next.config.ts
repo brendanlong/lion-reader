@@ -152,7 +152,12 @@ const nextConfig: NextConfig = {
   //   export (only referenced via `'coerce' in z`), which flips the library's
   //   `zodSupportsCoerce` check to false and makes it reject numeric query
   //   params (e.g. `limit`) when generating the OpenAPI document.
-  serverExternalPackages: ["html-rewriter-wasm", "piscina", "trpc-to-openapi"],
+  serverExternalPackages: [
+    "html-rewriter-wasm",
+    "piscina",
+    "trpc-to-openapi",
+    "@lion-reader/sanitizer",
+  ],
   // Handle piper-tts-web which has conditional Node.js code (require('fs'))
   // that the bundler tries to resolve even though it only runs in Node.js
   webpack: (config, { isServer, nextRuntime }) => {

@@ -39,6 +39,20 @@ describe("sanitizeEntryHtml", () => {
       const out = sanitizeEntryHtml("<svg><script>alert(1)</script></svg>");
       expect(out).not.toContain("script");
     });
+
+    it("drops markup hidden inside rawtext/RCDATA elements (mXSS)", () => {
+      // Inside title/xmp/noembed/noframes/noscript/plaintext the tokenizer
+      // reads the contents as text, so an unwrap would re-emit them verbatim
+      // and the browser would re-parse them as a live <img onerror>. The whole
+      // subtree must be dropped instead.
+      for (const tag of ["title", "xmp", "noembed", "noframes", "noscript", "plaintext"]) {
+        const out =
+          sanitizeEntryHtml(`<p>ok</p><${tag}><img src=x onerror=alert(1)></${tag}>`) ?? "";
+        expect(out).not.toContain("onerror");
+        expect(out).not.toContain("<img");
+        expect(out).toContain("<p>ok</p>");
+      }
+    });
   });
 
   describe("link and image transforms (formerly the DOMPurify hook)", () => {
@@ -127,8 +141,10 @@ describe("sanitizeEntryHtml", () => {
     it("does not disturb surrounding uppercase HTML", () => {
       const out =
         sanitizeEntryHtml('<DIV CLASS="wrap"><svg><rect width="4" height="4"/></svg></DIV>') ?? "";
-      // Uppercase HTML still gets folded/matched by sanitize-html as usual.
-      expect(out).toContain('<div class="wrap">');
+      // Uppercase HTML is matched case-insensitively; lol_html passes the
+      // original bytes through untouched (HTML tag/attribute names are
+      // case-insensitive, so this renders identically).
+      expect(out).toContain('<DIV CLASS="wrap">');
       expect(out).toContain("<rect");
     });
 
@@ -186,8 +202,7 @@ describe("sanitizeEntryHtml", () => {
     });
 
     it("forces safe rel/target on external svg <a> links (anti reverse-tabnabbing)", () => {
-      const out =
-        sanitizeEntryHtml('<svg><a href="https://ok.com"><text>x</text></a></svg>') ?? "";
+      const out = sanitizeEntryHtml('<svg><a href="https://ok.com"><text>x</text></a></svg>') ?? "";
       expect(out).toContain('target="_blank"');
       expect(out).toContain('rel="noopener noreferrer"');
       // In-document fragment links are not external and stay untouched.
