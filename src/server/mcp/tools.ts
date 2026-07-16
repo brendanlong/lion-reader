@@ -60,17 +60,22 @@ function parseArgs<T extends z.ZodType>(schema: T, args: unknown): z.infer<T> {
  * a parseable InvalidParams instead of an opaque internal error. Services
  * throw TRPCErrors (their native error type across all transports); bad IDs
  * and invalid cursors surface as BAD_REQUEST/NOT_FOUND.
+ *
+ * Client-error branches (BAD_REQUEST/NOT_FOUND) forward the message — it
+ * describes the caller's own bad input and is safe to surface. The
+ * InternalError branch does NOT: an unexpected server error's message can leak
+ * internal detail, so it's replaced with a generic string (issue #1266). Callers
+ * are responsible for logging the original error server-side before mapping.
  */
 export function toMcpError(error: unknown): unknown {
   if (error instanceof McpError) {
     return error;
   }
   if (error instanceof TRPCError) {
-    const code =
-      error.code === "BAD_REQUEST" || error.code === "NOT_FOUND"
-        ? ErrorCode.InvalidParams
-        : ErrorCode.InternalError;
-    return new McpError(code, error.message);
+    if (error.code === "BAD_REQUEST" || error.code === "NOT_FOUND") {
+      return new McpError(ErrorCode.InvalidParams, error.message);
+    }
+    return new McpError(ErrorCode.InternalError, "An internal error occurred");
   }
   return error;
 }
