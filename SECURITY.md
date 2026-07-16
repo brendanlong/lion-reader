@@ -44,6 +44,14 @@ Entry bodies, saved articles, and AI summaries are rendered with
 - The allowlist deliberately excludes `script`/`style`/`on*`/`form`/`base`/`meta`,
   restricts URL schemes, forces `rel=noopener`, and treats SVG/MathML as mXSS-prone.
   Changes here need a security review.
+- **Defense-in-depth headers** (`securityHeaders` in `next.config.ts`, mirrored on
+  the maintenance short-circuit in `scripts/server.ts`) add a CSP
+  (`frame-ancestors 'none'; object-src 'none'; base-uri 'self'`), `X-Frame-Options`,
+  `X-Content-Type-Options: nosniff`, `Referrer-Policy`, and (prod) HSTS. The CSP
+  does **not** yet lock down `script-src`/`default-src` — that needs a per-request
+  nonce/hash for the two inline `<script>`s in `layout.tsx` — so the sanitizer is
+  still the sole gate against injected `<script>`; the CSP only backstops
+  clickjacking, plugin/object injection, and `<base>` hijacking.
 
 ## 2. SSRF-safe outbound fetching
 
