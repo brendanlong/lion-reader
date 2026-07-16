@@ -169,6 +169,21 @@ const nextConfig: NextConfig = {
         fs: false,
         path: false,
       };
+      // Redirect onnxruntime-web (pulled in only by piper-tts-web for TTS
+      // narration) to its CPU-only `./wasm` build. The default entry loads the
+      // WebGPU/WebNN "JSEP" glue, which calls `new Function(...)` in its
+      // Emscripten/Embind init — both in the bundled `ort.bundle.min.mjs` and
+      // in the runtime-fetched `ort-wasm-simd-threaded.jsep.mjs` from
+      // public/onnx/. CSP treats `new Function` as `eval` and blocks it in prod
+      // (script-src has `wasm-unsafe-eval` but deliberately not `unsafe-eval`).
+      // Piper runs pure CPU inference and requests no `executionProviders`, so
+      // the JSEP build is dead weight whose init trips a CSP violation. The
+      // `$` limits the alias to the bare specifier so runtime wasm-file loads
+      // (served from public/onnx/) are untouched. See src/server/http/csp.ts.
+      config.resolve.alias = {
+        ...config.resolve.alias,
+        "onnxruntime-web$": "onnxruntime-web/wasm",
+      };
     }
     // isomorphic-dompurify pulls in jsdom during SSR of `"use client"` components
     // (e.g. EntryContentBody). jsdom reads browser/default-stylesheet.css via
@@ -216,6 +231,9 @@ const nextConfig: NextConfig = {
     resolveAlias: {
       fs: { browser: "./src/lib/stubs/empty.js" },
       path: { browser: "./src/lib/stubs/empty.js" },
+      // See the webpack `onnxruntime-web$` alias above: use the CPU-only build
+      // so the JSEP glue's `new Function` (CSP eval) never loads.
+      "onnxruntime-web": { browser: "onnxruntime-web/wasm" },
     },
   },
 };
