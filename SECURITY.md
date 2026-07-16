@@ -133,12 +133,13 @@ IDs) · **Code:** `src/app/api/wallabag/`, `src/app/api/greader.php/`,
   authenticate via hashed-token lookup (no string compare).
 - Clients address entries/feeds by **integer serials stored in the DB**
   (`greader_item_id`, `greader_stream_id`, …). The serial↔UUID lookups are
-  necessary because these protocols mandate integer IDs. **The resolved id must
-  always be re-scoped to the authenticated user** — `resolveWallabagEntry` /
-  `resolveFeedStream` do this through `visible_entries`/user predicates. A couple
-  of item-id resolvers (`greaderItemIdsToUuids`, `entryIdToWallabagId`) are
-  globally unscoped and safe **only** because their callers re-scope; do not add a
-  caller that trusts their output directly.
+  necessary because these protocols mandate integer IDs. **Every serial↔UUID
+  resolver is scoped to the authenticated user** — `resolveWallabagEntry` /
+  `resolveFeedStream`, and (since #1268) `greaderItemIdsToUuids` /
+  `entryIdToWallabagId`, all seek through `visible_entries`/user predicates, so a
+  resolved id is guaranteed visible to the caller. Keep it that way: a new
+  resolver that reverses a client-supplied serial must take a `userId` and scope
+  its lookup, never seek the shared `entries` table unscoped.
 
 ## 9. Webhooks & SSR
 

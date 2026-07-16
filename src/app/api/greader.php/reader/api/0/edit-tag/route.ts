@@ -54,7 +54,7 @@ export async function POST(request: Request): Promise<Response> {
   const removeTags = params.getAll("r");
 
   // Resolve item IDs to UUIDs
-  const uuidMap = await greaderItemIdsToUuids(db, itemIds);
+  const uuidMap = await greaderItemIdsToUuids(db, session.user.id, itemIds);
   const entryUuids = Array.from(uuidMap.values());
 
   if (entryUuids.length === 0) {
