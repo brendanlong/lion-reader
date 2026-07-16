@@ -12,6 +12,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSession } from "@/server/auth/session";
 import { db } from "@/server/db";
 import { extractClientInfo } from "@/server/http/client-ip";
+import { clearOAuthStateCookie } from "@/server/auth/oauth/state-cookie";
 
 // ============================================================================
 // Types
@@ -130,6 +131,9 @@ export async function createSessionResponse(
     secure: process.env.NODE_ENV === "production",
   });
 
+  // The one-time state binding cookie has served its purpose (issue #1263).
+  clearOAuthStateCookie(response);
+
   return response;
 }
 
@@ -146,5 +150,8 @@ export function createErrorRedirect(
   errorParam: string = "callback_failed",
   redirectStatus?: number
 ): NextResponse {
-  return NextResponse.redirect(`${appUrl}/login?error=${errorParam}`, redirectStatus);
+  const response = NextResponse.redirect(`${appUrl}/login?error=${errorParam}`, redirectStatus);
+  // Clear any state binding cookie so a failed attempt leaves nothing behind (#1263).
+  clearOAuthStateCookie(response);
+  return response;
 }

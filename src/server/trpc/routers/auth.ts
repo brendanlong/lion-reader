@@ -25,6 +25,7 @@ import { signupConfig, ALL_SIGNUP_PROVIDERS } from "@/server/config/env";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { createSession, revokeSessionByToken } from "@/server/auth/session";
 import { setSessionCookie, clearSessionCookie } from "@/server/auth/session-cookie";
+import { setOAuthStateCookie } from "@/server/auth/oauth/state-cookie";
 import { extractClientInfo } from "@/server/http/client-ip";
 import { getEnabledProviders } from "@/server/auth/oauth/config";
 import {
@@ -405,7 +406,7 @@ export const authRouter = createTRPCRouter({
         state: z.string(),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       if (!isGoogleOAuthEnabled()) {
         throw errors.oauthProviderNotConfigured("Google");
       }
@@ -416,6 +417,10 @@ export const authRouter = createTRPCRouter({
         undefined, // returnUrl
         input?.inviteToken // inviteToken
       );
+
+      // Bind the state to this browser so the callback can't be replayed against
+      // another user (login CSRF, issue #1263).
+      setOAuthStateCookie(ctx.resHeaders, result.state);
 
       return {
         url: result.url,
@@ -527,12 +532,16 @@ export const authRouter = createTRPCRouter({
         state: z.string(),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       if (!isAppleOAuthEnabled()) {
         throw errors.oauthProviderNotConfigured("Apple");
       }
 
       const result = await createAppleAuthUrl(input?.inviteToken);
+
+      // Bind the state to this browser (login CSRF, issue #1263). Apple's callback is a
+      // cross-site POST (form_post), so the cookie must be SameSite=None to be sent.
+      setOAuthStateCookie(ctx.resHeaders, result.state, "none");
 
       return {
         url: result.url,
@@ -669,12 +678,16 @@ export const authRouter = createTRPCRouter({
         state: z.string(),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       if (!isDiscordOAuthEnabled()) {
         throw errors.oauthProviderNotConfigured("Discord");
       }
 
       const result = await createDiscordAuthUrl(input?.inviteToken);
+
+      // Bind the state to this browser so the callback can't be replayed against
+      // another user (login CSRF, issue #1263).
+      setOAuthStateCookie(ctx.resHeaders, result.state);
 
       return {
         url: result.url,
@@ -1362,6 +1375,10 @@ export const authRouter = createTRPCRouter({
         [GOOGLE_DOCS_READONLY_SCOPE, GOOGLE_DRIVE_SCOPE],
         "save"
       );
+
+      // Bind the state to this browser so the callback can't be replayed against
+      // another user (login CSRF, issue #1263).
+      setOAuthStateCookie(ctx.resHeaders, result.state);
 
       // Return the URL with a note that this is for incremental auth
       // The state should be stored by the client to verify the callback

@@ -30,6 +30,11 @@ import {
   createErrorRedirect,
   handleSignupError,
 } from "@/server/auth/oauth/callback-helpers";
+import {
+  readOAuthStateCookie,
+  oauthStateCookieMatches,
+  clearOAuthStateCookie,
+} from "@/server/auth/oauth/state-cookie";
 
 /**
  * Handle Google OAuth redirect callback
@@ -55,6 +60,12 @@ export async function GET(request: NextRequest) {
     // Validate required fields
     if (!code || !state) {
       return createErrorRedirect(appUrl);
+    }
+
+    // Bind the callback to the browser that started the flow (login CSRF, issue #1263):
+    // the state cookie set when the auth URL was generated must match the returned state.
+    if (!oauthStateCookieMatches(readOAuthStateCookie(request), state)) {
+      return createErrorRedirect(appUrl, "invalid_state");
     }
 
     // Validate the OAuth callback
@@ -100,7 +111,9 @@ export async function GET(request: NextRequest) {
         } else {
           errorRedirect = "/settings?link_error=callback_failed";
         }
-        return NextResponse.redirect(`${appUrl}${errorRedirect}`);
+        const response = NextResponse.redirect(`${appUrl}${errorRedirect}`);
+        clearOAuthStateCookie(response);
+        return response;
       }
 
       // Update OAuth account with new tokens and scopes
@@ -115,14 +128,18 @@ export async function GET(request: NextRequest) {
         .where(eq(oauthAccounts.id, existingOAuthAccount[0].id));
 
       // Redirect based on mode (no session cookie needed - user already logged in)
+      let response: NextResponse;
       if (mode === "extension-save" && returnUrl) {
         // Redirect back to the extension save page with the original URL
-        return NextResponse.redirect(`${appUrl}${returnUrl}`);
+        response = NextResponse.redirect(`${appUrl}${returnUrl}`);
       } else if (mode === "save") {
-        return NextResponse.redirect(`${appUrl}/save`);
+        response = NextResponse.redirect(`${appUrl}/save`);
       } else {
-        return NextResponse.redirect(`${appUrl}/settings?linked=google`);
+        response = NextResponse.redirect(`${appUrl}/settings?linked=google`);
       }
+      // Clear the one-time state binding cookie (issue #1263).
+      clearOAuthStateCookie(response);
+      return response;
     }
 
     // Login mode - normal OAuth login/signup flow
