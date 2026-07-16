@@ -17,6 +17,8 @@ import { describe, it, expect } from "vitest";
 import {
   followRedirects,
   assertNotPrivateIpLiteral,
+  assertAllowedScheme,
+  assertAllowedUrl,
   type FetchImpl,
 } from "../../src/server/http/ssrf";
 
@@ -111,6 +113,67 @@ describe("followRedirects — per-hop SSRF validation", () => {
       "http://a.example.com/1",
       "http://b.example.com/2",
     ]);
+  });
+});
+
+describe("assertAllowedScheme — non-http(s) scheme rejection", () => {
+  it("allows http and https URLs", () => {
+    expect(() => assertAllowedScheme("http://public.example.com/a")).not.toThrow();
+    expect(() => assertAllowedScheme("https://public.example.com/a")).not.toThrow();
+  });
+
+  it.each([
+    "file:///etc/passwd",
+    "ftp://example.com/x",
+    "gopher://example.com/",
+    "data:text/plain,hi",
+  ])("rejects non-http(s) scheme: %s", (url) => {
+    expect(() => assertAllowedScheme(url)).toThrowError(
+      expect.objectContaining({ name: "SsrfBlockedError" })
+    );
+  });
+
+  it("rejects an unparseable URL (fail closed)", () => {
+    expect(() => assertAllowedScheme("not a url")).toThrowError(
+      expect.objectContaining({ name: "SsrfBlockedError" })
+    );
+  });
+});
+
+describe("followRedirects — per-hop scheme validation", () => {
+  it("blocks an initial non-http(s) URL (dispatcher path validator)", async () => {
+    const { impl, requests } = fakeFetch({});
+    await expect(
+      followRedirects("file:///etc/passwd", {}, impl, assertAllowedUrl)
+    ).rejects.toMatchObject({ name: "SsrfBlockedError" });
+    // Rejected before ever hitting the fetch impl.
+    expect(requests).toHaveLength(0);
+  });
+
+  it("blocks an initial non-http(s) URL (allow-private path validator)", async () => {
+    const { impl, requests } = fakeFetch({});
+    await expect(
+      followRedirects("file:///etc/passwd", {}, impl, assertAllowedScheme)
+    ).rejects.toMatchObject({ name: "SsrfBlockedError" });
+    expect(requests).toHaveLength(0);
+  });
+
+  it("blocks a redirect to a non-http(s) scheme (dispatcher path validator)", async () => {
+    const { impl } = fakeFetch({
+      "http://public.example.com/a": { status: 302, location: "file:///etc/passwd" },
+    });
+    await expect(
+      followRedirects("http://public.example.com/a", {}, impl, assertAllowedUrl)
+    ).rejects.toMatchObject({ name: "SsrfBlockedError" });
+  });
+
+  it("blocks a redirect to a non-http(s) scheme (allow-private path validator)", async () => {
+    const { impl } = fakeFetch({
+      "http://public.example.com/a": { status: 302, location: "gopher://public.example.com/" },
+    });
+    await expect(
+      followRedirects("http://public.example.com/a", {}, impl, assertAllowedScheme)
+    ).rejects.toMatchObject({ name: "SsrfBlockedError" });
   });
 });
 
