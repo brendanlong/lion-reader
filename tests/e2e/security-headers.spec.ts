@@ -13,6 +13,11 @@
  *   parser-inserted markup-injection vector CSP is here to stop);
  * - that a normally loaded app page produces no CSP violations (the app's own
  *   inline scripts, styles, and chunk loading all satisfy the policy).
+ *
+ * Known coverage gaps (policy allows these, but the e2e env never exercises
+ * them): Sentry Session Replay (prod-DSN only; needs `worker-src blob:` +
+ * the same-origin `/monitoring` tunnel) and the TTS narration downloads
+ * (Hugging Face voice models via `*.hf.co` redirect hops, jsdelivr wasm).
  */
 
 import { test, expect } from "@playwright/test";
