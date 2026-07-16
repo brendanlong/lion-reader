@@ -1,0 +1,21 @@
+[package]
+name = "lion-reader-sanitizer-core"
+version = "1.0.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[dependencies]
+lol_html = "2"
+# Spec-compliant HTML parsing for the small MathJax-container and <svg>
+# substrings (foreign-content camelCase adjustment matches browsers).
+scraper = { version = "0.24", default-features = false }
+# Pinned to the html5ever version scraper resolves to (QualName access only).
+html5ever = "0.35"
+ego-tree = "0.10"
+# HTML entity decoding for attribute-value scheme checks (values must be
+# checked as a browser would interpret them, i.e. entity-decoded).
+html-escape = "0.2"
+url = "2"
+regex = "1"
+getrandom = "0.3"
