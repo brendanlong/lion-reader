@@ -13,6 +13,7 @@ import { requireAuth } from "@/server/google-reader/auth";
 import { parseFormData, jsonResponse, errorResponse } from "@/server/google-reader/parse";
 import { feedStreamId } from "@/server/google-reader/id";
 import * as subscriptionsService from "@/server/services/subscriptions";
+import { checkRouteRateLimit } from "@/server/rate-limit";
 import { db } from "@/server/db";
 import { eq, isNull, and } from "drizzle-orm";
 import { feeds, subscriptions } from "@/server/db/schema";
@@ -23,6 +24,12 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request): Promise<Response> {
   const session = await requireAuth(request);
   if (session instanceof Response) return session;
+
+  // Creating a feed schedules an immediate fetch — the tRPC subscribe path is an
+  // "expensive" procedure, so rate-limit this compat path the same way to stop an
+  // authenticated client from enqueuing many immediate feed fetches (issue #1266).
+  const rateLimited = await checkRouteRateLimit(request, "expensive");
+  if (rateLimited) return rateLimited;
 
   const params = await parseFormData(request);
   const feedUrl = params.get("quickadd");
@@ -113,8 +120,9 @@ export async function POST(request: Request): Promise<Response> {
       streamName: feedUrl,
     });
   } catch (err) {
+    // Log the detail server-side but return a generic message — internal error
+    // text must not be echoed to clients (issue #1266).
     console.error("Failed to subscribe to feed:", err);
-    const message = err instanceof Error ? err.message : "Unknown error";
-    return errorResponse(`Failed to subscribe: ${message}`, 500);
+    return errorResponse("Failed to subscribe to feed", 500);
   }
 }

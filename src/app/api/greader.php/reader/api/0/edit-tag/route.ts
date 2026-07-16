@@ -33,6 +33,11 @@ import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
 
+// Bound the item-id list so a single call can't ask the server to issue an
+// unbounded number of per-entry updates. Matches the cap on
+// `stream/items/contents` and the services-layer bulk mutations (issue #1266).
+const MAX_ITEM_IDS = 1000;
+
 export async function POST(request: Request): Promise<Response> {
   const session = await requireAuth(request);
   if (session instanceof Response) return session;
@@ -44,6 +49,13 @@ export async function POST(request: Request): Promise<Response> {
     itemIds = parseItemIds(params);
   } catch {
     return errorResponse("Invalid item ID format", 400);
+  }
+
+  if (itemIds.length > MAX_ITEM_IDS) {
+    return errorResponse(
+      `Too many item ids: ${itemIds.length} requested, maximum ${MAX_ITEM_IDS} per request. Split into smaller batches.`,
+      400
+    );
   }
 
   if (itemIds.length === 0) {
@@ -77,9 +89,7 @@ export async function POST(request: Request): Promise<Response> {
   const removeStarred = removeTags.some((t) => isState(t, "starred"));
 
   if (addStarred || removeStarred) {
-    for (const entryId of entryUuids) {
-      await entriesService.updateEntryStarred(db, session.user.id, entryId, addStarred);
-    }
+    await entriesService.updateEntriesStarred(db, session.user.id, entryUuids, addStarred);
   }
 
   return textResponse("OK");

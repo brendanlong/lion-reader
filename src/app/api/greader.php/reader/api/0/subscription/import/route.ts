@@ -52,8 +52,9 @@ export async function POST(request: Request): Promise<Response> {
     if (err instanceof OpmlParseError) {
       return errorResponse(`Failed to parse OPML: ${err.message}`, 400);
     }
+    // Log the detail server-side but return a generic message — internal error
+    // text must not be echoed to clients (issue #1266).
     console.error("Failed to import OPML:", err);
-    const message = err instanceof Error ? err.message : "Unknown error";
-    return errorResponse(`Failed to import OPML: ${message}`, 500);
+    return errorResponse("Failed to import OPML", 500);
   }
 }
