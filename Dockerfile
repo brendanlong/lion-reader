@@ -95,9 +95,11 @@ RUN pnpm build:discord-bot
 # Build migration bundle (single optimized JS file)
 RUN pnpm build:migrate
 
-# Prune dev dependencies after build
+# Prune dev dependencies after build. CI=true lets pnpm remove/recreate the
+# modules directory without a confirmation prompt (there's no TTY in the
+# builder; without it prune fails with ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY).
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
-    pnpm prune --prod --ignore-scripts
+    CI=true pnpm prune --prod --ignore-scripts
 
 # =============================================================================
 # Stage 4: Production runner (minimal image, no pnpm needed)
