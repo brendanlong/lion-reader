@@ -34,7 +34,11 @@ import {
   type BulkUnreadCounts,
   type UnreadCounts,
 } from "./counts";
-import { publishMarkReadStateChanges, publishStarredStateChange } from "./entry-events";
+import {
+  publishMarkReadStateChanges,
+  publishStarredStateChange,
+  publishStarredStateChanges,
+} from "./entry-events";
 import { persistResanitizedFamily, sanitizeFamilyFromRaw } from "./resanitize";
 import {
   buildEntrySubscriptionFilter,
@@ -1437,6 +1441,81 @@ export async function updateEntryStarred(
   }
 
   return { entry, counts };
+}
+
+/**
+ * Bulk star/unstar: applies a single starred value to many entries in one
+ * `UPDATE ... FROM` instead of issuing one statement per entry. Used by the
+ * Google Reader `edit-tag` endpoint, which can carry up to 1000 item ids in a
+ * single call (issue #1266). Mirrors {@link markEntriesRead}: a self-join on
+ * `prev` captures each row's pre-update starred value so we can tell a real
+ * flip from a same-value watermark bump, `updated_at` (the delta-sync
+ * visibility timestamp) advances only on a real flip, and `starred_changed_at`
+ * (the last-writer-wins watermark) advances on every accepted write.
+ */
+export async function updateEntriesStarred(
+  db: DbOrTx,
+  userId: string,
+  entryIds: string[],
+  starred: boolean,
+  changedAt: Date = new Date()
+): Promise<{
+  entries: MarkReadEntryState[];
+  changed: MarkReadEntryState[];
+  counts?: BulkUnreadCounts;
+}> {
+  if (entryIds.length === 0) {
+    return { entries: [], changed: [] };
+  }
+
+  if (entryIds.length > 1000) {
+    throw errors.validation("Maximum 1000 entries per request");
+  }
+
+  const now = new Date();
+
+  const idValues = entryIds.map((id) => sql`${id}::uuid`);
+  const updated = await db.execute<{ entry_id: string; old_starred: boolean }>(sql`
+    UPDATE user_entries AS ue
+    SET starred = ${starred},
+        starred_changed_at = ${changedAt},
+        updated_at = CASE WHEN prev.starred <> ${starred} THEN ${now} ELSE ue.updated_at END
+    FROM user_entries AS prev
+    WHERE ue.user_id = ${userId}::uuid
+      AND ue.entry_id IN (${sql.join(idValues, sql`, `)})
+      AND prev.user_id = ue.user_id
+      AND prev.entry_id = ue.entry_id
+      AND ue.starred_changed_at <= ${changedAt}
+    RETURNING ue.entry_id AS entry_id, prev.starred AS old_starred
+  `);
+  const flippedIds = new Set(
+    updated.rows.filter((row) => row.old_starred !== starred).map((row) => row.entry_id)
+  );
+
+  const entriesState = await db
+    .select({
+      id: visibleEntries.id,
+      subscriptionId: visibleEntries.subscriptionId,
+      read: visibleEntries.read,
+      starred: visibleEntries.starred,
+      type: visibleEntries.type,
+      updatedAt: visibleEntries.updatedAt,
+    })
+    .from(visibleEntries)
+    .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.id, entryIds)));
+
+  // Only entries whose starred value actually flipped warrant SSE events and
+  // count recomputation (issue #1118); a batch of pure re-asserts still
+  // advanced the watermark above but changes no count.
+  const changed = entriesState.filter((entry) => flippedIds.has(entry.id));
+  const counts =
+    changed.length > 0 ? await getBulkEntryRelatedCounts(db, userId, changed) : undefined;
+
+  if (changed.length > 0 && counts) {
+    publishStarredStateChanges(userId, changed, counts);
+  }
+
+  return { entries: entriesState, changed, counts };
 }
 
 /**
