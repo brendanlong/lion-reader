@@ -1,0 +1,27 @@
+[package]
+name = "lion-reader-readability"
+version = "1.0.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+# Standalone workspace so this crate doesn't accidentally join a parent
+# workspace; unlike the sanitizer there is no pure-logic core sub-crate —
+# the extraction algorithm lives in the dom_smoothie dependency and the
+# wrapper's behavior is covered by the TS tests (tests/unit/content-cleaner.test.ts).
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+dom_smoothie = "0.18"
+napi = { version = "2", default-features = false, features = ["napi8"] }
+napi-derive = "2"
+
+[build-dependencies]
+napi-build = "2"
+
+[profile.release]
+lto = true
+opt-level = 3
