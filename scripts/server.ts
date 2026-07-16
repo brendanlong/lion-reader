@@ -75,13 +75,17 @@ app.prepare().then(() => {
         res.setHeader("Retry-After", "3600");
         res.setHeader("Cache-Control", "no-store");
         // These responses short-circuit before Next's handler, so they miss the
-        // security headers configured in next.config.ts. Set the framing/sniffing
-        // protections here too so maintenance-mode pages aren't a coverage gap.
+        // security headers from next.config.ts and the nonce'd CSP from
+        // src/proxy.ts. Set the framing/sniffing protections here too so
+        // maintenance-mode pages aren't a coverage gap. The maintenance HTML
+        // has no scripts at all (inline <style> only), so this static policy
+        // can be stricter than the app's (`script-src 'none'`); keep it
+        // conceptually in sync with src/server/http/csp.ts.
         res.setHeader("X-Frame-Options", "DENY");
         res.setHeader("X-Content-Type-Options", "nosniff");
         res.setHeader(
           "Content-Security-Policy",
-          "frame-ancestors 'none'; object-src 'none'; base-uri 'self'"
+          "script-src 'none'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'"
         );
         if (decision === "block-api") {
           res.setHeader("Content-Type", "application/json; charset=utf-8");
