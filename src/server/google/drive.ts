@@ -15,6 +15,7 @@ import { GoogleAuth } from "google-auth-library";
 import { logger } from "@/lib/logger";
 import { googleConfig } from "@/server/config/env";
 import { USER_AGENT } from "@/server/http/user-agent";
+import { fetchWithSsrfProtection } from "@/server/http/ssrf";
 
 // ============================================================================
 // Constants
@@ -156,7 +157,7 @@ async function getFileMetadata(
   try {
     const url = `${GOOGLE_DRIVE_API_ENDPOINT}/${fileId}?fields=id,name,mimeType`;
 
-    const response = await fetch(url, {
+    const response = await fetchWithSsrfProtection(url, {
       method: "GET",
       headers: {
         Accept: "application/json",
@@ -202,7 +203,7 @@ async function downloadFile(fileId: string, accessToken: string): Promise<ArrayB
   try {
     const url = `${GOOGLE_DRIVE_API_ENDPOINT}/${fileId}?alt=media`;
 
-    const response = await fetch(url, {
+    const response = await fetchWithSsrfProtection(url, {
       method: "GET",
       headers: {
         Authorization: `Bearer ${accessToken}`,

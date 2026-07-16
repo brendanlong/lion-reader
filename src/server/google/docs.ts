@@ -27,6 +27,7 @@ import { logger } from "@/lib/logger";
 import { googleConfig } from "@/server/config/env";
 import { fetchAndUploadImage, isStorageAvailable } from "@/server/storage/s3";
 import { USER_AGENT } from "@/server/http/user-agent";
+import { fetchWithSsrfProtection } from "@/server/http/ssrf";
 import { escapeHtml } from "@/server/http/html";
 import { stripTitleHeader } from "@/server/html/strip-title-header";
 import {
@@ -1297,7 +1298,7 @@ async function fetchPublicGoogleDoc(
 
     logger.debug("Fetching public Google Doc via Docs API", { docId, tabId });
 
-    const response = await fetch(url, {
+    const response = await fetchWithSsrfProtection(url, {
       method: "GET",
       headers: {
         Accept: "application/json",
@@ -1436,7 +1437,7 @@ export async function fetchPrivateGoogleDoc(
 
     logger.debug("Fetching private Google Doc via Docs API", { docId, tabId });
 
-    const response = await fetch(url, {
+    const response = await fetchWithSsrfProtection(url, {
       method: "GET",
       headers: {
         Accept: "application/json",
