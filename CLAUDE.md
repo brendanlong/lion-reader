@@ -141,7 +141,7 @@ Prefer SAX-style parsing unless the algorithm requires a DOM.
 
 - XML/RSS: `fast-xml-parser` (streaming)
 - HTML extraction: `htmlparser2` (streaming)
-- DOM required (Readability): `linkedom`
+- DOM required: `linkedom` (but article extraction/Readability is the native `@lion-reader/readability` module — dom_smoothie, built by `pnpm build:native`)
 - Parse once, pass parsed structure through code
 
 ## Sanitizing Untrusted HTML
