@@ -51,6 +51,14 @@ pub trait SaxHandler {
 /// Pump quick-xml events through a [`SaxHandler`]. `lowercase_attr_names`
 /// mirrors htmlparser2's `lowerCaseAttributeNames` (true for RSS/Atom, false
 /// for OPML, which matches `xmlUrl`/`xmlurl` case-sensitively).
+///
+/// End-tag dispatch reproduces htmlparser2's forgiving stack semantics
+/// exactly: an end tag closes every element down to (and including) its
+/// nearest match on the open-element stack, an end tag with **no** open match
+/// is ignored entirely (no callback, so the handler's text buffer keeps
+/// accumulating), and end-of-input implicitly closes everything still open —
+/// which is what lets a truncated feed keep its last partially-written
+/// entry, as the old parsers did.
 pub fn run_sax<H: SaxHandler>(
     content: &str,
     lowercase_attr_names: bool,
@@ -68,6 +76,14 @@ pub fn run_sax<H: SaxHandler>(
     config.check_comments = false;
     // Self-closing tags fire open+close, as htmlparser2 does in xmlMode.
     config.expand_empty_elements = true;
+
+    // Open-element stack (top = end); see the dispatch rules above.
+    let mut stack: Vec<String> = Vec::new();
+    let mut close_open_elements = |stack: &mut Vec<String>, handler: &mut H| {
+        while let Some(open) = stack.pop() {
+            handler.on_close(&open);
+        }
+    };
 
     loop {
         match reader.read_event() {
@@ -87,10 +103,18 @@ pub fn run_sax<H: SaxHandler>(
                     attrs.push((key, value));
                 }
                 handler.on_open(&name, &Attrs(attrs));
+                stack.push(name);
             }
             Ok(Event::End(e)) => {
                 let name = String::from_utf8_lossy(e.name().as_ref()).to_ascii_lowercase();
-                handler.on_close(&name);
+                if let Some(pos) = stack.iter().rposition(|open| *open == name) {
+                    while stack.len() > pos {
+                        // Unwrap can't fail: len > pos ≥ 0.
+                        let open = stack.pop().unwrap();
+                        handler.on_close(&open);
+                    }
+                }
+                // No open match: ignored, exactly like htmlparser2.
             }
             // Entity/character references are separate events; text between
             // them arrives literal, so no unescape pass is needed here.
@@ -110,9 +134,23 @@ pub fn run_sax<H: SaxHandler>(
                 let name = String::from_utf8_lossy(r.as_ref()).into_owned();
                 handler.on_text(&resolve_entity_ref(&name));
             }
-            Ok(Event::Eof) => return Ok(()),
+            Ok(Event::Eof) => {
+                close_open_elements(&mut stack, handler);
+                return Ok(());
+            }
             // Declarations, processing instructions, comments, doctypes.
             Ok(_) => {}
+            // Every quick_xml SyntaxError means "input ended inside a
+            // construct" (unclosed comment/CDATA/DOCTYPE/PI/tag — see its
+            // variant docs). htmlparser2 never errored there: the unclosed
+            // construct swallowed the rest of the input and the parse ended
+            // with whatever had been captured, so treat it as end-of-input.
+            // Mid-document well-formedness errors still propagate; callers
+            // treat them as an unparseable feed.
+            Err(quick_xml::Error::Syntax(_)) => {
+                close_open_elements(&mut stack, handler);
+                return Ok(());
+            }
             Err(e) => return Err(e.to_string()),
         }
     }
