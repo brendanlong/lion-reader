@@ -62,7 +62,9 @@ Entry bodies, saved articles, and AI summaries are rendered with
   Do not call `fetch`/`undici` directly on a URL that a user or feed can influence.
 - The guard pins DNS to defeat rebinding, re-validates every redirect hop, blocks
   private/loopback/link-local/cloud-metadata ranges and all literal-IP encodings,
-  rejects non-http schemes, and enforces size + timeout limits.
+  rejects non-http(s) schemes via an explicit allowlist enforced on the initial URL
+  and every redirect hop (not left to the underlying fetch), and enforces size +
+  timeout limits.
 - Applies to: feed polling/discovery, WebSub hub subscribe, full-content/save
   fetches, and content-source plugins. The content-source plugins that fetch
   hardcoded public hosts (`plugins/github.ts`, `plugins/bluesky.ts`,
