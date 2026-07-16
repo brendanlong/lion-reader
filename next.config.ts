@@ -75,6 +75,37 @@ const withPWAConfig = withPWA({
   },
 });
 
+// Security response headers applied to every route (defense-in-depth). Entry
+// bodies render via `dangerouslySetInnerHTML`, so the server-side sanitizer is
+// the sole XSS gate; these headers make a future sanitizer regression a
+// non-event (CSP blocks plugins/base-tag injection) and stop the app from being
+// framed (clickjacking).
+//
+// The CSP intentionally omits `default-src`/`script-src`: locking those down
+// requires a per-request nonce/hash for the two inline <script>s in layout.tsx,
+// which the static `headers()` config can't emit. We still ship the directives
+// that are safe without a nonce. `frame-ancestors` has no X-Frame-Options
+// equivalent for allow-lists, but we send both so older browsers are covered.
+const securityHeaders: { key: string; value: string }[] = [
+  {
+    key: "Content-Security-Policy",
+    value: ["frame-ancestors 'none'", "object-src 'none'", "base-uri 'self'"].join("; "),
+  },
+  { key: "X-Frame-Options", value: "DENY" },
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  // HSTS only in production: sending it over plaintext dev/HTTP would pin
+  // localhost to HTTPS. Fly.io terminates TLS and serves everything over HTTPS.
+  ...(process.env.NODE_ENV === "production"
+    ? [
+        {
+          key: "Strict-Transport-Security",
+          value: "max-age=63072000; includeSubDomains",
+        },
+      ]
+    : []),
+];
+
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["127.0.0.1", "localhost"],
   // Disable Next.js's built-in gzip compression. Our custom server applies
@@ -88,6 +119,11 @@ const nextConfig: NextConfig = {
   // Cache static assets for 1 day to reduce unnecessary requests
   async headers() {
     return [
+      {
+        // Security headers on every response (defense-in-depth).
+        source: "/:path*",
+        headers: securityHeaders,
+      },
       {
         // Match common static assets in public/
         source: "/:path*.(ico|png|svg|jpg|jpeg|gif|webp|woff|woff2|ttf|otf|eot)",
