@@ -23,6 +23,12 @@ import * as argon2 from "argon2";
 const mockAppleUserSub = "apple-user-123.abc.def";
 const mockAppleEmail = "test@example.com";
 
+// Lets individual tests override id_token claims to exercise decodeAppleIdToken's
+// issuer/audience/expiry validation. Reset in beforeEach.
+const { idTokenClaimOverrides } = vi.hoisted(() => ({
+  idTokenClaimOverrides: {} as Record<string, unknown>,
+}));
+
 // Mock the arctic library
 vi.mock("arctic", () => {
   // Helper to create a mock JWT id_token (defined inside mock to avoid hoisting issues)
@@ -42,7 +48,8 @@ vi.mock("arctic", () => {
     validateAuthorizationCode() {
       const idToken = mockCreateIdToken({
         iss: "https://appleid.apple.com",
-        aud: "test-client-id",
+        // Must match APPLE_CLIENT_ID set in beforeAll — decodeAppleIdToken validates aud.
+        aud: "test-apple-client-id",
         exp: Math.floor(Date.now() / 1000) + 3600,
         iat: Math.floor(Date.now() / 1000),
         sub: "apple-user-123.abc.def",
@@ -51,6 +58,8 @@ vi.mock("arctic", () => {
         is_private_email: "false",
         auth_time: Math.floor(Date.now() / 1000),
         nonce_supported: true,
+        // Per-test claim overrides (bad issuer/audience/expiry).
+        ...idTokenClaimOverrides,
       });
 
       return {
@@ -104,6 +113,10 @@ OF/2NxApJCzGCEDdfSp6VQO30hyhRANCAAQRWz+jn65BtOMvdyHKcvjBeBSDZH2r
 
   // Clean up tables before each test
   beforeEach(async () => {
+    // Reset any per-test id_token claim overrides.
+    for (const key of Object.keys(idTokenClaimOverrides)) {
+      delete idTokenClaimOverrides[key];
+    }
     await db.delete(sessions);
     await db.delete(oauthAccounts);
     await db.delete(users);
@@ -350,6 +363,39 @@ OF/2NxApJCzGCEDdfSp6VQO30hyhRANCAAQRWz+jn65BtOMvdyHKcvjBeBSDZH2r
       // Verify extracted info
       expect(result.userInfo.sub).toBe(mockAppleUserSub);
       expect(result.userInfo.email).toBe(mockAppleEmail);
+    });
+
+    it("rejects an id_token with a mismatched audience", async () => {
+      idTokenClaimOverrides.aud = "some-other-clients-id";
+      await redis.setex("oauth:apple:state:bad-aud-state", 600, "valid");
+
+      const { validateAppleCallback } = await import("../../src/server/auth/oauth/apple");
+
+      await expect(validateAppleCallback("mock-auth-code", "bad-aud-state")).rejects.toThrow(
+        "audience does not match"
+      );
+    });
+
+    it("rejects an id_token with an unexpected issuer", async () => {
+      idTokenClaimOverrides.iss = "https://evil.example.com";
+      await redis.setex("oauth:apple:state:bad-iss-state", 600, "valid");
+
+      const { validateAppleCallback } = await import("../../src/server/auth/oauth/apple");
+
+      await expect(validateAppleCallback("mock-auth-code", "bad-iss-state")).rejects.toThrow(
+        "unexpected issuer"
+      );
+    });
+
+    it("rejects an expired id_token", async () => {
+      idTokenClaimOverrides.exp = Math.floor(Date.now() / 1000) - 3600;
+      await redis.setex("oauth:apple:state:expired-state", 600, "valid");
+
+      const { validateAppleCallback } = await import("../../src/server/auth/oauth/apple");
+
+      await expect(validateAppleCallback("mock-auth-code", "expired-state")).rejects.toThrow(
+        "expired"
+      );
     });
   });
 });

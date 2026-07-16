@@ -132,6 +132,7 @@ export async function GET(request: NextRequest) {
       provider: "google",
       providerAccountId: userInfo.sub,
       email: userInfo.email,
+      emailVerified: userInfo.email_verified,
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
       expiresAt: tokens.expiresAt,

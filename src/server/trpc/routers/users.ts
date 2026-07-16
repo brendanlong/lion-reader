@@ -16,7 +16,11 @@ import {
 } from "../trpc";
 import { errors } from "../errors";
 import { sessions, users, oauthAccounts } from "@/server/db/schema";
-import { revokeSession, invalidateUserSessionCaches } from "@/server/auth/session";
+import {
+  revokeSession,
+  revokeOtherUserSessions,
+  invalidateUserSessionCaches,
+} from "@/server/auth/session";
 import { clearSessionCookie } from "@/server/auth/session-cookie";
 import { encryptApiKey, isEncryptionConfigured } from "@/lib/encryption";
 import { deleteUser } from "@/server/services/users";
@@ -220,6 +224,7 @@ export const usersRouter = createTRPCRouter({
     .output(z.object({ success: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
+      const currentSessionId = ctx.session.session.id;
       const { currentPassword, newPassword } = input;
 
       // Get the user's current password hash
@@ -250,6 +255,10 @@ export const usersRouter = createTRPCRouter({
           updatedAt: new Date(),
         })
         .where(eq(users.id, userId));
+
+      // Revoke every other session so a stolen/lingering credential can't survive
+      // a password change (common reason for changing it). Keep the current one.
+      await revokeOtherUserSessions(userId, currentSessionId);
 
       return { success: true };
     }),

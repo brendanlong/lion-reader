@@ -89,6 +89,7 @@ export async function POST(request: NextRequest) {
       provider: "apple",
       providerAccountId: userInfo.sub,
       email,
+      emailVerified: userInfo.emailVerified === true,
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
       expiresAt: tokens.expiresAt,

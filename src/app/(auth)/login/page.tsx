@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
 import { OAuthButtons } from "@/components/auth/OAuthButtons";
 import { AuthFooter } from "@/components/auth/AuthFooter";
+import { safeRedirectPath } from "@/lib/safe-redirect";
 import {
   subscribeToOAuthCompletion,
   checkOAuthOnVisibilityChange,
@@ -96,8 +97,9 @@ function LoginForm() {
       // The server set the httpOnly session cookie on the login response;
       // nothing to persist client-side.
 
-      // Get the redirect URL from query params or default to /all
-      const redirectTo = searchParams.get("redirect") ?? "/all";
+      // Get the redirect URL from query params or default to /all.
+      // Sanitize to a same-origin path to prevent an open redirect.
+      const redirectTo = safeRedirectPath(searchParams.get("redirect"));
       router.push(redirectTo);
       router.refresh();
     },
