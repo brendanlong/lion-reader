@@ -1,6 +1,21 @@
 packages:
   - .
 
+# Supply-chain: don't install a package version until it has been on the registry
+# for this many minutes (10080 = 7 days), so a compromised release has time to be
+# caught and yanked before it reaches us. Codified here (rather than left to each
+# machine's global pnpm config) so every contributor and CI resolves identically.
+# A frozen-lockfile install skips resolution, so this only gates adding/updating deps.
+minimumReleaseAge: 10080
+
+# Exempt high-churn browser-data packages from the cooldown. They publish multiple
+# times a week (caniuse data), so a fresh release routinely lands inside the 7-day
+# window and blocks otherwise-unrelated `pnpm add`/update runs. They're ubiquitous,
+# low-risk data packages, so the cooldown buys little here.
+minimumReleaseAgeExclude:
+  - browserslist
+  - caniuse-lite
+
 ignoredBuiltDependencies:
   - sharp
   - unrs-resolver
