@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   detectSwipeDirection,
+  getScreenX,
   getViewportEdges,
   isEdgeGestureSwipe,
   isSwipeNavigationAllowed,
@@ -54,6 +55,47 @@ describe("isEdgeGestureSwipe", () => {
   it("never blocks when the viewport width is unknown", () => {
     expect(isEdgeGestureSwipe("right", 0, 0)).toBe(false);
     expect(isEdgeGestureSwipe("left", 0, 0)).toBe(false);
+  });
+});
+
+describe("getScreenX", () => {
+  const originalVisualViewport = Object.getOwnPropertyDescriptor(window, "visualViewport");
+
+  function setVisualViewport(vv: Partial<VisualViewport> | null) {
+    Object.defineProperty(window, "visualViewport", {
+      configurable: true,
+      value: vv,
+    });
+  }
+
+  afterEach(() => {
+    if (originalVisualViewport) {
+      Object.defineProperty(window, "visualViewport", originalVisualViewport);
+    }
+  });
+
+  it("returns clientX unchanged when the visualViewport API is unavailable", () => {
+    setVisualViewport(null);
+    expect(getScreenX(100)).toBe(100);
+  });
+
+  it("returns clientX unchanged when not zoomed", () => {
+    setVisualViewport({ offsetLeft: 0, scale: 1 });
+    expect(getScreenX(100)).toBe(100);
+  });
+
+  it("magnifies layout distance by the zoom scale when panned to the left edge", () => {
+    // Zoomed 2x, panned fully left: 10 layout px from the edge spans 20
+    // physical px on screen.
+    setVisualViewport({ offsetLeft: 0, scale: 2 });
+    expect(getScreenX(10)).toBe(20);
+  });
+
+  it("subtracts the pan offset when zoomed and panned into the page", () => {
+    // Zoomed 2x, panned to layout x=100: a touch at clientX=110 is 10 layout
+    // px into the visual viewport = 20 physical px from the screen edge.
+    setVisualViewport({ offsetLeft: 100, scale: 2 });
+    expect(getScreenX(110)).toBe(20);
   });
 });
 
