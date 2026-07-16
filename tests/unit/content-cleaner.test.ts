@@ -131,6 +131,32 @@ describe("cleanContent", () => {
       expect(result).toBeNull();
     });
 
+    it("should reject pathologically nested HTML quickly (CPU-exhaustion guard)", () => {
+      // Extraction cost grows super-linearly with DOM nesting depth, and this
+      // runs on attacker-controlled feed HTML — the native module caps depth
+      // at 512 and fails fast to the raw-content fallback. Unguarded, this
+      // input takes minutes; guarded it returns null in tens of milliseconds.
+      const bomb = "<div>".repeat(5000) + "some text content here" + "</div>".repeat(5000);
+      const start = performance.now();
+      const result = cleanContent(bomb);
+      expect(result).toBeNull();
+      expect(performance.now() - start).toBeLessThan(5000);
+    });
+
+    it("should still extract from deeply (but not pathologically) nested pages", () => {
+      const deep =
+        "<div>".repeat(400) +
+        "<article><h1>Deep Title</h1>" +
+        "<p>Real content paragraph with plenty of words for the extraction algorithm to keep.</p>".repeat(
+          10
+        ) +
+        "</article>" +
+        "</div>".repeat(400);
+      const result = cleanContent(deep);
+      expect(result).not.toBeNull();
+      expect(result!.textContent).toContain("Real content paragraph");
+    });
+
     it("should handle malformed HTML gracefully", () => {
       const html = `
         <article>

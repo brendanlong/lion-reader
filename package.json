@@ -13,7 +13,7 @@
     "dev:worker": "tsx watch --clear-screen=false scripts/worker.ts",
     "dev:discord-bot": "tsx watch --clear-screen=false scripts/discord-bot.ts",
     "build": "next build --webpack",
-    "build:native": "pnpm --filter @lion-reader/sanitizer build",
+    "build:native": "pnpm --filter @lion-reader/sanitizer build && pnpm --filter @lion-reader/readability build",
     "build:worker": "node scripts/build-worker.mjs",
     "build:worker-thread": "node scripts/build-worker-thread.mjs",
     "build:discord-bot": "node scripts/build-discord-bot.mjs",
@@ -60,12 +60,12 @@
     ]
   },
   "dependencies": {
+    "@lion-reader/readability": "workspace:*",
     "@lion-reader/sanitizer": "workspace:*",
     "@anthropic-ai/sdk": "^0.110.0",
     "@ducanh2912/next-pwa": "^10.2.9",
     "@mintplex-labs/piper-tts-web": "^1.0.4",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@mozilla/readability": "^0.6.0",
     "@sentry/nextjs": "^10.48.0",
     "@tanstack/react-query": "^5.101.2",
     "@trpc/client": "^11.10.0",
