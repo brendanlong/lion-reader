@@ -22,8 +22,7 @@ import { entries, feeds, userEntries, subscriptions, visibleEntries } from "@/se
 import { parseTimestamptzOrNull } from "@/server/db/temporal";
 import { isValidUuid } from "@/lib/uuidv7";
 import { ENTRY_SEARCH_ENABLED } from "@/lib/feature-flags";
-import { SANITIZER_VERSION } from "@/server/html/sanitize";
-import { sanitizeEntryHtmlInWorker } from "@/server/worker-thread/pool";
+import { SANITIZER_VERSION, sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
 import { logger } from "@/lib/logger";
 import { errors } from "@/server/trpc/errors";
 import { publishMarkAllRead } from "@/server/redis/pubsub";
@@ -460,7 +459,7 @@ export async function resolveSanitizedFamily(
   const resolved = await sanitizeFamilyFromRaw(
     family,
     { original: raw?.original ?? null, cleaned: raw?.cleaned ?? null },
-    sanitizeEntryHtmlInWorker
+    sanitizeEntryHtmlAsync
   );
 
   // Persist the healed columns (fire-and-forget; a failed backfill must not fail

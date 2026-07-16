@@ -231,6 +231,39 @@ describe("OPML Import", () => {
     });
   });
 
+  describe("imports.preview", () => {
+    it("parses OPML server-side and returns the feed list without importing", async () => {
+      const userId = await createTestUser();
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const result = await caller.imports.preview({ opml: generateOpml(3) });
+
+      expect(result.feeds).toHaveLength(3);
+      expect(result.feeds[0]).toMatchObject({
+        title: "Feed 1",
+        xmlUrl: "https://example1.com/feed.xml",
+        htmlUrl: "https://example1.com",
+      });
+
+      // Preview must not create an import record or subscriptions
+      const imports = await db.select().from(opmlImports);
+      expect(imports).toHaveLength(0);
+      const subs = await db.select().from(subscriptions);
+      expect(subs).toHaveLength(0);
+    });
+
+    it("rejects invalid OPML with a validation error", async () => {
+      const userId = await createTestUser();
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      await expect(
+        caller.imports.preview({ opml: "<rss><channel></channel></rss>" })
+      ).rejects.toThrow("Failed to parse OPML");
+    });
+  });
+
   describe("imports.get", () => {
     it("retrieves import status", async () => {
       const userId = await createTestUser();

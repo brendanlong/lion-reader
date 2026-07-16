@@ -1,10 +1,19 @@
 /**
- * OPML parser using SAX-style parsing.
- * Parses OPML files from a string, returning feeds synchronously.
+ * OPML parser.
+ *
+ * The SAX state machine is the native `@lion-reader/feed-parser` module
+ * (`native/feed-parser/core/src/opml.rs`, a direct port of the old
+ * htmlparser2 parser that used to live here). Structural validation and the
+ * error type stay in TypeScript so the messages don't change.
  */
 
-import { Parser } from "htmlparser2";
-import type { OpmlFeed, OpmlParseResult } from "./types";
+import {
+  parseOpml as nativeParseOpml,
+  parseOpmlAsync as nativeParseOpmlAsync,
+} from "@lion-reader/feed-parser";
+import type { RawOpmlResult } from "@lion-reader/feed-parser";
+import type { OpmlParseResult } from "./types";
+import { PARSE_INLINE_MAX_CHARS } from "./native-result";
 
 /**
  * Error thrown when OPML parsing fails.
@@ -16,113 +25,58 @@ export class OpmlParseError extends Error {
   }
 }
 
+function toOpmlParseResult(raw: RawOpmlResult): OpmlParseResult {
+  if (!raw.hasOpml) {
+    throw new OpmlParseError("Invalid OPML: missing opml element");
+  }
+  if (!raw.hasBody) {
+    throw new OpmlParseError("Invalid OPML: missing body element");
+  }
+  return {
+    feeds: raw.feeds.map((feed) => ({
+      xmlUrl: feed.xmlUrl,
+      title: feed.title,
+      htmlUrl: feed.htmlUrl,
+      category: feed.category,
+    })),
+  };
+}
+
+/** Wrap XML-level parse failures so callers always see an OpmlParseError. */
+function toOpmlError(error: unknown): OpmlParseError {
+  return error instanceof OpmlParseError
+    ? error
+    : new OpmlParseError(`Invalid OPML: ${error instanceof Error ? error.message : String(error)}`);
+}
+
 /**
  * Parses an OPML file from a string.
  *
  * @param content - The OPML XML content as a string
  * @returns Parsed OPML feeds
+ * @throws OpmlParseError if the content is not valid OPML
  */
 export function parseOpml(content: string): OpmlParseResult {
-  const categoryStack: string[] = [];
-  let hasOpml = false;
-  let hasBody = false;
-  let inBody = false;
-  let outlineDepth = 0;
-
-  const feeds: OpmlFeed[] = [];
-  let parseError: Error | null = null;
-
-  const parser = new Parser(
-    {
-      onopentag(name, attribs) {
-        const tagName = name.toLowerCase();
-
-        if (tagName === "opml") {
-          hasOpml = true;
-        }
-
-        if (tagName === "body") {
-          hasBody = true;
-          inBody = true;
-        }
-
-        if (tagName === "outline" && inBody) {
-          outlineDepth++;
-
-          const xmlUrl = attribs.xmlurl || attribs.xmlUrl;
-          const text = attribs.text || attribs.title;
-          const htmlUrl = attribs.htmlurl || attribs.htmlUrl;
-          const type = attribs.type?.toLowerCase();
-          const categoryAttr = attribs.category;
-
-          if (xmlUrl) {
-            const feed: OpmlFeed = {
-              xmlUrl,
-              title: text,
-              htmlUrl: htmlUrl || undefined,
-            };
-
-            if (categoryStack.length > 0) {
-              feed.category = [...categoryStack];
-            } else if (categoryAttr) {
-              if (categoryAttr.includes("/")) {
-                feed.category = categoryAttr.split("/").map((c: string) => c.trim());
-              } else if (categoryAttr.includes(",")) {
-                feed.category = [categoryAttr.split(",")[0].trim()];
-              } else {
-                feed.category = [categoryAttr.trim()];
-              }
-            }
-
-            feeds.push(feed);
-          } else if (text && !type) {
-            categoryStack.push(text);
-          }
-        }
-      },
-
-      onclosetag(name) {
-        const tagName = name.toLowerCase();
-
-        if (tagName === "body") {
-          inBody = false;
-        }
-
-        if (tagName === "outline" && inBody) {
-          outlineDepth--;
-          while (categoryStack.length > outlineDepth) {
-            categoryStack.pop();
-          }
-        }
-      },
-
-      onerror(error) {
-        parseError = error;
-      },
-    },
-    {
-      xmlMode: true,
-      decodeEntities: true,
-      lowerCaseTags: true,
-      lowerCaseAttributeNames: false,
-    }
-  );
-
-  // Parse the content
-  parser.write(content);
-  parser.end();
-
-  if (parseError) {
-    throw parseError;
+  try {
+    return toOpmlParseResult(nativeParseOpml(content));
+  } catch (error) {
+    throw toOpmlError(error);
   }
+}
 
-  // Validate structure
-  if (!hasOpml) {
-    throw new OpmlParseError("Invalid OPML: missing opml element");
+/**
+ * Async form of `parseOpml`: the native parser runs on the libuv thread
+ * pool, so a large OPML file never blocks the event loop. Use from
+ * app-server request paths (OPML import/preview). Small inputs run
+ * synchronously (the async hop costs more than the parse).
+ */
+export async function parseOpmlAsync(content: string): Promise<OpmlParseResult> {
+  if (content.length <= PARSE_INLINE_MAX_CHARS) {
+    return parseOpml(content);
   }
-  if (!hasBody) {
-    throw new OpmlParseError("Invalid OPML: missing body element");
+  try {
+    return toOpmlParseResult(await nativeParseOpmlAsync(content));
+  } catch (error) {
+    throw toOpmlError(error);
   }
-
-  return { feeds };
 }

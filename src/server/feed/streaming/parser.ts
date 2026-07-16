@@ -3,8 +3,8 @@
  */
 
 import type { FeedParseResult } from "./types";
-import { parseRss } from "./rss-parser";
-import { parseAtom } from "./atom-parser";
+import { parseRss, parseRssAsync } from "./rss-parser";
+import { parseAtom, parseAtomAsync } from "./atom-parser";
 import { parseJson } from "./json-parser";
 
 export type FeedType = "rss" | "atom" | "json" | "unknown";
@@ -52,6 +52,26 @@ export function parseFeed(content: string): FeedParseResult {
       return parseRss(content);
     case "atom":
       return parseAtom(content);
+    case "json":
+      return parseJson(content);
+    case "unknown":
+      throw new UnknownFeedFormatError();
+  }
+}
+
+/**
+ * Async form of `parseFeed`: RSS/Atom parsing runs on the libuv thread pool
+ * (via the native parser) so large feeds never block the event loop. JSON
+ * Feed stays synchronous — `JSON.parse` is already native-fast.
+ */
+export async function parseFeedAsync(content: string): Promise<FeedParseResult> {
+  const format = detectFeedType(content);
+
+  switch (format) {
+    case "rss":
+      return parseRssAsync(content);
+    case "atom":
+      return parseAtomAsync(content);
     case "json":
       return parseJson(content);
     case "unknown":

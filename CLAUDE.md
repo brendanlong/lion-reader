@@ -139,7 +139,8 @@ Always use our custom user agent (`USER_AGENT`/`buildUserAgent` from `@/server/h
 
 Prefer SAX-style parsing unless the algorithm requires a DOM.
 
-- XML/RSS: `fast-xml-parser` (streaming)
+- Feed parsing (RSS/Atom/OPML): the native `@lion-reader/feed-parser` module (`native/feed-parser/`, quick-xml SAX, built by `pnpm build:native`) behind thin TS wrappers in `src/server/feed/streaming/` — date parsing and JSON Feed stay in JS. Request paths use the `*Async` forms (libuv thread pool); background jobs use the sync forms.
+- XML generation (OPML export): `fast-xml-parser`
 - HTML extraction: `htmlparser2` (streaming)
 - DOM required: `linkedom` (but article extraction/Readability is the native `@lion-reader/readability` module — dom_smoothie, built by `pnpm build:native`)
 - Parse once, pass parsed structure through code

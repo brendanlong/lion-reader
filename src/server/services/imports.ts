@@ -9,7 +9,7 @@
 
 import type { db as dbType } from "@/server/db";
 import { opmlImports, type OpmlImportFeedData } from "@/server/db/schema";
-import { parseOpml } from "@/server/feed/opml";
+import { parseOpmlAsync } from "@/server/feed/opml";
 import { createJob } from "@/server/jobs/queue";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { logger } from "@/lib/logger";
@@ -31,7 +31,7 @@ export interface ImportOpmlResult {
  * an `opml_imports` row, and queues a `process_opml_import` background job.
  *
  * Returns immediately — the feeds are subscribed asynchronously by the worker.
- * Throws `OpmlParseError` (from {@link parseOpml}) if the content is not valid
+ * Throws `OpmlParseError` (from {@link parseOpmlAsync}) if the content is not valid
  * OPML; callers translate that into their own error format.
  */
 export async function importOpml(
@@ -40,7 +40,9 @@ export async function importOpml(
   opml: string
 ): Promise<ImportOpmlResult> {
   // Step 1: Parse the OPML content (throws OpmlParseError on malformed input).
-  const opmlFeeds = parseOpml(opml);
+  // Async: this runs on the app-server request path (tRPC / Google Reader
+  // import), so the XML parse happens on the libuv thread pool.
+  const opmlFeeds = await parseOpmlAsync(opml);
 
   const importId = generateUuidv7();
   const now = new Date();

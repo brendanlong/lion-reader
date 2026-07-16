@@ -13,13 +13,10 @@
  * still *strictly older* than ours and its raw content is unchanged (so a row a
  * newer release already wrote is never downgraded).
  *
- * Before doing anything it probes the worker-thread pool's compiled-in
- * `SANITIZER_VERSION` and refuses to run if it doesn't match the main process
- * (`assertWorkerBundleCurrent`): a stale `dist/worker-thread.js` would sanitize
- * large bodies with out-of-date rules while stamping rows current — silently
- * locking in mis-sanitized content — so we fail loudly instead. This makes it
- * safe to run in production mode; rebuild the bundle with
- * `pnpm build:worker-thread` if the preflight complains.
+ * Sanitization is the native `@lion-reader/sanitizer` module: the main
+ * process and every thread load the same `.node` file and `SANITIZER_VERSION`
+ * is read from it at runtime, so there is no stale-bundle hazard to preflight
+ * (the old piscina worker bundle needed a version probe; it's gone).
  *
  * ## Architecture: an overlapped producer/consumer pipeline with backpressure
  *
@@ -31,11 +28,11 @@
  *   - A single **producer** walks the stale rows by keyset over
  *     `(stalenessKey, id)` in chunks and pushes each row into a bounded queue.
  *   - `concurrency` **consumers** each pull one row at a time and sanitize its
- *     stale families in the piscina worker pool, then persist under the CAS guard.
+ *     stale families on the libuv thread pool, then persist under the CAS guard.
  *
  * The queue is **bounded** (capacity `chunkSize * prefetchChunks`): when it's
  * full the producer's `push` awaits, so we never fetch rows faster than the
- * workers drain them (no unbounded memory growth, no giant piscina backlog). When
+ * workers drain them (no unbounded memory growth, no giant thread-pool backlog). When
  * it drains below capacity the producer wakes and fetches the next chunk *while
  * the consumers keep working* — so DB fetches overlap CPU sanitization instead of
  * alternating with it. Pulling one row at a time (rather than one chunk at a time)
@@ -71,24 +68,20 @@
  *   --prefetch N       / RESANITIZE_PREFETCH_CHUNKS queue depth in chunks (default 2)
  *   --limit N          / RESANITIZE_LIMIT           stop after ~N entries (default: all)
  *
- * The worker-thread pool size defaults to `concurrency` (override with
- * WORKER_THREAD_POOL_SIZE) so all in-flight sanitizations can run in parallel.
+ * The libuv thread pool size defaults to `concurrency` (override with
+ * UV_THREADPOOL_SIZE) so all in-flight sanitizations can run in parallel.
  * Set PG_POOL_MAX high enough to cover `concurrency` persist connections plus the
  * producer's fetches (default pool is 20).
  */
 
 import { db, pool } from "../src/server/db";
-import { SANITIZER_VERSION } from "../src/server/html/sanitize";
+import { SANITIZER_VERSION, sanitizeEntryHtmlAsync } from "../src/server/html/sanitize";
 import {
   isSanitizedFamilyStale,
   persistResanitizedFamily,
   sanitizeFamilyFromRaw,
   selectStaleEntriesForResanitize,
 } from "../src/server/services/resanitize";
-import {
-  getWorkerSanitizerVersion,
-  sanitizeEntryHtmlInWorker,
-} from "../src/server/worker-thread/pool";
 import { availableParallelism } from "os";
 
 // ---------------------------------------------------------------------------
@@ -123,11 +116,12 @@ const CONCURRENCY = readIntOption(
 const PREFETCH_CHUNKS = readIntOption("--prefetch", "RESANITIZE_PREFETCH_CHUNKS", 2);
 const LIMIT = readIntOption("--limit", "RESANITIZE_LIMIT", Number.MAX_SAFE_INTEGER);
 
-// Default the sanitize worker pool to `concurrency` threads so every in-flight
-// sanitization can actually run in parallel (the pool otherwise caps at
-// min(4, cores/2)). Set before the first pool.run() so lazy init picks it up.
-if (!process.env.WORKER_THREAD_POOL_SIZE) {
-  process.env.WORKER_THREAD_POOL_SIZE = String(CONCURRENCY);
+// Default the libuv thread pool to `concurrency` threads so every in-flight
+// sanitization can actually run in parallel (libuv otherwise defaults to 4).
+// libuv reads this at pool creation — the first async native call — so setting
+// it here, before any sanitize runs, takes effect.
+if (!process.env.UV_THREADPOOL_SIZE) {
+  process.env.UV_THREADPOOL_SIZE = String(CONCURRENCY);
 }
 
 // ---------------------------------------------------------------------------
@@ -194,10 +188,10 @@ function fetchChunk(cursor: Cursor | null, limit: number): Promise<StaleRow[]> {
 type RowOutcome = { content: boolean; fullContent: boolean; failed: boolean };
 
 /**
- * Re-sanitize one row's stale families in the worker pool and persist under the
- * CAS guard. A family is healed only when it has raw content and its stored
- * version is behind (`isSanitizedFamilyStale`), matching the staleness key.
- * Offloads the sanitize to the piscina pool (`sanitizeEntryHtmlInWorker`) so
+ * Re-sanitize one row's stale families on the libuv thread pool and persist
+ * under the CAS guard. A family is healed only when it has raw content and its
+ * stored version is behind (`isSanitizedFamilyStale`), matching the staleness
+ * key. Offloads the sanitize to the thread pool (`sanitizeEntryHtmlAsync`) so
  * the main thread stays free to keep fetching. Never throws — a pathological
  * body is logged and counted, so one poison row can't wedge the run.
  */
@@ -211,7 +205,7 @@ async function resanitizeRow(row: StaleRow): Promise<RowOutcome> {
       const sanitized = await sanitizeFamilyFromRaw(
         "content",
         { original: row.contentOriginal, cleaned: row.contentCleaned },
-        sanitizeEntryHtmlInWorker
+        sanitizeEntryHtmlAsync
       );
       content = await persistResanitizedFamily(db, row.id, "content", sanitized, row.contentHash);
     }
@@ -225,7 +219,7 @@ async function resanitizeRow(row: StaleRow): Promise<RowOutcome> {
       const sanitized = await sanitizeFamilyFromRaw(
         "fullContent",
         { original: row.fullContentOriginal, cleaned: row.fullContentCleaned },
-        sanitizeEntryHtmlInWorker
+        sanitizeEntryHtmlAsync
       );
       fullContent = await persistResanitizedFamily(
         db,
@@ -246,56 +240,14 @@ async function resanitizeRow(row: StaleRow): Promise<RowOutcome> {
 }
 
 // ---------------------------------------------------------------------------
-// Preflight: refuse to run against a stale worker bundle
-// ---------------------------------------------------------------------------
-
-/**
- * The worker-thread bundle embeds a snapshot of the sanitizer rules at build
- * time. If it's stale, large bodies (which offload to the pool) would be
- * sanitized with out-of-date rules while every row is stamped with the current
- * `SANITIZER_VERSION` — silently locking in mis-sanitized content that the
- * version-gated self-heal will never revisit. That's especially dangerous for a
- * security-tightening bump, the exact case this tool exists to roll out fast. So
- * we probe the worker's compiled-in version up front and refuse to run unless it
- * matches, rather than corrupt the corpus. (Running from source with NODE_ENV
- * unset uses the src worker via tsx and always matches; the risk is a built
- * `dist/worker-thread.js` left stale after a sanitizer change — rebuild it with
- * `pnpm build:worker-thread`.)
- */
-async function assertWorkerBundleCurrent(): Promise<void> {
-  let workerVersion: number;
-  try {
-    workerVersion = await getWorkerSanitizerVersion();
-  } catch (error) {
-    throw new Error(
-      `Could not verify the worker-thread sanitizer version ` +
-        `(${error instanceof Error ? error.message : String(error)}). The worker bundle ` +
-        `(dist/worker-thread.js) is likely stale or incompatible — rebuild it with ` +
-        `'pnpm build:worker-thread' (or run from source with NODE_ENV unset) and retry.`
-    );
-  }
-  if (workerVersion !== SANITIZER_VERSION) {
-    throw new Error(
-      `Worker sanitizer version mismatch: the main process is at v${SANITIZER_VERSION} but ` +
-        `the worker bundle sanitizes at v${workerVersion}. Running would stamp rows as ` +
-        `v${SANITIZER_VERSION} while sanitizing large bodies with v${workerVersion} rules. ` +
-        `Rebuild the worker with 'pnpm build:worker-thread' (or run from source with ` +
-        `NODE_ENV unset) and retry.`
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Driver
 // ---------------------------------------------------------------------------
 
 async function main(): Promise<void> {
-  await assertWorkerBundleCurrent();
-
   console.log(
     `[resanitize] starting: sanitizer v${SANITIZER_VERSION}, chunkSize=${CHUNK_SIZE}, ` +
       `concurrency=${CONCURRENCY}, prefetch=${PREFETCH_CHUNKS} chunks, ` +
-      `poolThreads=${process.env.WORKER_THREAD_POOL_SIZE}` +
+      `poolThreads=${process.env.UV_THREADPOOL_SIZE}` +
       (LIMIT === Number.MAX_SAFE_INTEGER ? "" : `, limit=${LIMIT}`)
   );
 
@@ -330,7 +282,7 @@ async function main(): Promise<void> {
   let nextProgressAt = PROGRESS_EVERY;
 
   // Consumers: pull one row at a time and process it. Sized to CONCURRENCY so
-  // exactly that many entries are in flight (bounding piscina's backlog too).
+  // exactly that many entries are in flight (bounding the libuv backlog too).
   const consumers = Array.from({ length: CONCURRENCY }, () =>
     (async () => {
       for (;;) {
