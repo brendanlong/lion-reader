@@ -25,15 +25,13 @@ export function Button({
   ...props
 }: ButtonProps) {
   const baseStyles =
-    "inline-flex items-center justify-center rounded-md font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 ring-offset-background disabled:cursor-not-allowed disabled:opacity-50";
+    "inline-flex items-center justify-center rounded-md font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50";
 
   const variantStyles = {
     primary: "btn-primary",
-    secondary:
-      "border border-edge-input bg-surface text-body hover:bg-surface-muted focus:ring-focus",
-    ghost: "text-body hover:bg-surface-muted focus:ring-focus",
-    danger:
-      "bg-danger-solid text-danger-solid-foreground hover:bg-danger-solid-hover focus:ring-danger",
+    secondary: "border border-edge-input bg-surface text-body hover:bg-surface-muted",
+    ghost: "text-body hover:bg-surface-muted",
+    danger: "bg-danger-solid text-danger-solid-foreground hover:bg-danger-solid-hover",
   };
 
   // Ensure minimum 44px height for touch targets on mobile (WCAG touch target guidelines)

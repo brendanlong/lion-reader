@@ -32,7 +32,7 @@ export function MarkAllReadButton({
       <button
         type="button"
         onClick={() => setShowDialog(true)}
-        className="text-muted hover:bg-surface-muted focus:ring-focus hover:text-body inline-flex items-center justify-center rounded-md p-2 transition-colors focus:ring-2 focus:ring-offset-2 focus:outline-none"
+        className="text-muted hover:bg-surface-muted hover:text-body inline-flex items-center justify-center rounded-md p-2 transition-colors"
         title="Mark all as read"
         aria-label="Mark all as read"
       >

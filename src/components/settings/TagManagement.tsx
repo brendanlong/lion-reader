@@ -329,7 +329,7 @@ function TagItem({ tag, onSuccess, onError }: TagItemProps) {
             type="text"
             value={editingValues.name}
             onChange={(e) => setEditingValues({ ...editingValues, name: e.target.value })}
-            className="ui-text-sm bg-surface text-body border-edge-input focus:border-focus focus:ring-focus flex-1 rounded-md border px-3 py-1.5 focus:ring-2 focus:ring-offset-2 focus:outline-none"
+            className="ui-text-sm bg-surface text-body border-edge-input flex-1 rounded-md border px-3 py-1.5"
             disabled={updateMutation.isPending}
             autoFocus
           />
