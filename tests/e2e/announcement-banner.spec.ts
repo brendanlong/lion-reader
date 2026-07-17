@@ -3,7 +3,7 @@
  *
  * Verifies the full pipeline for the `announcement_changed` broadcast:
  * Redis (global site-status channel) → SSE endpoint → EventSource →
- * handleSyncEvent → announcement store → root-layout banner — and that it
+ * handleSyncEvent → announcement store → SPA-layout banner — and that it
  * updates the open tab live without any entries/tags/subscriptions refetch.
  */
 
