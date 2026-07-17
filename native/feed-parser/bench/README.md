@@ -45,3 +45,8 @@ commit after it. Verdict:
   (`copied` out-param never set — the V8 sandbox is off in official builds),
   checksums were stable across forced GC, and memory was reclaimed after the
   (deferred, next-tick) N-API finalizers ran.
+
+If this cost ever starts to matter, the viable design is external **Buffers**
+plus a native-side content-hash gate (decode only new/changed entries) —
+recorded in issue #1299. The conversion itself is at its floor; the remaining
+lever is converting less, not faster.
