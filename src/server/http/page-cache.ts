@@ -2,10 +2,12 @@
  * CDN cache policy for the public marketing/auth pages we want a CDN to absorb
  * during a traffic spike (a Hacker News launch, etc.).
  *
- * These pages are all dynamically rendered — `/demo/*` reads `searchParams` and
- * the auth pages sit under `src/app/(auth)/layout.tsx`, which reads the session
- * cookie — so Next stamps them `private, no-store` by default and a CDN caches
- * nothing. This module opts the *shareable* renders back into caching and is
+ * These pages are all dynamically rendered — `/demo/*` reads `searchParams`, the
+ * auth pages sit under `src/app/(auth)/layout.tsx`, which reads the session
+ * cookie, and even the static legal pages (`/privacy`, `/terms`) inherit the
+ * root layout's cookie read — so Next stamps them `private, no-store` by default
+ * and a CDN caches nothing. This module opts the *shareable* renders back into
+ * caching and is
  * enforced at the custom-server layer (`applyPageCacheHeaders`), because
  * `next.config.ts` `headers()` can neither reliably override Next's own
  * `Cache-Control` on a dynamic route nor vary on cookie presence.
@@ -59,8 +61,9 @@ export function cookieHeaderHasSession(cookieHeader: string | undefined): boolea
  * Cache policy for a request, or `null` for every path we don't manage (leaving
  * Next's own `Cache-Control` intact).
  *
- * - `/demo/*` has no auth redirect anywhere in its subtree, so the HTML is
- *   identical for every visitor — always cacheable, no cookie dependence.
+ * - `/demo/*`, `/privacy`, and `/terms` have no auth redirect anywhere in their
+ *   subtree and no per-visitor content, so the HTML is identical for every
+ *   visitor — always cacheable, no cookie dependence.
  * - `/login` and `/register` are rendered under the `(auth)` layout, which
  *   redirects a signed-in user to `/all` (or `/complete-signup`). The response
  *   body is therefore per-session: only the anonymous (no session cookie) render
@@ -76,7 +79,12 @@ export function pageCachePolicy(
   pathname: string,
   hasSessionCookie: boolean
 ): PageCachePolicy | null {
-  if (pathname === "/demo" || pathname.startsWith("/demo/")) {
+  if (
+    pathname === "/demo" ||
+    pathname.startsWith("/demo/") ||
+    pathname === "/privacy" ||
+    pathname === "/terms"
+  ) {
     return { cacheControl: CACHEABLE, cacheable: true };
   }
   if (pathname === "/login" || pathname === "/register") {
