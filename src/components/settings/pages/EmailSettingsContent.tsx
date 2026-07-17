@@ -430,7 +430,7 @@ function SpamPreferenceSection() {
             aria-checked={showSpam}
             onClick={handleToggle}
             disabled={preferencesQuery.isLoading || updateMutation.isPending}
-            className={`focus:ring-focus focus:ring-offset-surface relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${
+            className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out disabled:cursor-not-allowed disabled:opacity-50 ${
               showSpam ? "bg-primary-solid" : "bg-fill-muted"
             }`}
           >

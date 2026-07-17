@@ -206,7 +206,7 @@ export function NarrationSettings() {
           role="switch"
           aria-checked={settings.enabled}
           onClick={() => setSettings((prev) => ({ ...prev, enabled: !prev.enabled }))}
-          className={`focus:ring-focus focus:ring-offset-surface relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-offset-2 focus:outline-none ${
+          className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
             settings.enabled ? "bg-primary-solid" : "bg-fill-muted"
           }`}
         >
@@ -317,7 +317,7 @@ export function NarrationSettings() {
                   value={settings.voiceId || ""}
                   onChange={handleVoiceChange}
                   disabled={isLoadingVoices}
-                  className="ui-text-sm bg-surface text-body border-edge-input focus:border-focus focus:ring-focus block flex-1 rounded-md border px-3 py-2 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                  className="ui-text-sm bg-surface text-body border-edge-input block flex-1 rounded-md border px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {isLoadingVoices ? (
                     <option value="">Loading voices...</option>
@@ -439,7 +439,7 @@ export function NarrationSettings() {
                       useLlmNormalization: !prev.useLlmNormalization,
                     }))
                   }
-                  className={`focus:ring-focus focus:ring-offset-surface relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-offset-2 focus:outline-none ${
+                  className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
                     settings.useLlmNormalization ? "bg-primary-solid" : "bg-fill-muted"
                   }`}
                 >
@@ -471,7 +471,7 @@ export function NarrationSettings() {
                 onClick={() =>
                   setSettings((prev) => ({ ...prev, highlightEnabled: !prev.highlightEnabled }))
                 }
-                className={`focus:ring-focus focus:ring-offset-surface relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-offset-2 focus:outline-none ${
+                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
                   settings.highlightEnabled ? "bg-primary-solid" : "bg-fill-muted"
                 }`}
               >
@@ -499,7 +499,7 @@ export function NarrationSettings() {
                 onClick={() =>
                   setSettings((prev) => ({ ...prev, autoScrollEnabled: !prev.autoScrollEnabled }))
                 }
-                className={`focus:ring-focus focus:ring-offset-surface relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-offset-2 focus:outline-none ${
+                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
                   settings.autoScrollEnabled ? "bg-primary-solid" : "bg-fill-muted"
                 }`}
               >

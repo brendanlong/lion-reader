@@ -83,10 +83,8 @@ export function ColorPicker({ selectedColor, onSelect, onClose }: ColorPickerPro
               key={colorOption.value}
               type="button"
               onClick={() => onSelect(colorOption.value)}
-              className={`focus:ring-focus flex h-7 w-7 items-center justify-center rounded-md transition-transform hover:scale-110 focus:ring-2 focus:ring-offset-1 focus:outline-none ${
-                selectedColor === colorOption.value
-                  ? "ring-control-selected ring-2 ring-offset-1"
-                  : ""
+              className={`flex h-7 w-7 items-center justify-center rounded-md transition-transform hover:scale-110 ${
+                selectedColor === colorOption.value ? "ring-control-selected ring-2" : ""
               }`}
               title={colorOption.name}
             >

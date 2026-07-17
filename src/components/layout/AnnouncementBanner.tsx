@@ -66,7 +66,7 @@ export function AnnouncementBannerView({
           type="button"
           onClick={onDismiss}
           aria-label="Dismiss announcement"
-          className="focus:ring-focus -mr-1 shrink-0 rounded p-1 opacity-80 hover:opacity-100 focus:ring-2 focus:outline-none"
+          className="-mr-1 shrink-0 rounded p-1 opacity-80 hover:opacity-100"
         >
           <CloseIcon className="h-4 w-4" />
         </button>

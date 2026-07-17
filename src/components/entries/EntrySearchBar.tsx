@@ -74,7 +74,7 @@ export function EntrySearchBar({
         placeholder="Search entries… (press Enter)"
         aria-label="Search entries"
         autoFocus={autoFocus}
-        className="ui-text-sm bg-surface text-body placeholder:text-faint border-edge-input focus:border-focus focus:ring-focus block w-full rounded-md border py-2 pr-10 pl-9 focus:ring-2 focus:ring-offset-2 focus:outline-none [&::-webkit-search-cancel-button]:hidden"
+        className="ui-text-sm bg-surface text-body placeholder:text-faint border-edge-input block w-full rounded-md border py-2 pr-10 pl-9 [&::-webkit-search-cancel-button]:hidden"
       />
       <button
         type="button"

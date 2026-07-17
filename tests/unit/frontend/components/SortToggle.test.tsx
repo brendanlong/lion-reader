@@ -105,10 +105,12 @@ describe("SortToggle", () => {
       expect(document.activeElement).toBe(button);
     });
 
-    it("has focus ring styles", () => {
+    it("does not suppress the global focus outline (#1292)", () => {
       render(<SortToggle sortOrder="newest" onToggle={vi.fn()} />);
       const button = screen.getByRole("button");
-      expect(button).toHaveClass("focus:ring-2");
+      // Focus visibility comes from the global :focus-visible outline in
+      // globals.css; per-component focus rings are not allowed.
+      expect(button.className).not.toMatch(/focus:/);
     });
   });
 });

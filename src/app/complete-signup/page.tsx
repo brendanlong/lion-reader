@@ -78,7 +78,7 @@ export default function CompleteSignupPage() {
             type="checkbox"
             checked={acceptedTos}
             onChange={(e) => setAcceptedTos(e.target.checked)}
-            className="text-body border-edge-input focus:ring-focus mt-0.5 h-5 w-5 shrink-0 rounded dark:bg-zinc-800"
+            className="text-body border-edge-input mt-0.5 h-5 w-5 shrink-0 rounded dark:bg-zinc-800"
           />
           <span className="ui-text-sm text-body">
             I have read and agree to the{" "}
@@ -98,7 +98,7 @@ export default function CompleteSignupPage() {
             type="checkbox"
             checked={acceptedPrivacy}
             onChange={(e) => setAcceptedPrivacy(e.target.checked)}
-            className="text-body border-edge-input focus:ring-focus mt-0.5 h-5 w-5 shrink-0 rounded dark:bg-zinc-800"
+            className="text-body border-edge-input mt-0.5 h-5 w-5 shrink-0 rounded dark:bg-zinc-800"
           />
           <span className="ui-text-sm text-body">
             I have read and agree to the{" "}
@@ -118,7 +118,7 @@ export default function CompleteSignupPage() {
             type="checkbox"
             checked={confirmedNotInEu}
             onChange={(e) => setConfirmedNotInEu(e.target.checked)}
-            className="text-body border-edge-input focus:ring-focus mt-0.5 h-5 w-5 shrink-0 rounded dark:bg-zinc-800"
+            className="text-body border-edge-input mt-0.5 h-5 w-5 shrink-0 rounded dark:bg-zinc-800"
           />
           <span className="ui-text-sm text-body">
             I confirm that I am not located in the European Union

@@ -194,10 +194,12 @@ describe("Input", () => {
       expect(input).toHaveClass("rounded-md", "border", "bg-surface", "px-3", "py-2");
     });
 
-    it("applies focus ring styles", () => {
+    it("does not suppress the global focus outline (#1292)", () => {
       render(<Input />);
       const input = screen.getByRole("textbox");
-      expect(input).toHaveClass("focus:ring-2", "focus:ring-offset-2");
+      // Focus visibility comes from the global :focus-visible outline in
+      // globals.css; per-component focus rings are not allowed.
+      expect(input.className).not.toMatch(/focus:/);
     });
 
     it("fills width of container", () => {
