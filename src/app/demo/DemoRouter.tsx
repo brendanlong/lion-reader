@@ -13,8 +13,8 @@
 
 import { useMemo, useEffect, useCallback, useRef, useState, Suspense } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import Link from "next/link";
 import { ClientLink } from "@/components/ui/client-link";
+import { PageLink } from "@/components/ui/page-link";
 import { ScrollContainer } from "@/components/layout/ScrollContainerContext";
 import { Button } from "@/components/ui/button";
 import { ArrowLeftIcon, SparklesIcon } from "@/components/ui/icon-button";
@@ -294,18 +294,18 @@ function DemoRouterContent() {
                 <div className="border-edge-strong bg-surface-subtle mb-6 rounded-lg border p-6 text-center">
                   <h2 className="text-body mb-4 text-2xl font-semibold">Get Started</h2>
                   <div className="flex flex-col justify-center gap-3 sm:flex-row sm:items-center">
-                    <Link
+                    <PageLink
                       href="/register"
                       className="btn-primary ui-text-base inline-flex h-12 w-full items-center justify-center rounded-md px-6 font-medium sm:w-auto"
                     >
                       Sign Up
-                    </Link>
-                    <Link
+                    </PageLink>
+                    <PageLink
                       href="/login"
                       className="ui-text-base bg-surface text-body border-edge-input hover:bg-surface-muted inline-flex h-12 w-full items-center justify-center rounded-md border px-6 font-medium transition-colors sm:w-auto"
                     >
                       Sign in
-                    </Link>
+                    </PageLink>
                   </div>
                 </div>
               )}

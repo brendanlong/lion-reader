@@ -14,12 +14,12 @@
 "use client";
 
 import { useState, Suspense } from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
+import { PageLink } from "@/components/ui/page-link";
 import { OAuthButtons } from "@/components/auth/OAuthButtons";
 import { AuthFooter } from "@/components/auth/AuthFooter";
 import { EuRestrictionReason } from "@/components/auth/EuRestrictionNotice";
@@ -39,9 +39,11 @@ function RegisterForm() {
   // Get invite token from URL query parameter
   const inviteToken = searchParams.get("invite");
 
-  // Fetch signup configuration
-  const { data: signupConfigData, isLoading: isLoadingConfig } = trpc.auth.signupConfig.useQuery();
-  const euRestricted = signupConfigData?.euRestricted ?? false;
+  // Fetch signup configuration. The auth layout server-prefetches and hydrates
+  // this query (#1328), so it resolves as already-settled data on first render —
+  // useSuspenseQuery guarantees defined data without a client-side loading state.
+  const [signupConfigData] = trpc.auth.signupConfig.useSuspenseQuery();
+  const euRestricted = signupConfigData.euRestricted;
 
   // On EU-restricted instances, warn EU users up front that they can't sign up
   // here and point them at self-hosting.
@@ -133,19 +135,9 @@ function RegisterForm() {
   // Which providers may sign up depends on whether an invite is present:
   // with a token, the full allowlist applies; without one, only public providers.
   const effectiveProviders = inviteToken
-    ? (signupConfigData?.allowedSignupProviders ?? [])
-    : (signupConfigData?.publicSignupProviders ?? []);
+    ? signupConfigData.allowedSignupProviders
+    : signupConfigData.publicSignupProviders;
   const isEmailAllowed = effectiveProviders.includes("email");
-
-  // Show loading state while fetching config
-  if (isLoadingConfig) {
-    return (
-      <div>
-        <h2 className="ui-text-xl text-body mb-6 font-semibold">Create your account</h2>
-        <div className="text-muted text-center">Loading...</div>
-      </div>
-    );
-  }
 
   // No provider can sign up in this context (no invite present and nothing is
   // public). With a token the allowlist is never empty, so this only triggers
@@ -160,9 +152,9 @@ function RegisterForm() {
         </Alert>
         <p className="ui-text-sm text-muted mt-6 text-center">
           Already have an account?{" "}
-          <Link href="/login" className="text-body font-medium hover:underline">
+          <PageLink href="/login" className="text-body font-medium hover:underline">
             Sign in
-          </Link>
+          </PageLink>
         </p>
 
         <AuthFooter />
@@ -248,20 +240,20 @@ function RegisterForm() {
 
       <p className="ui-text-xs text-muted mt-4 text-center">
         By creating an account, you agree to our{" "}
-        <Link href="/terms" className="hover:text-body underline">
+        <PageLink href="/terms" className="hover:text-body underline">
           Terms of Service
-        </Link>{" "}
+        </PageLink>{" "}
         and{" "}
-        <Link href="/privacy" className="hover:text-body underline">
+        <PageLink href="/privacy" className="hover:text-body underline">
           Privacy Policy
-        </Link>
+        </PageLink>
       </p>
 
       <p className="ui-text-sm text-muted mt-6 text-center">
         Already have an account?{" "}
-        <Link href="/login" className="text-body font-medium hover:underline">
+        <PageLink href="/login" className="text-body font-medium hover:underline">
           Sign in
-        </Link>
+        </PageLink>
       </p>
 
       <AuthFooter />
