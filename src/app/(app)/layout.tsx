@@ -17,10 +17,14 @@
  * server prefetch and client query, preventing hydration mismatches.
  */
 
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { TRPCProvider } from "@/lib/trpc/provider";
 import { createHydrationHelpersForRequest, isAuthenticated, isConfirmed } from "@/lib/trpc/server";
 import { AuthErrorHandler } from "@/components/app/AuthErrorHandler";
+import { AnnouncementBanner } from "@/components/layout/AnnouncementBanner";
+import { ANNOUNCEMENT_DISMISSED_COOKIE } from "@/lib/site-status/announcement-cookie";
+import { getAnnouncement } from "@/server/services/site-status";
 import { AppLayoutContent } from "./AppLayoutContent";
 
 interface AppLayoutProps {
@@ -73,6 +77,16 @@ export default async function AppLayout({ children }: AppLayoutProps) {
   ]);
   const initialCursors = await trpc.sync.cursors(); // Lightweight cursor-only query
 
+  // Global announcement banner (admin-controlled, Redis-backed). Fetched and
+  // rendered here — inside the authenticated SPA — rather than in the root
+  // layout, so a temporary message is never baked into the CDN-cached public
+  // pages (demo/legal/anonymous auth). The dismissed id is read from a cookie
+  // (not localStorage) so the server can hide an already-dismissed banner and it
+  // never flashes back on reload. Live updates arrive over the SPA's SSE
+  // connection (announcement_changed → announcement store).
+  const [announcement, cookieStore] = await Promise.all([getAnnouncement(), cookies()]);
+  const dismissedId = cookieStore.get(ANNOUNCEMENT_DISMISSED_COOKIE)?.value ?? null;
+
   // children contains the page.tsx output (prefetch triggers), but AppRouter
   // handles all rendering based on pathname. We include children to ensure
   // Next.js runs the page.tsx files for prefetching.
@@ -80,6 +94,7 @@ export default async function AppLayout({ children }: AppLayoutProps) {
     <TRPCProvider>
       {/* Redirect on session death / signup-confirmation — SPA-only (see component) */}
       <AuthErrorHandler />
+      <AnnouncementBanner announcement={announcement} initialDismissedId={dismissedId} />
       <HydrateClient>
         <AppLayoutContent initialCursors={initialCursors} />
         {/* Page files run for prefetching but their output is hidden */}

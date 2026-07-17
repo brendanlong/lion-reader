@@ -48,6 +48,14 @@ describe("pageCachePolicy", () => {
     }
   });
 
+  it("makes the legal pages cacheable regardless of cookie", () => {
+    for (const path of ["/privacy", "/terms"]) {
+      // No per-visitor content and no auth redirect — shareable like /demo.
+      expect(pageCachePolicy(path, false)).toEqual({ cacheControl: CACHEABLE, cacheable: true });
+      expect(pageCachePolicy(path, true)).toEqual({ cacheControl: CACHEABLE, cacheable: true });
+    }
+  });
+
   it("caches the anonymous render of /login and /register with Vary: Cookie", () => {
     for (const path of ["/login", "/register"]) {
       expect(pageCachePolicy(path, false)).toEqual({
@@ -68,6 +76,8 @@ describe("pageCachePolicy", () => {
     // /demofoo must not be treated as under /demo
     expect(pageCachePolicy("/demofoo", false)).toBeNull();
     expect(pageCachePolicy("/login/extra", false)).toBeNull();
+    expect(pageCachePolicy("/privacyfoo", false)).toBeNull();
+    expect(pageCachePolicy("/terms/extra", false)).toBeNull();
     expect(pageCachePolicy("/all", true)).toBeNull();
     expect(pageCachePolicy("/", true)).toBeNull();
   });

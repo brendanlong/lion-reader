@@ -1,12 +1,9 @@
 import type { Metadata, Viewport } from "next";
-import { cookies, headers } from "next/headers";
+import { headers } from "next/headers";
 import { Geist, Geist_Mono, Merriweather, Literata, Inter, Source_Sans_3 } from "next/font/google";
 import { defaultOpenGraph } from "@/lib/metadata";
 import { appUrl } from "@/server/config/env";
 import { ThemeProvider } from "@/lib/theme/ThemeProvider";
-import { AnnouncementBanner } from "@/components/layout/AnnouncementBanner";
-import { ANNOUNCEMENT_DISMISSED_COOKIE } from "@/lib/site-status/announcement-cookie";
-import { getAnnouncement } from "@/server/services/site-status";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -149,20 +146,15 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // Global announcement banner (admin-controlled, Redis-backed). Fetched here so
-  // it renders on every route including the demo and logged-out surfaces. The
-  // dismissed id is read from a cookie (not localStorage) so the server can hide
-  // an already-dismissed banner and it never flashes back on reload.
-  const [announcement, cookieStore, headerStore] = await Promise.all([
-    getAnnouncement(),
-    cookies(),
-    headers(),
-  ]);
-  const dismissedId = cookieStore.get(ANNOUNCEMENT_DISMISSED_COOKIE)?.value ?? null;
   // Per-request CSP nonce, generated in src/proxy.ts (issue #1275). Every
   // inline <script> must carry it or the CSP blocks the script — that includes
   // next-themes' theme script, which gets it via ThemeProvider below. Absent
   // only if the proxy didn't run, in which case the response has no CSP either.
+  //
+  // The announcement banner is deliberately NOT rendered here: it lives in the
+  // authenticated SPA layout (src/app/(app)/layout.tsx) so a temporary message
+  // is never baked into the CDN-cached public pages (see src/server/http/page-cache.ts).
+  const headerStore = await headers();
   const nonce = headerStore.get("x-nonce") ?? undefined;
 
   return (
@@ -193,10 +185,7 @@ export default async function RootLayout({
         />
       </head>
       <body className="antialiased">
-        <ThemeProvider nonce={nonce}>
-          <AnnouncementBanner announcement={announcement} initialDismissedId={dismissedId} />
-          {children}
-        </ThemeProvider>
+        <ThemeProvider nonce={nonce}>{children}</ThemeProvider>
       </body>
     </html>
   );
