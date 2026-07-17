@@ -29,7 +29,8 @@ Corpus used for #1286/#1291 (fetch fresh; not committed):
 
 `node_api_create_external_string_latin1` (zero-copy, Node 20.4+, requires
 pure-ASCII data) was implemented behind a 16 KB threshold with dlsym runtime
-detection — see the reverted commit referenced from issue #1291. Verdict:
+detection — commit `7b7c1ece` has the full implementation, reverted by the
+commit after it. Verdict:
 
 - **Real feeds are almost never pure ASCII.** One curly quote or em-dash
   anywhere disqualifies a string; across the corpus, 0% of large-body bytes

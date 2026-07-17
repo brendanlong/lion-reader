@@ -20,11 +20,6 @@ lion-reader-feed-parser-core = { path = "core" }
 napi = { version = "2", default-features = false, features = ["napi8"] }
 napi-derive = "2"
 
-# dlsym-based runtime detection of node_api_create_external_string_latin1
-# (Node 20.4+; we build against napi8) — see src/external_string.rs.
-[target.'cfg(unix)'.dependencies]
-libc = "0.2"
-
 [build-dependencies]
 napi-build = "2"
 

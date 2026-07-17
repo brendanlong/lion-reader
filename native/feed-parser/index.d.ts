@@ -98,23 +98,3 @@ export function parseAtomAsync(content: string): Promise<RawParsedFeed>;
  * files never block the event loop.
  */
 export function parseOpmlAsync(content: string): Promise<RawOpmlResult>;
-
-export interface StringConversionStats {
-  /** Zero-copy external Latin-1 strings actually created. */
-  externalCreated: number;
-  /** External creation requested but V8 copied anyway (`copied` out-param). */
-  externalDeclinedCopied: number;
-  /** At/above the size threshold but not pure ASCII — ordinary copy. */
-  copiedNonAscii: number;
-  /** Below the size threshold — ordinary copy. */
-  copiedSmall: number;
-  /** External API unavailable (Node < 20.4) — ordinary copy. */
-  copiedNoApi: number;
-}
-
-/**
- * Process-lifetime counters for how content/summary strings crossed the
- * N-API boundary. Diagnostic only (benchmarks, GC stress tests) — see
- * `src/external_string.rs`.
- */
-export function stringConversionStats(): StringConversionStats;

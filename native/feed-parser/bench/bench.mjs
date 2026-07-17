@@ -14,7 +14,7 @@
  *     main-thread work is AsyncTask::resolve() converting Rust strings to V8
  *     strings, so this approximates the boundary conversion cost.
  */
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename } from "node:path";
 import { performance } from "node:perf_hooks";
 import { createRequire } from "node:module";
@@ -35,6 +35,7 @@ if (files.length === 0) {
   console.error("usage: node bench.mjs [--json dir] [--iters n] <feed files...>");
   process.exit(1);
 }
+if (jsonDir) mkdirSync(jsonDir, { recursive: true });
 
 /** Sorts object keys recursively so JSON output is canonical for diffing. */
 function canonicalize(value) {
