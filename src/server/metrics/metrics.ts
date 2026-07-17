@@ -262,40 +262,31 @@ const CONTENT_PROCESSING_BUCKETS = [
  * Histogram for feed parsing (RSS/Atom/JSON) duration in seconds.
  * Measures only the parse step, not the surrounding fetch or processing.
  */
-const feedParseDurationSeconds = metricsEnabled
-  ? new Histogram({
-      name: "feed_parse_duration_seconds",
-      help: "Feed parsing (RSS/Atom/JSON) duration in seconds",
-      buckets: CONTENT_PROCESSING_BUCKETS,
-      registers: [registry],
-    })
-  : null;
+const feedParseDurationSeconds = getOrCreateHistogram({
+  name: "feed_parse_duration_seconds",
+  help: "Feed parsing (RSS/Atom/JSON) duration in seconds",
+  buckets: CONTENT_PROCESSING_BUCKETS,
+});
 
 /**
  * Histogram for readability (article extraction) duration in seconds.
  * Measures only the native extraction step.
  */
-const readabilityDurationSeconds = metricsEnabled
-  ? new Histogram({
-      name: "readability_duration_seconds",
-      help: "Readability article extraction duration in seconds",
-      buckets: CONTENT_PROCESSING_BUCKETS,
-      registers: [registry],
-    })
-  : null;
+const readabilityDurationSeconds = getOrCreateHistogram({
+  name: "readability_duration_seconds",
+  help: "Readability article extraction duration in seconds",
+  buckets: CONTENT_PROCESSING_BUCKETS,
+});
 
 /**
  * Histogram for HTML sanitization duration in seconds.
  * Measures only the native sanitizer pass.
  */
-const sanitizeDurationSeconds = metricsEnabled
-  ? new Histogram({
-      name: "sanitize_duration_seconds",
-      help: "HTML sanitization duration in seconds",
-      buckets: CONTENT_PROCESSING_BUCKETS,
-      registers: [registry],
-    })
-  : null;
+const sanitizeDurationSeconds = getOrCreateHistogram({
+  name: "sanitize_duration_seconds",
+  help: "HTML sanitization duration in seconds",
+  buckets: CONTENT_PROCESSING_BUCKETS,
+});
 
 /**
  * Creates a timer for tracking feed parse duration.
