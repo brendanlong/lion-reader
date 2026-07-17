@@ -1,21 +1,6 @@
-import { execSync } from "child_process";
 import type { NextConfig } from "next";
 import withPWA from "@ducanh2912/next-pwa";
 import { withSentryConfig } from "@sentry/nextjs";
-
-// Get git commit SHA at build time
-function getGitCommitSha(): string | undefined {
-  // First check environment variable (set by CI/CD systems like Vercel, Fly.io)
-  if (process.env.GIT_COMMIT_SHA) {
-    return process.env.GIT_COMMIT_SHA;
-  }
-  // Fall back to git command
-  try {
-    return execSync("git rev-parse --short HEAD", { encoding: "utf-8" }).trim();
-  } catch {
-    return undefined;
-  }
-}
 
 // PWA configuration - wraps the Next.js config to enable service worker precaching
 const withPWAConfig = withPWA({
@@ -107,10 +92,6 @@ const nextConfig: NextConfig = {
   // zstd/brotli/gzip/deflate compression to streaming SSR responses, and
   // Fly.io's edge handles non-streaming responses.
   compress: false,
-  env: {
-    // Inject git commit SHA at build time
-    GIT_COMMIT_SHA: getGitCommitSha(),
-  },
   // Cache static assets for 1 day to reduce unnecessary requests
   async headers() {
     return [
