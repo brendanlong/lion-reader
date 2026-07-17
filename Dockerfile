@@ -69,16 +69,23 @@ WORKDIR /app
 # Copy dependencies from deps stage
 COPY --from=deps /app/node_modules ./node_modules
 
-# Copy source code
-COPY . .
+# Steps that depend ONLY on node_modules / the native-builder stage go ABOVE
+# `COPY . .` so a source-only change (the common deploy) leaves them cached and
+# jumps straight to `pnpm build`. public/onnx/ and native/*/*.node are in
+# .dockerignore, so the `COPY . .` overlay below won't clobber what we generate.
 
-# Run postinstall script (copies ONNX WASM files to public/)
+# Copy ONNX WASM files to public/ (reads node_modules only). Copy just the
+# script first so this layer busts only when the script itself changes.
+COPY scripts/copy-onnx-wasm.mjs ./scripts/copy-onnx-wasm.mjs
 RUN node scripts/copy-onnx-wasm.mjs
 
 # Compiled native modules (the runner also copies these out of this stage)
 COPY --from=native-builder /app/native/sanitizer/sanitizer.node ./native/sanitizer/sanitizer.node
 COPY --from=native-builder /app/native/readability/readability.node ./native/readability/readability.node
 COPY --from=native-builder /app/native/feed-parser/feed-parser.node ./native/feed-parser/feed-parser.node
+
+# Copy source code
+COPY . .
 
 # Set environment for build
 ENV NEXT_TELEMETRY_DISABLED=1
