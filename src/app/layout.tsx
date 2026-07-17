@@ -65,12 +65,53 @@ export const viewport: Viewport = {
 };
 
 /**
+ * Blocking script to apply the theme class (dark/light/epaper) before first paint.
+ *
+ * next-themes injects its own theme script, but only where <ThemeProvider> is
+ * mounted — inside <body>. That means <html> gets the theme class only after the
+ * whole <head> is parsed, so a browser that paints the canvas background during
+ * head parsing (Firefox notably) shows a light flash for a user who explicitly
+ * chose dark on a light-scheme OS, on every full-page navigation (the demo/auth
+ * pages use full document loads). The `@media (prefers-color-scheme)` fallback in
+ * globals.css only covers *system*-theme users, not an explicit choice. Applying
+ * the class here in <head>, before any body parsing, closes that gap; next-themes
+ * re-asserts the identical class on hydration (idempotent, no visible change).
+ *
+ * Must be kept in sync with the next-themes config in ThemeProvider.tsx
+ * (storageKey "lion-reader-theme", themes light/dark/epaper, defaultTheme
+ * "system", attribute=class, enableSystem). The e-ink "system → epaper" override
+ * is left to EInkSystemThemeOverride post-hydration, exactly as before.
+ */
+const themeScript = `
+(function() {
+  try {
+    var stored = localStorage.getItem('lion-reader-theme') || 'system';
+    var resolved = stored;
+    if (['light', 'dark', 'epaper'].indexOf(stored) < 0) {
+      resolved = 'system';
+    }
+    if (resolved === 'system') {
+      resolved = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    var el = document.documentElement;
+    el.classList.remove('light', 'dark', 'epaper');
+    el.classList.add(resolved);
+    // next-themes sets color-scheme only for light/dark; .epaper declares its own
+    // (color-scheme: light) in globals.css.
+    if (resolved === 'light' || resolved === 'dark') {
+      el.style.colorScheme = resolved;
+    }
+  } catch (e) {}
+})();
+`;
+
+/**
  * Blocking script to apply text appearance settings before first paint.
  *
  * This runs synchronously in the <head> to prevent flash of wrong text size/font.
  * Must be kept in sync with settings.ts storage key and logic.
  *
- * Note: Theme (dark/light mode) is handled by next-themes, not this script.
+ * Note: Theme (dark/light mode) is handled by next-themes plus themeScript above.
  *
  * Sets CSS custom properties for text appearance:
  * - --entry-font-family
@@ -173,6 +214,11 @@ export default async function RootLayout({
         {/* suppressHydrationWarning: browsers blank the nonce content attribute
             after parsing (nonce hiding), so hydration would see nonce="" and
             warn on every load. The scripts have executed by then either way. */}
+        <script
+          nonce={nonce}
+          suppressHydrationWarning
+          dangerouslySetInnerHTML={{ __html: themeScript }}
+        />
         <script
           nonce={nonce}
           suppressHydrationWarning
