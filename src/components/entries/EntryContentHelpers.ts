@@ -49,6 +49,55 @@ export function detectSwipeDirection(
 }
 
 /**
+ * Width (CSS px) of the strip along each screen edge reserved for the
+ * OS/browser back-forward navigation gesture (iOS edge swipe, Android gesture
+ * nav). Covers the system zones on both platforms: ~20pt on iOS, 24-32dp on
+ * Android.
+ */
+const EDGE_GESTURE_ZONE_PX = 32;
+
+/**
+ * Convert a touch's layout-viewport clientX into its physical distance (screen
+ * CSS px) from the left edge of the screen.
+ *
+ * The OS back-forward gesture zone is a fixed *physical* strip, but touch
+ * clientX is in *layout* px: when pinch-zoomed it's offset by the pan and one
+ * layout px spans `scale` screen px, so a layout-px edge zone would grow with
+ * zoom (40% of the screen per side at 5x). Falls back to clientX when the
+ * visualViewport API is unavailable (scale 1, no pan — the two are identical).
+ */
+export function getScreenX(clientX: number): number {
+  const vv = typeof window !== "undefined" ? window.visualViewport : null;
+  if (!vv) return clientX;
+  return (clientX - vv.offsetLeft) * vv.scale;
+}
+
+/**
+ * Whether a swipe is (likely) the OS/browser back-forward navigation gesture:
+ * a rightward swipe starting against the left screen edge, or a leftward swipe
+ * starting against the right edge. Some browsers (notably installed PWAs)
+ * deliver the full touch sequence for these gestures *and* perform history
+ * navigation, so also treating them as an article swipe navigates twice —
+ * opening (and auto-marking read) the adjacent article before the browser's
+ * history-back lands on the list (#1260).
+ *
+ * Both coordinates are physical screen CSS px: `startScreenX` from
+ * getScreenX(), `screenWidth` from window.innerWidth (the layout viewport
+ * width, which pinch-zoom doesn't change). Returns false when the width is
+ * unknown (<= 0) so navigation is never blocked outright.
+ */
+export function isEdgeGestureSwipe(
+  direction: "left" | "right",
+  startScreenX: number,
+  screenWidth: number
+): boolean {
+  if (screenWidth <= 0) return false;
+  return direction === "right"
+    ? startScreenX <= EDGE_GESTURE_ZONE_PX
+    : startScreenX >= screenWidth - EDGE_GESTURE_ZONE_PX;
+}
+
+/**
  * Tolerance (CSS px) for treating the visual viewport as flush against a layout
  * viewport edge; absorbs sub-pixel rounding from pinch-zoom.
  */
