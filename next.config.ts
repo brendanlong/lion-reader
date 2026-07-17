@@ -44,18 +44,18 @@ const withPWAConfig = withPWA({
           },
         },
       },
-      // Cache images with stale-while-revalidate
-      {
-        urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp|ico)$/i,
-        handler: "StaleWhileRevalidate",
-        options: {
-          cacheName: "static-images",
-          expiration: {
-            maxEntries: 100,
-            maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
-          },
-        },
-      },
+      // NOTE: images are deliberately NOT runtime-cached by the service worker.
+      // Once a SW owns an image response, the browser can no longer serve that
+      // image from its fast in-memory image cache — it must run the fetch
+      // handler and read the bytes from Cache Storage asynchronously on every
+      // render. Paging between entries mounts fresh <img> nodes, so that async
+      // round-trip shows up as a flash of alt text before the (already "cached")
+      // image paints, even on a 0ms cache hit. StaleWhileRevalidate made it
+      // worse by also firing a redundant background revalidation each time.
+      // Letting image requests fall through to the browser's native HTTP cache
+      // (our content images are CDN-served with long cache-control headers)
+      // restores instant, flash-free painting — the way a normal site behaves.
+      // See https://github.com/brendanlong/lion-reader (image-flash fix).
     ],
   },
 });
