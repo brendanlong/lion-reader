@@ -3,6 +3,7 @@ import {
   getAvailableProviders,
   isChatModelId,
   isProviderAvailable,
+  supportsReasoningEffort,
 } from "@/server/services/ai-providers";
 import { getNarrationModelRef } from "@/server/services/narration";
 import { getSummarizationModelId } from "@/server/services/summarization";
@@ -133,6 +134,17 @@ describe("getNarrationModelRef", () => {
     expect(getNarrationModelRef("some-bare-model")).toEqual(
       getNarrationModelRef(DEFAULT_NARRATION_MODEL)
     );
+  });
+});
+
+describe("supportsReasoningEffort", () => {
+  it("allows reasoning effort only for the gpt-oss family", () => {
+    expect(supportsReasoningEffort("openai/gpt-oss-20b")).toBe(true);
+    expect(supportsReasoningEffort("gpt-oss-120b")).toBe(true);
+    // Groq/Cerebras 400 on reasoning_effort for non-reasoning models
+    expect(supportsReasoningEffort("meta-llama/llama-4-scout-17b-16e-instruct")).toBe(false);
+    expect(supportsReasoningEffort("llama-3.3-70b-versatile")).toBe(false);
+    expect(supportsReasoningEffort("qwen-3-32b")).toBe(false);
   });
 });
 
