@@ -279,11 +279,11 @@ export default function PrivacyPolicyPage() {
             </p>
           </LegalSubsection>
 
-          <LegalSubsection title="Object Storage (AWS S3 / Fly.io Tigris)">
+          <LegalSubsection title="Object Storage (Fly.io Tigris)">
             <LegalParagraph tight>
               Images embedded in some articles (for example, images from imported Google Docs) are
-              stored on an S3-compatible object storage service (AWS S3 or Fly.io Tigris). These
-              stored images are served from that provider when you view the article.
+              stored on Fly.io&apos;s Tigris object storage. These stored images are served from
+              Tigris when you view the article.
             </LegalParagraph>
           </LegalSubsection>
         </div>
