@@ -33,8 +33,6 @@ interface EntryListFallbackProps {
   filters: EntryListFilters;
   /** Number of skeleton items if no placeholder data */
   skeletonCount?: number;
-  /** Currently selected entry ID */
-  selectedEntryId?: string | null;
   /** Callback when entry is clicked (disabled during fallback) */
   onEntryClick?: (entryId: string) => void;
 }
@@ -51,7 +49,6 @@ interface EntryListFallbackProps {
 export function EntryListFallback({
   filters,
   skeletonCount = 5,
-  selectedEntryId,
   onEntryClick,
 }: EntryListFallbackProps) {
   const queryClient = useQueryClient();
@@ -80,7 +77,11 @@ export function EntryListFallback({
             key={entry.id}
             entry={entry}
             onClick={onEntryClick}
-            selected={selectedEntryId === entry.id}
+            // No selection here: the fallback is a brief pre-load state that
+            // isn't wired to keyboard focus (no onFocus), and selection is shown
+            // via the focused row's outline — so a `selected` prop would only
+            // ever set an aria-label with no matching focus. Selection appears
+            // once the real EntryList renders.
             // Disable mutations during fallback - they'd update stale data
             onToggleRead={undefined}
             onToggleStar={undefined}
