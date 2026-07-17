@@ -5,16 +5,31 @@
  */
 
 /**
- * Default model for LLM narration preprocessing, as a `provider:model`
- * reference. Narration preprocessing only supports the OpenAI-compatible
- * providers (Groq, Cerebras) — it relies on JSON-object response formatting.
+ * Providers selectable for narration preprocessing. Narration preprocessing
+ * only supports the OpenAI-compatible providers (Groq, Cerebras) — it relies
+ * on JSON-object response formatting. This is also the preference order for the
+ * default model when the user hasn't picked one: Cerebras first (fastest), then
+ * Groq.
  */
-export const DEFAULT_NARRATION_MODEL = "groq:openai/gpt-oss-20b";
+export const NARRATION_PROVIDERS = ["cerebras", "groq"] as const;
+
+export type NarrationProvider = (typeof NARRATION_PROVIDERS)[number];
 
 /**
- * Providers selectable for narration preprocessing.
+ * Default narration preprocessing model per provider, as `provider:model`
+ * references. The effective default is the first configured provider's entry,
+ * in {@link NARRATION_PROVIDERS} order.
  */
-export const NARRATION_PROVIDERS = ["groq", "cerebras"] as const;
+export const DEFAULT_NARRATION_MODELS: Record<NarrationProvider, string> = {
+  cerebras: "cerebras:gpt-oss-120b",
+  groq: "groq:openai/gpt-oss-120b",
+};
+
+/**
+ * Default model for LLM narration preprocessing when no provider is known to be
+ * configured (e.g. as a frontend fallback before the models query resolves).
+ */
+export const DEFAULT_NARRATION_MODEL = DEFAULT_NARRATION_MODELS.cerebras;
 
 /**
  * Default speech rate (1.0 = normal speed).

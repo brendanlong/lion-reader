@@ -19,15 +19,17 @@ export const DEFAULT_SUMMARIZATION_MODELS: Record<AiProvider, string> = {
 
 /**
  * Provider preference order for the default summarization model when the user
- * hasn't picked one.
+ * hasn't picked one. Cerebras and Groq run gpt-oss far faster than Anthropic,
+ * and most users prefer the fastest possible summaries over minor quality
+ * gains, so the hosted OpenAI-compatible providers come first.
  */
-export const SUMMARIZATION_PROVIDER_PRIORITY: AiProvider[] = ["anthropic", "groq", "cerebras"];
+export const SUMMARIZATION_PROVIDER_PRIORITY: AiProvider[] = ["cerebras", "groq", "anthropic"];
 
 /**
  * Default summarization model when no provider is known to be configured
  * (e.g. as a frontend fallback before the models query resolves).
  */
-export const DEFAULT_SUMMARIZATION_MODEL = DEFAULT_SUMMARIZATION_MODELS.anthropic;
+export const DEFAULT_SUMMARIZATION_MODEL = DEFAULT_SUMMARIZATION_MODELS.cerebras;
 
 /**
  * Default maximum words for generated summaries.

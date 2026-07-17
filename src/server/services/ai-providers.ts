@@ -252,11 +252,83 @@ export function simplifyModelIds(
 
 /**
  * Groq's model list includes audio (whisper/TTS) and moderation models that
- * can't do chat completions; hide them from the pickers.
+ * can't do chat completions; hide them from the pickers. TTS families don't all
+ * spell "tts" in their IDs (Groq exposes Orpheus TTS as `canopylabs/orpheus-*`),
+ * so match those families by name too.
  */
 export function isChatModelId(id: string): boolean {
   const lower = id.toLowerCase();
-  return !lower.includes("whisper") && !lower.includes("tts") && !lower.includes("guard");
+  return (
+    !lower.includes("whisper") &&
+    !lower.includes("tts") &&
+    !lower.includes("guard") &&
+    !lower.includes("canopylabs") &&
+    !lower.includes("orpheus")
+  );
+}
+
+/**
+ * Minimum context window (in tokens) for a model to appear in the summarization
+ * and narration pickers. Summarization feeds up to ~12k tokens of article text
+ * plus the prompt and reserves several thousand output/reasoning tokens, so
+ * short-context models (e.g. Groq's 8k-context Gemma/older-Llama or small Qwen
+ * builds) can't reasonably summarize a full article. Models whose context
+ * window is unknown (Cerebras omits the field) are kept.
+ */
+const MIN_CONTEXT_WINDOW = 32768;
+
+/**
+ * Reads the optional `context_window` field the Groq models API returns. The
+ * provider SDK types don't expose it, so we read it defensively; Cerebras omits
+ * it entirely (returns `undefined`).
+ */
+function contextWindowOf(model: unknown): number | undefined {
+  const value = (model as { context_window?: unknown }).context_window;
+  return typeof value === "number" ? value : undefined;
+}
+
+/**
+ * Whether a Groq/Cerebras model is usable for summarization/narration: it must
+ * be a chat model and, when the provider reports a context window, have enough
+ * room to summarize a full article.
+ */
+function isUsableChatModel(model: { id: string }): boolean {
+  if (!isChatModelId(model.id)) {
+    return false;
+  }
+  const contextWindow = contextWindowOf(model);
+  return contextWindow === undefined || contextWindow >= MIN_CONTEXT_WINDOW;
+}
+
+/** Claude model families we surface, one (newest) model per family. */
+const CLAUDE_FAMILIES = ["opus", "sonnet", "haiku", "fable"] as const;
+
+/**
+ * Filters Anthropic models to the newest generation — the latest Opus, Sonnet,
+ * Haiku, and Fable — dropping older versions of each family. The Anthropic API
+ * returns models newest-first, so the first model seen for a family is its
+ * newest. Models that don't match a known family are kept (so a new family
+ * isn't accidentally hidden).
+ */
+export function filterToLatestClaudeGeneration(
+  models: { id: string; displayName: string }[]
+): { id: string; displayName: string }[] {
+  const seenFamilies = new Set<string>();
+  const result: { id: string; displayName: string }[] = [];
+
+  for (const model of models) {
+    const family = CLAUDE_FAMILIES.find((f) => model.id.toLowerCase().includes(f));
+    if (!family) {
+      result.push(model);
+      continue;
+    }
+    if (!seenFamilies.has(family)) {
+      seenFamilies.add(family);
+      result.push(model);
+    }
+  }
+
+  return result;
 }
 
 async function listProviderModels(provider: AiProvider, keys?: AiProviderKeys): Promise<AiModel[]> {
@@ -269,7 +341,7 @@ async function listProviderModels(provider: AiProvider, keys?: AiProviderKeys): 
       for await (const model of client.models.list({ limit: 100 })) {
         models.push({ id: model.id, displayName: model.display_name });
       }
-      return simplifyModelIds(models).map((model) => ({
+      return filterToLatestClaudeGeneration(simplifyModelIds(models)).map((model) => ({
         id: formatModelRef("anthropic", model.id),
         displayName: model.displayName,
         provider: "anthropic" as const,
@@ -280,7 +352,7 @@ async function listProviderModels(provider: AiProvider, keys?: AiProviderKeys): 
       if (!client) return [];
       const response = await client.models.list();
       return response.data
-        .filter((model) => isChatModelId(model.id))
+        .filter((model) => isUsableChatModel(model))
         .map((model) => ({
           id: formatModelRef("groq", model.id),
           displayName: model.id,
@@ -293,7 +365,7 @@ async function listProviderModels(provider: AiProvider, keys?: AiProviderKeys): 
       if (!client) return [];
       const response = await client.models.list();
       return response.data
-        .filter((model) => isChatModelId(model.id))
+        .filter((model) => isUsableChatModel(model))
         .map((model) => ({
           id: formatModelRef("cerebras", model.id),
           displayName: model.id,
