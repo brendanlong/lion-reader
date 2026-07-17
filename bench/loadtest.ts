@@ -37,6 +37,10 @@ const STAGES = (
 ).filter((n) => n > 0);
 const STAGE_SECONDS = Number(process.env.STAGE_SECONDS ?? DEFAULT_STAGE_SECONDS);
 const RESULT_LABEL = process.env.RESULT_LABEL ?? "";
+// When running several generator processes in parallel against one server, give
+// each a distinct SESSION_OFFSET so they drive DISTINCT users (not the same
+// first-N), avoiding artificial same-user contention.
+const SESSION_OFFSET = Number(process.env.SESSION_OFFSET ?? 0);
 
 const workload = loadWorkload();
 const S = workload.session;
@@ -73,7 +77,8 @@ class Recorder {
   stats(action: string): { n: number; p50: number; p95: number; p99: number; max: number } {
     const arr = (this.samples.get(action) ?? []).slice().sort((a, b) => a - b);
     if (arr.length === 0) return { n: 0, p50: 0, p95: 0, p99: 0, max: 0 };
-    const q = (p: number) => arr[Math.min(arr.length - 1, Math.floor(p * arr.length))];
+    // Nearest-rank: the p-quantile is the ceil(p*n)-th value (1-indexed).
+    const q = (p: number) => arr[Math.max(0, Math.ceil(p * arr.length) - 1)];
     return { n: arr.length, p50: q(0.5), p95: q(0.95), p99: q(0.99), max: arr[arr.length - 1] };
   }
 
@@ -114,7 +119,9 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function runSession(client: BenchClient, stopAt: number): Promise<void> {
   // 1. Page-load bundle (browser fires these together on load).
   const [listRes] = await Promise.all([
-    timed("entries.list", () => client.entries.list.query({ limit: S.listLimit })),
+    timed("entries.list", () =>
+      client.entries.list.query({ limit: S.listLimit, unreadOnly: S.unreadOnly })
+    ),
     timed("subscriptions.list", () => client.subscriptions.list.query({ limit: 100 })),
     timed("tags.list", () => client.tags.list.query()),
     timed("entries.count(all)", () => client.entries.count.query({})),
@@ -129,7 +136,7 @@ async function runSession(client: BenchClient, stopAt: number): Promise<void> {
   for (let p = 0; p < S.scrollPages && cursor && Date.now() < stopAt; p++) {
     await sleep(rand(S.thinkMs));
     const more = await timed("entries.list(scroll)", () =>
-      client.entries.list.query({ limit: S.listLimit, cursor })
+      client.entries.list.query({ limit: S.listLimit, unreadOnly: S.unreadOnly, cursor })
     );
     const moreItems = (more as { items?: { id: string }[] } | undefined)?.items ?? [];
     items = items.concat(moreItems);
@@ -218,19 +225,25 @@ function gauge(text: string, name: string): number | undefined {
   return m ? Number(m[1]) : undefined;
 }
 
-/** Sum + count for a tRPC procedure's duration histogram (seconds). */
+/**
+ * Sum + count for a tRPC procedure's duration histogram (seconds), summed
+ * across ALL label series for that procedure. The histogram is labelled
+ * `procedure,type,ok`, so a procedure that has both succeeded and errored emits
+ * separate `_sum`/`_count` series (ok="true" and ok="false"); we must add them
+ * all, not take the first match (which prom-client emits in hash order, not a
+ * stable true-first order — so the first match could be the error series).
+ */
 function trpcHist(text: string, procedure: string): { sum: number; count: number } {
-  const sumRe = new RegExp(
-    `^trpc_procedure_duration_seconds_sum\\{[^}]*procedure="${procedure}"[^}]*\\}\\s+([0-9.eE+-]+)`,
-    "m"
-  );
-  const cntRe = new RegExp(
-    `^trpc_procedure_duration_seconds_count\\{[^}]*procedure="${procedure}"[^}]*\\}\\s+([0-9.eE+-]+)`,
-    "m"
-  );
-  const sum = text.match(sumRe);
-  const cnt = text.match(cntRe);
-  return { sum: sum ? Number(sum[1]) : 0, count: cnt ? Number(cnt[1]) : 0 };
+  const sumOf = (metric: string): number => {
+    const re = new RegExp(
+      `^trpc_procedure_duration_seconds_${metric}\\{[^}]*procedure="${procedure}"[^}]*\\}\\s+([0-9.eE+-]+)`,
+      "gm"
+    );
+    let total = 0;
+    for (const m of text.matchAll(re)) total += Number(m[1]);
+    return total;
+  };
+  return { sum: sumOf("sum"), count: sumOf("count") };
 }
 
 /**
@@ -299,7 +312,8 @@ async function runStage(vus: number, sessions: SessionInfo[]): Promise<StageResu
   const vuPromises: Promise<void>[] = [];
   for (let i = 0; i < vus; i++) {
     // Distinct user per VU where possible; wrap around if fewer sessions.
-    vuPromises.push(runVu(sessions[i % sessions.length], stopAt));
+    // SESSION_OFFSET lets parallel generators cover disjoint user ranges.
+    vuPromises.push(runVu(sessions[(i + SESSION_OFFSET) % sessions.length], stopAt));
   }
   const gaugesPromise = sampleGaugesDuring(stopAt, 2000);
   await Promise.all(vuPromises);
@@ -442,6 +456,13 @@ async function main() {
     }
   } else if (knee === STAGES[STAGES.length - 1]) {
     console.log(`Ramp completed without breaching SLO — true knee is ≥ ${knee} (raise STAGES).`);
+    if (lastStage?.limiter.startsWith("generator-bound")) {
+      console.log(
+        `  ⚠ The top stage was GENERATOR-BOUND (client p95 high, server flat) — this` +
+          ` single generator can't push the server harder. Run parallel generators` +
+          ` (SESSION_OFFSET) to find the true knee; the number below is a lower bound.`
+      );
+    }
   }
   console.log(`Peak-concurrent fraction (from prod): ${(frac * 100).toFixed(1)}%`);
   console.log(`=> Registered-user ceiling ≈ ${registeredCeiling.toLocaleString()}`);

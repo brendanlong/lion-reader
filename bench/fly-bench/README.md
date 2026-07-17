@@ -11,8 +11,8 @@ cores, 4 GB). Tear it all down at the end.
 > creates real (cheap, short-lived) billable resources.
 >
 > **The local 2-core run is already a good proxy** for this tier (see
-> `~/wiki/pages/lion-reader-capacity-benchmark-2026.md`): ~200 concurrent active
-> users / ~400 rps, DB never the bottleneck. This run confirms it on real Fly
+> `~/wiki/pages/lion-reader-capacity-benchmark-2026.md`): ~250 concurrent active
+> users / ~350 rps, DB never the bottleneck. This run confirms it on real Fly
 > hardware and network.
 
 Everything below assumes you're in the repo root with `flyctl` authenticated.

@@ -158,15 +158,17 @@ async function main() {
         CROSS JOIN generate_series(1, ${w.entriesPerFeed}) AS e(i)
       `);
 
-      // user_entries: read/starred deterministically to hit target fractions.
+      // user_entries: read set by a per-feed fraction (deterministic); starred
+      // by a Bernoulli draw so the target fraction holds even when
+      // starredFraction * entriesPerFeed < 1 (e.g. 1% of 50 = 0.5/feed — a
+      // per-feed modulus would round to zero starred, #starred-bug).
       await db.execute(sql`
         INSERT INTO user_entries (user_id, entry_id, read, starred, read_changed_at, starred_changed_at, updated_at, published_or_fetched_at)
         SELECT
           ${userId}::uuid, e.id,
           (row_number() OVER (PARTITION BY e.feed_id ORDER BY e.id))::float
             / ${w.entriesPerFeed} <= ${w.readFraction},
-          (row_number() OVER (PARTITION BY e.feed_id ORDER BY e.id))
-            % ${Math.max(1, Math.round(1 / Math.max(w.starredFraction, 0.0001)))} = 0,
+          random() < ${w.starredFraction},
           e.published_at, e.published_at, now(),
           COALESCE(e.published_at, e.fetched_at)
         FROM entries e

@@ -20,7 +20,7 @@ export interface WorkloadParams {
   seed: {
     /** Subscriptions per user (≈ prod p50). */
     subsPerUser: number;
-    /** Feeds shared per subscription cluster. Each user gets its own feeds. */
+    /** Entries generated per feed (each user has its own feeds). */
     entriesPerFeed: number;
     /** Fraction of a user's entries already marked read (0..1). */
     readFraction: number;
@@ -39,6 +39,12 @@ export interface WorkloadParams {
   session: {
     /** entries.list page size the client requests. */
     listLimit: number;
+    /**
+     * Whether the list bundle filters to unread only. Production defaults to
+     * unreadOnly=true on essentially every route (getDefaultViewPreferences),
+     * so this is the query plan the SLO should gate on.
+     */
+    unreadOnly: boolean;
     /** Extra list pages fetched by scrolling, per session. */
     scrollPages: number;
     /** Articles opened per session (each = get + single markRead). */
@@ -88,6 +94,7 @@ const DEFAULTS: WorkloadParams = {
   },
   session: {
     listLimit: 50,
+    unreadOnly: true,
     scrollPages: 2,
     articlesOpened: 5,
     starProbability: 0.15,
