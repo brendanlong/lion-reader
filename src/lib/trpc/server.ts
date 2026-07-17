@@ -11,6 +11,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { createHydrationHelpers } from "@trpc/react-query/rsc";
 import { db } from "@/server/db";
 import { validateSession } from "@/server/auth/session";
+import { isSignupConfirmed } from "@/server/auth/confirmation";
 import { createCaller, type AppRouter } from "@/server/trpc/root";
 import type { Context } from "@/server/trpc/context";
 import { getQueryClient } from "./query-client";
@@ -140,7 +141,5 @@ export async function isAuthenticated(): Promise<boolean> {
 export async function isConfirmed(): Promise<boolean> {
   const ctx = await createServerContext();
   const user = ctx.session?.user;
-  return (
-    user?.tosAgreedAt != null && user?.privacyPolicyAgreedAt != null && user?.notEuAgreedAt != null
-  );
+  return user != null && isSignupConfirmed(user);
 }

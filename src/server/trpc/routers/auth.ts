@@ -827,6 +827,12 @@ export const authRouter = createTRPCRouter({
         allowedSignupProviders: z.array(z.enum(ALL_SIGNUP_PROVIDERS)),
         /** Providers allowed without an invite (subset of allowedSignupProviders). */
         publicSignupProviders: z.array(z.enum(ALL_SIGNUP_PROVIDERS)),
+        /**
+         * True when this instance restricts EU users (EU_RESTRICTED=true): the
+         * signup flow requires the not-in-the-EU certification and the register
+         * page shows a notice that the service is not available in the EU.
+         */
+        euRestricted: z.boolean(),
       })
     )
     .query(() => {
@@ -835,6 +841,7 @@ export const authRouter = createTRPCRouter({
         requiresInvite: publicSignupProviders.length === 0,
         allowedSignupProviders: [...signupConfig.allowedSignupProviders],
         publicSignupProviders,
+        euRestricted: signupConfig.euRestricted,
       };
     }),
 
@@ -883,10 +890,13 @@ export const authRouter = createTRPCRouter({
     }),
 
   /**
-   * Confirm signup by accepting Terms of Service, Privacy Policy, and EU check.
+   * Confirm signup by accepting Terms of Service, Privacy Policy, and — on
+   * EU-restricted instances (EU_RESTRICTED=true) — the not-in-the-EU check.
    *
-   * Users must confirm all three checkboxes before they can use the app.
-   * This sets the individual agreement timestamps on the user record.
+   * ToS and Privacy Policy are always required. The EU certification is only
+   * required when the instance is EU-restricted; otherwise `confirmedNotInEu`
+   * is ignored and `notEuAgreedAt` is left unset. This sets the individual
+   * agreement timestamps on the user record.
    */
   confirmSignup: protectedProcedure
     .input(
@@ -897,22 +907,30 @@ export const authRouter = createTRPCRouter({
         acceptedPrivacyPolicy: z.literal(true, {
           error: "You must accept the Privacy Policy",
         }),
-        confirmedNotInEu: z.literal(true, {
-          error: "You must confirm you are not in the EU",
-        }),
+        // Optional at the schema level so non-EU-restricted instances (where the
+        // checkbox isn't shown) can confirm; enforced below only when required.
+        confirmedNotInEu: z.boolean().optional(),
       })
     )
     .output(z.object({ success: z.boolean() }))
-    .mutation(async ({ ctx }) => {
+    .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
       const now = new Date();
+
+      const euRestricted = signupConfig.euRestricted;
+      if (euRestricted && input.confirmedNotInEu !== true) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "You must confirm you are not in the EU",
+        });
+      }
 
       await ctx.db
         .update(users)
         .set({
           tosAgreedAt: now,
           privacyPolicyAgreedAt: now,
-          notEuAgreedAt: now,
+          notEuAgreedAt: euRestricted ? now : null,
           updatedAt: now,
         })
         .where(eq(users.id, userId));
