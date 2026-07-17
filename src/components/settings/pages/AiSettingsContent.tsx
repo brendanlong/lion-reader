@@ -30,7 +30,7 @@ function ApiKeySettingsSections() {
       {/* Summaries (model, max words, custom prompt) */}
       <SummarizationSettings />
 
-      {/* Narration text-processing model (Groq/Cerebras) */}
+      {/* Narration text processing model (Groq/Cerebras) */}
       <NarrationAiSettings />
     </>
   );

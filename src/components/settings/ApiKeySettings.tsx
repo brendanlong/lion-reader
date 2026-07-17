@@ -593,7 +593,7 @@ export function SummarizationSettings() {
 }
 
 /**
- * Narration text-processing model settings.
+ * Narration text processing model settings.
  */
 export function NarrationAiSettings() {
   const utils = trpc.useUtils();
