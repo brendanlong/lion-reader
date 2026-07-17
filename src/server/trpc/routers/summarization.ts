@@ -8,7 +8,11 @@
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 
-import { createTRPCRouter, confirmedProtectedProcedure as protectedProcedure } from "../trpc";
+import {
+  createTRPCRouter,
+  confirmedProtectedProcedure as protectedProcedure,
+  expensiveConfirmedProtectedProcedure,
+} from "../trpc";
 import { errors } from "../errors";
 import { uuidSchema } from "../validation";
 import { entries, entrySummaries, userEntries } from "@/server/db/schema";
@@ -91,7 +95,10 @@ export const summarizationRouter = createTRPCRouter({
    * @param entryId - The entry ID
    * @returns Summary text, whether it was cached, model ID, and generation time
    */
-  generate: protectedProcedure
+  // Rate-limited (10 burst, 1/sec): makes an outbound LLM call, potentially on
+  // the server-wide API key, and explicit regenerate bypasses the error
+  // backoff below.
+  generate: expensiveConfirmedProtectedProcedure
     .meta({
       openapi: {
         method: "POST",
