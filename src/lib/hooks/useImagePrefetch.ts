@@ -1,12 +1,32 @@
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect } from "react";
 import { useScrollContainer } from "@/components/layout/ScrollContainerContext";
 
+// useLayoutEffect must run before paint (see below), but it warns when React
+// renders on the server. The content it observes is client-rendered, so fall
+// back to useEffect during SSR to stay quiet.
+const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
+
 /**
- * Prefetch images before they scroll into view.
+ * Prefetch images before they scroll into view, and make images that are
+ * already on-screen paint without a flash.
  *
- * Uses IntersectionObserver with a large rootMargin to detect images
- * approaching the viewport and start loading them early, preventing
- * the flash that occurs with native `loading="lazy"`.
+ * Opening or paging an entry mounts brand-new `<img>` nodes, and a fresh `<img>`
+ * never paints its bytes on the first frame — even when they're cached (service
+ * worker / CDN / memory). By default the browser reserves the box, then decodes
+ * `decoding="async"` off the critical path and paints the image a frame later;
+ * for sanitizer-stamped `loading="lazy"` images the deferral is worse still.
+ * Either way that empty→decode gap is the flash seen on every navigation despite
+ * the 0ms cache hits.
+ *
+ * To fix it we split the images at mount:
+ *   - Images actually in the viewport get `loading="eager"` + `decoding="sync"`
+ *     **synchronously in a layout effect, before paint**, so the browser decodes
+ *     a cached image and presents it atomically on the first paint instead of
+ *     showing a blank box. This covers both lazy (sanitized feed content) and
+ *     plain-eager images (e.g. the demo's raw, unsanitized HTML).
+ *   - Lazy images below the fold keep the lazy path but are upgraded to eager via
+ *     an IntersectionObserver as they approach, so they're decoded before they
+ *     scroll in too. Non-lazy images below the fold already load eagerly.
  *
  * @param containerRef - Ref to the container element with images
  * @param content - The content string (used to re-run when content changes)
@@ -20,13 +40,40 @@ export function useImagePrefetch(
   // Get scroll container from context (provided by ScrollContainerProvider)
   const scrollContainerRef = useScrollContainer();
 
-  useEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    // Find all lazy-loaded images in the container
-    const images = container.querySelectorAll<HTMLImageElement>('img[loading="lazy"]');
+    const images = Array.from(container.querySelectorAll<HTMLImageElement>("img"));
     if (images.length === 0) return;
+
+    // The IntersectionObserver root: the scroll container, or the viewport.
+    const root = scrollContainerRef?.current ?? null;
+    const rootRect = root
+      ? root.getBoundingClientRect()
+      : { top: 0, bottom: window.innerHeight, height: window.innerHeight };
+
+    // Only images actually on screen need the synchronous eager + sync-decode
+    // treatment — that's the only place a blank frame is *visible*. Using a
+    // wider margin here would mass-eager-load and sync-decode everything just
+    // below the fold, which defeats lazy loading on long articles (feed images
+    // often have no width/height, so they collapse to height 0 and stack near
+    // the top before they load). Below-fold prefetch-ahead stays with the
+    // observer, which upgrades lazy images to eager as they approach — without
+    // sync decode, since they aren't visible yet.
+    const toObserve: HTMLImageElement[] = [];
+    for (const img of images) {
+      const rect = img.getBoundingClientRect();
+      const visible = rect.bottom >= rootRect.top && rect.top <= rootRect.bottom;
+      if (visible) {
+        img.loading = "eager";
+        img.decoding = "sync";
+      } else if (img.getAttribute("loading") === "lazy") {
+        toObserve.push(img);
+      }
+    }
+
+    if (toObserve.length === 0) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -44,7 +91,7 @@ export function useImagePrefetch(
       },
       {
         // Use scroll container from context, or viewport if not available
-        root: scrollContainerRef?.current ?? null,
+        root,
         // Start observing when images are within rootMargin
         rootMargin,
         // Trigger as soon as any part enters the margin
@@ -52,12 +99,12 @@ export function useImagePrefetch(
       }
     );
 
-    // Observe all lazy images (skip already loaded ones)
-    images.forEach((img) => {
+    // Observe remaining images (skip already loaded ones)
+    for (const img of toObserve) {
       if (!img.complete) {
         observer.observe(img);
       }
-    });
+    }
 
     return () => {
       observer.disconnect();
