@@ -9,12 +9,8 @@
 
 import { createContext, useContext, useEffect, useCallback, useMemo, type ReactNode } from "react";
 import { useTheme } from "next-themes";
-import {
-  useAppearanceSettings,
-  type AppearanceSettings,
-  type TextSize,
-  type FontFamily,
-} from "./settings";
+import { useAppearanceSettings, type AppearanceSettings } from "./settings";
+import { entryTextStyleVars } from "./config";
 
 interface AppearanceContextValue {
   settings: AppearanceSettings;
@@ -69,61 +65,15 @@ export function useAppearance(): AppearanceContextValue {
 }
 
 /**
- * Font configuration with normalized sizing.
- *
- * Different fonts have different x-heights and metrics, so they appear
- * different sizes at the same font-size. We apply size adjustments and
- * tuned line-heights to make them visually consistent.
- */
-interface FontConfig {
-  family: string;
-  /** Size multiplier to normalize apparent size (1 = baseline) */
-  sizeAdjust: number;
-  /** Line height tuned for this font */
-  lineHeight: number;
-}
-
-const FONT_CONFIGS: Record<FontFamily, FontConfig> = {
-  system: {
-    family: "inherit",
-    // Varies by platform (San Francisco, Segoe UI, Roboto, etc.)
-    sizeAdjust: 1,
-    lineHeight: 1.7,
-  },
-  merriweather: {
-    family: "var(--font-merriweather), Georgia, serif",
-    // Smaller x-height, scale up to match Literata baseline
-    sizeAdjust: 0.929,
-    lineHeight: 1.8,
-  },
-  literata: {
-    family: "var(--font-literata), Georgia, serif",
-    // Baseline reference font
-    sizeAdjust: 1,
-    lineHeight: 1.75,
-  },
-  inter: {
-    family: "var(--font-inter), system-ui, sans-serif",
-    // Slightly smaller x-height than Literata
-    sizeAdjust: 0.945,
-    lineHeight: 1.7,
-  },
-  "source-sans": {
-    family: "var(--font-source-sans), system-ui, sans-serif",
-    // Larger x-height, scale down to match
-    sizeAdjust: 1.061,
-    lineHeight: 1.7,
-  },
-};
-
-/**
  * Hook to get text style classes for entry content.
  *
  * Returns Tailwind classes and inline styles for applying text appearance settings.
  *
  * Uses CSS custom properties set by the head script for initial render to avoid
  * flash of wrong styles during hydration. The React state is still tracked to
- * update the CSS vars when settings change.
+ * update the CSS vars when settings change. The vars come from the shared
+ * `entryTextStyleVars` (the same mapping the head script bakes in), so runtime
+ * updates and the pre-paint values can't diverge.
  */
 export function useEntryTextStyles(): {
   className: string;
@@ -133,26 +83,11 @@ export function useEntryTextStyles(): {
 
   // Update CSS custom properties when settings change (for client-side updates)
   useEffect(() => {
-    const baseSizes: Record<TextSize, number> = {
-      small: 0.875,
-      medium: 1,
-      large: 1.125,
-      "x-large": 1.25,
-    };
-
-    const fontConfig = FONT_CONFIGS[settings.fontFamily] || FONT_CONFIGS.system;
-    const baseSize = baseSizes[settings.textSize] || baseSizes.medium;
-    const adjustedSize = baseSize * fontConfig.sizeAdjust;
-
     const style = document.documentElement.style;
-    style.setProperty("--entry-font-family", fontConfig.family);
-    style.setProperty("--entry-font-size", `${adjustedSize}rem`);
-    style.setProperty("--entry-line-height", String(fontConfig.lineHeight));
-    style.setProperty(
-      "--entry-text-align",
-      settings.textJustification === "justify" ? "justify" : "left"
-    );
-  }, [settings.textSize, settings.fontFamily, settings.textJustification]);
+    for (const [prop, value] of Object.entries(entryTextStyleVars(settings))) {
+      style.setProperty(prop, value);
+    }
+  }, [settings]);
 
   // Return styles that use CSS custom properties (set by head script on initial load)
   return useMemo(

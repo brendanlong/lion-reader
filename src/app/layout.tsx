@@ -5,6 +5,7 @@ import { defaultOpenGraph } from "@/lib/metadata";
 import { appUrl } from "@/server/config/env";
 import { ThemeProvider } from "@/lib/theme/ThemeProvider";
 import { DEFAULT_THEME, THEME_STORAGE_KEY, THEMES } from "@/lib/theme/config";
+import { buildTextAppearanceScript } from "@/lib/appearance/config";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -110,62 +111,14 @@ const themeScript = `
 /**
  * Blocking script to apply text appearance settings before first paint.
  *
- * This runs synchronously in the <head> to prevent flash of wrong text size/font.
- * Must be kept in sync with settings.ts storage key and logic.
+ * Runs synchronously in the <head> to prevent a flash of wrong text size/font.
+ * Built from the shared appearance config (storage key, defaults, font metrics,
+ * size formula) so it can't drift from the runtime store / useEntryTextStyles;
+ * the appearance-head-script unit test pins its output to entryTextStyleVars.
  *
  * Note: Theme (dark/light mode) is handled by next-themes plus themeScript above.
- *
- * Sets CSS custom properties for text appearance:
- * - --entry-font-family
- * - --entry-font-size
- * - --entry-line-height
- * - --entry-text-align
  */
-const textAppearanceScript = `
-(function() {
-  try {
-    var stored = localStorage.getItem('lion-reader-appearance-settings');
-    var settings = {
-      textSize: 'medium',
-      fontFamily: 'system',
-      textJustification: 'left'
-    };
-    if (stored) {
-      var parsed = JSON.parse(stored);
-      if (['small', 'medium', 'large', 'x-large'].indexOf(parsed.textSize) >= 0) {
-        settings.textSize = parsed.textSize;
-      }
-      if (['system', 'merriweather', 'literata', 'inter', 'source-sans'].indexOf(parsed.fontFamily) >= 0) {
-        settings.fontFamily = parsed.fontFamily;
-      }
-      if (parsed.textJustification === 'justify') {
-        settings.textJustification = 'justify';
-      }
-    }
-
-    // Font configs with size adjustments for visual consistency
-    var fontConfigs = {
-      'system': { family: 'inherit', sizeAdjust: 1, lineHeight: 1.7 },
-      'merriweather': { family: 'var(--font-merriweather), Georgia, serif', sizeAdjust: 0.929, lineHeight: 1.8 },
-      'literata': { family: 'var(--font-literata), Georgia, serif', sizeAdjust: 1, lineHeight: 1.75 },
-      'inter': { family: 'var(--font-inter), system-ui, sans-serif', sizeAdjust: 0.945, lineHeight: 1.7 },
-      'source-sans': { family: 'var(--font-source-sans), system-ui, sans-serif', sizeAdjust: 1.061, lineHeight: 1.7 }
-    };
-    var baseSizes = { 'small': 0.875, 'medium': 1, 'large': 1.125, 'x-large': 1.25 };
-
-    var fontConfig = fontConfigs[settings.fontFamily] || fontConfigs['system'];
-    var baseSize = baseSizes[settings.textSize] || 1;
-    var adjustedSize = baseSize * fontConfig.sizeAdjust;
-
-    // Set CSS custom properties for entry text styling
-    var style = document.documentElement.style;
-    style.setProperty('--entry-font-family', fontConfig.family);
-    style.setProperty('--entry-font-size', adjustedSize + 'rem');
-    style.setProperty('--entry-line-height', fontConfig.lineHeight);
-    style.setProperty('--entry-text-align', settings.textJustification);
-  } catch (e) {}
-})();
-`;
+const textAppearanceScript = buildTextAppearanceScript();
 
 /**
  * Service worker registration script.
