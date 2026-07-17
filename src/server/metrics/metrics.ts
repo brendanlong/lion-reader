@@ -11,6 +11,7 @@ import type { CounterConfiguration, HistogramConfiguration, GaugeConfiguration }
  * - A shared registry for all metrics
  * - Conditional initialization of default collectors
  * - HTTP request metrics (counter and histogram)
+ * - tRPC per-procedure latency metrics
  * - Feed fetch metrics
  * - Job processing metrics
  * - SSE connection metrics
@@ -173,6 +174,55 @@ export function startHttpTimer(method: string, path: string): (status: number) =
     const durationMs = performance.now() - startTime;
     trackHttpRequest(method, path, status, durationMs);
   };
+}
+
+// ============================================================================
+// tRPC Procedure Metrics
+// ============================================================================
+
+/**
+ * tRPC procedure types (matches @trpc/server's ProcedureType).
+ */
+export type TrpcProcedureType = "query" | "mutation" | "subscription";
+
+/**
+ * Histogram for individual tRPC procedure duration in seconds.
+ *
+ * This is observed per procedure inside the tRPC timing middleware, so it is
+ * accurate even for BATCHED requests — unlike http_request_duration_seconds,
+ * which the fetch handler labels with only the first procedure in a batch. Use
+ * this for precise per-endpoint latency; use the HTTP histogram for transport
+ * overhead. Labels:
+ * - procedure: the tRPC path (e.g. "entries.list"); bounded by the router, so
+ *   cardinality is safe.
+ * - type: "query" | "mutation" | "subscription"
+ * - ok: "true" if the procedure resolved, "false" if it errored (so error
+ *   latency can be separated from success latency).
+ */
+const trpcProcedureDurationSeconds = getOrCreateHistogram({
+  name: "trpc_procedure_duration_seconds",
+  help: "tRPC procedure execution duration in seconds, labeled by procedure",
+  labelNames: ["procedure", "type", "ok"] as const,
+  buckets: [0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
+});
+
+/**
+ * Tracks a single tRPC procedure execution.
+ * This function has zero overhead when metrics are disabled.
+ *
+ * @param procedure - The tRPC procedure path (e.g. "entries.list")
+ * @param type - The procedure type (query, mutation, subscription)
+ * @param ok - Whether the procedure resolved successfully
+ * @param durationMs - Execution duration in milliseconds
+ */
+export function trackTrpcProcedure(
+  procedure: string,
+  type: TrpcProcedureType,
+  ok: boolean,
+  durationMs: number
+): void {
+  if (!metricsEnabled) return;
+  trpcProcedureDurationSeconds?.observe({ procedure, type, ok: String(ok) }, durationMs / 1000);
 }
 
 // ============================================================================
