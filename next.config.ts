@@ -88,6 +88,14 @@ const securityHeaders: { key: string; value: string }[] = [
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["127.0.0.1", "localhost"],
+  // Emit .next/standalone with a traced, minimal node_modules — the production
+  // image ships that instead of the full pruned node_modules (issue #1305).
+  // Our custom server (dist/server.js) keeps `next` external and resolves it
+  // from the standalone node_modules at runtime; deps only needed by the
+  // worker/discord bundles are bundled by esbuild, and their few runtime
+  // externals (argon2, html-rewriter-wasm, @lion-reader/*) are all also in the
+  // Next server graph, so the trace covers them.
+  output: "standalone",
   // Disable Next.js's built-in gzip compression. Our custom server applies
   // zstd/brotli/gzip/deflate compression to streaming SSR responses, and
   // Fly.io's edge handles non-streaming responses.
