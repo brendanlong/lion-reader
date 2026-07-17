@@ -6,9 +6,9 @@
  */
 
 import type { Metadata } from "next";
-import Link from "next/link";
 import { LegalList, LegalPage, LegalParagraph, LegalSection } from "@/components/legal/LegalProse";
 import { Card } from "@/components/ui/card";
+import { PageLink } from "@/components/ui/page-link";
 import { TextLink } from "@/components/ui/text-link";
 
 export const metadata: Metadata = {
@@ -27,9 +27,9 @@ export default function TermsOfServicePage() {
         </LegalParagraph>
         <LegalParagraph>
           Please also review our{" "}
-          <Link href="/privacy" className="text-accent hover:text-accent-hover font-medium">
+          <PageLink href="/privacy" className="text-accent hover:text-accent-hover font-medium">
             Privacy Policy
-          </Link>
+          </PageLink>
           , which describes how we collect and use your data.
         </LegalParagraph>
       </LegalSection>
@@ -130,9 +130,9 @@ export default function TermsOfServicePage() {
         <LegalParagraph>
           You may also delete your account at any time. Upon termination, your personal data will be
           handled according to our{" "}
-          <Link href="/privacy" className="text-accent hover:text-accent-hover font-medium">
+          <PageLink href="/privacy" className="text-accent hover:text-accent-hover font-medium">
             Privacy Policy
-          </Link>
+          </PageLink>
           .
         </LegalParagraph>
       </LegalSection>

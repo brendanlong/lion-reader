@@ -6,7 +6,6 @@
  */
 
 import type { Metadata } from "next";
-import Link from "next/link";
 import {
   LegalList,
   LegalPage,
@@ -15,6 +14,7 @@ import {
   LegalSubsection,
 } from "@/components/legal/LegalProse";
 import { Card } from "@/components/ui/card";
+import { PageLink } from "@/components/ui/page-link";
 import { TextLink } from "@/components/ui/text-link";
 
 export const metadata: Metadata = {
@@ -391,12 +391,12 @@ export default function PrivacyPolicyPage() {
           <li>
             <strong>Delete:</strong> Delete your account and all associated data at any time from
             your{" "}
-            <Link
+            <PageLink
               href="/settings/delete-account"
               className="text-accent hover:text-accent-hover font-medium"
             >
               account settings
-            </Link>
+            </PageLink>
             . Account deletion is permanent and cannot be undone.
           </li>
         </LegalList>

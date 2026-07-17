@@ -7,12 +7,12 @@
 "use client";
 
 import { useState, useMemo, useEffect, Suspense } from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
+import { PageLink } from "@/components/ui/page-link";
 import { OAuthButtons } from "@/components/auth/OAuthButtons";
 import { AuthFooter } from "@/components/auth/AuthFooter";
 import { safeRedirectPath } from "@/lib/safe-redirect";
@@ -45,8 +45,10 @@ function LoginForm() {
   // Get success message from registration redirect
   const registered = searchParams.get("registered") === "true";
 
-  // Fetch signup configuration to determine if signup link should be shown
-  const { data: signupConfigData } = trpc.auth.signupConfig.useQuery();
+  // Fetch signup configuration to determine if signup link should be shown. The
+  // auth layout server-prefetches and hydrates this query (#1328), so it resolves
+  // as already-settled data on first render.
+  const [signupConfigData] = trpc.auth.signupConfig.useSuspenseQuery();
 
   // Listen for OAuth completion from other tabs/windows (PWA support for Firefox Android)
   // When OAuth happens in a separate browser window, this allows the PWA to detect completion
@@ -205,12 +207,12 @@ function LoginForm() {
         </Button>
       </form>
 
-      {!signupConfigData?.requiresInvite && (
+      {!signupConfigData.requiresInvite && (
         <p className="ui-text-sm text-muted mt-6 text-center">
           Don&apos;t have an account?{" "}
-          <Link href="/register" className="text-body font-medium hover:underline">
+          <PageLink href="/register" className="text-body font-medium hover:underline">
             Create one
-          </Link>
+          </PageLink>
         </p>
       )}
 

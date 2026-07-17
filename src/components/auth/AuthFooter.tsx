@@ -4,19 +4,19 @@
  * Displays attribution, legal links, and GitHub link in a compact format.
  */
 
-import Link from "next/link";
+import { PageLink } from "@/components/ui/page-link";
 
 export function AuthFooter() {
   return (
     <footer className="border-edge mt-8 border-t pt-6">
       <p className="ui-text-xs text-muted text-center">
-        <Link href="/terms" className="hover:text-body hover:underline">
+        <PageLink href="/terms" className="hover:text-body hover:underline">
           Terms of Service
-        </Link>{" "}
+        </PageLink>{" "}
         •{" "}
-        <Link href="/privacy" className="hover:text-body hover:underline">
+        <PageLink href="/privacy" className="hover:text-body hover:underline">
           Privacy Policy
-        </Link>
+        </PageLink>
       </p>
       <p className="ui-text-xs text-muted mt-2 text-center">
         Created by{" "}

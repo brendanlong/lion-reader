@@ -12,8 +12,8 @@
 "use client";
 
 import { useState, useSyncExternalStore, type ReactNode } from "react";
-import Link from "next/link";
 import { CloseIcon, MenuIcon } from "@/components/ui/icon-button";
+import { PageLink } from "@/components/ui/page-link";
 import { LayoutShell } from "@/components/layout/LayoutShell";
 import {
   ScrollContainerProvider,
@@ -73,18 +73,18 @@ export function DemoLayoutContent({ children }: DemoLayoutContentProps) {
               }
               headerRight={
                 <div className="flex items-center gap-2">
-                  <Link
+                  <PageLink
                     href="/register"
                     className="btn-primary ui-text-sm inline-flex min-h-[40px] items-center gap-1.5 rounded-md px-3 font-medium"
                   >
                     Sign Up
-                  </Link>
-                  <Link
+                  </PageLink>
+                  <PageLink
                     href="/login"
                     className="ui-text-sm border-edge-strong bg-surface text-body hover:bg-surface-muted inline-flex min-h-[40px] items-center gap-1.5 rounded-md border px-3 font-medium transition-colors active:bg-zinc-100 dark:active:bg-zinc-700"
                   >
                     Sign In
-                  </Link>
+                  </PageLink>
                 </div>
               }
             >

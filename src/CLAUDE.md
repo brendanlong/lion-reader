@@ -1,7 +1,10 @@
 # Source Code Guidelines
 
 - Choose between Suspense and inline loading by the criterion below, not by default. Keep components well-factored with small boundaries either way.
-- Always use client-only navigation. Don't use Next.js's `<Link>` or `useRouter` - they trigger SSR fetches and prefetching we don't want. Use `<ClientLink>` from `@/components/ui` for internal navigation instead.
+- Never use Next.js's `<Link>` for internal navigation (nor a raw `<a>`) — `<Link>` triggers the RSC soft-nav/prefetching we don't want, and a soft nav bypasses the CDN-cached HTML of the public pages. Pick by whether the target is inside the SPA:
+  - **Inside the SPA shell** (the `(app)` routes, the demo's own views): `<ClientLink>` from `@/components/ui/client-link` — client-only pushState nav, no SSR fetch.
+  - **Standalone routes outside the SPA** (auth pages, public legal pages, demo → sign-in/up): `<PageLink>` from `@/components/ui/page-link` — a plain full-page `<a>` that loads the target document (hitting the CDN cache) with no RSC request. See `src/server/http/page-cache.ts` for which public pages are CDN-cacheable.
+- Avoid `useRouter` for navigation for the same reason; it's fine for post-mutation redirects (e.g. into the app after login) where a real router transition is intended.
 
 ## Suspense vs. inline loading
 
