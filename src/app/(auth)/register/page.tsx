@@ -154,7 +154,6 @@ function RegisterForm() {
     return (
       <div>
         <h2 className="ui-text-xl text-body mb-6 font-semibold">Invite Required</h2>
-        {euNotice}
         <Alert variant="error" className="mb-4">
           This instance requires an invite to sign up. Please contact an administrator to request an
           invite.

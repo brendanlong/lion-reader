@@ -12,15 +12,16 @@
 export function EuRestrictionReason() {
   return (
     <>
-      Our{" "}
-      <a href="/privacy" target="_blank" rel="noopener noreferrer">
+      Despite our strict{" "}
+      <a href="/privacy" target="_blank" rel="noopener noreferrer" className="underline">
         privacy policy
-      </a>{" "}
-      is unusually strict, but EU requirements would additionally require us to{" "}
+      </a>
+      , EU law would require us to{" "}
       <a
         href="https://www.activemind.legal/guides/fine-eu-representative/"
         target="_blank"
         rel="noopener noreferrer"
+        className="underline"
       >
         retain a lawyer
       </a>
