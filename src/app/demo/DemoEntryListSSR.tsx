@@ -31,12 +31,19 @@ export function DemoEntryListSSR({ entries, backHref, title }: DemoEntryListSSRP
           const date = entry.publishedAt ?? entry.fetchedAt;
 
           return (
-            // Uses the same class helper as the interactive EntryListItem (unread,
-            // comfortable) so this crawlable-anchor list is pixel-identical to the
-            // post-hydration list and the swap in DemoLayoutContent shows no flash.
-            // The interactive item can't be reused directly here: it renders an
-            // <article role="button"> with nested star/read <button>s (invalid and
-            // uncrawlable inside an <a>), so we keep this stripped-down anchor.
+            // Uses the same class helper as the interactive EntryListItem so this
+            // crawlable-anchor list matches the post-hydration list and the swap in
+            // DemoLayoutContent shows no flash. The interactive item can't be reused
+            // directly here: it renders an <article role="button"> with nested
+            // star/read <button>s (invalid and uncrawlable inside an <a>), so we keep
+            // this stripped-down anchor.
+            //
+            // Assumes the default "comfortable" density: getItemClasses(false) is
+            // hardcoded because there's no pre-paint signal for list density (it's
+            // client-only localStorage, and compact changes DOM structure — dropping
+            // the summary — not just CSS, unlike the font/size CSS vars). A user who
+            // persisted compact density still sees a one-time comfortable→compact
+            // reflow on hydration; that's the uncommon case and no worse than before.
             <a
               key={entry.id}
               href={`${backHref}?entry=${entry.id}`}
