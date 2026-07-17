@@ -10,6 +10,7 @@
 import { ThemeProvider as NextThemesProvider, useTheme } from "next-themes";
 import { useEffect, type ReactNode } from "react";
 import { useIsEInkDisplay } from "./eink";
+import { DEFAULT_THEME, THEME_STORAGE_KEY, THEMES } from "./config";
 
 interface ThemeProviderProps {
   children: ReactNode;
@@ -121,11 +122,11 @@ export function ThemeProvider({ children, nonce }: ThemeProviderProps) {
   return (
     <NextThemesProvider
       attribute="class"
-      defaultTheme="system"
+      defaultTheme={DEFAULT_THEME}
       enableSystem
-      themes={["light", "dark", "epaper"]}
+      themes={[...THEMES]}
       disableTransitionOnChange
-      storageKey="lion-reader-theme"
+      storageKey={THEME_STORAGE_KEY}
       nonce={nonce}
     >
       <EInkSystemThemeOverride />
