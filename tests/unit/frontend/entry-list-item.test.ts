@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { getItemClasses } from "@/components/entries/EntryListItem";
+import { getItemClasses } from "@/components/entries/entryItemClasses";
 
 describe("getItemClasses", () => {
   const baseClasses =

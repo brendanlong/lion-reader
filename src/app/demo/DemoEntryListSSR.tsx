@@ -8,6 +8,7 @@
  */
 
 import { formatRelativeTime } from "@/lib/format";
+import { getItemClasses } from "@/components/entries/entryItemClasses";
 import { type DemoEntry } from "./data";
 
 interface DemoEntryListSSRProps {
@@ -29,17 +30,25 @@ export function DemoEntryListSSR({ entries, backHref, title }: DemoEntryListSSRP
           const date = entry.publishedAt ?? entry.fetchedAt;
 
           return (
+            // Uses the same class helper as the interactive EntryListItem (unread,
+            // comfortable) so this crawlable-anchor list is pixel-identical to the
+            // post-hydration list and the swap in DemoLayoutContent shows no flash.
+            // The interactive item can't be reused directly here: it renders an
+            // <article role="button"> with nested star/read <button>s (invalid and
+            // uncrawlable inside an <a>), so we keep this stripped-down anchor.
             <a
               key={entry.id}
               href={`${backHref}?entry=${entry.id}`}
-              className="group border-edge-input hover:bg-surface-muted relative block cursor-pointer rounded-lg border bg-zinc-50 p-3 transition-colors active:bg-zinc-200 sm:p-4 dark:bg-zinc-800 dark:active:bg-zinc-700"
+              className={`${getItemClasses(false)} block`}
             >
               <div className="flex items-start gap-3">
                 <div className="mt-1.5 shrink-0">
                   <span className="bg-body block h-2.5 w-2.5 rounded-full" aria-hidden="true" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <h3 className="ui-text-sm text-body line-clamp-2 font-medium">{displayTitle}</h3>
+                  <h3 className="ui-text-sm text-body line-clamp-2 font-semibold">
+                    {displayTitle}
+                  </h3>
                   <div className="ui-text-xs text-muted mt-1 flex items-center gap-2">
                     <span className="truncate">{source}</span>
                     <span aria-hidden="true">&middot;</span>
