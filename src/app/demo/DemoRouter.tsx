@@ -190,7 +190,7 @@ function DemoRouterContent() {
   );
 
   // Keyboard shortcuts (j/k navigation, o/Enter to open, Escape to close, etc.)
-  const { selectedEntryId } = useKeyboardShortcuts({
+  const { selectedEntryId, setSelectedEntryId } = useKeyboardShortcuts({
     entries,
     onOpenEntry: openEntry,
     onClose: closeEntry,
@@ -203,6 +203,15 @@ function DemoRouterContent() {
     onNavigateNext: goToNextEntry,
     onNavigatePrevious: goToPreviousEntry,
   });
+
+  // Sync selection with browser focus so Tabbing to a row makes m/s act on it,
+  // matching the real app.
+  const handleEntryFocus = useCallback(
+    (id: string) => {
+      setSelectedEntryId(id);
+    },
+    [setSelectedEntryId]
+  );
 
   const { onTouchStart: handleTouchStart, onTouchEnd: handleTouchEnd } = useSwipeGesture({
     onSwipeLeft: nextEntryId ? () => openEntry(nextEntryId) : undefined,
@@ -348,7 +357,12 @@ function DemoRouterContent() {
       </div>
 
       {/* Entry list */}
-      <DemoEntryList entries={entries} backHref={backHref} selectedEntryId={selectedEntryId} />
+      <DemoEntryList
+        entries={entries}
+        backHref={backHref}
+        selectedEntryId={selectedEntryId}
+        onEntryFocus={handleEntryFocus}
+      />
     </div>
   );
 }
