@@ -91,6 +91,17 @@ export function startMetricsServer(port = 9091): Server | null {
     }
   });
 
+  // Without an 'error' listener a bind failure (e.g. EADDRINUSE) emits an
+  // unhandled 'error' event that crashes the whole process. The metrics server
+  // is non-essential — losing scrapes must never take down the app (or an e2e
+  // run) — so log and carry on instead.
+  server.on("error", (error) => {
+    logger.error("Internal metrics server error", {
+      port,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
+
   server.listen(port, () => {
     logger.info("Internal metrics server started", { port });
   });
