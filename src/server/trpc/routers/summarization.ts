@@ -300,9 +300,15 @@ export const summarizationRouter = createTRPCRouter({
         };
       }
 
-      // Check if we should retry after a previous error
+      // Check if we should retry after a previous error. The backoff guards
+      // against automatic retry loops; an explicit user retry (the error
+      // card's "Try again" / the regenerate button both send regenerate:
+      // true) always goes through — e.g. after the user fixes the failure by
+      // changing model or keys.
       const canRetry =
-        !summaryRecord.errorAt || Date.now() - summaryRecord.errorAt.getTime() > RETRY_AFTER_MS;
+        input.regenerate ||
+        !summaryRecord.errorAt ||
+        Date.now() - summaryRecord.errorAt.getTime() > RETRY_AFTER_MS;
 
       if (!canRetry) {
         throw errors.internal(
