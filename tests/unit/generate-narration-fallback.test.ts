@@ -12,14 +12,18 @@ import { generateNarration } from "../../src/server/services/narration";
 import { splitNarrationParagraphs } from "../../src/lib/narration/paragraph-map";
 
 describe("generateNarration fallback paragraph map", () => {
-  const prevKey = process.env.GROQ_API_KEY;
+  const prevGroqKey = process.env.GROQ_API_KEY;
+  const prevCerebrasKey = process.env.CEREBRAS_API_KEY;
 
-  // Force the no-LLM fallback path deterministically.
+  // Force the no-LLM fallback path deterministically by clearing every provider
+  // narration can use (Cerebras and Groq).
   beforeAll(() => {
     delete process.env.GROQ_API_KEY;
+    delete process.env.CEREBRAS_API_KEY;
   });
   afterAll(() => {
-    if (prevKey !== undefined) process.env.GROQ_API_KEY = prevKey;
+    if (prevGroqKey !== undefined) process.env.GROQ_API_KEY = prevGroqKey;
+    if (prevCerebrasKey !== undefined) process.env.CEREBRAS_API_KEY = prevCerebrasKey;
   });
 
   it("aligns the map with the split for clean per-<p> content", async () => {
