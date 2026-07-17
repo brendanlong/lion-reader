@@ -146,6 +146,11 @@ export async function readResponseBufferWithSizeLimit(
   try {
     while (true) {
       const { done, value } = await reader.read();
+      // Check the timeout flag BEFORE `done`: a timeout calls `reader.cancel()`,
+      // which resolves the pending `read()` with `done: true`, so testing `done`
+      // first would silently return a partial body instead of failing. (At the
+      // exact deadline this may also reject a body whose final chunk landed in
+      // the same tick — acceptable, since that read did take the full timeout.)
       if (timedOut) {
         throw new BodyReadTimeoutError(url, timeoutMs!);
       }
