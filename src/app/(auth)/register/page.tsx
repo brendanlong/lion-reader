@@ -22,6 +22,7 @@ import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
 import { OAuthButtons } from "@/components/auth/OAuthButtons";
 import { AuthFooter } from "@/components/auth/AuthFooter";
+import { EuRestrictionReason } from "@/components/auth/EuRestrictionNotice";
 
 export default function RegisterPage() {
   return (
@@ -46,22 +47,8 @@ function RegisterForm() {
   // here and point them at self-hosting.
   const euNotice = euRestricted ? (
     <Alert variant="warning" className="mb-4">
-      <span className="font-semibold">Not available in the European Union.</span> Our
-      <a href="/privacy" target="_blank">
-        privacy policy
-      </a>{" "}
-      is unusually-strict, but EU requirements would additionally require us to
-      <a href="https://www.activemind.legal/guides/fine-eu-representative/">retain a laywer</a>,
-      which isn&apos;t viable for a free project. You&apos;re welcome to{" "}
-      <a
-        href="https://github.com/brendanlong/lion-reader"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="underline"
-      >
-        self-host Lion Reader
-      </a>{" "}
-      instead.
+      <span className="font-semibold">Not available in the European Union.</span>{" "}
+      <EuRestrictionReason />
     </Alert>
   ) : null;
 
