@@ -62,3 +62,13 @@ export function parseModelRef(ref: string): ModelRef {
 export function formatModelRef(provider: AiProvider, model: string): string {
   return `${provider}:${model}`;
 }
+
+/**
+ * Normalizes a stored model value to its `provider:model` form so values
+ * written before multi-provider support (bare Anthropic IDs) compare equal to
+ * their prefixed equivalents.
+ */
+export function normalizeModelRef(model: string): string {
+  const ref = parseModelRef(model);
+  return formatModelRef(ref.provider, ref.model);
+}

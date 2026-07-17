@@ -19,8 +19,7 @@ import { InlineCode } from "@/components/ui/inline-code";
 import {
   AI_PROVIDER_DISPLAY_NAMES,
   AI_PROVIDERS,
-  formatModelRef,
-  parseModelRef,
+  normalizeModelRef,
   type AiProvider,
 } from "@/lib/ai/model-ref";
 import {
@@ -29,15 +28,6 @@ import {
 } from "@/lib/summarization/constants";
 import { DEFAULT_NARRATION_MODEL } from "@/lib/narration/constants";
 import { SettingsSection } from "./SettingsSection";
-
-/**
- * Normalizes a stored model value to a `provider:model` reference so it
- * matches the ids in the model lists (legacy values are bare Anthropic IDs).
- */
-function normalizeModelRef(model: string): string {
-  const ref = parseModelRef(model);
-  return formatModelRef(ref.provider, ref.model);
-}
 
 interface ProviderKeyConfig {
   field: "anthropicApiKey" | "groqApiKey" | "cerebrasApiKey";
