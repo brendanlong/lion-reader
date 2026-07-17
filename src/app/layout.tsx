@@ -4,6 +4,8 @@ import { Geist, Geist_Mono, Merriweather, Literata, Inter, Source_Sans_3 } from 
 import { defaultOpenGraph } from "@/lib/metadata";
 import { appUrl } from "@/server/config/env";
 import { ThemeProvider } from "@/lib/theme/ThemeProvider";
+import { DEFAULT_THEME, THEME_STORAGE_KEY, THEMES } from "@/lib/theme/config";
+import { buildTextAppearanceScript } from "@/lib/appearance/config";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -65,64 +67,58 @@ export const viewport: Viewport = {
 };
 
 /**
- * Blocking script to apply text appearance settings before first paint.
+ * Blocking script to apply the theme class (dark/light/epaper) before first paint.
  *
- * This runs synchronously in the <head> to prevent flash of wrong text size/font.
- * Must be kept in sync with settings.ts storage key and logic.
+ * next-themes injects its own theme script, but only where <ThemeProvider> is
+ * mounted — inside <body>. That means <html> gets the theme class only after the
+ * whole <head> is parsed, so a browser that paints the canvas background during
+ * head parsing (Firefox notably) shows a light flash for a user who explicitly
+ * chose dark on a light-scheme OS, on every full-page navigation (the demo/auth
+ * pages use full document loads). The `@media (prefers-color-scheme)` fallback in
+ * globals.css only covers *system*-theme users, not an explicit choice. Applying
+ * the class here in <head>, before any body parsing, closes that gap; next-themes
+ * re-asserts the identical class on hydration (idempotent, no visible change).
  *
- * Note: Theme (dark/light mode) is handled by next-themes, not this script.
- *
- * Sets CSS custom properties for text appearance:
- * - --entry-font-family
- * - --entry-font-size
- * - --entry-line-height
- * - --entry-text-align
+ * The storageKey / themes / default come from the shared theme config (used by
+ * ThemeProvider too) so the two can't drift; the resolution *logic* here still
+ * mirrors next-themes' own inline script (the library doesn't export it), and
+ * attribute=class / enableSystem must stay matched. The e-ink "system → epaper"
+ * override is left to EInkSystemThemeOverride post-hydration, exactly as before.
  */
-const textAppearanceScript = `
+const themeScript = `
 (function() {
   try {
-    var stored = localStorage.getItem('lion-reader-appearance-settings');
-    var settings = {
-      textSize: 'medium',
-      fontFamily: 'system',
-      textJustification: 'left'
-    };
-    if (stored) {
-      var parsed = JSON.parse(stored);
-      if (['small', 'medium', 'large', 'x-large'].indexOf(parsed.textSize) >= 0) {
-        settings.textSize = parsed.textSize;
-      }
-      if (['system', 'merriweather', 'literata', 'inter', 'source-sans'].indexOf(parsed.fontFamily) >= 0) {
-        settings.fontFamily = parsed.fontFamily;
-      }
-      if (parsed.textJustification === 'justify') {
-        settings.textJustification = 'justify';
-      }
+    var themes = ${JSON.stringify(THEMES)};
+    var stored = localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)}) || ${JSON.stringify(
+      DEFAULT_THEME
+    )};
+    var resolved = themes.indexOf(stored) < 0 ? ${JSON.stringify(DEFAULT_THEME)} : stored;
+    if (resolved === 'system') {
+      resolved = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     }
-
-    // Font configs with size adjustments for visual consistency
-    var fontConfigs = {
-      'system': { family: 'inherit', sizeAdjust: 1, lineHeight: 1.7 },
-      'merriweather': { family: 'var(--font-merriweather), Georgia, serif', sizeAdjust: 0.929, lineHeight: 1.8 },
-      'literata': { family: 'var(--font-literata), Georgia, serif', sizeAdjust: 1, lineHeight: 1.75 },
-      'inter': { family: 'var(--font-inter), system-ui, sans-serif', sizeAdjust: 0.945, lineHeight: 1.7 },
-      'source-sans': { family: 'var(--font-source-sans), system-ui, sans-serif', sizeAdjust: 1.061, lineHeight: 1.7 }
-    };
-    var baseSizes = { 'small': 0.875, 'medium': 1, 'large': 1.125, 'x-large': 1.25 };
-
-    var fontConfig = fontConfigs[settings.fontFamily] || fontConfigs['system'];
-    var baseSize = baseSizes[settings.textSize] || 1;
-    var adjustedSize = baseSize * fontConfig.sizeAdjust;
-
-    // Set CSS custom properties for entry text styling
-    var style = document.documentElement.style;
-    style.setProperty('--entry-font-family', fontConfig.family);
-    style.setProperty('--entry-font-size', adjustedSize + 'rem');
-    style.setProperty('--entry-line-height', fontConfig.lineHeight);
-    style.setProperty('--entry-text-align', settings.textJustification);
+    var el = document.documentElement;
+    el.classList.remove.apply(el.classList, themes);
+    el.classList.add(resolved);
+    // next-themes sets color-scheme only for light/dark; .epaper declares its own
+    // (color-scheme: light) in globals.css.
+    if (resolved === 'light' || resolved === 'dark') {
+      el.style.colorScheme = resolved;
+    }
   } catch (e) {}
 })();
 `;
+
+/**
+ * Blocking script to apply text appearance settings before first paint.
+ *
+ * Runs synchronously in the <head> to prevent a flash of wrong text size/font.
+ * Built from the shared appearance config (storage key, defaults, font metrics,
+ * size formula) so it can't drift from the runtime store / useEntryTextStyles;
+ * the appearance-head-script unit test pins its output to entryTextStyleVars.
+ *
+ * Note: Theme (dark/light mode) is handled by next-themes plus themeScript above.
+ */
+const textAppearanceScript = buildTextAppearanceScript();
 
 /**
  * Service worker registration script.
@@ -173,6 +169,11 @@ export default async function RootLayout({
         {/* suppressHydrationWarning: browsers blank the nonce content attribute
             after parsing (nonce hiding), so hydration would see nonce="" and
             warn on every load. The scripts have executed by then either way. */}
+        <script
+          nonce={nonce}
+          suppressHydrationWarning
+          dangerouslySetInnerHTML={{ __html: themeScript }}
+        />
         <script
           nonce={nonce}
           suppressHydrationWarning
