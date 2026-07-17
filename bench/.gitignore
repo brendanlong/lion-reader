@@ -1,0 +1,5 @@
+# Throwaway load-test artifacts — never commit.
+# sessions.json contains live session tokens.
+sessions.json
+results-*.json
+prod-stats.txt
