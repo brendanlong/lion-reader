@@ -94,7 +94,7 @@ export function FileFeedIssueDialog({ isOpen, feed, onClose }: FileFeedIssueDial
               type="checkbox"
               checked={linkConfirmed}
               onChange={(e) => setLinkConfirmed(e.target.checked)}
-              className="text-accent focus:ring-focus border-edge-input mt-0.5 h-4 w-4 rounded dark:bg-zinc-800"
+              className="text-accent border-edge-input mt-0.5 h-4 w-4 rounded dark:bg-zinc-800"
             />
             <span className="ui-text-sm text-body">
               I&apos;ve confirmed the{" "}
@@ -114,7 +114,7 @@ export function FileFeedIssueDialog({ isOpen, feed, onClose }: FileFeedIssueDial
               type="checkbox"
               checked={publicAcknowledged}
               onChange={(e) => setPublicAcknowledged(e.target.checked)}
-              className="text-accent focus:ring-focus border-edge-input mt-0.5 h-4 w-4 rounded dark:bg-zinc-800"
+              className="text-accent border-edge-input mt-0.5 h-4 w-4 rounded dark:bg-zinc-800"
             />
             <span className="ui-text-sm text-body">
               I understand that issues are filed publicly at{" "}

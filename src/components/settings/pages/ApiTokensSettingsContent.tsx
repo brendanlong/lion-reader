@@ -201,7 +201,7 @@ export default function ApiTokensSettingsContent() {
                       type="checkbox"
                       checked={selectedScopes.includes(scope)}
                       onChange={() => toggleScope(scope)}
-                      className="text-accent focus:ring-focus border-edge-input mt-1 h-4 w-4 rounded dark:bg-zinc-800"
+                      className="text-accent border-edge-input mt-1 h-4 w-4 rounded dark:bg-zinc-800"
                     />
                     <div className="flex-1">
                       <p className="text-body font-medium">{label}</p>
