@@ -16,6 +16,7 @@ import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
+import { EuRestrictionReason } from "@/components/auth/EuRestrictionNotice";
 
 export default function CompleteSignupPage() {
   const router = useRouter();
@@ -131,6 +132,12 @@ export default function CompleteSignupPage() {
               I confirm that I am not located in the European Union
             </span>
           </label>
+        )}
+
+        {euRestricted && (
+          <p className="ui-text-xs text-muted">
+            <EuRestrictionReason />
+          </p>
         )}
       </div>
 
