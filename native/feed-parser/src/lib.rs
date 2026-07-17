@@ -15,6 +15,10 @@ use napi::{Env, Error, Result, Status, Task};
 
 use lion_reader_feed_parser_core as core;
 
+mod external_string;
+
+use external_string::LargeString;
+
 #[napi(object)]
 pub struct DateCandidate {
     /// `true` for the primary date element (RSS `pubDate`, Atom `published`):
@@ -32,8 +36,10 @@ pub struct RawParsedEntry {
     pub title: Option<String>,
     pub author: Option<String>,
     /// Absent when `content_is_summary` is set — the caller reuses `summary`.
-    pub content: Option<String>,
-    pub summary: Option<String>,
+    /// `LargeString`: converts to JS as a zero-copy external string when
+    /// large and pure ASCII (see `external_string.rs`).
+    pub content: Option<LargeString>,
+    pub summary: Option<LargeString>,
     /// True when the entry's content is byte-identical to its summary (the
     /// common description-only RSS / summary-only Atom case). The string is
     /// then shipped across the N-API boundary once, as `summary`, instead of
@@ -94,12 +100,15 @@ fn convert_entry(entry: core::types::ParsedEntry) -> RawParsedEntry {
         link: entry.link,
         title: entry.title,
         author: entry.author,
+        // The LargeString conversions also run the external-eligibility
+        // (ASCII) scan here, inside `Task::compute` for async parses — off
+        // the main thread.
         content: if content_is_summary {
             None
         } else {
-            entry.content
+            entry.content.map(LargeString::from)
         },
-        summary: entry.summary,
+        summary: entry.summary.map(LargeString::from),
         content_is_summary,
         media_description: entry.media_description,
         media_thumbnail_url: entry.media_thumbnail_url,
@@ -252,4 +261,33 @@ impl Task for ParseOpmlJob {
 #[napi(ts_return_type = "Promise<RawOpmlResult>")]
 pub fn parse_opml_async(content: String) -> AsyncTask<ParseOpmlJob> {
     AsyncTask::new(ParseOpmlJob { content })
+}
+
+#[napi(object)]
+pub struct StringConversionStats {
+    /// Zero-copy external Latin-1 strings actually created.
+    pub external_created: f64,
+    /// External creation requested but V8 copied anyway (`copied` out-param).
+    pub external_declined_copied: f64,
+    /// At/above the size threshold but not pure ASCII — ordinary copy.
+    pub copied_non_ascii: f64,
+    /// Below the size threshold — ordinary copy.
+    pub copied_small: f64,
+    /// External API unavailable (Node < 20.4) — ordinary copy.
+    pub copied_no_api: f64,
+}
+
+/// Process-lifetime counters for how content/summary strings crossed the
+/// N-API boundary. Diagnostic only (benchmarks, GC stress tests).
+#[napi]
+pub fn string_conversion_stats() -> StringConversionStats {
+    use std::sync::atomic::Ordering;
+    StringConversionStats {
+        external_created: external_string::EXTERNAL_CREATED.load(Ordering::Relaxed) as f64,
+        external_declined_copied: external_string::EXTERNAL_DECLINED_COPIED.load(Ordering::Relaxed)
+            as f64,
+        copied_non_ascii: external_string::COPIED_NON_ASCII.load(Ordering::Relaxed) as f64,
+        copied_small: external_string::COPIED_SMALL.load(Ordering::Relaxed) as f64,
+        copied_no_api: external_string::COPIED_NO_API.load(Ordering::Relaxed) as f64,
+    }
 }
