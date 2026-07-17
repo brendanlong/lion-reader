@@ -46,9 +46,18 @@ const FORCE_EXIT_TIMEOUT_MS = DRAIN_TIMEOUT_MS + 10_000;
 // generated .next/standalone/server.js uses — so it never tries to load
 // next.config.js at runtime.
 if (!dev) {
-  const requiredServerFiles = JSON.parse(
-    readFileSync(join(process.cwd(), ".next", "required-server-files.json"), "utf8")
-  ) as { config: Record<string, unknown> };
+  const manifestPath = join(process.cwd(), ".next", "required-server-files.json");
+  let requiredServerFiles: { config: Record<string, unknown> };
+  try {
+    requiredServerFiles = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+      config: Record<string, unknown>;
+    };
+  } catch (error) {
+    throw new Error(
+      `Failed to read ${manifestPath} — the production server needs a completed ` +
+        `\`next build\` in the working directory. Original error: ${String(error)}`
+    );
+  }
   process.env.__NEXT_PRIVATE_STANDALONE_CONFIG = JSON.stringify(requiredServerFiles.config);
 }
 
