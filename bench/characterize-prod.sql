@@ -98,11 +98,13 @@ SELECT type, count(*) AS feeds FROM feeds GROUP BY type ORDER BY feeds DESC;
 -- Effective poll interval currently scheduled (next_fetch_at - last_fetched_at).
 SELECT
   count(*) FILTER (WHERE next_fetch_at IS NOT NULL)                                    AS feeds_scheduled,
-  round(avg(EXTRACT(EPOCH FROM (next_fetch_at - last_fetched_at)))/60.0, 1)            AS mean_interval_min,
-  round(percentile_cont(0.5) WITHIN GROUP (
-          ORDER BY EXTRACT(EPOCH FROM (next_fetch_at - last_fetched_at)))/60.0, 1)     AS p50_interval_min,
-  round(percentile_cont(0.9) WITHIN GROUP (
-          ORDER BY EXTRACT(EPOCH FROM (next_fetch_at - last_fetched_at)))/60.0, 1)     AS p90_interval_min
+  -- EXTRACT(EPOCH ...) and percentile_cont over it return double precision, and
+  -- round(double, int) doesn't exist in Postgres — cast to numeric first.
+  round((avg(EXTRACT(EPOCH FROM (next_fetch_at - last_fetched_at)))/60.0)::numeric, 1) AS mean_interval_min,
+  round((percentile_cont(0.5) WITHIN GROUP (
+          ORDER BY EXTRACT(EPOCH FROM (next_fetch_at - last_fetched_at)))/60.0)::numeric, 1)  AS p50_interval_min,
+  round((percentile_cont(0.9) WITHIN GROUP (
+          ORDER BY EXTRACT(EPOCH FROM (next_fetch_at - last_fetched_at)))/60.0)::numeric, 1)  AS p90_interval_min
 FROM feeds
 WHERE last_fetched_at IS NOT NULL AND next_fetch_at IS NOT NULL;
 
