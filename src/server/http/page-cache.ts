@@ -7,8 +7,8 @@
  * cookie, and even the static legal pages (`/privacy`, `/terms`) inherit the
  * root layout's cookie read — so Next stamps them `private, no-store` by default
  * and a CDN caches nothing. This module opts the *shareable* renders back into
- * caching and is
- * enforced at the custom-server layer (`applyPageCacheHeaders`), because
+ * caching and is enforced at the custom-server layer (`applyPageCacheHeaders`),
+ * because
  * `next.config.ts` `headers()` can neither reliably override Next's own
  * `Cache-Control` on a dynamic route nor vary on cookie presence.
  *
