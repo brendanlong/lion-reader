@@ -24,7 +24,7 @@ export const metadata: Metadata = {
 
 export default function PrivacyPolicyPage() {
   return (
-    <LegalPage title="Privacy Policy" lastUpdated="February 2026">
+    <LegalPage title="Privacy Policy" lastUpdated="July 2026">
       <LegalSection title="Overview">
         <LegalParagraph>
           Lion Reader is committed to protecting your privacy. We collect only the data necessary to
@@ -86,7 +86,10 @@ export default function PrivacyPolicyPage() {
           <li>To maintain your account and authenticate you when you sign in</li>
           <li>To fetch, store, and display RSS/Atom feeds you subscribe to</li>
           <li>To track your reading progress (read/unread status, starred items)</li>
-          <li>To enable optional features like audio narration and saved articles</li>
+          <li>
+            To enable optional features like article summarization, audio narration, saved articles,
+            and Discord integration
+          </li>
           <li>
             To monitor service health, diagnose errors, and improve performance (via Sentry and
             Grafana)
@@ -151,6 +154,42 @@ export default function PrivacyPolicyPage() {
 
         <div className="mt-4 space-y-6">
           <Card padding="md">
+            <LegalSubsection title="Article Summarization (Anthropic, Cerebras, Groq) — Optional">
+              <LegalParagraph>
+                <strong>This feature is optional and off by default.</strong> Summarization only
+                happens when you explicitly request a summary for an article and a summarization
+                model has been configured (either your own API key or a server-provided one). When
+                you generate a summary, the article&apos;s title and text content are sent to your
+                chosen AI provider—Anthropic, Cerebras, or Groq—to produce the summary.
+              </LegalParagraph>
+              <LegalParagraph>
+                You choose which provider and model to use in your settings, and you may provide a
+                custom summarization prompt. Generated summaries are cached on our servers so the
+                same article does not need to be reprocessed.
+              </LegalParagraph>
+              <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+                <TextLink
+                  href="https://www.anthropic.com/legal/privacy"
+                  external
+                  className="ui-text-sm"
+                >
+                  Anthropic&apos;s Privacy Policy &rarr;
+                </TextLink>
+                <TextLink
+                  href="https://www.cerebras.ai/privacy-policy"
+                  external
+                  className="ui-text-sm"
+                >
+                  Cerebras&apos;s Privacy Policy &rarr;
+                </TextLink>
+                <TextLink href="https://groq.com/privacy-policy/" external className="ui-text-sm">
+                  Groq&apos;s Privacy Policy &rarr;
+                </TextLink>
+              </p>
+            </LegalSubsection>
+          </Card>
+
+          <Card padding="md">
             <LegalSubsection title="Audio Narration (Groq) — Optional">
               <LegalParagraph>
                 <strong>This feature is optional and disabled by default.</strong> When you enable
@@ -198,11 +237,53 @@ export default function PrivacyPolicyPage() {
             </LegalParagraph>
           </LegalSubsection>
 
-          <LegalSubsection title="Authentication Providers (Google, Apple)">
+          <LegalSubsection title="Authentication Providers (Google, Apple, Discord)">
             <LegalParagraph tight>
-              If you choose to sign in with Google or Apple, we use their OAuth services. We only
-              receive your email address and profile ID—we do not access any other data from these
-              providers.
+              If you choose to sign in with Google, Apple, or Discord, we use their OAuth services.
+              We only receive your email address and profile ID—we do not access any other data from
+              these providers.
+            </LegalParagraph>
+          </LegalSubsection>
+
+          <LegalSubsection title="Discord Bot — Optional">
+            <LegalParagraph tight>
+              You can optionally link your Discord account to save articles through our Discord bot
+              (by reacting to a message or sending a link to the bot). If you enable this feature,
+              Discord processes the messages, reactions, and links involved in the interaction as
+              part of operating its platform, and we receive the Discord user ID and the links you
+              share so we can save them to your account. The bot is not active unless you
+              deliberately link it.
+            </LegalParagraph>
+            <p className="mt-2">
+              <TextLink href="https://discord.com/privacy" external className="ui-text-sm">
+                View Discord&apos;s Privacy Policy &rarr;
+              </TextLink>
+            </p>
+          </LegalSubsection>
+
+          <LegalSubsection title="Inbound Email (Mailgun)">
+            <LegalParagraph tight>
+              If you use the email newsletter feature, we use Mailgun to receive emails sent to your
+              unique ingest address and forward them to our servers, where they are stored as feed
+              entries. Mailgun processes the sender, subject, and content of those emails in order
+              to deliver them to us.
+            </LegalParagraph>
+            <p className="mt-2">
+              <TextLink
+                href="https://www.mailgun.com/legal/privacy-policy/"
+                external
+                className="ui-text-sm"
+              >
+                View Mailgun&apos;s Privacy Policy &rarr;
+              </TextLink>
+            </p>
+          </LegalSubsection>
+
+          <LegalSubsection title="Object Storage (Fly.io Tigris)">
+            <LegalParagraph tight>
+              Images embedded in some articles (for example, images from imported Google Docs) are
+              stored on Fly.io&apos;s Tigris object storage. These stored images are served from
+              Tigris when you view the article.
             </LegalParagraph>
           </LegalSubsection>
         </div>
@@ -304,8 +385,8 @@ export default function PrivacyPolicyPage() {
             individual login sessions from your account settings
           </li>
           <li>
-            <strong>Control features:</strong> Disable optional features like AI text processing for
-            narration at any time
+            <strong>Control features:</strong> Enable or disable optional features like article
+            summarization, AI text processing for narration, and the Discord bot at any time
           </li>
           <li>
             <strong>Delete:</strong> Delete your account and all associated data at any time from
