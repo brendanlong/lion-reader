@@ -18,7 +18,11 @@ import { db } from "@/server/db";
 import { feeds } from "@/server/db/schema";
 import { handleVerificationChallengeByFeed, verifyHmacSignatureByFeed } from "@/server/feed/websub";
 import { ingestWebsubNotification } from "@/server/feed/websub-notification";
-import { ContentTooLargeError, readRequestBufferWithSizeLimit } from "@/server/http/fetch";
+import {
+  BodyReadTimeoutError,
+  ContentTooLargeError,
+  readRequestBufferWithSizeLimit,
+} from "@/server/http/fetch";
 import { usageLimitsConfig } from "@/server/config/env";
 import { logger } from "@/lib/logger";
 import { isValidUuid } from "@/lib/uuidv7";
@@ -98,7 +102,8 @@ export async function POST(
     return new Response("Invalid feed ID", { status: 400 });
   }
 
-  // Bound the body BEFORE buffering + HMAC (see the per-subscription route).
+  // Bound the body BEFORE buffering + HMAC (see the per-subscription route):
+  // size-capped against a huge payload, time-capped against slow-loris.
   let bodyBuffer: Buffer;
   try {
     bodyBuffer = await readRequestBufferWithSizeLimit(request, usageLimitsConfig.maxFeedSizeBytes);
@@ -106,6 +111,10 @@ export async function POST(
     if (error instanceof ContentTooLargeError) {
       logger.warn("WebSub notification body too large", { feedId });
       return new Response("Payload too large", { status: 413 });
+    }
+    if (error instanceof BodyReadTimeoutError) {
+      logger.warn("WebSub notification body read timed out", { feedId });
+      return new Response("Request timeout", { status: 408 });
     }
     throw error;
   }
