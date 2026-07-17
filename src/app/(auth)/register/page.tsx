@@ -46,10 +46,13 @@ function RegisterForm() {
   // here and point them at self-hosting.
   const euNotice = euRestricted ? (
     <Alert variant="warning" className="mb-4">
-      <span className="font-semibold">Not available in the European Union.</span> This is a free
-      hobby project, and we&apos;re not able to take on the EU&apos;s regulatory requirements or
-      liability, so please don&apos;t sign up if you&apos;re located in the EU. You&apos;re very
-      welcome to{" "}
+      <span className="font-semibold">Not available in the European Union.</span> Our
+      <a href="/privacy" target="_blank">
+        privacy policy
+      </a>{" "}
+      is unusually-strict, but EU requirements would additionally require us to
+      <a href="https://www.activemind.legal/guides/fine-eu-representative/">retain a laywer</a>,
+      which isn&apos;t viable for a free project. You&apos;re welcome to{" "}
       <a
         href="https://github.com/brendanlong/lion-reader"
         target="_blank"
