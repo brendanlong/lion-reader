@@ -9,6 +9,7 @@
 
 import { formatRelativeTime } from "@/lib/format";
 import { getItemClasses } from "@/components/entries/entryItemClasses";
+import { StarIcon, StarFilledIcon } from "@/components/ui/icon-button";
 import { type DemoEntry } from "./data";
 
 interface DemoEntryListSSRProps {
@@ -46,9 +47,26 @@ export function DemoEntryListSSR({ entries, backHref, title }: DemoEntryListSSRP
                   <span className="bg-body block h-2.5 w-2.5 rounded-full" aria-hidden="true" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <h3 className="ui-text-sm text-body line-clamp-2 font-semibold">
-                    {displayTitle}
-                  </h3>
+                  {/* Title + star, mirroring EntryListItem's resting layout so the
+                      star doesn't pop in on hydration. The star is a static icon
+                      here (not a toggle button) because a <button> can't nest in
+                      an <a>; it matches the interactive item's at-rest appearance:
+                      the -m/p touch-target padding there nets to the same 16px box. */}
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="ui-text-sm text-body line-clamp-2 font-semibold">
+                      {displayTitle}
+                    </h3>
+                    <span
+                      className={`shrink-0 ${entry.starred ? "text-star" : "text-zinc-300 dark:text-zinc-600"}`}
+                      aria-hidden="true"
+                    >
+                      {entry.starred ? (
+                        <StarFilledIcon className="h-4 w-4" />
+                      ) : (
+                        <StarIcon className="h-4 w-4" />
+                      )}
+                    </span>
+                  </div>
                   <div className="ui-text-xs text-muted mt-1 flex items-center gap-2">
                     <span className="truncate">{source}</span>
                     <span aria-hidden="true">&middot;</span>
