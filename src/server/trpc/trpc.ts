@@ -26,6 +26,7 @@ import {
   validateAdminSecret,
 } from "@/server/auth/admin-session";
 import { extractBearerToken } from "@/server/auth/bearer";
+import { isSignupConfirmed } from "@/server/auth/confirmation";
 import { logger } from "@/lib/logger";
 import { trackTrpcProcedure } from "@/server/metrics/metrics";
 import * as Sentry from "@sentry/nextjs";
@@ -198,15 +199,16 @@ export const protectedProcedure = t.procedure
 /**
  * Middleware that enforces signup confirmation.
  * Throws FORBIDDEN with SIGNUP_CONFIRMATION_REQUIRED code if the user
- * has not completed the signup confirmation flow (ToS, Privacy, EU check).
+ * has not completed the signup confirmation flow (ToS, Privacy, and — on
+ * EU-restricted instances — the not-in-the-EU certification). Delegates to
+ * `isSignupConfirmed` so the EU gate stays consistent across surfaces.
  * Must be chained after authMiddleware.
  */
 const confirmedMiddleware = t.middleware(({ ctx, next }) => {
   const session = ctx.session!;
   const sessionToken = ctx.sessionToken!;
 
-  const { tosAgreedAt, privacyPolicyAgreedAt, notEuAgreedAt } = session.user;
-  if (!tosAgreedAt || !privacyPolicyAgreedAt || !notEuAgreedAt) {
+  if (!isSignupConfirmed(session.user)) {
     throw errors.signupConfirmationRequired();
   }
 

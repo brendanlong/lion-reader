@@ -45,6 +45,11 @@ kill_timeout = 30
   # apple/google are open to the public; email is allowed only with a valid invite.
   ALLOWED_SIGNUP_PROVIDERS = "apple,google,email"
   ALLOWED_PUBLIC_SIGNUP_PROVIDERS = "apple,google"
+
+  # The hosted instance is not offered to EU users: require the not-in-the-EU
+  # certification at signup and show the "not available in the EU" notice. Unset
+  # (the default) on self-hosted instances, which take on no EU obligation.
+  EU_RESTRICTED = "true"
   NEXT_PUBLIC_APP_URL = "https://lionreader.com"
   NODE_ENV = "production"
   PORT = "3000"

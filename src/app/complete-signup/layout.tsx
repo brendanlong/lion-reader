@@ -12,6 +12,7 @@ import type { ReactNode } from "react";
 import { TRPCProvider } from "@/lib/trpc/provider";
 import { AuthErrorHandler } from "@/components/app/AuthErrorHandler";
 import { validateSession } from "@/server/auth/session";
+import { isSignupConfirmed } from "@/server/auth/confirmation";
 
 interface CompleteSignupLayoutProps {
   children: ReactNode;
@@ -31,11 +32,7 @@ export default async function CompleteSignupLayout({ children }: CompleteSignupL
   }
 
   // Already confirmed, go to app
-  if (
-    session.user.tosAgreedAt &&
-    session.user.privacyPolicyAgreedAt &&
-    session.user.notEuAgreedAt
-  ) {
+  if (isSignupConfirmed(session.user)) {
     redirect("/all");
   }
 

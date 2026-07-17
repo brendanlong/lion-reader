@@ -22,6 +22,7 @@ import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
 import { OAuthButtons } from "@/components/auth/OAuthButtons";
 import { AuthFooter } from "@/components/auth/AuthFooter";
+import { EuRestrictionReason } from "@/components/auth/EuRestrictionNotice";
 
 export default function RegisterPage() {
   return (
@@ -40,6 +41,16 @@ function RegisterForm() {
 
   // Fetch signup configuration
   const { data: signupConfigData, isLoading: isLoadingConfig } = trpc.auth.signupConfig.useQuery();
+  const euRestricted = signupConfigData?.euRestricted ?? false;
+
+  // On EU-restricted instances, warn EU users up front that they can't sign up
+  // here and point them at self-hosting.
+  const euNotice = euRestricted ? (
+    <Alert variant="warning" className="mb-4">
+      <span className="font-semibold">Not available in the European Union.</span>{" "}
+      <EuRestrictionReason />
+    </Alert>
+  ) : null;
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -162,6 +173,8 @@ function RegisterForm() {
   return (
     <div>
       <h2 className="ui-text-xl text-body mb-6 font-semibold">Create your account</h2>
+
+      {euNotice}
 
       {errors.form && (
         <Alert variant="error" className="mb-4">

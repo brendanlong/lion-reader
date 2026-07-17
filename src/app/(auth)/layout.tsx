@@ -10,6 +10,7 @@ import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { TRPCProvider } from "@/lib/trpc/provider";
 import { validateSession } from "@/server/auth/session";
+import { isSignupConfirmed } from "@/server/auth/confirmation";
 import { AuthLayoutContent } from "./AuthLayoutContent";
 
 interface AuthLayoutProps {
@@ -25,11 +26,7 @@ export default async function AuthLayout({ children }: AuthLayoutProps) {
     const session = await validateSession(sessionToken);
     if (session) {
       // User is signed in but hasn't completed signup confirmation
-      if (
-        !session.user.tosAgreedAt ||
-        !session.user.privacyPolicyAgreedAt ||
-        !session.user.notEuAgreedAt
-      ) {
+      if (!isSignupConfirmed(session.user)) {
         redirect("/complete-signup");
       }
       // User is fully authenticated, redirect to the app
