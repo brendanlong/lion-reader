@@ -46,6 +46,12 @@ interface EntryListItemProps {
    */
   selected?: boolean;
   /**
+   * Callback when the entry row itself receives focus (e.g. via Tab). Used to
+   * sync the keyboard-shortcut selection with browser focus so `m`/`s` act on
+   * the tab-focused entry, not just one reached with j/k.
+   */
+  onFocus?: (entryId: string) => void;
+  /**
    * Callback when the read status indicator is clicked.
    * entryType and subscriptionId are required (but subscriptionId can be null) to force explicit handling.
    */
@@ -121,6 +127,7 @@ export const EntryListItem = memo(function EntryListItem({
   onClick,
   onMouseDown,
   selected = false,
+  onFocus,
   onToggleRead,
   onToggleStar,
   density = "comfortable",
@@ -152,6 +159,14 @@ export const EntryListItem = memo(function EntryListItem({
     onMouseDown?.(id);
   };
 
+  const handleFocus = (e: React.FocusEvent) => {
+    // Only sync selection when the row itself is focused (via Tab), not when a
+    // descendant control receives focus and bubbles up (focus events bubble).
+    if (e.target === e.currentTarget) {
+      onFocus?.(id);
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
@@ -177,6 +192,7 @@ export const EntryListItem = memo(function EntryListItem({
       onClick={handleClick}
       onMouseDown={handleMouseDown}
       onKeyDown={handleKeyDown}
+      onFocus={handleFocus}
       data-entry-id={id}
       className={getItemClasses(read, selected, density)}
       aria-label={`${read ? "Read" : "Unread"}${selected ? ", selected" : ""} article: ${displayTitle} from ${source}`}
@@ -189,10 +205,14 @@ export const EntryListItem = memo(function EntryListItem({
             // the padding with an equal negative margin so layout is unchanged.
             <button
               type="button"
+              // Kept out of the tab order: tabbing a row would otherwise stop on
+              // the row, then this dot, then the star. Keyboard users toggle read
+              // with `m` on the focused row; this stays available to pointer users.
+              tabIndex={-1}
               onClick={handleToggleRead}
               className="group/toggle -m-[17px] flex items-center justify-center rounded-full p-[17px]"
               aria-label={read ? "Mark as unread" : "Mark as read"}
-              title={read ? "Mark as unread" : "Mark as read"}
+              title={read ? "Mark as unread" : "Mark as read (m)"}
             >
               <span
                 className={`block h-2.5 w-2.5 rounded-full transition-colors ${
@@ -227,6 +247,9 @@ export const EntryListItem = memo(function EntryListItem({
             {onToggleStar ? (
               <button
                 type="button"
+                // Out of the tab order like the read dot above — keyboard users
+                // toggle the star with `s` on the focused row (pointer still works).
+                tabIndex={-1}
                 onClick={handleToggleStar}
                 // 44px WCAG touch target: pad the 16px icon out to 44px and cancel
                 // the padding with an equal negative margin so layout is unchanged.
@@ -236,7 +259,7 @@ export const EntryListItem = memo(function EntryListItem({
                     : "hover:text-star text-zinc-300 opacity-0 group-hover:opacity-100 dark:text-zinc-600"
                 }`}
                 aria-label={starred ? "Remove from starred" : "Add to starred"}
-                title={starred ? "Remove from starred" : "Add to starred"}
+                title={starred ? "Remove from starred (s)" : "Add to starred (s)"}
               >
                 {starred ? (
                   <StarFilledIcon className="h-4 w-4" />

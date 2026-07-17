@@ -73,7 +73,13 @@ export function MainScrollContainer({ children, className }: MainScrollContainer
   );
 
   return (
-    <main ref={setRef} className={className}>
+    // tabIndex={-1} keeps this scroll region out of the sequential tab order.
+    // Firefox (and Chrome for childless scrollers) otherwise makes any scrollable
+    // element keyboard-focusable, adding a stray tab stop that renders as a focus
+    // outline "line" across the top of the content. The region is full of
+    // focusable controls (buttons, entries), so a tab stop on the container
+    // itself is redundant; keyboard users still reach and scroll it via those.
+    <main ref={setRef} tabIndex={-1} className={className}>
       {children}
     </main>
   );

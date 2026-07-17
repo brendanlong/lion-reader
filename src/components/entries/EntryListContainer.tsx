@@ -189,7 +189,7 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
   );
 
   // Keyboard shortcuts
-  const { selectedEntryId } = useKeyboardShortcuts({
+  const { selectedEntryId, setSelectedEntryId } = useKeyboardShortcuts({
     entries,
     onOpenEntry: setOpenEntryId,
     onClose: () => setOpenEntryId(null),
@@ -206,6 +206,15 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
     onNavigateNext: goToNextEntry,
     onNavigatePrevious: goToPreviousEntry,
   });
+
+  // Sync selection with browser focus so Tabbing to a row makes `m`/`s` act on
+  // it (they key off the shortcut selection, which j/k also sets).
+  const handleEntryFocus = useCallback(
+    (entryId: string) => {
+      setSelectedEntryId(entryId);
+    },
+    [setSelectedEntryId]
+  );
 
   // Query state for the presentational EntryList
   const externalQueryState: ExternalQueryState = useMemo(
@@ -260,6 +269,7 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
     <EntryList
       onEntryClick={handleEntryClick}
       onEntryMouseDown={handleEntryMouseDown}
+      onEntryFocus={handleEntryFocus}
       selectedEntryId={selectedEntryId}
       onToggleRead={toggleRead}
       onToggleStar={toggleStar}
