@@ -259,7 +259,6 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
           sortOrder,
         }}
         skeletonCount={5}
-        selectedEntryId={selectedEntryId}
         onEntryClick={handleEntryClick}
       />
     );

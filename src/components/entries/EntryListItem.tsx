@@ -42,7 +42,10 @@ interface EntryListItemProps {
    */
   onMouseDown?: (entryId: string) => void;
   /**
-   * Whether this entry is currently selected (for keyboard navigation).
+   * Whether this entry is the current keyboard selection. Selection is shown
+   * visually by the browser focus outline (the selected row is focused — see
+   * `onFocus` and the j/k handlers in useKeyboardShortcuts), so this only feeds
+   * the aria-label; it deliberately does not add a ring/border of its own.
    */
   selected?: boolean;
   /**
@@ -75,32 +78,27 @@ interface EntryListItemProps {
 }
 
 /**
- * Get the appropriate CSS classes for the entry item based on read, selected,
- * and density state.
+ * Get the appropriate CSS classes for the entry item based on read and density
+ * state.
  *
- * The unread/read/selected *color* language is identical across densities — only
- * the padding and border treatment change. In "compact" mode items are borderless
+ * Selection is *not* styled here: the keyboard/`j`-`k` cursor and Tab focus are
+ * unified onto the browser's single `:focus-visible` outline (the selected row is
+ * the focused row), so there's no separate ring/border to keep in sync — see
+ * `getItemClasses`'s former selected branch, removed in favor of the focus
+ * outline. This avoids the double outline (border + ring) and the ring lingering
+ * after focus moved elsewhere.
+ *
+ * The unread/read *color* language is identical across densities — only the
+ * padding and border treatment change. In "compact" mode items are borderless
  * rows in a single `divide-edge` list (see EntryList), so the per-card borders
  * (including the e-paper `border-zinc-500` fallback) are dropped; the darker
  * e-paper divider handles row separation instead.
  */
-export function getItemClasses(
-  read: boolean,
-  selected: boolean,
-  density: ListDensity = "comfortable"
-): string {
+export function getItemClasses(read: boolean, density: ListDensity = "comfortable"): string {
   const compact = density === "compact";
   const baseClasses = compact
     ? "group relative cursor-pointer px-3 py-2.5 transition-colors sm:px-4"
     : "group relative cursor-pointer rounded-lg border p-3 transition-colors sm:p-4";
-
-  if (selected) {
-    // Selected state takes priority - accent ring indicator. In compact mode the
-    // ring stands in for the border the cards would otherwise carry.
-    return `${baseClasses} ${compact ? "" : "border-accent "}ring-2 ring-accent ring-offset-1 ring-offset-surface ${
-      read ? "bg-canvas" : "bg-surface"
-    }`;
-  }
 
   if (read) {
     // Read entries recede into the page canvas: no fill of their own and a
@@ -194,7 +192,7 @@ export const EntryListItem = memo(function EntryListItem({
       onKeyDown={handleKeyDown}
       onFocus={handleFocus}
       data-entry-id={id}
-      className={getItemClasses(read, selected, density)}
+      className={getItemClasses(read, density)}
       aria-label={`${read ? "Read" : "Unread"}${selected ? ", selected" : ""} article: ${displayTitle} from ${source}`}
     >
       <div className="flex items-start gap-3">

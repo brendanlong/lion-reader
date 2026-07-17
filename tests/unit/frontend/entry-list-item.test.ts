@@ -1,8 +1,11 @@
 /**
  * Unit tests for EntryListItem utility functions.
  *
- * Tests the getItemClasses function which determines CSS classes
- * based on read and selected state.
+ * Tests the getItemClasses function which determines CSS classes based on read
+ * state and density. Selection is intentionally NOT reflected here: the keyboard
+ * cursor and Tab focus are unified onto the browser's single `:focus-visible`
+ * outline (the selected row is the focused row), so getItemClasses must never
+ * emit a ring/border of its own.
  */
 
 import { describe, it, expect } from "vitest";
@@ -12,9 +15,9 @@ describe("getItemClasses", () => {
   const baseClasses =
     "group relative cursor-pointer rounded-lg border p-3 transition-colors sm:p-4";
 
-  describe("unread, not selected", () => {
+  describe("unread", () => {
     it("returns unread styling classes", () => {
-      const classes = getItemClasses(false, false);
+      const classes = getItemClasses(false);
 
       expect(classes).toContain(baseClasses);
       // Unread stands out: raised surface card with a distinctly stronger border
@@ -29,9 +32,9 @@ describe("getItemClasses", () => {
     });
   });
 
-  describe("read, not selected", () => {
+  describe("read", () => {
     it("returns read styling classes", () => {
-      const classes = getItemClasses(true, false);
+      const classes = getItemClasses(true);
 
       expect(classes).toContain(baseClasses);
       // Read recedes into the page canvas with a faint hairline border
@@ -43,65 +46,33 @@ describe("getItemClasses", () => {
     });
   });
 
-  describe("unread, selected", () => {
-    it("returns selected styling with unread background", () => {
-      const classes = getItemClasses(false, true);
-
-      expect(classes).toContain(baseClasses);
-      // Selected state has accent ring
-      expect(classes).toContain("border-accent");
-      expect(classes).toContain("ring-2");
-      expect(classes).toContain("ring-accent");
-      expect(classes).toContain("ring-offset-1");
-      // Unread background within selected state (raised surface)
-      expect(classes).toContain("bg-surface");
-      // Ring-offset uses the surface token (was dark:ring-offset-zinc-900)
-      expect(classes).toContain("ring-offset-surface");
-    });
-  });
-
-  describe("read, selected", () => {
-    it("returns selected styling with read background", () => {
-      const classes = getItemClasses(true, true);
-
-      expect(classes).toContain(baseClasses);
-      // Selected state has accent ring
-      expect(classes).toContain("border-accent");
-      expect(classes).toContain("ring-2");
-      expect(classes).toContain("ring-accent");
-      expect(classes).toContain("ring-offset-1");
-      // Read background within selected state recedes into the canvas
-      expect(classes).toContain("bg-canvas");
-      // Ring-offset uses the surface token (was dark:ring-offset-zinc-900)
-      expect(classes).toContain("ring-offset-surface");
-    });
-  });
-
-  describe("selected state priority", () => {
-    it("prioritizes selected styling over read/unread styling", () => {
-      const selectedUnread = getItemClasses(false, true);
-      const selectedRead = getItemClasses(true, true);
-
-      // Both should have the accent ring (selected indicator)
-      expect(selectedUnread).toContain("ring-accent");
-      expect(selectedRead).toContain("ring-accent");
-
-      // Neither should have hover states that conflict with selection
-      expect(selectedUnread).not.toContain("hover:bg-surface-muted");
-      expect(selectedRead).not.toContain("hover:bg-surface");
+  describe("selection is the focus outline, not a class", () => {
+    it("never emits a ring or accent border in any density/read combination", () => {
+      for (const read of [false, true]) {
+        for (const density of ["comfortable", "compact"] as const) {
+          const classes = getItemClasses(read, density);
+          expect(classes).not.toContain("ring-2");
+          expect(classes).not.toContain("ring-accent");
+          expect(classes).not.toContain("ring-offset");
+          expect(classes).not.toContain("border-accent");
+          // And no per-component focus utilities (the global :focus-visible
+          // outline is the only focus/selection indicator).
+          expect(classes).not.toContain("focus:");
+        }
+      }
     });
   });
 
   describe("compact density", () => {
     it("defaults to comfortable when density is omitted", () => {
       // The explicit "comfortable" and the default must produce identical output.
-      expect(getItemClasses(false, false)).toBe(getItemClasses(false, false, "comfortable"));
-      expect(getItemClasses(true, true)).toBe(getItemClasses(true, true, "comfortable"));
+      expect(getItemClasses(false)).toBe(getItemClasses(false, "comfortable"));
+      expect(getItemClasses(true)).toBe(getItemClasses(true, "comfortable"));
     });
 
     it("drops the per-card border and rounding but keeps the color language", () => {
-      const unread = getItemClasses(false, false, "compact");
-      const read = getItemClasses(true, false, "compact");
+      const unread = getItemClasses(false, "compact");
+      const read = getItemClasses(true, "compact");
 
       // Borderless rows: the surrounding list supplies divide-edge separators.
       expect(unread).not.toContain("rounded-lg");
@@ -120,15 +91,6 @@ describe("getItemClasses", () => {
       expect(unread).toContain("hover:bg-surface-muted");
       expect(read).toContain("bg-canvas");
       expect(read).toContain("hover:bg-surface");
-    });
-
-    it("keeps the selection ring but no border in compact", () => {
-      const selected = getItemClasses(false, true, "compact");
-
-      expect(selected).toContain("ring-2");
-      expect(selected).toContain("ring-accent");
-      expect(selected).not.toContain("border-accent");
-      expect(selected).toContain("bg-surface");
     });
   });
 });

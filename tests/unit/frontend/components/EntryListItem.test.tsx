@@ -235,15 +235,21 @@ describe("EntryListItem", () => {
   });
 
   describe("selected state", () => {
-    it("applies selection ring when selected", () => {
+    // Selection is shown by the browser's global :focus-visible outline (the
+    // selected row is focused), not by a ring/border class — this avoids the
+    // double outline and the ring lingering after focus moves away. The only
+    // selected-specific rendering is the aria-label (covered below).
+    it("does not apply a selection ring/border when selected", () => {
       const entry = createMockEntry();
       render(<EntryListItem entry={entry} selected={true} />);
 
       const article = screen.getByRole("button");
-      expect(article).toHaveClass("ring-2", "ring-accent");
+      expect(article).not.toHaveClass("ring-2");
+      expect(article).not.toHaveClass("ring-accent");
+      expect(article).not.toHaveClass("border-accent");
     });
 
-    it("does not apply selection ring when not selected", () => {
+    it("does not apply a selection ring/border when not selected", () => {
       const entry = createMockEntry();
       render(<EntryListItem entry={entry} selected={false} />);
 
