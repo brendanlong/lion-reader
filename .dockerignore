@@ -5,6 +5,10 @@ node_modules/
 .next/
 out/
 dist/
+# Native (Rust) build artifacts - rebuilt in the native-builder stage; local
+# artifacts would be wrong-platform and would bust the stage's layer cache
+native/*/target/
+native/*/*.node
 # Regenerated in the builder stage by scripts/copy-onnx-wasm.mjs (Dockerfile)
 public/onnx/
 

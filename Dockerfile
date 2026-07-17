@@ -25,6 +25,7 @@ FROM base AS deps
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY native/sanitizer/package.json ./native/sanitizer/package.json
 COPY native/readability/package.json ./native/readability/package.json
+COPY native/feed-parser/package.json ./native/feed-parser/package.json
 
 # Install all dependencies (including devDependencies for building)
 # Use --ignore-scripts because postinstall needs files not yet copied
@@ -32,7 +33,34 @@ RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile --ignore-scripts
 
 # =============================================================================
-# Stage 3: Build the application
+# Stage 3: Build the native (Rust) modules for this image's platform (musl)
+# =============================================================================
+# A separate stage keyed only on native/ sources: pure-TS deploys hit the layer
+# cache and skip the Rust toolchain install and cargo build entirely, and when
+# Rust does change, BuildKit runs this stage in parallel with the JS build.
+# The build.mjs scripts are plain `node` + `cargo` — no pnpm/node_modules needed.
+# Cache mounts keep crate downloads and incremental build artifacts across
+# builds (each build.mjs copies its artifact out of target/ to <name>.node).
+FROM node:26-alpine AS native-builder
+
+WORKDIR /app
+
+RUN apk add --no-cache rust cargo
+
+# .dockerignore excludes native/*/target/ and native/*/*.node so local build
+# artifacts can't leak into (or bust the cache of) this layer.
+COPY native ./native
+
+RUN --mount=type=cache,id=cargo-registry,target=/root/.cargo/registry \
+    --mount=type=cache,id=cargo-target,target=/app/native/sanitizer/target \
+    --mount=type=cache,id=cargo-target-readability,target=/app/native/readability/target \
+    --mount=type=cache,id=cargo-target-feed-parser,target=/app/native/feed-parser/target \
+    node native/sanitizer/build.mjs && \
+    node native/readability/build.mjs && \
+    node native/feed-parser/build.mjs
+
+# =============================================================================
+# Stage 4: Build the application
 # =============================================================================
 FROM base AS builder
 
@@ -47,16 +75,10 @@ COPY . .
 # Run postinstall script (copies ONNX WASM files to public/)
 RUN node scripts/copy-onnx-wasm.mjs
 
-# Build the native (Rust) modules for this image's platform (musl). Rust is
-# only needed in this stage; the runner just receives the compiled .node files.
-# Cache mounts keep crate downloads and incremental build artifacts across
-# builds (each build.mjs copies its artifact out of target/ to <name>.node).
-RUN apk add --no-cache rust cargo
-RUN --mount=type=cache,id=cargo-registry,target=/root/.cargo/registry \
-    --mount=type=cache,id=cargo-target,target=/app/native/sanitizer/target \
-    --mount=type=cache,id=cargo-target-readability,target=/app/native/readability/target \
-    --mount=type=cache,id=cargo-target-feed-parser,target=/app/native/feed-parser/target \
-    pnpm build:native
+# Compiled native modules (the runner also copies these out of this stage)
+COPY --from=native-builder /app/native/sanitizer/sanitizer.node ./native/sanitizer/sanitizer.node
+COPY --from=native-builder /app/native/readability/readability.node ./native/readability/readability.node
+COPY --from=native-builder /app/native/feed-parser/feed-parser.node ./native/feed-parser/feed-parser.node
 
 # Set environment for build
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -80,8 +102,12 @@ ENV REDIS_URL="redis://localhost:6379"
 ARG NEXT_PUBLIC_SENTRY_DSN=""
 ENV NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN
 
-# Build Next.js application
-RUN pnpm build
+# Build Next.js application. The cache mount persists .next/cache (webpack's
+# persistent build cache) across builds, cutting warm build times — and keeps
+# it out of the image layers (it's build-time-only; the runtime recreates the
+# dir if it needs it).
+RUN --mount=type=cache,id=next-cache,target=/app/.next/cache \
+    pnpm build
 
 # Build custom server bundle (compression + Next.js wrapper)
 RUN pnpm build:server
@@ -102,7 +128,7 @@ RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
     CI=true pnpm prune --prod --ignore-scripts
 
 # =============================================================================
-# Stage 4: Production runner (minimal image, no pnpm needed)
+# Stage 5: Production runner (minimal image, no pnpm needed)
 # =============================================================================
 FROM node:26-alpine AS runner
 
