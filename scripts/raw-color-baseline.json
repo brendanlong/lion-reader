@@ -6,6 +6,8 @@
   "src/app/complete-signup/page.tsx\tdark:bg-zinc-800",
   "src/app/demo/DemoArticleView.tsx\tactive:bg-zinc-200",
   "src/app/demo/DemoArticleView.tsx\tdark:active:bg-zinc-700",
+  "src/app/demo/DemoEntryListSSR.tsx\tdark:text-zinc-600",
+  "src/app/demo/DemoEntryListSSR.tsx\ttext-zinc-300",
   "src/app/demo/DemoLayoutContent.tsx\tactive:bg-zinc-100",
   "src/app/demo/DemoLayoutContent.tsx\tactive:bg-zinc-200",
   "src/app/demo/DemoLayoutContent.tsx\tdark:active:bg-zinc-700",
