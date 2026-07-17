@@ -27,6 +27,7 @@ import {
 } from "@/server/auth/admin-session";
 import { extractBearerToken } from "@/server/auth/bearer";
 import { logger } from "@/lib/logger";
+import { trackTrpcProcedure } from "@/server/metrics/metrics";
 import * as Sentry from "@sentry/nextjs";
 
 /**
@@ -71,6 +72,13 @@ const timingMiddleware = t.middleware(async ({ path, type, next, ctx }) => {
     const result = await next();
     const duration = Date.now() - start;
 
+    // Per-procedure latency metric. Accurate even for batched requests, unlike
+    // http_request_duration_seconds which only sees the first procedure in a
+    // batch. `result.ok` is authoritative here: tRPC returns a failed result
+    // object rather than always throwing, so read it directly (the catch below
+    // still covers errors thrown out of next()).
+    trackTrpcProcedure(path, type, result.ok, duration);
+
     // Log slow requests
     if (duration > 1000) {
       logger.warn("Slow tRPC request", {
@@ -84,6 +92,8 @@ const timingMiddleware = t.middleware(async ({ path, type, next, ctx }) => {
     return result;
   } catch (error) {
     const duration = Date.now() - start;
+
+    trackTrpcProcedure(path, type, false, duration);
 
     // Log the error
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
