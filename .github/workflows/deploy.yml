@@ -47,9 +47,12 @@ jobs:
         uses: superfly/flyctl-actions/setup-flyctl@master
 
       - name: Deploy to Fly.io
-        # Pass the deployed commit SHA as a build arg: the alpine builder has no
-        # git, so next.config.ts's `git rev-parse` fallback can't resolve it.
-        # Short SHA to match the previous git-derived value baked into User-Agent.
-        run: flyctl deploy --remote-only --build-arg GIT_COMMIT_SHA="$(git rev-parse --short HEAD)"
+        # Pass the deployed commit SHA as a RUNTIME env var (read by
+        # src/server/config/env.ts for the outgoing User-Agent). A runtime var
+        # reaches every process group — including the esbuild-bundled worker and
+        # Discord bot, which a build-time inline never reached — and keeps the
+        # Docker image build independent of the SHA, so unchanged layers stay
+        # cached. Short SHA to match the previous git-derived value.
+        run: flyctl deploy --remote-only --env GIT_COMMIT_SHA="$(git rev-parse --short HEAD)"
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

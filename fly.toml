@@ -37,6 +37,11 @@ kill_timeout = 30
   discord = "node dist/discord-bot.js"
 
 [env]
+  # GIT_COMMIT_SHA (surfaced in the outgoing User-Agent) is not listed here —
+  # CI passes it per-deploy via `flyctl deploy --env GIT_COMMIT_SHA=...`
+  # (.github/workflows/deploy.yml). A manual deploy without that flag leaves it
+  # unset, which only means the User-Agent omits the SHA suffix.
+
   # apple/google are open to the public; email is allowed only with a valid invite.
   ALLOWED_SIGNUP_PROVIDERS = "apple,google,email"
   ALLOWED_PUBLIC_SIGNUP_PROVIDERS = "apple,google"
