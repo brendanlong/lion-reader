@@ -57,6 +57,16 @@ export default defineConfig({
       // from .env.test via inherited process env, which Next.js never
       // overrides).
       NODE_ENV: useProductionBuild ? "production" : "development",
+      // Exercise the Prometheus metric registration paths in the production
+      // build, where metrics.ts is split across multiple module graphs and a
+      // metric registered outside the idempotent getOrCreate* helpers crashes
+      // the app on the second module-graph evaluation (this is what took the
+      // site down when #1293 and #1296 landed together). With metrics disabled
+      // the whole registration path is skipped and such a regression sails
+      // through CI. Only in the production build: the dev server shares one
+      // module graph (so the crash can't occur) and would just contend for the
+      // metrics server's port 9091.
+      ...(useProductionBuild ? { METRICS_ENABLED: "true" } : {}),
     },
   },
 });
