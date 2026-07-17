@@ -76,7 +76,7 @@ export function DiscordBotSettings() {
             href={botConfig.inviteUrl ?? "#"}
             target="_blank"
             rel="noopener noreferrer"
-            className="ui-text-sm inline-flex items-center gap-2 rounded-lg border border-indigo-300 bg-indigo-50 px-4 py-2.5 font-medium text-indigo-800 shadow-sm transition-all hover:border-indigo-400 hover:bg-indigo-100 hover:shadow dark:border-indigo-700 dark:bg-indigo-950 dark:text-indigo-200 dark:hover:border-indigo-600 dark:hover:bg-indigo-900"
+            className="ui-text-sm inline-flex items-center gap-2 rounded-lg border border-indigo-300 bg-indigo-50 px-4 py-2.5 font-medium text-indigo-800 shadow-sm transition hover:border-indigo-400 hover:bg-indigo-100 hover:shadow dark:border-indigo-700 dark:bg-indigo-950 dark:text-indigo-200 dark:hover:border-indigo-600 dark:hover:bg-indigo-900"
           >
             <DiscordIcon className="h-4 w-4" />
             Invite Bot
@@ -85,7 +85,7 @@ export function DiscordBotSettings() {
           <button
             type="button"
             onClick={copyInviteUrl}
-            className="ui-text-sm text-body border-edge-input inline-flex items-center gap-2 rounded-lg border bg-white px-4 py-2.5 font-medium shadow-sm transition-all hover:border-zinc-400 hover:bg-zinc-50 hover:shadow dark:bg-zinc-800 dark:hover:border-zinc-500 dark:hover:bg-zinc-700"
+            className="ui-text-sm text-body border-edge-input inline-flex items-center gap-2 rounded-lg border bg-white px-4 py-2.5 font-medium shadow-sm transition hover:border-zinc-400 hover:bg-zinc-50 hover:shadow dark:bg-zinc-800 dark:hover:border-zinc-500 dark:hover:bg-zinc-700"
           >
             {copied ? "Copied!" : "Copy Link"}
           </button>
