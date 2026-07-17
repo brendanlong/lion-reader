@@ -21,23 +21,21 @@ import { NextRequest, NextResponse } from "next/server";
 /**
  * Get the public-facing base URL for redirects.
  * In production behind a proxy (e.g., Fly.io), request.url contains the internal
- * URL (localhost:3000), not the external URL (lionreader.com). We need to use
- * the forwarded headers or configured app URL for correct redirects.
+ * URL (localhost:3000), not the external URL (lionreader.com), so we rely on the
+ * configured NEXT_PUBLIC_APP_URL there.
+ *
+ * We deliberately do NOT trust the `x-forwarded-host` header for the redirect
+ * base: it is attacker-controllable, so building a `redirect()` target from it
+ * would be an open-redirect (redirect to `https://evil.com/save?...`) the moment
+ * NEXT_PUBLIC_APP_URL is missing. Production always sets NEXT_PUBLIC_APP_URL; the
+ * request.url origin is only a local-dev convenience where there is no proxy.
  */
 function getBaseUrl(request: NextRequest): string {
-  // First, try NEXT_PUBLIC_APP_URL (most reliable in production)
   if (process.env.NEXT_PUBLIC_APP_URL) {
     return process.env.NEXT_PUBLIC_APP_URL;
   }
 
-  // Fall back to x-forwarded-host header (set by proxies like Fly.io)
-  const forwardedHost = request.headers.get("x-forwarded-host");
-  const forwardedProto = request.headers.get("x-forwarded-proto") || "https";
-  if (forwardedHost) {
-    return `${forwardedProto}://${forwardedHost}`;
-  }
-
-  // Last resort: use request.url (works for local dev)
+  // Local dev only (no proxy in front): request.url is the real origin.
   return new URL(request.url).origin;
 }
 

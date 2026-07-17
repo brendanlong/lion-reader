@@ -19,7 +19,7 @@ import { feedStreamIdToSubscriptionUuid } from "@/server/google-reader/id";
 import { parseStreamId } from "@/server/google-reader/streams";
 import { resolveTagByName } from "@/server/google-reader/tags";
 import { db } from "@/server/db";
-import { eq, and, isNull, sql } from "drizzle-orm";
+import { eq, and, isNull, inArray, sql } from "drizzle-orm";
 import { subscriptions, subscriptionTags } from "@/server/db/schema";
 import * as tagsService from "@/server/services/tags";
 
@@ -124,8 +124,18 @@ export async function POST(request: Request): Promise<Response> {
       // Soft delete the subscription
       const now = new Date();
 
-      // Remove tag associations
-      await db.delete(subscriptionTags).where(eq(subscriptionTags.subscriptionId, subscriptionId));
+      // Remove tag associations. `subscriptionId` was resolved user-scoped
+      // above, but scope the delete through the user's own subscriptions too so
+      // it is self-evidently user-scoped in isolation (defense-in-depth).
+      await db.delete(subscriptionTags).where(
+        inArray(
+          subscriptionTags.subscriptionId,
+          db
+            .select({ id: subscriptions.id })
+            .from(subscriptions)
+            .where(and(eq(subscriptions.id, subscriptionId), eq(subscriptions.userId, userId)))
+        )
+      );
 
       // Set unsubscribedAt
       await db
