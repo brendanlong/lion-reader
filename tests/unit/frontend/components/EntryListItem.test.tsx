@@ -383,4 +383,55 @@ describe("EntryListItem", () => {
       expect(screen.getByRole("button")).toHaveAttribute("tabIndex", "0");
     });
   });
+
+  describe("tab order and focus", () => {
+    it("keeps the read marker out of the tab order (m shortcut handles it)", () => {
+      const entry = createMockEntry();
+      render(<EntryListItem entry={entry} onToggleRead={vi.fn()} />);
+
+      // Still a clickable button for pointer users, but not a tab stop — tabbing
+      // a row should land on the next row, not the read dot then the star.
+      expect(screen.getByRole("button", { name: "Mark as read" })).toHaveAttribute(
+        "tabIndex",
+        "-1"
+      );
+    });
+
+    it("keeps the star marker out of the tab order (s shortcut handles it)", () => {
+      const entry = createMockEntry();
+      render(<EntryListItem entry={entry} onToggleStar={vi.fn()} />);
+
+      expect(screen.getByRole("button", { name: "Add to starred" })).toHaveAttribute(
+        "tabIndex",
+        "-1"
+      );
+    });
+
+    it("calls onFocus with the entry id when the row itself is focused", () => {
+      const entry = createMockEntry({ id: "entry-123" });
+      const onFocus = vi.fn();
+      render(<EntryListItem entry={entry} onFocus={onFocus} />);
+
+      fireEvent.focusIn(screen.getByRole("button", { name: /article: Test Article Title/ }));
+      expect(onFocus).toHaveBeenCalledWith("entry-123");
+    });
+
+    it("does not call onFocus when a descendant control receives focus", () => {
+      const entry = createMockEntry({ id: "entry-123" });
+      const onFocus = vi.fn();
+      render(
+        <EntryListItem
+          entry={entry}
+          onFocus={onFocus}
+          onToggleRead={vi.fn()}
+          onToggleStar={vi.fn()}
+        />
+      );
+
+      // Focus events bubble; a marker button getting focus (e.g. via pointer)
+      // must not be mistaken for the row being tab-focused.
+      fireEvent.focusIn(screen.getByRole("button", { name: "Mark as read" }));
+      expect(onFocus).not.toHaveBeenCalled();
+    });
+  });
 });
