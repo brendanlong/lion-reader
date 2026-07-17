@@ -6,12 +6,13 @@
  * subsections, paragraphs, and lists. Use these instead of hand-styling
  * each element so the two pages can't drift apart.
  *
- * These pages intentionally use Next.js <Link> (not ClientLink) — they are
- * standalone routes outside the SPA shell.
+ * These pages intentionally navigate with <PageLink> (a plain full-page <a>),
+ * not ClientLink — they are standalone routes outside the SPA shell, and a full
+ * navigation hits the CDN-cached HTML without a Next.js RSC prefetch/soft-nav.
  */
 
-import Link from "next/link";
 import type { ReactNode } from "react";
+import { PageLink } from "@/components/ui/page-link";
 
 /**
  * Full legal-page scaffold: background, centered column, back link,
@@ -28,9 +29,9 @@ export function LegalPage({ title, lastUpdated, children }: LegalPageProps) {
     <div className="bg-canvas min-h-screen px-4 py-12">
       <main className="mx-auto max-w-3xl">
         <div className="mb-8">
-          <Link href="/" className="ui-text-sm text-muted hover:text-body">
+          <PageLink href="/" className="ui-text-sm text-muted hover:text-body">
             &larr; Back to Lion Reader
-          </Link>
+          </PageLink>
           <h1 className="text-body mt-4 text-3xl font-bold tracking-tight">{title}</h1>
           <p className="ui-text-sm text-muted mt-2">Last updated: {lastUpdated}</p>
         </div>
