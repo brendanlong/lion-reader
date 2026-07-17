@@ -250,6 +250,18 @@ export function useKeyboardShortcuts(
   // re-registering handlers on every render
   const entryIds = useMemo(() => entries.map((e) => e.id), [entries]);
 
+  // Move browser focus onto a list row. Selection is shown by the shared
+  // `:focus-visible` outline (the selected row is the focused row), so j/k must
+  // actually focus the row — that unifies the keyboard cursor with Tab focus
+  // onto one indicator instead of a separate ring. The row already exists in the
+  // DOM (the list isn't virtualized), so this resolves synchronously; focusing
+  // also scrolls it into view. `onFocus` on the row keeps selectedEntryId in
+  // sync, so this and setSelectedEntryId agree.
+  const focusEntryRow = useCallback((id: string) => {
+    if (typeof document === "undefined") return;
+    document.querySelector<HTMLElement>(`[data-entry-id="${id}"]`)?.focus();
+  }, []);
+
   // Get the current index of the selected entry
   const getSelectedIndex = useCallback((): number => {
     if (!selectedEntryId) return -1;
@@ -268,15 +280,20 @@ export function useKeyboardShortcuts(
 
     const currentIndex = getSelectedIndex();
 
+    let nextId: string | undefined;
     if (currentIndex === -1) {
       // Nothing selected, select the first entry
-      setSelectedEntryId(entryIds[0]);
+      nextId = entryIds[0];
     } else if (currentIndex < entryIds.length - 1) {
       // Move to next entry
-      setSelectedEntryId(entryIds[currentIndex + 1]);
+      nextId = entryIds[currentIndex + 1];
     }
-    // If already at the last entry, do nothing
-  }, [entryIds, getSelectedIndex, setSelectedEntryId]);
+    // If already at the last entry, nextId stays undefined and we do nothing
+    if (nextId) {
+      setSelectedEntryId(nextId);
+      focusEntryRow(nextId);
+    }
+  }, [entryIds, getSelectedIndex, setSelectedEntryId, focusEntryRow]);
 
   // Move selection to the previous entry
   const selectPrevious = useCallback(() => {
@@ -284,15 +301,20 @@ export function useKeyboardShortcuts(
 
     const currentIndex = getSelectedIndex();
 
+    let prevId: string | undefined;
     if (currentIndex === -1) {
       // Nothing selected, select the last entry
-      setSelectedEntryId(entryIds[entryIds.length - 1]);
+      prevId = entryIds[entryIds.length - 1];
     } else if (currentIndex > 0) {
       // Move to previous entry
-      setSelectedEntryId(entryIds[currentIndex - 1]);
+      prevId = entryIds[currentIndex - 1];
     }
-    // If already at the first entry, do nothing
-  }, [entryIds, getSelectedIndex, setSelectedEntryId]);
+    // If already at the first entry, prevId stays undefined and we do nothing
+    if (prevId) {
+      setSelectedEntryId(prevId);
+      focusEntryRow(prevId);
+    }
+  }, [entryIds, getSelectedIndex, setSelectedEntryId, focusEntryRow]);
 
   // Open the currently selected entry
   const openSelected = useCallback(() => {
@@ -304,6 +326,15 @@ export function useKeyboardShortcuts(
   // Clear selection
   const clearSelection = useCallback(() => {
     setSelectedEntryId(null);
+    // Selection is shown by the focused row's outline, so clearing it (Escape)
+    // must also drop focus from that row — otherwise the outline would linger
+    // with nothing logically selected.
+    if (typeof document !== "undefined") {
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && active.matches("[data-entry-id]")) {
+        active.blur();
+      }
+    }
   }, [setSelectedEntryId]);
 
   // Compute whether the selected entry is still in the list
