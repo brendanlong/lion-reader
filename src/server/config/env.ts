@@ -110,7 +110,13 @@ export const securityConfig = {
 export const fetcherConfig = {
   /** Optional contact email to include in User-Agent header. */
   contactEmail: process.env.FETCHER_CONTACT_EMAIL,
-  /** Git commit SHA, injected at build time via next.config.ts. */
+  /**
+   * Git commit SHA, set at deploy time as a runtime env var
+   * (flyctl deploy --env, see .github/workflows/deploy.yml). A runtime var —
+   * not a build-time inline — so the esbuild-bundled worker/Discord/server
+   * processes see it too, and the Docker build stays SHA-independent.
+   * Unset in local dev.
+   */
   commitSha: process.env.GIT_COMMIT_SHA,
 };
 
