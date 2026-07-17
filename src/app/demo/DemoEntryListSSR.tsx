@@ -8,6 +8,8 @@
  */
 
 import { formatRelativeTime } from "@/lib/format";
+import { getItemClasses } from "@/components/entries/entryItemClasses";
+import { StarIcon, StarFilledIcon } from "@/components/ui/icon-button";
 import { type DemoEntry } from "./data";
 
 interface DemoEntryListSSRProps {
@@ -29,17 +31,49 @@ export function DemoEntryListSSR({ entries, backHref, title }: DemoEntryListSSRP
           const date = entry.publishedAt ?? entry.fetchedAt;
 
           return (
+            // Uses the same class helper as the interactive EntryListItem so this
+            // crawlable-anchor list matches the post-hydration list and the swap in
+            // DemoLayoutContent shows no flash. The interactive item can't be reused
+            // directly here: it renders an <article role="button"> with nested
+            // star/read <button>s (invalid and uncrawlable inside an <a>), so we keep
+            // this stripped-down anchor.
+            //
+            // Assumes the default "comfortable" density: getItemClasses(false) is
+            // hardcoded because there's no pre-paint signal for list density (it's
+            // client-only localStorage, and compact changes DOM structure — dropping
+            // the summary — not just CSS, unlike the font/size CSS vars). A user who
+            // persisted compact density still sees a one-time comfortable→compact
+            // reflow on hydration; that's the uncommon case and no worse than before.
             <a
               key={entry.id}
               href={`${backHref}?entry=${entry.id}`}
-              className="group border-edge-input hover:bg-surface-muted relative block cursor-pointer rounded-lg border bg-zinc-50 p-3 transition-colors active:bg-zinc-200 sm:p-4 dark:bg-zinc-800 dark:active:bg-zinc-700"
+              className={`${getItemClasses(false)} block`}
             >
               <div className="flex items-start gap-3">
                 <div className="mt-1.5 shrink-0">
                   <span className="bg-body block h-2.5 w-2.5 rounded-full" aria-hidden="true" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <h3 className="ui-text-sm text-body line-clamp-2 font-medium">{displayTitle}</h3>
+                  {/* Title + star, mirroring EntryListItem's resting layout so the
+                      star doesn't pop in on hydration. The star is a static icon
+                      here (not a toggle button) because a <button> can't nest in
+                      an <a>; it matches the interactive item's at-rest appearance:
+                      the -m/p touch-target padding there nets to the same 16px box. */}
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="ui-text-sm text-body line-clamp-2 font-semibold">
+                      {displayTitle}
+                    </h3>
+                    <span
+                      className={`shrink-0 ${entry.starred ? "text-star" : "text-zinc-300 dark:text-zinc-600"}`}
+                      aria-hidden="true"
+                    >
+                      {entry.starred ? (
+                        <StarFilledIcon className="h-4 w-4" />
+                      ) : (
+                        <StarIcon className="h-4 w-4" />
+                      )}
+                    </span>
+                  </div>
                   <div className="ui-text-xs text-muted mt-1 flex items-center gap-2">
                     <span className="truncate">{source}</span>
                     <span aria-hidden="true">&middot;</span>
