@@ -40,6 +40,27 @@ function RegisterForm() {
 
   // Fetch signup configuration
   const { data: signupConfigData, isLoading: isLoadingConfig } = trpc.auth.signupConfig.useQuery();
+  const euRestricted = signupConfigData?.euRestricted ?? false;
+
+  // On EU-restricted instances, warn EU users up front that they can't sign up
+  // here and point them at self-hosting.
+  const euNotice = euRestricted ? (
+    <Alert variant="warning" className="mb-4">
+      <span className="font-semibold">Not available in the European Union.</span> This is a free
+      hobby project, and we&apos;re not able to take on the EU&apos;s regulatory requirements or
+      liability, so please don&apos;t sign up if you&apos;re located in the EU. You&apos;re very
+      welcome to{" "}
+      <a
+        href="https://github.com/brendanlong/lion-reader"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="underline"
+      >
+        self-host Lion Reader
+      </a>{" "}
+      instead.
+    </Alert>
+  ) : null;
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -143,6 +164,7 @@ function RegisterForm() {
     return (
       <div>
         <h2 className="ui-text-xl text-body mb-6 font-semibold">Invite Required</h2>
+        {euNotice}
         <Alert variant="error" className="mb-4">
           This instance requires an invite to sign up. Please contact an administrator to request an
           invite.
@@ -162,6 +184,8 @@ function RegisterForm() {
   return (
     <div>
       <h2 className="ui-text-xl text-body mb-6 font-semibold">Create your account</h2>
+
+      {euNotice}
 
       {errors.form && (
         <Alert variant="error" className="mb-4">
