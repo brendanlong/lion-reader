@@ -225,7 +225,10 @@ export function getDemoSubscription(subscriptionId: string): DemoSubscription | 
 function heroFigureHtml(entry: DemoEntry): string {
   if (!entry.heroImage) return "";
   const alt = entry.heroImageAlt ?? `${entry.title ?? "Article"} illustration`;
-  return `<figure><img src="${entry.heroImage}" alt="${alt}" /></figure>\n`;
+  // All demo hero images are 1200x630; the intrinsic width/height lets the
+  // browser reserve the aspect-ratio box up front (prose caps them at
+  // max-width:100%; height:auto) so they don't flash/reflow on load.
+  return `<figure><img src="${entry.heroImage}" alt="${alt}" width="1200" height="630" /></figure>\n`;
 }
 
 /** Get EntryArticle props for a demo entry */
