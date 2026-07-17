@@ -8,14 +8,9 @@
  */
 
 import { type Metadata } from "next";
-import { EntryArticle } from "@/components/entries/EntryArticle";
 import { pageOpenGraph } from "@/lib/metadata";
-import {
-  getDemoEntry,
-  getDemoEntryArticleProps,
-  getDemoSubscription,
-  getDemoEntriesForSubscription,
-} from "../../data";
+import { getDemoEntry, getDemoSubscription, getDemoEntriesForSubscription } from "../../data";
+import { DemoArticleView } from "../../DemoArticleView";
 import { DemoEntryListSSR } from "../../DemoEntryListSSR";
 
 interface Props {
@@ -48,7 +43,7 @@ export default async function DemoSubscriptionPage({ params, searchParams }: Pro
   const entry = entryId ? getDemoEntry(entryId) : undefined;
 
   if (entry) {
-    return <EntryArticle {...getDemoEntryArticleProps(entry)} />;
+    return <DemoArticleView entry={entry} backHref={`/demo/subscription/${id}`} />;
   }
 
   const subscription = getDemoSubscription(id);
