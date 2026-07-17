@@ -119,6 +119,10 @@ async function seed() {
         summary: `This is sample content for entry ${i + 1} from ${feed.title}...`,
         publishedAt: new Date(Date.now() - i * 24 * 60 * 60 * 1000), // Each day older
         fetchedAt: new Date(Date.now() - i * 24 * 60 * 60 * 1000),
+        // Web entries require last_seen_at (and only web entries may set it) per
+        // the entries_last_seen_only_fetched CHECK constraint. All seeded feeds
+        // are web, but gate on type so this stays correct if others are added.
+        lastSeenAt: feed.type === "web" ? new Date(Date.now() - i * 24 * 60 * 60 * 1000) : null,
         contentHash: hashContent(content),
       };
     });
