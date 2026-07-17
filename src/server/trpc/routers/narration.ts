@@ -385,7 +385,7 @@ export const narrationRouter = createTRPCRouter({
       // Fetch API keys from DB on demand (not cached in session for security)
       const keys = await getUserApiKeys(ctx.session.user.id);
       const models = await listAllModels(keys, NARRATION_PROVIDERS);
-      const defaultRef = getNarrationModelRef(null);
+      const defaultRef = getNarrationModelRef(null, keys);
       return { models, defaultModelId: formatModelRef(defaultRef.provider, defaultRef.model) };
     }),
 });

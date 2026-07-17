@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest";
 import {
+  filterToLatestClaudeGeneration,
   getAvailableProviders,
   isChatModelId,
   isProviderAvailable,
@@ -11,7 +12,7 @@ import {
   DEFAULT_SUMMARIZATION_MODELS,
   SUMMARIZATION_PROVIDER_PRIORITY,
 } from "@/lib/summarization/constants";
-import { DEFAULT_NARRATION_MODEL } from "@/lib/narration/constants";
+import { DEFAULT_NARRATION_MODEL, DEFAULT_NARRATION_MODELS } from "@/lib/narration/constants";
 
 const ENV_VARS = [
   "ANTHROPIC_API_KEY",
@@ -77,21 +78,28 @@ describe("getSummarizationModelId", () => {
     expect(getSummarizationModelId(null, {})).toBe("groq:foo");
   });
 
-  it("defaults to the first configured provider by priority", () => {
+  it("defaults to the first configured provider by priority (Cerebras > Groq > Anthropic)", () => {
     clearEnv();
+    // Cerebras wins over both others when configured.
     expect(getSummarizationModelId(null, { groqApiKey: "g", cerebrasApiKey: "c" })).toBe(
-      DEFAULT_SUMMARIZATION_MODELS.groq
+      DEFAULT_SUMMARIZATION_MODELS.cerebras
     );
     expect(getSummarizationModelId(null, { anthropicApiKey: "a", cerebrasApiKey: "c" })).toBe(
-      DEFAULT_SUMMARIZATION_MODELS.anthropic
-    );
-    expect(getSummarizationModelId(null, { cerebrasApiKey: "c" })).toBe(
       DEFAULT_SUMMARIZATION_MODELS.cerebras
+    );
+    // Groq wins over Anthropic.
+    expect(getSummarizationModelId(null, { anthropicApiKey: "a", groqApiKey: "g" })).toBe(
+      DEFAULT_SUMMARIZATION_MODELS.groq
+    );
+    // Anthropic only when it's the sole option.
+    expect(getSummarizationModelId(null, { anthropicApiKey: "a" })).toBe(
+      DEFAULT_SUMMARIZATION_MODELS.anthropic
     );
   });
 
-  it("defaults to the Anthropic model when nothing is configured", () => {
+  it("defaults to the first-priority provider (Cerebras) when nothing is configured", () => {
     clearEnv();
+    expect(SUMMARIZATION_PROVIDER_PRIORITY[0]).toBe("cerebras");
     expect(getSummarizationModelId(null, {})).toBe(
       DEFAULT_SUMMARIZATION_MODELS[SUMMARIZATION_PROVIDER_PRIORITY[0]]
     );
@@ -99,19 +107,35 @@ describe("getSummarizationModelId", () => {
 });
 
 describe("getNarrationModelRef", () => {
-  it("defaults to the built-in narration model", () => {
+  it("defaults to the Cerebras gpt-oss-120b model when nothing is configured", () => {
     clearEnv();
     expect(getNarrationModelRef(null)).toEqual({
-      provider: "groq",
-      model: "openai/gpt-oss-20b",
+      provider: "cerebras",
+      model: "gpt-oss-120b",
     });
+  });
+
+  it("defaults to the first configured provider (Cerebras before Groq)", () => {
+    clearEnv();
+    // Only Groq configured → Groq default.
+    expect(getNarrationModelRef(null, { groqApiKey: "g" })).toEqual({
+      provider: "groq",
+      model: "openai/gpt-oss-120b",
+    });
+    expect(DEFAULT_NARRATION_MODELS.groq).toBe("groq:openai/gpt-oss-120b");
+    // Both configured → Cerebras wins (fastest, listed first).
+    expect(getNarrationModelRef(null, { groqApiKey: "g", cerebrasApiKey: "c" })).toEqual({
+      provider: "cerebras",
+      model: "gpt-oss-120b",
+    });
+    expect(DEFAULT_NARRATION_MODELS.cerebras).toBe("cerebras:gpt-oss-120b");
   });
 
   it("uses the user model when set", () => {
     clearEnv();
-    expect(getNarrationModelRef("cerebras:gpt-oss-120b")).toEqual({
-      provider: "cerebras",
-      model: "gpt-oss-120b",
+    expect(getNarrationModelRef("groq:openai/gpt-oss-20b")).toEqual({
+      provider: "groq",
+      model: "openai/gpt-oss-20b",
     });
   });
 
@@ -156,9 +180,42 @@ describe("isChatModelId", () => {
     expect(isChatModelId("meta-llama/llama-guard-4-12b")).toBe(false);
   });
 
+  it("filters TTS families that don't spell out 'tts'", () => {
+    // Groq exposes Orpheus TTS under the canopylabs org.
+    expect(isChatModelId("canopylabs/orpheus-3b-0.1-ft")).toBe(false);
+    expect(isChatModelId("orpheus-3b")).toBe(false);
+  });
+
   it("keeps chat models", () => {
     expect(isChatModelId("openai/gpt-oss-20b")).toBe(true);
     expect(isChatModelId("llama-3.3-70b-versatile")).toBe(true);
     expect(isChatModelId("qwen-3-32b")).toBe(true);
+  });
+});
+
+describe("filterToLatestClaudeGeneration", () => {
+  it("keeps only the newest model per family (API returns newest-first)", () => {
+    const models = [
+      { id: "claude-opus-4-8", displayName: "Claude Opus 4.8" },
+      { id: "claude-opus-4-7", displayName: "Claude Opus 4.7" },
+      { id: "claude-sonnet-4-6", displayName: "Claude Sonnet 4.6" },
+      { id: "claude-sonnet-4-5", displayName: "Claude Sonnet 4.5" },
+      { id: "claude-haiku-4-5", displayName: "Claude Haiku 4.5" },
+      { id: "claude-3-5-haiku", displayName: "Claude Haiku 3.5" },
+      { id: "claude-fable-5", displayName: "Claude Fable 5" },
+    ];
+    expect(filterToLatestClaudeGeneration(models).map((m) => m.id)).toEqual([
+      "claude-opus-4-8",
+      "claude-sonnet-4-6",
+      "claude-haiku-4-5",
+      "claude-fable-5",
+    ]);
+  });
+
+  it("keeps models that don't match a known family", () => {
+    const models = [{ id: "claude-some-new-family-1", displayName: "New" }];
+    expect(filterToLatestClaudeGeneration(models).map((m) => m.id)).toEqual([
+      "claude-some-new-family-1",
+    ]);
   });
 });
