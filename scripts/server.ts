@@ -17,6 +17,7 @@ import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { maybeCompressResponse } from "../src/server/http/compression";
+import { applyPageCacheHeaders } from "../src/server/http/page-cache";
 import { stripOauthSurfaceTrailingSlash } from "../src/server/http/trailing-slash";
 import {
   startMaintenancePoller,
@@ -122,6 +123,10 @@ app.prepare().then(() => {
     }
 
     maybeCompressResponse(req, res);
+    // Make the shareable public pages (/demo, and the anonymous render of
+    // /login and /register) CDN-cacheable, overriding Next's dynamic-route
+    // no-store. See src/server/http/page-cache.ts.
+    applyPageCacheHeaders(req, res);
     handle(req, res);
   });
 

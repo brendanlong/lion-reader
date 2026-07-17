@@ -4,6 +4,12 @@ This file governs the outbound-HTTP helpers: SSRF-protected fetching (`ssrf.ts`)
 
 Every outgoing request must send our custom User-Agent (`USER_AGENT`/`buildUserAgent` from `@/server/http/user-agent`).
 
+## CDN Cache Headers for Public Pages (`page-cache.ts`)
+
+`applyPageCacheHeaders(req, res)` (wired in `scripts/server.ts`, right after `maybeCompressResponse`) makes the shareable public pages CDN-cacheable so a CDN can absorb an anonymous-traffic spike. These routes are all dynamically rendered — `/demo/*` reads `searchParams`; `/login` and `/register` render under `src/app/(auth)/layout.tsx`, which reads the session cookie — so Next stamps them `private, no-store` and a CDN caches nothing. We override that at the custom-server layer (not `next.config.ts` `headers()`, which can't reliably beat Next's own `Cache-Control` on a dynamic route nor branch on cookie presence) by patching `res.writeHead`, exactly like the compression wrapper. The pure decision is `pageCachePolicy(pathname, hasSessionCookie)`, unit-tested in `tests/unit/page-cache.test.ts`.
+
+Only the **anonymous** render of `/login` and `/register` is cacheable: a request carrying a `session` cookie gets `no-store` (its body is the signed-in redirect), and cacheable renders carry `Vary: Cookie`. `/demo/*` has no auth redirect in its subtree, so it's cacheable unconditionally. This origin-side gating is defense in depth under the CDN's own "bypass on session cookie" rule — never rely on either alone to keep a per-session redirect out of a shared cache.
+
 ## SSRF Protection
 
 All server-side fetches that target user-influenced URLs (feed preview/discover, feed fetching, full-content fetching, WebSub hub callbacks) are guarded against Server-Side Request Forgery to private/internal networks. The shared helper `fetchWithSsrfProtection(url, init)` in `src/server/http/ssrf.ts` performs the fetch and:
