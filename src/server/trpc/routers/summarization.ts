@@ -24,7 +24,7 @@ import {
   DEFAULT_SUMMARIZATION_PROMPT,
 } from "@/server/services/summarization";
 import { getAvailableProviders, listAllModels } from "@/server/services/ai-providers";
-import { AI_PROVIDERS } from "@/lib/ai/model-ref";
+import { AI_PROVIDERS, normalizeModelRef } from "@/lib/ai/model-ref";
 import { getUserApiKeys } from "@/server/auth/session";
 import { logger } from "@/lib/logger";
 import { sanitizeEntryHtml } from "@/server/html/sanitize";
@@ -128,7 +128,12 @@ export const summarizationRouter = createTRPCRouter({
         promptHash: string | null;
       }): boolean => {
         const promptVersionChanged = record.promptVersion !== CURRENT_PROMPT_VERSION;
-        const modelChanged = record.modelId !== null && record.modelId !== currentModelId;
+        // Compare as normalized provider:model refs so summaries cached under
+        // a legacy bare Anthropic ID (e.g. "claude-sonnet-5") aren't reported
+        // stale against the same model's new prefixed form.
+        const modelChanged =
+          record.modelId !== null &&
+          normalizeModelRef(record.modelId) !== normalizeModelRef(currentModelId);
         const maxWordsChanged = record.maxWords !== null && record.maxWords !== currentMaxWords;
         const promptChanged = record.promptHash !== null && record.promptHash !== currentPromptHash;
         return promptVersionChanged || modelChanged || maxWordsChanged || promptChanged;
