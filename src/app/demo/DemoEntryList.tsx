@@ -28,9 +28,15 @@ interface DemoEntryListProps {
   entries: DemoEntry[];
   backHref: string;
   selectedEntryId?: string | null;
+  onEntryFocus?: (entryId: string) => void;
 }
 
-export function DemoEntryList({ entries, backHref, selectedEntryId }: DemoEntryListProps) {
+export function DemoEntryList({
+  entries,
+  backHref,
+  selectedEntryId,
+  onEntryFocus,
+}: DemoEntryListProps) {
   const demoState = useDemoState();
 
   const handleToggleRead = useCallback(
@@ -52,6 +58,7 @@ export function DemoEntryList({ entries, backHref, selectedEntryId }: DemoEntryL
       externalEntries={entries}
       externalQueryState={STATIC_QUERY_STATE}
       selectedEntryId={selectedEntryId}
+      onEntryFocus={onEntryFocus}
       onEntryClick={(id) => {
         clientPush(`${backHref}?entry=${id}`);
       }}
