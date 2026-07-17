@@ -8,7 +8,11 @@
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 
-import { createTRPCRouter, confirmedProtectedProcedure as protectedProcedure } from "../trpc";
+import {
+  createTRPCRouter,
+  confirmedProtectedProcedure as protectedProcedure,
+  expensiveConfirmedProtectedProcedure,
+} from "../trpc";
 import { errors } from "../errors";
 import { uuidSchema } from "../validation";
 import { entries, entrySummaries, userEntries } from "@/server/db/schema";
@@ -91,7 +95,10 @@ export const summarizationRouter = createTRPCRouter({
    * @param entryId - The entry ID
    * @returns Summary text, whether it was cached, model ID, and generation time
    */
-  generate: protectedProcedure
+  // Rate-limited (10 burst, 1/sec): makes an outbound LLM call, potentially on
+  // the server-wide API key, and explicit regenerate bypasses the error
+  // backoff below.
+  generate: expensiveConfirmedProtectedProcedure
     .meta({
       openapi: {
         method: "POST",
@@ -300,13 +307,21 @@ export const summarizationRouter = createTRPCRouter({
         };
       }
 
-      // Check if we should retry after a previous error
+      // Check if we should retry after a previous error. The backoff guards
+      // against automatic retry loops; an explicit user retry (the error
+      // card's "Try again" / the regenerate button both send regenerate:
+      // true) always goes through — e.g. after the user fixes the failure by
+      // changing model or keys.
       const canRetry =
-        !summaryRecord.errorAt || Date.now() - summaryRecord.errorAt.getTime() > RETRY_AFTER_MS;
+        input.regenerate ||
+        !summaryRecord.errorAt ||
+        Date.now() - summaryRecord.errorAt.getTime() > RETRY_AFTER_MS;
 
       if (!canRetry) {
+        // Note this echoes the stored error from the *previous* attempt — no
+        // new request was made (the settings may have changed since).
         throw errors.internal(
-          `Summarization failed recently. Please try again later. Error: ${summaryRecord.error}`
+          `Summarization failed recently and this request was not retried. Use Regenerate to retry now, or try again later. Previous error: ${summaryRecord.error}`
         );
       }
 
