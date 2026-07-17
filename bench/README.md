@@ -85,3 +85,41 @@ CPU-balance observation). See the wiki page.
 `USERS`, `STAGES` (comma list of VU counts), `STAGE_SECONDS`, `WARMUP_SECONDS`,
 `BASE_URL`, `METRICS_URL`, `RESULT_LABEL`, `MAX_CONNECTIONS`, `PG_POOL_MAX`
 (server side).
+
+## Worker (feed-fetch) throughput — `bench/worker/`
+
+Answers "how many feeds can one worker keep polled before it falls behind?"
+Separate from the request-path benchmark above. Seeds M feeds (each with an
+active subscriber) all due now, pointed at a local mock feed server, then runs
+the real `dist/worker.js` and times how fast it drains the backlog — for a sweep
+of `WORKER_CONCURRENCY`, in two phases:
+
+- **FRESH** — first poll returns 200 + N items → full parse + entry processing +
+  sanitize + `user_entries` fanout (worst case: cold start / mass subscribe /
+  every feed updated at once).
+- **NOT-MODIFIED** — re-poll after the worker stored our ETag → 304 (steady
+  state: most real polls find nothing new).
+
+Runs against the **test** DB (`lionreader_test`) so it doesn't touch the capacity
+seed, and spawns the worker with `ALLOW_PRIVATE_NETWORK_FETCH=true` so it can
+reach `127.0.0.1`.
+
+```bash
+# realistic network latency (the number that matters — the worker is I/O-bound):
+FEEDS=500 CONCURRENCIES=1,3,8,16 ITEMS_PER_FEED=25 MOCK_LATENCY_MS=150 \
+  npx dotenv -e .env.local-services.test -- npx tsx bench/worker/worker-bench.ts
+
+# CPU/DB ceiling (0ms latency, more feeds to get a stable rate):
+FEEDS=2000 CONCURRENCIES=1,3,8,16 ITEMS_PER_FEED=25 MOCK_LATENCY_MS=0 \
+  npx dotenv -e .env.local-services.test -- npx tsx bench/worker/worker-bench.ts
+```
+
+Output per concurrency: feeds/s for FRESH and 304, and the implied feed count
+sustainable at hourly cadence. Set `MOCK_LATENCY_MS` to model real feed-server
+RTT — at `concurrency=1` throughput is ~`1/latency` (serial), so this dominates.
+Knobs: `FEEDS`, `CONCURRENCIES`, `ITEMS_PER_FEED`, `MOCK_LATENCY_MS`.
+
+> Caveat: the mock uses a uniform latency, so it does **not** model the slow-feed
+> tail. With `WORKER_CONCURRENCY=1`, a single feed that hangs to the 30 s fetch
+> timeout blocks the only slot for 30 s (head-of-line blocking) — the strongest
+> reason to raise concurrency is latency isolation, not raw throughput.

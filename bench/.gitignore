@@ -3,3 +3,5 @@
 sessions.json
 results-*.json
 prod-stats.txt
+# Real prod usage specifics — derived locally, not committed (see prod-params.example.json).
+prod-params.json
