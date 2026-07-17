@@ -1,9 +1,11 @@
 /**
  * Complete Signup Page
  *
- * Requires users to accept Terms of Service, Privacy Policy, and confirm
- * they are not in the EU before they can use the app.
- * Also provides a button to delete their account if they don't want to proceed.
+ * Requires users to accept Terms of Service and Privacy Policy — and, on
+ * EU-restricted instances (EU_RESTRICTED=true, surfaced via the `euRestricted`
+ * signup-config flag), to confirm they are not in the EU — before they can use
+ * the app. Also provides a button to delete their account if they don't want to
+ * proceed.
  */
 
 "use client";
@@ -14,9 +16,13 @@ import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
+import { EuRestrictionReason } from "@/components/auth/EuRestrictionNotice";
 
 export default function CompleteSignupPage() {
   const router = useRouter();
+  const { data: signupConfigData } = trpc.auth.signupConfig.useQuery();
+  const euRestricted = signupConfigData?.euRestricted ?? false;
+
   const [acceptedTos, setAcceptedTos] = useState(false);
   const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
   const [confirmedNotInEu, setConfirmedNotInEu] = useState(false);
@@ -44,7 +50,7 @@ export default function CompleteSignupPage() {
     },
   });
 
-  const allChecked = acceptedTos && acceptedPrivacy && confirmedNotInEu;
+  const allChecked = acceptedTos && acceptedPrivacy && (!euRestricted || confirmedNotInEu);
   const isDeleteConfirmed = deleteConfirmation === "delete";
 
   function handleConfirm() {
@@ -52,7 +58,8 @@ export default function CompleteSignupPage() {
     confirmMutation.mutate({
       acceptedTermsOfService: true,
       acceptedPrivacyPolicy: true,
-      confirmedNotInEu: true,
+      // Only sent when the instance requires it; the server ignores it otherwise.
+      confirmedNotInEu: euRestricted ? true : undefined,
     });
   }
 
@@ -113,17 +120,25 @@ export default function CompleteSignupPage() {
           </span>
         </label>
 
-        <label className="flex cursor-pointer items-start gap-3">
-          <input
-            type="checkbox"
-            checked={confirmedNotInEu}
-            onChange={(e) => setConfirmedNotInEu(e.target.checked)}
-            className="text-body border-edge-input mt-0.5 h-5 w-5 shrink-0 rounded dark:bg-zinc-800"
-          />
-          <span className="ui-text-sm text-body">
-            I confirm that I am not located in the European Union
-          </span>
-        </label>
+        {euRestricted && (
+          <label className="flex cursor-pointer items-start gap-3">
+            <input
+              type="checkbox"
+              checked={confirmedNotInEu}
+              onChange={(e) => setConfirmedNotInEu(e.target.checked)}
+              className="text-body border-edge-input mt-0.5 h-5 w-5 shrink-0 rounded dark:bg-zinc-800"
+            />
+            <span className="ui-text-sm text-body">
+              I confirm that I am not located in the European Union
+            </span>
+          </label>
+        )}
+
+        {euRestricted && (
+          <p className="ui-text-xs text-muted">
+            <EuRestrictionReason />
+          </p>
+        )}
       </div>
 
       <div className="space-y-3">

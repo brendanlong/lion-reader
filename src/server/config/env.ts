@@ -83,6 +83,20 @@ export const signupConfig = {
   get publicSignupProviders(): readonly SignupProvider[] {
     return resolvePublicSignupProviders();
   },
+
+  /**
+   * When true, this instance restricts EU users: the signup flow requires users
+   * to certify they are not located in the European Union (the `notEuAgreedAt`
+   * confirmation), and the registration page tells EU users the service is not
+   * available to them and points them at self-hosting.
+   *
+   * Defaults to false so self-hosted instances take on no EU-related obligation
+   * unless the operator opts in. Set EU_RESTRICTED=true (the hosted lionreader.com
+   * instance does, via fly.toml). Read lazily so tests can set the env after import.
+   */
+  get euRestricted(): boolean {
+    return process.env.EU_RESTRICTED === "true";
+  },
 };
 
 /** Public-facing app URL. Used for sitemap, robots.txt, metadata, and User-Agent header. */
