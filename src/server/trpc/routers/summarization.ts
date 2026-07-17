@@ -318,8 +318,10 @@ export const summarizationRouter = createTRPCRouter({
         Date.now() - summaryRecord.errorAt.getTime() > RETRY_AFTER_MS;
 
       if (!canRetry) {
+        // Note this echoes the stored error from the *previous* attempt — no
+        // new request was made (the settings may have changed since).
         throw errors.internal(
-          `Summarization failed recently. Please try again later. Error: ${summaryRecord.error}`
+          `Summarization failed recently and this request was not retried. Use Regenerate to retry now, or try again later. Previous error: ${summaryRecord.error}`
         );
       }
 
