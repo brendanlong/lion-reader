@@ -17,8 +17,12 @@ import { generateUuidv7 } from "@/lib/uuidv7";
 import {
   generateNarration,
   htmlToNarrationInput,
-  isGroqAvailable,
+  isNarrationLlmAvailable,
+  getNarrationModelRef,
 } from "@/server/services/narration";
+import { listAllModels } from "@/server/services/ai-providers";
+import { AI_PROVIDERS, formatModelRef } from "@/lib/ai/model-ref";
+import { NARRATION_PROVIDERS } from "@/lib/narration/constants";
 import { buildAlignedNarration } from "@/lib/narration/paragraph-map";
 import { selectDisplayedContent } from "@/lib/narration/select-content";
 import { getUserApiKeys } from "@/server/auth/session";
@@ -119,9 +123,10 @@ export const narrationRouter = createTRPCRouter({
     .output(generateOutputSchema)
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
+      const userNarrationModel = ctx.session.user.narrationModel;
 
-      // Fetch API key from DB on demand (not cached in session for security)
-      const { groqApiKey: userGroqApiKey } = await getUserApiKeys(userId);
+      // Fetch API keys from DB on demand (not cached in session for security)
+      const keys = await getUserApiKeys(userId);
 
       // Fetch the entry with visibility check via user_entries join
       // Both regular entries and saved articles are in the entries table now
@@ -217,8 +222,12 @@ export const narrationRouter = createTRPCRouter({
       const canRetryLLM =
         !narrationRecord.errorAt || Date.now() - narrationRecord.errorAt.getTime() > RETRY_AFTER_MS;
 
-      // If user disabled LLM normalization, Groq is not configured, or we had a recent error, fall back to plain text
-      if (!input.useLlmNormalization || !isGroqAvailable(userGroqApiKey) || !canRetryLLM) {
+      // If user disabled LLM normalization, no provider is configured, or we had a recent error, fall back to plain text
+      if (
+        !input.useLlmNormalization ||
+        !isNarrationLlmAvailable(keys, userNarrationModel) ||
+        !canRetryLLM
+      ) {
         // Generate a fallback (plain-text) narration with a paragraph map aligned
         // to the player's paragraph split.
         const { narrationText: fallbackText, paragraphMap } = buildAlignedNarration(
@@ -238,7 +247,10 @@ export const narrationRouter = createTRPCRouter({
 
       try {
         // Generate via LLM
-        const result = await generateNarration(sourceContent, userGroqApiKey);
+        const result = await generateNarration(sourceContent, {
+          keys,
+          userModel: userNarrationModel,
+        });
 
         // Stop the timer after generation completes
         stopTimer();
@@ -315,8 +327,8 @@ export const narrationRouter = createTRPCRouter({
   /**
    * Check if AI text processing is available.
    *
-   * Returns true if either the user has configured a Groq API key
-   * or the server has GROQ_API_KEY configured.
+   * Returns true if the configured narration model's provider (Groq or
+   * Cerebras) has a user-configured or server-configured API key.
    */
   isAiTextProcessingAvailable: protectedProcedure
     .meta({
@@ -330,6 +342,50 @@ export const narrationRouter = createTRPCRouter({
     .input(z.void())
     .output(z.object({ available: z.boolean() }))
     .query(({ ctx }) => {
-      return { available: ctx.session.hasGroqApiKey || !!process.env.GROQ_API_KEY };
+      // The session only carries has-key booleans (never the keys); the
+      // placeholder values below are only tested for truthiness.
+      const sessionKeys = {
+        groqApiKey: ctx.session.hasGroqApiKey ? "configured" : null,
+        cerebrasApiKey: ctx.session.hasCerebrasApiKey ? "configured" : null,
+      };
+      return {
+        available: isNarrationLlmAvailable(sessionKeys, ctx.session.user.narrationModel),
+      };
+    }),
+
+  /**
+   * List available models for narration preprocessing.
+   *
+   * Narration requires JSON-object responses, so only the OpenAI-compatible
+   * providers (Groq, Cerebras) are listed. Providers with no key are skipped.
+   */
+  listModels: protectedProcedure
+    .meta({
+      openapi: {
+        method: "GET",
+        path: "/narration/models",
+        tags: ["Narration"],
+        summary: "List available models for narration preprocessing",
+      },
+    })
+    .input(z.void())
+    .output(
+      z.object({
+        models: z.array(
+          z.object({
+            id: z.string(),
+            displayName: z.string(),
+            provider: z.enum(AI_PROVIDERS),
+          })
+        ),
+        defaultModelId: z.string(),
+      })
+    )
+    .query(async ({ ctx }) => {
+      // Fetch API keys from DB on demand (not cached in session for security)
+      const keys = await getUserApiKeys(ctx.session.user.id);
+      const models = await listAllModels(keys, NARRATION_PROVIDERS);
+      const defaultRef = getNarrationModelRef(null);
+      return { models, defaultModelId: formatModelRef(defaultRef.provider, defaultRef.model) };
     }),
 });

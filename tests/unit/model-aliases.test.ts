@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { simplifyModelIds } from "@/server/services/summarization";
+import { simplifyModelIds } from "@/server/services/ai-providers";
 
 describe("simplifyModelIds", () => {
   it("strips date suffixes from versioned model IDs", () => {

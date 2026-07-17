@@ -5,6 +5,18 @@
  */
 
 /**
+ * Default model for LLM narration preprocessing, as a `provider:model`
+ * reference. Narration preprocessing only supports the OpenAI-compatible
+ * providers (Groq, Cerebras) — it relies on JSON-object response formatting.
+ */
+export const DEFAULT_NARRATION_MODEL = "groq:openai/gpt-oss-20b";
+
+/**
+ * Providers selectable for narration preprocessing.
+ */
+export const NARRATION_PROVIDERS = ["groq", "cerebras"] as const;
+
+/**
  * Default speech rate (1.0 = normal speed).
  */
 export const DEFAULT_RATE = 1.0;
