@@ -307,6 +307,19 @@ export function EntryContentBody({
     [onToggleRead]
   );
 
+  // Keyboard shortcut: s to toggle star (parity with `m`, and with the list view)
+  useHotkeys(
+    "s",
+    (e) => {
+      e.preventDefault();
+      onToggleStar();
+    },
+    {
+      enableOnFormTags: false,
+    },
+    [onToggleStar]
+  );
+
   return (
     <EntryArticle
       title={title}

@@ -85,6 +85,12 @@ interface EntryListProps {
   selectedEntryId?: string | null;
 
   /**
+   * Callback when an entry row receives focus (Tab), used to sync the
+   * keyboard-shortcut selection with browser focus.
+   */
+  onEntryFocus?: (entryId: string) => void;
+
+  /**
    * Callback when the read status indicator is clicked.
    */
   onToggleRead?: (entryId: string, currentlyRead: boolean) => void;
@@ -121,6 +127,7 @@ export function EntryList({
   onEntryMouseDown,
   emptyMessage = "No entries to display",
   selectedEntryId,
+  onEntryFocus,
   onToggleRead,
   onToggleStar,
   externalEntries: allEntries,
@@ -210,6 +217,7 @@ export function EntryList({
             entry={entry}
             onClick={onEntryClick}
             onMouseDown={onEntryMouseDown}
+            onFocus={onEntryFocus}
             selected={selectedEntryId === entry.id}
             onToggleRead={onToggleRead}
             onToggleStar={onToggleStar}
