@@ -8,8 +8,11 @@
 //! - Attributes are allow-listed globally (`class`/`id`/`title`/`dir`/
 //!   `lang`, `data-*`, the MathML presentation set) plus per-tag additions.
 //! - URL-carrying attributes are scheme-checked (http/https/mailto/tel;
-//!   `data:` additionally for img/source), on the entity-decoded value.
-//!   Protocol-relative and relative URLs pass.
+//!   `data:image/*` additionally for img/source), on the entity-decoded value.
+//!   Protocol-relative and relative URLs pass. `data:` is accepted only when
+//!   its MIME type is `image/*` (so `data:text/html` never reaches an image
+//!   sink); `data:image/svg+xml` is allowed because an SVG in an image context
+//!   is passive (see `is_image_url_allowed`).
 //! - Comments and doctypes are removed.
 //! - Transforms: external links get `target="_blank" rel="noopener
 //!   noreferrer"`; images get `loading="lazy"`; iframes survive only as
@@ -24,7 +27,7 @@ use lol_html::html_content::Element;
 use lol_html::{doc_comments, doctype, element, HtmlRewriter, Settings};
 
 use crate::embeds::normalize_embed;
-use crate::urls::{decode_attr, is_url_allowed};
+use crate::urls::{decode_attr, is_image_url_allowed};
 
 /// Tags allowed in entry content (sanitize.ts ALLOWED_TAGS + MATHML_TAGS).
 const ALLOWED_TAGS: &[&str] = &[
@@ -93,7 +96,10 @@ const MATHML_ATTRS: &[&str] = &[
 const SAFE_SCHEMES: &[&str] = &["http", "https", "mailto", "tel"];
 // img/source src (and srcset candidates): http/https + data URIs (feeds embed
 // base64 images). Deliberately NOT mailto/tel — matches the old
-// `allowedSchemesByTag` for img/source exactly.
+// `allowedSchemesByTag` for img/source exactly. `data:` is MIME-gated to
+// `image/*` by `is_image_url_allowed` (a `data:text/html` image source would
+// otherwise be a stored-HTML sink), which still permits `data:image/svg+xml`
+// since an SVG rendered as an image is passive.
 const IMAGE_SCHEMES: &[&str] = &["http", "https", "data"];
 
 fn tag_allowed(tag: &str) -> bool {
@@ -238,14 +244,19 @@ fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Se
             continue;
         }
         if let Some(schemes) = url_schemes_for(&tag, &name) {
-            if !is_url_allowed(&decode_attr(&attr.value()), schemes) {
+            // `is_image_url_allowed` matches `is_url_allowed` for every scheme
+            // except `data:`, which it MIME-gates to `image/*`. `data` is only
+            // ever in `IMAGE_SCHEMES` (image sinks), so this is a no-op for the
+            // http/https/mailto/tel attributes and closes `data:text/html` on
+            // `img`/`source` `src`.
+            if !is_image_url_allowed(&decode_attr(&attr.value()), schemes) {
                 to_remove.push(name);
             }
         } else if name == "srcset" && matches!(tag.as_str(), "img" | "source") {
             let decoded = decode_attr(&attr.value()).into_owned();
             if !srcset_urls(&decoded)
                 .iter()
-                .all(|u| is_url_allowed(u, IMAGE_SCHEMES))
+                .all(|u| is_image_url_allowed(u, IMAGE_SCHEMES))
             {
                 to_remove.push(name);
             }
@@ -416,6 +427,28 @@ mod tests {
             sanitize(r#"<img src="data:image/png;base64,AAA=">"#),
             r#"<img src="data:image/png;base64,AAA=" loading="lazy">"#
         );
+    }
+
+    #[test]
+    fn img_src_data_must_be_image_mime() {
+        // `data:` is allowed on image sinks only when the MIME type is image/*.
+        // `data:image/svg+xml` stays (passive image context); `data:text/html`
+        // and other non-image data URLs are dropped from src and srcset.
+        assert_eq!(
+            sanitize(r#"<img src="data:image/svg+xml,%3Csvg%3E%3C/svg%3E">"#),
+            r#"<img src="data:image/svg+xml,%3Csvg%3E%3C/svg%3E" loading="lazy">"#
+        );
+        assert_eq!(
+            sanitize(r#"<img src="data:text/html,<script>alert(1)</script>">"#),
+            r#"<img loading="lazy">"#
+        );
+        // A non-image data: candidate drops the whole srcset (all-or-nothing).
+        assert_eq!(
+            sanitize(r#"<img src="a.png" srcset="data:text/html,x 1x, b.png 2x">"#),
+            r#"<img src="a.png" loading="lazy">"#
+        );
+        let ok = r#"<img srcset="data:image/png;base64,AAA= 1x, /b.png 2x" loading="lazy">"#;
+        assert_eq!(sanitize(ok), ok);
     }
 
     #[test]
