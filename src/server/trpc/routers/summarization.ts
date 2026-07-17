@@ -2,7 +2,7 @@
  * Summarization Router
  *
  * Handles AI-powered article summarization.
- * Uses Anthropic Claude for generating concise summaries.
+ * Uses the user's configured AI provider (Anthropic, Groq, or Cerebras).
  */
 
 import { z } from "zod";
@@ -21,9 +21,10 @@ import {
   getSummarizationModelId,
   getMaxWords,
   hashPrompt,
-  listModels,
   DEFAULT_SUMMARIZATION_PROMPT,
 } from "@/server/services/summarization";
+import { getAvailableProviders, listAllModels } from "@/server/services/ai-providers";
+import { AI_PROVIDERS, normalizeModelRef } from "@/lib/ai/model-ref";
 import { getUserApiKeys } from "@/server/auth/session";
 import { logger } from "@/lib/logger";
 import { sanitizeEntryHtml } from "@/server/html/sanitize";
@@ -107,7 +108,10 @@ export const summarizationRouter = createTRPCRouter({
       const userMaxWords = ctx.session.user.summarizationMaxWords;
       const userPrompt = ctx.session.user.summarizationPrompt;
 
-      const currentModelId = getSummarizationModelId(userSummarizationModel);
+      // Fetch API keys from DB on demand (not cached in session for security)
+      const keys = await getUserApiKeys(userId);
+
+      const currentModelId = getSummarizationModelId(userSummarizationModel, keys);
       const currentMaxWords = getMaxWords(userMaxWords);
       const currentPromptHash = hashPrompt(userPrompt);
 
@@ -124,19 +128,21 @@ export const summarizationRouter = createTRPCRouter({
         promptHash: string | null;
       }): boolean => {
         const promptVersionChanged = record.promptVersion !== CURRENT_PROMPT_VERSION;
-        const modelChanged = record.modelId !== null && record.modelId !== currentModelId;
+        // Compare as normalized provider:model refs so summaries cached under
+        // a legacy bare Anthropic ID (e.g. "claude-sonnet-5") aren't reported
+        // stale against the same model's new prefixed form.
+        const modelChanged =
+          record.modelId !== null &&
+          normalizeModelRef(record.modelId) !== normalizeModelRef(currentModelId);
         const maxWordsChanged = record.maxWords !== null && record.maxWords !== currentMaxWords;
         const promptChanged = record.promptHash !== null && record.promptHash !== currentPromptHash;
         return promptVersionChanged || modelChanged || maxWordsChanged || promptChanged;
       };
 
-      // Fetch API key from DB on demand (not cached in session for security)
-      const { anthropicApiKey: userAnthropicApiKey } = await getUserApiKeys(userId);
-
-      // Check if summarization is available (user key or server key)
-      if (!isSummarizationAvailable(userAnthropicApiKey)) {
+      // Check if summarization is available (user key or server key, any provider)
+      if (!isSummarizationAvailable(keys)) {
         throw errors.internal(
-          "AI summarization is not configured. Add an Anthropic API key in Settings to enable it."
+          "AI summarization is not configured. Add an Anthropic, Groq, or Cerebras API key in Settings to enable it."
         );
       }
 
@@ -310,7 +316,7 @@ export const summarizationRouter = createTRPCRouter({
 
         // Generate via LLM
         const result = await generateSummary(preparedContent, entry.title ?? "", {
-          userApiKey: userAnthropicApiKey,
+          keys,
           userModel: userSummarizationModel,
           userMaxWords: userMaxWords,
           userPrompt: userPrompt,
@@ -363,8 +369,8 @@ export const summarizationRouter = createTRPCRouter({
   /**
    * Check if AI summarization is available.
    *
-   * Returns true if either the user has configured an Anthropic API key
-   * or the server has ANTHROPIC_API_KEY configured.
+   * Returns true if any provider (Anthropic, Groq, Cerebras) has a
+   * user-configured or server-configured API key.
    */
   isAvailable: protectedProcedure
     .meta({
@@ -378,14 +384,20 @@ export const summarizationRouter = createTRPCRouter({
     .input(z.void())
     .output(z.object({ available: z.boolean() }))
     .query(({ ctx }) => {
-      return { available: ctx.session.hasAnthropicApiKey || !!process.env.ANTHROPIC_API_KEY };
+      const available =
+        ctx.session.hasAnthropicApiKey ||
+        ctx.session.hasGroqApiKey ||
+        ctx.session.hasCerebrasApiKey ||
+        getAvailableProviders().length > 0;
+      return { available };
     }),
 
   /**
-   * List available Anthropic models for summarization.
+   * List available models for summarization across all configured providers.
    *
-   * Uses the user's API key if configured, otherwise falls back to the server key.
-   * Returns an empty array if no key is available.
+   * Uses the user's API keys where configured, otherwise falls back to the
+   * server keys. Providers with no key are skipped; returns an empty array if
+   * none is available.
    */
   listModels: protectedProcedure
     .meta({
@@ -403,16 +415,17 @@ export const summarizationRouter = createTRPCRouter({
           z.object({
             id: z.string(),
             displayName: z.string(),
+            provider: z.enum(AI_PROVIDERS),
           })
         ),
         defaultModelId: z.string(),
       })
     )
     .query(async ({ ctx }) => {
-      // Fetch API key from DB on demand (not cached in session for security)
-      const { anthropicApiKey } = await getUserApiKeys(ctx.session.user.id);
-      const models = await listModels(anthropicApiKey);
-      return { models, defaultModelId: getSummarizationModelId() };
+      // Fetch API keys from DB on demand (not cached in session for security)
+      const keys = await getUserApiKeys(ctx.session.user.id);
+      const models = await listAllModels(keys);
+      return { models, defaultModelId: getSummarizationModelId(null, keys) };
     }),
 
   /**

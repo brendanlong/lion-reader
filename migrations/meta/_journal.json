@@ -708,6 +708,13 @@
       "when": 1782953400000,
       "tag": "0101_entries_is_placeholder",
       "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1782953500000,
+      "tag": "0102_ai_provider_settings",
+      "breakpoints": true
     }
   ]
 }
