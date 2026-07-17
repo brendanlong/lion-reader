@@ -48,16 +48,18 @@ export function SubscriptionItem({
   const subHref = href ?? `/subscription/${subscription.id}`;
 
   return (
-    <li className="group relative">
+    <li className="group relative flex items-center">
       <ClientLink
         href={subHref}
         onNavigate={onClose}
         onPrefetch={onPrefetch}
-        className={`ui-text-sm flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 transition-colors ${
+        className={`ui-text-sm flex min-h-[44px] min-w-0 flex-1 items-center justify-between rounded-md px-3 py-2 transition-colors ${
           isActive ? "bg-surface-muted text-body" : "text-body hover:bg-surface-muted"
         }`}
       >
-        <span className="truncate pr-8">{displayTitle}</span>
+        {/* pr-8 keeps long titles clear of the desktop hover-overlay buttons;
+            on hover-less devices the buttons are in-flow, so reclaim the space */}
+        <span className="hover-none:pr-2 truncate pr-8">{displayTitle}</span>
         {subscription.unreadCount > 0 && (
           <span className="ui-text-xs text-muted shrink-0 tabular-nums group-hover:hidden">
             ({subscription.unreadCount})
@@ -65,8 +67,10 @@ export function SubscriptionItem({
         )}
       </ClientLink>
 
-      {/* Action buttons - visible on hover/touch */}
-      <div className="absolute top-1/2 right-1 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+      {/* Action buttons — revealed on hover (and untappable while hidden, so an
+          invisible button never swallows a click); on hover-less devices they
+          sit in-flow after the unread count, always visible. */}
+      <div className="hover-none:static hover-none:translate-y-0 hover-none:pr-1 hover-none:opacity-100 hover-none:pointer-events-auto pointer-events-none absolute top-1/2 right-1 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100">
         <IconButton
           icon={<EditIcon />}
           aria-label={`Edit ${displayTitle}`}

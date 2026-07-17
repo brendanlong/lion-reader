@@ -254,7 +254,7 @@ export const EntryListItem = memo(function EntryListItem({
                 className={`-m-[14px] flex shrink-0 items-center justify-center rounded-full p-[14px] transition-colors ${
                   starred
                     ? "text-star hover:text-star-hover"
-                    : "hover:text-star text-zinc-300 opacity-0 group-hover:opacity-100 dark:text-zinc-600"
+                    : "hover:text-star hover-none:opacity-100 text-zinc-300 opacity-0 group-hover:opacity-100 dark:text-zinc-600"
                 }`}
                 aria-label={starred ? "Remove from starred" : "Add to starred"}
                 title={starred ? "Remove from starred (s)" : "Add to starred (s)"}
