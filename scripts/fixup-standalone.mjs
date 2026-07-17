@@ -45,10 +45,14 @@ function standalonePath(realDir) {
   return join(standaloneDir, relative(rootDir, realDir));
 }
 
-// 1. Copy whole packages whose dynamic requires the trace misses.
+// 1. Copy whole packages whose dynamic requires the trace misses. Remove the
+// traced subset first: cpSync's `force` doesn't overwrite when the file type
+// differs (e.g. symlink vs regular file) and throws EEXIST instead.
 for (const pkg of ["html-rewriter-wasm", "argon2"]) {
   const realDir = packageDir(pkg);
-  cpSync(realDir, standalonePath(realDir), { recursive: true, force: true });
+  const dest = standalonePath(realDir);
+  rmSync(dest, { recursive: true, force: true });
+  cpSync(realDir, dest, { recursive: true });
   console.log(`Copied full package: ${pkg}`);
 }
 
