@@ -70,7 +70,7 @@ export function StateToggleButton({
     <button
       type="button"
       onClick={handleClick}
-      className={`text-muted hover:bg-surface-muted focus:ring-focus hover:text-body inline-flex items-center justify-center rounded-md p-2 transition-colors focus:ring-2 focus:ring-offset-2 focus:outline-none ${className}`}
+      className={`text-muted hover:bg-surface-muted hover:text-body inline-flex items-center justify-center rounded-md p-2 transition-colors ${className}`}
       title={ariaLabel}
       aria-label={ariaLabel}
       aria-pressed={isPressed}

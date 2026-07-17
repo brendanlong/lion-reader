@@ -177,7 +177,7 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
       <button
         type="button"
         onClick={handleOpen}
-        className={`ui-text-sm border-edge-strong bg-surface text-body hover:bg-surface-muted focus:ring-focus inline-flex min-h-[40px] items-center gap-1.5 rounded-md border px-3 font-medium transition-colors focus:ring-2 focus:ring-offset-2 focus:outline-none active:bg-zinc-100 dark:active:bg-zinc-700 ${className}`}
+        className={`ui-text-sm border-edge-strong bg-surface text-body hover:bg-surface-muted inline-flex min-h-[40px] items-center gap-1.5 rounded-md border px-3 font-medium transition-colors active:bg-zinc-100 dark:active:bg-zinc-700 ${className}`}
         title="Upload file"
         aria-label="Upload file"
       >

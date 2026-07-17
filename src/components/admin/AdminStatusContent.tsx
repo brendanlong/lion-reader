@@ -20,11 +20,10 @@ import type { AnnouncementLevel } from "@/server/services/site-status";
 const MESSAGE_MAX = 1000;
 
 const textareaClass =
-  "ui-text-sm bg-surface text-body border-edge-input focus:border-focus focus:ring-focus block w-full rounded-md border px-3 py-2 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50";
+  "ui-text-sm bg-surface text-body border-edge-input block w-full rounded-md border px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50";
 const selectClass =
-  "ui-text-sm bg-surface text-body border-edge-input focus:border-focus focus:ring-focus block rounded-md border px-3 py-2 focus:ring-2 focus:ring-offset-2 focus:outline-none";
-const checkboxClass =
-  "text-accent focus:ring-focus border-edge-input h-4 w-4 rounded dark:bg-zinc-800";
+  "ui-text-sm bg-surface text-body border-edge-input block rounded-md border px-3 py-2";
+const checkboxClass = "text-accent border-edge-input h-4 w-4 rounded dark:bg-zinc-800";
 
 interface SiteStatus {
   maintenance: { enabled: boolean; message: string };
