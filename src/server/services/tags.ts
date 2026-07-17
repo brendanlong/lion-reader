@@ -275,7 +275,13 @@ export async function updateTag(
   // name can still slip in between and trip the partial unique index. Catch that
   // as a validation error instead of surfacing a raw 500.
   try {
-    await db.update(tags).set(updateData).where(eq(tags.id, tagId));
+    // Scope the UPDATE by userId too — the ownership SELECT above already
+    // guarantees it, but keeping the predicate here makes the mutation
+    // self-evidently user-scoped in isolation (defense-in-depth).
+    await db
+      .update(tags)
+      .set(updateData)
+      .where(and(eq(tags.id, tagId), eq(tags.userId, userId)));
   } catch (err) {
     if (isUniqueViolation(err)) {
       throw errors.validation("A tag with this name already exists");

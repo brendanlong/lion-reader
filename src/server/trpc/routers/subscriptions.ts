@@ -635,14 +635,16 @@ export const subscriptionsRouter = createTRPCRouter({
         // Remove all tag associations so resubscribing starts fresh
         await tx.delete(subscriptionTags).where(eq(subscriptionTags.subscriptionId, input.id));
 
-        // Soft delete by setting unsubscribedAt
+        // Soft delete by setting unsubscribedAt. Scope by userId too — the
+        // ownership SELECT above already guarantees it, but keeping the
+        // predicate makes the mutation self-evidently user-scoped in isolation.
         await tx
           .update(subscriptions)
           .set({
             unsubscribedAt: now,
             updatedAt: now,
           })
-          .where(eq(subscriptions.id, input.id));
+          .where(and(eq(subscriptions.id, input.id), eq(subscriptions.userId, userId)));
 
         return formerTagRows.map((r) => r.tagId);
       });

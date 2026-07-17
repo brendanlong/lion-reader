@@ -85,11 +85,17 @@ export async function POST(request: NextRequest) {
       return createErrorRedirect(appUrl, "callback_failed", REDIRECT_STATUS);
     }
 
-    const { userInfo, firstAuthData, tokens } = appleResult;
+    const { userInfo, tokens } = appleResult;
 
-    // Get email from JWT or first-auth data
-    // Apple only sends email on first auth, but we can look up returning users by providerAccountId
-    const email = userInfo.email ?? firstAuthData?.email;
+    // The email used for account linking/creation must come ONLY from the
+    // signature-verified id_token (userInfo), never from `firstAuthData.email`
+    // — that field is part of Apple's client-posted `user` form value and is
+    // attacker-controllable. Today the coupling "no id_token email ⇒ no
+    // email_verified" already blocks a linked-account takeover (processOAuthCallback
+    // refuses an unverified email), but relying on the verified claim directly
+    // keeps the linking decision independent of any client-supplied input.
+    // Returning users (no email on re-auth) are matched by providerAccountId (sub).
+    const email = userInfo.email;
 
     // Process OAuth callback - handles existing accounts, linking, and new user creation
     // Note: inviteToken is passed through from Redis state data
