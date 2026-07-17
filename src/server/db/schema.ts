@@ -81,11 +81,13 @@ export const users = pgTable(
     showSpam: boolean("show_spam").notNull().default(false), // Show spam entries from email feeds
 
     // User-configured API keys (override server defaults when set)
-    groqApiKey: text("groq_api_key"), // For narration LLM preprocessing
-    anthropicApiKey: text("anthropic_api_key"), // For AI summarization
-    summarizationModel: text("summarization_model"), // Anthropic model for summaries
+    groqApiKey: text("groq_api_key"), // Groq: narration LLM preprocessing + summaries
+    anthropicApiKey: text("anthropic_api_key"), // Anthropic: AI summarization
+    cerebrasApiKey: text("cerebras_api_key"), // Cerebras: narration LLM preprocessing + summaries
+    summarizationModel: text("summarization_model"), // provider:model ref for summaries (legacy: bare Anthropic ID)
     summarizationMaxWords: integer("summarization_max_words"), // Override SUMMARIZATION_MAX_WORDS
     summarizationPrompt: text("summarization_prompt"), // Custom summarization prompt
+    narrationModel: text("narration_model"), // provider:model ref for narration preprocessing (Groq/Cerebras)
 
     // Signup confirmation: each records when the user accepted the agreement
     tosAgreedAt: timestamp("tos_agreed_at", { withTimezone: true }),

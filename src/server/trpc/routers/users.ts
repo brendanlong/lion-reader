@@ -341,9 +341,11 @@ export const usersRouter = createTRPCRouter({
         canConfigureApiKeys: z.boolean(),
         hasGroqApiKey: z.boolean(),
         hasAnthropicApiKey: z.boolean(),
+        hasCerebrasApiKey: z.boolean(),
         summarizationModel: z.string().nullable(),
         summarizationMaxWords: z.number().nullable(),
         summarizationPrompt: z.string().nullable(),
+        narrationModel: z.string().nullable(),
       })
     )
     .query(async ({ ctx }) => {
@@ -354,9 +356,11 @@ export const usersRouter = createTRPCRouter({
         canConfigureApiKeys: isEncryptionConfigured(),
         hasGroqApiKey: ctx.session.hasGroqApiKey,
         hasAnthropicApiKey: ctx.session.hasAnthropicApiKey,
+        hasCerebrasApiKey: ctx.session.hasCerebrasApiKey,
         summarizationModel: ctx.session.user.summarizationModel,
         summarizationMaxWords: ctx.session.user.summarizationMaxWords,
         summarizationPrompt: ctx.session.user.summarizationPrompt,
+        narrationModel: ctx.session.user.narrationModel,
       };
     }),
 
@@ -380,7 +384,9 @@ export const usersRouter = createTRPCRouter({
         // API keys: empty string clears the key, non-empty sets it
         groqApiKey: z.string().optional(),
         anthropicApiKey: z.string().optional(),
+        cerebrasApiKey: z.string().optional(),
         summarizationModel: z.string().optional(),
+        narrationModel: z.string().optional(),
         // Summarization settings: null clears (reverts to default)
         summarizationMaxWords: z.number().int().min(1).max(10000).nullable().optional(),
         summarizationPrompt: z.string().max(10000).nullable().optional(),
@@ -392,9 +398,11 @@ export const usersRouter = createTRPCRouter({
         canConfigureApiKeys: z.boolean(),
         hasGroqApiKey: z.boolean(),
         hasAnthropicApiKey: z.boolean(),
+        hasCerebrasApiKey: z.boolean(),
         summarizationModel: z.string().nullable(),
         summarizationMaxWords: z.number().nullable(),
         summarizationPrompt: z.string().nullable(),
+        narrationModel: z.string().nullable(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -403,7 +411,8 @@ export const usersRouter = createTRPCRouter({
       // Reject API key storage if encryption is not configured
       const settingApiKey =
         (input.groqApiKey !== undefined && input.groqApiKey !== "") ||
-        (input.anthropicApiKey !== undefined && input.anthropicApiKey !== "");
+        (input.anthropicApiKey !== undefined && input.anthropicApiKey !== "") ||
+        (input.cerebrasApiKey !== undefined && input.cerebrasApiKey !== "");
       if (settingApiKey && !isEncryptionConfigured()) {
         throw errors.validation(
           "API key encryption is not configured on this server. Contact your administrator."
@@ -415,9 +424,11 @@ export const usersRouter = createTRPCRouter({
         showSpam?: boolean;
         groqApiKey?: string | null;
         anthropicApiKey?: string | null;
+        cerebrasApiKey?: string | null;
         summarizationModel?: string | null;
         summarizationMaxWords?: number | null;
         summarizationPrompt?: string | null;
+        narrationModel?: string | null;
         updatedAt: Date;
       } = {
         updatedAt: new Date(),
@@ -438,8 +449,18 @@ export const usersRouter = createTRPCRouter({
           : null;
       }
 
+      if (input.cerebrasApiKey !== undefined) {
+        updateData.cerebrasApiKey = input.cerebrasApiKey
+          ? encryptApiKey(input.cerebrasApiKey)
+          : null;
+      }
+
       if (input.summarizationModel !== undefined) {
         updateData.summarizationModel = input.summarizationModel || null;
+      }
+
+      if (input.narrationModel !== undefined) {
+        updateData.narrationModel = input.narrationModel || null;
       }
 
       if (input.summarizationMaxWords !== undefined) {
@@ -462,9 +483,11 @@ export const usersRouter = createTRPCRouter({
           showSpam: users.showSpam,
           groqApiKey: users.groqApiKey,
           anthropicApiKey: users.anthropicApiKey,
+          cerebrasApiKey: users.cerebrasApiKey,
           summarizationModel: users.summarizationModel,
           summarizationMaxWords: users.summarizationMaxWords,
           summarizationPrompt: users.summarizationPrompt,
+          narrationModel: users.narrationModel,
         })
         .from(users)
         .where(eq(users.id, userId))
@@ -475,9 +498,11 @@ export const usersRouter = createTRPCRouter({
         canConfigureApiKeys: isEncryptionConfigured(),
         hasGroqApiKey: !!updatedUser[0]?.groqApiKey,
         hasAnthropicApiKey: !!updatedUser[0]?.anthropicApiKey,
+        hasCerebrasApiKey: !!updatedUser[0]?.cerebrasApiKey,
         summarizationModel: updatedUser[0]?.summarizationModel ?? null,
         summarizationMaxWords: updatedUser[0]?.summarizationMaxWords ?? null,
         summarizationPrompt: updatedUser[0]?.summarizationPrompt ?? null,
+        narrationModel: updatedUser[0]?.narrationModel ?? null,
       };
     }),
 

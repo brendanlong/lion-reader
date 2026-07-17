@@ -9,8 +9,9 @@
 
 import { trpc } from "@/lib/trpc/client";
 import {
-  GroqApiKeySettings,
-  SummarizationApiKeySettings,
+  AiProviderKeySettings,
+  SummarizationSettings,
+  NarrationAiSettings,
 } from "@/components/settings/ApiKeySettings";
 // Import directly from file to avoid barrel export pulling in piper-tts-web
 import { NarrationSettings } from "@/components/narration/NarrationSettings";
@@ -23,11 +24,14 @@ function ApiKeySettingsSections() {
 
   return (
     <>
-      {/* AI Text Processing (Groq API key) */}
-      <GroqApiKeySettings />
+      {/* Provider API keys (Anthropic, Groq, Cerebras) */}
+      <AiProviderKeySettings />
 
-      {/* Summaries (Anthropic API key + model) */}
-      <SummarizationApiKeySettings />
+      {/* Summaries (model, max words, custom prompt) */}
+      <SummarizationSettings />
+
+      {/* Narration text processing model (Groq/Cerebras) */}
+      <NarrationAiSettings />
     </>
   );
 }
