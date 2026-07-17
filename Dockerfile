@@ -106,6 +106,13 @@ ENV NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN
 RUN --mount=type=cache,id=next-cache,target=/app/.next/cache \
     pnpm build
 
+# `output: "standalone"` emitted a traced, minimal node_modules into
+# .next/standalone — the runner ships that instead of the full pruned tree
+# (issue #1305). Patch the gaps the trace misses (dynamic requires, next's
+# subpath shims, the @lion-reader workspace symlinks), then move it out of
+# .next so the runner's .next COPY doesn't pick up a duplicate node_modules.
+RUN node scripts/fixup-standalone.mjs && mv .next/standalone /standalone
+
 # Build custom server bundle (compression + Next.js wrapper)
 RUN pnpm build:server
 
@@ -117,12 +124,6 @@ RUN pnpm build:discord-bot
 
 # Build migration bundle (single optimized JS file)
 RUN pnpm build:migrate
-
-# Prune dev dependencies after build. CI=true lets pnpm remove/recreate the
-# modules directory without a confirmation prompt (there's no TTY in the
-# builder; without it prune fails with ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY).
-RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
-    CI=true pnpm prune --prod --ignore-scripts
 
 # =============================================================================
 # Stage 5: Production runner (minimal image, no pnpm needed)
@@ -146,8 +147,12 @@ ENV HOSTNAME="0.0.0.0"
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/package.json ./package.json
 
-# Copy production node_modules (already pruned in builder)
-COPY --from=builder /app/node_modules ./node_modules
+# Copy the traced standalone node_modules (a fraction of the full tree; see
+# the fixup-standalone step in the builder). dist/server.js keeps `next`
+# external and resolves it from here; the worker/discord bundles only need
+# their few runtime externals (argon2, html-rewriter-wasm, @lion-reader/*),
+# which the Next server graph also uses, so the trace covers them.
+COPY --from=builder /standalone/node_modules ./node_modules
 
 # The native modules: node_modules/@lion-reader/{sanitizer,readability,feed-parser}
 # are pnpm workspace symlinks into these directories, so they must exist in the
@@ -181,11 +186,10 @@ COPY --from=builder /app/dist/discord-bot.js ./dist/discord-bot.js
 COPY --from=builder /app/scripts/start-all.sh ./scripts/start-all.sh
 RUN chmod +x scripts/start-all.sh
 
-# Generate minimal next.config.js for runtime.
-# The full next.config.ts requires TypeScript and build-time-only deps (next-pwa,
-# sentry). Only compress:false is needed at runtime — everything else (headers,
-# webpack, etc.) is baked into .next/ at build time.
-RUN echo 'module.exports = { compress: false };' > next.config.js
+# No next.config.js in the image: dist/server.js hands next() the resolved
+# build-time config from .next/required-server-files.json (the standalone
+# mechanism) — the traced node_modules doesn't include the runtime
+# config-loading machinery. See scripts/server.ts.
 
 # Switch to non-root user
 USER nextjs

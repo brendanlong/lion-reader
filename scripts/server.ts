@@ -14,6 +14,8 @@
 
 import next from "next";
 import { createServer } from "node:http";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { maybeCompressResponse } from "../src/server/http/compression";
 import { stripOauthSurfaceTrailingSlash } from "../src/server/http/trailing-slash";
 import {
@@ -36,6 +38,19 @@ const port = parseInt(process.env.PORT || "3000", 10);
 const DRAIN_TIMEOUT_MS = dev ? 1_000 : 15_000;
 // Hard deadline for the whole shutdown (drain + pool/Redis cleanup).
 const FORCE_EXIT_TIMEOUT_MS = DRAIN_TIMEOUT_MS + 10_000;
+
+// In production we run against Next's `output: "standalone"` build, whose
+// traced node_modules deliberately omits the runtime config-loading machinery
+// (next/dist/compiled/webpack etc.). Hand `next()` the resolved build-time
+// config via __NEXT_PRIVATE_STANDALONE_CONFIG — the same mechanism the
+// generated .next/standalone/server.js uses — so it never tries to load
+// next.config.js at runtime.
+if (!dev) {
+  const requiredServerFiles = JSON.parse(
+    readFileSync(join(process.cwd(), ".next", "required-server-files.json"), "utf8")
+  ) as { config: Record<string, unknown> };
+  process.env.__NEXT_PRIVATE_STANDALONE_CONFIG = JSON.stringify(requiredServerFiles.config);
+}
 
 const app = next({
   dev,
