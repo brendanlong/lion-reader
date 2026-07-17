@@ -11,24 +11,15 @@
 
 "use client";
 
-import { useMemo, useEffect, useCallback, useRef, useState, Suspense } from "react";
+import { useMemo, useEffect, useCallback, useRef, Suspense } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { ClientLink } from "@/components/ui/client-link";
-import { PageLink } from "@/components/ui/page-link";
-import { ScrollContainer } from "@/components/layout/ScrollContainerContext";
-import { Button } from "@/components/ui/button";
-import { ArrowLeftIcon, SparklesIcon } from "@/components/ui/icon-button";
-import { StarButton, ReadToggleButton } from "@/components/entries/EntryStateButtons";
-import { EntryArticle } from "@/components/entries/EntryArticle";
-import { SummaryCard } from "@/components/summarization/SummaryCard";
-import { AppearanceSettings } from "@/components/settings/AppearanceSettings";
-import { useEntryTextStyles } from "@/lib/appearance/AppearanceProvider";
 import { useSwipeGesture } from "@/lib/hooks/useSwipeGesture";
 import { SortToggle } from "@/components/entries/SortToggle";
 import { UnreadToggle } from "@/components/entries/UnreadToggle";
 import { MarkAllReadButton } from "@/components/entries/MarkAllReadButton";
 import { useKeyboardShortcuts } from "@/lib/hooks/useKeyboardShortcuts";
 import { clientPush, extractParamsFromPathname } from "@/lib/navigation";
+import { DemoArticleView } from "./DemoArticleView";
 import { DemoEntryList } from "./DemoEntryList";
 import { DemoListSkeleton } from "./DemoListSkeleton";
 import { useDemoState } from "./DemoStateContext";
@@ -37,7 +28,6 @@ import {
   getDemoEntriesForSubscription,
   getDemoEntriesForTag,
   getDemoEntry,
-  getDemoEntryArticleProps,
   getDemoSubscription,
   getDemoTag,
 } from "./data";
@@ -47,10 +37,6 @@ function DemoRouterContent() {
   const searchParams = useSearchParams();
   const entryId = searchParams.get("entry");
   const demoState = useDemoState();
-  const [showSummaryForEntry, setShowSummaryForEntry] = useState<string | null>(null);
-  // Apply the user's appearance settings (font, size, alignment) to demo
-  // article content, matching EntryContentBody in the real app.
-  const { className: textSizeClass, style: textStyle } = useEntryTextStyles();
 
   // Parse the pathname to determine the current view
   const { subscriptionId: subId, tagId } = extractParamsFromPathname(pathname, "/demo");
@@ -232,102 +218,13 @@ function DemoRouterContent() {
 
   if (selectedEntry) {
     return (
-      <ScrollContainer key={selectedEntry.id} className="h-full overflow-y-auto">
-        <EntryArticle
-          {...getDemoEntryArticleProps(selectedEntry)}
-          textSizeClass={textSizeClass}
-          textStyle={textStyle}
-          onTouchStart={handleTouchStart}
-          onTouchEnd={handleTouchEnd}
-          backButton={
-            <ClientLink
-              href={backHref}
-              className="ui-text-sm text-muted hover:bg-surface-muted hover:text-body mb-4 -ml-2 inline-flex min-h-[44px] items-center gap-2 rounded-md px-2 transition-colors active:bg-zinc-200 sm:mb-6 dark:active:bg-zinc-700"
-            >
-              <ArrowLeftIcon className="h-4 w-4" />
-              <span>Back to list</span>
-            </ClientLink>
-          }
-          actionButtons={
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-              {/* Star + Read/Unread toggles (shared with the real reader) */}
-              <StarButton
-                starred={selectedEntry.starred}
-                onToggle={() => demoState.toggleStar(selectedEntry.id)}
-              />
-              <ReadToggleButton
-                read={selectedEntry.read}
-                onToggle={() => demoState.toggleRead(selectedEntry.id)}
-              />
-
-              {/* Summarize button */}
-              <Button
-                variant={showSummaryForEntry === selectedEntry.id ? "primary" : "secondary"}
-                size="sm"
-                onClick={() =>
-                  setShowSummaryForEntry(
-                    showSummaryForEntry === selectedEntry.id ? null : selectedEntry.id
-                  )
-                }
-                aria-label={
-                  showSummaryForEntry === selectedEntry.id ? "Hide summary" : "Show AI summary"
-                }
-              >
-                <SparklesIcon className="h-4 w-4" />
-                <span className="ml-2">
-                  {showSummaryForEntry === selectedEntry.id ? "Hide Summary" : "Summarize"}
-                </span>
-              </Button>
-            </div>
-          }
-          beforeContent={
-            <>
-              {showSummaryForEntry === selectedEntry.id && (
-                <SummaryCard
-                  summary={selectedEntry.summaryHtml}
-                  modelId="claude-sonnet-4-6"
-                  generatedAt={new Date("2026-02-07")}
-                  onClose={() => setShowSummaryForEntry(null)}
-                />
-              )}
-              {selectedEntry.id === "welcome" && (
-                <div className="border-edge-strong bg-surface-subtle mb-6 rounded-lg border p-6 text-center">
-                  <h2 className="text-body mb-4 text-2xl font-semibold">Get Started</h2>
-                  <div className="flex flex-col justify-center gap-3 sm:flex-row sm:items-center">
-                    <PageLink
-                      href="/register"
-                      className="btn-primary ui-text-base inline-flex h-12 w-full items-center justify-center rounded-md px-6 font-medium sm:w-auto"
-                    >
-                      Sign Up
-                    </PageLink>
-                    <PageLink
-                      href="/login"
-                      className="ui-text-base bg-surface text-body border-edge-input hover:bg-surface-muted inline-flex h-12 w-full items-center justify-center rounded-md border px-6 font-medium transition-colors sm:w-auto"
-                    >
-                      Sign in
-                    </PageLink>
-                  </div>
-                </div>
-              )}
-            </>
-          }
-          afterContent={
-            selectedEntry.id === "appearance" && (
-              <div className="border-edge-strong mt-8 border-t pt-8">
-                <div className="mb-4">
-                  <h2 className="text-body text-xl font-semibold">Try it yourself</h2>
-                  <p className="ui-text-sm text-muted mt-1">
-                    These are the real appearance settings from the app. Switch to the dark theme to
-                    see the warm, low-blue-light palette, or adjust the fonts and text size &mdash;
-                    changes apply live to this article. Your choices are saved in this browser.
-                  </p>
-                </div>
-                <AppearanceSettings />
-              </div>
-            )
-          }
-        />
-      </ScrollContainer>
+      <DemoArticleView
+        key={selectedEntry.id}
+        entry={selectedEntry}
+        backHref={backHref}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+      />
     );
   }
 
