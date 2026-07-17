@@ -114,8 +114,23 @@ export interface ChatCompletionOptions {
   jsonObject?: boolean;
   /** Sampling temperature. Ignored for Anthropic. */
   temperature?: number;
-  /** Reasoning effort for reasoning models (gpt-oss). Ignored for Anthropic. */
+  /**
+   * Reasoning effort for reasoning models. Ignored for Anthropic, and only
+   * sent to models that accept the parameter (see
+   * {@link supportsReasoningEffort}) — Groq/Cerebras reject it with a 400 on
+   * non-reasoning models like Llama.
+   */
   reasoningEffort?: "low" | "medium" | "high";
+}
+
+/**
+ * Whether a provider-native model ID accepts the OpenAI-style
+ * `reasoning_effort` low/medium/high parameter. Currently only the gpt-oss
+ * family does on Groq and Cerebras; other models (Llama, Qwen, ...) return
+ * `400 reasoning_effort is not supported with this model`.
+ */
+export function supportsReasoningEffort(model: string): boolean {
+  return model.toLowerCase().includes("gpt-oss");
 }
 
 /**
@@ -157,7 +172,9 @@ export async function generateChatCompletion(
         model: ref.model,
         max_completion_tokens: options.maxTokens,
         ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
-        ...(options.reasoningEffort ? { reasoning_effort: options.reasoningEffort } : {}),
+        ...(options.reasoningEffort && supportsReasoningEffort(ref.model)
+          ? { reasoning_effort: options.reasoningEffort }
+          : {}),
         ...(options.jsonObject ? { response_format: { type: "json_object" as const } } : {}),
         messages: [
           ...(options.system ? [{ role: "system" as const, content: options.system }] : []),
@@ -175,7 +192,9 @@ export async function generateChatCompletion(
         model: ref.model,
         max_completion_tokens: options.maxTokens,
         ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
-        ...(options.reasoningEffort ? { reasoning_effort: options.reasoningEffort } : {}),
+        ...(options.reasoningEffort && supportsReasoningEffort(ref.model)
+          ? { reasoning_effort: options.reasoningEffort }
+          : {}),
         ...(options.jsonObject ? { response_format: { type: "json_object" as const } } : {}),
         messages: [
           ...(options.system ? [{ role: "system" as const, content: options.system }] : []),
