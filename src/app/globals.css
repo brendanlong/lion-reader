@@ -11,6 +11,12 @@
    existing one like the built-in `dark` above. */
 @custom-variant epaper (&:where(.epaper, .epaper *));
 
+/* Devices whose primary input can't hover (phones/tablets). Tailwind v4 gates
+   `hover:`/`group-hover:` behind `@media (hover: hover)`, so hover-revealed
+   controls never appear on touch — but an `opacity-0` control still receives
+   taps. Use this variant to give such controls an always-visible fallback. */
+@custom-variant hover-none (@media (hover: none));
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
