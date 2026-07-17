@@ -199,6 +199,103 @@ export function startFeedFetchTimer(): (status: FeedFetchStatus) => void {
 }
 
 // ============================================================================
+// Content Processing Metrics
+// ============================================================================
+
+/**
+ * Buckets for the content-processing steps (feed parsing, readability
+ * extraction, HTML sanitization). These run an order of magnitude faster than
+ * a feed fetch — sanitization is ~1ms/100KB — so the buckets start well below
+ * a millisecond and stretch to a few seconds to catch pathologically large
+ * bodies, giving useful p50/p90/p99 resolution across the fast common case.
+ */
+const CONTENT_PROCESSING_BUCKETS = [
+  0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5,
+];
+
+/**
+ * Histogram for feed parsing (RSS/Atom/JSON) duration in seconds.
+ * Measures only the parse step, not the surrounding fetch or processing.
+ */
+const feedParseDurationSeconds = metricsEnabled
+  ? new Histogram({
+      name: "feed_parse_duration_seconds",
+      help: "Feed parsing (RSS/Atom/JSON) duration in seconds",
+      buckets: CONTENT_PROCESSING_BUCKETS,
+      registers: [registry],
+    })
+  : null;
+
+/**
+ * Histogram for readability (article extraction) duration in seconds.
+ * Measures only the native extraction step.
+ */
+const readabilityDurationSeconds = metricsEnabled
+  ? new Histogram({
+      name: "readability_duration_seconds",
+      help: "Readability article extraction duration in seconds",
+      buckets: CONTENT_PROCESSING_BUCKETS,
+      registers: [registry],
+    })
+  : null;
+
+/**
+ * Histogram for HTML sanitization duration in seconds.
+ * Measures only the native sanitizer pass.
+ */
+const sanitizeDurationSeconds = metricsEnabled
+  ? new Histogram({
+      name: "sanitize_duration_seconds",
+      help: "HTML sanitization duration in seconds",
+      buckets: CONTENT_PROCESSING_BUCKETS,
+      registers: [registry],
+    })
+  : null;
+
+/**
+ * Creates a timer for tracking feed parse duration.
+ * Returns a function to call when parsing completes.
+ * Returns a no-op function when metrics are disabled.
+ */
+export function startFeedParseTimer(): () => void {
+  return startContentProcessingTimer(feedParseDurationSeconds);
+}
+
+/**
+ * Creates a timer for tracking readability extraction duration.
+ * Returns a function to call when extraction completes.
+ * Returns a no-op function when metrics are disabled.
+ */
+export function startReadabilityTimer(): () => void {
+  return startContentProcessingTimer(readabilityDurationSeconds);
+}
+
+/**
+ * Creates a timer for tracking HTML sanitization duration.
+ * Returns a function to call when sanitization completes.
+ * Returns a no-op function when metrics are disabled.
+ */
+export function startSanitizeTimer(): () => void {
+  return startContentProcessingTimer(sanitizeDurationSeconds);
+}
+
+/**
+ * Shared implementation for the content-processing timers. Returns a no-op
+ * when metrics are disabled so callers have zero overhead.
+ */
+function startContentProcessingTimer(histogram: Histogram | null): () => void {
+  if (!metricsEnabled || !histogram) {
+    return () => {};
+  }
+
+  const startTime = performance.now();
+
+  return () => {
+    histogram.observe((performance.now() - startTime) / 1000);
+  };
+}
+
+// ============================================================================
 // Job Processing Metrics
 // ============================================================================
 

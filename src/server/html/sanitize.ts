@@ -33,6 +33,7 @@ import {
 } from "@lion-reader/sanitizer";
 
 import { logger } from "@/lib/logger";
+import { startSanitizeTimer } from "@/server/metrics/metrics";
 
 /**
  * Version of the sanitization rules, re-exported from the native module —
@@ -67,9 +68,14 @@ function logWarnings(warnings: string[]): void {
  */
 export function sanitizeEntryHtml(html: string | null | undefined): string | null {
   if (!html) return null;
-  const result = nativeSanitizeEntryHtml(html);
-  logWarnings(result.warnings);
-  return result.html;
+  const stopTimer = startSanitizeTimer();
+  try {
+    const result = nativeSanitizeEntryHtml(html);
+    logWarnings(result.warnings);
+    return result.html;
+  } finally {
+    stopTimer();
+  }
 }
 
 /**
@@ -96,10 +102,16 @@ export async function sanitizeEntryHtmlAsync(
   html: string | null | undefined
 ): Promise<string | null> {
   if (!html) return null;
+  // Small bodies run through the sync path, which records its own timing.
   if (html.length <= SANITIZE_INLINE_MAX_CHARS) {
     return sanitizeEntryHtml(html);
   }
-  const result = await nativeSanitizeEntryHtmlAsync(html);
-  logWarnings(result.warnings);
-  return result.html;
+  const stopTimer = startSanitizeTimer();
+  try {
+    const result = await nativeSanitizeEntryHtmlAsync(html);
+    logWarnings(result.warnings);
+    return result.html;
+  } finally {
+    stopTimer();
+  }
 }
