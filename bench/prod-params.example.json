@@ -1,0 +1,15 @@
+{
+  "_comment": "Copy to prod-params.json and fill from bench/characterize-prod.sql output. Any subset of keys overrides the defaults in config.ts. Delete keys you don't want to override.",
+  "seed": {
+    "subsPerUser": 40,
+    "entriesPerFeed": 50,
+    "readFraction": 0.6,
+    "starredFraction": 0.01,
+    "tagsPerUser": 5,
+    "uncategorizedSubs": 8
+  },
+  "translation": {
+    "_comment": "peakConcurrentFraction = (peak simultaneous active users) / (total registered). Derive from §2: e.g. if active_5m peaks around 8% of users_total, use ~0.08. This converts the concurrent knee into the registered-user ceiling.",
+    "peakConcurrentFraction": 0.05
+  }
+}

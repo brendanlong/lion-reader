@@ -1,0 +1,46 @@
+# Throwaway Fly app for the capacity benchmark — NOT production.
+#
+# App-only (no worker/discord): the load test exercises the request path, so we
+# don't need feed polling. One app machine on the cheapest DEDICATED-CPU tier
+# you asked to test: performance-2x / 4GB. Deploy with the CURRENT app image.
+#
+# See bench/fly-bench/README.md for the full runbook (create DB+Redis, set
+# secrets, deploy, seed, run, destroy).
+
+app = "lion-reader-bench"
+primary_region = "lax"
+
+[build]
+  # Reuse the image the runbook builds/pins; no Dockerfile build needed if you
+  # pass --image. Left here for `fly deploy` from a checkout as a fallback.
+  dockerfile = "../../Dockerfile"
+
+[deploy]
+  release_command = "node dist/migrate.js"
+  strategy = "immediate"
+
+[processes]
+  app = "node dist/server.js"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"
+  NEXT_PUBLIC_APP_URL = "https://lion-reader-bench.fly.dev"
+  # Turn on the Prometheus endpoint so the driver can scrape server-side truth
+  # (reach it via `fly proxy 9091:9091 -a lion-reader-bench` while testing).
+  METRICS_ENABLED = "true"
+  # Match prod's DB pool so the benchmark sees the same connection ceiling.
+  PG_POOL_MAX = "20"
+  FETCHER_CONTACT_EMAIL = "self@brendanlong.com"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = false      # never suspend mid-test
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  size = "performance-2x"         # 2 dedicated cores
+  memory = "4gb"
+  processes = ["app"]
