@@ -4,6 +4,7 @@ import { Geist, Geist_Mono, Merriweather, Literata, Inter, Source_Sans_3 } from 
 import { defaultOpenGraph } from "@/lib/metadata";
 import { appUrl } from "@/server/config/env";
 import { ThemeProvider } from "@/lib/theme/ThemeProvider";
+import { DEFAULT_THEME, THEME_STORAGE_KEY, THEMES } from "@/lib/theme/config";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -77,24 +78,25 @@ export const viewport: Viewport = {
  * the class here in <head>, before any body parsing, closes that gap; next-themes
  * re-asserts the identical class on hydration (idempotent, no visible change).
  *
- * Must be kept in sync with the next-themes config in ThemeProvider.tsx
- * (storageKey "lion-reader-theme", themes light/dark/epaper, defaultTheme
- * "system", attribute=class, enableSystem). The e-ink "system → epaper" override
- * is left to EInkSystemThemeOverride post-hydration, exactly as before.
+ * The storageKey / themes / default come from the shared theme config (used by
+ * ThemeProvider too) so the two can't drift; the resolution *logic* here still
+ * mirrors next-themes' own inline script (the library doesn't export it), and
+ * attribute=class / enableSystem must stay matched. The e-ink "system → epaper"
+ * override is left to EInkSystemThemeOverride post-hydration, exactly as before.
  */
 const themeScript = `
 (function() {
   try {
-    var stored = localStorage.getItem('lion-reader-theme') || 'system';
-    var resolved = stored;
-    if (['light', 'dark', 'epaper'].indexOf(stored) < 0) {
-      resolved = 'system';
-    }
+    var themes = ${JSON.stringify(THEMES)};
+    var stored = localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)}) || ${JSON.stringify(
+      DEFAULT_THEME
+    )};
+    var resolved = themes.indexOf(stored) < 0 ? ${JSON.stringify(DEFAULT_THEME)} : stored;
     if (resolved === 'system') {
       resolved = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     }
     var el = document.documentElement;
-    el.classList.remove('light', 'dark', 'epaper');
+    el.classList.remove.apply(el.classList, themes);
     el.classList.add(resolved);
     // next-themes sets color-scheme only for light/dark; .epaper declares its own
     // (color-scheme: light) in globals.css.
