@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "pnpm install --frozen-lockfile 2>/dev/null || true"
+            "command": "pnpm install --frozen-lockfile 2>/dev/null || true; nohup env PATH=\"$HOME/.cargo/bin:$PATH\" pnpm build:native </dev/null >>/tmp/lion-reader-build-native.log 2>&1 & true"
           }
         ]
       }
