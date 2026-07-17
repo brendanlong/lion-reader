@@ -10,72 +10,23 @@
 "use client";
 
 import { useCallback, useSyncExternalStore } from "react";
+import {
+  APPEARANCE_STORAGE_KEY,
+  DEFAULT_APPEARANCE_SETTINGS,
+  coerceAppearanceSettings,
+  type AppearanceSettings,
+} from "./config";
 
-/**
- * Text size options for entry content.
- */
-export type TextSize = "small" | "medium" | "large" | "x-large";
-
-/**
- * Text justification options for entry content.
- */
-export type TextJustification = "left" | "justify";
-
-/**
- * Font family options for entry content.
- */
-export type FontFamily = "system" | "merriweather" | "literata" | "inter" | "source-sans";
-
-/**
- * List density options for the entry list.
- *
- * - "comfortable": roomy bordered cards (the default reading view).
- * - "compact": a single divided list with tighter padding and no excerpt, for
- *   scanning/triaging many items at once.
- */
-export type ListDensity = "comfortable" | "compact";
-
-/**
- * User preferences for text appearance.
- *
- * Note: Theme (dark/light mode) is managed by next-themes, not here.
- */
-export interface AppearanceSettings {
-  /**
-   * Text size for entry content.
-   */
-  textSize: TextSize;
-
-  /**
-   * Text justification for entry content.
-   */
-  textJustification: TextJustification;
-
-  /**
-   * Font family for entry content.
-   */
-  fontFamily: FontFamily;
-
-  /**
-   * Vertical density of the entry list.
-   */
-  listDensity: ListDensity;
-}
-
-/**
- * Default appearance settings.
- */
-const DEFAULT_APPEARANCE_SETTINGS: AppearanceSettings = {
-  textSize: "medium",
-  textJustification: "left",
-  fontFamily: "system",
-  listDensity: "comfortable",
-};
-
-/**
- * localStorage key for appearance settings.
- */
-const STORAGE_KEY = "lion-reader-appearance-settings";
+// The appearance types and config are single-sourced in ./config (shared with
+// the blocking <head> script in the root layout); re-exported here so existing
+// `@/lib/appearance/settings` importers are unaffected.
+export type {
+  AppearanceSettings,
+  TextSize,
+  TextJustification,
+  FontFamily,
+  ListDensity,
+} from "./config";
 
 /**
  * Loads appearance settings from localStorage.
@@ -92,39 +43,11 @@ function loadAppearanceSettings(): AppearanceSettings {
   }
 
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = localStorage.getItem(APPEARANCE_STORAGE_KEY);
     if (!stored) {
       return DEFAULT_APPEARANCE_SETTINGS;
     }
-
-    const parsed = JSON.parse(stored) as Partial<AppearanceSettings>;
-
-    // Validate and merge with defaults
-    const validTextSizes: TextSize[] = ["small", "medium", "large", "x-large"];
-    const validJustifications: TextJustification[] = ["left", "justify"];
-    const validFontFamilies: FontFamily[] = [
-      "system",
-      "merriweather",
-      "literata",
-      "inter",
-      "source-sans",
-    ];
-    const validListDensities: ListDensity[] = ["comfortable", "compact"];
-
-    return {
-      textSize: validTextSizes.includes(parsed.textSize as TextSize)
-        ? (parsed.textSize as TextSize)
-        : DEFAULT_APPEARANCE_SETTINGS.textSize,
-      textJustification: validJustifications.includes(parsed.textJustification as TextJustification)
-        ? (parsed.textJustification as TextJustification)
-        : DEFAULT_APPEARANCE_SETTINGS.textJustification,
-      fontFamily: validFontFamilies.includes(parsed.fontFamily as FontFamily)
-        ? (parsed.fontFamily as FontFamily)
-        : DEFAULT_APPEARANCE_SETTINGS.fontFamily,
-      listDensity: validListDensities.includes(parsed.listDensity as ListDensity)
-        ? (parsed.listDensity as ListDensity)
-        : DEFAULT_APPEARANCE_SETTINGS.listDensity,
-    };
+    return coerceAppearanceSettings(JSON.parse(stored) as Partial<AppearanceSettings>);
   } catch {
     // If parsing fails, return defaults
     return DEFAULT_APPEARANCE_SETTINGS;
@@ -142,7 +65,7 @@ function saveAppearanceSettings(settings: AppearanceSettings): void {
   }
 
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+    localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify(settings));
   } catch {
     // Silently fail if localStorage is full or unavailable
   }
