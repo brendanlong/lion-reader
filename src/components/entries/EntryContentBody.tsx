@@ -21,7 +21,6 @@ import { processHtmlForHighlighting } from "@/lib/narration/client-paragraph-ids
 import { selectDisplayedContent } from "@/lib/narration/select-content";
 import { useNarrationSettings } from "@/lib/narration/settings";
 import { useEntryTextStyles } from "@/lib/appearance/AppearanceProvider";
-import { useImagePrefetch } from "@/lib/hooks/useImagePrefetch";
 import { useSwipeGesture } from "@/lib/hooks/useSwipeGesture";
 import { EntryArticle } from "./EntryArticle";
 import { StickyEntryControls } from "./StickyEntryControls";
@@ -244,9 +243,8 @@ export function EntryContentBody({
     return contentToDisplay;
   }, [contentToDisplay, shouldProcessForHighlighting, narration.processedHtml]);
 
-  // Prefetch images before they scroll into view
-  // This prevents the flash that occurs with native loading="lazy"
-  useImagePrefetch(contentRef, sanitizedContent);
+  // Image prefetching is owned by EntryContentRenderer (shared with the demo
+  // reader); contentRef is still forwarded there for narration highlighting.
 
   // Auto-scroll to highlighted paragraph when playing
   // Note: Highlighting is now handled via CSS by NarrationHighlightStyles component

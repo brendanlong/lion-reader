@@ -157,7 +157,7 @@ export function EntryArticle({
         <EntryContentRenderer
           sanitizedContent={contentHtml}
           fallbackContent={fallbackContent}
-          contentRef={contentRef ?? { current: null }}
+          contentRef={contentRef}
           textSizeClass={textSizeClass}
           textStyle={textStyle ?? {}}
         />
