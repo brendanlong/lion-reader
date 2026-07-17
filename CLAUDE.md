@@ -136,6 +136,10 @@ Don't try to invalidate the cache or look things up in the cache. Pass data down
 
 Always use our custom user agent (`USER_AGENT`/`buildUserAgent` from `@/server/http/user-agent`), and fetch user-influenced URLs only through `fetchWithSsrfProtection` (see `src/server/http/CLAUDE.md`).
 
+## Third-Party Providers
+
+When you add, remove, or change a third-party service that receives or stores user data (e.g. an LLM/AI provider, auth provider, email, object storage, hosting, error tracking), **update the privacy policy** (`src/app/privacy/page.tsx`) to keep its "Third-Party Services" section accurate, and bump the "Last updated" date. Note whether the feature is opt-in and what data is sent.
+
 ## Parsing
 
 Prefer SAX-style parsing unless the algorithm requires a DOM.
