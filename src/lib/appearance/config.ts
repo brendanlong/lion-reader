@@ -115,7 +115,7 @@ export const FONT_CONFIGS: Record<FontFamily, FontConfig> = {
   },
 };
 
-/** Base font-size (rem) per text-size option, before per-font sizeAdjust. */
+/** Base font size (rem) for each size option, before per-font sizeAdjust. */
 export const BASE_SIZES: Record<TextSize, number> = {
   small: 0.875,
   medium: 1,
