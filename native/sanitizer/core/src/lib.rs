@@ -28,8 +28,11 @@ pub mod urls;
 /// Version of the sanitization rules. The single source of truth — the
 /// TypeScript `SANITIZER_VERSION` re-exports this value via the napi
 /// binding. v9 = the Rust port (output differs from sanitize-html in
-/// formatting, so every row must be re-sanitized).
-pub const SANITIZER_VERSION: u32 = 9;
+/// formatting, so every row must be re-sanitized). v10 = MIME-gate `data:`
+/// image sources to `image/*` (drops `data:text/html` etc. from
+/// `img`/`source` `src`/`srcset` and SVG `<image>` href; only content
+/// carrying a `data:` URL can differ).
+pub const SANITIZER_VERSION: u32 = 10;
 
 /// Run the full sanitization pipeline. `warnings` collects non-fatal
 /// diagnostics (e.g. unrecognized MathJax wrappers) for the caller to log.
