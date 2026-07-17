@@ -1,18 +1,25 @@
 /**
  * Summarization service for AI-powered article summaries.
  *
- * Uses Anthropic Claude to generate concise summaries of articles.
- * Summaries are cached by content hash for deduplication across entries.
+ * Uses a configurable AI provider (Anthropic, Groq, or Cerebras) to generate
+ * concise summaries of articles. Summaries are cached by content hash for
+ * deduplication across entries.
  */
 
-import Anthropic from "@anthropic-ai/sdk";
 import { createHash } from "crypto";
 import { marked } from "marked";
 import { logger } from "@/lib/logger";
 import { sanitizeEntryHtml } from "@/server/html/sanitize";
 import { htmlToPlainText } from "@/lib/narration/html-to-narration-input";
+import { parseModelRef } from "@/lib/ai/model-ref";
 import {
-  DEFAULT_SUMMARIZATION_MODEL,
+  generateChatCompletion,
+  getAvailableProviders,
+  type AiProviderKeys,
+} from "@/server/services/ai-providers";
+import {
+  DEFAULT_SUMMARIZATION_MODELS,
+  SUMMARIZATION_PROVIDER_PRIORITY,
   DEFAULT_SUMMARIZATION_MAX_WORDS,
 } from "@/lib/summarization/constants";
 
@@ -36,8 +43,13 @@ const MAX_CONTENT_LENGTH = 50000;
 
 /**
  * Maximum tokens for the summary response.
+ *
+ * The OpenAI-compatible providers get a higher cap because reasoning models
+ * (gpt-oss) spend part of the completion budget on reasoning tokens before
+ * emitting the summary; a 1024 cap can truncate mid-reasoning.
  */
-const MAX_OUTPUT_TOKENS = 1024;
+const MAX_OUTPUT_TOKENS_ANTHROPIC = 1024;
+const MAX_OUTPUT_TOKENS_OPENAI_COMPAT = 4096;
 
 /**
  * Gets the configured max words for summaries.
@@ -144,33 +156,6 @@ function extractSummaryFromResponse(responseText: string): string {
 }
 
 /**
- * Global Anthropic client instance. Only initialized when ANTHROPIC_API_KEY env var is set.
- */
-let globalAnthropicClient: Anthropic | null = null;
-
-/**
- * Gets or creates an Anthropic client instance.
- * If a user API key is provided, creates a new client with that key.
- * Otherwise falls back to the global client using ANTHROPIC_API_KEY env var.
- * Returns null if no API key is available.
- */
-function getAnthropicClient(userApiKey?: string | null): Anthropic | null {
-  if (userApiKey) {
-    return new Anthropic({ apiKey: userApiKey });
-  }
-
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return null;
-  }
-
-  if (!globalAnthropicClient) {
-    globalAnthropicClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  }
-
-  return globalAnthropicClient;
-}
-
-/**
  * Result of summary generation.
  */
 export interface GenerateSummaryResult {
@@ -197,15 +182,16 @@ export function prepareContentForSummarization(htmlContent: string): string {
 }
 
 /**
- * Generates a summary using the Anthropic API.
+ * Generates a summary using the model's provider (Anthropic, Groq, or
+ * Cerebras).
  *
  * @param content - Plain text content to summarize
  * @returns The generated summary and model ID
- * @throws Error if Anthropic API call fails
+ * @throws Error if the provider API call fails
  *
  * @example
  * try {
- *   const result = await generateSummary("Long article text here...");
+ *   const result = await generateSummary("Long article text here...", "Title", { keys });
  *   console.log(result.summary);
  * } catch (error) {
  *   console.error('Summarization failed:', error);
@@ -215,43 +201,31 @@ export async function generateSummary(
   content: string,
   title: string,
   options?: {
-    userApiKey?: string | null;
+    keys?: AiProviderKeys;
     userModel?: string | null;
     userMaxWords?: number | null;
     userPrompt?: string | null;
   }
 ): Promise<GenerateSummaryResult> {
-  const client = getAnthropicClient(options?.userApiKey);
-
-  if (!client) {
-    throw new Error("Anthropic API key not configured");
-  }
-
   // Priority: user model > environment > default
-  const modelId =
-    options?.userModel || process.env.SUMMARIZATION_MODEL || DEFAULT_SUMMARIZATION_MODEL;
+  const modelId = getSummarizationModelId(options?.userModel, options?.keys);
+  const modelRef = parseModelRef(modelId);
 
   try {
-    const response = await client.messages.create({
-      model: modelId,
-      max_tokens: MAX_OUTPUT_TOKENS,
-      messages: [
-        {
-          role: "user",
-          content: buildSummarizationPrompt(content, title, {
-            userMaxWords: options?.userMaxWords,
-            userPrompt: options?.userPrompt,
-          }),
-        },
-      ],
+    const responseText = await generateChatCompletion(modelRef, options?.keys, {
+      userPrompt: buildSummarizationPrompt(content, title, {
+        userMaxWords: options?.userMaxWords,
+        userPrompt: options?.userPrompt,
+      }),
+      maxTokens:
+        modelRef.provider === "anthropic"
+          ? MAX_OUTPUT_TOKENS_ANTHROPIC
+          : MAX_OUTPUT_TOKENS_OPENAI_COMPAT,
+      ...(modelRef.provider !== "anthropic" ? { reasoningEffort: "medium" as const } : {}),
     });
 
-    // Extract text from response
-    const textContent = response.content.find((block) => block.type === "text");
-    const responseText = textContent?.type === "text" ? textContent.text : "";
-
     if (!responseText) {
-      throw new Error("Empty response from Anthropic API");
+      throw new Error("Empty response from summarization model");
     }
 
     // Extract summary from <summary> tags and convert Markdown to HTML.
@@ -265,7 +239,9 @@ export async function generateSummary(
       modelId,
     };
   } catch (error) {
-    logger.error("Anthropic API call failed", {
+    logger.error("Summarization API call failed", {
+      provider: modelRef.provider,
+      model: modelRef.model,
       error: error instanceof Error ? error.message : String(error),
     });
     throw error;
@@ -273,85 +249,30 @@ export async function generateSummary(
 }
 
 /**
- * Checks if summarization is available.
- *
- * @param userApiKey - Optional user-configured API key
- * @returns true if either the user API key or ANTHROPIC_API_KEY env var is set
+ * Checks if summarization is available (any provider has a user or server
+ * key configured).
  */
-export function isSummarizationAvailable(userApiKey?: string | null): boolean {
-  return !!userApiKey || !!process.env.ANTHROPIC_API_KEY;
+export function isSummarizationAvailable(keys?: AiProviderKeys): boolean {
+  return getAvailableProviders(keys).length > 0;
 }
 
 /**
- * Gets the model ID for summarization.
+ * Gets the model ID for summarization as a `provider:model` reference
+ * (legacy stored values may be bare Anthropic IDs — parse with
+ * `parseModelRef`).
  *
- * @param userModel - Optional user-configured model
+ * Priority: user setting > `SUMMARIZATION_MODEL` env var > the default model
+ * of the first configured provider (Anthropic, then Groq, then Cerebras).
  */
-export function getSummarizationModelId(userModel?: string | null): string {
-  return userModel || process.env.SUMMARIZATION_MODEL || DEFAULT_SUMMARIZATION_MODEL;
-}
-
-/**
- * Model info returned from the list models API.
- */
-export interface SummarizationModel {
-  id: string;
-  displayName: string;
-}
-
-/**
- * Strips date suffixes from versioned model IDs, keeping only the first
- * (newest) version of each model.
- *
- * The Anthropic API returns versioned IDs like "claude-sonnet-4-5-20250929"
- * but accepts shorter aliases like "claude-sonnet-4-5". Since the API returns
- * models newest-first, we keep the first occurrence of each alias and drop
- * subsequent versions.
- */
-export function simplifyModelIds(models: SummarizationModel[]): SummarizationModel[] {
-  const seen = new Set<string>();
-  const result: SummarizationModel[] = [];
-
-  for (const model of models) {
-    const match = model.id.match(/^(.+)-\d{8}$/);
-    const alias = match ? match[1] : model.id;
-
-    if (!seen.has(alias)) {
-      seen.add(alias);
-      result.push({ id: alias, displayName: model.displayName });
-    }
+export function getSummarizationModelId(userModel?: string | null, keys?: AiProviderKeys): string {
+  if (userModel) {
+    return userModel;
   }
-
-  return result;
-}
-
-/**
- * Lists available Anthropic models.
- *
- * @param userApiKey - Optional user-configured API key
- * @returns Array of available models with alias entries added
- */
-export async function listModels(userApiKey?: string | null): Promise<SummarizationModel[]> {
-  const client = getAnthropicClient(userApiKey);
-
-  if (!client) {
-    return [];
+  if (process.env.SUMMARIZATION_MODEL) {
+    return process.env.SUMMARIZATION_MODEL;
   }
-
-  try {
-    const models: SummarizationModel[] = [];
-    // Fetch all models using auto-pagination
-    for await (const model of client.models.list({ limit: 100 })) {
-      models.push({
-        id: model.id,
-        displayName: model.display_name,
-      });
-    }
-    return simplifyModelIds(models);
-  } catch (error) {
-    logger.error("Failed to list Anthropic models", {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return [];
-  }
+  const available = getAvailableProviders(keys);
+  const provider =
+    SUMMARIZATION_PROVIDER_PRIORITY.find((p) => available.includes(p)) ?? "anthropic";
+  return DEFAULT_SUMMARIZATION_MODELS[provider];
 }

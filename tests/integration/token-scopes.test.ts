@@ -65,9 +65,11 @@ function buildSession(userId: string): NonNullable<Context["session"]> {
       lastActiveAt: null,
       groqApiKey: null,
       anthropicApiKey: null,
+      cerebrasApiKey: null,
       summarizationModel: null,
       summarizationMaxWords: null,
       summarizationPrompt: null,
+      narrationModel: null,
       savedUnreadCount: 0,
       starredUnreadCount: 0,
       createdAt: now,
@@ -75,6 +77,7 @@ function buildSession(userId: string): NonNullable<Context["session"]> {
     },
     hasGroqApiKey: false,
     hasAnthropicApiKey: false,
+    hasCerebrasApiKey: false,
   };
 }
 

@@ -70,6 +70,8 @@ export interface SessionData {
   hasGroqApiKey: boolean;
   /** Whether user has an Anthropic API key configured (actual key not cached for security) */
   hasAnthropicApiKey: boolean;
+  /** Whether user has a Cerebras API key configured (actual key not cached for security) */
+  hasCerebrasApiKey: boolean;
 }
 
 /**
@@ -93,9 +95,11 @@ interface CachedSession {
   userShowSpam: boolean;
   userHasGroqApiKey: boolean;
   userHasAnthropicApiKey: boolean;
+  userHasCerebrasApiKey: boolean;
   userSummarizationModel: string | null;
   userSummarizationMaxWords: number | null;
   userSummarizationPrompt: string | null;
+  userNarrationModel: string | null;
   userTosAgreedAt: string | null;
   userPrivacyPolicyAgreedAt: string | null;
   userNotEuAgreedAt: string | null;
@@ -250,9 +254,11 @@ function serializeForCache(data: SessionData): string {
     userShowSpam: data.user.showSpam,
     userHasGroqApiKey: data.hasGroqApiKey,
     userHasAnthropicApiKey: data.hasAnthropicApiKey,
+    userHasCerebrasApiKey: data.hasCerebrasApiKey,
     userSummarizationModel: data.user.summarizationModel ?? null,
     userSummarizationMaxWords: data.user.summarizationMaxWords ?? null,
     userSummarizationPrompt: data.user.summarizationPrompt ?? null,
+    userNarrationModel: data.user.narrationModel ?? null,
     userTosAgreedAt: data.user.tosAgreedAt?.toISOString() ?? null,
     userPrivacyPolicyAgreedAt: data.user.privacyPolicyAgreedAt?.toISOString() ?? null,
     userNotEuAgreedAt: data.user.notEuAgreedAt?.toISOString() ?? null,
@@ -289,9 +295,11 @@ function deserializeFromCache(data: string): SessionData {
       showSpam: cached.userShowSpam ?? false,
       groqApiKey: null, // Not cached in Redis for security; use getUserApiKeys() when needed
       anthropicApiKey: null, // Not cached in Redis for security; use getUserApiKeys() when needed
+      cerebrasApiKey: null, // Not cached in Redis for security; use getUserApiKeys() when needed
       summarizationModel: cached.userSummarizationModel ?? null,
       summarizationMaxWords: cached.userSummarizationMaxWords ?? null,
       summarizationPrompt: cached.userSummarizationPrompt ?? null,
+      narrationModel: cached.userNarrationModel ?? null,
       tosAgreedAt: cached.userTosAgreedAt ? new Date(cached.userTosAgreedAt) : null,
       privacyPolicyAgreedAt: cached.userPrivacyPolicyAgreedAt
         ? new Date(cached.userPrivacyPolicyAgreedAt)
@@ -306,6 +314,7 @@ function deserializeFromCache(data: string): SessionData {
     },
     hasGroqApiKey: cached.userHasGroqApiKey ?? false,
     hasAnthropicApiKey: cached.userHasAnthropicApiKey ?? false,
+    hasCerebrasApiKey: cached.userHasCerebrasApiKey ?? false,
   };
 }
 
@@ -398,9 +407,11 @@ export async function validateSession(
       ...dbResult.user,
       groqApiKey: null, // Not cached for security; use getUserApiKeys() when needed
       anthropicApiKey: null, // Not cached for security; use getUserApiKeys() when needed
+      cerebrasApiKey: null, // Not cached for security; use getUserApiKeys() when needed
     },
     hasGroqApiKey: !!dbResult.user.groqApiKey,
     hasAnthropicApiKey: !!dbResult.user.anthropicApiKey,
+    hasCerebrasApiKey: !!dbResult.user.cerebrasApiKey,
   };
 
   // Cache the result in Redis (if available). We cache before applying the
@@ -474,6 +485,7 @@ async function updateLastActiveAt(sessionId: string, userId: string): Promise<vo
 export interface UserApiKeys {
   groqApiKey: string | null;
   anthropicApiKey: string | null;
+  cerebrasApiKey: string | null;
 }
 
 /**
@@ -488,20 +500,22 @@ export async function getUserApiKeys(userId: string): Promise<UserApiKeys> {
     .select({
       groqApiKey: users.groqApiKey,
       anthropicApiKey: users.anthropicApiKey,
+      cerebrasApiKey: users.cerebrasApiKey,
     })
     .from(users)
     .where(eq(users.id, userId))
     .limit(1);
 
   if (result.length === 0) {
-    return { groqApiKey: null, anthropicApiKey: null };
+    return { groqApiKey: null, anthropicApiKey: null, cerebrasApiKey: null };
   }
 
-  const { groqApiKey, anthropicApiKey } = result[0];
+  const { groqApiKey, anthropicApiKey, cerebrasApiKey } = result[0];
 
   return {
     groqApiKey: groqApiKey ? decryptApiKey(groqApiKey) : null,
     anthropicApiKey: anthropicApiKey ? decryptApiKey(anthropicApiKey) : null,
+    cerebrasApiKey: cerebrasApiKey ? decryptApiKey(cerebrasApiKey) : null,
   };
 }
 

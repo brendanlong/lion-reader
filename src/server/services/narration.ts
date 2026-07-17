@@ -1,13 +1,21 @@
 /**
  * Narration service for LLM-based text preprocessing.
  *
- * Uses Groq (GPT-OSS 20B) to convert article HTML to narration-ready text
- * for text-to-speech. Falls back to simple HTML stripping when Groq is unavailable.
+ * Uses an OpenAI-compatible provider (Groq or Cerebras, default Groq
+ * GPT-OSS 20B) to convert article HTML to narration-ready text for
+ * text-to-speech. Falls back to simple HTML stripping when no provider is
+ * available.
  */
 
-import Groq from "groq-sdk";
 import { z } from "zod";
 import { logger } from "@/lib/logger";
+import { parseModelRef, type ModelRef } from "@/lib/ai/model-ref";
+import { DEFAULT_NARRATION_MODEL } from "@/lib/narration/constants";
+import {
+  generateChatCompletion,
+  isProviderAvailable,
+  type AiProviderKeys,
+} from "@/server/services/ai-providers";
 import { htmlToNarrationInput } from "@/lib/narration/html-to-narration-input";
 import { buildAlignedNarration, type ParagraphMapEntry } from "@/lib/narration/paragraph-map";
 import type { NarrationInputParagraph } from "@/lib/narration/html-to-narration-input";
@@ -97,30 +105,19 @@ OUTPUT:
 Return ONLY valid JSON.`;
 
 /**
- * Global Groq client instance. Only initialized when GROQ_API_KEY env var is set.
+ * Resolves the narration model as a `provider:model` reference.
+ * Priority: user setting > `NARRATION_MODEL` env var > default.
+ *
+ * Narration preprocessing requires JSON-object responses, which only the
+ * OpenAI-compatible providers support — a reference that resolves to another
+ * provider (e.g. a legacy bare model ID) falls back to the default model.
  */
-let globalGroqClient: Groq | null = null;
-
-/**
- * Gets or creates a Groq client instance.
- * If a user API key is provided, creates a new client with that key.
- * Otherwise falls back to the global client using GROQ_API_KEY env var.
- * Returns null if no API key is available.
- */
-function getGroqClient(userApiKey?: string | null): Groq | null {
-  if (userApiKey) {
-    return new Groq({ apiKey: userApiKey });
+export function getNarrationModelRef(userModel?: string | null): ModelRef {
+  const ref = parseModelRef(userModel || process.env.NARRATION_MODEL || DEFAULT_NARRATION_MODEL);
+  if (ref.provider !== "groq" && ref.provider !== "cerebras") {
+    return parseModelRef(DEFAULT_NARRATION_MODEL);
   }
-
-  if (!process.env.GROQ_API_KEY) {
-    return null;
-  }
-
-  if (!globalGroqClient) {
-    globalGroqClient = new Groq({ apiKey: process.env.GROQ_API_KEY });
-  }
-
-  return globalGroqClient;
+  return ref;
 }
 
 /**
@@ -159,14 +156,16 @@ export interface GenerateNarrationResult {
 }
 
 /**
- * Generates narration-ready text from HTML content using Groq LLM.
+ * Generates narration-ready text from HTML content using an LLM.
  *
  * Uses structured JSON input/output with per-paragraph fallback.
- * If GROQ_API_KEY is not set or JSON parsing fails, falls back to simple HTML-to-text conversion.
+ * If no provider key is configured or JSON parsing fails, falls back to
+ * simple HTML-to-text conversion.
  *
  * @param htmlContent - HTML content to convert to narration
+ * @param options - Per-user provider keys and optional model override
  * @returns Object containing the narration text and source
- * @throws Error if Groq API call fails (caller should handle and use fallback)
+ * @throws Error if the provider API call fails (caller should handle and use fallback)
  *
  * @example
  * try {
@@ -174,22 +173,27 @@ export interface GenerateNarrationResult {
  *   console.log(result.text); // "Hello, Doctor Smith!"
  *   console.log(result.source); // "llm"
  * } catch (error) {
- *   console.error('Groq API failed:', error);
+ *   console.error('Narration LLM failed:', error);
  *   // Use htmlToPlainText as fallback
  * }
  */
 export async function generateNarration(
   htmlContent: string,
-  userApiKey?: string | null
+  options?: {
+    keys?: AiProviderKeys;
+    userModel?: string | null;
+  }
 ): Promise<GenerateNarrationResult> {
-  const client = getGroqClient(userApiKey);
+  const modelRef = getNarrationModelRef(options?.userModel);
 
   // Convert HTML to structured paragraphs
   const { paragraphs: inputParagraphs } = htmlToNarrationInput(htmlContent);
 
-  // If Groq is not configured, use fallback
-  if (!client) {
-    logger.debug("Groq API key not configured, using fallback text conversion");
+  // If the model's provider is not configured, use fallback
+  if (!isProviderAvailable(modelRef.provider, options?.keys)) {
+    logger.debug("Narration LLM provider not configured, using fallback text conversion", {
+      provider: modelRef.provider,
+    });
     trackNarrationHighlightFallback();
     return buildFallbackNarration(inputParagraphs);
   }
@@ -198,37 +202,27 @@ export async function generateNarration(
     // Send paragraphs as JSON
     const userPrompt = JSON.stringify({ paragraphs: inputParagraphs });
 
-    const response = await client.chat.completions.create({
-      model: "openai/gpt-oss-20b",
+    const rawOutput = await generateChatCompletion(modelRef, options?.keys, {
+      system: NARRATION_SYSTEM_PROMPT,
+      userPrompt,
       // Mechanical text normalization task — minimal reasoning keeps latency and
-      // token cost close to the old llama-3.1-8b-instant model. gpt-oss emits any
-      // reasoning in a separate `reasoning` field, so `message.content` is still
-      // the clean JSON we parse below.
-      reasoning_effort: "low",
-      messages: [
-        {
-          role: "system",
-          content: NARRATION_SYSTEM_PROMPT,
-        },
-        {
-          role: "user",
-          content: userPrompt,
-        },
-      ],
-      response_format: { type: "json_object" }, // Request JSON output
+      // token cost low. gpt-oss emits any reasoning in a separate `reasoning`
+      // field, so the response content is still the clean JSON we parse below.
+      reasoningEffort: "low",
+      jsonObject: true, // Request JSON output
       temperature: 0.1, // Low temperature for consistency
       // Output must echo back every rewritten paragraph for the whole article,
       // and (unlike the old non-reasoning llama-3.1-8b) gpt-oss spends some of
       // this budget on reasoning tokens even at "low" effort. Keep the cap high
       // so long articles don't truncate into the (uncached, repeatedly-retried)
       // fallback path. We only pay for tokens actually generated.
-      max_completion_tokens: 16000,
+      maxTokens: 16000,
     });
 
-    const rawOutput = response.choices[0]?.message?.content;
-
     if (!rawOutput) {
-      logger.warn("Groq returned empty response, using fallback");
+      logger.warn("Narration LLM returned empty response, using fallback", {
+        provider: modelRef.provider,
+      });
       trackNarrationHighlightFallback();
       return buildFallbackNarration(inputParagraphs);
     }
@@ -278,7 +272,9 @@ export async function generateNarration(
     };
   } catch (error) {
     // Log the error and re-throw so caller can handle
-    logger.error("Groq API call failed", {
+    logger.error("Narration LLM call failed", {
+      provider: modelRef.provider,
+      model: modelRef.model,
       error: error instanceof Error ? error.message : String(error),
     });
     throw error;
@@ -286,11 +282,9 @@ export async function generateNarration(
 }
 
 /**
- * Checks if Groq integration is available.
- *
- * @param userApiKey - Optional user-configured API key
- * @returns true if either the user API key or GROQ_API_KEY env var is set
+ * Checks if LLM narration preprocessing is available: the configured
+ * narration model's provider has a user or server key set.
  */
-export function isGroqAvailable(userApiKey?: string | null): boolean {
-  return !!userApiKey || !!process.env.GROQ_API_KEY;
+export function isNarrationLlmAvailable(keys?: AiProviderKeys, userModel?: string | null): boolean {
+  return isProviderAvailable(getNarrationModelRef(userModel).provider, keys);
 }
