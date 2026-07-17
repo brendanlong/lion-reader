@@ -50,6 +50,42 @@ pub fn is_url_allowed(decoded: &str, schemes: &[&str]) -> bool {
     }
 }
 
+/// Whether a `data:` value declares an `image/` MIME type — the only `data:`
+/// form we ever allow as an image source. `data:image/svg+xml` is included on
+/// purpose: an SVG loaded through `<img>`/`<image>`/`srcset` is a *passive*
+/// image context (no script execution, no external subresource loads), so it
+/// is safe to render, whereas `data:text/html` / `data:application/*` are not
+/// images and must never reach an image sink. The value is normalized the same
+/// way `url_scheme` sees it (control/space stripped, lowercased) so obfuscated
+/// prefixes like `data:\timage/...` can't slip past.
+pub fn is_data_image(decoded: &str) -> bool {
+    let cleaned: String = decoded
+        .chars()
+        .filter(|c| !matches!(c, '\u{0000}'..='\u{0020}'))
+        .collect::<String>()
+        .to_ascii_lowercase();
+    cleaned.starts_with("data:image/")
+}
+
+/// Image-source URL check: like [`is_url_allowed`], but a `data:` URL is
+/// additionally required to be an `image/` MIME type (see [`is_data_image`]).
+/// Use this for every attribute whose value the browser loads as an image
+/// (`img`/`source` `src`, `srcset` candidates, SVG `<image>` href).
+pub fn is_image_url_allowed(decoded: &str, schemes: &[&str]) -> bool {
+    match url_scheme(decoded) {
+        None => true,
+        Some(scheme) => {
+            if !schemes.contains(&scheme.as_str()) {
+                return false;
+            }
+            if scheme == "data" {
+                return is_data_image(decoded);
+            }
+            true
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -81,5 +117,31 @@ mod tests {
         assert!(!is_url_allowed("javascript:x", &["http", "https"]));
         assert!(!is_url_allowed("data:text/html,x", &["http", "https"]));
         assert!(is_url_allowed("data:image/png;base64,x", &["http", "https", "data"]));
+    }
+
+    #[test]
+    fn data_image_mime_gate() {
+        // Only image/* data URLs count as images.
+        assert!(is_data_image("data:image/png;base64,AAA="));
+        assert!(is_data_image("data:image/svg+xml,<svg></svg>"));
+        assert!(is_data_image("DATA:IMAGE/PNG;base64,AAA="));
+        assert!(is_data_image("data:\timage/png;base64,AAA="));
+        assert!(!is_data_image("data:text/html,<script>"));
+        assert!(!is_data_image("data:application/javascript,x"));
+        assert!(!is_data_image("data:,plain"));
+    }
+
+    #[test]
+    fn image_url_allow_gates_data_by_mime() {
+        let schemes = &["http", "https", "data"];
+        assert!(is_image_url_allowed("https://x.com/a.png", schemes));
+        assert!(is_image_url_allowed("/relative.png", schemes));
+        assert!(is_image_url_allowed("data:image/png;base64,AAA=", schemes));
+        assert!(is_image_url_allowed("data:image/svg+xml,<svg/>", schemes));
+        // data: with a non-image MIME is rejected even though `data` is listed.
+        assert!(!is_image_url_allowed("data:text/html,<script>", schemes));
+        assert!(!is_image_url_allowed("data:application/pdf,x", schemes));
+        // Non-listed schemes still rejected.
+        assert!(!is_image_url_allowed("javascript:x", schemes));
     }
 }
