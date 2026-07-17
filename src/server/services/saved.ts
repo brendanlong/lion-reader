@@ -1323,8 +1323,11 @@ export async function deleteSavedArticle(
     return false;
   }
 
-  // Delete the entry (will cascade to user_entries)
-  await db.delete(entries).where(eq(entries.id, articleId));
+  // Delete the entry (will cascade to user_entries). Scope the DELETE to the
+  // user's own saved feed as well as the id — the ownership SELECT above already
+  // guarantees it, but pinning feedId keeps the mutation self-evidently
+  // user-scoped in isolation (defense-in-depth against a future refactor).
+  await db.delete(entries).where(and(eq(entries.id, articleId), eq(entries.feedId, savedFeedId)));
 
   return true;
 }

@@ -22,7 +22,7 @@ use scraper::{ElementRef, Html};
 
 use crate::scanner::{find_top_level_ranges, Recovery};
 use crate::serialize::{attr_display_name, escape_attr, escape_text};
-use crate::urls::{url_scheme};
+use crate::urls::{is_data_image, url_scheme};
 
 const ALLOWED_SVG_TAGS: &[&str] = &[
     "svg", "a", "altglyph", "altglyphdef", "altglyphitem", "circle", "clippath", "defs", "desc",
@@ -90,10 +90,20 @@ fn is_href_allowed(tag: &str, value: &str) -> bool {
         };
     }
     if tag == "image" || tag == "feimage" {
-        // Referenced images: same rules as HTML <img>.
+        // Referenced images: same rules as HTML <img> — a `data:` href must be
+        // an `image/*` MIME type (so `data:text/html` can't ride in as an
+        // image), which still permits `data:image/svg+xml`.
         return match scheme {
             None => true,
-            Some(s) => HREF_IMAGE_SCHEMES.contains(&s.as_str()),
+            Some(s) => {
+                if !HREF_IMAGE_SCHEMES.contains(&s.as_str()) {
+                    return false;
+                }
+                if s == "data" {
+                    return is_data_image(value);
+                }
+                true
+            }
         };
     }
     // Every other element references a template within the document; only a

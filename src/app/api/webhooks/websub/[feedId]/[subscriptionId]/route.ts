@@ -18,7 +18,11 @@ import { db } from "@/server/db";
 import { feeds } from "@/server/db/schema";
 import { handleVerificationChallenge, verifyHmacSignature } from "@/server/feed/websub";
 import { ingestWebsubNotification } from "@/server/feed/websub-notification";
-import { ContentTooLargeError, readRequestBufferWithSizeLimit } from "@/server/http/fetch";
+import {
+  BodyReadTimeoutError,
+  ContentTooLargeError,
+  readRequestBufferWithSizeLimit,
+} from "@/server/http/fetch";
 import { usageLimitsConfig } from "@/server/config/env";
 import { logger } from "@/lib/logger";
 import { isValidUuid } from "@/lib/uuidv7";
@@ -114,7 +118,8 @@ export async function POST(
 
   // Bound the body BEFORE buffering + HMAC: anyone who learns a callback URL
   // (they leak via hub dashboards/proxies/logs) could otherwise POST an
-  // arbitrarily large payload to exhaust memory.
+  // arbitrarily large payload to exhaust memory, or trickle bytes slowly to
+  // hold the connection open (slow-loris). The read is size- AND time-capped.
   let bodyBuffer: Buffer;
   try {
     bodyBuffer = await readRequestBufferWithSizeLimit(request, usageLimitsConfig.maxFeedSizeBytes);
@@ -122,6 +127,10 @@ export async function POST(
     if (error instanceof ContentTooLargeError) {
       logger.warn("WebSub notification body too large", { feedId, subscriptionId });
       return new Response("Payload too large", { status: 413 });
+    }
+    if (error instanceof BodyReadTimeoutError) {
+      logger.warn("WebSub notification body read timed out", { feedId, subscriptionId });
+      return new Response("Request timeout", { status: 408 });
     }
     throw error;
   }

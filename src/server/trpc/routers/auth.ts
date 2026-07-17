@@ -630,11 +630,14 @@ export const authRouter = createTRPCRouter({
         validateAppleCallback(code, state, userDataInput)
       );
 
-      const { userInfo, firstAuthData, tokens, inviteToken } = appleResult;
+      const { userInfo, tokens, inviteToken } = appleResult;
 
-      // Get email from JWT or first-auth data
-      // Apple always includes email in JWT on first auth, may not on subsequent auths
-      const email = userInfo.email ?? firstAuthData?.email;
+      // The linking/creation email must come ONLY from the signature-verified
+      // id_token (userInfo), never `firstAuthData.email` — that is part of
+      // Apple's client-posted `user` value and is attacker-controllable. See the
+      // browser callback route for the full rationale. Returning users (no email
+      // on re-auth) are matched by providerAccountId (sub).
+      const email = userInfo.email;
 
       const oauthResult = await processOAuthCallback({
         provider: "apple",

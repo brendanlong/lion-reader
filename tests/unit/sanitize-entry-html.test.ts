@@ -303,6 +303,24 @@ describe("sanitizeEntryHtml", () => {
       expect(out).toContain("data:image/png;base64");
     });
 
+    it("keeps data:image/svg+xml image URIs (passive image context)", () => {
+      const out = sanitizeEntryHtml('<img src="data:image/svg+xml,%3Csvg%3E%3C/svg%3E">') ?? "";
+      expect(out).toContain("data:image/svg+xml");
+    });
+
+    it("drops non-image data: URIs from img src (no data:text/html sink)", () => {
+      const out = sanitizeEntryHtml('<img src="data:text/html,<script>alert(1)</script>">') ?? "";
+      expect(out).not.toContain("data:text/html");
+      expect(out).not.toContain("<script");
+    });
+
+    it("drops the whole srcset when a candidate is a non-image data: URI", () => {
+      const out =
+        sanitizeEntryHtml('<img src="a.png" srcset="data:text/html,x 1x, b.png 2x">') ?? "";
+      expect(out).not.toContain("srcset");
+      expect(out).not.toContain("data:text/html");
+    });
+
     it("preserves the narration data-para-id attribute", () => {
       const out = sanitizeEntryHtml('<p data-para-id="3">x</p>') ?? "";
       expect(out).toContain('data-para-id="3"');

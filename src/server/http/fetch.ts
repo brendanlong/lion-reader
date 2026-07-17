@@ -77,6 +77,20 @@ export class ContentTooLargeError extends Error {
 }
 
 /**
+ * Error thrown when reading a body exceeds the allowed wall-clock time.
+ * Used to bound inbound webhook reads against slow-loris connection holding.
+ */
+export class BodyReadTimeoutError extends Error {
+  constructor(
+    public readonly url: string,
+    public readonly timeoutMs: number
+  ) {
+    super(`Body read exceeded ${timeoutMs}ms`);
+    this.name = "BodyReadTimeoutError";
+  }
+}
+
+/**
  * Reads a response body as a Buffer with a streaming size limit.
  * Aborts the request if the response exceeds maxBytes, preventing OOM.
  *
@@ -86,13 +100,20 @@ export class ContentTooLargeError extends Error {
  * @param response - The fetch Response object
  * @param maxBytes - Maximum allowed response size in bytes
  * @param url - The URL being fetched (for error messages)
+ * @param timeoutMs - Optional wall-clock deadline for the whole read; a slow
+ *   trickle that never exceeds maxBytes can otherwise hold a connection open
+ *   indefinitely (slow-loris). Outbound fetches bound this with
+ *   `AbortSignal.timeout` on the request itself; inbound webhook reads pass it
+ *   here.
  * @returns The response body as a Buffer
- * @throws ContentTooLargeError if the response exceeds the limit
+ * @throws ContentTooLargeError if the response exceeds the size limit
+ * @throws BodyReadTimeoutError if the read exceeds timeoutMs
  */
 export async function readResponseBufferWithSizeLimit(
   response: Request | Response,
   maxBytes: number,
-  url: string
+  url: string,
+  timeoutMs?: number
 ): Promise<Buffer> {
   // Early check: Content-Length header (not always present, but fast rejection)
   const contentLength = response.headers.get("content-length");
@@ -111,17 +132,40 @@ export async function readResponseBufferWithSizeLimit(
   const chunks: Uint8Array[] = [];
   let receivedBytes = 0;
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
+  // Wall-clock deadline: cancelling the reader unblocks a hung `read()` (a
+  // trickling client), which then resolves `done` and lets us throw below.
+  let timedOut = false;
+  const timer =
+    timeoutMs === undefined
+      ? undefined
+      : setTimeout(() => {
+          timedOut = true;
+          reader.cancel().catch(() => {});
+        }, timeoutMs);
 
-    receivedBytes += value.byteLength;
-    if (receivedBytes > maxBytes) {
-      reader.cancel();
-      throw new ContentTooLargeError(url, maxBytes, receivedBytes);
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      // Check the timeout flag BEFORE `done`: a timeout calls `reader.cancel()`,
+      // which resolves the pending `read()` with `done: true`, so testing `done`
+      // first would silently return a partial body instead of failing. (At the
+      // exact deadline this may also reject a body whose final chunk landed in
+      // the same tick — acceptable, since that read did take the full timeout.)
+      if (timedOut) {
+        throw new BodyReadTimeoutError(url, timeoutMs!);
+      }
+      if (done) break;
+
+      receivedBytes += value.byteLength;
+      if (receivedBytes > maxBytes) {
+        reader.cancel();
+        throw new ContentTooLargeError(url, maxBytes, receivedBytes);
+      }
+
+      chunks.push(value);
     }
-
-    chunks.push(value);
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 
   return Buffer.concat(chunks, receivedBytes);
@@ -159,13 +203,21 @@ export async function readResponseWithSizeLimit(
  * `hmac.update` would drop a leading BOM and mangle non-round-tripping bytes,
  * shifting which bodies verify.
  *
- * @throws ContentTooLargeError if the request body exceeds the limit
+ * Bounds the read with a wall-clock deadline (default
+ * `REQUEST_BODY_READ_TIMEOUT_MS`): the size cap alone stops a *large* body, but
+ * a client trickling bytes below the cap could otherwise hold the connection
+ * (and its request handler) open indefinitely — a slow-loris connection-
+ * exhaustion vector once a callback URL leaks.
+ *
+ * @throws ContentTooLargeError if the request body exceeds the size limit
+ * @throws BodyReadTimeoutError if the read exceeds the timeout
  */
 export async function readRequestBufferWithSizeLimit(
   request: Request,
-  maxBytes: number
+  maxBytes: number,
+  timeoutMs: number = REQUEST_BODY_READ_TIMEOUT_MS
 ): Promise<Buffer> {
-  return readResponseBufferWithSizeLimit(request, maxBytes, request.url);
+  return readResponseBufferWithSizeLimit(request, maxBytes, request.url, timeoutMs);
 }
 
 // ============================================================================
@@ -187,6 +239,13 @@ export const ACCEPT_ENCODING = "zstd, gzip, deflate, br";
  * Default timeout for feed fetch requests (10 seconds).
  */
 export const FEED_FETCH_TIMEOUT_MS = 10000;
+
+/**
+ * Wall-clock deadline for reading an inbound request body (30 seconds).
+ * Bounds slow-loris connection holding on webhook endpoints that must buffer
+ * the body before authenticating it (see `readRequestBufferWithSizeLimit`).
+ */
+export const REQUEST_BODY_READ_TIMEOUT_MS = 30000;
 
 /**
  * Timeout for page fetch requests (30 seconds).
