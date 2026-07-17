@@ -96,6 +96,73 @@ describe("useSwipeGesture", () => {
     expect(onSwipeLeft).toHaveBeenCalledOnce();
   });
 
+  it("ignores a rightward swipe starting at the left screen edge (browser back gesture)", () => {
+    const { onSwipeRight, handlers } = setup();
+    // jsdom's window.innerWidth defaults to 1024; x=10 is inside the edge zone.
+    handlers.onTouchStart(touchEvent([{ clientX: 10, clientY: 0 }]));
+    handlers.onTouchEnd(touchEvent([], [{ clientX: 150, clientY: 0 }]));
+    expect(onSwipeRight).not.toHaveBeenCalled();
+  });
+
+  it("ignores a leftward swipe starting at the right screen edge (browser forward gesture)", () => {
+    const { onSwipeLeft, handlers } = setup();
+    handlers.onTouchStart(touchEvent([{ clientX: window.innerWidth - 10, clientY: 0 }]));
+    handlers.onTouchEnd(touchEvent([], [{ clientX: window.innerWidth - 150, clientY: 0 }]));
+    expect(onSwipeLeft).not.toHaveBeenCalled();
+  });
+
+  // The edge-gesture zone is physical: 32 *screen* px, however far that is in
+  // layout px under pinch-zoom. Both tests zoom 2x panned fully left, where
+  // zoom edge-gating (isSwipeNavigationAllowed) permits a rightward swipe.
+  function setupZoomed2xAtLeftEdge() {
+    Object.defineProperty(document.documentElement, "clientWidth", {
+      configurable: true,
+      value: 400,
+    });
+    Object.defineProperty(window, "visualViewport", {
+      configurable: true,
+      value: { offsetLeft: 0, width: 200, scale: 2 },
+    });
+    return () => {
+      delete (document.documentElement as unknown as { clientWidth?: number }).clientWidth;
+    };
+  }
+
+  it("blocks a zoomed swipe starting inside the physical edge zone (OS back gesture)", () => {
+    const restore = setupZoomed2xAtLeftEdge();
+    try {
+      const { onSwipeRight, handlers } = setup();
+      // clientX=10 is 20 physical px from the screen edge — inside the zone.
+      handlers.onTouchStart(touchEvent([{ clientX: 10, clientY: 0 }]));
+      handlers.onTouchEnd(touchEvent([], [{ clientX: 150, clientY: 0 }]));
+      expect(onSwipeRight).not.toHaveBeenCalled();
+    } finally {
+      restore();
+    }
+  });
+
+  it("allows a zoomed swipe outside the physical zone even within 32 layout px", () => {
+    const restore = setupZoomed2xAtLeftEdge();
+    try {
+      const { onSwipeRight, handlers } = setup();
+      // clientX=20 is only 20 layout px from the edge, but 40 physical px —
+      // outside the OS gesture zone, so this legitimate zoomed "previous
+      // article" swipe must not be blocked.
+      handlers.onTouchStart(touchEvent([{ clientX: 20, clientY: 0 }]));
+      handlers.onTouchEnd(touchEvent([], [{ clientX: 150, clientY: 0 }]));
+      expect(onSwipeRight).toHaveBeenCalledOnce();
+    } finally {
+      restore();
+    }
+  });
+
+  it("fires onSwipeRight for a rightward swipe starting away from the edge", () => {
+    const { onSwipeRight, handlers } = setup();
+    handlers.onTouchStart(touchEvent([{ clientX: RIGHT, clientY: 0 }]));
+    handlers.onTouchEnd(touchEvent([], [{ clientX: LEFT, clientY: 0 }]));
+    expect(onSwipeRight).toHaveBeenCalledOnce();
+  });
+
   it("keeps the flag set on touchcancel while a finger remains down", () => {
     const { onSwipeLeft, handlers } = setup();
     handlers.onTouchStart(touchEvent([{ clientX: LEFT, clientY: 0 }]));

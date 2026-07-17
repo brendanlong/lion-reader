@@ -1,7 +1,9 @@
 import { useCallback, useRef } from "react";
 import {
   detectSwipeDirection,
+  getScreenX,
   getViewportEdges,
+  isEdgeGestureSwipe,
   isSwipeNavigationAllowed,
   type ViewportEdges,
 } from "@/components/entries/EntryContentHelpers";
@@ -18,6 +20,8 @@ export function useSwipeGesture({
   const touchStartRef = useRef<{
     x: number;
     y: number;
+    /** Physical distance from the left screen edge; see getScreenX. */
+    screenX: number;
     edges: ViewportEdges;
   } | null>(null);
   // Set once a gesture ever involves more than one finger (pinch-to-zoom, etc.).
@@ -40,6 +44,9 @@ export function useSwipeGesture({
       touchStartRef.current = {
         x: touch.clientX,
         y: touch.clientY,
+        // Captured at gesture start: a one-finger drag pans a zoomed viewport,
+        // shifting visualViewport.offsetLeft mid-gesture.
+        screenX: getScreenX(touch.clientX),
         // Capture the pan position at the start of the gesture so a swipe that
         // begins mid-pan of a zoomed article scrolls instead of navigating.
         edges: getViewportEdges(),
@@ -66,6 +73,13 @@ export function useSwipeGesture({
         y: touch.clientY,
       });
       if (!direction) return;
+
+      // A swipe that begins against a screen edge is the OS/browser
+      // back-forward gesture. The browser handles it via history navigation
+      // (some browsers deliver the touch events anyway), so also treating it
+      // as an article swipe would navigate twice — opening and auto-marking
+      // read the adjacent article before the history-back lands (#1260).
+      if (isEdgeGestureSwipe(direction, start.screenX, window.innerWidth)) return;
 
       // When the article is pinch-zoomed, only navigate if the swipe started
       // against the edge it moves toward; otherwise the user is panning around
