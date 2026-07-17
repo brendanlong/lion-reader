@@ -1,4 +1,5 @@
 import { Registry, collectDefaultMetrics, Counter, Histogram, Gauge } from "prom-client";
+import type { CounterConfiguration, HistogramConfiguration, GaugeConfiguration } from "prom-client";
 
 /**
  * Prometheus Metrics Registry
@@ -25,15 +26,71 @@ export const metricsEnabled = process.env.METRICS_ENABLED === "true";
 
 /**
  * Shared Prometheus registry for all metrics.
- * Use this registry when creating new metrics to ensure they're
- * all exported together from the /api/metrics endpoint.
+ *
+ * Anchored on `globalThis` (via a well-known Symbol) rather than a plain module
+ * singleton, because in production the Next.js app process instantiates this
+ * module in MULTIPLE separate module graphs within the one OS process: the
+ * custom-server bundle (`scripts/server.ts`), the Next instrumentation hook
+ * (`src/instrumentation.ts`, which starts the /metrics server), and the
+ * route-handler chunks (where `startHttpTimer` runs). A plain `new Registry()`
+ * gives each graph its OWN registry, so the HTTP metrics observed by the route
+ * handlers land on a registry the scrape never reads — which is exactly why
+ * `http_request_*` stayed empty while DB-collected metrics worked. globalThis is
+ * shared across every module graph in the process, so all copies converge on a
+ * single registry — the same bridge `src/server/shutdown.ts` uses.
  */
-export const registry = new Registry();
+const REGISTRY_KEY = Symbol.for("lion-reader.metrics.registry");
+type GlobalWithMetricsRegistry = typeof globalThis & { [REGISTRY_KEY]?: Registry };
 
-// Only register default collectors when metrics are enabled
-// This avoids any performance overhead when metrics are disabled
-if (metricsEnabled) {
-  collectDefaultMetrics({ register: registry });
+function getSharedRegistry(): Registry {
+  const globalWithRegistry = globalThis as GlobalWithMetricsRegistry;
+  let shared = globalWithRegistry[REGISTRY_KEY];
+  if (!shared) {
+    shared = new Registry();
+    // Register default collectors once, on the shared registry (only when
+    // enabled — avoids any overhead when metrics are off).
+    if (metricsEnabled) {
+      collectDefaultMetrics({ register: shared });
+    }
+    globalWithRegistry[REGISTRY_KEY] = shared;
+  }
+  return shared;
+}
+
+export const registry = getSharedRegistry();
+
+/**
+ * Idempotent metric constructors.
+ *
+ * Because this module is evaluated once per module graph (see above) but they
+ * all share one registry, a second evaluation must REUSE the metric objects the
+ * first one registered rather than construct new ones: prom-client throws on
+ * duplicate registration, and only the object actually wired into the shared
+ * registry shows up in the scrape. `getSingleMetric` returns the existing object
+ * so every graph's `startHttpTimer` / `track*` call mutates the scraped metric.
+ * Returns null when metrics are disabled (callers already null-check).
+ */
+function getOrCreateCounter<T extends string>(config: CounterConfiguration<T>): Counter<T> | null {
+  if (!metricsEnabled) return null;
+  const existing = registry.getSingleMetric(config.name);
+  if (existing) return existing as Counter<T>;
+  return new Counter<T>({ ...config, registers: [registry] });
+}
+
+function getOrCreateHistogram<T extends string>(
+  config: HistogramConfiguration<T>
+): Histogram<T> | null {
+  if (!metricsEnabled) return null;
+  const existing = registry.getSingleMetric(config.name);
+  if (existing) return existing as Histogram<T>;
+  return new Histogram<T>({ ...config, registers: [registry] });
+}
+
+function getOrCreateGauge<T extends string>(config: GaugeConfiguration<T>): Gauge<T> | null {
+  if (!metricsEnabled) return null;
+  const existing = registry.getSingleMetric(config.name);
+  if (existing) return existing as Gauge<T>;
+  return new Gauge<T>({ ...config, registers: [registry] });
 }
 
 // ============================================================================
@@ -44,14 +101,11 @@ if (metricsEnabled) {
  * Counter for total HTTP requests.
  * Labels: method (GET, POST, etc.), path (normalized route), status (HTTP status code)
  */
-const httpRequestsTotal = metricsEnabled
-  ? new Counter({
-      name: "http_requests_total",
-      help: "Total HTTP requests",
-      labelNames: ["method", "path", "status"] as const,
-      registers: [registry],
-    })
-  : null;
+const httpRequestsTotal = getOrCreateCounter({
+  name: "http_requests_total",
+  help: "Total HTTP requests",
+  labelNames: ["method", "path", "status"] as const,
+});
 
 /**
  * Histogram for HTTP request duration in seconds.
@@ -62,15 +116,12 @@ const httpRequestsTotal = metricsEnabled
  * - 50ms, 100ms, 250ms: typical responses
  * - 500ms, 1s, 2.5s, 5s, 10s: slow responses
  */
-const httpRequestDurationSeconds = metricsEnabled
-  ? new Histogram({
-      name: "http_request_duration_seconds",
-      help: "HTTP request duration in seconds",
-      labelNames: ["method", "path"] as const,
-      buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
-      registers: [registry],
-    })
-  : null;
+const httpRequestDurationSeconds = getOrCreateHistogram({
+  name: "http_request_duration_seconds",
+  help: "HTTP request duration in seconds",
+  labelNames: ["method", "path"] as const,
+  buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
+});
 
 /**
  * Track an HTTP request.
@@ -140,14 +191,11 @@ export type FeedFetchStatus = "success" | "not_modified" | "error";
  * Counter for total feed fetches.
  * Labels: status (success, not_modified, error)
  */
-const feedFetchTotal = metricsEnabled
-  ? new Counter({
-      name: "feed_fetch_total",
-      help: "Total feed fetch attempts",
-      labelNames: ["status"] as const,
-      registers: [registry],
-    })
-  : null;
+const feedFetchTotal = getOrCreateCounter({
+  name: "feed_fetch_total",
+  help: "Total feed fetch attempts",
+  labelNames: ["status"] as const,
+});
 
 /**
  * Histogram for feed fetch duration in seconds.
@@ -155,14 +203,11 @@ const feedFetchTotal = metricsEnabled
  *
  * Buckets cover typical fetch times from 50ms to 30s.
  */
-const feedFetchDurationSeconds = metricsEnabled
-  ? new Histogram({
-      name: "feed_fetch_duration_seconds",
-      help: "Feed fetch duration in seconds",
-      buckets: [0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30],
-      registers: [registry],
-    })
-  : null;
+const feedFetchDurationSeconds = getOrCreateHistogram({
+  name: "feed_fetch_duration_seconds",
+  help: "Feed fetch duration in seconds",
+  buckets: [0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30],
+});
 
 /**
  * Tracks a feed fetch result.
@@ -310,14 +355,11 @@ export type JobStatus = "success" | "failure";
  * Counter for total jobs processed.
  * Labels: type (fetch_feed, cleanup, etc.), status (success, failure)
  */
-const jobProcessedTotal = metricsEnabled
-  ? new Counter({
-      name: "job_processed_total",
-      help: "Total jobs processed",
-      labelNames: ["type", "status"] as const,
-      registers: [registry],
-    })
-  : null;
+const jobProcessedTotal = getOrCreateCounter({
+  name: "job_processed_total",
+  help: "Total jobs processed",
+  labelNames: ["type", "status"] as const,
+});
 
 /**
  * Histogram for job processing duration in seconds.
@@ -325,28 +367,22 @@ const jobProcessedTotal = metricsEnabled
  *
  * Buckets cover typical job durations from 10ms to 5 minutes.
  */
-const jobDurationSeconds = metricsEnabled
-  ? new Histogram({
-      name: "job_duration_seconds",
-      help: "Job processing duration in seconds",
-      labelNames: ["type"] as const,
-      buckets: [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 300],
-      registers: [registry],
-    })
-  : null;
+const jobDurationSeconds = getOrCreateHistogram({
+  name: "job_duration_seconds",
+  help: "Job processing duration in seconds",
+  labelNames: ["type"] as const,
+  buckets: [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 300],
+});
 
 /**
  * Gauge for current job queue size.
  * Labels: type (fetch_feed, cleanup, etc.), status (pending, running)
  */
-const jobQueueSize = metricsEnabled
-  ? new Gauge({
-      name: "job_queue_size",
-      help: "Current job queue size by type and status",
-      labelNames: ["type", "status"] as const,
-      registers: [registry],
-    })
-  : null;
+const jobQueueSize = getOrCreateGauge({
+  name: "job_queue_size",
+  help: "Current job queue size by type and status",
+  labelNames: ["type", "status"] as const,
+});
 
 /**
  * Tracks a job processing result.
@@ -371,26 +407,20 @@ export function trackJobProcessed(type: string, status: JobStatus, durationMs: n
  * Gauge for active SSE connections.
  * Incremented when a client connects, decremented on disconnect.
  */
-const sseConnectionsActive = metricsEnabled
-  ? new Gauge({
-      name: "sse_connections_active",
-      help: "Number of active SSE connections",
-      registers: [registry],
-    })
-  : null;
+const sseConnectionsActive = getOrCreateGauge({
+  name: "sse_connections_active",
+  help: "Number of active SSE connections",
+});
 
 /**
  * Counter for total SSE events sent.
  * Labels: type (new_entry, entry_updated, heartbeat)
  */
-const sseEventsSentTotal = metricsEnabled
-  ? new Counter({
-      name: "sse_events_sent_total",
-      help: "Total SSE events sent to clients",
-      labelNames: ["type"] as const,
-      registers: [registry],
-    })
-  : null;
+const sseEventsSentTotal = getOrCreateCounter({
+  name: "sse_events_sent_total",
+  help: "Total SSE events sent to clients",
+  labelNames: ["type"] as const,
+});
 
 /**
  * Increments the active SSE connections gauge.
@@ -428,35 +458,26 @@ export function trackSSEEventSent(eventType: string): void {
 /**
  * Gauge for database connection pool total connections.
  */
-const dbPoolTotalConnections = metricsEnabled
-  ? new Gauge({
-      name: "db_pool_total_connections",
-      help: "Total connections in the database pool",
-      registers: [registry],
-    })
-  : null;
+const dbPoolTotalConnections = getOrCreateGauge({
+  name: "db_pool_total_connections",
+  help: "Total connections in the database pool",
+});
 
 /**
  * Gauge for database connection pool idle connections.
  */
-const dbPoolIdleConnections = metricsEnabled
-  ? new Gauge({
-      name: "db_pool_idle_connections",
-      help: "Idle connections in the database pool",
-      registers: [registry],
-    })
-  : null;
+const dbPoolIdleConnections = getOrCreateGauge({
+  name: "db_pool_idle_connections",
+  help: "Idle connections in the database pool",
+});
 
 /**
  * Gauge for database connection pool waiting requests.
  */
-const dbPoolWaitingRequests = metricsEnabled
-  ? new Gauge({
-      name: "db_pool_waiting_requests",
-      help: "Requests waiting for a database connection",
-      registers: [registry],
-    })
-  : null;
+const dbPoolWaitingRequests = getOrCreateGauge({
+  name: "db_pool_waiting_requests",
+  help: "Requests waiting for a database connection",
+});
 
 /**
  * Updates database pool metrics from pg Pool stats.
@@ -481,46 +502,34 @@ export function updateDbPoolMetrics(stats: {
 /**
  * Gauge for total registered users.
  */
-const usersTotal = metricsEnabled
-  ? new Gauge({
-      name: "users_total",
-      help: "Total number of registered users",
-      registers: [registry],
-    })
-  : null;
+const usersTotal = getOrCreateGauge({
+  name: "users_total",
+  help: "Total number of registered users",
+});
 
 /**
  * Gauge for total active subscriptions.
  */
-const subscriptionsTotal = metricsEnabled
-  ? new Gauge({
-      name: "subscriptions_total",
-      help: "Total number of active subscriptions",
-      registers: [registry],
-    })
-  : null;
+const subscriptionsTotal = getOrCreateGauge({
+  name: "subscriptions_total",
+  help: "Total number of active subscriptions",
+});
 
 /**
  * Gauge for total entries in the database.
  */
-const entriesTotal = metricsEnabled
-  ? new Gauge({
-      name: "entries_total",
-      help: "Total number of entries",
-      registers: [registry],
-    })
-  : null;
+const entriesTotal = getOrCreateGauge({
+  name: "entries_total",
+  help: "Total number of entries",
+});
 
 /**
  * Gauge for total feeds in the database.
  */
-const feedsTotal = metricsEnabled
-  ? new Gauge({
-      name: "feeds_total",
-      help: "Total number of feeds",
-      registers: [registry],
-    })
-  : null;
+const feedsTotal = getOrCreateGauge({
+  name: "feeds_total",
+  help: "Total number of feeds",
+});
 
 /**
  * Updates all business metrics.
@@ -574,26 +583,20 @@ export function updateJobQueueMetrics(
  * Counter for WebSub notifications received.
  * Tracks content push notifications from hubs.
  */
-const websubNotificationsReceivedTotal = metricsEnabled
-  ? new Counter({
-      name: "websub_notifications_received_total",
-      help: "Total WebSub content notifications received",
-      registers: [registry],
-    })
-  : null;
+const websubNotificationsReceivedTotal = getOrCreateCounter({
+  name: "websub_notifications_received_total",
+  help: "Total WebSub content notifications received",
+});
 
 /**
  * Counter for WebSub renewal attempts.
  * Labels: status (success, failure)
  */
-const websubRenewalsTotal = metricsEnabled
-  ? new Counter({
-      name: "websub_renewals_total",
-      help: "Total WebSub subscription renewal attempts",
-      labelNames: ["status"] as const,
-      registers: [registry],
-    })
-  : null;
+const websubRenewalsTotal = getOrCreateCounter({
+  name: "websub_renewals_total",
+  help: "Total WebSub subscription renewal attempts",
+  labelNames: ["status"] as const,
+});
 
 /**
  * Tracks a WebSub notification received.
@@ -624,25 +627,19 @@ export function trackWebsubRenewal(success: boolean): void {
  * Updated by the monitor_feed_health job. Alert if this grows beyond the
  * expected fetch cadence (feeds are polled at least hourly in steady state).
  */
-const feedLastSuccessfulFetchAgeSeconds = metricsEnabled
-  ? new Gauge({
-      name: "feed_last_successful_fetch_age_seconds",
-      help: "Seconds since the most recent successful feed fetch across all pollable feeds",
-      registers: [registry],
-    })
-  : null;
+const feedLastSuccessfulFetchAgeSeconds = getOrCreateGauge({
+  name: "feed_last_successful_fetch_age_seconds",
+  help: "Seconds since the most recent successful feed fetch across all pollable feeds",
+});
 
 /**
  * Gauge for the number of pollable feeds currently failing (consecutive_failures > 0).
  * Updated by the monitor_feed_health job.
  */
-const feedsFailing = metricsEnabled
-  ? new Gauge({
-      name: "feeds_failing",
-      help: "Number of pollable feeds with consecutive fetch failures",
-      registers: [registry],
-    })
-  : null;
+const feedsFailing = getOrCreateGauge({
+  name: "feeds_failing",
+  help: "Number of pollable feeds with consecutive fetch failures",
+});
 
 /**
  * Updates feed fetch health gauges from a monitor_feed_health run.
@@ -691,14 +688,11 @@ export type NarrationErrorType = "api_error" | "empty_response" | "unknown";
  * - cached: "true" if served from cache, "false" if newly generated
  * - source: "llm" for LLM-generated, "fallback" for plain text conversion
  */
-const narrationGeneratedTotal = metricsEnabled
-  ? new Counter({
-      name: "narration_generated_total",
-      help: "Total narration generations",
-      labelNames: ["cached", "source"] as const,
-      registers: [registry],
-    })
-  : null;
+const narrationGeneratedTotal = getOrCreateCounter({
+  name: "narration_generated_total",
+  help: "Total narration generations",
+  labelNames: ["cached", "source"] as const,
+});
 
 /**
  * Histogram for narration generation duration in seconds.
@@ -706,27 +700,21 @@ const narrationGeneratedTotal = metricsEnabled
  *
  * Buckets cover typical LLM latencies from 100ms to 30s.
  */
-const narrationGenerationDurationSeconds = metricsEnabled
-  ? new Histogram({
-      name: "narration_generation_duration_seconds",
-      help: "Narration generation duration in seconds",
-      buckets: [0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 30],
-      registers: [registry],
-    })
-  : null;
+const narrationGenerationDurationSeconds = getOrCreateHistogram({
+  name: "narration_generation_duration_seconds",
+  help: "Narration generation duration in seconds",
+  buckets: [0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 30],
+});
 
 /**
  * Counter for narration generation errors.
  * Labels: error_type (api_error, empty_response, unknown)
  */
-const narrationGenerationErrorsTotal = metricsEnabled
-  ? new Counter({
-      name: "narration_generation_errors_total",
-      help: "Total narration generation errors",
-      labelNames: ["error_type"] as const,
-      registers: [registry],
-    })
-  : null;
+const narrationGenerationErrorsTotal = getOrCreateCounter({
+  name: "narration_generation_errors_total",
+  help: "Total narration generation errors",
+  labelNames: ["error_type"] as const,
+});
 
 /**
  * Tracks a narration generation result.
@@ -790,27 +778,21 @@ export function startNarrationGenerationTimer(): () => void {
  * Counter for enhanced voice selections.
  * Labels: voice_id (the selected voice identifier)
  */
-const enhancedVoiceSelectedTotal = metricsEnabled
-  ? new Counter({
-      name: "enhanced_voice_selected_total",
-      help: "Total enhanced voice selections",
-      labelNames: ["voice_id"] as const,
-      registers: [registry],
-    })
-  : null;
+const enhancedVoiceSelectedTotal = getOrCreateCounter({
+  name: "enhanced_voice_selected_total",
+  help: "Total enhanced voice selections",
+  labelNames: ["voice_id"] as const,
+});
 
 /**
  * Counter for enhanced voice download completions.
  * Labels: voice_id (the downloaded voice identifier)
  */
-const enhancedVoiceDownloadCompletedTotal = metricsEnabled
-  ? new Counter({
-      name: "enhanced_voice_download_completed_total",
-      help: "Total enhanced voice downloads completed",
-      labelNames: ["voice_id"] as const,
-      registers: [registry],
-    })
-  : null;
+const enhancedVoiceDownloadCompletedTotal = getOrCreateCounter({
+  name: "enhanced_voice_download_completed_total",
+  help: "Total enhanced voice downloads completed",
+  labelNames: ["voice_id"] as const,
+});
 
 /**
  * Counter for enhanced voice download failures.
@@ -818,27 +800,21 @@ const enhancedVoiceDownloadCompletedTotal = metricsEnabled
  * - voice_id: The voice that failed to download
  * - error_type: Type of error (network, storage, unknown)
  */
-const enhancedVoiceDownloadFailedTotal = metricsEnabled
-  ? new Counter({
-      name: "enhanced_voice_download_failed_total",
-      help: "Total enhanced voice download failures",
-      labelNames: ["voice_id", "error_type"] as const,
-      registers: [registry],
-    })
-  : null;
+const enhancedVoiceDownloadFailedTotal = getOrCreateCounter({
+  name: "enhanced_voice_download_failed_total",
+  help: "Total enhanced voice download failures",
+  labelNames: ["voice_id", "error_type"] as const,
+});
 
 /**
  * Counter for narration playback starts.
  * Labels: provider (browser or piper)
  */
-const narrationPlaybackStartedTotal = metricsEnabled
-  ? new Counter({
-      name: "narration_playback_started_total",
-      help: "Total narration playbacks started",
-      labelNames: ["provider"] as const,
-      registers: [registry],
-    })
-  : null;
+const narrationPlaybackStartedTotal = getOrCreateCounter({
+  name: "narration_playback_started_total",
+  help: "Total narration playbacks started",
+  labelNames: ["provider"] as const,
+});
 
 /**
  * Enhanced voice download error types.
@@ -904,37 +880,28 @@ export function trackNarrationPlaybackStarted(provider: "browser" | "piper"): vo
  * Counter for times highlighting was active during narration.
  * Incremented when highlighting first becomes active in a session.
  */
-const narrationHighlightActiveTotal = metricsEnabled
-  ? new Counter({
-      name: "narration_highlight_active_total",
-      help: "Total times narration highlighting was active",
-      registers: [registry],
-    })
-  : null;
+const narrationHighlightActiveTotal = getOrCreateCounter({
+  name: "narration_highlight_active_total",
+  help: "Total times narration highlighting was active",
+});
 
 /**
  * Counter for times fallback mapping was used for highlighting.
  * Incremented when positional mapping is used instead of LLM markers.
  */
-const narrationHighlightFallbackTotal = metricsEnabled
-  ? new Counter({
-      name: "narration_highlight_fallback_total",
-      help: "Total times fallback positional mapping was used for highlighting",
-      registers: [registry],
-    })
-  : null;
+const narrationHighlightFallbackTotal = getOrCreateCounter({
+  name: "narration_highlight_fallback_total",
+  help: "Total times fallback positional mapping was used for highlighting",
+});
 
 /**
  * Counter for times auto-scroll was triggered during highlighting.
  * Incremented when the view scrolls to a highlighted paragraph.
  */
-const narrationHighlightScrollTotal = metricsEnabled
-  ? new Counter({
-      name: "narration_highlight_scroll_total",
-      help: "Total times auto-scroll was triggered during highlighting",
-      registers: [registry],
-    })
-  : null;
+const narrationHighlightScrollTotal = getOrCreateCounter({
+  name: "narration_highlight_scroll_total",
+  help: "Total times auto-scroll was triggered during highlighting",
+});
 
 /**
  * Tracks when narration highlighting becomes active.
