@@ -262,7 +262,7 @@ export function isSummarizationAvailable(keys?: AiProviderKeys): boolean {
  * `parseModelRef`).
  *
  * Priority: user setting > `SUMMARIZATION_MODEL` env var > the default model
- * of the first configured provider (Anthropic, then Groq, then Cerebras).
+ * of the first configured provider (Cerebras, then Groq, then Anthropic).
  */
 export function getSummarizationModelId(userModel?: string | null, keys?: AiProviderKeys): string {
   if (userModel) {
@@ -272,7 +272,10 @@ export function getSummarizationModelId(userModel?: string | null, keys?: AiProv
     return process.env.SUMMARIZATION_MODEL;
   }
   const available = getAvailableProviders(keys);
+  // When nothing is configured summarization is disabled anyway, so the value
+  // is nominal — fall back to the highest-priority provider's default.
   const provider =
-    SUMMARIZATION_PROVIDER_PRIORITY.find((p) => available.includes(p)) ?? "anthropic";
+    SUMMARIZATION_PROVIDER_PRIORITY.find((p) => available.includes(p)) ??
+    SUMMARIZATION_PROVIDER_PRIORITY[0];
   return DEFAULT_SUMMARIZATION_MODELS[provider];
 }
