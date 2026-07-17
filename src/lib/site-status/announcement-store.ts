@@ -1,12 +1,12 @@
 /**
  * Live announcement store.
  *
- * The announcement banner is server-rendered from the root layout (outside any
- * provider), but the SSE handler that receives `announcement_changed` events
- * lives deep inside the authenticated app. This module-level store bridges the
- * two — the SSE handler writes here, the banner subscribes via
- * useSyncExternalStore — with no shared React context needed (same pattern as
- * `useSidebarUnreadOnly`).
+ * The announcement banner is server-rendered from the authenticated SPA layout
+ * (`src/app/(app)/layout.tsx`), and the SSE handler that receives
+ * `announcement_changed` events lives deeper inside the same app. This
+ * module-level store bridges the two — the SSE handler writes here, the banner
+ * subscribes via useSyncExternalStore — with no shared React context needed
+ * (same pattern as `useSidebarUnreadOnly`).
  *
  * The snapshot is tri-state:
  * - `undefined` — no live update has arrived; the banner uses its SSR prop.
