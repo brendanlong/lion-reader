@@ -13,6 +13,7 @@ import type { ExtractedArticle, ExtractOptions } from "@lion-reader/readability"
 import { HTMLRewriter } from "html-rewriter-wasm";
 import { logger } from "@/lib/logger";
 import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
+import { startReadabilityTimer } from "@/server/metrics/metrics";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -328,7 +329,14 @@ export function cleanContent(
   if (!passesMinContentLength(html, options)) return null;
 
   try {
-    return finishCleaned(extractArticle(html, EXTRACT_OPTIONS), html, options);
+    const stopTimer = startReadabilityTimer();
+    let article: ExtractedArticle | null;
+    try {
+      article = extractArticle(html, EXTRACT_OPTIONS);
+    } finally {
+      stopTimer();
+    }
+    return finishCleaned(article, html, options);
   } catch (error) {
     // Log the error but don't throw - return null to indicate failure
     logger.warn("Readability parsing error", {
@@ -356,12 +364,20 @@ export async function cleanContentAsync(
   options: CleanContentOptions = {}
 ): Promise<CleanedContent | null> {
   if (!passesMinContentLength(html, options)) return null;
+  // Small inputs run through the sync path, which records its own timing.
   if (html.length <= CLEAN_INLINE_MAX_CHARS) {
     return cleanContent(html, options);
   }
 
   try {
-    return finishCleaned(await extractArticleAsync(html, EXTRACT_OPTIONS), html, options);
+    const stopTimer = startReadabilityTimer();
+    let article: ExtractedArticle | null;
+    try {
+      article = await extractArticleAsync(html, EXTRACT_OPTIONS);
+    } finally {
+      stopTimer();
+    }
+    return finishCleaned(article, html, options);
   } catch (error) {
     logger.warn("Readability parsing error", {
       url: options.url,

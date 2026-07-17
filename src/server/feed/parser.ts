@@ -15,6 +15,7 @@ import {
   UnknownFeedFormatError,
 } from "./streaming/parser";
 import { usageLimitsConfig } from "../config/env";
+import { startFeedParseTimer } from "../metrics/metrics";
 
 // Re-export for backwards compatibility
 export { UnknownFeedFormatError };
@@ -58,8 +59,13 @@ export function detectFeedType(content: string): "rss" | "atom" | "json" | "unkn
  * @throws Error if the feed is invalid (missing required elements)
  */
 export function parseFeed(content: string): ParsedFeed {
-  const result = parseFeedInternal(content);
-  return resultToParsedFeed(result);
+  const stopTimer = startFeedParseTimer();
+  try {
+    const result = parseFeedInternal(content);
+    return resultToParsedFeed(result);
+  } finally {
+    stopTimer();
+  }
 }
 
 /**
@@ -77,8 +83,13 @@ export function parseFeed(content: string): ParsedFeed {
  * @throws Error if the feed is invalid (missing required elements)
  */
 export async function parseFeedAsync(content: string): Promise<ParsedFeed> {
-  const result = await parseFeedAsyncInternal(content);
-  return resultToParsedFeed(result);
+  const stopTimer = startFeedParseTimer();
+  try {
+    const result = await parseFeedAsyncInternal(content);
+    return resultToParsedFeed(result);
+  } finally {
+    stopTimer();
+  }
 }
 
 /**
@@ -91,6 +102,11 @@ export async function parseFeedAsync(content: string): Promise<ParsedFeed> {
  * @throws Error if the feed is invalid
  */
 export function parseFeedWithFormat(content: string, format: "rss" | "atom" | "json"): ParsedFeed {
-  const result = parseFeedWithFormatInternal(content, format);
-  return resultToParsedFeed(result);
+  const stopTimer = startFeedParseTimer();
+  try {
+    const result = parseFeedWithFormatInternal(content, format);
+    return resultToParsedFeed(result);
+  } finally {
+    stopTimer();
+  }
 }
