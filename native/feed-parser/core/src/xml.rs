@@ -79,7 +79,7 @@ pub fn run_sax<H: SaxHandler>(
 
     // Open-element stack (top = end); see the dispatch rules above.
     let mut stack: Vec<String> = Vec::new();
-    let mut close_open_elements = |stack: &mut Vec<String>, handler: &mut H| {
+    let close_open_elements = |stack: &mut Vec<String>, handler: &mut H| {
         while let Some(open) = stack.pop() {
             handler.on_close(&open);
         }
