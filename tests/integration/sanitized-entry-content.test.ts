@@ -1,21 +1,19 @@
 /**
- * Integration tests for entries.get serving DB-cached sanitized HTML.
+ * Integration tests for entries.get sanitizing entry HTML per read.
  *
- * Sanitized entry HTML is persisted in the entries.*_sanitized columns at write
- * time, so the read path serves it directly. When the stored version is stale or
- * missing (pre-migration rows, or after the allow-list was tightened), the read
- * path re-sanitizes from the raw columns and self-heals. These tests verify both
- * behaviors against a real database.
+ * As of issue #1282 sanitization is no longer persisted: entries store only the
+ * raw content columns, and the read path (entries.get, and the services-layer
+ * getEntry/getEntries used by MCP/Google Reader/Wallabag) sanitizes on every
+ * read. These tests verify raw feed HTML never reaches a consumer, against a
+ * real database.
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
-import { SANITIZER_VERSION } from "../../src/server/html/sanitize";
 import * as entriesService from "../../src/server/services/entries";
 
 function createAuthContext(userId: string): Context {
@@ -110,16 +108,6 @@ async function makeEntryVisible(userId: string, entryId: string): Promise<void> 
     .values({ userId, entryId, read: false, starred: false, updatedAt: now });
 }
 
-/** Poll until predicate is true (used to observe fire-and-forget heal writes). */
-async function eventually(predicate: () => Promise<boolean>, timeoutMs = 2000): Promise<void> {
-  const start = Date.now();
-  while (true) {
-    if (await predicate()) return;
-    if (Date.now() - start > timeoutMs) throw new Error("Condition not met within timeout");
-    await new Promise((r) => setTimeout(r, 25));
-  }
-}
-
 describe("entries.get sanitized content", () => {
   beforeEach(async () => {
     await db.delete(userEntries);
@@ -137,49 +125,17 @@ describe("entries.get sanitized content", () => {
     await db.delete(users);
   });
 
-  it("serves the stored sanitized value without re-sanitizing from raw", async () => {
+  it("sanitizes the raw content on read, never returning raw HTML", async () => {
     const { userId, feedId } = await seedSubscribedUser();
     const entryId = generateUuidv7();
     const now = new Date();
-    // Raw content differs from the stored sanitized value: if get served the
-    // stored value we see the sentinel; if it re-sanitized raw we'd see "raw".
     await db.insert(entries).values({
       id: entryId,
       feedId,
       type: "web",
       guid: `guid-${entryId}`,
-      title: "Stored",
-      contentCleaned: "<p>raw uncached</p>",
-      contentCleanedSanitized: "<p>STORED_SENTINEL</p>",
-      contentSanitizedVersion: SANITIZER_VERSION,
-      contentHash: `hash-${entryId}`,
-      fetchedAt: now,
-      publishedAt: now,
-      lastSeenAt: now,
-      createdAt: now,
-      updatedAt: now,
-    });
-    await makeEntryVisible(userId, entryId);
-
-    const caller = createCaller(createAuthContext(userId));
-    const { entry } = await caller.entries.get({ id: entryId });
-
-    expect(entry.contentCleaned).toBe("<p>STORED_SENTINEL</p>");
-  });
-
-  it("re-sanitizes from raw and self-heals when the stored version is missing", async () => {
-    const { userId, feedId } = await seedSubscribedUser();
-    const entryId = generateUuidv7();
-    const now = new Date();
-    // Simulate a pre-migration row: raw content present, no sanitized columns.
-    await db.insert(entries).values({
-      id: entryId,
-      feedId,
-      type: "web",
-      guid: `guid-${entryId}`,
-      title: "Unhealed",
+      title: "Unsafe",
       contentCleaned: '<p onclick="evil()">hello<script>alert(1)</script></p>',
-      contentSanitizedVersion: null,
       contentHash: `hash-${entryId}`,
       fetchedAt: now,
       publishedAt: now,
@@ -192,33 +148,15 @@ describe("entries.get sanitized content", () => {
     const caller = createCaller(createAuthContext(userId));
     const { entry } = await caller.entries.get({ id: entryId });
 
-    // Returned content is sanitized.
     expect(entry.contentCleaned).toContain("hello");
     expect(entry.contentCleaned).not.toContain("<script>");
     expect(entry.contentCleaned).not.toContain("onclick");
-
-    // The heal is persisted (fire-and-forget), so a later read is a stored hit.
-    await eventually(async () => {
-      const [row] = await db
-        .select({
-          sanitized: entries.contentCleanedSanitized,
-          version: entries.contentSanitizedVersion,
-        })
-        .from(entries)
-        .where(eq(entries.id, entryId));
-      return row?.version === SANITIZER_VERSION && (row?.sanitized ?? "").includes("hello");
-    });
   });
 
-  it("does not heal or stamp a full-content family that has no raw content", async () => {
+  it("returns null full-content fields when the entry has no full content", async () => {
     const { userId, feedId } = await seedSubscribedUser();
     const entryId = generateUuidv7();
     const now = new Date();
-    // Ordinary feed insert: content family sanitized at the current version, but
-    // the full-content family has no raw columns and a NULL version — the common
-    // case for virtually every entry. Reading it must NOT take the heal path for
-    // the empty full-content family (issue #1086): no wasted no-op sanitize, and
-    // no fire-and-forget UPDATE stamping full_content_sanitized_version.
     await db.insert(entries).values({
       id: entryId,
       feedId,
@@ -226,11 +164,8 @@ describe("entries.get sanitized content", () => {
       guid: `guid-${entryId}`,
       title: "No full content",
       contentCleaned: "<p>hello</p>",
-      contentCleanedSanitized: "<p>hello</p>",
-      contentSanitizedVersion: SANITIZER_VERSION,
       fullContentOriginal: null,
       fullContentCleaned: null,
-      fullContentSanitizedVersion: null,
       contentHash: `hash-${entryId}`,
       fetchedAt: now,
       publishedAt: now,
@@ -242,43 +177,27 @@ describe("entries.get sanitized content", () => {
 
     const caller = createCaller(createAuthContext(userId));
     const { entry } = await caller.entries.get({ id: entryId });
+    expect(entry.contentCleaned).toContain("hello");
     expect(entry.fullContentOriginal).toBeNull();
     expect(entry.fullContentCleaned).toBeNull();
-
-    // Give any (unwanted) fire-and-forget heal write time to land, then assert the
-    // full-content version was never stamped — the short-circuit skipped the heal.
-    await new Promise((r) => setTimeout(r, 300));
-    const [row] = await db
-      .select({ version: entries.fullContentSanitizedVersion })
-      .from(entries)
-      .where(eq(entries.id, entryId));
-    expect(row?.version).toBeNull();
   });
 
-  it("heals a stale full-content family to the lazy shape (original not re-materialized)", async () => {
+  it("serves full-content cleaned (sanitized) and omits original when cleaned exists", async () => {
     const { userId, feedId } = await seedSubscribedUser();
     const entryId = generateUuidv7();
     const now = new Date();
-    // Pre-lazy-rule row left stale by a version bump: both full-content raws
-    // present and both sanitized copies eagerly materialized at the previous
-    // version. Reading it must re-sanitize only the serving variant (cleaned)
-    // and persist NULL for the original's sanitized column — converging the
-    // row to the lazy shape instead of re-materializing a whole-page sanitized
-    // copy nothing reads (issue #1117).
+    // The full-content serving rule is `cleaned ?? original`, so when cleaned
+    // exists the (whole raw page) original is never displayed — the read path
+    // skips sanitizing it and returns null.
     await db.insert(entries).values({
       id: entryId,
       feedId,
       type: "web",
       guid: `guid-${entryId}`,
-      title: "Stale full content",
+      title: "Full content",
       contentCleaned: "<p>feed body</p>",
-      contentCleanedSanitized: "<p>feed body</p>",
-      contentSanitizedVersion: SANITIZER_VERSION,
       fullContentOriginal: "<article>whole raw page<script>alert(1)</script></article>",
       fullContentCleaned: '<p onclick="evil()">full cleaned<script>alert(2)</script></p>',
-      fullContentOriginalSanitized: "<article>OLD_EAGER_ORIGINAL</article>",
-      fullContentCleanedSanitized: "<p>OLD_CLEANED</p>",
-      fullContentSanitizedVersion: SANITIZER_VERSION - 1,
       fullContentHash: `fullhash-${entryId}`,
       fullContentFetchedAt: now,
       contentHash: `hash-${entryId}`,
@@ -293,54 +212,25 @@ describe("entries.get sanitized content", () => {
     const caller = createCaller(createAuthContext(userId));
     const { entry } = await caller.entries.get({ id: entryId });
 
-    // The serving variant is re-sanitized from raw; the original comes back
-    // NULL (not materialized). Consumers fall back `cleaned ?? original`.
     expect(entry.fullContentCleaned).toContain("full cleaned");
     expect(entry.fullContentCleaned).not.toContain("<script>");
     expect(entry.fullContentCleaned).not.toContain("onclick");
     expect(entry.fullContentOriginal).toBeNull();
-
-    // The heal persists the lazy shape (fire-and-forget).
-    await eventually(async () => {
-      const [row] = await db
-        .select({
-          originalSanitized: entries.fullContentOriginalSanitized,
-          cleanedSanitized: entries.fullContentCleanedSanitized,
-          version: entries.fullContentSanitizedVersion,
-        })
-        .from(entries)
-        .where(eq(entries.id, entryId));
-      return (
-        row?.version === SANITIZER_VERSION &&
-        row?.originalSanitized === null &&
-        (row?.cleanedSanitized ?? "").includes("full cleaned")
-      );
-    });
   });
 
-  it("serves a pre-cleanup current-version full-content row as stored (both variants)", async () => {
+  it("sanitizes the full-content original when cleaned is absent", async () => {
     const { userId, feedId } = await seedSubscribedUser();
     const entryId = generateUuidv7();
     const now = new Date();
-    // A row the 0100 cleanup migration didn't touch conceptually can't exist
-    // (it nulls all eager copies), but during rollout an old release may still
-    // eagerly materialize both variants at the current version. The fast path
-    // (version current) must serve such a row exactly as stored — no lazy-rule
-    // rewrite, no heal, no wasted sanitize.
     await db.insert(entries).values({
       id: entryId,
       feedId,
       type: "web",
       guid: `guid-${entryId}`,
-      title: "Pre-cleanup full content",
+      title: "Full content original only",
       contentCleaned: "<p>feed body</p>",
-      contentCleanedSanitized: "<p>feed body</p>",
-      contentSanitizedVersion: SANITIZER_VERSION,
-      fullContentOriginal: "<article>raw page</article>",
-      fullContentCleaned: "<p>raw cleaned</p>",
-      fullContentOriginalSanitized: "<article>STORED_ORIGINAL_SENTINEL</article>",
-      fullContentCleanedSanitized: "<p>STORED_CLEANED_SENTINEL</p>",
-      fullContentSanitizedVersion: SANITIZER_VERSION,
+      fullContentOriginal: '<article onclick="evil()">raw page<script>alert(1)</script></article>',
+      fullContentCleaned: null,
       fullContentHash: `fullhash-${entryId}`,
       fullContentFetchedAt: now,
       contentHash: `hash-${entryId}`,
@@ -355,15 +245,16 @@ describe("entries.get sanitized content", () => {
     const caller = createCaller(createAuthContext(userId));
     const { entry } = await caller.entries.get({ id: entryId });
 
-    expect(entry.fullContentOriginal).toBe("<article>STORED_ORIGINAL_SENTINEL</article>");
-    expect(entry.fullContentCleaned).toBe("<p>STORED_CLEANED_SENTINEL</p>");
+    expect(entry.fullContentOriginal).toContain("raw page");
+    expect(entry.fullContentOriginal).not.toContain("<script>");
+    expect(entry.fullContentOriginal).not.toContain("onclick");
   });
 
   // The services-layer getEntry/getEntries are the read path for MCP get_entry,
-  // Google Reader, and Wallabag — they must serve sanitized content too, not
-  // just the tRPC router (issue #956).
+  // Google Reader, and Wallabag — they must sanitize content too, not just the
+  // tRPC router (issue #956).
   describe("services getEntry/getEntries", () => {
-    it("getEntry serves stored sanitized content, never the raw columns", async () => {
+    it("getEntry sanitizes the raw content, never returning raw HTML", async () => {
       const { userId, feedId } = await seedSubscribedUser();
       const entryId = generateUuidv7();
       const now = new Date();
@@ -372,35 +263,8 @@ describe("entries.get sanitized content", () => {
         feedId,
         type: "web",
         guid: `guid-${entryId}`,
-        title: "Stored",
-        contentCleaned: "<p>raw uncached</p>",
-        contentCleanedSanitized: "<p>STORED_SENTINEL</p>",
-        contentSanitizedVersion: SANITIZER_VERSION,
-        contentHash: `hash-${entryId}`,
-        fetchedAt: now,
-        publishedAt: now,
-        lastSeenAt: now,
-        createdAt: now,
-        updatedAt: now,
-      });
-      await makeEntryVisible(userId, entryId);
-
-      const entry = await entriesService.getEntry(db, userId, entryId);
-      expect(entry.contentCleaned).toBe("<p>STORED_SENTINEL</p>");
-    });
-
-    it("getEntry sanitizes unhealed rows instead of returning raw HTML", async () => {
-      const { userId, feedId } = await seedSubscribedUser();
-      const entryId = generateUuidv7();
-      const now = new Date();
-      await db.insert(entries).values({
-        id: entryId,
-        feedId,
-        type: "web",
-        guid: `guid-${entryId}`,
-        title: "Unhealed",
+        title: "Unsafe",
         contentCleaned: '<p onclick="evil()">hello<script>alert(1)</script></p>',
-        contentSanitizedVersion: null,
         contentHash: `hash-${entryId}`,
         fetchedAt: now,
         publishedAt: now,
@@ -428,7 +292,6 @@ describe("entries.get sanitized content", () => {
           guid: `guid-${entryId}`,
           title: "Bulk",
           contentCleaned: `<p>body-${entryId}<script>alert(1)</script></p>`,
-          contentSanitizedVersion: null,
           contentHash: `hash-${entryId}`,
           fetchedAt: now,
           publishedAt: now,

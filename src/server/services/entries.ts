@@ -22,8 +22,7 @@ import { entries, feeds, userEntries, subscriptions, visibleEntries } from "@/se
 import { parseTimestamptzOrNull } from "@/server/db/temporal";
 import { isValidUuid } from "@/lib/uuidv7";
 import { ENTRY_SEARCH_ENABLED } from "@/lib/feature-flags";
-import { SANITIZER_VERSION, sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
-import { logger } from "@/lib/logger";
+import { sanitizeEntryContentFamily } from "@/server/html/sanitize-entry";
 import { errors } from "@/server/trpc/errors";
 import { publishMarkAllRead } from "@/server/redis/pubsub";
 import {
@@ -38,7 +37,6 @@ import {
   publishStarredStateChange,
   publishStarredStateChanges,
 } from "./entry-events";
-import { persistResanitizedFamily, sanitizeFamilyFromRaw } from "./resanitize";
 import {
   buildEntrySubscriptionFilter,
   buildEntryFilterConditions,
@@ -305,8 +303,9 @@ function encodeCursor(ts: string, entryId: string): string {
 
 /**
  * Base select fields shared by every full-entry read (getEntry/getEntries and
- * selectFullEntry). Selects the persisted sanitized content columns (plus
- * their versions) so raw untrusted HTML never leaves the service layer.
+ * selectFullEntry). Selects the **raw** content columns; the read path
+ * sanitizes them per read (see `toEntryFull`/`toFullEntry`) so raw untrusted
+ * HTML never leaves the service layer.
  */
 const entryFullSelectFields = {
   id: visibleEntries.id,
@@ -321,16 +320,9 @@ const entryFullSelectFields = {
   url: visibleEntries.url,
   title: visibleEntries.title,
   author: visibleEntries.author,
-  // Sanitized content is served to the client; the matching version columns let
-  // the read path detect when the allow-list changed and re-sanitize from raw.
-  contentOriginalSanitized: visibleEntries.contentOriginalSanitized,
-  contentCleanedSanitized: visibleEntries.contentCleanedSanitized,
-  contentSanitizedVersion: visibleEntries.contentSanitizedVersion,
-  // Whether this family has raw content to (re-)sanitize at all. Lets the read
-  // path skip the heal for a family with no raw content instead of wasting a
-  // SELECT + no-op sanitize + version-stamping UPDATE on it (see
-  // resolveSanitizedFamily); matches the staleness query's RESANITIZE_NA rule.
-  hasContentRaw: sql<boolean>`${visibleEntries.contentOriginal} IS NOT NULL OR ${visibleEntries.contentCleaned} IS NOT NULL`,
+  // Raw (untrusted) content, sanitized on read before it leaves the service.
+  contentOriginal: visibleEntries.contentOriginal,
+  contentCleaned: visibleEntries.contentCleaned,
   summary: visibleEntries.summary,
   publishedAt: visibleEntries.publishedAt,
   fetchedAt: visibleEntries.fetchedAt,
@@ -350,13 +342,9 @@ const entryFullSelectFields = {
  */
 const fullEntrySelectFields = {
   ...entryFullSelectFields,
-  fullContentOriginalSanitized: visibleEntries.fullContentOriginalSanitized,
-  fullContentCleanedSanitized: visibleEntries.fullContentCleanedSanitized,
-  fullContentSanitizedVersion: visibleEntries.fullContentSanitizedVersion,
-  // See hasContentRaw. Ordinary feed/email inserts leave the full-content raw
-  // columns (and version) NULL, so without this the *first* read of nearly every
-  // entry would take the heal path for a family that has nothing to sanitize.
-  hasFullContentRaw: sql<boolean>`${visibleEntries.fullContentOriginal} IS NOT NULL OR ${visibleEntries.fullContentCleaned} IS NOT NULL`,
+  // Raw (untrusted) full-content columns, sanitized on read (see toFullEntry).
+  fullContentOriginal: visibleEntries.fullContentOriginal,
+  fullContentCleaned: visibleEntries.fullContentCleaned,
   fullContentFetchedAt: visibleEntries.fullContentFetchedAt,
   fullContentError: visibleEntries.fullContentError,
   contentHash: visibleEntries.contentHash,
@@ -381,128 +369,30 @@ export async function selectFullEntry(db: typeof dbType, userId: string, entryId
 }
 
 /**
- * Resolve one family of an entry's sanitized content for display.
+ * Sanitize both content families of a full entry for display.
  *
  * Entry bodies come from untrusted feeds and are rendered via
  * `dangerouslySetInnerHTML` (and served to external clients such as MCP,
- * Google Reader, and Wallabag), so they must be sanitized. Sanitization is
- * persisted in the `*_sanitized` columns at write time (see
- * `@/server/html/sanitize-entry`), so the common case is a pure read of the
- * stored values. When the stored version doesn't match the current
- * `SANITIZER_VERSION` — pre-migration rows, or after the allow-list was
- * tightened — we re-sanitize from that family's raw columns and persist the
- * result (fire-and-forget) so subsequent reads are fast again.
- *
- * The content (`content_*`) and full-content (`full_content_*`) families are
- * versioned independently because they are written at different times, and are
- * resolved independently so callers that only serve the content family
- * (getEntry/getEntries) don't pay to fetch and re-sanitize full-content HTML
- * they never return.
+ * Google Reader, and Wallabag), so they must be sanitized. As of issue #1282
+ * sanitization is not persisted — the native sanitizer is fast enough to run on
+ * every read — so the read query selects the raw columns and this sanitizes
+ * them (large bodies off the event loop; the full-content original only when
+ * cleaned is NULL). See `sanitizeEntryContentFamily`.
  */
-export async function resolveSanitizedFamily(
-  db: typeof dbType,
-  entryId: string,
-  family: "content" | "fullContent",
-  stored: {
-    originalSanitized: string | null;
-    cleanedSanitized: string | null;
-    version: number | null;
-    hasRaw: boolean;
-  }
-): Promise<{ original: string | null; cleaned: string | null }> {
-  // Fast path: already sanitized at (or beyond) the current version. `>=`, not
-  // `===`, so a row a newer release wrote at a higher version (during an
-  // expand/contract rollout, or when this is an old release running after a
-  // rollback) is served as-is instead of pointlessly re-sanitized every read —
-  // the persist CAS is strictly-less-than and would reject the downgrade anyway.
-  if (stored.version !== null && stored.version >= SANITIZER_VERSION) {
-    return { original: stored.originalSanitized, cleaned: stored.cleanedSanitized };
-  }
-
-  // Nothing to heal: a family with no raw content can't be re-sanitized, and its
-  // stored sanitized columns are already NULL. Ordinary feed/email inserts leave
-  // the full-content family's raw columns and version NULL, so without this guard
-  // the *first* read of nearly every entry (and every read after a
-  // SANITIZER_VERSION bump) would take the heal path below — a wasted SELECT, two
-  // no-op sanitize calls, and a fire-and-forget UPDATE stamping the version on a
-  // family that holds no content. Skip it, matching the bulk-resanitize
-  // staleness query, which treats a no-raw family as not stale (RESANITIZE_NA
-  // in resanitize.ts).
-  if (!stored.hasRaw) {
-    return { original: stored.originalSanitized, cleaned: stored.cleanedSanitized };
-  }
-
-  // Heal path: fetch this family's raw columns (plus its content hash for the
-  // persist guard), sanitize, and persist so we don't pay this again.
-  const rawColumns =
-    family === "content"
-      ? {
-          original: entries.contentOriginal,
-          cleaned: entries.contentCleaned,
-          hash: entries.contentHash,
-        }
-      : {
-          original: entries.fullContentOriginal,
-          cleaned: entries.fullContentCleaned,
-          hash: entries.fullContentHash,
-        };
-  const [raw] = await db.select(rawColumns).from(entries).where(eq(entries.id, entryId)).limit(1);
-
-  // Sanitize the family's serving variant(s), offloading large bodies to a
-  // worker thread: this runs on the read request path and, right after a
-  // SANITIZER_VERSION bump, can fire for many entries at once as stored rows
-  // are healed, so it must not block the app-server event loop. For the
-  // full-content family the original is sanitized lazily — only when cleaned
-  // is NULL (see sanitizeFamilyFromRaw) — so healing a stale row converges it
-  // to the lazy shape (original sanitized column NULL) instead of
-  // re-materializing a whole-page sanitized copy nothing reads.
-  const resolved = await sanitizeFamilyFromRaw(
-    family,
-    { original: raw?.original ?? null, cleaned: raw?.cleaned ?? null },
-    sanitizeEntryHtmlAsync
-  );
-
-  // Persist the healed columns (fire-and-forget; a failed backfill must not fail
-  // the read) under the shared version + content-hash CAS guard, so a re-sanitize
-  // computed from now-stale raw can never clobber newer content. See
-  // persistResanitizedFamily in @/server/services/resanitize.
-  void persistResanitizedFamily(db, entryId, family, resolved, raw?.hash ?? null).catch((err) => {
-    logger.warn("Failed to persist re-sanitized entry content", { entryId, family, err });
-  });
-
-  return resolved;
-}
-
-/**
- * Resolve both sanitized content families (see resolveSanitizedFamily).
- * Used by toFullEntry, which returns full-content fields.
- */
-async function resolveSanitizedContent(
-  db: typeof dbType,
-  entryId: string,
-  stored: {
-    contentOriginalSanitized: string | null;
-    contentCleanedSanitized: string | null;
-    contentSanitizedVersion: number | null;
-    hasContentRaw: boolean;
-    fullContentOriginalSanitized: string | null;
-    fullContentCleanedSanitized: string | null;
-    fullContentSanitizedVersion: number | null;
-    hasFullContentRaw: boolean;
-  }
-) {
+async function sanitizeFullEntryContent(row: {
+  contentOriginal: string | null;
+  contentCleaned: string | null;
+  fullContentOriginal: string | null;
+  fullContentCleaned: string | null;
+}) {
   const [content, fullContent] = await Promise.all([
-    resolveSanitizedFamily(db, entryId, "content", {
-      originalSanitized: stored.contentOriginalSanitized,
-      cleanedSanitized: stored.contentCleanedSanitized,
-      version: stored.contentSanitizedVersion,
-      hasRaw: stored.hasContentRaw,
+    sanitizeEntryContentFamily("content", {
+      original: row.contentOriginal,
+      cleaned: row.contentCleaned,
     }),
-    resolveSanitizedFamily(db, entryId, "fullContent", {
-      originalSanitized: stored.fullContentOriginalSanitized,
-      cleanedSanitized: stored.fullContentCleanedSanitized,
-      version: stored.fullContentSanitizedVersion,
-      hasRaw: stored.hasFullContentRaw,
+    sanitizeEntryContentFamily("fullContent", {
+      original: row.fullContentOriginal,
+      cleaned: row.fullContentCleaned,
     }),
   ]);
 
@@ -516,35 +406,24 @@ async function resolveSanitizedContent(
 
 /**
  * Transform a raw full entry row into the full-entry output shape.
- * Strips internal fields, resolves sanitized content, and defaults fetchFullContent.
+ * Strips internal fields, sanitizes content, and defaults fetchFullContent.
  */
-export async function toFullEntry(
-  db: typeof dbType,
-  row: NonNullable<Awaited<ReturnType<typeof selectFullEntry>>>
-) {
+export async function toFullEntry(row: NonNullable<Awaited<ReturnType<typeof selectFullEntry>>>) {
   const {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     contentHash,
-    contentOriginalSanitized,
-    contentCleanedSanitized,
-    contentSanitizedVersion,
-    hasContentRaw,
-    fullContentOriginalSanitized,
-    fullContentCleanedSanitized,
-    fullContentSanitizedVersion,
-    hasFullContentRaw,
+    contentOriginal,
+    contentCleaned,
+    fullContentOriginal,
+    fullContentCleaned,
     ...rest
   } = row;
 
-  const content = await resolveSanitizedContent(db, row.id, {
-    contentOriginalSanitized,
-    contentCleanedSanitized,
-    contentSanitizedVersion,
-    hasContentRaw,
-    fullContentOriginalSanitized,
-    fullContentCleanedSanitized,
-    fullContentSanitizedVersion,
-    hasFullContentRaw,
+  const content = await sanitizeFullEntryContent({
+    contentOriginal,
+    contentCleaned,
+    fullContentOriginal,
+    fullContentCleaned,
   });
 
   return {
@@ -913,28 +792,18 @@ async function searchEntries(
 }
 
 /**
- * Maps a raw row to EntryFull, resolving the sanitized content family (with
- * self-heal for rows whose stored sanitized version is stale). EntryFull
+ * Maps a raw row to EntryFull, sanitizing the content family per read. EntryFull
  * doesn't expose full-content fields, so that family is neither selected nor
- * resolved here.
+ * sanitized here.
  */
 async function toEntryFull(
-  db: typeof dbType,
   row: Awaited<ReturnType<typeof selectEntryFullRows>>[number]
 ): Promise<EntryFull> {
-  const {
-    contentOriginalSanitized,
-    contentCleanedSanitized,
-    contentSanitizedVersion,
-    hasContentRaw,
-    ...rest
-  } = row;
+  const { contentOriginal, contentCleaned, ...rest } = row;
 
-  const content = await resolveSanitizedFamily(db, row.id, "content", {
-    originalSanitized: contentOriginalSanitized,
-    cleanedSanitized: contentCleanedSanitized,
-    version: contentSanitizedVersion,
-    hasRaw: hasContentRaw,
+  const content = await sanitizeEntryContentFamily("content", {
+    original: contentOriginal,
+    cleaned: contentCleaned,
   });
 
   return {
@@ -951,6 +820,36 @@ function selectEntryFullRows(db: typeof dbType, condition: SQL | undefined) {
     .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
     .where(condition);
 }
+
+/**
+ * Runs `fn` over `items` with at most `limit` in flight at once, preserving
+ * input order in the result. Used to bound how many entry bodies sanitize
+ * concurrently on batch reads (see getEntries).
+ */
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await fn(items[index]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
+/**
+ * The largest read batch is the Google Reader stream-contents sync, up to ~100
+ * entries. Sanitization is native and fast (~0.09 ms / 10 KB, off the event loop
+ * for large bodies), but this caps how many bodies are in flight at once so a
+ * batch of large bodies can't flood the libuv pool or spike memory.
+ */
+const GET_ENTRIES_SANITIZE_CONCURRENCY = 8;
 
 /**
  * Gets a single entry by ID with full content.
@@ -973,14 +872,14 @@ export async function getEntry(
     throw errors.entryNotFound();
   }
 
-  return toEntryFull(db, result[0]);
+  return toEntryFull(result[0]);
 }
 
 /**
  * Gets multiple entries by ID in a single query.
  * Returns entries in the same order as the input IDs.
  * Missing entries are silently skipped.
- * Content fields are sanitized (see getEntry).
+ * Content fields are sanitized per read (see getEntry).
  */
 export async function getEntries(
   db: typeof dbType,
@@ -994,10 +893,11 @@ export async function getEntries(
     and(inArray(visibleEntries.id, entryIds), eq(visibleEntries.userId, userId))
   );
 
-  // Build a map for O(1) lookup, then return in original order.
-  // Sanitized-content resolution is a pure pass-through in the common case;
-  // stale rows self-heal (one extra query each).
-  const mapped = await Promise.all(results.map((row) => toEntryFull(db, row)));
+  // Build a map for O(1) lookup, then return in original order. Sanitize with a
+  // small concurrency bound so a large-body batch doesn't flood the thread pool.
+  const mapped = await mapWithConcurrency(results, GET_ENTRIES_SANITIZE_CONCURRENCY, (row) =>
+    toEntryFull(row)
+  );
   const resultMap = new Map<string, EntryFull>();
   for (const entry of mapped) {
     resultMap.set(entry.id, entry);
