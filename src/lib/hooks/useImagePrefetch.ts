@@ -58,18 +58,20 @@ export function useImagePrefetch(
     const images = Array.from(container.querySelectorAll<HTMLImageElement>("img"));
     if (images.length === 0) return;
 
-    // Hide the alt-text/broken-image placeholder while each image loads, so the
+    // Hide the alt-text/broken-image placeholder while an image loads, so the
     // reserved box stays empty for the frame(s) before it paints instead of
-    // flashing alt text. Reveal it again on error (so a broken image stays
-    // meaningful); on success the removed class just lets the painted image show
-    // (alt text isn't visible over a loaded image anyway). Runs before paint in
-    // the layout effect, so the class is present on the very first frame.
+    // flashing alt text — most visibly when paging to a fresh (but cached)
+    // image. Reveal it again on load (the image paints) or error (a broken image
+    // keeps its alt text so it stays meaningful). Applied to every still-loading
+    // image, including below-the-fold lazy ones: their alt text isn't visible
+    // off-screen, and by the time one scrolls in the observer below has usually
+    // upgraded it to eager and it's loaded. A complete image already shows its
+    // final state (painted, or alt text if it failed, i.e. naturalWidth 0) and
+    // needs no class. The alt attribute is untouched, so screen readers are
+    // unaffected — this only hides the *visual* placeholder.
     const listenerCleanups: Array<() => void> = [];
     for (const img of images) {
-      // A complete image is already settled: only reveal alt text if it failed
-      // (a failed load reports complete with naturalWidth 0).
       if (img.complete) continue;
-
       img.classList.add(IMG_LOADING_CLASS);
       const reveal = () => img.classList.remove(IMG_LOADING_CLASS);
       img.addEventListener("load", reveal, { once: true });
