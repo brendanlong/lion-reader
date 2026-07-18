@@ -36,8 +36,10 @@ const port = parseInt(process.env.PORT || "3000", 10);
 // Per-process secret for the internal revalidate-public endpoint (issue
 // #1359). Generated before Next boots so the route handler (same process)
 // reads the same value; it never leaves the process, so only the startup hook
-// below can call that endpoint.
-process.env.INTERNAL_REVALIDATE_SECRET ??= randomUUID();
+// below can call that endpoint. Unconditionally overwritten — honoring an
+// externally-set value would silently turn the per-process secret into a
+// shared credential.
+process.env.INTERNAL_REVALIDATE_SECRET = randomUUID();
 
 /**
  * Re-render the statically-prerendered public pages with runtime env (issue

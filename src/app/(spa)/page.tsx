@@ -12,6 +12,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { validateSession } from "@/server/auth/session";
+import { isSignupConfirmed } from "@/server/auth/confirmation";
 
 export default async function HomePage() {
   const cookieStore = await cookies();
@@ -20,7 +21,7 @@ export default async function HomePage() {
   if (sessionToken) {
     const session = await validateSession(sessionToken);
     if (session) {
-      redirect("/all");
+      redirect(isSignupConfirmed(session.user) ? "/all" : "/complete-signup");
     }
   }
 
