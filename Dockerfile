@@ -113,6 +113,13 @@ ENV REDIS_URL="redis://localhost:6379"
 ARG ASSET_PREFIX
 ENV ASSET_PREFIX=$ASSET_PREFIX
 
+# Same CDN origin, but as a NEXT_PUBLIC_* var so it's inlined into BOTH the
+# server and client bundles: the demo builds its hero/OG image URLs (with a
+# ?v=<hash> cache-buster) on the server prerender and again on the client after
+# hydration, and both must produce the identical URL. Derived from ASSET_PREFIX
+# so it can never drift from the /_next/static origin. See demo-assets.ts.
+ENV NEXT_PUBLIC_ASSET_PREFIX=$ASSET_PREFIX
+
 # Client-side Sentry DSN. NEXT_PUBLIC_* vars are inlined into the client
 # bundle at build time, so a runtime secret is not enough — the DSN must be
 # provided to the build (fly.toml [build.args]). DSNs are not secret (they
