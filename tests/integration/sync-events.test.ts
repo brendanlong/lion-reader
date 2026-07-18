@@ -820,6 +820,145 @@ describe("sync.events", () => {
   });
 
   // ==========================================================================
+  // sync.cursors entries argmax
+  //
+  // The entries cursor is the argmax of GREATEST(entries.updated_at,
+  // user_entries.updated_at) over the user's entries, plus the id achieving it.
+  // It's computed via index-driven arms (arm_ue = state changes/new entries;
+  // arm_sub = content refetches over the user's feeds; arm_saved = the saved
+  // feed) rather than scanning the whole timeline. These lock in the argmax
+  // semantics the rewrite must preserve.
+  // ==========================================================================
+
+  describe("sync.cursors entries argmax", () => {
+    it("returns a null entries cursor when the user has no entries", async () => {
+      const userId = await createTestUser();
+
+      const cursor = await createCaller(createAuthContext(userId)).sync.cursors();
+
+      expect(cursor.entries).toBeNull();
+      expect(cursor.entriesAfterId).toBeNull();
+    });
+
+    it("uses user_entries.updated_at when a state change is newest", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/argmax-state.xml");
+      await createTestSubscription(userId, feedId);
+
+      const contentTime = new Date("2024-06-01T00:00:00.000Z");
+      const stateTime = new Date("2024-06-02T00:00:00.000Z"); // newer
+      const entryId = await createTestEntry(feedId, {
+        createdAt: contentTime,
+        updatedAt: contentTime,
+      });
+      await createUserEntry(userId, entryId, { updatedAt: stateTime });
+
+      const cursor = await createCaller(createAuthContext(userId)).sync.cursors();
+
+      expect(cursor.entriesAfterId).toBe(entryId);
+      expect(
+        parseTimestamptz(cursor.entries!).equals(parseTimestamptz(stateTime.toISOString()))
+      ).toBe(true);
+    });
+
+    it("uses entries.updated_at when a content refetch is newer than any state change", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/argmax-content.xml");
+      await createTestSubscription(userId, feedId);
+
+      const stateTime = new Date("2024-06-01T00:00:00.000Z");
+      const contentTime = new Date("2024-06-02T00:00:00.000Z"); // newer than the state change
+      const entryId = await createTestEntry(feedId, {
+        createdAt: stateTime,
+        updatedAt: contentTime,
+      });
+      await createUserEntry(userId, entryId, { updatedAt: stateTime });
+
+      const cursor = await createCaller(createAuthContext(userId)).sync.cursors();
+
+      // The naive query would still find this (it materialized GREATEST for every
+      // row); the point is the index-driven arm_sub does too, without the scan.
+      expect(cursor.entriesAfterId).toBe(entryId);
+      expect(
+        parseTimestamptz(cursor.entries!).equals(parseTimestamptz(contentTime.toISOString()))
+      ).toBe(true);
+    });
+
+    it("breaks a tie at the max timestamp by the larger entry id", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/argmax-tie.xml");
+      await createTestSubscription(userId, feedId);
+
+      // Two entries share the exact max timestamp: one via a state change, one via
+      // a content refetch. The cursor id must be the larger of the two so keyset
+      // catch-up resumes past both (the tiebreak spans the two arms).
+      const tie = new Date("2024-06-02T00:00:00.000Z");
+      const old = new Date("2024-06-01T00:00:00.000Z");
+
+      const stateEntryId = await createTestEntry(feedId, { createdAt: old, updatedAt: old });
+      await createUserEntry(userId, stateEntryId, { updatedAt: tie }); // state change at tie
+
+      const contentEntryId = await createTestEntry(feedId, { createdAt: old, updatedAt: tie }); // content at tie
+      await createUserEntry(userId, contentEntryId, { updatedAt: old });
+
+      const cursor = await createCaller(createAuthContext(userId)).sync.cursors();
+
+      const expectedId = stateEntryId > contentEntryId ? stateEntryId : contentEntryId;
+      expect(cursor.entriesAfterId).toBe(expectedId);
+      expect(parseTimestamptz(cursor.entries!).equals(parseTimestamptz(tie.toISOString()))).toBe(
+        true
+      );
+    });
+
+    it("includes saved-article content updates (the saved-feed arm)", async () => {
+      const userId = await createTestUser();
+      const savedFeedId = await createSavedFeed(userId);
+
+      const stateTime = new Date("2024-06-01T00:00:00.000Z");
+      const contentTime = new Date("2024-06-03T00:00:00.000Z");
+      const savedEntryId = await createSavedEntry(savedFeedId, {
+        createdAt: stateTime,
+        updatedAt: contentTime,
+      });
+      await createUserEntry(userId, savedEntryId, { updatedAt: stateTime });
+
+      const cursor = await createCaller(createAuthContext(userId)).sync.cursors();
+
+      expect(cursor.entriesAfterId).toBe(savedEntryId);
+      expect(
+        parseTimestamptz(cursor.entries!).equals(parseTimestamptz(contentTime.toISOString()))
+      ).toBe(true);
+    });
+
+    it("includes content updates to starred orphans on unsubscribed feeds", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/argmax-orphan.xml");
+      const subId = await createTestSubscription(userId, feedId);
+
+      const stateTime = new Date("2024-06-01T00:00:00.000Z");
+      const contentTime = new Date("2024-06-04T00:00:00.000Z");
+      const entryId = await createTestEntry(feedId, { createdAt: stateTime, updatedAt: stateTime });
+      // Starred, so the orphan stays visible after unsubscribe.
+      await createUserEntry(userId, entryId, { starred: true, updatedAt: stateTime });
+
+      // Unsubscribe (soft delete) — arm_sub still drives from ALL subscriptions,
+      // so a later content refetch is still reflected in the cursor.
+      await db
+        .update(subscriptions)
+        .set({ unsubscribedAt: new Date() })
+        .where(eq(subscriptions.id, subId));
+      await db.update(entries).set({ updatedAt: contentTime }).where(eq(entries.id, entryId));
+
+      const cursor = await createCaller(createAuthContext(userId)).sync.cursors();
+
+      expect(cursor.entriesAfterId).toBe(entryId);
+      expect(
+        parseTimestamptz(cursor.entries!).equals(parseTimestamptz(contentTime.toISOString()))
+      ).toBe(true);
+    });
+  });
+
+  // ==========================================================================
   // Pagination
   // ==========================================================================
 
