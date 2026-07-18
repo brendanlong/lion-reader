@@ -13,6 +13,7 @@
 
 import { useState } from "react";
 import { trpc } from "@/lib/trpc/client";
+import { STATIC_CONFIG_QUERY_OPTIONS } from "@/lib/trpc/query-client";
 import { SpinnerIcon } from "@/components/ui/icon-button";
 import { type OAuthProvider, providerNames, ProviderIcon, useAuthUrlQuery } from "./oauth-helpers";
 
@@ -37,7 +38,11 @@ export function OAuthSignInButton({
 }: OAuthSignInButtonProps) {
   const [isLoading, setIsLoading] = useState(false);
 
-  const { data: providersData, isLoading: isProvidersLoading } = trpc.auth.providers.useQuery();
+  // Deploy-static config prefetched + hydrated by the auth layout — never refetch.
+  const { data: providersData, isLoading: isProvidersLoading } = trpc.auth.providers.useQuery(
+    undefined,
+    STATIC_CONFIG_QUERY_OPTIONS
+  );
 
   const authUrlQuery = useAuthUrlQuery(provider, inviteToken);
 

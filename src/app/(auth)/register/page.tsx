@@ -16,6 +16,7 @@
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
+import { STATIC_CONFIG_QUERY_OPTIONS } from "@/lib/trpc/query-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
@@ -42,7 +43,11 @@ function RegisterForm() {
   // Fetch signup configuration. The auth layout server-prefetches and hydrates
   // this query (#1328), so it resolves as already-settled data on first render —
   // useSuspenseQuery guarantees defined data without a client-side loading state.
-  const [signupConfigData] = trpc.auth.signupConfig.useSuspenseQuery();
+  // The config is deploy-static, so never refetch it (STATIC_CONFIG_QUERY_OPTIONS).
+  const [signupConfigData] = trpc.auth.signupConfig.useSuspenseQuery(
+    undefined,
+    STATIC_CONFIG_QUERY_OPTIONS
+  );
   const euRestricted = signupConfigData.euRestricted;
 
   // On EU-restricted instances, warn EU users up front that they can't sign up
