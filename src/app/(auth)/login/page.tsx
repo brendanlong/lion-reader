@@ -43,6 +43,16 @@ function LoginForm() {
     form?: string;
   }>({});
 
+  // Once login succeeds we start a router navigation into the app, but that
+  // navigation renders the authenticated shell server-side and can take a
+  // moment. `loginMutation.isPending` flips back to false as soon as the login
+  // request resolves, so binding the button to it alone would briefly re-enable
+  // the button during that navigation gap (looks like the click did nothing).
+  // Keep this true from success until the component unmounts on navigation; it
+  // is never reset back to false on the happy path. On error it stays false, so
+  // the button re-enables for a retry.
+  const [isRedirecting, setIsRedirecting] = useState(false);
+
   // Get success message from registration redirect
   const registered = searchParams.get("registered") === "true";
 
@@ -61,7 +71,9 @@ function LoginForm() {
     const handleOAuthComplete = (message: { redirectTo: string }) => {
       // Clear the completion marker to prevent re-triggering
       clearOAuthCompletion();
-      // Navigate to the redirect destination - the session cookie should already be set
+      // Navigate to the redirect destination - the session cookie should already be set.
+      // No need to touch `isRedirecting` here: that flag is about the email/password
+      // submit button, whereas the OAuth buttons own their own loading state.
       router.push(message.redirectTo);
       router.refresh();
     };
@@ -107,6 +119,9 @@ function LoginForm() {
       // Get the redirect URL from query params or default to /all.
       // Sanitize to a same-origin path to prevent an open redirect.
       const redirectTo = safeRedirectPath(searchParams.get("redirect"));
+      // Keep the button in its loading state through the (server-rendered)
+      // navigation instead of letting it re-enable the instant isPending clears.
+      setIsRedirecting(true);
       router.push(redirectTo);
       router.refresh();
     },
@@ -146,6 +161,10 @@ function LoginForm() {
 
     loginMutation.mutate({ email, password });
   };
+
+  // Show the loading state while the login request is in flight AND while the
+  // post-success navigation into the app is happening.
+  const isSubmitting = loginMutation.isPending || isRedirecting;
 
   return (
     <div>
@@ -192,7 +211,7 @@ function LoginForm() {
           onChange={(e) => setEmail(e.target.value)}
           error={errors.email}
           autoComplete="email"
-          disabled={loginMutation.isPending}
+          disabled={isSubmitting}
         />
 
         <Input
@@ -204,10 +223,10 @@ function LoginForm() {
           onChange={(e) => setPassword(e.target.value)}
           error={errors.password}
           autoComplete="current-password"
-          disabled={loginMutation.isPending}
+          disabled={isSubmitting}
         />
 
-        <Button type="submit" className="w-full" loading={loginMutation.isPending}>
+        <Button type="submit" className="w-full" loading={isSubmitting}>
           Sign in
         </Button>
       </form>
