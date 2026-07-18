@@ -102,7 +102,10 @@ UNION of arms (`user_entries.updated_at` via `idx_user_entries_updated_at`;
 ### Fix (validated here)
 
 The **maximum** of `GREATEST(a,b)` over a set is `GREATEST(max a, max b)` — a true
-identity — so the value is derivable from two index-served maxes:
+identity — so the value is derivable from two index-served maxes. The block below
+shows just the **value** to make the identity clear; the shipped query
+(`sync.cursors`) wraps the same arms in a `UNION ALL … ORDER BY ts DESC, id DESC
+LIMIT 1` so it also returns the `entriesAfterId` tiebreak (see next paragraph):
 
 ```sql
 SELECT GREATEST(
