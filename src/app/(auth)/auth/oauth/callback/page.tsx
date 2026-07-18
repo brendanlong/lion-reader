@@ -150,8 +150,9 @@ function OAuthCallbackContent() {
       const redirectTo = data.isNewUser ? "/complete-signup" : "/all";
       // Broadcast completion for PWAs that may be listening in another window
       broadcastOAuthComplete(redirectTo);
-      // /complete-signup is a standalone page outside the SPA, so this
-      // hard-navigates there; /all soft-navigates into the app.
+      // Both /all and /complete-signup are authenticated (never CDN-cached), so
+      // navigateAfterAuth soft-navs into the app here; it hard-navigates only the
+      // public /login error path below.
       navigateAfterAuth(router, redirectTo);
     },
     onError: (error) => {
@@ -170,8 +171,9 @@ function OAuthCallbackContent() {
       const redirectTo = data.isNewUser ? "/complete-signup" : "/all";
       // Broadcast completion for PWAs that may be listening in another window
       broadcastOAuthComplete(redirectTo);
-      // /complete-signup is a standalone page outside the SPA, so this
-      // hard-navigates there; /all soft-navigates into the app.
+      // Both /all and /complete-signup are authenticated (never CDN-cached), so
+      // navigateAfterAuth soft-navs into the app here; it hard-navigates only the
+      // public /login error path below.
       navigateAfterAuth(router, redirectTo);
     },
     onError: (error) => {

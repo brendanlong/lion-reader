@@ -75,8 +75,8 @@ function LoginForm() {
       // Navigate to the redirect destination - the session cookie should already be set.
       // No need to touch `isRedirecting` here: that flag is about the email/password
       // submit button, whereas the OAuth buttons own their own loading state.
-      // A new user is sent to the standalone /complete-signup (hard nav); an
-      // existing user soft-navigates into the app.
+      // The redirect target here is always authenticated (/all or /complete-signup),
+      // so this soft-navigates into the app.
       navigateAfterAuth(router, message.redirectTo);
     };
 

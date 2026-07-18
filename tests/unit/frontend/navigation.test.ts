@@ -112,8 +112,10 @@ describe("isSpaPath", () => {
     "/tag/123",
     "/subscription/abc#top",
     "/demo/all?entry=welcome",
+    // Authenticated standalone route: never CDN-cached, so soft-nav is safe.
+    "/complete-signup",
     "/",
-  ])("treats %s as an in-SPA path", (path) => {
+  ])("treats %s as soft-nav-safe", (path) => {
     expect(isSpaPath(path)).toBe(true);
   });
 
@@ -121,11 +123,10 @@ describe("isSpaPath", () => {
     "/login",
     "/login?error=callback_failed",
     "/register",
-    "/complete-signup",
     "/privacy",
     "/terms",
     "/auth/oauth/callback?code=x",
-  ])("treats %s as a standalone (non-SPA) path", (path) => {
+  ])("treats %s as a CDN-cacheable public page needing a hard nav", (path) => {
     expect(isSpaPath(path)).toBe(false);
   });
 
