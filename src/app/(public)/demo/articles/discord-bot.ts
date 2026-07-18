@@ -1,4 +1,6 @@
 import { type DemoArticle } from "./types";
+import heroImage from "./images/discord-bot.png";
+import ogImage from "./images/discord-bot-og.png";
 
 const article: DemoArticle = {
   id: "discord-bot",
@@ -11,7 +13,8 @@ const article: DemoArticle = {
     "Save articles to Lion Reader directly from Discord by reacting to messages with a lion emoji, or by sending a link to the bot in a DM.",
   publishedAt: new Date("2026-01-18T01:20:31Z"),
   starred: false,
-  heroImage: "/demo/discord-bot.png",
+  heroImage,
+  ogImage,
   heroImageAlt:
     "The Lion Reader lion beside a chat bubble where an article is saved with the book-reading Lion Reader emoji reaction, with a saluting lion emoji confirming.",
   summaryHtml: `<p>The Lion Reader Discord bot automatically saves articles when users react to messages with a lion emoji or send a link to the bot in a DM. After linking accounts through Discord OAuth or API tokens, the bot provides instant visual feedback using custom emojis to confirm successful saves or indicate errors.</p>`,

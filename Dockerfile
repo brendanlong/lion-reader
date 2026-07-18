@@ -110,6 +110,8 @@ ENV DATABASE_URL="postgresql://build:build@localhost:5432/build"
 ENV REDIS_URL="redis://localhost:6379"
 
 # CDN base URL for /_next/static (see the global ARG at the top of this file).
+# Demo hero/OG images are imported into the Next build too, so they're hashed
+# into /_next/static/media and served from this same CDN origin automatically.
 ARG ASSET_PREFIX
 ENV ASSET_PREFIX=$ASSET_PREFIX
 

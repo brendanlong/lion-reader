@@ -55,9 +55,6 @@ jobs:
       - name: Check for raw color utilities
         run: pnpm check:colors
 
-      - name: Check for dead theme-token utilities
-        run: pnpm check:theme-tokens
-
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest

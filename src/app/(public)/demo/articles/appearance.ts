@@ -1,4 +1,6 @@
 import { type DemoArticle } from "./types";
+import heroImage from "./images/appearance.png";
+import ogImage from "./images/appearance-og.png";
 
 const article: DemoArticle = {
   id: "appearance",
@@ -11,7 +13,8 @@ const article: DemoArticle = {
     "Customize fonts, text size, alignment, and list density, and switch between light, a sleep-friendly low-blue-light dark theme, and an e-paper theme for e-ink screens.",
   publishedAt: new Date("2025-12-28T12:00:00Z"),
   starred: false,
-  heroImage: "/demo/appearance.png",
+  heroImage,
+  ogImage,
   heroImageAlt:
     "The Lion Reader lion holding a card split into a light half with a sun and a dark half with a moon, with a paintbrush and color swatches.",
   summaryHtml: `<p>Lion Reader offers extensive reading customization: <strong>dark mode</strong> with sleep-friendly warm amber tones to reduce blue light, an <strong>e-paper theme</strong> optimized for e-ink displays, typography controls (font family, size, alignment), list density options, and Progressive Web App support for native-like installation.</p>`,

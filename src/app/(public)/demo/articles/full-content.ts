@@ -1,4 +1,6 @@
 import { type DemoArticle } from "./types";
+import heroImage from "./images/full-content.png";
+import ogImage from "./images/full-content-og.png";
 
 const article: DemoArticle = {
   id: "full-content",
@@ -10,7 +12,8 @@ const article: DemoArticle = {
   summary: "Read complete articles inside Lion Reader, even when feeds only provide excerpts.",
   publishedAt: new Date("2026-01-15T12:00:00Z"),
   starred: false,
-  heroImage: "/demo/full-content.png",
+  heroImage,
+  ogImage,
   heroImageAlt:
     "The Lion Reader lion holding a short excerpt that unfolds into a long, full-length article page.",
   summaryHtml: `<p>Lion Reader fetches full article content on demand using Mozilla&#39;s Readability algorithm, eliminating the need to leave your reader. Enable automatic fetching per subscription or toggle manually to get clean, distraction-free articles with preserved formatting, images, and code blocks.</p>`,
