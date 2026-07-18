@@ -20,9 +20,7 @@
 import { createHash } from "node:crypto";
 import { getRedisClient } from "@/server/redis";
 import { logger } from "@/lib/logger";
-
-const MAINTENANCE_KEY = "lion-reader:site-status:maintenance";
-const ANNOUNCEMENT_KEY = "lion-reader:site-status:announcement";
+import { MAINTENANCE_KEY, ANNOUNCEMENT_KEY } from "@/server/services/site-status-keys";
 
 /** How long a read is cached in-process before it's refreshed from Redis. */
 const CACHE_TTL_MS = 5_000;
