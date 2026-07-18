@@ -48,20 +48,32 @@ Entry bodies, saved articles, and AI summaries are rendered with
   Changes here need a security review.
 - **Defense-in-depth headers**: `securityHeaders` in `next.config.ts` sets
   `X-Frame-Options`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, and
-  (prod) HSTS. The **Content-Security-Policy** is set per-request in
-  `src/proxy.ts` with the policy built in `src/server/http/csp.ts`: it locks
-  `script-src` down to a random per-request nonce (`'strict-dynamic'`), sets
-  `default-src 'self'`, restricts `frame-src` to the sanitizer's allow-listed
-  embed hosts, and keeps `frame-ancestors 'none'` / `object-src 'none'` /
-  `base-uri 'self'`. The nonce is threaded to the inline `<script>`s in
-  `layout.tsx` (and next-themes) via the `x-nonce` request header, so an
-  injected `<script>` (or inline event handler) that survives a sanitizer
-  regression is blocked by the browser instead of executing — the sanitizer is
-  the primary XSS gate, the CSP is the backstop. Directive rationale lives in
-  `csp.ts`; the maintenance short-circuit in `scripts/server.ts` carries its own
-  static, script-less CSP (it bypasses Next and has no scripts). `/sw.js` is
-  deliberately CSP-exempt (the service worker's own fetches for runtime caching
-  of cross-origin images would be broken by the app's `connect-src`).
+  (prod) HSTS. The **Content-Security-Policy** is set in `src/proxy.ts` with
+  the policies built in `src/server/http/csp.ts`, and is **two-tier** (#1359):
+  - **Strict nonce'd policy (the default, on every dynamic route)**: locks
+    `script-src` down to a random per-request nonce (`'strict-dynamic'`), sets
+    `default-src 'self'`, restricts `frame-src` to the sanitizer's allow-listed
+    embed hosts, and keeps `frame-ancestors 'none'` / `object-src 'none'` /
+    `base-uri 'self'`. The nonce is threaded to the inline `<script>`s in
+    `src/app/root-document.tsx` (and next-themes) via the `x-nonce` request
+    header, so an injected `<script>` (or inline event handler) that survives a
+    sanitizer regression is blocked by the browser instead of executing — the
+    sanitizer is the primary XSS gate, the CSP is the backstop.
+  - **Relaxed static policy (only the statically-prerendered public pages —
+    `isPublicStaticPath` in `src/proxy.ts`: demo, login, register, terms,
+    privacy)**: `script-src 'unsafe-inline'` instead of a nonce (prerendered
+    HTML can't carry one), no `'strict-dynamic'`. **Invariant: these pages must
+    render zero user-supplied HTML** — demo articles are dev-authored
+    constants, and the auth forms render user input only as escaped React
+    text. Any page that renders untrusted HTML must live under the `(spa)`
+    route group (strict CSP); adding untrusted HTML to a `(public)` page
+    re-triggers the strict-CSP requirement and needs a security review.
+
+  Directive rationale lives in `csp.ts`; the maintenance short-circuit in
+  `scripts/server.ts` carries its own static, script-less CSP (it bypasses Next
+  and has no scripts). `/sw.js` is deliberately CSP-exempt (the service
+  worker's own fetches for runtime caching of cross-origin images would be
+  broken by the app's `connect-src`).
 
 ## 2. SSRF-safe outbound fetching
 
@@ -182,7 +194,7 @@ IDs) · **Code:** `src/app/api/wallabag/`, `src/app/api/greader.php/`,
 
 ## 9. Webhooks & SSR
 
-**Code:** `src/app/api/webhooks/email/mailgun/`, `src/app/(app)/`, `src/app/admin/`
+**Code:** `src/app/api/webhooks/email/mailgun/`, `src/app/(spa)/(app)/`, `src/app/(spa)/admin/`
 
 - Mailgun webhook: HMAC-SHA256 signature + timestamp freshness window + Redis
   nonce replay protection. Keep all three.

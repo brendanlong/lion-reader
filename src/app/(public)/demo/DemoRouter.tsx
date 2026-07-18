@@ -33,7 +33,12 @@ import {
 function DemoRouterContent() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const entryId = searchParams.get("entry");
+  // The article id normally arrives as `?entry=`. The pathname form covers a
+  // direct visit to /demo/entry/[entryId] — the internal target of the
+  // next.config.ts rewrite that serves the `?entry=` URLs statically (issue
+  // #1359) — so the article stays up after hydration there too.
+  const entryId =
+    searchParams.get("entry") ?? pathname.match(/^\/demo\/entry\/([^/]+)/)?.[1] ?? null;
   const demoState = useDemoState();
 
   // Parse the pathname to determine the current view

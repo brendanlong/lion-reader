@@ -1,12 +1,12 @@
 # Outbound HTTP & SSRF Protection (`src/server/http/`)
 
-This file governs the outbound-HTTP helpers: SSRF-protected fetching (`ssrf.ts`), user agent (`user-agent.ts`), CORS, compression, client IP, and the OAuth-surface trailing-slash handling (`trailing-slash.ts` — see `src/server/oauth/CLAUDE.md` for why it exists). One inbound-response concern also lives here: the Content-Security-Policy builder (`csp.ts`, security-critical — the XSS backstop behind the sanitizer). The policy is applied per-request with a fresh `script-src` nonce by `src/proxy.ts`; directive rationale is documented in `csp.ts` itself, the header wiring in SECURITY.md.
+This file governs the outbound-HTTP helpers: SSRF-protected fetching (`ssrf.ts`), user agent (`user-agent.ts`), CORS, compression, client IP, and the OAuth-surface trailing-slash handling (`trailing-slash.ts` — see `src/server/oauth/CLAUDE.md` for why it exists). One inbound-response concern also lives here: the Content-Security-Policy builders (`csp.ts`, security-critical — the XSS backstop behind the sanitizer). `src/proxy.ts` applies the strict policy per-request with a fresh `script-src` nonce on every dynamic route, and the relaxed static policy (`'unsafe-inline'`, no nonce — issue #1359) on the statically-prerendered public routes, which must render zero user-supplied HTML; directive rationale is documented in `csp.ts` itself, the header wiring and the public-page invariant in SECURITY.md.
 
 Every outgoing request must send our custom User-Agent (`USER_AGENT`/`buildUserAgent` from `@/server/http/user-agent`).
 
 ## CDN (static assets only)
 
-Only the hashed `/_next/static` assets are CDN-served, via Next's `assetPrefix` (a Bunny pull zone; `ASSET_PREFIX` env, defaulted in the Dockerfile — see `next.config.ts`). HTML is never CDN-cached: pages keep Next's default `private, no-store`, so there is no deploy-purge or cookie-vary machinery. When `ASSET_PREFIX` is set, `csp.ts` adds its origin to the script/style/font directives.
+Only the hashed `/_next/static` assets are CDN-served, via Next's `assetPrefix` (a Bunny pull zone; `ASSET_PREFIX` env, defaulted in the Dockerfile — see `next.config.ts`). HTML is never CDN-cached: dynamic pages keep Next's default `private, no-store`, so there is no deploy-purge or cookie-vary machinery. The statically-prerendered public pages (issue #1359) are origin-served from the build's prerender cache (Next emits `s-maxage` for them, but no shared cache sits in front of HTML today). If a CDN is ever put in front of HTML, keep `/login`/`/register` origin-served: an edge-cached copy would bypass the maintenance gate in `scripts/server.ts` (see #1318). When `ASSET_PREFIX` is set, `csp.ts` adds its origin to the script/style/font directives.
 
 ## SSRF Protection
 

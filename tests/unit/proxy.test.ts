@@ -149,3 +149,62 @@ describe("proxy request logging (LOG_MCP_REQUESTS)", () => {
     expect(rewrite.pathname).toBe("/oauth/register");
   });
 });
+
+describe("proxy CSP tiering (issue #1359)", () => {
+  const PUBLIC_PATHS = [
+    "/demo",
+    "/demo/all",
+    "/demo/entry/welcome",
+    "/login",
+    "/terms",
+    "/privacy",
+  ];
+  const DYNAMIC_PATHS = [
+    "/",
+    "/all",
+    "/auth/oauth/complete",
+    "/settings",
+    "/api/trpc/entries.list",
+  ];
+
+  it.each(PUBLIC_PATHS)("%s gets the relaxed static CSP with no nonce", (path) => {
+    const res = proxy(makeRequest(path));
+    const csp = res.headers.get("Content-Security-Policy")!;
+    expect(csp).toMatch(/script-src[^;]*'unsafe-inline'/);
+    expect(csp).not.toContain("'nonce-");
+    // 'strict-dynamic' would make browsers ignore 'unsafe-inline' and the
+    // 'self' allowlist, blocking every script on the static pages.
+    expect(csp).not.toContain("'strict-dynamic'");
+    // No per-request header rewriting: the response must not carry the
+    // middleware override markers that a modified request would produce.
+    expect(res.headers.get("x-middleware-override-headers")).toBeNull();
+  });
+
+  it.each(DYNAMIC_PATHS)("%s gets the strict nonce'd CSP", (path) => {
+    const res = proxy(makeRequest(path));
+    const csp = res.headers.get("Content-Security-Policy")!;
+    expect(csp).toMatch(/script-src[^;]*'nonce-[A-Za-z0-9+/=_-]+'/);
+    expect(csp).toContain("'strict-dynamic'");
+    expect(csp).not.toMatch(/script-src[^;]*'unsafe-inline'/);
+  });
+
+  it("GET /register (the signup page) gets the relaxed static CSP", () => {
+    const res = proxy(makeRequest("/register"));
+    expect(res.headers.get("Content-Security-Policy")).toMatch(/script-src[^;]*'unsafe-inline'/);
+    expect(res.headers.get("x-middleware-rewrite")).toBeNull();
+  });
+
+  it.each(["POST", "OPTIONS"])(
+    "%s /register (the OAuth DCR rewrite) keeps the strict nonce'd CSP",
+    (method) => {
+      const res = proxy(makeRequest("/register", method));
+      expect(new URL(res.headers.get("x-middleware-rewrite")!).pathname).toBe("/oauth/register");
+      expect(res.headers.get("Content-Security-Policy")).toContain("'nonce-");
+    }
+  );
+
+  it("does not treat demo-prefixed lookalike paths as public", () => {
+    const res = proxy(makeRequest("/demonstration"));
+    expect(res.headers.get("Content-Security-Policy")).toContain("'nonce-");
+  });
+});

@@ -1,17 +1,27 @@
 /**
- * Content-Security-Policy construction (issue #1275).
+ * Content-Security-Policy construction (issues #1275, #1359).
  *
- * The policy is built per-request in `src/proxy.ts` around a random nonce, so
- * `script-src` can be locked down while still allowing the app's own inline
- * scripts (the text-appearance and service-worker-registration scripts in
- * `src/app/layout.tsx`, plus next-themes' theme script). Entry bodies render
- * untrusted-but-sanitized HTML via `dangerouslySetInnerHTML`, so this CSP is
- * the backstop that turns a sanitizer regression from an XSS into a blocked
- * script — see SECURITY.md.
+ * Two policies, applied by `src/proxy.ts`:
+ *
+ * - The strict per-request policy (`buildContentSecurityPolicy`), built around
+ *   a random nonce so `script-src` can be locked down while still allowing the
+ *   app's own inline scripts (the theme/text-appearance/service-worker scripts
+ *   in `src/app/root-document.tsx`, plus next-themes' theme script). Entry
+ *   bodies render untrusted-but-sanitized HTML via `dangerouslySetInnerHTML`,
+ *   so this CSP is the backstop that turns a sanitizer regression from an XSS
+ *   into a blocked script — see SECURITY.md.
+ *
+ * - The relaxed static policy (`buildPublicContentSecurityPolicy`) for the
+ *   statically-prerendered public pages (demo, login, register, terms,
+ *   privacy). A nonce forces per-request rendering, which defeats serving
+ *   those pages as prerendered files, so their `script-src` allows
+ *   `'unsafe-inline'` instead. That's acceptable ONLY because those pages
+ *   render zero user-supplied HTML (the invariant is documented in
+ *   SECURITY.md and `src/app/(public)/layout.tsx`).
  *
  * The maintenance short-circuit in `scripts/server.ts` bypasses Next.js (and
  * therefore the proxy), so it carries its own static, script-less CSP — keep
- * the two conceptually in sync when changing directives here.
+ * the policies conceptually in sync when changing directives here.
  */
 
 import { embedCanonicalHostnames } from "@lion-reader/sanitizer";
@@ -76,6 +86,36 @@ import { embedCanonicalHostnames } from "@lion-reader/sanitizer";
  */
 export function buildContentSecurityPolicy(nonce: string): string {
   const isDev = process.env.NODE_ENV === "development";
+  return buildPolicy(
+    `'nonce-${nonce}' 'strict-dynamic' 'wasm-unsafe-eval'${isDev ? " 'unsafe-eval'" : ""}`
+  );
+}
+
+/**
+ * Builds the static Content-Security-Policy for the public routes (demo,
+ * login, register, terms, privacy — see `isPublicStaticPath` in
+ * `src/proxy.ts`). Identical to the strict policy except for `script-src`:
+ *
+ * - `'unsafe-inline'` instead of a nonce, so the statically-prerendered HTML's
+ *   inline scripts (our head scripts, next-themes, Next's streamed flight-data
+ *   pushes) run without per-request stamping.
+ * - No `'strict-dynamic'`: in CSP3 browsers `'strict-dynamic'` makes the
+ *   browser IGNORE `'unsafe-inline'` and the host/`'self'` allowlist, which
+ *   with no nonce would block every script on the page. Without it, chunk
+ *   loading is covered by the `'self'`/CDN host allowlist.
+ *
+ * Inline-script injection is the exact vector the strict policy exists to
+ * stop, so this policy is only safe on pages that render no user-supplied
+ * HTML. Keep it that way (SECURITY.md).
+ */
+export function buildPublicContentSecurityPolicy(): string {
+  const isDev = process.env.NODE_ENV === "development";
+  return buildPolicy(`'unsafe-inline' 'wasm-unsafe-eval'${isDev ? " 'unsafe-eval'" : ""}`);
+}
+
+/** Shared directive list; `scriptSrcExtra` is appended to `script-src 'self'{cdn}`. */
+function buildPolicy(scriptSrcExtra: string): string {
+  const isDev = process.env.NODE_ENV === "development";
   // " https://lionreader.b-cdn.net" in production, "" when no CDN is configured.
   const assetPrefix = process.env.ASSET_PREFIX;
   const cdn = assetPrefix ? ` ${new URL(assetPrefix).origin}` : "";
@@ -84,9 +124,7 @@ export function buildContentSecurityPolicy(nonce: string): string {
     .join(" ");
   return [
     `default-src 'self'${cdn}`,
-    `script-src 'self'${cdn} 'nonce-${nonce}' 'strict-dynamic' 'wasm-unsafe-eval'${
-      isDev ? " 'unsafe-eval'" : ""
-    }`,
+    `script-src 'self'${cdn} ${scriptSrcExtra}`,
     `style-src 'self'${cdn} 'unsafe-inline'`,
     "img-src 'self' data: blob: http: https:",
     "media-src 'self' data: blob: http: https:",

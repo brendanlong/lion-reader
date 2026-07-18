@@ -138,7 +138,7 @@ Always use our custom user agent (`USER_AGENT`/`buildUserAgent` from `@/server/h
 
 ## Third-Party Providers
 
-When you add, remove, or change a third-party service that receives or stores user data (e.g. an LLM/AI provider, auth provider, email, object storage, hosting, error tracking), **update the privacy policy** (`src/app/privacy/page.tsx`) to keep its "Third-Party Services" section accurate, and bump the "Last updated" date. Note whether the feature is opt-in and what data is sent.
+When you add, remove, or change a third-party service that receives or stores user data (e.g. an LLM/AI provider, auth provider, email, object storage, hosting, error tracking), **update the privacy policy** (`src/app/(public)/privacy/page.tsx`) to keep its "Third-Party Services" section accurate, and bump the "Last updated" date. Note whether the feature is opt-in and what data is sent.
 
 ## Parsing
 

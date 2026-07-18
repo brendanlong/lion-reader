@@ -18,4 +18,4 @@
  * none today (its handlers are inherently dynamic — they read the request), so
  * nothing is lost. If that changes, mirror the segment config here too.
  */
-export { GET, POST } from "@/app/oauth/authorize/route";
+export { GET, POST } from "@/app/(spa)/oauth/authorize/route";

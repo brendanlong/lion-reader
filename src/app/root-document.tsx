@@ -1,5 +1,29 @@
+/**
+ * Shared root document for the two root layouts (issue #1359).
+ *
+ * The app has two root layouts, split by rendering mode:
+ *
+ * - `(spa)/layout.tsx` — the authenticated app and every auth/OAuth/utility
+ *   surface. Dynamic (per-request SSR): it reads the per-request CSP nonce
+ *   (issue #1275) and threads it to the inline scripts here, because those
+ *   pages render sanitized-but-untrusted entry HTML and get the strict
+ *   nonce-based CSP as an XSS backstop.
+ * - `(public)/layout.tsx` — the public pages (demo, login, register, terms,
+ *   privacy). Statically prerendered at build time so the origin serves them
+ *   as cached files with near-zero CPU (the HN-flood landing pages). No nonce:
+ *   these pages get the relaxed static CSP from `src/server/http/csp.ts`
+ *   (`'unsafe-inline'`), which is safe because they render no user-supplied
+ *   HTML — see SECURITY.md before adding any content to the public group.
+ *
+ * Everything document-level that both layouts share lives here — fonts,
+ * metadata/viewport, the blocking theme/appearance scripts, the service-worker
+ * registration — so the two can't drift. Only the nonce plumbing differs.
+ *
+ * Navigating between the two groups is a full page load (multiple root
+ * layouts), which is fine: public↔app transitions are login/logout flows.
+ */
+
 import type { Metadata, Viewport } from "next";
-import { headers } from "next/headers";
 import { Geist, Geist_Mono, Merriweather, Literata, Inter, Source_Sans_3 } from "next/font/google";
 import { defaultOpenGraph } from "@/lib/metadata";
 import { appUrl } from "@/server/config/env";
@@ -40,7 +64,13 @@ const sourceSans = Source_Sans_3({
   subsets: ["latin"],
 });
 
-export const metadata: Metadata = {
+/**
+ * Font-variable classes for <html>. Shared with `global-not-found.tsx`, which
+ * must render its own complete document (it sits outside both root layouts).
+ */
+export const rootFontClassName = `${geistSans.variable} ${geistMono.variable} ${merriweather.variable} ${literata.variable} ${inter.variable} ${sourceSans.variable}`;
+
+export const rootMetadata: Metadata = {
   metadataBase: new URL(appUrl),
   title: "Lion Reader",
   description:
@@ -59,7 +89,7 @@ export const metadata: Metadata = {
 // `bg-surface` header per system preference. ThemeColorMeta (ThemeProvider) then
 // overrides this to the *resolved app theme* after hydration, so a forced theme
 // (e.g. dark on a light-scheme phone) still matches. See ThemeProvider.tsx.
-export const viewport: Viewport = {
+export const rootViewport: Viewport = {
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#ffffff" },
     { media: "(prefers-color-scheme: dark)", color: "#18181b" },
@@ -137,22 +167,16 @@ if ('serviceWorker' in navigator) {
 }
 `;
 
-export default async function RootLayout({
-  children,
-}: Readonly<{
+interface RootDocumentProps {
   children: React.ReactNode;
-}>) {
-  // Per-request CSP nonce, generated in src/proxy.ts (issue #1275). Every
-  // inline <script> must carry it or the CSP blocks the script — that includes
-  // next-themes' theme script, which gets it via ThemeProvider below. Absent
-  // only if the proxy didn't run, in which case the response has no CSP either.
-  //
-  // The announcement banner is deliberately NOT rendered here: it lives in the
-  // authenticated SPA layout (src/app/(app)/layout.tsx) — announcements are for
-  // signed-in users, not the public demo/legal/auth pages.
-  const headerStore = await headers();
-  const nonce = headerStore.get("x-nonce") ?? undefined;
+  /**
+   * Per-request CSP nonce for the (spa) layout's strict CSP; undefined for the
+   * (public) layout, whose relaxed static CSP allows un-nonce'd inline scripts.
+   */
+  nonce?: string;
+}
 
+export function RootDocument({ children, nonce }: RootDocumentProps) {
   return (
     // Font variables live on <html> (not <body>) so the entry text-appearance
     // custom properties, which are set on documentElement by the head script
@@ -160,11 +184,7 @@ export default async function RootLayout({
     // Setting them on <body> left --entry-font-family invalid at the html level,
     // which broke font selection for entry content everywhere. next-themes only
     // toggles the theme class on <html>, so these classes are preserved.
-    <html
-      lang="en"
-      suppressHydrationWarning
-      className={`${geistSans.variable} ${geistMono.variable} ${merriweather.variable} ${literata.variable} ${inter.variable} ${sourceSans.variable}`}
-    >
+    <html lang="en" suppressHydrationWarning className={rootFontClassName}>
       <head>
         {/* suppressHydrationWarning: browsers blank the nonce content attribute
             after parsing (nonce hiding), so hydration would see nonce="" and
