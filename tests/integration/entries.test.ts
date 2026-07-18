@@ -142,7 +142,8 @@ async function createTestEntry(
   options: {
     guid?: string;
     title?: string;
-    contentCleaned?: string;
+    contentCleaned?: string | null;
+    contentOriginal?: string;
     publishedAt?: Date;
     isSpam?: boolean;
     type?: "web" | "email" | "saved";
@@ -162,7 +163,13 @@ async function createTestEntry(
     type,
     guid,
     title: options.title ?? `Entry ${entryId}`,
-    contentCleaned: options.contentCleaned ?? `Content for ${options.title ?? entryId}`,
+    // `=== undefined` (not `??`) so an explicit `null` stays null, letting a test
+    // exercise the search_vector fallback to content_original (#1249).
+    contentCleaned:
+      options.contentCleaned === undefined
+        ? `Content for ${options.title ?? entryId}`
+        : options.contentCleaned,
+    contentOriginal: options.contentOriginal,
     contentHash: `hash-${entryId}`,
     fetchedAt: options.publishedAt ?? now,
     publishedAt: options.publishedAt ?? now,
@@ -366,9 +373,7 @@ describe("Entries", () => {
       expect(seen.sort()).toEqual([entryIdA, entryIdB].sort());
     });
 
-    // Skipped while search is disabled (#1249) — intended behavior once
-    // ENTRY_SEARCH_ENABLED is flipped back on.
-    it.skip("returns a single row per entry in search results", async () => {
+    it("returns a single row per entry in search results", async () => {
       const userId = await createTestUser();
       const { entryIdB } = await createOverlappingSubscriptions(userId, {
         title: "Distributed Systems Consensus",
@@ -573,22 +578,8 @@ describe("Entries", () => {
     });
   });
 
+  // Full-text search over the stored, GIN-indexed entries.search_vector (#1249).
   describe("list with query", () => {
-    it("rejects search queries while search is disabled (#1249)", async () => {
-      const userId = await createTestUser();
-      const ctx = createAuthContext(userId);
-      const caller = createCaller(ctx);
-
-      await expect(caller.entries.list({ query: "anything" })).rejects.toThrow(
-        "Search is temporarily disabled"
-      );
-    });
-  });
-
-  // Search is temporarily disabled until the full-text index lands (#1249):
-  // these tests describe the intended behavior once ENTRY_SEARCH_ENABLED is
-  // flipped back on — un-skip them when re-enabling.
-  describe.skip("list with query (search enabled, #1249)", () => {
     it("searches entries by title", async () => {
       const userId = await createTestUser();
       const feedId = await createTestFeed("https://example.com/feed.xml");
@@ -647,6 +638,37 @@ describe("Entries", () => {
 
       expect(result.items).toHaveLength(1);
       expect(result.items[0].id).toBe(entry1Id);
+    });
+
+    it("falls back to raw content_original when content_cleaned is empty (#1249)", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/feed.xml");
+      await createTestSubscription(userId, feedId);
+
+      // ~95% of real entries have an empty content_cleaned, so the search vector
+      // falls back to the raw (HTML) content_original — otherwise content search
+      // would be title-only for almost everything.
+      const matchId = await createTestEntry(feedId, {
+        title: "Untitled",
+        contentCleaned: null,
+        contentOriginal: "<p>photosynthesis converts sunlight into chemical energy</p>",
+      });
+      const otherId = await createTestEntry(feedId, {
+        title: "Untitled",
+        contentCleaned: null,
+        contentOriginal: "<p>tectonic plates drift over geological time</p>",
+      });
+
+      await createUserEntry(userId, matchId);
+      await createUserEntry(userId, otherId);
+
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const result = await caller.entries.list({ query: "photosynthesis" });
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].id).toBe(matchId);
     });
 
     it("searches entries by both title and content (default)", async () => {

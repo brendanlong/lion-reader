@@ -5,8 +5,6 @@
  * Preferences are synced to URL query params (see useUrlViewPreferences).
  */
 
-import { ENTRY_SEARCH_ENABLED } from "@/lib/feature-flags";
-
 /**
  * View types for different entry list pages.
  */
@@ -59,13 +57,9 @@ export function parseViewPreferencesFromParams(
   searchQuery: string | undefined;
 } {
   // Parse the full-text search query - empty/whitespace means "not searching".
-  // While search is disabled (#1249) the param is ignored entirely, so a
-  // lingering ?q= deep link renders the plain list instead of erroring — this
-  // is the single frontend choke point (both server prefetch and client parse
-  // flow through here).
-  const searchQuery = ENTRY_SEARCH_ENABLED
-    ? searchParams?.get("q")?.trim() || undefined
-    : undefined;
+  // This is the single frontend choke point (both server prefetch and client
+  // parse flow through here).
+  const searchQuery = searchParams?.get("q")?.trim() || undefined;
 
   // Parse unreadOnly - explicit "false" means show all, anything else uses default.
   // While searching, the default flips to showing everything: a search is
