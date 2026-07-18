@@ -21,6 +21,9 @@ describe("evaluateRequest", () => {
       "/admin/status",
       "/api/admin/session",
       "/api/health",
+      // Startup revalidation hook (secret-guarded, no DB) — must work when a
+      // process boots during maintenance. See server-gate.ts EXEMPT_PREFIXES.
+      "/api/internal/revalidate-public",
       "/privacy",
       "/terms",
     ]) {

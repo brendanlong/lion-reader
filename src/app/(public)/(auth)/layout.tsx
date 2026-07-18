@@ -1,36 +1,43 @@
 /**
  * Public Auth Layout
  *
- * Layout for the login/register pages: the centered card shell plus the tRPC
- * provider the forms need for their client-side mutations and config queries.
+ * Layout for the login/register pages: the centered card shell, the tRPC
+ * provider the forms need, and the SSR'd signup/provider config.
  *
- * Unlike the old shared auth layout, this deliberately reads NO request data —
- * no `cookies()` session check and no server-side signupConfig/providers
- * prefetch — so both pages can be statically prerendered (issue #1359). The
- * consequences are accepted trade-offs:
+ * These pages are statically prerendered (issue #1359), so this layout reads
+ * NO request data — no `cookies()` session check (the redirect for
+ * already-authenticated visitors lives in `src/proxy.ts` instead) and no
+ * request-bound tRPC helpers. The signupConfig/providers prefetch (#1328 —
+ * OAuth buttons, invite-required state, the signup link, the EU notice in the
+ * SSR HTML instead of a client-side pop-in) is preserved through
+ * `createStaticHydrationHelpers`, which calls the env-only procedures with an
+ * anonymous context: the config gets baked into the prerendered HTML.
  *
- * - An already-authenticated user who opens /login or /register sees the form
- *   instead of being bounced to /all (logging in again still works; the app
- *   layout keeps its own guards).
- * - Config-driven content (OAuth provider buttons, invite-required state, the
- *   signup link) is fetched client-side and pops in after hydration, instead
- *   of being SSR'd (this reverts the #1328 SSR prefetch in exchange for
- *   serving the pages statically). The forms themselves are in the static
- *   HTML, and validation/OAuth errors were always client-rendered.
+ * Because that bake happens at `next build` (with build-machine env, which in
+ * CI/Docker is NOT the runtime env), the custom server re-renders these pages
+ * at every process startup via the revalidate-public route — the config can't
+ * change after startup, so startup freshness is exactly enough. See
+ * `scripts/server.ts` and `src/app/api/internal/revalidate-public/route.ts`.
  */
 
 import type { ReactNode } from "react";
 import { TRPCProvider } from "@/lib/trpc/provider";
+import { createStaticHydrationHelpers } from "@/lib/trpc/server";
 import { AuthLayoutContent } from "@/components/auth/AuthLayoutContent";
 
 interface PublicAuthLayoutProps {
   children: ReactNode;
 }
 
-export default function PublicAuthLayout({ children }: PublicAuthLayoutProps) {
+export default async function PublicAuthLayout({ children }: PublicAuthLayoutProps) {
+  const { trpc, HydrateClient } = await createStaticHydrationHelpers();
+  await Promise.all([trpc.auth.signupConfig.prefetch(), trpc.auth.providers.prefetch()]);
+
   return (
     <TRPCProvider>
-      <AuthLayoutContent>{children}</AuthLayoutContent>
+      <HydrateClient>
+        <AuthLayoutContent>{children}</AuthLayoutContent>
+      </HydrateClient>
     </TRPCProvider>
   );
 }

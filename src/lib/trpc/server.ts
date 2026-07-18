@@ -106,6 +106,29 @@ export const createHydrationHelpersForRequest = cache(async () => {
 });
 
 /**
+ * Request-free variant of {@link createHydrationHelpersForRequest} for the
+ * statically-prerendered `(public)` pages (issue #1359): builds an anonymous
+ * context without touching `cookies()`/`headers()`, so prefetching through it
+ * does NOT opt the route into dynamic rendering. Only use it for procedures
+ * whose output is independent of the request (deploy-static config like
+ * `auth.signupConfig` / `auth.providers`); the prerendered HTML bakes whatever
+ * they return at render time, refreshed at process startup via the
+ * revalidate-public route (see scripts/server.ts).
+ */
+export const createStaticHydrationHelpers = cache(async () => {
+  const caller = createCaller({
+    db,
+    session: null,
+    apiToken: null,
+    authType: null,
+    scopes: [],
+    sessionToken: null,
+    headers: new Headers(),
+  });
+  return createHydrationHelpers<AppRouter>(caller, getQueryClient);
+});
+
+/**
  * Helper type for prefetch function results.
  * Includes the query client and sync cursor for SSE.
  */

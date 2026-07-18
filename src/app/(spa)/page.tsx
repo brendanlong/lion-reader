@@ -2,6 +2,11 @@
  * Landing Page
  *
  * Redirects authenticated users to /all and unauthenticated users to the demo.
+ *
+ * Normally unreachable: `maybeSessionRedirect` in src/proxy.ts answers `/`
+ * before Next renders (anonymous → demo without a render; validated session →
+ * /all). This page is the fallback for the proxy's validation-error
+ * fall-through — keep its logic in sync with the proxy's.
  */
 
 import { cookies } from "next/headers";

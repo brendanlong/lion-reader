@@ -10,11 +10,16 @@
  * comment in proxy.ts and anthropics/claude-ai-mcp#341). A form `POST` here
  * would be silently hijacked into OAuth registration.
  *
- * This page is statically prerendered (issue #1359). Everything it renders
- * depends on the invite token (`useSearchParams`) and the signup config (a
- * client-side query), so the static HTML is just the card shell + spinner and
- * the form renders after hydration. Don't reintroduce a suspense query for the
- * config — it would try to fetch during the build-time prerender.
+ * This page is statically prerendered (issue #1359). The signup config is
+ * SSR'd via the layout's request-free prefetch (re-rendered at process
+ * startup — see the layout comment), so the static HTML contains the
+ * no-invite variant of the page (the invite-required notice on invite-only
+ * instances, the public signup form otherwise). Only the `?invite=` token is
+ * per-request: `useSearchParams` lives in a thin wrapper whose Suspense
+ * fallback renders the same form with no token, so an invited visitor briefly
+ * sees the no-invite variant until hydration swaps the token in. Don't
+ * reintroduce a suspense query for the config — it would try to fetch over
+ * HTTP during the build-time prerender.
  */
 
 "use client";
@@ -32,7 +37,7 @@ import { OAuthButtons } from "@/components/auth/OAuthButtons";
 import { AuthFooter } from "@/components/auth/AuthFooter";
 import { EuRestrictionReason } from "@/components/auth/EuRestrictionNotice";
 
-/** Shown while the form waits on URL params (prerender) or the signup config. */
+/** Shown only if the signup config isn't hydrated (client-side fetch fallback). */
 function RegisterLoading() {
   return (
     <div className="flex items-center justify-center py-12">
@@ -43,21 +48,28 @@ function RegisterLoading() {
 
 export default function RegisterPage() {
   return (
-    <Suspense fallback={<RegisterLoading />}>
-      <RegisterForm />
+    // The fallback IS the page (with no invite token), so the prerendered HTML
+    // carries the real form instead of a spinner; RegisterFormWithInvite
+    // replaces it at hydration only to thread the ?invite= token through.
+    <Suspense fallback={<RegisterForm inviteToken={null} />}>
+      <RegisterFormWithInvite />
     </Suspense>
   );
 }
 
-function RegisterForm() {
-  const router = useRouter();
+/** Reads the invite token from the URL (client-side; bails static prerender). */
+function RegisterFormWithInvite() {
   const searchParams = useSearchParams();
+  return <RegisterForm inviteToken={searchParams.get("invite")} />;
+}
 
-  // Get invite token from URL query parameter
-  const inviteToken = searchParams.get("invite");
+function RegisterForm({ inviteToken }: { inviteToken: string | null }) {
+  const router = useRouter();
 
-  // Fetch signup configuration client-side. The config is deploy-static, so
-  // never refetch it (STATIC_CONFIG_QUERY_OPTIONS).
+  // The layout SSR-prefetches this (request-free, so the page stays static);
+  // the guard below only matters if hydration is missing and the query runs
+  // client-side. The config is deploy-static, so never refetch it
+  // (STATIC_CONFIG_QUERY_OPTIONS).
   const { data: signupConfigData } = trpc.auth.signupConfig.useQuery(
     undefined,
     STATIC_CONFIG_QUERY_OPTIONS
