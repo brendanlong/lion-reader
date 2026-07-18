@@ -70,7 +70,13 @@ export function cookieHeaderHasSession(cookieHeader: string | undefined): boolea
  *
  * - `/demo/*`, `/privacy`, and `/terms` have no auth redirect anywhere in their
  *   subtree and no per-visitor content, so the HTML is identical for every
- *   visitor — always cacheable, no cookie dependence.
+ *   visitor — always cacheable, no cookie dependence. Static assets that share
+ *   the `/demo/` URL prefix (the `public/demo/*.png` screenshots embedded in
+ *   demo entries) are excluded: this policy's `max-age=0` is meant for HTML,
+ *   and stamping it on images forces browsers to revalidate every remounted
+ *   `<img>`, which bypasses the synchronous memory/image cache and flashes alt
+ *   text on each entry navigation. Skipping them leaves `next.config.ts`'s
+ *   static-asset header (`max-age=86400`) in effect.
  * - `/login` and `/register` are rendered under the `(auth)` layout, which
  *   redirects a signed-in user to `/all` (or `/complete-signup`). The response
  *   body is therefore per-session: only the anonymous (no session cookie) render
@@ -88,7 +94,10 @@ export function pageCachePolicy(
 ): PageCachePolicy | null {
   if (
     pathname === "/demo" ||
-    pathname.startsWith("/demo/") ||
+    // Demo pages only — not the public/demo/* image assets that share the URL
+    // prefix. Page routes are extensionless, so a dot in the final segment
+    // means a static file; those keep the long-lived static-asset header.
+    (pathname.startsWith("/demo/") && !/\.[^/]*$/.test(pathname)) ||
     pathname === "/privacy" ||
     pathname === "/terms"
   ) {

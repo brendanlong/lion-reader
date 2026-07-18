@@ -23,63 +23,44 @@ const withPWAConfig = withPWA({
   disable: process.env.NODE_ENV === "development",
   // Custom worker source for share target handling
   customWorkerSrc: "worker",
+  // Don't cache or intercept the start URL ("/"): navigations are deliberately
+  // never SW-intercepted (streaming SSR, and "/" is CDN-cacheable HTML), and
+  // with no other caching an offline start page is unreachable anyway. Both
+  // flags are needed — `dynamicStartUrl` (default true) is what registers the
+  // NetworkFirst "start-url" route in the generated SW (and the cache-put in
+  // the registration script); `cacheStartUrl` would otherwise add "/" to the
+  // precache manifest via additionalManifestEntries, which bypasses the
+  // webpack-asset `exclude` filter below.
+  cacheStartUrl: false,
+  dynamicStartUrl: false,
   // Precache nothing from the public/ folder (icons, demo images, manifest, ...).
   // globby builds the public precache list as ["**/*", ...publicExcludes]; a
   // "!**/*" negation empties it. See workboxOptions.exclude for _next/static.
   publicExcludes: ["!**/*"],
-  // Workbox configuration for caching strategies
   workboxOptions: {
     // Skip waiting to activate new service workers immediately
     skipWaiting: true,
     clientsClaim: true,
     // Precache nothing from the webpack build either: exclude every emitted
     // asset from the precache manifest so `precacheAndRoute` gets an empty list.
-    // Runtime caching (fonts, below) and the custom worker still register fetch
-    // handlers, so installability and the Share Target handler are unaffected.
+    // The custom worker still registers a fetch handler, so installability and
+    // the Share Target handler are unaffected.
     exclude: [/.*/],
-    // Runtime caching configuration
-    runtimeCaching: [
-      // Cache Google Fonts stylesheets
-      {
-        urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
-        handler: "StaleWhileRevalidate",
-        options: {
-          cacheName: "google-fonts-stylesheets",
-          expiration: {
-            maxEntries: 10,
-            maxAgeSeconds: 60 * 60 * 24 * 365, // 1 year
-          },
-        },
-      },
-      // Cache Google Fonts webfont files
-      {
-        urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
-        handler: "CacheFirst",
-        options: {
-          cacheName: "google-fonts-webfonts",
-          expiration: {
-            maxEntries: 20,
-            maxAgeSeconds: 60 * 60 * 24 * 365, // 1 year
-          },
-          cacheableResponse: {
-            statuses: [0, 200],
-          },
-        },
-      },
-      // NOTE: images are deliberately NOT runtime-cached by the service worker.
-      // Paging between entries mounts fresh <img> nodes (each entry is keyed and
-      // its body comes from dangerouslySetInnerHTML), and a newly-inserted <img>
-      // whose request we serve via the SW's respondWith gets its bytes back from
-      // Cache Storage asynchronously — one blank frame showing alt text before it
-      // paints, even on a 0ms hit, and shown as "service worker" rather than
-      // "(memory cache)" in devtools. (A request the browser satisfies from its
-      // in-memory cache never reaches the SW at all, but a remounted <img> misses
-      // that transient entry.) StaleWhileRevalidate compounded it with a
-      // redundant background revalidation each load. Letting images fall through
-      // to the browser's native HTTP cache (content images are CDN-served with
-      // long cache-control headers) restores flash-free painting; pairs with the
-      // in-viewport eager + sync-decode pass in useImagePrefetch.ts.
-    ],
+    // No runtime caching (specifying runtimeCaching also suppresses next-pwa's
+    // large default list). The SW exists solely for the Share Target handler
+    // (worker/index.ts) and PWA installability:
+    // - Fonts are self-hosted by next/font at build time, so the Google Fonts
+    //   routes previously listed here could never match a request.
+    // - Images are deliberately not SW-cached: serving a remounted <img> via
+    //   respondWith is always async, forfeiting the browser's synchronous
+    //   memory/image-cache paint. (The alt-text flash this was blamed for was
+    //   ultimately a Cache-Control bug — see pageCachePolicy in
+    //   src/server/http/page-cache.ts — but SW-serving images would reintroduce
+    //   the same async remount by another path.)
+    // Everything falls through to the browser's HTTP cache + our headers() below.
+    // Workbox's GenerateSW rejects a config with neither precache entries nor
+    // runtime routes, so register one route that can never match.
+    runtimeCaching: [{ urlPattern: () => false, handler: "NetworkOnly" }],
   },
 });
 
