@@ -18,7 +18,6 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { maybeCompressResponse } from "../src/server/http/compression";
-import { neutralizeStaticSharedCache } from "../src/server/http/static-cache-control";
 import { stripOauthSurfaceTrailingSlash } from "../src/server/http/trailing-slash";
 import {
   startMaintenancePoller,
@@ -173,12 +172,6 @@ app.prepare().then(() => {
     }
 
     maybeCompressResponse(req, res);
-    // Strip the year-long shared-cache lifetime Next stamps on the statically-
-    // prerendered public pages + their RSC payloads (see the helper's comment):
-    // that HTML/RSC is build-coupled and must never be CDN-cached across a
-    // deploy, and an edge-cached /login|/register would bypass the maintenance
-    // gate above (#1318).
-    neutralizeStaticSharedCache(res);
     handle(req, res);
   });
 

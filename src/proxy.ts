@@ -273,6 +273,21 @@ export async function proxy(request: NextRequest) {
   ) {
     const response = NextResponse.next();
     response.headers.set("Content-Security-Policy", buildPublicContentSecurityPolicy());
+    // Override the year-long shared-cache lifetime Next stamps on fully-static
+    // prerenders (`s-maxage=31536000`, on these pages AND their RSC payloads).
+    // That HTML/RSC is build-coupled — it references per-deploy hashed chunks
+    // that 404 after a deploy, and the RSC Flight payload version-skews a newer
+    // client — so it must never be held by a shared cache across a deploy. Our
+    // Bunny pull zone wraps the whole site and honors origin Cache-Control (and
+    // keys on `_rsc`/`entry`), so an edge-cached `/login`/`/register` would also
+    // bypass the maintenance gate in `scripts/server.ts` (#1318). Setting the
+    // header here suppresses Next's default at the source: `sendRenderResult`
+    // only stamps its own when none is already set (`!res.getHeader(...)`, in
+    // next/dist/server/send-payload). `private` keeps it out of shared caches;
+    // `no-cache` lets the browser hold a copy but revalidate, so a deploy can't
+    // leave it booting a stale document (Next doesn't self-heal missing
+    // bootstrap chunks) and a maintenance-time revalidation hits the 503 gate.
+    response.headers.set("Cache-Control", "private, no-cache");
     return response;
   }
 
