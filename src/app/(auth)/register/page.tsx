@@ -69,10 +69,28 @@ function RegisterForm() {
     form?: string;
   }>({});
 
+  // Registration succeeding logs the user straight in (the server creates a
+  // session and sets the httpOnly cookie on the response). A brand-new email
+  // account still has to accept ToS/Privacy (and, on EU-restricted instances,
+  // the not-in-EU cert) before the app shell will let it in, so we send them to
+  // /complete-signup rather than bouncing back to /login to re-enter the
+  // credentials they just chose. That navigation renders a server-side page and
+  // takes a moment, during which `registerMutation.isPending` has already
+  // cleared — keep the button in its loading state through it via this flag. It
+  // is never reset on the happy path (the component unmounts on navigation); on
+  // error it stays false so the button re-enables for a retry.
+  const [isRedirecting, setIsRedirecting] = useState(false);
+
   const registerMutation = trpc.auth.register.useMutation({
     onSuccess: () => {
-      // Redirect to login with success message
-      router.push("/login?registered=true");
+      // The server already set the httpOnly session cookie, so the user is
+      // signed in — go straight to the confirmation step (which leads into the
+      // app) instead of asking them to sign in again. This is unconditionally
+      // where a new email account goes: the (app) layout redirects any
+      // not-yet-confirmed user to /complete-signup anyway.
+      setIsRedirecting(true);
+      router.push("/complete-signup");
+      router.refresh();
     },
     onError: (error) => {
       // Handle specific error codes
@@ -136,6 +154,10 @@ function RegisterForm() {
       inviteToken: inviteToken ?? undefined,
     });
   };
+
+  // Show the loading state while the request is in flight AND while the
+  // post-success navigation into the app is happening.
+  const isSubmitting = registerMutation.isPending || isRedirecting;
 
   // Which providers may sign up depends on whether an invite is present:
   // with a token, the full allowlist applies; without one, only public providers.
@@ -209,7 +231,7 @@ function RegisterForm() {
               onChange={(e) => setEmail(e.target.value)}
               error={errors.email}
               autoComplete="email"
-              disabled={registerMutation.isPending}
+              disabled={isSubmitting}
             />
 
             <Input
@@ -221,7 +243,7 @@ function RegisterForm() {
               onChange={(e) => setPassword(e.target.value)}
               error={errors.password}
               autoComplete="new-password"
-              disabled={registerMutation.isPending}
+              disabled={isSubmitting}
             />
 
             <Input
@@ -233,10 +255,10 @@ function RegisterForm() {
               onChange={(e) => setConfirmPassword(e.target.value)}
               error={errors.confirmPassword}
               autoComplete="new-password"
-              disabled={registerMutation.isPending}
+              disabled={isSubmitting}
             />
 
-            <Button type="submit" className="w-full" loading={registerMutation.isPending}>
+            <Button type="submit" className="w-full" loading={isSubmitting}>
               Create account
             </Button>
           </form>
