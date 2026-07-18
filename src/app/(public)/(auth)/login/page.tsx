@@ -82,10 +82,11 @@ function LoginAlerts() {
 }
 
 /**
- * The "Create one" signup link, gated on the instance's signup config. A plain
- * client-side query (never a suspense query — that would try to fetch during
- * the build-time prerender): absent from the static HTML, pops in once the
- * config resolves on instances that allow public signup.
+ * The "Create one" signup link, gated on the instance's signup config. The
+ * layout SSR-prefetches the config (request-free), so on instances that allow
+ * public signup the link is in the prerendered HTML; the query only actually
+ * fetches if hydration is missing. Never a suspense query — that would try to
+ * fetch over HTTP during the build-time prerender.
  */
 function SignupPrompt() {
   const { data: signupConfig } = trpc.auth.signupConfig.useQuery(

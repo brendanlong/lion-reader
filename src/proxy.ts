@@ -1,8 +1,14 @@
 /**
  * Next.js Proxy (middleware)
  *
- * Three jobs:
+ * Four jobs:
  *
+ * 0. Session-aware redirects for `/` and the static auth pages
+ *    (`maybeSessionRedirect`, issue #1359): anonymous visitors to `/` 307
+ *    straight to the demo with no Next render; visitors with a *validated*
+ *    session are bounced from `/`, `/login`, `/register` into the app. A UX
+ *    redirect only — see the function comment for why this is not the #984
+ *    auth gate.
  * 1. The per-request Content-Security-Policy nonce (issue #1275): a locked-down
  *    `script-src` needs a fresh nonce on every response, which the static
  *    `headers()` config in `next.config.ts` can't produce. This is Next's
@@ -41,7 +47,9 @@
  * per-request tRPC/API session checks. A cookie-presence check here would be a
  * redundant *and weaker* second gate (it can't detect expired/revoked/forged
  * cookies), so we don't duplicate it. See issue #984, where the previous
- * proxy-level gate was found to be dead code.
+ * proxy-level gate was found to be dead code. (`maybeSessionRedirect` is not
+ * that gate: it protects nothing — it only *redirects* fully-validated
+ * sessions away from the public pages, and falls through on anything else.)
  */
 
 import { NextResponse, type NextRequest } from "next/server";
@@ -163,7 +171,76 @@ function logRequest(request: NextRequest): void {
   );
 }
 
-export function proxy(request: NextRequest) {
+/** Where anonymous (and dead-session) visitors to `/` land. */
+const DEMO_LANDING_PATH = "/demo/all?entry=welcome";
+
+/**
+ * Session-aware redirects for `/` and the static auth pages (issue #1359).
+ *
+ * The login/register pages are statically prerendered, so the old
+ * layout-level "already signed in → /all" redirect can't run there anymore;
+ * and `/` was a dynamic page that existed only to issue a redirect. Both move
+ * here. Cost profile is deliberately asymmetric: a visitor with no session
+ * cookie — the flood case — costs one header check (and for `/`, an immediate
+ * 307 with no Next render at all). Only when a session cookie is present do
+ * we validate it (Redis-first, DB fallback — the modules load lazily so the
+ * cookieless path never touches them).
+ *
+ * This is a UX redirect, NOT an auth gate — deliberately unlike the
+ * proxy-level cookie-presence gate removed in #984: we fully validate the
+ * session (a presence-only check would bounce a dead cookie to /all, whose
+ * layout would bounce it straight back — a redirect loop), and on an invalid
+ * session or any validation error we fall through to the page, where the
+ * server-side layout guards remain the source of truth.
+ *
+ * `src/app/(spa)/page.tsx` keeps the same `/` logic as a fallback for the
+ * validation-error fall-through; keep the two in sync.
+ */
+async function maybeSessionRedirect(request: NextRequest): Promise<NextResponse | null> {
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return null; // never touch POST/OPTIONS /register (the DCR rewrite below)
+  }
+  const { pathname } = request.nextUrl;
+  const isRoot = pathname === "/";
+  if (!isRoot && pathname !== "/login" && pathname !== "/register") {
+    return null;
+  }
+
+  // Redirects carry no content, so the CSP is inert; set the static policy for
+  // header consistency (these are all public-surface responses).
+  const redirectTo = (target: string): NextResponse => {
+    const response = NextResponse.redirect(new URL(target, request.url));
+    response.headers.set("Content-Security-Policy", buildPublicContentSecurityPolicy());
+    return response;
+  };
+
+  const sessionToken = request.cookies.get("session")?.value;
+  if (sessionToken) {
+    try {
+      // Lazy imports keep the DB/Redis clients out of the cookieless hot path
+      // (they initialize once, on the first request that carries a cookie).
+      const [{ validateSession }, { isSignupConfirmed }] = await Promise.all([
+        import("@/server/auth/session"),
+        import("@/server/auth/confirmation"),
+      ]);
+      const session = await validateSession(sessionToken);
+      if (session) {
+        return redirectTo(isSignupConfirmed(session.user) ? "/all" : "/complete-signup");
+      }
+    } catch (error) {
+      // Validation infrastructure unavailable — fall through to the page (for
+      // `/`, the dynamic fallback page retries with the same logic).
+      console.error("Proxy session check failed:", error);
+      return null;
+    }
+  }
+
+  // No session (or an invalid one): the auth pages render normally; `/` goes
+  // straight to the demo without invoking a Next render.
+  return isRoot ? redirectTo(DEMO_LANDING_PATH) : null;
+}
+
+export async function proxy(request: NextRequest) {
   if (shouldLog(request)) {
     logRequest(request);
   }
@@ -176,6 +253,12 @@ export function proxy(request: NextRequest) {
   // SW can be asked to fetch via their own CSP.
   if (request.nextUrl.pathname === "/sw.js") {
     return NextResponse.next();
+  }
+
+  // Session-aware redirects for `/` and the static auth pages (see above).
+  const sessionRedirect = await maybeSessionRedirect(request);
+  if (sessionRedirect) {
+    return sessionRedirect;
   }
 
   // Statically-prerendered public routes (issue #1359): no nonce — the
