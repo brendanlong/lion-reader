@@ -50,8 +50,8 @@ function OAuthCompleteContent() {
 
     // Small delay to ensure broadcast is sent before redirecting
     // This helps ensure the message is received by listeners. Use replace: this
-    // intermediate page shouldn't stay in history. A standalone target
-    // (/complete-signup) needs a full page load rather than an RSC soft-nav.
+    // intermediate page shouldn't stay in history. A CDN-cacheable public target
+    // needs a full page load rather than an RSC soft-nav (version-skew risk).
     setTimeout(() => {
       if (isSpaPath(redirectTo)) {
         router.replace(redirectTo);
