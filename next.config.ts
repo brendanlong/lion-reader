@@ -2,20 +2,42 @@ import type { NextConfig } from "next";
 import withPWA from "@ducanh2912/next-pwa";
 import { withSentryConfig } from "@sentry/nextjs";
 
-// PWA configuration - wraps the Next.js config to enable service worker precaching
+// PWA configuration - wraps the Next.js config to add the service worker.
+//
+// Precaching is deliberately DISABLED (see `exclude` / `publicExcludes` below).
+// The service worker earns its keep only for the Share Target API (worker/index.ts
+// handles POSTs to /api/share) and PWA installability — NOT for offline, which
+// doesn't work anyway: navigations aren't intercepted and no HTML/data is cached,
+// so a precached JS/asset shell is unreachable offline. Precaching every
+// _next/static chunk and public asset therefore bought us only downsides: it
+// duplicates the browser's own HTTP cache, forces a service-worker round-trip for
+// assets the browser could serve from memory (the source of the image-paint
+// flash, since public/demo images were precached), and — with skipWaiting +
+// clientsClaim — lets a freshly-activated worker serve newer precached chunks to
+// a tab still running older HTML. Letting everything fall through to the browser's
+// native HTTP cache is simpler and faster; our static assets are already immutable
+// + content-hashed (or CDN-served with long cache-control headers).
 const withPWAConfig = withPWA({
   dest: "public",
   // Disable PWA in development for faster builds
   disable: process.env.NODE_ENV === "development",
   // Custom worker source for share target handling
   customWorkerSrc: "worker",
+  // Precache nothing from the public/ folder (icons, demo images, manifest, ...).
+  // globby builds the public precache list as ["**/*", ...publicExcludes]; a
+  // "!**/*" negation empties it. See workboxOptions.exclude for _next/static.
+  publicExcludes: ["!**/*"],
   // Workbox configuration for caching strategies
   workboxOptions: {
     // Skip waiting to activate new service workers immediately
     skipWaiting: true,
     clientsClaim: true,
-    // Runtime caching configuration for Next.js static assets
-    // Note: next-pwa automatically precaches _next/static/* during build
+    // Precache nothing from the webpack build either: exclude every emitted
+    // asset from the precache manifest so `precacheAndRoute` gets an empty list.
+    // Runtime caching (fonts, below) and the custom worker still register fetch
+    // handlers, so installability and the Share Target handler are unaffected.
+    exclude: [/.*/],
+    // Runtime caching configuration
     runtimeCaching: [
       // Cache Google Fonts stylesheets
       {
@@ -45,17 +67,18 @@ const withPWAConfig = withPWA({
         },
       },
       // NOTE: images are deliberately NOT runtime-cached by the service worker.
-      // Once a SW owns an image response, the browser can no longer serve that
-      // image from its fast in-memory image cache — it must run the fetch
-      // handler and read the bytes from Cache Storage asynchronously on every
-      // render. Paging between entries mounts fresh <img> nodes, so that async
-      // round-trip shows up as a flash of alt text before the (already "cached")
-      // image paints, even on a 0ms cache hit. StaleWhileRevalidate made it
-      // worse by also firing a redundant background revalidation each time.
-      // Letting image requests fall through to the browser's native HTTP cache
-      // (our content images are CDN-served with long cache-control headers)
-      // restores instant, flash-free painting — the way a normal site behaves.
-      // See https://github.com/brendanlong/lion-reader (image-flash fix).
+      // Paging between entries mounts fresh <img> nodes (each entry is keyed and
+      // its body comes from dangerouslySetInnerHTML), and a newly-inserted <img>
+      // whose request we serve via the SW's respondWith gets its bytes back from
+      // Cache Storage asynchronously — one blank frame showing alt text before it
+      // paints, even on a 0ms hit, and shown as "service worker" rather than
+      // "(memory cache)" in devtools. (A request the browser satisfies from its
+      // in-memory cache never reaches the SW at all, but a remounted <img> misses
+      // that transient entry.) StaleWhileRevalidate compounded it with a
+      // redundant background revalidation each load. Letting images fall through
+      // to the browser's native HTTP cache (content images are CDN-served with
+      // long cache-control headers) restores flash-free painting; pairs with the
+      // in-viewport eager + sync-decode pass in useImagePrefetch.ts.
     ],
   },
 });
