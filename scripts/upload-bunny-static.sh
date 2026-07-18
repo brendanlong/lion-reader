@@ -13,9 +13,12 @@
 #   BUNNY_STORAGE_ZONE_PASSWORD - storage zone password/API key (required;
 #                                 NOT the account API key)
 #   BUNNY_STORAGE_ENDPOINT      - optional endpoint base URL, default
-#                                 https://storage.bunnycdn.com (use a region
-#                                 endpoint like https://ny.storage.bunnycdn.com
-#                                 if the zone's primary region isn't Falkenstein)
+#                                 https://storage.bunnycdn.com. That default is
+#                                 ONLY valid for zones whose primary region is
+#                                 Falkenstein — any other region needs its
+#                                 region endpoint (e.g. https://la.storage.bunnycdn.com,
+#                                 https://ny.storage.bunnycdn.com) or every
+#                                 request 401s.
 #
 # Uploads are ADDITIVE: nothing is ever deleted, so previous builds' hashed
 # files keep working for any HTML that still references them (that persistence
@@ -27,6 +30,8 @@ STATIC_DIR="${1:?usage: upload-bunny-static.sh <local-static-dir>}"
 : "${BUNNY_STORAGE_ZONE_NAME:?BUNNY_STORAGE_ZONE_NAME is required}"
 : "${BUNNY_STORAGE_ZONE_PASSWORD:?BUNNY_STORAGE_ZONE_PASSWORD is required}"
 ENDPOINT="${BUNNY_STORAGE_ENDPOINT:-https://storage.bunnycdn.com}"
+# Exported for the per-file sh -c workers spawned by xargs below.
+export BUNNY_STORAGE_ZONE_NAME BUNNY_STORAGE_ZONE_PASSWORD ENDPOINT
 
 if [ ! -d "$STATIC_DIR" ]; then
   echo "error: $STATIC_DIR is not a directory" >&2
@@ -45,15 +50,42 @@ if [ -z "$FILES" ]; then
   exit 1
 fi
 COUNT=$(printf '%s\n' "$FILES" | wc -l)
+
+# Preflight one cheap authenticated request so a bad credential or wrong
+# region endpoint fails in seconds with a diagnosis, instead of 240 files
+# each silently retrying a 401 (which looks like a hang in CI logs).
+# curl prints 000 via -w itself when the connection fails; || true keeps
+# set -e from aborting before we can report it.
+PREFLIGHT_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+  --connect-timeout 10 --max-time 30 \
+  -H "AccessKey: ${BUNNY_STORAGE_ZONE_PASSWORD}" \
+  "${ENDPOINT}/${BUNNY_STORAGE_ZONE_NAME}/" || true)
+PREFLIGHT_CODE="${PREFLIGHT_CODE:-000}"
+if [ "$PREFLIGHT_CODE" != "200" ]; then
+  {
+    echo "error: preflight GET ${ENDPOINT}/${BUNNY_STORAGE_ZONE_NAME}/ returned HTTP ${PREFLIGHT_CODE}"
+    echo "  401: wrong password (must be the STORAGE ZONE password, not the account API key)"
+    echo "       or wrong region endpoint — a zone whose primary region isn't Falkenstein"
+    echo "       needs BUNNY_STORAGE_ENDPOINT, e.g. https://la.storage.bunnycdn.com"
+    echo "  404: wrong BUNNY_STORAGE_ZONE_NAME"
+    echo "  000: connection failed or timed out"
+  } >&2
+  exit 1
+fi
+
 echo "Uploading $COUNT files from $STATIC_DIR to storage zone '$BUNNY_STORAGE_ZONE_NAME' under _next/static/"
 
-# 8-way parallel PUTs; curl -sf makes any HTTP error fail that file, and
-# xargs propagates a non-zero exit so the workflow fails loudly rather than
-# releasing a build whose assets didn't all land.
-printf '%s\n' "$FILES" | xargs -P 8 -I {} \
-  curl -sf -o /dev/null --retry 3 --retry-all-errors -X PUT \
+# 8-way parallel PUTs. Each worker has hard timeouts so a stalled connection
+# can't hang the deploy, and prints the failing path so CI logs show what
+# broke; any failure makes xargs exit non-zero, aborting before release.
+printf '%s\n' "$FILES" | xargs -P 8 -I {} sh -c '
+  curl -sS -f -o /dev/null \
+    --connect-timeout 10 --max-time 120 \
+    --retry 3 --retry-all-errors -X PUT \
     -H "AccessKey: ${BUNNY_STORAGE_ZONE_PASSWORD}" \
-    --data-binary "@{}" \
-    "${ENDPOINT}/${BUNNY_STORAGE_ZONE_NAME}/_next/static/{}"
+    --data-binary "@$1" \
+    "${ENDPOINT}/${BUNNY_STORAGE_ZONE_NAME}/_next/static/$1" \
+  || { echo "upload FAILED: $1" >&2; exit 1; }
+' upload-one {}
 
 echo "Upload complete ($COUNT files)"

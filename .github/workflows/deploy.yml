@@ -96,7 +96,11 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           BUNNY_STORAGE_ZONE_NAME: ${{ secrets.BUNNY_STORAGE_ZONE_NAME }}
           BUNNY_STORAGE_ZONE_PASSWORD: ${{ secrets.BUNNY_STORAGE_ZONE_PASSWORD }}
-          BUNNY_STORAGE_ENDPOINT: ${{ secrets.BUNNY_STORAGE_ENDPOINT }}
+          # The lionreader storage zone's primary region is Los Angeles; the
+          # script's storage.bunnycdn.com default only works for Falkenstein
+          # zones (anything else 401s). Not a secret — override via the
+          # BUNNY_STORAGE_ENDPOINT secret only if the zone's region changes.
+          BUNNY_STORAGE_ENDPOINT: ${{ secrets.BUNNY_STORAGE_ENDPOINT || 'https://la.storage.bunnycdn.com' }}
 
       - name: Purge CDN cache
         # Every deploy deletes the previous build's hashed /_next/static assets
