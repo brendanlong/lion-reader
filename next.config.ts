@@ -100,14 +100,11 @@ const nextConfig: NextConfig = {
   experimental: {
     globalNotFound: true,
   },
-  // Serve the hashed /_next/static assets from the CDN (a Bunny pull zone with
-  // the app as origin). Set via env so dev and CI builds (which run against
-  // local servers the pull zone can't reach) stay origin-served; the production
-  // Dockerfile defaults it to https://lionreader.b-cdn.net. The CDN origin is
-  // also added to the CSP (src/server/http/csp.ts) from the same env var.
-  // Assets are content-hashed and served with `immutable`, so the pull zone
-  // needs no purging or deploy coordination. Files in public/ are not affected
-  // (they stay origin-served).
+  // Serve the hashed /_next/static assets from a CDN. Set via ASSET_PREFIX
+  // (configured in fly.toml; unset elsewhere, so dev/CI stay origin-served). The
+  // same origin is added to the CSP (src/server/http/csp.ts). Assets are
+  // content-hashed and served `immutable`, so the CDN needs no purging or deploy
+  // coordination; files in public/ are unaffected (they stay origin-served).
   assetPrefix: process.env.ASSET_PREFIX || undefined,
   // Emit .next/standalone with a traced, minimal node_modules — the production
   // image ships that instead of the full pruned node_modules (issue #1305).
