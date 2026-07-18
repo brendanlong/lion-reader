@@ -16,6 +16,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { useSwipeGesture } from "@/lib/hooks/useSwipeGesture";
 import { useKeyboardShortcuts } from "@/lib/hooks/useKeyboardShortcuts";
 import { clientPush, extractParamsFromPathname } from "@/lib/navigation";
+import { decodeImage } from "@/lib/image-decode";
 import { DemoArticleView } from "./DemoArticleView";
 import { DemoEntryList } from "./DemoEntryList";
 import { DemoListHeader } from "./DemoListHeader";
@@ -134,10 +135,20 @@ function DemoRouterContent() {
     };
   }, [entryId, entries]);
 
-  // Navigation callbacks for keyboard shortcuts and swipe gestures
+  // Navigation callbacks for keyboard shortcuts and swipe gestures.
+  // Before swapping views, decode the destination's hero image off-DOM so a
+  // cached hero paints on the first frame instead of flashing its alt text.
+  // The wait is capped at 50ms (see decodeImage) — a cached hero decodes in
+  // ~20ms, and an uncached one navigates without a perceptible stall.
   const openEntry = useCallback(
     (id: string) => {
-      clientPush(`${backHref}?entry=${id}`);
+      const href = `${backHref}?entry=${id}`;
+      const heroImage = getDemoEntry(id)?.heroImage;
+      if (heroImage) {
+        void decodeImage(heroImage, 50).then(() => clientPush(href));
+      } else {
+        clientPush(href);
+      }
     },
     [backHref]
   );

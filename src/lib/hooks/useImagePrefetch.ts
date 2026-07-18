@@ -6,6 +6,10 @@ import { useScrollContainer } from "@/components/layout/ScrollContainerContext";
 // back to useEffect during SSR to stay quiet.
 const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
+// Applied to an <img> while it loads to hide its alt text/broken-image
+// placeholder (see below). Kept in sync with the CSS rule in globals.css.
+const IMG_LOADING_CLASS = "content-img-loading";
+
 /**
  * Prefetch images before they scroll into view, and make images that are
  * already on-screen paint without a flash.
@@ -28,6 +32,13 @@ const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffec
  *     an IntersectionObserver as they approach, so they're decoded before they
  *     scroll in too. Non-lazy images below the fold already load eagerly.
  *
+ * As a backstop for the frames before a not-yet-cached image paints, every
+ * still-loading image gets a class that hides its alt text/broken-image
+ * placeholder, so the reserved box stays empty instead of flashing alt text.
+ * The class is removed on load (image paints) or error (alt text is revealed so
+ * a genuinely broken image stays meaningful). The alt attribute is untouched, so
+ * screen readers are unaffected — this only hides the *visual* placeholder.
+ *
  * @param containerRef - Ref to the container element with images
  * @param content - The content string (used to re-run when content changes)
  * @param rootMargin - How far outside the viewport to start prefetching (default: "50%")
@@ -46,6 +57,28 @@ export function useImagePrefetch(
 
     const images = Array.from(container.querySelectorAll<HTMLImageElement>("img"));
     if (images.length === 0) return;
+
+    // Hide the alt-text/broken-image placeholder while each image loads, so the
+    // reserved box stays empty for the frame(s) before it paints instead of
+    // flashing alt text. Reveal it again on error (so a broken image stays
+    // meaningful); on success the removed class just lets the painted image show
+    // (alt text isn't visible over a loaded image anyway). Runs before paint in
+    // the layout effect, so the class is present on the very first frame.
+    const listenerCleanups: Array<() => void> = [];
+    for (const img of images) {
+      // A complete image is already settled: only reveal alt text if it failed
+      // (a failed load reports complete with naturalWidth 0).
+      if (img.complete) continue;
+
+      img.classList.add(IMG_LOADING_CLASS);
+      const reveal = () => img.classList.remove(IMG_LOADING_CLASS);
+      img.addEventListener("load", reveal, { once: true });
+      img.addEventListener("error", reveal, { once: true });
+      listenerCleanups.push(() => {
+        img.removeEventListener("load", reveal);
+        img.removeEventListener("error", reveal);
+      });
+    }
 
     // The IntersectionObserver root: the scroll container, or the viewport.
     const root = scrollContainerRef?.current ?? null;
@@ -73,7 +106,11 @@ export function useImagePrefetch(
       }
     }
 
-    if (toObserve.length === 0) return;
+    const runListenerCleanups = () => {
+      for (const cleanup of listenerCleanups) cleanup();
+    };
+
+    if (toObserve.length === 0) return runListenerCleanups;
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -108,6 +145,7 @@ export function useImagePrefetch(
 
     return () => {
       observer.disconnect();
+      runListenerCleanups();
     };
   }, [containerRef, content, rootMargin, scrollContainerRef]);
 }
