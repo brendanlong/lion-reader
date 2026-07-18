@@ -24,8 +24,8 @@ function makeRequest(path: string, method = "GET", headers?: Record<string, stri
 describe("proxy", () => {
   it.each(["POST", "OPTIONS"])(
     "rewrites %s /register to the OAuth DCR handler at /oauth/register",
-    (method) => {
-      const res = proxy(makeRequest("/register", method));
+    async (method) => {
+      const res = await proxy(makeRequest("/register", method));
       const rewrite = new URL(res.headers.get("x-middleware-rewrite")!);
       expect(rewrite.pathname).toBe("/oauth/register");
       // A rewrite is not a redirect — the URL stays /register for the client.
@@ -33,23 +33,23 @@ describe("proxy", () => {
     }
   );
 
-  it("does not rewrite GET /register (the human signup page)", () => {
-    const res = proxy(makeRequest("/register"));
+  it("does not rewrite GET /register (the human signup page)", async () => {
+    const res = await proxy(makeRequest("/register"));
     expect(res.headers.get("x-middleware-rewrite")).toBeNull();
     expect(res.headers.get("location")).toBeNull();
   });
 
-  it("does not gate auth: an unauthenticated protected path passes through untouched", () => {
+  it("does not gate auth: an unauthenticated protected path passes through untouched", async () => {
     // Auth is handled by the server-side layout guards, not the proxy (#984).
-    const res = proxy(makeRequest("/all"));
+    const res = await proxy(makeRequest("/all"));
     expect(res.headers.get("location")).toBeNull();
     expect(res.headers.get("x-middleware-rewrite")).toBeNull();
   });
 
-  it("only rewrites the exact /register path, not method-matching other paths", () => {
+  it("only rewrites the exact /register path, not method-matching other paths", async () => {
     // Defensive: the pathname guard keeps the rewrite scoped even if the
     // matcher is ever widened.
-    const res = proxy(makeRequest("/register-something", "POST"));
+    const res = await proxy(makeRequest("/register-something", "POST"));
     expect(res.headers.get("x-middleware-rewrite")).toBeNull();
   });
 });
@@ -67,17 +67,17 @@ describe("proxy request logging (LOG_MCP_REQUESTS)", () => {
     vi.restoreAllMocks();
   });
 
-  it("logs nothing when LOG_MCP_REQUESTS is unset", () => {
+  it("logs nothing when LOG_MCP_REQUESTS is unset", async () => {
     delete process.env.LOG_MCP_REQUESTS;
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
-    proxy(makeRequest("/mcp", "POST"));
+    await proxy(makeRequest("/mcp", "POST"));
     expect(spy).not.toHaveBeenCalled();
   });
 
-  it("logs a structured line with host/method/path and hasAuthorization boolean", () => {
+  it("logs a structured line with host/method/path and hasAuthorization boolean", async () => {
     process.env.LOG_MCP_REQUESTS = "true";
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
-    proxy(makeRequest("/mcp", "POST", { authorization: "Bearer super-secret-token" }));
+    await proxy(makeRequest("/mcp", "POST", { authorization: "Bearer super-secret-token" }));
     expect(spy).toHaveBeenCalledOnce();
     const entry = JSON.parse(spy.mock.calls[0][0] as string);
     expect(entry).toMatchObject({
@@ -91,48 +91,48 @@ describe("proxy request logging (LOG_MCP_REQUESTS)", () => {
     expect(spy.mock.calls[0][0]).not.toContain("super-secret-token");
   });
 
-  it("reports hasAuthorization=false when no Authorization header is present", () => {
+  it("reports hasAuthorization=false when no Authorization header is present", async () => {
     process.env.LOG_MCP_REQUESTS = "true";
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
-    proxy(makeRequest("/mcp", "POST"));
+    await proxy(makeRequest("/mcp", "POST"));
     const entry = JSON.parse(spy.mock.calls[0][0] as string);
     expect(entry.hasAuthorization).toBe(false);
   });
 
-  it("does NOT log ordinary (non-surface) apex traffic even when enabled", () => {
+  it("does NOT log ordinary (non-surface) apex traffic even when enabled", async () => {
     // No MCP host configured, so only the OAuth/MCP surface is logged on the apex.
     process.env.LOG_MCP_REQUESTS = "true";
     delete process.env.MCP_HOST;
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
-    proxy(makeRequest("/all"));
-    proxy(makeRequest("/api/trpc/entries.list"));
+    await proxy(makeRequest("/all"));
+    await proxy(makeRequest("/api/trpc/entries.list"));
     expect(spy).not.toHaveBeenCalled();
   });
 
-  it("logs EVERY path on the dedicated MCP host, including unexpected ones", () => {
+  it("logs EVERY path on the dedicated MCP host, including unexpected ones", async () => {
     // The point: catch a request to a path we didn't anticipate (the "wrong URL"
     // / origin-root-fallback failure modes) so it doesn't slip through unlogged.
     process.env.LOG_MCP_REQUESTS = "true";
     process.env.MCP_HOST = "mcp.example.com";
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
-    proxy(makeRequest("/some/unexpected/path", "GET", { host: "MCP.example.com:443" }));
+    await proxy(makeRequest("/some/unexpected/path", "GET", { host: "MCP.example.com:443" }));
     expect(spy).toHaveBeenCalledOnce();
     const entry = JSON.parse(spy.mock.calls[0][0] as string);
     expect(entry.path).toBe("/some/unexpected/path");
   });
 
-  it("does not log unexpected paths on a host that isn't the MCP host", () => {
+  it("does not log unexpected paths on a host that isn't the MCP host", async () => {
     process.env.LOG_MCP_REQUESTS = "true";
     process.env.MCP_HOST = "mcp.example.com";
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
-    proxy(makeRequest("/some/unexpected/path", "GET", { host: "reader.example.com" }));
+    await proxy(makeRequest("/some/unexpected/path", "GET", { host: "reader.example.com" }));
     expect(spy).not.toHaveBeenCalled();
   });
 
-  it("redacts sensitive query params (auth code) but keeps public ones", () => {
+  it("redacts sensitive query params (auth code) but keeps public ones", async () => {
     process.env.LOG_MCP_REQUESTS = "true";
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
-    proxy(makeRequest("/oauth/authorize?client_id=abc&code=SECRET_CODE&state=xyz", "GET"));
+    await proxy(makeRequest("/oauth/authorize?client_id=abc&code=SECRET_CODE&state=xyz", "GET"));
     const entry = JSON.parse(spy.mock.calls[0][0] as string);
     const query = new URLSearchParams(entry.query);
     expect(query.get("client_id")).toBe("abc");
@@ -141,11 +141,94 @@ describe("proxy request logging (LOG_MCP_REQUESTS)", () => {
     expect(spy.mock.calls[0][0]).not.toContain("SECRET_CODE");
   });
 
-  it("still performs the /register rewrite while logging is enabled", () => {
+  it("still performs the /register rewrite while logging is enabled", async () => {
     process.env.LOG_MCP_REQUESTS = "true";
     vi.spyOn(console, "log").mockImplementation(() => {});
-    const res = proxy(makeRequest("/register", "POST"));
+    const res = await proxy(makeRequest("/register", "POST"));
     const rewrite = new URL(res.headers.get("x-middleware-rewrite")!);
     expect(rewrite.pathname).toBe("/oauth/register");
   });
+});
+
+describe("proxy CSP tiering (issue #1359)", () => {
+  const PUBLIC_PATHS = [
+    "/demo",
+    "/demo/all",
+    "/demo/entry/welcome",
+    "/login",
+    "/terms",
+    "/privacy",
+  ];
+  const DYNAMIC_PATHS = ["/all", "/auth/oauth/complete", "/settings", "/api/trpc/entries.list"];
+
+  it.each(PUBLIC_PATHS)("%s gets the relaxed static CSP with no nonce", async (path) => {
+    const res = await proxy(makeRequest(path));
+    const csp = res.headers.get("Content-Security-Policy")!;
+    expect(csp).toMatch(/script-src[^;]*'unsafe-inline'/);
+    expect(csp).not.toContain("'nonce-");
+    // 'strict-dynamic' would make browsers ignore 'unsafe-inline' and the
+    // 'self' allowlist, blocking every script on the static pages.
+    expect(csp).not.toContain("'strict-dynamic'");
+    // No per-request header rewriting: the response must not carry the
+    // middleware override markers that a modified request would produce.
+    expect(res.headers.get("x-middleware-override-headers")).toBeNull();
+  });
+
+  it.each(DYNAMIC_PATHS)("%s gets the strict nonce'd CSP", async (path) => {
+    const res = await proxy(makeRequest(path));
+    const csp = res.headers.get("Content-Security-Policy")!;
+    expect(csp).toMatch(/script-src[^;]*'nonce-[A-Za-z0-9+/=_-]+'/);
+    expect(csp).toContain("'strict-dynamic'");
+    expect(csp).not.toMatch(/script-src[^;]*'unsafe-inline'/);
+  });
+
+  it("GET /register (the signup page) gets the relaxed static CSP", async () => {
+    const res = await proxy(makeRequest("/register"));
+    expect(res.headers.get("Content-Security-Policy")).toMatch(/script-src[^;]*'unsafe-inline'/);
+    expect(res.headers.get("x-middleware-rewrite")).toBeNull();
+  });
+
+  it.each(["POST", "OPTIONS"])(
+    "%s /register (the OAuth DCR rewrite) keeps the strict nonce'd CSP",
+    async (method) => {
+      const res = await proxy(makeRequest("/register", method));
+      expect(new URL(res.headers.get("x-middleware-rewrite")!).pathname).toBe("/oauth/register");
+      expect(res.headers.get("Content-Security-Policy")).toContain("'nonce-");
+    }
+  );
+
+  it("does not treat demo-prefixed lookalike paths as public", async () => {
+    const res = await proxy(makeRequest("/demonstration"));
+    expect(res.headers.get("Content-Security-Policy")).toContain("'nonce-");
+  });
+});
+
+describe("proxy session redirects (issue #1359)", () => {
+  it("GET / without a session cookie 307s straight to the demo landing page", async () => {
+    const res = await proxy(makeRequest("/"));
+    expect(res.status).toBe(307);
+    const location = new URL(res.headers.get("location")!);
+    expect(location.pathname).toBe("/demo/all");
+    expect(location.searchParams.get("entry")).toBe("welcome");
+  });
+
+  it("GET /login and /register without a session cookie fall through to the page", async () => {
+    for (const path of ["/login", "/register"]) {
+      const res = await proxy(makeRequest(path));
+      expect(res.status, path).toBe(200);
+      expect(res.headers.get("location"), path).toBeNull();
+    }
+  });
+
+  it("POST /register with a session cookie still hits the DCR rewrite untouched", async () => {
+    // The session redirect must never intercept the method-split OAuth
+    // registration POST, even for a browser that happens to carry a session.
+    const res = await proxy(makeRequest("/register", "POST", { cookie: "session=some-token" }));
+    expect(new URL(res.headers.get("x-middleware-rewrite")!).pathname).toBe("/oauth/register");
+    expect(res.headers.get("location")).toBeNull();
+  });
+
+  // The cookie-present validation paths (valid session → /all or
+  // /complete-signup; invalid → fall through) need a real database + Redis, so
+  // they're covered by tests/e2e/auth-ssr.spec.ts rather than mocked here.
 });

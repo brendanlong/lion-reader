@@ -14,6 +14,7 @@
 
 import next from "next";
 import { createServer } from "node:http";
+import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { maybeCompressResponse } from "../src/server/http/compression";
@@ -31,6 +32,55 @@ import { logger } from "../src/lib/logger";
 const dev = process.env.NODE_ENV !== "production";
 const hostname = process.env.HOSTNAME || "0.0.0.0";
 const port = parseInt(process.env.PORT || "3000", 10);
+
+// Per-process secret for the internal revalidate-public endpoint (issue
+// #1359). Generated before Next boots so the route handler (same process)
+// reads the same value; it never leaves the process, so only the startup hook
+// below can call that endpoint. Unconditionally overwritten — honoring an
+// externally-set value would silently turn the per-process secret into a
+// shared credential.
+process.env.INTERNAL_REVALIDATE_SECRET = randomUUID();
+
+/**
+ * Re-render the statically-prerendered public pages with runtime env (issue
+ * #1359): the login/register HTML bakes the signup/provider config, and the
+ * copy from `next build` was rendered with build-machine env (dummy values in
+ * CI/Docker). Invalidate them via the internal route, then warm them so the
+ * first real visitor gets the cached copy. Retries cover the window where the
+ * server has just started listening but Next isn't serving yet. The config
+ * can't change after startup, so once per boot is exactly enough.
+ */
+async function revalidatePublicPages(): Promise<void> {
+  const base = `http://127.0.0.1:${port}`;
+  const headers = { "x-internal-secret": process.env.INTERNAL_REVALIDATE_SECRET! };
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      const res = await fetch(`${base}/api/internal/revalidate-public`, {
+        method: "POST",
+        headers,
+      });
+      if (res.ok) {
+        const { revalidated } = (await res.json()) as { revalidated: string[] };
+        // Warm each page so the re-render happens now, not on the first visitor.
+        await Promise.all(revalidated.map((path) => fetch(`${base}${path}`).catch(() => {})));
+        logger.info("Revalidated startup-rendered public pages", { revalidated });
+        return;
+      }
+      logger.error("Revalidate-public returned non-OK status", { status: res.status });
+      return;
+    } catch (error) {
+      if (attempt === 5) {
+        // The pages keep serving build-baked config until the next boot — loud
+        // error so it's investigated, but not fatal (everything else works).
+        logger.error("Failed to revalidate public pages at startup", {
+          error: error instanceof Error ? error.message : "Unknown error",
+        });
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+    }
+  }
+}
 
 // How long in-flight requests and SSE streams get to finish before their
 // connections are severed. Must fit inside fly.toml's kill_timeout (with room
@@ -136,6 +186,11 @@ app.prepare().then(() => {
       hostname,
       port,
     });
+    // Re-render the public pages with runtime env (see revalidatePublicPages).
+    // Dev has no prerender cache — every request renders fresh — so skip it.
+    if (!dev) {
+      void revalidatePublicPages();
+    }
   });
 
   // Graceful shutdown: stop accepting connections, let in-flight requests

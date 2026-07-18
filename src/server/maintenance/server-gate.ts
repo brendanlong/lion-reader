@@ -36,6 +36,11 @@ const EXEMPT_PREFIXES = [
   "/admin",
   "/api/admin",
   "/api/health",
+  // The startup revalidation hook (scripts/server.ts → revalidate-public):
+  // secret-guarded, touches no DB, and must work when a process boots while
+  // maintenance is on, or login/register would keep serving build-baked
+  // config after maintenance ends.
+  "/api/internal",
   "/_next",
   "/privacy",
   "/terms",

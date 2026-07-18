@@ -9,6 +9,17 @@
  * `/oauth/register` (a HACK to satisfy claude.ai's root-path synthesis; see the
  * comment in proxy.ts and anthropics/claude-ai-mcp#341). A form `POST` here
  * would be silently hijacked into OAuth registration.
+ *
+ * This page is statically prerendered (issue #1359). The signup config is
+ * SSR'd via the layout's request-free prefetch (re-rendered at process
+ * startup — see the layout comment), so the static HTML contains the
+ * no-invite variant of the page (the invite-required notice on invite-only
+ * instances, the public signup form otherwise). Only the `?invite=` token is
+ * per-request: `useSearchParams` lives in a thin wrapper whose Suspense
+ * fallback renders the same form with no token, so an invited visitor briefly
+ * sees the no-invite variant until hydration swaps the token in. Don't
+ * reintroduce a suspense query for the config — it would try to fetch over
+ * HTTP during the build-time prerender.
  */
 
 "use client";
@@ -21,43 +32,48 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
 import { PageLink } from "@/components/ui/page-link";
+import { SpinnerIcon } from "@/components/ui/icon-button";
 import { OAuthButtons } from "@/components/auth/OAuthButtons";
 import { AuthFooter } from "@/components/auth/AuthFooter";
 import { EuRestrictionReason } from "@/components/auth/EuRestrictionNotice";
 
+/** Shown only if the signup config isn't hydrated (client-side fetch fallback). */
+function RegisterLoading() {
+  return (
+    <div className="flex items-center justify-center py-12">
+      <SpinnerIcon className="text-body h-8 w-8" />
+    </div>
+  );
+}
+
 export default function RegisterPage() {
   return (
-    <Suspense>
-      <RegisterForm />
+    // The fallback IS the page (with no invite token), so the prerendered HTML
+    // carries the real form instead of a spinner; RegisterFormWithInvite
+    // replaces it at hydration only to thread the ?invite= token through.
+    <Suspense fallback={<RegisterForm inviteToken={null} />}>
+      <RegisterFormWithInvite />
     </Suspense>
   );
 }
 
-function RegisterForm() {
-  const router = useRouter();
+/** Reads the invite token from the URL (client-side; bails static prerender). */
+function RegisterFormWithInvite() {
   const searchParams = useSearchParams();
+  return <RegisterForm inviteToken={searchParams.get("invite")} />;
+}
 
-  // Get invite token from URL query parameter
-  const inviteToken = searchParams.get("invite");
+function RegisterForm({ inviteToken }: { inviteToken: string | null }) {
+  const router = useRouter();
 
-  // Fetch signup configuration. The auth layout server-prefetches and hydrates
-  // this query (#1328), so it resolves as already-settled data on first render —
-  // useSuspenseQuery guarantees defined data without a client-side loading state.
-  // The config is deploy-static, so never refetch it (STATIC_CONFIG_QUERY_OPTIONS).
-  const [signupConfigData] = trpc.auth.signupConfig.useSuspenseQuery(
+  // The layout SSR-prefetches this (request-free, so the page stays static);
+  // the guard below only matters if hydration is missing and the query runs
+  // client-side. The config is deploy-static, so never refetch it
+  // (STATIC_CONFIG_QUERY_OPTIONS).
+  const { data: signupConfigData } = trpc.auth.signupConfig.useQuery(
     undefined,
     STATIC_CONFIG_QUERY_OPTIONS
   );
-  const euRestricted = signupConfigData.euRestricted;
-
-  // On EU-restricted instances, warn EU users up front that they can't sign up
-  // here and point them at self-hosting.
-  const euNotice = euRestricted ? (
-    <Alert variant="warning" className="mb-4">
-      <span className="font-semibold">Not available in the European Union.</span>{" "}
-      <EuRestrictionReason />
-    </Alert>
-  ) : null;
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -158,6 +174,22 @@ function RegisterForm() {
   // Show the loading state while the request is in flight AND while the
   // post-success navigation into the app is happening.
   const isSubmitting = registerMutation.isPending || isRedirecting;
+
+  // Everything below depends on the signup config; show the same loading state
+  // as the prerender fallback until it resolves. (After all hooks, so hook
+  // order is stable across renders.)
+  if (!signupConfigData) {
+    return <RegisterLoading />;
+  }
+
+  // On EU-restricted instances, warn EU users up front that they can't sign up
+  // here and point them at self-hosting.
+  const euNotice = signupConfigData.euRestricted ? (
+    <Alert variant="warning" className="mb-4">
+      <span className="font-semibold">Not available in the European Union.</span>{" "}
+      <EuRestrictionReason />
+    </Alert>
+  ) : null;
 
   // Which providers may sign up depends on whether an invite is present:
   // with a token, the full allowlist applies; without one, only public providers.
