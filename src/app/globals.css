@@ -620,6 +620,22 @@ body {
 }
 
 /* =================================
+   Loading images: hide the placeholder
+
+   `useImagePrefetch` adds `content-img-loading` to each <img> while it loads
+   and removes it on load/error. Hiding the text color hides the alt-text and
+   broken-image placeholder the browser paints in the reserved box before the
+   image decodes, so paging to a fresh (but cached) image shows an empty box for
+   the frame(s) before it paints instead of a flash of alt text. On error the
+   class is removed, so the alt text reappears (a broken image stays meaningful).
+   The alt attribute is untouched, so screen readers are unaffected.
+   ================================= */
+
+img.content-img-loading {
+  color: transparent;
+}
+
+/* =================================
    Reader Prose Heading Hierarchy
 
    Scoped to the rendered article/summary content (`reader-prose`, applied

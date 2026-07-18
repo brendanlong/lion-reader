@@ -109,4 +109,29 @@ describe("useImagePrefetch", () => {
     expect(img.decoding).not.toBe("sync");
     expect(img.loading).not.toBe("eager");
   });
+
+  it("hides the placeholder of a still-loading image, then reveals it on load", () => {
+    const img = makeImage({ top: 100, bottom: 400 });
+    // jsdom never loads images, so a src'd <img> stays incomplete.
+    expect(img.complete).toBe(false);
+    renderWithImages([img]);
+
+    // Class present before the image loads → alt text/placeholder hidden.
+    expect(img.classList.contains("content-img-loading")).toBe(true);
+
+    img.dispatchEvent(new Event("load"));
+    // Removed on load → the painted image shows.
+    expect(img.classList.contains("content-img-loading")).toBe(false);
+  });
+
+  it("reveals the placeholder when a loading image errors", () => {
+    const img = makeImage({ top: 100, bottom: 400 });
+    renderWithImages([img]);
+
+    expect(img.classList.contains("content-img-loading")).toBe(true);
+
+    img.dispatchEvent(new Event("error"));
+    // Removed on error → alt text reappears so a broken image stays meaningful.
+    expect(img.classList.contains("content-img-loading")).toBe(false);
+  });
 });
