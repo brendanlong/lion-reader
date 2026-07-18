@@ -46,13 +46,14 @@ test("/register with an invite token SSRs the full signup form", async ({ reques
   expect(html).not.toContain("Loading...");
 });
 
-test("tRPC responses are marked uncacheable so a shared CDN can't replay them", async ({
+test("tRPC responses are marked uncacheable so a shared cache can't replay them", async ({
   request,
 }) => {
-  // The register/login forms refetch auth.signupConfig on the client. If a shared
-  // cache (our CDN) stores that GET, it can replay a stale cross-deploy response
-  // (e.g. one missing `euRestricted`), which makes the SSR-rendered EU banner
-  // vanish after the client refetch. Every tRPC response must be `no-store`.
+  // The register/login forms refetch auth.signupConfig on the client. If a
+  // shared cache in front of the app stores that GET, it can replay a stale
+  // cross-deploy response (e.g. one missing `euRestricted`), which makes the
+  // SSR-rendered EU banner vanish after the client refetch. Every tRPC response
+  // must be `no-store`.
   // superjson encodes the procedure's `undefined` input as json:null + a meta
   // marker (matches the real client's batch GET).
   const input = encodeURIComponent(
