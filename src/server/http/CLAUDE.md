@@ -4,11 +4,9 @@ This file governs the outbound-HTTP helpers: SSRF-protected fetching (`ssrf.ts`)
 
 Every outgoing request must send our custom User-Agent (`USER_AGENT`/`buildUserAgent` from `@/server/http/user-agent`).
 
-## CDN Cache Headers for Public Pages (`page-cache.ts`)
+## CDN (static assets only)
 
-`applyPageCacheHeaders(req, res)` (wired in `scripts/server.ts`, right after `maybeCompressResponse`) makes the shareable public pages CDN-cacheable so a CDN can absorb an anonymous-traffic spike. These routes are all dynamically rendered — `/demo/*` reads `searchParams`; `/login` and `/register` render under `src/app/(auth)/layout.tsx`, which reads the session cookie; the legal pages (`/privacy`, `/terms`) are static but inherit the root layout's cookie read — so Next stamps them `private, no-store` and a CDN caches nothing. We override that at the custom-server layer (not `next.config.ts` `headers()`, which can't reliably beat Next's own `Cache-Control` on a dynamic route nor branch on cookie presence) by patching `res.writeHead`, exactly like the compression wrapper. The pure decision is `pageCachePolicy(pathname, hasSessionCookie)`, unit-tested in `tests/unit/page-cache.test.ts`.
-
-Only the **anonymous** render of `/login` and `/register` is cacheable: a request carrying a `session` cookie gets `no-store` (its body is the signed-in redirect), and cacheable renders carry `Vary: Cookie`. `/demo/*`, `/privacy`, and `/terms` have no auth redirect in their subtree and no per-visitor content, so they're cacheable unconditionally — except static assets under `/demo/` (the `public/demo/*.png` screenshots), which are excluded by an extension check: the page policy's `max-age=0` on an image defeats the browser's synchronous memory/image cache, so every `<img>` remount revalidated over the network and flashed alt text when paging entries. Those keep `next.config.ts`'s `max-age=86400` static-asset header. This origin-side gating is defense in depth under the CDN's own "bypass on session cookie" rule — never rely on either alone to keep a per-session redirect out of a shared cache. Long-lived cached HTML depends on old builds' hashed assets staying servable after a deploy — the deploy workflow's Bunny storage upload + purge provide that (issues #1318/#1350; see docs/DEPLOYMENT.md).
+Only the hashed `/_next/static` assets are CDN-served, via Next's `assetPrefix` (a Bunny pull zone; `ASSET_PREFIX` env, defaulted in the Dockerfile — see `next.config.ts`). HTML is never CDN-cached: pages keep Next's default `private, no-store`, so there is no deploy-purge or cookie-vary machinery. When `ASSET_PREFIX` is set, `csp.ts` adds its origin to the script/style/font directives.
 
 ## SSRF Protection
 

@@ -8,26 +8,26 @@ Reusable UI primitives are in `src/components/ui/`. **Always check for existing 
 
 ### Available Components
 
-| Component             | Purpose                                                                            |
-| --------------------- | ---------------------------------------------------------------------------------- |
-| **Button**            | Primary, secondary, ghost, danger variants with loading state                      |
-| **Input**             | Text input with label and error handling                                           |
-| **Alert**             | Status messages (error, success, warning, info)                                    |
-| **Dialog**            | Modal dialogs with backdrop, focus trap, escape handling                           |
-| **Card**              | Container with border, background, and consistent padding                          |
-| **CardSection**       | Subsection within a Card, separated by a top border                                |
-| **NoteBox**           | Subtle zinc-tinted box for notes and secondary content                             |
-| **StatusCard**        | Colored card for info/success/warning/error states                                 |
-| **ClientLink**        | Soft, client-side navigation _within_ the SPA (pushState)                          |
-| **PageLink**          | Full-page nav to standalone routes outside the SPA (plain `<a>`, hits CDN, no RSC) |
-| **TextLink**          | Accent-colored inline text link (`external` for new tab)                           |
-| **InlineCode**        | Small monospace chip for inline code, URLs, file names                             |
-| **Kbd**               | Keyboard key chip for displaying shortcut keys                                     |
-| **NavLink**           | Sidebar navigation links with active state and counts                              |
-| **IconButton**        | Small icon-only action buttons (edit, close, etc.)                                 |
-| **NotFoundCard**      | Card for 404/missing content states                                                |
-| **ColorPicker**       | Color selection with `ColorDot` preview                                            |
-| **StateToggleButton** | Toggle button with visual state indicator                                          |
+| Component             | Purpose                                                                  |
+| --------------------- | ------------------------------------------------------------------------ |
+| **Button**            | Primary, secondary, ghost, danger variants with loading state            |
+| **Input**             | Text input with label and error handling                                 |
+| **Alert**             | Status messages (error, success, warning, info)                          |
+| **Dialog**            | Modal dialogs with backdrop, focus trap, escape handling                 |
+| **Card**              | Container with border, background, and consistent padding                |
+| **CardSection**       | Subsection within a Card, separated by a top border                      |
+| **NoteBox**           | Subtle zinc-tinted box for notes and secondary content                   |
+| **StatusCard**        | Colored card for info/success/warning/error states                       |
+| **ClientLink**        | Soft, client-side navigation _within_ the SPA (pushState)                |
+| **PageLink**          | Full-page nav to standalone routes outside the SPA (plain `<a>`, no RSC) |
+| **TextLink**          | Accent-colored inline text link (`external` for new tab)                 |
+| **InlineCode**        | Small monospace chip for inline code, URLs, file names                   |
+| **Kbd**               | Keyboard key chip for displaying shortcut keys                           |
+| **NavLink**           | Sidebar navigation links with active state and counts                    |
+| **IconButton**        | Small icon-only action buttons (edit, close, etc.)                       |
+| **NotFoundCard**      | Card for 404/missing content states                                      |
+| **ColorPicker**       | Color selection with `ColorDot` preview                                  |
+| **StateToggleButton** | Toggle button with visual state indicator                                |
 
 ### Common Icons
 

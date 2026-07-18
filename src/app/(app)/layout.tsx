@@ -79,8 +79,8 @@ export default async function AppLayout({ children }: AppLayoutProps) {
 
   // Global announcement banner (admin-controlled, Redis-backed). Fetched and
   // rendered here — inside the authenticated SPA — rather than in the root
-  // layout, so a temporary message is never baked into the CDN-cached public
-  // pages (demo/legal/anonymous auth). The dismissed id is read from a cookie
+  // layout, so the public pages (demo/legal/anonymous auth) never carry a
+  // temporary message. The dismissed id is read from a cookie
   // (not localStorage) so the server can hide an already-dismissed banner and it
   // never flashes back on reload. Live updates arrive over the SPA's SSE
   // connection (announcement_changed → announcement store).

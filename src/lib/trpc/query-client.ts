@@ -28,10 +28,10 @@ import superjson from "superjson";
  * and keep it robust if `staleTime` is ever lowered.
  *
  * This is what keeps the signup/sign-in pages from re-hitting `/api/trpc` after
- * hydration — a refetch there previously let a stale CDN-cached response
+ * hydration — a refetch there previously let a stale shared-cache response
  * overwrite the correct SSR value (the register page's EU-banner flash). The
- * `no-store` header on tRPC responses stops the CDN from caching in the first
- * place; this stops the client from asking at all.
+ * `no-store` header on tRPC responses stops shared caches from storing them in
+ * the first place; this stops the client from asking at all.
  */
 export const STATIC_CONFIG_QUERY_OPTIONS = {
   staleTime: Infinity,

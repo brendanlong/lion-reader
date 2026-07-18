@@ -148,8 +148,8 @@ export default async function RootLayout({
   // only if the proxy didn't run, in which case the response has no CSP either.
   //
   // The announcement banner is deliberately NOT rendered here: it lives in the
-  // authenticated SPA layout (src/app/(app)/layout.tsx) so a temporary message
-  // is never baked into the CDN-cached public pages (see src/server/http/page-cache.ts).
+  // authenticated SPA layout (src/app/(app)/layout.tsx) — announcements are for
+  // signed-in users, not the public demo/legal/auth pages.
   const headerStore = await headers();
   const nonce = headerStore.get("x-nonce") ?? undefined;
 
