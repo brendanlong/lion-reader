@@ -21,7 +21,6 @@ import type { db as dbType, DbOrTx } from "@/server/db";
 import { entries, feeds, userEntries, subscriptions, visibleEntries } from "@/server/db/schema";
 import { parseTimestamptzOrNull } from "@/server/db/temporal";
 import { isValidUuid } from "@/lib/uuidv7";
-import { ENTRY_SEARCH_ENABLED } from "@/lib/feature-flags";
 import { sanitizeEntryContentFamily } from "@/server/html/sanitize-entry";
 import { errors } from "@/server/trpc/errors";
 import { publishMarkAllRead } from "@/server/redis/pubsub";
@@ -50,7 +49,7 @@ import {
 
 export interface ListEntriesParams {
   userId: string;
-  query?: string; // Optional full-text search query — currently rejected (search disabled, #1249)
+  query?: string; // Optional full-text search query — delegates to searchEntries (#1249)
   subscriptionId?: string;
   tagId?: string;
   uncategorized?: boolean;
@@ -82,7 +81,6 @@ export interface ListEntriesParams {
 export interface SearchEntriesParams {
   userId: string;
   query: string;
-  searchIn?: "title" | "content" | "both";
   subscriptionId?: string;
   tagId?: string;
   uncategorized?: boolean;
@@ -457,17 +455,12 @@ export async function listEntries(
     throw new Error("listEntries: `cursor` and `offset` are mutually exclusive");
   }
 
-  // If query is provided, delegate to search implementation
+  // If query is provided, delegate to search implementation (indexed full-text
+  // search over the stored entries.search_vector column — see searchEntries).
   if (params.query) {
-    // Full-text search is disabled until the entries table has a search index
-    // (#1249) — without one every search tokenizes the user's entire history.
-    if (!ENTRY_SEARCH_ENABLED) {
-      throw errors.validation("Search is temporarily disabled on this server");
-    }
     return searchEntries(db, {
       ...params,
       query: params.query,
-      searchIn: "both", // Always search both title and content
       showSpam: params.showSpam,
     });
   }
@@ -637,7 +630,10 @@ export async function listEntries(
 }
 
 /**
- * Searches entries by title and/or content.
+ * Full-text search over entries, ranked by relevance. Matches and ranks against
+ * the stored, GIN-indexed `entries.search_vector` (title + cleaned body, falling
+ * back to raw content; see migration 0105) rather than tokenizing bodies on the
+ * fly, so it no longer scans the user's whole history per query (#1249).
  */
 async function searchEntries(
   db: typeof dbType,
@@ -645,24 +641,19 @@ async function searchEntries(
 ): Promise<{ items: EntryListItem[]; nextCursor?: string }> {
   const effectiveMaxLimit = params.maxLimit ?? MAX_LIMIT;
   const limit = Math.min(params.limit ?? DEFAULT_LIMIT, effectiveMaxLimit);
-  const searchIn = params.searchIn ?? "both";
 
   const conditions = [eq(visibleEntries.userId, params.userId)];
 
-  // Build full-text search vector
-  let searchVector: ReturnType<typeof sql>;
-  if (searchIn === "title") {
-    searchVector = sql`to_tsvector('english', COALESCE(${visibleEntries.title}, ''))`;
-  } else if (searchIn === "content") {
-    searchVector = sql`to_tsvector('english', COALESCE(${visibleEntries.contentCleaned}, ''))`;
-  } else {
-    searchVector = sql`to_tsvector('english', COALESCE(${visibleEntries.title}, '') || ' ' || COALESCE(${visibleEntries.contentCleaned}, ''))`;
-  }
-
+  // Match and rank against the stored, GIN-indexed tsvector (title + cleaned
+  // body, falling back to raw content when cleaned is empty — see migration
+  // 0105). Reading the precomputed column means the `@@` lookup is served by
+  // idx_entries_search_vector and ts_rank doesn't re-tokenize each matching
+  // document, which is what made the old on-the-fly to_tsvector search scan and
+  // tokenize the user's entire history on every query (#1249).
   const searchQuery = sql`plainto_tsquery('english', ${params.query})`;
-  conditions.push(sql`${searchVector} @@ ${searchQuery}`);
+  conditions.push(sql`${visibleEntries.searchVector} @@ ${searchQuery}`);
 
-  const rankColumn = sql<number>`ts_rank(${searchVector}, ${searchQuery})`;
+  const rankColumn = sql<number>`ts_rank(${visibleEntries.searchVector}, ${searchQuery})`;
 
   // Apply subscription filters (subscriptionId, tagId, uncategorized)
   const subscriptionFilter = await buildEntrySubscriptionFilter(
