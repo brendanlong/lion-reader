@@ -15,7 +15,7 @@ import {
 } from "../../src/server/http/page-cache";
 import { SESSION_COOKIE_NAME } from "../../src/server/auth/session-cookie";
 
-const CACHEABLE = "public, max-age=0, s-maxage=3600, stale-while-revalidate=604800";
+const CACHEABLE = "public, max-age=0, s-maxage=300, stale-while-revalidate=60";
 const NO_STORE = "private, no-store";
 
 describe("cookieHeaderHasSession", () => {

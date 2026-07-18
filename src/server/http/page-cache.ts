@@ -21,10 +21,18 @@ import { SESSION_COOKIE_NAME } from "@/server/auth/session-cookie";
 
 /**
  * Shareable render: browsers always revalidate (`max-age=0`) so a deploy is
- * picked up promptly, while a shared cache holds it for an hour and may serve
- * stale for a day while it refetches. `s-maxage` drives the CDN.
+ * picked up promptly; `s-maxage` drives the CDN.
+ *
+ * The CDN lifetime must stay SHORT because every deploy deletes the previous
+ * build's hashed assets: cached HTML referencing them keeps rendering (SSR),
+ * but hydration 404s on the route chunk and Next swaps in the unthemed
+ * `global-error` page — the "background flash" of issue #1350. The deploy
+ * workflow also purges the CDN after each rollout, but that requires a secret
+ * and can fail, so the TTL is the backstop: at most ~6 minutes of stale HTML
+ * (300s + 60s stale-while-revalidate) instead of the former hour + week of SWR.
+ * 300s still collapses a traffic spike to ~1 origin fetch per page per 5 min.
  */
-const CACHEABLE = "public, max-age=0, s-maxage=3600, stale-while-revalidate=604800";
+const CACHEABLE = "public, max-age=0, s-maxage=300, stale-while-revalidate=60";
 
 /** Per-session render (e.g. the signed-in redirect): never cache. */
 const NO_STORE = "private, no-store";
