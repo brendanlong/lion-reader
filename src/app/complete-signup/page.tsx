@@ -16,6 +16,7 @@ import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
+import { PageLink } from "@/components/ui/page-link";
 import { EuRestrictionReason } from "@/components/auth/EuRestrictionNotice";
 
 export default function CompleteSignupPage() {
@@ -89,14 +90,14 @@ export default function CompleteSignupPage() {
           />
           <span className="ui-text-sm text-body">
             I have read and agree to the{" "}
-            <a
+            <PageLink
               href="/terms"
               target="_blank"
               rel="noopener noreferrer"
               className="text-body hover:text-body underline"
             >
               Terms of Service
-            </a>
+            </PageLink>
           </span>
         </label>
 
@@ -109,14 +110,14 @@ export default function CompleteSignupPage() {
           />
           <span className="ui-text-sm text-body">
             I have read and agree to the{" "}
-            <a
+            <PageLink
               href="/privacy"
               target="_blank"
               rel="noopener noreferrer"
               className="text-body hover:text-body underline"
             >
               Privacy Policy
-            </a>
+            </PageLink>
           </span>
         </label>
 
