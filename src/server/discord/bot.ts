@@ -32,7 +32,7 @@ import { eq, and } from "drizzle-orm";
 import { db } from "@/server/db";
 import { oauthAccounts } from "@/server/db/schema";
 import { saveArticle } from "@/server/services/saved";
-import { validateApiToken } from "@/server/auth/api-token";
+import { validateApiToken, SAVE_ARTICLE_SCOPES } from "@/server/auth/api-token";
 import {
   linkDiscordApiToken,
   resolveDiscordApiTokenUserId,
@@ -440,6 +440,22 @@ async function handleLinkCommand(
       content:
         "Invalid API token. Please check your token and try again.\n\n" +
         "To get a token: Lion Reader → Settings → API Tokens → Create with 'Save articles' scope.",
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  // The bot only ever saves articles, and it does so via the saveArticle service
+  // (which bypasses the tRPC scope middleware), so gate `/link` on the same scope
+  // set `saved.save` requires. Token scopes are immutable, so a link-time check
+  // is sufficient — a linked token can always save. Reject anything else here
+  // rather than silently accepting a token that can never do anything useful.
+  const canSave = SAVE_ARTICLE_SCOPES.some((scope) => tokenData.token.scopes.includes(scope));
+  if (!canSave) {
+    await interaction.reply({
+      content:
+        "That API token doesn't have permission to save articles.\n\n" +
+        "Create a token with the 'Save articles' scope: Lion Reader → Settings → API Tokens.",
       flags: MessageFlags.Ephemeral,
     });
     return;

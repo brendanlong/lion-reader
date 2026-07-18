@@ -31,6 +31,16 @@ export const API_TOKEN_SCOPES = {
 
 export type ApiTokenScope = (typeof API_TOKEN_SCOPES)[keyof typeof API_TOKEN_SCOPES];
 
+/**
+ * Scopes that permit saving an article. A token needs at least one of these.
+ * `saved.save` (tRPC/REST) and the Discord bot's `/link` both gate on this set —
+ * keep it the single source of truth so the two surfaces can't drift.
+ */
+export const SAVE_ARTICLE_SCOPES: ApiTokenScope[] = [
+  API_TOKEN_SCOPES.SAVED_WRITE,
+  API_TOKEN_SCOPES.MCP,
+];
+
 // ============================================================================
 // Types
 // ============================================================================
