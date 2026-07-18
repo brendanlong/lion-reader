@@ -17,6 +17,8 @@ const article: DemoArticle = {
   heroImageAlt:
     "The Lion Reader lion holding up the classic orange RSS feed icon, with feed cards floating nearby.",
   summaryHtml: `<p>Lion Reader supports <strong>RSS 2.0 and Atom 1.0</strong> formats with automatic feed discovery. It uses <strong>HTTP conditional requests</strong> and respects Cache-Control headers while polling between once every 10 minutes and once every 7 days. The system handles redirects intelligently and applies exponential backoff for failed fetches.</p>`,
+  summaryModelId: "claude-sonnet-4-6",
+  summaryGeneratedAt: new Date("2026-02-08"),
   contentHtml: `
     <h2>Modern Syndication with RSS &amp; Atom</h2>
 

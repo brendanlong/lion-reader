@@ -17,6 +17,8 @@ const article: DemoArticle = {
   heroImageAlt:
     "The Lion Reader lion holding up a shield emblazoned with a keyhole, with a padlock and key floating nearby.",
   summaryHtml: `<p>Lion Reader offers <strong>multiple sign-in methods</strong> including email/password and OAuth providers (Google, Apple, Discord), with secure <strong>session management</strong> using SHA-256 hashes and Redis caching. Features include <strong>API tokens</strong> with scoped permissions, rate limiting, webhook verification, and subscription-based entry visibility to protect privacy.</p>`,
+  summaryModelId: "claude-sonnet-4-6",
+  summaryGeneratedAt: new Date("2026-02-07"),
   contentHtml: `
     <p>Lion Reader takes security and privacy seriously. Whether you&rsquo;re signing in with email or OAuth, managing API tokens, or connecting AI assistants, your data is protected with industry-standard security practices.</p>
 

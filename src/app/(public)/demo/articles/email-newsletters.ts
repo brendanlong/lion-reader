@@ -16,6 +16,8 @@ const article: DemoArticle = {
   ogImage,
   heroImageAlt: "The Lion Reader lion happily pulling a folded newsletter out of a large envelope.",
   summaryHtml: `<p>Lion Reader generates unique ingest email addresses that convert newsletters into feed entries. Subscribe to Substack, Ghost, or any newsletter using these addresses, and they appear in your unified timeline with full RSS-like features: starring, search, tags, and reading controls. Built-in security includes HMAC verification and sender blocking.</p>`,
+  summaryModelId: "claude-sonnet-4-6",
+  summaryGeneratedAt: new Date("2026-02-08"),
   contentHtml: `
     <p>Many exceptional writers and publications distribute content exclusively via email newsletters, not RSS feeds. <a href="https://substack.com/" target="_blank" rel="noopener noreferrer">Substack</a>, <a href="https://ghost.org/" target="_blank" rel="noopener noreferrer">Ghost</a>, <a href="https://buttondown.com/" target="_blank" rel="noopener noreferrer">Buttondown</a>, and countless independent creators have chosen email as their primary distribution channel. Lion Reader solves this problem by generating unique ingest email addresses &mdash; up to 5 per account &mdash; that you can use to subscribe to any newsletter. Each newsletter sender automatically becomes its own subscription in your Lion Reader account, appearing alongside your web feeds in a unified timeline.</p>
 

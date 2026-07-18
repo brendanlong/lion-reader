@@ -17,6 +17,8 @@ const article: DemoArticle = {
   heroImageAlt:
     "The Lion Reader lion plugging a connector cable into a friendly robot AI assistant, linking the two together.",
   summaryHtml: `<p>The Model Context Protocol (MCP) lets AI assistants like Claude access Lion Reader&#39;s features directly. The server exposes tools for listing, reading, searching, saving, and starring entries plus managing subscriptions and tags, all through the same services layer as the web UI. Remote clients (e.g. claude.ai) connect over Streamable HTTP with <strong>OAuth 2.1</strong>; local clients use stdio. Access is scoped by <strong>token permissions</strong>.</p>`,
+  summaryModelId: "claude-sonnet-5",
+  summaryGeneratedAt: new Date("2026-07-03"),
   contentHtml: `
     <h2>What is MCP?</h2>
 
