@@ -12,7 +12,8 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { validateSession } from "@/server/auth/session";
-import { isSignupConfirmed } from "@/server/auth/confirmation";
+import { sessionHomePath } from "@/server/auth/confirmation";
+import { DEMO_LANDING_PATH } from "@/lib/routes";
 
 export default async function HomePage() {
   const cookieStore = await cookies();
@@ -21,9 +22,9 @@ export default async function HomePage() {
   if (sessionToken) {
     const session = await validateSession(sessionToken);
     if (session) {
-      redirect(isSignupConfirmed(session.user) ? "/all" : "/complete-signup");
+      redirect(sessionHomePath(session.user));
     }
   }
 
-  redirect("/demo/all?entry=welcome");
+  redirect(DEMO_LANDING_PATH);
 }
