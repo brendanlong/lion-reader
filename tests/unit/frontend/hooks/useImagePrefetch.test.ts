@@ -134,4 +134,16 @@ describe("useImagePrefetch", () => {
     // Removed on error → alt text reappears so a broken image stays meaningful.
     expect(img.classList.contains("content-img-loading")).toBe(false);
   });
+
+  it("hides the placeholder of below-the-fold lazy images too", () => {
+    // The placeholder-hiding applies to every still-loading image, not just
+    // visible ones, so a lazy feed image doesn't flash its alt text if it
+    // scrolls in before it finishes loading.
+    const img = makeImage({ top: 5000, bottom: 5300 });
+    renderWithImages([img]);
+
+    // Still lazy (left for the observer to upgrade) but its placeholder is hidden.
+    expect(img.getAttribute("loading")).toBe("lazy");
+    expect(img.classList.contains("content-img-loading")).toBe(true);
+  });
 });
