@@ -294,6 +294,14 @@ export function DemoStateProvider({ children }: { children: ReactNode }) {
   // read (no hydration mismatch). The Suspense fallback — a provider with
   // nothing pre-seeded — only ever shows if params aren't yet resolved, and is
   // required so useSearchParams doesn't opt the whole subtree out of SSR.
+  //
+  // ASSUMPTION: every /demo route stays dynamically rendered (each page awaits
+  // `searchParams`). That keeps useSearchParams resolved on first render so the
+  // fallback never mounts. If a demo route were ever made static, SSR would
+  // render the fallback (seeding nothing) while the client seeds from `?entry=`
+  // — reintroducing exactly the article read/unread hydration mismatch this
+  // provider exists to prevent, plus resetting state on the fallback→resolved
+  // swap. Keep demo routes dynamic.
   return (
     <Suspense
       fallback={<DemoStateProviderImpl initialReadEntryId={null}>{children}</DemoStateProviderImpl>}
