@@ -34,7 +34,16 @@ if [ ! -d "$STATIC_DIR" ]; then
 fi
 
 cd "$STATIC_DIR"
+# Newline-delimited list is safe: Next.js asset names are hashed and never
+# contain newlines (xargs -I switches to newline delimiting, so spaces are
+# fine too).
 FILES=$(find . -type f | sed 's|^\./||')
+if [ -z "$FILES" ]; then
+  # An empty static dir means the extraction step grabbed the wrong path —
+  # fail rather than "successfully" uploading nothing and releasing.
+  echo "error: no files found under $STATIC_DIR" >&2
+  exit 1
+fi
 COUNT=$(printf '%s\n' "$FILES" | wc -l)
 echo "Uploading $COUNT files from $STATIC_DIR to storage zone '$BUNNY_STORAGE_ZONE_NAME' under _next/static/"
 
