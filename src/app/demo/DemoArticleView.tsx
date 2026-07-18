@@ -29,6 +29,17 @@ import { useEntryTextStyles } from "@/lib/appearance/AppearanceProvider";
 import { getDemoEntryArticleProps, type DemoEntry } from "./data";
 import { useDemoState } from "./DemoStateContext";
 
+/**
+ * Time zone used to format the article date during SSR only. The server has no
+ * way to know the visitor's zone, and defaulting to the host's UTC made the
+ * SSR'd date jump ~hours when the client re-rendered it in local time. Pinning
+ * SSR to a sensible default zone means it matches for visitors in that zone (and
+ * is a small, deliberate correction — not a UTC jump — for everyone else, whose
+ * client render then switches to their real local time). Client renders pass
+ * `undefined` so each visitor still sees their own local time.
+ */
+const SSR_FALLBACK_TIME_ZONE = "America/Los_Angeles";
+
 interface DemoArticleViewProps {
   /** The entry to render (live read/starred state is read from DemoStateContext). */
   entry: DemoEntry;
@@ -59,6 +70,10 @@ export function DemoArticleView({
     <ScrollContainer className="h-full overflow-y-auto">
       <EntryArticle
         {...getDemoEntryArticleProps(entry)}
+        // On the server (no visitor zone available) format in a fixed default
+        // zone; on the client use the visitor's local zone. See
+        // SSR_FALLBACK_TIME_ZONE.
+        dateTimeZone={typeof window === "undefined" ? SSR_FALLBACK_TIME_ZONE : undefined}
         textSizeClass={textSizeClass}
         textStyle={textStyle}
         onTouchStart={onTouchStart}
