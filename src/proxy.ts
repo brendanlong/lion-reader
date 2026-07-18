@@ -206,7 +206,7 @@ export function proxy(request: NextRequest) {
   // ==========================================================================
   // HACK: claude.ai OAuth "root path" workaround — `/register` is METHOD-SPLIT.
   //
-  //   GET      /register  ->  the human signup PAGE (normal; app/(auth)/register)
+  //   GET      /register  ->  the human signup PAGE (normal; app/(public)/(auth)/register)
   //   POST     /register  ->  rewritten to the OAuth DCR handler at /oauth/register
   //   OPTIONS  /register  ->  same rewrite, so an in-browser MCP client's CORS
   //                           preflight for the DCR POST is answered (the DCR
