@@ -70,6 +70,12 @@ and it is the one query the layout **`await`s**, so it sits directly on SSR TTFB
 Total DB time for the whole SSR pass is ~130 ms, of which ~125 ms is this single
 query; everything else combined is under 8 ms.
 
+> **Status:** fixed in `src/server/trpc/routers/sync.ts` (`sync.cursors`) — the
+> entries argmax now uses the index-driven arms described below. Equivalence to
+> the old query was verified across baseline / content-update-wins / tie /
+> saved / starred-orphan cases; integration coverage added in
+> `tests/integration/sync-events.test.ts` ("sync.cursors entries argmax").
+
 ## The problem: `sync.cursors` entries argmax
 
 ```sql
