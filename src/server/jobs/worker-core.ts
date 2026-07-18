@@ -144,6 +144,20 @@ interface InternalWorkerConfig {
   claimJob: ClaimJobFn;
   processJob: ProcessJobFn;
   onJobError?: (job: Job, error: unknown) => void;
+  /**
+   * Called when a `claimJob` attempt throws (e.g. the DB connection was dropped
+   * by a Postgres restart). The loop already logs and retries; this hook is for
+   * side-channel reporting (Sentry). It must not throw.
+   */
+  onClaimError?: (error: unknown) => void;
+  /**
+   * Called if the main run loop ever rejects. The loop is written not to — claim
+   * and process failures are handled inside it — so this firing means an
+   * unforeseen bug. The standalone worker uses it to exit the process (so Fly
+   * restarts it) rather than lingering as a live process with a dead loop. It
+   * must not throw.
+   */
+  onLoopExit?: (error: unknown) => void;
 }
 
 /**
@@ -162,6 +176,8 @@ export function createWorkerCore(config: InternalWorkerConfig): Worker {
     claimJob,
     processJob,
     onJobError,
+    onClaimError,
+    onLoopExit,
   } = config;
 
   // Worker state
@@ -213,7 +229,27 @@ export function createWorkerCore(config: InternalWorkerConfig): Worker {
     while (!state.shuttingDown) {
       // Fill up to capacity
       while (state.currentlyExecuting.size < concurrency && !state.shuttingDown) {
-        const job = await claimJob({ types: jobTypes });
+        let job: Job | null;
+        try {
+          job = await claimJob({ types: jobTypes });
+        } catch (error) {
+          // A failure while claiming — most importantly a DB connection dropped
+          // by a Postgres restart ("Connection terminated unexpectedly") — must
+          // NOT kill the loop. Without this guard the rejection escaped runLoop;
+          // because Sentry's onUnhandledRejection integration runs in 'warn'
+          // mode the process kept running with a dead loop until it was manually
+          // restarted (the app server, handling each request independently,
+          // self-heals for free). Log it, touch activity (the loop is alive —
+          // it's the DB that's down, so we must not let the liveness check
+          // restart us), stop filling this cycle, and fall through to the sleep
+          // below so the next cycle retries on a fresh pooled connection.
+          logger.error("Failed to claim job; retrying after poll interval", {
+            error: error instanceof Error ? error.message : "Unknown error",
+          });
+          onClaimError?.(error);
+          touchActivity();
+          break;
+        }
         touchActivity();
         if (job === null) break;
 
@@ -294,8 +330,19 @@ export function createWorkerCore(config: InternalWorkerConfig): Worker {
       jobTypes: jobTypes ?? "all",
     });
 
-    // Start the run loop (don't await - runs in background)
-    state.runLoopPromise = runLoop();
+    // Start the run loop (don't await - runs in background). Attach a catch so a
+    // loop that rejects can never become an unhandled rejection: with claim and
+    // process failures already handled inside runLoop this should never fire, but
+    // if it does we surface it loudly and hand off to onLoopExit (the standalone
+    // worker exits so Fly restarts it) instead of silently leaving a live process
+    // with a dead loop.
+    state.runLoopPromise = runLoop().catch((error) => {
+      state.running = false;
+      logger.error("Worker run loop terminated unexpectedly", {
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+      onLoopExit?.(error);
+    });
 
     logger.info("Worker started");
   }
