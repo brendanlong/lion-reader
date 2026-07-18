@@ -24,8 +24,8 @@ const withPWAConfig = withPWA({
   // Custom worker source for share target handling
   customWorkerSrc: "worker",
   // Don't cache or intercept the start URL ("/"): navigations are deliberately
-  // never SW-intercepted (streaming SSR, and "/" is CDN-cacheable HTML), and
-  // with no other caching an offline start page is unreachable anyway. Both
+  // never SW-intercepted (streaming SSR), and with no other caching an offline
+  // start page is unreachable anyway. Both
   // flags are needed — `dynamicStartUrl` (default true) is what registers the
   // NetworkFirst "start-url" route in the generated SW (and the cache-put in
   // the registration script); `cacheStartUrl` would otherwise add "/" to the
@@ -54,9 +54,9 @@ const withPWAConfig = withPWA({
     // - Images are deliberately not SW-cached: serving a remounted <img> via
     //   respondWith is always async, forfeiting the browser's synchronous
     //   memory/image-cache paint. (The alt-text flash this was blamed for was
-    //   ultimately a Cache-Control bug — see pageCachePolicy in
-    //   src/server/http/page-cache.ts — but SW-serving images would reintroduce
-    //   the same async remount by another path.)
+    //   ultimately a Cache-Control bug — a `max-age=0` on images forced a
+    //   network revalidation on every <img> remount — but SW-serving images
+    //   would reintroduce the same async remount by another path.)
     // Everything falls through to the browser's HTTP cache + our headers() below.
     // Workbox's GenerateSW rejects a config with neither precache entries nor
     // runtime routes, so register one route that can never match.
@@ -92,6 +92,15 @@ const securityHeaders: { key: string; value: string }[] = [
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["127.0.0.1", "localhost"],
+  // Serve the hashed /_next/static assets from the CDN (a Bunny pull zone with
+  // the app as origin). Set via env so dev and CI builds (which run against
+  // local servers the pull zone can't reach) stay origin-served; the production
+  // Dockerfile defaults it to https://lionreader.b-cdn.net. The CDN origin is
+  // also added to the CSP (src/server/http/csp.ts) from the same env var.
+  // Assets are content-hashed and served with `immutable`, so the pull zone
+  // needs no purging or deploy coordination. Files in public/ are not affected
+  // (they stay origin-served).
+  assetPrefix: process.env.ASSET_PREFIX || undefined,
   // Emit .next/standalone with a traced, minimal node_modules — the production
   // image ships that instead of the full pruned node_modules (issue #1305).
   // Our custom server (dist/server.js) keeps `next` external and resolves it

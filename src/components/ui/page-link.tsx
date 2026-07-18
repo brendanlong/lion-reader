@@ -6,9 +6,8 @@
  * demo's sign-in/sign-up buttons.
  *
  * Renders a plain <a>, so clicking triggers a real browser navigation: it loads
- * the target's HTML document — hitting our CDN cache for the cacheable public
- * pages (see `src/server/http/page-cache.ts`) — and issues no Next.js RSC
- * (`?_rsc=`) request and no viewport/hover prefetch, unlike `next/link`.
+ * the target's HTML document and issues no Next.js RSC (`?_rsc=`) request and
+ * no viewport/hover prefetch, unlike `next/link`.
  * Modifier/middle clicks, `target`, and `download` all fall through to the
  * browser natively (a plain <a> needs no JS for that).
  *

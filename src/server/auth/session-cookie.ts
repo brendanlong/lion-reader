@@ -16,7 +16,7 @@
  * redirect flow in src/server/auth/oauth/callback-helpers.ts.
  */
 
-export const SESSION_COOKIE_NAME = "session";
+const SESSION_COOKIE_NAME = "session";
 
 const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days
 

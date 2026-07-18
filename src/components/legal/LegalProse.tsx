@@ -7,8 +7,8 @@
  * each element so the two pages can't drift apart.
  *
  * These pages intentionally navigate with <PageLink> (a plain full-page <a>),
- * not ClientLink — they are standalone routes outside the SPA shell, and a full
- * navigation hits the CDN-cached HTML without a Next.js RSC prefetch/soft-nav.
+ * not ClientLink — they are standalone routes outside the SPA shell, loaded
+ * with a full navigation rather than a Next.js RSC prefetch/soft-nav.
  */
 
 import type { ReactNode } from "react";
