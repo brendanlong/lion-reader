@@ -85,11 +85,16 @@ jobs:
             echo "Bunny secrets not configured; skipping CDN purge"
             exit 0
           fi
-          curl -sf -X POST \
+          # Best-effort: a failed purge must not mark a successful deploy red —
+          # the short s-maxage bounds the damage. The warning still surfaces a
+          # broken secret in the run summary.
+          if curl -sf -X POST \
             "https://api.bunny.net/pullzone/${BUNNY_PULL_ZONE_ID}/purgeCache" \
-            -H "AccessKey: ${BUNNY_API_KEY}" \
-            -H "Content-Length: 0"
-          echo "CDN cache purged"
+            -H "AccessKey: ${BUNNY_API_KEY}"; then
+            echo "CDN cache purged"
+          else
+            echo "::warning::Bunny CDN purge failed (deploy itself succeeded); check BUNNY_API_KEY / BUNNY_PULL_ZONE_ID"
+          fi
         env:
           BUNNY_API_KEY: ${{ secrets.BUNNY_API_KEY }}
           BUNNY_PULL_ZONE_ID: ${{ secrets.BUNNY_PULL_ZONE_ID }}
