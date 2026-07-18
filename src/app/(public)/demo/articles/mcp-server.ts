@@ -1,4 +1,6 @@
 import { type DemoArticle } from "./types";
+import heroImage from "./images/mcp-server.png";
+import ogImage from "./images/mcp-server-og.png";
 
 const article: DemoArticle = {
   id: "mcp-server",
@@ -10,7 +12,8 @@ const article: DemoArticle = {
   summary: "Connect Lion Reader to AI assistants like Claude via the Model Context Protocol.",
   publishedAt: new Date("2026-01-14T12:00:00Z"),
   starred: true,
-  heroImage: "/demo/mcp-server.png",
+  heroImage,
+  ogImage,
   heroImageAlt:
     "The Lion Reader lion plugging a connector cable into a friendly robot AI assistant, linking the two together.",
   summaryHtml: `<p>The Model Context Protocol (MCP) lets AI assistants like Claude access Lion Reader&#39;s features directly. The server exposes tools for listing, reading, searching, saving, and starring entries plus managing subscriptions and tags, all through the same services layer as the web UI. Remote clients (e.g. claude.ai) connect over Streamable HTTP with <strong>OAuth 2.1</strong>; local clients use stdio. Access is scoped by <strong>token permissions</strong>.</p>`,

@@ -1,4 +1,6 @@
 import { type DemoArticle } from "./types";
+import heroImage from "./images/keyboard-shortcuts.png";
+import ogImage from "./images/keyboard-shortcuts-og.png";
 
 const article: DemoArticle = {
   id: "keyboard-shortcuts",
@@ -10,7 +12,8 @@ const article: DemoArticle = {
   summary: "Navigate your entire reading workflow without touching the mouse.",
   publishedAt: new Date("2025-12-27T14:00:00Z"),
   starred: false,
-  heroImage: "/demo/keyboard-shortcuts.png",
+  heroImage,
+  ogImage,
   heroImageAlt:
     "The Lion Reader lion tapping a large keyboard key, with arrow keycaps floating nearby.",
   summaryHtml: `<p>Lion Reader offers <strong>keyboard shortcuts</strong> for faster navigation. Use <strong>j/k</strong> to move through entries, <strong>m</strong> to mark read/unread, <strong>s</strong> to star items, and <strong>g+letter combinations</strong> to jump between sections like All Items, Starred, and Saved articles.</p>`,

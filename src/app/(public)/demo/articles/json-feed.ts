@@ -1,4 +1,6 @@
 import { type DemoArticle } from "./types";
+import heroImage from "./images/json-feed.png";
+import ogImage from "./images/json-feed-og.png";
 
 const article: DemoArticle = {
   id: "json-feed",
@@ -11,7 +13,8 @@ const article: DemoArticle = {
     "Native support for JSON Feed, a modern syndication format that uses JSON instead of XML.",
   publishedAt: new Date("2025-12-26T14:00:00Z"),
   starred: false,
-  heroImage: "/demo/json-feed.png",
+  heroImage,
+  ogImage,
   heroImageAlt:
     "The Lion Reader lion holding a feed card marked with curly braces, representing the JSON Feed format.",
   summaryHtml: `<p>JSON Feed is a modern syndication format using JSON instead of XML, making it easier to produce and consume. It supports multiple authors, tags, and both HTML and plain text content. Lion Reader provides <strong>full native support</strong> for JSON Feed versions 1.0 and 1.1 alongside RSS and Atom.</p>`,

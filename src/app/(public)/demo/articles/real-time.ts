@@ -1,4 +1,6 @@
 import { type DemoArticle } from "./types";
+import heroImage from "./images/real-time.png";
+import ogImage from "./images/real-time-og.png";
 
 const article: DemoArticle = {
   id: "real-time",
@@ -10,7 +12,8 @@ const article: DemoArticle = {
   summary: "See new entries appear instantly with Server-Sent Events and smart cache invalidation.",
   publishedAt: new Date("2025-12-28T16:00:00Z"),
   starred: true,
-  heroImage: "/demo/real-time.png",
+  heroImage,
+  ogImage,
   heroImageAlt:
     "The Lion Reader lion reading while a conveyor belt delivers a steady stream of fresh newspapers, emails, and books.",
   summaryHtml: `<p>Lion Reader uses <strong>Server-Sent Events (SSE)</strong> and Redis pub/sub for real-time updates without polling. When feeds fetch new content, events publish to per-feed channels, and your browser receives updates instantly. The connection automatically subscribes to relevant feeds, with graceful degradation if Redis fails.</p>`,

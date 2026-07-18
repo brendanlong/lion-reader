@@ -1,4 +1,6 @@
 import { type DemoArticle } from "./types";
+import heroImage from "./images/auth-security.png";
+import ogImage from "./images/auth-security-og.png";
 
 const article: DemoArticle = {
   id: "auth-security",
@@ -10,7 +12,8 @@ const article: DemoArticle = {
   summary: "Sign in with email, Google, Apple, or Discord. API tokens for extensions and MCP.",
   publishedAt: new Date("2025-12-26T11:00:00Z"),
   starred: false,
-  heroImage: "/demo/auth-security.png",
+  heroImage,
+  ogImage,
   heroImageAlt:
     "The Lion Reader lion holding up a shield emblazoned with a keyhole, with a padlock and key floating nearby.",
   summaryHtml: `<p>Lion Reader offers <strong>multiple sign-in methods</strong> including email/password and OAuth providers (Google, Apple, Discord), with secure <strong>session management</strong> using SHA-256 hashes and Redis caching. Features include <strong>API tokens</strong> with scoped permissions, rate limiting, webhook verification, and subscription-based entry visibility to protect privacy.</p>`,
