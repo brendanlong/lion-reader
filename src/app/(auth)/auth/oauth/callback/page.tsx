@@ -16,6 +16,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
+import { navigateAfterAuth } from "@/lib/navigation";
 import { broadcastOAuthComplete } from "@/lib/oauth-channel";
 import { SpinnerIcon } from "@/components/ui/icon-button";
 
@@ -149,13 +150,14 @@ function OAuthCallbackContent() {
       const redirectTo = data.isNewUser ? "/complete-signup" : "/all";
       // Broadcast completion for PWAs that may be listening in another window
       broadcastOAuthComplete(redirectTo);
-      router.push(redirectTo);
-      router.refresh();
+      // /complete-signup is a standalone page outside the SPA, so this
+      // hard-navigates there; /all soft-navigates into the app.
+      navigateAfterAuth(router, redirectTo);
     },
     onError: (error) => {
       cleanupOAuthState();
       const errorCode = getErrorCode(error.message);
-      router.push(`/login?error=${errorCode}`);
+      navigateAfterAuth(router, `/login?error=${errorCode}`);
     },
   });
 
@@ -168,13 +170,14 @@ function OAuthCallbackContent() {
       const redirectTo = data.isNewUser ? "/complete-signup" : "/all";
       // Broadcast completion for PWAs that may be listening in another window
       broadcastOAuthComplete(redirectTo);
-      router.push(redirectTo);
-      router.refresh();
+      // /complete-signup is a standalone page outside the SPA, so this
+      // hard-navigates there; /all soft-navigates into the app.
+      navigateAfterAuth(router, redirectTo);
     },
     onError: (error) => {
       cleanupOAuthState();
       const errorCode = getErrorCode(error.message);
-      router.push(`/login?error=${errorCode}`);
+      navigateAfterAuth(router, `/login?error=${errorCode}`);
     },
   });
 
@@ -228,7 +231,9 @@ function OAuthCallbackContent() {
         : `/login?error=${validation.errorCode}`;
       cleanupOAuthState();
       const timeoutId = setTimeout(() => {
-        router.push(redirectPath);
+        // /login (non-link mode) is a standalone page → hard nav; /settings
+        // (link mode) soft-navigates into the app.
+        navigateAfterAuth(router, redirectPath);
       }, 2000);
       return () => clearTimeout(timeoutId);
     }

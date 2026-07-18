@@ -5,6 +5,58 @@
  */
 
 import { type MouseEvent } from "react";
+import type { AppRouterInstance } from "next/dist/shared/lib/app-router-context.shared-runtime";
+
+/** Route prefixes that render as their own document *outside* the app SPA shell. */
+const NON_SPA_PREFIXES = [
+  "/login",
+  "/register",
+  "/complete-signup",
+  "/privacy",
+  "/terms",
+  "/auth",
+] as const;
+
+/**
+ * True when `path` is rendered inside the main app SPA shell (so a client-side
+ * soft navigation is safe), false for a standalone route that needs a full load.
+ */
+export function isSpaPath(path: string): boolean {
+  const pathname = path.split(/[?#]/, 1)[0];
+  return !NON_SPA_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
+  );
+}
+
+/**
+ * Navigate to a post-auth destination: a soft-nav for SPA routes, a full page
+ * load for standalone routes.
+ *
+ * Standalone routes outside the SPA shell — the auth pages (`/login`,
+ * `/register`, `/complete-signup`, the OAuth pages) and the public legal pages
+ * (`/privacy`, `/terms`) — are served as their own HTML documents. They must be
+ * *entered* via a real browser navigation, never a Next.js RSC soft-nav
+ * (`router.push`): a soft-nav issues an `?_rsc=` request that can hit a newer
+ * server build than the (possibly CDN-cached) shell that started it, producing a
+ * version-skew error. Clickable links to these routes already avoid soft-nav by
+ * using `PageLink` (a plain `<a>`); this is the programmatic (post-mutation
+ * redirect) counterpart. See `src/CLAUDE.md`.
+ *
+ * Pass the same path you'd give `router.push`. The SPA branch also
+ * `router.refresh()`es so the authenticated shell re-renders server-side with
+ * the new session.
+ */
+export function navigateAfterAuth(
+  router: Pick<AppRouterInstance, "push" | "refresh">,
+  path: string
+): void {
+  if (isSpaPath(path)) {
+    router.push(path);
+    router.refresh();
+  } else {
+    window.location.href = path;
+  }
+}
 
 /**
  * Navigate using pushState without triggering SSR.
