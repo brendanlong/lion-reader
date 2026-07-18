@@ -19,6 +19,28 @@ import { TRPCClientError } from "@trpc/client";
 import superjson from "superjson";
 
 /**
+ * Query options for the deploy-static config queries the public pages read
+ * (`auth.signupConfig`, `auth.providers`). Their values come from server env and
+ * cannot change within a browser session, so we suppress every background
+ * refetch: `staleTime: Infinity` keeps the SSR-hydrated data permanently fresh,
+ * which alone stops the mount/focus/reconnect refetches (they all only fire on a
+ * stale query), and the explicit `refetchOn* : false` flags document that intent
+ * and keep it robust if `staleTime` is ever lowered.
+ *
+ * This is what keeps the signup/sign-in pages from re-hitting `/api/trpc` after
+ * hydration — a refetch there previously let a stale CDN-cached response
+ * overwrite the correct SSR value (the register page's EU-banner flash). The
+ * `no-store` header on tRPC responses stops the CDN from caching in the first
+ * place; this stops the client from asking at all.
+ */
+export const STATIC_CONFIG_QUERY_OPTIONS = {
+  staleTime: Infinity,
+  refetchOnMount: false,
+  refetchOnWindowFocus: false,
+  refetchOnReconnect: false,
+} as const;
+
+/**
  * Check if an error is a tRPC UNAUTHORIZED error indicating invalid session.
  */
 function isUnauthorizedError(error: unknown): boolean {
