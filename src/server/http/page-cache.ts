@@ -23,6 +23,13 @@ import { SESSION_COOKIE_NAME } from "@/server/auth/session-cookie";
  * Shareable render: browsers always revalidate (`max-age=0`) so a deploy is
  * picked up promptly, while a shared cache holds it for an hour and may serve
  * stale for a day while it refetches. `s-maxage` drives the CDN.
+ *
+ * Stale cached HTML is only safe because deploys keep every referenced build
+ * asset servable: the deploy workflow uploads each build's `/_next/static` to
+ * the Bunny storage zone (additive; issue #1318) and purges the pull zone
+ * after each rollout — without that, a deploy deletes the previous build's
+ * hashed chunks and cached HTML hydration 404s into the global-error page
+ * (issue #1350).
  */
 const CACHEABLE = "public, max-age=0, s-maxage=3600, stale-while-revalidate=604800";
 
