@@ -17,9 +17,10 @@ interface SortToggleProps {
   sortOrder: "newest" | "oldest";
 
   /**
-   * Callback when the toggle is clicked.
+   * Callback when the toggle is clicked. Optional so it can render inert during
+   * SSR (see StateToggleButton).
    */
-  onToggle: () => void;
+  onToggle?: () => void;
 
   /**
    * Optional class name for additional styling.

@@ -9,7 +9,16 @@
 
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import {
+  createContext,
+  Suspense,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
+import { useSearchParams } from "next/navigation";
 import { DEMO_ENTRIES, type DemoEntry } from "./data";
 
 // ============================================================================
@@ -83,12 +92,29 @@ const DemoStateContext = createContext<DemoStateContextValue | null>(null);
 // Provider
 // ============================================================================
 
-export function DemoStateProvider({ children }: { children: ReactNode }) {
+function DemoStateProviderImpl({
+  initialReadEntryId,
+  children,
+}: {
+  /**
+   * Entry to seed as already-read (the one open on first load, from `?entry=`).
+   * The real app auto-marks an opened entry read; seeding it into the initial
+   * state — on both the server and the client's first render — means the read
+   * toggle and unread counts render read from the first paint, with no flash as
+   * DemoRouter's mark-read effect runs after hydration.
+   */
+  initialReadEntryId: string | null;
+  children: ReactNode;
+}) {
   const [state, setState] = useState<DemoState>(() => {
-    // Initialize from static data defaults
+    // Initialize from static data defaults, treating the initially-open entry
+    // as read so it matches the real app's open-marks-read behavior.
     const entryStates = new Map<string, EntryState>();
     for (const entry of DEMO_ENTRIES) {
-      entryStates.set(entry.id, { read: entry.read, starred: entry.starred });
+      entryStates.set(entry.id, {
+        read: entry.read || entry.id === initialReadEntryId,
+        starred: entry.starred,
+      });
     }
     return {
       entryStates,
@@ -246,6 +272,35 @@ export function DemoStateProvider({ children }: { children: ReactNode }) {
   );
 
   return <DemoStateContext.Provider value={value}>{children}</DemoStateContext.Provider>;
+}
+
+/**
+ * Reads the open entry id from the URL and seeds it as read. Isolated so the
+ * `useSearchParams()` call sits under the Suspense boundary in DemoStateProvider
+ * (required by Next for client components that read search params).
+ */
+function DemoStateProviderWithInitialRead({ children }: { children: ReactNode }) {
+  const initialReadEntryId = useSearchParams().get("entry");
+  return (
+    <DemoStateProviderImpl initialReadEntryId={initialReadEntryId}>
+      {children}
+    </DemoStateProviderImpl>
+  );
+}
+
+export function DemoStateProvider({ children }: { children: ReactNode }) {
+  // On these dynamic demo routes the search params are available during SSR, so
+  // the server and the client's first render both seed the same open entry as
+  // read (no hydration mismatch). The Suspense fallback — a provider with
+  // nothing pre-seeded — only ever shows if params aren't yet resolved, and is
+  // required so useSearchParams doesn't opt the whole subtree out of SSR.
+  return (
+    <Suspense
+      fallback={<DemoStateProviderImpl initialReadEntryId={null}>{children}</DemoStateProviderImpl>}
+    >
+      <DemoStateProviderWithInitialRead>{children}</DemoStateProviderWithInitialRead>
+    </Suspense>
+  );
 }
 
 // ============================================================================
