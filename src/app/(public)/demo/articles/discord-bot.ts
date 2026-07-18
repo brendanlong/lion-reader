@@ -18,6 +18,8 @@ const article: DemoArticle = {
   heroImageAlt:
     "The Lion Reader lion beside a chat bubble where an article is saved with the book-reading Lion Reader emoji reaction, with a saluting lion emoji confirming.",
   summaryHtml: `<p>The Lion Reader Discord bot automatically saves articles when users react to messages with a lion emoji or send a link to the bot in a DM. After linking accounts through Discord OAuth or API tokens, the bot provides instant visual feedback using custom emojis to confirm successful saves or indicate errors.</p>`,
+  summaryModelId: "claude-sonnet-5",
+  summaryGeneratedAt: new Date("2026-07-13"),
   contentHtml: `
     <h2>Save Articles from Discord</h2>
 

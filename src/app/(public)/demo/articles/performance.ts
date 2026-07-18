@@ -18,6 +18,8 @@ const article: DemoArticle = {
   heroImageAlt:
     "The Lion Reader lion dashing forward with speed lines and a lightning bolt while holding an article card.",
   summaryHtml: `<p>Lion Reader treats speed as a feature you can feel: <strong>new articles appear in your lists automatically</strong> without a refresh, moving around the app is instant and never reloads what you&rsquo;re reading, your own actions apply the moment you make them, and a carefully tuned backend keeps typical page loads under 100ms.</p>`,
+  summaryModelId: "claude-sonnet-5",
+  summaryGeneratedAt: new Date("2026-07-03"),
   contentHtml: `
     <p>Most of Lion Reader&rsquo;s features exist in other readers somewhere. What&rsquo;s harder to find is a reader that treats <em>speed</em> as a feature you can feel &mdash; not a nice-to-have, but something worth obsessing over. Lion Reader is built so the interface stays out of your way: updates appear without flicker, navigation is instant, and pages load fast even on the cheapest cloud hardware.</p>
 

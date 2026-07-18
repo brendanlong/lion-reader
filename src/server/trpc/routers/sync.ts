@@ -126,29 +126,88 @@ export const syncRouter = createTRPCRouter({
 
     // Run all max queries in parallel for efficiency.
     // The pool returns Postgres's raw microsecond string for timestamptz, which
-    // mapWith decodes to a full-precision Temporal.Instant — avoiding the
-    // JavaScript Date truncation that caused cursor comparison bugs (#680, #683).
+    // parseTimestamptzOrNull / mapWith decodes to a full-precision
+    // Temporal.Instant — avoiding the JavaScript Date truncation that caused
+    // cursor comparison bugs (#680, #683).
     const [entriesResult, subscriptionsResult, tagsResult] = await Promise.all([
-      // Entries: newest GREATEST(entries.updated_at, user_entries.updated_at)
-      // plus the id of the entry achieving it, forming the `(entries,
-      // entriesAfterId)` keyset. This catches both entry metadata changes AND
-      // read/starred state changes; the id lets a catch-up page within a tied
-      // timestamp group. Ordered by (key DESC, id DESC) so LIMIT 1 is the argmax.
-      ctx.db
-        .select({
-          max: sql`GREATEST(${entries.updatedAt}, ${userEntries.updatedAt})`.mapWith(
-            parseTimestamptzOrNull
-          ),
-          maxId: entries.id,
-        })
-        .from(userEntries)
-        .innerJoin(entries, eq(entries.id, userEntries.entryId))
-        .where(eq(userEntries.userId, userId))
-        .orderBy(
-          sql`GREATEST(${entries.updatedAt}, ${userEntries.updatedAt}) DESC`,
-          sql`${entries.id} DESC`
+      // ── Entries cursor: argmax of GREATEST(entries.updated_at,
+      //    user_entries.updated_at) over the user's entries, plus the id
+      //    achieving it — the `(entries, entriesAfterId)` keyset. ─────────────
+      //
+      // GREATEST(e, ue) spans two tables, so no index can serve an ORDER BY on
+      // it: the naive `user_entries ⨝ entries ORDER BY GREATEST(...) DESC LIMIT
+      // 1` had to materialize the value for EVERY one of the user's entries
+      // (nested-loop PK lookup into entries per row) and top-N sort the lot —
+      // O(user's entire history), on every SSR and every SSE (re)connect. For a
+      // heavy user that measured ~125 ms / ~200k buffers. This is the same class
+      // of problem #1105 fixed for the sibling sync.events delta; the argmax was
+      // left on the old shape.
+      //
+      // The fix uses the identity  max_i GREATEST(a_i, b_i) = GREATEST(max_i a_i,
+      // max_i b_i)  to split into index-served arms, each returning its own
+      // top (ts, id); the outer `ORDER BY ts DESC, id DESC LIMIT 1` then picks
+      // the overall argmax:
+      //   arm_ue  — max user_entries.updated_at (state changes + new entries, since
+      //             fanout stamps ue.updated_at = now()), via
+      //             idx_user_entries_updated_at.
+      //   arm_sub — max entries.updated_at (content refetches that bump the entry
+      //             but not the ue row) over the user's feeds, driven from
+      //             subscriptions into idx_entries_feed_updated_at per feed.
+      //   arm_saved — same, for the saved-articles feed (no subscription row).
+      // The two entry arms are bounded to updated_at >= arm_ue's max (the `bound`
+      // CTE): an entry only changes the answer when its content update is at least
+      // as new as the newest state change, so this keeps the per-feed index seeks
+      // near-empty in the common case (user activity is newest) while still
+      // catching — and correctly id-tiebreaking, `>=` includes the tied boundary —
+      // the rare case where a content update is the most recent change. Joining
+      // user_entries in both arms preserves the old query's set (entries the user
+      // actually has a row for). Driving arm_sub from ALL subscriptions (active
+      // and unsubscribed) covers starred orphans, whose subscription row survives
+      // unsubscribe. Measured ~1.3 ms / ~1.1k buffers on the same heavy user.
+      ctx.db.execute<{ ts: string | null; id: string | null }>(sql`
+        WITH arm_ue AS (
+          SELECT ue.updated_at AS ts, ue.entry_id AS id
+          FROM user_entries ue
+          WHERE ue.user_id = ${userId}::uuid
+          ORDER BY ue.updated_at DESC, ue.entry_id DESC
+          LIMIT 1
+        ),
+        bound AS (
+          SELECT COALESCE((SELECT ts FROM arm_ue), '-infinity'::timestamptz) AS ts
+        ),
+        arm_sub AS (
+          SELECT e.updated_at AS ts, e.id
+          FROM subscriptions s
+          JOIN entries e
+            ON e.feed_id = s.feed_id
+            AND e.updated_at >= (SELECT ts FROM bound)
+          JOIN user_entries ue2
+            ON ue2.entry_id = e.id AND ue2.user_id = ${userId}::uuid
+          WHERE s.user_id = ${userId}::uuid
+          ORDER BY e.updated_at DESC, e.id DESC
+          LIMIT 1
+        ),
+        arm_saved AS (
+          SELECT e.updated_at AS ts, e.id
+          FROM entries e
+          JOIN user_entries ue2
+            ON ue2.entry_id = e.id AND ue2.user_id = ${userId}::uuid
+          WHERE e.feed_id = (
+              SELECT id FROM feeds WHERE user_id = ${userId}::uuid AND type = 'saved'
+            )
+            AND e.updated_at >= (SELECT ts FROM bound)
+          ORDER BY e.updated_at DESC, e.id DESC
+          LIMIT 1
         )
-        .limit(1),
+        SELECT ts, id FROM (
+          SELECT ts, id FROM arm_ue
+          UNION ALL SELECT ts, id FROM arm_sub
+          UNION ALL SELECT ts, id FROM arm_saved
+        ) c
+        WHERE ts IS NOT NULL
+        ORDER BY ts DESC, id DESC
+        LIMIT 1
+      `),
 
       // Subscriptions: max(updated_at) from ALL subscriptions (active and removed)
       // updated_at is set when unsubscribing, so this covers both cases
@@ -168,9 +227,11 @@ export const syncRouter = createTRPCRouter({
         .where(eq(tags.userId, userId)),
     ]);
 
+    const entriesRow = entriesResult.rows[0];
+
     return {
-      entries: entriesResult[0]?.max?.toString() ?? null,
-      entriesAfterId: entriesResult[0]?.maxId ?? null,
+      entries: parseTimestamptzOrNull(entriesRow?.ts)?.toString() ?? null,
+      entriesAfterId: entriesRow?.id ?? null,
       subscriptions: subscriptionsResult[0]?.max?.toString() ?? null,
       tags: tagsResult[0]?.max?.toString() ?? null,
     };

@@ -18,6 +18,8 @@ const article: DemoArticle = {
   heroImageAlt:
     "The Lion Reader lion beside a moving box of feed subscriptions with import and export arrows.",
   summaryHtml: `<p>Lion Reader supports full OPML import and export for migrating feed subscriptions between readers. Import processes run in the background with real-time progress updates, preserving folder/tag structure while validating feeds. Export generates OPML 2.0 with custom titles and complete hierarchy, compatible with any OPML-supporting reader.</p>`,
+  summaryModelId: "claude-sonnet-4-6",
+  summaryGeneratedAt: new Date("2026-02-07"),
   contentHtml: `
     <h2>Portable Subscriptions</h2>
 

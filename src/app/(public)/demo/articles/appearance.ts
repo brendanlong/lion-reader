@@ -18,6 +18,8 @@ const article: DemoArticle = {
   heroImageAlt:
     "The Lion Reader lion holding a card split into a light half with a sun and a dark half with a moon, with a paintbrush and color swatches.",
   summaryHtml: `<p>Lion Reader offers extensive reading customization: <strong>dark mode</strong> with sleep-friendly warm amber tones to reduce blue light, an <strong>e-paper theme</strong> optimized for e-ink displays, typography controls (font family, size, alignment), list density options, and Progressive Web App support for native-like installation.</p>`,
+  summaryModelId: "claude-sonnet-5",
+  summaryGeneratedAt: new Date("2026-07-14"),
   contentHtml: `
     <p>Reading comfort is personal. What works for one person might strain another&rsquo;s eyes. That&rsquo;s why Lion Reader gives you comprehensive control over how your content appears, letting you create the perfect reading environment for your preferences and lighting conditions.</p>
 
