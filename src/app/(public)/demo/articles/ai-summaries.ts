@@ -1,4 +1,6 @@
 import { type DemoArticle } from "./types";
+import heroImage from "./images/ai-summaries.png";
+import ogImage from "./images/ai-summaries-og.png";
 
 const article: DemoArticle = {
   id: "ai-summaries",
@@ -10,7 +12,8 @@ const article: DemoArticle = {
   summary: "Generate concise AI summaries to quickly triage your reading list.",
   publishedAt: new Date("2026-01-16T12:00:00Z"),
   starred: true,
-  heroImage: "/demo/ai-summaries.png",
+  heroImage,
+  ogImage,
   heroImageAlt:
     "The Lion Reader lion waving a sparkling magic wand to condense a long scroll into a short summary card.",
   summaryHtml: `<p>Lion Reader offers <strong>on-demand AI summaries</strong> to help triage unread articles. Unlike auto-summarizing readers, summaries are only generated when you click &quot;Summarize.&quot; Results are <strong>cached and shared across users</strong> to reduce costs, letting you quickly scan summaries to prioritize your reading list.</p>`,

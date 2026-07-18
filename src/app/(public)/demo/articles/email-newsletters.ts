@@ -1,4 +1,6 @@
 import { type DemoArticle } from "./types";
+import heroImage from "./images/email-newsletters.png";
+import ogImage from "./images/email-newsletters-og.png";
 
 const article: DemoArticle = {
   id: "email-newsletters",
@@ -10,7 +12,8 @@ const article: DemoArticle = {
   summary: "Read newsletters alongside your feeds with unique ingest email addresses.",
   publishedAt: new Date("2025-12-30T12:00:00Z"),
   starred: false,
-  heroImage: "/demo/email-newsletters.png",
+  heroImage,
+  ogImage,
   heroImageAlt: "The Lion Reader lion happily pulling a folded newsletter out of a large envelope.",
   summaryHtml: `<p>Lion Reader generates unique ingest email addresses that convert newsletters into feed entries. Subscribe to Substack, Ghost, or any newsletter using these addresses, and they appear in your unified timeline with full RSS-like features: starring, search, tags, and reading controls. Built-in security includes HMAC verification and sender blocking.</p>`,
   contentHtml: `

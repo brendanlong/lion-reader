@@ -1,4 +1,6 @@
 import { type DemoArticle } from "./types";
+import heroImage from "./images/text-to-speech.png";
+import ogImage from "./images/text-to-speech-og.png";
 
 const article: DemoArticle = {
   id: "text-to-speech",
@@ -11,7 +13,8 @@ const article: DemoArticle = {
     "Listen to articles read aloud with AI-enhanced text preprocessing and paragraph highlighting.",
   publishedAt: new Date("2025-12-27T18:00:00Z"),
   starred: false,
-  heroImage: "/demo/text-to-speech.png",
+  heroImage,
+  ogImage,
   heroImageAlt:
     "The Lion Reader lion wearing headphones and reading a newspaper as an article is read aloud, with sound waves rising from the page.",
   summaryHtml: `<p>Lion Reader converts articles to audio using a two-stage process: an <strong>AI preprocessor</strong> (GPT-OSS) transforms HTML into narration-friendly text by expanding abbreviations and formatting complex elements, then either Web Speech API or local <strong>Piper TTS</strong> synthesizes speech. Features include synchronized paragraph highlighting, playback controls, and offline capability.</p>`,

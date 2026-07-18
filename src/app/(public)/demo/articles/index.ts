@@ -17,7 +17,8 @@ import performance from "./performance";
 
 // Organization & Search
 // (The full-text search article is unlisted while search is disabled, #1249 —
-// restore src/app/demo/articles/search.ts from git history when re-enabling.)
+// restore src/app/demo/articles/search.ts from git history when re-enabling; its
+// hero/OG images are already in ./images/search{,-og}.png, ready to import.)
 import tags from "./tags";
 import opml from "./opml";
 

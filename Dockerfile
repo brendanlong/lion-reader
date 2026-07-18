@@ -110,15 +110,10 @@ ENV DATABASE_URL="postgresql://build:build@localhost:5432/build"
 ENV REDIS_URL="redis://localhost:6379"
 
 # CDN base URL for /_next/static (see the global ARG at the top of this file).
+# Demo hero/OG images are imported into the Next build too, so they're hashed
+# into /_next/static/media and served from this same CDN origin automatically.
 ARG ASSET_PREFIX
 ENV ASSET_PREFIX=$ASSET_PREFIX
-
-# Same CDN origin, but as a NEXT_PUBLIC_* var so it's inlined into BOTH the
-# server and client bundles: the demo builds its hero/OG image URLs (with a
-# ?v=<hash> cache-buster) on the server prerender and again on the client after
-# hydration, and both must produce the identical URL. Derived from ASSET_PREFIX
-# so it can never drift from the /_next/static origin. See demo-assets.ts.
-ENV NEXT_PUBLIC_ASSET_PREFIX=$ASSET_PREFIX
 
 # Client-side Sentry DSN. NEXT_PUBLIC_* vars are inlined into the client
 # bundle at build time, so a runtime secret is not enough — the DSN must be

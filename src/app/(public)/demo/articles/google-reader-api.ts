@@ -1,4 +1,6 @@
 import { type DemoArticle } from "./types";
+import heroImage from "./images/google-reader-api.png";
+import ogImage from "./images/google-reader-api-og.png";
 
 const article: DemoArticle = {
   id: "google-reader-api",
@@ -11,7 +13,8 @@ const article: DemoArticle = {
     "Sync Lion Reader with mobile and desktop RSS apps using the Google Reader-compatible API.",
   publishedAt: new Date("2026-02-20T01:00:00Z"),
   starred: false,
-  heroImage: "/demo/google-reader-api.png",
+  heroImage,
+  ogImage,
   heroImageAlt:
     "The Lion Reader lion syncing with a phone and a desktop feed reader via two-way arrows.",
   summaryHtml: `<p>Lion Reader supports the <strong>Google Reader API</strong>, enabling sync with third-party RSS apps like Reeder Classic, NetNewsWire, and NewsFlash. Compatible apps sync subscriptions, read state, starred and saved articles, tags, and unread counts. To set up, select <strong>FreshRSS</strong> as the service type in your app and enter your Lion Reader credentials.</p>`,
