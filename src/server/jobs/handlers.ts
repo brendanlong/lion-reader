@@ -150,12 +150,9 @@ async function fetchFullContentForNewEntries(
       // inline rather than offloading to a worker — the thread hop is pure
       // overhead here.
       const result = await fetchFullContent(entry.url!, { offloadClean: false });
-      // Persists the result (sanitized at write time so the user's first
-      // read is fast) or the fetch error onto the shared entry row. Sanitize
-      // inline too, for the same reason.
-      const update = await persistFullContentResult(db, entry.id, result, new Date(), {
-        offloadSanitize: false,
-      });
+      // Persists the raw full-content columns or the fetch error onto the shared
+      // entry row; sanitization happens per read (issue #1282).
+      const update = await persistFullContentResult(db, entry.id, result, new Date());
 
       if (update) {
         fetched++;
