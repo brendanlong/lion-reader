@@ -72,6 +72,15 @@ describe("pageCachePolicy", () => {
     }
   });
 
+  it("leaves demo static assets to the static-asset header", () => {
+    // public/demo/*.png shares the /demo/ URL prefix with the demo pages, but
+    // the page policy's max-age=0 on an image forces a revalidation on every
+    // <img> remount — the browser can't reuse its memory/image cache
+    // synchronously, so entry navigation flashes alt text before each paint.
+    expect(pageCachePolicy("/demo/welcome.png", false)).toBeNull();
+    expect(pageCachePolicy("/demo/welcome-og.png", true)).toBeNull();
+  });
+
   it("does not match lookalike paths", () => {
     // /demofoo must not be treated as under /demo
     expect(pageCachePolicy("/demofoo", false)).toBeNull();
