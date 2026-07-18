@@ -9,6 +9,7 @@
 import { useState, useMemo, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
+import { STATIC_CONFIG_QUERY_OPTIONS } from "@/lib/trpc/query-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
@@ -47,8 +48,12 @@ function LoginForm() {
 
   // Fetch signup configuration to determine if signup link should be shown. The
   // auth layout server-prefetches and hydrates this query (#1328), so it resolves
-  // as already-settled data on first render.
-  const [signupConfigData] = trpc.auth.signupConfig.useSuspenseQuery();
+  // as already-settled data on first render. The config is deploy-static, so
+  // never refetch it (STATIC_CONFIG_QUERY_OPTIONS).
+  const [signupConfigData] = trpc.auth.signupConfig.useSuspenseQuery(
+    undefined,
+    STATIC_CONFIG_QUERY_OPTIONS
+  );
 
   // Listen for OAuth completion from other tabs/windows (PWA support for Firefox Android)
   // When OAuth happens in a separate browser window, this allows the PWA to detect completion
