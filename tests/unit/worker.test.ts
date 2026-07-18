@@ -778,9 +778,52 @@ describe("Worker", () => {
       // ...and did NOT busy-spin: a tight loop would rack up hundreds of claims
       // in ~100ms; the poll interval keeps it to a handful.
       expect(claimCount).toBeLessThan(20);
-      // Every failed claim was both logged and reported.
-      expect(claimErrors).toHaveLength(claimCount);
-      expect(errorLogs).toContain("Failed to claim job; retrying after poll interval");
+      // Every failed claim was logged...
+      expect(
+        errorLogs.filter((m) => m === "Failed to claim job; retrying after poll interval").length
+      ).toBe(claimCount);
+      // ...but the outage was reported to Sentry only ONCE (deduped), not once
+      // per poll — otherwise a multi-minute outage floods Sentry.
+      expect(claimErrors).toHaveLength(1);
+
+      await worker.stop();
+    });
+
+    it("re-reports a new outage after claiming has recovered in between", async () => {
+      // fail, recover (empty queue), fail again: two distinct outages, so the
+      // dedupe must re-arm and report the second one.
+      const claimSequence: Array<"throw" | "null"> = ["throw", "null", "throw", "null"];
+      let idx = 0;
+      const claimErrors: unknown[] = [];
+      const recoveryLogs: string[] = [];
+      const testLogger: WorkerLogger = {
+        info: (msg) => recoveryLogs.push(msg),
+        warn: () => {},
+        error: () => {},
+      };
+
+      const worker = createWorker({
+        concurrency: 1,
+        pollIntervalMs: 10,
+        logger: testLogger,
+        onClaimError: (error) => claimErrors.push(error),
+        claimJob: async () => {
+          const action = claimSequence[Math.min(idx, claimSequence.length - 1)];
+          idx++;
+          if (action === "throw") {
+            throw new Error("Connection terminated unexpectedly");
+          }
+          return null;
+        },
+        processJob: async () => {},
+      });
+
+      await worker.start();
+      await tick(80);
+
+      // Two separate failure runs → two reports (not one, not per-poll).
+      expect(claimErrors).toHaveLength(2);
+      expect(recoveryLogs).toContain("Job claiming recovered after earlier failures");
 
       await worker.stop();
     });

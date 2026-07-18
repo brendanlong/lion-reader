@@ -226,6 +226,13 @@ export function createWorkerCore(config: InternalWorkerConfig): Worker {
    * Main run loop - claims and processes jobs continuously.
    */
   async function runLoop(): Promise<void> {
+    // Whether we've already reported the current run of claim failures. A
+    // Postgres restart makes every poll's claim throw for the duration of the
+    // outage; reporting each one would flood Sentry (and `pool.on("error")`
+    // already reports the underlying drop). We report the first failure, then
+    // stay quiet until a claim succeeds again. Every attempt is still logged.
+    let claimFailureReported = false;
+
     while (!state.shuttingDown) {
       // Fill up to capacity
       while (state.currentlyExecuting.size < concurrency && !state.shuttingDown) {
@@ -239,16 +246,25 @@ export function createWorkerCore(config: InternalWorkerConfig): Worker {
           // because Sentry's onUnhandledRejection integration runs in 'warn'
           // mode the process kept running with a dead loop until it was manually
           // restarted (the app server, handling each request independently,
-          // self-heals for free). Log it, touch activity (the loop is alive —
-          // it's the DB that's down, so we must not let the liveness check
-          // restart us), stop filling this cycle, and fall through to the sleep
-          // below so the next cycle retries on a fresh pooled connection.
+          // self-heals for free). Log it, stop filling this cycle, and fall
+          // through to the sleep below so the next cycle retries on a fresh
+          // pooled connection. (The outer loop's trailing touchActivity keeps
+          // the liveness check fresh — the loop itself is healthy; it's the DB
+          // that's unreachable, and a restart wouldn't fix that.)
           logger.error("Failed to claim job; retrying after poll interval", {
             error: error instanceof Error ? error.message : "Unknown error",
           });
-          onClaimError?.(error);
-          touchActivity();
+          if (!claimFailureReported) {
+            claimFailureReported = true;
+            onClaimError?.(error);
+          }
           break;
+        }
+        // The claim succeeded (a job or an empty queue) — the DB is reachable
+        // again, so re-arm reporting for any future outage.
+        if (claimFailureReported) {
+          claimFailureReported = false;
+          logger.info("Job claiming recovered after earlier failures");
         }
         touchActivity();
         if (job === null) break;
