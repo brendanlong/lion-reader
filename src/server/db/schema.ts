@@ -468,12 +468,6 @@ export const entries = pgTable(
     author: text("author"),
     contentOriginal: text("content_original"),
     contentCleaned: text("content_cleaned"), // Readability-cleaned HTML
-    // DEPRECATED (issue #1282): sanitization is now per-read, so these columns
-    // are no longer read or written. Kept for one release for rollback safety
-    // (expand/contract); a follow-up migration drops them. See sanitize-entry.ts.
-    contentOriginalSanitized: text("content_original_sanitized"),
-    contentCleanedSanitized: text("content_cleaned_sanitized"),
-    contentSanitizedVersion: smallint("content_sanitized_version"),
     summary: text("summary"), // truncated for previews
 
     // Saved article metadata (only for type='saved')
@@ -496,10 +490,6 @@ export const entries = pgTable(
     fullContentHash: text("full_content_hash"), // SHA256 of full content (for separate summary caching)
     fullContentOriginal: text("full_content_original"), // Raw HTML from URL
     fullContentCleaned: text("full_content_cleaned"), // Readability-cleaned HTML
-    // DEPRECATED (issue #1282): see contentOriginalSanitized above.
-    fullContentOriginalSanitized: text("full_content_original_sanitized"),
-    fullContentCleanedSanitized: text("full_content_cleaned_sanitized"),
-    fullContentSanitizedVersion: smallint("full_content_sanitized_version"),
     fullContentFetchedAt: timestamp("full_content_fetched_at", { withTimezone: true }),
     fullContentError: text("full_content_error"), // Error message if fetch failed
 
@@ -850,12 +840,6 @@ export const visibleEntries = pgView("visible_entries", {
   unsubscribeUrl: text("unsubscribe_url"), // extracted from email HTML body
   readChangedAt: timestamp("read_changed_at", { withTimezone: true }),
   publishedOrFetchedAt: temporalTimestamp("published_or_fetched_at").notNull(), // denormalized timeline sort key (temporalTimestamp: µs-precise cursor sort key)
-  contentOriginalSanitized: text("content_original_sanitized"),
-  contentCleanedSanitized: text("content_cleaned_sanitized"),
-  contentSanitizedVersion: smallint("content_sanitized_version"),
-  fullContentOriginalSanitized: text("full_content_original_sanitized"),
-  fullContentCleanedSanitized: text("full_content_cleaned_sanitized"),
-  fullContentSanitizedVersion: smallint("full_content_sanitized_version"),
   // NOT NULL in reality (entries.greader_item_id is NOT NULL); typed non-null so
   // it flows into EntryListItem/EntryFull's non-null greaderItemId without a cast.
   // Doubles as the Wallabag entry id (reversed by resolveWallabagEntry).

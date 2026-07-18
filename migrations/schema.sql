@@ -215,12 +215,6 @@ CREATE TABLE public.entries (
     full_content_error text,
     full_content_hash text,
     unsubscribe_url text,
-    content_original_sanitized text,
-    content_cleaned_sanitized text,
-    content_sanitized_version smallint,
-    full_content_original_sanitized text,
-    full_content_cleaned_sanitized text,
-    full_content_sanitized_version smallint,
     greader_item_id bigint NOT NULL,
     is_placeholder boolean DEFAULT false NOT NULL,
     CONSTRAINT entries_last_seen_only_fetched CHECK (((type = 'web'::public.feed_type) = (last_seen_at IS NOT NULL))),
@@ -233,10 +227,6 @@ ALTER TABLE ONLY public.entries ALTER COLUMN summary SET COMPRESSION lz4;
 ALTER TABLE ONLY public.entries ALTER COLUMN content_cleaned SET COMPRESSION lz4;
 ALTER TABLE ONLY public.entries ALTER COLUMN full_content_original SET COMPRESSION lz4;
 ALTER TABLE ONLY public.entries ALTER COLUMN full_content_cleaned SET COMPRESSION lz4;
-ALTER TABLE ONLY public.entries ALTER COLUMN content_original_sanitized SET COMPRESSION lz4;
-ALTER TABLE ONLY public.entries ALTER COLUMN content_cleaned_sanitized SET COMPRESSION lz4;
-ALTER TABLE ONLY public.entries ALTER COLUMN full_content_original_sanitized SET COMPRESSION lz4;
-ALTER TABLE ONLY public.entries ALTER COLUMN full_content_cleaned_sanitized SET COMPRESSION lz4;
 
 CREATE SEQUENCE public.entries_greader_item_id_seq
     AS bigint
@@ -581,12 +571,6 @@ CREATE VIEW public.visible_entries AS
     e.unsubscribe_url,
     ue.read_changed_at,
     ue.published_or_fetched_at,
-    e.content_original_sanitized,
-    e.content_cleaned_sanitized,
-    e.content_sanitized_version,
-    e.full_content_original_sanitized,
-    e.full_content_cleaned_sanitized,
-    e.full_content_sanitized_version,
     e.greader_item_id,
     s.greader_stream_id AS subscription_greader_stream_id
    FROM ((public.user_entries ue

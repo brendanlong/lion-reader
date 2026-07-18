@@ -722,6 +722,13 @@
       "when": 1782953600000,
       "tag": "0103_drop_resanitize_index",
       "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1782953700000,
+      "tag": "0104_drop_sanitized_columns",
+      "breakpoints": true
     }
   ]
 }
