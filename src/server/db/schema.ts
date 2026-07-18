@@ -198,6 +198,32 @@ export const apiTokens = pgTable(
 );
 
 // ============================================================================
+// DISCORD API-TOKEN LINKS
+// ============================================================================
+
+/**
+ * Discord bot account links created via `/link` with an API token.
+ *
+ * Maps a Discord user id to the api_tokens row they linked. Lives in Postgres
+ * (not Redis) so it survives the deploy-time cache clear and any Redis data
+ * loss (#1370). References the token row (ON DELETE CASCADE) rather than the raw
+ * token, so no secret is kept at rest and the link auto-invalidates when the
+ * token is deleted; revocation/expiry is checked at resolve time. OAuth-based
+ * links live in `oauthAccounts` instead. One link per Discord user.
+ */
+export const discordApiTokenLinks = pgTable(
+  "discord_api_token_links",
+  {
+    discordId: text("discord_id").primaryKey(),
+    tokenId: uuid("token_id")
+      .notNull()
+      .references(() => apiTokens.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("idx_discord_api_token_links_token").on(table.tokenId)]
+);
+
+// ============================================================================
 // OAUTH ACCOUNTS
 // ============================================================================
 
@@ -1205,6 +1231,9 @@ export type NewSession = typeof sessions.$inferInsert;
 
 export type ApiToken = typeof apiTokens.$inferSelect;
 export type NewApiToken = typeof apiTokens.$inferInsert;
+
+export type DiscordApiTokenLink = typeof discordApiTokenLinks.$inferSelect;
+export type NewDiscordApiTokenLink = typeof discordApiTokenLinks.$inferInsert;
 
 export type Feed = typeof feeds.$inferSelect;
 export type NewFeed = typeof feeds.$inferInsert;

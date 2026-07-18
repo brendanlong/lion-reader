@@ -185,6 +185,12 @@ CREATE TABLE public.blocked_senders (
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
+CREATE TABLE public.discord_api_token_links (
+    discord_id text NOT NULL,
+    token_id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
 CREATE TABLE public.entries (
     id uuid NOT NULL,
     feed_id uuid NOT NULL,
@@ -616,6 +622,9 @@ ALTER TABLE ONLY public.api_tokens
 ALTER TABLE ONLY public.blocked_senders
     ADD CONSTRAINT blocked_senders_pkey PRIMARY KEY (id);
 
+ALTER TABLE ONLY public.discord_api_token_links
+    ADD CONSTRAINT discord_api_token_links_pkey PRIMARY KEY (discord_id);
+
 ALTER TABLE ONLY public.entries
     ADD CONSTRAINT entries_pkey PRIMARY KEY (id);
 
@@ -739,6 +748,8 @@ ALTER TABLE ONLY public.websub_subscriptions
 CREATE INDEX idx_api_tokens_user ON public.api_tokens USING btree (user_id);
 
 CREATE INDEX idx_blocked_senders_user ON public.blocked_senders USING btree (user_id);
+
+CREATE INDEX idx_discord_api_token_links_token ON public.discord_api_token_links USING btree (token_id);
 
 CREATE INDEX idx_entries_feed ON public.entries USING btree (feed_id, id);
 
@@ -867,6 +878,9 @@ ALTER TABLE ONLY public.api_tokens
 
 ALTER TABLE ONLY public.blocked_senders
     ADD CONSTRAINT blocked_senders_user_id_users_id_fk FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.discord_api_token_links
+    ADD CONSTRAINT discord_api_token_links_token_id_fkey FOREIGN KEY (token_id) REFERENCES public.api_tokens(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.entries
     ADD CONSTRAINT entries_feed_id_feeds_id_fk FOREIGN KEY (feed_id) REFERENCES public.feeds(id) ON DELETE CASCADE;
