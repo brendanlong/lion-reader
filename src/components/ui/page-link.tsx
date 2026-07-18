@@ -1,23 +1,32 @@
 /**
  * PageLink Component
  *
- * A link for full-page navigation to standalone routes that live *outside* the
- * SPA shell — the auth pages, the public legal pages (privacy/terms), and the
- * demo's sign-in/sign-up buttons.
+ * A link for navigation to standalone routes that live *outside* the SPA shell —
+ * the auth pages, the public legal pages (privacy/terms), and the demo's
+ * sign-in/sign-up buttons.
  *
- * Renders a plain <a>, so clicking triggers a real browser navigation: it loads
- * the target's HTML document and issues no Next.js RSC (`?_rsc=`) request and
- * no viewport/hover prefetch, unlike `next/link`.
- * Modifier/middle clicks, `target`, and `download` all fall through to the
- * browser natively (a plain <a> needs no JS for that).
+ * Renders a Next.js `<Link prefetch={false}>`. Clicking does a soft, client-side
+ * RSC navigation across the route-group boundary (no full document reload), but
+ * with **no** prefetching: in the App Router `prefetch={false}` disables the
+ * background prefetch on *both* viewport and hover, so a page full of PageLinks
+ * never fires a storm of `?_rsc=` requests. Modifier/middle clicks, `target`, and
+ * `download` fall through to the browser natively because Link renders a real
+ * `<a href>`.
  *
- * Use this instead of `next/link` for any internal navigation that should leave
- * or enter the SPA. For soft, client-side navigation *within* the SPA, use
- * `<ClientLink>` instead. Between the two, never hand-roll a raw <a> for an
- * internal href.
+ * This is the **one** sanctioned place `next/link` is used — always with
+ * `prefetch={false}`. Use it for internal navigation that crosses *into or out
+ * of* the SPA. For soft navigation *within* the SPA (rendered from the client
+ * cache with no server fetch at all), use `<ClientLink>` instead. Between the
+ * two, never use `next/link` directly nor hand-roll a raw <a> for an internal
+ * href.
  *
- * Deliberately not a client component (no `"use client"`, no handlers) so it can
- * render inside server components like the legal pages.
+ * Note: logout is deliberately NOT a PageLink — it uses a full `window.location`
+ * navigation so the reload wipes the module-level per-user caches (QueryClient,
+ * subscription lookup map). See `AppLayoutContent`.
+ *
+ * Not a client component itself (no `"use client"`, no handlers), so it can
+ * render inside server components like the legal pages; `<Link>` is a client
+ * component and works fine when rendered from a server component.
  *
  * @example
  * ```tsx
@@ -27,9 +36,13 @@
  * ```
  */
 
-import { type ReactNode, type AnchorHTMLAttributes } from "react";
+import Link from "next/link";
+import { type ReactNode, type ComponentPropsWithoutRef } from "react";
 
-export interface PageLinkProps extends Omit<AnchorHTMLAttributes<HTMLAnchorElement>, "href"> {
+export interface PageLinkProps extends Omit<
+  ComponentPropsWithoutRef<typeof Link>,
+  "href" | "prefetch"
+> {
   /** Link destination (an internal route). */
   href: string;
   /** Link content. */
@@ -38,8 +51,8 @@ export interface PageLinkProps extends Omit<AnchorHTMLAttributes<HTMLAnchorEleme
 
 export function PageLink({ href, children, ...props }: PageLinkProps) {
   return (
-    <a href={href} {...props}>
+    <Link href={href} prefetch={false} {...props}>
       {children}
-    </a>
+    </Link>
   );
 }

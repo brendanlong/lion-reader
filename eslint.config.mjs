@@ -16,6 +16,29 @@ const eslintConfig = defineConfig([
       "vitest/no-focused-tests": ["error", { fixable: false }],
     },
   },
+  // Enforce the "one sanctioned next/link wrapper" rule (see src/CLAUDE.md):
+  // PageLink is the only place `next/link` may be imported (it wraps
+  // `<Link prefetch={false}>`). Everywhere else uses PageLink for cross-SPA
+  // navigation or ClientLink for in-SPA pushState nav — importing `next/link`
+  // directly would reintroduce the default prefetching we avoid.
+  {
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: ["src/components/ui/page-link.tsx"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "next/link",
+              message:
+                "Import PageLink (@/components/ui/page-link) or ClientLink (@/components/ui/client-link) instead of next/link — PageLink is the only sanctioned next/link wrapper.",
+            },
+          ],
+        },
+      ],
+    },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:
