@@ -21,10 +21,12 @@
  * structural utilities (`text-center`, `text-sm`, `border-2`, `border-dashed`,
  * `outline-none`) and CSS keywords (`bg-transparent`, `text-white`), and raw
  * palette colors (`bg-zinc-100`) are governed separately by `check:colors`. Those
- * are recognised and skipped. Whatever remains that is NOT a live theme token is
- * treated as a violation — except a small BASELINE of non-class noise (SVG
- * attribute names, CSS properties, and HTML-content strings that merely look like
- * utilities). This is a RATCHET, exactly like `check:colors`: when you legitimately
+ * are recognised and skipped. Comments (`//…`, `/* … *\/`, JSX `{/* … *\/}`) are
+ * blanked before scanning, so token-shaped prose like the compound `text-processing`
+ * in a comment doesn't trip the check (#1323). Whatever remains that is NOT a live
+ * theme token is treated as a violation — except a small BASELINE of non-class noise
+ * (HTML-content strings and import paths that merely look like utilities). This is a
+ * RATCHET, exactly like `check:colors`: when you legitimately
  * introduce such a string, run `pnpm check:theme-tokens --update` and commit the
  * baseline change so it shows up in review.
  *
@@ -196,6 +198,69 @@ function walk(dir) {
 }
 
 /**
+ * Blank out comments (`//…`, `/* … *\/`, and JSX `{/* … *\/}`) so token-shaped
+ * words in prose don't trip the utility regex (see #1323: the comment phrase
+ * `text-processing` was flagged as a dead `text-*` color utility). We keep string
+ * and template-literal content — that's where real class names live — and only
+ * treat `//`/`/*` as a comment opener when it's outside a string. Comment bytes
+ * are replaced with spaces (newlines preserved) so nothing merges across them.
+ * @param {string} text
+ * @returns {string}
+ */
+function stripComments(text) {
+  const out = [];
+  let i = 0;
+  const n = text.length;
+  // state: null (code), '"' / "'" / "`" (string of that quote)
+  let quote = null;
+  while (i < n) {
+    const c = text[i];
+    if (quote !== null) {
+      out.push(c);
+      if (c === "\\" && i + 1 < n) {
+        // keep the escaped char verbatim
+        out.push(text[i + 1]);
+        i += 2;
+        continue;
+      }
+      if (c === quote) quote = null;
+      i++;
+      continue;
+    }
+    // not in a string
+    if (c === '"' || c === "'" || c === "`") {
+      quote = c;
+      out.push(c);
+      i++;
+      continue;
+    }
+    if (c === "/" && text[i + 1] === "/") {
+      // line comment: blank until end of line
+      while (i < n && text[i] !== "\n") {
+        out.push(" ");
+        i++;
+      }
+      continue;
+    }
+    if (c === "/" && text[i + 1] === "*") {
+      // block comment (also covers JSX `{/* … *\/}`): blank until `*\/`
+      while (i < n && !(text[i] === "*" && text[i + 1] === "/")) {
+        out.push(text[i] === "\n" ? "\n" : " ");
+        i++;
+      }
+      if (i < n) {
+        out.push("  "); // the closing `*\/`
+        i += 2;
+      }
+      continue;
+    }
+    out.push(c);
+    i++;
+  }
+  return out.join("");
+}
+
+/**
  * Collect every color-prefixed utility whose value is NOT a live theme color,
  * a palette shade, a keyword, a structural utility, or an arbitrary value.
  * @returns {Map<string, Set<string>>} normalized utility -> set of relative files
@@ -207,7 +272,7 @@ function collect(themeColors) {
     if (!fs.existsSync(abs)) continue;
     for (const file of walk(abs)) {
       const rel = path.relative(ROOT, file);
-      const text = fs.readFileSync(file, "utf8");
+      const text = stripComments(fs.readFileSync(file, "utf8"));
       for (const m of text.matchAll(RE)) {
         const prop = m[1];
         let value = m[2];
