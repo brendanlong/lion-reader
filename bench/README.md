@@ -86,6 +86,24 @@ CPU-balance observation). See the wiki page.
 `BASE_URL`, `METRICS_URL`, `RESULT_LABEL`, `MAX_CONNECTIONS`, `PG_POOL_MAX`
 (server side).
 
+## Anonymous-page load — `bench/anon-pages.ts`
+
+The HN-flood shape: unauthenticated visitors hitting SSR pages (`/demo/all`,
+`/login`, `/register`; `/` and `/demo` redirect to `/demo/all`). These pages make
+**zero DB queries** and open no SSE, but the root layout reads `cookies()`/
+`headers()` for the per-request CSP nonce, so each is a full React server-render
+(dynamic, not prerendered). Measures render throughput vs concurrency.
+
+```bash
+BASE_URL=http://127.0.0.1:39547 PATHS=/demo/all,/login,/register \
+  CONCURRENCIES=10,25,50,100,200 DURATION_S=12 npx tsx bench/anon-pages.ts
+```
+
+Local result (2 dedicated cores): ~210 renders/s, CPU-bound (~11 ms/render,
+~45 KB HTML), latency climbing past ~25 concurrent — _lower_ than the
+authenticated API throughput because SSR-ing a page costs more than a tRPC JSON
+response. Since these pages don't touch Postgres, they don't stress the DB knee.
+
 ## Worker (feed-fetch) throughput — `bench/worker/`
 
 Answers "how many feeds can one worker keep polled before it falls behind?"
