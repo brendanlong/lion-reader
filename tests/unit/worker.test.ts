@@ -698,4 +698,134 @@ describe("Worker", () => {
       await worker.stop();
     });
   });
+
+  describe("claim error resilience", () => {
+    // Regression: a Postgres restart drops the pooled connection, so the loop's
+    // `await claimJob()` rejects with "Connection terminated unexpectedly". This
+    // used to escape the run loop and — because Sentry's onUnhandledRejection
+    // integration runs in 'warn' mode — leave the process alive with a dead loop
+    // until a manual restart. The loop must instead log, retry, and self-heal.
+    it("keeps running after a claim throws, then processes later jobs", async () => {
+      let claimCount = 0;
+      const processed: string[] = [];
+      const claimErrors: unknown[] = [];
+
+      const worker = createWorker({
+        concurrency: 1,
+        pollIntervalMs: 10,
+        logger: silentLogger,
+        onClaimError: (error) => claimErrors.push(error),
+        claimJob: async () => {
+          claimCount++;
+          if (claimCount === 1) {
+            throw new Error("Connection terminated unexpectedly");
+          }
+          if (claimCount === 2) {
+            return createMockJob("after-recovery");
+          }
+          return null;
+        },
+        processJob: async (job) => {
+          processed.push(job.id);
+        },
+      });
+
+      await worker.start();
+      await tick(60);
+
+      // The throw was surfaced but did not kill the loop, which recovered and
+      // processed the next job on a subsequent poll.
+      expect(claimErrors).toHaveLength(1);
+      expect(processed).toContain("after-recovery");
+      expect(worker.isRunning()).toBe(true);
+
+      await worker.stop();
+    });
+
+    it("keeps polling (without busy-spinning) while claims fail persistently", async () => {
+      let claimCount = 0;
+      const errorLogs: string[] = [];
+      const claimErrors: unknown[] = [];
+      const testLogger: WorkerLogger = {
+        info: () => {},
+        warn: () => {},
+        error: (msg) => errorLogs.push(msg),
+      };
+
+      const worker = createWorker({
+        concurrency: 2,
+        pollIntervalMs: 30,
+        logger: testLogger,
+        onClaimError: (error) => claimErrors.push(error),
+        claimJob: async () => {
+          claimCount++;
+          throw new Error("Connection terminated unexpectedly");
+        },
+        processJob: async () => {},
+      });
+
+      await worker.start();
+      await tick(20);
+
+      const claimsAfterFirstPoll = claimCount;
+      expect(claimsAfterFirstPoll).toBeGreaterThanOrEqual(1);
+      expect(worker.isRunning()).toBe(true);
+
+      await tick(80);
+
+      // Kept polling on the ~30ms interval rather than dying...
+      expect(claimCount).toBeGreaterThan(claimsAfterFirstPoll);
+      // ...and did NOT busy-spin: a tight loop would rack up hundreds of claims
+      // in ~100ms; the poll interval keeps it to a handful.
+      expect(claimCount).toBeLessThan(20);
+      // Every failed claim was logged...
+      expect(
+        errorLogs.filter((m) => m === "Failed to claim job; retrying after poll interval").length
+      ).toBe(claimCount);
+      // ...but the outage was reported to Sentry only ONCE (deduped), not once
+      // per poll — otherwise a multi-minute outage floods Sentry.
+      expect(claimErrors).toHaveLength(1);
+
+      await worker.stop();
+    });
+
+    it("re-reports a new outage after claiming has recovered in between", async () => {
+      // fail, recover (empty queue), fail again: two distinct outages, so the
+      // dedupe must re-arm and report the second one.
+      const claimSequence: Array<"throw" | "null"> = ["throw", "null", "throw", "null"];
+      let idx = 0;
+      const claimErrors: unknown[] = [];
+      const recoveryLogs: string[] = [];
+      const testLogger: WorkerLogger = {
+        info: (msg) => recoveryLogs.push(msg),
+        warn: () => {},
+        error: () => {},
+      };
+
+      const worker = createWorker({
+        concurrency: 1,
+        pollIntervalMs: 10,
+        logger: testLogger,
+        onClaimError: (error) => claimErrors.push(error),
+        claimJob: async () => {
+          const action = claimSequence[Math.min(idx, claimSequence.length - 1)];
+          idx++;
+          if (action === "throw") {
+            throw new Error("Connection terminated unexpectedly");
+          }
+          return null;
+        },
+        processJob: async () => {},
+      });
+
+      await worker.start();
+      await tick(80);
+
+      // Two separate failure runs → two reports (not one, not per-poll).
+      expect(claimErrors).toHaveLength(2);
+      expect(recoveryLogs).toContain("Job claiming recovered after earlier failures");
+
+      await worker.stop();
+    });
+  });
 });

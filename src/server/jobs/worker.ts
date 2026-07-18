@@ -108,6 +108,13 @@ export interface WorkerConfig {
    * @internal
    */
   _processJob?: (job: Job) => Promise<void>;
+  /**
+   * Called if the main run loop ever exits unexpectedly (see
+   * {@link InternalWorkerConfig.onLoopExit} in worker-core). The standalone
+   * process wires this to a process exit so Fly restarts the machine rather than
+   * leaving a live process with a dead loop.
+   */
+  onLoopExit?: (error: unknown) => void;
 }
 
 /**
@@ -344,6 +351,7 @@ function createWorker(config: WorkerConfig = {}): Worker {
     logger = defaultLogger,
     _claimJob: claimJobOverride,
     _processJob: processJobOverride,
+    onLoopExit,
   } = config;
 
   // Use the core worker if we're in test mode (both overrides provided)
@@ -597,6 +605,20 @@ function createWorker(config: WorkerConfig = {}): Worker {
         extra: { jobId: job.id },
       });
     },
+    onClaimError: (error) => {
+      // Claiming failed (typically a DB connection dropped by a Postgres
+      // restart). The loop logs and retries; report it so a persistent claim
+      // outage is visible in Sentry, not just the logs.
+      Sentry.captureException(error, {
+        tags: { context: "worker-claim" },
+      });
+    },
+    onLoopExit: (error) => {
+      Sentry.captureException(error, {
+        tags: { context: "worker-loop-exit" },
+      });
+      onLoopExit?.(error);
+    },
   });
 }
 
@@ -609,7 +631,26 @@ function createWorker(config: WorkerConfig = {}): Worker {
  */
 export async function startWorkerWithSignalHandling(config: WorkerConfig = {}): Promise<Worker> {
   const logger = config.logger ?? defaultLogger;
-  const worker = createWorker(config);
+
+  // Guard against re-entrant exits if both onLoopExit and a signal fire.
+  let exiting = false;
+
+  const worker = createWorker({
+    ...config,
+    onLoopExit: (error) => {
+      config.onLoopExit?.(error);
+      if (exiting) return;
+      exiting = true;
+      // The run loop should never exit on its own. If it does, the process is a
+      // zombie (alive but claiming no jobs), so exit non-zero and let Fly restart
+      // the machine — a clean restart beats lingering with a dead loop until the
+      // 10-minute liveness health check eventually trips.
+      logger.error("Worker run loop exited; restarting process", {
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+      void Sentry.close(2000).finally(() => process.exit(1));
+    },
+  });
 
   // Handle graceful shutdown
   const shutdown = async (signal: string) => {
