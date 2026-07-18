@@ -23,13 +23,11 @@ export async function linkDiscordApiToken(
   discordId: string,
   tokenId: string
 ): Promise<void> {
-  await db
-    .insert(discordApiTokenLinks)
-    .values({ discordId, tokenId })
-    .onConflictDoUpdate({
-      target: discordApiTokenLinks.discordId,
-      set: { tokenId, createdAt: new Date() },
-    });
+  await db.insert(discordApiTokenLinks).values({ discordId, tokenId }).onConflictDoUpdate({
+    // Only swap the token; leave created_at as the first-link timestamp.
+    target: discordApiTokenLinks.discordId,
+    set: { tokenId },
+  });
 }
 
 /**
