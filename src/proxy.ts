@@ -171,8 +171,7 @@ function logRequest(request: NextRequest): void {
   );
 }
 
-/** Where anonymous (and dead-session) visitors to `/` land. */
-const DEMO_LANDING_PATH = "/demo/all?entry=welcome";
+import { DEMO_LANDING_PATH } from "@/lib/routes";
 
 /**
  * Session-aware redirects for `/` and the static auth pages (issue #1359).
@@ -219,13 +218,13 @@ async function maybeSessionRedirect(request: NextRequest): Promise<NextResponse 
     try {
       // Lazy imports keep the DB/Redis clients out of the cookieless hot path
       // (they initialize once, on the first request that carries a cookie).
-      const [{ validateSession }, { isSignupConfirmed }] = await Promise.all([
+      const [{ validateSession }, { sessionHomePath }] = await Promise.all([
         import("@/server/auth/session"),
         import("@/server/auth/confirmation"),
       ]);
       const session = await validateSession(sessionToken);
       if (session) {
-        return redirectTo(isSignupConfirmed(session.user) ? "/all" : "/complete-signup");
+        return redirectTo(sessionHomePath(session.user));
       }
     } catch (error) {
       // Validation infrastructure unavailable — fall through to the page (for

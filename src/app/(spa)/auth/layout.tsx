@@ -15,7 +15,7 @@ import type { ReactNode } from "react";
 import { TRPCProvider } from "@/lib/trpc/provider";
 import { AuthLayoutContent } from "@/components/auth/AuthLayoutContent";
 import { validateSession } from "@/server/auth/session";
-import { isSignupConfirmed } from "@/server/auth/confirmation";
+import { sessionHomePath } from "@/server/auth/confirmation";
 
 interface OAuthTransitionLayoutProps {
   children: ReactNode;
@@ -29,12 +29,8 @@ export default async function OAuthTransitionLayout({ children }: OAuthTransitio
   if (sessionToken) {
     const session = await validateSession(sessionToken);
     if (session) {
-      // User is signed in but hasn't completed signup confirmation
-      if (!isSignupConfirmed(session.user)) {
-        redirect("/complete-signup");
-      }
-      // User is fully authenticated, redirect to the app
-      redirect("/all");
+      // Signed in: into the app, or to signup confirmation if incomplete.
+      redirect(sessionHomePath(session.user));
     }
   }
 

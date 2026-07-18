@@ -1,9 +1,11 @@
 /**
- * /demo → redirect to /demo/all?entry=welcome
+ * /demo → redirect to the demo landing page (shared constant with the proxy's
+ * `/` fast path and the `/` fallback page).
  */
 
 import { redirect } from "next/navigation";
+import { DEMO_LANDING_PATH } from "@/lib/routes";
 
 export default function DemoIndexPage() {
-  redirect("/demo/all?entry=welcome");
+  redirect(DEMO_LANDING_PATH);
 }
