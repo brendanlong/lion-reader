@@ -6,8 +6,14 @@
 
 /**
  * Format a date as a readable string.
+ *
+ * @param timeZone Optional IANA time zone (e.g. "America/Los_Angeles"). When
+ *   omitted the runtime's ambient zone is used (the visitor's local zone in the
+ *   browser). Pass an explicit zone to get a deterministic result independent of
+ *   where the code runs — e.g. so a server render doesn't default to the host's
+ *   UTC and then differ from the client's local render.
  */
-export function formatDate(date: Date): string {
+export function formatDate(date: Date, timeZone?: string): string {
   return date.toLocaleDateString("en-US", {
     weekday: "long",
     year: "numeric",
@@ -15,6 +21,7 @@ export function formatDate(date: Date): string {
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    ...(timeZone ? { timeZone } : {}),
   });
 }
 
