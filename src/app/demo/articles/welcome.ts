@@ -1,4 +1,5 @@
 import { type DemoArticle } from "./types";
+import { resolveWelcomePublishedAt } from "./welcome-published-at";
 
 const article: DemoArticle = {
   id: "welcome",
@@ -9,7 +10,10 @@ const article: DemoArticle = {
   author: null,
   summary:
     "An AI-native, all-in-one reader for feeds, newsletters, and read-later. Explore the demo to see what it can do.",
-  publishedAt: new Date(),
+  // Build/deploy-stamped so SSR and the post-hydration client render show the
+  // identical time (no "31 minutes ago" → "just now" jump). See
+  // resolveWelcomePublishedAt for the full rationale.
+  publishedAt: resolveWelcomePublishedAt(process.env.NEXT_PUBLIC_BUILD_TIME),
   starred: true,
   heroImage: "/demo/welcome.png",
   heroImageAlt:

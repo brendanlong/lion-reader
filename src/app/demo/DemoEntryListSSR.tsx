@@ -10,20 +10,38 @@
 import { formatRelativeTime } from "@/lib/format";
 import { getItemClasses } from "@/components/entries/entryItemClasses";
 import { StarIcon, StarFilledIcon } from "@/components/ui/icon-button";
+import { DemoListHeader } from "./DemoListHeader";
 import { type DemoEntry } from "./data";
 
 interface DemoEntryListSSRProps {
   entries: DemoEntry[];
   backHref: string;
   title: string;
+  /**
+   * Whether to render the Mark All Read / Sort / Show-unread action buttons.
+   * False for Highlights, matching DemoRouter (which hides them there) so the
+   * SSR header and the post-hydration header are identical. Defaults to true.
+   */
+  showActions?: boolean;
 }
 
-export function DemoEntryListSSR({ entries, backHref, title }: DemoEntryListSSRProps) {
+export function DemoEntryListSSR({
+  entries,
+  backHref,
+  title,
+  showActions = true,
+}: DemoEntryListSSRProps) {
   return (
     <div className="mx-auto max-w-3xl px-4 py-4 sm:p-6">
-      <div className="mb-4 flex items-center justify-between sm:mb-6">
-        <h1 className="ui-text-xl sm:ui-text-2xl text-body font-bold">{title}</h1>
-      </div>
+      {/* Buttons render statically (no handlers) here, then become interactive
+          when DemoRouter takes over on hydration — same markup, so no shift. */}
+      <DemoListHeader
+        title={title}
+        showActions={showActions}
+        sortOrder="newest"
+        showUnreadOnly={false}
+        markAllReadDescription={title}
+      />
       <div className="space-y-3">
         {entries.map((entry) => {
           const displayTitle = entry.title ?? "Untitled";

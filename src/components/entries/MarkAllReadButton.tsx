@@ -16,8 +16,12 @@ interface MarkAllReadButtonProps {
   contextDescription: string;
   /** Whether the mark all read mutation is in progress */
   isLoading: boolean;
-  /** Called when the user confirms marking all as read */
-  onConfirm: () => void;
+  /**
+   * Called when the user confirms marking all as read. Optional so the button
+   * can render as a static control during SSR (see the demo's crawlable list
+   * header), where no handler can cross the server/client boundary.
+   */
+  onConfirm?: () => void;
 }
 
 export function MarkAllReadButton({
@@ -45,7 +49,7 @@ export function MarkAllReadButton({
         contextDescription={contextDescription}
         isLoading={isLoading}
         onConfirm={() => {
-          onConfirm();
+          onConfirm?.();
           setShowDialog(false);
         }}
         onCancel={() => setShowDialog(false)}

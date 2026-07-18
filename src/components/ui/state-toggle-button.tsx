@@ -29,9 +29,11 @@ interface StateToggleButtonProps {
   isPressed: boolean;
 
   /**
-   * Callback when the button is clicked.
+   * Callback when the button is clicked. Optional so the button can render as a
+   * static, inert control during SSR (e.g. the demo's crawlable list header),
+   * where no handler can cross the server/client boundary.
    */
-  onToggle: () => void;
+  onToggle?: () => void;
 
   /**
    * Optional additional class names.
@@ -61,10 +63,12 @@ export function StateToggleButton({
   onToggle,
   className = "",
 }: StateToggleButtonProps) {
-  const handleClick = (e: MouseEvent) => {
-    e.preventDefault();
-    onToggle();
-  };
+  const handleClick = onToggle
+    ? (e: MouseEvent) => {
+        e.preventDefault();
+        onToggle();
+      }
+    : undefined;
 
   return (
     <button

@@ -42,6 +42,12 @@ export default async function DemoHighlightsPage({ searchParams }: Props) {
 
   const starredEntries = sortNewestFirst(DEMO_ENTRIES.filter((e) => e.starred));
   return (
-    <DemoEntryListSSR entries={starredEntries} backHref="/demo/highlights" title="Highlights" />
+    <DemoEntryListSSR
+      entries={starredEntries}
+      backHref="/demo/highlights"
+      title="Highlights"
+      // Highlights has no list actions (matching DemoRouter's `!isHighlights`).
+      showActions={false}
+    />
   );
 }

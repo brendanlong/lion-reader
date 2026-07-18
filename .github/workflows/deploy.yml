@@ -53,6 +53,16 @@ jobs:
         # Discord bot, which a build-time inline never reached — and keeps the
         # Docker image build independent of the SHA, so unchanged layers stay
         # cached. Short SHA to match the previous git-derived value.
-        run: flyctl deploy --remote-only --env GIT_COMMIT_SHA="$(git rev-parse --short HEAD)"
+        #
+        # NEXT_PUBLIC_BUILD_TIME is passed as BOTH a build arg (inlined into the
+        # client bundle) and a runtime env var, using one shared value so the
+        # demo's "Welcome" published time matches between the client and server
+        # renders (see src/app/demo/articles/welcome-published-at.ts).
+        run: |
+          BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          flyctl deploy --remote-only \
+            --build-arg NEXT_PUBLIC_BUILD_TIME="$BUILD_TIME" \
+            --env NEXT_PUBLIC_BUILD_TIME="$BUILD_TIME" \
+            --env GIT_COMMIT_SHA="$(git rev-parse --short HEAD)"
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
