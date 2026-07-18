@@ -116,7 +116,7 @@ export function buildPublicContentSecurityPolicy(): string {
 /** Shared directive list; `scriptSrcExtra` is appended to `script-src 'self'{cdn}`. */
 function buildPolicy(scriptSrcExtra: string): string {
   const isDev = process.env.NODE_ENV === "development";
-  // " https://lionreader.b-cdn.net" in production, "" when no CDN is configured.
+  // The CDN origin (leading space) when ASSET_PREFIX is set, "" otherwise.
   const assetPrefix = process.env.ASSET_PREFIX;
   const cdn = assetPrefix ? ` ${new URL(assetPrefix).origin}` : "";
   const frameSrc = embedCanonicalHostnames()
