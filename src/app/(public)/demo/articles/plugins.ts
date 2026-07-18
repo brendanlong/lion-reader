@@ -15,6 +15,8 @@ const article: DemoArticle = {
   heroImageAlt:
     "The Lion Reader lion with colorful modular puzzle pieces for different content sources snapping into place.",
   summaryHtml: `<p>Lion Reader enhances RSS by pulling in <strong>complete content</strong> from sources like LessWrong, YouTube, arXiv, GitHub, Google Docs, and Bluesky &mdash; restoring embedded media, full text, and proper math rendering that standard feeds strip out. Paste any link and Lion Reader handles the rest automatically.</p>`,
+  summaryModelId: "claude-sonnet-5",
+  summaryGeneratedAt: new Date("2026-07-14"),
   contentHtml: `
     <h2>Content from anywhere, made readable</h2>
 

@@ -14,6 +14,8 @@ const article: DemoArticle = {
   heroImageAlt:
     "The Lion Reader lion tapping a large keyboard key, with arrow keycaps floating nearby.",
   summaryHtml: `<p>Lion Reader offers <strong>keyboard shortcuts</strong> for faster navigation. Use <strong>j/k</strong> to move through entries, <strong>m</strong> to mark read/unread, <strong>s</strong> to star items, and <strong>g+letter combinations</strong> to jump between sections like All Items, Starred, and Saved articles.</p>`,
+  summaryModelId: "claude-sonnet-5",
+  summaryGeneratedAt: new Date("2026-07-08"),
   contentHtml: `
     <p>Mouse or touch interfaces work fine, but keyboard navigation is faster once you learn it. Lion Reader follows a keyboard-first design philosophy, giving every core action a keyboard shortcut so you can blaze through your reading workflow without touching the mouse.</p>
 

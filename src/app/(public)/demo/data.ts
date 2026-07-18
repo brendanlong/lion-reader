@@ -37,6 +37,10 @@ export interface DemoEntry extends EntryListData {
   contentHtml: string;
   /** Pre-generated AI summary HTML for the summary card */
   summaryHtml: string;
+  /** Model ID that generated `summaryHtml` (shown in the summary card footer). */
+  summaryModelId: string;
+  /** When `summaryHtml` was generated (shown in the summary card footer). */
+  summaryGeneratedAt: Date;
   /** Optional hero illustration. See DemoArticle. */
   heroImage?: string;
   /** Resolved opaque social/OG image (the `-og.png` sibling of heroImage). See DemoArticle. */
