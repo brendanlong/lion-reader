@@ -493,6 +493,44 @@
   }
 }
 
+/* =================================
+   Cross-Document View Transitions (issue #1350)
+
+   Full-page navigations (PageLink between the public pages, login → app)
+   repaint from a blank document, and browsers show their default canvas —
+   colored by the BROWSER theme, not the page — for a frame or two between the
+   old page and the new page's first paint (~33ms of Firefox's #2b2a33 measured
+   on a real navigation). That default canvas is lighter than our dark theme
+   and darker than our light theme, so it reads as a background flash, and no
+   page CSS can recolor it.
+
+   Opting into cross-document view transitions makes supporting browsers
+   (Chrome 126+, Safari 18.2+) snapshot the old page and hold it until the new
+   page has rendered, then swap — eliminating the between-documents canvas
+   entirely. Both the outgoing and incoming page must opt in; this lives in
+   globals.css so every page does. Firefox ships this behind a flag as of
+   mid-2026 and will inherit the fix when it lands; until then the flash there
+   is a browser-level behavior we can't remove (its blank-canvas color follows
+   the browser theme, decided before our document exists).
+
+   The default 0.25s cross-fade reads as lag on an instant navigation, so keep
+   the swap quick; skip the animation entirely for reduced-motion users (they
+   still get the no-flash hold-and-swap, which is the point).
+   ================================= */
+@view-transition {
+  navigation: auto;
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 0.1s;
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none;
+  }
+}
+
 /* Disable the browser's horizontal-overscroll actions: Chrome Android's
    overscroll history navigation (a rightward drag anywhere on the page shows
    a back arrow and navigates on release — it competes with our in-app
