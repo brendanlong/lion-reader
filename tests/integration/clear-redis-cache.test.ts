@@ -32,6 +32,9 @@ beforeEach(async () => {
   await redis.flushdb();
 });
 
+// The exact `deleted` counts asserted below hold because the test keyspace is
+// quiescent (no concurrent writers): SCAN can only re-list keys under concurrent
+// rehashing, and UNLINK's actual-delete count is robust to that anyway.
 describe("clearRedisCacheExceptSiteStatus", () => {
   it("preserves site-status keys and deletes everything else", async () => {
     // Durable source-of-truth flags that must survive a deploy.
