@@ -46,6 +46,23 @@ test("/register with an invite token SSRs the full signup form", async ({ reques
   expect(html).not.toContain("Loading...");
 });
 
+test("tRPC responses are marked uncacheable so a shared CDN can't replay them", async ({
+  request,
+}) => {
+  // The register/login forms refetch auth.signupConfig on the client. If a shared
+  // cache (our CDN) stores that GET, it can replay a stale cross-deploy response
+  // (e.g. one missing `euRestricted`), which makes the SSR-rendered EU banner
+  // vanish after the client refetch. Every tRPC response must be `no-store`.
+  // superjson encodes the procedure's `undefined` input as json:null + a meta
+  // marker (matches the real client's batch GET).
+  const input = encodeURIComponent(
+    JSON.stringify({ "0": { json: null, meta: { values: ["undefined"], v: 1 } } })
+  );
+  const response = await request.get(`/api/trpc/auth.providers?batch=1&input=${input}`);
+  expect(response.status()).toBe(200);
+  expect(response.headers()["cache-control"]).toContain("no-store");
+});
+
 test("/login SSRs signup-config-driven content without a loading flash", async ({ request }) => {
   const response = await request.get("/login");
   expect(response.status()).toBe(200);
