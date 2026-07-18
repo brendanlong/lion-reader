@@ -258,6 +258,17 @@ The deployment workflow is already configured in `.github/workflows/deploy.yml`.
 - **Deploy**: `flyctl deploy --remote-only` with `FLY_API_TOKEN` from GitHub secrets.
 - **CDN**: the deploy workflow has no CDN steps. The hashed `/_next/static` assets are served from a Bunny pull zone (`https://lionreader.b-cdn.net`, origin = the app) via Next's `assetPrefix`, configured by the `ASSET_PREFIX` build arg defaulted in the `Dockerfile`. Assets are content-hashed and served `immutable`, so no purging or upload ordering is needed; HTML is never CDN-cached (pages keep Next's default `private, no-store`). The pull zone must send CORS headers (Bunny's "CORS headers" option) so cross-origin font loads work.
 
+### Why HTML is not CDN-cached (and what it would take to change that)
+
+We deliberately cache only the content-hashed `/_next/static` assets, not the HTML pages. Caching HTML at the edge is a bigger commitment than it looks, because a cached HTML document references build-specific artifacts that vanish from the origin on the next deploy:
+
+- **JS bundles.** A cached page points at `/_next/static/chunks/<hash>.js` from the build that rendered it. After a deploy those hashes change and the old files are gone from the origin (Fly runs one build per release; it does not retain prior builds). A visitor holding cached HTML then 404s on its chunks. This is unavoidable if we cache HTML — it holds **regardless of soft vs. hard navigation** — so caching HTML requires keeping _old_ JS bundles available too.
+- **RSC payloads.** Soft (`?_rsc=`) navigations fetch a Flight payload tied to the current build id; a cached shell from an older build hitting a newer origin version-skews. Hard navigations avoid _this_ particular problem — but not the JS-bundle one above.
+
+That asymmetry is the key point: because the JS bundles must be retained no matter what, **forcing hard navigations buys nothing on its own** — it only removes the RSC-skew half of the problem while the bundle-retention half remains. So there is no "hard-nav-only" shortcut that makes HTML caching safe without persistent asset storage. (This is why the app uses soft navs everywhere except logout; see `src/CLAUDE.md`.)
+
+If we pick HTML caching back up, the requirement is a **persistent Bunny storage zone** holding old builds' JS bundles **and** RSC payloads for a grace window (long enough to cover cached-HTML TTL + the time a client might sit on a stale tab), plus a **cleanup story** so that storage doesn't grow unbounded across deploys (e.g. prune builds older than N releases / M days). The payoff — near-zero-cost, edge-fast public pages — has to be weighed against that retention + GC complexity; today it isn't worth it, since `assetPrefix` already edge-caches the bulk of the bytes.
+
 ---
 
 ## First Deployment
