@@ -14,13 +14,11 @@
 import { useMemo, useEffect, useCallback, useRef, Suspense } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useSwipeGesture } from "@/lib/hooks/useSwipeGesture";
-import { SortToggle } from "@/components/entries/SortToggle";
-import { UnreadToggle } from "@/components/entries/UnreadToggle";
-import { MarkAllReadButton } from "@/components/entries/MarkAllReadButton";
 import { useKeyboardShortcuts } from "@/lib/hooks/useKeyboardShortcuts";
 import { clientPush, extractParamsFromPathname } from "@/lib/navigation";
 import { DemoArticleView } from "./DemoArticleView";
 import { DemoEntryList } from "./DemoEntryList";
+import { DemoListHeader } from "./DemoListHeader";
 import { DemoListSkeleton } from "./DemoListSkeleton";
 import { useDemoState } from "./DemoStateContext";
 import {
@@ -230,28 +228,22 @@ function DemoRouterContent() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-4 sm:p-6">
-      {/* Header with title and action buttons */}
-      <div className="mb-4 flex items-center justify-between sm:mb-6">
-        <h1 className="ui-text-xl sm:ui-text-2xl text-body font-bold">{pageTitle}</h1>
-        {!isHighlights && (
-          <div className="flex gap-2">
-            <MarkAllReadButton
-              contextDescription={markAllReadDescription}
-              isLoading={false}
-              onConfirm={() => {
-                // Mark all currently-visible base entries as read
-                const ids = baseEntries.map((e) => e.id);
-                demoState.markAllRead(ids);
-              }}
-            />
-            <SortToggle sortOrder={demoState.sortOrder} onToggle={demoState.toggleSortOrder} />
-            <UnreadToggle
-              showUnreadOnly={demoState.showUnreadOnly}
-              onToggle={demoState.toggleShowUnreadOnly}
-            />
-          </div>
-        )}
-      </div>
+      {/* Header with title and action buttons — same component (and markup) the
+          SSR list renders, so the swap on hydration is seamless. */}
+      <DemoListHeader
+        title={pageTitle}
+        showActions={!isHighlights}
+        sortOrder={demoState.sortOrder}
+        showUnreadOnly={demoState.showUnreadOnly}
+        markAllReadDescription={markAllReadDescription}
+        onMarkAllRead={() => {
+          // Mark all currently-visible base entries as read
+          const ids = baseEntries.map((e) => e.id);
+          demoState.markAllRead(ids);
+        }}
+        onToggleSort={demoState.toggleSortOrder}
+        onToggleUnread={demoState.toggleShowUnreadOnly}
+      />
 
       {/* Entry list */}
       <DemoEntryList
