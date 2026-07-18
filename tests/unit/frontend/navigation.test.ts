@@ -8,7 +8,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { MouseEvent } from "react";
-import { handleClientNav, isSpaPath } from "@/lib/navigation";
+import { handleClientNav } from "@/lib/navigation";
 
 interface FakeEventOptions {
   metaKey?: boolean;
@@ -99,40 +99,5 @@ describe("handleClientNav", () => {
 
     expect(preventDefault).not.toHaveBeenCalled();
     expect(window.location.pathname).toBe("/start");
-  });
-});
-
-describe("isSpaPath", () => {
-  it.each([
-    "/all",
-    "/save",
-    "/settings",
-    "/settings?tab=account",
-    "/admin/overview",
-    "/tag/123",
-    "/subscription/abc#top",
-    "/demo/all?entry=welcome",
-    // Authenticated standalone route: never CDN-cached, so soft-nav is safe.
-    "/complete-signup",
-    "/",
-  ])("treats %s as soft-nav-safe", (path) => {
-    expect(isSpaPath(path)).toBe(true);
-  });
-
-  it.each([
-    "/login",
-    "/login?error=callback_failed",
-    "/register",
-    "/privacy",
-    "/terms",
-    "/auth/oauth/callback?code=x",
-  ])("treats %s as a CDN-cacheable public page needing a hard nav", (path) => {
-    expect(isSpaPath(path)).toBe(false);
-  });
-
-  it("does not match a prefix that is only a partial segment", () => {
-    // "/registered" starts with "/register" as a string but is a different route.
-    expect(isSpaPath("/registered")).toBe(true);
-    expect(isSpaPath("/loginfoo")).toBe(true);
   });
 });

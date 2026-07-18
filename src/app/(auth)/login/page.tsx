@@ -17,7 +17,6 @@ import { PageLink } from "@/components/ui/page-link";
 import { OAuthButtons } from "@/components/auth/OAuthButtons";
 import { AuthFooter } from "@/components/auth/AuthFooter";
 import { safeRedirectPath } from "@/lib/safe-redirect";
-import { navigateAfterAuth } from "@/lib/navigation";
 import {
   subscribeToOAuthCompletion,
   checkOAuthOnVisibilityChange,
@@ -75,9 +74,8 @@ function LoginForm() {
       // Navigate to the redirect destination - the session cookie should already be set.
       // No need to touch `isRedirecting` here: that flag is about the email/password
       // submit button, whereas the OAuth buttons own their own loading state.
-      // The redirect target here is always authenticated (/all or /complete-signup),
-      // so this soft-navigates into the app.
-      navigateAfterAuth(router, message.redirectTo);
+      router.push(message.redirectTo);
+      router.refresh();
     };
 
     // Subscribe to BroadcastChannel and storage events
@@ -124,9 +122,8 @@ function LoginForm() {
       // Keep the button in its loading state through the (server-rendered)
       // navigation instead of letting it re-enable the instant isPending clears.
       setIsRedirecting(true);
-      // Almost always /all (soft-nav into the app); guard the rare case where the
-      // sanitized ?redirect target is a standalone page, which needs a hard nav.
-      navigateAfterAuth(router, redirectTo);
+      router.push(redirectTo);
+      router.refresh();
     },
     onError: (error) => {
       // Handle specific error codes

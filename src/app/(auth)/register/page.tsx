@@ -89,8 +89,6 @@ function RegisterForm() {
       // where a new email account goes: the (app) layout redirects any
       // not-yet-confirmed user to /complete-signup anyway.
       setIsRedirecting(true);
-      // /complete-signup is authenticated-only (never CDN-cached), so a soft-nav
-      // is safe.
       router.push("/complete-signup");
       router.refresh();
     },
