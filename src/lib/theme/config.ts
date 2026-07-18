@@ -3,7 +3,7 @@
  * resolve the theme identically:
  *
  * - the next-themes `<ThemeProvider>` (`src/lib/theme/ThemeProvider.tsx`), and
- * - the blocking `<head>` theme script in `src/app/layout.tsx`, which applies the
+ * - the blocking `<head>` theme script in `src/app/root-document.tsx`, which applies the
  *   theme class before first paint (next-themes' own script runs too late — it's
  *   inside `<body>`).
  *

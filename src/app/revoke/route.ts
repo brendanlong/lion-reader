@@ -13,4 +13,4 @@
  * (see src/app/authorize/route.ts). `/oauth/revoke` declares none today; mirror
  * it here if that ever changes.
  */
-export { POST, OPTIONS } from "@/app/oauth/revoke/route";
+export { POST, OPTIONS } from "@/app/(spa)/oauth/revoke/route";

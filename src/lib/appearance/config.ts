@@ -4,7 +4,7 @@
  *
  * - the React runtime — the settings store (`settings.ts`) and the CSS-var
  *   applier (`useEntryTextStyles` in `AppearanceProvider.tsx`); and
- * - the blocking `<head>` script in `src/app/layout.tsx` that sets the entry
+ * - the blocking `<head>` script in `src/app/root-document.tsx` that sets the entry
  *   text CSS vars before first paint. That script can't import at runtime (it
  *   runs before the bundle loads), so `buildTextAppearanceScript()` here bakes
  *   this same data into the inline source. Because both sides read these

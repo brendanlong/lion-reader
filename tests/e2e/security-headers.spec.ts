@@ -1,18 +1,24 @@
 /**
- * E2E tests for the security response headers, in particular the nonce-based
- * Content-Security-Policy set by src/proxy.ts (issue #1275).
+ * E2E tests for the security response headers, in particular the two-tier
+ * Content-Security-Policy set by src/proxy.ts (issues #1275, #1359).
  *
- * The CSP is the XSS backstop behind the server-side sanitizer: a `<script>`
- * or inline event handler that survives a sanitizer regression must be blocked
- * by the browser. These tests pin:
+ * The strict nonce'd CSP is the XSS backstop behind the server-side sanitizer
+ * on every route that renders entry HTML: a `<script>` or inline event handler
+ * that survives a sanitizer regression must be blocked by the browser. The
+ * statically-prerendered public pages (demo, login, register, terms, privacy)
+ * instead carry a relaxed static CSP (`'unsafe-inline'`, no nonce) — safe only
+ * because they render no user-supplied HTML. These tests pin:
  *
- * - the policy shape (nonce'd `script-src` with `'strict-dynamic'`,
- *   `default-src 'self'`, the baseline directives), with a fresh nonce per
+ * - the strict policy shape on dynamic pages (nonce'd `script-src` with
+ *   `'strict-dynamic'`, the baseline directives), with a fresh nonce per
  *   request that matches the inline scripts' `nonce` attributes;
- * - that injected markup with an inline event handler does NOT execute (the
- *   parser-inserted markup-injection vector CSP is here to stop);
- * - that a normally loaded app page produces no CSP violations (the app's own
- *   inline scripts, styles, and chunk loading all satisfy the policy).
+ * - the relaxed policy shape on the public pages (no nonce, `'unsafe-inline'`,
+ *   and crucially no `'strict-dynamic'`, which would void `'unsafe-inline'`
+ *   and block every script);
+ * - that injected markup with an inline event handler does NOT execute inside
+ *   the authenticated app (the parser-inserted markup-injection vector the
+ *   strict CSP exists to stop);
+ * - that normally loaded app and public pages produce no CSP violations.
  *
  * Known coverage gaps (policy allows these, but the e2e env never exercises
  * them): Sentry Session Replay (prod-DSN only; needs `worker-src blob:` +
@@ -20,7 +26,7 @@
  * (Hugging Face voice models via `*.hf.co` redirect hops, jsdelivr wasm).
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import {
   getDb,
   createConfirmedUser,
@@ -40,8 +46,15 @@ function extractNonce(csp: string): string | null {
   return match ? match[1] : null;
 }
 
-test("HTML responses carry a nonce'd CSP that matches the inline scripts", async ({ request }) => {
-  const response = await request.get("/login");
+// A dynamic (per-request SSR) page that renders without authentication. The
+// login page can't be used here anymore — it's statically prerendered and
+// carries the relaxed CSP.
+const DYNAMIC_PAGE = "/auth/oauth/complete";
+
+test("dynamic HTML responses carry a nonce'd CSP that matches the inline scripts", async ({
+  request,
+}) => {
+  const response = await request.get(DYNAMIC_PAGE);
   expect(response.status()).toBe(200);
 
   const csp = response.headers()["content-security-policy"];
@@ -66,9 +79,9 @@ test("HTML responses carry a nonce'd CSP that matches the inline scripts", async
   expect(html).toContain(`nonce="${nonce}"`);
 });
 
-test("each request gets a fresh nonce", async ({ request }) => {
-  const first = await request.get("/login");
-  const second = await request.get("/login");
+test("each dynamic request gets a fresh nonce", async ({ request }) => {
+  const first = await request.get(DYNAMIC_PAGE);
+  const second = await request.get(DYNAMIC_PAGE);
   const firstNonce = extractNonce(first.headers()["content-security-policy"] ?? "");
   const secondNonce = extractNonce(second.headers()["content-security-policy"] ?? "");
   expect(firstNonce).toBeTruthy();
@@ -76,8 +89,59 @@ test("each request gets a fresh nonce", async ({ request }) => {
   expect(firstNonce).not.toBe(secondNonce);
 });
 
-test("injected inline event handlers are blocked by the CSP", async ({ page }) => {
-  await page.goto("/login");
+test("public pages carry the relaxed static CSP with no nonce", async ({ request }) => {
+  for (const path of ["/login", "/register", "/terms", "/privacy", "/demo/all"]) {
+    const response = await request.get(path);
+    expect(response.status(), path).toBe(200);
+
+    const csp = response.headers()["content-security-policy"];
+    expect(csp, path).toBeTruthy();
+    // Static pages can't carry a per-request nonce, so inline scripts run via
+    // 'unsafe-inline' — acceptable only because these pages render no
+    // user-supplied HTML (SECURITY.md).
+    expect(csp, path).toMatch(/script-src[^;]*'unsafe-inline'/);
+    expect(csp, path).not.toContain("'nonce-");
+    // 'strict-dynamic' would make browsers IGNORE 'unsafe-inline' and the
+    // 'self' allowlist — with no nonce that blocks every script on the page.
+    expect(csp, path).not.toContain("'strict-dynamic'");
+    // The baseline directives stay intact.
+    expect(csp, path).toContain("object-src 'none'");
+    expect(csp, path).toContain("frame-ancestors 'none'");
+
+    const html = await response.text();
+    expect(html, path).not.toContain('nonce="');
+  }
+});
+
+/** Collects CSP violation reports fired inside the page. */
+async function collectCspViolations(page: Page): Promise<string[]> {
+  const violations: string[] = [];
+  await page.exposeFunction("__reportCspViolation", (report: string) => {
+    violations.push(report);
+  });
+  await page.addInitScript(() => {
+    document.addEventListener("securitypolicyviolation", (e) => {
+      (
+        window as Window & {
+          __reportCspViolation?: (report: string) => void;
+        }
+      ).__reportCspViolation?.(
+        `${e.violatedDirective}: ${e.blockedURI} (source: ${e.sourceFile}:${e.lineNumber}, sample: ${e.sample})`
+      );
+    });
+  });
+  return violations;
+}
+
+test("injected inline event handlers are blocked by the CSP in the app", async ({
+  page,
+  baseURL,
+}) => {
+  const db = getDb();
+  const user = await createConfirmedUser(db);
+  await loginAs(page.context(), user, baseURL!);
+  await page.goto("/all");
+  await expect(page.getByRole("main")).toBeVisible();
 
   const result = await page.evaluate(async () => {
     const violations: string[] = [];
@@ -120,21 +184,7 @@ test("a logged-in app page loads with zero CSP violations", async ({ page, baseU
   });
   await loginAs(page.context(), user, baseURL!);
 
-  const violations: string[] = [];
-  await page.exposeFunction("__reportCspViolation", (report: string) => {
-    violations.push(report);
-  });
-  await page.addInitScript(() => {
-    document.addEventListener("securitypolicyviolation", (e) => {
-      (
-        window as Window & {
-          __reportCspViolation?: (report: string) => void;
-        }
-      ).__reportCspViolation?.(
-        `${e.violatedDirective}: ${e.blockedURI} (source: ${e.sourceFile}:${e.lineNumber}, sample: ${e.sample})`
-      );
-    });
-  });
+  const violations = await collectCspViolations(page);
 
   // The main app shell: SSR inline scripts, theme script, chunk loading, tRPC
   // and SSE connections all have to satisfy the policy.
@@ -151,6 +201,35 @@ test("a logged-in app page loads with zero CSP violations", async ({ page, baseU
   // non-JIT validation path when the CSP blocks it — correct behavior for us,
   // but the blocked probe still fires a one-time report-only violation event.
   // Filter that known-benign probe; anything else is a real policy gap.
+  const unexpected = violations.filter((v) => !v.startsWith("script-src: eval ("));
+  expect(unexpected).toEqual([]);
+});
+
+test("the public demo article page loads with zero CSP violations", async ({ page }) => {
+  const violations = await collectCspViolations(page);
+
+  // The flood landing page: served statically (via the ?entry= rewrite) under
+  // the relaxed CSP. The inline theme/appearance/SW scripts, chunk loading,
+  // and hydration all have to satisfy it.
+  await page.goto("/demo/all?entry=welcome");
+  await expect(page.getByRole("main")).toBeVisible();
+  // The blocking theme script in <head> must have run (it applies the resolved
+  // theme class to <html> before paint).
+  const htmlClass = await page.evaluate(() => document.documentElement.className);
+  expect(htmlClass).toMatch(/\b(light|dark|epaper)\b/);
+  await page.waitForTimeout(2000);
+
+  const unexpected = violations.filter((v) => !v.startsWith("script-src: eval ("));
+  expect(unexpected).toEqual([]);
+});
+
+test("the login page loads with zero CSP violations", async ({ page }) => {
+  const violations = await collectCspViolations(page);
+
+  await page.goto("/login");
+  await expect(page.getByRole("heading", { name: "Sign in to your account" })).toBeVisible();
+  await page.waitForTimeout(2000);
+
   const unexpected = violations.filter((v) => !v.startsWith("script-src: eval ("));
   expect(unexpected).toEqual([]);
 });

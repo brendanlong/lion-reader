@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 /**
  * All preview/OG images — the shared social card and every demo article hero —
- * are generated at this fixed size (see src/app/demo/articles/CLAUDE.md).
+ * are generated at this fixed size (see src/app/(public)/demo/articles/CLAUDE.md).
  * Emitting og:image:width/height lets crawlers reserve the card's space up front
  * (no layout shift, and some clients require dimensions to render a large card).
  */
