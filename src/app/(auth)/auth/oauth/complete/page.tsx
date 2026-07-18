@@ -22,6 +22,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { broadcastOAuthComplete } from "@/lib/oauth-channel";
 import { SpinnerIcon } from "@/components/ui/icon-button";
 import { safeRedirectPath } from "@/lib/safe-redirect";
+import { isSpaPath } from "@/lib/navigation";
 
 export default function OAuthCompletePage() {
   return (
@@ -48,9 +49,15 @@ function OAuthCompleteContent() {
     broadcastOAuthComplete(redirectTo);
 
     // Small delay to ensure broadcast is sent before redirecting
-    // This helps ensure the message is received by listeners
+    // This helps ensure the message is received by listeners. Use replace: this
+    // intermediate page shouldn't stay in history. A standalone target
+    // (/complete-signup) needs a full page load rather than an RSC soft-nav.
     setTimeout(() => {
-      router.replace(redirectTo);
+      if (isSpaPath(redirectTo)) {
+        router.replace(redirectTo);
+      } else {
+        window.location.replace(redirectTo);
+      }
     }, 100);
   }, [router, searchParams]);
 

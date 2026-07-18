@@ -14,7 +14,7 @@
 "use client";
 
 import { useState, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
 import { STATIC_CONFIG_QUERY_OPTIONS } from "@/lib/trpc/query-client";
 import { Button } from "@/components/ui/button";
@@ -34,7 +34,6 @@ export default function RegisterPage() {
 }
 
 function RegisterForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
 
   // Get invite token from URL query parameter
@@ -89,8 +88,9 @@ function RegisterForm() {
       // where a new email account goes: the (app) layout redirects any
       // not-yet-confirmed user to /complete-signup anyway.
       setIsRedirecting(true);
-      router.push("/complete-signup");
-      router.refresh();
+      // /complete-signup is a standalone page outside the SPA shell, so
+      // hard-navigate (a full document load) rather than an RSC soft-nav.
+      window.location.href = "/complete-signup";
     },
     onError: (error) => {
       // Handle specific error codes
