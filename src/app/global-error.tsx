@@ -47,7 +47,7 @@ const styles = `
     :root { --ge-bg: #09090b; --ge-fg: #d4d4d8; --ge-muted: #a1a1aa; --ge-btn: #f59e0b; --ge-btn-fg: #18181b; }
   }
   :root.light, :root.epaper { --ge-bg: #fafafa; --ge-fg: #3f3f46; --ge-muted: #52525b; --ge-btn: #b45309; --ge-btn-fg: #ffffff; }
-  :root.epaper { --ge-bg: #ffffff; --ge-fg: #000000; --ge-btn: #000000; }
+  :root.epaper { --ge-bg: #ffffff; --ge-fg: #000000; --ge-btn: #000000; --ge-btn-fg: #ffffff; }
   :root.dark { --ge-bg: #09090b; --ge-fg: #d4d4d8; --ge-muted: #a1a1aa; --ge-btn: #f59e0b; --ge-btn-fg: #18181b; }
   body { margin: 0; background: var(--ge-bg); color: var(--ge-fg); }
 `;
@@ -69,10 +69,15 @@ export default function GlobalError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  // Decide synchronously (lazy initializer runs once, client-only) whether this
-  // render should auto-reload, so the error UI never flashes before a reload.
-  // Writing the guard here rather than in an effect keeps the decision and the
-  // guard update atomic.
+  // Decide synchronously (lazy initializer) whether this render should
+  // auto-reload, so the error UI never flashes before a reload. Writing the
+  // guard here rather than in an effect keeps the decision and the guard
+  // update atomic. In the primary trigger (stale-HTML hydration failure) this
+  // component client-renders from scratch, so the initializer just works. In
+  // the rarer SSR'd-error case the server initializer returns false (storage
+  // access throws) while the client's may return true — a hydration mismatch
+  // React resolves by client-rendering, after which the reload proceeds; a
+  // console warning in an already-broken document is an accepted trade-off.
   const [reloading] = useState(() => {
     try {
       const last = Number(sessionStorage.getItem(RELOAD_GUARD_KEY) ?? 0);
