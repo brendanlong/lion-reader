@@ -10,6 +10,8 @@ Every outgoing request must send our custom User-Agent (`USER_AGENT`/`buildUserA
 
 Only the **anonymous** render of `/login` and `/register` is cacheable: a request carrying a `session` cookie gets `no-store` (its body is the signed-in redirect), and cacheable renders carry `Vary: Cookie`. `/demo/*`, `/privacy`, and `/terms` have no auth redirect in their subtree and no per-visitor content, so they're cacheable unconditionally. This origin-side gating is defense in depth under the CDN's own "bypass on session cookie" rule — never rely on either alone to keep a per-session redirect out of a shared cache.
 
+**The CDN TTL must stay short** (`s-maxage=300, stale-while-revalidate=60`): every deploy deletes the previous build's hashed `/_next/static` assets, so CDN-cached HTML from before a deploy references chunks that now 404 — the SSR paint still works, but hydration fails and Next swaps in the (formerly unthemed white) `global-error` page, which users perceived as a background flash on navigation (issue #1350). The deploy workflow purges the Bunny pull zone after each rollout (see `.github/workflows/deploy.yml`); the short TTL is the backstop when the purge is unavailable. Don't raise these values without first making old build assets survive deploys (e.g. serving `/_next/static` from object storage).
+
 ## SSRF Protection
 
 All server-side fetches that target user-influenced URLs (feed preview/discover, feed fetching, full-content fetching, WebSub hub callbacks) are guarded against Server-Side Request Forgery to private/internal networks. The shared helper `fetchWithSsrfProtection(url, init)` in `src/server/http/ssrf.ts` performs the fetch and:

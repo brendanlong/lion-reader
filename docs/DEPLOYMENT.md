@@ -256,6 +256,7 @@ The deployment workflow is already configured in `.github/workflows/deploy.yml`.
 - **Concurrency**: `group: deploy` with `cancel-in-progress: false`, so deploys **queue** instead of cancelling each other — cancelling an in-flight `flyctl deploy` could kill a mid-flight canary rollout and leave a partial deployment.
 - **Checkout**: `ref: ${{ github.event.workflow_run.head_sha || github.sha }}` — deploys the exact commit CI validated, since `workflow_run` runs against the branch tip, which may have moved on.
 - **Deploy**: `flyctl deploy --remote-only` with `FLY_API_TOKEN` from GitHub secrets.
+- **CDN purge**: after a successful rollout, the workflow purges the Bunny CDN pull zone. Every deploy deletes the previous build's hashed `/_next/static` assets, so any HTML the CDN cached before the deploy references chunks that now 404 — hydration then fails and visitors get the global-error page (issue #1350). The purge makes the CDN refetch fresh HTML immediately; the short `s-maxage` in `src/server/http/page-cache.ts` is the backstop if the purge is skipped or fails. Requires two optional GitHub secrets (the step skips gracefully without them): `BUNNY_API_KEY` (Bunny dashboard > Account Settings > API) and `BUNNY_PULL_ZONE_ID` (the numeric pull zone id from the zone's dashboard URL).
 
 ---
 

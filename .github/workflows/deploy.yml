@@ -66,3 +66,30 @@ jobs:
             --env GIT_COMMIT_SHA="$(git rev-parse --short HEAD)"
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+      - name: Purge CDN cache
+        # Every deploy deletes the previous build's hashed /_next/static assets,
+        # so any HTML the CDN cached before the deploy references chunks that
+        # now 404 — hydration fails and visitors get the global-error page
+        # (issue #1350). Purging the Bunny pull zone right after the rollout
+        # makes the CDN refetch fresh HTML (and re-warm assets) immediately;
+        # the short s-maxage in src/server/http/page-cache.ts is the backstop
+        # if this step is skipped or fails.
+        #
+        # Requires two GitHub secrets from the Bunny dashboard:
+        #   BUNNY_API_KEY      - account API key (Account Settings > API)
+        #   BUNNY_PULL_ZONE_ID - numeric id of the lionreader pull zone
+        # Skips gracefully when they're not configured.
+        run: |
+          if [ -z "$BUNNY_API_KEY" ] || [ -z "$BUNNY_PULL_ZONE_ID" ]; then
+            echo "Bunny secrets not configured; skipping CDN purge"
+            exit 0
+          fi
+          curl -sf -X POST \
+            "https://api.bunny.net/pullzone/${BUNNY_PULL_ZONE_ID}/purgeCache" \
+            -H "AccessKey: ${BUNNY_API_KEY}" \
+            -H "Content-Length: 0"
+          echo "CDN cache purged"
+        env:
+          BUNNY_API_KEY: ${{ secrets.BUNNY_API_KEY }}
+          BUNNY_PULL_ZONE_ID: ${{ secrets.BUNNY_PULL_ZONE_ID }}
