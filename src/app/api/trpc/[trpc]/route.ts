@@ -78,20 +78,27 @@ const handler = async (req: Request) => {
   // Record HTTP metrics
   endTimer(response.status);
 
+  const headers = new Headers(response.headers);
+
+  // tRPC uses GET for queries, and those responses carry per-request/per-user
+  // data (and change across deploys). Without an explicit Cache-Control, a shared
+  // cache — our CDN (Bunny) — stores and replays them. That served a stale
+  // pre-`euRestricted` auth.signupConfig on anonymous /register loads (no session
+  // cookie, so the CDN's cookie-based bypass doesn't apply): the EU banner
+  // rendered in SSR, then vanished when the client's background refetch read the
+  // stale cached response. Mark every tRPC response uncacheable by shared caches.
+  headers.set("Cache-Control", "private, no-store");
+
   // Add rate limit headers to the response
-  if (Object.keys(rateLimitHeaders).length > 0) {
-    const headers = new Headers(response.headers);
-    for (const [key, value] of Object.entries(rateLimitHeaders)) {
-      headers.set(key, value);
-    }
-    return new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers,
-    });
+  for (const [key, value] of Object.entries(rateLimitHeaders)) {
+    headers.set(key, value);
   }
 
-  return response;
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 };
 
 export { handler as GET, handler as POST };
