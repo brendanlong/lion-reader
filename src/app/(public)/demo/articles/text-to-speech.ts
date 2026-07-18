@@ -15,6 +15,8 @@ const article: DemoArticle = {
   heroImageAlt:
     "The Lion Reader lion wearing headphones and reading a newspaper as an article is read aloud, with sound waves rising from the page.",
   summaryHtml: `<p>Lion Reader converts articles to audio using a two-stage process: an <strong>AI preprocessor</strong> (GPT-OSS) transforms HTML into narration-friendly text by expanding abbreviations and formatting complex elements, then either Web Speech API or local <strong>Piper TTS</strong> synthesizes speech. Features include synchronized paragraph highlighting, playback controls, and offline capability.</p>`,
+  summaryModelId: "claude-sonnet-5",
+  summaryGeneratedAt: new Date("2026-07-15"),
   contentHtml: `
     <p>Sometimes you want to listen instead of read &mdash; while cooking, commuting, or just giving your eyes a rest. Lion Reader&rsquo;s narration feature transforms articles into natural-sounding audio using a two-stage pipeline that combines AI preprocessing with on-device speech synthesis.</p>
 

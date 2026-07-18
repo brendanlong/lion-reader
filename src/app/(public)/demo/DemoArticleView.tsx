@@ -110,8 +110,8 @@ export function DemoArticleView({
             {showSummary && (
               <SummaryCard
                 summary={entry.summaryHtml}
-                modelId="claude-sonnet-4-6"
-                generatedAt={new Date("2026-02-07")}
+                modelId={entry.summaryModelId}
+                generatedAt={entry.summaryGeneratedAt}
                 onClose={() => setShowSummary(false)}
               />
             )}
