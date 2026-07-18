@@ -5,10 +5,11 @@
 /**
  * Unit tests for PageLink component.
  *
- * PageLink renders a plain <a> for full-page navigation to standalone routes
- * outside the SPA shell. The contract that matters: it is a real anchor with the
- * given href (so the browser does a full document navigation, not a Next.js RSC
- * soft-nav) and it forwards arbitrary anchor props through.
+ * PageLink wraps `<Link prefetch={false}>` for navigation to standalone routes
+ * outside the SPA shell. The contract that matters here: it renders a real anchor
+ * with the given href (so browser affordances like open-in-new-tab work) and it
+ * forwards arbitrary anchor props through. The prefetch={false} / soft-nav
+ * behavior is a Next.js concern exercised in the browser, not asserted in jsdom.
  */
 
 import { describe, it, expect } from "vitest";
