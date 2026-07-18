@@ -99,13 +99,13 @@ jobs:
           BUNNY_STORAGE_ENDPOINT: ${{ secrets.BUNNY_STORAGE_ENDPOINT }}
 
       - name: Purge CDN cache
-        # Every deploy deletes the previous build's hashed /_next/static assets,
-        # so any HTML the CDN cached before the deploy references chunks that
-        # now 404 — hydration fails and visitors get the global-error page
-        # (issue #1350). Purging the Bunny pull zone right after the rollout
-        # makes the CDN refetch fresh HTML (and re-warm assets) immediately;
-        # the short s-maxage in src/server/http/page-cache.ts is the backstop
-        # if this step is skipped or fails.
+        # Every deploy deletes the previous build's hashed /_next/static assets
+        # from the origin, so any HTML the CDN cached before the deploy
+        # references chunks the origin now 404s — hydration fails and visitors
+        # get the global-error page (issue #1350). Purging the Bunny pull zone
+        # right after the rollout makes the CDN refetch fresh HTML immediately;
+        # the storage-zone upload above keeps old builds' assets servable for
+        # any stragglers.
         #
         # Requires two GitHub secrets from the Bunny dashboard:
         #   BUNNY_API_KEY      - account API key (Account Settings > API)
