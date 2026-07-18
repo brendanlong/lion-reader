@@ -125,4 +125,20 @@ describe("buildChunkReloadScript", () => {
     dispatch(win, "error", { error: chunkError() });
     expect(win.reloadCount).toBe(1);
   });
+
+  it("does not reload when sessionStorage is unavailable (no unguarded loop)", () => {
+    // Private mode / disabled storage: the guard can't be persisted, so we must
+    // skip the reload rather than reload unguarded and risk an infinite loop.
+    const win = makeWindow();
+    win.sessionStorage.getItem = () => {
+      throw new Error("SecurityError: storage disabled");
+    };
+    win.sessionStorage.setItem = () => {
+      throw new Error("SecurityError: storage disabled");
+    };
+    new Function("window", buildChunkReloadScript())(win);
+    dispatch(win, "error", { error: chunkError() });
+    dispatch(win, "unhandledrejection", { reason: chunkError() });
+    expect(win.reloadCount).toBe(0);
+  });
 });
