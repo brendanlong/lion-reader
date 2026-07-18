@@ -468,10 +468,9 @@ export const entries = pgTable(
     author: text("author"),
     contentOriginal: text("content_original"),
     contentCleaned: text("content_cleaned"), // Readability-cleaned HTML
-    // XSS-sanitized cache of the content fields, served directly by the read
-    // path so sanitization isn't re-run on every entries.get. Stamped with the
-    // SANITIZER_VERSION they were produced with; the read path re-sanitizes from
-    // the raw columns above when the version is stale. See sanitize-entry.ts.
+    // DEPRECATED (issue #1282): sanitization is now per-read, so these columns
+    // are no longer read or written. Kept for one release for rollback safety
+    // (expand/contract); a follow-up migration drops them. See sanitize-entry.ts.
     contentOriginalSanitized: text("content_original_sanitized"),
     contentCleanedSanitized: text("content_cleaned_sanitized"),
     contentSanitizedVersion: smallint("content_sanitized_version"),
@@ -497,7 +496,7 @@ export const entries = pgTable(
     fullContentHash: text("full_content_hash"), // SHA256 of full content (for separate summary caching)
     fullContentOriginal: text("full_content_original"), // Raw HTML from URL
     fullContentCleaned: text("full_content_cleaned"), // Readability-cleaned HTML
-    // XSS-sanitized cache of the full content fields (see contentOriginalSanitized).
+    // DEPRECATED (issue #1282): see contentOriginalSanitized above.
     fullContentOriginalSanitized: text("full_content_original_sanitized"),
     fullContentCleanedSanitized: text("full_content_cleaned_sanitized"),
     fullContentSanitizedVersion: smallint("full_content_sanitized_version"),
@@ -559,11 +558,6 @@ export const entries = pgTable(
     //   Enables limit pushdown for "all entries" queries. Migration 0060.
     // - idx_entries_feed_published_coalesce: (feed_id, COALESCE(published_at, fetched_at) DESC, id DESC)
     //   Enables seek + limit pushdown for per-feed/subscription queries. Migration 0061.
-    // - idx_entries_resanitize: (RESANITIZE_STALENESS_KEY DESC, id DESC), where the key is
-    //   LEAST of each content family's version if it has raw content else a large sentinel.
-    //   Backs the manual bulk re-sanitize script (scripts/resanitize-bulk.ts, via
-    //   src/server/services/resanitize.ts): seeks past fresh rows to the stalest ones
-    //   without a full scan or sort. Migration 0085.
     //
     // Type-specific check constraints (created via raw SQL in migrations):
     // - entries_spam_only_email: spam fields only for email entries

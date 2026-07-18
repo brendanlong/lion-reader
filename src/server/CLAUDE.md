@@ -6,9 +6,9 @@ Subsystem docs (read before working in these areas): `src/server/html/CLAUDE.md`
 
 ## Services Layer
 
-Business logic lives in pure service functions in `src/server/services/` — functions accept `db` + parameters and return plain data objects, shared by tRPC routers, the MCP server, compat APIs (Google Reader, Wallabag), and background jobs. Naming: `verbNoun` (`listEntries`, `markEntriesRead`). Notable modules: `entries.ts` (list/get/mark-read/star/count + the sanitized read path `selectFullEntry`/`toFullEntry`), `subscriptions.ts`, `saved.ts`, `tags.ts`, `counts.ts` (denormalized counters, not scans), `reconcile-counters.ts`, `entry-filters.ts` (shared filter construction), `entry-events.ts` (shared `entry_state_changed` publishing so every caller emits the same event), `full-content.ts`, `narration.ts`, `summarization.ts`, `users.ts`, `retention.ts`, `resanitize.ts`.
+Business logic lives in pure service functions in `src/server/services/` — functions accept `db` + parameters and return plain data objects, shared by tRPC routers, the MCP server, compat APIs (Google Reader, Wallabag), and background jobs. Naming: `verbNoun` (`listEntries`, `markEntriesRead`). Notable modules: `entries.ts` (list/get/mark-read/star/count + the sanitized read path `selectFullEntry`/`toFullEntry`), `subscriptions.ts`, `saved.ts`, `tags.ts`, `counts.ts` (denormalized counters, not scans), `reconcile-counters.ts`, `entry-filters.ts` (shared filter construction), `entry-events.ts` (shared `entry_state_changed` publishing so every caller emits the same event), `full-content.ts`, `narration.ts`, `summarization.ts`, `users.ts`, `retention.ts`.
 
-Entry content served by `getEntry`/`getEntries`/`toFullEntry` is **sanitized in the services layer** (see `src/server/html/CLAUDE.md`), so every consumer gets the same guarantee.
+Entry content served by `getEntry`/`getEntries`/`toFullEntry` is **sanitized in the services layer on every read** (raw HTML is stored; see `src/server/html/CLAUDE.md`), so every consumer gets the same guarantee.
 
 ## Site Status (announcement banner + maintenance mode)
 

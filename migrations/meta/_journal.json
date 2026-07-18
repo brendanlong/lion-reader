@@ -715,6 +715,13 @@
       "when": 1782953500000,
       "tag": "0102_ai_provider_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1782953600000,
+      "tag": "0103_drop_resanitize_index",
+      "breakpoints": true
     }
   ]
 }

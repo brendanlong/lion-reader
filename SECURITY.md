@@ -36,13 +36,16 @@ user-influenced URLs and must never be usable to reach internal services.
 Entry bodies, saved articles, and AI summaries are rendered with
 `dangerouslySetInnerHTML`. The server-side sanitizer is the **sole** XSS gate.
 
-- **Every HTML field rendered to a user must be sanitized on the write path
-  (services layer), never on the client.** New render sinks
-  (`dangerouslySetInnerHTML`) must render only already-sanitized content.
+- **Every HTML field rendered to a user must be sanitized in the services layer,
+  never on the client.** Entry content is sanitized **on every read** (raw HTML is
+  stored; see issue #1282) via `sanitizeEntryContentFamily`/`sanitizeEntryHtml`.
+  New render sinks (`dangerouslySetInnerHTML`) must render only already-sanitized
+  content, and new read paths must funnel through the services-layer chokepoints.
 - **Never render feed-controlled text (titles, author names, feed names) as HTML.**
-- **Bump `SANITIZER_VERSION` (native/sanitizer/core/src/lib.rs) whenever
-  sanitizer behavior changes** (see the html doc for the rule) and rebuild the
-  native module (`pnpm build:native`).
+- Sanitization is per-read, so a rules change in `native/sanitizer/` takes effect
+  on the next read everywhere after a deploy — rebuild the native module
+  (`pnpm build:native`). `SANITIZER_VERSION` is now informational only (nothing is
+  stored to compare against). See the html doc.
 - The allowlist deliberately excludes `script`/`style`/`on*`/`form`/`base`/`meta`,
   restricts URL schemes, forces `rel=noopener`, and treats SVG/MathML as mXSS-prone.
   Changes here need a security review.
