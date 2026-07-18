@@ -48,6 +48,16 @@ function formatDate(date: Date): string {
   }).format(new Date(date));
 }
 
+function formatDateTime(date: Date): string {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(date));
+}
+
 function truncateId(id: string): string {
   if (id.length <= 12) return id;
   return `${id.slice(0, 8)}...`;
@@ -118,9 +128,9 @@ function UserRow({ user }: { user: User }) {
       {/* Stats row */}
       <div className="ui-text-xs text-muted flex flex-wrap gap-x-4 gap-y-1 tabular-nums">
         <span>Member since {formatDate(user.createdAt)}</span>
-        <span>Last active: {user.lastActiveAt ? formatDate(user.lastActiveAt) : "Never"}</span>
+        <span>Last active: {user.lastActiveAt ? formatDateTime(user.lastActiveAt) : "Never"}</span>
         <span>
-          Last API/MCP use: {user.lastTokenUsedAt ? formatDate(user.lastTokenUsedAt) : "Never"}
+          Last API/MCP use: {user.lastTokenUsedAt ? formatDateTime(user.lastTokenUsedAt) : "Never"}
         </span>
         <span>
           Subscriptions:{" "}
