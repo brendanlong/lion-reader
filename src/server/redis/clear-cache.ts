@@ -14,10 +14,10 @@
  * as-is — no read-then-restore race. Everything else swept here is cache /
  * ephemeral (sessions, SSE channels, OAuth state, rate limits) and safe to drop.
  *
- * Known exception, deliberately NOT preserved: `discord:token:*` (the Discord
- * bot's durable user → API-token links) is also swept, so token-linked Discord
- * users must re-run `/link` after a deploy. That key wants a proper home in
- * Postgres rather than a spot on this preserve-list — tracked in issue #1370.
+ * The Discord bot's user → API-token links used to be the exception here: they
+ * lived only in Redis (`discord:token:*`) and were wiped on every deploy. They
+ * now live durably in Postgres (`discord_api_token_links`, issue #1370), so
+ * there is nothing Discord-related left to preserve on this path.
  */
 
 import type Redis from "ioredis";
