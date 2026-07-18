@@ -59,15 +59,16 @@ jobs:
         # demo's "Welcome" published time matches between the client and server
         # renders (see src/app/demo/articles/welcome-published-at.ts).
         #
-        # When the Bunny storage secrets are configured, the deploy splits into
-        # build → extract /_next/static from the built image → upload to the
-        # storage zone → release. Ordering matters: every hashed asset must be
-        # in the storage zone BEFORE any HTML referencing it goes live, so the
-        # /_next/static edge rule (issue #1318) never serves a 404 for the
-        # current build. Uploads are additive, so previous builds' assets stay
-        # servable after the deploy deletes them from the origin — the
-        # deploy-skew fix of issue #1350. Without the secrets this falls back
-        # to the original single-step deploy.
+        # When the Bunny storage config is present (BUNNY_STORAGE_ZONE_NAME
+        # repo variable + BUNNY_STORAGE_ZONE_PASSWORD secret), the deploy
+        # splits into build → extract /_next/static from the built image →
+        # upload to the storage zone → release. Ordering matters: every hashed
+        # asset must be in the storage zone BEFORE any HTML referencing it goes
+        # live, so the /_next/static edge rule (issue #1318) never serves a 404
+        # for the current build. Uploads are additive, so previous builds'
+        # assets stay servable after the deploy deletes them from the origin —
+        # the deploy-skew fix of issue #1350. Without the config this falls
+        # back to the original single-step deploy.
         run: |
           BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           SHORT_SHA="$(git rev-parse --short HEAD)"
@@ -86,7 +87,7 @@ jobs:
               --env NEXT_PUBLIC_BUILD_TIME="$BUILD_TIME" \
               --env GIT_COMMIT_SHA="$SHORT_SHA"
           else
-            echo "Bunny storage secrets not configured; single-step deploy (static assets served from origin only)"
+            echo "Bunny storage config not set; single-step deploy (static assets served from origin only)"
             flyctl deploy --remote-only \
               --build-arg NEXT_PUBLIC_BUILD_TIME="$BUILD_TIME" \
               --env NEXT_PUBLIC_BUILD_TIME="$BUILD_TIME" \
@@ -94,13 +95,16 @@ jobs:
           fi
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-          BUNNY_STORAGE_ZONE_NAME: ${{ secrets.BUNNY_STORAGE_ZONE_NAME }}
+          # Zone name and endpoint aren't sensitive, so they're repository
+          # VARIABLES (Settings > Secrets and variables > Actions > Variables);
+          # only the zone password is a secret.
+          BUNNY_STORAGE_ZONE_NAME: ${{ vars.BUNNY_STORAGE_ZONE_NAME }}
           BUNNY_STORAGE_ZONE_PASSWORD: ${{ secrets.BUNNY_STORAGE_ZONE_PASSWORD }}
           # The lionreader storage zone's primary region is Los Angeles; the
           # script's storage.bunnycdn.com default only works for Falkenstein
-          # zones (anything else 401s). Not a secret — override via the
-          # BUNNY_STORAGE_ENDPOINT secret only if the zone's region changes.
-          BUNNY_STORAGE_ENDPOINT: ${{ secrets.BUNNY_STORAGE_ENDPOINT || 'https://la.storage.bunnycdn.com' }}
+          # zones (anything else 401s). Set the BUNNY_STORAGE_ENDPOINT variable
+          # only if the zone's region changes.
+          BUNNY_STORAGE_ENDPOINT: ${{ vars.BUNNY_STORAGE_ENDPOINT || 'https://la.storage.bunnycdn.com' }}
 
       - name: Purge CDN cache
         # Every deploy deletes the previous build's hashed /_next/static assets
@@ -111,18 +115,17 @@ jobs:
         # the storage-zone upload above keeps old builds' assets servable for
         # any stragglers.
         #
-        # Requires two GitHub secrets from the Bunny dashboard:
-        #   BUNNY_API_KEY      - account API key (Account Settings > API)
-        #   BUNNY_PULL_ZONE_ID - numeric id of the lionreader pull zone
-        # Skips gracefully when they're not configured.
+        # Requires (skips gracefully when either is missing):
+        #   BUNNY_API_KEY      secret   - account API key (Account Settings > API)
+        #   BUNNY_PULL_ZONE_ID variable - numeric id of the lionreader pull zone
         run: |
           if [ -z "$BUNNY_API_KEY" ] || [ -z "$BUNNY_PULL_ZONE_ID" ]; then
-            echo "Bunny secrets not configured; skipping CDN purge"
+            echo "Bunny purge config not set; skipping CDN purge"
             exit 0
           fi
           # Best-effort: a failed purge must not mark a successful deploy red —
-          # the short s-maxage bounds the damage. The warning still surfaces a
-          # broken secret in the run summary.
+          # the storage-zone upload keeps stale HTML's assets servable anyway.
+          # The warning still surfaces a broken key in the run summary.
           if curl -sf -X POST \
             "https://api.bunny.net/pullzone/${BUNNY_PULL_ZONE_ID}/purgeCache" \
             -H "AccessKey: ${BUNNY_API_KEY}"; then
@@ -132,4 +135,4 @@ jobs:
           fi
         env:
           BUNNY_API_KEY: ${{ secrets.BUNNY_API_KEY }}
-          BUNNY_PULL_ZONE_ID: ${{ secrets.BUNNY_PULL_ZONE_ID }}
+          BUNNY_PULL_ZONE_ID: ${{ vars.BUNNY_PULL_ZONE_ID }}
