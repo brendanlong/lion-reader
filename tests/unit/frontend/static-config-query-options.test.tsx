@@ -6,7 +6,7 @@
  * Regression test for STATIC_CONFIG_QUERY_OPTIONS: the deploy-static config
  * queries the public auth pages read (`auth.signupConfig`, `auth.providers`)
  * must not background-refetch. A refetch there previously let a stale
- * CDN-cached tRPC response overwrite the correct SSR-hydrated value, flashing
+ * shared-cache tRPC response overwrite the correct SSR-hydrated value, flashing
  * the register page's EU banner in and back out.
  *
  * We drive React Query's real `focusManager` (the mechanism behind

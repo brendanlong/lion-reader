@@ -58,81 +58,12 @@ jobs:
         # client bundle) and a runtime env var, using one shared value so the
         # demo's "Welcome" published time matches between the client and server
         # renders (see src/app/demo/articles/welcome-published-at.ts).
-        #
-        # When the Bunny storage config is present (BUNNY_STORAGE_ZONE_NAME
-        # repo variable + BUNNY_STORAGE_ZONE_PASSWORD secret), the deploy
-        # splits into build → extract /_next/static from the built image →
-        # upload to the storage zone → release. Ordering matters: every hashed
-        # asset must be in the storage zone BEFORE any HTML referencing it goes
-        # live, so the /_next/static edge rule (issue #1318) never serves a 404
-        # for the current build. Uploads are additive, so previous builds'
-        # assets stay servable after the deploy deletes them from the origin —
-        # the deploy-skew fix of issue #1350. Without the config this falls
-        # back to the original single-step deploy.
         run: |
           BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           SHORT_SHA="$(git rev-parse --short HEAD)"
-          if [ -n "$BUNNY_STORAGE_ZONE_NAME" ] && [ -n "$BUNNY_STORAGE_ZONE_PASSWORD" ]; then
-            IMAGE="registry.fly.io/lion-reader:deploy-${SHORT_SHA}"
-            flyctl deploy --remote-only --build-only --push \
-              --image-label "deploy-${SHORT_SHA}" \
-              --build-arg NEXT_PUBLIC_BUILD_TIME="$BUILD_TIME"
-            flyctl auth docker
-            docker pull "$IMAGE"
-            CID="$(docker create "$IMAGE")"
-            docker cp "$CID":/app/.next/static ./next-static
-            docker rm "$CID"
-            bash scripts/upload-bunny-static.sh ./next-static
-            flyctl deploy --image "$IMAGE" \
-              --env NEXT_PUBLIC_BUILD_TIME="$BUILD_TIME" \
-              --env GIT_COMMIT_SHA="$SHORT_SHA"
-          else
-            echo "Bunny storage config not set; single-step deploy (static assets served from origin only)"
-            flyctl deploy --remote-only \
-              --build-arg NEXT_PUBLIC_BUILD_TIME="$BUILD_TIME" \
-              --env NEXT_PUBLIC_BUILD_TIME="$BUILD_TIME" \
-              --env GIT_COMMIT_SHA="$SHORT_SHA"
-          fi
+          flyctl deploy --remote-only \
+            --build-arg NEXT_PUBLIC_BUILD_TIME="$BUILD_TIME" \
+            --env NEXT_PUBLIC_BUILD_TIME="$BUILD_TIME" \
+            --env GIT_COMMIT_SHA="$SHORT_SHA"
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-          # Zone name and endpoint aren't sensitive, so they're repository
-          # VARIABLES (Settings > Secrets and variables > Actions > Variables);
-          # only the zone password is a secret.
-          BUNNY_STORAGE_ZONE_NAME: ${{ vars.BUNNY_STORAGE_ZONE_NAME }}
-          BUNNY_STORAGE_ZONE_PASSWORD: ${{ secrets.BUNNY_STORAGE_ZONE_PASSWORD }}
-          # The lionreader storage zone's primary region is Los Angeles; the
-          # script's storage.bunnycdn.com default only works for Falkenstein
-          # zones (anything else 401s). Set the BUNNY_STORAGE_ENDPOINT variable
-          # only if the zone's region changes.
-          BUNNY_STORAGE_ENDPOINT: ${{ vars.BUNNY_STORAGE_ENDPOINT || 'https://la.storage.bunnycdn.com' }}
-
-      - name: Purge CDN cache
-        # Every deploy deletes the previous build's hashed /_next/static assets
-        # from the origin, so any HTML the CDN cached before the deploy
-        # references chunks the origin now 404s — hydration fails and visitors
-        # get the global-error page (issue #1350). Purging the Bunny pull zone
-        # right after the rollout makes the CDN refetch fresh HTML immediately;
-        # the storage-zone upload above keeps old builds' assets servable for
-        # any stragglers.
-        #
-        # Requires (skips gracefully when either is missing):
-        #   BUNNY_API_KEY      secret   - account API key (Account Settings > API)
-        #   BUNNY_PULL_ZONE_ID variable - numeric id of the lionreader pull zone
-        run: |
-          if [ -z "$BUNNY_API_KEY" ] || [ -z "$BUNNY_PULL_ZONE_ID" ]; then
-            echo "Bunny purge config not set; skipping CDN purge"
-            exit 0
-          fi
-          # Best-effort: a failed purge must not mark a successful deploy red —
-          # the storage-zone upload keeps stale HTML's assets servable anyway.
-          # The warning still surfaces a broken key in the run summary.
-          if curl -sf -X POST \
-            "https://api.bunny.net/pullzone/${BUNNY_PULL_ZONE_ID}/purgeCache" \
-            -H "AccessKey: ${BUNNY_API_KEY}"; then
-            echo "CDN cache purged"
-          else
-            echo "::warning::Bunny CDN purge failed (deploy itself succeeded); check BUNNY_API_KEY / BUNNY_PULL_ZONE_ID"
-          fi
-        env:
-          BUNNY_API_KEY: ${{ secrets.BUNNY_API_KEY }}
-          BUNNY_PULL_ZONE_ID: ${{ vars.BUNNY_PULL_ZONE_ID }}

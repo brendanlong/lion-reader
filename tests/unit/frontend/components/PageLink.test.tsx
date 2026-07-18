@@ -7,8 +7,8 @@
  *
  * PageLink renders a plain <a> for full-page navigation to standalone routes
  * outside the SPA shell. The contract that matters: it is a real anchor with the
- * given href (so the browser does a full navigation to the CDN-cached document,
- * not a Next.js RSC soft-nav) and it forwards arbitrary anchor props through.
+ * given href (so the browser does a full document navigation, not a Next.js RSC
+ * soft-nav) and it forwards arbitrary anchor props through.
  */
 
 import { describe, it, expect } from "vitest";

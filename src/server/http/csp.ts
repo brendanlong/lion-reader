@@ -59,6 +59,13 @@ import { embedCanonicalHostnames } from "@lion-reader/sanitizer";
  *   hosts (`EMBED_CANONICAL_HOSTNAMES`), so the CSP double-enforces that list.
  * - `object-src 'none'`, `base-uri 'self'`, `frame-ancestors 'none'`: the
  *   pre-existing baseline (plugins, `<base>` hijacking, clickjacking).
+ * - The CDN origin (`ASSET_PREFIX`, the Next.js `assetPrefix` in
+ *   `next.config.ts`): the hashed `/_next/static` assets — JS chunks, CSS, and
+ *   next/font files — load from it in production, so it joins `script-src`
+ *   (the `'self'` fallback path for pre-CSP3 browsers; `'strict-dynamic'`
+ *   browsers ignore the host list), `style-src`, `font-src`, and `default-src`
+ *   (which backstops `<link rel="prefetch">`). Unset in dev/tests, where the
+ *   directives stay origin-only.
  * - `form-action` is deliberately absent: Chrome checks post-submit redirects
  *   against it, which would break the OAuth consent flow (form POST to self,
  *   then 302 to the client's external `redirect_uri`). Note `form-action`
@@ -69,18 +76,21 @@ import { embedCanonicalHostnames } from "@lion-reader/sanitizer";
  */
 export function buildContentSecurityPolicy(nonce: string): string {
   const isDev = process.env.NODE_ENV === "development";
+  // " https://lionreader.b-cdn.net" in production, "" when no CDN is configured.
+  const assetPrefix = process.env.ASSET_PREFIX;
+  const cdn = assetPrefix ? ` ${new URL(assetPrefix).origin}` : "";
   const frameSrc = embedCanonicalHostnames()
     .map((host) => `https://${host}`)
     .join(" ");
   return [
-    "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' 'wasm-unsafe-eval'${
+    `default-src 'self'${cdn}`,
+    `script-src 'self'${cdn} 'nonce-${nonce}' 'strict-dynamic' 'wasm-unsafe-eval'${
       isDev ? " 'unsafe-eval'" : ""
     }`,
-    "style-src 'self' 'unsafe-inline'",
+    `style-src 'self'${cdn} 'unsafe-inline'`,
     "img-src 'self' data: blob: http: https:",
     "media-src 'self' data: blob: http: https:",
-    "font-src 'self' data:",
+    `font-src 'self'${cdn} data:`,
     `connect-src 'self' https://huggingface.co https://*.huggingface.co https://*.hf.co https://cdn.jsdelivr.net${
       isDev ? " ws:" : ""
     }`,

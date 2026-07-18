@@ -1,6 +1,16 @@
 # Production Dockerfile for Lion Reader
 # Multi-stage build for optimal image size
 
+# CDN base URL for the hashed /_next/static assets (Next.js assetPrefix; see
+# next.config.ts). Defaulted here — not in CI — so the production image gets it
+# with zero deploy-workflow logic, while dev and CI builds (which run outside
+# Docker against local servers the pull zone can't reach) stay origin-served.
+# Override with --build-arg ASSET_PREFIX="" when building an image for local
+# testing, since the pull zone's origin is production. Declared globally and
+# re-declared per stage so the build (baked into the Next output) and the
+# runtime (read by src/server/http/csp.ts for the CSP) always agree.
+ARG ASSET_PREFIX="https://lionreader.b-cdn.net"
+
 # =============================================================================
 # Stage 1: Base image with pnpm (for building)
 # =============================================================================
@@ -99,6 +109,10 @@ ENV NODE_ENV=production
 ENV DATABASE_URL="postgresql://build:build@localhost:5432/build"
 ENV REDIS_URL="redis://localhost:6379"
 
+# CDN base URL for /_next/static (see the global ARG at the top of this file).
+ARG ASSET_PREFIX
+ENV ASSET_PREFIX=$ASSET_PREFIX
+
 # Client-side Sentry DSN. NEXT_PUBLIC_* vars are inlined into the client
 # bundle at build time, so a runtime secret is not enough — the DSN must be
 # provided to the build (fly.toml [build.args]). DSNs are not secret (they
@@ -158,6 +172,12 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
+
+# Matches the builder's ASSET_PREFIX (the value baked into the Next build) via
+# the shared global ARG: the runtime server reads it to allow the CDN origin in
+# the CSP (src/server/http/csp.ts).
+ARG ASSET_PREFIX
+ENV ASSET_PREFIX=$ASSET_PREFIX
 
 # Copy necessary files for running the app
 COPY --from=builder /app/public ./public
