@@ -9,13 +9,15 @@
  * whatever container fits its context.
  */
 
+import { PageLink } from "@/components/ui/page-link";
+
 export function EuRestrictionReason() {
   return (
     <>
       Despite our strict{" "}
-      <a href="/privacy" target="_blank" rel="noopener noreferrer" className="underline">
+      <PageLink href="/privacy" target="_blank" rel="noopener noreferrer" className="underline">
         privacy policy
-      </a>
+      </PageLink>
       , EU law would require us to{" "}
       <a
         href="https://www.activemind.legal/guides/fine-eu-representative/"

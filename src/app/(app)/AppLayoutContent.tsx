@@ -9,8 +9,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
 import { ClientLink } from "@/components/ui/client-link";
 import {
   CloseIcon,
@@ -33,7 +31,6 @@ import {
 import { KeyboardShortcutsProvider } from "@/components/keyboard/KeyboardShortcutsProvider";
 import { AppRouter } from "@/components/app/AppRouter";
 import { trpc } from "@/lib/trpc/client";
-import { clearSubscriptionLookupMap } from "@/lib/cache/count-cache";
 import { AppearanceProvider } from "@/lib/appearance/AppearanceProvider";
 import { type SyncCursors } from "@/lib/events/cursors";
 
@@ -42,23 +39,20 @@ interface AppLayoutContentProps {
 }
 
 export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
-  const router = useRouter();
-  const queryClient = useQueryClient();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   const logoutMutation = trpc.auth.logout.useMutation({
     onSuccess: () => {
       // The server cleared the httpOnly session cookie on the logout response.
-      // Drop all cached data before the next login. The browser QueryClient and
-      // the subscription lookup map are module-level singletons that outlive the
-      // session, so without this a different account signing in on the same tab
-      // (SPA navigation, no full reload) would be served the previous user's
-      // article bodies, lists, counts, and subscription titles.
-      queryClient.clear();
-      clearSubscriptionLookupMap();
-      router.push("/login");
-      router.refresh();
+      // Hard-navigate to /login (a standalone page outside the SPA shell) rather
+      // than a router soft-nav: the full page load both drops all in-memory
+      // caches — the browser QueryClient and the subscription lookup map are
+      // module-level singletons that outlive the session, so a different account
+      // signing in on the same tab must never be served the previous user's
+      // article bodies, lists, counts, or subscription titles — and avoids an
+      // RSC soft-nav into a CDN-cacheable page (a version-skew source).
+      window.location.href = "/login";
     },
     onError: () => {
       toast.error("Failed to sign out");
