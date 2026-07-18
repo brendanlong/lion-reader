@@ -2,6 +2,13 @@
  * Login Page
  *
  * Allows users to sign in with their email and password, or with OAuth providers.
+ *
+ * This page is statically prerendered (issue #1359): the heading and the
+ * email/password form are in the build-time HTML, so keep everything that
+ * reads request state out of the top-level component — URL params are read in
+ * `LoginAlerts` (inside its own Suspense boundary, so only the alerts are
+ * deferred to the client) or at submit time from `window.location`, and the
+ * signup config is a plain client-side query in `SignupPrompt`.
  */
 
 "use client";
@@ -23,17 +30,85 @@ import {
   clearOAuthCompletion,
 } from "@/lib/oauth-channel";
 
-export default function LoginPage() {
+/**
+ * The success/error alerts driven by URL query params (?registered=true from
+ * the signup redirect, ?error=… from the OAuth callback). `useSearchParams`
+ * bails out of static prerendering up to the nearest Suspense boundary, so
+ * this lives in its own component: only the alerts are client-rendered, not
+ * the whole form.
+ */
+function LoginAlerts() {
+  const searchParams = useSearchParams();
+
+  // Success message from the registration redirect
+  const registered = searchParams.get("registered") === "true";
+
+  // OAuth error from the callback redirect, mapped to a user-friendly message
+  const oauthError = searchParams.get("error");
+  const oauthErrorMessage = useMemo(() => {
+    if (!oauthError) return null;
+
+    const errorMessages: Record<string, string> = {
+      invalid_state: "Authentication failed. Please try again.",
+      callback_failed: "Failed to complete sign-in. Please try again.",
+      provider_not_configured: "This sign-in method is not available.",
+      signup_provider_not_allowed:
+        "This sign-in method is not available for new accounts. If you already have an account, try a different sign-in method.",
+      invite_required:
+        "An invite is required to create an account. If you already have an account, try signing in with email and password instead.",
+      invite_invalid: "The invite link is invalid. Please request a new invite.",
+      invite_expired: "The invite link has expired. Please request a new invite.",
+      invite_already_used: "This invite has already been used. Please request a new invite.",
+    };
+
+    return errorMessages[oauthError] || "An error occurred during sign-in. Please try again.";
+  }, [oauthError]);
+
   return (
-    <Suspense>
-      <LoginForm />
-    </Suspense>
+    <>
+      {registered && (
+        <Alert variant="success" className="mb-4">
+          Account created successfully. Please sign in.
+        </Alert>
+      )}
+
+      {oauthErrorMessage && (
+        <Alert variant="error" className="mb-4">
+          {oauthErrorMessage}
+        </Alert>
+      )}
+    </>
   );
 }
 
-function LoginForm() {
+/**
+ * The "Create one" signup link, gated on the instance's signup config. A plain
+ * client-side query (never a suspense query — that would try to fetch during
+ * the build-time prerender): absent from the static HTML, pops in once the
+ * config resolves on instances that allow public signup.
+ */
+function SignupPrompt() {
+  const { data: signupConfig } = trpc.auth.signupConfig.useQuery(
+    undefined,
+    STATIC_CONFIG_QUERY_OPTIONS
+  );
+
+  if (!signupConfig || signupConfig.requiresInvite) {
+    return null;
+  }
+
+  return (
+    <p className="ui-text-sm text-muted mt-6 text-center">
+      Don&apos;t have an account?{" "}
+      <PageLink href="/register" className="text-body font-medium hover:underline">
+        Create one
+      </PageLink>
+    </p>
+  );
+}
+
+export default function LoginPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -52,18 +127,6 @@ function LoginForm() {
   // is never reset back to false on the happy path. On error it stays false, so
   // the button re-enables for a retry.
   const [isRedirecting, setIsRedirecting] = useState(false);
-
-  // Get success message from registration redirect
-  const registered = searchParams.get("registered") === "true";
-
-  // Fetch signup configuration to determine if signup link should be shown. The
-  // auth layout server-prefetches and hydrates this query (#1328), so it resolves
-  // as already-settled data on first render. The config is deploy-static, so
-  // never refetch it (STATIC_CONFIG_QUERY_OPTIONS).
-  const [signupConfigData] = trpc.auth.signupConfig.useSuspenseQuery(
-    undefined,
-    STATIC_CONFIG_QUERY_OPTIONS
-  );
 
   // Listen for OAuth completion from other tabs/windows (PWA support for Firefox Android)
   // When OAuth happens in a separate browser window, this allows the PWA to detect completion
@@ -90,35 +153,18 @@ function LoginForm() {
     };
   }, [router]);
 
-  // Get OAuth error from callback redirect and map to user-friendly message
-  const oauthError = searchParams.get("error");
-  const oauthErrorMessage = useMemo(() => {
-    if (!oauthError) return null;
-
-    const errorMessages: Record<string, string> = {
-      invalid_state: "Authentication failed. Please try again.",
-      callback_failed: "Failed to complete sign-in. Please try again.",
-      provider_not_configured: "This sign-in method is not available.",
-      signup_provider_not_allowed:
-        "This sign-in method is not available for new accounts. If you already have an account, try a different sign-in method.",
-      invite_required:
-        "An invite is required to create an account. If you already have an account, try signing in with email and password instead.",
-      invite_invalid: "The invite link is invalid. Please request a new invite.",
-      invite_expired: "The invite link has expired. Please request a new invite.",
-      invite_already_used: "This invite has already been used. Please request a new invite.",
-    };
-
-    return errorMessages[oauthError] || "An error occurred during sign-in. Please try again.";
-  }, [oauthError]);
-
   const loginMutation = trpc.auth.login.useMutation({
     onSuccess: () => {
       // The server set the httpOnly session cookie on the login response;
       // nothing to persist client-side.
 
-      // Get the redirect URL from query params or default to /all.
-      // Sanitize to a same-origin path to prevent an open redirect.
-      const redirectTo = safeRedirectPath(searchParams.get("redirect"));
+      // Get the redirect URL from query params or default to /all. Read from
+      // window.location (not useSearchParams — that would force this whole
+      // component out of the static prerender) and sanitize to a same-origin
+      // path to prevent an open redirect.
+      const redirectTo = safeRedirectPath(
+        new URLSearchParams(window.location.search).get("redirect")
+      );
       // Keep the button in its loading state through the (server-rendered)
       // navigation instead of letting it re-enable the instant isPending clears.
       setIsRedirecting(true);
@@ -170,17 +216,9 @@ function LoginForm() {
     <div>
       <h2 className="ui-text-xl text-body mb-6 font-semibold">Sign in to your account</h2>
 
-      {registered && (
-        <Alert variant="success" className="mb-4">
-          Account created successfully. Please sign in.
-        </Alert>
-      )}
-
-      {oauthErrorMessage && (
-        <Alert variant="error" className="mb-4">
-          {oauthErrorMessage}
-        </Alert>
-      )}
+      <Suspense fallback={null}>
+        <LoginAlerts />
+      </Suspense>
 
       {errors.form && (
         <Alert variant="error" className="mb-4">
@@ -231,14 +269,7 @@ function LoginForm() {
         </Button>
       </form>
 
-      {!signupConfigData.requiresInvite && (
-        <p className="ui-text-sm text-muted mt-6 text-center">
-          Don&apos;t have an account?{" "}
-          <PageLink href="/register" className="text-body font-medium hover:underline">
-            Create one
-          </PageLink>
-        </p>
-      )}
+      <SignupPrompt />
 
       <AuthFooter />
     </div>

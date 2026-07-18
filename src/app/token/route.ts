@@ -10,4 +10,4 @@
  * (see src/app/authorize/route.ts). `/oauth/token` declares none today; mirror
  * it here if that ever changes.
  */
-export { POST, OPTIONS } from "@/app/oauth/token/route";
+export { POST, OPTIONS } from "@/app/(spa)/oauth/token/route";

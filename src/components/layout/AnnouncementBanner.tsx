@@ -2,7 +2,7 @@
  * Announcement Banner
  *
  * A closeable bar rendered at the top of the authenticated SPA (from
- * src/app/(app)/layout.tsx — deliberately NOT the root layout, so the public
+ * src/app/(spa)/(app)/layout.tsx — deliberately NOT the root layout, so the public
  * pages never carry a temporary message). The announcement is fetched server-side and
  * passed in as a prop, so this needs no client API call. Dismissal is keyed by
  * the announcement's message-derived id: dismissing sticks for that exact

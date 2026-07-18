@@ -92,6 +92,14 @@ const securityHeaders: { key: string; value: string }[] = [
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["127.0.0.1", "localhost"],
+  // The root layout is split into two route groups — (spa) dynamic and
+  // (public) static (issue #1359) — so there is no single root layout for a
+  // root not-found.tsx to render inside. global-not-found.tsx (a complete,
+  // self-contained document) handles unmatched URLs instead; this flag enables
+  // that file convention.
+  experimental: {
+    globalNotFound: true,
+  },
   // Serve the hashed /_next/static assets from the CDN (a Bunny pull zone with
   // the app as origin). Set via env so dev and CI builds (which run against
   // local servers the pull zone can't reach) stay origin-served; the production
@@ -113,6 +121,26 @@ const nextConfig: NextConfig = {
   // zstd/brotli/gzip/deflate compression to streaming SSR responses, and
   // Fly.io's edge handles non-streaming responses.
   compress: false,
+  // Serve the demo article URLs (`?entry=` on any /demo page) from the
+  // statically-prerendered /demo/entry/[entryId] route (issue #1359). Reading
+  // `searchParams` in a server component forces per-request rendering, so the
+  // demo pages themselves never look at the query — this server-internal
+  // rewrite (the browser URL is unchanged) picks the article page instead.
+  // DemoRouter re-derives the view client-side from the real URL after
+  // hydration, exactly as before. An `entry` value that doesn't match the id
+  // charset falls through to the (static) list page, which ignores the query —
+  // the same treatment such values got from the old `?entry=` lookup.
+  async rewrites() {
+    return {
+      beforeFiles: [
+        {
+          source: "/demo/:path*",
+          has: [{ type: "query", key: "entry", value: "(?<entry>[A-Za-z0-9_-]+)" }],
+          destination: "/demo/entry/:entry",
+        },
+      ],
+    };
+  },
   // Cache static assets for 1 day to reduce unnecessary requests
   async headers() {
     return [

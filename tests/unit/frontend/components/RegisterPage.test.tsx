@@ -22,7 +22,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, fireEvent, waitFor } from "@testing-library/react";
 import { TRPCClientError } from "@trpc/client";
-import RegisterPage from "@/app/(auth)/register/page";
+import RegisterPage from "@/app/(public)/(auth)/register/page";
 import {
   renderWithTrpc,
   stubMemoryLocalStorage,

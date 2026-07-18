@@ -9,9 +9,12 @@
  *    documented CSP pattern: generate the nonce here and put the policy on the
  *    *request* headers — Next.js extracts the nonce from the forwarded
  *    `Content-Security-Policy` request header and stamps it onto its own
- *    framework/chunk `<script>` tags, and `src/app/layout.tsx` reads `x-nonce`
+ *    framework/chunk `<script>` tags, and `src/app/(spa)/layout.tsx` reads `x-nonce`
  *    for the app's inline scripts — then set the same policy on the *response*.
  *    Policy contents and directive rationale live in `src/server/http/csp.ts`.
+ *    Exception: the statically-prerendered public routes (`isPublicStaticPath`)
+ *    get a static, relaxed CSP with no nonce (issue #1359) — their prerendered
+ *    HTML can't carry a per-request nonce, and they render no untrusted HTML.
  * 2. The claude.ai OAuth workaround: rewriting POST/OPTIONS `/register` to the
  *    Dynamic Client Registration handler at `/oauth/register` (see the big
  *    comment in `proxy()`).
@@ -32,8 +35,8 @@
  * near-no-op that only performs the `/register` rewrite.
  *
  * Route authentication is intentionally NOT handled here. It lives in one place:
- * the server-side layout guards — `src/app/(app)/layout.tsx` (via
- * `isAuthenticated()`) and `src/app/complete-signup/layout.tsx` — which validate
+ * the server-side layout guards — `src/app/(spa)/(app)/layout.tsx` (via
+ * `isAuthenticated()`) and `src/app/(spa)/complete-signup/layout.tsx` — which validate
  * the real session (not just cookie presence) on every dynamic render, backed by
  * per-request tRPC/API session checks. A cookie-presence check here would be a
  * redundant *and weaker* second gate (it can't detect expired/revoked/forged
@@ -43,7 +46,11 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { mcpConfig } from "@/server/config/env";
-import { buildContentSecurityPolicy, generateCspNonce } from "@/server/http/csp";
+import {
+  buildContentSecurityPolicy,
+  buildPublicContentSecurityPolicy,
+  generateCspNonce,
+} from "@/server/http/csp";
 
 /**
  * Query params that are safe to log (client_id, PKCE code_challenge, state,
@@ -78,6 +85,30 @@ function isOAuthMcpSurfacePath(pathname: string): boolean {
     pathname === "/revoke" ||
     pathname.startsWith("/oauth/") ||
     pathname.startsWith("/.well-known/")
+  );
+}
+
+/**
+ * The statically-prerendered public routes (issue #1359): the `(public)` route
+ * group — demo, login, register, terms, privacy. These get the relaxed static
+ * CSP instead of the per-request nonce policy: generating a nonce would be
+ * pointless (the prerendered HTML can't be stamped with it, so the nonce'd
+ * policy would block every script on the page), and these pages render no
+ * user-supplied HTML so the strict policy's backstop isn't needed. Keep this
+ * list in sync with the contents of `src/app/(public)/` — a route added there
+ * without an entry here gets the strict CSP and breaks (scripts blocked), the
+ * safe failure direction.
+ *
+ * `POST`/`OPTIONS /register` is NOT public: it's the OAuth DCR rewrite below.
+ */
+function isPublicStaticPath(pathname: string): boolean {
+  return (
+    pathname === "/demo" ||
+    pathname.startsWith("/demo/") ||
+    pathname === "/login" ||
+    pathname === "/register" ||
+    pathname === "/terms" ||
+    pathname === "/privacy"
   );
 }
 
@@ -145,6 +176,22 @@ export function proxy(request: NextRequest) {
   // SW can be asked to fetch via their own CSP.
   if (request.nextUrl.pathname === "/sw.js") {
     return NextResponse.next();
+  }
+
+  // Statically-prerendered public routes (issue #1359): no nonce — the
+  // prerendered HTML was built without one — just the relaxed static CSP on
+  // the response. Checked before the nonce flow but after the /register
+  // method-split below can't apply (this matcher excludes POST/OPTIONS).
+  if (
+    isPublicStaticPath(request.nextUrl.pathname) &&
+    !(
+      request.nextUrl.pathname === "/register" &&
+      (request.method === "POST" || request.method === "OPTIONS")
+    )
+  ) {
+    const response = NextResponse.next();
+    response.headers.set("Content-Security-Policy", buildPublicContentSecurityPolicy());
+    return response;
   }
 
   // Per-request CSP nonce (issue #1275). `set` overwrites any client-supplied

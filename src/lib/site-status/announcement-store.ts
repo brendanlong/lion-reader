@@ -2,7 +2,7 @@
  * Live announcement store.
  *
  * The announcement banner is server-rendered from the authenticated SPA layout
- * (`src/app/(app)/layout.tsx`), and the SSE handler that receives
+ * (`src/app/(spa)/(app)/layout.tsx`), and the SSE handler that receives
  * `announcement_changed` events lives deeper inside the same app. This
  * module-level store bridges the two — the SSE handler writes here, the banner
  * subscribes via useSyncExternalStore — with no shared React context needed
