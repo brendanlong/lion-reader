@@ -1,4 +1,6 @@
 import { type DemoArticle } from "./types";
+import heroImage from "./images/save-for-later.png";
+import ogImage from "./images/save-for-later-og.png";
 
 const article: DemoArticle = {
   id: "save-for-later",
@@ -10,7 +12,8 @@ const article: DemoArticle = {
   summary: "Save any web page, upload documents, or capture articles for later reading.",
   publishedAt: new Date("2025-12-27T16:00:00Z"),
   starred: true,
-  heroImage: "/demo/save-for-later.png",
+  heroImage,
+  ogImage,
   heroImageAlt:
     "The Lion Reader lion placing a bookmark ribbon into an open book to save its place, with a clock nearby.",
   summaryHtml: `<p>Lion Reader&#39;s Save for Later uses Mozilla&#39;s Readability algorithm to extract clean content from web pages. Save via bookmarklet, PWA share, MCP, API, Discord, or upload Markdown/Word/HTML files directly. Saved articles integrate fully with starring, tagging, and search, preserving content even if original pages disappear.</p>`,

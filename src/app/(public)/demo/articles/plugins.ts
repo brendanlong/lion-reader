@@ -1,4 +1,6 @@
 import { type DemoArticle } from "./types";
+import heroImage from "./images/plugins.png";
+import ogImage from "./images/plugins-og.png";
 
 const article: DemoArticle = {
   id: "plugins",
@@ -11,7 +13,8 @@ const article: DemoArticle = {
     "Lion Reader goes beyond plain RSS to pull in complete, readable content from sources that don't normally cooperate — arXiv papers, GitHub, Google Docs, LessWrong, YouTube, and Bluesky — so you can subscribe and save from them like anything else.",
   publishedAt: new Date("2026-01-20T12:00:00Z"),
   starred: false,
-  heroImage: "/demo/plugins.png",
+  heroImage,
+  ogImage,
   heroImageAlt:
     "The Lion Reader lion with colorful modular puzzle pieces for different content sources snapping into place.",
   summaryHtml: `<p>Lion Reader enhances RSS by pulling in <strong>complete content</strong> from sources like LessWrong, YouTube, arXiv, GitHub, Google Docs, and Bluesky &mdash; restoring embedded media, full text, and proper math rendering that standard feeds strip out. Paste any link and Lion Reader handles the rest automatically.</p>`,

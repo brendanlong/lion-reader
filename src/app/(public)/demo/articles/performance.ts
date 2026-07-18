@@ -1,4 +1,6 @@
 import { type DemoArticle } from "./types";
+import heroImage from "./images/performance.png";
+import ogImage from "./images/performance-og.png";
 
 const article: DemoArticle = {
   id: "performance",
@@ -11,7 +13,8 @@ const article: DemoArticle = {
     "New articles appear in your lists without a refresh, navigation is instant, and the backend is tuned for sub-100ms page loads.",
   publishedAt: new Date("2026-03-01T12:00:00Z"),
   starred: false,
-  heroImage: "/demo/performance.png",
+  heroImage,
+  ogImage,
   heroImageAlt:
     "The Lion Reader lion dashing forward with speed lines and a lightning bolt while holding an article card.",
   summaryHtml: `<p>Lion Reader treats speed as a feature you can feel: <strong>new articles appear in your lists automatically</strong> without a refresh, moving around the app is instant and never reloads what you&rsquo;re reading, your own actions apply the moment you make them, and a carefully tuned backend keeps typical page loads under 100ms.</p>`,

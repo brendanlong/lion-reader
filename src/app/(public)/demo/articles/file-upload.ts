@@ -1,4 +1,6 @@
 import { type DemoArticle } from "./types";
+import heroImage from "./images/file-upload.png";
+import ogImage from "./images/file-upload-og.png";
 
 const article: DemoArticle = {
   id: "file-upload",
@@ -11,7 +13,8 @@ const article: DemoArticle = {
     "Upload Word documents, Markdown files, HTML, and plain text directly into your reading library.",
   publishedAt: new Date("2025-12-26T10:00:00Z"),
   starred: false,
-  heroImage: "/demo/file-upload.png",
+  heroImage,
+  ogImage,
   heroImageAlt:
     "The Lion Reader lion placing a document into an upload tray, with Word, Markdown, and text file icons nearby.",
   summaryHtml: `<p>Lion Reader supports uploading Word documents (.docx), Markdown files (.md), HTML files (.html), and plain text (.txt) directly into your saved articles. Word documents are converted via Mammoth with Readability cleaning, Markdown supports YAML frontmatter for metadata, and all uploaded content integrates fully with starring, tagging, search, and narration.</p>`,
