@@ -14,6 +14,8 @@ const article: DemoArticle = {
   heroImageAlt:
     "The Lion Reader lion holding a short excerpt that unfolds into a long, full-length article page.",
   summaryHtml: `<p>Lion Reader fetches full article content on demand using Mozilla&#39;s Readability algorithm, eliminating the need to leave your reader. Enable automatic fetching per subscription or toggle manually to get clean, distraction-free articles with preserved formatting, images, and code blocks.</p>`,
+  summaryModelId: "claude-sonnet-4-6",
+  summaryGeneratedAt: new Date("2026-02-07"),
   contentHtml: `
     <p>Many RSS feeds only provide excerpts or summaries, forcing you to leave your feed reader to read the full article in a web browser. This constant context switching breaks your reading flow and makes it harder to stay focused on what matters.</p>
 
