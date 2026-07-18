@@ -13,11 +13,6 @@
  * toggle made on the still-running old machines during the release is preserved
  * as-is — no read-then-restore race. Everything else swept here is cache /
  * ephemeral (sessions, SSE channels, OAuth state, rate limits) and safe to drop.
- *
- * Known exception, deliberately NOT preserved: `discord:token:*` (the Discord
- * bot's durable user → API-token links) is also swept, so token-linked Discord
- * users must re-run `/link` after a deploy. That key wants a proper home in
- * Postgres rather than a spot on this preserve-list — tracked in issue #1370.
  */
 
 import type Redis from "ioredis";

@@ -25,7 +25,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 
 import { createTRPCRouter, scopedProtectedProcedure } from "../trpc";
-import { API_TOKEN_SCOPES } from "@/server/auth/api-token";
+import { API_TOKEN_SCOPES, SAVE_ARTICLE_SCOPES } from "@/server/auth/api-token";
 import { errors } from "../errors";
 import { uuidSchema } from "../validation";
 import { usageLimitsConfig } from "@/server/config/env";
@@ -111,7 +111,7 @@ export const savedRouter = createTRPCRouter({
    * @param title - Optional title hint (from bookmarklet's document.title)
    * @returns The saved article
    */
-  save: scopedProtectedProcedure([API_TOKEN_SCOPES.SAVED_WRITE, API_TOKEN_SCOPES.MCP])
+  save: scopedProtectedProcedure(SAVE_ARTICLE_SCOPES)
     .meta({
       openapi: {
         method: "POST",

@@ -32,9 +32,13 @@ import { eq, and } from "drizzle-orm";
 import { db } from "@/server/db";
 import { oauthAccounts } from "@/server/db/schema";
 import { saveArticle } from "@/server/services/saved";
-import { validateApiToken } from "@/server/auth/api-token";
+import { validateApiToken, SAVE_ARTICLE_SCOPES } from "@/server/auth/api-token";
+import {
+  linkDiscordApiToken,
+  resolveDiscordApiTokenUserId,
+  unlinkDiscordApiToken,
+} from "@/server/services/discord-links";
 import { getMaintenance } from "@/server/services/site-status";
-import { getRedisClient } from "@/server/redis";
 import { logger } from "@/lib/logger";
 import {
   DISCORD_BOT_TOKEN,
@@ -43,9 +47,6 @@ import {
   DISCORD_SUCCESS_EMOJI,
   DISCORD_ERROR_EMOJI,
 } from "./config";
-
-// Redis key prefix for storing Discord user -> API token mappings
-const REDIS_KEY_PREFIX = "discord:token:";
 
 /** Shown to users when the bot is paused for maintenance. */
 const MAINTENANCE_REPLY =
@@ -64,9 +65,6 @@ async function isUnderMaintenance(): Promise<boolean> {
 // How long after login() to wait for the gateway `clientReady` event before
 // warning that the bot connected but isn't receiving events.
 const READY_WATCHDOG_MS = 30 * 1000;
-
-// In-memory fallback when Redis is unavailable
-const tokenCache = new Map<string, string>();
 
 // ============================================================================
 // URL Extraction
@@ -132,36 +130,6 @@ function extractUrls(content: string): string[] {
 }
 
 // ============================================================================
-// Token Storage (Redis with in-memory fallback)
-// ============================================================================
-
-async function storeApiToken(discordId: string, apiToken: string): Promise<void> {
-  const redis = getRedisClient();
-  if (redis) {
-    await redis.set(`${REDIS_KEY_PREFIX}${discordId}`, apiToken);
-  } else {
-    tokenCache.set(discordId, apiToken);
-  }
-}
-
-async function getApiToken(discordId: string): Promise<string | null> {
-  const redis = getRedisClient();
-  if (redis) {
-    return await redis.get(`${REDIS_KEY_PREFIX}${discordId}`);
-  }
-  return tokenCache.get(discordId) ?? null;
-}
-
-async function removeApiToken(discordId: string): Promise<void> {
-  const redis = getRedisClient();
-  if (redis) {
-    await redis.del(`${REDIS_KEY_PREFIX}${discordId}`);
-  } else {
-    tokenCache.delete(discordId);
-  }
-}
-
-// ============================================================================
 // User Lookup
 // ============================================================================
 
@@ -172,7 +140,7 @@ interface ResolvedUser {
 
 /**
  * Look up a Lion Reader user by Discord ID.
- * Tries OAuth first, then falls back to API token.
+ * Tries OAuth first, then falls back to a durable Postgres API-token link.
  */
 async function resolveUser(discordId: string): Promise<ResolvedUser | null> {
   // First, check OAuth linking
@@ -188,15 +156,11 @@ async function resolveUser(discordId: string): Promise<ResolvedUser | null> {
     return { userId: oauthResult[0].userId, method: "oauth" };
   }
 
-  // Fall back to API token
-  const apiToken = await getApiToken(discordId);
-  if (apiToken) {
-    const tokenData = await validateApiToken(apiToken);
-    if (tokenData) {
-      return { userId: tokenData.user.id, method: "token" };
-    }
-    // Token is invalid, clean it up
-    await removeApiToken(discordId);
+  // Fall back to the API-token link (Postgres). A revoked/expired token
+  // resolves to null, exactly as an unlinked user would.
+  const userId = await resolveDiscordApiTokenUserId(db, discordId);
+  if (userId) {
+    return { userId, method: "token" };
   }
 
   return null;
@@ -481,8 +445,24 @@ async function handleLinkCommand(
     return;
   }
 
-  // Store the token
-  await storeApiToken(user.id, token);
+  // The bot only ever saves articles, and it does so via the saveArticle service
+  // (which bypasses the tRPC scope middleware), so gate `/link` on the same scope
+  // set `saved.save` requires. Token scopes are immutable, so a link-time check
+  // is sufficient — a linked token can always save. Reject anything else here
+  // rather than silently accepting a token that can never do anything useful.
+  const canSave = SAVE_ARTICLE_SCOPES.some((scope) => tokenData.token.scopes.includes(scope));
+  if (!canSave) {
+    await interaction.reply({
+      content:
+        "That API token doesn't have permission to save articles.\n\n" +
+        "Create a token with the 'Save articles' scope: Lion Reader → Settings → API Tokens.",
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  // Store a durable reference to the token row (not the raw token).
+  await linkDiscordApiToken(db, user.id, tokenData.token.id);
 
   await interaction.reply({
     content:
@@ -502,8 +482,7 @@ async function handleUnlinkCommand(
   interaction: ChatInputCommandInteraction,
   user: User
 ): Promise<void> {
-  const hadToken = (await getApiToken(user.id)) !== null;
-  await removeApiToken(user.id);
+  const hadToken = await unlinkDiscordApiToken(db, user.id);
 
   // Check if they still have OAuth
   const oauthResult = await db
