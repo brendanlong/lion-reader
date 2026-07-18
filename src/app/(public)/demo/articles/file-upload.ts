@@ -15,6 +15,8 @@ const article: DemoArticle = {
   heroImageAlt:
     "The Lion Reader lion placing a document into an upload tray, with Word, Markdown, and text file icons nearby.",
   summaryHtml: `<p>Lion Reader supports uploading Word documents (.docx), Markdown files (.md), HTML files (.html), and plain text (.txt) directly into your saved articles. Word documents are converted via Mammoth with Readability cleaning, Markdown supports YAML frontmatter for metadata, and all uploaded content integrates fully with starring, tagging, search, and narration.</p>`,
+  summaryModelId: "claude-sonnet-4-6",
+  summaryGeneratedAt: new Date("2026-02-08"),
   contentHtml: `
     <p>Beyond saving web pages, Lion Reader lets you upload files directly into your reading library. Whether it&rsquo;s a Word document from a colleague, Markdown notes from your writing tool, an HTML export, or a plain text file &mdash; uploaded content becomes a first-class <a href="/demo/all?entry=save-for-later">saved article</a> with all the same features: starring, <a href="/demo/all?entry=tags">tagging</a>, <a href="/demo/all?entry=text-to-speech">narration</a>, and <a href="/demo/all?entry=ai-summaries">AI summaries</a>.</p>
 

@@ -14,6 +14,8 @@ const article: DemoArticle = {
   heroImageAlt:
     "The Lion Reader lion holding up a fan of colorful tag labels in teal, green, and gold.",
   summaryHtml: `<p>Lion Reader lets you organize subscriptions with <strong>custom tags</strong> (many-to-many relationships) featuring personalized names and colors. Browse entries by tag with real-time unread counts, rename any subscription, and enjoy soft deletion that preserves your read/starred history across all feed types.</p>`,
+  summaryModelId: "claude-sonnet-4-6",
+  summaryGeneratedAt: new Date("2026-02-07"),
   contentHtml: `
     <h2>Organize Your Way</h2>
 

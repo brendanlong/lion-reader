@@ -15,6 +15,8 @@ const article: DemoArticle = {
   heroImageAlt:
     "The Lion Reader lion beside a browser window with a puzzle-piece extension icon saving an article in one click.",
   summaryHtml: `<p>The Lion Reader browser extension lets you save any web page for later reading with a single click, a keyboard shortcut, or the right-click context menu. Available for <strong>Firefox</strong> and <strong>Chrome</strong>, the extension automatically extracts article content using Mozilla Readability, stores an API token for future saves, and handles Google Docs with automatic OAuth.</p>`,
+  summaryModelId: "claude-sonnet-4-6",
+  summaryGeneratedAt: new Date("2026-02-25"),
   contentHtml: `
     <h2>Save While You Browse</h2>
 

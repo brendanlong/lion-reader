@@ -13,6 +13,8 @@ const article: DemoArticle = {
   heroImage: "/demo/websub.png",
   heroImageAlt: "A broadcast tower instantly pushing a fresh article card to the Lion Reader lion.",
   summaryHtml: `<p>WebSub (formerly PubSubHubbub) is a W3C standard that enables <strong>real-time content delivery</strong> by pushing updates directly to Lion Reader the moment they&#39;re published, instead of repeatedly polling feeds. This provides <strong>near-instant delivery</strong>, reduces server load, and lowers bandwidth usage. Lion Reader automatically discovers and subscribes to WebSub hubs when available, seamlessly falling back to polling otherwise.</p>`,
+  summaryModelId: "claude-sonnet-4-6",
+  summaryGeneratedAt: new Date("2026-02-07"),
   contentHtml: `
     <h2>What is WebSub?</h2>
 
