@@ -171,3 +171,14 @@ applies `rounded-lg` automatically via `reader-prose`), and each demo page's
 `generateMetadata` passes `entry?.ogImage` (the resolved `-og.png`) to
 `pageOpenGraph`, so the opaque variant is the social preview on whatever
 `/demo/...?entry=` URL is shared.
+
+Both the hero and OG URLs are run through `demoImageUrl` (`../demo-assets.ts`),
+which serves them from the CDN with a `?v=<content-hash>` cache-buster. **After
+adding or changing any `public/demo/*` image, regenerate the hash manifest:**
+
+```bash
+pnpm generate:demo-images   # updates demo-image-manifest.ts; commit it
+```
+
+`pnpm build` runs this too, and CI's `check:demo-images` fails if the committed
+manifest is stale.

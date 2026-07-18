@@ -58,6 +58,9 @@ jobs:
       - name: Check for dead theme-token utilities
         run: pnpm check:theme-tokens
 
+      - name: Check demo image manifest is up to date
+        run: pnpm check:demo-images
+
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest

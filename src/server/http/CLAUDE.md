@@ -4,9 +4,15 @@ This file governs the outbound-HTTP helpers: SSRF-protected fetching (`ssrf.ts`)
 
 Every outgoing request must send our custom User-Agent (`USER_AGENT`/`buildUserAgent` from `@/server/http/user-agent`).
 
-## CDN (static assets only)
+## CDN (static assets + demo images)
 
-Only the hashed `/_next/static` assets are CDN-served, via Next's `assetPrefix` (a Bunny pull zone; `ASSET_PREFIX` env, defaulted in the Dockerfile — see `next.config.ts`). HTML is never CDN-cached: dynamic pages keep Next's default `private, no-store`, so there is no deploy-purge or cookie-vary machinery. The statically-prerendered public pages (issue #1359) are origin-served from the build's prerender cache (Next emits `s-maxage` for them, but no shared cache sits in front of HTML today). If a CDN is ever put in front of HTML, keep `/login`/`/register` origin-served: an edge-cached copy would bypass the maintenance gate in `scripts/server.ts` (see #1318). When `ASSET_PREFIX` is set, `csp.ts` adds its origin to the script/style/font directives.
+The Bunny pull zone (`ASSET_PREFIX`/`NEXT_PUBLIC_ASSET_PREFIX`, defaulted in the Dockerfile) wraps the **whole site** as its origin and honors origin `Cache-Control`, so what it actually caches is decided by the headers we send, not by which paths it can reach:
+
+- **`/_next/static`** — content-hashed, served via Next's `assetPrefix` with `immutable`. No purge/deploy coordination.
+- **Demo hero/OG images** (`public/demo/*`) — served from the CDN by `demoImageUrl` (`src/app/(public)/demo/demo-assets.ts`), which prefixes `NEXT_PUBLIC_ASSET_PREFIX` and appends a `?v=<content-hash>` from the generated manifest (`pnpm generate:demo-images`, run by `pnpm build`). The hash — not a hashed filename — is what makes `immutable`-style caching safe for these files, so **Bunny must include `v` in its cache key**. `NEXT_PUBLIC_ASSET_PREFIX` (not the plain `ASSET_PREFIX`) because the demo builds these URLs on both the server prerender and the client re-render and the two must match byte-for-byte (hydration).
+- **HTML + RSC** — never CDN-cached. Dynamic pages keep Next's default `private, no-store`. The statically-prerendered public pages (issue #1359) get Next's `s-maxage=31536000`, which the custom server rewrites to `private, no-cache` (`neutralizeStaticSharedCache` in `static-cache-control.ts`): that HTML/RSC is build-coupled (hashed chunks vanish on deploy; RSC Flight payloads version-skew), and — since Bunny already keys its cache on `_rsc` and `entry` — an edge-cached copy would also bypass the maintenance gate in `scripts/server.ts` (#1318). `private` keeps it out of shared caches; `no-cache` lets the browser revalidate so a deploy can't leave it booting a stale document. See docs/DEPLOYMENT.md, "Why HTML is not CDN-cached".
+
+When `ASSET_PREFIX` is set, `csp.ts` adds its origin to the script/style/font directives (`img-src` already allows any https, so CDN-served demo images need no CSP change).
 
 ## SSRF Protection
 

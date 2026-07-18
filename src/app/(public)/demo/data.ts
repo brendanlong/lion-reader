@@ -9,6 +9,7 @@
 import { type EntryArticleProps } from "@/components/entries/EntryArticle";
 import type { EntryListData } from "@/lib/hooks/types";
 import { DEMO_ARTICLES, type DemoArticle } from "./articles";
+import { demoImageUrl } from "./demo-assets";
 
 // ============================================================================
 // Types
@@ -136,9 +137,8 @@ export const DEMO_SUBSCRIPTIONS: DemoSubscription[] = Object.entries(SUBSCRIPTIO
  * `-og.png` sibling (see src/app/demo/articles/CLAUDE.md).
  */
 function resolveOgImage(article: DemoArticle): string | undefined {
-  if (article.ogImage) return article.ogImage;
-  if (!article.heroImage) return undefined;
-  return article.heroImage.replace(/\.png$/, "-og.png");
+  const path = article.ogImage ?? article.heroImage?.replace(/\.png$/, "-og.png");
+  return path ? demoImageUrl(path) : undefined;
 }
 
 /** Convert an article to a full DemoEntry by deriving feedId, feedTitle, etc. */
@@ -228,7 +228,7 @@ function heroFigureHtml(entry: DemoEntry): string {
   // All demo hero images are 1200x630; the intrinsic width/height lets the
   // browser reserve the aspect-ratio box up front (prose caps them at
   // max-width:100%; height:auto) so they don't flash/reflow on load.
-  return `<figure><img src="${entry.heroImage}" alt="${alt}" width="1200" height="630" /></figure>\n`;
+  return `<figure><img src="${demoImageUrl(entry.heroImage)}" alt="${alt}" width="1200" height="630" /></figure>\n`;
 }
 
 /** Get EntryArticle props for a demo entry */
