@@ -114,10 +114,11 @@ function toInputSchema(schema: z.ZodType): Tool["inputSchema"] {
 // Argument Schemas
 // ============================================================================
 
-// NOTE: full-text search (`query`) is temporarily removed from this schema
-// while search is disabled (#1249) — advertising a parameter that always
-// errors would just make agents retry it. Restore the arg when re-enabling.
 const listEntriesArgs = z.object({
+  query: z
+    .string()
+    .optional()
+    .describe("Full-text search query over entry title and content (relevance-ranked)"),
   subscriptionId: uuidSchema.optional().describe("Filter by subscription ID"),
   tagId: uuidSchema.optional().describe("Filter by tag ID"),
   uncategorized: z.boolean().optional().describe("Show only uncategorized entries"),
@@ -249,7 +250,7 @@ function buildTools(): Tool[] {
     {
       name: "list_entries",
       description:
-        "List feed entries with filters and pagination, sorted by time. Returns summaries (title, snippet) without full content.",
+        "List feed entries with filters and pagination, sorted by time (or by relevance when `query` is given for full-text search). Returns summaries (title, snippet) without full content.",
       inputSchema: toInputSchema(listEntriesArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(listEntriesArgs, args);

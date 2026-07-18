@@ -1,13 +1,6 @@
 /**
  * Tests for the shared entries.list input builder and URL view-preference
  * parsing, focused on the full-text search (`?q=`) behavior (#565).
- *
- * Search is TEMPORARILY DISABLED until the full-text index lands (#1249):
- * `parseViewPreferencesFromParams` ignores `?q=` entirely, so the skipped
- * tests below describe the intended behavior once ENTRY_SEARCH_ENABLED is
- * flipped back on. `buildEntriesListInput` itself is unchanged (its only
- * real `searchQuery` producer is the gated parse function), so its tests
- * stay active.
  */
 
 import { describe, expect, it } from "vitest";
@@ -22,37 +15,28 @@ describe("parseViewPreferencesFromParams", () => {
     expect(result.sortOrder).toBe("newest");
   });
 
-  it("ignores the q param while search is disabled (#1249)", () => {
-    const result = parseViewPreferencesFromParams(new URLSearchParams("q=hello"));
-    expect(result.searchQuery).toBeUndefined();
-    // The searching unreadOnly default flip doesn't apply either.
-    expect(result.unreadOnly).toBe(true);
-  });
-
   it("treats a whitespace-only q as not searching", () => {
     const result = parseViewPreferencesFromParams(new URLSearchParams("q=%20%20"));
     expect(result.searchQuery).toBeUndefined();
     expect(result.unreadOnly).toBe(true);
   });
 
-  // Skipped while search is disabled (#1249) — intended behavior once
-  // ENTRY_SEARCH_ENABLED is flipped back on.
-  it.skip("parses and trims the q param", () => {
+  it("parses and trims the q param", () => {
     const result = parseViewPreferencesFromParams(new URLSearchParams("q=%20hello%20world%20"));
     expect(result.searchQuery).toBe("hello world");
   });
 
-  it.skip("defaults unreadOnly to false while searching", () => {
+  it("defaults unreadOnly to false while searching", () => {
     const result = parseViewPreferencesFromParams(new URLSearchParams("q=hello"));
     expect(result.unreadOnly).toBe(false);
   });
 
-  it.skip("keeps an explicit unreadOnly=true while searching", () => {
+  it("keeps an explicit unreadOnly=true while searching", () => {
     const result = parseViewPreferencesFromParams(new URLSearchParams("q=hello&unreadOnly=true"));
     expect(result.unreadOnly).toBe(true);
   });
 
-  it.skip("ignores the route default for unreadOnly while searching", () => {
+  it("ignores the route default for unreadOnly while searching", () => {
     const result = parseViewPreferencesFromParams(new URLSearchParams("q=hello"), {
       unreadOnly: true,
     });
