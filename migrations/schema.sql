@@ -217,6 +217,7 @@ CREATE TABLE public.entries (
     unsubscribe_url text,
     greader_item_id bigint NOT NULL,
     is_placeholder boolean DEFAULT false NOT NULL,
+    search_vector tsvector GENERATED ALWAYS AS (to_tsvector('english'::regconfig, "left"(((COALESCE(title, ''::text) || ' '::text) || COALESCE(NULLIF(content_cleaned, ''::text), content_original, ''::text)), 300000))) STORED,
     CONSTRAINT entries_last_seen_only_fetched CHECK (((type = 'web'::public.feed_type) = (last_seen_at IS NOT NULL))),
     CONSTRAINT entries_saved_metadata_only_saved CHECK (((type = 'saved'::public.feed_type) OR ((site_name IS NULL) AND (image_url IS NULL)))),
     CONSTRAINT entries_spam_only_email CHECK (((type = 'email'::public.feed_type) OR ((spam_score IS NULL) AND (is_spam = false)))),
@@ -572,7 +573,8 @@ CREATE VIEW public.visible_entries AS
     ue.read_changed_at,
     ue.published_or_fetched_at,
     e.greader_item_id,
-    s.greader_stream_id AS subscription_greader_stream_id
+    s.greader_stream_id AS subscription_greader_stream_id,
+    e.search_vector
    FROM ((public.user_entries ue
      JOIN public.entries e ON ((e.id = ue.entry_id)))
      LEFT JOIN public.subscriptions s ON ((s.id = ue.subscription_id)))
@@ -753,6 +755,8 @@ CREATE UNIQUE INDEX idx_entries_greader_item_id ON public.entries USING btree (g
 CREATE INDEX idx_entries_last_seen ON public.entries USING btree (feed_id, last_seen_at) WHERE (type = 'web'::public.feed_type);
 
 CREATE INDEX idx_entries_published_coalesce ON public.entries USING btree (COALESCE(published_at, fetched_at) DESC, id DESC);
+
+CREATE INDEX idx_entries_search_vector ON public.entries USING gin (search_vector);
 
 CREATE INDEX idx_entries_spam ON public.entries USING btree (feed_id, is_spam);
 

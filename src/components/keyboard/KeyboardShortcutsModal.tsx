@@ -13,7 +13,6 @@ import { Dialog, DialogHeader, DialogBody, DialogFooter } from "@/components/ui/
 import { Button } from "@/components/ui/button";
 import { IconButton, CloseIcon } from "@/components/ui/icon-button";
 import { Kbd } from "@/components/ui/kbd";
-import { ENTRY_SEARCH_ENABLED } from "@/lib/feature-flags";
 
 /**
  * Shortcut definition for display
@@ -53,8 +52,7 @@ const SHORTCUT_SECTIONS: ShortcutSection[] = [
       { keys: ["u"], description: "Toggle show/hide read items" },
       { keys: ["v"], description: "Open original URL in new tab" },
       { keys: ["r"], description: "Refresh current view" },
-      // Search is temporarily disabled (#1249); the `/` shortcut is inert.
-      ...(ENTRY_SEARCH_ENABLED ? [{ keys: ["/"], description: "Search entries" }] : []),
+      { keys: ["/"], description: "Search entries" },
     ],
   },
   {

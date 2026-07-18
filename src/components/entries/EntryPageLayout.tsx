@@ -17,7 +17,6 @@ import { type MarkAllReadOptions, useEntryMutations } from "@/lib/hooks/useEntry
 import { useUrlViewPreferences } from "@/lib/hooks/useUrlViewPreferences";
 import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
 import { useKeyboardShortcutsContext } from "@/components/keyboard/KeyboardShortcutsProvider";
-import { ENTRY_SEARCH_ENABLED } from "@/lib/feature-flags";
 import { SearchIcon } from "@/components/ui/icon-button";
 import { StateToggleButton } from "@/components/ui/state-toggle-button";
 import { UnreadToggle } from "./UnreadToggle";
@@ -127,7 +126,7 @@ export function EntryPageLayout({
     // useKey matches the produced character (event.key) rather than the
     // physical key code — "/" has no layout-independent code.
     {
-      enabled: ENTRY_SEARCH_ENABLED && keyboardShortcutsEnabled && !openEntryId,
+      enabled: keyboardShortcutsEnabled && !openEntryId,
       enableOnFormTags: false,
       useKey: true,
     },
@@ -145,18 +144,13 @@ export function EntryPageLayout({
         <div className="mb-4 flex items-center justify-between sm:mb-6">
           {titleSlot}
           <div className="flex gap-2">
-            {/* Search is temporarily disabled (#1249) — the toggle (and the
-                `/` shortcut above) are the only ways to open the bar, so
-                hiding it here keeps the whole feature out of the UI. */}
-            {ENTRY_SEARCH_ENABLED && (
-              <StateToggleButton
-                icon={<SearchIcon className="h-5 w-5" />}
-                label="Search"
-                ariaLabel={showSearchBar ? "Close search bar" : "Search entries"}
-                isPressed={showSearchBar}
-                onToggle={handleSearchToggle}
-              />
-            )}
+            <StateToggleButton
+              icon={<SearchIcon className="h-5 w-5" />}
+              label="Search"
+              ariaLabel={showSearchBar ? "Close search bar" : "Search entries"}
+              isPressed={showSearchBar}
+              onToggle={handleSearchToggle}
+            />
             {/* While searching, hide the controls that don't apply to search
                 results: mark-all-read acts on the whole view (not just the
                 matches), and search results are relevance-ranked (sort order

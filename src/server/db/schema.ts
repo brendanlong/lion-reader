@@ -33,6 +33,18 @@ const citext = customType<{ data: string }>({
   },
 });
 
+/**
+ * Postgres `tsvector` (full-text search document). Only used as the type of the
+ * stored `entries.search_vector` column exposed through `visible_entries`;
+ * searchEntries references it in raw `@@` / `ts_rank` SQL, never selecting the
+ * value itself, so the string `data` type is just a placeholder for Drizzle.
+ */
+const tsvector = customType<{ data: string }>({
+  dataType() {
+    return "tsvector";
+  },
+});
+
 // ============================================================================
 // ENUMS
 // ============================================================================
@@ -849,6 +861,10 @@ export const visibleEntries = pgView("visible_entries", {
   // and orphaned starred entries — the Google Reader layer falls back to the
   // feed's stream id for saved entries. Compat id; stripped from main-app/MCP.
   subscriptionGreaderStreamId: bigint("subscription_greader_stream_id", { mode: "bigint" }),
+  // Stored full-text search vector (entries.search_vector; migration 0105).
+  // searchEntries uses it for the `@@` match and the ts_rank sort — it is never
+  // selected as a value, so the raw tsvector never crosses the service boundary.
+  searchVector: tsvector("search_vector"),
 }).existing();
 
 // ============================================================================
