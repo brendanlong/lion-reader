@@ -770,16 +770,6 @@ CREATE INDEX idx_entries_last_seen ON public.entries USING btree (feed_id, last_
 
 CREATE INDEX idx_entries_published_coalesce ON public.entries USING btree (COALESCE(published_at, fetched_at) DESC, id DESC);
 
-CREATE INDEX idx_entries_resanitize ON public.entries USING btree (LEAST(
-CASE
-    WHEN ((content_original IS NOT NULL) OR (content_cleaned IS NOT NULL)) THEN COALESCE((content_sanitized_version)::integer, '-1'::integer)
-    ELSE 2147483647
-END,
-CASE
-    WHEN ((full_content_original IS NOT NULL) OR (full_content_cleaned IS NOT NULL)) THEN COALESCE((full_content_sanitized_version)::integer, '-1'::integer)
-    ELSE 2147483647
-END) DESC, id DESC);
-
 CREATE INDEX idx_entries_spam ON public.entries USING btree (feed_id, is_spam);
 
 CREATE INDEX idx_entries_type ON public.entries USING btree (type);

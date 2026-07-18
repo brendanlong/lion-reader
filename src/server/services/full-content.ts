@@ -11,15 +11,8 @@ import { eq } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import { entries, narrationContent } from "@/server/db/schema";
 import { fetchHtmlPage, HttpFetchError } from "@/server/http/fetch";
-import {
-  cleanContent,
-  cleanContentSanitizedAsync,
-  absolutizeUrls,
-} from "@/server/feed/content-cleaner";
-import {
-  withSanitizedEntryContent,
-  withSanitizedEntryContentAsync,
-} from "@/server/html/sanitize-entry";
+import { cleanContent, cleanContentAsync, absolutizeUrls } from "@/server/feed/content-cleaner";
+import { sanitizeEntryContentFamily } from "@/server/html/sanitize-entry";
 import { pluginRegistry } from "@/server/plugins";
 import { logger } from "@/lib/logger";
 import { processMarkdown } from "@/server/markdown";
@@ -36,14 +29,6 @@ export interface FetchFullContentResult {
   contentOriginal?: string;
   /** The Readability-cleaned HTML content */
   contentCleaned?: string;
-  /**
-   * The sanitized form of `contentCleaned`, when cleaning ran through
-   * `cleanContentSanitizedAsync` (offloadClean path).
-   * Persisted via `persistFullContentResult` as a `presanitized` hint so the
-   * sanitize isn't repeated. `undefined` when cleaning ran inline or no
-   * cleaned content exists.
-   */
-  contentCleanedSanitized?: string | null;
   /** Error message if the fetch failed */
   error?: string;
 }
@@ -57,12 +42,11 @@ export interface FetchFullContentResult {
  * 3. Returns both the original HTML and the cleaned content
  *
  * @param url - The article URL to fetch
- * @param options.offloadClean - Run extraction on the libuv thread pool (with
- *   the cleaned-HTML sanitize included) instead of inline on the calling
- *   thread. On by default; the background feed worker passes false because it
- *   already runs off the request path, so the async hop is pure overhead.
- *   App-server callers (fetchAndStoreFullContent) keep the default so the
- *   extraction pass never stalls the UI-serving event loop.
+ * @param options.offloadClean - Run extraction on the libuv thread pool instead
+ *   of inline on the calling thread. On by default; the background feed worker
+ *   passes false because it already runs off the request path, so the async hop
+ *   is pure overhead. App-server callers (fetchAndStoreFullContent) keep the
+ *   default so the extraction pass never stalls the UI-serving event loop.
  * @returns The fetch result with content or error
  */
 export async function fetchFullContent(
@@ -70,15 +54,10 @@ export async function fetchFullContent(
   options: { offloadClean?: boolean } = {}
 ): Promise<FetchFullContentResult> {
   const { offloadClean = true } = options;
-  // Run extraction either on the libuv thread pool (with the cleaned-HTML
-  // sanitize included so persistFullContentResult can reuse it) or inline, per
-  // offloadClean. The inline path has no `contentSanitized`.
-  const runClean = (
-    html: string,
-    resolveUrl: string
-  ): Promise<{ content: string; contentSanitized?: string | null } | null> =>
+  // Run extraction either on the libuv thread pool or inline, per offloadClean.
+  const runClean = (html: string, resolveUrl: string): Promise<{ content: string } | null> =>
     offloadClean
-      ? cleanContentSanitizedAsync(html, { url: resolveUrl })
+      ? cleanContentAsync(html, { url: resolveUrl })
       : Promise.resolve(cleanContent(html, { url: resolveUrl }));
 
   try {
@@ -122,7 +101,6 @@ export async function fetchFullContent(
             success: true,
             contentOriginal,
             contentCleaned: cleaned?.content,
-            contentCleanedSanitized: cleaned?.contentSanitized,
           };
         }
       } catch (error) {
@@ -174,7 +152,6 @@ export async function fetchFullContent(
       success: true,
       contentOriginal,
       contentCleaned: cleaned.content,
-      contentCleanedSanitized: cleaned.contentSanitized,
     };
   } catch (error) {
     const errorMessage = getErrorMessage(error);
@@ -191,25 +168,22 @@ export async function fetchFullContent(
  * Persist a fetchFullContent result onto an entry's full-content columns.
  *
  * This is the single write site for the full-content invariants — hash
- * derivation for summary caching, sanitized-column stamping via
- * withSanitizedEntryContent, and error persistence — shared by the
+ * derivation for summary caching and error persistence — shared by the
  * user-initiated fetch (fetchAndStoreFullContent) and the background worker
  * (fetchFullContentForEntries in jobs/handlers.ts).
  *
- * @returns the applied update (including the sanitized columns) on success,
- *   or null when the fetch failed and only the error was persisted.
+ * Stores only the raw full-content columns; the read path sanitizes per read
+ * (issue #1282).
+ *
+ * @returns the applied update (the raw full-content columns) on success, or null
+ *   when the fetch failed and only the error was persisted.
  */
 export async function persistFullContentResult(
   db: typeof dbType,
   entryId: string,
   result: FetchFullContentResult,
-  now: Date = new Date(),
-  // Offload sanitization to a worker thread for large bodies. On by default; the
-  // background worker (fetchFullContentForEntries) passes false because it
-  // already runs off the request path, so the extra thread hop is pure overhead.
-  options: { offloadSanitize?: boolean } = {}
+  now: Date = new Date()
 ) {
-  const { offloadSanitize = true } = options;
   if (!result.success) {
     await db
       .update(entries)
@@ -228,14 +202,7 @@ export async function persistFullContentResult(
     ? createHash("sha256").update(fullContentForHash, "utf8").digest("hex")
     : null;
 
-  // Sanitize the fetched full content once: stored in the *_sanitized columns
-  // so reads are fast. The raw page HTML / Readability output is untrusted
-  // and rendered via dangerouslySetInnerHTML, so it must not be served raw.
-  // The chokepoint applies the lazy full-content rule: when contentCleaned
-  // exists, the (whole raw page) original is not sanitized at all and its
-  // sanitized column is persisted NULL — cleaned is the serving variant (see
-  // shouldMaterializeFullContentOriginal in @/server/html/sanitize-entry).
-  const fullContentValues = {
+  const fullContentUpdate = {
     fullContentOriginal: result.contentOriginal ?? null,
     fullContentCleaned: result.contentCleaned ?? null,
     fullContentHash,
@@ -243,15 +210,6 @@ export async function persistFullContentResult(
     fullContentError: null,
     updatedAt: now,
   };
-  // When fetchFullContent offloaded cleaning, the worker already sanitized the
-  // cleaned HTML (fused into the same task); reuse it so we don't sanitize the
-  // same body twice. The hint is only honored when its raw column is present in
-  // fullContentValues (it always is here), so it can never desync from the raw.
-  const fullContentUpdate = offloadSanitize
-    ? await withSanitizedEntryContentAsync(fullContentValues, {
-        fullContentCleanedSanitized: result.contentCleanedSanitized,
-      })
-    : withSanitizedEntryContent(fullContentValues);
 
   await db.update(entries).set(fullContentUpdate).where(eq(entries.id, entryId));
   return fullContentUpdate;
@@ -308,7 +266,7 @@ export async function fetchAndStoreFullContent(
     };
   }
 
-  const entry = await toFullEntry(db, rawEntry);
+  const entry = await toFullEntry(rawEntry);
 
   logger.info("Fetching full content for entry", {
     entryId: entry.id,
@@ -317,8 +275,8 @@ export async function fetchAndStoreFullContent(
 
   const result = await fetchFullContent(rawEntry.url);
   const now = new Date();
-  // Persist onto the shared entry row (see note above); the update carries
-  // the sanitized columns so they can be served back to the client below.
+  // Persist the raw full-content columns onto the shared entry row (see note
+  // above); sanitized for the response below (per-read sanitization, #1282).
   const fullContentUpdate = await persistFullContentResult(db, entryId, result, now);
 
   if (!result.success || !fullContentUpdate) {
@@ -364,12 +322,19 @@ export async function fetchAndStoreFullContent(
     contentLength: result.contentCleaned?.length,
   });
 
+  // Sanitize the freshly-fetched full content for the response (raw is stored;
+  // sanitization is per-read now — issue #1282).
+  const fullContent = await sanitizeEntryContentFamily("fullContent", {
+    original: fullContentUpdate.fullContentOriginal,
+    cleaned: fullContentUpdate.fullContentCleaned,
+  });
+
   return {
     success: true,
     entry: {
       ...entry,
-      fullContentOriginal: fullContentUpdate.fullContentOriginalSanitized ?? null,
-      fullContentCleaned: fullContentUpdate.fullContentCleanedSanitized ?? null,
+      fullContentOriginal: fullContent.original,
+      fullContentCleaned: fullContent.cleaned,
       fullContentFetchedAt: now,
       fullContentError: null,
     },

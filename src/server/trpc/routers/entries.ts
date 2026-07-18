@@ -319,7 +319,7 @@ export const entriesRouter = createTRPCRouter({
         throw errors.entryNotFound();
       }
 
-      return { entry: await entriesService.toFullEntry(ctx.db, row) };
+      return { entry: await entriesService.toFullEntry(row) };
     }),
 
   /**

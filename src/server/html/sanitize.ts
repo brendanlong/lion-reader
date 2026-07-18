@@ -37,18 +37,12 @@ import { startSanitizeTimer } from "@/server/metrics/metrics";
 
 /**
  * Version of the sanitization rules, re-exported from the native module —
- * the compiled rules are the single source of truth, so TypeScript can never
- * disagree with the binary about what version is running. Bump it in
- * `native/sanitizer/core/src/lib.rs` whenever sanitizer behavior changes
- * (allow-lists, transforms, serialization).
- *
- * Sanitized entry HTML is persisted in the database (`entries.*_sanitized`,
- * stamped with `*_sanitized_version`; see `withSanitizedEntryContent` in
- * `sanitize-entry.ts`). The read path (`resolveSanitizedContent` in the entries
- * router) compares the stored version against this constant and re-sanitizes
- * from the raw columns when they differ — so bumping this value marks every row
- * stale and transparently re-sanitizes it on next read instead of serving stale
- * output.
+ * the compiled rules are the single source of truth. This is now purely
+ * informational: as of issue #1282 sanitization is no longer persisted (entries
+ * store only raw HTML and are sanitized on every read), so there is no stored
+ * `*_sanitized_version` to compare against and a rules change is just a deploy —
+ * no version bump, fast-forward, or bulk re-sanitize is required. Kept as a
+ * constant for documentation and potential future use.
  */
 export const SANITIZER_VERSION: number = NATIVE_SANITIZER_VERSION;
 

@@ -12,7 +12,6 @@ import { extractArticle, extractArticleAsync } from "@lion-reader/readability";
 import type { ExtractedArticle, ExtractOptions } from "@lion-reader/readability";
 import { HTMLRewriter } from "html-rewriter-wasm";
 import { logger } from "@/lib/logger";
-import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
 import { startReadabilityTimer } from "@/server/metrics/metrics";
 
 const encoder = new TextEncoder();
@@ -385,26 +384,6 @@ export async function cleanContentAsync(
     });
     return null;
   }
-}
-
-/**
- * `cleanContentAsync` plus a sanitize of the cleaned output (also async, via
- * the native sanitizer), so a caller that persists the cleaned content
- * doesn't sanitize it again — the result is returned as `contentSanitized`
- * and handed to `withSanitizedEntryContentAsync` as a `presanitized` hint.
- * Each step is one native call; composing them costs a single extra N-API
- * string copy (~1% of the work), which is why there's no fused native task.
- *
- * Same audience as `cleanContentAsync`: app-server request paths (saved
- * articles, on-demand full-content fetch).
- */
-export async function cleanContentSanitizedAsync(
-  html: string,
-  options: CleanContentOptions = {}
-): Promise<(CleanedContent & { contentSanitized: string | null }) | null> {
-  const cleaned = await cleanContentAsync(html, options);
-  if (!cleaned) return null;
-  return { ...cleaned, contentSanitized: await sanitizeEntryHtmlAsync(cleaned.content) };
 }
 
 /**

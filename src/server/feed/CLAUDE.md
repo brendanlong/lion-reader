@@ -34,7 +34,7 @@ Because the row stays `active` with its `expires_at` unadvanced, the hourly rene
 
 ## Sanitization on the fetch path
 
-Feed fetching and email ingest run on the worker, off the request path, so they deliberately use the **synchronous** sanitize chokepoint (`withSanitizedEntryContent`) — worker-pool offload would be pure overhead. The WebSub notification ingest runs in the app process on the request path and sets `offloadSanitize: true`. See `src/server/html/CLAUDE.md` for the full rules.
+Feed fetching, WebSub ingest, and email ingest **store only the raw content columns** — sanitization is per-read now (issue #1282), so the fetch/write path does no sanitization at all (the old `withSanitizedEntryContent` chokepoint and the `offloadSanitize` flag are gone). Readability cleaning still happens at write time (that's separate from sanitization) and stays synchronous on the worker. See `src/server/html/CLAUDE.md` for the read-path sanitization rules.
 
 ## Feed Fetch Health
 

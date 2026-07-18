@@ -23,17 +23,17 @@ import {
 import { parseFeed } from "@/server/feed/parser";
 import { processMarkdown } from "@/server/markdown";
 import { usageLimitsConfig } from "@/server/config/env";
-import { absolutizeUrls, cleanContentSanitizedAsync } from "@/server/feed/content-cleaner";
+import { absolutizeUrls, cleanContentAsync } from "@/server/feed/content-cleaner";
 import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
 import { getOrCreateSavedFeed, getSavedFeedId, SAVED_FEED_TITLE } from "@/server/feed/saved-feed";
 import { generateSummary, stripHtml } from "@/server/html/strip-html";
 import { escapeHtml } from "@/server/http/html";
-import { withSanitizedEntryContentAsync } from "@/server/html/sanitize-entry";
+import { sanitizeEntryContentFamily } from "@/server/html/sanitize-entry";
 import { logger } from "@/lib/logger";
 import { publishNewEntry, publishEntryUpdatedFromEntry } from "@/server/redis/pubsub";
 import { toNewEntryListData } from "@/lib/events/schemas";
 import { errors } from "@/server/trpc/errors";
-import { markEntriesRead, resolveSanitizedFamily } from "@/server/services/entries";
+import { markEntriesRead } from "@/server/services/entries";
 import { publishMarkReadStateChanges } from "@/server/services/entry-events";
 import { pluginRegistry } from "@/server/plugins";
 import {
@@ -280,48 +280,37 @@ async function insertSavedEntry(
   db: typeof dbType,
   userId: string,
   savedFeedId: string,
-  params: InsertSavedEntryParams,
-  presanitized?: {
-    contentOriginalSanitized?: string | null;
-    contentCleanedSanitized?: string | null;
-  }
+  params: InsertSavedEntryParams
 ): Promise<SavedArticle | null> {
   const now = new Date();
   const entryId = generateUuidv7();
 
-  // Sanitize at write time so entries.get serves saved articles without
-  // re-running sanitize-html on every read. Offloaded to the libuv thread
-  // pool for large bodies (this runs on the app-server request path);
-  // `presanitized` reuses any sanitization the caller already computed
-  // (e.g. by cleanContentSanitizedAsync) instead of repeating it.
-  const values = await withSanitizedEntryContentAsync(
-    {
-      id: entryId,
-      feedId: savedFeedId,
-      type: "saved" as const,
-      guid: params.guid,
-      url: params.url,
-      title: params.title,
-      author: params.author,
-      contentOriginal: params.contentOriginal,
-      contentCleaned: params.contentCleaned,
-      summary: params.summary,
-      siteName: params.siteName,
-      imageUrl: params.imageUrl,
-      isPlaceholder: params.isPlaceholder ?? false,
-      publishedAt: null,
-      fetchedAt: now,
-      contentHash: params.contentHash,
-      spamScore: null,
-      isSpam: false,
-      listUnsubscribeMailto: null,
-      listUnsubscribeHttps: null,
-      listUnsubscribePost: null,
-      createdAt: now,
-      updatedAt: now,
-    },
-    presanitized ?? {}
-  );
+  // Store only the raw columns; the read path sanitizes per read (issue #1282).
+  const values = {
+    id: entryId,
+    feedId: savedFeedId,
+    type: "saved" as const,
+    guid: params.guid,
+    url: params.url,
+    title: params.title,
+    author: params.author,
+    contentOriginal: params.contentOriginal,
+    contentCleaned: params.contentCleaned,
+    summary: params.summary,
+    siteName: params.siteName,
+    imageUrl: params.imageUrl,
+    isPlaceholder: params.isPlaceholder ?? false,
+    publishedAt: null,
+    fetchedAt: now,
+    contentHash: params.contentHash,
+    spamScore: null,
+    isSpam: false,
+    listUnsubscribeMailto: null,
+    listUnsubscribeHttps: null,
+    listUnsubscribePost: null,
+    createdAt: now,
+    updatedAt: now,
+  };
   const inserted = await db.transaction(async (tx) => {
     const insertedRows = await tx
       .insert(entries)
@@ -358,6 +347,11 @@ async function insertSavedEntry(
     toNewEntryListData(values, SAVED_FEED_TITLE)
   ).catch(() => {});
 
+  // Sanitize the body for the returned SavedArticle: it is returned verbatim by
+  // service consumers (MCP save_article, Wallabag POST), so raw fetched HTML must
+  // not leave the service layer here either.
+  const contentCleaned = await sanitizeEntryHtmlAsync(params.contentCleaned);
+
   return {
     id: entryId,
     url: params.url,
@@ -365,10 +359,7 @@ async function insertSavedEntry(
     siteName: params.siteName,
     author: params.author,
     imageUrl: params.imageUrl,
-    // Serve the sanitized body: SavedArticle is returned verbatim by service
-    // consumers (MCP save_article, Wallabag POST), so raw fetched HTML must
-    // not leave the service layer here either.
-    contentCleaned: values.contentCleanedSanitized ?? null,
+    contentCleaned,
     excerpt: params.summary,
     read: false,
     starred: false,
@@ -874,13 +865,11 @@ async function selectExistingSavedArticle(
     return null;
   }
   const { entry, userState } = row;
-  // Version-check + worker-offload + self-heal rather than a synchronous
-  // re-sanitize of a possibly-stale body (matches the no-refetch path).
-  const { cleaned } = await resolveSanitizedFamily(db, entry.id, "content", {
-    originalSanitized: entry.contentOriginalSanitized,
-    cleanedSanitized: entry.contentCleanedSanitized,
-    version: entry.contentSanitizedVersion,
-    hasRaw: entry.contentOriginal !== null || entry.contentCleaned !== null,
+  // Sanitize the stored raw body per read, offloading large bodies to the
+  // worker pool (matches the no-refetch path).
+  const { cleaned } = await sanitizeEntryContentFamily("content", {
+    original: entry.contentOriginal,
+    cleaned: entry.contentCleaned,
   });
   return {
     id: entry.id,
@@ -937,15 +926,12 @@ export async function saveArticle(
     const isPlaceholder = existing[0].entry.isPlaceholder;
     if (!params.refetch && !isPlaceholder) {
       const { entry, userState } = existing[0];
-      // Serve the stored sanitized body, healing it off the event loop if the
-      // stored SANITIZER_VERSION is behind (raw content must not leave the
-      // service layer). resolveSanitizedFamily version-checks, offloads large
-      // sanitizes to the worker pool, and self-heals — matching entries.get.
-      const { cleaned } = await resolveSanitizedFamily(db, entry.id, "content", {
-        originalSanitized: entry.contentOriginalSanitized,
-        cleanedSanitized: entry.contentCleanedSanitized,
-        version: entry.contentSanitizedVersion,
-        hasRaw: entry.contentOriginal !== null || entry.contentCleaned !== null,
+      // Sanitize the stored raw body per read, offloading large bodies to the
+      // worker pool so it doesn't block the event loop (raw content must not
+      // leave the service layer) — matching entries.get.
+      const { cleaned } = await sanitizeEntryContentFamily("content", {
+        original: entry.contentOriginal,
+        cleaned: entry.contentCleaned,
       });
       return {
         id: entry.id,
@@ -979,11 +965,7 @@ export async function saveArticle(
   // for Markdown). Extraction runs on the libuv thread pool so large pages
   // don't block the event loop.
   const shouldSkipReadability = Boolean(pluginContent?.skipReadability) || markdownResult !== null;
-  const cleaned = shouldSkipReadability
-    ? null
-    : // sanitizeCleaned: also sanitize the cleaned HTML, so persisting it
-      // below can reuse the result instead of sanitizing again.
-      await cleanContentSanitizedAsync(html, { url: contentUrl });
+  const cleaned = shouldSkipReadability ? null : await cleanContentAsync(html, { url: contentUrl });
 
   // Generate excerpt - prefer frontmatter summary for Markdown content
   let excerpt: string | null = null;
@@ -1013,16 +995,6 @@ export async function saveArticle(
     cleaned?.content ??
     (pluginContent ? absolutizeUrls(pluginContent.html, contentUrl) : null);
 
-  // Reuse the sanitized cleaned HTML cleanContentSanitizedAsync already produced,
-  // but only when the content we're about to store is exactly that cleaned
-  // output (not markdown/plugin content, which took a different branch above).
-  // Leave the hint value `undefined` if there isn't one so the chokepoint
-  // sanitizes normally rather than persisting a spurious NULL sanitized
-  // column.
-  const presanitizedCleaned: { contentCleanedSanitized?: string | null } =
-    cleaned && finalContentCleaned === cleaned.content
-      ? { contentCleanedSanitized: cleaned.contentSanitized }
-      : {};
   const finalTitle =
     pluginContent?.title ||
     params.title ||
@@ -1086,26 +1058,22 @@ export async function saveArticle(
       }
     }
 
-    // Update the existing entry with new content (sanitized at write time,
-    // offloaded to a worker for large bodies since this is the request path;
-    // reusing the worker-sanitized cleaned HTML when applicable).
-    const update = await withSanitizedEntryContentAsync(
-      {
-        title: finalTitle,
-        author: finalAuthor,
-        contentOriginal: html,
-        contentCleaned: finalContentCleaned,
-        summary: excerpt,
-        siteName: finalSiteName,
-        imageUrl: metadata.imageUrl,
-        contentHash,
-        updatedAt: now,
-        // A successful real save clears the placeholder mark (no-op when the
-        // entry was already a real article). See #1256.
-        isPlaceholder: false,
-      },
-      presanitizedCleaned
-    );
+    // Update the existing entry with the new raw content; sanitization is per
+    // read now (issue #1282).
+    const update = {
+      title: finalTitle,
+      author: finalAuthor,
+      contentOriginal: html,
+      contentCleaned: finalContentCleaned,
+      summary: excerpt,
+      siteName: finalSiteName,
+      imageUrl: metadata.imageUrl,
+      contentHash,
+      updatedAt: now,
+      // A successful real save clears the placeholder mark (no-op when the
+      // entry was already a real article). See #1256.
+      isPlaceholder: false,
+    };
     // Update the content and flip the entry back to unread atomically. The
     // unread flip is routed through markEntriesRead (rather than a bare
     // `read=false` UPDATE) so it maintains read_changed_at (the changedAt
@@ -1155,8 +1123,8 @@ export async function saveArticle(
       siteName: finalSiteName,
       author: finalAuthor,
       imageUrl: metadata.imageUrl,
-      // Serve the sanitized body computed for the write above
-      contentCleaned: update.contentCleanedSanitized ?? null,
+      // Sanitize the body for the response (raw must not leave the service layer).
+      contentCleaned: await sanitizeEntryHtmlAsync(finalContentCleaned),
       excerpt,
       read: false, // Marked unread since content was updated
       starred: userState.starred,
@@ -1165,24 +1133,18 @@ export async function saveArticle(
     };
   }
 
-  const saved = await insertSavedEntry(
-    db,
-    userId,
-    savedFeedId,
-    {
-      guid: normalizedUrl,
-      url: normalizedUrl,
-      title: finalTitle,
-      author: finalAuthor,
-      contentOriginal: html,
-      contentCleaned: finalContentCleaned,
-      summary: excerpt,
-      siteName: finalSiteName,
-      imageUrl: metadata.imageUrl,
-      contentHash,
-    },
-    presanitizedCleaned
-  );
+  const saved = await insertSavedEntry(db, userId, savedFeedId, {
+    guid: normalizedUrl,
+    url: normalizedUrl,
+    title: finalTitle,
+    author: finalAuthor,
+    contentOriginal: html,
+    contentCleaned: finalContentCleaned,
+    summary: excerpt,
+    siteName: finalSiteName,
+    imageUrl: metadata.imageUrl,
+    contentHash,
+  });
 
   // A concurrent save (e.g. a double-click) already inserted this (feed_id,
   // guid) between our existence check above and the insert. Return the existing
@@ -1363,27 +1325,20 @@ export async function createUploadedArticle(
   // Compute content hash for narration deduplication
   const contentHash = generateContentHash(params.title, params.contentHtml);
 
-  // Original and cleaned are the same string here, so sanitize once (off the
-  // event loop for large uploads) and reuse it for both columns.
-  const contentSanitized = await sanitizeEntryHtmlAsync(params.contentHtml);
-  const saved = await insertSavedEntry(
-    db,
-    userId,
-    savedFeedId,
-    {
-      guid,
-      url: null,
-      title: params.title,
-      author: params.author ?? null,
-      contentOriginal: params.contentHtml,
-      contentCleaned: params.contentHtml,
-      summary: excerpt,
-      siteName: params.siteName,
-      imageUrl: null,
-      contentHash,
-    },
-    { contentOriginalSanitized: contentSanitized, contentCleanedSanitized: contentSanitized }
-  );
+  // Original and cleaned are the same string here; stored raw and sanitized per
+  // read (issue #1282).
+  const saved = await insertSavedEntry(db, userId, savedFeedId, {
+    guid,
+    url: null,
+    title: params.title,
+    author: params.author ?? null,
+    contentOriginal: params.contentHtml,
+    contentCleaned: params.contentHtml,
+    summary: excerpt,
+    siteName: params.siteName,
+    imageUrl: null,
+    contentHash,
+  });
 
   // The guid is a fresh random `uploaded:{uuid}`, so the insert can't conflict.
   if (!saved) {

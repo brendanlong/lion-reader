@@ -40,7 +40,6 @@
     "test:integration": "pnpm db:migrate:test && pnpm db:schema:test && dotenv -o -e .env.test -- vitest run tests/integration",
     "test:e2e": "pnpm db:migrate:test && dotenv -o -e .env.test -- playwright test",
     "worker": "tsx scripts/worker.ts",
-    "resanitize:bulk": "dotenv -- tsx scripts/resanitize-bulk.ts",
     "services": "bash scripts/local-services.sh",
     "db:migrate:local": "dotenv -o -e .env.test -e .env.local-services.test -- tsx scripts/migrate.ts",
     "dev:local": "dotenv -o -e .env.local-services -- concurrently --kill-others --names worker,next \"pnpm dev:worker\" \"pnpm dev:next\"",
