@@ -6,6 +6,7 @@ import { appUrl } from "@/server/config/env";
 import { ThemeProvider } from "@/lib/theme/ThemeProvider";
 import { DEFAULT_THEME, THEME_STORAGE_KEY, THEMES } from "@/lib/theme/config";
 import { buildTextAppearanceScript } from "@/lib/appearance/config";
+import { buildChunkReloadScript } from "@/lib/chunk-reload";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -121,6 +122,14 @@ const themeScript = `
 const textAppearanceScript = buildTextAppearanceScript();
 
 /**
+ * Blocking script that reloads once to recover from a webpack ChunkLoadError
+ * (stale CDN-cached HTML pointing at a chunk hash a redeploy removed). Inline in
+ * <head> so the listener is registered before any chunk loads — a React handler
+ * living in a chunk can't catch its own failure to load. See src/lib/chunk-reload.ts.
+ */
+const chunkReloadScript = buildChunkReloadScript();
+
+/**
  * Service worker registration script.
  *
  * Registers the service worker for PWA support including:
@@ -169,6 +178,13 @@ export default async function RootLayout({
         {/* suppressHydrationWarning: browsers blank the nonce content attribute
             after parsing (nonce hiding), so hydration would see nonce="" and
             warn on every load. The scripts have executed by then either way. */}
+        {/* Registered first so the ChunkLoadError listener is live before any
+            other script or chunk can fail to load. */}
+        <script
+          nonce={nonce}
+          suppressHydrationWarning
+          dangerouslySetInnerHTML={{ __html: chunkReloadScript }}
+        />
         <script
           nonce={nonce}
           suppressHydrationWarning
