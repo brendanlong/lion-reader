@@ -25,6 +25,14 @@ export interface EntryArticleProps {
   author: string | null;
   /** The date to display */
   date: Date;
+  /**
+   * Optional IANA time zone for formatting `date`. Omit to use the ambient zone
+   * (the visitor's local zone). The demo passes a fixed zone on the server so
+   * its SSR'd date doesn't render in the host's UTC; the `<time>` is marked
+   * suppressHydrationWarning so switching to the visitor's local zone on the
+   * client is not flagged as a hydration error.
+   */
+  dateTimeZone?: string;
   /** Optional prefix for the date (e.g., "Saved") */
   datePrefix?: string;
   /** Pre-sanitized HTML content */
@@ -66,6 +74,7 @@ export function EntryArticle({
   source,
   author,
   date,
+  dateTimeZone,
   datePrefix,
   contentHtml,
   fallbackContent,
@@ -133,9 +142,16 @@ export function EntryArticle({
             <span aria-hidden="true" className="text-faint hidden sm:inline">
               |
             </span>
-            <time dateTime={date.toISOString()} className="basis-full sm:basis-auto">
+            <time
+              dateTime={date.toISOString()}
+              className="basis-full sm:basis-auto"
+              // The server may format in a fixed zone (see dateTimeZone) while
+              // the client uses the visitor's local zone; that difference is
+              // intentional, not a hydration bug.
+              suppressHydrationWarning
+            >
               {datePrefix ? `${datePrefix} ` : ""}
-              {formatDate(date)}
+              {formatDate(date, dateTimeZone)}
             </time>
           </div>
         </div>
