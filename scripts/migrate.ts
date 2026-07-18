@@ -5,12 +5,15 @@
  *
  * This script:
  * 1. Runs migrations using our custom runner (each migration in its own transaction)
- * 2. Flushes all Redis caches to ensure cached data is consistent with new schema
+ * 2. Clears cached Redis data so it can't go stale against the new schema —
+ *    preserving the durable site-status flags (announcement + maintenance mode),
+ *    which are the source of truth and must survive a deploy.
  */
 
 import Redis from "ioredis";
 
 import { runMigrations } from "./run-migrations";
+import { clearRedisCacheExceptSiteStatus } from "@/server/redis/clear-cache";
 
 async function runDatabaseMigrations(): Promise<void> {
   const databaseUrl = process.env.DATABASE_URL;
@@ -22,15 +25,15 @@ async function runDatabaseMigrations(): Promise<void> {
   await runMigrations(databaseUrl);
 }
 
-async function flushRedisCache(): Promise<void> {
+async function clearRedisCache(): Promise<void> {
   const redisUrl = process.env.REDIS_URL;
 
   if (!redisUrl) {
-    console.log("REDIS_URL not set, skipping cache flush");
+    console.log("REDIS_URL not set, skipping cache clear");
     return;
   }
 
-  console.log("Flushing Redis cache...");
+  console.log("Clearing Redis cache (preserving site-status keys)...");
 
   const redis = new Redis(redisUrl, {
     lazyConnect: true,
@@ -39,8 +42,10 @@ async function flushRedisCache(): Promise<void> {
 
   try {
     await redis.connect();
-    await redis.flushdb();
-    console.log("Redis cache flushed successfully");
+    const { deleted, preserved } = await clearRedisCacheExceptSiteStatus(redis);
+    console.log(
+      `Redis cache cleared: deleted ${deleted} key(s), preserved ${preserved} site-status key(s)`
+    );
   } finally {
     await redis.quit();
   }
@@ -49,7 +54,7 @@ async function flushRedisCache(): Promise<void> {
 async function main() {
   try {
     await runDatabaseMigrations();
-    await flushRedisCache();
+    await clearRedisCache();
 
     console.log("\nMigration completed successfully!");
   } catch (error) {
