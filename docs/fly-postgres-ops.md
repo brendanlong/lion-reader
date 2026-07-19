@@ -150,6 +150,70 @@ Caveats:
 
 ---
 
+## Recovery: forced read-only from a full disk (orphaned replication slot pinning WAL)
+
+**Symptom:** writes fail cluster-wide with `ERROR: cannot execute UPDATE in a
+read-only transaction` while **reads still work**. `fly checks list -a <pg-app>` shows the
+`pg` check `critical` with `disk-capacity: >90% - readonly mode enabled, extend your volume
+to re-enable writes` and `vm` check `checkDisk: … free space on /data/`. The node is a
+healthy primary otherwise (no zombie, no split-brain). Flex flips the primary read-only at
+**~90% `/data` usage** as a safety valve so Postgres doesn't hard-crash on a full disk.
+
+**Cause (most common for us):** the disk is full of **undrained WAL**, not data. `pg_wal`
+dwarfs `base`:
+
+```bash
+su postgres
+du -sh /data/postgresql/*      # e.g. base=3.5G but pg_wal=4.9G  ← WAL is the problem
+```
+
+An **inactive replication slot** pins every WAL segment it still "needs," so Postgres can
+never recycle them. This happens when a **replica is removed without dropping its slot** —
+`repmgr standby unregister` (or `fly machine destroy`) removes the node from repmgr's
+topology but leaves the **replication slot behind in Postgres**. The slot then grows WAL
+without bound until the volume hits 90%. (Bit us after a `lax` replica added during a region
+move was torn down — repmgr `cluster show` listed only the survivor, yet the ghost's slot
+`repmgr_slot_<dead-node-id>` still existed and had pinned ~5 GB.)
+
+**Diagnose** (psql on port **5433**) — distinguish a pinning slot from a stalled archiver:
+
+```sql
+-- Slot pinning WAL: active=f with GBs retained is the culprit.
+SELECT slot_name, active, wal_status,
+       pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn)) AS retained
+FROM pg_replication_slots;
+
+-- Rule out archiving: nonzero failed_count / recent last_failed_time = archiving stuck instead.
+SELECT archived_count, last_archived_time, failed_count, last_failed_wal, last_failed_time
+FROM pg_stat_archiver;
+```
+
+**Fix** (frees the WAL and lifts read-only on its own — no volume extend, no restart):
+
+```sql
+-- Only a slot that is active=f AND belongs to a node gone from `repmgr cluster show`.
+-- NEVER drop the slot of a live standby.
+SELECT pg_drop_replication_slot('repmgr_slot_<dead-node-id>');
+CHECKPOINT;   -- recycle the now-unneeded WAL immediately (run twice if df doesn't drop)
+```
+
+Then `df -h /data` should fall well below 90%; Flex's disk-capacity check clears
+`/data/readonly.lock` and re-enables writes within a check cycle (~30–60s). Verify with
+`fly checks list -a <pg-app>`.
+
+Caveats:
+
+- **If it's the archiver instead** (`failed_count` climbing), WAL can't recycle until the
+  archive drains — fix the `archive_command`/Tigris creds, don't drop anything.
+- If the slot belongs to a standby you actually still want, the slot isn't the bug —
+  **extend the volume** (`fly volumes extend <vol-id> -s <GB> -a <pg-app>`) and investigate
+  why the standby stopped consuming WAL.
+- **Prevent the recurrence:** when removing a replica, drop its slot as part of teardown,
+  and destroy its **volume** too (an orphaned unattached volume in the old region is the
+  fingerprint of a half-removed replica — and it keeps billing).
+
+---
+
 ## Backups & Point-in-Time Recovery (PITR)
 
 Two independent layers protect the database:
