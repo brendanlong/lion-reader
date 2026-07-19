@@ -350,19 +350,23 @@ async function buildArticleFields(
     cleaned?.content ??
     (pluginContent ? absolutizeUrls(pluginContent.html, baseUrl) : null);
 
-  // Precedence: explicit caller value → direct-from-source (plugin, Markdown
-  // frontmatter, Open Graph/<title> via extractMetadata) → Readability → filename
-  // (title only). `metadata.title` sits above `cleaned.title` and is also the
-  // fallback that survives a failed extraction (short/unparseable page, where
-  // Readability returns nothing). Our readability extractor (dom_smoothie) doesn't
-  // clean up the title beyond what the meta/<title> scrape already yields, so the
-  // two are equivalent when both are present.
+  // Precedence: explicit caller value → plugin/Markdown frontmatter → Readability
+  // → raw Open Graph/<title> → filename (title only).
+  //
+  // Readability sits above the raw `metadata.title` scrape because when it does
+  // produce a title it's the better one to prefer (it can strip a " | Site Name"
+  // suffix / pick a sensible heading). It only returns a title when it also
+  // extracted the body, so `metadata.title` (our own og:title/<title> scrape)
+  // stays just below it as the fallback that survives a failed extraction
+  // (short/unparseable page). Today our extractor (dom_smoothie) doesn't actually
+  // clean the title beyond the meta/<title> scrape, so the two are equivalent in
+  // practice — but this is the order we want if/when it improves.
   const title =
     hints.providedTitle ||
     pluginContent?.title ||
     markdownResult?.title ||
-    metadata.title ||
     cleaned?.title ||
+    metadata.title ||
     (hints.filename ? titleFromFilename(hints.filename) || null : null) ||
     null;
   const author =
