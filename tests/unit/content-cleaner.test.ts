@@ -5,7 +5,6 @@
 import { describe, it, expect } from "vitest";
 import {
   cleanContent,
-  generateCleanedSummary,
   absolutizeUrls,
   extractBaseHref,
   cleanLessWrongContent,
@@ -351,81 +350,6 @@ describe("cleanContent", () => {
       expect(result!.textContent).not.toMatch(/^\s/);
       expect(result!.textContent).not.toMatch(/\s$/);
     });
-  });
-});
-
-describe("generateCleanedSummary", () => {
-  it("should use excerpt when available and long enough", () => {
-    const cleaned = {
-      content: "<p>Full content here...</p>",
-      textContent: "Full content here...",
-      excerpt: "This is a meaningful excerpt that summarizes the article content well.",
-      title: "Test",
-      byline: null,
-    };
-
-    const summary = generateCleanedSummary(cleaned);
-
-    expect(summary).toBe(cleaned.excerpt);
-  });
-
-  it("should fall back to text content when excerpt is short", () => {
-    const cleaned = {
-      content: "<p>Full content here...</p>",
-      textContent: "This is the full text content that should be used for the summary.",
-      excerpt: "Too short",
-      title: "Test",
-      byline: null,
-    };
-
-    const summary = generateCleanedSummary(cleaned);
-
-    expect(summary).toContain("full text content");
-  });
-
-  it("should truncate long content", () => {
-    const longText = "A".repeat(500);
-    const cleaned = {
-      content: `<p>${longText}</p>`,
-      textContent: longText,
-      excerpt: "",
-      title: "Test",
-      byline: null,
-    };
-
-    const summary = generateCleanedSummary(cleaned, 300);
-
-    expect(summary.length).toBeLessThanOrEqual(303); // 300 + "..."
-    expect(summary.endsWith("...")).toBe(true);
-  });
-
-  it("should not truncate short content", () => {
-    const cleaned = {
-      content: "<p>Short content</p>",
-      textContent: "Short content",
-      excerpt: "",
-      title: "Test",
-      byline: null,
-    };
-
-    const summary = generateCleanedSummary(cleaned);
-
-    expect(summary).toBe("Short content");
-    expect(summary.endsWith("...")).toBe(false);
-  });
-
-  it("should handle empty content", () => {
-    const cleaned = {
-      content: "",
-      textContent: "",
-      excerpt: "",
-      title: "Test",
-      byline: null,
-    };
-
-    const summary = generateCleanedSummary(cleaned);
-
-    expect(summary).toBe("");
   });
 });
 

@@ -35,16 +35,19 @@ describe("computeSavedArticleExcerpt", () => {
     expect(excerpt).not.toContain("Introduction");
   });
 
-  it("prefers the Readability excerpt when present, falling back to body text", () => {
+  it("delegates the cleaned branch to summarizeCleanedContent (description-preferred)", () => {
+    // A substantial excerpt (>= 50 chars) wins over the body text...
+    const excerpt = "A good, article-specific description that is clearly long enough.";
     expect(
       computeSavedArticleExcerpt({
         markdownResult: null,
-        cleaned: { excerpt: "A good article-specific excerpt.", textContent: "Body text here." },
+        cleaned: { excerpt, textContent: "Body text here." },
         pluginContent: null,
         html: "<p>Raw</p>",
       })
-    ).toBe("A good article-specific excerpt.");
+    ).toBe(excerpt);
 
+    // ...and the body text is used when there is no usable excerpt.
     expect(
       computeSavedArticleExcerpt({
         markdownResult: null,
@@ -55,28 +58,15 @@ describe("computeSavedArticleExcerpt", () => {
     ).toBe("The article begins here.");
   });
 
-  it("hard-truncates a long body-text fallback to <=300 chars (no ellipsis)", () => {
-    const long = "word ".repeat(200); // 1000 chars
-    const excerpt = computeSavedArticleExcerpt({
-      markdownResult: null,
-      cleaned: { excerpt: "", textContent: long },
-      pluginContent: null,
-      html: "",
-    });
-    expect(excerpt).not.toBeNull();
-    expect(excerpt!.length).toBeLessThanOrEqual(300);
-    expect(long.startsWith(excerpt!)).toBe(true);
-  });
-
-  it("truncates a long Readability excerpt to 297 chars + ellipsis", () => {
-    const long = "x".repeat(500);
-    const excerpt = computeSavedArticleExcerpt({
-      markdownResult: null,
-      cleaned: { excerpt: long, textContent: "body" },
-      pluginContent: null,
-      html: "",
-    });
-    expect(excerpt).toBe("x".repeat(297) + "...");
+  it("returns null when the cleaned content is empty", () => {
+    expect(
+      computeSavedArticleExcerpt({
+        markdownResult: null,
+        cleaned: { excerpt: "", textContent: "" },
+        pluginContent: null,
+        html: "<p>Raw</p>",
+      })
+    ).toBeNull();
   });
 
   it("summarizes raw plugin HTML only when Readability was skipped (cleaned is null)", () => {
