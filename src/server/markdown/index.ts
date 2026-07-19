@@ -33,9 +33,14 @@ interface FrontmatterResult {
   content: string;
 }
 
-// Regex to match YAML frontmatter at the start of a document
-// Must start with --- on its own line, end with --- on its own line
-const FRONTMATTER_REGEX = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/;
+// Regex to match YAML frontmatter at the start of a document.
+// Must start with --- on its own line, and end with either --- or ... on its
+// own line. YAML uses `...` as an explicit end-of-document marker, and tools
+// like Pandoc (e.g. gwern.net) close frontmatter with it. Accepting only `---`
+// as the closer made the lazy body matcher run past a `...` terminator and latch
+// onto the first later `---` thematic break, silently swallowing the whole intro
+// as "frontmatter" (see #1280).
+const FRONTMATTER_REGEX = /^---[ \t]*\r?\n([\s\S]*?)\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/;
 
 /**
  * Extracts and parses YAML frontmatter from Markdown content.
