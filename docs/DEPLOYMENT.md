@@ -431,8 +431,10 @@ Two independent layers protect the database:
 1. **Continuous WAL archiving → Tigris (primary).** Fly flex has built-in
    WAL-based backups: a scheduled base backup plus a continuous stream of WAL
    segments pushed to a Tigris (S3-compatible) bucket. This gives
-   **point-in-time recovery with an RPO of seconds** — you can restore to any
-   instant inside the retention window, not just the last snapshot. It is turned
+   **point-in-time recovery** — you can restore to any instant inside the
+   retention window, not just the last snapshot — with an **RPO of seconds** once
+   `--archive-timeout` is set (see below; untuned, a quiet DB's worst-case RPO is
+   larger because WAL ships only as 16MB segments fill). It is turned
    on with `--enable-backups` at create time (above) or `fly postgres backup
 enable` on an existing cluster.
 2. **Daily volume snapshots (floor).** Fly snapshots the 10GB NVMe volume once a
@@ -464,12 +466,12 @@ flyctl postgres backup config show -a lion-reader-pg
 
 **Configure retention / schedule** (`flyctl postgres backup config update`):
 
-| Flag                      | Meaning                                                                | Default |
-| ------------------------- | ---------------------------------------------------------------------- | ------- |
-| `--recovery-window`       | How far back PITR can target (retention window)                        | —       |
-| `--full-backup-frequency` | Base-backup cadence                                                    | 24h     |
-| `--archive-timeout`       | Max wait before forcing a WAL push (caps worst-case RPO on an idle DB) | —       |
-| `--minimum-redundancy`    | Minimum number of base backups to keep                                 | —       |
+| Flag                      | Meaning                                                                | Default      |
+| ------------------------- | ---------------------------------------------------------------------- | ------------ |
+| `--recovery-window`       | How far back PITR can target (retention window)                        | —            |
+| `--full-backup-frequency` | Base-backup cadence                                                    | 24h (verify) |
+| `--archive-timeout`       | Max wait before forcing a WAL push (caps worst-case RPO on an idle DB) | —            |
+| `--minimum-redundancy`    | Minimum number of base backups to keep                                 | —            |
 
 ```bash
 # Keep ~7 days of PITR window and force a WAL push at least every 60s:
@@ -506,7 +508,10 @@ flyctl postgres attach lion-reader-pg-restore --app lion-reader  # sets DATABASE
 flyctl apps restart lion-reader
 ```
 
-Omit `--restore-target-time` to restore to the latest archived WAL (lowest RPO).
+Omit `--restore-target-time` **only** when you want the newest possible state
+(e.g. recovering from hardware/host loss). For corruption or a bad
+delete/migration, you **must** target a time _before_ the incident — otherwise
+the WAL replay faithfully re-applies the damage you're recovering from.
 Use `--restore-target-name` to select a specific base backup by id/alias, and
 `--restore-target-inclusive=false` to stop _before_ the target time. Run
 `flyctl postgres backup restore --help` to confirm flag names before a real
