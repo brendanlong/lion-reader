@@ -176,8 +176,18 @@ const uploadArticleArgs = z.object({
   content: z
     .string()
     .min(1)
-    .describe("Article content in Markdown format (GitHub Flavored Markdown supported)"),
-  title: z.string().min(1).describe("Article title"),
+    .describe(
+      "Article content in GitHub Flavored Markdown. Supports footnotes ([^1] … [^1]: …) " +
+        "and math ($…$ inline, $$…$$ display). This is Markdown, not HTML — pass raw " +
+        "characters and do NOT HTML-escape (write & < >, not &amp; &lt; &gt;)."
+    ),
+  title: z
+    .string()
+    .min(1)
+    .describe(
+      "Article title as plain text. Do NOT HTML-escape it (write & not &amp;) — it is " +
+        "rendered as text, so entities would show up literally."
+    ),
 });
 
 const listSubscriptionsArgs = z.object({
