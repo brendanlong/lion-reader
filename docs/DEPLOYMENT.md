@@ -129,8 +129,10 @@ flyctl postgres create \
 - `--initial-cluster-size`: 1 (deliberate — flex multi-node uses repmgr, which has a
   poor failure-mode track record; WAL backups + volume snapshots are the safety net)
 - `--volume-size`: 10GB is plenty
-- `--enable-backups`: WAL-based backups to a Tigris bucket (PITR via
-  `flyctl postgres backup restore`), on top of daily volume snapshots
+- `--enable-backups`: creates a Tigris bucket and turns on continuous WAL-based
+  backups (point-in-time recovery via `flyctl postgres backup restore`), on top
+  of daily volume snapshots. See "Backups & Point-in-Time Recovery (PITR)" under
+  Ongoing Operations for the enable/configure/restore runbook.
 
 ### 2. Attach Postgres to Your App
 
@@ -420,17 +422,121 @@ flyctl scale count 3 --process-group app
 flyctl postgres connect -a lion-reader-pg --database lion_reader
 ```
 
-**Manual backup:**
+For backups and restores, see the dedicated section below.
+
+### Backups & Point-in-Time Recovery (PITR)
+
+Two independent layers protect the database:
+
+1. **Continuous WAL archiving → Tigris (primary).** Fly flex has built-in
+   WAL-based backups: a scheduled base backup plus a continuous stream of WAL
+   segments pushed to a Tigris (S3-compatible) bucket. This gives
+   **point-in-time recovery with an RPO of seconds** — you can restore to any
+   instant inside the retention window, not just the last snapshot. It is turned
+   on with `--enable-backups` at create time (above) or `fly postgres backup
+enable` on an existing cluster.
+2. **Daily volume snapshots (floor).** Fly snapshots the 10GB NVMe volume once a
+   day (~24h RPO), as the backstop if the WAL archive is ever unavailable
+   (restore path in [Backup, Restores, & Snapshots](https://fly.io/docs/postgres/managing/backup-and-restore/)).
+
+We deliberately use Fly's built-in WAL archiving rather than hand-rolling
+`wal-g`/`pgBackRest`: the flex image wires up the `archive_command`, the
+base-backup schedule, and the Tigris bucket for us, so there is no custom
+Postgres image to build and keep patched. A hot standby is intentionally **not**
+used — its value is low RTO (auto-failover in seconds), and a standby is not a
+backup (it replicates bad deletes/corruption/migrations instantly). A few minutes
+of downtime on a rare host failure is acceptable; WAL PITR is what actually
+protects the data. (Issue #1376.)
+
+Backups live on Fly Tigris — already our object-storage and hosting provider (see
+the privacy policy's "Object Storage" subsection) — so no new data processor is
+introduced.
+
+**Enable / verify backups are on:**
 
 ```bash
-flyctl postgres backup create -a lion-reader-pg
+# One-time, if the cluster was created without --enable-backups:
+flyctl postgres backup enable -a lion-reader-pg
+
+# Show the current backup configuration (retention, schedule, bucket):
+flyctl postgres backup config show -a lion-reader-pg
 ```
 
-**List backups:**
+**Configure retention / schedule** (`flyctl postgres backup config update`):
+
+| Flag                      | Meaning                                                                | Default |
+| ------------------------- | ---------------------------------------------------------------------- | ------- |
+| `--recovery-window`       | How far back PITR can target (retention window)                        | —       |
+| `--full-backup-frequency` | Base-backup cadence                                                    | 24h     |
+| `--archive-timeout`       | Max wait before forcing a WAL push (caps worst-case RPO on an idle DB) | —       |
+| `--minimum-redundancy`    | Minimum number of base backups to keep                                 | —       |
+
+```bash
+# Keep ~7 days of PITR window and force a WAL push at least every 60s:
+flyctl postgres backup config update -a lion-reader-pg \
+  --recovery-window 7d \
+  --archive-timeout 60s
+```
+
+WAL is normally shipped as segments fill; `--archive-timeout` bounds the
+worst-case RPO when the DB is quiet. Retention on Tigris is governed by
+`--recovery-window`; add a bucket lifecycle rule only if you want a hard backstop
+beyond it. (Duration flags take strings like `7d` / `60s` — run the command with
+`--help` to confirm the accepted format on the installed flex version.)
+
+**List backups / take an on-demand base backup:**
 
 ```bash
 flyctl postgres backup list -a lion-reader-pg
+flyctl postgres backup create -a lion-reader-pg   # also resets the base-backup timer
 ```
+
+**Restore to a point in time (PITR).** Restores always go into a **new** cluster —
+never in place. `--restore-target-time` takes an RFC3339 timestamp:
+
+```bash
+# Restore lion-reader-pg's archive into a fresh cluster, as of a chosen instant:
+flyctl postgres backup restore lion-reader-pg-restore \
+  -a lion-reader-pg \
+  --restore-target-time 2026-07-18T14:30:00Z
+
+# Verify the data, then repoint the app at the restored cluster:
+flyctl postgres detach lion-reader-pg --app lion-reader          # unbind the old DB
+flyctl postgres attach lion-reader-pg-restore --app lion-reader  # sets DATABASE_URL to the new DB
+flyctl apps restart lion-reader
+```
+
+Omit `--restore-target-time` to restore to the latest archived WAL (lowest RPO).
+Use `--restore-target-name` to select a specific base backup by id/alias, and
+`--restore-target-inclusive=false` to stop _before_ the target time. Run
+`flyctl postgres backup restore --help` to confirm flag names before a real
+restore — flex's flags occasionally change.
+
+**Restore drill — do this periodically; an untested backup isn't a backup:**
+
+1. Restore ~1h back into a throwaway cluster:
+   ```bash
+   flyctl postgres backup restore lion-reader-pg-drill -a lion-reader-pg \
+     --restore-target-time <RFC3339 ~1h ago>
+   ```
+2. `flyctl postgres connect -a lion-reader-pg-drill --database lion_reader` and
+   spot-check row counts / a recent entry against production.
+3. Confirm the target time landed where expected — e.g. a row written _after_ the
+   target time should be absent.
+4. `flyctl apps destroy lion-reader-pg-drill` to clean up (drill clusters cost money).
+
+**Monitoring.** A stalled archive is the dangerous _silent_ failure: if WAL stops
+shipping, the DB looks healthy while PITR quietly stops advancing. Check regularly:
+
+- `flyctl postgres backup list` shows a recent base backup, and
+  `flyctl postgres backup config show` reports healthy/recent archiving.
+- On [fly-metrics.net](https://fly-metrics.net), watch the primary's `pg_wal`
+  directory — WAL segments piling up locally means archiving is failing to drain
+  them.
+- Eyeball the Tigris backup bucket occasionally for recent WAL objects.
+- **Follow-up:** wire an automated alert (worker job or external cron) that pages
+  if the newest archived WAL is older than N minutes — the manual checks above are
+  the interim.
 
 ### Operating unmanaged Postgres
 
@@ -447,8 +553,9 @@ Fly does not manage this cluster, so these are ours:
   upgrade unmanaged clusters.
 - **Disk:** 10GB volume; `flyctl volumes extend` when needed. A full volume is an
   outage you have to notice — check the fly-metrics disk panel occasionally.
-- **Restore drill:** periodically `flyctl postgres backup restore` into a scratch
-  cluster to prove the WAL backups actually restore.
+- **Backups & restore drill:** WAL archiving to Tigris gives PITR; periodically
+  restore into a scratch cluster to prove it works. Full procedure in "Backups &
+  Point-in-Time Recovery (PITR)" above.
 
 **Temporarily scaling for expensive migrations.** A `machine update` resize is only
 a few-second restart, so for a CPU- or memory-heavy migration you can bump to a
@@ -668,8 +775,9 @@ bot). Only `app` is behind the HTTP load balancer; all three share Postgres and 
 | Discord VM      | shared-cpu-1x, 256MB    | ~$2/month         |
 | Postgres        | shared-cpu-8x, 2GB      | ~$15.55/month     |
 | Postgres volume | 10GB                    | ~$1.50/month      |
+| PG WAL backups  | Tigris (base + WAL)     | ~$1/month         |
 | Redis (Upstash) | Pay-as-you-go           | ~$0-5/month       |
-| **Total**       |                         | **~$30-36/month** |
+| **Total**       |                         | **~$31-37/month** |
 
 Costs vary by usage. Check [fly.io/docs/about/pricing](https://fly.io/docs/about/pricing/) for current rates.
 
@@ -681,7 +789,8 @@ After successful deployment:
 
 1. **Set up monitoring** - Configure Sentry for error tracking
 2. **Add custom domain** - Use `flyctl certs create` for SSL
-3. **Enable backups** - Configure automated Postgres backups
+3. **Enable backups** - Turn on continuous WAL archiving / PITR and run a restore
+   drill (see "Backups & Point-in-Time Recovery (PITR)")
 4. **Monitor usage** - Use Fly.io dashboard to track resource usage
 
 For questions or issues, check:
