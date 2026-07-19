@@ -6,7 +6,9 @@
 //!   "non-text" tags (`script`/`style`/`textarea`/`option`) whose content is
 //!   dropped with them.
 //! - Attributes are allow-listed globally (`class`/`id`/`title`/`dir`/
-//!   `lang`, `data-*`, the MathML presentation set) plus per-tag additions.
+//!   `lang`/`role`, `data-*`, `aria-*`, the MathML presentation set) plus
+//!   per-tag additions. `role`/`aria-*` are inert ARIA hooks kept for
+//!   assistive tech (e.g. `role="doc-noteref"` on footnotes).
 //! - URL-carrying attributes are scheme-checked (http/https/mailto/tel;
 //!   `data:image/*` additionally for img/source), on the entity-decoded value.
 //!   Protocol-relative and relative URLs pass. `data:` is accepted only when
@@ -92,8 +94,13 @@ const DROP_WITH_CONTENT: &[&str] = &[
     "annotation", "annotation-xml",
 ];
 
-/// Global attributes allowed on any element (`data-*` handled separately).
-const GLOBAL_ATTRS: &[&str] = &["class", "id", "title", "dir", "lang"];
+/// Global attributes allowed on any element (`data-*` and `aria-*` handled
+/// separately). `role` and `aria-*` are ARIA hooks: inert (no script, no URL,
+/// no resource load), preserved byte-identically by lol_html, and required for
+/// assistive tech — e.g. LessWrong footnotes carry `role="doc-noteref"` /
+/// `"doc-endnotes"` / `"doc-endnote"` that screen readers announce as
+/// footnotes. Allowing them matches DOMPurify's default ARIA handling.
+const GLOBAL_ATTRS: &[&str] = &["class", "id", "title", "dir", "lang", "role"];
 
 /// MathML presentation attributes — allowed on every element, matching
 /// sanitize.ts's `allowedAttributes["*"]` (no `href`, no event handlers).
@@ -119,7 +126,11 @@ fn tag_allowed(tag: &str) -> bool {
 }
 
 fn attr_allowed(tag: &str, name: &str) -> bool {
-    if GLOBAL_ATTRS.contains(&name) || MATHML_ATTRS.contains(&name) || name.starts_with("data-") {
+    if GLOBAL_ATTRS.contains(&name)
+        || MATHML_ATTRS.contains(&name)
+        || name.starts_with("data-")
+        || name.starts_with("aria-")
+    {
         return true;
     }
     match tag {
@@ -493,6 +504,17 @@ mod tests {
         assert_eq!(
             sanitize(r#"<p data-para-id="7" class="a" bogus="1">x</p>"#),
             r#"<p data-para-id="7" class="a">x</p>"#
+        );
+    }
+
+    #[test]
+    fn aria_and_role_attributes_kept() {
+        // ARIA hooks are inert and required for assistive tech (e.g. footnotes).
+        assert_eq!(
+            sanitize(
+                r#"<ol role="doc-endnotes"><li role="doc-endnote" aria-label="Footnote 1">x</li></ol>"#
+            ),
+            r#"<ol role="doc-endnotes"><li role="doc-endnote" aria-label="Footnote 1">x</li></ol>"#
         );
     }
 }
