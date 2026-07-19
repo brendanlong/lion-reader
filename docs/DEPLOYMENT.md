@@ -91,31 +91,51 @@ You should see your new app listed.
 
 ## Database Provisioning (Postgres)
 
-Lion Reader uses PostgreSQL for all persistent data.
+Lion Reader uses PostgreSQL for all persistent data. Production runs **unmanaged
+Fly Postgres (flex), single node**: `lion-reader-pg`, database `lion_reader`,
+`shared-cpu-8x` / 2GB in `lax`, 10GB volume, PostgreSQL 18. Unmanaged is chosen for
+performance-per-dollar (shared-CPU pooling gives more burst headroom per dollar than
+Managed Postgres); the tradeoff is that Fly does **not** support or upgrade unmanaged
+clusters, so we own upgrades, backups, and monitoring (see "Operating unmanaged
+Postgres" under Ongoing Operations).
 
 ### 1. Create a Postgres Cluster
 
 ```bash
 flyctl postgres create \
-  --name lion-reader-db \
+  --name lion-reader-pg \
   --region lax \
-  --vm-size shared-cpu-1x \
+  --flex \
+  --vm-size shared-cpu-8x \
+  --vm-memory 2048 \
   --initial-cluster-size 1 \
-  --volume-size 10
+  --volume-size 10 \
+  --enable-backups
 ```
 
 **Options explained:**
 
 - `--name`: Name for your Postgres app (must be unique)
 - `--region`: Should match your app's `primary_region` in `fly.toml`
-- `--vm-size`: `shared-cpu-1x` is sufficient for MVP (~$7/month)
-- `--initial-cluster-size`: 1 for MVP, increase for HA
-- `--volume-size`: 10GB is plenty for MVP
+- `--vm-size`/`--vm-memory`: shared-CPU quotas are pooled per machine, so
+  `shared-cpu-8x` gives Postgres a 50%-of-a-core sustained floor (8 vCPUs × 6.25%
+  baseline each) with burst to 8 cores — better burst behavior than a dedicated
+  `performance-1x` core at similar
+  cost. Memory is deliberately modest: the DB is ~5GB on disk but the hot working
+  set is small (ran comfortably at 1GB / ~98% cache-hit), so 2GB leaves headroom
+  for cache (incl. the search GIN index) and growth. flex sizes `shared_buffers`
+  etc. from VM memory **at each boot**, so resizing RAM re-tunes automatically and
+  scaling down is safe. Save the superuser password it prints.
+- `--initial-cluster-size`: 1 (deliberate — flex multi-node uses repmgr, which has a
+  poor failure-mode track record; WAL backups + volume snapshots are the safety net)
+- `--volume-size`: 10GB is plenty
+- `--enable-backups`: WAL-based backups to a Tigris bucket (PITR via
+  `flyctl postgres backup restore`), on top of daily volume snapshots
 
 ### 2. Attach Postgres to Your App
 
 ```bash
-flyctl postgres attach lion-reader-db --app lion-reader
+flyctl postgres attach lion-reader-pg --app lion-reader
 ```
 
 This automatically:
@@ -128,7 +148,7 @@ This automatically:
 
 ```bash
 # Connect to the database
-flyctl postgres connect -a lion-reader-db
+flyctl postgres connect -a lion-reader-pg
 
 # Run a quick test
 \conninfo
@@ -396,20 +416,57 @@ flyctl scale count 3 --process-group app
 **Connect to database:**
 
 ```bash
-flyctl postgres connect -a lion-reader-db
+# Connect straight to the app database (defaults to the `postgres` admin DB otherwise)
+flyctl postgres connect -a lion-reader-pg --database lion_reader
 ```
 
 **Manual backup:**
 
 ```bash
-flyctl postgres backup create -a lion-reader-db
+flyctl postgres backup create -a lion-reader-pg
 ```
 
 **List backups:**
 
 ```bash
-flyctl postgres backup list -a lion-reader-db
+flyctl postgres backup list -a lion-reader-pg
 ```
+
+### Operating unmanaged Postgres
+
+Fly does not manage this cluster, so these are ours:
+
+- **Watch throttling.** On [fly-metrics.net](https://fly-metrics.net), the
+  `lion-reader-pg` CPU dashboard shows burst balance (`fly_instance_cpu_balance`)
+  and throttle/steal time. Shared-CPU has a ~50%-of-a-core sustained floor (6.25%
+  baseline per vCPU, pooled across the 8) and bursts on a ~500 CPU-second-per-vCPU
+  balance; if the balance pins at 0 outside of backups,
+  the DB is throttled — upgrade the CPU (see below).
+- **Minor version updates:** `flyctl image update -a lion-reader-pg` (restarts the node).
+- **Major version upgrades:** dump/restore into a fresh cluster — Fly does not
+  upgrade unmanaged clusters.
+- **Disk:** 10GB volume; `flyctl volumes extend` when needed. A full volume is an
+  outage you have to notice — check the fly-metrics disk panel occasionally.
+- **Restore drill:** periodically `flyctl postgres backup restore` into a scratch
+  cluster to prove the WAL backups actually restore.
+
+**Temporarily scaling for expensive migrations.** A `machine update` resize is only
+a few-second restart, so for a CPU- or memory-heavy migration you can bump to a
+dedicated tier, run it, then scale back — this is a viable, low-friction pattern:
+
+```bash
+# Up (dedicated CPU removes the shared-CPU throttle). Size by bottleneck, not
+# by "bigger" — a single-threaded table rewrite only needs performance-2x; an
+# index build can use a few cores (see ../migrations/CLAUDE.md).
+flyctl machine update <machine-id> --vm-size performance-4x --app lion-reader-pg
+# ...run the migration...
+# Back down (restore the original RAM explicitly; presets won't)
+flyctl machine update <machine-id> --vm-size shared-cpu-8x --vm-memory 2048 --app lion-reader-pg
+```
+
+Pick the tier by the migration's bottleneck, not by "bigger is better" — see the
+scaling guidance in `../migrations/CLAUDE.md`. Note the web dashboard's scale button
+is disabled for Postgres apps; the CLI is the supported path.
 
 ### Viewing Logs
 
@@ -466,7 +523,7 @@ This usually means database migrations failed.
 flyctl logs | grep -i migration
 
 # Connect to database and check state
-flyctl postgres connect -a lion-reader-db
+flyctl postgres connect -a lion-reader-pg
 ```
 
 **"Health check failed"**
@@ -493,7 +550,7 @@ flyctl secrets list
 # Should show DATABASE_URL
 
 # Re-attach if needed
-flyctl postgres attach lion-reader-db
+flyctl postgres attach lion-reader-pg
 ```
 
 **"Authentication failed"**
@@ -501,8 +558,8 @@ flyctl postgres attach lion-reader-db
 The database user credentials may be wrong. Detach and reattach:
 
 ```bash
-flyctl postgres detach lion-reader-db
-flyctl postgres attach lion-reader-db
+flyctl postgres detach lion-reader-pg
+flyctl postgres attach lion-reader-pg
 ```
 
 ### Redis Connection Issues
@@ -602,14 +659,17 @@ bot). Only `app` is behind the HTTP load balancer; all three share Postgres and 
        +-------------+     +-------------+
 ```
 
-## Cost Estimate (MVP)
+## Cost Estimate (current production shape, July 2026)
 
-| Resource        | Size                 | Estimated Cost    |
-| --------------- | -------------------- | ----------------- |
-| App VM          | shared-cpu-1x, 512MB | ~$5/month         |
-| Postgres        | shared-cpu-1x, 10GB  | ~$7/month         |
-| Redis (Upstash) | Pay-as-you-go        | ~$0-5/month       |
-| **Total**       |                      | **~$12-17/month** |
+| Resource        | Size                    | Estimated Cost    |
+| --------------- | ----------------------- | ----------------- |
+| App VMs         | 2× shared-cpu-2x, 512MB | ~$8/month         |
+| Worker VM       | shared-cpu-1x, 512MB    | ~$3.50/month      |
+| Discord VM      | shared-cpu-1x, 256MB    | ~$2/month         |
+| Postgres        | shared-cpu-8x, 2GB      | ~$15.55/month     |
+| Postgres volume | 10GB                    | ~$1.50/month      |
+| Redis (Upstash) | Pay-as-you-go           | ~$0-5/month       |
+| **Total**       |                         | **~$30-36/month** |
 
 Costs vary by usage. Check [fly.io/docs/about/pricing](https://fly.io/docs/about/pricing/) for current rates.
 
