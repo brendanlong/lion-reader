@@ -117,8 +117,9 @@ flyctl postgres create \
 - `--name`: Name for your Postgres app (must be unique)
 - `--region`: Should match your app's `primary_region` in `fly.toml`
 - `--vm-size`/`--vm-memory`: shared-CPU quotas are pooled per machine, so
-  `shared-cpu-8x` gives Postgres a 50%-of-a-core sustained floor with burst to 8
-  cores — better burst behavior than a dedicated `performance-1x` core at similar
+  `shared-cpu-8x` gives Postgres a 50%-of-a-core sustained floor (8 vCPUs × 6.25%
+  baseline each) with burst to 8 cores — better burst behavior than a dedicated
+  `performance-1x` core at similar
   cost. Memory is deliberately modest: the DB is ~5GB on disk but the hot working
   set is small (ran comfortably at 1GB / ~98% cache-hit), so 2GB leaves headroom
   for cache (incl. the search GIN index) and growth. flex sizes `shared_buffers`
@@ -436,8 +437,9 @@ Fly does not manage this cluster, so these are ours:
 
 - **Watch throttling.** On [fly-metrics.net](https://fly-metrics.net), the
   `lion-reader-pg` CPU dashboard shows burst balance (`fly_instance_cpu_balance`)
-  and throttle/steal time. Shared-CPU has a ~50%-of-a-core sustained floor and
-  bursts on a ~500 CPU-second balance; if the balance pins at 0 outside of backups,
+  and throttle/steal time. Shared-CPU has a ~50%-of-a-core sustained floor (6.25%
+  baseline per vCPU, pooled across the 8) and bursts on a ~500 CPU-second-per-vCPU
+  balance; if the balance pins at 0 outside of backups,
   the DB is throttled — upgrade the CPU (see below).
 - **Minor version updates:** `flyctl image update -a lion-reader-pg` (restarts the node).
 - **Major version upgrades:** dump/restore into a fresh cluster — Fly does not
@@ -452,7 +454,9 @@ a few-second restart, so for a CPU- or memory-heavy migration you can bump to a
 dedicated tier, run it, then scale back — this is a viable, low-friction pattern:
 
 ```bash
-# Up (dedicated CPU removes the shared-CPU throttle)
+# Up (dedicated CPU removes the shared-CPU throttle). Size by bottleneck, not
+# by "bigger" — a single-threaded table rewrite only needs performance-2x; an
+# index build can use a few cores (see ../migrations/CLAUDE.md).
 flyctl machine update <machine-id> --vm-size performance-4x --app lion-reader-pg
 # ...run the migration...
 # Back down (restore the original RAM explicitly; presets won't)
