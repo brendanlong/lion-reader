@@ -10,8 +10,8 @@ actually bit us and how to avoid / recover from them.
 > `fly volumes snapshots create <volume-id>`. Snapshots are cheap, retained
 > independently of the volume, and are your only undo button.
 
-Related: [DEPLOYMENT.md](../DEPLOYMENT.md) · continuous backups are tracked in
-issue #1376 (WAL archiving / PITR).
+Related: [DEPLOYMENT.md](DEPLOYMENT.md). Continuous WAL archiving / PITR is **enabled**
+(issue #1376) — see [Backups & Point-in-Time Recovery (PITR)](#backups--point-in-time-recovery-pitr).
 
 ---
 
@@ -41,7 +41,8 @@ split-brain. Consequences:
 - **3 nodes:** the minimum for real HA / working automatic failover.
 
 Corollary: a "cheap 2-node HA" does not exist here. For durability without a 3rd node,
-prefer **WAL archiving** (#1376) over a hot standby.
+we rely on **WAL archiving** (enabled — see [Backups & PITR](#backups--point-in-time-recovery-pitr))
+rather than a hot standby.
 
 ## NEVER destroy a PG machine without unregistering it first
 
@@ -149,11 +150,121 @@ Caveats:
 
 ---
 
-## Backups (until #1376 lands)
+## Backups & Point-in-Time Recovery (PITR)
 
-Today the only backup is Fly's periodic **volume snapshots** (≈ daily, 5-day retention) →
-**RPO can be ~24h**, and Flex volumes are single-host local NVMe (not replicated). A
-single-node cluster with only snapshots can lose up to a day of data on a disk/host
-failure. Continuous **WAL archiving to object storage** (`wal-g`/`pgBackRest` → R2/S3)
-brings RPO down to seconds and is the higher-value spend than a hot standby — tracked in
-issue #1376.
+Two independent layers protect the database:
+
+1. **Continuous WAL archiving → Tigris (primary).** Fly flex has built-in WAL-based
+   backups: a scheduled base backup plus a continuous stream of WAL segments pushed to a
+   Tigris (S3-compatible) bucket. This gives **point-in-time recovery** — restore to any
+   instant inside the retention window, not just the last snapshot — with an **RPO of
+   seconds** because `--archive-timeout` is set (untuned, a quiet DB's worst-case RPO is
+   larger, since WAL otherwise ships only as 16MB segments fill).
+2. **Daily volume snapshots (floor).** Fly snapshots the 10GB NVMe volume once a day
+   (≈ 5-day retention, ~24h RPO), as the backstop if the WAL archive is ever unavailable.
+   Flex volumes are single-host local NVMe (not replicated), so snapshots alone would risk
+   ~24h of data on a disk/host failure — which is exactly why WAL archiving is the primary.
+
+We deliberately use Fly's built-in WAL archiving rather than hand-rolling
+`wal-g`/`pgBackRest`: the flex image wires up the `archive_command`, the base-backup
+schedule, and the Tigris bucket for us, so there is no custom Postgres image to build and
+keep patched. A hot standby is intentionally **not** used — its value is low RTO
+(auto-failover in seconds), and a standby is not a backup (it replicates bad
+deletes/corruption/migrations instantly). A few minutes of downtime on a rare host failure
+is acceptable; WAL PITR is what actually protects the data. (Issue #1376.)
+
+Backups live on Fly Tigris — already our object-storage and hosting provider (see the
+privacy policy's "Object Storage" subsection) — so no new data processor is introduced.
+
+### Current production status
+
+Backups are **enabled** on `lion-reader-pg` (turned on by `--enable-backups` at create).
+Current config (`fly postgres backup config show -a lion-reader-pg`):
+
+```
+ArchiveTimeout      = 60s
+RecoveryWindow      = 7d
+FullBackupFrequency = 24h
+MinimumRedundancy   = 3
+```
+
+i.e. a **7-day PITR window** with worst-case **RPO ~60s**.
+
+### Enable / configure
+
+```bash
+# One-time, only if a cluster was created without --enable-backups:
+fly postgres backup enable -a lion-reader-pg
+
+# Show / change the config (retention, schedule, bucket):
+fly postgres backup config show   -a lion-reader-pg
+fly postgres backup config update -a lion-reader-pg --recovery-window 7d --archive-timeout 60s
+```
+
+Config flags (`fly postgres backup config update`): `--recovery-window` (retention window
+PITR can target), `--full-backup-frequency` (base-backup cadence, default 24h),
+`--archive-timeout` (max wait before forcing a WAL push — bounds worst-case RPO on an idle
+DB), `--minimum-redundancy` (min base backups to keep). Durations are strings like
+`7d` / `60s`; run with `--help` to confirm the accepted format on the installed flex
+version. Add a bucket lifecycle rule only if you want a hard backstop beyond
+`--recovery-window`.
+
+### List backups / on-demand base backup
+
+```bash
+fly postgres backup list   -a lion-reader-pg
+fly postgres backup create -a lion-reader-pg   # also resets the base-backup timer
+```
+
+### Restore to a point in time (PITR)
+
+Restores always go into a **new** cluster — never in place. `--restore-target-time` takes
+an RFC3339 timestamp:
+
+```bash
+# Restore lion-reader-pg's archive into a fresh cluster, as of a chosen instant:
+fly postgres backup restore lion-reader-pg-restore \
+  -a lion-reader-pg \
+  --restore-target-time 2026-07-18T14:30:00Z
+
+# Verify the data, then repoint the app at the restored cluster:
+fly postgres detach lion-reader-pg           --app lion-reader   # unbind the old DB
+fly postgres attach lion-reader-pg-restore   --app lion-reader   # sets DATABASE_URL to the new DB
+fly apps restart lion-reader
+```
+
+Omit `--restore-target-time` **only** when you want the newest possible state (e.g.
+recovering from hardware/host loss). For corruption or a bad delete/migration, you **must**
+target a time _before_ the incident — otherwise the WAL replay faithfully re-applies the
+damage you're recovering from. Use `--restore-target-name` to select a specific base backup
+by id/alias, and `--restore-target-inclusive=false` to stop _before_ the target time. Run
+`fly postgres backup restore --help` to confirm flag names before a real restore — flex's
+flags occasionally change.
+
+### Restore drill
+
+Do this periodically — an untested backup isn't a backup.
+
+1. Restore ~1h back into a throwaway cluster:
+   ```bash
+   fly postgres backup restore lion-reader-pg-drill -a lion-reader-pg \
+     --restore-target-time <RFC3339 ~1h ago>
+   ```
+2. `fly postgres connect -a lion-reader-pg-drill --database lion_reader` and spot-check row
+   counts / a recent entry against production.
+3. Confirm the target time landed where expected — e.g. a row written _after_ the target
+   time should be absent.
+4. `fly apps destroy lion-reader-pg-drill` to clean up (drill clusters cost money).
+
+### Monitoring
+
+A stalled archive is the dangerous _silent_ failure: if WAL stops shipping, the DB looks
+healthy while PITR quietly stops advancing. Check regularly:
+
+- `fly postgres backup list` shows a recent base backup, and `fly postgres backup config
+show` reports healthy/recent archiving.
+- On [fly-metrics.net](https://fly-metrics.net), watch the primary's `pg_wal` directory —
+  WAL segments piling up locally means archiving is failing to drain them.
+- Eyeball the Tigris backup bucket occasionally for recent WAL objects.
+- **Follow-up:** wire an automated alert (worker job or external cron) that pages if the
+  newest archived WAL is older than N minutes — the manual checks above are the interim.
