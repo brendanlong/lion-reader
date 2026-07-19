@@ -291,10 +291,17 @@ const FEED_ACCEPT_HEADER =
 
 /**
  * Accept header for HTML page requests.
- * Prefers Markdown (text/markdown) but also accepts HTML.
+ *
+ * We deliberately do NOT advertise a preference for `text/markdown`. Some sites
+ * (Quartz/turntrout, gwern.net) honor `Accept: text/markdown` by returning a
+ * whole-page markdown dump or Pandoc-flavored markdown that our GFM converter
+ * mangles — leaking page chrome, dropping content, and losing article structure
+ * Readability would otherwise recover (#1280). Requesting HTML like a browser
+ * lets Readability do article extraction. The trailing wildcard still lets a
+ * markdown-only endpoint (e.g. a raw `.md` URL) respond with markdown, which the
+ * caller detects via Content-Type and converts as a fallback.
  */
-const HTML_ACCEPT_HEADER =
-  "text/markdown,text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
+const HTML_ACCEPT_HEADER = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
 
 // ============================================================================
 // Fetch Utilities
@@ -364,8 +371,10 @@ export interface FetchHtmlPageResult {
 /**
  * Fetches an HTML page with appropriate settings.
  *
- * Uses a longer timeout (30s) and HTML Accept header.
- * Prefers Markdown if available, but accepts HTML.
+ * Uses a longer timeout (30s) and an HTML Accept header. Requests HTML (not
+ * Markdown — see HTML_ACCEPT_HEADER / #1280), but still reports `isMarkdown`
+ * when a server returns markdown anyway (e.g. a raw `.md` URL) so the caller
+ * can convert it as a fallback.
  *
  * @param url - The URL to fetch
  * @returns The content and whether it's Markdown

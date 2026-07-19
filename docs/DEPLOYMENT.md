@@ -73,7 +73,7 @@ flyctl launch --no-deploy
 When prompted:
 
 - **App name**: Choose a unique name (e.g., `lion-reader` or `lion-reader-prod`)
-- **Region**: Select your preferred region. This project's `fly.toml` uses `lax` (US West) as `primary_region`; pick the region closest to you (e.g., `iad` for US East, `lhr` for London) and keep Postgres/Redis in the same one.
+- **Region**: Select your preferred region. This project's `fly.toml` uses `sjc` (US West) as `primary_region`; pick the region closest to you (e.g., `iad` for US East, `lhr` for London) and keep Postgres/Redis in the same one. **Keep the app, Postgres, and Redis all in one region** — a split (e.g. app in one region, DB in another) adds a cross-region proxy hop to every query. See [Fly.io Postgres operations](fly-postgres-ops.md) before changing regions.
 - **Postgres**: Select "No" (we'll provision this separately for more control)
 - **Redis**: Select "No" (we'll use Upstash)
 
@@ -93,7 +93,7 @@ You should see your new app listed.
 
 Lion Reader uses PostgreSQL for all persistent data. Production runs **unmanaged
 Fly Postgres (flex), single node**: `lion-reader-pg`, database `lion_reader`,
-`shared-cpu-8x` / 2GB in `lax`, 10GB volume, PostgreSQL 18. Unmanaged is chosen for
+`shared-cpu-8x` / 2GB in `sjc`, 10GB volume, PostgreSQL 18. Unmanaged is chosen for
 performance-per-dollar (shared-CPU pooling gives more burst headroom per dollar than
 Managed Postgres); the tradeoff is that Fly does **not** support or upgrade unmanaged
 clusters, so we own upgrades, backups, and monitoring (see "Operating unmanaged
@@ -104,7 +104,7 @@ Postgres" under Ongoing Operations).
 ```bash
 flyctl postgres create \
   --name lion-reader-pg \
-  --region lax \
+  --region sjc \
   --flex \
   --vm-size shared-cpu-8x \
   --vm-memory 2048 \
@@ -131,7 +131,7 @@ flyctl postgres create \
 - `--volume-size`: 10GB is plenty
 - `--enable-backups`: creates a Tigris bucket and turns on continuous WAL-based
   backups (point-in-time recovery via `flyctl postgres backup restore`), on top
-  of daily volume snapshots. Restore runbook: [Postgres Operations](postgres-ops.md).
+  of daily volume snapshots. Restore runbook: [Fly Postgres operations](fly-postgres-ops.md#backups--point-in-time-recovery-pitr).
 
 ### 2. Attach Postgres to Your App
 
@@ -181,7 +181,7 @@ flyctl redis create
 When prompted:
 
 - **Name**: `lion-reader-redis`
-- **Region**: Same as your app (e.g., `lax`)
+- **Region**: Same as your app (e.g., `sjc`)
 - **Plan**: Free tier is fine for MVP (100 commands/day limit)
   - For production, choose "Pay-as-you-go" (~$0.20/1M commands)
 - **Eviction**: Enable if you want auto-cleanup of old data
@@ -425,7 +425,7 @@ flyctl postgres connect -a lion-reader-pg --database lion_reader
 `lion-reader-pg` (point-in-time recovery, 7-day window, worst-case RPO ~60s), on
 top of daily volume snapshots. The full enable/configure/**restore** runbook —
 including PITR restore, the periodic restore drill, and monitoring — lives in
-[Postgres Operations](postgres-ops.md).
+[Fly Postgres operations](fly-postgres-ops.md#backups--point-in-time-recovery-pitr).
 
 ### Operating unmanaged Postgres
 
@@ -444,7 +444,7 @@ Fly does not manage this cluster, so these are ours:
   outage you have to notice — check the fly-metrics disk panel occasionally.
 - **Backups & restore drill:** WAL archiving to Tigris gives PITR; periodically
   restore into a scratch cluster to prove it works. Full procedure in
-  [Postgres Operations](postgres-ops.md).
+  [Fly Postgres operations](fly-postgres-ops.md#backups--point-in-time-recovery-pitr).
 
 **Temporarily scaling for expensive migrations.** A `machine update` resize is only
 a few-second restart, so for a CPU- or memory-heavy migration you can bump to a
