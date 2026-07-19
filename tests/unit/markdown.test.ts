@@ -491,6 +491,31 @@ Body continues here.
     expect(result.html).toContain("Bravo.");
   });
 
+  it("renders inline and display TeX as MathML", async () => {
+    const markdown = `Mass-energy is $E = mc^2$.
+
+$$\\int_0^1 x\\,dx = \\frac{1}{2}$$`;
+
+    const result = await processMarkdown(markdown);
+    // Inline math → presentation MathML.
+    expect(result.html).toContain("<math");
+    expect(result.html).toMatch(/<msup><mi>c<\/mi><mn>2<\/mn><\/msup>/);
+    // Display math carries the block flag.
+    expect(result.html).toContain('display="block"');
+    expect(result.html).toContain("<mfrac>");
+    // The `$…$` / `$$…$$` delimiters are consumed, not left as literal text.
+    expect(result.html).not.toContain("$E = mc^2$");
+    expect(result.html).not.toContain("$$");
+    // Note: the TeX source still lives in the `<annotation>` at this stage; the
+    // read-path sanitizer drops it (see sanitize-entry-html.test.ts).
+  });
+
+  it("does not throw on malformed TeX", async () => {
+    const markdown = `Broken math: $\\frac{1}{$ and text after.`;
+    // throwOnError:false — malformed TeX must not blow up processMarkdown.
+    await expect(processMarkdown(markdown)).resolves.toBeDefined();
+  });
+
   it("handles frontmatter with unquoted colons in values (#818)", async () => {
     const markdown = `---
 description: A model that matches quality
