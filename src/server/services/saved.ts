@@ -27,6 +27,7 @@ import { absolutizeUrls, cleanContentAsync } from "@/server/feed/content-cleaner
 import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
 import { getOrCreateSavedFeed, getSavedFeedId, SAVED_FEED_TITLE } from "@/server/feed/saved-feed";
 import { generateSummary, stripHtml } from "@/server/html/strip-html";
+import { computeSavedArticleExcerpt } from "@/server/services/saved-excerpt";
 import { escapeHtml } from "@/server/http/html";
 import { sanitizeEntryContentFamily } from "@/server/html/sanitize-entry";
 import { logger } from "@/lib/logger";
@@ -967,21 +968,8 @@ export async function saveArticle(
   const shouldSkipReadability = Boolean(pluginContent?.skipReadability) || markdownResult !== null;
   const cleaned = shouldSkipReadability ? null : await cleanContentAsync(html, { url: contentUrl });
 
-  // Generate excerpt - prefer frontmatter summary for Markdown content
-  let excerpt: string | null = null;
-  if (markdownResult?.summary) {
-    // Use summary from frontmatter
-    excerpt = markdownResult.summary;
-  } else if (pluginContent) {
-    excerpt = generateSummary(pluginContent.html) || null;
-  } else if (markdownResult) {
-    excerpt = generateSummary(html) || null;
-  } else if (cleaned) {
-    excerpt = cleaned.excerpt || cleaned.textContent.slice(0, 300).trim() || null;
-    if (excerpt && excerpt.length > 300) {
-      excerpt = excerpt.slice(0, 297) + "...";
-    }
-  }
+  // Generate excerpt (see computeSavedArticleExcerpt for precedence rationale).
+  const excerpt = computeSavedArticleExcerpt({ markdownResult, cleaned, pluginContent, html });
 
   // Build final values - prefer plugin/API data, then provided hint, then
   // extracted metadata, then Readability
