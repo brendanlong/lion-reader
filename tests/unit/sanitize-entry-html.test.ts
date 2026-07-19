@@ -343,6 +343,20 @@ describe("sanitizeEntryHtml", () => {
       const out = sanitizeEntryHtml('<p data-para-id="3">x</p>') ?? "";
       expect(out).toContain('data-para-id="3"');
     });
+
+    it("preserves ARIA role/aria-* hooks (footnote assistive-tech semantics)", () => {
+      // LessWrong-style footnotes carry doc-* roles that screen readers use to
+      // announce footnotes; these attributes are inert and must survive.
+      const html =
+        '<sup><a href="#fn1" role="doc-noteref" aria-describedby="fn1">1</a></sup>' +
+        '<ol role="doc-endnotes"><li role="doc-endnote" aria-label="Footnote 1">note</li></ol>';
+      const out = sanitizeEntryHtml(html) ?? "";
+      expect(out).toContain('role="doc-noteref"');
+      expect(out).toContain('role="doc-endnotes"');
+      expect(out).toContain('role="doc-endnote"');
+      expect(out).toContain('aria-describedby="fn1"');
+      expect(out).toContain('aria-label="Footnote 1"');
+    });
   });
 
   describe("YouTube embed iframes (issue #1115)", () => {

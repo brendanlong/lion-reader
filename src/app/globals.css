@@ -805,6 +805,51 @@ img.content-img-loading {
 }
 
 /* =================================
+   Reader Prose Footnotes
+
+   The CKEditor 5 footnotes plugin used on ForumMagnum sites (LessWrong, EA
+   Forum, Alignment Forum, etc.) emits a footnote section as an
+   <ol class="footnote-section"> whose items each start with a "^" back-link
+   (a <sup> inside <span class="footnote-back-link">) followed by the footnote
+   body in <div class="footnote-content">. Because that body is a block <div>,
+   Tailwind Typography drops it onto its own line, stranding the tiny superscript
+   "^" above each footnote with a large gap (and the <div>'s own <p> adds prose
+   margins on top). Pull the back-link and the footnote body back onto the list
+   marker's line so a footnote reads like "1. ^ text", matching the source.
+
+   Keyed off the plugin's class names (not a hostname), so it fixes every feed
+   using this plugin. The id/class/#fragment anchors survive sanitization, so
+   jump-to-footnote and jump-back already work — this is purely layout. */
+
+.reader-prose .footnote-content,
+.reader-prose .footnote-content > p:first-child {
+  display: inline;
+}
+/* Multi-paragraph footnotes: only the first paragraph joins the caret line;
+   the rest flow as normal blocks below it with an even gap (not Typography's
+   larger inter-paragraph margin, which looks off against the tightened list). */
+.reader-prose .footnote-content > p:not(:first-child) {
+  display: block;
+  margin: 0.5em 0 0;
+}
+
+.reader-prose .footnote-back-link {
+  margin-right: 0.35em;
+}
+/* Drop the caret from superscript to the baseline so it reads as an inline
+   "jump back" affordance beside the text, not a stranded superscript. */
+.reader-prose .footnote-back-link sup {
+  vertical-align: baseline;
+  font-size: inherit;
+}
+
+/* Tighten the space between footnotes now that each is a single line + body. */
+.reader-prose .footnote-section > li {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+
+/* =================================
    Reader Prose Video Embeds
 
    The only iframes that survive sanitization are YouTube embeds (see
