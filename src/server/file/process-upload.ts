@@ -1,16 +1,19 @@
 /**
- * File upload processing module.
+ * File upload conversion module.
  *
- * Handles conversion of uploaded files to HTML for storage as saved articles.
+ * Converts an uploaded file to raw article HTML. This is only the *acquisition*
+ * step — Readability cleaning, excerpt generation, and metadata (title / author /
+ * site name) all happen downstream in `buildArticleFields` (see `saved.ts`), so
+ * uploads share exactly the same processing as URL saves.
+ *
  * Supports:
- * - .docx files → mammoth conversion → Readability cleaning
- * - .html files → Readability cleaning
- * - .md files → marked conversion (no cleaning needed)
+ * - .docx files → mammoth conversion (Readability runs downstream)
+ * - .html files → passthrough (Readability runs downstream)
+ * - .md/.txt files → marked conversion (Readability skipped downstream, like a
+ *   Markdown URL save)
  */
 
 import * as mammoth from "mammoth";
-import { cleanContentAsync } from "@/server/feed/content-cleaner";
-import { generateSummary, summarizeCleanedContent } from "@/server/html/strip-html";
 import { logger } from "@/lib/logger";
 import { processMarkdown as convertMarkdown } from "@/server/markdown";
 
@@ -24,19 +27,27 @@ import { processMarkdown as convertMarkdown } from "@/server/markdown";
 export type SupportedFileType = "docx" | "html" | "markdown";
 
 /**
- * Result from processing an uploaded file.
+ * Raw content produced by converting an uploaded file. Fed to `buildArticleFields`
+ * as an article content bundle (with a null URL).
  */
-export interface ProcessedFile {
-  /** The cleaned/converted HTML content */
-  contentCleaned: string;
-  /** Plain text excerpt for preview */
-  excerpt: string | null;
-  /** Extracted or derived title (from filename or content) */
-  title: string | null;
-  /** Extracted author (from frontmatter, metadata, or Readability) */
-  author: string | null;
-  /** Original file type */
+export interface ConvertedUpload {
+  /** Raw article HTML (stored as content_original; Readability runs on it downstream). */
+  html: string;
+  /**
+   * Markdown conversion result — set for .md/.txt, null for .docx/.html. A
+   * non-null value tells `buildArticleFields` to skip Readability (as with a
+   * Markdown URL save) and use the frontmatter title/summary/author.
+   */
+  markdownResult: {
+    html: string;
+    title: string | null;
+    summary: string | null;
+    author: string | null;
+  } | null;
+  /** Detected file type (drives the display site name). */
   fileType: SupportedFileType;
+  /** Original filename, used downstream as a last-resort title. */
+  filename: string;
 }
 
 // ============================================================================
@@ -68,9 +79,10 @@ export function detectFileType(filename: string): SupportedFileType | null {
 }
 
 /**
- * Extracts a title from a filename by removing the extension.
+ * Extracts a title from a filename by removing the extension. Used downstream as
+ * a last-resort title when nothing better could be extracted from the content.
  */
-function titleFromFilename(filename: string): string {
+export function titleFromFilename(filename: string): string {
   // Remove extension
   let title = filename.replace(/\.(docx|html?|md|markdown|txt)$/i, "");
 
@@ -86,13 +98,13 @@ function titleFromFilename(filename: string): string {
 }
 
 // ============================================================================
-// File Processors
+// File Converters
 // ============================================================================
 
 /**
- * Converts a .docx file buffer to HTML using mammoth, then cleans with Readability.
+ * Converts a .docx file buffer to HTML using mammoth. Readability runs downstream.
  */
-async function processDocx(buffer: Buffer, filename: string): Promise<ProcessedFile> {
+async function convertDocx(buffer: Buffer, filename: string): Promise<ConvertedUpload> {
   const styleMap = ["p[style-name='Title'] => h1:fresh", "p[style-name='Subtitle'] => h2:fresh"];
 
   const result = await mammoth.convertToHtml({ buffer }, { styleMap });
@@ -104,105 +116,45 @@ async function processDocx(buffer: Buffer, filename: string): Promise<ProcessedF
     });
   }
 
-  const rawHtml = result.value;
-
-  // Wrap in HTML structure for Readability
-  const fullHtml = `<!DOCTYPE html><html><body>${rawHtml}</body></html>`;
-
-  // Clean with Readability
-  const cleaned = await cleanContentAsync(fullHtml, { minCleanedLength: 10 });
-
-  // Use cleaned content if available, otherwise use raw mammoth output
-  const contentCleaned = cleaned?.content ?? rawHtml;
-  const excerpt = cleaned ? summarizeCleanedContent(cleaned) : generateSummary(rawHtml);
-
+  // Wrap in HTML structure so downstream Readability has a document to parse.
   return {
-    contentCleaned,
-    excerpt: excerpt || null,
-    title: cleaned?.title || titleFromFilename(filename),
-    author: cleaned?.byline || null,
+    html: `<!DOCTYPE html><html><body>${result.value}</body></html>`,
+    markdownResult: null,
     fileType: "docx",
+    filename,
   };
 }
 
 /**
- * Processes an HTML file by cleaning with Readability.
+ * Converts Markdown to HTML using marked. Frontmatter title/description/author
+ * are extracted here and passed through as the markdown result so downstream
+ * treats it like a Markdown URL save (Readability skipped).
  */
-async function processHtml(content: string, filename: string): Promise<ProcessedFile> {
-  // Clean with Readability
-  const cleaned = await cleanContentAsync(content, { minCleanedLength: 10 });
-
-  if (cleaned) {
-    return {
-      contentCleaned: cleaned.content,
-      excerpt: summarizeCleanedContent(cleaned) || null,
-      title: cleaned.title || titleFromFilename(filename),
-      author: cleaned.byline || null,
-      fileType: "html",
-    };
-  }
-
-  // If Readability fails, return the raw HTML (sanitization happens on display)
+async function convertMarkdownFile(content: string, filename: string): Promise<ConvertedUpload> {
+  const { html, title, summary, author } = await convertMarkdown(content);
   return {
-    contentCleaned: content,
-    excerpt: generateSummary(content) || null,
-    title: titleFromFilename(filename),
-    author: null,
-    fileType: "html",
-  };
-}
-
-/**
- * Converts Markdown to HTML using marked.
- * Markdown content is kept as-is semantically, just rendered to HTML.
- * Supports YAML frontmatter for title, description, and author extraction.
- */
-async function processMarkdown(content: string, filename: string): Promise<ProcessedFile> {
-  // Convert markdown to HTML and extract title/summary/author from frontmatter or content
-  const {
-    html: contentCleaned,
-    title: extractedTitle,
-    summary: frontmatterSummary,
-    author,
-  } = await convertMarkdown(content);
-  const title = extractedTitle || titleFromFilename(filename);
-
-  // Prefer frontmatter description, fall back to generated summary from content
-  const excerpt = frontmatterSummary ?? generateSummary(contentCleaned);
-
-  return {
-    contentCleaned,
-    excerpt: excerpt || null,
-    title,
-    author,
+    html,
+    markdownResult: { html, title, summary, author },
     fileType: "markdown",
+    filename,
   };
 }
 
 // ============================================================================
-// Main Processing Function
+// Main Conversion Function
 // ============================================================================
 
 /**
- * Processes an uploaded file and converts it to HTML for storage.
+ * Converts an uploaded file to raw article content for `buildArticleFields`.
  *
  * @param content - The file content (Buffer for binary files, string for text)
  * @param filename - The original filename (used for type detection and title)
- * @returns Processed file with HTML content, or throws if unsupported type
- *
- * @example
- * ```typescript
- * // For a docx file
- * const result = await processUploadedFile(buffer, "document.docx");
- *
- * // For a markdown file
- * const result = await processUploadedFile(mdContent, "notes.md");
- * ```
+ * @returns The converted content, or throws if the type is unsupported
  */
-export async function processUploadedFile(
+export async function convertUploadedFile(
   content: Buffer | string,
   filename: string
-): Promise<ProcessedFile> {
+): Promise<ConvertedUpload> {
   const fileType = detectFileType(filename);
 
   if (!fileType) {
@@ -211,25 +163,25 @@ export async function processUploadedFile(
     );
   }
 
-  logger.info("Processing uploaded file", { filename, fileType });
+  logger.info("Converting uploaded file", { filename, fileType });
 
   switch (fileType) {
     case "docx": {
       // docx requires Buffer
       const buffer = typeof content === "string" ? Buffer.from(content, "base64") : content;
-      return processDocx(buffer, filename);
+      return convertDocx(buffer, filename);
     }
 
     case "html": {
-      // HTML should be string
+      // HTML should be string; Readability runs downstream.
       const htmlContent = typeof content === "string" ? content : content.toString("utf-8");
-      return processHtml(htmlContent, filename);
+      return { html: htmlContent, markdownResult: null, fileType: "html", filename };
     }
 
     case "markdown": {
       // Markdown should be string (also handles plain text files)
       const mdContent = typeof content === "string" ? content : content.toString("utf-8");
-      return processMarkdown(mdContent, filename);
+      return convertMarkdownFile(mdContent, filename);
     }
   }
 }

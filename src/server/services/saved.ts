@@ -22,6 +22,11 @@ import {
 } from "@/server/http/fetch";
 import { parseFeed } from "@/server/feed/parser";
 import { processMarkdown } from "@/server/markdown";
+import {
+  titleFromFilename,
+  type ConvertedUpload,
+  type SupportedFileType,
+} from "@/server/file/process-upload";
 import { usageLimitsConfig } from "@/server/config/env";
 import { absolutizeUrls, cleanContentAsync } from "@/server/feed/content-cleaner";
 import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
@@ -242,6 +247,148 @@ function generateContentHash(title: string | null, content: string | null): stri
   return createHash("sha256").update(hashInput, "utf8").digest("hex");
 }
 
+/**
+ * Reserved-TLD base URL for uploaded content, which has no real origin. Relative
+ * URLs in uploads resolve against this instead of Lion Reader's own domain, so a
+ * stray relative link becomes an obviously-broken external URL rather than one
+ * that silently points back into the app. `.invalid` never resolves (RFC 6761).
+ */
+const UPLOAD_BASE_URL = "https://uploaded.invalid/";
+
+/**
+ * A unit of acquired content, however it was obtained. `saveArticle` fills it by
+ * fetching a URL; the upload paths fill it by converting a file/Markdown. This is
+ * the seam the "save vs. upload" difference collapses to: only acquisition (and a
+ * null URL for uploads) differs — everything downstream is shared.
+ */
+interface ArticleContentBundle {
+  /** Raw content HTML (stored as content_original). */
+  html: string;
+  /** Base URL for metadata + relative-URL resolution; null for uploads (no origin). */
+  contentUrl: string | null;
+  /** Plugin-supplied content that bypasses normal metadata/Readability sources. */
+  pluginContent: {
+    html: string;
+    title?: string | null;
+    author?: string | null;
+    siteName?: string;
+    skipReadability?: boolean;
+  } | null;
+  /** Markdown conversion result (Readability is skipped for Markdown). */
+  markdownResult: {
+    html: string;
+    title: string | null;
+    summary: string | null;
+    author: string | null;
+  } | null;
+}
+
+/** Caller-supplied hints that outrank (title) or backstop (filename) extraction. */
+interface ArticleFieldHints {
+  /** Explicit caller-provided title — highest precedence. */
+  providedTitle?: string | null;
+  /** Upload filename, used only as a last-resort title (below Readability). */
+  filename?: string | null;
+  /** Provided site name (uploads: "Uploaded Document", etc.). */
+  siteName?: string | null;
+}
+
+/** The stored article fields buildArticleFields derives, plus quality-guard text. */
+interface BuiltArticleFields {
+  title: string | null;
+  author: string | null;
+  siteName: string | null;
+  contentOriginal: string;
+  contentCleaned: string | null;
+  summary: string | null;
+  imageUrl: string | null;
+  contentHash: string;
+  /** Plain text of the new content, for the refetch quality guard. */
+  newTextContent: string;
+}
+
+/**
+ * Turn an acquired content bundle into the stored article fields — shared by the
+ * URL-save path and the file/Markdown upload paths, so both derive title, author,
+ * site name, excerpt, cleaned content, and image identically. The only thing that
+ * differs between "save" and "upload" is how the bundle was acquired (fetch vs.
+ * file conversion) and that uploads carry a null URL.
+ *
+ * Field precedence:
+ *  - title:  provided → source (plugin / Markdown frontmatter / OG or `<title>`) → Readability → filename
+ *  - author: source (plugin / frontmatter / OG) → Readability byline
+ *  - excerpt: see {@link computeSavedArticleExcerpt} (frontmatter → cleaned → plugin/Markdown HTML)
+ */
+async function buildArticleFields(
+  bundle: ArticleContentBundle,
+  hints: ArticleFieldHints = {},
+  // Uploads are trusted user content, so they pass a lower minCleanedLength than
+  // a web fetch (where a short extraction usually means a failed JS-heavy page).
+  cleanOptions: { minCleanedLength?: number } = {}
+): Promise<BuiltArticleFields> {
+  const { html, contentUrl, pluginContent, markdownResult } = bundle;
+  // Uploads have no origin; a guaranteed-broken base keeps relative URLs from
+  // resolving against Lion Reader itself.
+  const baseUrl = contentUrl ?? UPLOAD_BASE_URL;
+
+  // Extract metadata from Open Graph / meta tags.
+  const metadata = extractMetadata(html, baseUrl);
+
+  // Run Readability unless a plugin opted out or this is Markdown. Extraction
+  // runs on the libuv thread pool so large pages don't block the event loop.
+  const shouldSkipReadability = Boolean(pluginContent?.skipReadability) || markdownResult !== null;
+  const cleaned = shouldSkipReadability
+    ? null
+    : await cleanContentAsync(html, { url: baseUrl, ...cleanOptions });
+
+  // When Readability ran, its output already has absolutized URLs; when it was
+  // skipped for plugin/Markdown content, absolutize here. When neither produced
+  // anything (Readability failed on a plain page), store NULL rather than the raw
+  // full page — readers fall back to the sanitized original content.
+  const contentCleaned =
+    markdownResult?.html ??
+    cleaned?.content ??
+    (pluginContent ? absolutizeUrls(pluginContent.html, baseUrl) : null);
+
+  // Precedence: explicit caller value → direct-from-source (plugin, Markdown
+  // frontmatter, Open Graph/<title>) → Readability → filename (title only).
+  const title =
+    hints.providedTitle ||
+    pluginContent?.title ||
+    markdownResult?.title ||
+    metadata.title ||
+    cleaned?.title ||
+    (hints.filename ? titleFromFilename(hints.filename) || null : null) ||
+    null;
+  const author =
+    pluginContent?.author || markdownResult?.author || metadata.author || cleaned?.byline || null;
+  const siteName = hints.siteName || pluginContent?.siteName || metadata.siteName || null;
+
+  const summary = computeSavedArticleExcerpt({ markdownResult, cleaned, pluginContent, html });
+
+  const contentHash = generateContentHash(title, contentCleaned || html);
+
+  // Plain text for the refetch quality guard: prefer the raw plugin body, else
+  // Readability's text, else the raw HTML stripped.
+  const newTextContent = pluginContent
+    ? stripHtml(pluginContent.html)
+    : cleaned
+      ? cleaned.textContent
+      : stripHtml(html);
+
+  return {
+    title,
+    author,
+    siteName,
+    contentOriginal: html,
+    contentCleaned,
+    summary,
+    imageUrl: metadata.imageUrl,
+    contentHash,
+    newTextContent,
+  };
+}
+
 // ============================================================================
 // Shared Insert Helper
 // ============================================================================
@@ -264,8 +411,9 @@ interface InsertSavedEntryParams {
 /**
  * Insert a saved entry into the database and publish a new-entry event.
  *
- * Handles the shared boilerplate for both saveArticle and createUploadedArticle:
- * entry insert, user_entries insert, SSE publish, and SavedArticle construction.
+ * Handles the shared boilerplate for the URL-save path (saveArticle /
+ * savePlaceholderArticle) and the upload path (insertUploadedArticle): entry
+ * insert, user_entries insert, SSE publish, and SavedArticle construction.
  *
  * The entry and user_entries inserts run in one transaction so a crash can't
  * leave an entry with no user_entries row (which would make it invisible).
@@ -274,8 +422,8 @@ interface InsertSavedEntryParams {
  * `onConflictDoNothing` on `(feed_id, guid)`, so a concurrent duplicate save
  * (e.g. a double-click) is idempotent instead of surfacing a raw unique-violation
  * 500 (issue #952). The caller re-selects the existing article in that case.
- * `createUploadedArticle` uses a random `uploaded:{uuid}` guid, so it never
- * conflicts and always gets a row back.
+ * Uploads use a random `uploaded:{uuid}` guid, so they never conflict and always
+ * get a row back.
  */
 async function insertSavedEntry(
   db: typeof dbType,
@@ -366,6 +514,74 @@ async function insertSavedEntry(
     starred: false,
     savedAt: now,
   };
+}
+
+/** Display site name for an uploaded file, by type. */
+const UPLOAD_SITE_NAMES: Record<SupportedFileType, string> = {
+  docx: "Uploaded Document",
+  html: "Uploaded HTML",
+  markdown: "Uploaded Text",
+};
+
+/** The derived fields an uploaded (null-URL) article is stored with. */
+interface UploadedArticleFields {
+  title: string | null;
+  author: string | null;
+  siteName: string | null;
+  contentOriginal: string;
+  contentCleaned: string | null;
+  summary: string | null;
+  imageUrl: string | null;
+  contentHash: string;
+}
+
+/**
+ * Insert a null-URL (uploaded) saved article from already-derived fields.
+ *
+ * Uploaded articles have no URL, so — unlike {@link saveArticle} — there is no
+ * existing-by-URL lookup, refetch, quality guard, or placeholder heal: the guid
+ * is a fresh random `uploaded:{uuid}` that never conflicts. This is the shared
+ * tail for every upload path (file upload, Markdown, pre-cleaned HTML).
+ */
+async function insertUploadedArticle(
+  db: typeof dbType,
+  userId: string,
+  fields: UploadedArticleFields
+): Promise<SavedArticle> {
+  const maxSize = usageLimitsConfig.maxSavedArticleSizeBytes;
+  if (fields.contentOriginal.length > maxSize) {
+    throw errors.contentTooLarge("Uploaded article", maxSize);
+  }
+
+  const savedFeedId = await getOrCreateSavedFeed(db, userId);
+
+  // Fresh random guid → the insert can't conflict.
+  const guid = `uploaded:${generateUuidv7()}`;
+
+  const saved = await insertSavedEntry(db, userId, savedFeedId, {
+    guid,
+    url: null,
+    title: fields.title,
+    author: fields.author,
+    contentOriginal: fields.contentOriginal,
+    contentCleaned: fields.contentCleaned,
+    summary: fields.summary,
+    siteName: fields.siteName,
+    imageUrl: fields.imageUrl,
+    contentHash: fields.contentHash,
+  });
+
+  if (!saved) {
+    throw new Error("Uploaded article insert unexpectedly conflicted");
+  }
+
+  logger.info("Created uploaded article", {
+    entryId: saved.id,
+    title: fields.title,
+    siteName: fields.siteName,
+  });
+
+  return saved;
 }
 
 // ============================================================================
@@ -953,49 +1169,21 @@ export async function saveArticle(
     existingEntry = existing[0];
   }
 
-  const { html, contentUrl, pluginContent, markdownResult } = await acquireArticleContent(
-    userId,
-    params,
-    normalizedUrl
-  );
+  const bundle = await acquireArticleContent(userId, params, normalizedUrl);
+  const { html } = bundle;
 
-  // Extract metadata from Open Graph / meta tags
-  const metadata = extractMetadata(html, contentUrl);
-
-  // Run Readability for clean content (skip for plugins that request it, or
-  // for Markdown). Extraction runs on the libuv thread pool so large pages
-  // don't block the event loop.
-  const shouldSkipReadability = Boolean(pluginContent?.skipReadability) || markdownResult !== null;
-  const cleaned = shouldSkipReadability ? null : await cleanContentAsync(html, { url: contentUrl });
-
-  // Generate excerpt (see computeSavedArticleExcerpt for precedence rationale).
-  const excerpt = computeSavedArticleExcerpt({ markdownResult, cleaned, pluginContent, html });
-
-  // Build final values - prefer plugin/API data, then provided hint, then
-  // extracted metadata, then Readability
-  // When Readability ran, its output already has absolutized URLs; when it
-  // was skipped for plugin/API content, absolutize here.
-  // When neither produced anything (Readability failed on a plain page),
-  // store NULL rather than the raw full page — readers fall back to the
-  // sanitized original content.
-  const finalContentCleaned =
-    markdownResult?.html ??
-    cleaned?.content ??
-    (pluginContent ? absolutizeUrls(pluginContent.html, contentUrl) : null);
-
-  const finalTitle =
-    pluginContent?.title ||
-    params.title ||
-    markdownResult?.title ||
-    metadata.title ||
-    cleaned?.title ||
-    null;
-  const finalAuthor =
-    pluginContent?.author || markdownResult?.author || metadata.author || cleaned?.byline || null;
-  const finalSiteName = pluginContent?.siteName || metadata.siteName || null;
-
-  // Compute content hash for narration deduplication
-  const contentHash = generateContentHash(finalTitle, finalContentCleaned || html);
+  // Derive the stored fields from the acquired content. Shared with the upload
+  // paths (buildArticleFields) so save and upload stay in lockstep.
+  const {
+    title: finalTitle,
+    author: finalAuthor,
+    siteName: finalSiteName,
+    contentCleaned: finalContentCleaned,
+    summary: excerpt,
+    imageUrl,
+    contentHash,
+    newTextContent,
+  } = await buildArticleFields(bundle, { providedTitle: params.title ?? null });
 
   // Handle refetch: update the existing entry if quality is acceptable
   if (existingEntry) {
@@ -1013,11 +1201,7 @@ export async function saveArticle(
     if (!skipQualityGuard) {
       const oldTextLength = oldEntry.contentCleaned ? stripHtml(oldEntry.contentCleaned).length : 0;
 
-      const newTextLength = pluginContent
-        ? stripHtml(pluginContent.html).length
-        : cleaned
-          ? cleaned.textContent.length
-          : stripHtml(html).length;
+      const newTextLength = newTextContent.length;
 
       // Reject if new content is significantly shorter AND short in absolute terms
       // This catches error pages and access-denied pages while allowing legitimate edits
@@ -1055,7 +1239,7 @@ export async function saveArticle(
       contentCleaned: finalContentCleaned,
       summary: excerpt,
       siteName: finalSiteName,
-      imageUrl: metadata.imageUrl,
+      imageUrl,
       contentHash,
       updatedAt: now,
       // A successful real save clears the placeholder mark (no-op when the
@@ -1110,7 +1294,7 @@ export async function saveArticle(
       title: finalTitle,
       siteName: finalSiteName,
       author: finalAuthor,
-      imageUrl: metadata.imageUrl,
+      imageUrl,
       // Sanitize the body for the response (raw must not leave the service layer).
       contentCleaned: await sanitizeEntryHtmlAsync(finalContentCleaned),
       excerpt,
@@ -1130,7 +1314,7 @@ export async function saveArticle(
     contentCleaned: finalContentCleaned,
     summary: excerpt,
     siteName: finalSiteName,
-    imageUrl: metadata.imageUrl,
+    imageUrl,
     contentHash,
   });
 
@@ -1285,68 +1469,68 @@ export async function deleteSavedArticle(
 /**
  * Create a saved article from pre-processed HTML content.
  *
- * This is the core function for creating uploaded articles. It accepts
- * already-processed HTML content and handles the database insertion.
- * Used by both the MCP uploadArticle and tRPC uploadFile endpoints.
+ * Accepts already-cleaned HTML plus caller-supplied metadata and inserts it
+ * as-is (no Readability, no metadata extraction) — for callers that already hold
+ * final content. The file/Markdown upload entry points instead run their content
+ * through {@link buildArticleFields} (see {@link createSavedFromUpload} /
+ * {@link uploadArticle}).
  */
 export async function createUploadedArticle(
   db: typeof dbType,
   userId: string,
   params: CreateUploadedArticleParams
 ): Promise<SavedArticle> {
-  // Check content size
-  const maxSize = usageLimitsConfig.maxSavedArticleSizeBytes;
-  if (params.contentHtml.length > maxSize) {
-    throw errors.contentTooLarge("Uploaded article", maxSize);
-  }
-
-  // Get or create the user's saved feed
-  const savedFeedId = await getOrCreateSavedFeed(db, userId);
-
-  // Generate excerpt if not provided
-  const excerpt = params.excerpt ?? generateSummary(params.contentHtml) ?? null;
-
-  // Generate a unique guid for uploaded articles (no URL)
-  // Format: uploaded:{uuid} to distinguish from URL-based saved articles
-  const guid = `uploaded:${generateUuidv7()}`;
-
-  // Compute content hash for narration deduplication
-  const contentHash = generateContentHash(params.title, params.contentHtml);
-
   // Original and cleaned are the same string here; stored raw and sanitized per
   // read (issue #1282).
-  const saved = await insertSavedEntry(db, userId, savedFeedId, {
-    guid,
-    url: null,
+  return insertUploadedArticle(db, userId, {
     title: params.title,
     author: params.author ?? null,
+    siteName: params.siteName,
     contentOriginal: params.contentHtml,
     contentCleaned: params.contentHtml,
-    summary: excerpt,
-    siteName: params.siteName,
+    summary: params.excerpt ?? generateSummary(params.contentHtml) ?? null,
     imageUrl: null,
-    contentHash,
+    contentHash: generateContentHash(params.title, params.contentHtml),
   });
+}
 
-  // The guid is a fresh random `uploaded:{uuid}`, so the insert can't conflict.
-  if (!saved) {
-    throw new Error("Uploaded article insert unexpectedly conflicted");
-  }
-
-  logger.info("Created uploaded article", {
-    entryId: saved.id,
-    title: params.title,
-    siteName: params.siteName,
-  });
-
-  return saved;
+/**
+ * Create a saved article from an uploaded file (see `convertUploadedFile`).
+ *
+ * The converted content runs through the same {@link buildArticleFields} pipeline
+ * as a URL save — Readability, excerpt, and title/author/site-name precedence —
+ * with a null URL and the filename as a last-resort title.
+ */
+export async function createSavedFromUpload(
+  db: typeof dbType,
+  userId: string,
+  params: { converted: ConvertedUpload; title?: string | null }
+): Promise<SavedArticle> {
+  const { converted } = params;
+  const fields = await buildArticleFields(
+    {
+      html: converted.html,
+      contentUrl: null,
+      pluginContent: null,
+      markdownResult: converted.markdownResult,
+    },
+    {
+      providedTitle: params.title ?? null,
+      filename: converted.filename,
+      siteName: UPLOAD_SITE_NAMES[converted.fileType],
+    },
+    { minCleanedLength: 10 }
+  );
+  return insertUploadedArticle(db, userId, fields);
 }
 
 /**
  * Upload an article with Markdown content.
  *
  * Creates a saved article from Markdown content without requiring a URL.
- * Useful for AI assistants uploading content directly.
+ * Useful for AI assistants uploading content directly. Shares the same
+ * downstream processing as file uploads and URL saves via
+ * {@link buildArticleFields}.
  */
 export async function uploadArticle(
   db: typeof dbType,
@@ -1359,22 +1543,12 @@ export async function uploadArticle(
     throw errors.contentTooLarge("Uploaded article", maxSize);
   }
 
-  // Convert markdown to HTML and extract title/summary/author from frontmatter or content
-  const {
-    html: contentCleaned,
-    title: extractedTitle,
-    summary,
-    author,
-  } = await processMarkdown(params.content);
-
-  // Use provided title, falling back to extracted title
-  const finalTitle = params.title || extractedTitle;
-
-  return createUploadedArticle(db, userId, {
-    contentHtml: contentCleaned,
-    title: finalTitle,
-    excerpt: summary,
-    siteName: "Uploaded Article",
-    author,
-  });
+  // Convert markdown to HTML (with frontmatter title/summary/author); Readability
+  // is skipped downstream because markdownResult is set.
+  const markdownResult = await processMarkdown(params.content);
+  const fields = await buildArticleFields(
+    { html: markdownResult.html, contentUrl: null, pluginContent: null, markdownResult },
+    { providedTitle: params.title, siteName: "Uploaded Article" }
+  );
+  return insertUploadedArticle(db, userId, fields);
 }
