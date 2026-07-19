@@ -458,6 +458,39 @@ But this paradigm doesn't explain everything.`;
     expect(result.html).not.toContain("importance:");
   });
 
+  it("renders GFM footnotes instead of leaking literal syntax", async () => {
+    const markdown = `A claim that needs support.[^src]
+
+Body continues here.
+
+[^src]: The supporting evidence.`;
+
+    const result = await processMarkdown(markdown);
+    // Reference becomes a superscript anchor pointing at the definition.
+    expect(result.html).toMatch(/<sup><a[^>]*href="#footnote-src"[^>]*>1<\/a><\/sup>/);
+    // Definitions are collected into a footnotes section, not left inline.
+    expect(result.html).toContain('<section class="footnotes"');
+    expect(result.html).toContain('id="footnote-src"');
+    expect(result.html).toContain("The supporting evidence.");
+    // A back-reference link returns to the citation.
+    expect(result.html).toContain('href="#footnote-ref-src"');
+    // No raw footnote markers survive in the output.
+    expect(result.html).not.toContain("[^src]");
+  });
+
+  it("numbers multiple footnotes in reference order", async () => {
+    const markdown = `First.[^a] Second.[^b]
+
+[^a]: Alpha.
+[^b]: Bravo.`;
+
+    const result = await processMarkdown(markdown);
+    expect(result.html).toMatch(/href="#footnote-a"[^>]*>1<\/a>/);
+    expect(result.html).toMatch(/href="#footnote-b"[^>]*>2<\/a>/);
+    expect(result.html).toContain("Alpha.");
+    expect(result.html).toContain("Bravo.");
+  });
+
   it("handles frontmatter with unquoted colons in values (#818)", async () => {
     const markdown = `---
 description: A model that matches quality
