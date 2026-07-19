@@ -180,6 +180,45 @@ Content here.`;
     expect(result.content).toBe("\nContent here.");
   });
 
+  it("closes frontmatter on a `...` end-of-document marker (#1280)", () => {
+    // gwern.net / Pandoc close YAML frontmatter with `...`, not `---`. Accepting
+    // only `---` made the lazy matcher run past this terminator to the first
+    // later `---` thematic break, swallowing the intro as frontmatter.
+    const markdown = `---
+title: Catapulting
+confidence: unlikely
+...
+
+Intro paragraph that must survive.
+
+# Intelligence, Broadly
+
+A scaling-centric view.
+
+---
+
+# Anomalies`;
+
+    const result = extractFrontmatter(markdown);
+    expect(result.frontmatter?.title).toBe("Catapulting");
+    // The intro, the heading, and the thematic break all remain in the body.
+    expect(result.content).toContain("Intro paragraph that must survive.");
+    expect(result.content).toContain("# Intelligence, Broadly");
+    expect(result.content).toContain("A scaling-centric view.");
+    // The `---` thematic break is body content, not a frontmatter closer.
+    expect(result.content).toContain("\n---\n");
+    // The YAML must not leak into the body.
+    expect(result.content).not.toContain("confidence: unlikely");
+  });
+
+  it("handles `...` end marker with CRLF line endings (#1280)", () => {
+    const markdown = "---\r\ntitle: Windows Dots\r\n...\r\n\r\nBody content.";
+
+    const result = extractFrontmatter(markdown);
+    expect(result.frontmatter?.title).toBe("Windows Dots");
+    expect(result.content).toBe("\r\nBody content.");
+  });
+
   it("requires frontmatter at document start", () => {
     const markdown = `Some text before
 
@@ -383,6 +422,40 @@ The full content of the article.`;
     expect(result.summary).toBe("A brief summary.");
     expect(result.author).toBe("Jane Smith");
     expect(result.html).toContain("full content");
+  });
+
+  it("keeps the intro when frontmatter is closed with `...` (#1280)", async () => {
+    // Regression: gwern-style frontmatter (`...` closer) followed by an intro,
+    // a heading, and a `---` thematic break. The intro must not be swallowed.
+    const markdown = `---
+title: Catapulting
+importance: 10
+...
+
+<div class="abstract">
+An abstract summarizing the article.
+</div>
+
+Because deep learning has continued to scale up, the intro begins here.
+
+# Intelligence, Broadly
+
+A scaling-centric view might be summed up like this:
+
+---
+
+# Anomalies
+
+But this paradigm doesn't explain everything.`;
+
+    const result = await processMarkdown(markdown);
+    expect(result.title).toBe("Catapulting");
+    expect(result.html).toContain("An abstract summarizing the article.");
+    expect(result.html).toContain("the intro begins here");
+    expect(result.html).toContain("Intelligence, Broadly");
+    expect(result.html).toContain("Anomalies");
+    // The YAML metadata must not leak into the rendered body.
+    expect(result.html).not.toContain("importance:");
   });
 
   it("handles frontmatter with unquoted colons in values (#818)", async () => {
