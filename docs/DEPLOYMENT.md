@@ -454,10 +454,15 @@ Backups live on Fly Tigris — already our object-storage and hosting provider (
 the privacy policy's "Object Storage" subsection) — so no new data processor is
 introduced.
 
+**Status:** backups are **enabled in production** (turned on by `--enable-backups`
+at create). Current config (`flyctl postgres backup config show -a lion-reader-pg`):
+`ArchiveTimeout=60s`, `RecoveryWindow=7d`, `FullBackupFrequency=24h`,
+`MinimumRedundancy=3` — i.e. a 7-day PITR window with worst-case RPO ~60s.
+
 **Enable / verify backups are on:**
 
 ```bash
-# One-time, if the cluster was created without --enable-backups:
+# One-time, if a cluster was created without --enable-backups:
 flyctl postgres backup enable -a lion-reader-pg
 
 # Show the current backup configuration (retention, schedule, bucket):
@@ -466,15 +471,16 @@ flyctl postgres backup config show -a lion-reader-pg
 
 **Configure retention / schedule** (`flyctl postgres backup config update`):
 
-| Flag                      | Meaning                                                                | Default      |
-| ------------------------- | ---------------------------------------------------------------------- | ------------ |
-| `--recovery-window`       | How far back PITR can target (retention window)                        | —            |
-| `--full-backup-frequency` | Base-backup cadence                                                    | 24h (verify) |
-| `--archive-timeout`       | Max wait before forcing a WAL push (caps worst-case RPO on an idle DB) | —            |
-| `--minimum-redundancy`    | Minimum number of base backups to keep                                 | —            |
+| Flag                      | Meaning                                                                | Default |
+| ------------------------- | ---------------------------------------------------------------------- | ------- |
+| `--recovery-window`       | How far back PITR can target (retention window)                        | —       |
+| `--full-backup-frequency` | Base-backup cadence                                                    | 24h     |
+| `--archive-timeout`       | Max wait before forcing a WAL push (caps worst-case RPO on an idle DB) | —       |
+| `--minimum-redundancy`    | Minimum number of base backups to keep                                 | —       |
 
 ```bash
-# Keep ~7 days of PITR window and force a WAL push at least every 60s:
+# The values currently set in production — 7-day PITR window, WAL push at
+# least every 60s (re-run to change them):
 flyctl postgres backup config update -a lion-reader-pg \
   --recovery-window 7d \
   --archive-timeout 60s
