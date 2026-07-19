@@ -73,7 +73,7 @@ flyctl launch --no-deploy
 When prompted:
 
 - **App name**: Choose a unique name (e.g., `lion-reader` or `lion-reader-prod`)
-- **Region**: Select your preferred region. This project's `fly.toml` uses `lax` (US West) as `primary_region`; pick the region closest to you (e.g., `iad` for US East, `lhr` for London) and keep Postgres/Redis in the same one.
+- **Region**: Select your preferred region. This project's `fly.toml` uses `sjc` (US West) as `primary_region`; pick the region closest to you (e.g., `iad` for US East, `lhr` for London) and keep Postgres/Redis in the same one. **Keep the app, Postgres, and Redis all in one region** — a split (e.g. app in one region, DB in another) adds a cross-region proxy hop to every query. See [Fly.io Postgres operations](references/fly-postgres-ops.md) before changing regions.
 - **Postgres**: Select "No" (we'll provision this separately for more control)
 - **Redis**: Select "No" (we'll use Upstash)
 
@@ -93,7 +93,7 @@ You should see your new app listed.
 
 Lion Reader uses PostgreSQL for all persistent data. Production runs **unmanaged
 Fly Postgres (flex), single node**: `lion-reader-pg`, database `lion_reader`,
-`shared-cpu-8x` / 2GB in `lax`, 10GB volume, PostgreSQL 18. Unmanaged is chosen for
+`shared-cpu-8x` / 2GB in `sjc`, 10GB volume, PostgreSQL 18. Unmanaged is chosen for
 performance-per-dollar (shared-CPU pooling gives more burst headroom per dollar than
 Managed Postgres); the tradeoff is that Fly does **not** support or upgrade unmanaged
 clusters, so we own upgrades, backups, and monitoring (see "Operating unmanaged
@@ -104,7 +104,7 @@ Postgres" under Ongoing Operations).
 ```bash
 flyctl postgres create \
   --name lion-reader-pg \
-  --region lax \
+  --region sjc \
   --flex \
   --vm-size shared-cpu-8x \
   --vm-memory 2048 \
@@ -180,7 +180,7 @@ flyctl redis create
 When prompted:
 
 - **Name**: `lion-reader-redis`
-- **Region**: Same as your app (e.g., `lax`)
+- **Region**: Same as your app (e.g., `sjc`)
 - **Plan**: Free tier is fine for MVP (100 commands/day limit)
   - For production, choose "Pay-as-you-go" (~$0.20/1M commands)
 - **Eviction**: Enable if you want auto-cleanup of old data
