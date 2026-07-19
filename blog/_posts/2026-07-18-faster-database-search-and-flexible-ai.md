@@ -20,7 +20,7 @@ Search understands word variations (a search for "cook" also finds "cooking" and
 
 ## Bring your own AI model
 
-We rebuilt the AI backend so it's no longer tied to a single provider. If you add an API key, you can now pick **any Groq, Anthropic, or Cerebras model for [summaries](https://lionreader.com/demo/all?entry=ai-summaries)**, and **any Groq or Cerebras model for [narration](https://lionreader.com/demo/all?entry=text-to-speech) cleanup** (the text preprocessing that makes articles sound natural when read aloud). Set your keys and preferred models under Settings → AI &amp; Narration.
+We rebuilt the AI backend so it's no longer tied to a single provider. If you add an API key, you can now pick **any Groq, Anthropic, or Cerebras model for [summaries](https://lionreader.com/demo/all?entry=ai-summaries)**, and **any Groq or Cerebras model for [narration](https://lionreader.com/demo/all?entry=text-to-speech) cleanup** (the text preprocessing that makes articles sound natural when read aloud). Set your keys and preferred models under Settings → AI & Narration.
 
 Our recommendation for most people is **[GPT-OSS-120B](https://openai.com/index/introducing-gpt-oss/) on [Cerebras](https://www.cerebras.ai/)**: summaries come back near-instantly, at roughly a tenth of the price of Claude Sonnet. It's not quite as sharp as Claude for the trickiest articles, but for triaging a reading list the speed and price are hard to beat. [Groq](https://groq.com/) offers some cheaper options too, though their paid tier looks to be waitlisted at the moment. And if you'd rather have the smartest possible summaries, [Anthropic's Claude](https://www.anthropic.com/) models are still there.
 
