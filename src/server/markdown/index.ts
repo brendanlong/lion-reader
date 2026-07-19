@@ -146,8 +146,10 @@ function parseFrontmatterLenient(yaml: string): Record<string, string> | null {
  * A dedicated marked instance, configured once at module load.
  *
  * We use an isolated `Marked` instance (not the shared global singleton) so our
- * options and the footnote extension can't leak into other `marked` importers
- * (e.g. summarization, the GitHub plugin) and vice versa.
+ * options and extensions can't leak into the other `marked` importers
+ * (summarization, the GitHub plugin), and theirs can't leak into ours. The old
+ * code mutated the global via `marked.setOptions` on every call, so whichever
+ * module configured it last won; a dedicated instance removes that coupling.
  *
  * `marked-footnote` adds GFM footnote support — `[^1]` references plus `[^1]:`
  * definitions — which core marked does not handle. Without it, definitions

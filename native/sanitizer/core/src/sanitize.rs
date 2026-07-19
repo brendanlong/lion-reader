@@ -50,8 +50,10 @@ const ALLOWED_TAGS: &[&str] = &[
     // rewrites it to the provider's canonical host with a forced sandbox;
     // anything else is removed entirely.
     "iframe",
-    // Presentation MathML (MathML Core renders natively). Deliberately
-    // excluded: semantics/annotation/annotation-xml (mXSS vector) and href.
+    // Presentation MathML (MathML Core renders natively). Excluded from the
+    // allow-list (and no `href`): `semantics` is unwrapped so its presentation
+    // child renders; `annotation`/`annotation-xml` are dropped with content
+    // (see DROP_WITH_CONTENT — raw-TeX-source leak + mXSS vector).
     "math", "mrow", "mi", "mo", "mn", "ms", "mtext", "mspace", "msup", "msub", "msubsup",
     "mfrac", "msqrt", "mroot", "mover", "munder", "munderover", "mmultiscripts",
     "mprescripts", "mtable", "mtr", "mtd", "mlabeledtr", "mpadded", "mphantom", "menclose",
