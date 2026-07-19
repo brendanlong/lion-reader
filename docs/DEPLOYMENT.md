@@ -92,11 +92,12 @@ You should see your new app listed.
 ## Database Provisioning (Postgres)
 
 Lion Reader uses PostgreSQL for all persistent data. Production runs **unmanaged
-Fly Postgres (flex), single node** — chosen over Fly Managed Postgres in July 2026
-for performance-per-dollar. Fly does **not** support or upgrade unmanaged clusters,
-so we own upgrades, backups, and monitoring (see "Operating unmanaged Postgres" under
-Ongoing Operations). Current production: `lion-reader-pg`, database `lion_reader`,
-`shared-cpu-8x` / 2GB in `lax`, 10GB volume, PostgreSQL 18.
+Fly Postgres (flex), single node**: `lion-reader-pg`, database `lion_reader`,
+`shared-cpu-8x` / 2GB in `lax`, 10GB volume, PostgreSQL 18. Unmanaged is chosen for
+performance-per-dollar (shared-CPU pooling gives more burst headroom per dollar than
+Managed Postgres); the tradeoff is that Fly does **not** support or upgrade unmanaged
+clusters, so we own upgrades, backups, and monitoring (see "Operating unmanaged
+Postgres" under Ongoing Operations).
 
 ### 1. Create a Postgres Cluster
 
@@ -660,14 +661,15 @@ bot). Only `app` is behind the HTTP load balancer; all three share Postgres and 
 
 ## Cost Estimate (current production shape, July 2026)
 
-| Resource        | Size                            | Estimated Cost    |
-| --------------- | ------------------------------- | ----------------- |
-| App VMs         | 2× shared-cpu-2x, 512MB         | ~$8/month         |
-| Worker VM       | shared-cpu-1x, 512MB            | ~$3.50/month      |
-| Discord VM      | shared-cpu-1x, 256MB            | ~$2/month         |
-| Postgres        | shared-cpu-8x, 2GB, 10GB volume | ~$18/month        |
-| Redis (Upstash) | Pay-as-you-go                   | ~$0-5/month       |
-| **Total**       |                                 | **~$32-37/month** |
+| Resource        | Size                    | Estimated Cost    |
+| --------------- | ----------------------- | ----------------- |
+| App VMs         | 2× shared-cpu-2x, 512MB | ~$8/month         |
+| Worker VM       | shared-cpu-1x, 512MB    | ~$3.50/month      |
+| Discord VM      | shared-cpu-1x, 256MB    | ~$2/month         |
+| Postgres        | shared-cpu-8x, 2GB      | ~$15.55/month     |
+| Postgres volume | 10GB                    | ~$1.50/month      |
+| Redis (Upstash) | Pay-as-you-go           | ~$0-5/month       |
+| **Total**       |                         | **~$30-36/month** |
 
 Costs vary by usage. Check [fly.io/docs/about/pricing](https://fly.io/docs/about/pricing/) for current rates.
 
