@@ -73,7 +73,7 @@ flyctl launch --no-deploy
 When prompted:
 
 - **App name**: Choose a unique name (e.g., `lion-reader` or `lion-reader-prod`)
-- **Region**: Select your preferred region. This project's `fly.toml` uses `lax` (US West) as `primary_region`; pick the region closest to you (e.g., `iad` for US East, `lhr` for London) and keep Postgres/Redis in the same one.
+- **Region**: Select your preferred region. This project's `fly.toml` uses `sjc` (US West) as `primary_region`; pick the region closest to you (e.g., `iad` for US East, `lhr` for London) and keep Postgres/Redis in the same one. **Keep the app, Postgres, and Redis all in one region** — a split (e.g. app in one region, DB in another) adds a cross-region proxy hop to every query. See [Fly.io Postgres operations](references/fly-postgres-ops.md) before changing regions.
 - **Postgres**: Select "No" (we'll provision this separately for more control)
 - **Redis**: Select "No" (we'll use Upstash)
 
@@ -98,7 +98,7 @@ Lion Reader uses PostgreSQL for all persistent data.
 ```bash
 flyctl postgres create \
   --name lion-reader-db \
-  --region lax \
+  --region sjc \
   --vm-size shared-cpu-1x \
   --initial-cluster-size 1 \
   --volume-size 10
@@ -160,7 +160,7 @@ flyctl redis create
 When prompted:
 
 - **Name**: `lion-reader-redis`
-- **Region**: Same as your app (e.g., `lax`)
+- **Region**: Same as your app (e.g., `sjc`)
 - **Plan**: Free tier is fine for MVP (100 commands/day limit)
   - For production, choose "Pay-as-you-go" (~$0.20/1M commands)
 - **Eviction**: Enable if you want auto-cleanup of old data
