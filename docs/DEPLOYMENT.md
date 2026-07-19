@@ -73,7 +73,7 @@ flyctl launch --no-deploy
 When prompted:
 
 - **App name**: Choose a unique name (e.g., `lion-reader` or `lion-reader-prod`)
-- **Region**: Select your preferred region. This project's `fly.toml` uses `sjc` (US West) as `primary_region`; pick the region closest to you (e.g., `iad` for US East, `lhr` for London) and keep Postgres/Redis in the same one. **Keep the app, Postgres, and Redis all in one region** — a split (e.g. app in one region, DB in another) adds a cross-region proxy hop to every query. See [Fly.io Postgres operations](references/fly-postgres-ops.md) before changing regions.
+- **Region**: Select your preferred region. This project's `fly.toml` uses `sjc` (US West) as `primary_region`; pick the region closest to you (e.g., `iad` for US East, `lhr` for London) and keep Postgres/Redis in the same one. **Keep the app, Postgres, and Redis all in one region** — a split (e.g. app in one region, DB in another) adds a cross-region proxy hop to every query. See [Fly.io Postgres operations](fly-postgres-ops.md) before changing regions.
 - **Postgres**: Select "No" (we'll provision this separately for more control)
 - **Redis**: Select "No" (we'll use Upstash)
 
@@ -129,8 +129,9 @@ flyctl postgres create \
 - `--initial-cluster-size`: 1 (deliberate — flex multi-node uses repmgr, which has a
   poor failure-mode track record; WAL backups + volume snapshots are the safety net)
 - `--volume-size`: 10GB is plenty
-- `--enable-backups`: WAL-based backups to a Tigris bucket (PITR via
-  `flyctl postgres backup restore`), on top of daily volume snapshots
+- `--enable-backups`: creates a Tigris bucket and turns on continuous WAL-based
+  backups (point-in-time recovery via `flyctl postgres backup restore`), on top
+  of daily volume snapshots. Restore runbook: [Fly Postgres operations](fly-postgres-ops.md#backups--point-in-time-recovery-pitr).
 
 ### 2. Attach Postgres to Your App
 
@@ -420,17 +421,11 @@ flyctl scale count 3 --process-group app
 flyctl postgres connect -a lion-reader-pg --database lion_reader
 ```
 
-**Manual backup:**
-
-```bash
-flyctl postgres backup create -a lion-reader-pg
-```
-
-**List backups:**
-
-```bash
-flyctl postgres backup list -a lion-reader-pg
-```
+**Backups & PITR.** Continuous WAL archiving to Tigris is **enabled** on
+`lion-reader-pg` (point-in-time recovery, 7-day window, worst-case RPO ~60s), on
+top of daily volume snapshots. The full enable/configure/**restore** runbook —
+including PITR restore, the periodic restore drill, and monitoring — lives in
+[Fly Postgres operations](fly-postgres-ops.md#backups--point-in-time-recovery-pitr).
 
 ### Operating unmanaged Postgres
 
@@ -447,8 +442,9 @@ Fly does not manage this cluster, so these are ours:
   upgrade unmanaged clusters.
 - **Disk:** 10GB volume; `flyctl volumes extend` when needed. A full volume is an
   outage you have to notice — check the fly-metrics disk panel occasionally.
-- **Restore drill:** periodically `flyctl postgres backup restore` into a scratch
-  cluster to prove the WAL backups actually restore.
+- **Backups & restore drill:** WAL archiving to Tigris gives PITR; periodically
+  restore into a scratch cluster to prove it works. Full procedure in
+  [Fly Postgres operations](fly-postgres-ops.md#backups--point-in-time-recovery-pitr).
 
 **Temporarily scaling for expensive migrations.** A `machine update` resize is only
 a few-second restart, so for a CPU- or memory-heavy migration you can bump to a
@@ -668,8 +664,9 @@ bot). Only `app` is behind the HTTP load balancer; all three share Postgres and 
 | Discord VM      | shared-cpu-1x, 256MB    | ~$2/month         |
 | Postgres        | shared-cpu-8x, 2GB      | ~$15.55/month     |
 | Postgres volume | 10GB                    | ~$1.50/month      |
+| PG WAL backups  | Tigris (base + WAL)     | ~$1/month         |
 | Redis (Upstash) | Pay-as-you-go           | ~$0-5/month       |
-| **Total**       |                         | **~$30-36/month** |
+| **Total**       |                         | **~$31-37/month** |
 
 Costs vary by usage. Check [fly.io/docs/about/pricing](https://fly.io/docs/about/pricing/) for current rates.
 
@@ -681,7 +678,8 @@ After successful deployment:
 
 1. **Set up monitoring** - Configure Sentry for error tracking
 2. **Add custom domain** - Use `flyctl certs create` for SSL
-3. **Enable backups** - Configure automated Postgres backups
+3. **Enable backups** - Turn on continuous WAL archiving / PITR and run a restore
+   drill (see "Backups & Point-in-Time Recovery (PITR)")
 4. **Monitor usage** - Use Fly.io dashboard to track resource usage
 
 For questions or issues, check:
