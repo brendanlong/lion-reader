@@ -5,7 +5,8 @@
  * Used by file uploads, URL fetching, and plugins.
  */
 
-import { marked } from "marked";
+import { Marked } from "marked";
+import markedFootnote from "marked-footnote";
 import { parse as parseYaml } from "yaml";
 import { extractAndStripTitleHeader } from "@/server/html/strip-title-header";
 
@@ -141,19 +142,33 @@ function parseFrontmatterLenient(yaml: string): Record<string, string> | null {
 }
 
 /**
+ * A dedicated marked instance, configured once at module load.
+ *
+ * We use an isolated `Marked` instance (not the shared global singleton) so our
+ * options and the footnote extension can't leak into other `marked` importers
+ * (e.g. summarization, the GitHub plugin) and vice versa.
+ *
+ * `marked-footnote` adds GFM footnote support — `[^1]` references plus `[^1]:`
+ * definitions — which core marked does not handle. Without it, definitions
+ * render as literal text inline where they're written (jarring for Pandoc-style
+ * uploads and markdown-only pages). The generated `<sup>` markers,
+ * `<section class="footnotes">` block, `id` anchors, and `#fragment` back-links
+ * all survive the read-path sanitizer (`id`/`data-*` are allow-listed, and
+ * same-document fragment hrefs are preserved).
+ */
+const markdownRenderer = new Marked({
+  gfm: true, // GitHub Flavored Markdown
+  breaks: true, // Convert \n to <br>
+}).use(markedFootnote());
+
+/**
  * Converts Markdown to HTML using marked with safe defaults.
  *
  * @param markdown - The Markdown text to convert
  * @returns The HTML representation
  */
 async function markdownToHtml(markdown: string): Promise<string> {
-  // Configure marked for safe rendering
-  marked.setOptions({
-    gfm: true, // GitHub Flavored Markdown
-    breaks: true, // Convert \n to <br>
-  });
-
-  return marked.parse(markdown) as Promise<string>;
+  return markdownRenderer.parse(markdown) as Promise<string>;
 }
 
 /**
