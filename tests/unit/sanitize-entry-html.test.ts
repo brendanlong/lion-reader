@@ -111,13 +111,31 @@ describe("sanitizeEntryHtml", () => {
       expect(out).toContain("<mi>y</mi>");
     });
 
-    it("blocks the annotation-xml mutation-XSS vector", () => {
+    it("blocks the annotation-xml mutation-XSS vector, dropping its payload", () => {
       const out =
         sanitizeEntryHtml(
           '<math><annotation-xml encoding="text/html"><img src=x onerror=alert(1)></annotation-xml></math>'
         ) ?? "";
       expect(out).not.toContain("annotation-xml");
       expect(out).not.toContain("onerror");
+      // annotation-xml is dropped WITH its subtree, so the payload is gone
+      // entirely — not merely stripped of its event handler.
+      expect(out).not.toContain("<img");
+    });
+
+    it("keeps presentation MathML but drops the TeX annotation (no source leak)", () => {
+      // KaTeX/MathJax wrap the equation in <semantics> alongside an
+      // <annotation> holding the raw TeX. <semantics> unwraps (presentation
+      // MathML renders); the annotation drops with content so the TeX never
+      // shows up as visible text next to the equation.
+      const out =
+        sanitizeEntryHtml(
+          "<math><semantics><mrow><msup><mi>c</mi><mn>2</mn></msup></mrow>" +
+            '<annotation encoding="application/x-tex">c^2</annotation></semantics></math>'
+        ) ?? "";
+      expect(out).toContain("<msup><mi>c</mi><mn>2</mn></msup>");
+      expect(out).not.toContain("annotation");
+      expect(out).not.toContain("c^2");
     });
   });
 

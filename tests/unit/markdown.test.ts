@@ -458,6 +458,64 @@ But this paradigm doesn't explain everything.`;
     expect(result.html).not.toContain("importance:");
   });
 
+  it("renders GFM footnotes instead of leaking literal syntax", async () => {
+    const markdown = `A claim that needs support.[^src]
+
+Body continues here.
+
+[^src]: The supporting evidence.`;
+
+    const result = await processMarkdown(markdown);
+    // Reference becomes a superscript anchor pointing at the definition.
+    expect(result.html).toMatch(/<sup><a[^>]*href="#footnote-src"[^>]*>1<\/a><\/sup>/);
+    // Definitions are collected into a footnotes section, not left inline.
+    expect(result.html).toContain('<section class="footnotes"');
+    expect(result.html).toContain('id="footnote-src"');
+    expect(result.html).toContain("The supporting evidence.");
+    // A back-reference link returns to the citation.
+    expect(result.html).toContain('href="#footnote-ref-src"');
+    // No raw footnote markers survive in the output.
+    expect(result.html).not.toContain("[^src]");
+  });
+
+  it("numbers multiple footnotes in reference order", async () => {
+    const markdown = `First.[^a] Second.[^b]
+
+[^a]: Alpha.
+[^b]: Bravo.`;
+
+    const result = await processMarkdown(markdown);
+    expect(result.html).toMatch(/href="#footnote-a"[^>]*>1<\/a>/);
+    expect(result.html).toMatch(/href="#footnote-b"[^>]*>2<\/a>/);
+    expect(result.html).toContain("Alpha.");
+    expect(result.html).toContain("Bravo.");
+  });
+
+  it("renders inline and display TeX as MathML", async () => {
+    const markdown = `Mass-energy is $E = mc^2$.
+
+$$\\int_0^1 x\\,dx = \\frac{1}{2}$$`;
+
+    const result = await processMarkdown(markdown);
+    // Inline math → presentation MathML.
+    expect(result.html).toContain("<math");
+    expect(result.html).toMatch(/<msup><mi>c<\/mi><mn>2<\/mn><\/msup>/);
+    // Display math carries the block flag.
+    expect(result.html).toContain('display="block"');
+    expect(result.html).toContain("<mfrac>");
+    // The `$…$` / `$$…$$` delimiters are consumed, not left as literal text.
+    expect(result.html).not.toContain("$E = mc^2$");
+    expect(result.html).not.toContain("$$");
+    // Note: the TeX source still lives in the `<annotation>` at this stage; the
+    // read-path sanitizer drops it (see sanitize-entry-html.test.ts).
+  });
+
+  it("does not throw on malformed TeX", async () => {
+    const markdown = `Broken math: $\\frac{1}{$ and text after.`;
+    // throwOnError:false — malformed TeX must not blow up processMarkdown.
+    await expect(processMarkdown(markdown)).resolves.toBeDefined();
+  });
+
   it("handles frontmatter with unquoted colons in values (#818)", async () => {
     const markdown = `---
 description: A model that matches quality

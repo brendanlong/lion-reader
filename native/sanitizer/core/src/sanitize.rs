@@ -52,8 +52,10 @@ const ALLOWED_TAGS: &[&str] = &[
     // rewrites it to the provider's canonical host with a forced sandbox;
     // anything else is removed entirely.
     "iframe",
-    // Presentation MathML (MathML Core renders natively). Deliberately
-    // excluded: semantics/annotation/annotation-xml (mXSS vector) and href.
+    // Presentation MathML (MathML Core renders natively). Excluded from the
+    // allow-list (and no `href`): `semantics` is unwrapped so its presentation
+    // child renders; `annotation`/`annotation-xml` are dropped with content
+    // (see DROP_WITH_CONTENT — raw-TeX-source leak + mXSS vector).
     "math", "mrow", "mi", "mo", "mn", "ms", "mtext", "mspace", "msup", "msub", "msubsup",
     "mfrac", "msqrt", "mroot", "mover", "munder", "munderover", "mmultiscripts",
     "mprescripts", "mtable", "mtr", "mtd", "mlabeledtr", "mpadded", "mphantom", "menclose",
@@ -80,6 +82,16 @@ const ALLOWED_TAGS: &[&str] = &[
 const DROP_WITH_CONTENT: &[&str] = &[
     "script", "style", "textarea", "option", "title", "xmp", "noembed", "noframes", "noscript",
     "plaintext",
+    // MathML annotations. `<semantics>` is unwrapped (its presentation-MathML
+    // child renders natively), but its annotations must be dropped WITH content,
+    // not unwrapped: `<annotation encoding="application/x-tex">` holds the raw
+    // LaTeX source (KaTeX/MathJax emit it), which unwrapping would spill into
+    // the page as visible text next to every equation; `<annotation-xml>` is an
+    // HTML integration point and a classic mXSS vector, so dropping it and its
+    // subtree is strictly safer than unwrapping (keeping children). Neither is
+    // used for visual rendering or screen-reader a11y — those use the
+    // presentation MathML we keep.
+    "annotation", "annotation-xml",
 ];
 
 /// Global attributes allowed on any element (`data-*` and `aria-*` handled
@@ -395,6 +407,31 @@ mod tests {
     fn mathml_preserved() {
         let math = r#"<math xmlns="http://www.w3.org/1998/Math/MathML"><mi>x</mi><msup><mi>y</mi><mn>2</mn></msup></math>"#;
         assert_eq!(sanitize(math), math);
+    }
+
+    #[test]
+    fn mathml_semantics_unwrapped_annotation_dropped() {
+        // KaTeX/MathJax output: `<semantics>` wraps the presentation MathML plus
+        // a TeX `<annotation>`. `<semantics>` is unwrapped (presentation kept),
+        // but the annotation is dropped WITH content so the raw TeX never spills
+        // out as visible text next to the equation.
+        let input = r#"<math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi>c</mi><mn>2</mn></msup></mrow><annotation encoding="application/x-tex">c^2</annotation></semantics></math>"#;
+        assert_eq!(
+            sanitize(input),
+            r#"<math xmlns="http://www.w3.org/1998/Math/MathML"><mrow><msup><mi>c</mi><mn>2</mn></msup></mrow></math>"#
+        );
+    }
+
+    #[test]
+    fn mathml_annotation_xml_html_payload_dropped() {
+        // `<annotation-xml encoding="text/html">` is an HTML integration point
+        // (classic MathML mXSS vector). It and its subtree must be dropped, not
+        // unwrapped — otherwise the payload's children would be re-parsed.
+        let input = r#"<math><semantics><mrow><mi>x</mi></mrow><annotation-xml encoding="text/html"><img src=x onerror=alert(1)></annotation-xml></semantics></math>"#;
+        let out = sanitize(input);
+        assert_eq!(out, "<math><mrow><mi>x</mi></mrow></math>");
+        assert!(!out.contains("onerror"), "{out}");
+        assert!(!out.contains("<img"), "{out}");
     }
 
     #[test]
