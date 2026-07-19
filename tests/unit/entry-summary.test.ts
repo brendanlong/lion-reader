@@ -108,6 +108,34 @@ describe("stripHtml", () => {
     });
   });
 
+  describe("MathML annotations", () => {
+    // KaTeX (output: "mathml") emits presentation MathML *plus* an
+    // <annotation encoding="application/x-tex"> holding the raw TeX. Without
+    // dropping the annotation, the equation appears twice in the excerpt (#1386).
+    it("drops the TeX annotation so the equation is not duplicated", () => {
+      const html =
+        "<p>The formula <math><semantics><mrow><mi>E</mi><mo>=</mo><mi>m</mi><msup><mi>c</mi><mn>2</mn></msup></mrow>" +
+        '<annotation encoding="application/x-tex">E = mc^2</annotation></semantics></math> is famous.</p>';
+      const result = stripHtml(html, 300);
+      expect(result).not.toContain("E = mc^2");
+      expect(result).toBe("The formula E=mc2 is famous.");
+    });
+
+    it("drops annotation-xml content too", () => {
+      const html =
+        "<p>Value <math><semantics><mrow><mi>x</mi></mrow>" +
+        '<annotation-xml encoding="MathML-Content"><ci>x</ci></annotation-xml></semantics></math> here.</p>';
+      const result = stripHtml(html, 300);
+      expect(result).toBe("Value x here.");
+    });
+
+    it("keeps presentation glyphs from feed math (no annotation)", () => {
+      const html =
+        "<p>Range <math><mrow><mi>μ</mi><mo>±</mo><mn>2</mn><mi>σ</mi></mrow></math> shown.</p>";
+      expect(stripHtml(html, 300)).toBe("Range μ±2σ shown.");
+    });
+  });
+
   describe("HTML entity decoding", () => {
     it("decodes common HTML entities", () => {
       const html = "<p>Rock &amp; Roll</p>";
