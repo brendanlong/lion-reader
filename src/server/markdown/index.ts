@@ -7,6 +7,7 @@
 
 import { Marked } from "marked";
 import markedFootnote from "marked-footnote";
+import markedKatex from "marked-katex-extension";
 import { parse as parseYaml } from "yaml";
 import { extractAndStripTitleHeader } from "@/server/html/strip-title-header";
 
@@ -159,7 +160,15 @@ function parseFrontmatterLenient(yaml: string): Record<string, string> | null {
 const markdownRenderer = new Marked({
   gfm: true, // GitHub Flavored Markdown
   breaks: true, // Convert \n to <br>
-}).use(markedFootnote());
+})
+  .use(markedFootnote())
+  // Render `$…$` / `$$…$$` TeX to MathML — native, no client JS/CSS, matching
+  // how the sanitizer already handles feed math (MathJax→MathML). KaTeX wraps
+  // output in `<semantics>…<annotation encoding="application/x-tex">` (the raw
+  // TeX); the read-path sanitizer keeps the presentation MathML and drops the
+  // annotation, so no TeX source leaks as visible text. `throwOnError: false`
+  // makes malformed TeX render as an inline error string instead of throwing.
+  .use(markedKatex({ output: "mathml", throwOnError: false }));
 
 /**
  * Converts Markdown to HTML using marked with safe defaults.
