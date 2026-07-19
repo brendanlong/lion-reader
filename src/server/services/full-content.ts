@@ -118,8 +118,11 @@ export async function fetchFullContent(
     const result = await fetchHtmlPage(url);
     const resolveUrl = result.finalUrl;
 
-    // If we got Markdown, convert it to HTML and skip Readability
-    // Markdown is already clean content, no need for article extraction
+    // We request HTML, not Markdown (#1280), so this is a fallback: a server
+    // returned Markdown anyway (e.g. a raw `.md` URL). Convert it to HTML and
+    // skip Readability — a markdown-only endpoint's body is the content itself,
+    // and once flattened to markdown the DOM structure Readability needs to
+    // separate chrome from content is already gone.
     if (result.isMarkdown) {
       logger.debug("Converting Markdown to HTML (skipping Readability)", { url });
       const { html: contentCleaned } = await processMarkdown(result.content);

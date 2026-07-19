@@ -9,7 +9,7 @@ Deep subsystem knowledge lives in per-directory `CLAUDE.md` files (loaded automa
 - `docs/diagrams/` - D2 flow diagrams for the major systems; great for orienting quickly.
 - `docs/references/` - Reference docs for external tools. Consult before editing related configs.
 - `docs/DEPLOYMENT.md` - Fly.io deployment/provisioning guide.
-- `docs/postgres-ops.md` - Postgres backups & point-in-time-recovery runbook (restore/PITR, drill, monitoring). Read before a restore.
+- `docs/fly-postgres-ops.md` - Fly Postgres Flex operations, recovery & backups (quorum, split-brain, zombie nodes, WAL/PITR restore & drill). **Read before any DB region move, failover, destroying a PG machine, or a restore.**
 - Per-directory guides: `src/server/CLAUDE.md` (data model, services, compat-API ids), `src/server/html/CLAUDE.md` (sanitization), `src/server/feed/CLAUDE.md` (fetching/WebSub), `src/server/auth/CLAUDE.md` (sessions/scopes), `src/server/oauth/CLAUDE.md` (OAuth server/MCP auth), `src/server/http/CLAUDE.md` (SSRF-safe fetching), `src/CLAUDE.md` + `src/components/CLAUDE.md` (frontend), `tests/CLAUDE.md` (testing).
 
 ALWAYS read the relevant documentation before working.
