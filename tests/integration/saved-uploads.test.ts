@@ -120,6 +120,24 @@ describe("createSavedFromUpload (HTML)", () => {
     expect(stored.contentCleaned).not.toContain('href="/relative/link"');
   });
 
+  it("keeps the raw original when Readability fails (contentCleaned null, still readable)", async () => {
+    const userId = await createTestUser();
+    // Too short for Readability to extract → cleaned is null. Matches how a URL
+    // save behaves on a page Readability can't parse: store the original, serve
+    // `cleaned ?? original` on read.
+    const converted = await convertUploadedFile(
+      "<html><body><p>Too short.</p></body></html>",
+      "tiny.html"
+    );
+    const article = await createSavedFromUpload(db, userId, { converted });
+
+    expect(article.contentCleaned).toBeNull();
+    const stored = await readStored(article.id);
+    expect(stored.contentCleaned).toBeNull();
+    // The raw body survives as the original, so the read path still renders it.
+    expect(stored.contentOriginal).toContain("Too short.");
+  });
+
   it("extracts Open Graph metadata (author, image) from uploaded HTML", async () => {
     const userId = await createTestUser();
     const html =
