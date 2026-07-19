@@ -178,15 +178,16 @@ const uploadArticleArgs = z.object({
     .min(1)
     .describe(
       "Article content in GitHub Flavored Markdown. Supports footnotes ([^1] … [^1]: …) " +
-        "and math ($…$ inline, $$…$$ display). This is Markdown, not HTML — pass raw " +
-        "characters and do NOT HTML-escape (write & < >, not &amp; &lt; &gt;)."
+        "and math ($…$ inline, $$…$$ display). Standard CommonMark: raw characters and " +
+        "HTML entities both work in the body (& and &amp; both render as &)."
     ),
   title: z
     .string()
     .min(1)
     .describe(
-      "Article title as plain text. Do NOT HTML-escape it (write & not &amp;) — it is " +
-        "rendered as text, so entities would show up literally."
+      "Article title as plain text (NOT Markdown or HTML). Do NOT HTML-escape it — write " +
+        "& not &amp;, since the title is rendered as literal text and an entity like " +
+        "&amp; would show up verbatim."
     ),
 });
 
