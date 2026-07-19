@@ -467,47 +467,6 @@ function finishCleaned(
   };
 }
 
-/**
- * Generates a summary from cleaned content.
- *
- * Uses the excerpt if available, otherwise truncates the text content.
- *
- * @param cleaned - The cleaned content result
- * @param maxLength - Maximum summary length (default: 300)
- * @returns Summary string
- */
-export function generateCleanedSummary(cleaned: CleanedContent, maxLength = 300): string {
-  // Prefer the excerpt if it's meaningful
-  if (cleaned.excerpt && cleaned.excerpt.length >= 50) {
-    return truncateText(cleaned.excerpt, maxLength);
-  }
-
-  // Fall back to truncated text content
-  return truncateText(cleaned.textContent, maxLength);
-}
-
-/**
- * Truncates text to a maximum length, adding ellipsis if needed.
- * Attempts to break at word boundaries.
- */
-function truncateText(text: string, maxLength: number): string {
-  const trimmed = text.trim();
-  if (trimmed.length <= maxLength) {
-    return trimmed;
-  }
-
-  // Try to find a word boundary before the max length
-  let truncated = trimmed.slice(0, maxLength);
-  const lastSpace = truncated.lastIndexOf(" ");
-
-  // If we found a space reasonably close to the end, use it
-  if (lastSpace > maxLength - 50) {
-    truncated = truncated.slice(0, lastSpace);
-  }
-
-  return truncated.trimEnd() + "...";
-}
-
 // ============================================================================
 // Feed-Specific Content Cleaners
 // ============================================================================

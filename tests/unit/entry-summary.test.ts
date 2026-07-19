@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { stripHtml } from "@/server/html/strip-html";
+import { stripHtml, summarizeCleanedContent } from "@/server/html/strip-html";
 
 describe("stripHtml", () => {
   describe("basic text extraction", () => {
@@ -208,5 +208,44 @@ describe("stripHtml", () => {
       const html = "<a>X</a><p>Y</p>";
       expect(stripHtml(html, 300)).toBe("X Y");
     });
+  });
+});
+
+describe("summarizeCleanedContent", () => {
+  it("uses the excerpt when it is substantial (>= 50 chars)", () => {
+    const excerpt = "This is a meaningful excerpt that summarizes the article content well.";
+    expect(summarizeCleanedContent({ excerpt, textContent: "Full body text here." })).toBe(excerpt);
+  });
+
+  it("falls back to body text when the excerpt is too short", () => {
+    const summary = summarizeCleanedContent({
+      excerpt: "Too short",
+      textContent: "This is the full text content that should be used for the summary.",
+    });
+    expect(summary).toContain("full text content");
+  });
+
+  it("falls back to body text when there is no excerpt", () => {
+    expect(summarizeCleanedContent({ excerpt: "", textContent: "The article begins here." })).toBe(
+      "The article begins here."
+    );
+  });
+
+  it("truncates long content at a word boundary with an ellipsis", () => {
+    const longText = "word ".repeat(200).trim(); // 999 chars, spaces to break on
+    const summary = summarizeCleanedContent({ excerpt: "", textContent: longText });
+    expect(summary.length).toBeLessThanOrEqual(303); // 300 + "..."
+    expect(summary.endsWith("...")).toBe(true);
+    expect(summary.includes("wordword")).toBe(false); // broke on a space
+  });
+
+  it("does not truncate short content", () => {
+    const summary = summarizeCleanedContent({ excerpt: "", textContent: "Short content" });
+    expect(summary).toBe("Short content");
+    expect(summary.endsWith("...")).toBe(false);
+  });
+
+  it("returns an empty string for empty content", () => {
+    expect(summarizeCleanedContent({ excerpt: "", textContent: "" })).toBe("");
   });
 });

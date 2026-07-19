@@ -1,4 +1,4 @@
-import { generateSummary } from "@/server/html/strip-html";
+import { generateSummary, summarizeCleanedContent } from "@/server/html/strip-html";
 
 /**
  * Choose the plain-text excerpt for a saved article.
@@ -15,6 +15,9 @@ import { generateSummary } from "@/server/html/strip-html";
  * (#1398). Plugins that skip Readability (Google Docs) leave `cleaned` null and
  * correctly fall through to their own HTML.
  *
+ * The cleaned branch defers to the shared `summarizeCleanedContent`, so saved
+ * articles and uploaded files derive excerpts identically (description-preferred).
+ *
  * Pure (no DB/network) so it can be unit-tested directly.
  */
 export function computeSavedArticleExcerpt(params: {
@@ -30,11 +33,7 @@ export function computeSavedArticleExcerpt(params: {
     return markdownResult.summary;
   }
   if (cleaned) {
-    let excerpt = cleaned.excerpt || cleaned.textContent.slice(0, 300).trim() || null;
-    if (excerpt && excerpt.length > 300) {
-      excerpt = excerpt.slice(0, 297) + "...";
-    }
-    return excerpt;
+    return summarizeCleanedContent(cleaned) || null;
   }
   if (pluginContent) {
     return generateSummary(pluginContent.html) || null;

@@ -10,7 +10,7 @@
 
 import * as mammoth from "mammoth";
 import { cleanContentAsync } from "@/server/feed/content-cleaner";
-import { generateSummary } from "@/server/html/strip-html";
+import { generateSummary, summarizeCleanedContent } from "@/server/html/strip-html";
 import { logger } from "@/lib/logger";
 import { processMarkdown as convertMarkdown } from "@/server/markdown";
 
@@ -114,7 +114,7 @@ async function processDocx(buffer: Buffer, filename: string): Promise<ProcessedF
 
   // Use cleaned content if available, otherwise use raw mammoth output
   const contentCleaned = cleaned?.content ?? rawHtml;
-  const excerpt = cleaned ? generateSummary(cleaned.content) : generateSummary(rawHtml);
+  const excerpt = cleaned ? summarizeCleanedContent(cleaned) : generateSummary(rawHtml);
 
   return {
     contentCleaned,
@@ -135,7 +135,7 @@ async function processHtml(content: string, filename: string): Promise<Processed
   if (cleaned) {
     return {
       contentCleaned: cleaned.content,
-      excerpt: cleaned.excerpt || generateSummary(cleaned.content) || null,
+      excerpt: summarizeCleanedContent(cleaned) || null,
       title: cleaned.title || titleFromFilename(filename),
       author: cleaned.byline || null,
       fileType: "html",

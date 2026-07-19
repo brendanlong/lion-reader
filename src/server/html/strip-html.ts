@@ -155,3 +155,52 @@ export function stripHtml(html: string, maxLength?: number): string {
 export function generateSummary(html: string): string {
   return stripHtml(html, 300);
 }
+
+/**
+ * Truncates plain text to a maximum length at a word boundary, adding an
+ * ellipsis when it had to cut. (Operates on already-plain text, unlike
+ * `stripHtml`, which parses HTML first.)
+ */
+function truncateText(text: string, maxLength: number): string {
+  const trimmed = text.trim();
+  if (trimmed.length <= maxLength) {
+    return trimmed;
+  }
+
+  // Try to find a word boundary before the max length
+  let truncated = trimmed.slice(0, maxLength);
+  const lastSpace = truncated.lastIndexOf(" ");
+  if (lastSpace > maxLength - 50) {
+    truncated = truncated.slice(0, lastSpace);
+  }
+
+  return truncated.trimEnd() + "...";
+}
+
+/**
+ * Builds a plain-text summary from already-cleaned (Readability) content.
+ *
+ * This is the single source of truth for turning cleaned content into an
+ * excerpt, shared by every surface that runs Readability then needs a preview
+ * (saved articles, uploaded HTML/docx). It prefers the extracted
+ * description/excerpt when it's substantial — that's usually a hand-written
+ * `og:description` / meta description and reads better than a truncated first
+ * paragraph — and only falls back to the article body text when the excerpt is
+ * missing or too short to be a real description. Both are truncated to
+ * `maxLength` at a word boundary.
+ *
+ * The ≥50-char guard keeps a junk/empty meta tag from winning; a page that sets
+ * a site-wide (rather than per-article) description is a site problem, not a bug
+ * to work around here — see the follow-up on smarter summary heuristics.
+ *
+ * Pure (no DB/network/native), so it can be unit-tested directly.
+ */
+export function summarizeCleanedContent(
+  cleaned: { excerpt: string; textContent: string },
+  maxLength = 300
+): string {
+  if (cleaned.excerpt && cleaned.excerpt.length >= 50) {
+    return truncateText(cleaned.excerpt, maxLength);
+  }
+  return truncateText(cleaned.textContent, maxLength);
+}
