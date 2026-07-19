@@ -807,8 +807,9 @@ img.content-img-loading {
 /* =================================
    Reader Prose Footnotes
 
-   LessWrong (and other CommonMark-footnote sources) ship a footnote section as
-   an <ol class="footnote-section"> whose items each start with a "^" back-link
+   The CKEditor 5 footnotes plugin used on ForumMagnum sites (LessWrong, EA
+   Forum, Alignment Forum, etc.) emits a footnote section as an
+   <ol class="footnote-section"> whose items each start with a "^" back-link
    (a <sup> inside <span class="footnote-back-link">) followed by the footnote
    body in <div class="footnote-content">. Because that body is a block <div>,
    Tailwind Typography drops it onto its own line, stranding the tiny superscript
@@ -816,9 +817,9 @@ img.content-img-loading {
    margins on top). Pull the back-link and the footnote body back onto the list
    marker's line so a footnote reads like "1. ^ text", matching the source.
 
-   The id/class/#fragment anchors survive sanitization, so jump-to-footnote and
-   jump-back already work; this is purely layout. (`role="doc-*"` is stripped by
-   the sanitizer, so this keys off the classes, which are preserved.) */
+   Keyed off the plugin's class names (not a hostname), so it fixes every feed
+   using this plugin. The id/class/#fragment anchors survive sanitization, so
+   jump-to-footnote and jump-back already work — this is purely layout. */
 
 .reader-prose .footnote-content,
 .reader-prose .footnote-content > p:first-child {
