@@ -400,7 +400,7 @@ A plugin can also declare `feedDefaultsToFullContent(feedUrl)`: when it returns 
 
 ### Fly.io Deployment
 
-- Single region (lax) with canary deployment strategy
+- Single region (sjc) with canary deployment strategy
 - Three process types:
   - `app` - Next.js web server (min 2 machines for zero-downtime deploys)
   - `worker` - Background job processor (feed fetching)
