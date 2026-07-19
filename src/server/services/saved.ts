@@ -351,7 +351,12 @@ async function buildArticleFields(
     (pluginContent ? absolutizeUrls(pluginContent.html, baseUrl) : null);
 
   // Precedence: explicit caller value → direct-from-source (plugin, Markdown
-  // frontmatter, Open Graph/<title>) → Readability → filename (title only).
+  // frontmatter, Open Graph/<title> via extractMetadata) → Readability → filename
+  // (title only). `metadata.title` sits above `cleaned.title` and is also the
+  // fallback that survives a failed extraction (short/unparseable page, where
+  // Readability returns nothing). Our readability extractor (dom_smoothie) doesn't
+  // clean up the title beyond what the meta/<title> scrape already yields, so the
+  // two are equivalent when both are present.
   const title =
     hints.providedTitle ||
     pluginContent?.title ||
