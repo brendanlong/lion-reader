@@ -33,7 +33,7 @@ import { logger } from "@/lib/logger";
 import * as countsService from "@/server/services/counts";
 import * as savedService from "@/server/services/saved";
 import {
-  processUploadedFile,
+  convertUploadedFile,
   detectFileType,
   getSupportedTypesDescription,
 } from "@/server/file/process-upload";
@@ -269,12 +269,14 @@ export const savedRouter = createTRPCRouter({
         throw errors.contentTooLarge("Uploaded file", usageLimitsConfig.maxSavedArticleSizeBytes);
       }
 
-      // Process the file
-      let processed;
+      // Convert the file to raw article content. Conversion failures are the
+      // user's problem (bad file) → BAD_REQUEST; the downstream save (Readability,
+      // metadata, insert) runs outside this catch so its errors surface as 500s.
+      let converted;
       try {
-        processed = await processUploadedFile(fileBuffer, input.filename);
+        converted = await convertUploadedFile(fileBuffer, input.filename);
       } catch (error) {
-        logger.warn("Failed to process uploaded file", {
+        logger.warn("Failed to convert uploaded file", {
           filename: input.filename,
           fileType,
           error: error instanceof Error ? error.message : String(error),
@@ -285,31 +287,18 @@ export const savedRouter = createTRPCRouter({
         });
       }
 
-      // Determine site name based on file type
-      const siteNameMap: Record<string, string> = {
-        docx: "Uploaded Document",
-        html: "Uploaded HTML",
-        markdown: "Uploaded Text",
-      };
-      const siteName = siteNameMap[processed.fileType] || "Uploaded File";
-
-      // Use provided title or extracted title
-      const finalTitle = input.title || processed.title;
-
-      // Create the uploaded article using the shared service
-      const article = await savedService.createUploadedArticle(ctx.db, userId, {
-        contentHtml: processed.contentCleaned,
-        title: finalTitle,
-        excerpt: processed.excerpt,
-        siteName,
-        author: processed.author,
+      // Save via the shared upload pipeline (title/author/excerpt/metadata
+      // derived identically to a URL save).
+      const article = await savedService.createSavedFromUpload(ctx.db, userId, {
+        converted,
+        title: input.title,
       });
 
       logger.info("Uploaded file saved", {
         entryId: article.id,
         filename: input.filename,
-        fileType: processed.fileType,
-        title: finalTitle,
+        fileType: converted.fileType,
+        title: article.title,
       });
 
       // Get counts after creating new entry
