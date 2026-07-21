@@ -143,6 +143,13 @@ export interface SavedArticleContent {
   html: string;
   title?: string | null;
   author?: string | null;
+  /**
+   * Plain-text excerpt/summary supplied by the plugin (e.g. the arXiv API
+   * abstract). When present it is preferred over Readability's extracted excerpt
+   * (see {@link computeSavedArticleExcerpt}) and truncated to the summary length
+   * downstream. Plain text, not HTML — it is stored/rendered as escaped text.
+   */
+  excerpt?: string | null;
   publishedAt?: Date | null;
   /** Canonical URL (may differ from input URL) */
   canonicalUrl?: string;

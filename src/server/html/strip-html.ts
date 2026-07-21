@@ -159,9 +159,10 @@ export function generateSummary(html: string): string {
 /**
  * Truncates plain text to a maximum length at a word boundary, adding an
  * ellipsis when it had to cut. (Operates on already-plain text, unlike
- * `stripHtml`, which parses HTML first.)
+ * `stripHtml`, which parses HTML first — so it's safe for text that may contain
+ * `<`/`>` from math/LaTeX, e.g. an arXiv abstract.)
  */
-function truncateText(text: string, maxLength: number): string {
+export function truncateText(text: string, maxLength: number): string {
   const trimmed = text.trim();
   if (trimmed.length <= maxLength) {
     return trimmed;

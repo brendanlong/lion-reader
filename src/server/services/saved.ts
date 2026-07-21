@@ -271,6 +271,8 @@ interface ArticleContentBundle {
     html: string;
     title?: string | null;
     author?: string | null;
+    /** Plugin-supplied excerpt (e.g. arXiv API abstract); preferred over Readability's. */
+    excerpt?: string | null;
     siteName?: string;
     skipReadability?: boolean;
   } | null;
@@ -317,7 +319,7 @@ interface BuiltArticleFields {
  * Field precedence:
  *  - title:  provided → source (plugin / Markdown frontmatter / OG or `<title>`) → Readability → filename
  *  - author: source (plugin / frontmatter / OG) → Readability byline
- *  - excerpt: see {@link computeSavedArticleExcerpt} (frontmatter → cleaned → plugin/Markdown HTML)
+ *  - excerpt: see {@link computeSavedArticleExcerpt} (plugin excerpt → frontmatter → cleaned → plugin/Markdown HTML)
  */
 async function buildArticleFields(
   bundle: ArticleContentBundle,
@@ -797,6 +799,8 @@ interface AcquiredArticleContent {
     html: string;
     title?: string | null;
     author?: string | null;
+    /** Plugin-supplied excerpt (e.g. arXiv API abstract); preferred over Readability's. */
+    excerpt?: string | null;
     siteName?: string;
     skipReadability?: boolean;
   } | null;
@@ -869,6 +873,7 @@ async function acquireArticleContent(
             html: content.html,
             title: content.title,
             author: content.author,
+            excerpt: content.excerpt,
             siteName: plugin.capabilities.savedArticle.siteName,
             skipReadability: plugin.capabilities.savedArticle.skipReadability,
           },

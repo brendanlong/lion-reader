@@ -1,5 +1,10 @@
 import type { UrlPlugin, SavedArticleContent } from "./types";
-import { getArxivFetchUrl } from "@/server/feed/arxiv";
+import {
+  extractPaperId,
+  fetchArxivMetadata,
+  formatArxivAuthors,
+  getArxivFetchUrl,
+} from "@/server/feed/arxiv";
 import { fetchHtmlPage } from "@/server/http/fetch";
 import { logger } from "@/lib/logger";
 
@@ -48,16 +53,26 @@ export const arxivPlugin: UrlPlugin = {
             isHtmlVersion: fetchUrl.includes("/html/"),
           });
 
-          // Fetch the content
-          const result = await fetchHtmlPage(fetchUrl);
+          // Fetch the HTML render and the structured API metadata concurrently
+          // (different hosts: arxiv.org vs export.arxiv.org). The API gives us
+          // the real title, author list, and abstract — much better than
+          // Readability's scrape of the HTML render.
+          const paperId = extractPaperId(url.href);
+          const [result, metadata] = await Promise.all([
+            fetchHtmlPage(fetchUrl),
+            paperId ? fetchArxivMetadata(paperId) : Promise.resolve(null),
+          ]);
           if (!result.content) {
             return null;
           }
 
+          // Prefer the API's structured fields; each falls back to null so
+          // Readability/metadata still fill them when the API call failed.
           return {
             html: result.content,
-            title: null, // Let Readability extract title
-            author: null,
+            title: metadata?.title ?? null,
+            author: metadata ? formatArxivAuthors(metadata.authors) : null,
+            excerpt: metadata?.summary ?? null,
             publishedAt: null,
             canonicalUrl: result.finalUrl,
           };
