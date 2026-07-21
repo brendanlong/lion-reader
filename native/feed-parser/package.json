@@ -4,6 +4,7 @@
   "private": true,
   "description": "Native (Rust) RSS/Atom/OPML feed parsing: quick-xml SAX ports of the old htmlparser2 parsers behind N-API calls.",
   "main": "index.js",
+  "type": "commonjs",
   "types": "index.d.ts",
   "scripts": {
     "build": "node build.mjs",

@@ -35,4 +35,25 @@ if (!binaryPath) {
 }
 
 const requireNative = createRequire(binaryPath);
-module.exports = requireNative(binaryPath);
+const nativeBinding = requireNative(binaryPath);
+
+// Static, lexable re-exports. Node's ESM loader discovers a CommonJS module's
+// named exports via cjs-module-lexer, which only sees literal `exports.<name> =`
+// assignments — not the dynamic binding object above. Without these,
+// `import { extractArticle } from "@lion-reader/readability"` fails to resolve
+// under the native ESM loader (e.g. the Playwright e2e harness).
+exports.extractArticle = nativeBinding.extractArticle;
+exports.extractArticleAsync = nativeBinding.extractArticleAsync;
+
+// Completeness guard: if the .node binary grows a `#[napi]` export that isn't
+// re-exported above, fail loudly at load rather than let ESM named imports of
+// it silently break (a failure that would otherwise only surface under Node's
+// ESM loader). Runs on every import — no separate drift-detecting test needed.
+for (const key of Object.keys(nativeBinding)) {
+  if (!(key in exports)) {
+    throw new Error(
+      `@lion-reader/readability: native binding exports "${key}" but index.js does not ` +
+        `re-export it. Add \`exports.${key} = nativeBinding.${key};\` for ESM named-import support.`
+    );
+  }
+}
