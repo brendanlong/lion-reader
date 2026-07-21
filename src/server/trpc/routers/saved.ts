@@ -204,7 +204,8 @@ export const savedRouter = createTRPCRouter({
    *
    * Supports Word documents (.docx), HTML files, and Markdown files.
    * Files are processed and converted to HTML for consistent rendering:
-   * - .docx: Converted via mammoth, then cleaned with Readability
+   * - .docx: Converted via mammoth; title/author/summary read from the document's
+   *   `docProps/core.xml`; Readability skipped (already clean content)
    * - .html: Cleaned with Readability
    * - .md: Rendered to HTML via marked (preserved as-is semantically)
    *

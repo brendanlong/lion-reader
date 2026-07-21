@@ -6,7 +6,7 @@ describe("computeSavedArticleExcerpt", () => {
     // The arXiv plugin runs Readability (cleaned is non-null) but also supplies
     // the real abstract from the API; the abstract must win.
     const excerpt = computeSavedArticleExcerpt({
-      markdownResult: null,
+      preCleanedContent: null,
       cleaned: { excerpt: "Readability excerpt", textContent: "Scraped body text" },
       pluginContent: {
         html: "<nav>Table of contents</nav><p>Body</p>",
@@ -20,7 +20,7 @@ describe("computeSavedArticleExcerpt", () => {
   it("clips a long plugin excerpt to the summary length at a word boundary", () => {
     const longAbstract = "Reward hacking ".repeat(40).trim(); // > 300 chars
     const excerpt = computeSavedArticleExcerpt({
-      markdownResult: null,
+      preCleanedContent: null,
       cleaned: null,
       pluginContent: { html: "<p>Body</p>", excerpt: longAbstract },
       html: "<p>Raw</p>",
@@ -31,9 +31,9 @@ describe("computeSavedArticleExcerpt", () => {
     expect(excerpt!).not.toContain("Reward hackin…"); // no mid-word cut
   });
 
-  it("prefers Markdown frontmatter summary above everything", () => {
+  it("prefers the pre-cleaned source summary (frontmatter / docx description) above everything", () => {
     const excerpt = computeSavedArticleExcerpt({
-      markdownResult: { summary: "Frontmatter wins" },
+      preCleanedContent: { summary: "Frontmatter wins" },
       cleaned: { excerpt: "Readability excerpt", textContent: "Body text" },
       pluginContent: { html: "<p>Plugin</p>" },
       html: "<p>Raw</p>",
@@ -49,7 +49,7 @@ describe("computeSavedArticleExcerpt", () => {
       "<nav><ol><li>1 Introduction</li><li>2 Monitoring Frontier Reasoning Models</li>" +
       "<li>2.1 Catching Systemic Reward Hacking</li></ol></nav>";
     const excerpt = computeSavedArticleExcerpt({
-      markdownResult: null,
+      preCleanedContent: null,
       cleaned: {
         excerpt: "",
         textContent:
@@ -69,7 +69,7 @@ describe("computeSavedArticleExcerpt", () => {
     const excerpt = "A good, article-specific description that is clearly long enough.";
     expect(
       computeSavedArticleExcerpt({
-        markdownResult: null,
+        preCleanedContent: null,
         cleaned: { excerpt, textContent: "Body text here." },
         pluginContent: null,
         html: "<p>Raw</p>",
@@ -79,7 +79,7 @@ describe("computeSavedArticleExcerpt", () => {
     // ...and the body text is used when there is no usable excerpt.
     expect(
       computeSavedArticleExcerpt({
-        markdownResult: null,
+        preCleanedContent: null,
         cleaned: { excerpt: "", textContent: "The article begins here." },
         pluginContent: null,
         html: "<p>Raw</p>",
@@ -90,7 +90,7 @@ describe("computeSavedArticleExcerpt", () => {
   it("returns null when the cleaned content is empty", () => {
     expect(
       computeSavedArticleExcerpt({
-        markdownResult: null,
+        preCleanedContent: null,
         cleaned: { excerpt: "", textContent: "" },
         pluginContent: null,
         html: "<p>Raw</p>",
@@ -101,7 +101,7 @@ describe("computeSavedArticleExcerpt", () => {
   it("summarizes raw plugin HTML only when Readability was skipped (cleaned is null)", () => {
     // e.g. Google Docs sets skipReadability: true, so no cleaned content exists.
     const excerpt = computeSavedArticleExcerpt({
-      markdownResult: null,
+      preCleanedContent: null,
       cleaned: null,
       pluginContent: { html: "<p>Google Doc body content.</p>" },
       html: "<p>ignored</p>",
@@ -109,9 +109,9 @@ describe("computeSavedArticleExcerpt", () => {
     expect(excerpt).toBe("Google Doc body content.");
   });
 
-  it("summarizes raw Markdown HTML when there is no frontmatter summary and no cleaned content", () => {
+  it("summarizes the raw pre-cleaned HTML when there is no source summary and no cleaned content", () => {
     const excerpt = computeSavedArticleExcerpt({
-      markdownResult: { summary: null },
+      preCleanedContent: { summary: null },
       cleaned: null,
       pluginContent: null,
       html: "<h1>Title</h1><p>Markdown body.</p>",
@@ -122,7 +122,7 @@ describe("computeSavedArticleExcerpt", () => {
   it("returns null when nothing usable is available (Readability failed on a plain page)", () => {
     expect(
       computeSavedArticleExcerpt({
-        markdownResult: null,
+        preCleanedContent: null,
         cleaned: null,
         pluginContent: null,
         html: "<p>Raw page that Readability rejected.</p>",

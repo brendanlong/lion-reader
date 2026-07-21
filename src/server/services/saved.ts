@@ -276,8 +276,13 @@ interface ArticleContentBundle {
     siteName?: string;
     skipReadability?: boolean;
   } | null;
-  /** Markdown conversion result (Readability is skipped for Markdown). */
-  markdownResult: {
+  /**
+   * Pre-cleaned content whose Readability is skipped because the source is
+   * already clean: Markdown (frontmatter title/summary/author) or a `.docx`
+   * (mammoth body + `docProps/core.xml` metadata). Null when Readability should
+   * run (URL/HTML).
+   */
+  preCleanedContent: {
     html: string;
     title: string | null;
     summary: string | null;
@@ -317,9 +322,9 @@ interface BuiltArticleFields {
  * file conversion) and that uploads carry a null URL.
  *
  * Field precedence:
- *  - title:  provided → plugin / Markdown frontmatter → Readability → OG or `<title>` → filename
- *  - author: plugin / frontmatter → Readability byline → OG/meta author
- *  - excerpt: see {@link computeSavedArticleExcerpt} (plugin excerpt → frontmatter → cleaned → plugin/Markdown HTML)
+ *  - title:  provided → plugin / Markdown frontmatter / docx core.xml → Readability → OG or `<title>` → filename
+ *  - author: plugin / frontmatter / docx core.xml → Readability byline → OG/meta author
+ *  - excerpt: see {@link computeSavedArticleExcerpt} (plugin excerpt → source metadata → cleaned → plugin/pre-cleaned HTML)
  */
 async function buildArticleFields(
   bundle: ArticleContentBundle,
@@ -328,7 +333,7 @@ async function buildArticleFields(
   // a web fetch (where a short extraction usually means a failed JS-heavy page).
   cleanOptions: { minCleanedLength?: number } = {}
 ): Promise<BuiltArticleFields> {
-  const { html, contentUrl, pluginContent, markdownResult } = bundle;
+  const { html, contentUrl, pluginContent, preCleanedContent } = bundle;
   // Uploads have no origin; a guaranteed-broken base keeps relative URLs from
   // resolving against Lion Reader itself.
   const baseUrl = contentUrl ?? UPLOAD_BASE_URL;
@@ -336,24 +341,26 @@ async function buildArticleFields(
   // Extract metadata from Open Graph / meta tags.
   const metadata = extractMetadata(html, baseUrl);
 
-  // Run Readability unless a plugin opted out or this is Markdown. Extraction
-  // runs on the libuv thread pool so large pages don't block the event loop.
-  const shouldSkipReadability = Boolean(pluginContent?.skipReadability) || markdownResult !== null;
+  // Run Readability unless a plugin opted out or the content is already clean
+  // (Markdown / docx). Extraction runs on the libuv thread pool so large pages
+  // don't block the event loop.
+  const shouldSkipReadability =
+    Boolean(pluginContent?.skipReadability) || preCleanedContent !== null;
   const cleaned = shouldSkipReadability
     ? null
     : await cleanContentAsync(html, { url: baseUrl, ...cleanOptions });
 
   // When Readability ran, its output already has absolutized URLs; when it was
-  // skipped for plugin/Markdown content, absolutize here. When neither produced
+  // skipped for plugin/pre-cleaned content, absolutize here. When neither produced
   // anything (Readability failed on a plain page), store NULL rather than the raw
   // full page — readers fall back to the sanitized original content.
   const contentCleaned =
-    markdownResult?.html ??
+    preCleanedContent?.html ??
     cleaned?.content ??
     (pluginContent ? absolutizeUrls(pluginContent.html, baseUrl) : null);
 
-  // Precedence: explicit caller value → plugin/Markdown frontmatter → Readability
-  // → raw Open Graph/<title>/meta scrape → filename (title only).
+  // Precedence: explicit caller value → plugin / Markdown frontmatter / docx
+  // core.xml → Readability → raw Open Graph/<title>/meta scrape → filename (title only).
   //
   // Readability sits above the raw `metadata` scrape (both for title and author)
   // because Readability is itself a "source-specific" extractor that mostly reads
@@ -371,16 +378,20 @@ async function buildArticleFields(
   const title =
     hints.providedTitle ||
     pluginContent?.title ||
-    markdownResult?.title ||
+    preCleanedContent?.title ||
     cleaned?.title ||
     metadata.title ||
     (hints.filename ? titleFromFilename(hints.filename) || null : null) ||
     null;
   const author =
-    pluginContent?.author || markdownResult?.author || cleaned?.byline || metadata.author || null;
+    pluginContent?.author ||
+    preCleanedContent?.author ||
+    cleaned?.byline ||
+    metadata.author ||
+    null;
   const siteName = hints.siteName || pluginContent?.siteName || metadata.siteName || null;
 
-  const summary = computeSavedArticleExcerpt({ markdownResult, cleaned, pluginContent, html });
+  const summary = computeSavedArticleExcerpt({ preCleanedContent, cleaned, pluginContent, html });
 
   const contentHash = generateContentHash(title, contentCleaned || html);
 
@@ -809,8 +820,11 @@ interface AcquiredArticleContent {
     siteName?: string;
     skipReadability?: boolean;
   } | null;
-  /** Markdown processing results (Readability is skipped for Markdown). */
-  markdownResult: {
+  /**
+   * Pre-cleaned content whose Readability is skipped (Markdown frontmatter here);
+   * null for a normal HTML fetch. See {@link ArticleContentBundle.preCleanedContent}.
+   */
+  preCleanedContent: {
     html: string;
     title: string | null;
     summary: string | null;
@@ -839,7 +853,12 @@ async function acquireArticleContent(
       url: params.url,
       htmlLength: params.html.length,
     });
-    return { html: params.html, contentUrl: params.url, pluginContent: null, markdownResult: null };
+    return {
+      html: params.html,
+      contentUrl: params.url,
+      pluginContent: null,
+      preCleanedContent: null,
+    };
   }
 
   // Try to find a plugin for this URL (public Google Docs, LessWrong, ArXiv, …)
@@ -882,7 +901,7 @@ async function acquireArticleContent(
             siteName: plugin.capabilities.savedArticle.siteName,
             skipReadability: plugin.capabilities.savedArticle.skipReadability,
           },
-          markdownResult: null,
+          preCleanedContent: null,
         };
       }
     } catch (error) {
@@ -941,7 +960,7 @@ async function acquireArticleContent(
           siteName: "Google Docs",
           skipReadability: true,
         },
-        markdownResult: null,
+        preCleanedContent: null,
       };
     }
   }
@@ -1001,14 +1020,14 @@ async function acquireArticleContent(
       html: markdownResult.html,
       contentUrl: result.finalUrl,
       pluginContent: null,
-      markdownResult,
+      preCleanedContent: markdownResult,
     };
   }
   return {
     html: result.content,
     contentUrl: result.finalUrl,
     pluginContent: null,
-    markdownResult: null,
+    preCleanedContent: null,
   };
 }
 
@@ -1531,7 +1550,7 @@ export async function createSavedFromUpload(
       html: converted.html,
       contentUrl: null,
       pluginContent: null,
-      markdownResult: converted.markdownResult,
+      preCleanedContent: converted.preCleanedContent,
     },
     {
       providedTitle: params.title ?? null,
@@ -1563,10 +1582,15 @@ export async function uploadArticle(
   }
 
   // Convert markdown to HTML (with frontmatter title/summary/author); Readability
-  // is skipped downstream because markdownResult is set.
+  // is skipped downstream because preCleanedContent is set.
   const markdownResult = await processMarkdown(params.content);
   const fields = await buildArticleFields(
-    { html: markdownResult.html, contentUrl: null, pluginContent: null, markdownResult },
+    {
+      html: markdownResult.html,
+      contentUrl: null,
+      pluginContent: null,
+      preCleanedContent: markdownResult,
+    },
     { providedTitle: params.title, siteName: "Uploaded Article" }
   );
   return insertUploadedArticle(db, userId, fields);
