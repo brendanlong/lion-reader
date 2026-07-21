@@ -102,17 +102,6 @@ not embedded in the app servers.
 4. **Graceful degradation**: Handle misbehaving feeds, rate limits, and failures
 5. **Observable**: Comprehensive logging, metrics, and error tracking
 
-### Component Responsibilities
-
-| Component         | Responsibilities                                      |
-| ----------------- | ----------------------------------------------------- |
-| **App Server**    | HTTP API, SSE connections                             |
-| **Worker**        | Background job execution (feed fetching)              |
-| **Discord Bot**   | Save articles via emoji reactions or DMs in Discord   |
-| **Postgres**      | Persistent storage, job queue (pg-boss style)         |
-| **Redis**         | Session cache, rate limiting, pub/sub for real-time   |
-| **Email Service** | Inbound email processing for newsletter subscriptions |
-
 ---
 
 ## Database Design
@@ -123,35 +112,9 @@ Detailed data-model invariants (entry visibility, subscription attribution, unre
 
 All primary keys use **UUIDv7**: globally unique without coordination, time-ordered (good B-tree insert locality, natural keyset-pagination tiebreaker). The `id` is **not** the timeline sort key — the timeline sorts by publish time, which diverges from insert order.
 
-### Key Tables
+### Schema & Views
 
-The schema is defined in `migrations/` directory. Key tables:
-
-- **users** - User accounts with email, password hash, OAuth links
-- **sessions** - Session tokens with expiry and revocation
-- **feeds** - Canonical feed data (URL, metadata, fetch state) - shared across users for efficiency
-- **entries** - Feed entries with content and timestamps
-- **subscriptions** - User-to-feed relationships with subscription time
-- **user_entries** - Per-user read/starred state for entries
-- **jobs** - Background job queue for feed fetching
-- **websub_subscriptions** - WebSub push subscription state
-- **websub_hub_stats** - Per-hub tally of how new articles first reached us (hub push vs. backup poll), for spotting silently-broken hubs
-- **ingest_addresses** - Per-user email addresses for newsletter ingestion
-- **narration_content** - Cached LLM-processed narration text
-- **entry_summaries** - Cached AI-generated article summaries
-- **tags** / **subscription_tags** - User-created tags with many-to-many subscription mapping
-- **api_tokens** - Scoped API tokens for external access
-- **invites** - Invite codes for invite-only registration mode
-- **blocked_senders** - Blocked email senders for newsletter ingestion
-- **opml_imports** - OPML import job tracking
-- **oauth_accounts** / **oauth_clients** / **oauth_authorization_codes** / **oauth_access_tokens** - OAuth provider links and OAuth server implementation
-
-### Database Views
-
-Views simplify queries by abstracting the feeds/subscriptions join:
-
-- **user_feeds** - Subscriptions with feed metadata merged (including the trigger-maintained `unread_count`), using subscription ID as the primary key. Display-only (subscription list surfaces); link/ownership/scoping checks must query `subscriptions` directly
-- **visible_entries** - Entries with visibility rules applied, including subscription context (via `user_entries.subscription_id`)
+The schema is the source of truth for tables and views: `migrations/schema.sql` (kept current by `pnpm db:schema`), with Drizzle schemas in `src/server/db/schema.ts`. The core shape: canonical `feeds`/`entries` rows are shared across users for storage efficiency, while `subscriptions` and `user_entries` hold each user's relationship and read/star state. Frontend queries go through the `user_feeds` / `visible_entries` views rather than manual joins — semantics and gotchas in `src/server/CLAUDE.md`.
 
 ### Key Design Decisions
 
@@ -175,17 +138,11 @@ Custom auth using battle-tested primitives: **`arctic`** (OAuth for Google/Apple
 
 ### OAuth Providers
 
-| Provider    | Scopes                       | Notes                                                      |
-| ----------- | ---------------------------- | ---------------------------------------------------------- |
-| **Google**  | `openid`, `email`, `profile` | Optional `documents.readonly` for Google Docs access       |
-| **Apple**   | `name`, `email`              | Uses form_post response mode; may use private relay emails |
-| **Discord** | `identify`, `email`          | Standard OAuth 2.0 flow                                    |
-
-Each provider is enabled by setting its environment variables (client ID and secret). The frontend automatically shows buttons for enabled providers.
+Sign-in providers are Google, Apple, and Discord; each is enabled by setting its client ID/secret environment variables, and the frontend automatically shows buttons for enabled providers. Google can additionally grant `documents.readonly` for Google Docs access.
 
 ### Session Cookie
 
-The `session` cookie is `HttpOnly` + `Secure` (issue #1088) and the server is its sole writer — there is no client-side token management. Dead sessions are detected without reading the cookie: the auth-error redirect is mounted only on authenticated surfaces, so any `UNAUTHORIZED` there means "session died". HttpOnly removes the XSS→session-theft path, but `sanitizeEntryHtml` remains security-critical XSS defense (see `src/server/html/CLAUDE.md`).
+The `session` cookie is `HttpOnly` + `Secure` and the server is its sole writer — there is no client-side token management. Dead sessions are detected without reading the cookie: the auth-error redirect is mounted only on authenticated surfaces, so any `UNAUTHORIZED` there means "session died".
 
 ### Token Scopes & Authorization
 
@@ -230,14 +187,7 @@ All server-side fetches of user-influenced URLs go through `fetchWithSsrfProtect
 
 ### Channel Design
 
-Per-feed channels for scalability - servers only receive events they care about:
-
-| Channel Pattern        | Events                                                                                                                                                                                                                   |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `feed:{feedId}:events` | `new_entry`, `entry_updated`                                                                                                                                                                                             |
-| `user:{userId}:events` | `subscription_created`, `subscription_updated`, `subscription_deleted`, `entry_state_changed`, `mark_all_read`, `tag_created`, `tag_updated`, `tag_deleted`, `import_progress`, `import_completed`, `saved_feed_created` |
-
-When a user subscribes to a new feed, the SSE connection dynamically subscribes to that feed's channel. `saved_feed_created` is a server-internal signal (not forwarded to the client): it fires when a user's saved-articles feed is first created so already-open connections subscribe to its channel and the first saved article broadcasts live rather than only after the next reconnect.
+Two channel patterns, so servers only receive events they care about: `feed:{feedId}:events` for entry events (shared across the feed's subscribers) and `user:{userId}:events` for per-user events (subscription/tag/read-state changes, imports). The event types live in `src/server/redis/pubsub.ts`. When a user subscribes to a new feed, the SSE connection dynamically subscribes to that feed's channel. `saved_feed_created` is a server-internal signal (not forwarded to the client): it fires when a user's saved-articles feed is first created so already-open connections subscribe to its channel and the first saved article broadcasts live rather than only after the next reconnect.
 
 ### Connection Efficiency
 
@@ -258,25 +208,7 @@ The API uses **subscription ID as the primary user-facing identifier**. While fe
 
 ### tRPC Router Structure
 
-Routers are organized by resource:
-
-- `auth` - Registration, login, logout, OAuth
-- `users` - Profile, sessions, settings
-- `subscriptions` - CRUD for feed subscriptions (primary user-facing API)
-- `entries` - List, read, star, mark read
-- `feeds` - Preview, discover feeds (pre-subscription only)
-- `tags` - Tag CRUD, subscription-tag assignments
-- `narration` - Text-to-speech generation
-- `summarization` - AI article summarization
-- `imports` - OPML import/export, Feedbin migration
-- `saved` - Save/delete/upload articles (read-it-later)
-- `apiTokens` - Scoped API token management
-- `feedStats` - Per-feed statistics and health monitoring
-- `brokenFeeds` - List feeds with consecutive fetch failures
-- `blockedSenders` - Block email senders, attempt unsubscribe
-- `ingestAddresses` - Manage per-user newsletter ingest email addresses
-- `sync` - Cursor-based delta sync for offline clients
-- `admin` - Invite management (invite-only mode)
+Routers are organized by resource (one file per resource in `src/server/trpc/routers/` — see the directory for the list). Note `feeds` is pre-subscription only (preview/discover); everything post-subscription goes through `subscriptions`.
 
 ### HTTP API Surfaces
 
@@ -288,9 +220,7 @@ Besides the browser tRPC endpoint (`/api/trpc`), the same routers/services back 
 - **MCP** (`/api/mcp`): see [MCP Server](#mcp-server).
 - **Webhooks** (`/api/webhooks/*`): Mailgun inbound email, WebSub hub callbacks.
 
-Both compat APIs expose **stored serial** integer ids, never UUID-derived ones — see "Compat API Integer IDs" in `src/server/CLAUDE.md`.
-
-This list is not exhaustive. Other route handlers under `src/app/api/` include `/api/health` (Fly.io/load-balancer health check), `/api/share` (PWA Web Share Target), `/api/admin/session` (admin session helper), and `/api/v1/telemetry` (client telemetry ingest).
+Both compat APIs expose **stored serial** integer ids, never UUID-derived ones — see "Compat API Integer IDs" in `src/server/CLAUDE.md`. This list is not exhaustive; see `src/app/api/` for the other route handlers (health check, PWA share target, telemetry, …).
 
 ### Pagination
 
@@ -321,15 +251,9 @@ what to render from `usePathname()`. The `page.tsx` files exist to prefetch rout
 data on initial load; their rendered output is hidden by the app layout. Navigation costs
 zero server requests — data is served from the React Query cache, kept fresh by SSE.
 
-Consequences:
-
-- Never use Next's `<Link>` or `router.push()` for internal navigation — they trigger
-  per-navigation RSC fetches. Use `ClientLink`.
-- `useParams()` doesn't update on `pushState`; dynamic params are parsed from the pathname
-  by regex.
-
 Native App Router navigation was evaluated and rejected in issue #872 (per-navigation
-RSC fetches defeat the SSE-fed cache).
+RSC fetches defeat the SSE-fed cache). The navigation rules this implies (which link
+components to use, `useParams()` not updating on `pushState`) are in `src/CLAUDE.md`.
 
 ### Route Structure
 
@@ -383,16 +307,7 @@ The registry indexes plugins by hostname for O(1) lookup, then calls the plugin'
 
 A plugin can also declare `feedDefaultsToFullContent(feedUrl)`: when it returns true for a feed URL, a **fresh** subscription to that feed starts with `fetch_full_content` on (the frontend then hydrates each entry's full content on open, cached on the shared `entries` row). Used for sources whose feed entries are truncated or drop embedded content — Bluesky's native RSS renders quote posts/images/link cards as a bare placeholder. Matched by hostname + the plugin's predicate on the **feed** URL (not `matchUrl`, which matches entry URLs); a resubscribe keeps the user's stored preference. See `createSubscription` and `feedDefaultsToFullContent` in `src/server/plugins/index.ts`.
 
-### Available Plugins
-
-| Plugin          | Capabilities           | Notes                                                                                                                                                                                                                                                                                                                                                                |
-| --------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **LessWrong**   | `feed`, `savedArticle` | GraphQL API for posts/comments, user profile feeds                                                                                                                                                                                                                                                                                                                   |
-| **Google Docs** | `savedArticle`         | Fetch Google Docs content via API                                                                                                                                                                                                                                                                                                                                    |
-| **ArXiv**       | `savedArticle`         | Fetch ArXiv paper content                                                                                                                                                                                                                                                                                                                                            |
-| **GitHub**      | `savedArticle`         | Fetch GitHub content                                                                                                                                                                                                                                                                                                                                                 |
-| **YouTube**     | `feed`, `savedArticle` | Feed: 1h polling floor (per-IP rate limiting); synthesizes entry content (embedded player + description) from Media RSS metadata. SavedArticle: saving a watch/`youtu.be`/shorts/live URL synthesizes the same embed-plus-description body from the watch page's metadata (Readability would fail on the JS watch page)                                              |
-| **Bluesky**     | `savedArticle`         | Native RSS works for subscribing but drops post embeds (quote posts, images, link cards, videos) behind a placeholder. SavedArticle hydrates a post via the public AT Protocol appview (`public.api.bsky.app`) — handle→DID, then `getPosts` — and renders the text (with rich-text facets) + embeds as clean HTML. Declares `feedDefaultsToFullContent` (see above) |
+The available plugins (LessWrong, Google Docs, ArXiv, GitHub, YouTube, Bluesky) and their capabilities are registered in `src/server/plugins/index.ts`; each plugin file documents its own source-specific behavior.
 
 ---
 
@@ -422,7 +337,7 @@ Practically, this means using the expand/contract pattern:
 
 ### Maintenance Mode
 
-For a heavier migration that can't be made backward-compatible (a data backfill, a non-expand/contract change), an admin can flip **maintenance mode** from `/admin` → Status. It is a **Redis** flag (not Postgres — the DB may be the thing being migrated) read by every process group. The custom server (`scripts/server.ts`) then serves a self-contained 503 maintenance page/JSON for all traffic except the demo (no DB), the admin panel, and the health check; the worker stops claiming jobs and the Discord bot stops responding. Turning it off resumes everything with no redeploy. A `MAINTENANCE_MODE` env var is an additional force-on fallback. There's also a Redis-backed, closeable **announcement banner** (info/warning) shown site-wide for known-issue notices. See "Site Status" in `src/server/CLAUDE.md`.
+For a heavier migration that can't be made backward-compatible (a data backfill, a non-expand/contract change), an admin can flip **maintenance mode** from `/admin` → Status: a **Redis** flag (not Postgres — the DB may be the thing being migrated) that makes every process group stop touching the DB and the app serve a 503 maintenance page, then resume with no redeploy when turned off. A Redis-backed **announcement banner** covers known-issue notices. Details: "Site Status" in `src/server/CLAUDE.md`.
 
 ### Local Development
 
@@ -461,7 +376,7 @@ Configured via `STORAGE_BUCKET`, `STORAGE_ENDPOINT`, `STORAGE_REGION`, `STORAGE_
 
 The `monitor_feed_health` singleton job (worker, every 15 minutes) enforces the invariant **"at least one feed must fetch successfully every N minutes"** (default 120, `FEED_HEALTH_MAX_SUCCESS_AGE_MINUTES`). Since feeds are polled at least hourly in steady state, zero successes anywhere means fetching is broken globally (worker stuck, fetch/parse regression, egress failure) — this catches whole-pipeline breakage that per-feed failure tracking doesn't surface. See `src/server/feed/health.ts`.
 
-On each run the job **pings a healthchecks.io check** (`FEED_HEALTH_HEARTBEAT_URL`): a success ping when healthy, a `/fail` ping when not, POSTing a plain-text body (status, reason, last successful fetch, failing/pollable counts, most recent feed error) that healthchecks.io includes in its notification emails so the alert explains _why_ without opening the app. The external monitor owns alert delivery and cadence (de-dupes, sends its own recovery email). The job also **updates Prometheus gauges** `feed_last_successful_fetch_age_seconds` and `feeds_failing`.
+On each run the job **pings a healthchecks.io check** (`FEED_HEALTH_HEARTBEAT_URL`): a success ping when healthy, a `/fail` ping when not, with a plain-text body explaining _why_ so the notification email is self-contained. The external monitor owns alert delivery and cadence (de-dupes, sends its own recovery email). The job also updates the Prometheus gauges `feed_last_successful_fetch_age_seconds` and `feeds_failing`.
 
 #### Monitoring layout: three independent checks
 
@@ -479,17 +394,4 @@ All three are optional (a process skips pinging when its URL is unset). A fully 
 
 ## Testing Strategy
 
-Testing conventions, the frontend-testing playbook, and the e2e design points live in `tests/CLAUDE.md`.
-
-### Philosophy
-
-Structure code so business logic is pure and can be unit tested without mocks. **No mocks of internal code** — refactor if mocking is needed. Integration and e2e tests run against real Postgres/Redis (docker-compose), and e2e tests exercise the real SSE pipeline in a browser, asserting the UI updates with zero refetches (the minimal-request invariant from `src/FRONTEND_STATE.md`).
-
-### Test Structure
-
-```
-tests/
-  unit/           # Fast, no I/O - pure logic tests (frontend cache logic under unit/frontend/)
-  integration/    # Requires Docker services - full flow tests
-  e2e/            # Playwright browser tests - real app server + Postgres + Redis
-```
+Structure code so business logic is pure and can be unit tested without mocks — **no mocks of internal code**; integration and e2e tests run against real Postgres/Redis, and e2e tests exercise the real SSE pipeline in a browser. Conventions, the frontend-testing playbook, and the e2e design points: `tests/CLAUDE.md`.
