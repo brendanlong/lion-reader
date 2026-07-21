@@ -98,9 +98,9 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 
 # NOTE: GIT_COMMIT_SHA (surfaced in the outgoing User-Agent) is deliberately
-# NOT a build arg — it's a runtime env var set by CI at deploy time
-# (fly deploy --env GIT_COMMIT_SHA=..., see .github/workflows/deploy.yml).
-# Keeping the SHA out of the build keeps these layers cacheable across deploys.
+# NOT consumed in this builder stage — it's stamped into the final runner layer
+# instead (see the "Build provenance" block near the end of this file), so this
+# expensive `pnpm build` stays cacheable across deploys even as the SHA changes.
 # Dummy URLs for build - modules check these exist but don't connect
 ENV DATABASE_URL="postgresql://build:build@localhost:5432/build"
 ENV REDIS_URL="redis://localhost:6379"
@@ -120,7 +120,7 @@ ENV NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN
 
 # Deploy timestamp, inlined into the client bundle so the demo's "Welcome"
 # article shows a stable published time that matches the server render (see
-# src/app/demo/articles/welcome-published-at.ts). CI passes the same value as a
+# src/app/(public)/demo/articles/welcome-published-at.ts). CI passes the same value as a
 # runtime --env too, so the server reads an identical value; unset builds fall
 # back to a fixed date. Placed last among the NEXT_PUBLIC args so its per-deploy
 # churn only busts the build layer (which re-runs each deploy anyway).
