@@ -6,14 +6,19 @@ const MAX_EXCERPT_LENGTH = 300;
 /**
  * Choose the plain-text excerpt for a saved article.
  *
- * Precedence: explicit plugin excerpt → pre-cleaned source summary (Markdown
- * frontmatter / docx `dc:description`) → Readability's cleaned extraction → raw
- * plugin HTML → raw pre-cleaned HTML.
+ * Precedence: caller-provided excerpt → explicit plugin excerpt → pre-cleaned
+ * source summary (Markdown frontmatter / docx `dc:description`) → Readability's
+ * cleaned extraction → raw plugin HTML → raw pre-cleaned HTML.
+ *
+ * A caller-provided excerpt (e.g. an MCP client that already read the page and
+ * has a clean abstract in hand) is authoritative and outranks every extracted
+ * source — the same top tier a caller-provided title occupies for the title. Like
+ * the plugin excerpt it's plain text, so it's just clipped to the summary length.
  *
  * A plugin-supplied `excerpt` (e.g. the arXiv API abstract) is authoritative and
- * outranks everything, including Readability — the whole point of fetching it is
- * that it beats any scrape of the HTML render. It's plain text, so it's just
- * clipped to the summary length (arXiv abstracts run long — see #1399).
+ * outranks everything extracted, including Readability — the whole point of
+ * fetching it is that it beats any scrape of the HTML render. It's plain text, so
+ * it's just clipped to the summary length (arXiv abstracts run long — see #1399).
  *
  * Otherwise the `cleaned` (Readability) branch must be checked **before** the
  * plugin-HTML branch. When Readability ran, its output is what we store and
@@ -30,13 +35,19 @@ const MAX_EXCERPT_LENGTH = 300;
  * Pure (no DB/network) so it can be unit-tested directly.
  */
 export function computeSavedArticleExcerpt(params: {
+  /** Explicit caller-provided excerpt — highest precedence. */
+  providedExcerpt?: string | null;
   preCleanedContent: { summary: string | null } | null;
   cleaned: { excerpt: string; textContent: string } | null;
   pluginContent: { html: string; excerpt?: string | null } | null;
   html: string;
 }): string | null {
-  const { preCleanedContent, cleaned, pluginContent, html } = params;
+  const { providedExcerpt, preCleanedContent, cleaned, pluginContent, html } = params;
 
+  if (providedExcerpt) {
+    // Explicit caller override: authoritative, just clip it.
+    return truncateText(providedExcerpt, MAX_EXCERPT_LENGTH) || null;
+  }
   if (pluginContent?.excerpt) {
     // Explicit plugin excerpt (arXiv abstract): authoritative, just clip it.
     return truncateText(pluginContent.excerpt, MAX_EXCERPT_LENGTH) || null;

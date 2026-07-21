@@ -165,7 +165,30 @@ const countEntriesArgs = z.object({
 
 const saveArticleArgs = z.object({
   url: z.url().describe("The URL to save"),
-  title: z.string().optional().describe("Optional title override (useful if page title is poor)"),
+  title: z
+    .string()
+    .optional()
+    .describe(
+      "Optional title override (useful if page title is poor). Plain text (NOT " +
+        "Markdown or HTML). Do NOT HTML-escape it — write & not &amp;, since it is " +
+        "rendered as literal text and an entity like &amp; would show up verbatim."
+    ),
+  author: z
+    .string()
+    .optional()
+    .describe(
+      "Optional author/byline override (useful if you already know it better than " +
+        "the page). Plain text (NOT Markdown or HTML). Do NOT HTML-escape it — write " +
+        "& not &amp;, since it is rendered as literal text."
+    ),
+  summary: z
+    .string()
+    .optional()
+    .describe(
+      "Optional summary/excerpt override (e.g. an abstract you already have). Plain " +
+        "text (NOT Markdown or HTML). Do NOT HTML-escape it — write & not &amp;, since " +
+        "it is rendered as literal text. Clipped to ~300 characters."
+    ),
 });
 
 const deleteSavedArticleArgs = z.object({
@@ -350,6 +373,8 @@ function buildTools(): Tool[] {
         return savedService.saveArticle(db, userId, {
           url: params.url,
           title: params.title,
+          author: params.author,
+          excerpt: params.summary,
           // Use the user's stored Google credentials for private Google Docs
           // when already linked/granted; otherwise throw a clear error telling
           // them to authorize Google Docs access in the web app (an MCP client

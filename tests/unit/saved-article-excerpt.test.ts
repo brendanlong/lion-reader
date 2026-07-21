@@ -17,6 +17,42 @@ describe("computeSavedArticleExcerpt", () => {
     expect(excerpt).toBe("Mitigating reward hacking remains a key challenge in aligned models.");
   });
 
+  it("prefers a caller-provided excerpt above everything, including the plugin excerpt", () => {
+    const excerpt = computeSavedArticleExcerpt({
+      providedExcerpt: "Caller-supplied abstract wins.",
+      preCleanedContent: { summary: "Frontmatter" },
+      cleaned: { excerpt: "Readability excerpt", textContent: "Body text" },
+      pluginContent: { html: "<p>Body</p>", excerpt: "arXiv abstract" },
+      html: "<p>Raw</p>",
+    });
+    expect(excerpt).toBe("Caller-supplied abstract wins.");
+  });
+
+  it("clips a long caller-provided excerpt to the summary length at a word boundary", () => {
+    const longSummary = "Reward hacking ".repeat(40).trim(); // > 300 chars
+    const excerpt = computeSavedArticleExcerpt({
+      providedExcerpt: longSummary,
+      preCleanedContent: null,
+      cleaned: null,
+      pluginContent: null,
+      html: "<p>Raw</p>",
+    });
+    expect(excerpt).not.toBeNull();
+    expect(excerpt!.length).toBeLessThanOrEqual(303); // 300 + "..."
+    expect(excerpt!.endsWith("...")).toBe(true);
+  });
+
+  it("ignores an empty caller-provided excerpt and falls through to the next source", () => {
+    const excerpt = computeSavedArticleExcerpt({
+      providedExcerpt: "",
+      preCleanedContent: null,
+      cleaned: null,
+      pluginContent: { html: "<p>Body</p>", excerpt: "arXiv abstract" },
+      html: "<p>Raw</p>",
+    });
+    expect(excerpt).toBe("arXiv abstract");
+  });
+
   it("clips a long plugin excerpt to the summary length at a word boundary", () => {
     const longAbstract = "Reward hacking ".repeat(40).trim(); // > 300 chars
     const excerpt = computeSavedArticleExcerpt({
