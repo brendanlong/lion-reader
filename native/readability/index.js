@@ -45,15 +45,17 @@ const nativeBinding = requireNative(binaryPath);
 exports.extractArticle = nativeBinding.extractArticle;
 exports.extractArticleAsync = nativeBinding.extractArticleAsync;
 
-// Completeness guard: if the .node binary grows a `#[napi]` export that isn't
-// re-exported above, fail loudly at load rather than let ESM named imports of
-// it silently break (a failure that would otherwise only surface under Node's
-// ESM loader). Runs on every import — no separate drift-detecting test needed.
-for (const key of Object.keys(nativeBinding)) {
-  if (!(key in exports)) {
+// Drift guard: every name re-exported above must resolve to a real symbol in
+// the binary. A re-export that comes out `undefined` means readability.node has
+// no such export — a `#[napi]` export was renamed/removed, or the list has a
+// typo. Left unchecked, cjs-module-lexer still sees the name (so the import
+// "succeeds") and it surfaces as a silent `undefined` that crashes only when
+// the missing function is called. Fail loud at load instead. Runs on every import.
+for (const key of Object.keys(exports)) {
+  if (exports[key] === undefined) {
     throw new Error(
-      `@lion-reader/readability: native binding exports "${key}" but index.js does not ` +
-        `re-export it. Add \`exports.${key} = nativeBinding.${key};\` for ESM named-import support.`
+      `@lion-reader/readability: re-exported "${key}" is undefined — readability.node has no ` +
+        `such export. Update the re-export list in index.js to match the built binary.`
     );
   }
 }
