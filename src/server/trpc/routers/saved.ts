@@ -131,6 +131,10 @@ export const savedRouter = createTRPCRouter({
           )
           .optional(),
         title: z.string().optional(),
+        /** Optional author hint (highest-precedence author source); plain text. */
+        author: z.string().optional(),
+        /** Optional excerpt/summary hint (highest-precedence); plain text, clipped. */
+        excerpt: z.string().optional(),
         /** When true (default), re-fetch and update if URL is already saved */
         refetch: z.boolean().default(true),
         /** When true with refetch, update even if new content appears lower quality */
@@ -145,6 +149,8 @@ export const savedRouter = createTRPCRouter({
         url: input.url,
         html: input.html,
         title: input.title,
+        author: input.author,
+        excerpt: input.excerpt,
         refetch: input.refetch,
         force: input.force,
         // The web UI can walk the user through Google sign-in / consent, so it

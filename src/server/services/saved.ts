@@ -63,6 +63,19 @@ export interface SaveArticleParams {
   /** Optional title hint (useful when page title is poor) */
   title?: string;
   /**
+   * Optional author hint. Highest-precedence author source (above plugin /
+   * frontmatter / Readability / OG-meta), for a caller that already knows the
+   * byline better than our extraction. Plain text (rendered escaped).
+   */
+  author?: string;
+  /**
+   * Optional excerpt/summary hint. Highest-precedence excerpt source (above the
+   * plugin excerpt / frontmatter / Readability), for a caller that already has a
+   * clean summary in hand. Plain text (rendered escaped); clipped to the summary
+   * length like the other excerpt sources.
+   */
+  excerpt?: string;
+  /**
    * Pre-fetched HTML (e.g. a bookmarklet capturing the rendered DOM). Used
    * instead of fetching the URL — useful for JavaScript-rendered pages where
    * a server-side fetch would miss content.
@@ -294,6 +307,10 @@ interface ArticleContentBundle {
 interface ArticleFieldHints {
   /** Explicit caller-provided title — highest precedence. */
   providedTitle?: string | null;
+  /** Explicit caller-provided author — highest precedence. */
+  providedAuthor?: string | null;
+  /** Explicit caller-provided excerpt/summary — highest precedence. */
+  providedExcerpt?: string | null;
   /** Upload filename, used only as a last-resort title (below Readability). */
   filename?: string | null;
   /** Provided site name (uploads: "Uploaded Document", etc.). */
@@ -323,8 +340,8 @@ interface BuiltArticleFields {
  *
  * Field precedence:
  *  - title:  provided → plugin / Markdown frontmatter / docx core.xml → Readability → OG or `<title>` → filename
- *  - author: plugin / frontmatter / docx core.xml → Readability byline → OG/meta author
- *  - excerpt: see {@link computeSavedArticleExcerpt} (plugin excerpt → source metadata → cleaned → plugin/pre-cleaned HTML)
+ *  - author: provided → plugin / frontmatter / docx core.xml → Readability byline → OG/meta author
+ *  - excerpt: see {@link computeSavedArticleExcerpt} (provided → plugin excerpt → source metadata → cleaned → plugin/pre-cleaned HTML)
  */
 async function buildArticleFields(
   bundle: ArticleContentBundle,
@@ -384,6 +401,7 @@ async function buildArticleFields(
     (hints.filename ? titleFromFilename(hints.filename) || null : null) ||
     null;
   const author =
+    hints.providedAuthor ||
     pluginContent?.author ||
     preCleanedContent?.author ||
     cleaned?.byline ||
@@ -391,7 +409,13 @@ async function buildArticleFields(
     null;
   const siteName = hints.siteName || pluginContent?.siteName || metadata.siteName || null;
 
-  const summary = computeSavedArticleExcerpt({ preCleanedContent, cleaned, pluginContent, html });
+  const summary = computeSavedArticleExcerpt({
+    providedExcerpt: hints.providedExcerpt,
+    preCleanedContent,
+    cleaned,
+    pluginContent,
+    html,
+  });
 
   const contentHash = generateContentHash(title, contentCleaned || html);
 
@@ -1221,7 +1245,11 @@ export async function saveArticle(
     imageUrl,
     contentHash,
     newTextContent,
-  } = await buildArticleFields(bundle, { providedTitle: params.title ?? null });
+  } = await buildArticleFields(bundle, {
+    providedTitle: params.title ?? null,
+    providedAuthor: params.author ?? null,
+    providedExcerpt: params.excerpt ?? null,
+  });
 
   // Handle refetch: update the existing entry if quality is acceptable
   if (existingEntry) {

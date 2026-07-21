@@ -1157,6 +1157,40 @@ describe("Saved Articles API", () => {
       expect(result.article.title).toBe("Title from Bookmarklet");
     });
 
+    it("uses provided author and excerpt parameters over extracted metadata", async () => {
+      const userId = await createTestUser();
+      const ctx = createAuthContext(userId);
+      const caller = createCaller(ctx);
+
+      const testHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Page Title</title>
+            <meta name="author" content="Scraped Author" />
+            <meta property="og:description" content="Scraped description from the page." />
+          </head>
+          <body>
+            <article>
+              <p>This is the article content that should be extracted by Readability.</p>
+              <p>It has multiple paragraphs to ensure proper extraction.</p>
+            </article>
+          </body>
+        </html>
+      `;
+
+      const result = await caller.saved.save({
+        url: "https://example.com/with-author-excerpt",
+        html: testHtml,
+        author: "Caller Author",
+        excerpt: "Caller-supplied summary.",
+      });
+
+      // Caller-provided values win over anything extracted from the page.
+      expect(result.article.author).toBe("Caller Author");
+      expect(result.article.excerpt).toBe("Caller-supplied summary.");
+    });
+
     it("falls back to og:title when title parameter is not provided", async () => {
       const userId = await createTestUser();
       const ctx = createAuthContext(userId);
