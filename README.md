@@ -2,6 +2,8 @@
 
 An AI-native, all-in-one reader that unifies RSS/Atom/JSON feeds, email newsletters, and read-later into one fast, self-hostable app. Try the [interactive demo](https://lionreader.com/demo) — no signup required.
 
+Read more: [Claude Wrote Me a 400-Commit RSS Reader App](https://www.brendanlong.com/claude-wrote-me-a-400-commit-rss-reader-app.html) and the follow-up, [My RSS Reader is Done](https://www.brendanlong.com/my-rss-reader-is-done.html).
+
 ## What makes it different
 
 - **AI-native, not AI-bolted-on** — Connect Claude and other assistants directly to your reader over the [Model Context Protocol (MCP)](docs/DESIGN.md#mcp-server) to list, search, save, star, and mark entries read on your behalf. On-demand article summaries via Claude (never auto-summarized), plus text-to-speech narration with synchronized paragraph highlighting.
