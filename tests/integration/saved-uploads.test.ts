@@ -261,4 +261,26 @@ describe("uploadArticle (Markdown)", () => {
     const article = await uploadArticle(db, userId, { content: md, title: "Explicit Title" });
     expect(article.title).toBe("Explicit Title");
   });
+
+  it("prefers the provided author/excerpt over frontmatter", async () => {
+    const userId = await createTestUser();
+    const md = [
+      "---",
+      "title: Frontmatter Title",
+      "description: A concise frontmatter summary of the piece.",
+      "author: Grace Hopper",
+      "---",
+      "",
+      "Some markdown body content here that is long enough to be meaningful.",
+    ].join("\n");
+
+    const article = await uploadArticle(db, userId, {
+      content: md,
+      title: "",
+      author: "Ada Lovelace",
+      excerpt: "An explicit summary override.",
+    });
+    expect(article.author).toBe("Ada Lovelace");
+    expect(article.excerpt).toBe("An explicit summary override.");
+  });
 });

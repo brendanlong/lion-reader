@@ -212,6 +212,21 @@ const uploadArticleArgs = z.object({
         "& not &amp;, since the title is rendered as literal text and an entity like " +
         "&amp; would show up verbatim."
     ),
+  author: z
+    .string()
+    .optional()
+    .describe(
+      "Optional author/byline override. Plain text (NOT Markdown or HTML). Do NOT " +
+        "HTML-escape it — write & not &amp;, since it is rendered as literal text."
+    ),
+  summary: z
+    .string()
+    .optional()
+    .describe(
+      "Optional summary/excerpt override (e.g. an abstract you already have). Plain " +
+        "text (NOT Markdown or HTML). Do NOT HTML-escape it — write & not &amp;, since " +
+        "it is rendered as literal text. Clipped to ~300 characters."
+    ),
 });
 
 const listSubscriptionsArgs = z.object({
@@ -405,6 +420,8 @@ function buildTools(): Tool[] {
         return savedService.uploadArticle(db, userId, {
           content: params.content,
           title: params.title,
+          author: params.author,
+          excerpt: params.summary,
         });
       },
     },

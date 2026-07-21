@@ -123,6 +123,17 @@ export interface UploadArticleParams {
   content: string;
   /** Article title */
   title: string;
+  /**
+   * Optional author hint. Highest-precedence author source (above the Markdown
+   * frontmatter author). Plain text.
+   */
+  author?: string;
+  /**
+   * Optional excerpt/summary hint. Highest-precedence excerpt source (above the
+   * Markdown frontmatter summary / cleaned content). Plain text; clipped to the
+   * summary length like the other excerpt sources.
+   */
+  excerpt?: string;
 }
 
 export interface CreateUploadedArticleParams {
@@ -1619,7 +1630,12 @@ export async function uploadArticle(
       pluginContent: null,
       preCleanedContent: markdownResult,
     },
-    { providedTitle: params.title, siteName: "Uploaded Article" }
+    {
+      providedTitle: params.title,
+      providedAuthor: params.author ?? null,
+      providedExcerpt: params.excerpt ?? null,
+      siteName: "Uploaded Article",
+    }
   );
   return insertUploadedArticle(db, userId, fields);
 }
