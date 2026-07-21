@@ -10,7 +10,9 @@ This file governs sessions, the session cookie, API-token/OAuth-token authorizat
 4. Validate: not revoked, not expired
 5. Update `last_active_at` asynchronously (on both the session row and, throttled, the denormalized `users.last_active_at` column)
 
-`users.last_active_at` is a denormalized copy of the most recent session activity. It exists so the admin "last active" view survives retention cleanup, which deletes expired sessions (see `runRetentionCleanup`); deriving activity from `MAX(sessions.last_active_at)` would blank out any user idle longer than the 30-day session lifetime. `updateLastActiveAt` refreshes it fire-and-forget, skipping the write when it was updated within the last minute to avoid write/index churn.
+`users.last_active_at` is a denormalized copy of the most recent **full-access (browser) session** activity. It exists so the admin "last active" view survives retention cleanup, which deletes expired sessions (see `runRetentionCleanup`); deriving activity from `MAX(sessions.last_active_at)` would blank out any user idle longer than the 30-day session lifetime. `updateLastActiveAt` refreshes it fire-and-forget, skipping the write when it was updated within the last minute to avoid write/index churn.
+
+A **scoped session** (`scopes IS NOT NULL` — today only the Google Reader compat token) is treated differently: it's a native app polling the sync API in the background, not a human using the reader, so `updateLastActiveAt` bumps **only its own `sessions.last_active_at`** and deliberately leaves `users.last_active_at` (and thus the admin "last active" column + the active-users stats) untouched. The admin user list instead folds `MAX(sessions.last_active_at)` over scoped rows into its `lastTokenUsedAt` ("last API usage") column alongside API-token and OAuth-token use, so compat-API sync shows up as API usage rather than session activity (`src/server/trpc/routers/admin.ts`).
 
 ## Session Cookie (`HttpOnly` + `Secure`)
 

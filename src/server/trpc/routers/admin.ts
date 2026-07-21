@@ -6,7 +6,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, isNull, sql, desc, asc, lt, gt, ilike, count, max } from "drizzle-orm";
+import { eq, and, isNull, isNotNull, sql, desc, asc, lt, gt, ilike, count, max } from "drizzle-orm";
 import crypto from "crypto";
 
 import { createTRPCRouter, adminProcedure } from "../trpc";
@@ -20,6 +20,7 @@ import {
   oauthAccounts,
   oauthAccessTokens,
   apiTokens,
+  sessions,
   userEntries,
 } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
@@ -553,10 +554,12 @@ const userEndpoints = {
             subscriptionCount: z.number(),
             entryCount: z.number(),
             lastActiveAt: z.date().nullable(),
-            // Most recent API-token / OAuth-MCP token use. Durable for
-            // long-lived API tokens (extension/integrations); for MCP OAuth
-            // access tokens it only reflects ~the last day, since those are
-            // short-lived and pruned by retention cleanup soon after expiry.
+            // Most recent programmatic (API) access: API-token / OAuth-MCP
+            // token use, or Google Reader compat-API polling (a scoped session).
+            // Durable for long-lived API tokens (extension/integrations); for
+            // MCP OAuth access tokens and Google Reader sessions it reflects
+            // only recent use, since those are pruned by retention cleanup soon
+            // after expiry.
             lastTokenUsedAt: z.date().nullable(),
           })
         ),
@@ -591,10 +594,19 @@ const userEndpoints = {
         .from(userEntries)
         .where(eq(userEntries.userId, users.id));
 
-      // Subqueries: most recent token use, tracked separately from session
-      // activity. API tokens (extension/integrations) are long-lived so this is
-      // durable; OAuth access tokens (remote MCP) are short-lived and pruned by
-      // retention, so they only contribute usage from ~the last day.
+      // Subqueries: most recent programmatic (API) access, tracked separately
+      // from human session activity. Three sources:
+      // - API tokens (extension/integrations) — long-lived, so durable.
+      // - OAuth access tokens (remote MCP) — short-lived and pruned by
+      //   retention, so they only contribute usage from ~the last day.
+      // - Scoped sessions — the Google Reader compat API mints one per login
+      //   (scopes IS NOT NULL). A native app polls it in the background, which
+      //   isn't real reader activity, so updateLastActiveAt bumps only
+      //   sessions.last_active_at for those and leaves users.last_active_at
+      //   alone. Surfacing MAX here reclassifies that polling as API usage.
+      //   Durable only while the session lives (retention deletes it ~a day
+      //   after its 30-day expiry), but an actively-syncing client keeps a live
+      //   session, so it stays current exactly when it matters.
       const apiTokenLastUsedSq = ctx.db
         .select({ max: max(apiTokens.lastUsedAt).as("max") })
         .from(apiTokens)
@@ -603,6 +615,10 @@ const userEndpoints = {
         .select({ max: max(oauthAccessTokens.lastUsedAt).as("max") })
         .from(oauthAccessTokens)
         .where(eq(oauthAccessTokens.userId, users.id));
+      const scopedSessionLastActiveSq = ctx.db
+        .select({ max: max(sessions.lastActiveAt).as("max") })
+        .from(sessions)
+        .where(and(eq(sessions.userId, users.id), isNotNull(sessions.scopes)));
 
       const conditions = [];
 
@@ -678,9 +694,9 @@ const userEndpoints = {
           subscriptionCount: sql<number>`(${subscriptionCountSq})`.as("subscription_count"),
           entryCount: sql<number>`(${entryCountSq})`.as("entry_count"),
           lastActiveAt: users.lastActiveAt,
-          // GREATEST ignores NULLs, so this is the newer of the two, or NULL.
+          // GREATEST ignores NULLs, so this is the newest of the three, or NULL.
           lastTokenUsedAt:
-            sql<Date | null>`GREATEST((${apiTokenLastUsedSq}), (${oauthTokenLastUsedSq}))`.as(
+            sql<Date | null>`GREATEST((${apiTokenLastUsedSq}), (${oauthTokenLastUsedSq}), (${scopedSessionLastActiveSq}))`.as(
               "last_token_used_at"
             ),
         })
@@ -762,6 +778,10 @@ const overviewEndpoints = {
 
         // Active users: single scan over the denormalized users.last_active_at
         // (durable across session retention cleanup, unlike a sessions scan).
+        // This counts real reader activity only — Google Reader compat-API
+        // polling is a scoped session that never bumps users.last_active_at, so
+        // native-app-only users don't inflate these counts (see
+        // updateLastActiveAt).
         ctx.db
           .select({
             active7d: sql<number>`COUNT(*) FILTER (WHERE ${users.lastActiveAt} > ${sevenDaysAgo})`,

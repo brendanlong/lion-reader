@@ -13,9 +13,9 @@
 
 import { describe, it, expect, afterAll } from "vitest";
 import * as argon2 from "argon2";
-import { inArray } from "drizzle-orm";
+import { inArray, eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { users } from "../../src/server/db/schema";
+import { users, sessions } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createSession, validateSession } from "../../src/server/auth/session";
 import { clientLogin, requireAuth } from "../../src/server/google-reader/auth";
@@ -159,5 +159,73 @@ describe("createSession scope validation", () => {
       scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
     });
     expect(token).toBeTruthy();
+  });
+});
+
+describe("last_active_at accounting for scoped vs full-access sessions", () => {
+  // updateLastActiveAt is fire-and-forget, so we poll for the DB write.
+  async function waitForSessionActiveAfter(sessionId: string, after: Date): Promise<Date> {
+    for (let i = 0; i < 100; i++) {
+      const [s] = await db
+        .select({ lastActiveAt: sessions.lastActiveAt })
+        .from(sessions)
+        .where(eq(sessions.id, sessionId));
+      if (s.lastActiveAt && s.lastActiveAt.getTime() > after.getTime()) return s.lastActiveAt;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    throw new Error("sessions.last_active_at was not bumped in time");
+  }
+
+  async function waitForUserActive(userId: string): Promise<Date> {
+    for (let i = 0; i < 100; i++) {
+      const [u] = await db
+        .select({ lastActiveAt: users.lastActiveAt })
+        .from(users)
+        .where(eq(users.id, userId));
+      if (u.lastActiveAt) return u.lastActiveAt;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    throw new Error("users.last_active_at was not bumped in time");
+  }
+
+  it("a scoped (Google Reader) session bumps its session row but never users.last_active_at", async () => {
+    const user = await createTestUser();
+    const login = await clientLogin(user.email, PASSWORD);
+    if (!login) throw new Error("unreachable");
+
+    // Resolve the session id (this first validation also fires a scoped bump).
+    const scoped = await validateSession(login.auth, { allowScoped: true });
+    const sessionId = scoped?.session.id;
+    if (!sessionId) throw new Error("unreachable");
+
+    // Reset to known markers: a compat-only user (NULL user activity) and an old
+    // session timestamp so the next bump is observably newer.
+    const marker = new Date("2020-01-01T00:00:00Z");
+    await db.update(users).set({ lastActiveAt: null }).where(eq(users.id, user.id));
+    await db.update(sessions).set({ lastActiveAt: marker }).where(eq(sessions.id, sessionId));
+
+    // Validate again — the scoped branch must bump only the session row.
+    await validateSession(login.auth, { allowScoped: true });
+    const bumped = await waitForSessionActiveAfter(sessionId, marker);
+    expect(bumped.getTime()).toBeGreaterThan(marker.getTime());
+
+    // Once the (single-statement) scoped bump has landed, the user row must
+    // still be untouched — a native app polling the sync API isn't "activity".
+    const [u] = await db
+      .select({ lastActiveAt: users.lastActiveAt })
+      .from(users)
+      .where(eq(users.id, user.id));
+    expect(u.lastActiveAt).toBeNull();
+  });
+
+  it("a full-access (browser) session bumps users.last_active_at", async () => {
+    const user = await createTestUser();
+    const { token } = await createSession(db, { userId: user.id });
+
+    await db.update(users).set({ lastActiveAt: null }).where(eq(users.id, user.id));
+
+    await validateSession(token);
+    const activeAt = await waitForUserActive(user.id);
+    expect(activeAt).toBeInstanceOf(Date);
   });
 });

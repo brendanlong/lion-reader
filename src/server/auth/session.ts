@@ -364,7 +364,11 @@ export async function validateSession(
             return null;
           }
           // Update last_active_at asynchronously (fire and forget)
-          void updateLastActiveAt(data.session.id, data.session.userId);
+          void updateLastActiveAt(
+            data.session.id,
+            data.session.userId,
+            data.session.scopes !== null
+          );
           return data;
         }
 
@@ -431,7 +435,11 @@ export async function validateSession(
   }
 
   // Update last_active_at asynchronously (fire and forget)
-  void updateLastActiveAt(sessionData.session.id, sessionData.session.userId);
+  void updateLastActiveAt(
+    sessionData.session.id,
+    sessionData.session.userId,
+    sessionData.session.scopes !== null
+  );
 
   return sessionData;
 }
@@ -445,23 +453,42 @@ export async function validateSession(
 const USER_LAST_ACTIVE_REFRESH_MS = 60 * 1000;
 
 /**
- * Updates last_active_at for both the session and (throttled) the user row.
+ * Updates last_active_at for the session and (throttled) the user row.
  * Done asynchronously (fire-and-forget) so it never blocks the request.
  *
  * The user-row copy is denormalized so the admin "last active" view survives
  * session retention cleanup (expired sessions are deleted), rather than being
  * derived from MAX(sessions.last_active_at).
  *
- * This runs on every authenticated request, so it's a single round-trip via a
+ * `isScoped` is true for a restricted (compat-API) session — today only the
+ * Google Reader token, which a native app polls in the background. That polling
+ * isn't real user activity, so a scoped session bumps **only** its own session
+ * row (needed for the user's session list and as the admin "last API usage"
+ * source, MAX(sessions.last_active_at) over scoped rows) and deliberately leaves
+ * `users.last_active_at` alone — otherwise a native-app sync would keep a user
+ * looking perpetually "active" (and inflate the active-users stats) despite
+ * never opening the reader.
+ *
+ * For a full-access (browser) session this is a single round-trip via a
  * writable CTE rather than two sequential statements. The session row is always
  * touched; the user row is only touched when its timestamp is stale, so the
  * common case is a no-op on the users table (no row write, no index churn) while
  * still costing just one query.
  */
-async function updateLastActiveAt(sessionId: string, userId: string): Promise<void> {
+async function updateLastActiveAt(
+  sessionId: string,
+  userId: string,
+  isScoped: boolean
+): Promise<void> {
   const now = new Date();
-  const staleCutoff = new Date(now.getTime() - USER_LAST_ACTIVE_REFRESH_MS);
   try {
+    if (isScoped) {
+      await db.execute(sql`
+        UPDATE ${sessions} SET last_active_at = ${now} WHERE id = ${sessionId}
+      `);
+      return;
+    }
+    const staleCutoff = new Date(now.getTime() - USER_LAST_ACTIVE_REFRESH_MS);
     await db.execute(sql`
       WITH touched_session AS (
         UPDATE ${sessions} SET last_active_at = ${now} WHERE id = ${sessionId}
