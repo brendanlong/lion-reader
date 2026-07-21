@@ -7,7 +7,9 @@
  * uploads share exactly the same processing as URL saves.
  *
  * Supports:
- * - .docx files → mammoth conversion (Readability runs downstream)
+ * - .docx files → mammoth conversion + `docProps/core.xml` metadata (Readability
+ *   skipped downstream — mammoth output is already clean, chrome-free content, so
+ *   running Readability only risks over-stripping; like a Markdown URL save)
  * - .html files → passthrough (Readability runs downstream)
  * - .md/.txt files → marked conversion (Readability skipped downstream, like a
  *   Markdown URL save)
@@ -16,6 +18,7 @@
 import * as mammoth from "mammoth";
 import { logger } from "@/lib/logger";
 import { processMarkdown as convertMarkdown } from "@/server/markdown";
+import { extractDocxCoreProperties } from "@/server/file/docx-core-props";
 
 // ============================================================================
 // Types
@@ -34,11 +37,12 @@ export interface ConvertedUpload {
   /** Raw article HTML (stored as content_original; Readability runs on it downstream). */
   html: string;
   /**
-   * Markdown conversion result — set for .md/.txt, null for .docx/.html. A
-   * non-null value tells `buildArticleFields` to skip Readability (as with a
-   * Markdown URL save) and use the frontmatter title/summary/author.
+   * Pre-cleaned content — set for .md/.txt (marked) and .docx (mammoth +
+   * core.xml), null for .html. A non-null value tells `buildArticleFields` to
+   * skip Readability (the content is already clean) and use the supplied
+   * title/summary/author (Markdown frontmatter, or docx `docProps/core.xml`).
    */
-  markdownResult: {
+  preCleanedContent: {
     html: string;
     title: string | null;
     summary: string | null;
@@ -102,7 +106,14 @@ export function titleFromFilename(filename: string): string {
 // ============================================================================
 
 /**
- * Converts a .docx file buffer to HTML using mammoth. Readability runs downstream.
+ * Converts a .docx file buffer to HTML using mammoth, and reads the author-set
+ * document properties (`docProps/core.xml`) for title/author/summary.
+ *
+ * Readability is skipped downstream (via `preCleanedContent`): mammoth emits a
+ * flat, chrome-free run of `<p>`/`<h1>`, so Readability adds no cleaning and only
+ * risks promoting the first paragraph as a bogus title or dropping content. The
+ * real `core.xml` metadata is far more reliable than anything guessed from the
+ * rendered HTML; where it's absent, downstream falls back to the filename.
  */
 async function convertDocx(buffer: Buffer, filename: string): Promise<ConvertedUpload> {
   const styleMap = ["p[style-name='Title'] => h1:fresh", "p[style-name='Subtitle'] => h2:fresh"];
@@ -116,10 +127,18 @@ async function convertDocx(buffer: Buffer, filename: string): Promise<ConvertedU
     });
   }
 
-  // Wrap in HTML structure so downstream Readability has a document to parse.
+  // Read the author-set document properties. jszip's lazy read only inflates
+  // that one small ZIP entry (not the whole archive).
+  const coreProps = await extractDocxCoreProperties(buffer);
+
   return {
-    html: `<!DOCTYPE html><html><body>${result.value}</body></html>`,
-    markdownResult: null,
+    html: result.value,
+    preCleanedContent: {
+      html: result.value,
+      title: coreProps.title,
+      summary: coreProps.description,
+      author: coreProps.author,
+    },
     fileType: "docx",
     filename,
   };
@@ -134,7 +153,7 @@ async function convertMarkdownFile(content: string, filename: string): Promise<C
   const { html, title, summary, author } = await convertMarkdown(content);
   return {
     html,
-    markdownResult: { html, title, summary, author },
+    preCleanedContent: { html, title, summary, author },
     fileType: "markdown",
     filename,
   };
@@ -175,7 +194,7 @@ export async function convertUploadedFile(
     case "html": {
       // HTML should be string; Readability runs downstream.
       const htmlContent = typeof content === "string" ? content : content.toString("utf-8");
-      return { html: htmlContent, markdownResult: null, fileType: "html", filename };
+      return { html: htmlContent, preCleanedContent: null, fileType: "html", filename };
     }
 
     case "markdown": {

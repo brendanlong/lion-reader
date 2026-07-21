@@ -83,6 +83,7 @@
     "htmlparser2": "^10.1.0",
     "ioredis": "^5.11.1",
     "jose": "6.2.3",
+    "jszip": "^3.10.1",
     "katex": "^0.17.0",
     "linkedom": "^0.18.13",
     "mammoth": "^1.12.0",

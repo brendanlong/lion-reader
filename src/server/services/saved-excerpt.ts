@@ -6,8 +6,9 @@ const MAX_EXCERPT_LENGTH = 300;
 /**
  * Choose the plain-text excerpt for a saved article.
  *
- * Precedence: explicit plugin excerpt → Markdown frontmatter summary →
- * Readability's cleaned extraction → raw plugin HTML → raw Markdown HTML.
+ * Precedence: explicit plugin excerpt → pre-cleaned source summary (Markdown
+ * frontmatter / docx `dc:description`) → Readability's cleaned extraction → raw
+ * plugin HTML → raw pre-cleaned HTML.
  *
  * A plugin-supplied `excerpt` (e.g. the arXiv API abstract) is authoritative and
  * outranks everything, including Readability — the whole point of fetching it is
@@ -29,20 +30,20 @@ const MAX_EXCERPT_LENGTH = 300;
  * Pure (no DB/network) so it can be unit-tested directly.
  */
 export function computeSavedArticleExcerpt(params: {
-  markdownResult: { summary: string | null } | null;
+  preCleanedContent: { summary: string | null } | null;
   cleaned: { excerpt: string; textContent: string } | null;
   pluginContent: { html: string; excerpt?: string | null } | null;
   html: string;
 }): string | null {
-  const { markdownResult, cleaned, pluginContent, html } = params;
+  const { preCleanedContent, cleaned, pluginContent, html } = params;
 
   if (pluginContent?.excerpt) {
     // Explicit plugin excerpt (arXiv abstract): authoritative, just clip it.
     return truncateText(pluginContent.excerpt, MAX_EXCERPT_LENGTH) || null;
   }
-  if (markdownResult?.summary) {
-    // Use summary from frontmatter
-    return markdownResult.summary;
+  if (preCleanedContent?.summary) {
+    // Use the summary from the source metadata (frontmatter / docx description).
+    return preCleanedContent.summary;
   }
   if (cleaned) {
     return summarizeCleanedContent(cleaned) || null;
@@ -50,7 +51,7 @@ export function computeSavedArticleExcerpt(params: {
   if (pluginContent) {
     return generateSummary(pluginContent.html) || null;
   }
-  if (markdownResult) {
+  if (preCleanedContent) {
     return generateSummary(html) || null;
   }
   return null;

@@ -15,6 +15,7 @@ import { users, entries } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createSavedFromUpload, uploadArticle } from "../../src/server/services/saved";
 import { convertUploadedFile } from "../../src/server/file/process-upload";
+import { buildMinimalDocx } from "../utils/docx";
 
 const createdUserIds: string[] = [];
 
@@ -152,6 +153,83 @@ describe("createSavedFromUpload (HTML)", () => {
     expect(article.author).toBe("Ada Lovelace");
     const stored = await readStored(article.id);
     expect(stored.imageUrl).toBe("https://cdn.example.com/cover.jpg");
+  });
+});
+
+describe("createSavedFromUpload (.docx)", () => {
+  // A body long enough that, if Readability *did* run, it would produce a cleaned
+  // body — so the assertions below confirm we deliberately skip it and keep the
+  // mammoth output as-is.
+  const DOCX_PARAGRAPHS = [
+    "This is the opening paragraph of an uploaded Word document. It has enough " +
+      "prose to be treated as a real article body rather than boilerplate.",
+    "A second paragraph with additional sentences so the content comfortably " +
+      "clears any minimum-length thresholds a cleaner might enforce.",
+  ];
+
+  it("uses docProps/core.xml for title, author, and summary", async () => {
+    const userId = await createTestUser();
+    const docx = buildMinimalDocx({
+      paragraphs: DOCX_PARAGRAPHS,
+      core: {
+        title: "The Real Core.xml Title",
+        creator: "Ada Lovelace",
+        description: "A concise summary taken straight from the document properties.",
+      },
+    });
+    const converted = await convertUploadedFile(docx, "some-file-name.docx");
+    const article = await createSavedFromUpload(db, userId, { converted });
+
+    expect(article.title).toBe("The Real Core.xml Title");
+    expect(article.author).toBe("Ada Lovelace");
+    expect(article.excerpt).toBe("A concise summary taken straight from the document properties.");
+    expect(article.siteName).toBe("Uploaded Document");
+    expect(article.url).toBeNull();
+  });
+
+  it("skips Readability: stores the mammoth body verbatim as cleaned content", async () => {
+    const userId = await createTestUser();
+    const docx = buildMinimalDocx({
+      paragraphs: DOCX_PARAGRAPHS,
+      core: { title: "Skip Readability Doc" },
+    });
+    const converted = await convertUploadedFile(docx, "notes.docx");
+    const article = await createSavedFromUpload(db, userId, { converted });
+
+    const stored = await readStored(article.id);
+    // The full mammoth output is preserved (not run through Readability, which
+    // could promote the first paragraph as a title or drop content).
+    expect(stored.contentCleaned).toContain("opening paragraph of an uploaded Word document");
+    expect(stored.contentCleaned).toContain("second paragraph");
+  });
+
+  it("falls back to the filename-derived title when core.xml has no title", async () => {
+    const userId = await createTestUser();
+    // core.xml present but with only an author — no dc:title.
+    const docx = buildMinimalDocx({
+      paragraphs: DOCX_PARAGRAPHS,
+      core: { creator: "Grace Hopper" },
+    });
+    const converted = await convertUploadedFile(docx, "My_Weekly-Report.docx");
+    const article = await createSavedFromUpload(db, userId, { converted });
+
+    expect(article.title).toBe("My Weekly Report");
+    expect(article.author).toBe("Grace Hopper");
+  });
+
+  it("prefers a caller-provided title over the core.xml title", async () => {
+    const userId = await createTestUser();
+    const docx = buildMinimalDocx({
+      paragraphs: DOCX_PARAGRAPHS,
+      core: { title: "Core.xml Title" },
+    });
+    const converted = await convertUploadedFile(docx, "notes.docx");
+    const article = await createSavedFromUpload(db, userId, {
+      converted,
+      title: "Caller Title",
+    });
+
+    expect(article.title).toBe("Caller Title");
   });
 });
 
