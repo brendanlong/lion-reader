@@ -2,7 +2,7 @@
 
 ## Documentation Map
 
-Deep subsystem knowledge lives in per-directory `CLAUDE.md` files (loaded automatically when you work on files there) — aggressively keep them, this file, and `docs/DESIGN.md` up-to-date if you notice anything outdated:
+Deep subsystem knowledge lives in per-directory `CLAUDE.md` files (loaded automatically when you work on files there):
 
 - `SECURITY.md` - Map of the **security-critical** code (XSS/SSRF/auth/cross-user isolation) and the invariant each area must uphold. **Reviewers and anyone touching auth, sanitization, outbound fetches, the compat/OAuth/MCP APIs, or cross-user data paths must read it first.**
 - `docs/DESIGN.md` - High-level architecture and design decisions. **Read it before design/architecture work** (deliberately not `@`-inlined).
@@ -13,6 +13,16 @@ Deep subsystem knowledge lives in per-directory `CLAUDE.md` files (loaded automa
 - Per-directory guides: `src/server/CLAUDE.md` (data model, services, compat-API ids), `src/server/html/CLAUDE.md` (sanitization), `src/server/feed/CLAUDE.md` (fetching/WebSub), `src/server/auth/CLAUDE.md` (sessions/scopes), `src/server/oauth/CLAUDE.md` (OAuth server/MCP auth), `src/server/http/CLAUDE.md` (SSRF-safe fetching), `src/CLAUDE.md` + `src/components/CLAUDE.md` (frontend), `tests/CLAUDE.md` (testing).
 
 ALWAYS read the relevant documentation before working.
+
+## Documentation Guidelines
+
+Docs (this file, per-directory `CLAUDE.md`s, `docs/`) explain **why and where**; the code explains **how**. Apply these rules when writing docs, and check for violations when reviewing doc changes (reviewer subagents included):
+
+- **Say each thing once**, in the doc closest to the code it governs; link from elsewhere instead of restating.
+- **Document decisions and required patterns** ("we use X", "always do Y") — not mechanics the reader can get from the code, and not exhaustive lists (tables, routers, events) the code already is the source of truth for.
+- **No history** unless it prevents repeating a mistake ("don't do X, it caused bug Y"). Describe the current state, never the change that got us here ("the old A is gone", "B replaced A").
+- **No non-decisions**: don't document things we haven't done or have merely deferred — that reads as a commitment to never do them.
+- Keep docs current **both ways**: when you change code whose docs are stale, or notice bloat/duplication, fix the docs in the same change — pruning is as valuable as adding.
 
 ## Commands
 
@@ -153,4 +163,4 @@ Prefer SAX-style parsing unless the algorithm requires a DOM.
 
 ## Sanitizing Untrusted HTML
 
-Entry HTML sanitization is **security-critical** (entry bodies are rendered via `dangerouslySetInnerHTML`; the sanitizer is the primary XSS defense). It happens **server-side in the services layer, on every read** — raw HTML is stored and sanitized per read (issue #1282), never persisted; never add a client-side sanitizer, and never render feed-controlled text as HTML. The sanitizer itself is a native Rust module (`native/sanitizer/`, built with `pnpm build:native` — required before running tests or the app). Read `src/server/html/CLAUDE.md` before touching anything sanitization-related. A sanitizer-rules change is just a deploy (`SANITIZER_VERSION` in `native/sanitizer/core/src/lib.rs` is now informational only).
+Entry HTML sanitization is **security-critical** (entry bodies are rendered via `dangerouslySetInnerHTML`; the sanitizer is the primary XSS defense). It happens **server-side in the services layer, on every read** — never add a client-side sanitizer, and never render feed-controlled text as HTML. The sanitizer is a native Rust module (`native/sanitizer/`, built with `pnpm build:native`). Read `src/server/html/CLAUDE.md` before touching anything sanitization-related.

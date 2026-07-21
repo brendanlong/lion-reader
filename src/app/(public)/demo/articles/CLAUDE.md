@@ -41,17 +41,13 @@ set, use the **single canonical full-body mascot** and the **`pro`** model tier:
 
 - `input_image_path_1: assets/lion-body.png` — the canonical full-body mascot: a
   clean sitting lion with well-defined paws, legs, tail and cream chest. **Use
-  exactly one reference.** This evolved through three tries: (1) the logo alone
-  on `nb2` — the logo is a lion _behind a book_, so the face/body aren't visible
-  and the lion drifted between images; (2) logo + `lionreader_emojis.png` sheet
-  together on `pro` — two references confused the model and it still drifted;
-  (3) a single clean **face** crop (`assets/lion-face.png`) on `pro` — fixed the
-  face but, with no body to copy, `nb`'s invented legs/paws came out blurry and
-  malformed. The fix was to first generate one clean full-body lion from the face
-  crop, save it as `assets/lion-body.png`, and use **that** as the sole reference.
-  It keeps proportions/paws/tail consistent _and_ still poses fine (the model
-  re-poses it for e.g. the dashing `performance` hero). `assets/lion-face.png` is
-  kept for regenerating the body reference itself.
+  exactly one lion reference.** Multiple lion references (or the logo, where the
+  lion hides behind a book) make the model drift off-model between images, and a
+  face-only reference makes it invent blurry, malformed legs — the full-body
+  mascot as the sole reference keeps proportions/paws/tail consistent _and_
+  still poses fine (the model re-poses it for e.g. the dashing `performance`
+  hero). `assets/lion-face.png` is kept only for regenerating the body
+  reference itself.
 - `model_tier: "pro"` — noticeably better reference adherence than the default
   `nb2` for this style-matching job.
 
@@ -62,9 +58,7 @@ use this), `lion-face.png` (face crop, for regenerating the body), `logo-origina
 sheet of expression emojis).
 
 In the prompt, say "match the lion's body, face, proportions, paws, tail and
-colors precisely to the reference mascot image". Worked example that produced the
-Text-to-Speech hero (`./images/text-to-speech.png`) used an older
-single-logo/`nb2` recipe:
+colors precisely to the reference mascot image". Worked example:
 
 ```
 mode: "generate"                       # REQUIRED — see gotcha
