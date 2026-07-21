@@ -373,8 +373,8 @@ async function buildArticleFields(
   // is skipped for Markdown (frontmatter wins) and for plugins that opt out
   // (`cleaned` is null), so those correctly prefer their own declared metadata.
   // dom_smoothie cleans up the title in some cases (e.g. stripping a
-  // " | Site Name" suffix) that our simpler raw scrape doesn't, so this ordering
-  // is load-bearing — it's not a no-op.
+  // " | Site Name" suffix) that our simpler raw scrape doesn't, so we prefer its
+  // output when it exists
   const title =
     hints.providedTitle ||
     pluginContent?.title ||
