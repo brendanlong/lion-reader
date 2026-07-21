@@ -473,6 +473,57 @@ describe("Admin API", () => {
       expect(result.items[0].lastTokenUsedAt!.getTime()).toBe(tokenUsedTime.getTime());
     });
 
+    it("reports scoped (Google Reader) session activity as token use, not session activity", async () => {
+      // A native app polling the Google Reader compat API holds a scoped
+      // session (scopes IS NOT NULL). That polling bumps only
+      // sessions.last_active_at, never users.last_active_at, so it must surface
+      // as lastTokenUsedAt ("last API usage") and leave lastActiveAt untouched.
+      const ctx = createAdminContext();
+      const caller = createCaller(ctx);
+
+      const userId = await createTestUser("greader-user");
+
+      // No full-access session activity: users.last_active_at stays NULL.
+      const scopedActiveTime = new Date("2026-05-25T00:00:00Z");
+      await db.insert(sessions).values({
+        id: generateUuidv7(),
+        userId,
+        tokenHash: `greader-hash-${userId}`,
+        scopes: ["reader:full-access"],
+        expiresAt: new Date("2026-06-24T00:00:00Z"),
+        lastActiveAt: scopedActiveTime,
+      });
+
+      const result = await caller.admin.listUsers({ search: "greader-user" });
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].lastActiveAt).toBeNull();
+      expect(result.items[0].lastTokenUsedAt).toBeInstanceOf(Date);
+      expect(result.items[0].lastTokenUsedAt!.getTime()).toBe(scopedActiveTime.getTime());
+    });
+
+    it("ignores full-access session rows when computing token use", async () => {
+      // A normal browser session (scopes NULL) must NOT count toward
+      // lastTokenUsedAt — only scoped sessions do.
+      const ctx = createAdminContext();
+      const caller = createCaller(ctx);
+
+      const userId = await createTestUser("browser-only-user");
+      await db.insert(sessions).values({
+        id: generateUuidv7(),
+        userId,
+        tokenHash: `browser-hash-${userId}`,
+        scopes: null,
+        expiresAt: new Date("2026-06-24T00:00:00Z"),
+        lastActiveAt: new Date("2026-05-25T00:00:00Z"),
+      });
+
+      const result = await caller.admin.listUsers({ search: "browser-only-user" });
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].lastTokenUsedAt).toBeNull();
+    });
+
     it("returns null token use for users who never used a token", async () => {
       const ctx = createAdminContext();
       const caller = createCaller(ctx);
