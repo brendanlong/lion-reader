@@ -372,9 +372,9 @@ async function buildArticleFields(
   // (short/unparseable page). This ordering is HTML-only in practice: Readability
   // is skipped for Markdown (frontmatter wins) and for plugins that opt out
   // (`cleaned` is null), so those correctly prefer their own declared metadata.
-  // Today our extractor (dom_smoothie) doesn't clean the title beyond the
-  // meta/<title> scrape, so title is equivalent either way in practice — but this
-  // is the order we want if/when it improves.
+  // dom_smoothie cleans up the title in some cases (e.g. stripping a
+  // " | Site Name" suffix) that our simpler raw scrape doesn't, so this ordering
+  // is load-bearing — it's not a no-op.
   const title =
     hints.providedTitle ||
     pluginContent?.title ||
