@@ -4,6 +4,7 @@
   "private": true,
   "description": "Native (Rust) article extraction: dom_smoothie (a Mozilla Readability port) behind one N-API call.",
   "main": "index.js",
+  "type": "commonjs",
   "types": "index.d.ts",
   "scripts": {
     "build": "node build.mjs",

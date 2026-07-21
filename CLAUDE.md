@@ -161,6 +161,14 @@ Prefer SAX-style parsing unless the algorithm requires a DOM.
 - DOM required: `linkedom` (but article extraction/Readability is the native `@lion-reader/readability` module — dom_smoothie, built by `pnpm build:native`)
 - Parse once, pass parsed structure through code
 
+## Module System (ESM)
+
+The repo is ESM (`"type": "module"`); author source in ESM syntax. Three interop boundaries are load-bearing — don't "simplify" them without reading this:
+
+- **esbuild bundles (`dist/server.js` etc.) stay CommonJS.** `scripts/dist-cjs-marker.mjs` writes `dist/package.json` (`{"type":"commonjs"}`) so Node doesn't read them as ESM under the root `type: module`; the Dockerfile copies it. Don't switch the bundles to `format: "esm"` — it breaks named imports of external CJS deps (e.g. the native `.node` addons: `cjs-module-lexer` can't see a native binding's exports, so `import { x }` throws at load).
+- **Native loaders (`native/*/index.js`) are CJS by design** (`"type": "commonjs"`), with static `exports.<name> =` re-exports so ESM named imports resolve, plus a load-time drift guard that throws if any re-exported name comes out `undefined` — i.e. the `.node` binary has no such export (a `#[napi]` export renamed/removed, or a typo). That's the dangerous direction: `cjs-module-lexer` still sees the name, so the import "succeeds" and the missing symbol surfaces as a silent `undefined` that only crashes when called (in prod). Keep the bundler-proof `createRequire` binary resolution (turbopack inlines the loader and breaks static `require("./x.node")` — verified, not theoretical). Don't revert to `module.exports = binding` (dynamic ⇒ ESM named imports break only under Node's ESM loader, i.e. e2e).
+- **tsx-run scripts** must use ESM idioms: no `require.main === module` (use `process.argv[1] === fileURLToPath(import.meta.url)`), no bare `require()`/`__dirname`.
+
 ## Sanitizing Untrusted HTML
 
 Entry HTML sanitization is **security-critical** (entry bodies are rendered via `dangerouslySetInnerHTML`; the sanitizer is the primary XSS defense). It happens **server-side in the services layer, on every read** — never add a client-side sanitizer, and never render feed-controlled text as HTML. The sanitizer is a native Rust module (`native/sanitizer/`, built with `pnpm build:native`). Read `src/server/html/CLAUDE.md` before touching anything sanitization-related.
