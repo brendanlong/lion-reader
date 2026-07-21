@@ -125,13 +125,27 @@ export const fetcherConfig = {
   /** Optional contact email to include in User-Agent header. */
   contactEmail: process.env.FETCHER_CONTACT_EMAIL,
   /**
-   * Git commit SHA, set at deploy time as a runtime env var
-   * (flyctl deploy --env, see .github/workflows/deploy.yml). A runtime var —
-   * not a build-time inline — so the esbuild-bundled worker/Discord/server
-   * processes see it too, and the Docker build stays SHA-independent.
-   * Unset in local dev.
+   * Git commit SHA, baked into the image at deploy time. CI passes it as a
+   * Docker build arg (flyctl deploy --build-arg GIT_COMMIT_SHA=...) and the
+   * Dockerfile stamps it into a real ENV in the final runner layer, so the
+   * value lives in the image (robust versioning) without a per-deploy runtime
+   * --env, and only busts that trivial final layer. Being a real runtime env
+   * var (not a build-time inline), the esbuild-bundled worker/Discord/server
+   * processes all read it. See .github/workflows/deploy.yml. Unset in local dev.
    */
   commitSha: process.env.GIT_COMMIT_SHA,
+};
+
+/**
+ * Build provenance, baked into the image in the final Docker layer (see the
+ * Dockerfile's "Build provenance" stamp and .github/workflows/deploy.yml).
+ * Surfaced by the /api/health endpoint for convenience. Unset in local dev.
+ */
+export const buildConfig = {
+  /** Git commit SHA of the deployed build (short SHA). */
+  commitSha: process.env.GIT_COMMIT_SHA,
+  /** ISO-8601 timestamp of when the image was built. */
+  buildTime: process.env.BUILD_TIME,
 };
 
 /**

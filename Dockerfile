@@ -219,6 +219,24 @@ COPY --from=builder /app/dist/discord-bot.js ./dist/discord-bot.js
 COPY --from=builder /app/scripts/start-all.sh ./scripts/start-all.sh
 RUN chmod +x scripts/start-all.sh
 
+# =============================================================================
+# Build provenance — stamped LAST, in the final layer, so it never busts an
+# earlier cached layer.
+# =============================================================================
+# GIT_COMMIT_SHA (surfaced in the outgoing User-Agent) and BUILD_TIME are baked
+# into the image as real runtime env vars here, AFTER every COPY. Nothing below
+# depends on them, so a per-deploy value only rebuilds this trivial ENV layer —
+# every earlier layer stays cached — yet the values live *in the image* instead
+# of relying on a fragile per-deploy `flyctl deploy --env`. Being real env vars
+# (not an esbuild build-time inline), all three process groups (app / worker /
+# discord) read them from the environment at runtime. Unset in a bare
+# `docker build` (the User-Agent then omits the SHA suffix). CI passes them via
+# `flyctl deploy --build-arg` (see .github/workflows/deploy.yml).
+ARG GIT_COMMIT_SHA=""
+ENV GIT_COMMIT_SHA=$GIT_COMMIT_SHA
+ARG BUILD_TIME=""
+ENV BUILD_TIME=$BUILD_TIME
+
 # No next.config.js in the image: dist/server.js hands next() the resolved
 # build-time config from .next/required-server-files.json (the standalone
 # mechanism) — the traced node_modules doesn't include the runtime

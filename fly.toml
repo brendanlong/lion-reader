@@ -43,10 +43,12 @@ kill_timeout = 30
   discord = "node dist/discord-bot.js"
 
 [env]
-  # GIT_COMMIT_SHA (surfaced in the outgoing User-Agent) is not listed here —
-  # CI passes it per-deploy via `flyctl deploy --env GIT_COMMIT_SHA=...`
-  # (.github/workflows/deploy.yml). A manual deploy without that flag leaves it
-  # unset, which only means the User-Agent omits the SHA suffix.
+  # GIT_COMMIT_SHA (surfaced in the outgoing User-Agent) and BUILD_TIME are not
+  # listed here — CI bakes them into the image per-deploy via
+  # `flyctl deploy --build-arg` and the Dockerfile stamps them into the final
+  # runner layer (.github/workflows/deploy.yml). A manual deploy without those
+  # flags leaves them unset, which only means the User-Agent omits the SHA
+  # suffix and /api/health reports no commit/buildTime.
 
   # apple/google are open to the public; email is allowed only with a valid invite.
   ALLOWED_SIGNUP_PROVIDERS = "apple,google,email"
