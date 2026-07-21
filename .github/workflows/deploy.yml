@@ -47,23 +47,29 @@ jobs:
         uses: superfly/flyctl-actions/setup-flyctl@master
 
       - name: Deploy to Fly.io
-        # Pass the deployed commit SHA as a RUNTIME env var (read by
-        # src/server/config/env.ts for the outgoing User-Agent). A runtime var
-        # reaches every process group — including the esbuild-bundled worker and
-        # Discord bot, which a build-time inline never reached — and keeps the
-        # Docker image build independent of the SHA, so unchanged layers stay
-        # cached. Short SHA to match the previous git-derived value.
+        # GIT_COMMIT_SHA (read by src/server/config/env.ts for the outgoing
+        # User-Agent) and BUILD_TIME are passed as BUILD ARGS. The Dockerfile
+        # stamps them into a real ENV in the final runner layer, AFTER every
+        # COPY, so the value is baked into the image (robust versioning that
+        # survives without a per-deploy runtime --env) while only busting that
+        # trivial final layer — earlier layers stay cached. Being real runtime
+        # env vars, they reach every process group (app / worker / Discord),
+        # including the esbuild-bundled ones a build-time inline never reached.
+        # Short SHA to match the previous git-derived value.
         #
-        # NEXT_PUBLIC_BUILD_TIME is passed as BOTH a build arg (inlined into the
-        # client bundle) and a runtime env var, using one shared value so the
-        # demo's "Welcome" published time matches between the client and server
-        # renders (see src/app/demo/articles/welcome-published-at.ts).
+        # NEXT_PUBLIC_BUILD_TIME is separate: it must be a build arg because
+        # Next inlines NEXT_PUBLIC_* into the client bundle at build time. It's
+        # also passed as a runtime env var, using the SAME timestamp as
+        # BUILD_TIME, so the demo's "Welcome" published time matches between the
+        # client and server renders (see
+        # src/app/(public)/demo/articles/welcome-published-at.ts).
         run: |
           BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           SHORT_SHA="$(git rev-parse --short HEAD)"
           flyctl deploy --remote-only \
+            --build-arg GIT_COMMIT_SHA="$SHORT_SHA" \
+            --build-arg BUILD_TIME="$BUILD_TIME" \
             --build-arg NEXT_PUBLIC_BUILD_TIME="$BUILD_TIME" \
-            --env NEXT_PUBLIC_BUILD_TIME="$BUILD_TIME" \
-            --env GIT_COMMIT_SHA="$SHORT_SHA"
+            --env NEXT_PUBLIC_BUILD_TIME="$BUILD_TIME"
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

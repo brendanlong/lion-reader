@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { sql } from "drizzle-orm";
 import { logger } from "@/lib/logger";
+import { buildConfig } from "@/server/config/env";
 
 /**
  * Health check endpoint for Fly.io and load balancers
@@ -20,6 +21,8 @@ interface HealthCheckResult {
   status: "healthy" | "degraded" | "unhealthy";
   timestamp: string;
   version?: string;
+  commit?: string;
+  buildTime?: string;
   checks: {
     database: ComponentHealth;
     redis: ComponentHealth;
@@ -123,6 +126,8 @@ export async function GET(): Promise<NextResponse> {
     status: overallStatus,
     timestamp: new Date().toISOString(),
     version: process.env.npm_package_version,
+    commit: buildConfig.commitSha,
+    buildTime: buildConfig.buildTime,
     checks,
   };
 
