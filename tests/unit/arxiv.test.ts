@@ -12,7 +12,28 @@ import {
   extractPaperId,
   buildArxivHtmlUrl,
   buildArxivAbsUrl,
+  parseArxivApiResponse,
+  formatArxivAuthors,
 } from "../../src/server/feed/arxiv";
+
+/** A trimmed-down but structurally faithful arXiv Atom API response. */
+const ARXIV_API_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title type="html">ArXiv Query: search_query=&amp;id_list=2503.11926</title>
+  <entry>
+    <id>http://arxiv.org/abs/2503.11926v1</id>
+    <title>Monitoring Reasoning Models for Misbehavior and the Risks of
+      Promoting Obfuscation</title>
+    <summary>  Mitigating reward hacking--where AI systems misbehave due to flaws
+      or misspecifications in their learning objectives--remains a key challenge.
+      We show that we can monitor a frontier reasoning model, such as OpenAI
+      o3-mini, for reward hacking.
+    </summary>
+    <author><name>Bowen Baker</name></author>
+    <author><name>Joost Huizinga</name></author>
+    <author><name>Leo Gao</name></author>
+  </entry>
+</feed>`;
 
 describe("ArXiv URL detection", () => {
   describe("isArxivUrl", () => {
@@ -162,5 +183,72 @@ describe("ArXiv URL detection", () => {
     it("builds abstract URL from old format paper ID", () => {
       expect(buildArxivAbsUrl("hep-th/9901001")).toBe("https://arxiv.org/abs/hep-th/9901001");
     });
+  });
+});
+
+describe("parseArxivApiResponse", () => {
+  it("extracts the title, abstract, and author names from the entry", () => {
+    const result = parseArxivApiResponse(ARXIV_API_XML);
+    // Whitespace (including the line wrapping arXiv uses) is collapsed.
+    expect(result.title).toBe(
+      "Monitoring Reasoning Models for Misbehavior and the Risks of Promoting Obfuscation"
+    );
+    expect(result.summary).toBe(
+      "Mitigating reward hacking--where AI systems misbehave due to flaws or " +
+        "misspecifications in their learning objectives--remains a key challenge. We show " +
+        "that we can monitor a frontier reasoning model, such as OpenAI o3-mini, for reward hacking."
+    );
+    expect(result.authors).toEqual(["Bowen Baker", "Joost Huizinga", "Leo Gao"]);
+  });
+
+  it("ignores the feed-level query title (only reads inside <entry>)", () => {
+    const result = parseArxivApiResponse(ARXIV_API_XML);
+    expect(result.title).not.toContain("ArXiv Query");
+  });
+
+  it("only reads the first entry when the API returns several", () => {
+    const multi = `<feed xmlns="http://www.w3.org/2005/Atom">
+      <entry><title>First</title><summary>First abstract</summary>
+        <author><name>Author One</name></author></entry>
+      <entry><title>Second</title><summary>Second abstract</summary>
+        <author><name>Author Two</name></author></entry>
+    </feed>`;
+    const result = parseArxivApiResponse(multi);
+    expect(result.title).toBe("First");
+    expect(result.summary).toBe("First abstract");
+    expect(result.authors).toEqual(["Author One"]);
+  });
+
+  it("returns nulls / empty authors for a response with no entry", () => {
+    const empty = `<feed xmlns="http://www.w3.org/2005/Atom">
+      <title>ArXiv Query: id_list=9999.99999</title>
+    </feed>`;
+    expect(parseArxivApiResponse(empty)).toEqual({
+      title: null,
+      summary: null,
+      authors: [],
+    });
+  });
+});
+
+describe("formatArxivAuthors", () => {
+  it("returns null for an empty list", () => {
+    expect(formatArxivAuthors([])).toBeNull();
+  });
+
+  it("returns the single author unchanged", () => {
+    expect(formatArxivAuthors(["Ada Lovelace"])).toBe("Ada Lovelace");
+  });
+
+  it("joins two authors with 'and'", () => {
+    expect(formatArxivAuthors(["Ada Lovelace", "Alan Turing"])).toBe(
+      "Ada Lovelace and Alan Turing"
+    );
+  });
+
+  it("collapses three or more authors to 'First Author et al.'", () => {
+    expect(formatArxivAuthors(["Bowen Baker", "Joost Huizinga", "Leo Gao"])).toBe(
+      "Bowen Baker et al."
+    );
   });
 });

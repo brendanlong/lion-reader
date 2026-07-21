@@ -10,8 +10,9 @@
  * when the HTML version is available, providing a better reading experience.
  */
 
+import { Parser } from "htmlparser2";
 import { logger } from "@/lib/logger";
-import { FEED_FETCH_TIMEOUT_MS } from "@/server/http/fetch";
+import { FEED_FETCH_TIMEOUT_MS, readResponseWithSizeLimit } from "@/server/http/fetch";
 import { fetchWithSsrfProtection } from "@/server/http/ssrf";
 import { USER_AGENT } from "@/server/http/user-agent";
 
@@ -174,4 +175,166 @@ export async function getArxivFetchUrl(url: string): Promise<string | null> {
   }
 
   return result.exists ? result.htmlUrl : result.fallbackUrl;
+}
+
+// ============================================================================
+// arXiv API metadata (title / abstract / authors)
+// ============================================================================
+
+/**
+ * A single-entry Atom document from the arXiv API is a few KB; cap the read so a
+ * misbehaving/hijacked response can't be buffered without bound.
+ */
+const ARXIV_API_MAX_BYTES = 1024 * 1024;
+
+/** Structured metadata scraped from the arXiv Atom API for one paper. */
+export interface ArxivApiMetadata {
+  /** The paper title (feed-level query title is ignored). */
+  title: string | null;
+  /** The abstract, from Atom `<summary>` — a far better excerpt than a scrape. */
+  summary: string | null;
+  /** Author display names, in order, from `<author><name>`. */
+  authors: string[];
+}
+
+/** Collapse runs of whitespace (arXiv wraps abstracts across lines) and trim. */
+function normalizeArxivText(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Parse an arXiv Atom API response (from `export.arxiv.org/api/query`) into the
+ * paper's title, abstract, and author names.
+ *
+ * SAX-parsed (xmlMode) for the same reasons the rest of the codebase prefers it.
+ * Only the **first** `<entry>` is read, and feed-level `<title>`/`<author>`
+ * elements (the query echo) are ignored — we only capture inside `<entry>`.
+ *
+ * Pure (no network) so it can be unit-tested directly against fixture XML.
+ */
+export function parseArxivApiResponse(xml: string): ArxivApiMetadata {
+  let title: string | null = null;
+  let summary: string | null = null;
+  const authors: string[] = [];
+
+  let inEntry = false;
+  let entryDone = false; // Stop capturing once the first <entry> closes.
+  let inAuthor = false;
+  let capture: "title" | "summary" | "name" | null = null;
+  let buffer = "";
+
+  const parser = new Parser(
+    {
+      onopentag(name) {
+        const tag = name.toLowerCase();
+        if (tag === "entry") {
+          if (!entryDone) inEntry = true;
+          return;
+        }
+        if (!inEntry) return;
+        if (tag === "author") {
+          inAuthor = true;
+        } else if (tag === "title") {
+          capture = "title";
+          buffer = "";
+        } else if (tag === "summary") {
+          capture = "summary";
+          buffer = "";
+        } else if (tag === "name" && inAuthor) {
+          capture = "name";
+          buffer = "";
+        }
+      },
+      ontext(text) {
+        if (capture) buffer += text;
+      },
+      onclosetag(name) {
+        const tag = name.toLowerCase();
+        if (!inEntry) return;
+        if (tag === "entry") {
+          inEntry = false;
+          entryDone = true;
+        } else if (tag === "author") {
+          inAuthor = false;
+        } else if (tag === "title" && capture === "title") {
+          title = normalizeArxivText(buffer) || null;
+          capture = null;
+        } else if (tag === "summary" && capture === "summary") {
+          summary = normalizeArxivText(buffer) || null;
+          capture = null;
+        } else if (tag === "name" && capture === "name") {
+          const authorName = normalizeArxivText(buffer);
+          if (authorName) authors.push(authorName);
+          capture = null;
+        }
+      },
+    },
+    { decodeEntities: true, xmlMode: true }
+  );
+
+  parser.write(xml);
+  parser.end();
+
+  return { title, summary, authors };
+}
+
+/**
+ * Format an arXiv author list into the single `author` string a saved article
+ * stores. Papers can carry dozens of authors, so a long list collapses to
+ * "First Author et al." rather than an unwieldy full byline.
+ */
+export function formatArxivAuthors(authors: string[]): string | null {
+  if (authors.length === 0) return null;
+  if (authors.length === 1) return authors[0];
+  if (authors.length === 2) return `${authors[0]} and ${authors[1]}`;
+  return `${authors[0]} et al.`;
+}
+
+/**
+ * Fetch a paper's structured metadata (title / abstract / authors) from the
+ * arXiv Atom API. Returns null on any failure so the caller falls back to the
+ * scraped HTML / Readability metadata.
+ *
+ * All outbound traffic goes through `fetchWithSsrfProtection` with our custom
+ * User-Agent. This is one request per save (not bulk harvesting), so it stays
+ * well within arXiv's API rate limits.
+ */
+export async function fetchArxivMetadata(paperId: string): Promise<ArxivApiMetadata | null> {
+  const apiUrl = `https://export.arxiv.org/api/query?id_list=${encodeURIComponent(paperId)}`;
+  try {
+    const response = await fetchWithSsrfProtection(apiUrl, {
+      headers: {
+        "User-Agent": USER_AGENT,
+      },
+      signal: AbortSignal.timeout(FEED_FETCH_TIMEOUT_MS),
+      redirect: "follow",
+    });
+
+    if (!response.ok) {
+      logger.warn("ArXiv API request failed", { paperId, status: response.status });
+      return null;
+    }
+
+    const xml = await readResponseWithSizeLimit(response, ARXIV_API_MAX_BYTES, apiUrl);
+    const metadata = parseArxivApiResponse(xml);
+
+    // A malformed / not-found response yields an empty entry — treat as a miss.
+    if (!metadata.title && !metadata.summary && metadata.authors.length === 0) {
+      logger.debug("ArXiv API returned no usable metadata", { paperId });
+      return null;
+    }
+
+    logger.debug("Fetched ArXiv API metadata", {
+      paperId,
+      hasSummary: metadata.summary !== null,
+      authorCount: metadata.authors.length,
+    });
+    return metadata;
+  } catch (error) {
+    logger.warn("ArXiv API request errored", {
+      paperId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
 }

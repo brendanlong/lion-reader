@@ -2,6 +2,35 @@ import { describe, it, expect } from "vitest";
 import { computeSavedArticleExcerpt } from "@/server/services/saved-excerpt";
 
 describe("computeSavedArticleExcerpt", () => {
+  it("prefers an explicit plugin excerpt above everything, including Readability (arXiv abstract #1399)", () => {
+    // The arXiv plugin runs Readability (cleaned is non-null) but also supplies
+    // the real abstract from the API; the abstract must win.
+    const excerpt = computeSavedArticleExcerpt({
+      markdownResult: null,
+      cleaned: { excerpt: "Readability excerpt", textContent: "Scraped body text" },
+      pluginContent: {
+        html: "<nav>Table of contents</nav><p>Body</p>",
+        excerpt: "Mitigating reward hacking remains a key challenge in aligned models.",
+      },
+      html: "<p>Raw</p>",
+    });
+    expect(excerpt).toBe("Mitigating reward hacking remains a key challenge in aligned models.");
+  });
+
+  it("clips a long plugin excerpt to the summary length at a word boundary", () => {
+    const longAbstract = "Reward hacking ".repeat(40).trim(); // > 300 chars
+    const excerpt = computeSavedArticleExcerpt({
+      markdownResult: null,
+      cleaned: null,
+      pluginContent: { html: "<p>Body</p>", excerpt: longAbstract },
+      html: "<p>Raw</p>",
+    });
+    expect(excerpt).not.toBeNull();
+    expect(excerpt!.length).toBeLessThanOrEqual(303); // 300 + "..."
+    expect(excerpt!.endsWith("...")).toBe(true);
+    expect(excerpt!).not.toContain("Reward hackin…"); // no mid-word cut
+  });
+
   it("prefers Markdown frontmatter summary above everything", () => {
     const excerpt = computeSavedArticleExcerpt({
       markdownResult: { summary: "Frontmatter wins" },

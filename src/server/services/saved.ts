@@ -271,6 +271,8 @@ interface ArticleContentBundle {
     html: string;
     title?: string | null;
     author?: string | null;
+    /** Plugin-supplied excerpt (e.g. arXiv API abstract); preferred over Readability's. */
+    excerpt?: string | null;
     siteName?: string;
     skipReadability?: boolean;
   } | null;
@@ -315,9 +317,9 @@ interface BuiltArticleFields {
  * file conversion) and that uploads carry a null URL.
  *
  * Field precedence:
- *  - title:  provided → source (plugin / Markdown frontmatter / OG or `<title>`) → Readability → filename
- *  - author: source (plugin / frontmatter / OG) → Readability byline
- *  - excerpt: see {@link computeSavedArticleExcerpt} (frontmatter → cleaned → plugin/Markdown HTML)
+ *  - title:  provided → plugin / Markdown frontmatter → Readability → OG or `<title>` → filename
+ *  - author: plugin / frontmatter → Readability byline → OG/meta author
+ *  - excerpt: see {@link computeSavedArticleExcerpt} (plugin excerpt → frontmatter → cleaned → plugin/Markdown HTML)
  */
 async function buildArticleFields(
   bundle: ArticleContentBundle,
@@ -351,16 +353,21 @@ async function buildArticleFields(
     (pluginContent ? absolutizeUrls(pluginContent.html, baseUrl) : null);
 
   // Precedence: explicit caller value → plugin/Markdown frontmatter → Readability
-  // → raw Open Graph/<title> → filename (title only).
+  // → raw Open Graph/<title>/meta scrape → filename (title only).
   //
-  // Readability sits above the raw `metadata.title` scrape because when it does
-  // produce a title it's the better one to prefer (it can strip a " | Site Name"
-  // suffix / pick a sensible heading). It only returns a title when it also
-  // extracted the body, so `metadata.title` (our own og:title/<title> scrape)
-  // stays just below it as the fallback that survives a failed extraction
-  // (short/unparseable page). Today our extractor (dom_smoothie) doesn't actually
-  // clean the title beyond the meta/<title> scrape, so the two are equivalent in
-  // practice — but this is the order we want if/when it improves.
+  // Readability sits above the raw `metadata` scrape (both for title and author)
+  // because Readability is itself a "source-specific" extractor that mostly reads
+  // the same Open Graph/meta tags — but when it and the raw scrape disagree, we
+  // trust Readability to have done better (e.g. stripping a " | Site Name" title
+  // suffix, or picking the real byline over a generic `meta[name=author]`). It
+  // only returns a value when it also extracted the body, so the raw `metadata`
+  // scrape stays just below it as the fallback that survives a failed extraction
+  // (short/unparseable page). This ordering is HTML-only in practice: Readability
+  // is skipped for Markdown (frontmatter wins) and for plugins that opt out
+  // (`cleaned` is null), so those correctly prefer their own declared metadata.
+  // Today our extractor (dom_smoothie) doesn't clean the title beyond the
+  // meta/<title> scrape, so title is equivalent either way in practice — but this
+  // is the order we want if/when it improves.
   const title =
     hints.providedTitle ||
     pluginContent?.title ||
@@ -370,7 +377,7 @@ async function buildArticleFields(
     (hints.filename ? titleFromFilename(hints.filename) || null : null) ||
     null;
   const author =
-    pluginContent?.author || markdownResult?.author || metadata.author || cleaned?.byline || null;
+    pluginContent?.author || markdownResult?.author || cleaned?.byline || metadata.author || null;
   const siteName = hints.siteName || pluginContent?.siteName || metadata.siteName || null;
 
   const summary = computeSavedArticleExcerpt({ markdownResult, cleaned, pluginContent, html });
@@ -797,6 +804,8 @@ interface AcquiredArticleContent {
     html: string;
     title?: string | null;
     author?: string | null;
+    /** Plugin-supplied excerpt (e.g. arXiv API abstract); preferred over Readability's. */
+    excerpt?: string | null;
     siteName?: string;
     skipReadability?: boolean;
   } | null;
@@ -869,6 +878,7 @@ async function acquireArticleContent(
             html: content.html,
             title: content.title,
             author: content.author,
+            excerpt: content.excerpt,
             siteName: plugin.capabilities.savedArticle.siteName,
             skipReadability: plugin.capabilities.savedArticle.skipReadability,
           },
