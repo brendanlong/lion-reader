@@ -28,6 +28,12 @@ import { users, feeds, entries, subscriptions, userEntries } from "../../src/ser
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import * as entriesService from "../../src/server/services/entries";
 import { getUserEventsChannel } from "../../src/server/redis/pubsub";
+import {
+  expectNoMessage,
+  subscribeAndDrain,
+  waitForMessage,
+  waitForMessages,
+} from "../utils/pubsub";
 
 let subscriber: Redis;
 
@@ -127,27 +133,6 @@ async function seedEntry(
   return entryId;
 }
 
-// Resolves with the first message on `channel`. Always removes its own listener
-// (on match or timeout) so listeners don't accumulate on the shared subscriber.
-function waitForMessage(channel: string, timeoutMs = 5000): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const listener = (ch: string, message: string) => {
-      if (ch !== channel) return;
-      cleanup();
-      resolve(message);
-    };
-    const timer = setTimeout(() => {
-      cleanup();
-      reject(new Error("Timed out waiting for message"));
-    }, timeoutMs);
-    const cleanup = () => {
-      clearTimeout(timer);
-      subscriber.off("message", listener);
-    };
-    subscriber.on("message", listener);
-  });
-}
-
 // Reads the user_entries state row directly, for asserting on the LWW
 // watermark columns that the service return value doesn't expose.
 async function getUserEntryRow(userId: string, entryId: string) {
@@ -164,26 +149,6 @@ async function getUserEntryRow(userId: string, entryId: string) {
   return row;
 }
 
-// Runs `action`, then waits `quietMs` and asserts no message arrived on `channel`.
-async function expectNoMessage(
-  channel: string,
-  action: () => Promise<unknown>,
-  quietMs = 200
-): Promise<void> {
-  let received = false;
-  const listener = (ch: string) => {
-    if (ch === channel) received = true;
-  };
-  subscriber.on("message", listener);
-  try {
-    await action();
-    await new Promise((resolve) => setTimeout(resolve, quietMs));
-    expect(received).toBe(false);
-  } finally {
-    subscriber.off("message", listener);
-  }
-}
-
 describe("markEntriesRead SSE publishing", () => {
   it("publishes entry_state_changed with absolute counts when an entry changes", async () => {
     const userId = await seedUser();
@@ -191,7 +156,7 @@ describe("markEntriesRead SSE publishing", () => {
 
     const channel = getUserEventsChannel(userId);
     await subscriber.subscribe(channel);
-    const messagePromise = waitForMessage(channel);
+    const messagePromise = waitForMessage(subscriber, channel);
 
     const { entries: result, counts } = await entriesService.markEntriesRead(
       db,
@@ -216,7 +181,7 @@ describe("markEntriesRead SSE publishing", () => {
 
     const channel = getUserEventsChannel(userId);
     await subscriber.subscribe(channel);
-    const messagePromise = waitForMessage(channel);
+    const messagePromise = waitForMessage(subscriber, channel);
 
     await entriesService.markEntriesRead(db, userId, [{ id: entryId }], true);
 
@@ -230,11 +195,14 @@ describe("markEntriesRead SSE publishing", () => {
   it("attaches the entry list payload when an entry flips to unread (#1237)", async () => {
     const userId = await seedUser();
     const entryId = await seedEntry(userId);
-    await entriesService.markEntriesRead(db, userId, [{ id: entryId }], true);
 
+    // Setup mutates through the service, which publishes fire-and-forget — so
+    // subscribe first and drain that event rather than racing it (issue #1427).
     const channel = getUserEventsChannel(userId);
-    await subscriber.subscribe(channel);
-    const messagePromise = waitForMessage(channel);
+    await subscribeAndDrain(subscriber, channel, () =>
+      entriesService.markEntriesRead(db, userId, [{ id: entryId }], true)
+    );
+    const messagePromise = waitForMessage(subscriber, channel);
 
     await entriesService.markEntriesRead(db, userId, [{ id: entryId }], false);
 
@@ -257,11 +225,12 @@ describe("markEntriesRead SSE publishing", () => {
   it("omits the payload for a spam entry flipping to unread", async () => {
     const userId = await seedUser();
     const entryId = await seedEntry(userId, { isSpam: true });
-    await entriesService.markEntriesRead(db, userId, [{ id: entryId }], true);
 
     const channel = getUserEventsChannel(userId);
-    await subscriber.subscribe(channel);
-    const messagePromise = waitForMessage(channel);
+    await subscribeAndDrain(subscriber, channel, () =>
+      entriesService.markEntriesRead(db, userId, [{ id: entryId }], true)
+    );
+    const messagePromise = waitForMessage(subscriber, channel);
 
     await entriesService.markEntriesRead(db, userId, [{ id: entryId }], false);
 
@@ -277,14 +246,14 @@ describe("markEntriesRead SSE publishing", () => {
     const entryId = await seedEntry(userId);
 
     // Establish a recent read_changed_at.
-    await entriesService.markEntriesRead(db, userId, [{ id: entryId }], true, {});
-
     const channel = getUserEventsChannel(userId);
-    await subscriber.subscribe(channel);
+    await subscribeAndDrain(subscriber, channel, () =>
+      entriesService.markEntriesRead(db, userId, [{ id: entryId }], true, {})
+    );
 
     // Replaying an older action loses the read_changed_at <= changedAt guard, so
     // no row updates and nothing is published.
-    await expectNoMessage(channel, () =>
+    await expectNoMessage(subscriber, channel, () =>
       entriesService.markEntriesRead(db, userId, [{ id: entryId, changedAt: new Date(0) }], false)
     );
   });
@@ -295,19 +264,19 @@ describe("markEntriesRead SSE publishing", () => {
 
     const t1 = new Date("2026-01-01T00:00:01Z");
     const t2 = new Date("2026-01-01T00:00:05Z");
-    await entriesService.markEntriesRead(db, userId, [{ id: entryId, changedAt: t1 }], true);
+    const channel = getUserEventsChannel(userId);
+    await subscribeAndDrain(subscriber, channel, () =>
+      entriesService.markEntriesRead(db, userId, [{ id: entryId, changedAt: t1 }], true)
+    );
 
     // Capture updated_at (the delta-sync "meaningful change" timestamp) after
     // the real flip so we can assert the re-assert leaves it untouched.
     const before = await getUserEntryRow(userId, entryId);
 
-    const channel = getUserEventsChannel(userId);
-    await subscriber.subscribe(channel);
-
     // A FRESH changedAt wins the guard and writes the row (the watermark must
     // advance), but the read value doesn't flip — so nothing is published,
     // `changed` is empty, and no counts are computed.
-    await expectNoMessage(channel, async () => {
+    await expectNoMessage(subscriber, channel, async () => {
       const result = await entriesService.markEntriesRead(
         db,
         userId,
@@ -361,11 +330,12 @@ describe("markEntriesRead SSE publishing", () => {
     const userId = await seedUser();
     const unreadEntryId = await seedEntry(userId);
     const readEntryId = await seedEntry(userId);
-    await entriesService.markEntriesRead(db, userId, [{ id: readEntryId }], true);
 
     const channel = getUserEventsChannel(userId);
-    await subscriber.subscribe(channel);
-    const messagePromise = waitForMessage(channel);
+    await subscribeAndDrain(subscriber, channel, () =>
+      entriesService.markEntriesRead(db, userId, [{ id: readEntryId }], true)
+    );
+    const messagePromise = waitForMessage(subscriber, channel);
 
     // One entry flips unread→read, the other is a same-value re-assert.
     const result = await entriesService.markEntriesRead(
@@ -392,7 +362,7 @@ describe("updateEntryStarred SSE publishing", () => {
 
     const channel = getUserEventsChannel(userId);
     await subscriber.subscribe(channel);
-    const messagePromise = waitForMessage(channel);
+    const messagePromise = waitForMessage(subscriber, channel);
 
     const { entry, counts } = await entriesService.updateEntryStarred(db, userId, entryId, true);
     expect(entry.starred).toBe(true);
@@ -410,13 +380,13 @@ describe("updateEntryStarred SSE publishing", () => {
     const entryId = await seedEntry(userId);
 
     // Establish a recent starred_changed_at.
-    await entriesService.updateEntryStarred(db, userId, entryId, true, new Date());
-
     const channel = getUserEventsChannel(userId);
-    await subscriber.subscribe(channel);
+    await subscribeAndDrain(subscriber, channel, () =>
+      entriesService.updateEntryStarred(db, userId, entryId, true, new Date())
+    );
 
     // Replaying an older action loses the starred_changed_at <= changedAt guard.
-    await expectNoMessage(channel, () =>
+    await expectNoMessage(subscriber, channel, () =>
       entriesService.updateEntryStarred(db, userId, entryId, false, new Date(0))
     );
   });
@@ -427,19 +397,19 @@ describe("updateEntryStarred SSE publishing", () => {
 
     const t1 = new Date("2026-01-01T00:00:01Z");
     const t2 = new Date("2026-01-01T00:00:05Z");
-    await entriesService.updateEntryStarred(db, userId, entryId, true, t1);
+    const channel = getUserEventsChannel(userId);
+    await subscribeAndDrain(subscriber, channel, () =>
+      entriesService.updateEntryStarred(db, userId, entryId, true, t1)
+    );
 
     // Capture updated_at (the delta-sync "meaningful change" timestamp) after
     // the real flip so we can assert the re-assert leaves it untouched.
     const before = await getUserEntryRow(userId, entryId);
 
-    const channel = getUserEventsChannel(userId);
-    await subscriber.subscribe(channel);
-
     // A FRESH changedAt wins the guard and writes the row (the watermark must
     // advance), but the starred value doesn't flip — so nothing is published
     // and no counts are computed.
-    await expectNoMessage(channel, async () => {
+    await expectNoMessage(subscriber, channel, async () => {
       const result = await entriesService.updateEntryStarred(db, userId, entryId, true, t2);
       expect(result.entry.starred).toBe(true);
       expect(result.counts).toBeUndefined();
@@ -485,7 +455,8 @@ describe("updateEntriesStarred (bulk) SSE publishing", () => {
 
     const channel = getUserEventsChannel(userId);
     await subscriber.subscribe(channel);
-    const first = waitForMessage(channel);
+    // One event per flipped entry, so wait for both.
+    const bothEvents = waitForMessages(subscriber, channel, 2);
 
     const {
       entries: state,
@@ -497,11 +468,11 @@ describe("updateEntriesStarred (bulk) SSE publishing", () => {
     // Both entries are now starred, so the starred badge reflects both.
     expect(counts?.starred.unread).toBe(2);
 
-    const event = JSON.parse(await first);
-    expect(event.type).toBe("entry_state_changed");
-    expect([entryA, entryB]).toContain(event.entryId);
-    expect(event.starred).toBe(true);
-    expect(event.counts.starred.unread).toBe(2);
+    const events = (await bothEvents).map((message) => JSON.parse(message));
+    expect(events.map((e) => e.type)).toEqual(["entry_state_changed", "entry_state_changed"]);
+    expect(events.map((e) => e.entryId).sort()).toEqual([entryA, entryB].sort());
+    expect(events.every((e) => e.starred)).toBe(true);
+    expect(events.every((e) => e.counts.starred.unread === 2)).toBe(true);
 
     // Both rows were actually written.
     expect((await getUserEntryRow(userId, entryA)).starred).toBe(true);
@@ -522,16 +493,16 @@ describe("updateEntriesStarred (bulk) SSE publishing", () => {
 
     const t1 = new Date("2026-01-01T00:00:01Z");
     const t2 = new Date("2026-01-01T00:00:05Z");
-    await entriesService.updateEntriesStarred(db, userId, [entryId], true, t1);
+    const channel = getUserEventsChannel(userId);
+    await subscribeAndDrain(subscriber, channel, () =>
+      entriesService.updateEntriesStarred(db, userId, [entryId], true, t1)
+    );
 
     const before = await getUserEntryRow(userId, entryId);
 
-    const channel = getUserEventsChannel(userId);
-    await subscriber.subscribe(channel);
-
     // A fresh changedAt advances the watermark, but the value doesn't flip, so
     // nothing is published and no counts are computed.
-    await expectNoMessage(channel, async () => {
+    await expectNoMessage(subscriber, channel, async () => {
       const result = await entriesService.updateEntriesStarred(db, userId, [entryId], true, t2);
       expect(result.changed).toHaveLength(0);
       expect(result.counts).toBeUndefined();
