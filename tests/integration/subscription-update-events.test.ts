@@ -30,6 +30,7 @@ import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
 import { getUserEventsChannel } from "../../src/server/redis/pubsub";
+import { expectNoMessage, subscribeAndDrain, waitForMessage } from "../utils/pubsub";
 
 let subscriber: Redis;
 
@@ -179,47 +180,6 @@ async function getSubscriptionUpdatedAt(subscriptionId: string): Promise<Date> {
   return row.updatedAt;
 }
 
-// Resolves with the first message on `channel`. Always removes its own listener
-// (on match or timeout) so listeners don't accumulate on the shared subscriber.
-function waitForMessage(channel: string, timeoutMs = 5000): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const listener = (ch: string, message: string) => {
-      if (ch !== channel) return;
-      cleanup();
-      resolve(message);
-    };
-    const timer = setTimeout(() => {
-      cleanup();
-      reject(new Error("Timed out waiting for message"));
-    }, timeoutMs);
-    const cleanup = () => {
-      clearTimeout(timer);
-      subscriber.off("message", listener);
-    };
-    subscriber.on("message", listener);
-  });
-}
-
-// Runs `action`, then waits `quietMs` and asserts no message arrived on `channel`.
-async function expectNoMessage(
-  channel: string,
-  action: () => Promise<unknown>,
-  quietMs = 200
-): Promise<void> {
-  let received = false;
-  const listener = (ch: string) => {
-    if (ch === channel) received = true;
-  };
-  subscriber.on("message", listener);
-  try {
-    await action();
-    await new Promise((resolve) => setTimeout(resolve, quietMs));
-    expect(received).toBe(false);
-  } finally {
-    subscriber.off("message", listener);
-  }
-}
-
 // ============================================================================
 // Tests
 // ============================================================================
@@ -233,7 +193,7 @@ describe("subscriptions.update meaningful-change gating (issue #1160)", () => {
 
     const channel = getUserEventsChannel(userId);
     await subscriber.subscribe(channel);
-    const messagePromise = waitForMessage(channel);
+    const messagePromise = waitForMessage(subscriber, channel);
 
     const result = await caller.subscriptions.update({
       id: subscriptionId,
@@ -261,7 +221,7 @@ describe("subscriptions.update meaningful-change gating (issue #1160)", () => {
     const channel = getUserEventsChannel(userId);
     await subscriber.subscribe(channel);
 
-    await expectNoMessage(channel, async () => {
+    await expectNoMessage(subscriber, channel, async () => {
       // The full-form re-save pattern: every field sent, none changed.
       const result = await caller.subscriptions.update({
         id: subscriptionId,
@@ -286,7 +246,7 @@ describe("subscriptions.update meaningful-change gating (issue #1160)", () => {
     const channel = getUserEventsChannel(userId);
     await subscriber.subscribe(channel);
 
-    await expectNoMessage(channel, () =>
+    await expectNoMessage(subscriber, channel, () =>
       caller.subscriptions.update({ id: subscriptionId, customTitle: null })
     );
 
@@ -303,7 +263,9 @@ describe("subscriptions.update meaningful-change gating (issue #1160)", () => {
     const channel = getUserEventsChannel(userId);
     await subscriber.subscribe(channel);
 
-    await expectNoMessage(channel, () => caller.subscriptions.update({ id: subscriptionId }));
+    await expectNoMessage(subscriber, channel, () =>
+      caller.subscriptions.update({ id: subscriptionId })
+    );
 
     const after = await getSubscriptionUpdatedAt(subscriptionId);
     expect(after).toEqual(before);
@@ -320,7 +282,7 @@ describe("subscriptions.update meaningful-change gating (issue #1160)", () => {
 
     const channel = getUserEventsChannel(userId);
     await subscriber.subscribe(channel);
-    const messagePromise = waitForMessage(channel);
+    const messagePromise = waitForMessage(subscriber, channel);
 
     const result = await caller.subscriptions.update({
       id: subscriptionId,
@@ -347,7 +309,7 @@ describe("subscriptions.setTags meaningful-change gating (issue #1160)", () => {
 
     const channel = getUserEventsChannel(userId);
     await subscriber.subscribe(channel);
-    const messagePromise = waitForMessage(channel);
+    const messagePromise = waitForMessage(subscriber, channel);
 
     await caller.subscriptions.setTags({ id: subscriptionId, tagIds: [tagId] });
 
@@ -366,14 +328,16 @@ describe("subscriptions.setTags meaningful-change gating (issue #1160)", () => {
     const tagB = await createTestTag(userId, "News");
     const caller = createCaller(createAuthContext(userId));
 
-    await caller.subscriptions.setTags({ id: subscriptionId, tagIds: [tagA, tagB] });
+    // Setup mutates through the API, which publishes fire-and-forget — so
+    // subscribe first and drain that event rather than racing it (issue #1427).
+    const channel = getUserEventsChannel(userId);
+    await subscribeAndDrain(subscriber, channel, () =>
+      caller.subscriptions.setTags({ id: subscriptionId, tagIds: [tagA, tagB] })
+    );
     const before = await getSubscriptionUpdatedAt(subscriptionId);
 
-    const channel = getUserEventsChannel(userId);
-    await subscriber.subscribe(channel);
-
     // Same set, different order — still identical.
-    await expectNoMessage(channel, () =>
+    await expectNoMessage(subscriber, channel, () =>
       caller.subscriptions.setTags({ id: subscriptionId, tagIds: [tagB, tagA] })
     );
 
@@ -395,12 +359,12 @@ describe("subscriptions.setTags meaningful-change gating (issue #1160)", () => {
     const tagB = await createTestTag(userId, "News");
     const caller = createCaller(createAuthContext(userId));
 
-    await caller.subscriptions.setTags({ id: subscriptionId, tagIds: [tagA] });
-    const before = await getSubscriptionUpdatedAt(subscriptionId);
-
     const channel = getUserEventsChannel(userId);
-    await subscriber.subscribe(channel);
-    const messagePromise = waitForMessage(channel);
+    await subscribeAndDrain(subscriber, channel, () =>
+      caller.subscriptions.setTags({ id: subscriptionId, tagIds: [tagA] })
+    );
+    const before = await getSubscriptionUpdatedAt(subscriptionId);
+    const messagePromise = waitForMessage(subscriber, channel);
 
     await caller.subscriptions.setTags({ id: subscriptionId, tagIds: [tagA, tagB] });
 
@@ -417,12 +381,12 @@ describe("subscriptions.setTags meaningful-change gating (issue #1160)", () => {
     const tagId = await createTestTag(userId, "Tech");
     const caller = createCaller(createAuthContext(userId));
 
-    await caller.subscriptions.setTags({ id: subscriptionId, tagIds: [tagId] });
-    const before = await getSubscriptionUpdatedAt(subscriptionId);
-
     const channel = getUserEventsChannel(userId);
-    await subscriber.subscribe(channel);
-    const messagePromise = waitForMessage(channel);
+    await subscribeAndDrain(subscriber, channel, () =>
+      caller.subscriptions.setTags({ id: subscriptionId, tagIds: [tagId] })
+    );
+    const before = await getSubscriptionUpdatedAt(subscriptionId);
+    const messagePromise = waitForMessage(subscriber, channel);
 
     await caller.subscriptions.setTags({ id: subscriptionId, tagIds: [] });
 
@@ -443,7 +407,7 @@ describe("subscriptions.setTags meaningful-change gating (issue #1160)", () => {
     const channel = getUserEventsChannel(userId);
     await subscriber.subscribe(channel);
 
-    await expectNoMessage(channel, () =>
+    await expectNoMessage(subscriber, channel, () =>
       caller.subscriptions.setTags({ id: subscriptionId, tagIds: [] })
     );
 

@@ -19,6 +19,7 @@ import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import { getUserEventsChannel } from "../../src/server/redis/pubsub";
 import type { Context } from "../../src/server/trpc/context";
+import { expectNoMessage, waitForMessage } from "../utils/pubsub";
 
 let subscriber: Redis;
 
@@ -150,27 +151,6 @@ async function seedUnreadEntries(userId: string, count: number): Promise<string[
   return entryIds;
 }
 
-// Resolves with the first message on `channel`. Always removes its own listener
-// (on match or timeout) so listeners don't accumulate on the shared subscriber.
-function waitForMessage(channel: string, timeoutMs = 5000): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const listener = (ch: string, message: string) => {
-      if (ch !== channel) return;
-      cleanup();
-      resolve(message);
-    };
-    const timer = setTimeout(() => {
-      cleanup();
-      reject(new Error("Timed out waiting for message"));
-    }, timeoutMs);
-    const cleanup = () => {
-      clearTimeout(timer);
-      subscriber.off("message", listener);
-    };
-    subscriber.on("message", listener);
-  });
-}
-
 describe("entries.markAllRead SSE publishing", () => {
   it("publishes a mark_all_read signal carrying a cursor timestamp and the max marked id", async () => {
     const userId = generateUuidv7();
@@ -185,7 +165,7 @@ describe("entries.markAllRead SSE publishing", () => {
 
     const channel = getUserEventsChannel(userId);
     await subscriber.subscribe(channel);
-    const messagePromise = waitForMessage(channel);
+    const messagePromise = waitForMessage(subscriber, channel);
 
     const caller = createCaller(createAuthContext(userId));
     const result = await caller.entries.markAllRead({});
@@ -214,22 +194,11 @@ describe("entries.markAllRead SSE publishing", () => {
 
     const channel = getUserEventsChannel(userId);
     await subscriber.subscribe(channel);
-    let received = false;
-    const listener = (ch: string) => {
-      if (ch === channel) received = true;
-    };
-    subscriber.on("message", listener);
 
-    try {
+    await expectNoMessage(subscriber, channel, async () => {
       const caller = createCaller(createAuthContext(userId));
       const result = await caller.entries.markAllRead({});
       expect(result.count).toBe(0);
-
-      // Give any (erroneous) publish a chance to arrive.
-      await new Promise((resolve) => setTimeout(resolve, 200));
-      expect(received).toBe(false);
-    } finally {
-      subscriber.off("message", listener);
-    }
+    });
   });
 });

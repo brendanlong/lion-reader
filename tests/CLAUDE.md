@@ -25,6 +25,10 @@ Key design points:
 - **Minimal-request assertions**: `recordTrpcProcedures(page)` records every tRPC procedure the page calls. Tests assert that SSE events update the UI with _zero_ `entries.*` refetches — this encodes the delta-update invariant documented in `src/FRONTEND_STATE.md` as a regression test instead of a code-review concern.
 - **Isolation**: each test creates its own user and feeds (unique IDs), so tests don't interfere with each other or with leftover data; the suite runs serially against one shared server.
 
+## Asserting on Redis pub/sub events
+
+Integration tests that assert on published events use the shared helpers in `tests/utils/pubsub.ts` — don't hand-roll listeners per file. Because all SSE publishing is fire-and-forget (a service call's `await` returns before its PUBLISH reaches Redis), a test whose **setup** mutates through a service or tRPC caller must use `subscribeAndDrain` rather than subscribing afterwards: otherwise the setup's own event can arrive inside the window under test and be mistaken for one the action published (issue #1427).
+
 ## Manual verification
 
 Use the Playwright MCP browser tools (`mcp__Playwright__browser_*`) if available — navigate, take accessibility snapshots, click, and screenshot interactively against a dev server (or https://lionreader.com/demo for auth-free checks). `pnpm test:e2e` starts the app server on port 4983 against the test database; you can also seed data with the helpers and inspect pages with Playwright directly.
