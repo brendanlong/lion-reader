@@ -7,6 +7,7 @@ import { escapeHtml } from "@/server/http/html";
 import { githubConfig, usageLimitsConfig } from "@/server/config/env";
 import { marked } from "marked";
 import { extractAndStripTitleHeader } from "@/server/html/strip-title-header";
+import { absolutizeUrls } from "@/server/feed/content-cleaner";
 
 // ============================================================================
 // Types
@@ -330,6 +331,39 @@ function processMarkdownContent(content: string): { html: string; title: string 
 }
 
 /**
+ * A file's location in a repo, used to resolve the relative URLs in it.
+ * `ref` defaults to `HEAD` (accepted by both github.com and
+ * raw.githubusercontent.com) for the repo-root README, which we fetch without one.
+ */
+export interface RepoFileLocation {
+  owner: string;
+  repo: string;
+  ref?: string;
+  path: string;
+}
+
+/**
+ * Absolutize the relative URLs in a rendered repo file against GitHub's *two*
+ * bases: embedded files (`src`) resolve to raw.githubusercontent.com, which
+ * serves the bytes, while links (`href`) resolve to the github.com blob view,
+ * which serves a page a reader can actually follow. This has to happen here
+ * rather than in the generic single-base absolutizer downstream, which resolves
+ * everything against the article URL — that turns `images/foo.png` into a
+ * `github.com/…/blob/…/images/foo.png` HTML page and renders a broken image.
+ *
+ * Both bases are the file's own URL, so paths resolve relative to its directory
+ * the way GitHub renders them. Root-relative paths (`/docs/logo.png`) are still
+ * wrong: GitHub reads them as repo-root-relative, but URL resolution sends them
+ * to the origin root, which no choice of base can fix (#1423).
+ */
+function absolutizeGitHubUrls(html: string, file: RepoFileLocation): string {
+  const { owner, repo, ref = "HEAD", path } = file;
+  return absolutizeUrls(html, `https://github.com/${owner}/${repo}/blob/${ref}/${path}`, {
+    mediaBaseUrl: `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${path}`,
+  });
+}
+
+/**
  * Wrap code in a styled pre block.
  */
 function codeToHtml(content: string, language?: string): string {
@@ -342,22 +376,31 @@ function codeToHtml(content: string, language?: string): string {
 /**
  * Process a single file's content into HTML.
  * For markdown files, also extracts the title from the first header.
+ *
+ * `location` is the repo file the content came from, so its relative URLs can be
+ * resolved GitHub's way; pass null for gist files, whose sibling-file references
+ * we don't resolve (they'd need gist.githubusercontent.com raw URLs, #1424).
  */
-function processFileContent(
+export function processFileContent(
   content: string,
   filename: string,
-  language: string | null
+  language: string | null,
+  location: RepoFileLocation | null
 ): { html: string; extractedTitle: string | null } {
+  const absolutize = (html: string): string =>
+    location ? absolutizeGitHubUrls(html, location) : html;
+
   if (isMarkdownFile(filename) || isMarkdownLanguage(language)) {
     const { html, title } = processMarkdownContent(content);
-    return { html, extractedTitle: title };
+    return { html: absolutize(html), extractedTitle: title };
   }
 
   if (isHtmlFile(filename)) {
-    return { html: content, extractedTitle: null };
+    return { html: absolutize(content), extractedTitle: null };
   }
 
-  // For other files, wrap in code block
+  // For other files, wrap in code block. The content is HTML-escaped, so there
+  // are no URL attributes left to absolutize.
   return { html: codeToHtml(content, language ?? undefined), extractedTitle: null };
 }
 
@@ -387,7 +430,8 @@ function buildGistHtml(
       const { html, extractedTitle } = processFileContent(
         matchedFile.content,
         matchedFile.filename,
-        matchedFile.language
+        matchedFile.language,
+        null
       );
       // Use extracted title from markdown, fall back to filename
       return { html, title: extractedTitle || matchedFile.filename };
@@ -397,7 +441,12 @@ function buildGistHtml(
   // Single file: return it directly
   if (files.length === 1) {
     const file = files[0];
-    const { html, extractedTitle } = processFileContent(file.content, file.filename, file.language);
+    const { html, extractedTitle } = processFileContent(
+      file.content,
+      file.filename,
+      file.language,
+      null
+    );
     // Use extracted title from markdown, fall back to filename
     return { html, title: extractedTitle || file.filename };
   }
@@ -406,7 +455,7 @@ function buildGistHtml(
   const parts: string[] = [];
   for (const file of files) {
     parts.push(`<h2>${escapeHtml(file.filename)}</h2>`);
-    const { html } = processFileContent(file.content, file.filename, file.language);
+    const { html } = processFileContent(file.content, file.filename, file.language, null);
     parts.push(html);
   }
 
@@ -456,7 +505,11 @@ async function fetchGitHubContent(url: URL): Promise<SavedArticleContent | null>
         return null;
       }
 
-      const { html, extractedTitle } = processFileContent(readme.content, readme.filename, null);
+      const { html, extractedTitle } = processFileContent(readme.content, readme.filename, null, {
+        owner: parsed.owner,
+        repo: parsed.repo,
+        path: readme.filename,
+      });
       // Use extracted title from README, fall back to repo name
       const title = extractedTitle || `${parsed.owner}/${parsed.repo}`;
 
@@ -481,7 +534,7 @@ async function fetchGitHubContent(url: URL): Promise<SavedArticleContent | null>
           return null;
         }
 
-        const { html, extractedTitle } = processFileContent(rawContent, parsed.path, null);
+        const { html, extractedTitle } = processFileContent(rawContent, parsed.path, null, parsed);
         const title = extractedTitle || filename;
         return {
           html,
@@ -493,7 +546,7 @@ async function fetchGitHubContent(url: URL): Promise<SavedArticleContent | null>
       }
 
       const content = Buffer.from(contents.content, "base64").toString("utf-8");
-      const { html, extractedTitle } = processFileContent(content, parsed.path, null);
+      const { html, extractedTitle } = processFileContent(content, parsed.path, null, parsed);
       const title = extractedTitle || filename;
 
       return {
@@ -513,7 +566,7 @@ async function fetchGitHubContent(url: URL): Promise<SavedArticleContent | null>
       }
 
       const filename = parsed.path.split("/").pop() ?? parsed.path;
-      const { html, extractedTitle } = processFileContent(content, parsed.path, null);
+      const { html, extractedTitle } = processFileContent(content, parsed.path, null, parsed);
       const title = extractedTitle || filename;
 
       return {

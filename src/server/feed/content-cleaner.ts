@@ -27,9 +27,18 @@ const decoder = new TextDecoder();
  *
  * @param html - The HTML content to process
  * @param baseUrl - The base URL for resolving relative URLs
+ * @param options.mediaBaseUrl - Separate base for the embedded-resource
+ *   attributes (`src`, `poster`, `srcset` — so `img`/`video`/`audio`, but also
+ *   `iframe`/`source`/`embed`); defaults to `baseUrl`. Needed for sources that
+ *   serve a document and the files it embeds from different origins — see
+ *   `absolutizeGitHubUrls` in `src/server/plugins/github.ts`.
  * @returns HTML with all relative URLs converted to absolute
  */
-export function absolutizeUrls(html: string, baseUrl: string): string {
+export function absolutizeUrls(
+  html: string,
+  baseUrl: string,
+  options: { mediaBaseUrl?: string } = {}
+): string {
   try {
     let output = "";
     const rewriter = new HTMLRewriter((chunk) => {
@@ -41,6 +50,7 @@ export function absolutizeUrls(html: string, baseUrl: string): string {
     // <base> in <head> will be seen before any body elements.
     // Per the HTML spec, only the first <base> with an href is used.
     let effectiveBaseUrl = baseUrl;
+    let effectiveMediaBaseUrl = options.mediaBaseUrl ?? baseUrl;
     let baseHrefSet = false;
 
     // Check for <base> tag and use its href as the base URL
@@ -54,7 +64,11 @@ export function absolutizeUrls(html: string, baseUrl: string): string {
           // in case <base href> itself is relative
           const resolved = resolveUrl(href, baseUrl);
           if (resolved) {
+            // <base href> governs both kinds of URL, so it replaces
+            // mediaBaseUrl too — but only for the elements that follow it,
+            // since this is a single streaming pass (see above).
             effectiveBaseUrl = resolved;
+            effectiveMediaBaseUrl = resolved;
             baseHrefSet = true;
           }
         }
@@ -66,7 +80,7 @@ export function absolutizeUrls(html: string, baseUrl: string): string {
       element(el) {
         const value = el.getAttribute("src");
         if (value) {
-          const absolute = resolveUrl(value, effectiveBaseUrl);
+          const absolute = resolveUrl(value, effectiveMediaBaseUrl);
           if (absolute && absolute !== value) {
             el.setAttribute("src", absolute);
           }
@@ -92,7 +106,7 @@ export function absolutizeUrls(html: string, baseUrl: string): string {
       element(el) {
         const value = el.getAttribute("poster");
         if (value) {
-          const absolute = resolveUrl(value, effectiveBaseUrl);
+          const absolute = resolveUrl(value, effectiveMediaBaseUrl);
           if (absolute && absolute !== value) {
             el.setAttribute("poster", absolute);
           }
@@ -104,7 +118,7 @@ export function absolutizeUrls(html: string, baseUrl: string): string {
       element(el) {
         const value = el.getAttribute("srcset");
         if (value) {
-          el.setAttribute("srcset", absolutizeSrcset(value, effectiveBaseUrl));
+          el.setAttribute("srcset", absolutizeSrcset(value, effectiveMediaBaseUrl));
         }
       },
     });

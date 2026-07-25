@@ -151,6 +151,11 @@ export interface SavedArticleContent {
    */
   excerpt?: string | null;
   publishedAt?: Date | null;
-  /** Canonical URL (may differ from input URL) */
+  /**
+   * Canonical URL (may differ from input URL). It also doubles as the base the
+   * save and full-content paths absolutize `html`'s relative URLs against, so a
+   * plugin whose page and embedded files don't share an origin+directory has to
+   * resolve them itself before returning (see `github.ts`).
+   */
   canonicalUrl?: string;
 }
