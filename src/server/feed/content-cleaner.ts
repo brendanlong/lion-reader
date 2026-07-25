@@ -27,9 +27,10 @@ const decoder = new TextDecoder();
  *
  * @param html - The HTML content to process
  * @param baseUrl - The base URL for resolving relative URLs
- * @param options.mediaBaseUrl - Separate base for the media attributes (src,
- *   poster, srcset); defaults to `baseUrl`. Needed for sources that serve a
- *   document and its embedded files from different origins — see
+ * @param options.mediaBaseUrl - Separate base for the embedded-resource
+ *   attributes (`src`, `poster`, `srcset` — so `img`/`video`/`audio`, but also
+ *   `iframe`/`source`/`embed`); defaults to `baseUrl`. Needed for sources that
+ *   serve a document and the files it embeds from different origins — see
  *   `absolutizeGitHubUrls` in `src/server/plugins/github.ts`.
  * @returns HTML with all relative URLs converted to absolute
  */
@@ -63,8 +64,9 @@ export function absolutizeUrls(
           // in case <base href> itself is relative
           const resolved = resolveUrl(href, baseUrl);
           if (resolved) {
-            // Per the HTML spec <base href> governs every relative URL in the
-            // document, so an explicit tag overrides mediaBaseUrl too.
+            // <base href> governs both kinds of URL, so it replaces
+            // mediaBaseUrl too — but only for the elements that follow it,
+            // since this is a single streaming pass (see above).
             effectiveBaseUrl = resolved;
             effectiveMediaBaseUrl = resolved;
             baseHrefSet = true;

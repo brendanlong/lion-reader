@@ -344,12 +344,17 @@ export interface RepoFileLocation {
 
 /**
  * Absolutize the relative URLs in a rendered repo file against GitHub's *two*
- * bases: media (`src`) resolves to raw.githubusercontent.com, which serves the
- * file bytes, while links (`href`) resolve to the github.com blob view, which
- * serves a page a reader can actually follow. This has to happen here rather
- * than in the generic single-base absolutizer downstream, which resolves
+ * bases: embedded files (`src`) resolve to raw.githubusercontent.com, which
+ * serves the bytes, while links (`href`) resolve to the github.com blob view,
+ * which serves a page a reader can actually follow. This has to happen here
+ * rather than in the generic single-base absolutizer downstream, which resolves
  * everything against the article URL — that turns `images/foo.png` into a
  * `github.com/…/blob/…/images/foo.png` HTML page and renders a broken image.
+ *
+ * Both bases are the file's own URL, so paths resolve relative to its directory
+ * the way GitHub renders them. Root-relative paths (`/docs/logo.png`) are still
+ * wrong: GitHub reads them as repo-root-relative, but URL resolution sends them
+ * to the origin root, which no choice of base can fix (#1423).
  */
 function absolutizeGitHubUrls(html: string, file: RepoFileLocation): string {
   const { owner, repo, ref = "HEAD", path } = file;
@@ -373,8 +378,8 @@ function codeToHtml(content: string, language?: string): string {
  * For markdown files, also extracts the title from the first header.
  *
  * `location` is the repo file the content came from, so its relative URLs can be
- * resolved GitHub's way; pass null for gist files, whose flat file list has no
- * relative paths to resolve.
+ * resolved GitHub's way; pass null for gist files, whose sibling-file references
+ * we don't resolve (they'd need gist.githubusercontent.com raw URLs, #1424).
  */
 export function processFileContent(
   content: string,
@@ -382,7 +387,8 @@ export function processFileContent(
   language: string | null,
   location: RepoFileLocation | null
 ): { html: string; extractedTitle: string | null } {
-  const absolutize = (html: string) => (location ? absolutizeGitHubUrls(html, location) : html);
+  const absolutize = (html: string): string =>
+    location ? absolutizeGitHubUrls(html, location) : html;
 
   if (isMarkdownFile(filename) || isMarkdownLanguage(language)) {
     const { html, title } = processMarkdownContent(content);

@@ -394,9 +394,50 @@ describe("processFileContent", () => {
       );
     });
 
-    it("leaves gist content relative (no repo path to resolve against)", () => {
+    it("leaves content untouched when given no repo location (gists)", () => {
       const { html } = processFileContent("![Chart](images/chart.png)", "notes.md", null, null);
       expect(html).toContain('src="images/chart.png"');
+    });
+
+    it("resolves srcset candidates and video posters against the raw base", () => {
+      const { html } = processFileContent(
+        '<img srcset="images/small.png 1x, images/large.png 2x">' +
+          '<video poster="images/poster.png"></video>',
+        "wsff.md",
+        null,
+        repoFile
+      );
+      expect(html).toContain(`${rawBase}/images/small.png 1x`);
+      expect(html).toContain(`${rawBase}/images/large.png 2x`);
+      expect(html).toContain(`poster="${rawBase}/images/poster.png"`);
+    });
+
+    it("resolves links against the blob view at the default HEAD ref", () => {
+      const { html } = processFileContent("[Docs](docs/guide.md)", "README.md", null, {
+        owner: "brendanlong",
+        repo: "lion-reader",
+        path: "README.md",
+      });
+      expect(html).toContain(
+        'href="https://github.com/brendanlong/lion-reader/blob/HEAD/docs/guide.md"'
+      );
+    });
+
+    // GitHub reads a leading slash as repo-root-relative, but URL resolution
+    // sends it to the origin root instead. Un-skip with the fix.
+    it.skip("resolves root-relative image paths against the repo root (#1423)", () => {
+      const { html } = processFileContent(
+        '<img src="/docs/images/chart.png">',
+        "wsff.md",
+        null,
+        repoFile
+      );
+      expect(html).toContain(`src="${rawBase}/docs/images/chart.png"`);
+    });
+
+    it.skip("resolves root-relative links against the repo root (#1423)", () => {
+      const { html } = processFileContent("[Docs](/docs/guide.md)", "wsff.md", null, repoFile);
+      expect(html).toContain(`href="${blobBase}/docs/guide.md"`);
     });
   });
 

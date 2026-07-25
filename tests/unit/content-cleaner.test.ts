@@ -599,6 +599,16 @@ describe("absolutizeUrls", () => {
       expect(result).toContain('src="https://example.com/docs/photo.jpg"');
     });
 
+    it("should keep honoring <base href> when no mediaBaseUrl is given", () => {
+      // The arXiv shape: a <base href> directory plus bare relative figure
+      // names. Media and page share an origin there, so it must keep resolving
+      // off <base> and not off the (unset) media base.
+      const html =
+        '<html><head><base href="/html/2503.09516v5/"></head><body><img src="x1.png"></body></html>';
+      const result = absolutizeUrls(html, "https://arxiv.org/html/2503.09516");
+      expect(result).toContain('src="https://arxiv.org/html/2503.09516v5/x1.png"');
+    });
+
     it("should let an explicit <base href> override mediaBaseUrl", () => {
       const html =
         '<html><head><base href="https://base.example.com/"></head><body><img src="photo.jpg"></body></html>';
