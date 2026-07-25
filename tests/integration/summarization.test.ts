@@ -3,8 +3,8 @@
  *
  * The key security invariant: cached AI summaries are re-sanitized on read with
  * the *current* sanitizer rules before being returned for `dangerouslySetInnerHTML`
- * rendering. This means a `SANITIZER_VERSION` bump that closes a sanitizer hole is
- * applied to every stored summary without a version column or migration (see the
+ * rendering. This means a rules change that closes a sanitizer hole reaches every
+ * stored summary on the next read, with no version column or migration (see the
  * read-path comment in src/server/trpc/routers/summarization.ts). These tests lock
  * that in so the sanitize-on-read guarantee can't be silently dropped.
  */

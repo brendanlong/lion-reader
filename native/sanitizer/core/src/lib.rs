@@ -27,11 +27,6 @@ pub mod serialize;
 pub mod svg;
 pub mod urls;
 
-/// Version of the sanitization rules, re-exported to TypeScript by the napi
-/// binding. Informational only — sanitization is per-read, so nothing compares
-/// it to decide staleness and a rules change does not require bumping it.
-pub const SANITIZER_VERSION: u32 = 10;
-
 /// Run the full sanitization pipeline. `warnings` collects non-fatal
 /// diagnostics (e.g. unrecognized MathJax wrappers) for the caller to log.
 pub fn sanitize_entry_html(html: &str, warnings: &mut Vec<String>) -> Result<String, String> {

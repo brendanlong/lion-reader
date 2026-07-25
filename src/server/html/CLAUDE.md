@@ -37,7 +37,7 @@ The single read-path chokepoint is `sanitizeEntryContentFamily(family, { origina
 - The **content** family sanitizes **both** variants — the frontend has a user-facing original/cleaned toggle for feed content (`hasBothVersions` in `EntryContentBody.tsx`).
 - The **full-content** family's serving rule is strictly `cleaned ?? original` (no toggle), so the (whole raw page) `original` is sanitized **only when `cleaned` is NULL** — otherwise it is never displayed, so we skip the whole-page sanitize and return `null`. Consumers already fall back `cleaned ?? original`.
 
-`SANITIZER_VERSION` (defined in the native crate `core/src/lib.rs`, re-exported by `sanitize.ts`) is **purely informational**. Because nothing stores a sanitized copy, a change to the allow-lists/transforms takes effect on the next read everywhere — **a rules change is just a deploy**, no version bump required.
+There is deliberately **no sanitizer version constant**. Because nothing stores a sanitized copy, a change to the allow-lists/transforms takes effect on the next read everywhere — **a rules change is just a deploy** (rebuild the native module), with nothing to bump, fast-forward, or bulk re-sanitize. Don't reintroduce one without a consumer that compares it.
 
 ## Event-loop protection (async sanitize)
 
