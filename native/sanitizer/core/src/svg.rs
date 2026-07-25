@@ -20,6 +20,7 @@
 
 use scraper::{ElementRef, Html};
 
+use crate::idrefs::{prefix_fragment_href, prefix_func_iris, prefix_id, SVG_FUNC_IRI_ATTRS};
 use crate::scanner::{find_top_level_ranges, Recovery};
 use crate::serialize::{attr_display_name, escape_attr, escape_text};
 use crate::urls::{is_data_image, url_scheme};
@@ -141,7 +142,19 @@ fn emit_svg_element(el: ElementRef, out: &mut String) {
         {
             continue;
         }
-        kept.push((display, value.to_string()));
+        // Namespace ids and the references that reach them, so an SVG's
+        // gradients/clip paths/masks keep resolving after the rename and can't
+        // collide with the app's own ids (see idrefs.rs).
+        let value = if attr_lower == "id" {
+            prefix_id(value)
+        } else if attr_lower == "href" || attr_lower == "xlink:href" {
+            prefix_fragment_href(value).unwrap_or_else(|| value.to_string())
+        } else if SVG_FUNC_IRI_ATTRS.contains(&attr_lower.as_str()) {
+            prefix_func_iris(value)
+        } else {
+            value.to_string()
+        };
+        kept.push((display, value));
     }
     // External SVG links open in a new browsing context; force a safe rel to
     // prevent reverse-tabnabbing, mirroring the HTML <a> transform (which
@@ -358,8 +371,54 @@ mod tests {
         let extraction = extract_inline_svg(html);
         assert_eq!(extraction.svgs.len(), 2);
         let out = reinsert_inline_svg(&extraction.html, &extraction);
-        let one = out.find("id=\"one\"").unwrap();
-        let two = out.find("id=\"two\"").unwrap();
+        // ids are namespaced (see idrefs.rs), hence the `uc-` prefix here.
+        let one = out.find("id=\"uc-one\"").unwrap_or_else(|| panic!("{out}"));
+        let two = out.find("id=\"uc-two\"").unwrap_or_else(|| panic!("{out}"));
         assert!(one < two, "{out}");
+    }
+
+    // Namespacing tests use escaped strings rather than `r#"…"#`: the literals
+    // contain `"#`, which closes a single-hash raw string early.
+
+    #[test]
+    fn namespaces_ids_with_their_paint_references() {
+        // A gradient is reached by `url(#id)`; if the id moves and the funcIRI
+        // doesn't, the shape renders unpainted.
+        let out = roundtrip(concat!(
+            "<svg><defs><linearGradient id=\"g\"><stop stop-color=\"red\"/></linearGradient>",
+            "<clipPath id=\"c\"><rect/></clipPath></defs>",
+            "<rect fill=\"url(#g)\" clip-path=\"url(#c)\" stroke=\"url(#g)\"/></svg>"
+        ));
+        assert!(out.contains("id=\"uc-g\""), "{out}");
+        assert!(out.contains("id=\"uc-c\""), "{out}");
+        assert!(out.contains("fill=\"url(#uc-g)\""), "{out}");
+        assert!(out.contains("clip-path=\"url(#uc-c)\""), "{out}");
+        assert!(out.contains("stroke=\"url(#uc-g)\""), "{out}");
+        assert!(!out.contains("url(#g)"), "{out}");
+    }
+
+    #[test]
+    fn namespaces_mask_filter_and_template_references() {
+        let out = roundtrip(concat!(
+            "<svg><defs><mask id=\"m\"><rect/></mask>",
+            "<filter id=\"f\"><feGaussianBlur in=\"SourceGraphic\"/></filter>",
+            "<symbol id=\"s\"><circle/></symbol></defs>",
+            "<g mask=\"url(#m)\" filter=\"url(#f)\"><text href=\"#s\">x</text></g></svg>"
+        ));
+        assert!(out.contains("mask=\"url(#uc-m)\""), "{out}");
+        assert!(out.contains("filter=\"url(#uc-f)\""), "{out}");
+        assert!(out.contains("id=\"uc-s\""), "{out}");
+        assert!(out.contains("href=\"#uc-s\""), "{out}");
+        // Filter primitives' `in` names a value inside the filter, not a
+        // document id, so it must keep its original value.
+        assert!(out.contains("in=\"SourceGraphic\""), "{out}");
+    }
+
+    #[test]
+    fn leaves_non_reference_paint_values_alone() {
+        let out = roundtrip("<svg><rect fill=\"#ff0000\" stroke=\"none\" clip-path=\"circle(50%)\"/></svg>");
+        assert!(out.contains("fill=\"#ff0000\""), "{out}");
+        assert!(out.contains("stroke=\"none\""), "{out}");
+        assert!(out.contains("clip-path=\"circle(50%)\""), "{out}");
     }
 }

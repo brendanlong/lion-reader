@@ -252,7 +252,8 @@ describe("sanitizeEntryHtml", () => {
           '<svg><linearGradient href="https://evil.com/x"/><radialGradient href="#tmpl"/></svg>'
         ) ?? "";
       expect(out).not.toContain("evil.com");
-      expect(out).toContain('href="#tmpl"');
+      // The kept fragment ref is namespaced along with the id it points at.
+      expect(out).toContain('href="#uc-tmpl"');
     });
 
     it("drops style attributes (CSS policy, matching HTML)", () => {
@@ -348,14 +349,19 @@ describe("sanitizeEntryHtml", () => {
       // LessWrong-style footnotes carry doc-* roles that screen readers use to
       // announce footnotes; these attributes are inert and must survive.
       const html =
-        '<sup><a href="#fn1" role="doc-noteref" aria-describedby="fn1">1</a></sup>' +
-        '<ol role="doc-endnotes"><li role="doc-endnote" aria-label="Footnote 1">note</li></ol>';
+        '<sup><a href="#fn1" id="fnref1" role="doc-noteref" aria-describedby="fn1">1</a></sup>' +
+        '<ol role="doc-endnotes"><li id="fn1" role="doc-endnote" aria-label="Footnote 1">note</li></ol>';
       const out = sanitizeEntryHtml(html) ?? "";
       expect(out).toContain('role="doc-noteref"');
       expect(out).toContain('role="doc-endnotes"');
       expect(out).toContain('role="doc-endnote"');
-      expect(out).toContain('aria-describedby="fn1"');
       expect(out).toContain('aria-label="Footnote 1"');
+      // The footnote's id, its link and its ARIA reference are namespaced as a
+      // set, so the link still lands on the note and the reference still
+      // resolves (#1425).
+      expect(out).toContain('href="#uc-fn1"');
+      expect(out).toContain('id="uc-fn1"');
+      expect(out).toContain('aria-describedby="uc-fn1"');
     });
   });
 
