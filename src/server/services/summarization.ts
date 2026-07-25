@@ -7,9 +7,9 @@
  */
 
 import { createHash } from "crypto";
-import { marked } from "marked";
 import { logger } from "@/lib/logger";
 import { sanitizeEntryHtml } from "@/server/html/sanitize";
+import { markdownToHtml } from "@/server/markdown";
 import { htmlToPlainText } from "@/lib/narration/html-to-narration-input";
 import { parseModelRef } from "@/lib/ai/model-ref";
 import {
@@ -22,12 +22,6 @@ import {
   SUMMARIZATION_PROVIDER_PRIORITY,
   DEFAULT_SUMMARIZATION_MAX_WORDS,
 } from "@/lib/summarization/constants";
-
-// Configure marked for safe rendering
-marked.setOptions({
-  gfm: true, // GitHub Flavored Markdown
-  breaks: true, // Convert \n to <br>
-});
 
 /**
  * Current prompt version. Increment this when changing the prompt
@@ -232,7 +226,7 @@ export async function generateSummary(
     // marked passes raw HTML through, and the summary is rendered via
     // dangerouslySetInnerHTML, so sanitize before storing/returning it.
     const markdownSummary = extractSummaryFromResponse(responseText);
-    const summary = sanitizeEntryHtml(await marked.parse(markdownSummary)) ?? "";
+    const summary = sanitizeEntryHtml(markdownToHtml(markdownSummary)) ?? "";
 
     return {
       summary,

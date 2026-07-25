@@ -13,7 +13,6 @@
 
 \set U0 '01890000-0000-7000-8000-000000000001'
 \set SAVED_FEED '01890000-0000-7000-8000-0000000000ff'
-\set SANVER 10
 
 \timing on
 
@@ -48,13 +47,12 @@ FROM tmp_feed;
 
 -- ---------------------------------------------------------------------------
 -- Web entries: for each feed, `n` entries spread over the last ~2 years.
--- Sanitized columns are pre-populated at the current SANITIZER_VERSION so the
--- full-entry read path is a pure read (no self-heal), matching steady state.
+-- Only raw content is stored; the read path sanitizes on every read (#1282), so
+-- this already matches steady state.
 -- ---------------------------------------------------------------------------
 INSERT INTO entries (
   id, feed_id, guid, url, title, author,
   content_original, content_cleaned,
-  content_original_sanitized, content_cleaned_sanitized, content_sanitized_version,
   summary, published_at, fetched_at, last_seen_at, content_hash, type
 )
 SELECT
@@ -65,9 +63,6 @@ SELECT
   'Author ' || (g % 7),
   repeat('lorem ipsum dolor sit amet ', 40),
   repeat('lorem ipsum dolor sit amet ', 30),
-  repeat('lorem ipsum dolor sit amet ', 30),
-  repeat('lorem ipsum dolor sit amet ', 30),
-  :SANVER,
   'Summary for entry ' || g,
   ts.published_at, ts.published_at, ts.published_at,
   md5(random()::text), 'web'
@@ -160,13 +155,13 @@ INSERT INTO feeds (id, type, user_id, title) VALUES (:'SAVED_FEED', 'saved', :'U
 
 INSERT INTO entries (
   id, feed_id, guid, url, title,
-  content_cleaned, content_cleaned_sanitized, content_sanitized_version,
+  content_cleaned,
   summary, published_at, fetched_at, content_hash, type, site_name
 )
 SELECT
   gen_random_uuid(), :'SAVED_FEED', 'saved-' || g,
   'https://saved.example.com/' || g, 'Saved article ' || g,
-  repeat('saved body text ', 50), repeat('saved body text ', 50), :SANVER,
+  repeat('saved body text ', 50),
   'Saved summary ' || g,
   now() - (g || ' days')::interval, now() - (g || ' days')::interval,
   md5(random()::text), 'saved', 'saved.example.com'

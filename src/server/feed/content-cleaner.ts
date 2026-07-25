@@ -59,7 +59,10 @@ export function absolutizeUrls(
         if (baseHrefSet) return;
 
         const href = el.getAttribute("href");
-        if (href) {
+        // A fragment-only <base href> means "this document", so it leaves the
+        // base unchanged — and `resolveUrl` now passes fragments through, which
+        // would otherwise make it the base and break every later resolution.
+        if (href && !href.startsWith("#")) {
           // Resolve the <base> href against the provided baseUrl,
           // in case <base href> itself is relative
           const resolved = resolveUrl(href, baseUrl);
@@ -183,6 +186,21 @@ function resolveUrl(url: string, baseUrl: string): string | null {
   try {
     // Skip data:, javascript:, and vbscript: URLs
     if (url.startsWith("data:") || url.startsWith("javascript:") || url.startsWith("vbscript:")) {
+      return url;
+    }
+
+    // Leave same-document fragments (`#footnote-1`, `#bib.bib19`) relative.
+    // Their target is an `id` in this very entry, which survives sanitization,
+    // so absolutizing would send the reader off-site — and, because the href
+    // would then be absolute, the sanitizer would also add `target="_blank"`
+    // and open a new tab for what should be a scroll (#1425).
+    //
+    // The trade-off: in a *truncated* excerpt feed the target may only exist on
+    // the source page, so such a link now dead-ends instead of navigating there.
+    // Full-text entries (arXiv citations, footnotes, Markdown tables of
+    // contents) are much the more common case, and for them absolutizing broke
+    // every anchor.
+    if (url.startsWith("#")) {
       return url;
     }
 

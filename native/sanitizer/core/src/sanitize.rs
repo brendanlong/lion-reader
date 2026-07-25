@@ -29,6 +29,7 @@ use lol_html::html_content::Element;
 use lol_html::{doc_comments, doctype, element, HtmlRewriter, Settings};
 
 use crate::embeds::normalize_embed;
+use crate::idrefs::{prefix_fragment_href, prefix_id, prefix_id_list, ARIA_IDREF_ATTRS};
 use crate::urls::{decode_attr, is_image_url_allowed};
 
 /// Tags allowed in entry content (sanitize.ts ALLOWED_TAGS + MATHML_TAGS).
@@ -245,6 +246,40 @@ fn handle_iframe(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Sen
     Ok(())
 }
 
+/// Namespacing of ids and same-document references happens inline in
+/// `handle_element`'s attribute pass (see `idrefs.rs` for the reference surface).
+///
+/// Every value is read and written **raw** (not entity-decoded). lol_html's
+/// `set_attribute` escapes `"` but not `&`, so writing back a decoded value
+/// would peel one entity layer per pass — leaving `id="a&amp;b"` and
+/// `href="#a&amp;b"` disagreeing after the rename, and making the pass
+/// non-idempotent. Operating on raw bytes keeps the two sides in step by
+/// construction. It also keeps the `#` test conservative: a raw value starting
+/// with a literal `#` always decodes to a fragment, so this can only ever
+/// under-match, never mistake a URL for a fragment.
+///
+/// Whether an attribute *name* can hold an id or an id reference. Pure name
+/// test so the caller can skip reading the value. The `aria-` prefix check
+/// guards the list scan, which would otherwise run for every attribute.
+fn is_idref_attr(name: &str) -> bool {
+    matches!(name, "id" | "name" | "headers" | "href")
+        || (name.starts_with("aria-") && ARIA_IDREF_ATTRS.contains(&name))
+}
+
+/// The namespaced form of an id-defining or id-referencing attribute, or None
+/// when this particular value needs no rewrite. Only called for names that
+/// passed [`is_idref_attr`]. `name` must be lowercased, as lol_html gives it for
+/// HTML elements.
+fn namespaced_value(name: &str, value: &str) -> Option<String> {
+    match name {
+        // `name` on an `<a>` is the legacy anchor target, so it is an id too.
+        "id" | "name" => Some(prefix_id(value)),
+        "href" => prefix_fragment_href(value),
+        // `headers` and the ARIA idrefs are space-separated id lists.
+        _ => Some(prefix_id_list(value)),
+    }
+}
+
 fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let tag = el.tag_name();
     if !tag_allowed(&tag) {
@@ -260,6 +295,13 @@ fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Se
     }
 
     let mut to_remove: Vec<String> = Vec::new();
+    // Id/idref rewrites (see `namespaced_value`) are collected in this same
+    // pass: a separate `get_attribute` probe per interesting name, or even a
+    // second walk of the attribute list, measurably slowed every element down —
+    // including elements with no id at all. Only attributes that survive the
+    // allow-list are considered, so `to_remove` and `rewrites` stay disjoint and
+    // a rewrite can never resurrect an attribute the filter just dropped.
+    let mut rewrites: Vec<(String, String)> = Vec::new();
     for attr in el.attributes() {
         let name = attr.name();
         if !attr_allowed(&tag, &name) {
@@ -274,6 +316,7 @@ fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Se
             // `img`/`source` `src`.
             if !is_image_url_allowed(&decode_attr(&attr.value()), schemes) {
                 to_remove.push(name);
+                continue;
             }
         } else if name == "srcset" && matches!(tag.as_str(), "img" | "source") {
             let decoded = decode_attr(&attr.value()).into_owned();
@@ -282,11 +325,28 @@ fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Se
                 .all(|u| is_image_url_allowed(u, IMAGE_SCHEMES))
             {
                 to_remove.push(name);
+                continue;
+            }
+        }
+        // Name test before `attr.value()`, which allocates: most attributes
+        // (`class`, `alt`, `width`, …) hold no id and must not pay for a copy.
+        if is_idref_attr(&name) {
+            let value = attr.value();
+            if let Some(rewritten) = namespaced_value(&name, &value) {
+                // Skip no-op writes: `set_attribute` makes lol_html re-serialize
+                // the whole start tag, so an already-prefixed value (a
+                // re-sanitized summary) or an empty id must not pay for one.
+                if rewritten != value {
+                    rewrites.push((name, rewritten));
+                }
             }
         }
     }
     for name in to_remove {
         el.remove_attribute(&name);
+    }
+    for (name, value) in rewrites {
+        el.set_attribute(&name, &value)?;
     }
 
     if tag == "a" {
@@ -373,6 +433,88 @@ mod tests {
             sanitize(r#"<a href="https://example.com">x</a><a href="/local">y</a>"#),
             r#"<a href="https://example.com" target="_blank" rel="noopener noreferrer">x</a><a href="/local">y</a>"#
         );
+    }
+
+    // Namespacing tests use escaped strings rather than `r#"…"#`: the literals
+    // contain `"#`, which closes a single-hash raw string early.
+
+    #[test]
+    fn ids_and_in_page_links_are_namespaced_together() {
+        // The pair has to move as one, or the link stops resolving.
+        assert_eq!(
+            sanitize("<a href=\"#intro\">go</a><h2 id=\"intro\">Intro</h2>"),
+            "<a href=\"#uc-intro\">go</a><h2 id=\"uc-intro\">Intro</h2>"
+        );
+    }
+
+    #[test]
+    fn namespaces_every_aria_idref_attribute() {
+        // Driven off the constant so a typo in an entry can't ship silently.
+        for attr in ARIA_IDREF_ATTRS {
+            let out = sanitize(&format!("<p {attr}=\"a b\">x</p>"));
+            assert!(
+                out.contains(&format!("{attr}=\"uc-a uc-b\"")),
+                "{attr} not namespaced: {out}"
+            );
+        }
+    }
+
+    #[test]
+    fn namespaces_every_reference_kind_the_allow_list_keeps() {
+        let out = sanitize("<p id=\"d\" aria-labelledby=\"l1 l2\" aria-describedby=\"d1\">x</p>");
+        assert!(out.contains("id=\"uc-d\""), "{out}");
+        assert!(out.contains("aria-labelledby=\"uc-l1 uc-l2\""), "{out}");
+        assert!(out.contains("aria-describedby=\"uc-d1\""), "{out}");
+
+        let table = sanitize("<table><tr><th id=\"h\">H</th><td headers=\"h\">v</td></tr></table>");
+        assert!(table.contains("id=\"uc-h\""), "{table}");
+        assert!(table.contains("headers=\"uc-h\""), "{table}");
+
+        // Legacy `<a name>` is an anchor target, so it moves with the ids.
+        let anchor = sanitize("<a name=\"top\"></a><a href=\"#top\">up</a>");
+        assert!(anchor.contains("name=\"uc-top\""), "{anchor}");
+        assert!(anchor.contains("href=\"#uc-top\""), "{anchor}");
+    }
+
+    #[test]
+    fn leaves_off_site_and_bare_fragment_hrefs_alone() {
+        let out = sanitize("<a href=\"https://example.com/#intro\">x</a><a href=\"#\">top</a>");
+        assert!(out.contains("href=\"https://example.com/#intro\""), "{out}");
+        assert!(out.contains("href=\"#\""), "{out}");
+    }
+
+    #[test]
+    fn namespacing_survives_re_sanitizing() {
+        // Cached summaries are re-sanitized on read, so a second pass must not
+        // stack another prefix (which would break the matching id).
+        let once = sanitize("<a href=\"#intro\">go</a><h2 id=\"intro\">Intro</h2>");
+        assert_eq!(sanitize(&once), once);
+    }
+
+    #[test]
+    fn entity_carrying_ids_stay_in_step_and_idempotent() {
+        // Values are rewritten raw. If they were decoded first, lol_html (which
+        // escapes `"` but not `&`) would peel an entity layer per pass, so the
+        // id and the href would disagree and a second pass would drift again.
+        let once = sanitize("<h2 id=\"a&amp;b\">x</h2><a href=\"#a&amp;b\">y</a>");
+        assert!(once.contains("id=\"uc-a&amp;b\""), "{once}");
+        assert!(once.contains("href=\"#uc-a&amp;b\""), "{once}");
+        assert_eq!(sanitize(&once), once);
+    }
+
+    #[test]
+    fn a_rewritten_fragment_href_cannot_smuggle_a_scheme() {
+        // The written value always begins with `#`, so no scheme can appear.
+        let out = sanitize("<a href=\"#&#106;avascript:alert(1)\">x</a>");
+        assert!(out.contains("href=\"#uc-"), "{out}");
+        assert!(!out.contains("javascript:alert(1)\">"), "{out}");
+    }
+
+    #[test]
+    fn does_not_namespace_aria_attributes_that_are_not_idrefs() {
+        let out = sanitize("<p aria-label=\"hello\" aria-hidden=\"true\">x</p>");
+        assert!(out.contains("aria-label=\"hello\""), "{out}");
+        assert!(out.contains("aria-hidden=\"true\""), "{out}");
     }
 
     #[test]

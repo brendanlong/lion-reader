@@ -4,6 +4,7 @@
 
 import { describe, it, expect } from "vitest";
 import { extractFrontmatter, processMarkdown } from "../../src/server/markdown";
+import { sanitizeEntryHtml } from "../../src/server/html/sanitize";
 
 describe("extractFrontmatter", () => {
   it("extracts title from frontmatter", () => {
@@ -531,5 +532,96 @@ This paper introduces Parcae.`;
     expect(result.html).not.toContain("description:");
     expect(result.html).not.toContain("image:");
     expect(result.html).toContain("Parcae");
+  });
+
+  describe("heading ids (#1425)", () => {
+    it("gives headings GitHub-compatible slugs so a table of contents resolves", async () => {
+      const result = await processMarkdown(
+        "# Doc\n\n[Jump](#front-loading-alignment)\n\n## Front-loading Alignment\n\nBody."
+      );
+      // The slug an author writing against GitHub's rules would expect.
+      expect(result.html).toContain('id="front-loading-alignment"');
+      expect(result.html).toContain('href="#front-loading-alignment"');
+    });
+
+    it("strips punctuation and lowercases like github-slugger", async () => {
+      const result = await processMarkdown("# Doc\n\n## What's *new* in v2.0?\n\nBody.");
+      expect(result.html).toContain('id="whats-new-in-v20"');
+    });
+
+    it("does not accumulate slug suffixes across documents", async () => {
+      // The extension's slugger is module-level state shared by every caller;
+      // it must reset per parse or the second document's "Intro" becomes
+      // "intro-1" and its table of contents breaks.
+      const first = await processMarkdown("# Doc\n\n## Intro\n\nBody.");
+      const second = await processMarkdown("# Doc\n\n## Intro\n\nBody.");
+      expect(first.html).toContain('id="intro"');
+      expect(second.html).toContain('id="intro"');
+    });
+
+    it("disambiguates duplicate headings within one document", async () => {
+      const result = await processMarkdown("# Doc\n\n## Intro\n\nA.\n\n## Intro\n\nB.");
+      expect(result.html).toContain('id="intro"');
+      expect(result.html).toContain('id="intro-1"');
+    });
+
+    it("leaves a link to the stripped title heading dangling", async () => {
+      // processMarkdown removes the leading heading (it becomes the article
+      // title), so its slug goes with it. A table of contents linking to the
+      // document's own title is the one anchor that can't resolve.
+      const result = await processMarkdown("# My Doc\n\n[Top](#my-doc)\n\nBody.");
+      expect(result.title).toBe("My Doc");
+      expect(result.html).not.toContain('id="my-doc"');
+      expect(result.html).toContain('href="#my-doc"');
+    });
+  });
+});
+
+/**
+ * The user-visible claim of #1425 is that a link in rendered Markdown actually
+ * lands somewhere. That spans two subsystems — Markdown rendering generates the
+ * ids, and the read-path sanitizer namespaces both sides — so neither unit test
+ * alone proves it. These drive the seam.
+ */
+describe("rendered Markdown through the read-path sanitizer (#1425)", () => {
+  const render = async (markdown: string): Promise<string> => {
+    const { html } = await processMarkdown(markdown);
+    return sanitizeEntryHtml(html) ?? "";
+  };
+
+  /** Every `href="#…"` that has no element with the matching id. */
+  const danglingAnchors = (html: string): string[] => {
+    const ids = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]));
+    const targets = [...html.matchAll(/href="#([^"]+)"/g)].map((m) => m[1]);
+    return [...new Set(targets.filter((t) => !ids.has(t)))];
+  };
+
+  it("resolves a table of contents to its headings", async () => {
+    const html = await render(
+      "# Doc\n\n- [Intro](#intro)\n- [Details](#details)\n\n## Intro\n\nA.\n\n## Details\n\nB."
+    );
+    expect(danglingAnchors(html)).toEqual([]);
+    // Namespaced as a set, and still same-document rather than off-site.
+    expect(html).toContain('href="#uc-intro"');
+    expect(html).toContain('id="uc-intro"');
+  });
+
+  it("resolves footnote markers and their back-links", async () => {
+    const html = await render(
+      "# Doc\n\nA claim[^1] and another[^2].\n\n[^1]: First.\n[^2]: Second."
+    );
+    expect(danglingAnchors(html)).toEqual([]);
+  });
+
+  it("keeps in-page links out of a new tab", async () => {
+    // An absolutized anchor would pick up target="_blank" from the sanitizer's
+    // external-link transform, opening a tab for what should be a scroll.
+    const html = await render("# Doc\n\n[Intro](#intro)\n\n## Intro\n\nA.");
+    expect(html).not.toMatch(/href="#[^"]*"[^>]*target="_blank"/);
+  });
+
+  it("still opens genuinely external links in a new tab", async () => {
+    const html = await render("# Doc\n\n[Out](https://example.com/x)");
+    expect(html).toContain('target="_blank"');
   });
 });

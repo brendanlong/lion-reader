@@ -44,8 +44,7 @@ Entry bodies, saved articles, and AI summaries are rendered with
 - **Never render feed-controlled text (titles, author names, feed names) as HTML.**
 - Sanitization is per-read, so a rules change in `native/sanitizer/` takes effect
   on the next read everywhere after a deploy — rebuild the native module
-  (`pnpm build:native`). `SANITIZER_VERSION` is now informational only (nothing is
-  stored to compare against). See the html doc.
+  (`pnpm build:native`). There is no version constant to bump. See the html doc.
 - The allowlist deliberately excludes `script`/`style`/`on*`/`form`/`base`/`meta`,
   restricts URL schemes, forces `rel=noopener`, and treats SVG/MathML as mXSS-prone.
   Changes here need a security review.

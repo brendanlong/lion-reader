@@ -324,8 +324,8 @@ describe("processFileContent", () => {
   const blobBase = `https://github.com/${repoFile.owner}/${repoFile.repo}/blob/main`;
 
   describe("relative URL resolution", () => {
-    it("resolves relative Markdown image paths to raw.githubusercontent.com", () => {
-      const { html } = processFileContent(
+    it("resolves relative Markdown image paths to raw.githubusercontent.com", async () => {
+      const { html } = await processFileContent(
         "![A chart](images/chart.png)",
         "wsff.md",
         null,
@@ -334,8 +334,8 @@ describe("processFileContent", () => {
       expect(html).toContain(`src="${rawBase}/images/chart.png"`);
     });
 
-    it("resolves ./-prefixed image paths the same way", () => {
-      const { html } = processFileContent(
+    it("resolves ./-prefixed image paths the same way", async () => {
+      const { html } = await processFileContent(
         "![A chart](./images/chart.png)",
         "wsff.md",
         null,
@@ -344,9 +344,9 @@ describe("processFileContent", () => {
       expect(html).toContain(`src="${rawBase}/images/chart.png"`);
     });
 
-    it("resolves images in raw HTML blocks embedded in Markdown", () => {
+    it("resolves images in raw HTML blocks embedded in Markdown", async () => {
       // GitHub Markdown commonly centers figures with a raw <div><img>.
-      const { html } = processFileContent(
+      const { html } = await processFileContent(
         '<div align="center"><img src="images/chart.png" width="50%" alt="A chart"></div>',
         "wsff.md",
         null,
@@ -355,16 +355,16 @@ describe("processFileContent", () => {
       expect(html).toContain(`src="${rawBase}/images/chart.png"`);
     });
 
-    it("resolves images relative to the file's own directory, not the repo root", () => {
-      const { html } = processFileContent("![Chart](charts/one.png)", "where.md", null, {
+    it("resolves images relative to the file's own directory, not the repo root", async () => {
+      const { html } = await processFileContent("![Chart](charts/one.png)", "where.md", null, {
         ...repoFile,
         path: "side-quests/where.md",
       });
       expect(html).toContain(`src="${rawBase}/side-quests/charts/one.png"`);
     });
 
-    it("resolves relative links to the github.com blob view, not raw", () => {
-      const { html } = processFileContent(
+    it("resolves relative links to the github.com blob view, not raw", async () => {
+      const { html } = await processFileContent(
         "[Side quest](./side-quests/where.md)",
         "wsff.md",
         null,
@@ -373,8 +373,8 @@ describe("processFileContent", () => {
       expect(html).toContain(`href="${blobBase}/side-quests/where.md"`);
     });
 
-    it("leaves absolute URLs alone", () => {
-      const { html } = processFileContent(
+    it("leaves absolute URLs alone", async () => {
+      const { html } = await processFileContent(
         "![Thumb](https://img.youtube.com/vi/abc/hqdefault.jpg)",
         "wsff.md",
         null,
@@ -383,8 +383,8 @@ describe("processFileContent", () => {
       expect(html).toContain('src="https://img.youtube.com/vi/abc/hqdefault.jpg"');
     });
 
-    it("defaults to the HEAD ref when the file was fetched without one", () => {
-      const { html } = processFileContent("![Logo](logo.png)", "README.md", null, {
+    it("defaults to the HEAD ref when the file was fetched without one", async () => {
+      const { html } = await processFileContent("![Logo](logo.png)", "README.md", null, {
         owner: "brendanlong",
         repo: "lion-reader",
         path: "README.md",
@@ -394,13 +394,18 @@ describe("processFileContent", () => {
       );
     });
 
-    it("leaves content untouched when given no repo location (gists)", () => {
-      const { html } = processFileContent("![Chart](images/chart.png)", "notes.md", null, null);
+    it("leaves content untouched when given no repo location (gists)", async () => {
+      const { html } = await processFileContent(
+        "![Chart](images/chart.png)",
+        "notes.md",
+        null,
+        null
+      );
       expect(html).toContain('src="images/chart.png"');
     });
 
-    it("resolves srcset candidates and video posters against the raw base", () => {
-      const { html } = processFileContent(
+    it("resolves srcset candidates and video posters against the raw base", async () => {
+      const { html } = await processFileContent(
         '<img srcset="images/small.png 1x, images/large.png 2x">' +
           '<video poster="images/poster.png"></video>',
         "wsff.md",
@@ -412,8 +417,8 @@ describe("processFileContent", () => {
       expect(html).toContain(`poster="${rawBase}/images/poster.png"`);
     });
 
-    it("resolves links against the blob view at the default HEAD ref", () => {
-      const { html } = processFileContent("[Docs](docs/guide.md)", "README.md", null, {
+    it("resolves links against the blob view at the default HEAD ref", async () => {
+      const { html } = await processFileContent("[Docs](docs/guide.md)", "README.md", null, {
         owner: "brendanlong",
         repo: "lion-reader",
         path: "README.md",
@@ -425,8 +430,8 @@ describe("processFileContent", () => {
 
     // GitHub reads a leading slash as repo-root-relative, but URL resolution
     // sends it to the origin root instead. Un-skip with the fix.
-    it.skip("resolves root-relative image paths against the repo root (#1423)", () => {
-      const { html } = processFileContent(
+    it.skip("resolves root-relative image paths against the repo root (#1423)", async () => {
+      const { html } = await processFileContent(
         '<img src="/docs/images/chart.png">',
         "wsff.md",
         null,
@@ -435,20 +440,109 @@ describe("processFileContent", () => {
       expect(html).toContain(`src="${rawBase}/docs/images/chart.png"`);
     });
 
-    it.skip("resolves root-relative links against the repo root (#1423)", () => {
-      const { html } = processFileContent("[Docs](/docs/guide.md)", "wsff.md", null, repoFile);
+    it.skip("resolves root-relative links against the repo root (#1423)", async () => {
+      const { html } = await processFileContent(
+        "[Docs](/docs/guide.md)",
+        "wsff.md",
+        null,
+        repoFile
+      );
       expect(html).toContain(`href="${blobBase}/docs/guide.md"`);
     });
   });
 
+  describe("heading ids (#1425)", () => {
+    it("slugs headings so a README's table of contents resolves", async () => {
+      const { html } = await processFileContent(
+        "# Doc\n\n[Jump](#front-loading-alignment)\n\n## Front-loading Alignment\n\nBody.",
+        "wsff.md",
+        null,
+        repoFile
+      );
+      expect(html).toContain('id="front-loading-alignment"');
+      // Same-document fragments must stay relative, not get the blob base.
+      expect(html).toContain('href="#front-loading-alignment"');
+    });
+  });
+
+  describe("shared Markdown dialect", () => {
+    // Repo files render through the app's one Markdown instance
+    // (src/server/markdown), so they get the same extensions an upload does.
+    it("renders math in repo files", async () => {
+      const { html } = await processFileContent(
+        "# Doc\n\nThe bound is $x^2$ here.",
+        "README.md",
+        null,
+        repoFile
+      );
+      expect(html).toContain("<math");
+    });
+
+    it("leaves prose dollar amounts alone", async () => {
+      // KaTeX's standard delimiters need a non-space before the closing `$`,
+      // so ordinary README prose doesn't get parsed as a math span.
+      const { html } = await processFileContent(
+        "# Doc\n\nIt costs $5 and $10 to run.",
+        "README.md",
+        null,
+        repoFile
+      );
+      expect(html).toContain("$5 and $10");
+      expect(html).not.toContain("<math");
+    });
+
+    it("renders GFM footnotes in repo files", async () => {
+      const { html } = await processFileContent(
+        "# Doc\n\nClaim[^1]\n\n[^1]: The note.",
+        "README.md",
+        null,
+        repoFile
+      );
+      expect(html).toContain("The note.");
+      expect(html).toContain('href="#footnote-1"');
+    });
+
+    it("strips YAML frontmatter and takes its metadata", async () => {
+      // Common in repo docs (Jekyll/Hugo); rendering it as text looked broken.
+      const file = await processFileContent(
+        "---\ntitle: Real Title\nauthor: Jane\ndescription: A summary.\n---\n\nBody text.",
+        "docs/guide.md",
+        null,
+        repoFile
+      );
+      expect(file.html).toContain("Body text.");
+      expect(file.html).not.toContain("title:");
+      expect(file.title).toBe("Real Title");
+      expect(file.author).toBe("Jane");
+      expect(file.excerpt).toBe("A summary.");
+    });
+
+    it("reports no metadata for non-Markdown files", async () => {
+      const file = await processFileContent("const x = 1;", "app.js", null, repoFile);
+      expect(file.title).toBeNull();
+      expect(file.author).toBeNull();
+      expect(file.excerpt).toBeNull();
+    });
+  });
+
   describe("non-Markdown files", () => {
-    it("resolves relative URLs in HTML files", () => {
-      const { html } = processFileContent('<img src="logo.png">', "index.html", null, repoFile);
+    it("resolves relative URLs in HTML files", async () => {
+      const { html } = await processFileContent(
+        '<img src="logo.png">',
+        "index.html",
+        null,
+        repoFile
+      );
       expect(html).toContain(`src="${rawBase}/logo.png"`);
     });
 
-    it("escapes other files into a code block without rewriting URLs", () => {
-      const { html } = processFileContent('const src = "images/a.png";', "app.js", null, repoFile);
+    it("escapes other files into a code block without rewriting URLs", async () => {
+      const { html } = await processFileContent(
+        'const src = "images/a.png";',
+        "app.js",
+        null,
+        repoFile
+      );
       expect(html).toContain("<pre><code>");
       expect(html).toContain("images/a.png");
       expect(html).not.toContain(rawBase);

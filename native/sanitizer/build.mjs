@@ -3,7 +3,7 @@
  *
  * We deliberately don't use @napi-rs/cli: a .node file is just the cdylib
  * renamed, and the TypeScript definitions are hand-maintained in index.d.ts
- * (the exported surface is three functions and a constant). This keeps the
+ * (the exported surface is four functions). This keeps the
  * build a plain `cargo build` that works identically on dev machines, CI,
  * and the Alpine Docker builder.
  */

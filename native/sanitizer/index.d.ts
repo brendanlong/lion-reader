@@ -3,14 +3,6 @@
  * Keep in lockstep with the #[napi] exports.
  */
 
-/**
- * Version of the sanitization rules compiled into this module. The single
- * source of truth for `SANITIZER_VERSION` — TypeScript re-exports this value.
- * Bump it in native/sanitizer/core/src/lib.rs whenever any sanitizer
- * behavior changes (allow-lists, transforms, serialization).
- */
-export const SANITIZER_VERSION: number;
-
 export interface SanitizeOutput {
   html: string;
   /**

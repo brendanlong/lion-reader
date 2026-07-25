@@ -15,9 +15,9 @@ import { sanitizeEntryHtml, sanitizeEntryHtmlAsync } from "@/server/html/sanitiz
 // Content generators — synthesize realistic article HTML at various sizes.
 // ---------------------------------------------------------------------------
 
-function makeParagraph(i: number): string {
+function makeParagraph(i: number, withId = true): string {
   return (
-    `<p class="body-text" id="p${i}">This is paragraph number ${i} with some ` +
+    `<p class="body-text"${withId ? ` id="p${i}"` : ""}>This is paragraph number ${i} with some ` +
     `<a href="https://example.com/article/${i}">an external link</a> and ` +
     `<strong>bold</strong>, <em>emphasized</em>, and <code>inline code</code> text. ` +
     `Here is <a href="/relative/${i}">a relative link</a> and an image ` +
@@ -25,10 +25,10 @@ function makeParagraph(i: number): string {
   );
 }
 
-function makeArticle(paragraphs: number): string {
+function makeArticle(paragraphs: number, withIds = true): string {
   const parts: string[] = ["<article><h1>Sample Article</h1>"];
   for (let i = 0; i < paragraphs; i++) {
-    parts.push(makeParagraph(i));
+    parts.push(makeParagraph(i, withIds));
     if (i % 10 === 0) {
       parts.push(
         `<blockquote><p>A quoted passage ${i}.</p></blockquote>` +
@@ -61,6 +61,10 @@ const corpus: Record<string, string> = {
   medium: makeArticle(150), // typical long-form article
   large: makeArticle(1200), // large article (~700KB territory)
   mathHeavy: makeMathArticle(80), // math-dense (LessWrong style)
+  // Same as `medium` minus the per-paragraph `id`. Namespacing (idrefs.rs)
+  // rewrites every id, and rewriting an attribute makes lol_html re-serialize
+  // that start tag, so the pair isolates what id density costs.
+  mediumNoIds: makeArticle(150, false),
 };
 
 // ---------------------------------------------------------------------------
@@ -96,6 +100,7 @@ const ITERS: Record<string, number> = {
   medium: 300,
   large: 40,
   mathHeavy: 200,
+  mediumNoIds: 300,
 };
 
 console.log("=== Sizes ===");
