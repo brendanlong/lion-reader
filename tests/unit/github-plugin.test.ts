@@ -428,9 +428,8 @@ describe("processFileContent", () => {
       );
     });
 
-    // GitHub reads a leading slash as repo-root-relative, but URL resolution
-    // sends it to the origin root instead. Un-skip with the fix.
-    it.skip("resolves root-relative image paths against the repo root (#1423)", async () => {
+    // GitHub reads a leading slash as repo-root-relative, not origin-root-relative.
+    it("resolves root-relative image paths against the repo root (#1423)", async () => {
       const { html } = await processFileContent(
         '<img src="/docs/images/chart.png">',
         "wsff.md",
@@ -440,7 +439,7 @@ describe("processFileContent", () => {
       expect(html).toContain(`src="${rawBase}/docs/images/chart.png"`);
     });
 
-    it.skip("resolves root-relative links against the repo root (#1423)", async () => {
+    it("resolves root-relative links against the repo root (#1423)", async () => {
       const { html } = await processFileContent(
         "[Docs](/docs/guide.md)",
         "wsff.md",
@@ -448,6 +447,27 @@ describe("processFileContent", () => {
         repoFile
       );
       expect(html).toContain(`href="${blobBase}/docs/guide.md"`);
+    });
+
+    it("resolves root-relative paths from a file in a subdirectory (#1423)", async () => {
+      // The repo root, not the file's directory, is what a leading slash means.
+      const { html } = await processFileContent(
+        '<img src="/Docs/Logo.png">',
+        "docs/deep/page.md",
+        null,
+        { ...repoFile, path: "docs/deep/page.md" }
+      );
+      expect(html).toContain(`src="${rawBase}/Docs/Logo.png"`);
+    });
+
+    it("leaves protocol-relative URLs at their own host (#1423)", async () => {
+      const { html } = await processFileContent(
+        '<img src="//img.example.com/chart.png">',
+        "wsff.md",
+        null,
+        repoFile
+      );
+      expect(html).toContain('src="https://img.example.com/chart.png"');
     });
   });
 

@@ -648,6 +648,67 @@ describe("absolutizeUrls", () => {
     });
   });
 
+  describe("rootBaseUrl option", () => {
+    it("should resolve root-relative paths against rootBaseUrl, not the origin root", () => {
+      const html = `<img src="/images/photo.jpg">
+        <a href="/docs/other.md">Link</a>
+        <video poster="/images/poster.jpg"></video>
+        <img srcset="/images/small.jpg 1x, /images/large.jpg 2x">`;
+      const result = absolutizeUrls(html, "https://example.com/tree/main/page.md", {
+        mediaBaseUrl: "https://cdn.example.com/main/page.md",
+        rootBaseUrl: "https://example.com/tree/main/",
+        mediaRootBaseUrl: "https://cdn.example.com/main/",
+      });
+      expect(result).toContain('src="https://cdn.example.com/main/images/photo.jpg"');
+      expect(result).toContain('href="https://example.com/tree/main/docs/other.md"');
+      expect(result).toContain('poster="https://cdn.example.com/main/images/poster.jpg"');
+      expect(result).toContain("https://cdn.example.com/main/images/small.jpg 1x");
+      expect(result).toContain("https://cdn.example.com/main/images/large.jpg 2x");
+    });
+
+    it("should still resolve directory-relative paths against the ordinary bases", () => {
+      const html = '<img src="images/photo.jpg"><a href="other.md">Link</a>';
+      const result = absolutizeUrls(html, "https://example.com/tree/main/docs/page.md", {
+        rootBaseUrl: "https://example.com/tree/main/",
+      });
+      expect(result).toContain('src="https://example.com/tree/main/docs/images/photo.jpg"');
+      expect(result).toContain('href="https://example.com/tree/main/docs/other.md"');
+    });
+
+    it("should default mediaRootBaseUrl to rootBaseUrl", () => {
+      const html = '<img src="/images/photo.jpg">';
+      const result = absolutizeUrls(html, "https://example.com/tree/main/page.md", {
+        rootBaseUrl: "https://example.com/tree/main/",
+      });
+      expect(result).toContain('src="https://example.com/tree/main/images/photo.jpg"');
+    });
+
+    it("should treat a rootBaseUrl without a trailing slash as a directory", () => {
+      const html = '<img src="/images/photo.jpg">';
+      const result = absolutizeUrls(html, "https://example.com/tree/main/page.md", {
+        rootBaseUrl: "https://example.com/tree/main",
+      });
+      expect(result).toContain('src="https://example.com/tree/main/images/photo.jpg"');
+    });
+
+    it("should leave protocol-relative URLs alone", () => {
+      const html = '<img src="//cdn.other.com/photo.jpg">';
+      const result = absolutizeUrls(html, "https://example.com/tree/main/page.md", {
+        rootBaseUrl: "https://example.com/tree/main/",
+      });
+      expect(result).toContain('src="https://cdn.other.com/photo.jpg"');
+    });
+
+    it("should let an explicit <base href> restore origin-root semantics", () => {
+      const html =
+        '<html><head><base href="https://base.example.com/docs/"></head><body><img src="/images/photo.jpg"></body></html>';
+      const result = absolutizeUrls(html, "https://example.com/tree/main/page.md", {
+        rootBaseUrl: "https://example.com/tree/main/",
+      });
+      expect(result).toContain('src="https://base.example.com/images/photo.jpg"');
+    });
+  });
+
   describe("edge cases", () => {
     it("should handle empty HTML", () => {
       const html = "";

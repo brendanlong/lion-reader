@@ -341,14 +341,19 @@ export interface RepoFileLocation {
  * `github.com/…/blob/…/images/foo.png` HTML page and renders a broken image.
  *
  * Both bases are the file's own URL, so paths resolve relative to its directory
- * the way GitHub renders them. Root-relative paths (`/docs/logo.png`) are still
- * wrong: GitHub reads them as repo-root-relative, but URL resolution sends them
- * to the origin root, which no choice of base can fix (#1423).
+ * the way GitHub renders them. GitHub also reads a leading slash
+ * (`/docs/logo.png`) as relative to the *repo* root rather than the origin root
+ * that URL semantics would give, so each base gets a matching `rootBaseUrl` at
+ * the repo's ref (#1423).
  */
 function absolutizeGitHubUrls(html: string, file: RepoFileLocation): string {
   const { owner, repo, ref = "HEAD", path } = file;
-  return absolutizeUrls(html, `https://github.com/${owner}/${repo}/blob/${ref}/${path}`, {
-    mediaBaseUrl: `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${path}`,
+  const blobRoot = `https://github.com/${owner}/${repo}/blob/${ref}/`;
+  const rawRoot = `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/`;
+  return absolutizeUrls(html, `${blobRoot}${path}`, {
+    mediaBaseUrl: `${rawRoot}${path}`,
+    rootBaseUrl: blobRoot,
+    mediaRootBaseUrl: rawRoot,
   });
 }
 
