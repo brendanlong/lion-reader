@@ -159,6 +159,7 @@ Prefer SAX-style parsing unless the algorithm requires a DOM.
 - XML generation (OPML export): `fast-xml-parser`
 - HTML extraction: `htmlparser2` (streaming)
 - DOM required: `linkedom` (but article extraction/Readability is the native `@lion-reader/readability` module — dom_smoothie, built by `pnpm build:native`)
+- Markdown: **always** `markdownToHtml`/`processMarkdown` from `src/server/markdown`. Every source (uploads, Markdown URL saves, GitHub repo files, AI summaries) shares that one `Marked` instance, so there is a single dialect to reason about and one place to add an extension. Never `import { marked }` — the global singleton is reconfigurable by any caller, and a second instance means a second dialect to keep in sync.
 - Parse once, pass parsed structure through code
 
 ## Sanitizing Untrusted HTML
