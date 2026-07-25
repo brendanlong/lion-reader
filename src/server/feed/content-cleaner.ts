@@ -194,6 +194,12 @@ function resolveUrl(url: string, baseUrl: string): string | null {
     // so absolutizing would send the reader off-site — and, because the href
     // would then be absolute, the sanitizer would also add `target="_blank"`
     // and open a new tab for what should be a scroll (#1425).
+    //
+    // The trade-off: in a *truncated* excerpt feed the target may only exist on
+    // the source page, so such a link now dead-ends instead of navigating there.
+    // Full-text entries (arXiv citations, footnotes, Markdown tables of
+    // contents) are much the more common case, and for them absolutizing broke
+    // every anchor.
     if (url.startsWith("#")) {
       return url;
     }

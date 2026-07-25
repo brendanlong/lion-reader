@@ -14,8 +14,9 @@
 //! 3. The lol_html allow-list pass (sanitize.rs).
 //! 4. SVG re-insertion.
 //!
-//! Bump [`SANITIZER_VERSION`] whenever any of this changes behavior — the
-//! persisted-sanitized-content machinery uses it for staleness.
+//! A rules change here needs no coordination beyond a deploy: nothing stores a
+//! sanitized copy, so the next read of every entry uses the new rules (see
+//! "Per-read sanitization" in `src/server/html/CLAUDE.md`).
 
 pub mod embeds;
 pub mod idrefs;
@@ -26,16 +27,10 @@ pub mod serialize;
 pub mod svg;
 pub mod urls;
 
-/// Version of the sanitization rules. The single source of truth — the
-/// TypeScript `SANITIZER_VERSION` re-exports this value via the napi
-/// binding. v9 = the Rust port (output differs from sanitize-html in
-/// formatting, so every row must be re-sanitized). v10 = MIME-gate `data:`
-/// image sources to `image/*` (drops `data:text/html` etc. from
-/// `img`/`source` `src`/`srcset` and SVG `<image>` href; only content
-/// carrying a `data:` URL can differ). v11 = namespace entry-content ids and
-/// the references that reach them with `idrefs::ID_PREFIX` (only content
-/// carrying an `id`/idref can differ).
-pub const SANITIZER_VERSION: u32 = 11;
+/// Version of the sanitization rules, re-exported to TypeScript by the napi
+/// binding. Informational only — sanitization is per-read, so nothing compares
+/// it to decide staleness and a rules change does not require bumping it.
+pub const SANITIZER_VERSION: u32 = 10;
 
 /// Run the full sanitization pipeline. `warnings` collects non-fatal
 /// diagnostics (e.g. unrecognized MathJax wrappers) for the caller to log.
@@ -121,5 +116,17 @@ mod tests {
     #[test]
     fn empty_input() {
         assert_eq!(run(""), "");
+    }
+
+    #[test]
+    fn html_and_svg_passes_namespace_ids_consistently() {
+        // The HTML and SVG passes prefix independently (SVG is extracted, run
+        // through its own allow-list, then spliced back), so an HTML link to an
+        // id defined *inside* an SVG only resolves if both agree.
+        let out = run(
+            "<a href=\"#chart\">see chart</a><svg><title id=\"chart\">Chart</title></svg>",
+        );
+        assert!(out.contains("href=\"#uc-chart\""), "{out}");
+        assert!(out.contains("id=\"uc-chart\""), "{out}");
     }
 }

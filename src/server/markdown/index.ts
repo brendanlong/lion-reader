@@ -144,13 +144,12 @@ function parseFrontmatterLenient(yaml: string): Record<string, string> | null {
 }
 
 /**
- * A dedicated marked instance, configured once at module load.
+ * The single marked instance, configured once at module load.
  *
- * We use an isolated `Marked` instance (not the shared global singleton) so our
- * options and extensions can't leak into the other `marked` importers
- * (summarization, the GitHub plugin), and theirs can't leak into ours. The old
- * code mutated the global via `marked.setOptions` on every call, so whichever
- * module configured it last won; a dedicated instance removes that coupling.
+ * An isolated `Marked` instance rather than the shared global singleton, which
+ * anything can reconfigure with `marked.setOptions` — whichever module ran last
+ * would win. Every Markdown source in the app renders through this one instance:
+ * one dialect to reason about, one place to add an extension.
  *
  * `marked-gfm-heading-id` gives headings the same `id` slugs GitHub generates
  * (via `github-slugger`), so a hand-written table of contents — `[Intro](#intro)`,
@@ -184,10 +183,16 @@ const markdownRenderer = new Marked({
 /**
  * Converts Markdown to HTML using marked with safe defaults.
  *
+ * This and {@link processMarkdown} are the *only* ways to render Markdown — every
+ * source (uploads, Markdown URL saves, GitHub repo files, AI summaries) goes
+ * through this one instance so they can't drift into subtly different dialects.
+ * Use this directly when there is no document metadata to extract (an AI
+ * summary); use `processMarkdown` for a document with frontmatter and a title.
+ *
  * @param markdown - The Markdown text to convert
  * @returns The HTML representation
  */
-async function markdownToHtml(markdown: string): Promise<string> {
+export async function markdownToHtml(markdown: string): Promise<string> {
   return markdownRenderer.parse(markdown) as Promise<string>;
 }
 

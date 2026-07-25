@@ -5,9 +5,7 @@ import { readResponseWithSizeLimit } from "@/server/http/fetch";
 import { fetchWithSsrfProtection } from "@/server/http/ssrf";
 import { escapeHtml } from "@/server/http/html";
 import { githubConfig, usageLimitsConfig } from "@/server/config/env";
-import { Marked } from "marked";
-import { gfmHeadingId } from "marked-gfm-heading-id";
-import { extractAndStripTitleHeader } from "@/server/html/strip-title-header";
+import { processMarkdown } from "@/server/markdown";
 import { absolutizeUrls } from "@/server/feed/content-cleaner";
 
 // ============================================================================
@@ -322,32 +320,6 @@ function isMarkdownLanguage(language: string | null): boolean {
 }
 
 /**
- * A dedicated marked instance for repo files.
- *
- * Deliberately separate from `src/server/markdown`'s instance: this one adds
- * only `gfmHeadingId` (so a README's hand-written table of contents resolves —
- * see #1425), not the KaTeX extension. GitHub renders no inline math, and
- * inferring it would mangle ordinary README prose — `costs $5 and $10` parses as
- * a `$…$` math span. Own instance rather than the shared `marked` global because
- * `services/summarization.ts` calls `setOptions` on that global, so whichever
- * module loaded last dictated our options.
- */
-const repoFileRenderer = new Marked({
-  gfm: true,
-  breaks: true,
-}).use(gfmHeadingId());
-
-/**
- * Convert Markdown content to HTML and extract title from first header.
- * Returns both the cleaned HTML (with title header stripped) and the extracted title.
- */
-function processMarkdownContent(content: string): { html: string; title: string | null } {
-  const html = repoFileRenderer.parse(content, { async: false }) as string;
-  const { title, content: cleanedHtml } = extractAndStripTitleHeader(html);
-  return { html: cleanedHtml, title };
-}
-
-/**
  * A file's location in a repo, used to resolve the relative URLs in it.
  * `ref` defaults to `HEAD` (accepted by both github.com and
  * raw.githubusercontent.com) for the repo-root README, which we fetch without one.
@@ -390,48 +362,70 @@ function codeToHtml(content: string, language?: string): string {
   return `<pre><code${langClass}>${escaped}</code></pre>`;
 }
 
+/** A repo/gist file rendered to HTML, plus whatever metadata it declared. */
+interface ProcessedRepoFile {
+  html: string;
+  /** Frontmatter title, else the leading heading (which is stripped from html). */
+  title: string | null;
+  /** Frontmatter author, when the file declares one. */
+  author: string | null;
+  /** Frontmatter description, when the file declares one. */
+  excerpt: string | null;
+}
+
 /**
  * Process a single file's content into HTML.
- * For markdown files, also extracts the title from the first header.
+ *
+ * Markdown goes through `processMarkdown` — the app's single Markdown path — so a
+ * repo file gets exactly the dialect an upload does (frontmatter, GFM footnotes,
+ * `$…$` math, GitHub-compatible heading ids). Keeping one renderer is worth more
+ * than tailoring one per source; GitHub itself renders no inline math, but KaTeX's
+ * standard delimiters don't fire on prose (`costs $5 and $10` stays text).
  *
  * `location` is the repo file the content came from, so its relative URLs can be
  * resolved GitHub's way; pass null for gist files, whose sibling-file references
  * we don't resolve (they'd need gist.githubusercontent.com raw URLs, #1424).
  */
-export function processFileContent(
+export async function processFileContent(
   content: string,
   filename: string,
   language: string | null,
   location: RepoFileLocation | null
-): { html: string; extractedTitle: string | null } {
+): Promise<ProcessedRepoFile> {
   const absolutize = (html: string): string =>
     location ? absolutizeGitHubUrls(html, location) : html;
 
   if (isMarkdownFile(filename) || isMarkdownLanguage(language)) {
-    const { html, title } = processMarkdownContent(content);
-    return { html: absolutize(html), extractedTitle: title };
+    const { html, title, summary, author } = await processMarkdown(content);
+    return { html: absolutize(html), title, author, excerpt: summary };
   }
 
   if (isHtmlFile(filename)) {
-    return { html: absolutize(content), extractedTitle: null };
+    return { html: absolutize(content), title: null, author: null, excerpt: null };
   }
 
   // For other files, wrap in code block. The content is HTML-escaped, so there
   // are no URL attributes left to absolutize.
-  return { html: codeToHtml(content, language ?? undefined), extractedTitle: null };
+  return {
+    html: codeToHtml(content, language ?? undefined),
+    title: null,
+    author: null,
+    excerpt: null,
+  };
 }
 
 /**
- * Build HTML from a gist with multiple files.
+ * Build HTML from a gist with multiple files. Metadata a single file declared in
+ * frontmatter is propagated; a concatenation of several has no one author/excerpt.
  */
-function buildGistHtml(
+async function buildGistHtml(
   gist: GistResponse,
   targetFilename?: string
-): { html: string; title: string | null } {
+): Promise<Omit<ProcessedRepoFile, "title"> & { title: string | null }> {
   const files = Object.values(gist.files).sort((a, b) => a.filename.localeCompare(b.filename));
 
   if (files.length === 0) {
-    return { html: "<p>Empty gist</p>", title: null };
+    return { html: "<p>Empty gist</p>", title: null, author: null, excerpt: null };
   }
 
   // If a specific file is requested, find it
@@ -444,39 +438,34 @@ function buildGistHtml(
     );
 
     if (matchedFile) {
-      const { html, extractedTitle } = processFileContent(
+      const file = await processFileContent(
         matchedFile.content,
         matchedFile.filename,
         matchedFile.language,
         null
       );
       // Use extracted title from markdown, fall back to filename
-      return { html, title: extractedTitle || matchedFile.filename };
+      return { ...file, title: file.title || matchedFile.filename };
     }
   }
 
   // Single file: return it directly
   if (files.length === 1) {
-    const file = files[0];
-    const { html, extractedTitle } = processFileContent(
-      file.content,
-      file.filename,
-      file.language,
-      null
-    );
+    const only = files[0];
+    const file = await processFileContent(only.content, only.filename, only.language, null);
     // Use extracted title from markdown, fall back to filename
-    return { html, title: extractedTitle || file.filename };
+    return { ...file, title: file.title || only.filename };
   }
 
   // Multiple files: concatenate with headers
   const parts: string[] = [];
   for (const file of files) {
     parts.push(`<h2>${escapeHtml(file.filename)}</h2>`);
-    const { html } = processFileContent(file.content, file.filename, file.language, null);
+    const { html } = await processFileContent(file.content, file.filename, file.language, null);
     parts.push(html);
   }
 
-  return { html: parts.join("\n"), title: null };
+  return { html: parts.join("\n"), title: null, author: null, excerpt: null };
 }
 
 // ============================================================================
@@ -498,18 +487,20 @@ async function fetchGitHubContent(url: URL): Promise<SavedArticleContent | null>
         return null;
       }
 
-      const { html, title: fileTitle } = buildGistHtml(gist, parsed.filename);
+      const file = await buildGistHtml(gist, parsed.filename);
 
       // Build a nice title
-      let title = fileTitle || gist.description;
+      let title = file.title || gist.description;
       if (!title) {
         title = `Gist ${parsed.gistId}`;
       }
 
       return {
-        html,
+        html: file.html,
         title,
-        author: gist.owner?.login ?? null,
+        excerpt: file.excerpt,
+        // A frontmatter byline is more specific than "whoever owns the gist".
+        author: file.author ?? gist.owner?.login ?? null,
         publishedAt: gist.created_at ? new Date(gist.created_at) : null,
         canonicalUrl: `https://gist.github.com/${gist.owner?.login ?? ""}/${gist.id}`,
       };
@@ -522,18 +513,19 @@ async function fetchGitHubContent(url: URL): Promise<SavedArticleContent | null>
         return null;
       }
 
-      const { html, extractedTitle } = processFileContent(readme.content, readme.filename, null, {
+      const file = await processFileContent(readme.content, readme.filename, null, {
         owner: parsed.owner,
         repo: parsed.repo,
         path: readme.filename,
       });
       // Use extracted title from README, fall back to repo name
-      const title = extractedTitle || `${parsed.owner}/${parsed.repo}`;
+      const title = file.title || `${parsed.owner}/${parsed.repo}`;
 
       return {
-        html,
+        html: file.html,
         title,
-        author: parsed.owner,
+        excerpt: file.excerpt,
+        author: file.author ?? parsed.owner,
         publishedAt: null,
         canonicalUrl: `https://github.com/${parsed.owner}/${parsed.repo}`,
       };
@@ -551,25 +543,27 @@ async function fetchGitHubContent(url: URL): Promise<SavedArticleContent | null>
           return null;
         }
 
-        const { html, extractedTitle } = processFileContent(rawContent, parsed.path, null, parsed);
-        const title = extractedTitle || filename;
+        const file = await processFileContent(rawContent, parsed.path, null, parsed);
+        const title = file.title || filename;
         return {
-          html,
+          html: file.html,
           title,
-          author: parsed.owner,
+          excerpt: file.excerpt,
+          author: file.author ?? parsed.owner,
           publishedAt: null,
           canonicalUrl: `https://github.com/${parsed.owner}/${parsed.repo}/blob/${parsed.ref}/${parsed.path}`,
         };
       }
 
       const content = Buffer.from(contents.content, "base64").toString("utf-8");
-      const { html, extractedTitle } = processFileContent(content, parsed.path, null, parsed);
-      const title = extractedTitle || filename;
+      const file = await processFileContent(content, parsed.path, null, parsed);
+      const title = file.title || filename;
 
       return {
-        html,
+        html: file.html,
         title,
-        author: parsed.owner,
+        excerpt: file.excerpt,
+        author: file.author ?? parsed.owner,
         publishedAt: null,
         canonicalUrl: `https://github.com/${parsed.owner}/${parsed.repo}/blob/${parsed.ref}/${parsed.path}`,
       };
@@ -583,13 +577,14 @@ async function fetchGitHubContent(url: URL): Promise<SavedArticleContent | null>
       }
 
       const filename = parsed.path.split("/").pop() ?? parsed.path;
-      const { html, extractedTitle } = processFileContent(content, parsed.path, null, parsed);
-      const title = extractedTitle || filename;
+      const file = await processFileContent(content, parsed.path, null, parsed);
+      const title = file.title || filename;
 
       return {
-        html,
+        html: file.html,
         title,
-        author: parsed.owner,
+        excerpt: file.excerpt,
+        author: file.author ?? parsed.owner,
         publishedAt: null,
         canonicalUrl: `https://github.com/${parsed.owner}/${parsed.repo}/blob/${parsed.ref}/${parsed.path}`,
       };

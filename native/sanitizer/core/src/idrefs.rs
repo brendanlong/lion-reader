@@ -50,19 +50,19 @@ pub const ARIA_IDREF_ATTRS: &[&str] = &[
 /// SVG presentation attributes that can hold a `url(#id)` funcIRI. Gradients,
 /// clip paths, masks, markers and filters are referenced this way, so missing
 /// one here means a chart silently loses its fill or clipping.
+///
+/// Only paint and reference properties belong here. The `<color>`-valued ones
+/// (`color`, `stop-color`, `flood-color`, `lighting-color`) take
+/// `currentColor | <color> | inherit` and can never hold a funcIRI.
 pub const SVG_FUNC_IRI_ATTRS: &[&str] = &[
     "clip-path",
-    "color",
     "fill",
     "filter",
-    "flood-color",
-    "lighting-color",
     "marker-end",
     "marker-mid",
     "marker-start",
     "mask",
     "stroke",
-    "stop-color",
 ];
 
 /// Prefix a single id token. Idempotent, and a no-op on an empty value.
@@ -100,34 +100,43 @@ pub fn prefix_fragment_href(value: &str) -> Option<String> {
     Some(format!("#{}", prefix_id(fragment)))
 }
 
+/// Split an optional matching quote off a funcIRI's inner text, returning the
+/// quote (so it can be re-emitted) and the bare value.
+fn strip_quotes(inner: &str) -> (&str, &str) {
+    if let Some(bare) = inner.strip_prefix('"').and_then(|s| s.strip_suffix('"')) {
+        return ("\"", bare);
+    }
+    if let Some(bare) = inner.strip_prefix('\'').and_then(|s| s.strip_suffix('\'')) {
+        return ("'", bare);
+    }
+    ("", inner)
+}
+
 /// Rewrite every `url(#id)` funcIRI in an attribute value, leaving the rest
 /// (including `url(https://…)` and non-URL keywords like `none` or a
 /// `circle(50%)` basic shape) exactly as it was.
 pub fn prefix_func_iris(value: &str) -> String {
+    // `url(` is a CSS function token, so it is case-insensitive and `URL(#g)`
+    // has to match too: missing it would leave the reference pointing at the
+    // pre-rename id and render the shape unpainted. Scanning a lowercased copy
+    // keeps the offsets valid, because ASCII lowercasing preserves byte length.
+    let lowered = value.to_ascii_lowercase();
     let mut out = String::with_capacity(value.len() + 8);
-    let mut rest = value;
-    while let Some(start) = rest.find("url(") {
-        let (before, from_url) = rest.split_at(start);
-        out.push_str(before);
-        let inner_start = start + "url(".len();
-        let Some(close) = rest[inner_start..].find(')') else {
-            // Unterminated `url(` — emit the remainder verbatim.
-            out.push_str(from_url);
-            return out;
+    let mut pos = 0usize;
+    while let Some(found) = lowered[pos..].find("url(") {
+        let open = pos + found;
+        let inner_start = open + "url(".len();
+        let Some(close_offset) = value[inner_start..].find(')') else {
+            // Unterminated `url(` — the remainder is emitted verbatim below.
+            break;
         };
-        let inner = &rest[inner_start..inner_start + close];
-        // Strip optional matching quotes: url("#a") / url('#a') / url(#a).
-        let unquoted = inner.trim();
-        let (quote, bare) = match unquoted.strip_prefix('"').and_then(|s| s.strip_suffix('"')) {
-            Some(bare) => ("\"", bare),
-            None => match unquoted.strip_prefix('\'').and_then(|s| s.strip_suffix('\'')) {
-                Some(bare) => ("'", bare),
-                None => ("", unquoted),
-            },
-        };
+        let close = inner_start + close_offset;
+        let (quote, bare) = strip_quotes(value[inner_start..close].trim());
+        out.push_str(&value[pos..open]);
         match bare.strip_prefix('#') {
             Some(id) if !id.is_empty() => {
-                out.push_str("url(");
+                // Re-emit the function name from the original, preserving case.
+                out.push_str(&value[open..inner_start]);
                 out.push_str(quote);
                 out.push('#');
                 out.push_str(&prefix_id(id));
@@ -135,11 +144,11 @@ pub fn prefix_func_iris(value: &str) -> String {
                 out.push(')');
             }
             // Not a same-document reference (e.g. url(https://…)); keep as-is.
-            _ => out.push_str(&rest[start..inner_start + close + 1]),
+            _ => out.push_str(&value[open..=close]),
         }
-        rest = &rest[inner_start + close + 1..];
+        pos = close + 1;
     }
-    out.push_str(rest);
+    out.push_str(&value[pos..]);
     out
 }
 

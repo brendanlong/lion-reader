@@ -415,6 +415,41 @@ mod tests {
     }
 
     #[test]
+    fn namespaces_every_func_iri_attribute() {
+        // Driven off the constant so a typo in an entry can't ship silently.
+        for attr in SVG_FUNC_IRI_ATTRS {
+            let out = roundtrip(&format!("<svg><rect {attr}=\"url(#g)\"/></svg>"));
+            assert!(
+                out.contains(&format!("{attr}=\"url(#uc-g)\"")),
+                "{attr} not namespaced: {out}"
+            );
+        }
+    }
+
+    #[test]
+    fn matches_url_case_insensitively() {
+        // `url(` is a CSS function token; `URL(#g)` left unrewritten would point
+        // at the pre-rename id and the shape would render unpainted.
+        let out = roundtrip("<svg><linearGradient id=\"g\"/><rect fill=\"URL(#g)\"/></svg>");
+        assert!(out.contains("id=\"uc-g\""), "{out}");
+        assert!(out.contains("fill=\"URL(#uc-g)\""), "{out}");
+    }
+
+    #[test]
+    fn leaves_filter_primitive_value_names_alone() {
+        // `in`/`in2`/`result` name values within one filter, not document ids.
+        let out = roundtrip(concat!(
+            "<svg><filter id=\"f\"><feGaussianBlur in=\"SourceGraphic\" result=\"blur\"/>",
+            "<feBlend in=\"blur\" in2=\"SourceGraphic\"/></filter></svg>"
+        ));
+        assert!(out.contains("result=\"blur\""), "{out}");
+        assert!(out.contains("in=\"blur\""), "{out}");
+        assert!(out.contains("in2=\"SourceGraphic\""), "{out}");
+        assert!(!out.contains("uc-blur"), "{out}");
+        assert!(!out.contains("uc-SourceGraphic"), "{out}");
+    }
+
+    #[test]
     fn leaves_non_reference_paint_values_alone() {
         let out = roundtrip("<svg><rect fill=\"#ff0000\" stroke=\"none\" clip-path=\"circle(50%)\"/></svg>");
         assert!(out.contains("fill=\"#ff0000\""), "{out}");

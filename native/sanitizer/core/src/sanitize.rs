@@ -247,11 +247,20 @@ fn handle_iframe(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Sen
 }
 
 /// Namespace this element's ids and same-document references (see `idrefs.rs`).
-/// Runs after the allow-list filtering, so it only ever sees kept attributes.
-fn namespace_idrefs(
-    tag: &str,
-    el: &mut Element,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+/// Runs after the allow-list filtering, so it only ever sees kept attributes —
+/// which is also why it needs no per-tag guards: `attr_allowed` already confines
+/// `headers` to th/td and `name`/`href` to `a`, and duplicating that here would
+/// just be a second copy to keep in sync if the allow-list ever widens.
+///
+/// Every value is read and written **raw** (not entity-decoded). lol_html's
+/// `set_attribute` escapes `"` but not `&`, so writing back a decoded value
+/// would peel one entity layer per pass — leaving `id="a&amp;b"` and
+/// `href="#a&amp;b"` disagreeing after the rename, and making the pass
+/// non-idempotent. Operating on raw bytes keeps the two sides in step by
+/// construction. It also keeps the `#` test conservative: a raw value starting
+/// with a literal `#` always decodes to a fragment, so this can only ever
+/// under-match, never mistake a URL for a fragment.
+fn namespace_idrefs(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if let Some(id) = el.get_attribute("id") {
         el.set_attribute("id", &prefix_id(&id))?;
     }
@@ -260,20 +269,16 @@ fn namespace_idrefs(
             el.set_attribute(name, &prefix_id_list(&refs))?;
         }
     }
-    if matches!(tag, "th" | "td") {
-        if let Some(headers) = el.get_attribute("headers") {
-            el.set_attribute("headers", &prefix_id_list(&headers))?;
-        }
+    if let Some(headers) = el.get_attribute("headers") {
+        el.set_attribute("headers", &prefix_id_list(&headers))?;
     }
-    if tag == "a" {
-        // `name` is the legacy anchor target, so it is an id like any other.
-        if let Some(name) = el.get_attribute("name") {
-            el.set_attribute("name", &prefix_id(&name))?;
-        }
-        if let Some(href) = el.get_attribute("href") {
-            if let Some(prefixed) = prefix_fragment_href(&decode_attr(&href)) {
-                el.set_attribute("href", &prefixed)?;
-            }
+    // `name` on an `<a>` is the legacy anchor target, so it is an id like any other.
+    if let Some(name) = el.get_attribute("name") {
+        el.set_attribute("name", &prefix_id(&name))?;
+    }
+    if let Some(href) = el.get_attribute("href") {
+        if let Some(prefixed) = prefix_fragment_href(&href) {
+            el.set_attribute("href", &prefixed)?;
         }
     }
     Ok(())
@@ -323,7 +328,7 @@ fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Se
         el.remove_attribute(&name);
     }
 
-    namespace_idrefs(&tag, el)?;
+    namespace_idrefs(el)?;
 
     if tag == "a" {
         // External links open in a new tab with a safe rel (anti
@@ -424,6 +429,18 @@ mod tests {
     }
 
     #[test]
+    fn namespaces_every_aria_idref_attribute() {
+        // Driven off the constant so a typo in an entry can't ship silently.
+        for attr in ARIA_IDREF_ATTRS {
+            let out = sanitize(&format!("<p {attr}=\"a b\">x</p>"));
+            assert!(
+                out.contains(&format!("{attr}=\"uc-a uc-b\"")),
+                "{attr} not namespaced: {out}"
+            );
+        }
+    }
+
+    #[test]
     fn namespaces_every_reference_kind_the_allow_list_keeps() {
         let out = sanitize("<p id=\"d\" aria-labelledby=\"l1 l2\" aria-describedby=\"d1\">x</p>");
         assert!(out.contains("id=\"uc-d\""), "{out}");
@@ -453,6 +470,25 @@ mod tests {
         // stack another prefix (which would break the matching id).
         let once = sanitize("<a href=\"#intro\">go</a><h2 id=\"intro\">Intro</h2>");
         assert_eq!(sanitize(&once), once);
+    }
+
+    #[test]
+    fn entity_carrying_ids_stay_in_step_and_idempotent() {
+        // Values are rewritten raw. If they were decoded first, lol_html (which
+        // escapes `"` but not `&`) would peel an entity layer per pass, so the
+        // id and the href would disagree and a second pass would drift again.
+        let once = sanitize("<h2 id=\"a&amp;b\">x</h2><a href=\"#a&amp;b\">y</a>");
+        assert!(once.contains("id=\"uc-a&amp;b\""), "{once}");
+        assert!(once.contains("href=\"#uc-a&amp;b\""), "{once}");
+        assert_eq!(sanitize(&once), once);
+    }
+
+    #[test]
+    fn a_rewritten_fragment_href_cannot_smuggle_a_scheme() {
+        // The written value always begins with `#`, so no scheme can appear.
+        let out = sanitize("<a href=\"#&#106;avascript:alert(1)\">x</a>");
+        assert!(out.contains("href=\"#uc-"), "{out}");
+        assert!(!out.contains("javascript:alert(1)\">"), "{out}");
     }
 
     #[test]
