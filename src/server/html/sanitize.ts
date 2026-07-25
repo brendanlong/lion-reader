@@ -29,22 +29,10 @@
 import {
   sanitizeEntryHtml as nativeSanitizeEntryHtml,
   sanitizeEntryHtmlAsync as nativeSanitizeEntryHtmlAsync,
-  SANITIZER_VERSION as NATIVE_SANITIZER_VERSION,
 } from "@lion-reader/sanitizer";
 
 import { logger } from "@/lib/logger";
 import { startSanitizeTimer } from "@/server/metrics/metrics";
-
-/**
- * Version of the sanitization rules, re-exported from the native module —
- * the compiled rules are the single source of truth. This is now purely
- * informational: as of issue #1282 sanitization is no longer persisted (entries
- * store only raw HTML and are sanitized on every read), so there is no stored
- * `*_sanitized_version` to compare against and a rules change is just a deploy —
- * no version bump, fast-forward, or bulk re-sanitize is required. Kept as a
- * constant for documentation and potential future use.
- */
-export const SANITIZER_VERSION: number = NATIVE_SANITIZER_VERSION;
 
 function logWarnings(warnings: string[]): void {
   for (const warning of warnings) {

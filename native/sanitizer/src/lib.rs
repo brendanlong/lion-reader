@@ -10,11 +10,6 @@ use napi::{Env, Error, Result, Status, Task};
 
 use lion_reader_sanitizer_core as core;
 
-/// Version of the sanitization rules compiled into this module — the single
-/// source of truth for `SANITIZER_VERSION`.
-#[napi]
-pub const SANITIZER_VERSION: u32 = core::SANITIZER_VERSION;
-
 #[napi(object)]
 pub struct SanitizeOutput {
     pub html: String,

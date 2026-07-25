@@ -215,9 +215,9 @@ export const summarizationRouter = createTRPCRouter({
           if (fullRecord?.summaryText) {
             return {
               // Sanitize on read with the *current* rules. Cached summaries are
-              // stored already-sanitized, but re-sanitizing here means a
-              // SANITIZER_VERSION bump (e.g. one that closes a sanitizer hole) is
-              // applied to every stored summary without a version column or
+              // stored already-sanitized, but re-sanitizing here means a rules
+              // change (e.g. one that closes a sanitizer hole) reaches every
+              // stored summary on the next read, with no version column or
               // migration — unlike large entry bodies, summaries are small enough
               // that re-sanitizing on each read is cheaper than tracking staleness.
               summary: sanitizeEntryHtml(fullRecord.summaryText) ?? "",
