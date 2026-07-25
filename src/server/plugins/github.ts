@@ -46,6 +46,26 @@ interface ContentsResponse {
 // ============================================================================
 
 /**
+ * Split the `{ref}/{path}` tail of a blob or raw URL.
+ *
+ * A ref may contain slashes (`feature/x`), so the boundary is ambiguous in
+ * general and we take the first segment — right for the common `main`-style ref.
+ * The fully-qualified `refs/heads/…` / `refs/tags/…` forms are unambiguous
+ * though, and they're what GitHub's "Raw" button emits today, so absorb those
+ * three segments. Getting this right matters beyond re-joining `${ref}/${path}`:
+ * `absolutizeGitHubUrls` needs the ref *alone* to build the repo root.
+ */
+function splitRefAndPath(segments: string[]): { ref: string; path: string } {
+  const qualified =
+    segments.length >= 3 && segments[0] === "refs" && ["heads", "tags"].includes(segments[1]);
+  const refLength = qualified ? 3 : 1;
+  return {
+    ref: segments.slice(0, refLength).join("/"),
+    path: segments.slice(refLength).join("/"),
+  };
+}
+
+/**
  * Parse a GitHub URL into its component type.
  */
 export function parseGitHubUrl(url: URL): GitHubUrlType | null {
@@ -83,13 +103,12 @@ export function parseGitHubUrl(url: URL): GitHubUrlType | null {
       return null;
     }
 
-    const [owner, repo, ref, ...pathParts] = parts;
+    const [owner, repo, ...refAndPath] = parts;
     return {
       type: "raw",
       owner,
       repo,
-      ref,
-      path: pathParts.join("/"),
+      ...splitRefAndPath(refAndPath),
     };
   }
 
@@ -110,13 +129,11 @@ export function parseGitHubUrl(url: URL): GitHubUrlType | null {
 
     // Blob view: github.com/{owner}/{repo}/blob/{ref}/{path}
     if (rest[0] === "blob" && rest.length >= 3) {
-      const [, ref, ...pathParts] = rest;
       return {
         type: "blob",
         owner,
         repo,
-        ref,
-        path: pathParts.join("/"),
+        ...splitRefAndPath(rest.slice(1)),
       };
     }
 
@@ -343,17 +360,16 @@ export interface RepoFileLocation {
  * Both bases are the file's own URL, so paths resolve relative to its directory
  * the way GitHub renders them. GitHub also reads a leading slash
  * (`/docs/logo.png`) as relative to the *repo* root rather than the origin root
- * that URL semantics would give, so each base gets a matching `rootBaseUrl` at
- * the repo's ref (#1423).
+ * that URL semantics would give, so each base gets a matching root base at the
+ * repo's ref (#1423).
  */
 function absolutizeGitHubUrls(html: string, file: RepoFileLocation): string {
   const { owner, repo, ref = "HEAD", path } = file;
   const blobRoot = `https://github.com/${owner}/${repo}/blob/${ref}/`;
   const rawRoot = `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/`;
   return absolutizeUrls(html, `${blobRoot}${path}`, {
-    mediaBaseUrl: `${rawRoot}${path}`,
     rootBaseUrl: blobRoot,
-    mediaRootBaseUrl: rawRoot,
+    media: { baseUrl: `${rawRoot}${path}`, rootBaseUrl: rawRoot },
   });
 }
 

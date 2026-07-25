@@ -27,24 +27,28 @@ const decoder = new TextDecoder();
  *
  * @param html - The HTML content to process
  * @param baseUrl - The base URL for resolving relative URLs
- * @param options.mediaBaseUrl - Separate base for the embedded-resource
- *   attributes (`src`, `poster`, `srcset` — so `img`/`video`/`audio`, but also
- *   `iframe`/`source`/`embed`); defaults to `baseUrl`. Needed for sources that
- *   serve a document and the files it embeds from different origins — see
- *   `absolutizeGitHubUrls` in `src/server/plugins/github.ts`.
  * @param options.rootBaseUrl - Directory URL that root-relative paths
  *   (`/a/b.png`) resolve against, instead of the origin root that ordinary URL
  *   semantics would give. For sources that serve a document tree under a path
  *   prefix and read a leading slash as relative to that tree's root rather than
  *   the origin's (a GitHub repo — see `absolutizeGitHubUrls`).
- * @param options.mediaRootBaseUrl - Root base for the embedded-resource
- *   attributes; defaults to `rootBaseUrl`.
+ * @param options.media - Separate bases for the embedded-resource attributes
+ *   (`src`, `poster`, `srcset` — so `img`/`video`/`audio`, but also
+ *   `iframe`/`source`/`embed`); the whole pair defaults to the document's.
+ *   Needed for sources that serve a document and the files it embeds from
+ *   different origins — see `absolutizeGitHubUrls` in
+ *   `src/server/plugins/github.ts`. The two bases travel together so a caller
+ *   can't point media at another origin and leave its root base behind on this
+ *   one, which is the bug this option exists to prevent.
  * @returns HTML with all relative URLs converted to absolute
  */
 export function absolutizeUrls(
   html: string,
   baseUrl: string,
-  options: { mediaBaseUrl?: string; rootBaseUrl?: string; mediaRootBaseUrl?: string } = {}
+  options: {
+    rootBaseUrl?: string;
+    media?: { baseUrl: string; rootBaseUrl?: string };
+  } = {}
 ): string {
   try {
     let output = "";
@@ -57,10 +61,9 @@ export function absolutizeUrls(
     // <base> in <head> will be seen before any body elements.
     // Per the HTML spec, only the first <base> with an href is used.
     let documentBase: ResolveBase = { url: baseUrl, root: options.rootBaseUrl };
-    let mediaBase: ResolveBase = {
-      url: options.mediaBaseUrl ?? baseUrl,
-      root: options.mediaRootBaseUrl ?? options.rootBaseUrl,
-    };
+    let mediaBase: ResolveBase = options.media
+      ? { url: options.media.baseUrl, root: options.media.rootBaseUrl }
+      : documentBase;
     let baseHrefSet = false;
 
     // Check for <base> tag and use its href as the base URL
@@ -77,11 +80,11 @@ export function absolutizeUrls(
           // in case <base href> itself is relative
           const resolved = resolveUrl(href, { url: baseUrl });
           if (resolved) {
-            // <base href> governs both kinds of URL, so it replaces
-            // mediaBaseUrl too — but only for the elements that follow it,
-            // since this is a single streaming pass (see above). It also
-            // restores plain HTML semantics for root-relative paths, so the
-            // root bases are dropped.
+            // <base href> governs both kinds of URL, so it replaces the media
+            // bases too — but only for the elements that follow it, since this
+            // is a single streaming pass (see above). It also restores plain
+            // HTML semantics for root-relative paths, so the root bases are
+            // dropped.
             documentBase = { url: resolved };
             mediaBase = { url: resolved };
             baseHrefSet = true;
@@ -206,8 +209,16 @@ interface ResolveBase {
  */
 function resolveUrl(url: string, base: ResolveBase): string | null {
   try {
+    // The URL parser ignores surrounding whitespace, so match its view of the
+    // value rather than the raw attribute when classifying below.
+    const trimmed = url.trim();
+
     // Skip data:, javascript:, and vbscript: URLs
-    if (url.startsWith("data:") || url.startsWith("javascript:") || url.startsWith("vbscript:")) {
+    if (
+      trimmed.startsWith("data:") ||
+      trimmed.startsWith("javascript:") ||
+      trimmed.startsWith("vbscript:")
+    ) {
       return url;
     }
 
@@ -222,7 +233,7 @@ function resolveUrl(url: string, base: ResolveBase): string | null {
     // Full-text entries (arXiv citations, footnotes, Markdown tables of
     // contents) are much the more common case, and for them absolutizing broke
     // every anchor.
-    if (url.startsWith("#")) {
+    if (trimmed.startsWith("#")) {
       return url;
     }
 
@@ -230,8 +241,8 @@ function resolveUrl(url: string, base: ResolveBase): string | null {
     // for sources whose root is a subtree (a GitHub repo, #1423). Strip the
     // leading slash and resolve against that subtree instead. `//host/path` is
     // protocol-relative, not root-relative, so it's left to ordinary handling.
-    if (base.root && url.startsWith("/") && !url.startsWith("//")) {
-      return new URL(url.slice(1), asDirectoryUrl(base.root)).href;
+    if (base.root && trimmed.startsWith("/") && !trimmed.startsWith("//")) {
+      return new URL(trimmed.slice(1), asDirectoryUrl(base.root)).href;
     }
 
     const resolved = new URL(url, base.url);
@@ -282,7 +293,7 @@ function looksLikeNewSrcsetEntry(str: string): boolean {
  * entry boundaries, rather than naively splitting on all commas.
  *
  * @param srcset - The srcset attribute value
- * @param baseUrl - The base URL for resolution
+ * @param base - The base(s) for resolution
  * @returns The srcset with absolute URLs
  */
 function absolutizeSrcset(srcset: string, base: ResolveBase): string {
