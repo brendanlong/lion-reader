@@ -10,6 +10,7 @@ import {
   normalizeFilenameForFragment,
   isMarkdownFile,
   isHtmlFile,
+  processFileContent,
 } from "../../src/server/plugins/github";
 
 describe("GitHub plugin URL parsing", () => {
@@ -308,6 +309,108 @@ describe("File type detection", () => {
       expect(isHtmlFile("script.js")).toBe(false);
       expect(isHtmlFile("style.css")).toBe(false);
       expect(isHtmlFile("README.md")).toBe(false);
+    });
+  });
+});
+
+describe("processFileContent", () => {
+  const repoFile = {
+    owner: "humanlayer",
+    repo: "advanced-context-engineering-for-coding-agents",
+    ref: "main",
+    path: "wsff.md",
+  };
+  const rawBase = `https://raw.githubusercontent.com/${repoFile.owner}/${repoFile.repo}/main`;
+  const blobBase = `https://github.com/${repoFile.owner}/${repoFile.repo}/blob/main`;
+
+  describe("relative URL resolution", () => {
+    it("resolves relative Markdown image paths to raw.githubusercontent.com", () => {
+      const { html } = processFileContent(
+        "![A chart](images/chart.png)",
+        "wsff.md",
+        null,
+        repoFile
+      );
+      expect(html).toContain(`src="${rawBase}/images/chart.png"`);
+    });
+
+    it("resolves ./-prefixed image paths the same way", () => {
+      const { html } = processFileContent(
+        "![A chart](./images/chart.png)",
+        "wsff.md",
+        null,
+        repoFile
+      );
+      expect(html).toContain(`src="${rawBase}/images/chart.png"`);
+    });
+
+    it("resolves images in raw HTML blocks embedded in Markdown", () => {
+      // GitHub Markdown commonly centers figures with a raw <div><img>.
+      const { html } = processFileContent(
+        '<div align="center"><img src="images/chart.png" width="50%" alt="A chart"></div>',
+        "wsff.md",
+        null,
+        repoFile
+      );
+      expect(html).toContain(`src="${rawBase}/images/chart.png"`);
+    });
+
+    it("resolves images relative to the file's own directory, not the repo root", () => {
+      const { html } = processFileContent("![Chart](charts/one.png)", "where.md", null, {
+        ...repoFile,
+        path: "side-quests/where.md",
+      });
+      expect(html).toContain(`src="${rawBase}/side-quests/charts/one.png"`);
+    });
+
+    it("resolves relative links to the github.com blob view, not raw", () => {
+      const { html } = processFileContent(
+        "[Side quest](./side-quests/where.md)",
+        "wsff.md",
+        null,
+        repoFile
+      );
+      expect(html).toContain(`href="${blobBase}/side-quests/where.md"`);
+    });
+
+    it("leaves absolute URLs alone", () => {
+      const { html } = processFileContent(
+        "![Thumb](https://img.youtube.com/vi/abc/hqdefault.jpg)",
+        "wsff.md",
+        null,
+        repoFile
+      );
+      expect(html).toContain('src="https://img.youtube.com/vi/abc/hqdefault.jpg"');
+    });
+
+    it("defaults to the HEAD ref when the file was fetched without one", () => {
+      const { html } = processFileContent("![Logo](logo.png)", "README.md", null, {
+        owner: "brendanlong",
+        repo: "lion-reader",
+        path: "README.md",
+      });
+      expect(html).toContain(
+        'src="https://raw.githubusercontent.com/brendanlong/lion-reader/HEAD/logo.png"'
+      );
+    });
+
+    it("leaves gist content relative (no repo path to resolve against)", () => {
+      const { html } = processFileContent("![Chart](images/chart.png)", "notes.md", null, null);
+      expect(html).toContain('src="images/chart.png"');
+    });
+  });
+
+  describe("non-Markdown files", () => {
+    it("resolves relative URLs in HTML files", () => {
+      const { html } = processFileContent('<img src="logo.png">', "index.html", null, repoFile);
+      expect(html).toContain(`src="${rawBase}/logo.png"`);
+    });
+
+    it("escapes other files into a code block without rewriting URLs", () => {
+      const { html } = processFileContent('const src = "images/a.png";', "app.js", null, repoFile);
+      expect(html).toContain("<pre><code>");
+      expect(html).toContain("images/a.png");
+      expect(html).not.toContain(rawBase);
     });
   });
 });

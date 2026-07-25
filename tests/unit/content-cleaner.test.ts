@@ -577,6 +577,38 @@ describe("absolutizeUrls", () => {
     });
   });
 
+  describe("mediaBaseUrl option", () => {
+    it("should resolve media attributes against mediaBaseUrl and links against baseUrl", () => {
+      const html = `<img src="images/photo.jpg">
+        <a href="other.html">Link</a>
+        <video poster="images/poster.jpg"></video>
+        <img srcset="images/small.jpg 1x, images/large.jpg 2x">`;
+      const result = absolutizeUrls(html, "https://example.com/docs/page.html", {
+        mediaBaseUrl: "https://cdn.example.com/docs/page.html",
+      });
+      expect(result).toContain('src="https://cdn.example.com/docs/images/photo.jpg"');
+      expect(result).toContain('poster="https://cdn.example.com/docs/images/poster.jpg"');
+      expect(result).toContain("https://cdn.example.com/docs/images/small.jpg 1x");
+      expect(result).toContain("https://cdn.example.com/docs/images/large.jpg 2x");
+      expect(result).toContain('href="https://example.com/docs/other.html"');
+    });
+
+    it("should default mediaBaseUrl to baseUrl", () => {
+      const html = '<img src="photo.jpg">';
+      const result = absolutizeUrls(html, "https://example.com/docs/page.html", {});
+      expect(result).toContain('src="https://example.com/docs/photo.jpg"');
+    });
+
+    it("should let an explicit <base href> override mediaBaseUrl", () => {
+      const html =
+        '<html><head><base href="https://base.example.com/"></head><body><img src="photo.jpg"></body></html>';
+      const result = absolutizeUrls(html, "https://example.com/page", {
+        mediaBaseUrl: "https://cdn.example.com/",
+      });
+      expect(result).toContain('src="https://base.example.com/photo.jpg"');
+    });
+  });
+
   describe("edge cases", () => {
     it("should handle empty HTML", () => {
       const html = "";
