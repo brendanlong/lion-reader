@@ -70,7 +70,11 @@ describe("MathJax CHTML conversion through sanitizeEntryHtml", () => {
       // attributes, uppercase tags, entities). Only the math block is
       // rewritten (and the sanitizer's own attribute transforms applied);
       // everything else must be byte-identical.
-      const before = `<DIV class=box id=a><P>Fish &amp; chips`;
+      //
+      // Deliberately no `id` here: namespacing rewrites it, and lol_html
+      // re-serializes a start tag whose attribute changed, so an `id` would
+      // make this assertion test the transform rather than the splice.
+      const before = `<DIV class=box lang=en><P>Fish &amp; chips`;
       const after = `</P><br>tail`;
       const out = convert(`${before}${MJX_X}${after}`);
       expect(out.startsWith(before)).toBe(true);

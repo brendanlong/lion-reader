@@ -18,6 +18,7 @@
 //! persisted-sanitized-content machinery uses it for staleness.
 
 pub mod embeds;
+pub mod idrefs;
 pub mod mathjax;
 pub mod sanitize;
 pub mod scanner;
@@ -31,8 +32,10 @@ pub mod urls;
 /// formatting, so every row must be re-sanitized). v10 = MIME-gate `data:`
 /// image sources to `image/*` (drops `data:text/html` etc. from
 /// `img`/`source` `src`/`srcset` and SVG `<image>` href; only content
-/// carrying a `data:` URL can differ).
-pub const SANITIZER_VERSION: u32 = 10;
+/// carrying a `data:` URL can differ). v11 = namespace entry-content ids and
+/// the references that reach them with `idrefs::ID_PREFIX` (only content
+/// carrying an `id`/idref can differ).
+pub const SANITIZER_VERSION: u32 = 11;
 
 /// Run the full sanitization pipeline. `warnings` collects non-fatal
 /// diagnostics (e.g. unrecognized MathJax wrappers) for the caller to log.
