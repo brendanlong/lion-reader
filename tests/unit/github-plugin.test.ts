@@ -441,6 +441,31 @@ describe("processFileContent", () => {
     });
   });
 
+  describe("heading ids (#1425)", () => {
+    it("slugs headings so a README's table of contents resolves", () => {
+      const { html } = processFileContent(
+        "# Doc\n\n[Jump](#front-loading-alignment)\n\n## Front-loading Alignment\n\nBody.",
+        "wsff.md",
+        null,
+        repoFile
+      );
+      expect(html).toContain('id="front-loading-alignment"');
+      // Same-document fragments must stay relative, not get the blob base.
+      expect(html).toContain('href="#front-loading-alignment"');
+    });
+
+    it("does not treat prose dollar amounts as math", () => {
+      // Repo files get no KaTeX extension precisely so this stays literal.
+      const { html } = processFileContent(
+        "It costs $5 and $10 to run.",
+        "README.md",
+        null,
+        repoFile
+      );
+      expect(html).toContain("$5 and $10");
+    });
+  });
+
   describe("non-Markdown files", () => {
     it("resolves relative URLs in HTML files", () => {
       const { html } = processFileContent('<img src="logo.png">', "index.html", null, repoFile);

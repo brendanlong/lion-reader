@@ -532,4 +532,46 @@ This paper introduces Parcae.`;
     expect(result.html).not.toContain("image:");
     expect(result.html).toContain("Parcae");
   });
+
+  describe("heading ids (#1425)", () => {
+    it("gives headings GitHub-compatible slugs so a table of contents resolves", async () => {
+      const result = await processMarkdown(
+        "# Doc\n\n[Jump](#front-loading-alignment)\n\n## Front-loading Alignment\n\nBody."
+      );
+      // The slug an author writing against GitHub's rules would expect.
+      expect(result.html).toContain('id="front-loading-alignment"');
+      expect(result.html).toContain('href="#front-loading-alignment"');
+    });
+
+    it("strips punctuation and lowercases like github-slugger", async () => {
+      const result = await processMarkdown("# Doc\n\n## What's *new* in v2.0?\n\nBody.");
+      expect(result.html).toContain('id="whats-new-in-v20"');
+    });
+
+    it("does not accumulate slug suffixes across documents", async () => {
+      // The extension's slugger is module-level state shared by every caller;
+      // it must reset per parse or the second document's "Intro" becomes
+      // "intro-1" and its table of contents breaks.
+      const first = await processMarkdown("# Doc\n\n## Intro\n\nBody.");
+      const second = await processMarkdown("# Doc\n\n## Intro\n\nBody.");
+      expect(first.html).toContain('id="intro"');
+      expect(second.html).toContain('id="intro"');
+    });
+
+    it("disambiguates duplicate headings within one document", async () => {
+      const result = await processMarkdown("# Doc\n\n## Intro\n\nA.\n\n## Intro\n\nB.");
+      expect(result.html).toContain('id="intro"');
+      expect(result.html).toContain('id="intro-1"');
+    });
+
+    it("leaves a link to the stripped title heading dangling", async () => {
+      // processMarkdown removes the leading heading (it becomes the article
+      // title), so its slug goes with it. A table of contents linking to the
+      // document's own title is the one anchor that can't resolve.
+      const result = await processMarkdown("# My Doc\n\n[Top](#my-doc)\n\nBody.");
+      expect(result.title).toBe("My Doc");
+      expect(result.html).not.toContain('id="my-doc"');
+      expect(result.html).toContain('href="#my-doc"');
+    });
+  });
 });

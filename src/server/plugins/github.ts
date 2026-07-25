@@ -5,7 +5,8 @@ import { readResponseWithSizeLimit } from "@/server/http/fetch";
 import { fetchWithSsrfProtection } from "@/server/http/ssrf";
 import { escapeHtml } from "@/server/http/html";
 import { githubConfig, usageLimitsConfig } from "@/server/config/env";
-import { marked } from "marked";
+import { Marked } from "marked";
+import { gfmHeadingId } from "marked-gfm-heading-id";
 import { extractAndStripTitleHeader } from "@/server/html/strip-title-header";
 import { absolutizeUrls } from "@/server/feed/content-cleaner";
 
@@ -321,11 +322,27 @@ function isMarkdownLanguage(language: string | null): boolean {
 }
 
 /**
+ * A dedicated marked instance for repo files.
+ *
+ * Deliberately separate from `src/server/markdown`'s instance: this one adds
+ * only `gfmHeadingId` (so a README's hand-written table of contents resolves —
+ * see #1425), not the KaTeX extension. GitHub renders no inline math, and
+ * inferring it would mangle ordinary README prose — `costs $5 and $10` parses as
+ * a `$…$` math span. Own instance rather than the shared `marked` global because
+ * `services/summarization.ts` calls `setOptions` on that global, so whichever
+ * module loaded last dictated our options.
+ */
+const repoFileRenderer = new Marked({
+  gfm: true,
+  breaks: true,
+}).use(gfmHeadingId());
+
+/**
  * Convert Markdown content to HTML and extract title from first header.
  * Returns both the cleaned HTML (with title header stripped) and the extracted title.
  */
 function processMarkdownContent(content: string): { html: string; title: string | null } {
-  const html = marked.parse(content, { async: false }) as string;
+  const html = repoFileRenderer.parse(content, { async: false }) as string;
   const { title, content: cleanedHtml } = extractAndStripTitleHeader(html);
   return { html: cleanedHtml, title };
 }
