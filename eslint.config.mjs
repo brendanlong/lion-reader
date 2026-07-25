@@ -39,6 +39,28 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  // `src/server/markdown` owns the app's single `Marked` instance. Importing
+  // `marked` elsewhere either mutates the reconfigurable global singleton or
+  // creates a second instance — both give us more than one Markdown dialect to
+  // keep in sync (see "Parsing" in CLAUDE.md).
+  {
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: ["src/server/markdown/index.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "marked",
+              message:
+                "Import markdownToHtml or processMarkdown from @/server/markdown instead of marked — that module owns the app's single Marked instance.",
+            },
+          ],
+        },
+      ],
+    },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:

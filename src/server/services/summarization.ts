@@ -226,7 +226,7 @@ export async function generateSummary(
     // marked passes raw HTML through, and the summary is rendered via
     // dangerouslySetInnerHTML, so sanitize before storing/returning it.
     const markdownSummary = extractSummaryFromResponse(responseText);
-    const summary = sanitizeEntryHtml(await markdownToHtml(markdownSummary)) ?? "";
+    const summary = sanitizeEntryHtml(markdownToHtml(markdownSummary)) ?? "";
 
     return {
       summary,

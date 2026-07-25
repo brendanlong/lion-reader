@@ -376,11 +376,10 @@ interface ProcessedRepoFile {
 /**
  * Process a single file's content into HTML.
  *
- * Markdown goes through `processMarkdown` — the app's single Markdown path — so a
- * repo file gets exactly the dialect an upload does (frontmatter, GFM footnotes,
- * `$…$` math, GitHub-compatible heading ids). Keeping one renderer is worth more
- * than tailoring one per source; GitHub itself renders no inline math, but KaTeX's
- * standard delimiters don't fire on prose (`costs $5 and $10` stays text).
+ * Markdown goes through `processMarkdown`, so a repo file gets exactly the dialect
+ * an upload does. Note that includes `$…$` math, which GitHub itself doesn't
+ * render — harmless in practice, since KaTeX's standard delimiters don't fire on
+ * prose (`costs $5 and $10` stays text) and there's a test for that.
  *
  * `location` is the repo file the content came from, so its relative URLs can be
  * resolved GitHub's way; pass null for gist files, whose sibling-file references
@@ -421,7 +420,7 @@ export async function processFileContent(
 async function buildGistHtml(
   gist: GistResponse,
   targetFilename?: string
-): Promise<Omit<ProcessedRepoFile, "title"> & { title: string | null }> {
+): Promise<ProcessedRepoFile> {
   const files = Object.values(gist.files).sort((a, b) => a.filename.localeCompare(b.filename));
 
   if (files.length === 0) {

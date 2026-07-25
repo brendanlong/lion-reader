@@ -146,17 +146,23 @@ function parseFrontmatterLenient(yaml: string): Record<string, string> | null {
 /**
  * The single marked instance, configured once at module load.
  *
- * An isolated `Marked` instance rather than the shared global singleton, which
- * anything can reconfigure with `marked.setOptions` — whichever module ran last
- * would win. Every Markdown source in the app renders through this one instance:
- * one dialect to reason about, one place to add an extension.
+ * An isolated instance rather than the shared global singleton, which anything can
+ * reconfigure with `marked.setOptions` — whichever module ran last would win. Every
+ * Markdown source in the app renders through this one instance (a lint rule
+ * enforces it; see "Parsing" in CLAUDE.md).
  *
  * `marked-gfm-heading-id` gives headings the same `id` slugs GitHub generates
  * (via `github-slugger`), so a hand-written table of contents — `[Intro](#intro)`,
  * which authors write against GitHub's slugging rules — has something to land on.
- * Core marked emits no heading ids, so those anchors were all dead (#1425). The
- * extension resets its slugger in a `preprocess` hook, so ids don't accumulate
- * `-1` suffixes across documents sharing this instance.
+ * Core marked emits no heading ids, so those anchors were all dead (#1425).
+ *
+ * That extension keeps its slugger in **module-level mutable state**, reset in a
+ * `preprocess` hook. That is only safe because parsing is synchronous end to end,
+ * so `preprocess` and the renderer run in one uninterrupted turn — which is why
+ * `markdownToHtml` pins `{ async: false }`. If an extension ever made parsing
+ * async, two concurrent documents would interleave and doc B's reset would land
+ * mid-parse of doc A, silently slugging its headings against the wrong occurrence
+ * table (`intro` → `intro-1`) and breaking every table of contents under load.
  *
  * `marked-footnote` adds GFM footnote support — `[^1]` references plus `[^1]:`
  * definitions — which core marked does not handle. Without it, definitions
@@ -181,19 +187,16 @@ const markdownRenderer = new Marked({
   .use(markedKatex({ output: "mathml", throwOnError: false }));
 
 /**
- * Converts Markdown to HTML using marked with safe defaults.
+ * Converts Markdown to HTML. Use this when there is no document metadata to
+ * extract (an AI summary); use {@link processMarkdown} for a document with
+ * frontmatter and a title.
  *
- * This and {@link processMarkdown} are the *only* ways to render Markdown — every
- * source (uploads, Markdown URL saves, GitHub repo files, AI summaries) goes
- * through this one instance so they can't drift into subtly different dialects.
- * Use this directly when there is no document metadata to extract (an AI
- * summary); use `processMarkdown` for a document with frontmatter and a title.
- *
- * @param markdown - The Markdown text to convert
- * @returns The HTML representation
+ * `{ async: false }` is load-bearing, not decoration: marked *throws* if an
+ * extension has forced async parsing, which turns the silent slugger corruption
+ * described above into a loud startup-time failure.
  */
-export async function markdownToHtml(markdown: string): Promise<string> {
-  return markdownRenderer.parse(markdown) as Promise<string>;
+export function markdownToHtml(markdown: string): string {
+  return markdownRenderer.parse(markdown, { async: false });
 }
 
 /**
@@ -229,7 +232,7 @@ export async function processMarkdown(markdown: string): Promise<ProcessedMarkdo
   const { frontmatter, content: markdownWithoutFrontmatter } = extractFrontmatter(markdown);
 
   // Convert remaining markdown to HTML
-  const html = await markdownToHtml(markdownWithoutFrontmatter);
+  const html = markdownToHtml(markdownWithoutFrontmatter);
 
   // Extract and strip title header from HTML
   const { title: headerTitle, content: htmlWithoutHeader } = extractAndStripTitleHeader(html);

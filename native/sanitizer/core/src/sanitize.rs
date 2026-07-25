@@ -246,11 +246,8 @@ fn handle_iframe(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Sen
     Ok(())
 }
 
-/// Namespace this element's ids and same-document references (see `idrefs.rs`).
-/// Runs after the allow-list filtering, so it only ever sees kept attributes —
-/// which is also why it needs no per-tag guards: `attr_allowed` already confines
-/// `headers` to th/td and `name`/`href` to `a`, and duplicating that here would
-/// just be a second copy to keep in sync if the allow-list ever widens.
+/// Namespacing of ids and same-document references happens inline in
+/// `handle_element`'s attribute pass (see `idrefs.rs` for the reference surface).
 ///
 /// Every value is read and written **raw** (not entity-decoded). lol_html's
 /// `set_attribute` escapes `"` but not `&`, so writing back a decoded value
@@ -260,28 +257,27 @@ fn handle_iframe(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Sen
 /// construction. It also keeps the `#` test conservative: a raw value starting
 /// with a literal `#` always decodes to a fragment, so this can only ever
 /// under-match, never mistake a URL for a fragment.
-fn namespace_idrefs(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    if let Some(id) = el.get_attribute("id") {
-        el.set_attribute("id", &prefix_id(&id))?;
+///
+/// Whether an attribute *name* can hold an id or an id reference. Pure name
+/// test so the caller can skip reading the value. The `aria-` prefix check
+/// guards the list scan, which would otherwise run for every attribute.
+fn is_idref_attr(name: &str) -> bool {
+    matches!(name, "id" | "name" | "headers" | "href")
+        || (name.starts_with("aria-") && ARIA_IDREF_ATTRS.contains(&name))
+}
+
+/// The namespaced form of an id-defining or id-referencing attribute, or None
+/// when this particular value needs no rewrite. Only called for names that
+/// passed [`is_idref_attr`]. `name` must be lowercased, as lol_html gives it for
+/// HTML elements.
+fn namespaced_value(name: &str, value: &str) -> Option<String> {
+    match name {
+        // `name` on an `<a>` is the legacy anchor target, so it is an id too.
+        "id" | "name" => Some(prefix_id(value)),
+        "href" => prefix_fragment_href(value),
+        // `headers` and the ARIA idrefs are space-separated id lists.
+        _ => Some(prefix_id_list(value)),
     }
-    for name in ARIA_IDREF_ATTRS {
-        if let Some(refs) = el.get_attribute(name) {
-            el.set_attribute(name, &prefix_id_list(&refs))?;
-        }
-    }
-    if let Some(headers) = el.get_attribute("headers") {
-        el.set_attribute("headers", &prefix_id_list(&headers))?;
-    }
-    // `name` on an `<a>` is the legacy anchor target, so it is an id like any other.
-    if let Some(name) = el.get_attribute("name") {
-        el.set_attribute("name", &prefix_id(&name))?;
-    }
-    if let Some(href) = el.get_attribute("href") {
-        if let Some(prefixed) = prefix_fragment_href(&href) {
-            el.set_attribute("href", &prefixed)?;
-        }
-    }
-    Ok(())
 }
 
 fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -299,6 +295,13 @@ fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Se
     }
 
     let mut to_remove: Vec<String> = Vec::new();
+    // Id/idref rewrites (see `namespaced_value`) are collected in this same
+    // pass: a separate `get_attribute` probe per interesting name, or even a
+    // second walk of the attribute list, measurably slowed every element down —
+    // including elements with no id at all. Only attributes that survive the
+    // allow-list are considered, so `to_remove` and `rewrites` stay disjoint and
+    // a rewrite can never resurrect an attribute the filter just dropped.
+    let mut rewrites: Vec<(String, String)> = Vec::new();
     for attr in el.attributes() {
         let name = attr.name();
         if !attr_allowed(&tag, &name) {
@@ -313,6 +316,7 @@ fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Se
             // `img`/`source` `src`.
             if !is_image_url_allowed(&decode_attr(&attr.value()), schemes) {
                 to_remove.push(name);
+                continue;
             }
         } else if name == "srcset" && matches!(tag.as_str(), "img" | "source") {
             let decoded = decode_attr(&attr.value()).into_owned();
@@ -321,14 +325,29 @@ fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Se
                 .all(|u| is_image_url_allowed(u, IMAGE_SCHEMES))
             {
                 to_remove.push(name);
+                continue;
+            }
+        }
+        // Name test before `attr.value()`, which allocates: most attributes
+        // (`class`, `alt`, `width`, …) hold no id and must not pay for a copy.
+        if is_idref_attr(&name) {
+            let value = attr.value();
+            if let Some(rewritten) = namespaced_value(&name, &value) {
+                // Skip no-op writes: `set_attribute` makes lol_html re-serialize
+                // the whole start tag, so an already-prefixed value (a
+                // re-sanitized summary) or an empty id must not pay for one.
+                if rewritten != value {
+                    rewrites.push((name, rewritten));
+                }
             }
         }
     }
     for name in to_remove {
         el.remove_attribute(&name);
     }
-
-    namespace_idrefs(el)?;
+    for (name, value) in rewrites {
+        el.set_attribute(&name, &value)?;
+    }
 
     if tag == "a" {
         // External links open in a new tab with a safe rel (anti

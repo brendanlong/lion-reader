@@ -427,6 +427,17 @@ mod tests {
     }
 
     #[test]
+    fn namespaces_the_legacy_xlink_href_form() {
+        // Older SVG in the wild references templates via xlink:href.
+        let out = roundtrip(concat!(
+            "<svg><defs><symbol id=\"s\"><circle/></symbol></defs>",
+            "<text xlink:href=\"#s\">x</text></svg>"
+        ));
+        assert!(out.contains("id=\"uc-s\""), "{out}");
+        assert!(out.contains("xlink:href=\"#uc-s\""), "{out}");
+    }
+
+    #[test]
     fn matches_url_case_insensitively() {
         // `url(` is a CSS function token; `URL(#g)` left unrewritten would point
         // at the pre-rename id and the shape would render unpainted.

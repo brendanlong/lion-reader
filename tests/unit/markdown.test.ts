@@ -4,6 +4,7 @@
 
 import { describe, it, expect } from "vitest";
 import { extractFrontmatter, processMarkdown } from "../../src/server/markdown";
+import { sanitizeEntryHtml } from "../../src/server/html/sanitize";
 
 describe("extractFrontmatter", () => {
   it("extracts title from frontmatter", () => {
@@ -573,5 +574,54 @@ This paper introduces Parcae.`;
       expect(result.html).not.toContain('id="my-doc"');
       expect(result.html).toContain('href="#my-doc"');
     });
+  });
+});
+
+/**
+ * The user-visible claim of #1425 is that a link in rendered Markdown actually
+ * lands somewhere. That spans two subsystems — Markdown rendering generates the
+ * ids, and the read-path sanitizer namespaces both sides — so neither unit test
+ * alone proves it. These drive the seam.
+ */
+describe("rendered Markdown through the read-path sanitizer (#1425)", () => {
+  const render = async (markdown: string): Promise<string> => {
+    const { html } = await processMarkdown(markdown);
+    return sanitizeEntryHtml(html) ?? "";
+  };
+
+  /** Every `href="#…"` that has no element with the matching id. */
+  const danglingAnchors = (html: string): string[] => {
+    const ids = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]));
+    const targets = [...html.matchAll(/href="#([^"]+)"/g)].map((m) => m[1]);
+    return [...new Set(targets.filter((t) => !ids.has(t)))];
+  };
+
+  it("resolves a table of contents to its headings", async () => {
+    const html = await render(
+      "# Doc\n\n- [Intro](#intro)\n- [Details](#details)\n\n## Intro\n\nA.\n\n## Details\n\nB."
+    );
+    expect(danglingAnchors(html)).toEqual([]);
+    // Namespaced as a set, and still same-document rather than off-site.
+    expect(html).toContain('href="#uc-intro"');
+    expect(html).toContain('id="uc-intro"');
+  });
+
+  it("resolves footnote markers and their back-links", async () => {
+    const html = await render(
+      "# Doc\n\nA claim[^1] and another[^2].\n\n[^1]: First.\n[^2]: Second."
+    );
+    expect(danglingAnchors(html)).toEqual([]);
+  });
+
+  it("keeps in-page links out of a new tab", async () => {
+    // An absolutized anchor would pick up target="_blank" from the sanitizer's
+    // external-link transform, opening a tab for what should be a scroll.
+    const html = await render("# Doc\n\n[Intro](#intro)\n\n## Intro\n\nA.");
+    expect(html).not.toMatch(/href="#[^"]*"[^>]*target="_blank"/);
+  });
+
+  it("still opens genuinely external links in a new tab", async () => {
+    const html = await render("# Doc\n\n[Out](https://example.com/x)");
+    expect(html).toContain('target="_blank"');
   });
 });

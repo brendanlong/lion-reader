@@ -200,12 +200,11 @@ LIMIT 11;
 EXPLAIN (ANALYZE, BUFFERS, COSTS off, SUMMARY off)
 SELECT ve.id, ve.greader_item_id, ve.subscription_greader_stream_id, feeds.greader_stream_id,
        ve.feed_id, ve.type, ve.url, ve.title, ve.author,
-       ve.content_original_sanitized, ve.content_cleaned_sanitized, ve.content_sanitized_version,
-       (ve.content_original IS NOT NULL OR ve.content_cleaned IS NOT NULL) AS has_content_raw,
+       ve.content_original, ve.content_cleaned,
        ve.summary, ve.published_at, ve.fetched_at, ve.read, ve.starred, ve.updated_at,
        ve.subscription_id, ve.site_name, feeds.title, feeds.url, ve.unsubscribe_url,
-       ve.full_content_original_sanitized, ve.full_content_cleaned_sanitized,
-       ve.full_content_sanitized_version, ve.full_content_fetched_at, ve.full_content_error,
+       ve.full_content_original, ve.full_content_cleaned,
+       ve.full_content_fetched_at, ve.full_content_error,
        ve.content_hash, s.fetch_full_content
 FROM visible_entries ve
 JOIN feeds ON feeds.id = ve.feed_id
