@@ -194,6 +194,13 @@ const markdownRenderer = new Marked({
  * `{ async: false }` is load-bearing, not decoration: marked *throws* if an
  * extension has forced async parsing, which turns the silent slugger corruption
  * described above into a loud startup-time failure.
+ *
+ * Nothing is being given up by pinning it. marked's async mode only lets *hooks*
+ * and `walkTokens` await — the lexer, parser and renderer still run as one
+ * synchronous chunk, so it does not yield to the event loop. Measured on a 100 KB
+ * math-dense document, the worst event-loop stall is the same either way (~78 ms).
+ * Taking this rendering off the main thread needs a worker, not async mode; that
+ * and the KaTeX amplification which makes it matter are tracked in #1431.
  */
 export function markdownToHtml(markdown: string): string {
   return markdownRenderer.parse(markdown, { async: false });
