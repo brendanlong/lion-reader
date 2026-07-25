@@ -28,7 +28,12 @@ import { users, feeds, entries, subscriptions, userEntries } from "../../src/ser
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import * as entriesService from "../../src/server/services/entries";
 import { getUserEventsChannel } from "../../src/server/redis/pubsub";
-import { expectNoMessage, subscribeAndDrain, waitForMessage } from "../utils/pubsub";
+import {
+  expectNoMessage,
+  subscribeAndDrain,
+  waitForMessage,
+  waitForMessages,
+} from "../utils/pubsub";
 
 let subscriber: Redis;
 
@@ -450,7 +455,8 @@ describe("updateEntriesStarred (bulk) SSE publishing", () => {
 
     const channel = getUserEventsChannel(userId);
     await subscriber.subscribe(channel);
-    const first = waitForMessage(subscriber, channel);
+    // One event per flipped entry, so wait for both.
+    const bothEvents = waitForMessages(subscriber, channel, 2);
 
     const {
       entries: state,
@@ -462,11 +468,11 @@ describe("updateEntriesStarred (bulk) SSE publishing", () => {
     // Both entries are now starred, so the starred badge reflects both.
     expect(counts?.starred.unread).toBe(2);
 
-    const event = JSON.parse(await first);
-    expect(event.type).toBe("entry_state_changed");
-    expect([entryA, entryB]).toContain(event.entryId);
-    expect(event.starred).toBe(true);
-    expect(event.counts.starred.unread).toBe(2);
+    const events = (await bothEvents).map((message) => JSON.parse(message));
+    expect(events.map((e) => e.type)).toEqual(["entry_state_changed", "entry_state_changed"]);
+    expect(events.map((e) => e.entryId).sort()).toEqual([entryA, entryB].sort());
+    expect(events.every((e) => e.starred)).toBe(true);
+    expect(events.every((e) => e.counts.starred.unread === 2)).toBe(true);
 
     // Both rows were actually written.
     expect((await getUserEntryRow(userId, entryA)).starred).toBe(true);

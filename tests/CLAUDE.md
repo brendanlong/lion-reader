@@ -27,7 +27,7 @@ Key design points:
 
 ## Asserting on Redis pub/sub events
 
-Integration tests that assert on published events use the shared helpers in `tests/utils/pubsub.ts` — don't hand-roll listeners per file. Because all SSE publishing is fire-and-forget (a service call's `await` returns before its PUBLISH reaches Redis), a test whose **setup** mutates through a service or tRPC caller must use `subscribeAndDrain` rather than subscribing afterwards: otherwise the setup's own event can arrive inside the window under test and be mistaken for one the action published (issue #1427).
+Integration tests that assert on published events use the shared helpers in `tests/utils/pubsub.ts` — don't hand-roll listeners per file. A test whose **setup** mutates through a service or tRPC caller must establish that state with `subscribeAndDrain`, never by subscribing afterwards (publishing is fire-and-forget, so the setup's own event can land inside the window under test — see the file header and issue #1427).
 
 ## Manual verification
 

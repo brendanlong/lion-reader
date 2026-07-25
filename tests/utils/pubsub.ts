@@ -63,6 +63,10 @@ export async function waitForMessage(
  * `expectedEvents` events, and returns only once all of them have arrived — so
  * a late fire-and-forget publish from setup can't be mistaken for an event from
  * the action the test is actually asserting on (issue #1427).
+ *
+ * Count the events setup really publishes: the bulk mark-read/star paths emit
+ * one entry_state_changed per *changed* entry, so a setup that flips two entries
+ * publishes two. Draining too few leaves a straggler and re-opens the race.
  */
 export async function subscribeAndDrain(
   subscriber: Redis,
@@ -72,8 +76,9 @@ export async function subscribeAndDrain(
 ): Promise<void> {
   await subscriber.subscribe(channel);
   const drained = waitForMessages(subscriber, channel, expectedEvents);
-  await setup();
-  await drained;
+  // Both awaited together so a throwing `setup` doesn't leave `drained` to
+  // reject unhandled (vitest would attribute it to an unrelated later test).
+  await Promise.all([drained, setup()]);
 }
 
 /** Runs `action`, then waits `quietMs` and asserts no message arrived on `channel`. */
