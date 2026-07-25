@@ -7,6 +7,7 @@
 
 import { Marked } from "marked";
 import markedFootnote from "marked-footnote";
+import { gfmHeadingId } from "marked-gfm-heading-id";
 import markedKatex from "marked-katex-extension";
 import { parse as parseYaml } from "yaml";
 import { extractAndStripTitleHeader } from "@/server/html/strip-title-header";
@@ -151,6 +152,13 @@ function parseFrontmatterLenient(yaml: string): Record<string, string> | null {
  * code mutated the global via `marked.setOptions` on every call, so whichever
  * module configured it last won; a dedicated instance removes that coupling.
  *
+ * `marked-gfm-heading-id` gives headings the same `id` slugs GitHub generates
+ * (via `github-slugger`), so a hand-written table of contents — `[Intro](#intro)`,
+ * which authors write against GitHub's slugging rules — has something to land on.
+ * Core marked emits no heading ids, so those anchors were all dead (#1425). The
+ * extension resets its slugger in a `preprocess` hook, so ids don't accumulate
+ * `-1` suffixes across documents sharing this instance.
+ *
  * `marked-footnote` adds GFM footnote support — `[^1]` references plus `[^1]:`
  * definitions — which core marked does not handle. Without it, definitions
  * render as literal text inline where they're written (jarring for Pandoc-style
@@ -163,6 +171,7 @@ const markdownRenderer = new Marked({
   gfm: true, // GitHub Flavored Markdown
   breaks: true, // Convert \n to <br>
 })
+  .use(gfmHeadingId())
   .use(markedFootnote())
   // Render `$…$` / `$$…$$` TeX to MathML — native, no client JS/CSS, matching
   // how the sanitizer already handles feed math (MathJax→MathML). KaTeX wraps

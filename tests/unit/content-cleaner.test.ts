@@ -577,6 +577,35 @@ describe("absolutizeUrls", () => {
     });
   });
 
+  describe("same-document fragment links (#1425)", () => {
+    it("should leave fragment-only hrefs relative", () => {
+      // arXiv citations / LessWrong footnotes / Markdown TOCs point at an id in
+      // the same entry, which survives sanitization — absolutizing them sends
+      // the reader off-site instead of scrolling.
+      const html = '<a href="#bib.bib19">[19]</a><a href="#footnote-1">1</a>';
+      const result = absolutizeUrls(html, baseUrl);
+      expect(result).toContain('href="#bib.bib19"');
+      expect(result).toContain('href="#footnote-1"');
+    });
+
+    it("should leave a bare # href relative", () => {
+      const result = absolutizeUrls('<a href="#">top</a>', baseUrl);
+      expect(result).toContain('href="#"');
+    });
+
+    it("should still absolutize a path that carries a fragment", () => {
+      const result = absolutizeUrls('<a href="/other#section">x</a>', baseUrl);
+      expect(result).toContain('href="https://example.com/other#section"');
+    });
+
+    it("should not let a fragment-only <base href> become the base", () => {
+      // Per spec it means "this document", so resolution must be unaffected.
+      const html = '<html><head><base href="#x"></head><body><img src="a.png"></body></html>';
+      const result = absolutizeUrls(html, "https://example.com/docs/page.html");
+      expect(result).toContain('src="https://example.com/docs/a.png"');
+    });
+  });
+
   describe("mediaBaseUrl option", () => {
     it("should resolve media attributes against mediaBaseUrl and links against baseUrl", () => {
       const html = `<img src="images/photo.jpg">
