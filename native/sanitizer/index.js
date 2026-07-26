@@ -47,7 +47,6 @@ const nativeBinding = requireNative(binaryPath);
 // assignments — not the dynamic binding object above. Without these,
 // `import { sanitizeEntryHtml } from "@lion-reader/sanitizer"` fails to resolve
 // under the native ESM loader (e.g. the Playwright e2e harness).
-exports.SANITIZER_VERSION = nativeBinding.SANITIZER_VERSION;
 exports.sanitizeEntryHtml = nativeBinding.sanitizeEntryHtml;
 exports.sanitizeEntryHtmlAsync = nativeBinding.sanitizeEntryHtmlAsync;
 exports.embedCanonicalHostnames = nativeBinding.embedCanonicalHostnames;
