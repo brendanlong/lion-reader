@@ -298,36 +298,7 @@ export async function runMigrations(
   }
 }
 
-// ============================================================================
-// CLI Entry Point
-// ============================================================================
-
-async function main(): Promise<void> {
-  const databaseUrl = process.env.DATABASE_URL;
-
-  if (!databaseUrl) {
-    console.error("DATABASE_URL environment variable is not set");
-    process.exit(1);
-  }
-
-  console.log("Running database migrations...\n");
-
-  try {
-    const { applied, skipped } = await runMigrations(databaseUrl);
-
-    if (applied.length > 0) {
-      console.log(`\n✓ Applied ${applied.length} migration(s)`);
-    }
-    if (skipped.length > 0) {
-      console.log(`  Skipped ${skipped.length} already-applied migration(s)`);
-    }
-  } catch (error) {
-    console.error("\nMigration failed:", error);
-    process.exit(1);
-  }
-}
-
-// Run if executed directly
-if (require.main === module) {
-  main();
-}
+// This module is a library — `scripts/migrate.ts` is the entry point that calls
+// runMigrations(). (It previously had a `require.main === module` self-runner,
+// removed with the ESM migration: it was never invoked directly and `require`
+// is undefined in an ES module.)

@@ -214,6 +214,9 @@ COPY --from=builder /app/dist/server.js ./dist/server.js
 COPY --from=builder /app/dist/worker.js ./dist/worker.js
 COPY --from=builder /app/dist/migrate.js ./dist/migrate.js
 COPY --from=builder /app/dist/discord-bot.js ./dist/discord-bot.js
+# Marks the bundles as CommonJS so Node doesn't read them as ESM under the
+# repo's root "type": "module" (see scripts/dist-cjs-marker.mjs).
+COPY --from=builder /app/dist/package.json ./dist/package.json
 
 # Copy startup script
 COPY --from=builder /app/scripts/start-all.sh ./scripts/start-all.sh

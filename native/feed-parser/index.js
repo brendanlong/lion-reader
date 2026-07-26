@@ -35,4 +35,31 @@ if (!binaryPath) {
 }
 
 const requireNative = createRequire(binaryPath);
-module.exports = requireNative(binaryPath);
+const nativeBinding = requireNative(binaryPath);
+
+// Static, lexable re-exports. Node's ESM loader discovers a CommonJS module's
+// named exports via cjs-module-lexer, which only sees literal `exports.<name> =`
+// assignments — not the dynamic binding object above. Without these,
+// `import { parseRss } from "@lion-reader/feed-parser"` fails to resolve under
+// the native ESM loader (e.g. the Playwright e2e harness).
+exports.parseRss = nativeBinding.parseRss;
+exports.parseAtom = nativeBinding.parseAtom;
+exports.parseOpml = nativeBinding.parseOpml;
+exports.parseRssAsync = nativeBinding.parseRssAsync;
+exports.parseAtomAsync = nativeBinding.parseAtomAsync;
+exports.parseOpmlAsync = nativeBinding.parseOpmlAsync;
+
+// Drift guard: every name re-exported above must resolve to a real symbol in
+// the binary. A re-export that comes out `undefined` means feed-parser.node has
+// no such export — a `#[napi]` export was renamed/removed, or the list has a
+// typo. Left unchecked, cjs-module-lexer still sees the name (so the import
+// "succeeds") and it surfaces as a silent `undefined` that crashes only when
+// the missing function is called. Fail loud at load instead. Runs on every import.
+for (const key of Object.keys(exports)) {
+  if (exports[key] === undefined) {
+    throw new Error(
+      `@lion-reader/feed-parser: re-exported "${key}" is undefined — feed-parser.node has no ` +
+        `such export. Update the re-export list in index.js to match the built binary.`
+    );
+  }
+}

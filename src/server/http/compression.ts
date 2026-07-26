@@ -7,12 +7,11 @@
  */
 
 import { createBrotliCompress, createGzip, createDeflate, constants } from "node:zlib";
+import * as zlib from "node:zlib";
 import type { Transform } from "node:stream";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 // Check if zstd is available at runtime (Node.js 22+)
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const zlib = require("node:zlib") as Record<string, unknown>;
 const hasZstd = typeof zlib.createZstdCompress === "function";
 
 type CompressionEncoding = "zstd" | "br" | "gzip" | "deflate";
@@ -73,7 +72,7 @@ function selectEncoding(acceptEncoding: string): CompressionEncoding | null {
 function createCompressor(encoding: CompressionEncoding): Transform {
   switch (encoding) {
     case "zstd":
-      return (zlib.createZstdCompress as () => Transform)();
+      return zlib.createZstdCompress();
     case "br":
       return createBrotliCompress({
         params: {

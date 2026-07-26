@@ -12,6 +12,7 @@
 import { execSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
+import { fileURLToPath } from "node:url";
 
 const OUTPUT_FILE = path.join(process.cwd(), "migrations", "schema.sql");
 
@@ -147,8 +148,8 @@ export function dumpSchema(databaseUrl: string): void {
   console.log(`✓ Schema dumped to ${path.relative(process.cwd(), OUTPUT_FILE)}`);
 }
 
-// Run directly if this is the main module
-if (require.main === module) {
+// Run directly if this is the main module (ESM entry-point check)
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const databaseUrl = process.env.DATABASE_URL;
 
   if (!databaseUrl) {

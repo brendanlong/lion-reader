@@ -12,6 +12,7 @@ import * as esbuild from "esbuild";
 import { readFileSync } from "fs";
 import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";
+import { writeDistCjsMarker } from "./dist-cjs-marker.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = resolve(__dirname, "..");
@@ -89,6 +90,7 @@ async function build() {
 
   try {
     const result = await esbuild.build(buildOptions);
+    writeDistCjsMarker(resolve(rootDir, "dist"));
 
     const duration = Date.now() - startTime;
     console.log(`Server bundle built in ${duration}ms`);
