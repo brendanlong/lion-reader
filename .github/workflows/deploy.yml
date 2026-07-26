@@ -37,7 +37,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.0
+        uses: actions/checkout@v7.0.1
         with:
           # Deploy the exact commit CI validated (workflow_run runs on the
           # default branch's ref, which may have moved past head_sha).
