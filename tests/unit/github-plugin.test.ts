@@ -126,6 +126,21 @@ describe("GitHub plugin URL parsing", () => {
       });
     });
 
+    it("parses blob URLs with a fully-qualified ref", () => {
+      // `refs/heads/…` is unambiguous, so it must land in `ref` — the repo-root
+      // base is built from the ref alone (#1423).
+      const result = parseGitHubUrl(
+        new URL("https://github.com/owner/repo/blob/refs/heads/main/docs/page.md")
+      );
+      expect(result).toEqual({
+        type: "blob",
+        owner: "owner",
+        repo: "repo",
+        ref: "refs/heads/main",
+        path: "docs/page.md",
+      });
+    });
+
     it("parses blob URLs with commit SHA as ref", () => {
       const result = parseGitHubUrl(
         new URL("https://github.com/owner/repo/blob/abc123def456/file.js")
@@ -182,6 +197,33 @@ describe("GitHub plugin URL parsing", () => {
         repo: "repo",
         ref: "main",
         path: "docs/guide/intro.md",
+      });
+    });
+
+    it("parses raw URLs with a fully-qualified ref", () => {
+      // The shape GitHub's "Raw" button emits today.
+      const result = parseGitHubUrl(
+        new URL("https://raw.githubusercontent.com/owner/repo/refs/heads/main/docs/page.md")
+      );
+      expect(result).toEqual({
+        type: "raw",
+        owner: "owner",
+        repo: "repo",
+        ref: "refs/heads/main",
+        path: "docs/page.md",
+      });
+    });
+
+    it("parses raw URLs with a fully-qualified tag ref", () => {
+      const result = parseGitHubUrl(
+        new URL("https://raw.githubusercontent.com/owner/repo/refs/tags/v1.0.0/README.md")
+      );
+      expect(result).toEqual({
+        type: "raw",
+        owner: "owner",
+        repo: "repo",
+        ref: "refs/tags/v1.0.0",
+        path: "README.md",
       });
     });
 
@@ -428,9 +470,8 @@ describe("processFileContent", () => {
       );
     });
 
-    // GitHub reads a leading slash as repo-root-relative, but URL resolution
-    // sends it to the origin root instead. Un-skip with the fix.
-    it.skip("resolves root-relative image paths against the repo root (#1423)", async () => {
+    // GitHub reads a leading slash as repo-root-relative, not origin-root-relative.
+    it("resolves root-relative image paths against the repo root (#1423)", async () => {
       const { html } = await processFileContent(
         '<img src="/docs/images/chart.png">',
         "wsff.md",
@@ -440,7 +481,7 @@ describe("processFileContent", () => {
       expect(html).toContain(`src="${rawBase}/docs/images/chart.png"`);
     });
 
-    it.skip("resolves root-relative links against the repo root (#1423)", async () => {
+    it("resolves root-relative links against the repo root (#1423)", async () => {
       const { html } = await processFileContent(
         "[Docs](/docs/guide.md)",
         "wsff.md",
@@ -448,6 +489,43 @@ describe("processFileContent", () => {
         repoFile
       );
       expect(html).toContain(`href="${blobBase}/docs/guide.md"`);
+    });
+
+    it("resolves root-relative paths from a file in a subdirectory (#1423)", async () => {
+      // The repo root, not the file's directory, is what a leading slash means.
+      const { html } = await processFileContent(
+        '<img src="/Docs/Logo.png">',
+        "docs/deep/page.md",
+        null,
+        { ...repoFile, path: "docs/deep/page.md" }
+      );
+      expect(html).toContain(`src="${rawBase}/Docs/Logo.png"`);
+    });
+
+    it("keeps a fully-qualified ref intact in both bases (#1423)", async () => {
+      const { html } = await processFileContent(
+        '<img src="/Docs/Logo.png"><a href="/Docs/FORUMS.md">x</a>',
+        "wsff.md",
+        null,
+        { ...repoFile, ref: "refs/heads/main" }
+      );
+      const { owner, repo } = repoFile;
+      expect(html).toContain(
+        `src="https://raw.githubusercontent.com/${owner}/${repo}/refs/heads/main/Docs/Logo.png"`
+      );
+      expect(html).toContain(
+        `href="https://github.com/${owner}/${repo}/blob/refs/heads/main/Docs/FORUMS.md"`
+      );
+    });
+
+    it("leaves protocol-relative URLs at their own host (#1423)", async () => {
+      const { html } = await processFileContent(
+        '<img src="//img.example.com/chart.png">',
+        "wsff.md",
+        null,
+        repoFile
+      );
+      expect(html).toContain('src="https://img.example.com/chart.png"');
     });
   });
 
