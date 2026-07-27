@@ -39,7 +39,7 @@ export function ConsentForm({
     <div>
       {/* Application info */}
       <div className="mb-6 text-center">
-        <div className="bg-surface-muted mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full">
+        <div className="control-outline bg-surface-muted mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full">
           <ShieldCheckIcon className="text-muted h-8 w-8" />
         </div>
         <h2 className="ui-text-lg text-body font-semibold">Authorize {clientName}</h2>

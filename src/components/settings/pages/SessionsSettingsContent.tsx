@@ -152,14 +152,16 @@ function SessionCard({ session, onRevoke, isRevoking }: SessionCardProps) {
   return (
     <div
       className={`rounded-lg border p-3 sm:p-4 ${
-        session.isCurrent ? "border-success-border bg-success-subtle" : "border-edge bg-surface"
+        session.isCurrent
+          ? "border-success-border bg-success-subtle"
+          : "border-edge epaper:border-fill-muted bg-surface"
       }`}
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex-1">
           <div className="flex items-center gap-2">
             {/* Device icon */}
-            <div className="bg-surface-muted flex h-8 w-8 shrink-0 items-center justify-center rounded-full">
+            <div className="control-outline bg-surface-muted flex h-8 w-8 shrink-0 items-center justify-center rounded-full">
               {platform === "iOS" || platform === "Android" ? (
                 <MobileIcon className="text-muted h-4 w-4" />
               ) : (
@@ -172,7 +174,7 @@ function SessionCard({ session, onRevoke, isRevoking }: SessionCardProps) {
                 {browser} on {platform}
               </p>
               {session.isCurrent && (
-                <span className="ui-text-xs bg-success-subtle text-success-subtle-foreground mt-0.5 inline-flex items-center rounded-full px-2 py-0.5 font-medium">
+                <span className="control-outline ui-text-xs bg-success-subtle text-success-subtle-foreground mt-0.5 inline-flex items-center rounded-full px-2 py-0.5 font-medium">
                   Current session
                 </span>
               )}

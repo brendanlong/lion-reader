@@ -362,7 +362,7 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
     <div className="space-y-3">
       {/* Error message */}
       {error && (
-        <div className="bg-danger-subtle rounded-md p-3">
+        <div className="control-outline bg-danger-subtle rounded-md p-3">
           <div className="ui-text-xs text-danger-subtle-foreground flex items-start gap-2">
             <AlertCircleIcon className="mt-0.5 h-4 w-4 flex-shrink-0" />
             <div className="flex-1 space-y-1">
@@ -395,7 +395,7 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
 
       {/* Storage limit warning */}
       {isStorageLimitExceeded && (
-        <div className="ui-text-xs bg-warning-subtle text-warning-subtle-foreground flex items-start gap-2 rounded-md p-3">
+        <div className="control-outline ui-text-xs bg-warning-subtle text-warning-subtle-foreground flex items-start gap-2 rounded-md p-3">
           <AlertIcon className="mt-0.5 h-4 w-4 flex-shrink-0" />
           <span className="flex-1">
             Voice storage exceeds 200 MB. Consider removing unused voices to free up space.

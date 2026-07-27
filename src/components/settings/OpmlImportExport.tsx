@@ -276,7 +276,9 @@ function ImportSection() {
       {importState.type === "idle" && (
         <div
           className={`relative rounded-lg border-2 border-dashed p-8 text-center transition-colors ${
-            isDragOver ? "border-accent bg-accent-subtle" : "border-edge-input"
+            isDragOver
+              ? "border-accent epaper:border-edge bg-accent-subtle"
+              : "border-edge-input epaper:border-fill-muted"
           }`}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
@@ -441,15 +443,15 @@ function ImportResults({ imported, skipped, failed, results, onReset }: ImportRe
       </Alert>
 
       <div className="mb-4 grid grid-cols-3 gap-4">
-        <div className="bg-success-subtle rounded-md p-3">
+        <div className="control-outline bg-success-subtle rounded-md p-3">
           <p className="ui-text-2xl text-success font-bold">{imported}</p>
           <p className="ui-text-xs text-success">Imported</p>
         </div>
-        <div className="bg-warning-subtle rounded-md p-3">
+        <div className="control-outline bg-warning-subtle rounded-md p-3">
           <p className="ui-text-2xl text-warning font-bold">{skipped}</p>
           <p className="ui-text-xs text-warning">Skipped</p>
         </div>
-        <div className="bg-danger-subtle rounded-md p-3">
+        <div className="control-outline bg-danger-subtle rounded-md p-3">
           <p className="ui-text-2xl text-danger font-bold">{failed}</p>
           <p className="ui-text-xs text-danger">Failed</p>
         </div>
@@ -483,10 +485,10 @@ function ImportResults({ imported, skipped, failed, results, onReset }: ImportRe
                       <span
                         className={`ui-text-xs ml-2 shrink-0 rounded-full px-2 py-0.5 font-medium ${
                           result.status === "imported"
-                            ? "bg-success-subtle text-success"
+                            ? "control-outline bg-success-subtle text-success"
                             : result.status === "skipped"
-                              ? "bg-warning-subtle text-warning"
-                              : "bg-danger-subtle text-danger"
+                              ? "control-outline bg-warning-subtle text-warning"
+                              : "control-outline bg-danger-subtle text-danger"
                         }`}
                       >
                         {result.status}

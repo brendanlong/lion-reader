@@ -130,7 +130,7 @@ export default function BrokenFeedsSettingsContent() {
 function EmptyState() {
   return (
     <div className="p-8 text-center">
-      <div className="bg-success-subtle mx-auto flex h-12 w-12 items-center justify-center rounded-full">
+      <div className="control-outline bg-success-subtle mx-auto flex h-12 w-12 items-center justify-center rounded-full">
         <CheckIcon className="text-success h-6 w-6" />
       </div>
       <h3 className="ui-text-sm text-body mt-4 font-medium">All feeds are working</h3>
@@ -191,7 +191,7 @@ function BrokenFeedRow({ feed, onUnsubscribe, onFileIssue }: BrokenFeedRowProps)
 
           {/* Error Message */}
           {feed.lastError && (
-            <div className="bg-danger-subtle mt-2 rounded-md px-3 py-2">
+            <div className="control-outline bg-danger-subtle mt-2 rounded-md px-3 py-2">
               <p className="ui-text-sm text-danger">
                 <span className="font-medium">Error:</span> {feed.lastError}
               </p>

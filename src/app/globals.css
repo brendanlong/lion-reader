@@ -328,14 +328,17 @@
   /* next-themes only sets color-scheme for light/dark, so declare it here */
   color-scheme: light;
 
-  /* The e-ink gray ramp: the four levels a 2-bit (fast-refresh) panel paints
-     flat — 0%, 33%, 67%, 100%. Values between them are dithered, which is where
-     the sandy cross-hatch comes from, so every gray in this theme is one of
-     these four. `-dark` is the only one that carries text (7.5:1 on paper);
-     `-light` is for non-text fills, where it would fail AA. */
+  /* The e-ink gray ramp. E-ink panels are natively 4-bit: they paint exact
+     multiples of 17 (0x11) flat and dither everything else, which is where the
+     sandy cross-hatch comes from — so every gray in this theme is one of these
+     four values. `-dark` (5x17) is the only one that carries text, at 7.5:1 on
+     paper; `-light` (8x17) is for non-text fills and borders, and is chosen over
+     the more obvious 10x17 (#aaa) because it clears WCAG 1.4.11's 3:1 for
+     state-bearing borders (3.5:1 vs #aaa's 2.3:1) while staying clearly lighter
+     than ink. */
   --epaper-ink: #000000;
   --epaper-gray-dark: #555555;
-  --epaper-gray-light: #aaaaaa;
+  --epaper-gray-light: #888888;
   --epaper-paper: #ffffff;
 
   --background: var(--epaper-paper);
@@ -373,7 +376,11 @@
   /* Status colors: base/solid tones sit dark so they gray to clearly-darker-than-
      mid-gray on e-ink. Their `-subtle` card fills collapse to paper white and
      their borders to black like every other surface — a status box is a black
-     box, told apart by its icon and text, never by a tint. */
+     box, not a tinted one. `-subtle-foreground` deliberately keeps its hue: on a
+     borderless status box (`Alert`) it is the ONLY thing left marking the role,
+     so flattening it to ink makes error/success/warning render identically.
+     Long-form copy that merely happens to sit on a `-subtle` surface overrides
+     to `text-body` at the call site instead (see SummaryCard). */
   --danger: #991b1b; /* red-800 */
   --danger-hover: #7f1d1d; /* red-900 */
   --danger-subtle: var(--epaper-paper);
@@ -721,18 +728,25 @@ body {
    the list doesn't read as a grid of boxes). It's a separate class rather than
    a `epaper:border-transparent` override so the two states can't depend on
    which order Tailwind happens to emit the border-color utilities in.
+
+   Both live in the `components` layer, NOT as `@utility` definitions, so an
+   explicit `border-*` utility on the same element always wins. As a utility,
+   `control-outline`'s `border` *shorthand* sorts after every `border-*` color
+   and width utility at equal specificity, so `control-outline border-2` would
+   have silently become 1px and `control-outline border-danger-border` a
+   transparent border — the caller's `className` losing to the component's base
+   classes, which is the opposite of what every call site reads like.
    ================================= */
 
-@utility control-outline {
-  border: 1px solid transparent;
-}
+@layer components {
+  .control-outline,
+  .control-outline-none {
+    border: 1px solid transparent;
+  }
 
-.epaper .control-outline {
-  border-color: var(--edge-input);
-}
-
-@utility control-outline-none {
-  border: 1px solid transparent;
+  .epaper .control-outline {
+    border-color: var(--edge-input);
+  }
 }
 
 /* =================================
