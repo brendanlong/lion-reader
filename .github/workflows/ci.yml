@@ -18,7 +18,7 @@ jobs:
     name: Type Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
 
       - uses: pnpm/action-setup@v6.0.9
 
@@ -37,7 +37,7 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
 
       - uses: pnpm/action-setup@v6.0.9
 
@@ -59,7 +59,7 @@ jobs:
     name: Unit Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
 
       - uses: pnpm/action-setup@v6.0.9
 
@@ -81,7 +81,7 @@ jobs:
     name: Build Extension
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
 
       - name: Build release extension
         run: bash extension/build.sh --release
@@ -129,7 +129,7 @@ jobs:
           - 6379:6379
 
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
 
       - uses: pnpm/action-setup@v6.0.9
 
@@ -175,7 +175,7 @@ jobs:
           - 6379:6379
 
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
 
       - uses: pnpm/action-setup@v6.0.9
 
