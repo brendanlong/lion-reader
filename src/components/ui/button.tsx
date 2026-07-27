@@ -27,11 +27,16 @@ export function Button({
   const baseStyles =
     "inline-flex items-center justify-center rounded-md font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50";
 
+  // Every variant carries a 1px border so they're all the same size. `secondary`
+  // colors it in all themes; the rest use `control-outline`, which paints it
+  // only on e-paper — there a button is either a black fill or a white box with
+  // a black outline, and the `hover:bg-surface-muted` fills are no-ops.
   const variantStyles = {
-    primary: "btn-primary",
+    primary: "btn-primary control-outline",
     secondary: "border border-edge-input bg-surface text-body hover:bg-surface-muted",
-    ghost: "text-body hover:bg-surface-muted",
-    danger: "bg-danger-solid text-danger-solid-foreground hover:bg-danger-solid-hover",
+    ghost: "control-outline text-body hover:bg-surface-muted",
+    danger:
+      "control-outline bg-danger-solid text-danger-solid-foreground hover:bg-danger-solid-hover",
   };
 
   // Ensure minimum 44px height for touch targets on mobile (WCAG touch target guidelines)

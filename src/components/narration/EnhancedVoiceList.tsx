@@ -132,10 +132,10 @@ function VoiceItem({
     <div
       className={`relative rounded-lg border p-4 transition-colors ${
         isSelected
-          ? "border-control-selected bg-zinc-50 dark:bg-zinc-800"
+          ? "border-control-selected epaper:bg-surface bg-zinc-50 dark:bg-zinc-800"
           : isDownloaded
-            ? "border-edge-strong hover:bg-surface-muted cursor-pointer"
-            : "border-edge-strong"
+            ? "border-edge-strong epaper:border-fill-muted hover:bg-surface-muted cursor-pointer"
+            : "border-edge-strong epaper:border-fill-muted"
       }`}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
@@ -235,7 +235,7 @@ function VoiceItem({
                   e.stopPropagation();
                   onDelete();
                 }}
-                className="text-faint hover:bg-surface-muted hover:text-muted rounded-md p-2 transition-colors"
+                className="control-outline text-faint hover:bg-surface-muted hover:text-muted rounded-md p-2 transition-colors"
                 title="Delete voice"
               >
                 <TrashIcon className="h-4 w-4" />

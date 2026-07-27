@@ -283,13 +283,13 @@ function IngestAddressRow({ address }: IngestAddressRowProps) {
         <div className="min-w-0 flex-1">
           {/* Email Address */}
           <div className="flex items-center gap-2">
-            <code className="ui-text-sm bg-surface-muted text-body rounded px-2 py-1 break-all">
+            <code className="control-outline ui-text-sm bg-surface-muted text-body rounded px-2 py-1 break-all">
               {address.email}
             </code>
             <button
               type="button"
               onClick={handleCopy}
-              className="text-muted hover:bg-surface-muted hover:text-body flex-shrink-0 rounded p-1 transition-colors"
+              className="control-outline text-muted hover:bg-surface-muted hover:text-body flex-shrink-0 rounded p-1 transition-colors"
               title="Copy email address"
             >
               {copied ? (

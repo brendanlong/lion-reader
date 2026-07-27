@@ -60,7 +60,7 @@ function DefaultErrorFallback({
         {message ?? "An unexpected error occurred. Please try again."}
       </p>
       {error && process.env.NODE_ENV === "development" && (
-        <pre className="ui-text-xs bg-surface-muted text-body mb-4 max-w-md overflow-auto rounded-md p-3 text-left">
+        <pre className="control-outline ui-text-xs bg-surface-muted text-body mb-4 max-w-md overflow-auto rounded-md p-3 text-left">
           {error.message}
         </pre>
       )}

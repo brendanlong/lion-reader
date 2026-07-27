@@ -54,7 +54,7 @@ function StatusBadge({ status }: StatusBadgeProps) {
   const styles = {
     pending: "bg-info-subtle text-info-foreground",
     used: "bg-success-subtle text-success",
-    expired: "bg-surface-muted text-muted",
+    expired: "control-outline bg-surface-muted text-muted",
   };
 
   return (

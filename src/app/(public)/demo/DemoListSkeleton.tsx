@@ -13,7 +13,7 @@ export function DemoListSkeleton() {
       </div>
       <div className="space-y-4">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="bg-surface-muted h-24 animate-pulse rounded-lg" />
+          <div key={i} className="bg-fill-muted h-24 animate-pulse rounded-lg" />
         ))}
       </div>
     </div>

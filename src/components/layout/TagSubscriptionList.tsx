@@ -84,7 +84,7 @@ export function TagSubscriptionList({
       <ul className="mt-1 ml-6 space-y-1">
         {[1, 2].map((i) => (
           <li key={i}>
-            <div className="bg-surface-muted h-9 animate-pulse rounded-md" />
+            <div className="bg-fill-muted h-9 animate-pulse rounded-md" />
           </li>
         ))}
       </ul>

@@ -35,10 +35,7 @@ export function SettingsListSkeleton({
   return (
     <div className="p-6">
       {items.map((i) => (
-        <div
-          key={i}
-          className={`mb-4 ${height} bg-surface-muted animate-pulse rounded last:mb-0`}
-        />
+        <div key={i} className={`mb-4 ${height} bg-fill-muted animate-pulse rounded last:mb-0`} />
       ))}
     </div>
   );

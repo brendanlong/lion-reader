@@ -23,6 +23,9 @@ export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>
  * Compact button for icon-only actions.
  * Always requires an aria-label for accessibility.
  *
+ * Both variants are borderless everywhere except e-paper, where `control-outline`
+ * gives them the same black box as every other control (see globals.css).
+ *
  * @example
  * ```tsx
  * <IconButton
@@ -57,7 +60,7 @@ export function IconButton({
       ref={ref}
       type="button"
       disabled={disabled}
-      className={`flex items-center justify-center rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${sizeStyles[size]} ${variantStyles[variant]} ${className}`}
+      className={`control-outline flex items-center justify-center rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${sizeStyles[size]} ${variantStyles[variant]} ${className}`}
       {...props}
     >
       {icon}

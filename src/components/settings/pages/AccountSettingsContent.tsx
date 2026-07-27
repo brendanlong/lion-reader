@@ -90,8 +90,8 @@ function AccountInfoSection() {
     <SettingsSection title="Account Information">
       {userQuery.isLoading ? (
         <div className="space-y-4">
-          <div className="bg-surface-muted h-5 w-48 animate-pulse rounded" />
-          <div className="bg-surface-muted h-5 w-32 animate-pulse rounded" />
+          <div className="bg-fill-muted h-5 w-48 animate-pulse rounded" />
+          <div className="bg-fill-muted h-5 w-32 animate-pulse rounded" />
         </div>
       ) : userQuery.error ? (
         <p className="ui-text-sm text-danger">Failed to load account information</p>
@@ -139,7 +139,7 @@ function PasswordSection() {
   if (linkedAccountsQuery.isLoading) {
     return (
       <SettingsSection title="Password">
-        <div className="bg-surface-muted h-32 animate-pulse rounded" />
+        <div className="bg-fill-muted h-32 animate-pulse rounded" />
       </SettingsSection>
     );
   }

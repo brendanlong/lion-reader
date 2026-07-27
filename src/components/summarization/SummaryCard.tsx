@@ -85,7 +85,7 @@ export function SummaryCard({
           {onClose && (
             <button
               onClick={onClose}
-              className="text-danger hover:bg-danger-subtle rounded p-1"
+              className="control-outline text-danger hover:bg-danger-subtle rounded p-1"
               aria-label="Close"
             >
               <CloseIcon className="h-4 w-4" />
@@ -118,7 +118,7 @@ export function SummaryCard({
           {onClose && (
             <button
               onClick={onClose}
-              className="text-info hover:bg-info-subtle/50 rounded p-1"
+              className="control-outline text-info hover:bg-info-subtle/50 rounded p-1"
               aria-label="Close summary"
             >
               <CloseIcon className="h-4 w-4" />

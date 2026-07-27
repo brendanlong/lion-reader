@@ -230,8 +230,8 @@ export function NarrationSettings() {
               <label
                 className={`relative flex cursor-pointer rounded-lg border p-4 transition-colors ${
                   settings.provider === "browser"
-                    ? "border-control-selected bg-zinc-50 dark:bg-zinc-800"
-                    : "border-edge-strong hover:bg-surface-muted"
+                    ? "border-control-selected epaper:bg-surface bg-zinc-50 dark:bg-zinc-800"
+                    : "border-edge-strong epaper:border-fill-muted hover:bg-surface-muted"
                 }`}
               >
                 <input
@@ -267,8 +267,8 @@ export function NarrationSettings() {
               <label
                 className={`relative flex cursor-pointer rounded-lg border p-4 transition-colors ${
                   settings.provider === "piper"
-                    ? "border-control-selected bg-zinc-50 dark:bg-zinc-800"
-                    : "border-edge-strong hover:bg-surface-muted"
+                    ? "border-control-selected epaper:bg-surface bg-zinc-50 dark:bg-zinc-800"
+                    : "border-edge-strong epaper:border-fill-muted hover:bg-surface-muted"
                 }`}
               >
                 <input
