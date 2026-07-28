@@ -44,6 +44,13 @@ describe("formatModelName", () => {
     expect(formatModelName("cerebras:qwen-3-32b")).toBe("Qwen 3 32B");
   });
 
+  it("treats OpenRouter variant suffixes as a word break", () => {
+    // The provider prefix splits on the first colon; the one left in the
+    // native ID is a variant suffix, not a separator we should render.
+    expect(formatModelName("openrouter:deepseek/deepseek-r1:free")).toBe("Deepseek R1 Free");
+    expect(formatModelName("openrouter:openai/gpt-oss-120b")).toBe("GPT-OSS 120B");
+  });
+
   it("returns empty string unchanged", () => {
     expect(formatModelName("")).toBe("");
   });

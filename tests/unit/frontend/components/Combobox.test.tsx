@@ -31,16 +31,23 @@ const OPTIONS: ComboboxOption[] = [
 
 function renderCombobox(props: Partial<React.ComponentProps<typeof Combobox>> = {}) {
   const onChange = vi.fn();
-  render(
+  const element = (overrides: Partial<React.ComponentProps<typeof Combobox>>) => (
     <Combobox
       id="model"
       value="cerebras:gpt-oss-120b"
       options={OPTIONS}
       onChange={onChange}
       {...props}
+      {...overrides}
     />
   );
-  return { onChange, input: screen.getByRole("combobox") };
+  const { rerender } = render(element({}));
+  return {
+    onChange,
+    input: screen.getByRole("combobox"),
+    /** Re-renders with a different options list, as a refetch would. */
+    rerenderOptions: (options: ComboboxOption[]) => rerender(element({ options })),
+  };
 }
 
 describe("Combobox", () => {
@@ -113,9 +120,42 @@ describe("Combobox", () => {
   it("selects with pointer and closes", () => {
     const { onChange, input } = renderCombobox();
     fireEvent.focus(input);
-    fireEvent.pointerDown(screen.getByText("Claude Opus 5"));
+    fireEvent.click(screen.getByText("Claude Opus 5"));
     expect(onChange).toHaveBeenCalledWith("openrouter:anthropic/claude-opus-5");
     expect(input).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("does not select on touch-down, so the list can be flick-scrolled", () => {
+    const { onChange } = renderCombobox();
+    fireEvent.focus(screen.getByRole("combobox"));
+    // A touch landing on an option must not pick it; only the completed tap
+    // (click) does. Pointerdown is still cancelled, to hold input focus.
+    const option = screen.getByText("Claude Opus 5");
+    const notCancelled = fireEvent.pointerDown(option);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(notCancelled).toBe(false);
+  });
+
+  it("clamps the active option when the list shrinks underneath it", () => {
+    // The options prop refetches while the listbox is open (React Query
+    // refocus), so a stored index can point past the end of the new list.
+    const { onChange, input, rerenderOptions } = renderCombobox({
+      value: "openrouter:anthropic/claude-opus-5",
+    });
+    fireEvent.focus(input);
+    fireEvent.keyDown(input, { key: "End" }); // index 2 of 3
+    rerenderOptions(OPTIONS.slice(0, 1)); // now only 1 option exists
+    fireEvent.keyDown(input, { key: "Enter" });
+    // Falls back to the first option rather than silently doing nothing.
+    expect(onChange).toHaveBeenCalledWith("cerebras:gpt-oss-120b");
+  });
+
+  it("jumps to the first and last option with Home and End", () => {
+    const { onChange, input } = renderCombobox();
+    fireEvent.focus(input);
+    fireEvent.keyDown(input, { key: "End" });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onChange).toHaveBeenCalledWith("openrouter:anthropic/claude-opus-5");
   });
 
   it("selects with arrow keys and Enter", () => {

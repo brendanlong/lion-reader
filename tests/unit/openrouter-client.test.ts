@@ -138,6 +138,47 @@ describe("listOpenRouterModels", () => {
     }
   });
 
+  it("drops only the malformed entries, not the whole catalog", async () => {
+    // One model with a type change on a field we model must not cost us the
+    // other ~370 — that would silently empty the picker of every OpenRouter
+    // option while the other providers still appear.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          data: [
+            { id: "openai/gpt-oss-120b" },
+            { id: "bad/model", context_length: "128000" },
+            { id: "anthropic/claude-opus-5" },
+          ],
+        })
+      )
+    );
+    const models = await listOpenRouterModels();
+    expect(models.map((m) => m.id)).toEqual(["openai/gpt-oss-120b", "anthropic/claude-opus-5"]);
+  });
+
+  it("backs off after a failed refresh instead of refetching on every call", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ data: [{ id: "openai/gpt-oss-120b" }] }))
+      .mockRejectedValue(new Error("network down"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    vi.useFakeTimers();
+    try {
+      await listOpenRouterModels();
+      vi.advanceTimersByTime(60 * 60 * 1000);
+      await listOpenRouterModels(); // refresh fails, stale served, age pushed back
+      await listOpenRouterModels();
+      await listOpenRouterModels();
+      // Still only the initial fetch plus the one failed refresh.
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("throws when the first fetch fails and there is nothing cached", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network down")));
     await expect(listOpenRouterModels()).rejects.toThrow("network down");

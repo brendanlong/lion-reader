@@ -20,6 +20,18 @@ import { isChatModelId, MIN_CONTEXT_WINDOW } from "@/lib/ai/model-filters";
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
 /**
+ * Timeouts. Every outbound fetch in the repo caps itself rather than inheriting
+ * undici's ~5-minute default, and these two especially: the catalog fetch is
+ * shared process-wide by {@link listOpenRouterModels}, so a request that hangs
+ * would hang every user's model picker with it.
+ *
+ * Completions get much longer than the catalog — a reasoning model working
+ * through a long article legitimately takes a while — but still finite.
+ */
+const MODELS_FETCH_TIMEOUT_MS = 15_000;
+const COMPLETION_TIMEOUT_MS = 180_000;
+
+/**
  * OpenRouter attributes requests to an app via these headers and shows it in
  * their public rankings. Sending them is optional but makes our traffic
  * identifiable to them the same way our User-Agent does to feed publishers.
@@ -82,6 +94,7 @@ export async function openRouterChatCompletion(
     method: "POST",
     headers: openRouterHeaders(apiKey),
     body: JSON.stringify(request),
+    signal: AbortSignal.timeout(COMPLETION_TIMEOUT_MS),
   });
 
   // A non-JSON body (gateway HTML error page) must not mask the status code.
@@ -110,8 +123,8 @@ export async function openRouterChatCompletion(
 
 /**
  * A model from OpenRouter's catalog, narrowed to the fields we filter and
- * display on. Everything but `id` is optional so a catalog change can't make
- * the whole list fail to parse.
+ * display on. Everything but `id` is optional, so an added or nulled field
+ * can't fail the parse.
  */
 const openRouterModelSchema = z.object({
   id: z.string(),
@@ -128,7 +141,15 @@ const openRouterModelSchema = z.object({
 
 export type OpenRouterModel = z.infer<typeof openRouterModelSchema>;
 
-const modelsResponseSchema = z.object({ data: z.array(openRouterModelSchema) });
+/**
+ * Per-entry `.catch(null)` so one malformed model out of ~370 (a type change on
+ * a field we model, say `context_length` arriving as a string) costs us that
+ * one model rather than the entire catalog — which would silently empty the
+ * user's picker of every OpenRouter option.
+ */
+const modelsResponseSchema = z.object({
+  data: z.array(openRouterModelSchema.nullable().catch(null)),
+});
 
 /**
  * Whether an OpenRouter model can back summarization/narration.
@@ -178,6 +199,13 @@ export function isUsableOpenRouterModel(
  */
 const MODELS_CACHE_TTL_MS = 10 * 60 * 1000;
 
+/**
+ * How long a failed refresh suppresses the next attempt. Without this, an
+ * OpenRouter outage turns every settings-page load into another (~1 MB,
+ * timeout-length) request while the stale cache is being served anyway.
+ */
+const MODELS_REFRESH_RETRY_MS = 60 * 1000;
+
 let modelsCache: { fetchedAt: number; models: OpenRouterModel[] } | null = null;
 let inflightModels: Promise<OpenRouterModel[]> | null = null;
 
@@ -190,15 +218,20 @@ export function clearOpenRouterModelsCache(): void {
 async function fetchOpenRouterModels(): Promise<OpenRouterModel[]> {
   const response = await fetch(`${OPENROUTER_BASE_URL}/models`, {
     headers: { Accept: "application/json", "User-Agent": USER_AGENT },
+    signal: AbortSignal.timeout(MODELS_FETCH_TIMEOUT_MS),
   });
   if (!response.ok) {
     throw new Error(`OpenRouter model list failed (${response.status}): ${response.statusText}`);
   }
-  const parsed = modelsResponseSchema.safeParse(await response.json());
+  // A non-JSON body (gateway HTML error page) would otherwise surface as a bare
+  // SyntaxError with no hint of where it came from.
+  const body: unknown = await response.json().catch(() => null);
+  const parsed = modelsResponseSchema.safeParse(body);
   if (!parsed.success) {
     throw new Error("OpenRouter returned an unexpected model list response");
   }
-  return parsed.data.data;
+  // Drop only the entries that failed to parse — see modelsResponseSchema.
+  return parsed.data.data.filter((model) => model !== null);
 }
 
 /**
@@ -221,6 +254,12 @@ export async function listOpenRouterModels(): Promise<OpenRouterModel[]> {
         logger.warn("Failed to refresh OpenRouter model list, serving stale cache", {
           error: error instanceof Error ? error.message : String(error),
         });
+        // Push the stale entry's age back so the next caller serves it outright
+        // instead of re-attempting a failing fetch on every settings-page load.
+        modelsCache = {
+          models: modelsCache.models,
+          fetchedAt: Date.now() - MODELS_CACHE_TTL_MS + MODELS_REFRESH_RETRY_MS,
+        };
         return modelsCache.models;
       }
       throw error;

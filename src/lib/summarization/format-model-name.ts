@@ -19,6 +19,7 @@
  *   "cerebras:gpt-oss-120b"      -> "GPT-OSS 120B"
  *   "groq:openai/gpt-oss-20b"    -> "GPT-OSS 20B"
  *   "groq:llama-3.3-70b-versatile" -> "Llama 3.3 70B Versatile"
+ *   "openrouter:deepseek/deepseek-r1:free" -> "Deepseek R1 Free"
  *
  * Unknown IDs fall back to title-casing their segments so the output is
  * never worse than the raw ID.
@@ -45,7 +46,9 @@ export function formatModelName(modelId: string): string {
   const hasClaudePrefix = withoutDate.startsWith("claude-");
   const rest = hasClaudePrefix ? withoutDate.slice("claude-".length) : withoutDate;
 
-  const segments = rest.split("-").filter((segment) => segment.length > 0);
+  // OpenRouter variant suffixes are colon-separated ("deepseek-r1:free"), so
+  // treat a colon as a word break too — otherwise it renders as "R1:free".
+  const segments = rest.split(/[-:]/).filter((segment) => segment.length > 0);
 
   // Group consecutive numeric segments so they can be joined with dots, while
   // word segments stay space-separated.

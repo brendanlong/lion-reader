@@ -21,8 +21,6 @@ export interface ComboboxOption {
   group?: string;
   /** Extra text matched by the search but not displayed. */
   keywords?: string;
-  /** Muted text shown after the label. */
-  hint?: string;
 }
 
 /**
@@ -80,11 +78,13 @@ export function Combobox({
 }: ComboboxProps) {
   const listboxId = useId();
   const containerRef = useRef<HTMLDivElement>(null);
-  const listRef = useRef<HTMLUListElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [activeIndex, setActiveIndex] = useState(0);
+  // Raw because it may point past a list that shrank underneath it; read the
+  // clamped `activeIndex` below instead.
+  const [rawActiveIndex, setActiveIndex] = useState(0);
 
   const selectedOption = options.find((option) => option.value === value);
   // While closed the input displays the selection; typing replaces it with the
@@ -98,6 +98,27 @@ export function Combobox({
 
   const visible = matches.slice(0, MAX_VISIBLE_OPTIONS);
   const hiddenCount = matches.length - visible.length;
+
+  // The stored index can outlive the list it indexed — `options` refetches
+  // while the listbox is open — so clamp rather than trusting it. Everything
+  // below (highlight, aria-activedescendant, Enter) uses the clamped value.
+  const activeIndex = rawActiveIndex < visible.length ? rawActiveIndex : 0;
+  const activeOption = visible[activeIndex];
+
+  // Consecutive runs of options that share a group, for the `role="group"`
+  // headings. Built from the already-capped `visible` slice, so ≤50 items.
+  const groups: {
+    label: string | undefined;
+    items: { option: ComboboxOption; index: number }[];
+  }[] = [];
+  visible.forEach((option, index) => {
+    const last = groups[groups.length - 1];
+    if (last && last.label === option.group) {
+      last.items.push({ option, index });
+    } else {
+      groups.push({ label: option.group, items: [{ option, index }] });
+    }
+  });
 
   const close = useCallback(() => {
     setIsOpen(false);
@@ -168,7 +189,16 @@ export function Combobox({
           return;
         }
         const delta = event.key === "ArrowDown" ? 1 : -1;
-        setActiveIndex((index) => (index + delta + visible.length) % visible.length);
+        setActiveIndex((activeIndex + delta + visible.length) % visible.length);
+        return;
+      }
+      case "Home":
+      case "End": {
+        if (!isOpen || visible.length === 0) {
+          return;
+        }
+        event.preventDefault();
+        setActiveIndex(event.key === "Home" ? 0 : visible.length - 1);
         return;
       }
       case "Enter": {
@@ -176,9 +206,8 @@ export function Combobox({
           return;
         }
         event.preventDefault();
-        const option = visible[activeIndex];
-        if (option) {
-          select(option);
+        if (activeOption) {
+          select(activeOption);
         }
         return;
       }
@@ -196,8 +225,6 @@ export function Combobox({
     }
   };
 
-  let lastGroup: string | undefined;
-
   return (
     <div ref={containerRef} className="relative">
       <input
@@ -205,11 +232,11 @@ export function Combobox({
         type="text"
         role="combobox"
         aria-expanded={isOpen}
-        aria-controls={listboxId}
+        // Only while open: the listbox is unmounted when closed, and a dangling
+        // aria-controls points at nothing.
+        aria-controls={isOpen ? listboxId : undefined}
         aria-autocomplete="list"
-        aria-activedescendant={
-          isOpen && visible[activeIndex] ? `${listboxId}-${activeIndex}` : undefined
-        }
+        aria-activedescendant={isOpen && activeOption ? `${listboxId}-${activeIndex}` : undefined}
         aria-describedby={ariaDescribedBy}
         autoComplete="off"
         spellCheck={false}
@@ -227,60 +254,66 @@ export function Combobox({
         className="ui-text-sm bg-surface text-body placeholder:text-faint border-edge-input block w-full rounded-md border px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
       />
       {isOpen && (
-        <ul
-          ref={listRef}
-          id={listboxId}
-          role="listbox"
-          aria-label={listLabel}
-          className="bg-surface border-edge-strong absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-md border py-1 shadow-lg"
-        >
-          {visible.length === 0 ? (
-            <li role="presentation" className="ui-text-sm text-muted px-3 py-2">
-              {emptyMessage}
-            </li>
-          ) : (
-            visible.map((option, index) => {
-              const showGroup = option.group !== undefined && option.group !== lastGroup;
-              lastGroup = option.group;
-              return (
-                // `role="presentation"` so the listbox's only children with a
-                // role are the option divs below.
-                <li key={option.value} role="presentation">
-                  {showGroup && (
-                    <div className="ui-text-xs text-faint px-3 pt-2 pb-1 font-medium">
-                      {option.group}
-                    </div>
-                  )}
+        <div className="bg-surface border-edge-strong absolute z-20 mt-1 w-full rounded-md border shadow-lg">
+          {/* The listbox holds nothing but groups and options — the status
+              messages below are siblings, not children, so the accessibility
+              tree stays valid. */}
+          <div
+            ref={listRef}
+            id={listboxId}
+            role="listbox"
+            aria-label={listLabel}
+            className="max-h-72 overflow-y-auto py-1"
+          >
+            {groups.map((group) => (
+              <div key={group.label ?? "__ungrouped"} role="group" aria-label={group.label}>
+                {group.label !== undefined && (
                   <div
+                    aria-hidden="true"
+                    className="ui-text-xs text-faint px-3 pt-2 pb-1 font-medium"
+                  >
+                    {group.label}
+                  </div>
+                )}
+                {group.items.map(({ option, index }) => (
+                  <div
+                    key={option.value}
                     id={`${listboxId}-${index}`}
                     data-index={index}
                     role="option"
                     aria-selected={option.value === value}
-                    onPointerDown={(event) => {
-                      // Keep focus on the input so the blur/close race can't
-                      // swallow the selection.
-                      event.preventDefault();
-                      select(option);
-                    }}
+                    // preventDefault on pointerdown keeps focus in the input
+                    // (so the outside-pointerdown close can't race the pick),
+                    // but the pick itself waits for click — selecting on
+                    // pointerdown would fire the moment a touch lands, making
+                    // the list impossible to flick-scroll on a phone.
+                    onPointerDown={(event) => event.preventDefault()}
+                    onClick={() => select(option)}
                     onPointerEnter={() => setActiveIndex(index)}
                     className={`ui-text-sm text-body control-outline-none cursor-pointer px-3 py-2 ${
                       index === activeIndex ? "bg-surface-muted control-outline" : ""
                     }`}
                   >
                     {option.label}
-                    {option.hint && <span className="text-faint ml-2">{option.hint}</span>}
                   </div>
-                </li>
-              );
-            })
-          )}
-          {hiddenCount > 0 && (
-            <li role="presentation" className="ui-text-xs text-faint px-3 py-2">
-              {hiddenCount} more match{hiddenCount === 1 ? "" : "es"} — keep typing to narrow the
-              list
-            </li>
-          )}
-        </ul>
+                ))}
+              </div>
+            ))}
+          </div>
+          {/* Announced, because a search that matches nothing or silently drops
+              results is otherwise invisible to a screen reader. */}
+          <div aria-live="polite">
+            {visible.length === 0 && (
+              <div className="ui-text-sm text-muted px-3 py-2">{emptyMessage}</div>
+            )}
+            {hiddenCount > 0 && (
+              <div className="border-edge ui-text-xs text-faint border-t px-3 py-2">
+                {hiddenCount} more match{hiddenCount === 1 ? "" : "es"} — keep typing to narrow the
+                list
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
