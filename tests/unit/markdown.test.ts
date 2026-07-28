@@ -468,13 +468,14 @@ Body continues here.
 
     const result = await processMarkdown(markdown);
     // Reference becomes a superscript anchor pointing at the definition.
-    expect(result.html).toMatch(/<sup><a[^>]*href="#footnote-src"[^>]*>1<\/a><\/sup>/);
+    // The `fn-` / `fnref-` anchor names are GitHub's own.
+    expect(result.html).toMatch(/<sup[^>]*><a[^>]*href="#fn-src"[^>]*>1<\/a><\/sup>/);
     // Definitions are collected into a footnotes section, not left inline.
     expect(result.html).toContain('<section class="footnotes"');
-    expect(result.html).toContain('id="footnote-src"');
+    expect(result.html).toContain('id="fn-src"');
     expect(result.html).toContain("The supporting evidence.");
     // A back-reference link returns to the citation.
-    expect(result.html).toContain('href="#footnote-ref-src"');
+    expect(result.html).toContain('href="#fnref-src"');
     // No raw footnote markers survive in the output.
     expect(result.html).not.toContain("[^src]");
   });
@@ -486,8 +487,8 @@ Body continues here.
 [^b]: Bravo.`;
 
     const result = await processMarkdown(markdown);
-    expect(result.html).toMatch(/href="#footnote-a"[^>]*>1<\/a>/);
-    expect(result.html).toMatch(/href="#footnote-b"[^>]*>2<\/a>/);
+    expect(result.html).toMatch(/href="#fn-a"[^>]*>1<\/a>/);
+    expect(result.html).toMatch(/href="#fn-b"[^>]*>2<\/a>/);
     expect(result.html).toContain("Alpha.");
     expect(result.html).toContain("Bravo.");
   });
@@ -507,13 +508,14 @@ $$\\int_0^1 x\\,dx = \\frac{1}{2}$$`;
     // The `$…$` / `$$…$$` delimiters are consumed, not left as literal text.
     expect(result.html).not.toContain("$E = mc^2$");
     expect(result.html).not.toContain("$$");
-    // Note: the TeX source still lives in the `<annotation>` at this stage; the
-    // read-path sanitizer drops it (see sanitize-entry-html.test.ts).
+    // No `<annotation>` copy of the TeX source: the read-path sanitizer dropped
+    // it anyway, so emitting one was pure amplification (#1431).
+    expect(result.html).not.toContain("<annotation");
   });
 
   it("does not throw on malformed TeX", async () => {
     const markdown = `Broken math: $\\frac{1}{$ and text after.`;
-    // throwOnError:false — malformed TeX must not blow up processMarkdown.
+    // Malformed TeX renders as an inline error, never blows up the document.
     await expect(processMarkdown(markdown)).resolves.toBeDefined();
   });
 
@@ -550,9 +552,9 @@ This paper introduces Parcae.`;
     });
 
     it("does not accumulate slug suffixes across documents", async () => {
-      // The extension's slugger is module-level state shared by every caller;
-      // it must reset per parse or the second document's "Intro" becomes
-      // "intro-1" and its table of contents breaks.
+      // The occurrence table is per-render state inside the renderer. If it
+      // were ever shared between calls, the second document's "Intro" would
+      // become "intro-1" and its table of contents would break.
       const first = await processMarkdown("# Doc\n\n## Intro\n\nBody.");
       const second = await processMarkdown("# Doc\n\n## Intro\n\nBody.");
       expect(first.html).toContain('id="intro"');
@@ -573,6 +575,71 @@ This paper introduces Parcae.`;
       expect(result.title).toBe("My Doc");
       expect(result.html).not.toContain('id="my-doc"');
       expect(result.html).toContain('href="#my-doc"');
+    });
+  });
+
+  /**
+   * Markdown *grows* on the way to HTML, so the raw-bytes limit the caller
+   * applies to a fetched document is the wrong budget for the renderer. Both
+   * budgets are therefore enforced inside the renderer, and the output one
+   * aborts the render rather than measuring the finished string (#1431).
+   */
+  describe("size budgets (#1431)", () => {
+    /** Bigger than `maxMarkdownInputBytes` (1MB by default). */
+    const overInputCap = (): string => "word ".repeat(300_000);
+
+    it("rejects Markdown over the input cap", async () => {
+      await expect(processMarkdown(overInputCap())).rejects.toThrow(/maximum size/);
+    });
+
+    it("rejects a document that amplifies past the output budget", async () => {
+      // Math-dense input inside the input cap: this is the shape from #1431,
+      // where the old renderer expanded ~29x and only got measured afterwards.
+      // 400k math spans render to far more than the 5MB output budget.
+      await expect(processMarkdown("$a_1^2$ ".repeat(400_000))).rejects.toThrow(/maximum size/);
+    });
+
+    it("renders a large ordinary document well inside both budgets", async () => {
+      // Prose amplifies ~1.3x, so a document near the input cap is fine —
+      // the budgets must not reject legitimately long articles.
+      const result = await processMarkdown("Lorem ipsum dolor sit amet.\n\n".repeat(20_000));
+      expect(result.html).toContain("Lorem ipsum");
+    });
+  });
+
+  /**
+   * Rendering above the inline threshold is handed to the libuv thread pool, so
+   * a large document doesn't block the event loop the way the old synchronous
+   * renderer did (#1431). What's observable from here is that the offloaded
+   * path produces the same HTML as the inline one and that concurrent renders
+   * don't corrupt each other's heading slugs.
+   */
+  describe("thread-pool offload (#1431)", () => {
+    /** The leading `# Doc` is stripped as the title, so `## Intro` survives. */
+    const head = "# Doc\n\n## Intro\n\nBody with $E = mc^2$ math.\n";
+    /** Pushes a document comfortably past the ~10 KB inline threshold. */
+    const padding = `\n${"Filler paragraph text. ".repeat(1000)}`;
+
+    it("renders an offloaded document the same way as an inline one", async () => {
+      const inline = await processMarkdown(head);
+      const offloaded = await processMarkdown(head + padding);
+      expect(head.length).toBeLessThan(10 * 1024);
+      expect((head + padding).length).toBeGreaterThan(10 * 1024);
+      // The padded document is the inline one plus a trailing paragraph, so the
+      // two renderers must agree byte for byte on everything before it.
+      expect(offloaded.html.startsWith(inline.html.trimEnd())).toBe(true);
+    });
+
+    it("keeps concurrent renders from sharing a heading occurrence table", async () => {
+      // The hazard the old module-level slugger had: interleaved documents
+      // slugging against each other's counts, so one comes out "intro-1".
+      const results = await Promise.all(
+        Array.from({ length: 8 }, () => processMarkdown(head + padding))
+      );
+      for (const result of results) {
+        expect(result.html).toContain('<h2 id="intro">');
+        expect(result.html).not.toContain('id="intro-1"');
+      }
     });
   });
 });

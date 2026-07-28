@@ -39,10 +39,11 @@ const eslintConfig = defineConfig([
       ],
     },
   },
-  // `src/server/markdown` owns the app's single `Marked` instance. Importing
-  // `marked` elsewhere either mutates the reconfigurable global singleton or
-  // creates a second instance — both give us more than one Markdown dialect to
-  // keep in sync (see "Parsing" in CLAUDE.md).
+  // `src/server/markdown` is the app's only entry point to the native
+  // renderer. Calling `@lion-reader/markdown` directly bypasses the size
+  // budgets and the frontmatter/title handling, and invites a second set of
+  // render options — i.e. a second Markdown dialect to keep in sync (see
+  // "Parsing" in CLAUDE.md).
   {
     files: ["src/**/*.{ts,tsx}"],
     ignores: ["src/server/markdown/index.ts"],
@@ -52,9 +53,9 @@ const eslintConfig = defineConfig([
         {
           paths: [
             {
-              name: "marked",
+              name: "@lion-reader/markdown",
               message:
-                "Import markdownToHtml or processMarkdown from @/server/markdown instead of marked — that module owns the app's single Marked instance.",
+                "Import markdownToHtmlAsync or processMarkdown from @/server/markdown instead — that module owns the app's Markdown dialect and its size budgets.",
             },
           ],
         },

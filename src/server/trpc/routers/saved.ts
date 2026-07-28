@@ -288,6 +288,11 @@ export const savedRouter = createTRPCRouter({
           fileType,
           error: error instanceof Error ? error.message : String(error),
         });
+        // An error that already knows what it is keeps its own code and
+        // message — conversion can raise a typed one (a Markdown source or its
+        // rendered HTML busting its byte budget, #1431), and re-wrapping it
+        // would bury `CONTENT_TOO_LARGE` under a generic BAD_REQUEST.
+        if (error instanceof TRPCError) throw error;
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: `Failed to process file: ${error instanceof Error ? error.message : "Unknown error"}`,

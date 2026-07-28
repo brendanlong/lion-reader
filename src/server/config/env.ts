@@ -286,6 +286,29 @@ export const usageLimitsConfig = {
 
   /** Maximum email content size in bytes (default: 2MB). Emails larger than this are rejected. */
   maxEmailSizeBytes: parseInt(process.env.MAX_EMAIL_SIZE_BYTES || String(2 * 1024 * 1024), 10),
+
+  /**
+   * Maximum Markdown source size in bytes (default: 1MB), checked before
+   * rendering.
+   *
+   * Deliberately well below `maxSavedArticleSizeBytes`: Markdown *grows* on the
+   * way to HTML — math-dense input expands roughly 10x — so a raw-bytes limit
+   * sized for fetched HTML is the wrong budget for a renderer input (#1431).
+   * 1MB is still far more Markdown than any real article (~150k words).
+   */
+  maxMarkdownInputBytes: parseInt(process.env.MAX_MARKDOWN_INPUT_BYTES || String(1024 * 1024), 10),
+
+  /**
+   * Maximum rendered-Markdown size in bytes (default: 5MB), enforced *during*
+   * rendering so an amplifying document is rejected while it amplifies rather
+   * than after it has built the whole string. Matches
+   * `maxSavedArticleSizeBytes`, which is what the article would be checked
+   * against downstream anyway.
+   */
+  maxRenderedMarkdownBytes: parseInt(
+    process.env.MAX_RENDERED_MARKDOWN_BYTES || String(5 * 1024 * 1024),
+    10
+  ),
 };
 
 export const storageConfig = {

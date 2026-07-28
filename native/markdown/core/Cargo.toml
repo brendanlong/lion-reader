@@ -1,0 +1,16 @@
+[package]
+name = "lion-reader-markdown-core"
+version = "1.0.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[dependencies]
+# GitHub Flavored Markdown. default-features = false drops the `cli` feature,
+# which would otherwise pull in clap and syntect (a syntax highlighter we don't
+# use) — roughly a third of the build.
+comrak = { version = "0.54", default-features = false }
+# LaTeX → MathML, pure Rust. Replaces KaTeX, which amplified math-dense input
+# ~29x; this emits MathML core directly, with no `<annotation>` copy of the TeX
+# source (the read-path sanitizer dropped it anyway). See #1431.
+pulldown-latex = "0.8"

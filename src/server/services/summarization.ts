@@ -9,7 +9,7 @@
 import { createHash } from "crypto";
 import { logger } from "@/lib/logger";
 import { sanitizeEntryHtml } from "@/server/html/sanitize";
-import { markdownToHtml } from "@/server/markdown";
+import { markdownToHtmlAsync } from "@/server/markdown";
 import { htmlToPlainText } from "@/lib/narration/html-to-narration-input";
 import { parseModelRef } from "@/lib/ai/model-ref";
 import {
@@ -222,11 +222,11 @@ export async function generateSummary(
       throw new Error("Empty response from summarization model");
     }
 
-    // Extract summary from <summary> tags and convert Markdown to HTML.
-    // marked passes raw HTML through, and the summary is rendered via
+    // Extract summary from <summary> tags and convert Markdown to HTML. The
+    // renderer passes raw HTML through, and the summary is rendered via
     // dangerouslySetInnerHTML, so sanitize before storing/returning it.
     const markdownSummary = extractSummaryFromResponse(responseText);
-    const summary = sanitizeEntryHtml(markdownToHtml(markdownSummary)) ?? "";
+    const summary = sanitizeEntryHtml(await markdownToHtmlAsync(markdownSummary)) ?? "";
 
     return {
       summary,

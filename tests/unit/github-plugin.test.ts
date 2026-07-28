@@ -577,7 +577,7 @@ describe("processFileContent", () => {
         repoFile
       );
       expect(html).toContain("The note.");
-      expect(html).toContain('href="#footnote-1"');
+      expect(html).toContain('href="#fn-1"');
     });
 
     it("strips YAML frontmatter and takes its metadata", async () => {

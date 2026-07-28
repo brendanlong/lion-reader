@@ -30,7 +30,7 @@ const article: DemoArticle = {
 
     <p>You can enable automatic full-content fetching per subscription for feeds that consistently truncate their articles. Or use the manual toggle to switch between feed content and full content whenever you need it. The system preserves images, code blocks, formatting, and document structure so you get an authentic reading experience. If extraction fails for any reason, Lion Reader gracefully falls back to displaying the original feed content. And once you have the complete article, you can generate an <a href="/demo/all?entry=ai-summaries">AI summary</a> of the full text rather than just the excerpt.</p>
 
-    <p>For Markdown-formatted content, Lion Reader uses the <a href="https://marked.js.org/" target="_blank" rel="noopener noreferrer">marked</a> library to convert Markdown to clean HTML, preserving code blocks, tables, and all standard Markdown formatting.</p>
+    <p>For Markdown-formatted content, Lion Reader converts <a href="https://github.github.com/gfm/" target="_blank" rel="noopener noreferrer">GitHub Flavored Markdown</a> to clean HTML, preserving code blocks, tables, footnotes, and all standard Markdown formatting. Equations written as TeX are rendered as real math your browser displays natively.</p>
   `,
 };
 

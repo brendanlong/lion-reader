@@ -3,14 +3,27 @@
  *
  * Centralized Markdown-to-HTML conversion with title extraction and frontmatter parsing.
  * Used by file uploads, URL fetching, and plugins.
+ *
+ * The dialect — GitHub Flavored Markdown plus `$…$` / `$$…$$` TeX rendered to
+ * MathML — lives in the native renderer (`native/markdown/`, comrak +
+ * pulldown-latex). Every Markdown source in the app renders through it, so
+ * there is one dialect to reason about and one place to extend (a lint rule
+ * enforces it; see "Parsing" in CLAUDE.md). This module owns the surrounding
+ * document concerns: frontmatter, title extraction, and the size budgets.
+ *
+ * Rendering is native because it is the most expensive step in the content
+ * pipeline and used to be the only one that could block the event loop (#1431)
+ * — it now offloads to the libuv thread pool the same way sanitization and
+ * Readability extraction do.
  */
 
-import { Marked } from "marked";
-import markedFootnote from "marked-footnote";
-import { gfmHeadingId } from "marked-gfm-heading-id";
-import markedKatex from "marked-katex-extension";
+import { renderMarkdown, renderMarkdownAsync } from "@lion-reader/markdown";
+import type { MarkdownLimits, RenderedMarkdown } from "@lion-reader/markdown";
 import { parse as parseYaml } from "yaml";
+import { usageLimitsConfig } from "@/server/config/env";
 import { extractAndStripTitleHeader } from "@/server/html/strip-title-header";
+import { startMarkdownRenderTimer } from "@/server/metrics/metrics";
+import { errors } from "@/server/trpc/errors";
 
 /**
  * Result of parsing YAML frontmatter from Markdown.
@@ -144,66 +157,83 @@ function parseFrontmatterLenient(yaml: string): Record<string, string> | null {
 }
 
 /**
- * The single marked instance, configured once at module load.
- *
- * An isolated instance rather than the shared global singleton, which anything can
- * reconfigure with `marked.setOptions` — whichever module ran last would win. Every
- * Markdown source in the app renders through this one instance (a lint rule
- * enforces it; see "Parsing" in CLAUDE.md).
- *
- * `marked-gfm-heading-id` gives headings the same `id` slugs GitHub generates
- * (via `github-slugger`), so a hand-written table of contents — `[Intro](#intro)`,
- * which authors write against GitHub's slugging rules — has something to land on.
- * Core marked emits no heading ids, so those anchors were all dead (#1425).
- *
- * That extension keeps its slugger in **module-level mutable state**, reset in a
- * `preprocess` hook. That is only safe because parsing is synchronous end to end,
- * so `preprocess` and the renderer run in one uninterrupted turn — which is why
- * `markdownToHtml` pins `{ async: false }`. If an extension ever made parsing
- * async, two concurrent documents would interleave and doc B's reset would land
- * mid-parse of doc A, silently slugging its headings against the wrong occurrence
- * table (`intro` → `intro-1`) and breaking every table of contents under load.
- *
- * `marked-footnote` adds GFM footnote support — `[^1]` references plus `[^1]:`
- * definitions — which core marked does not handle. Without it, definitions
- * render as literal text inline where they're written (jarring for Pandoc-style
- * uploads and markdown-only pages). The generated `<sup>` markers,
- * `<section class="footnotes">` block, `id` anchors, and `#fragment` back-links
- * all survive the read-path sanitizer (`id`/`data-*` are allow-listed, and
- * same-document fragment hrefs are preserved).
+ * Documents at or below this size render synchronously on the calling thread:
+ * the native renderer handles them in well under a millisecond, so the fixed
+ * cost of scheduling a libuv-thread-pool task (and copying the string across
+ * the N-API boundary twice) isn't worth paying. ~10 KB, same rationale and
+ * value as the sanitizer's and the extractor's inline thresholds.
  */
-const markdownRenderer = new Marked({
-  gfm: true, // GitHub Flavored Markdown
-  breaks: true, // Convert \n to <br>
-})
-  .use(gfmHeadingId())
-  .use(markedFootnote())
-  // Render `$…$` / `$$…$$` TeX to MathML — native, no client JS/CSS, matching
-  // how the sanitizer already handles feed math (MathJax→MathML). KaTeX wraps
-  // output in `<semantics>…<annotation encoding="application/x-tex">` (the raw
-  // TeX); the read-path sanitizer keeps the presentation MathML and drops the
-  // annotation, so no TeX source leaks as visible text. `throwOnError: false`
-  // makes malformed TeX render as an inline error string instead of throwing.
-  .use(markedKatex({ output: "mathml", throwOnError: false }));
+const RENDER_INLINE_MAX_CHARS = 10 * 1024;
+
+function renderLimits(): MarkdownLimits {
+  return {
+    maxInputBytes: usageLimitsConfig.maxMarkdownInputBytes,
+    maxOutputBytes: usageLimitsConfig.maxRenderedMarkdownBytes,
+  };
+}
+
+/**
+ * Turns a budget rejection into the same user-facing "content too large" error
+ * every other size limit produces.
+ *
+ * The budgets are checked inside the renderer rather than by callers because
+ * Markdown *grows*: math-dense input expands ~10x, so a document that passes a
+ * raw-bytes check on the way in can still blow up on the way out. Checking
+ * afterwards meant paying for the whole expansion first (#1431).
+ */
+function unwrapRendered(result: RenderedMarkdown): string {
+  if (result.limitExceeded === undefined) {
+    return result.html;
+  }
+  if (result.limitExceeded === "input") {
+    throw errors.contentTooLarge("Markdown content", usageLimitsConfig.maxMarkdownInputBytes);
+  }
+  throw errors.contentTooLarge(
+    "Rendered Markdown content",
+    usageLimitsConfig.maxRenderedMarkdownBytes
+  );
+}
+
+/**
+ * The inline path. Not exported: every Markdown source in the app is reached
+ * from a request (saves, uploads, plugin fetches, summary generation), and none
+ * from a background job, so there is no caller that should be choosing the
+ * blocking form. If one ever appears — the sanitizer and the Readability
+ * extractor both have background-job callers that legitimately use their sync
+ * forms — export this rather than inlining a second `renderMarkdown` call.
+ */
+function renderInline(markdown: string): string {
+  const stopTimer = startMarkdownRenderTimer();
+  try {
+    return unwrapRendered(renderMarkdown(markdown, renderLimits()));
+  } finally {
+    stopTimer();
+  }
+}
 
 /**
  * Converts Markdown to HTML. Use this when there is no document metadata to
  * extract (an AI summary); use {@link processMarkdown} for a document with
  * frontmatter and a title.
  *
- * `{ async: false }` is load-bearing, not decoration: marked *throws* if an
- * extension has forced async parsing, which turns the silent slugger corruption
- * described above into a loud startup-time failure.
+ * The render runs on the libuv thread pool for documents above the inline
+ * threshold, so a large one never blocks the event loop that serves UI
+ * requests.
  *
- * Nothing is being given up by pinning it. marked's async mode only lets *hooks*
- * and `walkTokens` await — the lexer, parser and renderer still run as one
- * synchronous chunk, so it does not yield to the event loop. Measured on a 100 KB
- * math-dense document, the worst event-loop stall is the same either way (~78 ms).
- * Taking this rendering off the main thread needs a worker, not async mode; that
- * and the KaTeX amplification which makes it matter are tracked in #1431.
+ * @throws if the source or the rendered HTML exceeds its byte budget.
  */
-export function markdownToHtml(markdown: string): string {
-  return markdownRenderer.parse(markdown, { async: false });
+export async function markdownToHtmlAsync(markdown: string): Promise<string> {
+  // Small documents go through the inline path, which records its own timing.
+  if (markdown.length <= RENDER_INLINE_MAX_CHARS) {
+    return renderInline(markdown);
+  }
+
+  const stopTimer = startMarkdownRenderTimer();
+  try {
+    return unwrapRendered(await renderMarkdownAsync(markdown, renderLimits()));
+  } finally {
+    stopTimer();
+  }
 }
 
 /**
@@ -233,13 +263,15 @@ export interface ProcessedMarkdown {
  *
  * @param markdown - The Markdown text to convert
  * @returns HTML content, extracted title, and summary
+ * @throws if the source or the rendered HTML exceeds its byte budget.
  */
 export async function processMarkdown(markdown: string): Promise<ProcessedMarkdown> {
   // Extract frontmatter if present
   const { frontmatter, content: markdownWithoutFrontmatter } = extractFrontmatter(markdown);
 
-  // Convert remaining markdown to HTML
-  const html = markdownToHtml(markdownWithoutFrontmatter);
+  // Convert remaining markdown to HTML. Every caller is a request path (saves,
+  // uploads, plugin fetches), so this offloads large documents.
+  const html = await markdownToHtmlAsync(markdownWithoutFrontmatter);
 
   // Extract and strip title header from HTML
   const { title: headerTitle, content: htmlWithoutHeader } = extractAndStripTitleHeader(html);
