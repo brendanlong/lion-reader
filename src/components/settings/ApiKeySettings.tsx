@@ -205,7 +205,7 @@ export function AiProviderKeySettings() {
       }
     >
       {preferencesQuery.isLoading ? (
-        <div className="bg-surface-muted h-10 w-full animate-pulse rounded" />
+        <div className="bg-fill-muted h-10 w-full animate-pulse rounded" />
       ) : (
         <div className="space-y-4">
           {PROVIDER_KEY_CONFIGS.map((config) => (
@@ -413,7 +413,7 @@ export function SummarizationSettings() {
       }
     >
       {preferencesQuery.isLoading ? (
-        <div className="bg-surface-muted h-10 w-full animate-pulse rounded" />
+        <div className="bg-fill-muted h-10 w-full animate-pulse rounded" />
       ) : (
         <div className="space-y-4">
           {/* Model Selection */}
@@ -641,7 +641,7 @@ export function NarrationAiSettings() {
       }
     >
       {preferencesQuery.isLoading ? (
-        <div className="bg-surface-muted h-10 w-full animate-pulse rounded" />
+        <div className="bg-fill-muted h-10 w-full animate-pulse rounded" />
       ) : (
         <div>
           <label

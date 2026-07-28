@@ -70,7 +70,7 @@ export function SettingsSection({
         <Card>
           <div className="space-y-4">
             {Array.from({ length: skeletonRows }).map((_, i) => (
-              <div key={i} className="bg-surface-muted h-10 animate-pulse rounded" />
+              <div key={i} className="bg-fill-muted h-10 animate-pulse rounded" />
             ))}
           </div>
         </Card>

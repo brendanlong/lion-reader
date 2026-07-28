@@ -75,7 +75,7 @@ export default function BlockedSendersSettingsContent() {
 function EmptyState() {
   return (
     <div className="p-8 text-center">
-      <div className="bg-surface-muted mx-auto flex h-12 w-12 items-center justify-center rounded-full">
+      <div className="control-outline bg-surface-muted mx-auto flex h-12 w-12 items-center justify-center rounded-full">
         <ProhibitionIcon className="text-faint h-6 w-6" />
       </div>
       <h3 className="ui-text-sm text-body mt-4 font-medium">No blocked senders</h3>

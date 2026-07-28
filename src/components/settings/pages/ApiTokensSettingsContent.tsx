@@ -340,7 +340,7 @@ function ActiveTokenCard({ token, onRevoke, isRevoking }: ActiveTokenCardProps) 
         <div className="flex-1">
           <div className="flex items-center gap-2">
             {/* Key icon */}
-            <div className="bg-surface-muted flex h-8 w-8 shrink-0 items-center justify-center rounded-full">
+            <div className="control-outline bg-surface-muted flex h-8 w-8 shrink-0 items-center justify-center rounded-full">
               <KeyIcon className="text-muted h-4 w-4" />
             </div>
 
@@ -350,7 +350,7 @@ function ActiveTokenCard({ token, onRevoke, isRevoking }: ActiveTokenCardProps) 
                 {token.scopes.map((scope) => (
                   <span
                     key={scope}
-                    className="ui-text-xs bg-info-subtle text-info-foreground inline-flex items-center rounded-full px-2 py-0.5 font-medium"
+                    className="control-outline ui-text-xs bg-info-subtle text-info-foreground inline-flex items-center rounded-full px-2 py-0.5 font-medium"
                   >
                     {scopeLabels[scope]?.label ?? scope}
                   </span>

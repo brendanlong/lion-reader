@@ -81,13 +81,13 @@ function getFeedDisplayTitle(feed: FeedItem): string {
 function FeedStatusBadge({ feed }: { feed: FeedItem }) {
   if (feed.consecutiveFailures > 0) {
     return (
-      <span className="ui-text-xs bg-danger-subtle text-danger inline-flex items-center rounded-full px-2 py-0.5 font-medium">
+      <span className="control-outline ui-text-xs bg-danger-subtle text-danger inline-flex items-center rounded-full px-2 py-0.5 font-medium">
         {feed.consecutiveFailures} failure{feed.consecutiveFailures === 1 ? "" : "s"}
       </span>
     );
   }
   return (
-    <span className="ui-text-xs bg-success-subtle text-success inline-flex items-center rounded-full px-2 py-0.5 font-medium">
+    <span className="control-outline ui-text-xs bg-success-subtle text-success inline-flex items-center rounded-full px-2 py-0.5 font-medium">
       Healthy
     </span>
   );
@@ -99,7 +99,7 @@ function FeedStatusBadge({ feed }: { feed: FeedItem }) {
 
 function WebSubBadge() {
   return (
-    <span className="ui-text-xs bg-info-subtle text-info-foreground inline-flex items-center rounded-full px-2 py-0.5 font-medium">
+    <span className="control-outline ui-text-xs bg-info-subtle text-info-foreground inline-flex items-center rounded-full px-2 py-0.5 font-medium">
       WebSub
     </span>
   );
@@ -114,7 +114,7 @@ function ExpandableError({ error }: { error: string }) {
   const isLong = error.length > 120;
 
   return (
-    <div className="bg-danger-subtle mt-2 rounded-md px-3 py-2">
+    <div className="control-outline bg-danger-subtle mt-2 rounded-md px-3 py-2">
       <p className="ui-text-sm text-danger">
         <span className="font-medium">Error: </span>
         {expanded || !isLong ? error : error.slice(0, 120) + "..."}
@@ -238,7 +238,7 @@ function StatItem({ label, value }: { label: string; value: string }) {
 function EmptyState({ hasFilters }: { hasFilters: boolean }) {
   return (
     <div className="p-8 text-center">
-      <div className="bg-surface-muted mx-auto flex h-12 w-12 items-center justify-center rounded-full">
+      <div className="control-outline bg-surface-muted mx-auto flex h-12 w-12 items-center justify-center rounded-full">
         <RssIcon className="text-faint h-6 w-6" />
       </div>
       <h3 className="ui-text-sm text-body mt-4 font-medium">

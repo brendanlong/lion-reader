@@ -85,7 +85,7 @@ export function SummaryCard({
           {onClose && (
             <button
               onClick={onClose}
-              className="text-danger hover:bg-danger-subtle rounded p-1"
+              className="control-outline text-danger hover:bg-danger-subtle rounded p-1"
               aria-label="Close"
             >
               <CloseIcon className="h-4 w-4" />
@@ -118,7 +118,7 @@ export function SummaryCard({
           {onClose && (
             <button
               onClick={onClose}
-              className="text-info hover:bg-info-subtle/50 rounded p-1"
+              className="control-outline text-info hover:bg-info-subtle/50 rounded p-1"
               aria-label="Close summary"
             >
               <CloseIcon className="h-4 w-4" />
@@ -129,7 +129,7 @@ export function SummaryCard({
 
       {/* Content */}
       <div
-        className="prose reader-prose dark:prose-invert text-info-subtle-foreground [&_a]:text-info-foreground mt-3 max-w-none [&_li]:my-0 [&_ol]:my-1 [&_ul]:my-1"
+        className="prose reader-prose dark:prose-invert text-info-subtle-foreground epaper:text-body [&_a]:text-info-foreground mt-3 max-w-none [&_li]:my-0 [&_ol]:my-1 [&_ul]:my-1"
         style={style}
         dangerouslySetInnerHTML={{ __html: summary }}
       />

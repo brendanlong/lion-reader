@@ -230,8 +230,8 @@ export function NarrationSettings() {
               <label
                 className={`relative flex cursor-pointer rounded-lg border p-4 transition-colors ${
                   settings.provider === "browser"
-                    ? "border-control-selected bg-zinc-50 dark:bg-zinc-800"
-                    : "border-edge-strong hover:bg-surface-muted"
+                    ? "border-control-selected epaper:bg-surface bg-zinc-50 dark:bg-zinc-800"
+                    : "border-edge-strong epaper:border-fill-muted hover:bg-surface-muted"
                 }`}
               >
                 <input
@@ -267,8 +267,8 @@ export function NarrationSettings() {
               <label
                 className={`relative flex cursor-pointer rounded-lg border p-4 transition-colors ${
                   settings.provider === "piper"
-                    ? "border-control-selected bg-zinc-50 dark:bg-zinc-800"
-                    : "border-edge-strong hover:bg-surface-muted"
+                    ? "border-control-selected epaper:bg-surface bg-zinc-50 dark:bg-zinc-800"
+                    : "border-edge-strong epaper:border-fill-muted hover:bg-surface-muted"
                 }`}
               >
                 <input
@@ -515,7 +515,7 @@ export function NarrationSettings() {
 
           {/* Firefox Warning */}
           {isFirefoxBrowser && (
-            <div className="ui-text-xs bg-warning-subtle text-warning-subtle-foreground flex items-start gap-2 rounded-md p-3">
+            <div className="control-outline ui-text-xs bg-warning-subtle text-warning-subtle-foreground flex items-start gap-2 rounded-md p-3">
               <AlertIcon className="mt-0.5 h-4 w-4 flex-shrink-0" />
               <span>
                 Firefox has limited support for pausing narration. When you pause and resume,

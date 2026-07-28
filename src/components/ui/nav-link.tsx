@@ -31,6 +31,9 @@ export interface NavLinkProps {
  * Navigation link with consistent styling for active/inactive states.
  * Ensures 44px minimum height for touch targets (WCAG compliance).
  *
+ * The active row is a gray fill in light/dark and a black outline on e-paper,
+ * where a fill would dither — see `control-outline` in globals.css.
+ *
  * @example
  * ```tsx
  * <NavLink
@@ -57,7 +60,9 @@ export function NavLink({
       onNavigate={onClick}
       onPrefetch={onPrefetch}
       className={`ui-text-sm flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 font-medium transition-colors ${
-        isActive ? "bg-surface-muted text-body" : "text-body hover:bg-surface-muted"
+        isActive
+          ? "control-outline bg-surface-muted text-body"
+          : "control-outline-none text-body hover:bg-surface-muted"
       } ${className}`}
     >
       <span className="truncate">{children}</span>
@@ -109,7 +114,9 @@ export function NavLinkWithIcon({
       onNavigate={onClick}
       onPrefetch={onPrefetch}
       className={`ui-text-sm flex min-h-[44px] flex-1 items-center gap-2 rounded-md px-3 py-2 transition-colors ${
-        isActive ? "bg-surface-muted text-body" : "text-body hover:bg-surface-muted"
+        isActive
+          ? "control-outline bg-surface-muted text-body"
+          : "control-outline-none text-body hover:bg-surface-muted"
       } ${className}`}
     >
       {icon && <span className="shrink-0">{icon}</span>}

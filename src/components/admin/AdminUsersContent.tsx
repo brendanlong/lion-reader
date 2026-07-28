@@ -77,7 +77,7 @@ function ProviderBadge({ provider }: { provider: string }) {
   const config = providerConfig[provider];
   if (!config) {
     return (
-      <span className="ui-text-xs bg-surface-muted text-muted inline-flex items-center rounded-full px-2 py-0.5 font-medium">
+      <span className="control-outline ui-text-xs bg-surface-muted text-muted inline-flex items-center rounded-full px-2 py-0.5 font-medium">
         {provider}
       </span>
     );
@@ -85,7 +85,7 @@ function ProviderBadge({ provider }: { provider: string }) {
 
   const Icon = config.icon;
   return (
-    <span className="ui-text-xs bg-surface-muted text-muted inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium">
+    <span className="control-outline ui-text-xs bg-surface-muted text-muted inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium">
       <Icon className="h-3 w-3" />
       {config.label}
     </span>

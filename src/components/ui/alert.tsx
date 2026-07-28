@@ -23,7 +23,7 @@ export function Alert({ variant = "info", children, className = "" }: AlertProps
   return (
     <div
       role="alert"
-      className={`ui-text-sm rounded-md p-3 ${variantStyles[variant]} ${className}`}
+      className={`control-outline ui-text-sm rounded-md p-3 ${variantStyles[variant]} ${className}`}
     >
       {children}
     </div>

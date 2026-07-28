@@ -25,8 +25,7 @@ import type { ListDensity } from "@/lib/appearance/settings";
  * The unread/read *color* language is identical across densities — only the
  * padding and border treatment change. In "compact" mode items are borderless
  * rows in a single `divide-edge` list (see EntryList), so the per-card borders
- * (including the e-paper `border-zinc-500` fallback) are dropped; the darker
- * e-paper divider handles row separation instead.
+ * are dropped; the divider handles row separation instead.
  */
 export function getItemClasses(read: boolean, density: ListDensity = "comfortable"): string {
   const compact = density === "compact";
@@ -39,13 +38,16 @@ export function getItemClasses(read: boolean, density: ListDensity = "comfortabl
     // faint hairline border, so they read as "already handled". They lift to a
     // surface fill on hover to signal they're still clickable (the surface
     // tokens already carry their own dark-mode values).
+    // On e-paper every border is black, so "faint hairline" has to be said with
+    // gray instead: the read card steps down to the theme's non-text gray level
+    // while unread keeps the black edge.
     const readClasses = `${baseClasses} bg-canvas hover:bg-surface active:bg-surface-muted`;
-    return compact ? readClasses : `${readClasses} border-edge`;
+    return compact ? readClasses : `${readClasses} border-edge epaper:border-fill-muted`;
   }
 
   // Unread entries stand out as raised surface cards with a distinctly stronger
   // border (the only card/canvas separation available on e-paper, where every
   // fill is white).
   const unreadClasses = `${baseClasses} bg-surface hover:bg-surface-muted active:bg-zinc-100 dark:active:bg-zinc-700`;
-  return compact ? unreadClasses : `${unreadClasses} border-edge-input epaper:border-zinc-500`;
+  return compact ? unreadClasses : `${unreadClasses} border-edge-input`;
 }

@@ -210,10 +210,10 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
             onClick={handleBrowseClick}
             className={`cursor-pointer rounded-lg border-2 border-dashed p-8 text-center transition-colors ${
               isDragging
-                ? "bg-surface-muted border-zinc-500 dark:border-zinc-400"
+                ? "bg-surface-muted epaper:border-edge border-zinc-500 dark:border-zinc-400"
                 : selectedFile
                   ? "border-success bg-success-subtle"
-                  : "border-edge-input hover:bg-surface-muted hover:border-zinc-400 dark:hover:border-zinc-500"
+                  : "border-edge-input epaper:border-fill-muted hover:bg-surface-muted hover:border-zinc-400 dark:hover:border-zinc-500"
             }`}
           >
             <input

@@ -328,15 +328,15 @@ export function SubscribeContent() {
                   disabled={isLoading}
                   className={`w-full rounded-lg border p-4 text-left transition-colors ${
                     selectedFeedUrl === feed.url
-                      ? "border-control-selected bg-zinc-50 dark:bg-zinc-800"
-                      : "border-edge-strong bg-surface hover:bg-surface-muted hover:border-zinc-300 dark:hover:border-zinc-600"
+                      ? "border-control-selected epaper:bg-surface bg-zinc-50 dark:bg-zinc-800"
+                      : "border-edge-strong epaper:border-fill-muted bg-surface hover:bg-surface-muted hover:border-zinc-300 dark:hover:border-zinc-600"
                   } ${isLoading ? "cursor-not-allowed opacity-50" : ""}`}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <p className="text-body font-medium">{feed.title || "Untitled Feed"}</p>
-                        <span className="ui-text-xs text-body bg-fill-muted inline-flex items-center rounded-full px-2 py-0.5 font-medium">
+                        <span className="control-outline ui-text-xs text-body bg-fill-muted inline-flex items-center rounded-full px-2 py-0.5 font-medium">
                           {getFeedTypeLabel(feed.type)}
                         </span>
                       </div>

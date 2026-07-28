@@ -27,8 +27,8 @@ describe("getItemClasses", () => {
       expect(classes).toContain("active:bg-zinc-100");
       // Press step is intentionally a raw zinc pair (one step darker than surface-muted hover)
       expect(classes).toContain("dark:active:bg-zinc-700");
-      // E-paper (all fills white) leans on a darker border for card separation
-      expect(classes).toContain("epaper:border-zinc-500");
+      // E-paper: unread keeps the theme's black edge (no e-paper override)
+      expect(classes).not.toContain("epaper:border");
     });
   });
 
@@ -37,8 +37,10 @@ describe("getItemClasses", () => {
       const classes = getItemClasses(true);
 
       expect(classes).toContain(baseClasses);
-      // Read recedes into the page canvas with a faint hairline border
+      // Read recedes into the page canvas with a faint hairline border. E-paper
+      // paints every edge black, so the hairline there is the theme's gray level.
       expect(classes).toContain("border-edge");
+      expect(classes).toContain("epaper:border-fill-muted");
       expect(classes).toContain("bg-canvas");
       // Lifts to a surface fill on hover to signal it's still clickable
       expect(classes).toContain("hover:bg-surface");
@@ -78,9 +80,10 @@ describe("getItemClasses", () => {
       expect(unread).not.toContain("rounded-lg");
       expect(unread).not.toContain(" border ");
       expect(unread).not.toContain("border-edge-input");
-      // The e-paper per-card border fallback is dropped (dividers separate rows).
-      expect(unread).not.toContain("epaper:border-zinc-500");
+      // The e-paper per-card border override is dropped too (dividers separate rows).
+      expect(unread).not.toContain("epaper:border");
       expect(read).not.toContain("border-edge");
+      expect(read).not.toContain("epaper:border");
 
       // Tighter vertical padding for more items per screen.
       expect(unread).toContain("py-2.5");

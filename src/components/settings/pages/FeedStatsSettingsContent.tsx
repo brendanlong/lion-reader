@@ -70,18 +70,18 @@ function getStatusBadge(feed: FeedStats): { text: string; className: string } {
   if (feed.consecutiveFailures > 0) {
     return {
       text: `${feed.consecutiveFailures} failure${feed.consecutiveFailures === 1 ? "" : "s"}`,
-      className: "bg-danger-subtle text-danger",
+      className: "control-outline bg-danger-subtle text-danger",
     };
   }
   if (feed.websubActive) {
     return {
       text: "WebSub Active",
-      className: "bg-info-subtle text-info-foreground",
+      className: "control-outline bg-info-subtle text-info-foreground",
     };
   }
   return {
     text: "OK",
-    className: "bg-success-subtle text-success",
+    className: "control-outline bg-success-subtle text-success",
   };
 }
 
@@ -233,7 +233,7 @@ function SummaryCard({ label, value, variant = "default" }: SummaryCardProps) {
 function EmptyState() {
   return (
     <div className="p-8 text-center">
-      <div className="bg-surface-muted mx-auto flex h-12 w-12 items-center justify-center rounded-full">
+      <div className="control-outline bg-surface-muted mx-auto flex h-12 w-12 items-center justify-center rounded-full">
         <RssIcon className="text-faint h-6 w-6" />
       </div>
       <h3 className="ui-text-sm text-body mt-4 font-medium">No feeds subscribed</h3>
@@ -279,7 +279,7 @@ function FeedStatsRow({ feed }: FeedStatsRowProps) {
 
           {/* Error Message (if any) */}
           {feed.lastError && (
-            <div className="bg-danger-subtle mt-2 rounded-md px-3 py-2">
+            <div className="control-outline bg-danger-subtle mt-2 rounded-md px-3 py-2">
               <p className="ui-text-sm text-danger">
                 <span className="font-medium">Error:</span> {feed.lastError}
               </p>

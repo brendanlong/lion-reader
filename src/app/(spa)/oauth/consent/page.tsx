@@ -135,7 +135,7 @@ function ConsentLayout({ children }: { children: React.ReactNode }) {
 function ErrorMessage({ title, message }: { title: string; message: string }) {
   return (
     <div className="text-center">
-      <div className="bg-danger-subtle mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full">
+      <div className="control-outline bg-danger-subtle mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full">
         <WarningTriangleIcon className="text-danger h-6 w-6" />
       </div>
       <h2 className="ui-text-lg text-body font-semibold">{title}</h2>

@@ -56,7 +56,7 @@ export function DemoLayoutContent({ children }: DemoLayoutContentProps) {
               sidebarCloseButton={
                 <button
                   onClick={() => setSidebarOpen(false)}
-                  className="text-muted hover:bg-surface-muted flex h-10 w-10 items-center justify-center rounded-md active:bg-zinc-200 lg:hidden dark:active:bg-zinc-700"
+                  className="control-outline text-muted hover:bg-surface-muted flex h-10 w-10 items-center justify-center rounded-md active:bg-zinc-200 lg:hidden dark:active:bg-zinc-700"
                   aria-label="Close navigation menu"
                 >
                   <CloseIcon className="h-5 w-5" />
@@ -65,7 +65,7 @@ export function DemoLayoutContent({ children }: DemoLayoutContentProps) {
               mobileMenuButton={
                 <button
                   onClick={() => setSidebarOpen(true)}
-                  className="text-muted hover:bg-surface-muted flex h-10 w-10 items-center justify-center rounded-md active:bg-zinc-200 lg:hidden dark:active:bg-zinc-700"
+                  className="control-outline text-muted hover:bg-surface-muted flex h-10 w-10 items-center justify-center rounded-md active:bg-zinc-200 lg:hidden dark:active:bg-zinc-700"
                   aria-label="Open navigation menu"
                 >
                   <MenuIcon className="h-5 w-5" />

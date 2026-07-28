@@ -81,7 +81,7 @@ export function DemoArticleView({
         backButton={
           <ClientLink
             href={backHref}
-            className="ui-text-sm text-muted hover:bg-surface-muted hover:text-body mb-4 -ml-2 inline-flex min-h-[44px] items-center gap-2 rounded-md px-2 transition-colors active:bg-zinc-200 sm:mb-6 dark:active:bg-zinc-700"
+            className="control-outline ui-text-sm text-muted hover:bg-surface-muted hover:text-body mb-4 -ml-2 inline-flex min-h-[44px] items-center gap-2 rounded-md px-2 transition-colors active:bg-zinc-200 sm:mb-6 dark:active:bg-zinc-700"
           >
             <ArrowLeftIcon className="h-4 w-4" />
             <span>Back to list</span>

@@ -54,7 +54,9 @@ export function SubscriptionItem({
         onNavigate={onClose}
         onPrefetch={onPrefetch}
         className={`ui-text-sm flex min-h-[44px] min-w-0 flex-1 items-center justify-between rounded-md px-3 py-2 transition-colors ${
-          isActive ? "bg-surface-muted text-body" : "text-body hover:bg-surface-muted"
+          isActive
+            ? "control-outline bg-surface-muted text-body"
+            : "control-outline-none text-body hover:bg-surface-muted"
         }`}
       >
         {/* pr-8 keeps long titles clear of the desktop hover-overlay buttons;
