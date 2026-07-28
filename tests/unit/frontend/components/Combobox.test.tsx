@@ -198,6 +198,43 @@ describe("Combobox", () => {
     expect(input).toHaveAttribute("aria-expanded", "false");
   });
 
+  it("keeps the listbox's accessibility tree to groups and options", () => {
+    const { input } = renderCombobox();
+    fireEvent.focus(input);
+    const listbox = screen.getByRole("listbox");
+    // A listbox may only contain groups and options, so the status messages
+    // live outside it and group headings carry role="group".
+    expect([...listbox.children].every((child) => child.getAttribute("role") === "group")).toBe(
+      true
+    );
+    expect(screen.getAllByRole("group").map((g) => g.getAttribute("aria-label"))).toEqual([
+      "Cerebras",
+      "OpenRouter",
+    ]);
+  });
+
+  it("keeps the status messages outside the listbox", () => {
+    // Same rule: neither the truncation notice nor the empty-state message may
+    // sit inside the listbox, where only groups and options are allowed.
+    const many = Array.from({ length: 60 }, (_, index) => ({
+      value: `openrouter:model-${index}`,
+      label: `Model ${index}`,
+    }));
+    const { input } = renderCombobox({ options: many, value: "openrouter:model-0" });
+    fireEvent.focus(input);
+    expect(screen.getByRole("listbox")).not.toContainElement(screen.getByText(/10 more matches/));
+
+    fireEvent.change(input, { target: { value: "zzzz" } });
+    expect(screen.getByRole("listbox")).not.toContainElement(screen.getByText("No matches"));
+  });
+
+  it("points aria-controls at the listbox only while it exists", () => {
+    const { input } = renderCombobox();
+    expect(input).not.toHaveAttribute("aria-controls");
+    fireEvent.focus(input);
+    expect(input.getAttribute("aria-controls")).toBe(screen.getByRole("listbox").id);
+  });
+
   it("does not suppress the global focus outline (#1292)", () => {
     const { input } = renderCombobox();
     expect(input.className).not.toMatch(/focus:/);
