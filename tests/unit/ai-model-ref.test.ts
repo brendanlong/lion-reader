@@ -20,6 +20,16 @@ describe("parseModelRef", () => {
     });
   });
 
+  it("splits on the first colon only, so OpenRouter variant suffixes survive", () => {
+    expect(parseModelRef("openrouter:deepseek/deepseek-r1:free")).toEqual({
+      provider: "openrouter",
+      model: "deepseek/deepseek-r1:free",
+    });
+    expect(formatModelRef("openrouter", "deepseek/deepseek-r1:free")).toBe(
+      "openrouter:deepseek/deepseek-r1:free"
+    );
+  });
+
   it("treats bare model IDs as Anthropic (legacy stored values)", () => {
     expect(parseModelRef("claude-sonnet-4-5")).toEqual({
       provider: "anthropic",

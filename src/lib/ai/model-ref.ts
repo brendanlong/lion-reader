@@ -3,10 +3,13 @@
  *
  * Models are stored and transmitted as `provider:model` strings (e.g.
  * `anthropic:claude-sonnet-5`, `groq:openai/gpt-oss-20b`,
- * `cerebras:gpt-oss-120b`) so a single setting can select a model from any
- * configured provider. Legacy values without a provider prefix (bare Anthropic
- * model IDs like `claude-sonnet-4-5`, stored before multi-provider support)
- * parse as Anthropic models.
+ * `cerebras:gpt-oss-120b`, `openrouter:deepseek/deepseek-r1:free`) so a single
+ * setting can select a model from any configured provider. Only the **first**
+ * colon separates the provider from the model, because provider-native IDs may
+ * themselves contain colons (OpenRouter variant suffixes like `:free`).
+ * Legacy values without a provider prefix (bare Anthropic model IDs like
+ * `claude-sonnet-4-5`, stored before multi-provider support) parse as Anthropic
+ * models.
  *
  * Shared between server services and the settings UI.
  */
@@ -14,7 +17,7 @@
 /**
  * Supported AI providers.
  */
-export const AI_PROVIDERS = ["anthropic", "groq", "cerebras"] as const;
+export const AI_PROVIDERS = ["anthropic", "groq", "cerebras", "openrouter"] as const;
 
 export type AiProvider = (typeof AI_PROVIDERS)[number];
 
@@ -25,6 +28,7 @@ export const AI_PROVIDER_DISPLAY_NAMES: Record<AiProvider, string> = {
   anthropic: "Anthropic",
   groq: "Groq",
   cerebras: "Cerebras",
+  openrouter: "OpenRouter",
 };
 
 /**

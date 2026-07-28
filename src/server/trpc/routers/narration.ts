@@ -347,6 +347,7 @@ export const narrationRouter = createTRPCRouter({
       const sessionKeys = {
         groqApiKey: ctx.session.hasGroqApiKey ? "configured" : null,
         cerebrasApiKey: ctx.session.hasCerebrasApiKey ? "configured" : null,
+        openrouterApiKey: ctx.session.hasOpenrouterApiKey ? "configured" : null,
       };
       return {
         available: isNarrationLlmAvailable(sessionKeys, ctx.session.user.narrationModel),
@@ -357,7 +358,8 @@ export const narrationRouter = createTRPCRouter({
    * List available models for narration preprocessing.
    *
    * Narration requires JSON-object responses, so only the OpenAI-compatible
-   * providers (Groq, Cerebras) are listed. Providers with no key are skipped.
+   * providers are listed (and, on OpenRouter, only models whose catalog entry
+   * reports `response_format` support). Providers with no key are skipped.
    */
   listModels: protectedProcedure
     .meta({
@@ -384,7 +386,7 @@ export const narrationRouter = createTRPCRouter({
     .query(async ({ ctx }) => {
       // Fetch API keys from DB on demand (not cached in session for security)
       const keys = await getUserApiKeys(ctx.session.user.id);
-      const models = await listAllModels(keys, NARRATION_PROVIDERS);
+      const models = await listAllModels(keys, NARRATION_PROVIDERS, { requireJsonObject: true });
       const defaultRef = getNarrationModelRef(null, keys);
       return { models, defaultModelId: formatModelRef(defaultRef.provider, defaultRef.model) };
     }),

@@ -6,12 +6,13 @@
 
 /**
  * Providers selectable for narration preprocessing. Narration preprocessing
- * only supports the OpenAI-compatible providers (Groq, Cerebras) — it relies
- * on JSON-object response formatting. This is also the preference order for the
- * default model when the user hasn't picked one: Cerebras first (fastest), then
- * Groq.
+ * only supports the OpenAI-compatible providers (Groq, Cerebras, OpenRouter) —
+ * it relies on JSON-object response formatting, which Anthropic's API doesn't
+ * offer. This is also the preference order for the default model when the user
+ * hasn't picked one: Cerebras first (fastest), then Groq, then OpenRouter
+ * (which can reach the others, so a direct key wins when both are set).
  */
-export const NARRATION_PROVIDERS = ["cerebras", "groq"] as const;
+export const NARRATION_PROVIDERS = ["cerebras", "groq", "openrouter"] as const;
 
 export type NarrationProvider = (typeof NARRATION_PROVIDERS)[number];
 
@@ -23,6 +24,7 @@ export type NarrationProvider = (typeof NARRATION_PROVIDERS)[number];
 export const DEFAULT_NARRATION_MODELS: Record<NarrationProvider, string> = {
   cerebras: "cerebras:gpt-oss-120b",
   groq: "groq:openai/gpt-oss-120b",
+  openrouter: "openrouter:openai/gpt-oss-120b",
 };
 
 /**

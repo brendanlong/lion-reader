@@ -154,13 +154,18 @@ export default function PrivacyPolicyPage() {
 
         <div className="mt-4 space-y-6">
           <Card padding="md">
-            <LegalSubsection title="Article Summarization (Anthropic, Cerebras, Groq) — Optional">
+            <LegalSubsection title="Article Summarization (Anthropic, Cerebras, Groq, OpenRouter) — Optional">
               <LegalParagraph>
                 <strong>This feature is optional and off by default.</strong> Summarization only
                 happens when you explicitly request a summary for an article and a summarization
                 model has been configured (either your own API key or a server-provided one). When
                 you generate a summary, the article&apos;s title and text content are sent to your
-                chosen AI provider—Anthropic, Cerebras, or Groq—to produce the summary.
+                chosen AI provider—Anthropic, Cerebras, Groq, or OpenRouter—to produce the summary.
+              </LegalParagraph>
+              <LegalParagraph>
+                OpenRouter is an aggregator rather than a model host: content sent through it is
+                forwarded to whichever upstream provider runs the model you picked, and is also
+                subject to that provider&apos;s own policies.
               </LegalParagraph>
               <LegalParagraph>
                 You choose which provider and model to use in your settings, and you may provide a
@@ -185,16 +190,19 @@ export default function PrivacyPolicyPage() {
                 <TextLink href="https://groq.com/privacy-policy/" external className="ui-text-sm">
                   Groq&apos;s Privacy Policy &rarr;
                 </TextLink>
+                <TextLink href="https://openrouter.ai/privacy" external className="ui-text-sm">
+                  OpenRouter&apos;s Privacy Policy &rarr;
+                </TextLink>
               </p>
             </LegalSubsection>
           </Card>
 
           <Card padding="md">
-            <LegalSubsection title="Audio Narration (Groq) — Optional">
+            <LegalSubsection title="Audio Narration (Cerebras, Groq, OpenRouter) — Optional">
               <LegalParagraph>
                 <strong>This feature is optional and disabled by default.</strong> When you enable
-                AI text processing in narration settings, article content is sent to Groq (running
-                the open-weights GPT-OSS 20B model) to convert it into speakable text. This
+                AI text processing in narration settings, article content is sent to your chosen
+                provider—Cerebras, Groq, or OpenRouter—to convert it into speakable text. This
                 preprocessing expands abbreviations, formats numbers for speech, and improves
                 pronunciation. The processed text is cached on our servers to avoid repeated
                 processing.
@@ -205,9 +213,19 @@ export default function PrivacyPolicyPage() {
                 your device using your browser&apos;s built-in text-to-speech. No audio data is sent
                 to external servers.
               </LegalParagraph>
-              <p className="mt-2">
+              <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+                <TextLink
+                  href="https://www.cerebras.ai/privacy-policy"
+                  external
+                  className="ui-text-sm"
+                >
+                  Cerebras&apos;s Privacy Policy &rarr;
+                </TextLink>
                 <TextLink href="https://groq.com/privacy-policy/" external className="ui-text-sm">
-                  View Groq&apos;s Privacy Policy &rarr;
+                  Groq&apos;s Privacy Policy &rarr;
+                </TextLink>
+                <TextLink href="https://openrouter.ai/privacy" external className="ui-text-sm">
+                  OpenRouter&apos;s Privacy Policy &rarr;
                 </TextLink>
               </p>
             </LegalSubsection>

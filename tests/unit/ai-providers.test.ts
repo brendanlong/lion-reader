@@ -2,10 +2,10 @@ import { describe, it, expect, afterEach } from "vitest";
 import {
   filterToLatestClaudeGeneration,
   getAvailableProviders,
-  isChatModelId,
   isProviderAvailable,
   supportsReasoningEffort,
 } from "@/server/services/ai-providers";
+import { isChatModelId } from "@/lib/ai/model-filters";
 import { getNarrationModelRef } from "@/server/services/narration";
 import { getSummarizationModelId } from "@/server/services/summarization";
 import {
@@ -18,6 +18,7 @@ const ENV_VARS = [
   "ANTHROPIC_API_KEY",
   "GROQ_API_KEY",
   "CEREBRAS_API_KEY",
+  "OPENROUTER_API_KEY",
   "SUMMARIZATION_MODEL",
   "NARRATION_MODEL",
 ] as const;
@@ -97,6 +98,16 @@ describe("getSummarizationModelId", () => {
     );
   });
 
+  it("prefers a direct provider over OpenRouter, which can reach it anyway", () => {
+    clearEnv();
+    expect(getSummarizationModelId(null, { openrouterApiKey: "or", anthropicApiKey: "a" })).toBe(
+      DEFAULT_SUMMARIZATION_MODELS.anthropic
+    );
+    expect(getSummarizationModelId(null, { openrouterApiKey: "or" })).toBe(
+      DEFAULT_SUMMARIZATION_MODELS.openrouter
+    );
+  });
+
   it("defaults to the first-priority provider (Cerebras) when nothing is configured", () => {
     clearEnv();
     expect(SUMMARIZATION_PROVIDER_PRIORITY[0]).toBe("cerebras");
@@ -136,6 +147,24 @@ describe("getNarrationModelRef", () => {
     expect(getNarrationModelRef("groq:openai/gpt-oss-20b")).toEqual({
       provider: "groq",
       model: "openai/gpt-oss-20b",
+    });
+  });
+
+  it("accepts OpenRouter models, keeping colons in the variant suffix", () => {
+    clearEnv();
+    expect(getNarrationModelRef("openrouter:openai/gpt-oss-20b:free")).toEqual({
+      provider: "openrouter",
+      model: "openai/gpt-oss-20b:free",
+    });
+    // Only OpenRouter configured → its default.
+    expect(getNarrationModelRef(null, { openrouterApiKey: "or" })).toEqual({
+      provider: "openrouter",
+      model: "openai/gpt-oss-120b",
+    });
+    // A direct provider wins when both are configured.
+    expect(getNarrationModelRef(null, { openrouterApiKey: "or", groqApiKey: "g" })).toEqual({
+      provider: "groq",
+      model: "openai/gpt-oss-120b",
     });
   });
 

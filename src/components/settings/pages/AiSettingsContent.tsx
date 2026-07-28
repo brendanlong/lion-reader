@@ -24,13 +24,13 @@ function ApiKeySettingsSections() {
 
   return (
     <>
-      {/* Provider API keys (Anthropic, Groq, Cerebras) */}
+      {/* Provider API keys */}
       <AiProviderKeySettings />
 
       {/* Summaries (model, max words, custom prompt) */}
       <SummarizationSettings />
 
-      {/* Narration text processing model (Groq/Cerebras) */}
+      {/* Narration text processing model */}
       <NarrationAiSettings />
     </>
   );

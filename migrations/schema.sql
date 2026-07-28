@@ -539,7 +539,8 @@ CREATE TABLE public.users (
     starred_unread_count integer DEFAULT 0 NOT NULL,
     greader_user_id bigint DEFAULT nextval('public.greader_id_seq'::regclass) NOT NULL,
     cerebras_api_key text,
-    narration_model text
+    narration_model text,
+    openrouter_api_key text
 );
 
 CREATE VIEW public.visible_entries AS

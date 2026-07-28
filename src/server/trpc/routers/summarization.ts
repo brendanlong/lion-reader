@@ -403,6 +403,7 @@ export const summarizationRouter = createTRPCRouter({
         ctx.session.hasAnthropicApiKey ||
         ctx.session.hasGroqApiKey ||
         ctx.session.hasCerebrasApiKey ||
+        ctx.session.hasOpenrouterApiKey ||
         getAvailableProviders().length > 0;
       return { available };
     }),

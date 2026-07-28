@@ -1,11 +1,11 @@
 /**
  * Generic AI provider layer.
  *
- * Wraps the Anthropic, Groq, and Cerebras SDKs behind one interface so
- * features (summarization, narration preprocessing) can run on any configured
- * provider. Per-user API keys override the server-wide env keys
- * (`ANTHROPIC_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`); a provider is
- * "available" when either is set.
+ * Wraps the Anthropic, Groq, and Cerebras SDKs plus the OpenRouter aggregator
+ * behind one interface so features (summarization, narration preprocessing) can
+ * run on any configured provider. Per-user API keys override the server-wide
+ * env keys (`ANTHROPIC_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`,
+ * `OPENROUTER_API_KEY`); a provider is "available" when either is set.
  */
 
 import Anthropic from "@anthropic-ai/sdk";
@@ -13,6 +13,12 @@ import Cerebras from "@cerebras/cerebras_cloud_sdk";
 import Groq from "groq-sdk";
 import { logger } from "@/lib/logger";
 import { AI_PROVIDERS, formatModelRef, type AiProvider, type ModelRef } from "@/lib/ai/model-ref";
+import { isChatModelId, MIN_CONTEXT_WINDOW } from "@/lib/ai/model-filters";
+import {
+  isUsableOpenRouterModel,
+  listOpenRouterModels,
+  openRouterChatCompletion,
+} from "@/server/services/openrouter";
 
 /**
  * Per-user provider API keys, matching the shape returned by
@@ -22,12 +28,14 @@ export interface AiProviderKeys {
   anthropicApiKey?: string | null;
   groqApiKey?: string | null;
   cerebrasApiKey?: string | null;
+  openrouterApiKey?: string | null;
 }
 
 const ENV_KEYS: Record<AiProvider, string> = {
   anthropic: "ANTHROPIC_API_KEY",
   groq: "GROQ_API_KEY",
   cerebras: "CEREBRAS_API_KEY",
+  openrouter: "OPENROUTER_API_KEY",
 };
 
 function userKeyFor(provider: AiProvider, keys?: AiProviderKeys): string | null {
@@ -38,7 +46,17 @@ function userKeyFor(provider: AiProvider, keys?: AiProviderKeys): string | null 
       return keys?.groqApiKey ?? null;
     case "cerebras":
       return keys?.cerebrasApiKey ?? null;
+    case "openrouter":
+      return keys?.openrouterApiKey ?? null;
   }
+}
+
+/**
+ * Resolves the API key to use for a provider (user key first, then the server
+ * env key), or null when neither is set.
+ */
+function apiKeyFor(provider: AiProvider, keys?: AiProviderKeys): string | null {
+  return userKeyFor(provider, keys) || (process.env[ENV_KEYS[provider]] ?? null);
 }
 
 /**
@@ -109,7 +127,7 @@ export interface ChatCompletionOptions {
   maxTokens: number;
   /**
    * Request a JSON-object response. Only supported by the OpenAI-compatible
-   * providers (Groq, Cerebras); throws for Anthropic.
+   * providers (Groq, Cerebras, OpenRouter); throws for Anthropic.
    */
   jsonObject?: boolean;
   /** Sampling temperature. Ignored for Anthropic. */
@@ -127,7 +145,10 @@ export interface ChatCompletionOptions {
  * Whether a provider-native model ID accepts the OpenAI-style
  * `reasoning_effort` low/medium/high parameter. Currently only the gpt-oss
  * family does on Groq and Cerebras; other models (Llama, Qwen, ...) return
- * `400 reasoning_effort is not supported with this model`.
+ * `400 reasoning_effort is not supported with this model`. OpenRouter reuses
+ * the same check: its catalog reports per-model support, but that metadata
+ * isn't available on the completion path, and the aggregated IDs carry the
+ * same family names (`openai/gpt-oss-120b`).
  */
 export function supportsReasoningEffort(model: string): boolean {
   return model.toLowerCase().includes("gpt-oss");
@@ -209,6 +230,25 @@ export async function generateChatCompletion(
           : "";
       return typeof text === "string" ? text : "";
     }
+    case "openrouter": {
+      const apiKey = apiKeyFor("openrouter", keys);
+      if (!apiKey) {
+        throw new Error("OpenRouter API key not configured");
+      }
+      return openRouterChatCompletion(apiKey, {
+        model: ref.model,
+        max_tokens: options.maxTokens,
+        ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
+        ...(options.reasoningEffort && supportsReasoningEffort(ref.model)
+          ? { reasoning_effort: options.reasoningEffort }
+          : {}),
+        ...(options.jsonObject ? { response_format: { type: "json_object" as const } } : {}),
+        messages: [
+          ...(options.system ? [{ role: "system" as const, content: options.system }] : []),
+          { role: "user" as const, content: options.userPrompt },
+        ],
+      });
+    }
   }
 }
 
@@ -249,33 +289,6 @@ export function simplifyModelIds(
 
   return result;
 }
-
-/**
- * Groq's model list includes audio (whisper/TTS) and moderation models that
- * can't do chat completions; hide them from the pickers. TTS families don't all
- * spell "tts" in their IDs (Groq exposes Orpheus TTS as `canopylabs/orpheus-*`),
- * so match those families by name too.
- */
-export function isChatModelId(id: string): boolean {
-  const lower = id.toLowerCase();
-  return (
-    !lower.includes("whisper") &&
-    !lower.includes("tts") &&
-    !lower.includes("guard") &&
-    !lower.includes("canopylabs") &&
-    !lower.includes("orpheus")
-  );
-}
-
-/**
- * Minimum context window (in tokens) for a model to appear in the summarization
- * and narration pickers. Summarization feeds up to ~12k tokens of article text
- * plus the prompt and reserves several thousand output/reasoning tokens, so
- * short-context models (e.g. Groq's 8k-context Gemma/older-Llama or small Qwen
- * builds) can't reasonably summarize a full article. Models whose context
- * window is unknown (Cerebras omits the field) are kept.
- */
-const MIN_CONTEXT_WINDOW = 32768;
 
 /**
  * Reads the optional `context_window` field the Groq models API returns. The
@@ -331,7 +344,24 @@ export function filterToLatestClaudeGeneration(
   return result;
 }
 
-async function listProviderModels(provider: AiProvider, keys?: AiProviderKeys): Promise<AiModel[]> {
+/**
+ * Constraints a feature puts on the models it can drive.
+ */
+export interface ModelListOptions {
+  /**
+   * Keep only models that can return a JSON object (narration preprocessing
+   * parses one out of the response). Only enforced for OpenRouter, whose
+   * catalog reports per-model parameter support; Groq's and Cerebras's chat
+   * models all accept `response_format`.
+   */
+  requireJsonObject?: boolean;
+}
+
+async function listProviderModels(
+  provider: AiProvider,
+  keys?: AiProviderKeys,
+  options?: ModelListOptions
+): Promise<AiModel[]> {
   switch (provider) {
     case "anthropic": {
       const client = getAnthropicClient(keys);
@@ -373,6 +403,25 @@ async function listProviderModels(provider: AiProvider, keys?: AiProviderKeys): 
         }))
         .sort((a, b) => a.displayName.localeCompare(b.displayName));
     }
+    case "openrouter": {
+      // The catalog is public and identical for everyone, so it needs no key —
+      // but only list it when one is configured, since nothing can be run
+      // without it.
+      if (!apiKeyFor("openrouter", keys)) return [];
+      const models = await listOpenRouterModels();
+      return models
+        .filter((model) =>
+          isUsableOpenRouterModel(model, { requireJsonObject: options?.requireJsonObject })
+        )
+        .map((model) => ({
+          id: formatModelRef("openrouter", model.id),
+          // OpenRouter's own labels ("Google: Gemini 3 Pro") beat anything we
+          // could derive from the hundreds of aggregated IDs.
+          displayName: model.name || model.id,
+          provider: "openrouter" as const,
+        }))
+        .sort((a, b) => a.displayName.localeCompare(b.displayName));
+    }
   }
 }
 
@@ -383,14 +432,15 @@ async function listProviderModels(provider: AiProvider, keys?: AiProviderKeys): 
  */
 export async function listAllModels(
   keys?: AiProviderKeys,
-  providers: readonly AiProvider[] = AI_PROVIDERS
+  providers: readonly AiProvider[] = AI_PROVIDERS,
+  options?: ModelListOptions
 ): Promise<AiModel[]> {
   const results = await Promise.all(
     providers
       .filter((provider) => isProviderAvailable(provider, keys))
       .map(async (provider) => {
         try {
-          return await listProviderModels(provider, keys);
+          return await listProviderModels(provider, keys, options);
         } catch (error) {
           logger.error("Failed to list AI models", {
             provider,

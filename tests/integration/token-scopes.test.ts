@@ -66,6 +66,7 @@ function buildSession(userId: string): NonNullable<Context["session"]> {
       groqApiKey: null,
       anthropicApiKey: null,
       cerebrasApiKey: null,
+      openrouterApiKey: null,
       summarizationModel: null,
       summarizationMaxWords: null,
       summarizationPrompt: null,
@@ -78,6 +79,7 @@ function buildSession(userId: string): NonNullable<Context["session"]> {
     hasGroqApiKey: false,
     hasAnthropicApiKey: false,
     hasCerebrasApiKey: false,
+    hasOpenrouterApiKey: false,
   };
 }
 

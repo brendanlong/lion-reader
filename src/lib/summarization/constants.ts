@@ -15,15 +15,23 @@ export const DEFAULT_SUMMARIZATION_MODELS: Record<AiProvider, string> = {
   anthropic: "anthropic:claude-sonnet-5",
   groq: "groq:openai/gpt-oss-120b",
   cerebras: "cerebras:gpt-oss-120b",
+  openrouter: "openrouter:openai/gpt-oss-120b",
 };
 
 /**
  * Provider preference order for the default summarization model when the user
  * hasn't picked one. Cerebras and Groq run gpt-oss far faster than Anthropic,
  * and most users prefer the fastest possible summaries over minor quality
- * gains, so the hosted OpenAI-compatible providers come first.
+ * gains, so the hosted OpenAI-compatible providers come first. OpenRouter is
+ * last: it can reach any of the others, so a user who configured both a direct
+ * key and an OpenRouter key almost certainly wants the direct one.
  */
-export const SUMMARIZATION_PROVIDER_PRIORITY: AiProvider[] = ["cerebras", "groq", "anthropic"];
+export const SUMMARIZATION_PROVIDER_PRIORITY: AiProvider[] = [
+  "cerebras",
+  "groq",
+  "anthropic",
+  "openrouter",
+];
 
 /**
  * Default summarization model when no provider is known to be configured

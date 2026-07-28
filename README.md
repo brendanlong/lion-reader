@@ -6,7 +6,7 @@ Read more: [Claude Wrote Me a 400-Commit RSS Reader App](https://www.brendanlong
 
 ## What makes it different
 
-- **AI-native, not AI-bolted-on** — Connect Claude and other assistants directly to your reader over the [Model Context Protocol (MCP)](docs/DESIGN.md#mcp-server) to list, search, save, star, and mark entries read on your behalf. On-demand article summaries via Claude (never auto-summarized), plus text-to-speech narration with synchronized paragraph highlighting.
+- **AI-native, not AI-bolted-on** — Connect Claude and other assistants directly to your reader over the [Model Context Protocol (MCP)](docs/DESIGN.md#mcp-server) to list, search, save, star, and mark entries read on your behalf. On-demand article summaries (never auto-summarized) from Anthropic, Cerebras, Groq, or any model on OpenRouter, plus text-to-speech narration with synchronized paragraph highlighting.
 - **Everything in one place** — Feeds, email newsletters, and read-later side by side. Save any page via browser extensions, a bookmarklet, a Discord bot, your phone's share menu (PWA), the MCP/REST APIs, or Markdown/Word/HTML uploads — with enhanced extraction for arXiv, GitHub, Google Docs, and LessWrong.
 - **Obsessively fast** — Real-time updates are patched directly into the list you're reading (no refetch, no re-render jank), in-app navigation is served from cache with zero server round-trips, and the backend is tuned for sub-100ms page loads on cheap cloud hosts (sub-20ms on desktop hardware). See [Frontend State](src/FRONTEND_STATE.md) and [Design](docs/DESIGN.md#frontend-architecture).
 - **Free, open source, and self-hostable** — No ads, no data selling, no third-party analytics. Deploy with Docker; runs affordably at small scale and scales horizontally.

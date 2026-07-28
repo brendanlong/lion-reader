@@ -96,10 +96,11 @@ export const users = pgTable(
     groqApiKey: text("groq_api_key"), // Groq: narration LLM preprocessing + summaries
     anthropicApiKey: text("anthropic_api_key"), // Anthropic: AI summarization
     cerebrasApiKey: text("cerebras_api_key"), // Cerebras: narration LLM preprocessing + summaries
+    openrouterApiKey: text("openrouter_api_key"), // OpenRouter: aggregator, both features
     summarizationModel: text("summarization_model"), // provider:model ref for summaries (legacy: bare Anthropic ID)
     summarizationMaxWords: integer("summarization_max_words"), // Override SUMMARIZATION_MAX_WORDS
     summarizationPrompt: text("summarization_prompt"), // Custom summarization prompt
-    narrationModel: text("narration_model"), // provider:model ref for narration preprocessing (Groq/Cerebras)
+    narrationModel: text("narration_model"), // provider:model ref for narration preprocessing (OpenAI-compatible providers)
 
     // Signup confirmation: each records when the user accepted the agreement
     tosAgreedAt: timestamp("tos_agreed_at", { withTimezone: true }),

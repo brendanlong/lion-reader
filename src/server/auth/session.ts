@@ -72,6 +72,8 @@ export interface SessionData {
   hasAnthropicApiKey: boolean;
   /** Whether user has a Cerebras API key configured (actual key not cached for security) */
   hasCerebrasApiKey: boolean;
+  /** Whether user has an OpenRouter API key configured (actual key not cached for security) */
+  hasOpenrouterApiKey: boolean;
 }
 
 /**
@@ -96,6 +98,7 @@ interface CachedSession {
   userHasGroqApiKey: boolean;
   userHasAnthropicApiKey: boolean;
   userHasCerebrasApiKey: boolean;
+  userHasOpenrouterApiKey: boolean;
   userSummarizationModel: string | null;
   userSummarizationMaxWords: number | null;
   userSummarizationPrompt: string | null;
@@ -255,6 +258,7 @@ function serializeForCache(data: SessionData): string {
     userHasGroqApiKey: data.hasGroqApiKey,
     userHasAnthropicApiKey: data.hasAnthropicApiKey,
     userHasCerebrasApiKey: data.hasCerebrasApiKey,
+    userHasOpenrouterApiKey: data.hasOpenrouterApiKey,
     userSummarizationModel: data.user.summarizationModel ?? null,
     userSummarizationMaxWords: data.user.summarizationMaxWords ?? null,
     userSummarizationPrompt: data.user.summarizationPrompt ?? null,
@@ -296,6 +300,7 @@ function deserializeFromCache(data: string): SessionData {
       groqApiKey: null, // Not cached in Redis for security; use getUserApiKeys() when needed
       anthropicApiKey: null, // Not cached in Redis for security; use getUserApiKeys() when needed
       cerebrasApiKey: null, // Not cached in Redis for security; use getUserApiKeys() when needed
+      openrouterApiKey: null, // Not cached in Redis for security; use getUserApiKeys() when needed
       summarizationModel: cached.userSummarizationModel ?? null,
       summarizationMaxWords: cached.userSummarizationMaxWords ?? null,
       summarizationPrompt: cached.userSummarizationPrompt ?? null,
@@ -315,6 +320,7 @@ function deserializeFromCache(data: string): SessionData {
     hasGroqApiKey: cached.userHasGroqApiKey ?? false,
     hasAnthropicApiKey: cached.userHasAnthropicApiKey ?? false,
     hasCerebrasApiKey: cached.userHasCerebrasApiKey ?? false,
+    hasOpenrouterApiKey: cached.userHasOpenrouterApiKey ?? false,
   };
 }
 
@@ -412,10 +418,12 @@ export async function validateSession(
       groqApiKey: null, // Not cached for security; use getUserApiKeys() when needed
       anthropicApiKey: null, // Not cached for security; use getUserApiKeys() when needed
       cerebrasApiKey: null, // Not cached for security; use getUserApiKeys() when needed
+      openrouterApiKey: null, // Not cached for security; use getUserApiKeys() when needed
     },
     hasGroqApiKey: !!dbResult.user.groqApiKey,
     hasAnthropicApiKey: !!dbResult.user.anthropicApiKey,
     hasCerebrasApiKey: !!dbResult.user.cerebrasApiKey,
+    hasOpenrouterApiKey: !!dbResult.user.openrouterApiKey,
   };
 
   // Cache the result in Redis (if available). We cache before applying the
@@ -513,6 +521,7 @@ export interface UserApiKeys {
   groqApiKey: string | null;
   anthropicApiKey: string | null;
   cerebrasApiKey: string | null;
+  openrouterApiKey: string | null;
 }
 
 /**
@@ -528,21 +537,28 @@ export async function getUserApiKeys(userId: string): Promise<UserApiKeys> {
       groqApiKey: users.groqApiKey,
       anthropicApiKey: users.anthropicApiKey,
       cerebrasApiKey: users.cerebrasApiKey,
+      openrouterApiKey: users.openrouterApiKey,
     })
     .from(users)
     .where(eq(users.id, userId))
     .limit(1);
 
   if (result.length === 0) {
-    return { groqApiKey: null, anthropicApiKey: null, cerebrasApiKey: null };
+    return {
+      groqApiKey: null,
+      anthropicApiKey: null,
+      cerebrasApiKey: null,
+      openrouterApiKey: null,
+    };
   }
 
-  const { groqApiKey, anthropicApiKey, cerebrasApiKey } = result[0];
+  const { groqApiKey, anthropicApiKey, cerebrasApiKey, openrouterApiKey } = result[0];
 
   return {
     groqApiKey: groqApiKey ? decryptApiKey(groqApiKey) : null,
     anthropicApiKey: anthropicApiKey ? decryptApiKey(anthropicApiKey) : null,
     cerebrasApiKey: cerebrasApiKey ? decryptApiKey(cerebrasApiKey) : null,
+    openrouterApiKey: openrouterApiKey ? decryptApiKey(openrouterApiKey) : null,
   };
 }
 
