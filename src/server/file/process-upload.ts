@@ -11,7 +11,7 @@
  *   skipped downstream — mammoth output is already clean, chrome-free content, so
  *   running Readability only risks over-stripping; like a Markdown URL save)
  * - .html files → passthrough (Readability runs downstream)
- * - .md/.txt files → marked conversion (Readability skipped downstream, like a
+ * - .md/.txt files → Markdown rendering (Readability skipped downstream, like a
  *   Markdown URL save)
  */
 
@@ -37,7 +37,7 @@ export interface ConvertedUpload {
   /** Raw article HTML (stored as content_original; Readability runs on it downstream). */
   html: string;
   /**
-   * Pre-cleaned content — set for .md/.txt (marked) and .docx (mammoth +
+   * Pre-cleaned content — set for .md/.txt (Markdown) and .docx (mammoth +
    * core.xml), null for .html. A non-null value tells `buildArticleFields` to
    * skip Readability (the content is already clean) and use the supplied
    * title/summary/author (Markdown frontmatter, or docx `docProps/core.xml`).
@@ -145,7 +145,7 @@ async function convertDocx(buffer: Buffer, filename: string): Promise<ConvertedU
 }
 
 /**
- * Converts Markdown to HTML using marked. Frontmatter title/description/author
+ * Converts Markdown to HTML. Frontmatter title/description/author
  * are extracted here and passed through as the markdown result so downstream
  * treats it like a Markdown URL save (Readability skipped).
  */

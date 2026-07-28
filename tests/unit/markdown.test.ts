@@ -585,18 +585,30 @@ This paper introduces Parcae.`;
    * aborts the render rather than measuring the finished string (#1431).
    */
   describe("size budgets (#1431)", () => {
-    /** Bigger than `maxMarkdownInputBytes` (1MB by default). */
-    const overInputCap = (): string => "word ".repeat(300_000);
+    /** The `maxBytes` a rejection reports, which is what tells the two apart. */
+    const rejectedLimit = async (markdown: string): Promise<number | undefined> => {
+      try {
+        await processMarkdown(markdown);
+        return undefined;
+      } catch (error) {
+        const cause = (error as { cause?: { details?: { maxBytes?: number } } }).cause;
+        return cause?.details?.maxBytes;
+      }
+    };
 
     it("rejects Markdown over the input cap", async () => {
-      await expect(processMarkdown(overInputCap())).rejects.toThrow(/maximum size/);
+      // 1.5 MB of prose, over the 1 MB input cap but nowhere near amplifying.
+      expect(await rejectedLimit("word ".repeat(300_000))).toBe(1024 * 1024);
     });
 
     it("rejects a document that amplifies past the output budget", async () => {
-      // Math-dense input inside the input cap: this is the shape from #1431,
+      // Math-dense input *inside* the 1 MB input cap — the shape from #1431,
       // where the old renderer expanded ~29x and only got measured afterwards.
-      // 400k math spans render to far more than the 5MB output budget.
-      await expect(processMarkdown("$a_1^2$ ".repeat(400_000))).rejects.toThrow(/maximum size/);
+      // Asserting on the reported limit is what distinguishes this from the
+      // test above: both throw the same "maximum size" wording.
+      const markdown = "$a_1^2$ ".repeat(130_000); // ~1.04 MB in, ~10 MB out
+      expect(markdown.length).toBeLessThan(1024 * 1024);
+      expect(await rejectedLimit(markdown)).toBe(5 * 1024 * 1024);
     });
 
     it("renders a large ordinary document well inside both budgets", async () => {

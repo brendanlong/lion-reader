@@ -213,7 +213,7 @@ export const savedRouter = createTRPCRouter({
    * - .docx: Converted via mammoth; title/author/summary read from the document's
    *   `docProps/core.xml`; Readability skipped (already clean content)
    * - .html: Cleaned with Readability
-   * - .md: Rendered to HTML via marked (preserved as-is semantically)
+   * - .md: Rendered to HTML (preserved as-is semantically)
    *
    * @param content - Base64-encoded file content
    * @param filename - Original filename (used for type detection and title)
@@ -271,7 +271,7 @@ export const savedRouter = createTRPCRouter({
       }
 
       // Enforce the size limit on the decoded bytes before any conversion
-      // (mammoth/Readability/marked), so a large upload can't burn memory/CPU.
+      // (mammoth/Readability/Markdown), so a large upload can't burn memory/CPU.
       if (fileBuffer.length > usageLimitsConfig.maxSavedArticleSizeBytes) {
         throw errors.contentTooLarge("Uploaded file", usageLimitsConfig.maxSavedArticleSizeBytes);
       }

@@ -20,7 +20,11 @@
 import { renderMarkdown, renderMarkdownAsync } from "@lion-reader/markdown";
 import type { MarkdownLimits, RenderedMarkdown } from "@lion-reader/markdown";
 import { parse as parseYaml } from "yaml";
-import { usageLimitsConfig } from "@/server/config/env";
+import {
+  DEFAULT_MAX_MARKDOWN_INPUT_BYTES,
+  DEFAULT_MAX_RENDERED_MARKDOWN_BYTES,
+  usageLimitsConfig,
+} from "@/server/config/env";
 import { extractAndStripTitleHeader } from "@/server/html/strip-title-header";
 import { startMarkdownRenderTimer } from "@/server/metrics/metrics";
 import { errors } from "@/server/trpc/errors";
@@ -165,10 +169,32 @@ function parseFrontmatterLenient(yaml: string): Record<string, string> | null {
  */
 const RENDER_INLINE_MAX_CHARS = 10 * 1024;
 
+/**
+ * The budgets cross the N-API boundary as `u32`, which turns a bad env var into
+ * a silently wrong limit rather than an error: a malformed
+ * `MAX_MARKDOWN_INPUT_BYTES` parses to `NaN` and arrives as `0` (rejecting every
+ * document), and anything past 4 GB wraps. Nothing downstream would report
+ * either, so clamp here — an out-of-range value falls back to the documented
+ * default instead of quietly becoming a different limit.
+ */
+const MAX_BUDGET_BYTES = 0xffff_ffff;
+
+function budget(configured: number, fallback: number): number {
+  return Number.isInteger(configured) && configured > 0 && configured <= MAX_BUDGET_BYTES
+    ? configured
+    : fallback;
+}
+
 function renderLimits(): MarkdownLimits {
   return {
-    maxInputBytes: usageLimitsConfig.maxMarkdownInputBytes,
-    maxOutputBytes: usageLimitsConfig.maxRenderedMarkdownBytes,
+    maxInputBytes: budget(
+      usageLimitsConfig.maxMarkdownInputBytes,
+      DEFAULT_MAX_MARKDOWN_INPUT_BYTES
+    ),
+    maxOutputBytes: budget(
+      usageLimitsConfig.maxRenderedMarkdownBytes,
+      DEFAULT_MAX_RENDERED_MARKDOWN_BYTES
+    ),
   };
 }
 
@@ -181,31 +207,26 @@ function renderLimits(): MarkdownLimits {
  * raw-bytes check on the way in can still blow up on the way out. Checking
  * afterwards meant paying for the whole expansion first (#1431).
  */
-function unwrapRendered(result: RenderedMarkdown): string {
+function unwrapRendered(result: RenderedMarkdown, limits: MarkdownLimits): string {
   if (result.limitExceeded === undefined) {
     return result.html;
   }
   if (result.limitExceeded === "input") {
-    throw errors.contentTooLarge("Markdown content", usageLimitsConfig.maxMarkdownInputBytes);
+    throw errors.contentTooLarge("Markdown content", limits.maxInputBytes);
   }
-  throw errors.contentTooLarge(
-    "Rendered Markdown content",
-    usageLimitsConfig.maxRenderedMarkdownBytes
-  );
+  throw errors.contentTooLarge("Rendered Markdown content", limits.maxOutputBytes);
 }
 
 /**
- * The inline path. Not exported: every Markdown source in the app is reached
- * from a request (saves, uploads, plugin fetches, summary generation), and none
- * from a background job, so there is no caller that should be choosing the
- * blocking form. If one ever appears — the sanitizer and the Readability
- * extractor both have background-job callers that legitimately use their sync
- * forms — export this rather than inlining a second `renderMarkdown` call.
+ * The blocking path. Not exported: callers pick it through the `offload` flag
+ * on {@link processMarkdown} rather than by reaching for a second entry point,
+ * which keeps the budget handling and timing in one place.
  */
 function renderInline(markdown: string): string {
+  const limits = renderLimits();
   const stopTimer = startMarkdownRenderTimer();
   try {
-    return unwrapRendered(renderMarkdown(markdown, renderLimits()));
+    return unwrapRendered(renderMarkdown(markdown, limits), limits);
   } finally {
     stopTimer();
   }
@@ -228,9 +249,10 @@ export async function markdownToHtmlAsync(markdown: string): Promise<string> {
     return renderInline(markdown);
   }
 
+  const limits = renderLimits();
   const stopTimer = startMarkdownRenderTimer();
   try {
-    return unwrapRendered(await renderMarkdownAsync(markdown, renderLimits()));
+    return unwrapRendered(await renderMarkdownAsync(markdown, limits), limits);
   } finally {
     stopTimer();
   }
@@ -262,16 +284,26 @@ export interface ProcessedMarkdown {
  * Priority for title: frontmatter.title > first H1 heading
  *
  * @param markdown - The Markdown text to convert
+ * @param options.offload - Render on the libuv thread pool instead of inline on
+ *   the calling thread. On by default; the background feed worker passes false
+ *   because it already runs off the request path, so the thread hop is pure
+ *   overhead there — the same rule `fetchFullContent`'s `offloadClean` applies
+ *   to Readability extraction.
  * @returns HTML content, extracted title, and summary
  * @throws if the source or the rendered HTML exceeds its byte budget.
  */
-export async function processMarkdown(markdown: string): Promise<ProcessedMarkdown> {
+export async function processMarkdown(
+  markdown: string,
+  options: { offload?: boolean } = {}
+): Promise<ProcessedMarkdown> {
   // Extract frontmatter if present
   const { frontmatter, content: markdownWithoutFrontmatter } = extractFrontmatter(markdown);
 
-  // Convert remaining markdown to HTML. Every caller is a request path (saves,
-  // uploads, plugin fetches), so this offloads large documents.
-  const html = await markdownToHtmlAsync(markdownWithoutFrontmatter);
+  // Convert remaining markdown to HTML
+  const html =
+    options.offload === false
+      ? renderInline(markdownWithoutFrontmatter)
+      : await markdownToHtmlAsync(markdownWithoutFrontmatter);
 
   // Extract and strip title header from HTML
   const { title: headerTitle, content: htmlWithoutHeader } = extractAndStripTitleHeader(html);

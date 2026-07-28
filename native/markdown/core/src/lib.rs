@@ -5,23 +5,20 @@
 //! CLAUDE.md. GitHub Flavored Markdown via comrak, `$…$` / `$$…$$` TeX via
 //! pulldown-latex, both budget-checked.
 //!
-//! ## Why this is native (#1431)
+//! ## Budgets (#1431)
 //!
-//! The previous renderer (marked + KaTeX) was synchronous, unbounded, and
-//! amplified math-dense input ~29x, so a 5 MB Markdown file rendered to ~140 MB
-//! of string and ~13 s of event-loop-blocking CPU on the app server *before*
-//! anything checked the size. Rust fixes both halves:
+//! Rendering **amplifies** — math-dense input grows several times over — so
+//! both byte budgets are enforced *inside* the render rather than by the
+//! caller: the input cap short-circuits before parsing, and the output cap
+//! aborts the formatter mid-write (see [`BudgetWriter`]), so an amplifying
+//! document is rejected while it amplifies instead of after it has built the
+//! whole string. [`MAX_TEX_NESTING_DEPTH`] covers the one cost bytes can't see.
 //!
-//! - the work is ~20x faster and amplifies ~10x rather than ~29x, and
-//! - it can be handed to the libuv thread pool (`renderMarkdownAsync`) exactly
-//!   like the sanitizer and Readability extractor, so a large body never blocks
-//!   the event loop.
-//!
-//! Both budgets are enforced **inside** the render rather than by the caller:
-//! the input cap short-circuits before parsing, and the output cap aborts the
-//! formatter mid-write (see [`BudgetWriter`]), so an amplifying document is
-//! rejected while it amplifies instead of after it has already built the string.
+//! Being native is also what lets a render be handed to the libuv thread pool
+//! (`renderMarkdownAsync`), the way the sanitizer and Readability extractor
+//! already are, so a large document never blocks the event loop.
 
+use std::convert::Infallible;
 use std::fmt::{self, Write};
 use std::sync::Mutex;
 
@@ -57,13 +54,13 @@ pub enum RenderError {
 ///
 /// comrak streams the document into this, so an amplifying document (a page of
 /// `$a_1^2$`, a thousand-row `\begin{matrix}`) stops costing CPU and memory at
-/// the budget instead of at the end of the document. `fmt::Write` has no room
-/// for a custom error, so the overflow is recorded in `exceeded` and the caller
-/// distinguishes it from a genuine formatter error.
+/// the budget instead of at the end of the document.
+///
+/// Overflow is the only way writing can fail — `fmt::Write` on a `String` is
+/// otherwise infallible — so the `fmt::Error` needs no extra discriminator.
 struct BudgetWriter {
     out: String,
     limit: usize,
-    exceeded: bool,
 }
 
 impl BudgetWriter {
@@ -73,7 +70,6 @@ impl BudgetWriter {
             // document, so don't reserve it up front.
             out: String::new(),
             limit,
-            exceeded: false,
         }
     }
 }
@@ -81,7 +77,6 @@ impl BudgetWriter {
 impl Write for BudgetWriter {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         if self.out.len() + s.len() > self.limit {
-            self.exceeded = true;
             return Err(fmt::Error);
         }
         self.out.push_str(s);
@@ -94,9 +89,8 @@ impl Write for BudgetWriter {
 /// comrak's built-in heading-id rendering also appends a visible
 /// `<a class="anchor">` inside every heading, which we don't want; the adapter
 /// path skips that markup *and* skips comrak's own anchorizer, so this holds
-/// its own. Being per-render (not module-level, the way `marked-gfm-heading-id`
-/// kept its slugger) is what makes concurrent documents safe: two renders can
-/// never share an occurrence table and slug `Intro` as `intro-1`.
+/// its own. Being per-render state is what makes concurrent documents safe: two
+/// renders can never share an occurrence table and slug `Intro` as `intro-1`.
 ///
 /// `Anchorizer` implements GitHub's slugging algorithm, which is the point —
 /// a hand-written table of contents (`[Intro](#intro)`) is written against
@@ -122,12 +116,12 @@ impl HeadingAdapter for SluggedHeadings {
         heading: &HeadingMeta,
         _sourcepos: Option<Sourcepos>,
     ) -> fmt::Result {
-        let id = match self.anchorizer.lock() {
-            Ok(mut anchorizer) => anchorizer.anchorize(&heading.content),
-            // A poisoned mutex means another heading panicked mid-slug. Emit the
-            // heading without an id rather than taking the whole render down.
-            Err(_) => String::new(),
-        };
+        // The mutex never escapes `render`, so a panic in `anchorize` unwinds
+        // out of the whole render rather than leaving a poisoned lock for a
+        // later heading to trip on — recovering the guard is the honest arm.
+        let mut anchorizer = self.anchorizer.lock().unwrap_or_else(|e| e.into_inner());
+        let id = anchorizer.anchorize(&heading.content);
+        drop(anchorizer);
         if id.is_empty() {
             return write!(output, "<h{}>", heading.level);
         }
@@ -173,14 +167,97 @@ fn options() -> Options<'static> {
     options
 }
 
+/// Maximum group nesting depth of a single TeX expression.
+///
+/// pulldown-latex is **quadratic in nesting depth** — measured on
+/// `$$\frac{1}{\frac{1}{…}}$$`, depth 1k/2k/4k/8k/16k costs 17/66/268/1060/4351
+/// ms — and neither budget can stop it, because the cost is paid inside one
+/// `push_mathml` call that produces a *small* result. A 1 MB document of
+/// `$${{{{…}}}}$$` would pin a thread-pool thread for minutes, which is worse
+/// than the event-loop stall #1431 set out to fix (and harder to see, since it
+/// no longer shows up as event-loop delay).
+///
+/// Real math is nowhere near this: KaTeX's own test corpus tops out in the low
+/// tens, so anything past this cap is a bomb, not a document. Over-deep TeX
+/// degrades to escaped source like any other TeX we can't render.
+const MAX_TEX_NESTING_DEPTH: usize = 64;
+
+/// Deepest group nesting in a TeX expression.
+///
+/// Deliberately over-counts rather than under-counts (`\begin{matrix}` scores
+/// both its `\begin` and its braces): this is a safety cap, so guessing high is
+/// the harmless direction. Works on bytes so a multi-byte character after a
+/// backslash can't split a `char` boundary.
+fn tex_nesting_depth(tex: &str) -> usize {
+    let bytes = tex.as_bytes();
+    let mut depth: i32 = 0;
+    let mut deepest: i32 = 0;
+    let mut i = 0;
+
+    while i < bytes.len() {
+        let rest = &bytes[i..];
+        let step = if rest[0] == b'\\' {
+            if rest.starts_with(br"\left") || rest.starts_with(br"\begin") {
+                depth += 1;
+            } else if rest.starts_with(br"\right") || rest.starts_with(br"\end") {
+                depth -= 1;
+            }
+            // Skip the escaped character too, so `\{` and `\}` (literal braces,
+            // not grouping) don't count.
+            2
+        } else {
+            match rest[0] {
+                b'{' => depth += 1,
+                b'}' => depth -= 1,
+                _ => {}
+            }
+            1
+        };
+        deepest = deepest.max(depth);
+        i += step;
+    }
+
+    deepest.max(0) as usize
+}
+
+/// The TeX source, escaped, as a `<code>` element.
+///
+/// What every expression we can't render degrades to — the author still sees
+/// what they wrote, in the shape of the thing it is.
+fn escaped_tex(tex: &str) -> String {
+    let mut fallback = String::from("<code>");
+    // An escape failure here can only be an allocation problem; the partial
+    // string is still valid HTML, so there is nothing useful to do about it.
+    let _ = comrak::html::escape(&mut fallback, tex);
+    fallback.push_str("</code>");
+    fallback
+}
+
 /// Renders one `$…$` / `$$…$$` span to MathML.
 ///
-/// Malformed TeX must never fail the document (the old KaTeX config used
-/// `throwOnError: false` for the same reason): pulldown-latex renders a parse
-/// error as an inline `<merror>`, and if it fails outright the raw TeX is
-/// emitted as escaped text so the author can still see what they wrote.
+/// Malformed TeX must never fail the document, so anything unrenderable — a
+/// parse error, an unsupported macro, nesting past [`MAX_TEX_NESTING_DEPTH`] —
+/// degrades to [`escaped_tex`].
+///
+/// The parse is deliberately run to completion **before** rendering rather than
+/// streamed into `push_mathml`, because pulldown-latex's own error rendering
+/// writes the offending TeX into `<mtext>` **unescaped** (`mathml.rs`, the
+/// `Err(e)` arm of `write_event`). Since `render.unsafe` passes our output
+/// through verbatim, a `$\badcmd{<style>x}$` would inject a live element into
+/// the article — and the read-path sanitizer, doing exactly what it should with
+/// an unclosed `<style>`, would drop the entire rest of the entry. Handling the
+/// error ourselves means no attacker-controlled bytes ever reach the output
+/// except through `escape`.
 fn math_to_mathml(tex: &str, display: bool) -> String {
+    if tex_nesting_depth(tex) > MAX_TEX_NESTING_DEPTH {
+        return escaped_tex(tex);
+    }
+
     let storage = Storage::new();
+    let Ok(events) = Parser::new(tex, &storage).collect::<Result<Vec<_>, _>>() else {
+        return escaped_tex(tex);
+    };
+
     let config = RenderConfig {
         display_mode: if display {
             DisplayMode::Block
@@ -193,16 +270,10 @@ fn math_to_mathml(tex: &str, display: bool) -> String {
     };
 
     let mut mathml = String::new();
-    if push_mathml(&mut mathml, Parser::new(tex, &storage), config).is_ok() {
-        return mathml;
+    match push_mathml(&mut mathml, events.into_iter().map(Ok::<_, Infallible>), config) {
+        Ok(()) => mathml,
+        Err(_) => escaped_tex(tex),
     }
-
-    let mut fallback = String::from("<code>");
-    // An escape failure here can only be an allocation problem; the partial
-    // string is still valid HTML, so there is nothing useful to do about it.
-    let _ = comrak::html::escape(&mut fallback, tex);
-    fallback.push_str("</code>");
-    fallback
 }
 
 /// Replaces every math node with its rendered MathML, in place.
@@ -259,10 +330,6 @@ pub fn render(markdown: &str, limits: RenderLimits) -> Result<String, RenderErro
     let mut writer = BudgetWriter::new(limits.max_output_bytes);
     match format_html_with_plugins(root, &options, &mut writer, &plugins) {
         Ok(()) => Ok(writer.out),
-        Err(_) if writer.exceeded => Err(RenderError::OutputTooLarge),
-        // `fmt::Write` on a String is infallible otherwise, so this is
-        // unreachable in practice; treat it as an over-budget render rather
-        // than inventing a third failure mode.
         Err(_) => Err(RenderError::OutputTooLarge),
     }
 }
@@ -370,8 +437,8 @@ mod tests {
 
     #[test]
     fn does_not_emit_the_tex_source_as_an_annotation() {
-        // KaTeX wrapped every expression in `<annotation encoding="application/x-tex">`
-        // holding the raw TeX, which the read-path sanitizer then had to drop.
+        // An `<annotation>` holding the TeX source would be pure amplification:
+        // the read-path sanitizer drops it.
         let out = html("$E = mc^2$\n");
         assert!(!out.contains("<annotation"), "{out}");
         assert!(!out.contains("E = mc^2"), "{out}");
@@ -388,6 +455,71 @@ mod tests {
     fn degrades_malformed_tex_instead_of_failing_the_document() {
         let out = html("Broken: $\\badcmd{x}$ and text after.\n");
         assert!(out.contains("text after"), "{out}");
+        assert!(out.contains("<code>"), "{out}");
+    }
+
+    #[test]
+    fn never_emits_unescaped_tex_from_a_failed_render() {
+        // pulldown-latex's own error rendering writes the offending TeX into
+        // `<mtext>` unescaped, and `render.unsafe` would pass that through. The
+        // injected element below reached the read-path sanitizer as an unclosed
+        // `<style>`, which correctly dropped the entire rest of the entry.
+        let out = html("$\\badcmd{<style>x}$\n\nA later paragraph.\n");
+        assert!(!out.contains("<style>"), "{out}");
+        assert!(out.contains("&lt;style&gt;"), "{out}");
+        assert!(out.contains("A later paragraph."), "{out}");
+    }
+
+    #[test]
+    fn escapes_tex_that_closes_its_own_container() {
+        // `<b` is not an attack, just an unsupported macro next to a `<`
+        // comparison — the shape that makes this reachable by accident.
+        let out = html("$\\bm{a}<b$\n");
+        assert!(!out.contains("<b>"), "{out}");
+        assert!(out.contains("&lt;b"), "{out}");
+    }
+
+    // ---- TeX nesting depth ----
+
+    #[test]
+    fn counts_nesting_depth_without_counting_escaped_braces() {
+        assert_eq!(tex_nesting_depth("x"), 0);
+        assert_eq!(tex_nesting_depth("\\frac{1}{2}"), 1);
+        assert_eq!(tex_nesting_depth("\\frac{\\frac{1}{2}}{3}"), 2);
+        assert_eq!(tex_nesting_depth("\\left(x\\right)"), 1);
+        // `\{` and `\}` are literal braces, not grouping.
+        assert_eq!(tex_nesting_depth("\\{x\\}"), 0);
+        // A multi-byte character right after a backslash must not panic.
+        assert_eq!(tex_nesting_depth("\\¢{x}"), 1);
+    }
+
+    #[test]
+    fn degrades_tex_nested_past_the_depth_cap() {
+        let deep = format!(
+            "${}x{}$",
+            "\\frac{1}{".repeat(MAX_TEX_NESTING_DEPTH + 1),
+            "}".repeat(MAX_TEX_NESTING_DEPTH + 1)
+        );
+        let out = html(&deep);
+        assert!(out.contains("<code>"), "{out}");
+        assert!(!out.contains("<math"), "{out}");
+    }
+
+    #[test]
+    fn still_renders_tex_at_the_depth_cap() {
+        // The cap must sit far above real math, not clip it.
+        let deep = format!("${}x{}$", "\\frac{1}{".repeat(20), "}".repeat(20));
+        assert!(html(&deep).contains("<math"), "depth 20 must still render");
+    }
+
+    #[test]
+    fn does_not_spend_quadratic_time_on_deeply_nested_tex() {
+        // pulldown-latex is quadratic in nesting depth and the budgets can't see
+        // it: the cost is paid inside one call that returns a *small* result.
+        // Unguarded, this input took ~180 s (#1431 review). Not a wall-clock
+        // assertion — the point is that it completes at all.
+        let bomb = format!("${}x{}$", "\\frac{1}{".repeat(100_000), "}".repeat(100_000));
+        assert!(html(&bomb).contains("<code>"));
     }
 
     // ---- budgets ----

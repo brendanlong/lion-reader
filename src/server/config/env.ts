@@ -264,6 +264,14 @@ export const feedHealthConfig = {
 };
 
 /**
+ * Defaults for the Markdown budgets. Exported because the renderer falls back
+ * to them when the env var is unusable (see `renderLimits` in
+ * `src/server/markdown/index.ts`), so they need one home.
+ */
+export const DEFAULT_MAX_MARKDOWN_INPUT_BYTES = 1024 * 1024;
+export const DEFAULT_MAX_RENDERED_MARKDOWN_BYTES = 5 * 1024 * 1024;
+
+/**
  * Usage limits configuration.
  * These limits protect against abuse and prevent OOM from oversized content.
  * All limits are configurable via environment variables.
@@ -288,25 +296,20 @@ export const usageLimitsConfig = {
   maxEmailSizeBytes: parseInt(process.env.MAX_EMAIL_SIZE_BYTES || String(2 * 1024 * 1024), 10),
 
   /**
-   * Maximum Markdown source size in bytes (default: 1MB), checked before
-   * rendering.
+   * Maximum Markdown source size in bytes, checked before rendering.
    *
-   * Deliberately well below `maxSavedArticleSizeBytes`: Markdown *grows* on the
-   * way to HTML — math-dense input expands roughly 10x — so a raw-bytes limit
-   * sized for fetched HTML is the wrong budget for a renderer input (#1431).
-   * 1MB is still far more Markdown than any real article (~150k words).
+   * Deliberately well below `maxSavedArticleSizeBytes`, because Markdown grows
+   * on the way to HTML — see `src/server/markdown/index.ts` for why both of
+   * these live where they do.
    */
-  maxMarkdownInputBytes: parseInt(process.env.MAX_MARKDOWN_INPUT_BYTES || String(1024 * 1024), 10),
+  maxMarkdownInputBytes: parseInt(
+    process.env.MAX_MARKDOWN_INPUT_BYTES || String(DEFAULT_MAX_MARKDOWN_INPUT_BYTES),
+    10
+  ),
 
-  /**
-   * Maximum rendered-Markdown size in bytes (default: 5MB), enforced *during*
-   * rendering so an amplifying document is rejected while it amplifies rather
-   * than after it has built the whole string. Matches
-   * `maxSavedArticleSizeBytes`, which is what the article would be checked
-   * against downstream anyway.
-   */
+  /** Maximum rendered-Markdown size in bytes, enforced during rendering. */
   maxRenderedMarkdownBytes: parseInt(
-    process.env.MAX_RENDERED_MARKDOWN_BYTES || String(5 * 1024 * 1024),
+    process.env.MAX_RENDERED_MARKDOWN_BYTES || String(DEFAULT_MAX_RENDERED_MARKDOWN_BYTES),
     10
   ),
 };
