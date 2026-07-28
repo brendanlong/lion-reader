@@ -105,7 +105,10 @@ export function Combobox({
   }, []);
 
   const open = useCallback(() => {
-    if (disabled || isLoading) {
+    // Already-open is a no-op: focus and click both call this, so re-opening
+    // would wipe a query the user is in the middle of typing whenever they
+    // click back into the input to move the cursor.
+    if (disabled || isLoading || isOpen) {
       return;
     }
     setIsOpen(true);
@@ -115,7 +118,7 @@ export function Combobox({
     // MAX_VISIBLE_OPTIONS options, so a selection past that isn't on screen.
     const selectedIndex = options.findIndex((option) => option.value === value);
     setActiveIndex(selectedIndex >= 0 && selectedIndex < MAX_VISIBLE_OPTIONS ? selectedIndex : 0);
-  }, [disabled, isLoading, options, value]);
+  }, [disabled, isLoading, isOpen, options, value]);
 
   const select = useCallback(
     (option: ComboboxOption) => {

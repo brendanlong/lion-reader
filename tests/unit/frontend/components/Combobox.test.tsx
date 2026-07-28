@@ -80,6 +80,17 @@ describe("Combobox", () => {
     ]);
   });
 
+  it("keeps the query when the input is clicked again while open", () => {
+    const { input } = renderCombobox();
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "claude" } });
+    // Clicking back into the input (e.g. to move the cursor) must not reopen
+    // and wipe what the user has typed.
+    fireEvent.click(input);
+    expect(input).toHaveValue("claude");
+    expect(screen.getAllByRole("option")).toHaveLength(1);
+  });
+
   it("reports when the search matches nothing", () => {
     const { input } = renderCombobox({ emptyMessage: "No models match" });
     fireEvent.focus(input);
