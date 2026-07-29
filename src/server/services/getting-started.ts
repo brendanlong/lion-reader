@@ -31,8 +31,13 @@ import {
  *
  * The flag is claimed *before* the insert (`UPDATE ... WHERE
  * getting_started_at IS NULL RETURNING`), so a signup racing the backfill job
- * can't produce two copies. If anything after the claim fails, the flag is
- * released again so the next backfill run retries.
+ * can't produce two copies.
+ *
+ * The claim is released only when the **insert itself** fails — i.e. only while
+ * there is definitely no article — so a retry can never add a second copy. Once
+ * the article exists the claim stands, which makes starring best-effort: an
+ * unstarred article is a much better failure than a duplicate one, and the user
+ * can star it themselves.
  *
  * @returns the new entry's id, or null if this user already had one.
  */
@@ -50,22 +55,15 @@ export async function createGettingStartedArticle(
     return null;
   }
 
+  let article;
   try {
-    const article = await uploadArticle(db, userId, {
+    article = await uploadArticle(db, userId, {
       content: GETTING_STARTED_MARKDOWN,
       title: GETTING_STARTED_TITLE,
       excerpt: GETTING_STARTED_EXCERPT,
     });
-
-    // Starred so it stays easy to find after it scrolls out of the timeline.
-    // A separate call (rather than an insert-time flag) so it goes through the
-    // same counter/SSE path as a user starring it by hand.
-    await updateEntryStarred(db, userId, article.id, true);
-
-    logger.info("Created Getting Started article", { userId, entryId: article.id });
-    return article.id;
   } catch (err) {
-    // Release the claim so the backfill job can try again.
+    // Nothing was inserted, so hand the user back to the backfill.
     await db
       .update(users)
       .set({ gettingStartedAt: null })
@@ -75,6 +73,22 @@ export async function createGettingStartedArticle(
       });
     throw err;
   }
+
+  // Starred so it stays easy to find after it scrolls out of the timeline. A
+  // separate call rather than an insert-time flag, so it emits the same
+  // `entry_state_changed` event a hand-star does and open tabs update live.
+  try {
+    await updateEntryStarred(db, userId, article.id, true);
+  } catch (err) {
+    logger.error("Created Getting Started article but failed to star it", {
+      userId,
+      entryId: article.id,
+      err,
+    });
+  }
+
+  logger.info("Created Getting Started article", { userId, entryId: article.id });
+  return article.id;
 }
 
 /**
