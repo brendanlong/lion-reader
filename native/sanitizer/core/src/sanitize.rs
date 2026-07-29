@@ -175,6 +175,10 @@ fn attr_allowed(tag: &str, name: &str) -> bool {
 /// the reader CSS, which matches the exact token. Accepting ` CENTER ` (or an
 /// entity-obfuscated `&#99;enter`) and writing it back raw would leave a cell
 /// that survived sanitization and still rendered unaligned.
+///
+/// `#[cold]` for the reason described on [`handle_input`].
+#[cold]
+#[inline(never)]
 fn canonical_align(value: &str) -> Option<&'static str> {
     match decode_attr(value).trim().to_ascii_lowercase().as_str() {
         "left" => Some("left"),
@@ -286,6 +290,17 @@ fn handle_iframe(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Sen
 /// is not focusable, not editable and not submittable. Any other `type` is
 /// removed entirely: nothing else about a form control belongs in entry
 /// content.
+///
+/// `#[cold]`/`#[inline(never)]` are load-bearing, not decoration: inlined into
+/// `handle_element` this and `canonical_align` cost a **measured 4-8%** on
+/// article-shaped content (`scripts/bench-sanitize.mts`, `medium`/`large`),
+/// because `handle_element` runs for every element of every entry on every read
+/// while an `input` or an `align` appears in almost none of them. Keeping the
+/// rare paths out of the hot function's body returns it to parity. Re-run the
+/// bench before removing these — and note its run-to-run drift is a few percent,
+/// so interleave the variants and check an A/A control first.
+#[cold]
+#[inline(never)]
 fn handle_input(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let is_checkbox = el
         .get_attribute("type")
