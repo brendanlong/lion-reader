@@ -19,18 +19,35 @@ import {
 const POST_URL = "https://www.threads.com/@anujs3/post/DNG2tXiBjzN";
 
 /** A minimal post page carrying the Open Graph tags Threads actually serves. */
-function page(options: { title?: string | null; description?: string | null } = {}): string {
-  const { title = "Anuj Shah (@anujs3) on Threads", description = "Post body." } = options;
+function page(
+  options: {
+    title?: string | null;
+    description?: string | null;
+    image?: string | null;
+    /** Threads sends `summary` for a text post, `summary_large_image` with media. */
+    card?: string | null;
+  } = {}
+): string {
+  const {
+    title = "Anuj Shah (@anujs3) on Threads",
+    description = "Post body.",
+    image = "https://scontent.cdninstagram.com/v/t51.2885-19/avatar.jpg",
+    card = "summary",
+  } = options;
   return [
     "<html><head>",
     '<meta property="og:site_name" content="Threads" />',
     title === null ? "" : `<meta property="og:title" content="${title}" />`,
     description === null ? "" : `<meta property="og:description" content="${description}" />`,
-    '<meta property="og:image" content="https://scontent.cdninstagram.com/avatar.jpg" />',
+    image === null ? "" : `<meta property="og:image" content="${image}" />`,
+    card === null ? "" : `<meta name="twitter:card" content="${card}" />`,
     '<meta name="twitter:description" content="Post body, but elided at..." />',
     "</head><body></body></html>",
   ].join("");
 }
+
+/** The og:image on a post with real media, shaped like the live ones. */
+const MEDIA_IMAGE = "https://scontent-sea5-1.cdninstagram.com/v/t51.82787-15/comic.webp";
 
 describe("parseThreadsPostCode", () => {
   it("parses the canonical post URL", () => {
@@ -173,6 +190,45 @@ describe("renderThreadsPost", () => {
       POST_URL
     );
     expect(result!.html).toBe("<p>Body.</p>");
+  });
+
+  // og:image is ALWAYS present — it's the author's avatar on a text post — so
+  // rendering it unconditionally would caption every text post with a profile
+  // picture. twitter:card is what distinguishes media from avatar.
+  it("renders the image only when twitter:card says the image is the content", () => {
+    const withMedia = renderThreadsPost(
+      page({ image: MEDIA_IMAGE, card: "summary_large_image" }),
+      POST_URL
+    );
+    expect(withMedia!.html).toContain(
+      `<figure><img src="${MEDIA_IMAGE}" alt="" loading="lazy"></figure>`
+    );
+
+    // `summary` means the og:image is the avatar — never render it.
+    const textOnly = renderThreadsPost(page({ card: "summary" }), POST_URL);
+    expect(textOnly!.html).not.toContain("<figure>");
+    expect(textOnly!.html).not.toContain("avatar.jpg");
+  });
+
+  it.each([
+    ["the card is missing", { image: MEDIA_IMAGE, card: null }],
+    ["the image is missing", { image: null, card: "summary_large_image" }],
+    ["the image is not http(s)", { image: "javascript:alert(1)", card: "summary_large_image" }],
+  ])("renders no image when %s", (_label, options) => {
+    const result = renderThreadsPost(page(options), POST_URL);
+    expect(result!.html).not.toContain("<figure>");
+    expect(result!.html).not.toContain("javascript:");
+  });
+
+  it("keeps the post text ahead of the image, and out of the excerpt", () => {
+    const result = renderThreadsPost(
+      page({ description: "The comic caption.", image: MEDIA_IMAGE, card: "summary_large_image" }),
+      POST_URL
+    );
+    expect(result!.html.indexOf("The comic caption.")).toBeLessThan(
+      result!.html.indexOf("<figure>")
+    );
+    expect(result!.excerpt).toBe("The comic caption.");
   });
 
   it("returns null when the page carries no post text, so the save falls back", () => {
