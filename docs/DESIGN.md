@@ -307,7 +307,9 @@ The registry indexes plugins by hostname for O(1) lookup, then calls the plugin'
 
 A plugin can also declare `feedDefaultsToFullContent(feedUrl)`: when it returns true for a feed URL, a **fresh** subscription to that feed starts with `fetch_full_content` on (the frontend then hydrates each entry's full content on open, cached on the shared `entries` row). Used for sources whose feed entries are truncated or drop embedded content — Bluesky's native RSS renders quote posts/images/link cards as a bare placeholder. Matched by hostname + the plugin's predicate on the **feed** URL (not `matchUrl`, which matches entry URLs); a resubscribe keeps the user's stored preference. See `createSubscription` and `feedDefaultsToFullContent` in `src/server/plugins/index.ts`.
 
-The available plugins (LessWrong, Google Docs, ArXiv, GitHub, YouTube, Bluesky) and their capabilities are registered in `src/server/plugins/index.ts`; each plugin file documents its own source-specific behavior.
+The available plugins and their capabilities are registered in `src/server/plugins/index.ts`; each plugin file documents its own source-specific behavior.
+
+For the social networks with no usable public read API (LinkedIn, Threads), the plugin scrapes the structured metadata the public post page serves to a **logged-out** client — JSON-LD for LinkedIn, Open Graph for Threads — because the alternative is Readability extracting an auth wall. These are inherently best-effort: when the markup changes, the post goes private, or the site blocks our egress IP, `fetchContent` returns null and the save falls back to normal handling instead of failing. Both sites' `robots.txt` disallow a generic user agent, so keep this to the user-initiated single-post fetch that it is — don't extend it into anything that walks profiles or feeds. The general fix for login-walled sources is client-side capture through `saveArticle`'s `html` parameter, not more scrapers.
 
 ---
 

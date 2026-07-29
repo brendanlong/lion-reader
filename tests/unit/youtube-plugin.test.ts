@@ -10,7 +10,6 @@
 import { describe, it, expect } from "vitest";
 import {
   youtubePlugin,
-  youtubeDescriptionToHtml,
   synthesizeYouTubeSavedArticle,
   YOUTUBE_MIN_FETCH_INTERVAL_SECONDS,
 } from "@/server/plugins/youtube";
@@ -144,35 +143,6 @@ describe("extractYouTubeVideoId", () => {
     expect(extractYouTubeVideoId("https://example.com/watch?v=dQw4w9WgXcQ")).toBeNull();
     expect(extractYouTubeVideoId("not a url")).toBeNull();
     expect(extractYouTubeVideoId(undefined)).toBeNull();
-  });
-});
-
-describe("youtubeDescriptionToHtml", () => {
-  it("escapes HTML in the description", () => {
-    expect(youtubeDescriptionToHtml("a <script>alert(1)</script> & b")).toBe(
-      "<p>a &lt;script&gt;alert(1)&lt;/script&gt; &amp; b</p>"
-    );
-  });
-
-  it("splits paragraphs on blank lines and lines on single newlines", () => {
-    expect(youtubeDescriptionToHtml("para one\nline two\n\npara two")).toBe(
-      "<p>para one<br>line two</p><p>para two</p>"
-    );
-  });
-
-  it("links bare URLs, trimming trailing punctuation", () => {
-    expect(youtubeDescriptionToHtml("See https://example.com/page. Done")).toBe(
-      '<p>See <a href="https://example.com/page">https://example.com/page</a>. Done</p>'
-    );
-    expect(youtubeDescriptionToHtml("(see https://example.com/page)")).toBe(
-      '<p>(see <a href="https://example.com/page">https://example.com/page</a>)</p>'
-    );
-  });
-
-  it("keeps escaped query separators in linked URLs", () => {
-    expect(youtubeDescriptionToHtml("https://example.com/x?a=1&b=2")).toBe(
-      '<p><a href="https://example.com/x?a=1&amp;b=2">https://example.com/x?a=1&amp;b=2</a></p>'
-    );
   });
 });
 

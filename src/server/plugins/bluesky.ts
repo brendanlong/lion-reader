@@ -1,4 +1,5 @@
 import type { UrlPlugin, SavedArticleContent } from "./types";
+import { socialPostTitle } from "./social-post";
 import { escapeHtml } from "@/server/http/html";
 import { readResponseWithSizeLimit } from "@/server/http/fetch";
 import { fetchWithSsrfProtection } from "@/server/http/ssrf";
@@ -359,20 +360,9 @@ export function renderBlueskyPostHtml(post: PostView, postUrl: string): string {
   return parts.filter(Boolean).join("\n");
 }
 
-/**
- * Build a saved-article title from a post: the first line of text (trimmed to a
- * reasonable length), falling back to "Post by {author}". Bluesky posts have no
- * real title; this only surfaces where a title is required (saved-article list).
- */
+/** Build a saved-article title from a post — see {@link socialPostTitle}. */
 export function blueskyPostTitle(post: PostView): string {
-  const firstLine = (post.record?.text ?? "").split("\n")[0].trim();
-  if (firstLine) {
-    // Slice by code point, not UTF-16 unit, so truncation never leaves a lone
-    // surrogate half (e.g. cutting through an emoji).
-    const codePoints = [...firstLine];
-    return codePoints.length > 100 ? `${codePoints.slice(0, 99).join("")}…` : firstLine;
-  }
-  return `Post by ${authorLabel(post.author)}`;
+  return socialPostTitle(post.record?.text, authorLabel(post.author) || null);
 }
 
 // ============================================================================
