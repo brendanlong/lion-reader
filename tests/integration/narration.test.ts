@@ -25,6 +25,7 @@ import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
 import { splitNarrationParagraphs } from "../../src/lib/narration/paragraph-map";
+import { NARRATION_FORMAT_VERSION } from "../../src/lib/narration/constants";
 
 /** The narration cache key: sha256 of the exact content being narrated. */
 function narrationHash(content: string): string {
@@ -189,6 +190,7 @@ describe("narration.generate cached read path", () => {
       contentHash,
       contentNarration: "First\n\nThird",
       paragraphMap: storedMap,
+      formatVersion: NARRATION_FORMAT_VERSION,
       generatedAt: new Date(),
       createdAt: new Date(),
     });
@@ -200,24 +202,35 @@ describe("narration.generate cached read path", () => {
     expect(result.paragraphMap).toEqual(storedMap);
   });
 
-  it("re-derives an aligned map for a legacy row with no stored map", async () => {
+  it.each([
+    ["an older narration format", NARRATION_FORMAT_VERSION - 1, [{ n: 0, o: 0 }]],
+    ["a row from before the format was tracked", null, null],
+  ])("does not serve %s", async (label, formatVersion, paragraphMap) => {
     // A <br><br>-formatted block: the second <p> holds two paragraphs, exactly
-    // the shape that used to desync highlighting.
-    const contentCleaned = ["<p>Intro.</p>", "<p>Line one.", "<br /><br />", "Line two.</p>"].join(
-      "\n"
-    );
+    // the shape that used to desync highlighting. The label keeps each case's
+    // content (and so its content hash) distinct — see the note above.
+    const contentCleaned = [
+      `<p>Intro for ${label}.</p>`,
+      "<p>Line one.",
+      "<br /><br />",
+      "Line two.</p>",
+    ].join("\n");
     const contentHash = narrationHash(contentCleaned);
     const entryId = await createTestFeedAndEntry({ contentCleaned });
     await createUserEntry(userId, entryId);
 
-    // Legacy cached row: narration text present, paragraph_map NULL.
-    const cachedNarration = "Intro.\n\nLine one.\n\nLine two.";
+    // Its map numbers elements the way the walk of the day numbered them, so
+    // serving it against today's `data-para-id`s would highlight the wrong
+    // paragraphs. The row is regenerated instead — with no LLM key configured
+    // here, through the fallback path.
+    const cachedNarration = "Stale narration text.";
     createdNarrationHashes.push(contentHash);
     await db.insert(narrationContent).values({
       id: generateUuidv7(),
       contentHash,
       contentNarration: cachedNarration,
-      paragraphMap: null,
+      paragraphMap,
+      formatVersion,
       generatedAt: new Date(),
       createdAt: new Date(),
     });
@@ -225,9 +238,11 @@ describe("narration.generate cached read path", () => {
     const caller = createCaller(createAuthContext(userId));
     const result = await caller.narration.generate({ id: entryId, useLlmNormalization: true });
 
-    expect(result.cached).toBe(true);
-    // The re-derived map is aligned with the player's paragraph split: one entry
-    // per paragraph, and the two paragraphs from the second <p> both point at it.
+    expect(result.cached).toBe(false);
+    expect(result.narration).not.toBe(cachedNarration);
+    // And what it returns instead is aligned with the player's paragraph split:
+    // one entry per paragraph, the two halves of the <br><br> block both
+    // pointing at the <p> that holds them.
     const segments = splitNarrationParagraphs(result.narration);
     expect(result.paragraphMap.length).toBe(segments.length);
     expect(result.paragraphMap).toEqual([

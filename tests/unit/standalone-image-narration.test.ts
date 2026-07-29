@@ -17,11 +17,14 @@ describe("standalone image handling", () => {
     expect(result.paragraphs).toHaveLength(4);
     expect(result.paragraphs.map((p) => p.id)).toEqual([0, 1, 2, 3]);
 
-    // Should include alt text in narration
-    expect(result.paragraphs[0]).toEqual({ id: 0, text: "1" });
-    expect(result.paragraphs[1]).toEqual({ id: 1, text: "Image: image description" });
-    expect(result.paragraphs[2]).toEqual({ id: 2, text: "2" });
-    expect(result.paragraphs[3]).toEqual({ id: 3, text: "3" });
+    // Should include alt text in narration, each highlighting its own element
+    expect(result.paragraphs.map((p) => p.text)).toEqual([
+      "1",
+      "Image: image description",
+      "2",
+      "3",
+    ]);
+    expect(result.paragraphs.map((p) => p.o)).toEqual([0, 1, 2, 3]);
   });
 
   it("should handle standalone img without alt text", () => {
@@ -33,7 +36,7 @@ describe("standalone image handling", () => {
     expect(result.paragraphs.map((p) => p.id)).toEqual([0, 1, 2]);
 
     // Should use default description
-    expect(result.paragraphs[1]).toEqual({ id: 1, text: "Image: image" });
+    expect(result.paragraphs[1].text).toBe("Image: image");
   });
 
   it("should handle mix of standalone and figure-wrapped images", () => {

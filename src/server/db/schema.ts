@@ -1045,12 +1045,15 @@ export const narrationContent = pgTable("narration_content", {
   contentHash: text("content_hash").unique().notNull(), // SHA256 of source content
 
   contentNarration: text("content_narration"), // null until generated
-  // Paragraph map for highlighting (narration paragraph index -> data-para-id).
-  // Persisted alongside the narration so cache hits return the exact map built
-  // at generation time instead of reconstructing it heuristically. Null for
-  // rows generated before this column existed (read path falls back to
-  // re-deriving from source content).
+  // Paragraph map for highlighting (narration paragraph index -> data-para-id),
+  // persisted alongside the narration: it is the only map guaranteed to align
+  // with this exact text.
   paragraphMap: jsonb("paragraph_map").$type<ParagraphMapEntry[]>(),
+  // The narration format the row was generated with. Those element numbers only
+  // mean anything against the numbering that format produced, so a row from an
+  // older one (or from before this column existed) is a cache miss and gets
+  // regenerated in place — see NARRATION_FORMAT_VERSION (issue #1451).
+  formatVersion: integer("format_version"),
   generatedAt: timestamp("generated_at", { withTimezone: true }),
 
   // Error tracking for retry logic

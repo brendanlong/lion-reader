@@ -338,7 +338,8 @@ CREATE TABLE public.narration_content (
     error text,
     error_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    paragraph_map jsonb
+    paragraph_map jsonb,
+    format_version integer
 );
 ALTER TABLE ONLY public.narration_content ALTER COLUMN content_narration SET COMPRESSION lz4;
 

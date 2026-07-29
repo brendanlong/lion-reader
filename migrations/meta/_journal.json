@@ -750,6 +750,13 @@
       "when": 1782954000000,
       "tag": "0107_getting_started_article",
       "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1785283200000,
+      "tag": "0108_narration_format_version",
+      "breakpoints": true
     }
   ]
 }

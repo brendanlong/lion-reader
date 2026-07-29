@@ -6,7 +6,20 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { htmlToNarrationInput } from "../../src/lib/narration/html-to-narration-input";
+import {
+  htmlToNarrationInput,
+  type HtmlToNarrationInputResult,
+} from "../../src/lib/narration/html-to-narration-input";
+
+/**
+ * What the narration says, in order. Most of these tests are about the words;
+ * which element each paragraph highlights is `o`, exercised in the "highlight
+ * targets" block below and held to the server/client numbering invariant in
+ * narration-walk.test.ts.
+ */
+function narrated(result: HtmlToNarrationInputResult): string[] {
+  return result.paragraphs.map((paragraph) => paragraph.text);
+}
 
 describe("htmlToNarrationInput", () => {
   describe("basic paragraph handling", () => {
@@ -14,33 +27,26 @@ describe("htmlToNarrationInput", () => {
       const html = "<p>First paragraph.</p><p>Second paragraph.</p>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([
-        { id: 0, text: "First paragraph." },
-        { id: 1, text: "Second paragraph." },
-      ]);
+      expect(narrated(result)).toEqual(["First paragraph.", "Second paragraph."]);
     });
 
     it("returns paragraphs with sequential IDs", () => {
       const html = "<p>First.</p><p>Second.</p><p>Third.</p>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([
-        { id: 0, text: "First." },
-        { id: 1, text: "Second." },
-        { id: 2, text: "Third." },
-      ]);
+      expect(narrated(result)).toEqual(["First.", "Second.", "Third."]);
     });
 
     it("handles empty HTML", () => {
       const result = htmlToNarrationInput("");
 
-      expect(result.paragraphs).toEqual([]);
+      expect(narrated(result)).toEqual([]);
     });
 
     it("handles HTML with only whitespace", () => {
       const result = htmlToNarrationInput("   \n\n   ");
 
-      expect(result.paragraphs).toEqual([]);
+      expect(narrated(result)).toEqual([]);
     });
   });
 
@@ -49,32 +55,28 @@ describe("htmlToNarrationInput", () => {
       const html = "<h1>Main Title</h1>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 0, text: "Main Title" }]);
+      expect(narrated(result)).toEqual(["Main Title"]);
     });
 
     it("extracts h2 headings", () => {
       const html = "<h2>Section Title</h2>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 0, text: "Section Title" }]);
+      expect(narrated(result)).toEqual(["Section Title"]);
     });
 
     it("extracts h3 headings", () => {
       const html = "<h3>Subsection</h3>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 0, text: "Subsection" }]);
+      expect(narrated(result)).toEqual(["Subsection"]);
     });
 
     it("extracts h4-h6 headings", () => {
       const html = "<h4>Minor heading</h4><h5>Smaller</h5><h6>Smallest</h6>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([
-        { id: 0, text: "Minor heading" },
-        { id: 1, text: "Smaller" },
-        { id: 2, text: "Smallest" },
-      ]);
+      expect(narrated(result)).toEqual(["Minor heading", "Smaller", "Smallest"]);
     });
   });
 
@@ -83,25 +85,21 @@ describe("htmlToNarrationInput", () => {
       const html = "<pre><code>npm install</code></pre>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([
-        { id: 0, text: "Code block: npm install End code block." },
-      ]);
+      expect(narrated(result)).toEqual(["Code block: npm install End code block."]);
     });
 
     it("handles pre without code tag", () => {
       const html = "<pre>console.log('hello');</pre>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([
-        { id: 0, text: "Code block: console.log('hello'); End code block." },
-      ]);
+      expect(narrated(result)).toEqual(["Code block: console.log('hello'); End code block."]);
     });
 
     it("handles inline code within paragraph", () => {
       const html = "<p>Use the <code>npm</code> command.</p>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 0, text: "Use the `npm` command." }]);
+      expect(narrated(result)).toEqual(["Use the `npm` command."]);
     });
   });
 
@@ -110,7 +108,7 @@ describe("htmlToNarrationInput", () => {
       const html = "<blockquote>A famous quote.</blockquote>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 0, text: "Quote: A famous quote. End quote." }]);
+      expect(narrated(result)).toEqual(["Quote: A famous quote. End quote."]);
     });
 
     it("narrates a quoted paragraph once, not once per wrapper (issue #1445)", () => {
@@ -120,24 +118,24 @@ describe("htmlToNarrationInput", () => {
 
       // The quote speaks for the paragraph inside it, which keeps its own
       // paragraph index (1) but contributes no narration.
-      expect(result.paragraphs).toEqual([{ id: 0, text: "Quote: A famous quote. End quote." }]);
+      expect(narrated(result)).toEqual(["Quote: A famous quote. End quote."]);
     });
 
     it("keeps a multi-paragraph quote's paragraphs apart", () => {
-      // Blank lines, so the player speaks two paragraphs instead of "ab".
+      // One paragraph each, so the player speaks two instead of "ab" — and each
+      // highlights the <p> being read rather than the whole quote.
       const html = "<blockquote><p>a</p><p>b</p></blockquote>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 0, text: "Quote: a\n\nb End quote." }]);
+      expect(narrated(result)).toEqual(["Quote: a", "b End quote."]);
+      expect(result.paragraphs.map((p) => p.o)).toEqual([1, 2]);
     });
 
     it("reads an attribution after the quote it follows", () => {
       const html = "<blockquote><p>Quote text</p><footer>— Author</footer></blockquote>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([
-        { id: 0, text: "Quote: Quote text\n\n— Author End quote." },
-      ]);
+      expect(narrated(result)).toEqual(["Quote: Quote text", "— Author End quote."]);
     });
 
     it("keeps structure the quote wraps", () => {
@@ -148,9 +146,10 @@ describe("htmlToNarrationInput", () => {
         "<blockquote><table><tr><td>A</td><td>B</td></tr></table></blockquote>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([
-        { id: 0, text: "Quote: - a\n\n- b End quote." },
-        { id: 4, text: "Quote: Table: A, B End table. End quote." },
+      expect(narrated(result)).toEqual([
+        "Quote: - a",
+        "- b End quote.",
+        "Quote: Table: A, B End table. End quote.",
       ]);
     });
 
@@ -159,17 +158,14 @@ describe("htmlToNarrationInput", () => {
       const html = "<blockquote><p>q</p></blockquote><p>after</p>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([
-        { id: 0, text: "Quote: q End quote." },
-        { id: 2, text: "after" },
-      ]);
+      expect(narrated(result)).toEqual(["Quote: q End quote.", "after"]);
     });
 
     it("marks a quote that is a list item's only content", () => {
       const html = "<ul><li><blockquote><p>x</p></blockquote></li></ul>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 2, text: "- Quote: x End quote." }]);
+      expect(narrated(result)).toEqual(["- Quote: x End quote."]);
     });
 
     it("reads through a wrapper between the quote and its paragraphs", () => {
@@ -180,16 +176,14 @@ describe("htmlToNarrationInput", () => {
         '<blockquote><div class="quote-body"><p>Be excellent.</p></div><cite>Bill</cite></blockquote>';
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([
-        { id: 0, text: "Quote: Be excellent.\n\nBill End quote." },
-      ]);
+      expect(narrated(result)).toEqual(["Quote: Be excellent.", "Bill End quote."]);
     });
 
     it("keeps a wrapper that only holds text in the run around it", () => {
       const html = "<blockquote>Hello <span>world</span> again</blockquote>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 0, text: "Quote: Hello world again End quote." }]);
+      expect(narrated(result)).toEqual(["Quote: Hello world again End quote."]);
     });
 
     it("keeps a quoted figure's caption as well as its image", () => {
@@ -197,9 +191,7 @@ describe("htmlToNarrationInput", () => {
         '<blockquote><figure><img alt="A cat"><figcaption>My cat</figcaption></figure></blockquote>';
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([
-        { id: 0, text: "Quote: Image: A cat. My cat End quote." },
-      ]);
+      expect(narrated(result)).toEqual(["Quote: Image: A cat. My cat End quote."]);
     });
 
     it("keeps what a quoted figure wraps when it is not an image", () => {
@@ -209,9 +201,7 @@ describe("htmlToNarrationInput", () => {
         "<figcaption>Data</figcaption></figure></blockquote>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([
-        { id: 0, text: "Quote: Table: Cell A End table.\n\nData End quote." },
-      ]);
+      expect(narrated(result)).toEqual(["Quote: Table: Cell A End table.", "Data End quote."]);
     });
 
     it("narrates absurdly nested quotes instead of overflowing the stack", () => {
@@ -231,7 +221,7 @@ describe("htmlToNarrationInput", () => {
       const html = "<blockquote></blockquote><p>after</p>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 1, text: "after" }]);
+      expect(narrated(result)).toEqual(["after"]);
     });
   });
 
@@ -240,7 +230,7 @@ describe("htmlToNarrationInput", () => {
       const html = '<figure><img src="photo.jpg" alt="A beautiful sunset"></figure>';
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 0, text: "Image: A beautiful sunset" }]);
+      expect(narrated(result)).toEqual(["Image: A beautiful sunset"]);
     });
 
     it("narrates a figure's caption, which nothing else does", () => {
@@ -249,7 +239,7 @@ describe("htmlToNarrationInput", () => {
       const html = '<figure><img alt="A cat"><figcaption>My cat</figcaption></figure>';
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 0, text: "Image: A cat. My cat" }]);
+      expect(narrated(result)).toEqual(["Image: A cat. My cat"]);
     });
 
     it("narrates a figure whose image sits in a wrapper", () => {
@@ -261,26 +251,24 @@ describe("htmlToNarrationInput", () => {
         "<figcaption>My cat</figcaption></figure>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 0, text: "Image: A cat. My cat" }]);
+      expect(narrated(result)).toEqual(["Image: A cat. My cat"]);
     });
 
     it("does not announce an image for a figure that holds none", () => {
-      // A figure around a table is not an image; the table speaks for itself.
+      // A figure around a table is not an image; the table speaks for itself,
+      // and the caption reads after it, where it is written.
       const html =
         "<figure><table><tr><td>Cell</td></tr></table><figcaption>Data</figcaption></figure>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([
-        { id: 0, text: "Data" },
-        { id: 1, text: "Table: Cell End table." },
-      ]);
+      expect(narrated(result)).toEqual(["Table: Cell End table.", "Data"]);
     });
 
     it("handles inline images within paragraphs", () => {
       const html = '<p>Look at this: <img src="photo.jpg" alt="A photo"></p>';
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 0, text: "Look at this: Image: A photo" }]);
+      expect(narrated(result)).toEqual(["Look at this: Image: A photo"]);
     });
   });
 
@@ -289,21 +277,21 @@ describe("htmlToNarrationInput", () => {
       const html = '<p>Check out <a href="https://example.com">this link</a>.</p>';
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 0, text: "Check out this link." }]);
+      expect(narrated(result)).toEqual(["Check out this link."]);
     });
 
     it("converts URL-only links to domain mention", () => {
       const html = '<p>Visit <a href="https://example.com">https://example.com</a>.</p>';
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 0, text: "Visit [link to example.com]." }]);
+      expect(narrated(result)).toEqual(["Visit [link to example.com]."]);
     });
 
     it("converts empty link text to domain mention", () => {
       const html = '<p>Visit <a href="https://example.com"></a> for more.</p>';
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 0, text: "Visit [link to example.com] for more." }]);
+      expect(narrated(result)).toEqual(["Visit [link to example.com] for more."]);
     });
 
     it("does not announce an anchor that has no href", () => {
@@ -311,7 +299,7 @@ describe("htmlToNarrationInput", () => {
       const html = '<p><a id="fn1"></a>Footnote text</p>';
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 0, text: "Footnote text" }]);
+      expect(narrated(result)).toEqual(["Footnote text"]);
     });
   });
 
@@ -320,20 +308,14 @@ describe("htmlToNarrationInput", () => {
       const html = "<ul><li>First item</li><li>Second item</li></ul>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([
-        { id: 1, text: "- First item" },
-        { id: 2, text: "- Second item" },
-      ]);
+      expect(narrated(result)).toEqual(["- First item", "- Second item"]);
     });
 
     it("handles ordered lists", () => {
       const html = "<ol><li>Step one</li><li>Step two</li></ol>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([
-        { id: 1, text: "- Step one" },
-        { id: 2, text: "- Step two" },
-      ]);
+      expect(narrated(result)).toEqual(["- Step one", "- Step two"]);
     });
 
     it("speaks task-list state, which the checkbox alone carries (issue #1439)", () => {
@@ -344,10 +326,7 @@ describe("htmlToNarrationInput", () => {
         '<li><input type="checkbox" disabled=""> todo</li></ul>';
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([
-        { id: 1, text: "- Done: done" },
-        { id: 2, text: "- Not done: todo" },
-      ]);
+      expect(narrated(result)).toEqual(["- Done: done", "- Not done: todo"]);
     });
 
     it("speaks task-list state for loose lists (checkbox inside the item's <p>)", () => {
@@ -356,7 +335,7 @@ describe("htmlToNarrationInput", () => {
       const html = '<ul><li><p><input type="checkbox" checked="" disabled=""> done</p></li></ul>';
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 2, text: "- Done: done" }]);
+      expect(narrated(result)).toEqual(["- Done: done"]);
     });
 
     it("narrates a loose list item once, not once per wrapper (issue #1441)", () => {
@@ -366,17 +345,14 @@ describe("htmlToNarrationInput", () => {
       const result = htmlToNarrationInput(html);
 
       // ul is 0 and li is 1; both are containers here, so only the <p> speaks.
-      expect(result.paragraphs).toEqual([{ id: 2, text: "- hello" }]);
+      expect(narrated(result)).toEqual(["- hello"]);
     });
 
     it("keeps a multi-paragraph item's paragraphs separate", () => {
       const html = "<ul><li><p>a</p><p>b</p></li></ul>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([
-        { id: 2, text: "- a" },
-        { id: 3, text: "b" },
-      ]);
+      expect(narrated(result)).toEqual(["- a", "b"]);
     });
 
     it("narrates an item's own text and its block children separately", () => {
@@ -384,10 +360,7 @@ describe("htmlToNarrationInput", () => {
       const result = htmlToNarrationInput(html);
 
       // The item speaks its own marker, so the <p> inherits none.
-      expect(result.paragraphs).toEqual([
-        { id: 1, text: "- intro" },
-        { id: 2, text: "more" },
-      ]);
+      expect(narrated(result)).toEqual(["- intro", "more"]);
     });
 
     it("hands the marker to the first child that actually speaks", () => {
@@ -395,7 +368,7 @@ describe("htmlToNarrationInput", () => {
       const html = "<ul><li><p></p><p>text</p></li></ul>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 3, text: "- text" }]);
+      expect(narrated(result)).toEqual(["- text"]);
     });
 
     it("keeps the task-list state when the item leads with an empty block", () => {
@@ -404,7 +377,7 @@ describe("htmlToNarrationInput", () => {
       const html = '<ul><li><p><input type="checkbox" checked=""></p><p>Ship it</p></li></ul>';
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 3, text: "- Done: Ship it" }]);
+      expect(narrated(result)).toEqual(["- Done: Ship it"]);
     });
 
     it("marks the item's own paragraph when it opens with a sublist", () => {
@@ -412,10 +385,7 @@ describe("htmlToNarrationInput", () => {
       const html = "<ul><li><ul><li>sub</li></ul><p>after</p></li></ul>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([
-        { id: 3, text: "- sub" },
-        { id: 4, text: "- after" },
-      ]);
+      expect(narrated(result)).toEqual(["- sub", "- after"]);
     });
 
     it("marks through a non-block wrapper inside the item", () => {
@@ -423,14 +393,14 @@ describe("htmlToNarrationInput", () => {
       const html = "<ul><li><div><p>x</p></div></li></ul>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 2, text: "- x" }]);
+      expect(narrated(result)).toEqual(["- x"]);
     });
 
     it("does not let an empty link target take the item's marker", () => {
       const html = '<ul><li><a id="fn1"></a><p>Footnote text</p></li></ul>';
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 2, text: "- Footnote text" }]);
+      expect(narrated(result)).toEqual(["- Footnote text"]);
     });
 
     it("marks through a figure that announces no image", () => {
@@ -439,7 +409,7 @@ describe("htmlToNarrationInput", () => {
       const html = "<ul><li><figure><table><tr><td>x</td></tr></table></figure></li></ul>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 3, text: "- Table: x End table." }]);
+      expect(narrated(result)).toEqual(["- Table: x End table."]);
     });
 
     it("narrates thousands of blocks under a wrapper in reasonable time", () => {
@@ -465,10 +435,7 @@ describe("htmlToNarrationInput", () => {
       const html = "<ul><li>Parent<ul><li>Child</li></ul></li></ul>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([
-        { id: 1, text: "- Parent" },
-        { id: 3, text: "- Child" },
-      ]);
+      expect(narrated(result)).toEqual(["- Parent", "- Child"]);
     });
 
     it("keeps an inline image in the item that contains it", () => {
@@ -477,7 +444,7 @@ describe("htmlToNarrationInput", () => {
       const html = '<ul><li>Item with <img alt="icon"> image</li></ul>';
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 1, text: "- Item with Image: icon image" }]);
+      expect(narrated(result)).toEqual(["- Item with Image: icon image"]);
     });
 
     it("leaves a checkbox mid-item alone (not a task list)", () => {
@@ -486,7 +453,7 @@ describe("htmlToNarrationInput", () => {
       const html = '<ul><li>see <input type="checkbox" disabled=""> here</li></ul>';
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 1, text: "- see here" }]);
+      expect(narrated(result)).toEqual(["- see here"]);
     });
   });
 
@@ -495,14 +462,14 @@ describe("htmlToNarrationInput", () => {
       const html = "<table><tr><td>Cell 1</td><td>Cell 2</td></tr></table>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 0, text: "Table: Cell 1, Cell 2 End table." }]);
+      expect(narrated(result)).toEqual(["Table: Cell 1, Cell 2 End table."]);
     });
 
     it("narrates a cell's paragraph only as part of the table (issue #1445)", () => {
       const html = "<table><tr><td><p>Cell 1</p></td><td>Cell 2</td></tr></table>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 0, text: "Table: Cell 1, Cell 2 End table." }]);
+      expect(narrated(result)).toEqual(["Table: Cell 1, Cell 2 End table."]);
     });
 
     it("says what a silenced cell block would have said", () => {
@@ -514,9 +481,7 @@ describe("htmlToNarrationInput", () => {
         "<td><ul><li>a</li><li>b</li></ul></td></tr></table>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([
-        { id: 0, text: "Table: Image: Sales chart. Fig 1, - a - b End table." },
-      ]);
+      expect(narrated(result)).toEqual(["Table: Image: Sales chart. Fig 1, - a - b End table."]);
     });
 
     it("narrates the caption, which no one else will (issue #1445)", () => {
@@ -527,9 +492,7 @@ describe("htmlToNarrationInput", () => {
         "<tr><th>Q</th></tr><tr><td>1</td></tr></table>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([
-        { id: 0, text: "Table: Table 1. Revenue by quarter. Q. 1 End table." },
-      ]);
+      expect(narrated(result)).toEqual(["Table: Table 1. Revenue by quarter. Q. 1 End table."]);
     });
 
     it("reads a nested table as a cell of the outer one, once", () => {
@@ -540,16 +503,14 @@ describe("htmlToNarrationInput", () => {
         "</td></tr></table>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([
-        { id: 0, text: "Table: Table: A, B. C End table. End table." },
-      ]);
+      expect(narrated(result)).toEqual(["Table: Table: A, B. C End table. End table."]);
     });
 
     it("keeps the space inside a cell's inline markup", () => {
       const html = "<table><tr><td><b>Name:</b><span> John</span></td></tr></table>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 0, text: "Table: Name: John End table." }]);
+      expect(narrated(result)).toEqual(["Table: Name: John End table."]);
     });
   });
 
@@ -563,11 +524,11 @@ describe("htmlToNarrationInput", () => {
       `;
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([
-        { id: 0, text: "Title" },
-        { id: 1, text: "Introduction paragraph." },
-        { id: 2, text: "Code block: example code End code block." },
-        { id: 3, text: "Another paragraph." },
+      expect(narrated(result)).toEqual([
+        "Title",
+        "Introduction paragraph.",
+        "Code block: example code End code block.",
+        "Another paragraph.",
       ]);
     });
 
@@ -586,15 +547,15 @@ describe("htmlToNarrationInput", () => {
       `;
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([
-        { id: 0, text: "Article Title" },
-        { id: 1, text: "By Dr. Smith" },
-        { id: 2, text: "Introduction" },
-        { id: 3, text: "This is the introduction." },
-        { id: 5, text: "- Point one" },
-        { id: 6, text: "- Point two" },
-        { id: 7, text: "Quote: A memorable quote. End quote." },
-        { id: 8, text: "Final thoughts." },
+      expect(narrated(result)).toEqual([
+        "Article Title",
+        "By Dr. Smith",
+        "Introduction",
+        "This is the introduction.",
+        "- Point one",
+        "- Point two",
+        "Quote: A memorable quote. End quote.",
+        "Final thoughts.",
       ]);
     });
   });
@@ -604,14 +565,14 @@ describe("htmlToNarrationInput", () => {
       const html = "<p>Tom &amp; Jerry &lt;3 ice cream &quot;yum&quot;</p>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 0, text: 'Tom & Jerry <3 ice cream "yum"' }]);
+      expect(narrated(result)).toEqual(['Tom & Jerry <3 ice cream "yum"']);
     });
 
     it("handles nbsp", () => {
       const html = "<p>Hello&nbsp;World</p>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 0, text: "Hello World" }]);
+      expect(narrated(result)).toEqual(["Hello World"]);
     });
   });
 
@@ -620,24 +581,21 @@ describe("htmlToNarrationInput", () => {
       const html = "<p>Too    many    spaces</p>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 0, text: "Too many spaces" }]);
+      expect(narrated(result)).toEqual(["Too many spaces"]);
     });
 
     it("handles multiple paragraphs", () => {
       const html = "<p>First</p>\n\n\n\n<p>Second</p>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([
-        { id: 0, text: "First" },
-        { id: 1, text: "Second" },
-      ]);
+      expect(narrated(result)).toEqual(["First", "Second"]);
     });
 
     it("trims whitespace", () => {
       const html = "<p>  Trimmed content  </p>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 0, text: "Trimmed content" }]);
+      expect(narrated(result)).toEqual(["Trimmed content"]);
     });
   });
 
@@ -646,7 +604,7 @@ describe("htmlToNarrationInput", () => {
       const html = "<div><p>Content inside div</p></div>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 0, text: "Content inside div" }]);
+      expect(narrated(result)).toEqual(["Content inside div"]);
     });
 
     it("narrates a wrapper that holds only text (issue #1451)", () => {
@@ -654,18 +612,14 @@ describe("htmlToNarrationInput", () => {
       const html = "<div>Some text</div>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 0, text: "Some text" }]);
+      expect(narrated(result)).toEqual(["Some text"]);
     });
 
     it("narrates each sectioning wrapper that holds only text", () => {
       const html = "<section>First</section><article>Second</article><aside>Third</aside>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([
-        { id: 0, text: "First" },
-        { id: 1, text: "Second" },
-        { id: 2, text: "Third" },
-      ]);
+      expect(narrated(result)).toEqual(["First", "Second", "Third"]);
     });
 
     it("narrates the innermost wrapper only", () => {
@@ -673,7 +627,7 @@ describe("htmlToNarrationInput", () => {
       const result = htmlToNarrationInput(html);
 
       // The outer wrapper is structural, so only the inner one speaks.
-      expect(result.paragraphs).toEqual([{ id: 0, text: "Some text" }]);
+      expect(narrated(result)).toEqual(["Some text"]);
     });
 
     it("leaves a wrapper around a standalone image to the image", () => {
@@ -682,7 +636,7 @@ describe("htmlToNarrationInput", () => {
       const html = '<div><img alt="A cat"></div>';
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 0, text: "Image: A cat" }]);
+      expect(narrated(result)).toEqual(["Image: A cat"]);
     });
 
     it("narrates a wrapper that holds text alongside an image", () => {
@@ -691,16 +645,18 @@ describe("htmlToNarrationInput", () => {
 
       // One paragraph, on the wrapper: the image is read within its run rather
       // than as a paragraph of its own, so nothing is said twice.
-      expect(result.paragraphs).toEqual([{ id: 0, text: "Credit: Image: A cat" }]);
+      expect(narrated(result)).toEqual(["Credit: Image: A cat"]);
     });
 
-    it("does not narrate a wrapper's blocks twice", () => {
-      const html = "<div>Intro<p>Body</p></div>";
+    it("narrates a wrapper's loose text as well as its blocks, each once", () => {
+      const html = "<div>Intro<p>Body</p>Outro</div>";
       const result = htmlToNarrationInput(html);
 
-      // The wrapper is structural because the paragraph speaks for itself; its
-      // own "Intro" run has no element to highlight, so it goes unnarrated.
-      expect(result.paragraphs).toEqual([{ id: 0, text: "Body" }]);
+      // Three runs: the wrapper's own text either side of the paragraph, which
+      // speaks for itself. The loose runs highlight the wrapper (0), the
+      // paragraph highlights itself (1).
+      expect(narrated(result)).toEqual(["Intro", "Body", "Outro"]);
+      expect(result.paragraphs.map((p) => p.o)).toEqual([0, 1, 0]);
     });
 
     it("keeps a wrapper inside a blockquote in the quote", () => {
@@ -708,14 +664,14 @@ describe("htmlToNarrationInput", () => {
       const result = htmlToNarrationInput(html);
 
       // The blockquote speaks its whole subtree, so the wrapper stays silent.
-      expect(result.paragraphs).toEqual([{ id: 0, text: "Quote: Quoted text End quote." }]);
+      expect(narrated(result)).toEqual(["Quote: Quoted text End quote."]);
     });
 
     it("gives a wrapper in a list item the item's marker", () => {
       const html = "<ul><li><div>Item text</div></li></ul>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 2, text: "- Item text" }]);
+      expect(narrated(result)).toEqual(["- Item text"]);
     });
   });
 
@@ -724,31 +680,40 @@ describe("htmlToNarrationInput", () => {
       const html = "<dl><dt>Term</dt><dd>Definition</dd></dl>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([
-        { id: 1, text: "Term" },
-        { id: 2, text: "Definition" },
-      ]);
+      expect(narrated(result)).toEqual(["Term", "Definition"]);
     });
 
     it("does not repeat a definition's own paragraphs", () => {
       const html = "<dl><dt>Term</dt><dd><p>First</p><p>Second</p></dd></dl>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([
-        { id: 1, text: "Term" },
-        { id: 3, text: "First" },
-        { id: 4, text: "Second" },
-      ]);
+      expect(narrated(result)).toEqual(["Term", "First", "Second"]);
     });
   });
 
   describe("br handling", () => {
-    it("extracts text from paragraph with br (br treated as inline)", () => {
+    it("reads a line break as a break, not as a word join", () => {
       const html = "<p>Line one<br>Line two</p>";
       const result = htmlToNarrationInput(html);
 
-      // DOM-based parsing treats br as inline, text is joined
-      expect(result.paragraphs).toEqual([{ id: 0, text: "Line oneLine two" }]);
+      expect(narrated(result)).toEqual(["Line one Line two"]);
+    });
+
+    it("speaks a blank line's worth of breaks as separate paragraphs", () => {
+      // The `<br><br>` articles are written in; both halves highlight the <p>.
+      const html = "<p>Line one<br><br>Line two</p>";
+      const result = htmlToNarrationInput(html);
+
+      expect(narrated(result)).toEqual(["Line one", "Line two"]);
+      expect(result.paragraphs.map((p) => p.o)).toEqual([0, 0]);
+    });
+
+    it("does not let source formatting break a paragraph", () => {
+      // A blank line in the markup is whitespace, not a paragraph break.
+      const html = "<p>Line one\n\nLine two</p>";
+      const result = htmlToNarrationInput(html);
+
+      expect(narrated(result)).toEqual(["Line one Line two"]);
     });
   });
 });

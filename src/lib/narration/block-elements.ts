@@ -1,17 +1,30 @@
 /**
- * Shared block element definitions for narration.
+ * Which HTML elements are blocks, and which ones narration can highlight.
  *
- * This module is isomorphic (works in both browser and server)
- * and provides the canonical list of block elements for paragraph marking.
+ * This module is isomorphic (it works against a linkedom document server-side
+ * and a `DOMParser` one in the browser) and is the structural half of
+ * narration: it says where a stretch of speech ends and what can carry a
+ * `data-para-id`. What the speech *says* is `./runs`.
  *
  * @module narration/block-elements
  */
 
 /**
- * Block-level elements that get paragraph markers for narration highlighting.
- * Used by both server-side preprocessing and client-side highlighting.
+ * Elements that break a run of text, and can therefore own a spoken paragraph.
+ *
+ * Everything not listed is treated as phrasing content — it joins the run of
+ * text around it. That default is deliberate: a block we forget to list only
+ * merges its text into the neighbouring paragraph, whereas an inline element
+ * misfiled as a block would chop a sentence into paragraphs mid-clause. The
+ * list is closed because sanitization is (`native/sanitizer/core/src/sanitize.rs`
+ * `ALLOWED_TAGS`), so anything reaching us that isn't here is phrasing, a
+ * MathML tag, or a media element.
+ *
+ * A table's own structure (`tr`, `td`, `caption`, …) is absent on purpose: a
+ * table narrates its whole subtree in one paragraph, so the walk never
+ * descends into those and they can neither break a run nor own one.
  */
-export const BLOCK_ELEMENTS = [
+const BLOCK_TAGS = new Set([
   "p",
   "h1",
   "h2",
@@ -19,35 +32,6 @@ export const BLOCK_ELEMENTS = [
   "h4",
   "h5",
   "h6",
-  "blockquote",
-  "pre",
-  "ul",
-  "ol",
-  "li",
-  "dl",
-  "dt",
-  "dd",
-  "figure",
-  "table",
-  "img",
-] as const;
-
-/**
- * Type for block element tag names.
- */
-export type BlockElement = (typeof BLOCK_ELEMENTS)[number];
-
-/**
- * Generic containers that narrate as a paragraph only when nothing inside them
- * narrates already — see `wrapperSpeaks` for the rule (issue #1451).
- *
- * Most of them are structural — a `<div>` around the whole article, a
- * `<section>` around its own `<p>`s — and giving those a paragraph would say
- * everything inside them a second time. But an editor that emits
- * `<div>Some text</div>` where it should emit a `<p>` is common in feed HTML,
- * and text like that is narrated nowhere unless the container speaks it.
- */
-const WRAPPER_ELEMENTS = [
   "div",
   "section",
   "article",
@@ -56,80 +40,64 @@ const WRAPPER_ELEMENTS = [
   "footer",
   "main",
   "nav",
-] as const;
+  "blockquote",
+  "pre",
+  "figure",
+  "figcaption",
+  "details",
+  "summary",
+  "address",
+  "hr",
+  "ul",
+  "ol",
+  "li",
+  "dl",
+  "dt",
+  "dd",
+  "table",
+]);
 
-const BLOCK_ELEMENTS_SET = new Set<string>(BLOCK_ELEMENTS);
-const WRAPPER_ELEMENTS_SET = new Set<string>(WRAPPER_ELEMENTS);
-
-/** Everything that can narrate as a paragraph, images included. */
-const ANY_BLOCK_SELECTOR = [...BLOCK_ELEMENTS, ...WRAPPER_ELEMENTS].join(", ");
-
-/** The same, minus images: a nested image never gets a paragraph of its own. */
-const NESTED_BLOCK_SELECTOR = [...BLOCK_ELEMENTS, ...WRAPPER_ELEMENTS]
-  .filter((tagName) => tagName !== "img")
-  .join(", ");
-
-/**
- * Whether an element narrates as a paragraph of its own.
- *
- * An image counts here, but only the standalone ones become paragraphs — see
- * `narrationBlocks`.
- *
- * Memoized because the walks ask this about the same wrapper repeatedly and
- * answering it scans the wrapper's subtree.
- */
-export function isNarrationBlock(el: Element): boolean {
-  const tagName = el.tagName.toLowerCase();
-  if (BLOCK_ELEMENTS_SET.has(tagName)) return true;
-  if (!WRAPPER_ELEMENTS_SET.has(tagName)) return false;
-
-  const cached = speakingWrappers.get(el);
-  if (cached !== undefined) return cached;
-  const speaks = wrapperSpeaks(el);
-  speakingWrappers.set(el, speaks);
-  return speaks;
-}
-
-/** Which wrappers narrate as a paragraph — see `isNarrationBlock`. */
-const speakingWrappers = new WeakMap<Element, boolean>();
-
-/** Whether a wrapper narrates a paragraph rather than being walked through. */
-function wrapperSpeaks(el: Element): boolean {
-  // A block inside it narrates itself, so this wrapper is structural.
-  if (containsNarrationBlock(el)) return false;
-  // Nothing but images: each of those is a paragraph of its own, and speaking
-  // them here too would say the alt text twice — `<div><img></div>` is how most
-  // editors emit a standalone image. Unless there is text alongside them, which
-  // nothing else would narrate: then this wrapper reads as the whole run.
-  return el.querySelector("img") === null || (el.textContent ?? "").trim() !== "";
+/** Whether a tag name breaks a run of text — see `BLOCK_TAGS`. */
+export function isBlockTag(tagName: string): boolean {
+  return BLOCK_TAGS.has(tagName);
 }
 
 /**
- * Whether an element holds a block that narrates itself, which makes the
- * element around it a wrapper to be walked into rather than a run of text.
+ * Whether an element can carry a `data-para-id`: the blocks, plus images (an
+ * image alone in its run is highlighted as itself rather than as the block
+ * around it).
  */
-export function containsNarrationBlock(el: Element): boolean {
-  return el.querySelector(NESTED_BLOCK_SELECTOR) !== null;
+function isTarget(tagName: string): boolean {
+  return BLOCK_TAGS.has(tagName) || tagName === "img";
 }
 
 /**
- * The elements that narrate as paragraphs, in document order.
+ * The elements narration can highlight, in document order — their positions are
+ * the `data-para-id` numbers, and what a run's `o` indexes into.
  *
- * This is the one list both sides of narration are built from — the server's
- * narration input and the client's `data-para-id` assignment — so that a
- * paragraph index means the same element in both. `root` bounds the walk (the
- * `<body>` server-side, the wrapper the HTML was parsed into client-side).
+ * The server (deriving narration) and the client (stamping the attributes) both
+ * number elements with this one function, which is what makes an `o` mean the
+ * same element on both sides. It is deliberately a plain structural walk: no
+ * element is filtered out for saying nothing, because numbering that depended
+ * on the text would have to agree across two voices (annotated LLM input vs.
+ * plain spoken text) and across a cached paragraph map's lifetime. Elements
+ * that never own a run simply keep an id nothing highlights.
  */
-export function narrationBlocks(root: Element): Element[] {
-  return Array.from(root.querySelectorAll(ANY_BLOCK_SELECTOR)).filter((el) => {
-    if (!isNarrationBlock(el)) return false;
-    if (el.tagName.toLowerCase() !== "img") return true;
-    // An image is a paragraph only when it is standalone: a block around it
-    // speaks it instead (a figure's alt text, a table's cell, a paragraph's run
-    // of text), so a second paragraph here would repeat the alt text.
-    for (let parent = el.parentElement; parent && parent !== root; parent = parent.parentElement) {
-      if (isNarrationBlock(parent)) return false;
+export function narrationTargets(root: Element): Element[] {
+  const targets: Element[] = [];
+
+  // Walked with an explicit stack rather than a selector or recursion: entry
+  // HTML is feed-controlled, and a union selector over a deeply nested document
+  // is quadratic in some DOM implementations (seconds under jsdom) while
+  // recursion would overflow on the same input.
+  const stack: Element[] = [root];
+  while (stack.length > 0) {
+    const el = stack.pop() as Element;
+    if (el !== root && isTarget(el.tagName.toLowerCase())) targets.push(el);
+    const children = el.children;
+    for (let i = children.length - 1; i >= 0; i--) {
+      stack.push(children[i]);
     }
-    return true;
-  });
+  }
+  return targets;
 }
