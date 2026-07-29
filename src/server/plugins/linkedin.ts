@@ -2,6 +2,7 @@ import type { UrlPlugin, SavedArticleContent } from "./types";
 import { socialPostTitle } from "./social-post";
 import { fetchPluginPage } from "./fetch-page";
 import { Parser } from "htmlparser2";
+import { z } from "zod";
 import { escapeHtml, plainTextToHtml } from "@/server/http/html";
 import { safeDecodeURIComponent } from "@/lib/url";
 import { logger } from "@/lib/logger";
@@ -75,64 +76,81 @@ export function parseLinkedInPostUrn(url: URL): string | null {
 // ============================================================================
 
 /**
- * `@type` values we know are the post itself, and where each keeps the body.
- *
- * Matching on the declared type — rather than sniffing for whichever entity
- * happens to carry a body-shaped field — is what keeps an unrelated entity on
- * the same page (the LinkedIn `Organization`, whose `description` is "LinkedIn
- * is the world's largest professional network") from being saved as the post.
- * A type we haven't seen falls back to normal handling instead of guessing.
+ * JSON-LD is `unknown` at runtime: it is remote JSON, so every field may be
+ * absent, the wrong type, or — since schema.org permits a single value or an
+ * array of them **anywhere** — wrapped in an array. These schemas do the
+ * narrowing so the render path never has to, and a value of the wrong shape is
+ * dropped rather than crashing the save.
  */
-const POST_TYPES: Record<string, ReadonlyArray<"articleBody" | "description">> = {
-  // A text post. `description` is deliberately not listed: on a link-share post
-  // it describes the *shared article*, not the post.
-  SocialMediaPosting: ["articleBody"],
-  DiscussionForumPosting: ["articleBody"],
-  // A video post carries the commentary in `description` and has no articleBody.
-  VideoObject: ["description"],
-};
+const jsonLdText = z.string().trim().min(1);
+const jsonLdHttpUrl = jsonLdText.regex(/^https?:\/\//i);
+/** A `Person`, or the bare name string schema.org also permits. */
+const jsonLdPersonName = z.union([
+  jsonLdText,
+  z.object({ name: jsonLdText }).transform((p) => p.name),
+]);
+/** An `ImageObject`, or the bare URL string schema.org also permits. */
+const jsonLdImageUrl = z.union([
+  jsonLdHttpUrl,
+  z.object({ url: jsonLdHttpUrl }).transform((i) => i.url),
+]);
 
 /**
- * The subset of LinkedIn's JSON-LD we render.
+ * Parse the first of `value`'s candidates that matches, treating a lone value
+ * and an array of values identically. Returns null when none match, so an
+ * unusable entry (a `javascript:` image URL) is skipped rather than accepted or
+ * fatal.
  */
-interface LinkedInPerson {
-  name?: string;
-  url?: string;
+function firstMatching<T>(schema: z.ZodType<T>, value: unknown): T | null {
+  for (const candidate of Array.isArray(value) ? value : [value]) {
+    const parsed = schema.safeParse(candidate);
+    if (parsed.success) {
+      return parsed.data;
+    }
+  }
+  return null;
 }
 
-/** schema.org lets a value be a single item or an array of them, everywhere. */
-type OneOrMany<T> = T | T[];
+/** A JSON-LD entity, before any of its fields have been validated. */
+type JsonLdEntity = Record<string, unknown>;
 
-/** An `ImageObject`, or the bare URL string schema.org also permits. */
-type LinkedInImage = string | { url?: string };
-
-interface LinkedInJsonLd {
-  "@type"?: string;
-  headline?: string;
-  articleBody?: string;
-  description?: string;
-  datePublished?: string;
-  author?: OneOrMany<LinkedInPerson>;
-  creator?: OneOrMany<LinkedInPerson>;
-  image?: OneOrMany<LinkedInImage>;
-  thumbnailUrl?: string;
-  /** Some schema.org emitters nest the real entities under a `@graph`. */
-  "@graph"?: unknown;
-}
+/**
+ * The `@type` values that are the post itself, the field each keeps its body
+ * in, and — significantly — the order to prefer them in.
+ *
+ * Matching the declared type, rather than sniffing for whichever entity happens
+ * to carry a body-shaped field, is what keeps an unrelated entity on the same
+ * page (the LinkedIn `Organization`, whose `description` is "LinkedIn is the
+ * world's largest professional network") from being saved as the post. A type
+ * not listed here is declined rather than guessed at.
+ *
+ * The order matters because a page can carry more than one *post-typed* entity:
+ * a post that shares a video has both a `SocialMediaPosting` (the member's own
+ * commentary) and a `VideoObject` (the shared media). Document order doesn't
+ * reliably put the post first, so the post's own types outrank the media's.
+ */
+const POST_TYPES = [
+  // `description` is deliberately not read for these: on a link-share post it
+  // describes the *shared article*, not the post.
+  { type: "SocialMediaPosting", bodyField: "articleBody" },
+  { type: "DiscussionForumPosting", bodyField: "articleBody" },
+  // A video post carries the commentary in `description` and has no articleBody.
+  { type: "VideoObject", bodyField: "description" },
+] as const;
 
 /**
  * Flatten one parsed JSON-LD document into the entity objects it contains,
  * unwrapping the two containers schema.org allows: a top-level array, and a
  * `@graph` array.
  */
-function flattenJsonLd(parsed: unknown): LinkedInJsonLd[] {
+function flattenJsonLd(parsed: unknown): JsonLdEntity[] {
   const queue = Array.isArray(parsed) ? [...parsed] : [parsed];
-  const entities: LinkedInJsonLd[] = [];
+  const entities: JsonLdEntity[] = [];
   for (const item of queue) {
     if (!item || typeof item !== "object") {
       continue;
     }
-    const entity = item as LinkedInJsonLd;
+    const entity = item as JsonLdEntity;
     // A `@graph` wrapper carries no body itself; only its members matter.
     if (Array.isArray(entity["@graph"])) {
       queue.push(...entity["@graph"]);
@@ -144,8 +162,8 @@ function flattenJsonLd(parsed: unknown): LinkedInJsonLd[] {
 }
 
 /** SAX-scrape a post page for the entities in its JSON-LD blocks. */
-function extractLinkedInJsonLd(html: string): LinkedInJsonLd[] {
-  const jsonLd: LinkedInJsonLd[] = [];
+function extractLinkedInJsonLd(html: string): JsonLdEntity[] {
+  const jsonLd: JsonLdEntity[] = [];
 
   let inJsonLd = false;
   let scriptText = "";
@@ -184,33 +202,20 @@ function extractLinkedInJsonLd(html: string): LinkedInJsonLd[] {
   return jsonLd;
 }
 
-function isHttpUrl(url: string | undefined): url is string {
-  return !!url && /^https?:\/\//i.test(url);
-}
-
-/** Coerce schema.org's single-or-array shape to an array. */
-function toArray<T>(value: OneOrMany<T> | undefined): T[] {
-  if (value === undefined) return [];
-  return Array.isArray(value) ? value : [value];
-}
-
-/** First image with a usable http(s) URL, skipping any that aren't. */
-function firstImageUrl(image: LinkedInJsonLd["image"]): string | null {
-  for (const entry of toArray(image)) {
-    const url = typeof entry === "string" ? entry : entry?.url;
-    if (isHttpUrl(url)) {
-      return url;
-    }
-  }
-  return null;
-}
-
-/** First named author/creator. */
-function firstAuthorName(post: LinkedInJsonLd | undefined): string | null {
-  for (const person of [...toArray(post?.author), ...toArray(post?.creator)]) {
-    const name = person?.name?.trim();
-    if (name) {
-      return name;
+/**
+ * Find the entity that is the post, in {@link POST_TYPES} priority order, along
+ * with its body text. Returns null when the page declares no post we recognize.
+ */
+function findPostEntity(entities: JsonLdEntity[]): { post: JsonLdEntity; body: string } | null {
+  for (const { type, bodyField } of POST_TYPES) {
+    for (const post of entities) {
+      if (firstMatching(z.literal(type), post["@type"]) === null) {
+        continue;
+      }
+      const body = firstMatching(jsonLdText, post[bodyField]);
+      if (body) {
+        return { post, body };
+      }
     }
   }
   return null;
@@ -232,52 +237,43 @@ function firstAuthorName(post: LinkedInJsonLd | undefined): string | null {
  * header), but a reasonable article rather than a failure.
  */
 export function renderLinkedInPost(html: string, postUrl: string): SavedArticleContent | null {
-  // Take the first entity whose declared @type is a post, and read the body
-  // from the field that type keeps it in. Nothing is inferred from field shape,
-  // so an unrelated entity on the page can't be mistaken for the post.
-  let post: LinkedInJsonLd | undefined;
-  let body = "";
-  for (const entity of extractLinkedInJsonLd(html)) {
-    const bodyFields = POST_TYPES[entity["@type"] ?? ""];
-    const text = bodyFields?.map((field) => entity[field]?.trim()).find(Boolean);
-    if (text) {
-      post = entity;
-      body = text;
-      break;
-    }
-  }
-  if (!post) {
+  const found = findPostEntity(extractLinkedInJsonLd(html));
+  if (!found) {
     return null;
   }
+  const { post, body } = found;
 
-  const author = firstAuthorName(post);
+  const author =
+    firstMatching(jsonLdPersonName, post.author) ?? firstMatching(jsonLdPersonName, post.creator);
 
   const parts = [plainTextToHtml(body)];
 
   // The post's attached image (or the shared link's thumbnail). Plugin HTML is a
   // body fragment, so the save path's `og:image` scrape never sees this page —
   // inlining it is the only way the image survives the save.
-  const image = firstImageUrl(post?.image) ?? null;
+  const image = firstMatching(jsonLdImageUrl, post.image);
+  const thumbnail = firstMatching(jsonLdHttpUrl, post.thumbnailUrl);
   if (image) {
     parts.push(`<figure><img src="${escapeHtml(image)}" alt="" loading="lazy"></figure>`);
-  } else if (isHttpUrl(post?.thumbnailUrl)) {
+  } else if (thumbnail) {
     // A video post: the media itself is a streaming manifest a bare <video>
     // can't play, so link back to the post behind its poster frame.
     parts.push(
       `<figure><a href="${escapeHtml(postUrl)}">` +
-        `<img src="${escapeHtml(post.thumbnailUrl)}" alt="" loading="lazy">` +
+        `<img src="${escapeHtml(thumbnail)}" alt="" loading="lazy">` +
         `<strong>Watch video on LinkedIn</strong></a></figure>`
     );
   }
 
-  const published = post?.datePublished ? new Date(post.datePublished) : null;
+  const publishedText = firstMatching(jsonLdText, post.datePublished);
+  const published = publishedText ? new Date(publishedText) : null;
 
   return {
-    html: parts.filter(Boolean).join("\n"),
+    html: parts.join("\n"),
     // LinkedIn's own `headline` is a cleaned-up first line of the post, but
     // it's remote-controlled and unbounded — run it through the same eliding
     // the other social plugins use rather than storing it raw.
-    title: socialPostTitle(post?.headline?.trim() || body, author),
+    title: socialPostTitle(firstMatching(jsonLdText, post.headline) ?? body, author),
     author,
     publishedAt: published && !Number.isNaN(published.getTime()) ? published : null,
     canonicalUrl: postUrl,

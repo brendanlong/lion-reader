@@ -132,15 +132,12 @@ describe("renderLinkedInPost", () => {
     expect(result!.canonicalUrl).toBe(POST_URL);
   });
 
-  it("prefers articleBody over the `text` field, which is the shared link's title", () => {
-    const result = renderLinkedInPost(page(TEXT_POST), POST_URL);
-    expect(result!.html).not.toContain("Fix a B&amp;N Nook Android Tablet");
-  });
-
-  it("derives a title from the first line when there is no headline", () => {
-    const result = renderLinkedInPost(page({ ...TEXT_POST, headline: undefined }), POST_URL);
-    expect(result!.title).toBe(
-      "Opened up your Barnes & Noble NOOK just to find it's showing the wrong time?"
+  it("prefers the headline over the body's first line for the title", () => {
+    // Distinct values, so this pins which one was used in both directions.
+    const distinct = { ...TEXT_POST, headline: "The headline", articleBody: "The body." };
+    expect(renderLinkedInPost(page(distinct), POST_URL)!.title).toBe("The headline");
+    expect(renderLinkedInPost(page({ ...distinct, headline: undefined }), POST_URL)!.title).toBe(
+      "The body."
     );
   });
 
@@ -256,6 +253,103 @@ describe("renderLinkedInPost", () => {
       POST_URL
     );
     expect(result).toBeNull();
+  });
+
+  // A post that shares a video carries BOTH a SocialMediaPosting (the member's
+  // own commentary) and a VideoObject (the shared media). Document order does
+  // not reliably put the post first, so positional first-match would sometimes
+  // save the shared video's description instead of what the member wrote.
+  it("prefers the post's own entity over a shared VideoObject, in either order", () => {
+    const sharedVideo = {
+      "@type": "VideoObject",
+      description: "A SHARED VIDEO",
+      thumbnailUrl: "https://media.licdn.com/poster.jpg",
+    };
+    const commentary = { "@type": "SocialMediaPosting", articleBody: "THE REAL POST" };
+
+    for (const entities of [
+      [sharedVideo, commentary],
+      [commentary, sharedVideo],
+    ]) {
+      expect(renderLinkedInPost(page(entities), POST_URL)!.html).toBe("<p>THE REAL POST</p>");
+    }
+
+    // Also across a @graph, which flattens after the top-level entities.
+    const graphed = [{ "@graph": [commentary] }, sharedVideo];
+    expect(renderLinkedInPost(page(graphed), POST_URL)!.html).toBe("<p>THE REAL POST</p>");
+  });
+
+  it("reads a DiscussionForumPosting's articleBody", () => {
+    const result = renderLinkedInPost(
+      page({ "@type": "DiscussionForumPosting", articleBody: "A discussion post." }),
+      POST_URL
+    );
+    expect(result!.html).toBe("<p>A discussion post.</p>");
+  });
+
+  // JSON-LD is remote JSON: every field may be absent, the wrong type, or
+  // array-wrapped. The plugin's contract is to decline, never to throw — a
+  // throw on the decline path defeats the point of declining.
+  describe("hostile or malformed JSON-LD", () => {
+    it.each([
+      // `@type` values that resolve on Object.prototype rather than the map.
+      ["@type is constructor", { "@type": "constructor", articleBody: "x" }],
+      ["@type is __proto__", { "@type": "__proto__", articleBody: "x" }],
+      ["@type is toString", { "@type": "toString", articleBody: "x" }],
+      ["@type is hasOwnProperty", { "@type": "hasOwnProperty", articleBody: "x" }],
+      // Wrong types where a string is declared.
+      ["@type is a number", { "@type": 42, articleBody: "x" }],
+      ["articleBody is a number", { "@type": "SocialMediaPosting", articleBody: 123 }],
+      ["articleBody is an object", { "@type": "SocialMediaPosting", articleBody: {} }],
+      ["articleBody is null", { "@type": "SocialMediaPosting", articleBody: null }],
+      ["articleBody is whitespace", { "@type": "SocialMediaPosting", articleBody: "   " }],
+    ])("returns null for %s", (_label, entity) => {
+      expect(renderLinkedInPost(page(entity), POST_URL)).toBeNull();
+    });
+
+    it.each([
+      ["headline", { headline: 42 }],
+      ["author", { author: { name: 42 } }],
+      ["author as an object with no name", { author: {} }],
+      ["image", { image: { url: ["https://media.licdn.com/a.jpg"] } }],
+      ["thumbnailUrl", { thumbnailUrl: ["https://media.licdn.com/a.jpg"] }],
+      ["datePublished", { datePublished: 123456789 }],
+      ["everything at once", { headline: [], author: 0, image: false, datePublished: {} }],
+    ])("still renders the body when %s has the wrong type", (_label, overrides) => {
+      const result = renderLinkedInPost(page({ ...TEXT_POST, ...overrides }), POST_URL);
+      expect(result).not.toBeNull();
+      expect(result!.html).toContain("Barnes &amp; Noble NOOK");
+    });
+
+    it("does not turn a non-string datePublished into a bogus 1970 date", () => {
+      const result = renderLinkedInPost(page({ ...TEXT_POST, datePublished: 123456789 }), POST_URL);
+      expect(result!.publishedAt).toBeNull();
+    });
+
+    it("does not let an array-wrapped URL past the http(s) scheme gate", () => {
+      const result = renderLinkedInPost(
+        page({ ...TEXT_POST, image: { url: ["https://ok.jpg", "javascript:alert(1)"] } }),
+        POST_URL
+      );
+      expect(result!.html).not.toContain("javascript:");
+      expect(result!.html).not.toContain("<figure>");
+    });
+
+    it("accepts an array-wrapped @type", () => {
+      const result = renderLinkedInPost(
+        page({ ...TEXT_POST, "@type": ["SocialMediaPosting", "Article"] }),
+        POST_URL
+      );
+      expect(result!.author).toBe("Dave Taylor");
+    });
+
+    it("accepts a bare author name string", () => {
+      for (const author of ["Dave Taylor", ["Dave Taylor"]]) {
+        expect(renderLinkedInPost(page({ ...TEXT_POST, author }), POST_URL)!.author).toBe(
+          "Dave Taylor"
+        );
+      }
+    });
   });
 
   it("returns null for an auth wall with no post body, so the save falls back", () => {
