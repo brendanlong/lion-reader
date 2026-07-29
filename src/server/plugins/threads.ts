@@ -42,9 +42,17 @@ import { logger } from "@/lib/logger";
 const THREADS_HOSTS = new Set(["threads.com", "www.threads.com", "threads.net", "www.threads.net"]);
 
 /**
- * Parse a Threads post URL into its shortcode. Handles the canonical
- * `/@handle/post/{code}` form (with or without the SEO slug Threads appends),
- * and the `/t/{code}` short permalink its embeds use.
+ * Parse a URL that identifies a single Threads post, returning its id. Threads
+ * hands out three forms and a saved URL can be any of them:
+ *
+ * - `/@handle/post/{code}` — canonical, with or without the SEO slug appended
+ * - `/t/{code}` — short permalink, used by embeds
+ * - `/share/{code}` — what the app's share sheet produces, so it's the form
+ *   most likely to be pasted in; note its id is a share id in its own space,
+ *   not the post's shortcode
+ *
+ * The last two redirect to the canonical form, so `fetchContent` re-checks the
+ * URL it actually landed on rather than trusting the id here to be a post's.
  */
 export function parseThreadsPostCode(url: URL): string | null {
   if (!THREADS_HOSTS.has(url.hostname.toLowerCase())) {
@@ -63,8 +71,8 @@ export function parseThreadsPostCode(url: URL): string | null {
     return parts[2];
   }
 
-  // /t/{code} — the short permalink form used in embeds and share sheets.
-  if (parts.length === 2 && parts[0] === "t" && parts[1]) {
+  // /t/{code} and /share/{code} — both redirect to the canonical form.
+  if (parts.length === 2 && (parts[0] === "t" || parts[0] === "share") && parts[1]) {
     return parts[1];
   }
 
@@ -167,16 +175,31 @@ export const threadsPlugin: UrlPlugin = {
       siteName: "Threads",
 
       async fetchContent(url: URL): Promise<SavedArticleContent | null> {
-        // Fetch what the user gave us; `/t/{code}` redirects to the canonical
-        // `/@handle/post/{code}`, and both serve the same Open Graph tags.
+        // Fetch what the user gave us; the short forms redirect to the
+        // canonical `/@handle/post/{code}`, which serves the Open Graph tags.
         const page = await fetchPluginPage(url, "threads");
         if (!page) {
           return null;
         }
 
+        // A deleted or invalid post redirects to the Threads home page
+        // (`/?error=invalid_post`), which carries its own `og:description` —
+        // "Join Threads to share ideas, ask questions…" — that would otherwise
+        // be saved as the post body. Every Threads page has an `og:description`,
+        // so unlike LinkedIn there is no type to gate on; confirming the page we
+        // landed on is still a post is this plugin's equivalent of that gate.
+        if (!parseThreadsPostCode(new URL(page.finalUrl))) {
+          logger.info("Threads post URL redirected away from the post", {
+            url: url.href,
+            finalUrl: page.finalUrl,
+          });
+          return null;
+        }
+
         const content = renderThreadsPost(page.html, page.finalUrl);
         if (!content) {
-          logger.debug("Threads post page carried no post text", { url: url.href });
+          // See the LinkedIn plugin for why these decline paths log at info.
+          logger.info("Threads post page carried no post text", { url: url.href });
         }
         return content;
       },

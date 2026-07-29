@@ -49,6 +49,30 @@ describe("parseThreadsPostCode", () => {
     );
   });
 
+  // What the Threads app's share sheet produces, so it's the form most likely
+  // to be pasted into the app. Its id lives in its own space, not the post's
+  // shortcode space, and it 302s to the canonical URL.
+  it("parses the /share/ form the app's share sheet produces", () => {
+    for (const href of [
+      "https://www.threads.com/share/BAd-r4UCHz/",
+      "https://www.threads.com/share/BAd-r4UCHz",
+      "https://threads.com/share/BAd-r4UCHz",
+      "https://www.threads.net/share/BAd-r4UCHz/",
+    ]) {
+      expect(parseThreadsPostCode(new URL(href))).toBe("BAd-r4UCHz");
+    }
+  });
+
+  it("drives matchUrl for every form Threads hands out", () => {
+    for (const href of [
+      "https://www.threads.com/@smbccomics/post/DbYcIlkj-Pv",
+      "https://www.threads.com/t/DbYcIlkj-Pv",
+      "https://www.threads.com/share/BAd-r4UCHz/",
+    ]) {
+      expect(threadsPlugin.matchUrl(new URL(href))).toBe(true);
+    }
+  });
+
   it("handles both the threads.com and threads.net domains, with or without www", () => {
     for (const host of ["threads.com", "www.threads.com", "threads.net", "www.threads.net"]) {
       expect(parseThreadsPostCode(new URL(`https://${host}/@anujs3/post/DNG2tXiBjzN`))).toBe(
@@ -61,6 +85,13 @@ describe("parseThreadsPostCode", () => {
     for (const path of ["/@anujs3", "/", "/search?q=x", "/@anujs3/replies", "/tag/threads"]) {
       expect(parseThreadsPostCode(new URL(`https://www.threads.com${path}`))).toBeNull();
     }
+  });
+
+  // fetchContent guards against redirects with this: a deleted or invalid post
+  // redirects here, and the home page carries its own og:description that would
+  // otherwise be saved as the post body.
+  it("returns null for the home page a dead post redirects to", () => {
+    expect(parseThreadsPostCode(new URL("https://www.threads.com/?error=invalid_post"))).toBeNull();
   });
 
   it("returns null for non-Threads hosts", () => {
