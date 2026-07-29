@@ -593,7 +593,8 @@ describe("htmlToClientNarration", () => {
       const html = '<p>Text before <img src="test.jpg"> text after</p>';
       const result = htmlToClientNarration(html);
 
-      expect(result.narrationText).toBe("Text before  text after");
+      // The gap the image left is collapsed away, not spoken as a double space.
+      expect(result.narrationText).toBe("Text before text after");
     });
 
     it("handles inline images in list items", () => {
@@ -625,6 +626,20 @@ describe("htmlToClientNarration", () => {
         { n: 1, o: 2 },
       ]);
     });
+
+    it("skips a code block wrapped in a list item or blockquote too", () => {
+      // The wrapper used to read the code out on the <pre>'s behalf, which the
+      // skip above exists to prevent.
+      for (const html of [
+        "<ul><li><pre>const x = 1;</pre></li></ul>",
+        "<blockquote><pre>const x = 1;</pre></blockquote>",
+      ]) {
+        const result = htmlToClientNarration(html);
+
+        expect(result.narrationText).toBe("");
+        expect(result.paragraphMap).toEqual([]);
+      }
+    });
   });
 
   describe("list handling", () => {
@@ -638,6 +653,31 @@ describe("htmlToClientNarration", () => {
       expect(result.paragraphMap).toEqual([
         { n: 0, o: 1 },
         { n: 1, o: 2 },
+      ]);
+    });
+
+    it("narrates a loose list item once, not once per wrapper (issue #1441)", () => {
+      // The <li>/<p> shape cmark-gfm and GitHub emit for any list with blank
+      // lines between items, so it is common in feed HTML.
+      const html = "<ul><li><p>Item 1</p></li><li><p>Item 2</p></li></ul>";
+      const result = htmlToClientNarration(html);
+
+      // Only the paragraphs speak; ul (0) and both li (1, 3) are containers.
+      expect(result.narrationText).toBe("Item 1\n\nItem 2");
+      expect(result.paragraphMap).toEqual([
+        { n: 0, o: 2 },
+        { n: 1, o: 4 },
+      ]);
+    });
+
+    it("does not repeat a nested list's items in its parent item", () => {
+      const html = "<ul><li>Parent<ul><li>Child</li></ul></li></ul>";
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("Parent\n\nChild");
+      expect(result.paragraphMap).toEqual([
+        { n: 0, o: 1 },
+        { n: 1, o: 3 },
       ]);
     });
   });
@@ -787,6 +827,29 @@ describe("htmlToClientNarration", () => {
     });
   });
 
+  describe("paragraph text", () => {
+    it("keeps the space inside a paragraph's inline markup", () => {
+      const html = "<p><b>Name:</b><span> John</span></p>";
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("Name: John");
+    });
+
+    it("keeps an inline image's alt text apart from the words around it", () => {
+      const html = '<p>see<img alt="a cat">now</p>';
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("see Image: a cat now");
+    });
+
+    it("narrates a figure's caption, which nothing else does", () => {
+      const html = '<figure><img alt="A cat"><figcaption>My cat</figcaption></figure>';
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("Image: A cat. My cat");
+    });
+  });
+
   describe("blockquote handling", () => {
     it("includes blockquote text in narration", () => {
       const html = "<blockquote>A famous quote goes here.</blockquote>";
@@ -794,6 +857,15 @@ describe("htmlToClientNarration", () => {
 
       expect(result.narrationText).toBe("A famous quote goes here.");
       expect(result.paragraphMap).toEqual([{ n: 0, o: 0 }]);
+    });
+
+    it("narrates a quoted paragraph once, not once per wrapper (issue #1441)", () => {
+      const html = "<blockquote><p>A famous quote goes here.</p></blockquote>";
+      const result = htmlToClientNarration(html);
+
+      // The <p> (para-1) speaks; the blockquote wrapping it has no text of its own.
+      expect(result.narrationText).toBe("A famous quote goes here.");
+      expect(result.paragraphMap).toEqual([{ n: 0, o: 1 }]);
     });
   });
 
@@ -804,6 +876,77 @@ describe("htmlToClientNarration", () => {
 
       expect(result.narrationText).toBe("A, B. C, D");
       expect(result.paragraphMap).toEqual([{ n: 0, o: 0 }]);
+    });
+
+    it("narrates a cell's paragraph only as part of the table (issue #1445)", () => {
+      const html =
+        "<p>before</p><table><tr><td><p>Cell 1</p></td><td>B</td></tr></table><p>after</p>";
+      const result = htmlToClientNarration(html);
+
+      // The cell's <p> is para-2 and stays silent; "after" is still para-3.
+      expect(result.narrationText).toBe("before\n\nCell 1, B\n\nafter");
+      expect(result.paragraphMap).toEqual([
+        { n: 0, o: 0 },
+        { n: 1, o: 1 },
+        { n: 2, o: 3 },
+      ]);
+    });
+
+    it("says what a silenced cell block would have said", () => {
+      // `textContent` would drop the alt text the cell's figure used to speak.
+      const html =
+        '<table><tr><td><figure><img alt="Sales chart"><figcaption>Fig 1</figcaption></figure></td>' +
+        "<td>B</td></tr></table>";
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("Image: Sales chart. Fig 1, B");
+      expect(result.paragraphMap).toEqual([{ n: 0, o: 0 }]);
+    });
+
+    it("keeps inline markup in a cell glued to the text around it", () => {
+      const html = "<table><tr><td>50<sup>th</sup></td></tr></table>";
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("50th");
+    });
+
+    it("keeps the space inside a cell's inline markup", () => {
+      const html = "<table><tr><td><b>Name:</b><span> John</span></td></tr></table>";
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("Name: John");
+    });
+
+    it("narrates the caption, which no one else will (issue #1445)", () => {
+      // `<caption>` is outside the row walk, and its blocks are silenced for
+      // the table's sake — so if the table skips it, it is narrated nowhere.
+      const html =
+        "<table><caption><p>Table 1. Revenue by quarter</p></caption>" +
+        "<tr><th>Q</th></tr><tr><td>1</td></tr></table>";
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("Table 1. Revenue by quarter. Q. 1");
+      expect(result.paragraphMap).toEqual([{ n: 0, o: 0 }]);
+    });
+
+    it("reads a nested table as a cell of the outer one, once", () => {
+      // More than one inner cell, so cells run together rather than being
+      // separated would fail this too.
+      const html =
+        "<table><tr><td><table><tr><td>A</td><td>B</td></tr><tr><td>C</td></tr></table>" +
+        "</td></tr></table>";
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("A, B. C");
+      expect(result.paragraphMap).toEqual([{ n: 0, o: 0 }]);
+    });
+
+    it("does not let a code block's children narrate it back", () => {
+      const html = "<pre><p>const x = 1;</p></pre>";
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("");
+      expect(result.paragraphMap).toEqual([]);
     });
   });
 });
