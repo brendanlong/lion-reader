@@ -62,10 +62,12 @@ const SESSION_CACHE_PREFIX = "session:v2:";
  */
 export interface SessionData {
   session: Session;
-  // greaderUserId is a bigint (uncacheable in the Redis session JSON, and with no
-  // nullable placeholder) that only the Google Reader user-info route needs — and
-  // it reads that straight from the DB — so it's omitted from the session user.
-  user: Omit<User, "greaderUserId">;
+  // Two columns are deliberately absent. greaderUserId is a bigint (uncacheable
+  // in the Redis session JSON, and with no nullable placeholder) that only the
+  // Google Reader user-info route needs — and it reads that straight from the
+  // DB. gettingStartedAt is an onboarding bookkeeping marker with no request-path
+  // reader at all, so caching it would only mean stale data to invalidate.
+  user: Omit<User, "greaderUserId" | "gettingStartedAt">;
   /** Whether user has a Groq API key configured (actual key not cached for security) */
   hasGroqApiKey: boolean;
   /** Whether user has an Anthropic API key configured (actual key not cached for security) */

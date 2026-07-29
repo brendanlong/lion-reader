@@ -10,6 +10,14 @@ Business logic lives in pure service functions in `src/server/services/` — fun
 
 Entry content served by `getEntry`/`getEntries`/`toFullEntry` is **sanitized in the services layer on every read** (raw HTML is stored; see `src/server/html/CLAUDE.md`), so every consumer gets the same guarantee.
 
+## New-Account Onboarding
+
+Everything a brand-new account gets is in `runPostSignupTasks` (`src/server/auth/signup.ts`), called fire-and-forget by both signup paths (email/password and OAuth). **Add onboarding steps there, not in the routes** — otherwise the two paths drift. Each task swallows its own errors: none of them may fail a signup.
+
+Today that's the announcement-feed subscription and the **Getting Started article** (`src/server/services/getting-started.ts`, issue #1397), inserted through the ordinary Markdown upload path so it ends up an entirely normal saved article the user can unstar, read, or delete. The load-bearing idea: **`users.getting_started_at` records that we inserted it, not that it still exists** — which is what keeps a deleted article from coming back (issue #1383). The claim/release ordering that makes it safe against races and partial failure is documented at the function.
+
+Users who predate the feature are covered by the `backfill_getting_started` singleton job, a batch per run. It never parks: once the backlog drains it drops to a daily cadence, and that same scan then doubles as the retry for anyone whose signup-path insert failed.
+
 ## Site Status (announcement banner + maintenance mode)
 
 Two admin-controlled global flags live in **Redis, not Postgres** (`src/server/services/site-status.ts`): a site-wide **announcement banner** and a **maintenance mode** kill switch. Redis is deliberate — maintenance mode is meant to be turned on _while Postgres is being migrated/locked_, so the code that reads it must not depend on the DB. Both reads are fail-safe (Redis down ⇒ no banner, maintenance = the `MAINTENANCE_MODE` env override only) and cached in-process for a few seconds so the hot paths issue no per-request Redis round-trip.

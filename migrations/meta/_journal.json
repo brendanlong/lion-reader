@@ -743,6 +743,13 @@
       "when": 1782953900000,
       "tag": "0106_discord_api_token_links",
       "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1782954000000,
+      "tag": "0107_getting_started_article",
+      "breakpoints": true
     }
   ]
 }

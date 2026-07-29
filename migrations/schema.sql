@@ -539,7 +539,8 @@ CREATE TABLE public.users (
     starred_unread_count integer DEFAULT 0 NOT NULL,
     greader_user_id bigint DEFAULT nextval('public.greader_id_seq'::regclass) NOT NULL,
     cerebras_api_key text,
-    narration_model text
+    narration_model text,
+    getting_started_at timestamp with time zone
 );
 
 CREATE VIEW public.visible_entries AS
@@ -853,13 +854,15 @@ CREATE INDEX idx_user_entries_unread ON public.user_entries USING btree (user_id
 
 CREATE INDEX idx_user_entries_updated_at ON public.user_entries USING btree (user_id, updated_at);
 
+CREATE INDEX idx_users_getting_started_pending ON public.users USING btree (id) WHERE (getting_started_at IS NULL);
+
 CREATE INDEX idx_users_last_active_at ON public.users USING btree (last_active_at DESC NULLS LAST, id DESC);
 
 CREATE INDEX idx_websub_expiring ON public.websub_subscriptions USING btree (expires_at);
 
 CREATE INDEX idx_websub_feed ON public.websub_subscriptions USING btree (feed_id);
 
-CREATE UNIQUE INDEX jobs_singleton_type_unique ON public.jobs USING btree (type) WHERE (type = ANY (ARRAY['renew_websub'::text, 'monitor_feed_health'::text, 'cleanup'::text, 'reconcile_counters'::text]));
+CREATE UNIQUE INDEX jobs_singleton_type_unique ON public.jobs USING btree (type) WHERE (type = ANY (ARRAY['renew_websub'::text, 'monitor_feed_health'::text, 'cleanup'::text, 'reconcile_counters'::text, 'backfill_getting_started'::text]));
 
 CREATE UNIQUE INDEX uq_feeds_saved_user ON public.feeds USING btree (user_id) WHERE (type = 'saved'::public.feed_type);
 

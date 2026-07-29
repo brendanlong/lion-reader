@@ -83,6 +83,10 @@ export interface JobPayloads {
   // Daily self-healing sweep of the denormalized unread counters (issue
   // #1117). See src/server/services/reconcile-counters.ts.
   reconcile_counters: Record<string, never>;
+  // Fills the Getting Started article in for users who predate it, a batch per
+  // run (issue #1397). Stateless — `users.getting_started_at` is the progress
+  // marker. See src/server/services/getting-started.ts.
+  backfill_getting_started: Record<string, never>;
 }
 
 export type JobType = keyof JobPayloads;
@@ -579,6 +583,9 @@ export const SINGLETON_JOB_TYPES: JobType[] = [
   "monitor_feed_health",
   "cleanup",
   "reconcile_counters",
+  // Last on purpose: while a backlog remains it reschedules itself in seconds,
+  // so anything after it would starve (see the ordering invariant above).
+  "backfill_getting_started",
 ];
 
 /**

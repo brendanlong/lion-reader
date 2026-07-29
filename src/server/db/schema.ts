@@ -127,12 +127,22 @@ export const users = pgTable(
       .notNull()
       .default(sql`nextval('greader_id_seq'::regclass)`),
 
+    // When the Getting Started saved article was inserted for this user (issue
+    // #1397). Set once and never cleared, so unstarring or deleting the article
+    // doesn't bring it back.
+    gettingStartedAt: timestamp("getting_started_at", { withTimezone: true }),
+
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     // Supports the admin user list "most recent activity" sort + keyset cursor.
     index("idx_users_last_active_at").on(table.lastActiveAt.desc().nullsLast(), table.id.desc()),
+    // Drives the backfill_getting_started job's "who still needs one" scan.
+    // Partial, so it drains to empty once every user has been covered.
+    index("idx_users_getting_started_pending")
+      .on(table.id)
+      .where(sql`getting_started_at IS NULL`),
   ]
 );
 
@@ -940,7 +950,9 @@ export const jobs = pgTable(
     // INSERT...catch actually races correctly (see SINGLETON_JOB_TYPES).
     uniqueIndex("jobs_singleton_type_unique")
       .on(table.type)
-      .where(sql`type IN ('renew_websub', 'monitor_feed_health', 'cleanup')`),
+      .where(
+        sql`type IN ('renew_websub', 'monitor_feed_health', 'cleanup', 'reconcile_counters', 'backfill_getting_started')`
+      ),
   ]
 );
 
