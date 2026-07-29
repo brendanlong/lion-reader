@@ -112,6 +112,15 @@ describe("htmlToNarrationInput", () => {
 
       expect(result.paragraphs).toEqual([{ id: 0, text: "Quote: A famous quote. End quote." }]);
     });
+
+    // Same double-narration as issue #1441, in the wrapper that needs its
+    // markers split across the children rather than dropped. See issue #1445.
+    it.skip("narrates a quoted paragraph once, not once per wrapper", () => {
+      const html = "<blockquote><p>A famous quote.</p></blockquote>";
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toEqual([{ id: 1, text: "Quote: A famous quote. End quote." }]);
+    });
   });
 
   describe("image handling", () => {
@@ -189,14 +198,62 @@ describe("htmlToNarrationInput", () => {
     });
 
     it("speaks task-list state for loose lists (checkbox inside the item's <p>)", () => {
-      // cmark-gfm/GitHub shape, which arrives via feed HTML.
+      // cmark-gfm/GitHub shape, which arrives via feed HTML. The item has no
+      // text of its own, so the marker rides along on its <p> (issue #1441).
       const html = '<ul><li><p><input type="checkbox" checked="" disabled=""> done</p></li></ul>';
       const result = htmlToNarrationInput(html);
 
-      // The <p> is also narrated on its own — an <li> wrapping block children is
-      // double-narrated, which predates this (issue #1441). What
-      // matters here is that the item itself carries the state.
-      expect(result.paragraphs[0]).toEqual({ id: 1, text: "- Done: done" });
+      expect(result.paragraphs).toEqual([{ id: 2, text: "- Done: done" }]);
+    });
+
+    it("narrates a loose list item once, not once per wrapper (issue #1441)", () => {
+      // Any list with blank lines between items comes out of cmark-gfm/GitHub
+      // in this shape, so it is common in feed HTML.
+      const html = "<ul><li><p>hello</p></li></ul>";
+      const result = htmlToNarrationInput(html);
+
+      // ul is 0 and li is 1; both are containers here, so only the <p> speaks.
+      expect(result.paragraphs).toEqual([{ id: 2, text: "- hello" }]);
+    });
+
+    it("keeps a multi-paragraph item's paragraphs separate", () => {
+      const html = "<ul><li><p>a</p><p>b</p></li></ul>";
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toEqual([
+        { id: 2, text: "- a" },
+        { id: 3, text: "b" },
+      ]);
+    });
+
+    it("narrates an item's own text and its block children separately", () => {
+      const html = "<ul><li>intro<p>more</p></li></ul>";
+      const result = htmlToNarrationInput(html);
+
+      // The item speaks its own marker, so the <p> inherits none.
+      expect(result.paragraphs).toEqual([
+        { id: 1, text: "- intro" },
+        { id: 2, text: "more" },
+      ]);
+    });
+
+    it("does not repeat a nested list's items in its parent item", () => {
+      const html = "<ul><li>Parent<ul><li>Child</li></ul></li></ul>";
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toEqual([
+        { id: 1, text: "- Parent" },
+        { id: 3, text: "- Child" },
+      ]);
+    });
+
+    it("keeps an inline image in the item that contains it", () => {
+      // A nested image gets no paragraph of its own, so its alt text has to
+      // come from the enclosing block.
+      const html = '<ul><li>Item with <img alt="icon"> image</li></ul>';
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toEqual([{ id: 1, text: "- Item with Image: icon image" }]);
     });
 
     it("leaves a checkbox mid-item alone (not a task list)", () => {
@@ -215,6 +272,14 @@ describe("htmlToNarrationInput", () => {
       const result = htmlToNarrationInput(html);
 
       expect(result.paragraphs).toEqual([{ id: 0, text: "Table: Cell 1, Cell 2 End table." }]);
+    });
+
+    // The cell's <p> is narrated again on its own — issue #1445.
+    it.skip("narrates a cell's paragraph only as part of the table", () => {
+      const html = "<table><tr><td><p>Cell 1</p></td></tr></table>";
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toEqual([{ id: 0, text: "Table: Cell 1 End table." }]);
     });
   });
 

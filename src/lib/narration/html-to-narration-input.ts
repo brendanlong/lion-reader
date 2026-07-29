@@ -77,11 +77,64 @@ function leadingTaskCheckbox(li: Element): Element | null {
 }
 
 /**
+ * Whether an element narrates itself, so an enclosing block must leave its text
+ * out — otherwise the same words are spoken twice (issue #1441).
+ *
+ * `img` is the exception: an image nested inside a block element is dropped from
+ * the paragraph list below, so the enclosing block is what speaks its alt text.
+ */
+function narratesItself(el: Element): boolean {
+  const tagName = el.tagName.toLowerCase();
+  return tagName !== "img" && BLOCK_ELEMENTS_SET.has(tagName);
+}
+
+/**
+ * The bullet a list item is read with, plus its task-list state when it leads
+ * with a checkbox. A task list carries that state in the checkbox, which
+ * contributes no text — so read aloud, a done item would be indistinguishable
+ * from a not-done one (the narration half of issue #1439). Speak the state.
+ */
+function listItemMarker(li: Element): string {
+  const checkbox = leadingTaskCheckbox(li);
+  if (!checkbox) {
+    return "- ";
+  }
+  return `- ${checkbox.hasAttribute("checked") ? "Done" : "Not done"}: `;
+}
+
+/**
+ * The list marker a block inherits from the item that wraps it, if any.
+ *
+ * A loose list item (`<li><p>…</p></li>` — what cmark-gfm/GitHub emit for any
+ * list with blank lines between items, so it is common in feed HTML) has no
+ * text of its own; its children narrate themselves. The bullet and the spoken
+ * checkbox state therefore ride along on the first of those children instead of
+ * on the item (issue #1441). An item that does have its own text speaks its own
+ * marker, so its children inherit nothing.
+ */
+function inheritedListMarker(el: Element): string {
+  const li = el.parentElement;
+  if (!li || li.tagName.toLowerCase() !== "li") return "";
+  if (leadingElement(li) !== el) return "";
+  if (processInlineContent(li) !== "") return "";
+  return listItemMarker(li);
+}
+
+/**
  * Converts an element's text content for narration.
  * Returns text in speakable form (no structural markers like [HEADING]).
  * Handles special elements like images, code blocks, etc.
  */
 function getElementNarrationText(el: Element): string {
+  const text = getOwnNarrationText(el);
+  return text ? `${inheritedListMarker(el)}${text}` : "";
+}
+
+/**
+ * The element's own narration text, before any marker it inherits from an
+ * enclosing list item.
+ */
+function getOwnNarrationText(el: Element): string {
   const tagName = el.tagName.toLowerCase();
 
   // Handle headings - just return the text (no marker)
@@ -112,17 +165,12 @@ function getElementNarrationText(el: Element): string {
     return "";
   }
 
-  // Handle list items
+  // Handle list items. Only the item's own text: block children (a loose list's
+  // paragraphs, a nested list) narrate themselves, and one of them carries the
+  // marker when the item has no text of its own — see `inheritedListMarker`.
   if (tagName === "li") {
-    const text = el.textContent?.trim() || "";
-    // A task list carries its state in a leading checkbox, which contributes no
-    // text — so read aloud, a done item would be indistinguishable from a
-    // not-done one (the narration half of issue #1439). Speak the state.
-    const checkbox = leadingTaskCheckbox(el);
-    if (checkbox) {
-      return `- ${checkbox.hasAttribute("checked") ? "Done" : "Not done"}: ${text}`;
-    }
-    return `- ${text}`;
+    const text = processInlineContent(el);
+    return text ? `${listItemMarker(el)}${text}` : "";
   }
 
   // Handle figures
@@ -161,6 +209,8 @@ function getElementNarrationText(el: Element): string {
 
 /**
  * Process inline content, handling links and other inline elements.
+ *
+ * Block children are left out — see `narratesItself`.
  */
 function processInlineContent(el: Element): string {
   let text = "";
@@ -197,7 +247,7 @@ function processInlineContent(el: Element): string {
         // Inline image
         const alt = childEl.getAttribute("alt") || "image";
         text += `Image: ${alt}`;
-      } else {
+      } else if (!narratesItself(childEl)) {
         // Recurse for other inline elements (strong, em, span, etc.)
         text += processInlineContent(childEl);
       }

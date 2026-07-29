@@ -19,6 +19,9 @@ import {
 export { BLOCK_ELEMENTS };
 export type { ParagraphMapEntry };
 
+/** Set version of `BLOCK_ELEMENTS` for efficient lookup. */
+const BLOCK_ELEMENT_SET = new Set<string>(BLOCK_ELEMENTS);
+
 /**
  * Result of adding paragraph IDs to HTML content.
  */
@@ -81,7 +84,6 @@ export function addParagraphIdsToHtml(html: string): AddParagraphIdsResult {
 
   // Find standalone images (not nested inside other block elements)
   // An image is standalone if none of its ancestors are block elements
-  const blockElementSet = new Set(BLOCK_ELEMENTS);
   const standaloneImages: Element[] = [];
   container.querySelectorAll("img").forEach((img) => {
     let parent = img.parentElement;
@@ -89,7 +91,7 @@ export function addParagraphIdsToHtml(html: string): AddParagraphIdsResult {
 
     while (parent && parent !== container) {
       const parentTag = parent.tagName.toLowerCase();
-      if (blockElementSet.has(parentTag as (typeof BLOCK_ELEMENTS)[number])) {
+      if (BLOCK_ELEMENT_SET.has(parentTag)) {
         isStandalone = false;
         break;
       }
@@ -195,6 +197,11 @@ export interface ClientNarrationResult {
 /**
  * Process inline content, handling images and other inline elements.
  * Recursively walks through child nodes to preserve image alt text.
+ *
+ * Block children are skipped: each one is its own paragraph in the list below,
+ * so including their text here would narrate it twice — once for the wrapper
+ * and once for the child (issue #1441). Images are the exception, since a
+ * nested image never gets a paragraph of its own.
  */
 function processInlineContent(el: Element): string {
   let text = "";
@@ -215,7 +222,7 @@ function processInlineContent(el: Element): string {
         if (alt && alt.trim()) {
           text += `Image: ${alt.trim()}`;
         }
-      } else {
+      } else if (!BLOCK_ELEMENT_SET.has(childTag)) {
         // Recurse for other inline elements (strong, em, span, a, etc.)
         text += processInlineContent(childEl);
       }
@@ -350,7 +357,6 @@ export function htmlToClientNarration(html: string): ClientNarrationResult {
   const allElements = container.querySelectorAll(selector);
 
   // Find standalone images (not nested inside other block elements)
-  const blockElementSet = new Set(BLOCK_ELEMENTS);
   const standaloneImages: Element[] = [];
   container.querySelectorAll("img").forEach((img) => {
     let parent = img.parentElement;
@@ -358,7 +364,7 @@ export function htmlToClientNarration(html: string): ClientNarrationResult {
 
     while (parent && parent !== container) {
       const parentTag = parent.tagName.toLowerCase();
-      if (blockElementSet.has(parentTag as (typeof BLOCK_ELEMENTS)[number])) {
+      if (BLOCK_ELEMENT_SET.has(parentTag)) {
         isStandalone = false;
         break;
       }

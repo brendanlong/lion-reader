@@ -640,6 +640,31 @@ describe("htmlToClientNarration", () => {
         { n: 1, o: 2 },
       ]);
     });
+
+    it("narrates a loose list item once, not once per wrapper (issue #1441)", () => {
+      // The <li>/<p> shape cmark-gfm and GitHub emit for any list with blank
+      // lines between items, so it is common in feed HTML.
+      const html = "<ul><li><p>Item 1</p></li><li><p>Item 2</p></li></ul>";
+      const result = htmlToClientNarration(html);
+
+      // Only the paragraphs speak; ul (0) and both li (1, 3) are containers.
+      expect(result.narrationText).toBe("Item 1\n\nItem 2");
+      expect(result.paragraphMap).toEqual([
+        { n: 0, o: 2 },
+        { n: 1, o: 4 },
+      ]);
+    });
+
+    it("does not repeat a nested list's items in its parent item", () => {
+      const html = "<ul><li>Parent<ul><li>Child</li></ul></li></ul>";
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("Parent\n\nChild");
+      expect(result.paragraphMap).toEqual([
+        { n: 0, o: 1 },
+        { n: 1, o: 3 },
+      ]);
+    });
   });
 
   describe("heading handling", () => {
@@ -794,6 +819,15 @@ describe("htmlToClientNarration", () => {
 
       expect(result.narrationText).toBe("A famous quote goes here.");
       expect(result.paragraphMap).toEqual([{ n: 0, o: 0 }]);
+    });
+
+    it("narrates a quoted paragraph once, not once per wrapper (issue #1441)", () => {
+      const html = "<blockquote><p>A famous quote goes here.</p></blockquote>";
+      const result = htmlToClientNarration(html);
+
+      // The <p> (para-1) speaks; the blockquote wrapping it has no text of its own.
+      expect(result.narrationText).toBe("A famous quote goes here.");
+      expect(result.paragraphMap).toEqual([{ n: 0, o: 1 }]);
     });
   });
 
