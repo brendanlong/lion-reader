@@ -11,7 +11,7 @@
 
 import crypto from "crypto";
 import { eq, and, isNull, ne, gt, sql } from "drizzle-orm";
-import { db, type Database } from "@/server/db";
+import { db, type DbOrTx } from "@/server/db";
 import { sessions, users, type User, type Session } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { getRedisClient } from "@/server/redis";
@@ -174,11 +174,6 @@ export interface CreateSessionResult {
   /** Raw session token to return to client (never stored) */
   token: string;
 }
-
-/**
- * Transaction type - accepts both db and transaction contexts
- */
-type DbOrTx = Database | Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 /**
  * Creates a new session for a user.

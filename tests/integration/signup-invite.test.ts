@@ -164,6 +164,21 @@ describe("createUser with an invite", () => {
     expect(inviteRow.usedByUserId).toBe(survivors[0].id);
   });
 
+  it("rejects a denied provider without creating a user", async () => {
+    process.env.ALLOWED_SIGNUP_PROVIDERS = "google";
+    const invite = await createInvite();
+    const email = `invite-denied-${generateUuidv7()}@example.com`;
+
+    await expectSignupError(
+      signUp({ email, inviteToken: invite.token }),
+      "SIGNUP_PROVIDER_NOT_ALLOWED"
+    );
+    expect(await emailExists(email)).toBe(false);
+
+    const [inviteRow] = await db.select().from(invites).where(eq(invites.id, invite.id));
+    expect(inviteRow.usedAt).toBeNull();
+  });
+
   it("ignores invites for a publicly allowed provider", async () => {
     process.env.ALLOWED_PUBLIC_SIGNUP_PROVIDERS = "email";
     const email = `invite-public-${generateUuidv7()}@example.com`;
