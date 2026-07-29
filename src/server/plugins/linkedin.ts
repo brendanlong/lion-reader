@@ -330,7 +330,11 @@ export const linkedInPlugin: UrlPlugin = {
 
         const content = renderLinkedInPost(page.html, page.finalUrl);
         if (!content) {
-          logger.debug("LinkedIn post page carried no usable body", { url: url.href });
+          // Info, not debug: this is the plugin silently declining a page it
+          // matched, which is exactly the failure a scraper degrades into when
+          // the markup changes or the post goes private. Prod runs at info, so
+          // at debug the degradation is invisible.
+          logger.info("LinkedIn post page carried no usable body", { url: url.href });
         }
         return content;
       },
