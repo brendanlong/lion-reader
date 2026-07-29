@@ -252,6 +252,18 @@ describe("htmlToNarrationInput", () => {
       expect(result.paragraphs).toEqual([{ id: 0, text: "Image: A cat. My cat" }]);
     });
 
+    it("narrates a figure whose image sits in a wrapper", () => {
+      // The shape WordPress-style editors emit: a `<div>` holding nothing but
+      // the image, which is the image's own paragraph rather than a block that
+      // takes the image away from the figure.
+      const html =
+        '<figure><div class="image-block"><img alt="A cat"></div>' +
+        "<figcaption>My cat</figcaption></figure>";
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toEqual([{ id: 0, text: "Image: A cat. My cat" }]);
+    });
+
     it("does not announce an image for a figure that holds none", () => {
       // A figure around a table is not an image; the table speaks for itself.
       const html =
@@ -629,12 +641,104 @@ describe("htmlToNarrationInput", () => {
     });
   });
 
-  describe("div handling", () => {
+  describe("wrapper handling", () => {
     it("does not add separate entries for divs (they are containers)", () => {
       const html = "<div><p>Content inside div</p></div>";
       const result = htmlToNarrationInput(html);
 
       expect(result.paragraphs).toEqual([{ id: 0, text: "Content inside div" }]);
+    });
+
+    it("narrates a wrapper that holds only text (issue #1451)", () => {
+      // What an editor that doesn't emit `<p>` leaves in a feed.
+      const html = "<div>Some text</div>";
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toEqual([{ id: 0, text: "Some text" }]);
+    });
+
+    it("narrates each sectioning wrapper that holds only text", () => {
+      const html = "<section>First</section><article>Second</article><aside>Third</aside>";
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toEqual([
+        { id: 0, text: "First" },
+        { id: 1, text: "Second" },
+        { id: 2, text: "Third" },
+      ]);
+    });
+
+    it("narrates the innermost wrapper only", () => {
+      const html = "<div><div>Some text</div></div>";
+      const result = htmlToNarrationInput(html);
+
+      // The outer wrapper is structural, so only the inner one speaks.
+      expect(result.paragraphs).toEqual([{ id: 0, text: "Some text" }]);
+    });
+
+    it("leaves a wrapper around a standalone image to the image", () => {
+      // How most editors emit a standalone image; the wrapper saying the alt
+      // text too would narrate it twice.
+      const html = '<div><img alt="A cat"></div>';
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toEqual([{ id: 0, text: "Image: A cat" }]);
+    });
+
+    it("narrates a wrapper that holds text alongside an image", () => {
+      const html = '<div>Credit: <img alt="A cat"></div>';
+      const result = htmlToNarrationInput(html);
+
+      // One paragraph, on the wrapper: the image is read within its run rather
+      // than as a paragraph of its own, so nothing is said twice.
+      expect(result.paragraphs).toEqual([{ id: 0, text: "Credit: Image: A cat" }]);
+    });
+
+    it("does not narrate a wrapper's blocks twice", () => {
+      const html = "<div>Intro<p>Body</p></div>";
+      const result = htmlToNarrationInput(html);
+
+      // The wrapper is structural because the paragraph speaks for itself; its
+      // own "Intro" run has no element to highlight, so it goes unnarrated.
+      expect(result.paragraphs).toEqual([{ id: 0, text: "Body" }]);
+    });
+
+    it("keeps a wrapper inside a blockquote in the quote", () => {
+      const html = "<blockquote><div>Quoted text</div></blockquote>";
+      const result = htmlToNarrationInput(html);
+
+      // The blockquote speaks its whole subtree, so the wrapper stays silent.
+      expect(result.paragraphs).toEqual([{ id: 0, text: "Quote: Quoted text End quote." }]);
+    });
+
+    it("gives a wrapper in a list item the item's marker", () => {
+      const html = "<ul><li><div>Item text</div></li></ul>";
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toEqual([{ id: 2, text: "- Item text" }]);
+    });
+  });
+
+  describe("definition lists", () => {
+    it("narrates terms and definitions (issue #1451)", () => {
+      const html = "<dl><dt>Term</dt><dd>Definition</dd></dl>";
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toEqual([
+        { id: 1, text: "Term" },
+        { id: 2, text: "Definition" },
+      ]);
+    });
+
+    it("does not repeat a definition's own paragraphs", () => {
+      const html = "<dl><dt>Term</dt><dd><p>First</p><p>Second</p></dd></dl>";
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toEqual([
+        { id: 1, text: "Term" },
+        { id: 3, text: "First" },
+        { id: 4, text: "Second" },
+      ]);
     });
   });
 

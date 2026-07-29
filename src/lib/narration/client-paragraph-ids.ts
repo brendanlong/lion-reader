@@ -8,7 +8,7 @@
  * @module narration/client-paragraph-ids
  */
 
-import { BLOCK_ELEMENTS } from "./block-elements";
+import { BLOCK_ELEMENTS, isNarrationBlock, narrationBlocks } from "./block-elements";
 import {
   buildAlignedNarration,
   type NarrationElement,
@@ -18,9 +18,6 @@ import {
 // Re-export for backwards compatibility
 export { BLOCK_ELEMENTS };
 export type { ParagraphMapEntry };
-
-/** Set version of `BLOCK_ELEMENTS` for efficient lookup. */
-const BLOCK_ELEMENT_SET = new Set<string>(BLOCK_ELEMENTS);
 
 /**
  * Result of adding paragraph IDs to HTML content.
@@ -75,45 +72,8 @@ export function addParagraphIdsToHtml(html: string): AddParagraphIdsResult {
     };
   }
 
-  // Build selector for all block elements
-  const blockElementsExceptImg = BLOCK_ELEMENTS.filter((el) => el !== "img");
-  const selector = blockElementsExceptImg.join(", ");
-
-  // Find all block elements in document order
-  const allElements = container.querySelectorAll(selector);
-
-  // Find standalone images (not nested inside other block elements)
-  // An image is standalone if none of its ancestors are block elements
-  const standaloneImages: Element[] = [];
-  container.querySelectorAll("img").forEach((img) => {
-    let parent = img.parentElement;
-    let isStandalone = true;
-
-    while (parent && parent !== container) {
-      const parentTag = parent.tagName.toLowerCase();
-      if (BLOCK_ELEMENT_SET.has(parentTag)) {
-        isStandalone = false;
-        break;
-      }
-      parent = parent.parentElement;
-    }
-
-    if (isStandalone) {
-      standaloneImages.push(img);
-    }
-  });
-
-  // Combine block elements and standalone images, then sort by document order
-  const allElementsArray = Array.from(allElements);
-  const combinedElements = [...allElementsArray, ...standaloneImages].sort((a, b) => {
-    const position = a.compareDocumentPosition(b);
-    if (position & Node.DOCUMENT_POSITION_FOLLOWING) return -1;
-    if (position & Node.DOCUMENT_POSITION_PRECEDING) return 1;
-    return 0;
-  });
-
   let paraIndex = 0;
-  combinedElements.forEach((el) => {
+  narrationBlocks(container).forEach((el) => {
     const id = `para-${paraIndex}`;
     el.setAttribute("data-para-id", id);
     paraIndex++;
@@ -246,8 +206,10 @@ function inlineText(el: Element, depth = 0): string {
       text += imageText(childEl);
       return;
     }
-    if (BLOCK_ELEMENT_SET.has(childTag)) return;
-    // Recurse for other inline elements (strong, em, span, a, etc.)
+    if (isNarrationBlock(childEl)) return;
+    // Recurse for other inline elements (strong, em, span, a, etc.) — and for a
+    // wrapper around blocks, which narrates no paragraph of its own, so whatever
+    // text it holds outside those blocks belongs to this run.
     text += inlineText(childEl, depth + 1);
   });
 
@@ -262,8 +224,7 @@ function ownDescendant(el: Element, selector: string): Element | null {
   for (const candidate of Array.from(el.querySelectorAll(selector))) {
     let owner: Element | null = null;
     for (let parent = candidate.parentElement; parent; parent = parent.parentElement) {
-      const tagName = parent.tagName.toLowerCase();
-      if (tagName !== "img" && BLOCK_ELEMENT_SET.has(tagName)) {
+      if (isNarrationBlock(parent)) {
         owner = parent;
         break;
       }
@@ -319,7 +280,7 @@ function subtreeText(el: Element, depth = 0): string {
     }
     const inner = subtreeText(childEl, depth + 1);
     // Inline markup continues the run of text; a block starts a new one.
-    text += BLOCK_ELEMENT_SET.has(childTag) ? ` ${inner} ` : inner;
+    text += isNarrationBlock(childEl) ? ` ${inner} ` : inner;
   });
 
   return text;
@@ -488,48 +449,12 @@ export function htmlToClientNarration(html: string): ClientNarrationResult {
     };
   }
 
-  // Build selector for all block elements
-  const blockElementsExceptImg = BLOCK_ELEMENTS.filter((el) => el !== "img");
-  const selector = blockElementsExceptImg.join(", ");
-
-  // Find all block elements in document order
-  const allElements = container.querySelectorAll(selector);
-
-  // Find standalone images (not nested inside other block elements)
-  const standaloneImages: Element[] = [];
-  container.querySelectorAll("img").forEach((img) => {
-    let parent = img.parentElement;
-    let isStandalone = true;
-
-    while (parent && parent !== container) {
-      const parentTag = parent.tagName.toLowerCase();
-      if (BLOCK_ELEMENT_SET.has(parentTag)) {
-        isStandalone = false;
-        break;
-      }
-      parent = parent.parentElement;
-    }
-
-    if (isStandalone) {
-      standaloneImages.push(img);
-    }
-  });
-
-  // Combine block elements and standalone images, then sort by document order
-  const allElementsArray = Array.from(allElements);
-  const combinedElements = [...allElementsArray, ...standaloneImages].sort((a, b) => {
-    const position = a.compareDocumentPosition(b);
-    if (position & Node.DOCUMENT_POSITION_FOLLOWING) return -1;
-    if (position & Node.DOCUMENT_POSITION_PRECEDING) return 1;
-    return 0;
-  });
-
   // Process each element: add data-para-id and collect its narration text.
   // Every combined element gets a data-para-id (matching its document-order
   // index) so the rendered DOM has a highlight target for each block; empty
   // elements simply contribute no narration paragraph.
   const elements: NarrationElement[] = [];
-  combinedElements.forEach((el, elementIndex) => {
+  narrationBlocks(container).forEach((el, elementIndex) => {
     el.setAttribute("data-para-id", `para-${elementIndex}`);
     elements.push({ o: elementIndex, text: getElementNarrationText(el) });
   });

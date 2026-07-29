@@ -67,6 +67,24 @@ describe("paragraph ID consistency between server and client", () => {
     expect(serverResult.paragraphs.length).toBe(3); // p, figure, p
   });
 
+  it("should agree on definition lists and bare wrappers (issue #1451)", () => {
+    const html =
+      "<dl><dt>Term</dt><dd>Definition</dd></dl>" +
+      "<div>Text an editor put in a div</div>" +
+      '<div class="wrapper"><p>Wrapped</p></div>' +
+      '<div><img alt="A cat"></div>';
+
+    const serverResult = htmlToNarrationInput(html);
+    const clientResult = addParagraphIdsToHtml(html);
+
+    // dl, dt, dd, bare div, the wrapped p, the standalone img — but not the two
+    // structural divs.
+    expect(clientResult.paragraphCount).toBe(6);
+    expect(serverResult.paragraphs.map((p) => p.id)).toEqual([1, 2, 3, 4, 5]); // dl says nothing
+    expect(clientResult.html).toContain('<div data-para-id="para-3">');
+    expect(clientResult.html).not.toContain('<div class="wrapper" data-para-id');
+  });
+
   it("should handle complex article with multiple standalone images", () => {
     const html = `
       <h1>Article Title</h1>

@@ -9,15 +9,15 @@
  */
 
 import { parseHTML } from "linkedom";
-import { BLOCK_ELEMENTS } from "./block-elements";
+import {
+  BLOCK_ELEMENTS,
+  containsNarrationBlock,
+  isNarrationBlock,
+  narrationBlocks,
+} from "./block-elements";
 
 // Re-export for backwards compatibility
 export { BLOCK_ELEMENTS };
-
-/**
- * Set version of BLOCK_ELEMENTS for efficient lookup.
- */
-const BLOCK_ELEMENTS_SET = new Set<string>(BLOCK_ELEMENTS);
 
 /** `Node.ELEMENT_NODE` etc., which linkedom doesn't expose as globals. */
 const ELEMENT_NODE = 1;
@@ -91,16 +91,16 @@ function listItemMarker(li: Element): string {
 }
 
 /**
- * The list item a block belongs to, if any. Elements that aren't block-level —
- * a `<div>` or `<section>` wrapper — are transparent, since they get no
- * paragraph of their own; another block element does own its descendants.
+ * The list item a block belongs to, if any. Elements that narrate no paragraph
+ * of their own — a `<div>` or `<section>` around the blocks — are transparent;
+ * another block element does own its descendants.
  */
 function enclosingListItem(el: Element): Element | null {
   for (let parent = el.parentElement; parent; parent = parent.parentElement) {
     const tagName = parent.tagName.toLowerCase();
     if (tagName === "li") return parent;
     if (tagName === "ul" || tagName === "ol") return null;
-    if (BLOCK_ELEMENTS_SET.has(tagName) && !isTransparentWrapper(parent)) return null;
+    if (isNarrationBlock(parent) && !isTransparentWrapper(parent)) return null;
   }
   return null;
 }
@@ -140,7 +140,7 @@ function markerCarrier(li: Element, depth = 0): Element | null {
     // A nested list's items carry their own markers, and a nested image is
     // spoken by the block around it rather than getting a paragraph.
     if (tagName === "ul" || tagName === "ol" || tagName === "img") continue;
-    if (BLOCK_ELEMENTS_SET.has(tagName)) {
+    if (isNarrationBlock(child)) {
       if (getOwnNarrationText(child).trim() !== "") return child;
       if (!isTransparentWrapper(child)) continue;
     }
@@ -199,9 +199,6 @@ function insideSubtreeSpeaker(el: Element): boolean {
   return false;
 }
 
-/** Selector matching the blocks that break a run of inline text. */
-const BLOCK_SELECTOR = BLOCK_ELEMENTS.filter((tagName) => tagName !== "img").join(", ");
-
 /**
  * Whether a figure narrates as the image it holds — as opposed to one around a
  * table or a list, which announces no image and is walked into like a wrapper.
@@ -218,8 +215,7 @@ function ownDescendant(el: Element, selector: string): Element | null {
   for (const candidate of Array.from(el.querySelectorAll(selector))) {
     let owner: Element | null = null;
     for (let parent = candidate.parentElement; parent; parent = parent.parentElement) {
-      const tagName = parent.tagName.toLowerCase();
-      if (tagName !== "img" && BLOCK_ELEMENTS_SET.has(tagName)) {
+      if (isNarrationBlock(parent)) {
         owner = parent;
         break;
       }
@@ -260,10 +256,10 @@ function contentParagraphs(el: Element, depth = 0): string[] {
   el.childNodes.forEach((node) => {
     const child = node.nodeType === ELEMENT_NODE ? (node as Element) : null;
     const tagName = child?.tagName.toLowerCase() ?? "";
-    const isBlock = tagName !== "img" && BLOCK_ELEMENTS_SET.has(tagName);
+    const isBlock = child !== null && tagName !== "img" && isNarrationBlock(child);
     // A `<div>`/`<section>` around the blocks is transparent, but one that only
-    // wraps text is part of the run around it — as is an image, always.
-    if (!child || (!isBlock && !child.querySelector(BLOCK_SELECTOR))) {
+    // wraps inline markup is part of the run around it — as is an image, always.
+    if (!child || (!isBlock && !containsNarrationBlock(child))) {
       inline += inlineNodeText(node);
       return;
     }
@@ -481,11 +477,13 @@ function inlineNodeText(node: Node, depth = 0): string {
     return ` Image: ${el.getAttribute("alt") || "image"} `;
   }
 
-  if (BLOCK_ELEMENTS_SET.has(tagName)) {
+  if (isNarrationBlock(el)) {
     return "";
   }
 
-  // Recurse for other inline elements (strong, em, span, etc.)
+  // Recurse for other inline elements (strong, em, span, etc.) — and for a
+  // wrapper around blocks, which narrates no paragraph of its own, so whatever
+  // text it holds outside those blocks belongs to this run.
   return inlineChildrenText(el, depth + 1);
 }
 
@@ -521,31 +519,9 @@ export function htmlToNarrationInput(html: string): HtmlToNarrationInputResult {
   // Wrap in a full HTML document structure for proper parsing
   const { document: doc } = parseHTML(`<!DOCTYPE html><html><body>${html}</body></html>`);
 
-  // Build selector for all block elements (including img)
-  const selector = Array.from(BLOCK_ELEMENTS).join(", ");
-
-  // Find all block elements in document order
-  // querySelectorAll returns elements in document order, so no sorting needed
-  const allElements = doc.querySelectorAll(selector);
-
-  // Filter to skip non-standalone images (images inside other block elements like figure)
-  // An image is standalone if none of its ancestors are block elements
-  const combinedElements = Array.from(allElements).filter((el) => {
-    if (el.tagName.toLowerCase() !== "img") {
-      return true; // Keep all non-img elements
-    }
-
-    // For img elements, check if they are standalone
-    let parent = el.parentElement;
-    while (parent && parent !== doc.body) {
-      const parentTag = parent.tagName.toLowerCase();
-      if (BLOCK_ELEMENTS_SET.has(parentTag)) {
-        return false; // Skip - img is inside another block element
-      }
-      parent = parent.parentElement;
-    }
-    return true; // Standalone img
-  });
+  // The blocks that narrate, in document order — the same list the client marks
+  // with `data-para-id`, so index N means the same element on both sides.
+  const combinedElements = narrationBlocks(doc.body);
 
   const paragraphs: NarrationInputParagraph[] = [];
 
@@ -586,6 +562,8 @@ const BLOCK_TAGS_FOR_PLAIN_TEXT = new Set([
   "h5",
   "h6",
   "li",
+  "dt",
+  "dd",
   "tr",
   "blockquote",
   "pre",

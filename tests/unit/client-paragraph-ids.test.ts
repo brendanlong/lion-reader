@@ -295,22 +295,37 @@ describe("addParagraphIdsToHtml", () => {
       expect(result.paragraphCount).toBe(3);
     });
 
-    it("does not mark non-block elements", () => {
+    it("marks wrappers that only hold text, but not inline elements", () => {
       const html = `
         <p>Paragraph</p>
-        <div>Not a block element for narration</div>
-        <span>Also not marked</span>
-        <section>Section not marked</section>
-        <article>Article not marked</article>
+        <div>Text an editor put in a div instead of a p</div>
+        <span>Inline, part of no paragraph</span>
+        <section>Section text</section>
       `;
       const result = addParagraphIdsToHtml(html);
 
-      // Only p should be marked
-      expect(result.paragraphCount).toBe(1);
-      expect(result.html).not.toContain("<div data-para-id");
+      // p, div, section — the span is inline, and the bare text around it has
+      // no element of its own to highlight.
+      expect(result.paragraphCount).toBe(3);
+      expect(result.html).toContain("<div data-para-id");
+      expect(result.html).toContain("<section data-para-id");
       expect(result.html).not.toContain("<span data-para-id");
+    });
+
+    it("does not mark wrappers around blocks, only the blocks inside", () => {
+      const html = `
+        <div class="post-body">
+          <section><p>Paragraph</p></section>
+          <div><h2>Heading</h2></div>
+        </div>
+      `;
+      const result = addParagraphIdsToHtml(html);
+
+      expect(result.paragraphCount).toBe(2);
+      expect(result.html).not.toContain("<div data-para-id");
       expect(result.html).not.toContain("<section data-para-id");
-      expect(result.html).not.toContain("<article data-para-id");
+      expect(result.html).toContain("<p data-para-id");
+      expect(result.html).toContain("<h2 data-para-id");
     });
   });
 
@@ -682,6 +697,83 @@ describe("htmlToClientNarration", () => {
     });
   });
 
+  describe("wrapper handling", () => {
+    it("narrates a wrapper that holds only text (issue #1451)", () => {
+      // What an editor that doesn't emit `<p>` leaves in a feed.
+      const html = "<p>Before</p><div>Some text</div><p>After</p>";
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("Before\n\nSome text\n\nAfter");
+      expect(result.paragraphMap).toEqual([
+        { n: 0, o: 0 },
+        { n: 1, o: 1 },
+        { n: 2, o: 2 },
+      ]);
+      expect(result.processedHtml).toContain('<div data-para-id="para-1">');
+    });
+
+    it("does not narrate a structural wrapper's blocks twice", () => {
+      const html = '<div class="post-body"><p>First</p><section><p>Second</p></section></div>';
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("First\n\nSecond");
+      expect(result.paragraphMap).toEqual([
+        { n: 0, o: 0 },
+        { n: 1, o: 1 },
+      ]);
+      expect(result.processedHtml).not.toContain("<div data-para-id");
+      expect(result.processedHtml).not.toContain("<section data-para-id");
+    });
+
+    it("leaves a wrapper around a standalone image to the image", () => {
+      // How most editors emit a standalone image; the wrapper saying the alt
+      // text too would narrate it twice.
+      const html = '<div><img alt="A cat"></div>';
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("Image: A cat");
+      expect(result.paragraphMap).toEqual([{ n: 0, o: 0 }]);
+      expect(result.processedHtml).toContain('data-para-id="para-0"');
+      expect(result.processedHtml).not.toContain("<div data-para-id");
+    });
+
+    it("narrates a wrapper that holds text alongside an image", () => {
+      const html = '<div>Credit: <img alt="A cat"></div>';
+      const result = htmlToClientNarration(html);
+
+      // One paragraph, on the wrapper: the image is read within its run rather
+      // than as a paragraph of its own, so nothing is said twice.
+      expect(result.narrationText).toBe("Credit: Image: A cat");
+      expect(result.paragraphMap).toEqual([{ n: 0, o: 0 }]);
+    });
+  });
+
+  describe("definition lists", () => {
+    it("narrates terms and definitions (issue #1451)", () => {
+      const html = "<dl><dt>Term</dt><dd>Definition</dd></dl>";
+      const result = htmlToClientNarration(html);
+
+      // dl is para-0 and says nothing of its own, like ul/ol.
+      expect(result.narrationText).toBe("Term\n\nDefinition");
+      expect(result.paragraphMap).toEqual([
+        { n: 0, o: 1 },
+        { n: 1, o: 2 },
+      ]);
+    });
+
+    it("does not repeat a definition's own paragraphs", () => {
+      const html = "<dl><dt>Term</dt><dd><p>First</p><p>Second</p></dd></dl>";
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("Term\n\nFirst\n\nSecond");
+      expect(result.paragraphMap).toEqual([
+        { n: 0, o: 1 },
+        { n: 1, o: 3 },
+        { n: 2, o: 4 },
+      ]);
+    });
+  });
+
   describe("heading handling", () => {
     it("includes headings in narration", () => {
       const html = "<h1>Main Title</h1><p>Content</p><h2>Section</h2>";
@@ -847,6 +939,19 @@ describe("htmlToClientNarration", () => {
       const result = htmlToClientNarration(html);
 
       expect(result.narrationText).toBe("Image: A cat. My cat");
+    });
+
+    it("narrates a figure whose image sits in a wrapper", () => {
+      // The shape WordPress-style editors emit: a `<div>` holding nothing but
+      // the image, which is the image's own paragraph rather than a block that
+      // takes the image away from the figure.
+      const html =
+        '<figure><div class="image-block"><img alt="A cat"></div>' +
+        "<figcaption>My cat</figcaption></figure>";
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("Image: A cat. My cat");
+      expect(result.paragraphMap).toEqual([{ n: 0, o: 0 }]);
     });
   });
 
