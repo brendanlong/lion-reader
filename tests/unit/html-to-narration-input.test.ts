@@ -160,6 +160,14 @@ describe("htmlToNarrationInput", () => {
 
       expect(result.paragraphs).toEqual([{ id: 0, text: "Visit [link to example.com] for more." }]);
     });
+
+    it("does not announce an anchor that has no href", () => {
+      // `<a id="fn1">` is a link target, not a link — it goes nowhere.
+      const html = '<p><a id="fn1"></a>Footnote text</p>';
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toEqual([{ id: 0, text: "Footnote text" }]);
+    });
   });
 
   describe("list handling", () => {
@@ -235,6 +243,49 @@ describe("htmlToNarrationInput", () => {
         { id: 1, text: "- intro" },
         { id: 2, text: "more" },
       ]);
+    });
+
+    it("hands the marker to the first child that actually speaks", () => {
+      // Parking it on a leading empty <p> would lose it altogether.
+      const html = "<ul><li><p></p><p>text</p></li></ul>";
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toEqual([{ id: 3, text: "- text" }]);
+    });
+
+    it("keeps the task-list state when the item leads with an empty block", () => {
+      // The checkbox is the item's only cue that it is done (#1439), so losing
+      // the marker here would lose the state with it.
+      const html = '<ul><li><p><input type="checkbox" checked=""></p><p>Ship it</p></li></ul>';
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toEqual([{ id: 3, text: "- Done: Ship it" }]);
+    });
+
+    it("marks the item's own paragraph when it opens with a sublist", () => {
+      // A nested list narrates only through its items, which mark themselves.
+      const html = "<ul><li><ul><li>sub</li></ul><p>after</p></li></ul>";
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toEqual([
+        { id: 3, text: "- sub" },
+        { id: 4, text: "- after" },
+      ]);
+    });
+
+    it("marks through a non-block wrapper inside the item", () => {
+      // <div>/<section> get no paragraph of their own, so they are transparent.
+      const html = "<ul><li><div><p>x</p></div></li></ul>";
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toEqual([{ id: 2, text: "- x" }]);
+    });
+
+    it("does not let an empty link target take the item's marker", () => {
+      const html = '<ul><li><a id="fn1"></a><p>Footnote text</p></li></ul>';
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toEqual([{ id: 2, text: "- Footnote text" }]);
     });
 
     it("does not repeat a nested list's items in its parent item", () => {

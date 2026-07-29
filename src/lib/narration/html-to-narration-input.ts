@@ -77,18 +77,6 @@ function leadingTaskCheckbox(li: Element): Element | null {
 }
 
 /**
- * Whether an element narrates itself, so an enclosing block must leave its text
- * out — otherwise the same words are spoken twice (issue #1441).
- *
- * `img` is the exception: an image nested inside a block element is dropped from
- * the paragraph list below, so the enclosing block is what speaks its alt text.
- */
-function narratesItself(el: Element): boolean {
-  const tagName = el.tagName.toLowerCase();
-  return tagName !== "img" && BLOCK_ELEMENTS_SET.has(tagName);
-}
-
-/**
  * The bullet a list item is read with, plus its task-list state when it leads
  * with a checkbox. A task list carries that state in the checkbox, which
  * contributes no text — so read aloud, a done item would be indistinguishable
@@ -103,21 +91,59 @@ function listItemMarker(li: Element): string {
 }
 
 /**
+ * The list item a block belongs to, if any. Elements that aren't block-level —
+ * a `<div>` or `<section>` wrapper — are transparent, since they get no
+ * paragraph of their own; another block element does own its descendants.
+ */
+function enclosingListItem(el: Element): Element | null {
+  for (let parent = el.parentElement; parent; parent = parent.parentElement) {
+    const tagName = parent.tagName.toLowerCase();
+    if (tagName === "li") return parent;
+    if (BLOCK_ELEMENTS_SET.has(tagName)) return null;
+  }
+  return null;
+}
+
+/**
+ * The block a list item hands its marker to, or null if nothing in it speaks.
+ *
+ * The *first* child is not good enough: a leading empty `<p>` narrates nothing,
+ * and a nested list narrates only through its own items (which mark
+ * themselves), so a marker parked on either is a marker lost — including the
+ * task-list state from #1439, which is the item's only cue that it is done.
+ */
+function markerCarrier(li: Element): Element | null {
+  for (const child of Array.from(li.children)) {
+    const tagName = child.tagName.toLowerCase();
+    // A nested list's items carry their own markers, and a nested image is
+    // spoken by the block around it rather than getting a paragraph.
+    if (tagName === "ul" || tagName === "ol" || tagName === "img") continue;
+    if (!BLOCK_ELEMENTS_SET.has(tagName)) {
+      // A wrapper is transparent — the block that speaks may be inside it.
+      const nested = markerCarrier(child);
+      if (nested) return nested;
+      continue;
+    }
+    if (getOwnNarrationText(child).trim() !== "") return child;
+  }
+  return null;
+}
+
+/**
  * The list marker a block inherits from the item that wraps it, if any.
  *
  * A loose list item (`<li><p>…</p></li>` — what cmark-gfm/GitHub emit for any
  * list with blank lines between items, so it is common in feed HTML) has no
  * text of its own; its children narrate themselves. The bullet and the spoken
- * checkbox state therefore ride along on the first of those children instead of
- * on the item (issue #1441). An item that does have its own text speaks its own
+ * checkbox state therefore ride along on one of those children instead of on
+ * the item (issue #1441). An item that does have its own text speaks its own
  * marker, so its children inherit nothing.
  */
 function inheritedListMarker(el: Element): string {
-  const li = el.parentElement;
-  if (!li || li.tagName.toLowerCase() !== "li") return "";
-  if (leadingElement(li) !== el) return "";
+  const li = enclosingListItem(el);
+  if (!li) return "";
   if (processInlineContent(li) !== "") return "";
-  return listItemMarker(li);
+  return markerCarrier(li) === el ? listItemMarker(li) : "";
 }
 
 /**
@@ -210,7 +236,9 @@ function getOwnNarrationText(el: Element): string {
 /**
  * Process inline content, handling links and other inline elements.
  *
- * Block children are left out — see `narratesItself`.
+ * Block children are left out: each narrates itself, so speaking them here too
+ * would say the same words twice (issue #1441). An image is the exception — a
+ * nested one gets no paragraph of its own, so the block around it speaks it.
  */
 function processInlineContent(el: Element): string {
   let text = "";
@@ -230,7 +258,11 @@ function processInlineContent(el: Element): string {
         const href = childEl.getAttribute("href");
         const linkText = childEl.textContent?.trim() || "";
 
-        if (!linkText || linkText === href) {
+        if (!href) {
+          // A link target (`<a id="fn1">`), not a link: it goes nowhere, so
+          // announcing one would be noise — speak whatever text it wraps.
+          text += linkText;
+        } else if (!linkText || linkText === href) {
           try {
             const domain = new URL(href || "").hostname;
             text += `[link to ${domain}]`;
@@ -241,13 +273,16 @@ function processInlineContent(el: Element): string {
           text += linkText;
         }
       } else if (childTag === "code") {
-        // Inline code
-        text += `\`${childEl.textContent || ""}\``;
+        // Inline code (empty markup is not worth speaking a pair of backticks)
+        const code = childEl.textContent || "";
+        if (code) {
+          text += `\`${code}\``;
+        }
       } else if (childTag === "img") {
         // Inline image
         const alt = childEl.getAttribute("alt") || "image";
         text += `Image: ${alt}`;
-      } else if (!narratesItself(childEl)) {
+      } else if (!BLOCK_ELEMENTS_SET.has(childTag)) {
         // Recurse for other inline elements (strong, em, span, etc.)
         text += processInlineContent(childEl);
       }

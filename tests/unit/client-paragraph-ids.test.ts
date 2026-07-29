@@ -625,6 +625,20 @@ describe("htmlToClientNarration", () => {
         { n: 1, o: 2 },
       ]);
     });
+
+    it("skips a code block wrapped in a list item or blockquote too", () => {
+      // The wrapper used to read the code out on the <pre>'s behalf, which the
+      // skip above exists to prevent.
+      for (const html of [
+        "<ul><li><pre>const x = 1;</pre></li></ul>",
+        "<blockquote><pre>const x = 1;</pre></blockquote>",
+      ]) {
+        const result = htmlToClientNarration(html);
+
+        expect(result.narrationText).toBe("");
+        expect(result.paragraphMap).toEqual([]);
+      }
+    });
   });
 
   describe("list handling", () => {
