@@ -74,7 +74,7 @@ export async function fetchFullContent(
       });
 
       try {
-        const pluginContent = await plugin.capabilities.savedArticle.fetchContent(urlObj, {});
+        const pluginContent = await plugin.capabilities.savedArticle.fetchContent(urlObj);
 
         if (pluginContent) {
           logger.debug("Plugin successfully fetched content", {

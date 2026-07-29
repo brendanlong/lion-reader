@@ -1,7 +1,7 @@
 import type { UrlPlugin, SavedArticleContent } from "./types";
 import type { ParsedEntry } from "@/server/feed/types";
 import { Parser } from "htmlparser2";
-import { escapeHtml } from "@/server/http/html";
+import { escapeHtml, plainTextToHtml } from "@/server/http/html";
 import { fetchHtmlPage } from "@/server/http/fetch";
 import { logger } from "@/lib/logger";
 import {
@@ -22,19 +22,6 @@ import {
  * videos — while multiplying the per-IP request volume that triggers blocks.
  */
 export const YOUTUBE_MIN_FETCH_INTERVAL_SECONDS = 60 * 60;
-
-/**
- * Converts a plain-text YouTube video description to HTML: escapes it, turns
- * blank-line-separated blocks into paragraphs (single newlines into <br>), and
- * links bare http(s) URLs (YouTube descriptions are full of them).
- */
-export function youtubeDescriptionToHtml(description: string): string {
-  const paragraphs = description
-    .split(/\n{2,}/)
-    .map((block) => linkifyEscapedText(escapeHtml(block.trim())).replace(/\n/g, "<br>"))
-    .filter((block) => block.length > 0);
-  return paragraphs.map((p) => `<p>${p}</p>`).join("");
-}
 
 /**
  * Builds the privacy-enhanced YouTube embed iframe for a video id. Shared by
@@ -138,7 +125,7 @@ export function synthesizeYouTubeSavedArticle(
     ? extractYouTubeVideoMetadata(watchPageHtml)
     : { title: null, author: null, description: null };
   const iframe = buildYouTubeEmbedIframe(videoId, metadata.title);
-  const description = metadata.description ? youtubeDescriptionToHtml(metadata.description) : "";
+  const description = metadata.description ? plainTextToHtml(metadata.description) : "";
   return {
     html: iframe + description,
     title: metadata.title,
@@ -150,24 +137,6 @@ export function synthesizeYouTubeSavedArticle(
     // watch?v=... still produces distinct saved articles.
     canonicalUrl: `https://www.youtube.com/watch?v=${videoId}`,
   };
-}
-
-/**
- * Wraps bare http(s) URLs in already-HTML-escaped text with <a> tags. Escaped
- * text contains no raw `<`/`"`, so a match is safe to place in an href
- * attribute as-is (entities like `&amp;` decode back to the original URL).
- */
-function linkifyEscapedText(escapedText: string): string {
-  return escapedText.replace(/https?:\/\/[^\s]+/g, (match) => {
-    // Trailing sentence punctuation is almost never part of the URL; a
-    // trailing `)` only is when the URL itself contains `(`.
-    let url = match.replace(/[.,!?]+$/, "");
-    if (url.endsWith(")") && !url.includes("(")) {
-      url = url.slice(0, -1);
-    }
-    const trailer = match.slice(url.length);
-    return `<a href="${url}">${url}</a>${trailer}`;
-  });
 }
 
 /**
@@ -234,9 +203,7 @@ export const youtubePlugin: UrlPlugin = {
         if (!videoId) return null;
 
         const iframe = buildYouTubeEmbedIframe(videoId, entry.title);
-        const description = entry.mediaDescription
-          ? youtubeDescriptionToHtml(entry.mediaDescription)
-          : "";
+        const description = entry.mediaDescription ? plainTextToHtml(entry.mediaDescription) : "";
         return iframe + description;
       },
     },

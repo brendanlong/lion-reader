@@ -26,3 +26,20 @@ export function normalizeUrl(url: string): string {
     return url;
   }
 }
+
+/**
+ * Percent-decode a URL component, returning it unchanged when it contains a
+ * malformed escape rather than throwing.
+ *
+ * `decodeURIComponent` throws `URIError` on input like `%` or `%E0%A4%A`, and
+ * `new URL()` accepts both — so any code that decodes a path segment from a
+ * user-supplied URL crashes on input the validation layer happily let through.
+ * Use this anywhere a URL's own bytes are decoded.
+ */
+export function safeDecodeURIComponent(component: string): string {
+  try {
+    return decodeURIComponent(component);
+  } catch {
+    return component;
+  }
+}

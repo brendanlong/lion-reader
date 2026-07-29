@@ -307,7 +307,9 @@ The registry indexes plugins by hostname for O(1) lookup, then calls the plugin'
 
 A plugin can also declare `feedDefaultsToFullContent(feedUrl)`: when it returns true for a feed URL, a **fresh** subscription to that feed starts with `fetch_full_content` on (the frontend then hydrates each entry's full content on open, cached on the shared `entries` row). Used for sources whose feed entries are truncated or drop embedded content — Bluesky's native RSS renders quote posts/images/link cards as a bare placeholder. Matched by hostname + the plugin's predicate on the **feed** URL (not `matchUrl`, which matches entry URLs); a resubscribe keeps the user's stored preference. See `createSubscription` and `feedDefaultsToFullContent` in `src/server/plugins/index.ts`.
 
-The available plugins (LessWrong, Google Docs, ArXiv, GitHub, YouTube, Bluesky) and their capabilities are registered in `src/server/plugins/index.ts`; each plugin file documents its own source-specific behavior.
+The available plugins and their capabilities are registered in `src/server/plugins/index.ts`; each plugin file documents its own source-specific behavior.
+
+Some sources have no usable public read API and are scraped instead, from the structured metadata their page serves to a **logged-out** client (LinkedIn, Threads). Such a plugin must **only claim a page it positively recognizes** — matching a type the page itself declares, never sniffing for whichever field looks like a body — and return null otherwise. Because `skipReadability` means nothing downstream re-checks the extraction, a mis-identified body is stored silently: declining costs a fallback, guessing costs correctness. Before writing one, **measure what the generic path already produces**; that decides whether the plugin is rescuing a failure or improving a mediocre result, and how much it is allowed to assume. Each plugin file records that measurement and its source's `robots.txt` constraints.
 
 ---
 

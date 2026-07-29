@@ -12,6 +12,8 @@ import { arxivPlugin } from "./arxiv";
 import { githubPlugin } from "./github";
 import { youtubePlugin } from "./youtube";
 import { blueskyPlugin } from "./bluesky";
+import { linkedInPlugin } from "./linkedin";
+import { threadsPlugin } from "./threads";
 import { logger } from "@/lib/logger";
 
 // Register all available plugins at module load time
@@ -21,6 +23,8 @@ pluginRegistry.register(arxivPlugin);
 pluginRegistry.register(githubPlugin);
 pluginRegistry.register(youtubePlugin);
 pluginRegistry.register(blueskyPlugin);
+pluginRegistry.register(linkedInPlugin);
+pluginRegistry.register(threadsPlugin);
 
 logger.info("Plugins registered", {
   plugins: [
@@ -30,6 +34,8 @@ logger.info("Plugins registered", {
     githubPlugin.name,
     youtubePlugin.name,
     blueskyPlugin.name,
+    linkedInPlugin.name,
+    threadsPlugin.name,
   ],
 });
 
