@@ -2,7 +2,7 @@ import { fetchHtmlPage, HttpFetchError } from "@/server/http/fetch";
 import { logger } from "@/lib/logger";
 
 /** A fetched page, plus the URL it ended up at after redirects. */
-export interface PluginPage {
+interface PluginPage {
   html: string;
   finalUrl: string;
 }

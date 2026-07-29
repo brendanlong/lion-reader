@@ -14,12 +14,15 @@ import { logger } from "@/lib/logger";
  * requires Meta App Review plus business verification. The token-free
  * `graph.threads.net/oembed` endpoint returns only the `<blockquote>` shell
  * that `embed.js` hydrates client-side — no post text. And the post page is a
- * JS app that yields nothing to Readability.
+ * JS app: Readability returns nothing usable on it at all (verified against a
+ * real post page — extraction fails outright, unlike LinkedIn where it merely
+ * does a worse job than the page's own metadata).
  *
  * What is available is Open Graph: a Threads post page serves the complete post
  * text in `og:description` (the posts are short, so it isn't elided the way
- * `twitter:description` is) and the author in `og:title`. That's what this
- * plugin renders.
+ * `twitter:description` is) and the author in `og:title`. Unlike LinkedIn's,
+ * this `og:description` *is* the post rather than a description of something
+ * the post links to, which is why reading it as the body is sound here.
  *
  * Known limitations:
  * - **No publish date.** The page carries no `<time>`, no JSON-LD, and no

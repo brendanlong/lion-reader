@@ -12,18 +12,24 @@ import { logger } from "@/lib/logger";
  * LinkedIn has no public read API — open API access ended in 2015 and the
  * Community Management API is partner-gated and scoped to content the
  * authenticated member owns, so there is nothing to call for someone else's
- * post. Without this plugin a post URL goes to Readability, which extracts the
- * login wall.
+ * post.
  *
- * What LinkedIn *does* serve to a logged-out client is a JSON-LD
- * `SocialMediaPosting` (or `VideoObject` for a video post) carrying the full
- * post body past the "see more" fold, the author, the publish date, and the
- * attached image. That's the richest thing available without auth, so this
- * plugin fetches the public post page and renders that.
+ * Unlike Threads, Readability does *not* fail on a LinkedIn post page — it
+ * returns something usable. It's just consistently worse than the page's own
+ * JSON-LD, in three ways measured against real posts: it picks a **commenter**
+ * as the byline (on a post by Jason Feifer it returned "Jon Rosemberg"), it
+ * pulls the comment thread into the body (2754 extracted characters for an
+ * 834-character post), and its title is the SEO one with `| … | LinkedIn`
+ * chrome rather than the post's first line. The JSON-LD is exactly the post:
+ * the full body past the "see more" fold, the real author, the publish date,
+ * and the attached image.
+ *
+ * That is why an unrecognized page returns null rather than guessing: falling
+ * back to Readability is a genuinely reasonable outcome here, not a failure.
  *
  * Caveats worth knowing before debugging a bad save:
  * - Only works while the author keeps the post public; otherwise the page is an
- *   auth wall with no JSON-LD and we return null to fall back to normal handling.
+ *   auth wall with no JSON-LD and we fall back.
  * - LinkedIn is well known for serving HTTP 999 / auth walls to datacenter IP
  *   ranges, so this can degrade in production even when it works locally. The
  *   fetch failing is handled the same as unusable markup: fall back, don't throw.
@@ -69,10 +75,25 @@ export function parseLinkedInPostUrn(url: URL): string | null {
 // ============================================================================
 
 /**
- * The subset of LinkedIn's JSON-LD we render. A text post is a
- * `SocialMediaPosting` with `articleBody`; a video post is a `VideoObject` whose
- * commentary is in `description`. We key off the field shape rather than
- * `@type` so a type we haven't seen still works if it carries a body.
+ * `@type` values we know are the post itself, and where each keeps the body.
+ *
+ * Matching on the declared type — rather than sniffing for whichever entity
+ * happens to carry a body-shaped field — is what keeps an unrelated entity on
+ * the same page (the LinkedIn `Organization`, whose `description` is "LinkedIn
+ * is the world's largest professional network") from being saved as the post.
+ * A type we haven't seen falls back to normal handling instead of guessing.
+ */
+const POST_TYPES: Record<string, ReadonlyArray<"articleBody" | "description">> = {
+  // A text post. `description` is deliberately not listed: on a link-share post
+  // it describes the *shared article*, not the post.
+  SocialMediaPosting: ["articleBody"],
+  DiscussionForumPosting: ["articleBody"],
+  // A video post carries the commentary in `description` and has no articleBody.
+  VideoObject: ["description"],
+};
+
+/**
+ * The subset of LinkedIn's JSON-LD we render.
  */
 interface LinkedInPerson {
   name?: string;
@@ -99,12 +120,6 @@ interface LinkedInJsonLd {
   "@graph"?: unknown;
 }
 
-/** What we scrape out of a post page in one pass. */
-interface LinkedInPageData {
-  jsonLd: LinkedInJsonLd[];
-  ogDescription: string | null;
-}
-
 /**
  * Flatten one parsed JSON-LD document into the entity objects it contains,
  * unwrapping the two containers schema.org allows: a top-level array, and a
@@ -128,15 +143,9 @@ function flattenJsonLd(parsed: unknown): LinkedInJsonLd[] {
   return entities;
 }
 
-/**
- * SAX-scrape a post page for its JSON-LD entities and `og:description`. The two
- * are complements, not alternatives: a text post carries JSON-LD `articleBody`
- * and no `og:description` at all, while a link-share post's `og:description`
- * describes the *shared article* — which is why it is only ever a last resort.
- */
-export function extractLinkedInPageData(html: string): LinkedInPageData {
+/** SAX-scrape a post page for the entities in its JSON-LD blocks. */
+function extractLinkedInJsonLd(html: string): LinkedInJsonLd[] {
   const jsonLd: LinkedInJsonLd[] = [];
-  let ogDescription: string | null = null;
 
   let inJsonLd = false;
   let scriptText = "";
@@ -148,11 +157,6 @@ export function extractLinkedInPageData(html: string): LinkedInPageData {
         if (tag === "script" && attribs.type?.toLowerCase() === "application/ld+json") {
           inJsonLd = true;
           scriptText = "";
-        } else if (tag === "meta") {
-          const property = attribs.property?.toLowerCase();
-          if (property === "og:description" && attribs.content && !ogDescription) {
-            ogDescription = attribs.content;
-          }
         }
       },
       ontext(text) {
@@ -177,16 +181,7 @@ export function extractLinkedInPageData(html: string): LinkedInPageData {
   parser.write(html);
   parser.end();
 
-  return { jsonLd, ogDescription };
-}
-
-/**
- * Strip the boilerplate LinkedIn appends to `og:description`
- * (`… | 21 comments on LinkedIn`), which is engagement chrome rather than part
- * of the post.
- */
-function stripOgDescriptionSuffix(description: string): string {
-  return description.replace(/\s*\|\s*(?:\d+\s+comments?\s+on\s+)?LinkedIn\s*$/i, "").trim();
+  return jsonLd;
 }
 
 function isHttpUrl(url: string | undefined): url is string {
@@ -230,26 +225,28 @@ function firstAuthorName(post: LinkedInJsonLd | undefined): string | null {
  * Pure — `fetchContent` supplies the HTML — so it can be unit-tested against
  * captured page shapes without network mocking.
  *
- * Returns null when the page carries no usable post body (an auth wall, a
- * `/posts/` URL that isn't really a post, markup LinkedIn has since changed),
- * which makes the caller fall back to normal fetching.
+ * Returns null when the page carries no post entity we recognize — an auth
+ * wall, a `/posts/` URL that isn't really a post, a post type we haven't seen,
+ * or markup LinkedIn has since changed. The caller then falls back to normal
+ * fetching, which on LinkedIn means Readability: worse than this (see the file
+ * header), but a reasonable article rather than a failure.
  */
 export function renderLinkedInPost(html: string, postUrl: string): SavedArticleContent | null {
-  const { jsonLd, ogDescription } = extractLinkedInPageData(html);
-
-  // `articleBody` is unambiguously the post, so prefer any entity that has one
-  // over any entity that only has a `description`. A page can also carry
-  // unrelated JSON-LD (breadcrumbs, the LinkedIn `Organization`), and an
-  // `Organization`'s boilerplate `description` would otherwise win on ordering
-  // alone and be saved as the post body.
-  const post =
-    jsonLd.find((entity) => entity.articleBody?.trim()) ??
-    jsonLd.find((entity) => entity.description?.trim());
-  const body =
-    post?.articleBody?.trim() ||
-    post?.description?.trim() ||
-    (ogDescription ? stripOgDescriptionSuffix(ogDescription) : "");
-  if (!body) {
+  // Take the first entity whose declared @type is a post, and read the body
+  // from the field that type keeps it in. Nothing is inferred from field shape,
+  // so an unrelated entity on the page can't be mistaken for the post.
+  let post: LinkedInJsonLd | undefined;
+  let body = "";
+  for (const entity of extractLinkedInJsonLd(html)) {
+    const bodyFields = POST_TYPES[entity["@type"] ?? ""];
+    const text = bodyFields?.map((field) => entity[field]?.trim()).find(Boolean);
+    if (text) {
+      post = entity;
+      body = text;
+      break;
+    }
+  }
+  if (!post) {
     return null;
   }
 

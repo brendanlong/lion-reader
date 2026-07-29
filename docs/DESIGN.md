@@ -309,7 +309,9 @@ A plugin can also declare `feedDefaultsToFullContent(feedUrl)`: when it returns 
 
 The available plugins and their capabilities are registered in `src/server/plugins/index.ts`; each plugin file documents its own source-specific behavior.
 
-For the social networks with no usable public read API (LinkedIn, Threads), the plugin scrapes the structured metadata the public post page serves to a **logged-out** client — JSON-LD for LinkedIn, Open Graph for Threads — because the alternative is Readability extracting an auth wall. These are inherently best-effort: when the markup changes, the post goes private, or the site blocks our egress IP, `fetchContent` returns null and the save falls back to normal handling instead of failing. Both sites' `robots.txt` disallow a generic user agent, so keep this to the user-initiated single-post fetch that it is — don't extend it into anything that walks profiles or feeds. The general fix for login-walled sources is client-side capture through `saveArticle`'s `html` parameter, not more scrapers.
+For the social networks with no usable public read API (LinkedIn, Threads), the plugin scrapes the structured metadata the public post page serves to a **logged-out** client — JSON-LD for LinkedIn, Open Graph for Threads. Readability fails outright on Threads; on LinkedIn it succeeds but does a measurably worse job than the page's own JSON-LD (it picks a commenter as the byline and pulls the comment thread into the body). So these plugins must **only claim a page they positively recognize** — LinkedIn matches on the JSON-LD `@type`, never on "whichever entity looks like it has a body" — and return null otherwise. Falling back is a good outcome, and a confident wrong answer is not: with `skipReadability` nothing downstream re-checks what was extracted, so a mis-identified body is stored silently.
+
+Both sites' `robots.txt` disallow a generic user agent, so keep this to the user-initiated single-post fetch that it is — don't extend it into anything that walks profiles or feeds. The general fix for login-walled sources is client-side capture through `saveArticle`'s `html` parameter, not more scrapers.
 
 ---
 

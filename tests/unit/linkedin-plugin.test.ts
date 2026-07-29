@@ -164,7 +164,11 @@ describe("renderLinkedInPost", () => {
     expect(result!.html).toContain("Watch video on LinkedIn");
   });
 
-  it("falls back to og:description, stripping LinkedIn's comment-count suffix", () => {
+  // og:description is the *shared article's* description on a link-share post,
+  // and LinkedIn serves one on non-post pages too, so saving it as the body
+  // risks storing something that isn't the post. Falling back to Readability is
+  // a better outcome than a confident wrong answer.
+  it("returns null rather than saving og:description as the body", () => {
     const result = renderLinkedInPost(
       page(
         null,
@@ -172,11 +176,7 @@ describe("renderLinkedInPost", () => {
       ),
       POST_URL
     );
-
-    expect(result!.html).toBe("<p>The whole post body.</p>");
-    // No JSON-LD means no author or date to report.
-    expect(result!.author).toBeNull();
-    expect(result!.publishedAt).toBeNull();
+    expect(result).toBeNull();
   });
 
   it("skips JSON-LD blocks that carry no body", () => {
@@ -187,29 +187,6 @@ describe("renderLinkedInPost", () => {
       "</head><body></body></html>",
     ].join("");
     expect(renderLinkedInPost(html, POST_URL)!.author).toBe("Dave Taylor");
-  });
-
-  // An Organization block carries a boilerplate `description`, so picking the
-  // first entity with *any* body field would save "LinkedIn is the world's
-  // largest professional network" as the post.
-  it("prefers an articleBody entity over an earlier entity that only has a description", () => {
-    const org = {
-      "@type": "Organization",
-      name: "LinkedIn",
-      description: "LinkedIn is the world's largest professional network.",
-    };
-
-    // As separate blocks…
-    const separate = [
-      "<html><head>",
-      `<script type="application/ld+json">${JSON.stringify(org)}</script>`,
-      `<script type="application/ld+json">${JSON.stringify(TEXT_POST)}</script>`,
-      "</head><body></body></html>",
-    ].join("");
-    expect(renderLinkedInPost(separate, POST_URL)!.author).toBe("Dave Taylor");
-
-    // …and as one array block, which is also valid JSON-LD.
-    expect(renderLinkedInPost(page([org, TEXT_POST]), POST_URL)!.author).toBe("Dave Taylor");
   });
 
   it("unwraps a @graph container", () => {
@@ -250,13 +227,35 @@ describe("renderLinkedInPost", () => {
     expect(result!.html).toContain('src="https://media.licdn.com/ok.jpg"');
   });
 
-  it("survives malformed JSON-LD and falls back to og:description", () => {
-    const html =
-      "<html><head>" +
-      '<script type="application/ld+json">{not json</script>' +
-      '<meta property="og:description" content="Post body | LinkedIn">' +
-      "</head><body></body></html>";
-    expect(renderLinkedInPost(html, POST_URL)!.html).toBe("<p>Post body</p>");
+  it("survives malformed JSON-LD without throwing", () => {
+    const html = [
+      "<html><head>",
+      '<script type="application/ld+json">{not json</script>',
+      `<script type="application/ld+json">${JSON.stringify(TEXT_POST)}</script>`,
+      "</head><body></body></html>",
+    ].join("");
+    expect(renderLinkedInPost(html, POST_URL)!.author).toBe("Dave Taylor");
+  });
+
+  // The whole point of gating on @type: an Organization's boilerplate
+  // description must never be mistaken for the post, in any position.
+  it("ignores an entity whose @type is not a post, whatever fields it carries", () => {
+    const org = {
+      "@type": "Organization",
+      name: "LinkedIn",
+      description: "LinkedIn is the world's largest professional network.",
+      articleBody: "Not a post either.",
+    };
+    expect(renderLinkedInPost(page(org), POST_URL)).toBeNull();
+    expect(renderLinkedInPost(page([org, TEXT_POST]), POST_URL)!.author).toBe("Dave Taylor");
+  });
+
+  it("does not read `description` on a text post, which describes the shared link", () => {
+    const result = renderLinkedInPost(
+      page({ ...TEXT_POST, articleBody: undefined, description: "The shared article's summary." }),
+      POST_URL
+    );
+    expect(result).toBeNull();
   });
 
   it("returns null for an auth wall with no post body, so the save falls back", () => {
