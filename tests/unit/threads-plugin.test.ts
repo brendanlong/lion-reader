@@ -63,6 +63,13 @@ describe("parseThreadsPostCode", () => {
     }
   });
 
+  // fetchContent guards against redirects with this: a deleted or invalid post
+  // redirects here, and the home page carries its own og:description that would
+  // otherwise be saved as the post body.
+  it("returns null for the home page a dead post redirects to", () => {
+    expect(parseThreadsPostCode(new URL("https://www.threads.com/?error=invalid_post"))).toBeNull();
+  });
+
   it("returns null for non-Threads hosts", () => {
     expect(parseThreadsPostCode(new URL("https://example.com/@a/post/b"))).toBeNull();
   });

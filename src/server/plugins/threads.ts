@@ -174,6 +174,20 @@ export const threadsPlugin: UrlPlugin = {
           return null;
         }
 
+        // A deleted or invalid post redirects to the Threads home page
+        // (`/?error=invalid_post`), which carries its own `og:description` —
+        // "Join Threads to share ideas, ask questions…" — that would otherwise
+        // be saved as the post body. Every Threads page has an `og:description`,
+        // so unlike LinkedIn there is no type to gate on; confirming the page we
+        // landed on is still a post is this plugin's equivalent of that gate.
+        if (!parseThreadsPostCode(new URL(page.finalUrl))) {
+          logger.debug("Threads post URL redirected away from the post", {
+            url: url.href,
+            finalUrl: page.finalUrl,
+          });
+          return null;
+        }
+
         const content = renderThreadsPost(page.html, page.finalUrl);
         if (!content) {
           logger.debug("Threads post page carried no post text", { url: url.href });
