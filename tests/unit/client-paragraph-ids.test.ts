@@ -593,7 +593,8 @@ describe("htmlToClientNarration", () => {
       const html = '<p>Text before <img src="test.jpg"> text after</p>';
       const result = htmlToClientNarration(html);
 
-      expect(result.narrationText).toBe("Text before  text after");
+      // The gap the image left is collapsed away, not spoken as a double space.
+      expect(result.narrationText).toBe("Text before text after");
     });
 
     it("handles inline images in list items", () => {
@@ -826,6 +827,29 @@ describe("htmlToClientNarration", () => {
     });
   });
 
+  describe("paragraph text", () => {
+    it("keeps the space inside a paragraph's inline markup", () => {
+      const html = "<p><b>Name:</b><span> John</span></p>";
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("Name: John");
+    });
+
+    it("keeps an inline image's alt text apart from the words around it", () => {
+      const html = '<p>see<img alt="a cat">now</p>';
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("see Image: a cat now");
+    });
+
+    it("narrates a figure's caption, which nothing else does", () => {
+      const html = '<figure><img alt="A cat"><figcaption>My cat</figcaption></figure>';
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("Image: A cat. My cat");
+    });
+  });
+
   describe("blockquote handling", () => {
     it("includes blockquote text in narration", () => {
       const html = "<blockquote>A famous quote goes here.</blockquote>";
@@ -875,7 +899,7 @@ describe("htmlToClientNarration", () => {
         "<td>B</td></tr></table>";
       const result = htmlToClientNarration(html);
 
-      expect(result.narrationText).toBe("Image: Sales chart Fig 1, B");
+      expect(result.narrationText).toBe("Image: Sales chart. Fig 1, B");
       expect(result.paragraphMap).toEqual([{ n: 0, o: 0 }]);
     });
 
@@ -906,10 +930,14 @@ describe("htmlToClientNarration", () => {
     });
 
     it("reads a nested table as a cell of the outer one, once", () => {
-      const html = "<table><tr><td><table><tr><td>inner</td></tr></table></td></tr></table>";
+      // More than one inner cell, so cells run together rather than being
+      // separated would fail this too.
+      const html =
+        "<table><tr><td><table><tr><td>A</td><td>B</td></tr><tr><td>C</td></tr></table>" +
+        "</td></tr></table>";
       const result = htmlToClientNarration(html);
 
-      expect(result.narrationText).toBe("inner");
+      expect(result.narrationText).toBe("A, B. C");
       expect(result.paragraphMap).toEqual([{ n: 0, o: 0 }]);
     });
 

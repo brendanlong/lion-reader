@@ -195,6 +195,18 @@ export interface ClientNarrationResult {
 }
 
 /**
+ * How deep the walks below descend before flattening what is left. The markup
+ * is feed-controlled and nests as deeply as it likes; the walks are recursive.
+ */
+const MAX_CONTENT_DEPTH = 64;
+
+/** An image's spoken text, padded — nothing else guarantees a gap around it. */
+function imageText(img: Element): string {
+  const alt = img.getAttribute("alt");
+  return alt && alt.trim() ? ` Image: ${alt.trim()} ` : "";
+}
+
+/**
  * Process inline content, handling images and other inline elements.
  * Recursively walks through child nodes to preserve image alt text.
  *
@@ -204,32 +216,42 @@ export interface ClientNarrationResult {
  * nested image never gets a paragraph of its own.
  */
 function processInlineContent(el: Element): string {
-  let text = "";
+  // Horizontal whitespace only: a blank line in the source is how a block with
+  // `<br><br>` in it becomes two spoken paragraphs (see `./paragraph-map`).
+  return inlineText(el)
+    .replace(/[^\S\n]+/g, " ")
+    .trim();
+}
 
-  // Walk through child nodes
+/**
+ * The inline text of an element's children, untrimmed — trimming at every level
+ * of the walk swallows the space in `<b>Total:</b><span> 42</span>`.
+ */
+function inlineText(el: Element, depth = 0): string {
+  if (depth >= MAX_CONTENT_DEPTH) {
+    return el.textContent || "";
+  }
+
+  let text = "";
   el.childNodes.forEach((node) => {
     if (node.nodeType === Node.TEXT_NODE) {
-      // Text node
       text += node.textContent || "";
-    } else if (node.nodeType === Node.ELEMENT_NODE) {
-      // Element node
-      const childEl = node as Element;
-      const childTag = childEl.tagName.toLowerCase();
-
-      if (childTag === "img") {
-        // Inline image - include alt text
-        const alt = childEl.getAttribute("alt");
-        if (alt && alt.trim()) {
-          text += `Image: ${alt.trim()}`;
-        }
-      } else if (!BLOCK_ELEMENT_SET.has(childTag)) {
-        // Recurse for other inline elements (strong, em, span, a, etc.)
-        text += processInlineContent(childEl);
-      }
+      return;
     }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+
+    const childEl = node as Element;
+    const childTag = childEl.tagName.toLowerCase();
+    if (childTag === "img") {
+      text += imageText(childEl);
+      return;
+    }
+    if (BLOCK_ELEMENT_SET.has(childTag)) return;
+    // Recurse for other inline elements (strong, em, span, a, etc.)
+    text += inlineText(childEl, depth + 1);
   });
 
-  return text.trim();
+  return text;
 }
 
 /**
@@ -267,9 +289,12 @@ function subtreeNarrationText(el: Element): string {
  * The subtree's text, untrimmed — trimming at every level of the walk swallows
  * the space in `<b>Total:</b><span> 42</span>`.
  */
-function subtreeText(el: Element): string {
-  let text = "";
+function subtreeText(el: Element, depth = 0): string {
+  if (depth >= MAX_CONTENT_DEPTH) {
+    return el.textContent || "";
+  }
 
+  let text = "";
   el.childNodes.forEach((node) => {
     if (node.nodeType === Node.TEXT_NODE) {
       text += node.textContent || "";
@@ -280,20 +305,70 @@ function subtreeText(el: Element): string {
     const childEl = node as Element;
     const childTag = childEl.tagName.toLowerCase();
     if (childTag === "img") {
-      const alt = childEl.getAttribute("alt");
-      if (alt && alt.trim()) {
-        // Padded: nothing here guarantees whitespace around an image the way
-        // the text around an inline one does (a caption butts right up to it).
-        text += ` Image: ${alt.trim()} `;
-      }
+      text += imageText(childEl);
       return;
     }
-    const inner = subtreeText(childEl);
+    if (childTag === "table") {
+      // A table in a cell reads as a table, not as its cells glued together.
+      text += ` ${tableNarrationText(childEl)} `;
+      return;
+    }
+    if (childTag === "figure" && ownDescendant(childEl, "img")) {
+      text += ` ${figureNarrationText(childEl)} `;
+      return;
+    }
+    const inner = subtreeText(childEl, depth + 1);
     // Inline markup continues the run of text; a block starts a new one.
     text += BLOCK_ELEMENT_SET.has(childTag) ? ` ${inner} ` : inner;
   });
 
   return text;
+}
+
+/**
+ * A figure's image, with the caption that nothing else narrates: the caption is
+ * the description when there is no alt text, and extra detail when there is.
+ *
+ * A figure that holds no image of its own — one around a table or a list, or
+ * one whose image a nested block already speaks — is not an image at all, so it
+ * announces none and narrates whatever text it does hold.
+ */
+function figureNarrationText(el: Element): string {
+  const img = ownDescendant(el, "img");
+  if (!img) {
+    return processInlineContent(el);
+  }
+  const alt = img.getAttribute("alt")?.trim();
+  const caption = ownDescendant(el, "figcaption")?.textContent?.trim();
+  if (!alt) {
+    return caption ? `Image: ${caption}` : "";
+  }
+  return caption ? `Image: ${alt}. ${caption}` : `Image: ${alt}`;
+}
+
+/**
+ * A table's rows, and the caption that no one else will narrate (issue #1445):
+ * like the cells, the blocks inside it stay silent for the table's sake.
+ */
+function tableNarrationText(el: Element): string {
+  const parts: string[] = [];
+  const caption = el.querySelector("caption");
+  if (caption?.closest("table") === el) {
+    parts.push(subtreeNarrationText(caption));
+  }
+  el.querySelectorAll("tr").forEach((tr) => {
+    // A nested table narrates its own rows — as a cell of this one.
+    if (tr.closest("table") !== el) return;
+    const cells: string[] = [];
+    tr.querySelectorAll("th, td").forEach((cell) => {
+      if (cell.closest("tr") !== tr) return;
+      cells.push(subtreeNarrationText(cell));
+    });
+    if (cells.length > 0 && cells.some((c) => c.length > 0)) {
+      parts.push(cells.join(", "));
+    }
+  });
+  return parts.filter(Boolean).join(". ");
 }
 
 /**
@@ -351,38 +426,12 @@ function getElementNarrationText(el: Element): string {
   // nested block (a table, a list) is spoken by that block instead — and a
   // figure around one of those is not an image at all, so it announces none.
   if (tagName === "figure") {
-    const img = ownDescendant(el, "img");
-    if (!img) {
-      return processInlineContent(el);
-    }
-    const figcaption = ownDescendant(el, "figcaption");
-    const alt = img.getAttribute("alt") || figcaption?.textContent?.trim();
-    return alt ? `Image: ${alt}` : "";
+    return figureNarrationText(el);
   }
 
   // Handle tables
   if (tagName === "table") {
-    // Extract table content in a readable format. The caption counts: like the
-    // cells, the blocks inside it stay silent for the table's sake, so if the
-    // table doesn't say it, nothing does (issue #1445).
-    const parts: string[] = [];
-    const caption = el.querySelector("caption");
-    if (caption?.closest("table") === el) {
-      parts.push(subtreeNarrationText(caption));
-    }
-    el.querySelectorAll("tr").forEach((tr) => {
-      // A nested table narrates its own rows — as a cell of this one.
-      if (tr.closest("table") !== el) return;
-      const cells: string[] = [];
-      tr.querySelectorAll("th, td").forEach((cell) => {
-        if (cell.closest("tr") !== tr) return;
-        cells.push(subtreeNarrationText(cell));
-      });
-      if (cells.length > 0 && cells.some((c) => c.length > 0)) {
-        parts.push(cells.join(", "));
-      }
-    });
-    return parts.filter(Boolean).join(". ");
+    return tableNarrationText(el);
   }
 
   // Handle standalone images

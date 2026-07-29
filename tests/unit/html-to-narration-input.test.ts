@@ -197,7 +197,9 @@ describe("htmlToNarrationInput", () => {
         '<blockquote><figure><img alt="A cat"><figcaption>My cat</figcaption></figure></blockquote>';
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 0, text: "Quote: Image: A cat My cat End quote." }]);
+      expect(result.paragraphs).toEqual([
+        { id: 0, text: "Quote: Image: A cat. My cat End quote." },
+      ]);
     });
 
     it("keeps what a quoted figure wraps when it is not an image", () => {
@@ -239,6 +241,27 @@ describe("htmlToNarrationInput", () => {
       const result = htmlToNarrationInput(html);
 
       expect(result.paragraphs).toEqual([{ id: 0, text: "Image: A beautiful sunset" }]);
+    });
+
+    it("narrates a figure's caption, which nothing else does", () => {
+      // The caption is the description when there is no alt text, and extra
+      // detail when there is — and `<figcaption>` gets no paragraph of its own.
+      const html = '<figure><img alt="A cat"><figcaption>My cat</figcaption></figure>';
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toEqual([{ id: 0, text: "Image: A cat. My cat" }]);
+    });
+
+    it("does not announce an image for a figure that holds none", () => {
+      // A figure around a table is not an image; the table speaks for itself.
+      const html =
+        "<figure><table><tr><td>Cell</td></tr></table><figcaption>Data</figcaption></figure>";
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toEqual([
+        { id: 0, text: "Data" },
+        { id: 1, text: "Table: Cell End table." },
+      ]);
     });
 
     it("handles inline images within paragraphs", () => {
@@ -398,6 +421,29 @@ describe("htmlToNarrationInput", () => {
       expect(result.paragraphs).toEqual([{ id: 2, text: "- Footnote text" }]);
     });
 
+    it("marks through a figure that announces no image", () => {
+      // The figure speaks nothing of its own, so it owns nothing: the table
+      // inside it carries the item's marker (issue #1441's invariant).
+      const html = "<ul><li><figure><table><tr><td>x</td></tr></table></figure></li></ul>";
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toEqual([{ id: 3, text: "- Table: x End table." }]);
+    });
+
+    it("narrates a list item with thousands of paragraphs in reasonable time", () => {
+      // Answering "which of my blocks carries the marker?" walks the item, and
+      // it is asked once per block — quadratic without memoization, which took
+      // seconds on an item this size.
+      const html = `<ul><li>${"<p>text here</p>".repeat(3000)}</li></ul>`;
+
+      const started = performance.now();
+      const result = htmlToNarrationInput(html);
+
+      expect(performance.now() - started).toBeLessThan(2000);
+      expect(result.paragraphs).toHaveLength(3000);
+      expect(result.paragraphs[0].text).toBe("- text here");
+    });
+
     it("does not repeat a nested list's items in its parent item", () => {
       const html = "<ul><li>Parent<ul><li>Child</li></ul></li></ul>";
       const result = htmlToNarrationInput(html);
@@ -452,7 +498,7 @@ describe("htmlToNarrationInput", () => {
       const result = htmlToNarrationInput(html);
 
       expect(result.paragraphs).toEqual([
-        { id: 0, text: "Table: Image: Sales chart Fig 1, - a - b End table." },
+        { id: 0, text: "Table: Image: Sales chart. Fig 1, - a - b End table." },
       ]);
     });
 
@@ -470,11 +516,15 @@ describe("htmlToNarrationInput", () => {
     });
 
     it("reads a nested table as a cell of the outer one, once", () => {
-      const html = "<table><tr><td><table><tr><td>inner</td></tr></table></td></tr></table>";
+      // More than one inner cell, so cells run together rather than being
+      // separated would fail this too.
+      const html =
+        "<table><tr><td><table><tr><td>A</td><td>B</td></tr><tr><td>C</td></tr></table>" +
+        "</td></tr></table>";
       const result = htmlToNarrationInput(html);
 
       expect(result.paragraphs).toEqual([
-        { id: 0, text: "Table: Table: inner End table. End table." },
+        { id: 0, text: "Table: Table: A, B. C End table. End table." },
       ]);
     });
 

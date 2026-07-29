@@ -99,9 +99,18 @@ function enclosingListItem(el: Element): Element | null {
   for (let parent = el.parentElement; parent; parent = parent.parentElement) {
     const tagName = parent.tagName.toLowerCase();
     if (tagName === "li") return parent;
-    if (BLOCK_ELEMENTS_SET.has(tagName)) return null;
+    if (tagName === "ul" || tagName === "ol") return null;
+    if (BLOCK_ELEMENTS_SET.has(tagName) && !isTransparentWrapper(parent)) return null;
   }
   return null;
+}
+
+/**
+ * Whether a block says nothing of its own, so it owns none of its descendants:
+ * a `<figure>` around a table announces no image, and the table is what speaks.
+ */
+function isTransparentWrapper(el: Element): boolean {
+  return el.tagName.toLowerCase() === "figure" && getOwnNarrationText(el).trim() === "";
 }
 
 /**
@@ -112,19 +121,21 @@ function enclosingListItem(el: Element): Element | null {
  * themselves), so a marker parked on either is a marker lost — including the
  * task-list state from #1439, which is the item's only cue that it is done.
  */
-function markerCarrier(li: Element): Element | null {
+function markerCarrier(li: Element, depth = 0): Element | null {
+  if (depth >= MAX_CONTENT_DEPTH) return null;
+
   for (const child of Array.from(li.children)) {
     const tagName = child.tagName.toLowerCase();
     // A nested list's items carry their own markers, and a nested image is
     // spoken by the block around it rather than getting a paragraph.
     if (tagName === "ul" || tagName === "ol" || tagName === "img") continue;
-    if (!BLOCK_ELEMENTS_SET.has(tagName)) {
-      // A wrapper is transparent — the block that speaks may be inside it.
-      const nested = markerCarrier(child);
-      if (nested) return nested;
-      continue;
+    if (BLOCK_ELEMENTS_SET.has(tagName)) {
+      if (getOwnNarrationText(child).trim() !== "") return child;
+      if (!isTransparentWrapper(child)) continue;
     }
-    if (getOwnNarrationText(child).trim() !== "") return child;
+    // A wrapper is transparent — the block that speaks may be inside it.
+    const nested = markerCarrier(child, depth + 1);
+    if (nested) return nested;
   }
   return null;
 }
@@ -142,9 +153,23 @@ function markerCarrier(li: Element): Element | null {
 function inheritedListMarker(el: Element): string {
   const li = enclosingListItem(el);
   if (!li) return "";
-  if (processInlineContent(li) !== "") return "";
-  return markerCarrier(li) === el ? listItemMarker(li) : "";
+
+  // Memoized: the answer depends only on the item, but the question is asked
+  // once per block inside it, and answering walks the item — an item with a
+  // few thousand paragraphs took seconds to narrate without this.
+  let handoff = markerHandoffs.get(li);
+  if (!handoff) {
+    handoff =
+      processInlineContent(li) !== ""
+        ? { carrier: null, marker: "" }
+        : { carrier: markerCarrier(li), marker: listItemMarker(li) };
+    markerHandoffs.set(li, handoff);
+  }
+  return handoff.carrier === el ? handoff.marker : "";
 }
+
+/** Which block each list item hands its marker to — see `inheritedListMarker`. */
+const markerHandoffs = new WeakMap<Element, { carrier: Element | null; marker: string }>();
 
 /**
  * Blocks whose narration covers everything inside them, because their markers
@@ -165,6 +190,14 @@ function insideSubtreeSpeaker(el: Element): boolean {
 
 /** Selector matching the blocks that break a run of inline text. */
 const BLOCK_SELECTOR = BLOCK_ELEMENTS.filter((tagName) => tagName !== "img").join(", ");
+
+/**
+ * Whether a figure narrates as the image it holds — as opposed to one around a
+ * table or a list, which announces no image and is walked into like a wrapper.
+ */
+function speaksAsImage(el: Element): boolean {
+  return el.tagName.toLowerCase() === "figure" && ownDescendant(el, "img") !== null;
+}
 
 /**
  * The first matching descendant an element speaks for itself — one no block in
@@ -225,7 +258,7 @@ function contentParagraphs(el: Element, depth = 0): string[] {
     }
 
     flushInline();
-    if (SUBTREE_SPEAKERS.has(tagName)) {
+    if (SUBTREE_SPEAKERS.has(tagName) || speaksAsImage(child)) {
       // Already speaks for everything below it, so don't descend twice.
       const text = getOwnNarrationText(child, depth + 1);
       if (text) paragraphs.push(text);
@@ -310,12 +343,16 @@ function getOwnNarrationText(el: Element, depth = 0): string {
   // nested block (a table, a list) is spoken by that block instead — and a
   // figure around one of those is not an image at all, so it announces none.
   if (tagName === "figure") {
-    const img = ownDescendant(el, "img");
-    if (!img) {
+    if (!speaksAsImage(el)) {
       return processInlineContent(el);
     }
-    const figcaption = ownDescendant(el, "figcaption");
-    return `Image: ${img.getAttribute("alt") || figcaption?.textContent?.trim() || "no description"}`;
+    const alt = ownDescendant(el, "img")?.getAttribute("alt")?.trim();
+    const caption = ownDescendant(el, "figcaption")?.textContent?.trim();
+    if (!alt) {
+      // The caption is the only description there is.
+      return `Image: ${caption || "no description"}`;
+    }
+    return caption ? `Image: ${alt}. ${caption}` : `Image: ${alt}`;
   }
 
   // Handle tables
@@ -369,11 +406,18 @@ function processInlineContent(el: Element): string {
 /**
  * The inline text of an element's children, untrimmed — trimming at every level
  * of the walk swallows the space in `<b>Total:</b><span> 42</span>`.
+ *
+ * Depth-capped like the content walk, and for the same reason: the markup is
+ * feed-controlled and nests as deeply as it likes.
  */
-function inlineChildrenText(el: Element): string {
+function inlineChildrenText(el: Element, depth = 0): string {
+  if (depth >= MAX_CONTENT_DEPTH) {
+    return el.textContent ?? "";
+  }
+
   let text = "";
   el.childNodes.forEach((node) => {
-    text += inlineNodeText(node);
+    text += inlineNodeText(node, depth);
   });
   return text;
 }
@@ -381,7 +425,7 @@ function inlineChildrenText(el: Element): string {
 /**
  * What a node contributes to the inline run of text around it.
  */
-function inlineNodeText(node: Node): string {
+function inlineNodeText(node: Node, depth = 0): string {
   if (node.nodeType === TEXT_NODE) {
     return node.textContent || "";
   }
@@ -431,7 +475,7 @@ function inlineNodeText(node: Node): string {
   }
 
   // Recurse for other inline elements (strong, em, span, etc.)
-  return inlineChildrenText(el);
+  return inlineChildrenText(el, depth + 1);
 }
 
 /**
