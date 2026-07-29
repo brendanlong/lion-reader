@@ -853,5 +853,27 @@ describe("htmlToClientNarration", () => {
       expect(result.narrationText).toBe("A, B. C, D");
       expect(result.paragraphMap).toEqual([{ n: 0, o: 0 }]);
     });
+
+    it("narrates a cell's paragraph only as part of the table (issue #1445)", () => {
+      const html =
+        "<p>before</p><table><tr><td><p>Cell 1</p></td><td>B</td></tr></table><p>after</p>";
+      const result = htmlToClientNarration(html);
+
+      // The cell's <p> is para-2 and stays silent; "after" is still para-3.
+      expect(result.narrationText).toBe("before\n\nCell 1, B\n\nafter");
+      expect(result.paragraphMap).toEqual([
+        { n: 0, o: 0 },
+        { n: 1, o: 1 },
+        { n: 2, o: 3 },
+      ]);
+    });
+
+    it("does not let a code block's children narrate it back", () => {
+      const html = "<pre><p>const x = 1;</p></pre>";
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("");
+      expect(result.paragraphMap).toEqual([]);
+    });
   });
 });

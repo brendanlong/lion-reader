@@ -113,13 +113,70 @@ describe("htmlToNarrationInput", () => {
       expect(result.paragraphs).toEqual([{ id: 0, text: "Quote: A famous quote. End quote." }]);
     });
 
-    // Same double-narration as issue #1441, in the wrapper that needs its
-    // markers split across the children rather than dropped. See issue #1445.
-    it.skip("narrates a quoted paragraph once, not once per wrapper", () => {
+    it("narrates a quoted paragraph once, not once per wrapper (issue #1445)", () => {
+      // Every Markdown renderer emits a `>` quote in this shape.
       const html = "<blockquote><p>A famous quote.</p></blockquote>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 1, text: "Quote: A famous quote. End quote." }]);
+      // The quote speaks for the paragraph inside it, which keeps its own
+      // paragraph index (1) but contributes no narration.
+      expect(result.paragraphs).toEqual([{ id: 0, text: "Quote: A famous quote. End quote." }]);
+    });
+
+    it("keeps a multi-paragraph quote's paragraphs apart", () => {
+      // Blank lines, so the player speaks two paragraphs instead of "ab".
+      const html = "<blockquote><p>a</p><p>b</p></blockquote>";
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toEqual([{ id: 0, text: "Quote: a\n\nb End quote." }]);
+    });
+
+    it("reads an attribution after the quote it follows", () => {
+      const html = "<blockquote><p>Quote text</p><footer>— Author</footer></blockquote>";
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toEqual([
+        { id: 0, text: "Quote: Quote text\n\n— Author End quote." },
+      ]);
+    });
+
+    it("keeps structure the quote wraps", () => {
+      // Descending rather than flattening to textContent, so a list inside a
+      // quote keeps its bullets and a table keeps its markers.
+      const html =
+        "<blockquote><ul><li>a</li><li>b</li></ul></blockquote>" +
+        "<blockquote><table><tr><td>A</td><td>B</td></tr></table></blockquote>";
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toEqual([
+        { id: 0, text: "Quote: - a\n\n- b End quote." },
+        { id: 4, text: "Quote: Table: A, B End table. End quote." },
+      ]);
+    });
+
+    it("still numbers the blocks that follow a quote", () => {
+      // The suppressed <p> keeps its index — the client highlights by it.
+      const html = "<blockquote><p>q</p></blockquote><p>after</p>";
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toEqual([
+        { id: 0, text: "Quote: q End quote." },
+        { id: 2, text: "after" },
+      ]);
+    });
+
+    it("marks a quote that is a list item's only content", () => {
+      const html = "<ul><li><blockquote><p>x</p></blockquote></li></ul>";
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toEqual([{ id: 2, text: "- Quote: x End quote." }]);
+    });
+
+    it("drops an empty quote instead of speaking bare markers", () => {
+      const html = "<blockquote></blockquote><p>after</p>";
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toEqual([{ id: 1, text: "after" }]);
     });
   });
 
@@ -325,12 +382,11 @@ describe("htmlToNarrationInput", () => {
       expect(result.paragraphs).toEqual([{ id: 0, text: "Table: Cell 1, Cell 2 End table." }]);
     });
 
-    // The cell's <p> is narrated again on its own — issue #1445.
-    it.skip("narrates a cell's paragraph only as part of the table", () => {
-      const html = "<table><tr><td><p>Cell 1</p></td></tr></table>";
+    it("narrates a cell's paragraph only as part of the table (issue #1445)", () => {
+      const html = "<table><tr><td><p>Cell 1</p></td><td>Cell 2</td></tr></table>";
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 0, text: "Table: Cell 1 End table." }]);
+      expect(result.paragraphs).toEqual([{ id: 0, text: "Table: Cell 1, Cell 2 End table." }]);
     });
   });
 

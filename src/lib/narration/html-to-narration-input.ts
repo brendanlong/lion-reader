@@ -147,11 +147,76 @@ function inheritedListMarker(el: Element): string {
 }
 
 /**
+ * Blocks whose narration covers everything inside them, because their markers
+ * wrap the text (`Quote: … End quote.`) and can't be split across children the
+ * way a list item's bullet can.
+ */
+const SUBTREE_SPEAKERS = new Set(["blockquote", "pre", "table"]);
+
+/**
+ * Whether a block sits inside one that already speaks for it (issue #1445).
+ */
+function insideSubtreeSpeaker(el: Element): boolean {
+  for (let parent = el.parentElement; parent; parent = parent.parentElement) {
+    if (SUBTREE_SPEAKERS.has(parent.tagName.toLowerCase())) return true;
+  }
+  return false;
+}
+
+/**
+ * The paragraphs an element's content narrates as, in document order: inline
+ * runs and block children interleaved the way they appear, so an attribution
+ * that trails a quote is read after it rather than before it.
+ */
+function contentParagraphs(el: Element): string[] {
+  const paragraphs: string[] = [];
+  let inline = "";
+
+  const flushInline = () => {
+    if (inline.trim()) paragraphs.push(inline.trim());
+    inline = "";
+  };
+
+  el.childNodes.forEach((node) => {
+    const child = node.nodeType === ELEMENT_NODE ? (node as Element) : null;
+    const tagName = child?.tagName.toLowerCase() ?? "";
+    // An image belongs to the run of text around it — it gets no paragraph.
+    if (!child || tagName === "img" || !BLOCK_ELEMENTS_SET.has(tagName)) {
+      inline += inlineNodeText(node);
+      return;
+    }
+
+    flushInline();
+    if (SUBTREE_SPEAKERS.has(tagName)) {
+      // Already speaks for everything below it, so don't descend twice.
+      const text = getOwnNarrationText(child);
+      if (text) paragraphs.push(text);
+      return;
+    }
+
+    const inner = contentParagraphs(child);
+    if (tagName === "li" && inner.length > 0) {
+      inner[0] = `${listItemMarker(child)}${inner[0]}`;
+    }
+    paragraphs.push(...inner);
+  });
+
+  flushInline();
+  return paragraphs;
+}
+
+/**
  * Converts an element's text content for narration.
  * Returns text in speakable form (no structural markers like [HEADING]).
  * Handles special elements like images, code blocks, etc.
  */
 function getElementNarrationText(el: Element): string {
+  // A block inside a quote or a table was narrated by that wrapper already;
+  // narrating it again would speak the same words twice (issue #1445). It keeps
+  // its paragraph index — which is what the client highlights by — and simply
+  // contributes no paragraph, exactly like an empty element does.
+  if (insideSubtreeSpeaker(el)) return "";
+
   const text = getOwnNarrationText(el);
   return text ? `${inheritedListMarker(el)}${text}` : "";
 }
@@ -181,9 +246,12 @@ function getOwnNarrationText(el: Element): string {
     return `Code block: ${codeContent} End code block.`;
   }
 
-  // Handle blockquotes
+  // Handle blockquotes. Paragraphs inside the quote are kept apart by blank
+  // lines rather than run together, and the player speaks each of them as its
+  // own paragraph (all highlighting this blockquote).
   if (tagName === "blockquote") {
-    return `Quote: ${el.textContent?.trim() || ""} End quote.`;
+    const quoted = contentParagraphs(el);
+    return quoted.length > 0 ? `Quote: ${quoted.join("\n\n")} End quote.` : "";
   }
 
   // Handle lists (ul/ol don't have their own text - skip)
@@ -242,54 +310,63 @@ function getOwnNarrationText(el: Element): string {
  */
 function processInlineContent(el: Element): string {
   let text = "";
-
-  // Walk through child nodes
   el.childNodes.forEach((node) => {
-    if (node.nodeType === 3) {
-      // Text node
-      text += node.textContent || "";
-    } else if (node.nodeType === 1) {
-      // Element node
-      const childEl = node as Element;
-      const childTag = childEl.tagName.toLowerCase();
+    text += inlineNodeText(node);
+  });
+  return text.trim();
+}
 
-      if (childTag === "a") {
-        // Handle links
-        const href = childEl.getAttribute("href");
-        const linkText = childEl.textContent?.trim() || "";
+/**
+ * What a node contributes to the inline run of text around it.
+ */
+function inlineNodeText(node: Node): string {
+  if (node.nodeType === TEXT_NODE) {
+    return node.textContent || "";
+  }
+  if (node.nodeType !== ELEMENT_NODE) {
+    return "";
+  }
 
-        if (!href) {
-          // A link target (`<a id="fn1">`), not a link: it goes nowhere, so
-          // announcing one would be noise — speak whatever text it wraps.
-          text += linkText;
-        } else if (!linkText || linkText === href) {
-          try {
-            const domain = new URL(href || "").hostname;
-            text += `[link to ${domain}]`;
-          } catch {
-            text += `[link to ${href}]`;
-          }
-        } else {
-          text += linkText;
-        }
-      } else if (childTag === "code") {
-        // Inline code (empty markup is not worth speaking a pair of backticks)
-        const code = childEl.textContent || "";
-        if (code) {
-          text += `\`${code}\``;
-        }
-      } else if (childTag === "img") {
-        // Inline image
-        const alt = childEl.getAttribute("alt") || "image";
-        text += `Image: ${alt}`;
-      } else if (!BLOCK_ELEMENTS_SET.has(childTag)) {
-        // Recurse for other inline elements (strong, em, span, etc.)
-        text += processInlineContent(childEl);
+  const el = node as Element;
+  const tagName = el.tagName.toLowerCase();
+
+  if (tagName === "a") {
+    // Handle links
+    const href = el.getAttribute("href");
+    const linkText = el.textContent?.trim() || "";
+
+    if (!href) {
+      // A link target (`<a id="fn1">`), not a link: it goes nowhere, so
+      // announcing one would be noise — speak whatever text it wraps.
+      return linkText;
+    }
+    if (!linkText || linkText === href) {
+      try {
+        return `[link to ${new URL(href).hostname}]`;
+      } catch {
+        return `[link to ${href}]`;
       }
     }
-  });
+    return linkText;
+  }
 
-  return text.trim();
+  if (tagName === "code") {
+    // Inline code (empty markup is not worth speaking a pair of backticks)
+    const code = el.textContent || "";
+    return code ? `\`${code}\`` : "";
+  }
+
+  if (tagName === "img") {
+    // Inline image
+    return `Image: ${el.getAttribute("alt") || "image"}`;
+  }
+
+  if (BLOCK_ELEMENTS_SET.has(tagName)) {
+    return "";
+  }
+
+  // Recurse for other inline elements (strong, em, span, etc.)
+  return processInlineContent(el);
 }
 
 /**

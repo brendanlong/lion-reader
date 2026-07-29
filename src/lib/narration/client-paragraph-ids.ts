@@ -233,10 +233,25 @@ function processInlineContent(el: Element): string {
 }
 
 /**
+ * Blocks whose narration already accounts for everything inside them: a table
+ * speaks all of its cells, and a code block is deliberately not spoken at all.
+ * A block nested in one of those has to stay silent, or its text comes back —
+ * a second time for the table, and at all for the code block (issue #1445).
+ *
+ * A blockquote is not one of these: it speaks only its own text, so the
+ * paragraphs inside it are the ones that narrate the quote.
+ */
+const SUBTREE_SPEAKERS = new Set(["pre", "table"]);
+
+/**
  * Gets narration text for an element.
  * Handles special elements like images, code blocks, headings, etc.
  */
 function getElementNarrationText(el: Element): string {
+  for (let parent = el.parentElement; parent; parent = parent.parentElement) {
+    if (SUBTREE_SPEAKERS.has(parent.tagName.toLowerCase())) return "";
+  }
+
   const tagName = el.tagName.toLowerCase();
 
   // Handle headings - process inline content to capture any images
