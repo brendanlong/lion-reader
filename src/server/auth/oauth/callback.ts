@@ -12,7 +12,7 @@
 
 import { eq, and } from "drizzle-orm";
 
-import { db, type Database } from "@/server/db";
+import { db } from "@/server/db";
 import { users, oauthAccounts } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { createUser, runPostSignupTasks } from "@/server/auth/signup";
@@ -72,11 +72,6 @@ export interface ProcessOAuthCallbackResult {
   /** Whether this is a newly created user */
   isNewUser: boolean;
 }
-
-/**
- * Transaction type for database operations
- */
-type DbOrTx = Database | Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 /**
  * Process an OAuth callback for login/signup.
@@ -210,7 +205,7 @@ export async function processOAuthCallback(
   }
 
   // Create new user and OAuth account in a transaction
-  const newUser = await db.transaction(async (tx: DbOrTx) => {
+  const newUser = await db.transaction(async (tx) => {
     // Create user (handles invite validation and provider restriction atomically)
     const user = await createUser(tx, {
       email,
