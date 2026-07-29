@@ -178,9 +178,12 @@ describe("renderThreadsPost", () => {
     expect(renderThreadsPost(page(), POST_URL)!.publishedAt).toBeUndefined();
   });
 
+  // The exact cap is pinned in social-post.test.ts; this only checks Threads
+  // routes its title through that shared helper.
   it("elides a long first line into the title", () => {
     const result = renderThreadsPost(page({ description: "a".repeat(150) }), POST_URL);
-    expect(result!.title).toBe(`${"a".repeat(99)}…`);
+    expect(result!.title).toMatch(/^a+…$/);
+    expect(result!.title!.length).toBeLessThan(150);
   });
 
   it("finds Open Graph tags that appear after </head>", () => {
