@@ -32,7 +32,7 @@ export const GETTING_STARTED_EXCERPT =
  * title is passed explicitly anyway.
  */
 export const GETTING_STARTED_MARKDOWN = `
-Welcome! This article is starred, so you can always find it again under [Starred](/starred). When you're done with it, unstar it or delete it — it won't come back.
+Welcome! This article is starred, so you can always find it again under [Starred](/starred). When you're done with it, just unstar or delete it.
 
 ## 1. Get some content in
 
