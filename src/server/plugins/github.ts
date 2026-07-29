@@ -399,7 +399,7 @@ interface ProcessedRepoFile {
  *
  * Markdown goes through `processMarkdown`, so a repo file gets exactly the dialect
  * an upload does. Note that includes `$…$` math, which GitHub itself doesn't
- * render — harmless in practice, since KaTeX's standard delimiters don't fire on
+ * render — harmless in practice, since the standard delimiters don't fire on
  * prose (`costs $5 and $10` stays text) and there's a test for that.
  *
  * `location` is the repo file the content came from, so its relative URLs can be

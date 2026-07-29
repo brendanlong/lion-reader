@@ -53,6 +53,7 @@ const buildOptions = {
     "@lion-reader/sanitizer",
     "@lion-reader/readability",
     "@lion-reader/feed-parser",
+    "@lion-reader/markdown",
   ],
 
   // Source maps for debugging production issues

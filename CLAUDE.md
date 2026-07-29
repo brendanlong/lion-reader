@@ -26,7 +26,7 @@ Docs (this file, per-directory `CLAUDE.md`s, `docs/`) explain **why and where**;
 
 ## Commands
 
-- `pnpm build:native` - Build the native Rust modules (sanitizer, readability, feed-parser). **Required once per checkout before tests or the app** — if tests fail with "Failed to load the native …", run this. Needs the Rust toolchain (`cargo` — if missing from PATH, try `~/.cargo/bin`). The SessionStart hook starts it in the background, so it may already be done or in flight (log: `/tmp/lion-reader-build-native.log`).
+- `pnpm build:native` - Build the native Rust modules (sanitizer, readability, feed-parser, markdown). **Required once per checkout before tests or the app** — if tests fail with "Failed to load the native …", run this. Needs the Rust toolchain (`cargo` — if missing from PATH, try `~/.cargo/bin`). The SessionStart hook starts it in the background, so it may already be done or in flight (log: `/tmp/lion-reader-build-native.log`).
 - `pnpm typecheck` - Run before committing (no `any`, no `@ts-ignore`)
 - `pnpm test:unit` - Pure logic tests (fast, no DB)
 - `pnpm test:integration` - Backend tests against real Postgres/Redis (docker-compose)
@@ -159,7 +159,7 @@ Prefer SAX-style parsing unless the algorithm requires a DOM.
 - XML generation (OPML export): `fast-xml-parser`
 - HTML extraction: `htmlparser2` (streaming)
 - DOM required: `linkedom` (but article extraction/Readability is the native `@lion-reader/readability` module — dom_smoothie, built by `pnpm build:native`)
-- Markdown: **always** `markdownToHtml`/`processMarkdown` from `src/server/markdown`. Every source (uploads, Markdown URL saves, GitHub repo files, AI summaries) shares that one `Marked` instance, so there is a single dialect to reason about and one place to add an extension. Never `import { marked }` — the global singleton is reconfigurable by any caller, and a second instance means a second dialect to keep in sync.
+- Markdown: **always** `markdownToHtmlAsync`/`processMarkdown` from `src/server/markdown`, which wrap the native `@lion-reader/markdown` module (`native/markdown/`, comrak for GFM + pulldown-latex for `$…$` TeX → MathML, built by `pnpm build:native`). Every source (uploads, Markdown URL saves, GitHub repo files, AI summaries) shares that one dialect, so there is a single dialect to reason about and one place to extend. Never import `@lion-reader/markdown` directly (a lint rule enforces it) — that bypasses the size budgets and invites a second set of render options. Rendering **amplifies**, so its size budgets are enforced _inside_ the renderer rather than by callers (#1431) — the crate docs carry the numbers.
 - Parse once, pass parsed structure through code
 
 ## Module System (ESM)

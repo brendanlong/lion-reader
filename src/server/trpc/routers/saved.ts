@@ -213,7 +213,7 @@ export const savedRouter = createTRPCRouter({
    * - .docx: Converted via mammoth; title/author/summary read from the document's
    *   `docProps/core.xml`; Readability skipped (already clean content)
    * - .html: Cleaned with Readability
-   * - .md: Rendered to HTML via marked (preserved as-is semantically)
+   * - .md: Rendered to HTML (preserved as-is semantically)
    *
    * @param content - Base64-encoded file content
    * @param filename - Original filename (used for type detection and title)
@@ -271,7 +271,7 @@ export const savedRouter = createTRPCRouter({
       }
 
       // Enforce the size limit on the decoded bytes before any conversion
-      // (mammoth/Readability/marked), so a large upload can't burn memory/CPU.
+      // (mammoth/Readability/Markdown), so a large upload can't burn memory/CPU.
       if (fileBuffer.length > usageLimitsConfig.maxSavedArticleSizeBytes) {
         throw errors.contentTooLarge("Uploaded file", usageLimitsConfig.maxSavedArticleSizeBytes);
       }
@@ -288,6 +288,11 @@ export const savedRouter = createTRPCRouter({
           fileType,
           error: error instanceof Error ? error.message : String(error),
         });
+        // An error that already knows what it is keeps its own code and
+        // message — conversion can raise a typed one (a Markdown source or its
+        // rendered HTML busting its byte budget, #1431), and re-wrapping it
+        // would bury `CONTENT_TOO_LARGE` under a generic BAD_REQUEST.
+        if (error instanceof TRPCError) throw error;
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: `Failed to process file: ${error instanceof Error ? error.message : "Unknown error"}`,

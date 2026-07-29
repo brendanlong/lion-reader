@@ -9,6 +9,7 @@
         "src/app/demo/articles/scoring.ts"
       ]
     },
-    "native/sanitizer": {}
+    "native/sanitizer": {},
+    "native/markdown": {}
   }
 }

@@ -264,6 +264,14 @@ export const feedHealthConfig = {
 };
 
 /**
+ * Defaults for the Markdown budgets. Exported because the renderer falls back
+ * to them when the env var is unusable (see `renderLimits` in
+ * `src/server/markdown/index.ts`), so they need one home.
+ */
+export const DEFAULT_MAX_MARKDOWN_INPUT_BYTES = 1024 * 1024;
+export const DEFAULT_MAX_RENDERED_MARKDOWN_BYTES = 5 * 1024 * 1024;
+
+/**
  * Usage limits configuration.
  * These limits protect against abuse and prevent OOM from oversized content.
  * All limits are configurable via environment variables.
@@ -286,6 +294,24 @@ export const usageLimitsConfig = {
 
   /** Maximum email content size in bytes (default: 2MB). Emails larger than this are rejected. */
   maxEmailSizeBytes: parseInt(process.env.MAX_EMAIL_SIZE_BYTES || String(2 * 1024 * 1024), 10),
+
+  /**
+   * Maximum Markdown source size in bytes, checked before rendering.
+   *
+   * Deliberately well below `maxSavedArticleSizeBytes`, because Markdown grows
+   * on the way to HTML — see `src/server/markdown/index.ts` for why both of
+   * these live where they do.
+   */
+  maxMarkdownInputBytes: parseInt(
+    process.env.MAX_MARKDOWN_INPUT_BYTES || String(DEFAULT_MAX_MARKDOWN_INPUT_BYTES),
+    10
+  ),
+
+  /** Maximum rendered-Markdown size in bytes, enforced during rendering. */
+  maxRenderedMarkdownBytes: parseInt(
+    process.env.MAX_RENDERED_MARKDOWN_BYTES || String(DEFAULT_MAX_RENDERED_MARKDOWN_BYTES),
+    10
+  ),
 };
 
 export const storageConfig = {

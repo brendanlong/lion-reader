@@ -32,6 +32,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY native/sanitizer/package.json ./native/sanitizer/package.json
 COPY native/readability/package.json ./native/readability/package.json
 COPY native/feed-parser/package.json ./native/feed-parser/package.json
+COPY native/markdown/package.json ./native/markdown/package.json
 
 # Install all dependencies (including devDependencies for building)
 # Use --ignore-scripts because postinstall needs files not yet copied
@@ -61,9 +62,11 @@ RUN --mount=type=cache,id=cargo-registry,target=/root/.cargo/registry \
     --mount=type=cache,id=cargo-target,target=/app/native/sanitizer/target \
     --mount=type=cache,id=cargo-target-readability,target=/app/native/readability/target \
     --mount=type=cache,id=cargo-target-feed-parser,target=/app/native/feed-parser/target \
+    --mount=type=cache,id=cargo-target-markdown,target=/app/native/markdown/target \
     node native/sanitizer/build.mjs && \
     node native/readability/build.mjs && \
-    node native/feed-parser/build.mjs
+    node native/feed-parser/build.mjs && \
+    node native/markdown/build.mjs
 
 # =============================================================================
 # Stage 4: Build the application
@@ -89,6 +92,7 @@ RUN node scripts/copy-onnx-wasm.mjs
 COPY --from=native-builder /app/native/sanitizer/sanitizer.node ./native/sanitizer/sanitizer.node
 COPY --from=native-builder /app/native/readability/readability.node ./native/readability/readability.node
 COPY --from=native-builder /app/native/feed-parser/feed-parser.node ./native/feed-parser/feed-parser.node
+COPY --from=native-builder /app/native/markdown/markdown.node ./native/markdown/markdown.node
 
 # Copy source code
 COPY . .
@@ -187,7 +191,7 @@ COPY --from=builder /app/package.json ./package.json
 # which the Next server graph also uses, so the trace covers them.
 COPY --from=builder /standalone/node_modules ./node_modules
 
-# The native modules: node_modules/@lion-reader/{sanitizer,readability,feed-parser}
+# The native modules: node_modules/@lion-reader/{sanitizer,readability,feed-parser,markdown}
 # are pnpm workspace symlinks into these directories, so they must exist in the
 # runner.
 COPY --from=builder /app/native/sanitizer/package.json ./native/sanitizer/package.json
@@ -202,6 +206,10 @@ COPY --from=builder /app/native/feed-parser/package.json ./native/feed-parser/pa
 COPY --from=builder /app/native/feed-parser/index.js ./native/feed-parser/index.js
 COPY --from=builder /app/native/feed-parser/index.d.ts ./native/feed-parser/index.d.ts
 COPY --from=builder /app/native/feed-parser/feed-parser.node ./native/feed-parser/feed-parser.node
+COPY --from=builder /app/native/markdown/package.json ./native/markdown/package.json
+COPY --from=builder /app/native/markdown/index.js ./native/markdown/index.js
+COPY --from=builder /app/native/markdown/index.d.ts ./native/markdown/index.d.ts
+COPY --from=builder /app/native/markdown/markdown.node ./native/markdown/markdown.node
 
 # Copy built Next.js app
 COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next

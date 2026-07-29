@@ -69,7 +69,7 @@ console.log("Copied next's top-level subpath shims");
 // 3. Recreate the @lion-reader workspace symlinks.
 const scopeDir = join(standaloneDir, "node_modules", "@lion-reader");
 mkdirSync(scopeDir, { recursive: true });
-for (const name of ["sanitizer", "readability", "feed-parser"]) {
+for (const name of ["sanitizer", "readability", "feed-parser", "markdown"]) {
   const link = join(scopeDir, name);
   rmSync(link, { recursive: true, force: true });
   symlinkSync(join("..", "..", "native", name), link);

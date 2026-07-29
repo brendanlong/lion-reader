@@ -329,6 +329,16 @@ const readabilityDurationSeconds = getOrCreateHistogram({
 });
 
 /**
+ * Histogram for Markdown rendering duration in seconds.
+ * Measures only the native render (comrak + MathML), not frontmatter parsing.
+ */
+const markdownRenderDurationSeconds = getOrCreateHistogram({
+  name: "markdown_render_duration_seconds",
+  help: "Markdown to HTML rendering duration in seconds",
+  buckets: CONTENT_PROCESSING_BUCKETS,
+});
+
+/**
  * Histogram for HTML sanitization duration in seconds.
  * Measures only the native sanitizer pass.
  */
@@ -354,6 +364,15 @@ export function startFeedParseTimer(): () => void {
  */
 export function startReadabilityTimer(): () => void {
   return startContentProcessingTimer(readabilityDurationSeconds);
+}
+
+/**
+ * Creates a timer for tracking Markdown rendering duration.
+ * Returns a function to call when rendering completes.
+ * Returns a no-op function when metrics are disabled.
+ */
+export function startMarkdownRenderTimer(): () => void {
+  return startContentProcessingTimer(markdownRenderDurationSeconds);
 }
 
 /**

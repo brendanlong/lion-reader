@@ -41,12 +41,13 @@ const BLOCK_TAGS = new Set([
 /**
  * Tags whose content should be skipped entirely.
  *
- * `annotation`/`annotation-xml` hold MathML's alternate encodings (e.g. the raw
- * TeX that KaTeX emits alongside its presentation MathML). Including them would
+ * `annotation`/`annotation-xml` hold MathML's alternate encodings (e.g. a copy
+ * of the TeX source alongside the presentation MathML). Including them would
  * duplicate each equation in the plain-text excerpt — once from the presentation
  * glyphs and once from the TeX annotation (#1386) — so we drop their content,
- * mirroring the read-path sanitizer's DROP_WITH_CONTENT policy. Feed math
- * (MathJax→MathML) has no annotation, so this is a no-op there.
+ * mirroring the read-path sanitizer's DROP_WITH_CONTENT policy. Neither our own
+ * Markdown renderer nor feed math (MathJax→MathML) emits one, so this only
+ * matters for MathML that arrives with an annotation already attached.
  */
 const SKIP_TAGS = new Set(["script", "style", "head", "annotation", "annotation-xml"]);
 

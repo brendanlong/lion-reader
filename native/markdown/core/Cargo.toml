@@ -1,0 +1,16 @@
+[package]
+name = "lion-reader-markdown-core"
+version = "1.0.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[dependencies]
+# GitHub Flavored Markdown. default-features = false drops the `cli` feature,
+# which would otherwise pull in clap and syntect (a syntax highlighter we don't
+# use) — roughly a third of the build.
+comrak = { version = "0.54", default-features = false }
+# LaTeX → MathML, pure Rust: emits MathML core directly, which browsers render
+# natively (no client-side JS or CSS). See the `math_to_mathml` docs for the
+# two things it needs guarding against.
+pulldown-latex = "0.8"

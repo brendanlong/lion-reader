@@ -42,11 +42,12 @@ export interface FetchFullContentResult {
  * 3. Returns both the original HTML and the cleaned content
  *
  * @param url - The article URL to fetch
- * @param options.offloadClean - Run extraction on the libuv thread pool instead
- *   of inline on the calling thread. On by default; the background feed worker
- *   passes false because it already runs off the request path, so the async hop
- *   is pure overhead. App-server callers (fetchAndStoreFullContent) keep the
- *   default so the extraction pass never stalls the UI-serving event loop.
+ * @param options.offloadClean - Run the content-cleaning pass (Readability, or
+ *   Markdown rendering when the URL served Markdown) on the libuv thread pool
+ *   instead of inline on the calling thread. On by default; the background feed
+ *   worker passes false because it already runs off the request path, so the
+ *   async hop is pure overhead. App-server callers (fetchAndStoreFullContent)
+ *   keep the default so the pass never stalls the UI-serving event loop.
  * @returns The fetch result with content or error
  */
 export async function fetchFullContent(
@@ -125,7 +126,9 @@ export async function fetchFullContent(
     // separate chrome from content is already gone.
     if (result.isMarkdown) {
       logger.debug("Converting Markdown to HTML (skipping Readability)", { url });
-      const { html: contentCleaned } = await processMarkdown(result.content);
+      const { html: contentCleaned } = await processMarkdown(result.content, {
+        offload: offloadClean,
+      });
 
       // Absolutize URLs in the original HTML (before title stripping)
       const contentOriginal = absolutizeUrls(contentCleaned, resolveUrl);
