@@ -167,11 +167,23 @@ function insideSubtreeSpeaker(el: Element): boolean {
 const BLOCK_SELECTOR = BLOCK_ELEMENTS.filter((tagName) => tagName !== "img").join(", ");
 
 /**
- * Blocks that already speak for their whole subtree when they turn up inside
- * one — `SUBTREE_SPEAKERS` plus `figure`, which speaks its image rather than
- * its markup and so must not be walked into like a generic wrapper.
+ * The first matching descendant an element speaks for itself — one no block in
+ * between has already claimed.
  */
-const SELF_CONTAINED = new Set([...SUBTREE_SPEAKERS, "figure"]);
+function ownDescendant(el: Element, selector: string): Element | null {
+  for (const candidate of Array.from(el.querySelectorAll(selector))) {
+    let owner: Element | null = null;
+    for (let parent = candidate.parentElement; parent; parent = parent.parentElement) {
+      const tagName = parent.tagName.toLowerCase();
+      if (tagName !== "img" && BLOCK_ELEMENTS_SET.has(tagName)) {
+        owner = parent;
+        break;
+      }
+    }
+    if (owner === el) return candidate;
+  }
+  return null;
+}
 
 /**
  * How deep the content walk descends before flattening what is left.
@@ -213,7 +225,7 @@ function contentParagraphs(el: Element, depth = 0): string[] {
     }
 
     flushInline();
-    if (SELF_CONTAINED.has(tagName)) {
+    if (SUBTREE_SPEAKERS.has(tagName)) {
       // Already speaks for everything below it, so don't descend twice.
       const text = getOwnNarrationText(child, depth + 1);
       if (text) paragraphs.push(text);
@@ -294,31 +306,43 @@ function getOwnNarrationText(el: Element, depth = 0): string {
     return text ? `${listItemMarker(el)}${text}` : "";
   }
 
-  // Handle figures
+  // Handle figures. Only what the figure itself holds: an image inside a
+  // nested block (a table, a list) is spoken by that block instead — and a
+  // figure around one of those is not an image at all, so it announces none.
   if (tagName === "figure") {
-    const img = el.querySelector("img");
-    const figcaption = el.querySelector("figcaption");
-    const alt = img?.getAttribute("alt") || figcaption?.textContent?.trim() || "no description";
-    return `Image: ${alt}`;
+    const img = ownDescendant(el, "img");
+    if (!img) {
+      return processInlineContent(el);
+    }
+    const figcaption = ownDescendant(el, "figcaption");
+    return `Image: ${img.getAttribute("alt") || figcaption?.textContent?.trim() || "no description"}`;
   }
 
   // Handle tables
   if (tagName === "table") {
-    // Extract table content in a readable format. Cells narrate the same way
-    // anything else does rather than through `textContent`, because the blocks
-    // inside them stay silent for the table's sake — so whatever they would
-    // have said (an image's alt text, a list's bullets) has to be said here.
-    const rows: string[] = [];
+    // Extract table content in a readable format. The caption and the cells
+    // narrate the same way anything else does rather than through
+    // `textContent`, because the blocks inside them stay silent for the
+    // table's sake — so whatever they would have said (an image's alt text, a
+    // list's bullets) has to be said here or it is said nowhere.
+    const parts: string[] = [];
+    const caption = el.querySelector("caption");
+    if (caption?.closest("table") === el) {
+      parts.push(contentParagraphs(caption, depth + 1).join(" "));
+    }
     el.querySelectorAll("tr").forEach((tr) => {
+      // A nested table narrates its own rows — as a cell of this one.
+      if (tr.closest("table") !== el) return;
       const cells: string[] = [];
       tr.querySelectorAll("th, td").forEach((cell) => {
+        if (cell.closest("tr") !== tr) return;
         cells.push(contentParagraphs(cell, depth + 1).join(" "));
       });
       if (cells.length > 0) {
-        rows.push(cells.join(", "));
+        parts.push(cells.join(", "));
       }
     });
-    return `Table: ${rows.join(". ")} End table.`;
+    return `Table: ${parts.filter(Boolean).join(". ")} End table.`;
   }
 
   // Handle standalone images
@@ -339,11 +363,19 @@ function getOwnNarrationText(el: Element, depth = 0): string {
  * nested one gets no paragraph of its own, so the block around it speaks it.
  */
 function processInlineContent(el: Element): string {
+  return inlineChildrenText(el).trim();
+}
+
+/**
+ * The inline text of an element's children, untrimmed — trimming at every level
+ * of the walk swallows the space in `<b>Total:</b><span> 42</span>`.
+ */
+function inlineChildrenText(el: Element): string {
   let text = "";
   el.childNodes.forEach((node) => {
     text += inlineNodeText(node);
   });
-  return text.trim();
+  return text;
 }
 
 /**
@@ -361,14 +393,16 @@ function inlineNodeText(node: Node): string {
   const tagName = el.tagName.toLowerCase();
 
   if (tagName === "a") {
-    // Handle links
+    // Handle links. Spoken untrimmed, so the space in `a<a href> b </a>c`
+    // survives; the trimmed form is only for deciding what to say.
     const href = el.getAttribute("href");
-    const linkText = el.textContent?.trim() || "";
+    const raw = el.textContent || "";
+    const linkText = raw.trim();
 
     if (!href) {
       // A link target (`<a id="fn1">`), not a link: it goes nowhere, so
       // announcing one would be noise — speak whatever text it wraps.
-      return linkText;
+      return raw;
     }
     if (!linkText || linkText === href) {
       try {
@@ -377,7 +411,7 @@ function inlineNodeText(node: Node): string {
         return `[link to ${href}]`;
       }
     }
-    return linkText;
+    return raw;
   }
 
   if (tagName === "code") {
@@ -387,8 +421,9 @@ function inlineNodeText(node: Node): string {
   }
 
   if (tagName === "img") {
-    // Inline image
-    return `Image: ${el.getAttribute("alt") || "image"}`;
+    // Inline image. Padded because nothing guarantees whitespace around it —
+    // a caption or a cell's text can butt right up against the alt text.
+    return ` Image: ${el.getAttribute("alt") || "image"} `;
   }
 
   if (BLOCK_ELEMENTS_SET.has(tagName)) {
@@ -396,7 +431,7 @@ function inlineNodeText(node: Node): string {
   }
 
   // Recurse for other inline elements (strong, em, span, etc.)
-  return processInlineContent(el);
+  return inlineChildrenText(el);
 }
 
 /**

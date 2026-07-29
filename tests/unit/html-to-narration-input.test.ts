@@ -192,18 +192,32 @@ describe("htmlToNarrationInput", () => {
       expect(result.paragraphs).toEqual([{ id: 0, text: "Quote: Hello world again End quote." }]);
     });
 
-    it("speaks a quoted image rather than walking into the figure", () => {
+    it("keeps a quoted figure's caption as well as its image", () => {
       const html =
         '<blockquote><figure><img alt="A cat"><figcaption>My cat</figcaption></figure></blockquote>';
       const result = htmlToNarrationInput(html);
 
-      expect(result.paragraphs).toEqual([{ id: 0, text: "Quote: Image: A cat End quote." }]);
+      expect(result.paragraphs).toEqual([{ id: 0, text: "Quote: Image: A cat My cat End quote." }]);
+    });
+
+    it("keeps what a quoted figure wraps when it is not an image", () => {
+      // A figure around a table announces no image — the table speaks instead.
+      const html =
+        "<blockquote><figure><table><tr><td>Cell A</td></tr></table>" +
+        "<figcaption>Data</figcaption></figure></blockquote>";
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toEqual([
+        { id: 0, text: "Quote: Table: Cell A End table.\n\nData End quote." },
+      ]);
     });
 
     it("narrates absurdly nested quotes instead of overflowing the stack", () => {
       // Feed HTML is not depth-limited and the content walk is recursive, so
       // past a point it flattens what is left rather than descending further.
-      const depth = 500;
+      // Deep enough that an uncapped walk would overflow (measured: 2000 is
+      // fine, 5000 throws), so removing the cap fails this test.
+      const depth = 5000;
       const html = `${"<blockquote>".repeat(depth)}<p>the text</p>${"</blockquote>".repeat(depth)}`;
       const result = htmlToNarrationInput(html);
 
@@ -433,13 +447,42 @@ describe("htmlToNarrationInput", () => {
       // would have narrated — an image's alt text, a list's bullets — has to
       // come through in the cell instead of being lost.
       const html =
-        '<table><tr><td><figure><img alt="Sales chart"></figure></td>' +
+        '<table><tr><td><figure><img alt="Sales chart"><figcaption>Fig 1</figcaption></figure></td>' +
         "<td><ul><li>a</li><li>b</li></ul></td></tr></table>";
       const result = htmlToNarrationInput(html);
 
       expect(result.paragraphs).toEqual([
-        { id: 0, text: "Table: Image: Sales chart, - a - b End table." },
+        { id: 0, text: "Table: Image: Sales chart Fig 1, - a - b End table." },
       ]);
+    });
+
+    it("narrates the caption, which no one else will (issue #1445)", () => {
+      // `<caption>` is outside the row walk, and its blocks are silenced for
+      // the table's sake — so if the table skips it, it is narrated nowhere.
+      const html =
+        "<table><caption><p>Table 1. Revenue by quarter</p></caption>" +
+        "<tr><th>Q</th></tr><tr><td>1</td></tr></table>";
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toEqual([
+        { id: 0, text: "Table: Table 1. Revenue by quarter. Q. 1 End table." },
+      ]);
+    });
+
+    it("reads a nested table as a cell of the outer one, once", () => {
+      const html = "<table><tr><td><table><tr><td>inner</td></tr></table></td></tr></table>";
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toEqual([
+        { id: 0, text: "Table: Table: inner End table. End table." },
+      ]);
+    });
+
+    it("keeps the space inside a cell's inline markup", () => {
+      const html = "<table><tr><td><b>Name:</b><span> John</span></td></tr></table>";
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toEqual([{ id: 0, text: "Table: Name: John End table." }]);
     });
   });
 

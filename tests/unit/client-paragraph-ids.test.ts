@@ -886,6 +886,33 @@ describe("htmlToClientNarration", () => {
       expect(result.narrationText).toBe("50th");
     });
 
+    it("keeps the space inside a cell's inline markup", () => {
+      const html = "<table><tr><td><b>Name:</b><span> John</span></td></tr></table>";
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("Name: John");
+    });
+
+    it("narrates the caption, which no one else will (issue #1445)", () => {
+      // `<caption>` is outside the row walk, and its blocks are silenced for
+      // the table's sake — so if the table skips it, it is narrated nowhere.
+      const html =
+        "<table><caption><p>Table 1. Revenue by quarter</p></caption>" +
+        "<tr><th>Q</th></tr><tr><td>1</td></tr></table>";
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("Table 1. Revenue by quarter. Q. 1");
+      expect(result.paragraphMap).toEqual([{ n: 0, o: 0 }]);
+    });
+
+    it("reads a nested table as a cell of the outer one, once", () => {
+      const html = "<table><tr><td><table><tr><td>inner</td></tr></table></td></tr></table>";
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("inner");
+      expect(result.paragraphMap).toEqual([{ n: 0, o: 0 }]);
+    });
+
     it("does not let a code block's children narrate it back", () => {
       const html = "<pre><p>const x = 1;</p></pre>";
       const result = htmlToClientNarration(html);

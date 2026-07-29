@@ -233,6 +233,25 @@ function processInlineContent(el: Element): string {
 }
 
 /**
+ * The first matching descendant an element speaks for itself — one no block in
+ * between has already claimed.
+ */
+function ownDescendant(el: Element, selector: string): Element | null {
+  for (const candidate of Array.from(el.querySelectorAll(selector))) {
+    let owner: Element | null = null;
+    for (let parent = candidate.parentElement; parent; parent = parent.parentElement) {
+      const tagName = parent.tagName.toLowerCase();
+      if (tagName !== "img" && BLOCK_ELEMENT_SET.has(tagName)) {
+        owner = parent;
+        break;
+      }
+    }
+    if (owner === el) return candidate;
+  }
+  return null;
+}
+
+/**
  * Everything inside an element, block children included, with the blocks kept
  * apart by a space.
  *
@@ -241,6 +260,14 @@ function processInlineContent(el: Element): string {
  * come from here — and `textContent` won't do, since it drops image alt text.
  */
 function subtreeNarrationText(el: Element): string {
+  return subtreeText(el).replace(/\s+/g, " ").trim();
+}
+
+/**
+ * The subtree's text, untrimmed — trimming at every level of the walk swallows
+ * the space in `<b>Total:</b><span> 42</span>`.
+ */
+function subtreeText(el: Element): string {
   let text = "";
 
   el.childNodes.forEach((node) => {
@@ -261,12 +288,12 @@ function subtreeNarrationText(el: Element): string {
       }
       return;
     }
-    const inner = subtreeNarrationText(childEl);
+    const inner = subtreeText(childEl);
     // Inline markup continues the run of text; a block starts a new one.
     text += BLOCK_ELEMENT_SET.has(childTag) ? ` ${inner} ` : inner;
   });
 
-  return text.replace(/\s+/g, " ").trim();
+  return text;
 }
 
 /**
@@ -320,31 +347,42 @@ function getElementNarrationText(el: Element): string {
     return processInlineContent(el);
   }
 
-  // Handle figures
+  // Handle figures. Only what the figure itself holds: an image inside a
+  // nested block (a table, a list) is spoken by that block instead — and a
+  // figure around one of those is not an image at all, so it announces none.
   if (tagName === "figure") {
-    const img = el.querySelector("img");
-    const figcaption = el.querySelector("figcaption");
-    const alt = img?.getAttribute("alt") || figcaption?.textContent?.trim();
-    if (alt) {
-      return `Image: ${alt}`;
+    const img = ownDescendant(el, "img");
+    if (!img) {
+      return processInlineContent(el);
     }
-    return "";
+    const figcaption = ownDescendant(el, "figcaption");
+    const alt = img.getAttribute("alt") || figcaption?.textContent?.trim();
+    return alt ? `Image: ${alt}` : "";
   }
 
   // Handle tables
   if (tagName === "table") {
-    // Extract table content in a readable format
-    const rows: string[] = [];
+    // Extract table content in a readable format. The caption counts: like the
+    // cells, the blocks inside it stay silent for the table's sake, so if the
+    // table doesn't say it, nothing does (issue #1445).
+    const parts: string[] = [];
+    const caption = el.querySelector("caption");
+    if (caption?.closest("table") === el) {
+      parts.push(subtreeNarrationText(caption));
+    }
     el.querySelectorAll("tr").forEach((tr) => {
+      // A nested table narrates its own rows — as a cell of this one.
+      if (tr.closest("table") !== el) return;
       const cells: string[] = [];
       tr.querySelectorAll("th, td").forEach((cell) => {
+        if (cell.closest("tr") !== tr) return;
         cells.push(subtreeNarrationText(cell));
       });
       if (cells.length > 0 && cells.some((c) => c.length > 0)) {
-        rows.push(cells.join(", "));
+        parts.push(cells.join(", "));
       }
     });
-    return rows.join(". ");
+    return parts.filter(Boolean).join(". ");
   }
 
   // Handle standalone images
