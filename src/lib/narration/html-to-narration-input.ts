@@ -108,10 +108,21 @@ function enclosingListItem(el: Element): Element | null {
 /**
  * Whether a block says nothing of its own, so it owns none of its descendants:
  * a `<figure>` around a table announces no image, and the table is what speaks.
+ *
+ * Memoized for the same reason the marker handoff is: every block under a
+ * figure asks this about it, and answering walks the figure.
  */
 function isTransparentWrapper(el: Element): boolean {
-  return el.tagName.toLowerCase() === "figure" && getOwnNarrationText(el).trim() === "";
+  const cached = transparentWrappers.get(el);
+  if (cached !== undefined) return cached;
+
+  const transparent =
+    el.tagName.toLowerCase() === "figure" && getOwnNarrationText(el).trim() === "";
+  transparentWrappers.set(el, transparent);
+  return transparent;
 }
+
+const transparentWrappers = new WeakMap<Element, boolean>();
 
 /**
  * The block a list item hands its marker to, or null if nothing in it speaks.

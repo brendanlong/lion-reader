@@ -430,18 +430,23 @@ describe("htmlToNarrationInput", () => {
       expect(result.paragraphs).toEqual([{ id: 3, text: "- Table: x End table." }]);
     });
 
-    it("narrates a list item with thousands of paragraphs in reasonable time", () => {
-      // Answering "which of my blocks carries the marker?" walks the item, and
-      // it is asked once per block — quadratic without memoization, which took
-      // seconds on an item this size.
-      const html = `<ul><li>${"<p>text here</p>".repeat(3000)}</li></ul>`;
+    it("narrates thousands of blocks under a wrapper in reasonable time", () => {
+      // Two questions are asked of a wrapper by every block inside it — which
+      // of my blocks carries the marker, and does this figure say anything of
+      // its own — and answering either one walks the wrapper. Unmemoized that
+      // is quadratic: these took 1.4s and 1.3s, and 4× the blocks took 16×.
+      // Both run in tens of milliseconds, so the bound has plenty of slack.
+      for (const [html, first] of [
+        [`<ul><li>${"<p>text here</p>".repeat(3000)}</li></ul>`, "- text here"],
+        [`<figure>${"<p>text here</p>".repeat(3000)}</figure>`, "text here"],
+      ] as const) {
+        const started = performance.now();
+        const result = htmlToNarrationInput(html);
 
-      const started = performance.now();
-      const result = htmlToNarrationInput(html);
-
-      expect(performance.now() - started).toBeLessThan(2000);
-      expect(result.paragraphs).toHaveLength(3000);
-      expect(result.paragraphs[0].text).toBe("- text here");
+        expect(performance.now() - started).toBeLessThan(500);
+        expect(result.paragraphs).toHaveLength(3000);
+        expect(result.paragraphs[0].text).toBe(first);
+      }
     });
 
     it("does not repeat a nested list's items in its parent item", () => {
