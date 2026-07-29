@@ -256,8 +256,13 @@ export function renderLinkedInPost(html: string, postUrl: string): SavedArticleC
   if (image) {
     parts.push(`<figure><img src="${escapeHtml(image)}" alt="" loading="lazy"></figure>`);
   } else if (thumbnail) {
-    // A video post: the media itself is a streaming manifest a bare <video>
-    // can't play, so link back to the post behind its poster frame.
+    // A video post. The JSON-LD `contentUrl` is a progressive MP4, but it is
+    // access-gated — it 403s to anyone but a logged-in LinkedIn session, so a
+    // <video> would render a broken player. `embedUrl` (an iframe on
+    // linkedin.com) would work, but the sanitizer's embed allow-list is
+    // block-by-default per provider and its hostnames are double-enforced by
+    // the CSP, so adding LinkedIn is a security-surface change, not a plugin
+    // one. Until then: the poster frame, linking back to the post.
     parts.push(
       `<figure><a href="${escapeHtml(postUrl)}">` +
         `<img src="${escapeHtml(thumbnail)}" alt="" loading="lazy">` +
