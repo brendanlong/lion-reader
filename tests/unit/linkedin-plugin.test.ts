@@ -279,6 +279,32 @@ describe("renderLinkedInPost", () => {
     expect(renderLinkedInPost(page(graphed), POST_URL)!.html).toBe("<p>THE REAL POST</p>");
   });
 
+  it("renders a video transcript in a collapsed details block", () => {
+    const result = renderLinkedInPost(
+      page({
+        "@type": "VideoObject",
+        description: "Watch this.",
+        thumbnailUrl: "https://media.licdn.com/poster.jpg",
+        transcript: "Here's the formula.\n\nFirst you grab attention.",
+      }),
+      POST_URL
+    );
+
+    // No `open` attribute: collapsed by default.
+    expect(result!.html).toContain(
+      "<details><summary>Video transcript</summary>" +
+        "<p>Here&#039;s the formula.</p><p>First you grab attention.</p></details>"
+    );
+    // The transcript must not displace the post's own text or its summary.
+    expect(result!.html).toContain("<p>Watch this.</p>");
+    expect(result!.excerpt).toBe("Watch this.");
+  });
+
+  it("omits the transcript block entirely when there is no transcript", () => {
+    const result = renderLinkedInPost(page(TEXT_POST), POST_URL);
+    expect(result!.html).not.toContain("<details>");
+  });
+
   it("reads a DiscussionForumPosting's articleBody", () => {
     const result = renderLinkedInPost(
       page({ "@type": "DiscussionForumPosting", articleBody: "A discussion post." }),
@@ -314,6 +340,7 @@ describe("renderLinkedInPost", () => {
       ["image", { image: { url: ["https://media.licdn.com/a.jpg"] } }],
       ["thumbnailUrl", { thumbnailUrl: ["https://media.licdn.com/a.jpg"] }],
       ["datePublished", { datePublished: 123456789 }],
+      ["transcript", { transcript: 42 }],
       ["everything at once", { headline: [], author: 0, image: false, datePublished: {} }],
     ])("still renders the body when %s has the wrong type", (_label, overrides) => {
       const result = renderLinkedInPost(page({ ...TEXT_POST, ...overrides }), POST_URL);

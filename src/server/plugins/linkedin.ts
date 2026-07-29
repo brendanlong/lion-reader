@@ -270,11 +270,25 @@ export function renderLinkedInPost(html: string, postUrl: string): SavedArticleC
     );
   }
 
+  // A video post's JSON-LD carries a `transcript` of the spoken content — the
+  // one part of the video that survives being read rather than watched, and
+  // the only part TTS and search can reach. Collapsed, because it's long,
+  // machine-generated, and secondary to what the member actually wrote.
+  const transcript = firstMatching(jsonLdText, post.transcript);
+  if (transcript) {
+    parts.push(
+      `<details><summary>Video transcript</summary>${plainTextToHtml(transcript)}</details>`
+    );
+  }
+
   const publishedText = firstMatching(jsonLdText, post.datePublished);
   const published = publishedText ? new Date(publishedText) : null;
 
   return {
     html: parts.join("\n"),
+    // The post text alone, so a collapsed transcript never bleeds into the
+    // list summary (which is otherwise derived from the whole body).
+    excerpt: body,
     // LinkedIn's own `headline` is a cleaned-up first line of the post, but
     // it's remote-controlled and unbounded — run it through the same eliding
     // the other social plugins use rather than storing it raw.
