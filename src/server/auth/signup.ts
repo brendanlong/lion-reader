@@ -18,7 +18,7 @@ import { resolveSignupProviderAccess } from "@/server/auth/signup-providers";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { errors } from "@/server/trpc/errors";
 import { logger } from "@/lib/logger";
-import type { Database } from "@/server/db";
+import type { Database, Transaction } from "@/server/db";
 
 /**
  * Parameters for creating a new user
@@ -46,20 +46,16 @@ export interface CreateUserResult {
 }
 
 /**
- * Transaction type - accepts both db and transaction contexts
- */
-type DbOrTx = Database | Parameters<Parameters<Database["transaction"]>[0]>[0];
-
-/**
  * Creates a new user account with invite validation.
  *
  * This function implements the "just-do-it" pattern for invite tokens:
  * - Atomically tries to claim the invite (UPDATE WHERE conditions RETURNING)
  * - Only queries for error details if the claim fails
  *
- * Should be called within a transaction to ensure atomicity.
+ * Requires a transaction: the user row is inserted before the invite is
+ * claimed, so only a rollback undoes the user when the claim loses a race.
  *
- * @param tx - Database or transaction context
+ * @param tx - Transaction context
  * @param params - User creation parameters
  * @returns The created user info
  * @throws INVITE_REQUIRED if invite is needed but not provided
@@ -67,12 +63,13 @@ type DbOrTx = Database | Parameters<Parameters<Database["transaction"]>[0]>[0];
  * @throws INVITE_ALREADY_USED if invite was already claimed
  * @throws INVITE_EXPIRED if invite has expired
  */
-export async function createUser(tx: DbOrTx, params: CreateUserParams): Promise<CreateUserResult> {
+export async function createUser(
+  tx: Transaction,
+  params: CreateUserParams
+): Promise<CreateUserResult> {
   const { email, passwordHash, emailVerified, inviteToken, provider } = params;
   const now = new Date();
   const userId = generateUuidv7();
-
-  let claimedInviteId: string | undefined;
 
   // Determine how this provider may sign up: publicly, only with an invite, or
   // not at all. Public providers skip the invite requirement entirely.
@@ -81,12 +78,27 @@ export async function createUser(tx: DbOrTx, params: CreateUserParams): Promise<
     throw errors.signupProviderNotAllowed(provider);
   }
 
-  // Invite-only providers must present and claim a valid invite atomically.
-  if (access === "invite-only") {
-    if (!inviteToken) {
-      throw errors.inviteRequired();
-    }
+  // Invite-only providers must present an invite; claiming it happens after the
+  // user row exists (see below).
+  if (access === "invite-only" && !inviteToken) {
+    throw errors.inviteRequired();
+  }
 
+  // Create user. This must come before the invite claim: the claim writes
+  // invites.used_by_user_id, whose FK to users(id) is non-deferrable and so is
+  // checked at the end of that statement, not the transaction (#1447).
+  await tx.insert(users).values({
+    id: userId,
+    email,
+    passwordHash,
+    emailVerifiedAt: emailVerified ? now : null,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  // Invite-only providers must claim a valid invite atomically. A failed claim
+  // throws, which rolls back the user insert above.
+  if (access === "invite-only" && inviteToken) {
     // Just-do-it: try to mark invite as used in one atomic operation
     const claimed = await tx
       .update(invites)
@@ -123,19 +135,10 @@ export async function createUser(tx: DbOrTx, params: CreateUserParams): Promise<
       throw errors.inviteInvalid();
     }
 
-    claimedInviteId = claimed[0].id;
+    // users.invite_id is the other half of the circular FK, so it can only be
+    // set once the invite row is known-claimed.
+    await tx.update(users).set({ inviteId: claimed[0].id }).where(eq(users.id, userId));
   }
-
-  // Create user
-  await tx.insert(users).values({
-    id: userId,
-    email,
-    passwordHash,
-    emailVerifiedAt: emailVerified ? now : null,
-    inviteId: claimedInviteId,
-    createdAt: now,
-    updatedAt: now,
-  });
 
   return {
     userId,
