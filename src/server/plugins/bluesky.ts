@@ -4,6 +4,7 @@ import { escapeHtml } from "@/server/http/html";
 import { readResponseWithSizeLimit } from "@/server/http/fetch";
 import { fetchWithSsrfProtection } from "@/server/http/ssrf";
 import { USER_AGENT } from "@/server/http/user-agent";
+import { safeDecodeURIComponent } from "@/lib/url";
 import { logger } from "@/lib/logger";
 
 /**
@@ -55,8 +56,8 @@ export function parseBlueskyPostUrl(url: URL): BlueskyPostRef | null {
   if (parts.length !== 4 || parts[0] !== "profile" || parts[2] !== "post") {
     return null;
   }
-  const identifier = decodeURIComponent(parts[1]);
-  const rkey = decodeURIComponent(parts[3]);
+  const identifier = safeDecodeURIComponent(parts[1]);
+  const rkey = safeDecodeURIComponent(parts[3]);
   if (!identifier || !rkey) {
     return null;
   }

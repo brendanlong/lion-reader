@@ -101,6 +101,17 @@ describe("parseLinkedInPostUrn", () => {
     expect(linkedInPlugin.matchUrl(new URL(POST_URL))).toBe(true);
     expect(linkedInPlugin.matchUrl(new URL("https://www.linkedin.com/in/davetaylor"))).toBe(false);
   });
+
+  // `new URL()` and the save path's `z.string().url()` both accept a malformed
+  // percent-escape, and the registry calls matchUrl OUTSIDE the try that wraps
+  // fetchContent — so a throw here is a 500 on save, not a fallback.
+  it("does not throw on a malformed percent-escape", () => {
+    for (const path of ["/%", "/feed/update/%E0%A4%A", "/posts/%ZZ-activity-123-ab"]) {
+      expect(() =>
+        linkedInPlugin.matchUrl(new URL(`https://www.linkedin.com${path}`))
+      ).not.toThrow();
+    }
+  });
 });
 
 describe("renderLinkedInPost", () => {
@@ -176,6 +187,67 @@ describe("renderLinkedInPost", () => {
       "</head><body></body></html>",
     ].join("");
     expect(renderLinkedInPost(html, POST_URL)!.author).toBe("Dave Taylor");
+  });
+
+  // An Organization block carries a boilerplate `description`, so picking the
+  // first entity with *any* body field would save "LinkedIn is the world's
+  // largest professional network" as the post.
+  it("prefers an articleBody entity over an earlier entity that only has a description", () => {
+    const org = {
+      "@type": "Organization",
+      name: "LinkedIn",
+      description: "LinkedIn is the world's largest professional network.",
+    };
+
+    // As separate blocks…
+    const separate = [
+      "<html><head>",
+      `<script type="application/ld+json">${JSON.stringify(org)}</script>`,
+      `<script type="application/ld+json">${JSON.stringify(TEXT_POST)}</script>`,
+      "</head><body></body></html>",
+    ].join("");
+    expect(renderLinkedInPost(separate, POST_URL)!.author).toBe("Dave Taylor");
+
+    // …and as one array block, which is also valid JSON-LD.
+    expect(renderLinkedInPost(page([org, TEXT_POST]), POST_URL)!.author).toBe("Dave Taylor");
+  });
+
+  it("unwraps a @graph container", () => {
+    const result = renderLinkedInPost(
+      page({ "@context": "https://schema.org", "@graph": [TEXT_POST] }),
+      POST_URL
+    );
+    expect(result!.author).toBe("Dave Taylor");
+    expect(result!.html).toContain("Barnes &amp; Noble NOOK");
+  });
+
+  it("elides an over-long headline instead of storing it raw", () => {
+    const result = renderLinkedInPost(page({ ...TEXT_POST, headline: "x".repeat(5000) }), POST_URL);
+    expect(result!.title).toBe(`${"x".repeat(99)}…`);
+  });
+
+  it("accepts schema.org's single-or-array and bare-string shapes", () => {
+    const result = renderLinkedInPost(
+      page({
+        ...TEXT_POST,
+        author: [{ name: "Dave Taylor" }],
+        image: "https://media.licdn.com/bare-string.jpg",
+      }),
+      POST_URL
+    );
+    expect(result!.author).toBe("Dave Taylor");
+    expect(result!.html).toContain('src="https://media.licdn.com/bare-string.jpg"');
+  });
+
+  it("skips past an unusable image URL to a valid one", () => {
+    const result = renderLinkedInPost(
+      page({
+        ...TEXT_POST,
+        image: [{ url: "javascript:alert(1)" }, { url: "https://media.licdn.com/ok.jpg" }],
+      }),
+      POST_URL
+    );
+    expect(result!.html).toContain('src="https://media.licdn.com/ok.jpg"');
   });
 
   it("survives malformed JSON-LD and falls back to og:description", () => {

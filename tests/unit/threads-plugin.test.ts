@@ -71,6 +71,14 @@ describe("parseThreadsPostCode", () => {
     expect(threadsPlugin.matchUrl(new URL(POST_URL))).toBe(true);
     expect(threadsPlugin.matchUrl(new URL("https://www.threads.com/@anujs3"))).toBe(false);
   });
+
+  // See the LinkedIn equivalent: matchUrl runs outside the try that wraps
+  // fetchContent, so a throw here is a 500 on save rather than a fallback.
+  it("does not throw on a malformed percent-escape", () => {
+    for (const path of ["/%", "/@a/post/%E0%A4%A", "/t/%ZZ"]) {
+      expect(() => threadsPlugin.matchUrl(new URL(`https://www.threads.com${path}`))).not.toThrow();
+    }
+  });
 });
 
 describe("parseThreadsAuthor", () => {
@@ -125,6 +133,15 @@ describe("renderThreadsPost", () => {
   it("elides a long first line into the title", () => {
     const result = renderThreadsPost(page({ description: "a".repeat(150) }), POST_URL);
     expect(result!.title).toBe(`${"a".repeat(99)}…`);
+  });
+
+  it("finds Open Graph tags that appear after </head>", () => {
+    const result = renderThreadsPost(
+      '<html><head><title>t</title></head><meta property="og:description" content="Body.">' +
+        "<body></body></html>",
+      POST_URL
+    );
+    expect(result!.html).toBe("<p>Body.</p>");
   });
 
   it("returns null when the page carries no post text, so the save falls back", () => {

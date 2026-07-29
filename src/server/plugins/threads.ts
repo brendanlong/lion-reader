@@ -1,8 +1,9 @@
 import type { UrlPlugin, SavedArticleContent } from "./types";
 import { socialPostTitle } from "./social-post";
+import { fetchPluginPage } from "./fetch-page";
 import { Parser } from "htmlparser2";
 import { plainTextToHtml } from "@/server/http/html";
-import { fetchHtmlPage } from "@/server/http/fetch";
+import { safeDecodeURIComponent } from "@/lib/url";
 import { logger } from "@/lib/logger";
 
 /**
@@ -46,7 +47,7 @@ export function parseThreadsPostCode(url: URL): string | null {
   if (!THREADS_HOSTS.has(url.hostname.toLowerCase())) {
     return null;
   }
-  const parts = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
+  const parts = url.pathname.split("/").filter(Boolean).map(safeDecodeURIComponent);
 
   // /@{handle}/post/{code}[/{slug}]
   if (
@@ -95,11 +96,6 @@ function extractThreadsOpenGraph(html: string): ThreadsOpenGraph {
           title = content;
         } else if (property === "og:description" && !description) {
           description = content;
-        }
-      },
-      onclosetag(name) {
-        if (name.toLowerCase() === "head") {
-          parser.pause();
         }
       },
     },
@@ -170,24 +166,12 @@ export const threadsPlugin: UrlPlugin = {
       async fetchContent(url: URL): Promise<SavedArticleContent | null> {
         // Fetch what the user gave us; `/t/{code}` redirects to the canonical
         // `/@handle/post/{code}`, and both serve the same Open Graph tags.
-        let html: string;
-        let finalUrl: string;
-        try {
-          const result = await fetchHtmlPage(url.href);
-          if (result.isMarkdown) {
-            return null;
-          }
-          html = result.content;
-          finalUrl = result.finalUrl;
-        } catch (error) {
-          logger.warn("Failed to fetch Threads post page", {
-            url: url.href,
-            error: error instanceof Error ? error.message : String(error),
-          });
+        const page = await fetchPluginPage(url, "threads");
+        if (!page) {
           return null;
         }
 
-        const content = renderThreadsPost(html, finalUrl);
+        const content = renderThreadsPost(page.html, page.finalUrl);
         if (!content) {
           logger.debug("Threads post page carried no post text", { url: url.href });
         }

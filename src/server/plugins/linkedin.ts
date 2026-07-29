@@ -1,8 +1,9 @@
 import type { UrlPlugin, SavedArticleContent } from "./types";
 import { socialPostTitle } from "./social-post";
+import { fetchPluginPage } from "./fetch-page";
 import { Parser } from "htmlparser2";
 import { escapeHtml, plainTextToHtml } from "@/server/http/html";
-import { fetchHtmlPage } from "@/server/http/fetch";
+import { safeDecodeURIComponent } from "@/lib/url";
 import { logger } from "@/lib/logger";
 
 /**
@@ -11,8 +12,8 @@ import { logger } from "@/lib/logger";
  * LinkedIn has no public read API — open API access ended in 2015 and the
  * Community Management API is partner-gated and scoped to content the
  * authenticated member owns, so there is nothing to call for someone else's
- * post. Saving a post URL therefore ran Readability over a login-walled JS page
- * and stored a sign-up prompt.
+ * post. Without this plugin a post URL goes to Readability, which extracts the
+ * login wall.
  *
  * What LinkedIn *does* serve to a logged-out client is a JSON-LD
  * `SocialMediaPosting` (or `VideoObject` for a video post) carrying the full
@@ -54,7 +55,7 @@ export function parseLinkedInPostUrn(url: URL): string | null {
   // Permalink URL: /feed/update/urn:li:activity:{id} (also share/ugcPost URNs,
   // which LinkedIn's own "copy link to post" produces for some post types).
   const feedMatch = /^\/feed\/update\/(urn:li:(?:activity|share|ugcPost):\d+)\/?$/.exec(
-    decodeURIComponent(url.pathname)
+    safeDecodeURIComponent(url.pathname)
   );
   if (feedMatch) {
     return feedMatch[1];
@@ -73,16 +74,29 @@ export function parseLinkedInPostUrn(url: URL): string | null {
  * commentary is in `description`. We key off the field shape rather than
  * `@type` so a type we haven't seen still works if it carries a body.
  */
+interface LinkedInPerson {
+  name?: string;
+  url?: string;
+}
+
+/** schema.org lets a value be a single item or an array of them, everywhere. */
+type OneOrMany<T> = T | T[];
+
+/** An `ImageObject`, or the bare URL string schema.org also permits. */
+type LinkedInImage = string | { url?: string };
+
 interface LinkedInJsonLd {
   "@type"?: string;
   headline?: string;
   articleBody?: string;
   description?: string;
   datePublished?: string;
-  author?: { name?: string; url?: string };
-  creator?: { name?: string; url?: string };
-  image?: { url?: string } | { url?: string }[];
+  author?: OneOrMany<LinkedInPerson>;
+  creator?: OneOrMany<LinkedInPerson>;
+  image?: OneOrMany<LinkedInImage>;
   thumbnailUrl?: string;
+  /** Some schema.org emitters nest the real entities under a `@graph`. */
+  "@graph"?: unknown;
 }
 
 /** What we scrape out of a post page in one pass. */
@@ -92,10 +106,33 @@ interface LinkedInPageData {
 }
 
 /**
- * SAX-scrape a post page for its JSON-LD blocks and `og:description`. The two
- * are complements, not alternatives: a text post has JSON-LD `articleBody` and
- * no `og:description`, while a link-share post's `og:description` describes the
- * *shared article* rather than the post.
+ * Flatten one parsed JSON-LD document into the entity objects it contains,
+ * unwrapping the two containers schema.org allows: a top-level array, and a
+ * `@graph` array.
+ */
+function flattenJsonLd(parsed: unknown): LinkedInJsonLd[] {
+  const queue = Array.isArray(parsed) ? [...parsed] : [parsed];
+  const entities: LinkedInJsonLd[] = [];
+  for (const item of queue) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const entity = item as LinkedInJsonLd;
+    // A `@graph` wrapper carries no body itself; only its members matter.
+    if (Array.isArray(entity["@graph"])) {
+      queue.push(...entity["@graph"]);
+      continue;
+    }
+    entities.push(entity);
+  }
+  return entities;
+}
+
+/**
+ * SAX-scrape a post page for its JSON-LD entities and `og:description`. The two
+ * are complements, not alternatives: a text post carries JSON-LD `articleBody`
+ * and no `og:description` at all, while a link-share post's `og:description`
+ * describes the *shared article* — which is why it is only ever a last resort.
  */
 export function extractLinkedInPageData(html: string): LinkedInPageData {
   const jsonLd: LinkedInJsonLd[] = [];
@@ -129,14 +166,7 @@ export function extractLinkedInPageData(html: string): LinkedInPageData {
         }
         inJsonLd = false;
         try {
-          const parsed: unknown = JSON.parse(scriptText);
-          // A `@graph` wrapper or a bare array both show up in the wild.
-          const entries = Array.isArray(parsed) ? parsed : [parsed];
-          for (const entry of entries) {
-            if (entry && typeof entry === "object") {
-              jsonLd.push(entry as LinkedInJsonLd);
-            }
-          }
+          jsonLd.push(...flattenJsonLd(JSON.parse(scriptText)));
         } catch {
           // Malformed JSON-LD is not worth failing the save over.
         }
@@ -159,10 +189,36 @@ function stripOgDescriptionSuffix(description: string): string {
   return description.replace(/\s*\|\s*(?:\d+\s+comments?\s+on\s+)?LinkedIn\s*$/i, "").trim();
 }
 
+function isHttpUrl(url: string | undefined): url is string {
+  return !!url && /^https?:\/\//i.test(url);
+}
+
+/** Coerce schema.org's single-or-array shape to an array. */
+function toArray<T>(value: OneOrMany<T> | undefined): T[] {
+  if (value === undefined) return [];
+  return Array.isArray(value) ? value : [value];
+}
+
+/** First image with a usable http(s) URL, skipping any that aren't. */
 function firstImageUrl(image: LinkedInJsonLd["image"]): string | null {
-  const first = Array.isArray(image) ? image[0] : image;
-  const url = first?.url;
-  return url && /^https?:\/\//i.test(url) ? url : null;
+  for (const entry of toArray(image)) {
+    const url = typeof entry === "string" ? entry : entry?.url;
+    if (isHttpUrl(url)) {
+      return url;
+    }
+  }
+  return null;
+}
+
+/** First named author/creator. */
+function firstAuthorName(post: LinkedInJsonLd | undefined): string | null {
+  for (const person of [...toArray(post?.author), ...toArray(post?.creator)]) {
+    const name = person?.name?.trim();
+    if (name) {
+      return name;
+    }
+  }
+  return null;
 }
 
 // ============================================================================
@@ -181,9 +237,14 @@ function firstImageUrl(image: LinkedInJsonLd["image"]): string | null {
 export function renderLinkedInPost(html: string, postUrl: string): SavedArticleContent | null {
   const { jsonLd, ogDescription } = extractLinkedInPageData(html);
 
-  // First block that actually carries a post body; a page can also contain
-  // unrelated JSON-LD (breadcrumbs, the organization).
-  const post = jsonLd.find((entry) => entry.articleBody?.trim() || entry.description?.trim());
+  // `articleBody` is unambiguously the post, so prefer any entity that has one
+  // over any entity that only has a `description`. A page can also carry
+  // unrelated JSON-LD (breadcrumbs, the LinkedIn `Organization`), and an
+  // `Organization`'s boilerplate `description` would otherwise win on ordering
+  // alone and be saved as the post body.
+  const post =
+    jsonLd.find((entity) => entity.articleBody?.trim()) ??
+    jsonLd.find((entity) => entity.description?.trim());
   const body =
     post?.articleBody?.trim() ||
     post?.description?.trim() ||
@@ -192,8 +253,7 @@ export function renderLinkedInPost(html: string, postUrl: string): SavedArticleC
     return null;
   }
 
-  const person = post?.author ?? post?.creator;
-  const author = person?.name?.trim() || null;
+  const author = firstAuthorName(post);
 
   const parts = [plainTextToHtml(body)];
 
@@ -203,7 +263,7 @@ export function renderLinkedInPost(html: string, postUrl: string): SavedArticleC
   const image = firstImageUrl(post?.image) ?? null;
   if (image) {
     parts.push(`<figure><img src="${escapeHtml(image)}" alt="" loading="lazy"></figure>`);
-  } else if (post?.thumbnailUrl && /^https?:\/\//i.test(post.thumbnailUrl)) {
+  } else if (isHttpUrl(post?.thumbnailUrl)) {
     // A video post: the media itself is a streaming manifest a bare <video>
     // can't play, so link back to the post behind its poster frame.
     parts.push(
@@ -217,9 +277,10 @@ export function renderLinkedInPost(html: string, postUrl: string): SavedArticleC
 
   return {
     html: parts.filter(Boolean).join("\n"),
-    // LinkedIn's own `headline` is a cleaned-up first line of the post; fall
-    // back to deriving one the way the other social plugins do.
-    title: post?.headline?.trim() || socialPostTitle(body, author),
+    // LinkedIn's own `headline` is a cleaned-up first line of the post, but
+    // it's remote-controlled and unbounded — run it through the same eliding
+    // the other social plugins use rather than storing it raw.
+    title: socialPostTitle(post?.headline?.trim() || body, author),
     author,
     publishedAt: published && !Number.isNaN(published.getTime()) ? published : null,
     canonicalUrl: postUrl,
@@ -250,22 +311,12 @@ export const linkedInPlugin: UrlPlugin = {
       async fetchContent(url: URL): Promise<SavedArticleContent | null> {
         // Both public URL forms serve the same logged-out page with the same
         // JSON-LD, so fetch what the user gave us rather than reconstructing it.
-        let html: string;
-        try {
-          const result = await fetchHtmlPage(url.href);
-          if (result.isMarkdown) {
-            return null;
-          }
-          html = result.content;
-        } catch (error) {
-          logger.warn("Failed to fetch LinkedIn post page", {
-            url: url.href,
-            error: error instanceof Error ? error.message : String(error),
-          });
+        const page = await fetchPluginPage(url, "linkedin");
+        if (!page) {
           return null;
         }
 
-        const content = renderLinkedInPost(html, url.href);
+        const content = renderLinkedInPost(page.html, page.finalUrl);
         if (!content) {
           logger.debug("LinkedIn post page carried no usable body", { url: url.href });
         }
