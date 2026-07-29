@@ -951,20 +951,47 @@ img.content-img-loading {
    it into the marker's gutter so the text stays aligned with sibling items.
    Matched structurally rather than by class, because only some sources emit
    GitHub's `task-list-item` classes -- our Markdown renderer does not.
+
+   Two shapes, because renderers disagree on where the checkbox goes: directly
+   in the <li> for a tight list (what our renderer emits) and inside the item's
+   first <p> for a loose one (what cmark-gfm/GitHub emit, so it shows up in feed
+   HTML).
+
+   The checkbox is deliberately NOT pulled into the marker's gutter with a
+   negative margin, tempting as that is (it's what GitHub does). CSS can't see
+   text nodes -- `:first-child` matches the first *element*, so
+   `<li>see <input> here</li>`, which a feed is free to write, matches every
+   selector we can express. A negative margin there lands the checkbox on top of
+   the preceding word. Sitting at the text's start edge is slightly less tidy in
+   a list that mixes task and plain items, but it cannot collide with anything.
    ================================= */
 
-.reader-prose li:has(> input[type="checkbox"]) {
+.reader-prose li:has(> input[type="checkbox"]),
+.reader-prose li:has(> p:first-child > input[type="checkbox"]) {
   list-style: none;
 }
 
-.reader-prose li > input[type="checkbox"] {
+.reader-prose li input[type="checkbox"] {
   /* Sized in `em` so the checkbox tracks the user's article font size, which a
      UA-default 13px checkbox would not. */
   width: 1em;
   height: 1em;
-  margin-inline-start: -1.4em;
   margin-inline-end: 0.3em;
   vertical-align: -0.1em;
+}
+
+/* E-paper: browsers paint a *disabled* checkbox as a flat gray box (they
+   largely ignore the global `accent-color`), and mid-grays dither on e-ink --
+   see the .epaper block. Redraw it from the theme's black edge instead, with
+   the checked state carried by a fill rather than a hairline glyph. */
+.epaper .reader-prose li input[type="checkbox"] {
+  appearance: none;
+  border: 1px solid var(--edge);
+  border-radius: 0.15em;
+  background-color: var(--surface);
+}
+.epaper .reader-prose li input[type="checkbox"]:checked {
+  background-color: var(--edge);
 }
 
 /* =================================

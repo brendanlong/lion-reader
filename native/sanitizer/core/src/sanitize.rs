@@ -155,7 +155,7 @@ fn attr_allowed(tag: &str, name: &str) -> bool {
         "track" => matches!(name, "src" | "kind" | "srclang" | "label" | "default"),
         // `align` is how Markdown/GFM tables carry column alignment
         // (`| :-: |`). Presentational only — no script or resource surface —
-        // and value-checked by `attr_value_allowed`.
+        // and value-checked by `canonical_align`.
         "th" => matches!(name, "colspan" | "rowspan" | "scope" | "headers" | "align"),
         "td" => matches!(name, "colspan" | "rowspan" | "headers" | "align"),
         "col" | "colgroup" => name == "span",
@@ -166,13 +166,22 @@ fn attr_allowed(tag: &str, name: &str) -> bool {
 }
 
 /// `align` is the one keyword-valued attribute we allow, so its value is
-/// constrained to the three alignments GFM emits and the reader CSS honours —
-/// an allow-listed attribute should never carry an arbitrary string.
-fn align_value_allowed(value: &str) -> bool {
-    matches!(
-        decode_attr(value).trim().to_ascii_lowercase().as_str(),
-        "left" | "center" | "right"
-    )
+/// constrained to the three alignments GFM emits — an allow-listed attribute
+/// should never carry an arbitrary string. Returns the canonical spelling, or
+/// None to drop the attribute.
+///
+/// Canonicalizing, not just checking, is what makes the attribute *do*
+/// something: `align` is a presentational hint, so it only takes effect through
+/// the reader CSS, which matches the exact token. Accepting ` CENTER ` (or an
+/// entity-obfuscated `&#99;enter`) and writing it back raw would leave a cell
+/// that survived sanitization and still rendered unaligned.
+fn canonical_align(value: &str) -> Option<&'static str> {
+    match decode_attr(value).trim().to_ascii_lowercase().as_str() {
+        "left" => Some("left"),
+        "center" => Some("center"),
+        "right" => Some("right"),
+        _ => None,
+    }
 }
 
 /// Schemes allowed for a URL-carrying attribute on a given tag; None when
@@ -363,9 +372,17 @@ fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Se
             to_remove.push(name);
             continue;
         }
-        // Name test before `attr.value()`, which allocates.
-        if name == "align" && !align_value_allowed(&attr.value()) {
-            to_remove.push(name);
+        // Name test before `attr.value()`, which allocates. `align` is never an
+        // idref, so this arm can settle it and skip the rest of the loop body.
+        if name == "align" {
+            let value = attr.value();
+            match canonical_align(&value) {
+                None => to_remove.push(name),
+                Some(canonical) if canonical != value => {
+                    rewrites.push((name, canonical.to_string()))
+                }
+                Some(_) => {}
+            }
             continue;
         }
         if let Some(schemes) = url_schemes_for(&tag, &name) {
@@ -729,6 +746,10 @@ mod tests {
             r#"<input type="text" value="x">"#,
             r#"<input type="image" src="https://e.com/x.png">"#,
             r#"<input type="password">"#,
+            r#"<input type="submit">"#,
+            // The one type the tree builder inserts in place inside a table
+            // (every other input is foster-parented out).
+            r#"<input type="hidden" name="csrf" value="x">"#,
             "<input>",
         ] {
             let out = sanitize(&format!("<p>a</p>{input}<p>b</p>"));
@@ -746,7 +767,30 @@ mod tests {
             sanitize(r#"<table><tr><td align="expression(x)">c</td></tr></table>"#),
             "<table><tr><td>c</td></tr></table>"
         );
-        assert_eq!(sanitize(r#"<p align="center">x</p>"#), "<p>x</p>");
+        // `align` is scoped to cells, not global — including on the legacy-HTML
+        // tags where it used to be valid, which is where it would most plausibly
+        // creep back in from feed markup.
+        for tag in ["p", "table", "tr", "col", "colgroup", "div", "img", "mtd"] {
+            let out = sanitize(&format!("<{tag} align=\"center\">x</{tag}>"));
+            assert!(!out.contains("align"), "{tag}: {out}");
+        }
+    }
+
+    #[test]
+    fn surviving_align_is_always_canonical() {
+        // The CSS that gives `align` its effect matches the exact token, so a
+        // padded/uppercase/entity-obfuscated value must be rewritten, not just
+        // accepted — otherwise the cell renders unaligned despite the attribute.
+        for raw in [r#" CENTER "#, "Center", "&#99;enter"] {
+            let out = sanitize(&format!("<td align=\"{raw}\">x</td>"));
+            assert_eq!(out, r#"<td align="center">x</td>"#, "{raw}");
+        }
+        // Already canonical: left untouched, so no start-tag re-serialization.
+        let canonical = r#"<td align="center">x</td>"#;
+        assert_eq!(sanitize(canonical), canonical);
+        // Idempotent, like every other rewrite in this pass.
+        let once = sanitize(r#"<td align=" CENTER ">x</td>"#);
+        assert_eq!(sanitize(&once), once);
     }
 
     #[test]
