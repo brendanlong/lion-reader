@@ -14,12 +14,9 @@ Entry content served by `getEntry`/`getEntries`/`toFullEntry` is **sanitized in 
 
 Everything a brand-new account gets is in `runPostSignupTasks` (`src/server/auth/signup.ts`), called fire-and-forget by both signup paths (email/password and OAuth). **Add onboarding steps there, not in the routes** — otherwise the two paths drift. Each task swallows its own errors: none of them may fail a signup.
 
-Today that's the announcement-feed subscription and the **Getting Started article** (`src/server/services/getting-started.ts`, issue #1397) — a starred saved article inserted through the ordinary Markdown upload path, so it's an entirely normal saved article the user can unstar, read, or delete afterwards. Two rules hold it together:
+Today that's the announcement-feed subscription and the **Getting Started article** (`src/server/services/getting-started.ts`, issue #1397), inserted through the ordinary Markdown upload path so it ends up an entirely normal saved article the user can unstar, read, or delete. The load-bearing idea: **`users.getting_started_at` records that we inserted it, not that it still exists** — which is what keeps a deleted article from coming back (issue #1383). The claim/release ordering that makes it safe against races and partial failure is documented at the function.
 
-- **`users.getting_started_at` records that we inserted it, not that it still exists.** It's claimed atomically _before_ the insert (`UPDATE ... WHERE getting_started_at IS NULL RETURNING`) and released only if the insert then fails, so a signup racing the backfill can't double-insert, and deleting the article never brings it back (issue #1383).
-- **The content (`getting-started-content.ts`) is nearly all links into the app**, and they must be relative so they resolve on a self-hosted instance. `tests/unit/getting-started-content.test.ts` checks each in-app link against the routes that actually exist in `src/app`, so a renamed route fails CI instead of shipping dead links to every future user.
-
-Users who predate the feature are covered by the `backfill_getting_started` singleton job, which walks the same pending-users scan a batch at a time. It never parks: once the backlog drains it drops to a daily cadence, and the same scan then also retries anyone whose signup-path insert failed.
+Users who predate the feature are covered by the `backfill_getting_started` singleton job, a batch per run. It never parks: once the backlog drains it drops to a daily cadence, and that same scan then doubles as the retry for anyone whose signup-path insert failed.
 
 ## Site Status (announcement banner + maintenance mode)
 

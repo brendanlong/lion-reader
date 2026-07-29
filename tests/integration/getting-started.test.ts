@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, afterAll } from "vitest";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, ne } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { users, entries, userEntries } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
@@ -64,24 +64,23 @@ async function gettingStartedAt(userId: string): Promise<Date | null> {
   return row.at;
 }
 
-const DRAIN_BATCH = 200;
-const DRAIN_MAX_ROUNDS = 25;
+const BATCH = 100;
 
 /**
- * Runs the backfill until no pending users are left.
+ * Marks every *other* user in this database as already covered.
  *
- * The backfill is global by design, and this database is shared with the other
- * integration test files, so a single batch isn't guaranteed to reach our user.
- * Draining is also what makes the "no pending users left" assertion meaningful.
+ * The backfill is global by design, and this database is shared with 50-odd
+ * other integration files whose leftover user rows are all pending. Without
+ * this the backfill would create articles for them (slow, and it mutates rows
+ * this file doesn't own) and the batch counts would depend on how dirty the
+ * database happened to be. Stamping the flag — and only the flag — leaves our
+ * user as the single pending row, so the counts below are exact.
  */
-async function drainBackfill(): Promise<{ rounds: number; created: number }> {
-  let created = 0;
-  for (let rounds = 1; rounds <= DRAIN_MAX_ROUNDS; rounds++) {
-    const result = await backfillGettingStartedArticles(db, DRAIN_BATCH);
-    created += result.created;
-    if (result.attempted === 0) return { rounds, created };
-  }
-  return { rounds: DRAIN_MAX_ROUNDS, created };
+async function claimEveryoneElse(ourUserId: string): Promise<void> {
+  await db
+    .update(users)
+    .set({ gettingStartedAt: new Date() })
+    .where(and(isNull(users.gettingStartedAt), ne(users.id, ourUserId)));
 }
 
 afterAll(async () => {
@@ -135,7 +134,12 @@ describe("createGettingStartedArticle", () => {
 
     // Both the signup path and the backfill must leave it deleted.
     expect(await createGettingStartedArticle(db, userId)).toBeNull();
-    await drainBackfill();
+    await claimEveryoneElse(userId);
+    expect(await backfillGettingStartedArticles(db, BATCH)).toEqual({
+      attempted: 0,
+      created: 0,
+      failed: 0,
+    });
 
     expect(await savedEntriesFor(userId)).toHaveLength(0);
   });
@@ -161,17 +165,19 @@ describe("backfillGettingStartedArticles", () => {
   it("covers a user who predates the feature", async () => {
     const userId = await createTestUser();
     expect(await gettingStartedAt(userId)).toBeNull();
+    await claimEveryoneElse(userId);
 
-    const { rounds, created } = await drainBackfill();
+    expect(await backfillGettingStartedArticles(db, BATCH)).toEqual({
+      attempted: 1,
+      created: 1,
+      failed: 0,
+    });
 
-    expect(created).toBeGreaterThan(0);
-    // Every round but the last filled a full batch, so this converged.
-    expect(rounds).toBeLessThan(DRAIN_MAX_ROUNDS);
     expect(await gettingStartedAt(userId)).toBeInstanceOf(Date);
     expect(await savedEntriesFor(userId)).toHaveLength(1);
 
     // Nothing is left over: a second pass finds no pending users.
-    expect(await backfillGettingStartedArticles(db, DRAIN_BATCH)).toEqual({
+    expect(await backfillGettingStartedArticles(db, BATCH)).toEqual({
       attempted: 0,
       created: 0,
       failed: 0,

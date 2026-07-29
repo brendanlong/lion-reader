@@ -39,6 +39,11 @@ import {
  * unstarred article is a much better failure than a duplicate one, and the user
  * can star it themselves.
  *
+ * Deliberately biased that way at the other end too: the claim commits on its
+ * own, so a process that dies between the claim and the insert leaves that one
+ * user with no article and nothing to retry it. Losing an onboarding article
+ * beats showing someone two of them.
+ *
  * @returns the new entry's id, or null if this user already had one.
  */
 export async function createGettingStartedArticle(

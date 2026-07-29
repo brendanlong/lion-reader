@@ -1495,9 +1495,10 @@ export async function handleBackfillGettingStarted(
 ): Promise<JobHandlerResult> {
   const result = await backfillGettingStartedArticles(db, GETTING_STARTED_BATCH_SIZE);
 
-  // Come back promptly only while we're both filling batches and making
-  // progress. Requiring progress means a persistently failing batch backs off
-  // to the idle cadence instead of spinning every 15 seconds forever.
+  // Come back promptly while we're filling batches and getting somewhere. A
+  // batch where *nothing* succeeded drops to the idle cadence rather than
+  // spinning every 15 seconds; a batch with a few stuck users still counts as
+  // progress, so one poison row can't throttle the whole backfill to daily.
   const moreLikely = result.attempted === GETTING_STARTED_BATCH_SIZE && result.created > 0;
 
   return {

@@ -146,20 +146,28 @@ export async function createUser(tx: DbOrTx, params: CreateUserParams): Promise<
 
 /**
  * Everything we do for a brand-new account after the signup transaction has
- * committed. Every caller invokes this fire-and-forget (`void`), and each task
- * swallows its own errors — none of them may interfere with signup.
+ * committed. Every caller invokes this fire-and-forget (`void`), so this
+ * function must be **total** — a rejection here has no `.catch()` anywhere and
+ * would take the process down as an unhandled rejection. The individual tasks
+ * already swallow their own errors; the outer catch covers everything around
+ * them (notably the dynamic import).
  *
  * Adding an onboarding step? Put it here, not in the signup routes, so the
  * email/password and OAuth paths can't drift apart.
  */
 export async function runPostSignupTasks(db: Database, userId: string): Promise<void> {
-  // Dynamic import to keep the services graph out of the auth modules (see
-  // subscribeToAnnouncementFeed).
-  const { tryCreateGettingStartedArticle } = await import("@/server/services/getting-started");
-  await Promise.all([
-    subscribeToAnnouncementFeed(db, userId),
-    tryCreateGettingStartedArticle(db, userId),
-  ]);
+  try {
+    // Dynamic import to keep the services graph out of the auth modules (see
+    // subscribeToAnnouncementFeed).
+    const { tryCreateGettingStartedArticle } = await import("@/server/services/getting-started");
+    await Promise.all([
+      subscribeToAnnouncementFeed(db, userId),
+      tryCreateGettingStartedArticle(db, userId),
+    ]);
+  } catch (err) {
+    logger.error("Post-signup tasks failed", { userId, err });
+    Sentry.captureException(err, { tags: { source: "post-signup-tasks" }, extra: { userId } });
+  }
 }
 
 /**
