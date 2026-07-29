@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
 import { Card } from "@/components/ui/card";
+import { ClientLink } from "@/components/ui/client-link";
 import { FeedSiteLink } from "@/components/feeds/FeedSiteLink";
 import {
   CheckCircleIcon,
@@ -294,6 +295,18 @@ export function SubscribeContent() {
               Preview Feed
             </Button>
           </form>
+
+          {/* Coming from another reader? Point at the bulk path (issue #1397). */}
+          <p className="ui-text-sm text-muted mt-4">
+            Moving from another reader? Bring everything over at once with{" "}
+            <ClientLink
+              href="/settings/subscriptions"
+              className="text-accent hover:text-accent-hover font-medium"
+            >
+              OPML import
+            </ClientLink>
+            .
+          </p>
         </Card>
       )}
 

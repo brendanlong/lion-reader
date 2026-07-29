@@ -145,10 +145,28 @@ export async function createUser(tx: DbOrTx, params: CreateUserParams): Promise<
 }
 
 /**
+ * Everything we do for a brand-new account after the signup transaction has
+ * committed. Every caller invokes this fire-and-forget (`void`), and each task
+ * swallows its own errors — none of them may interfere with signup.
+ *
+ * Adding an onboarding step? Put it here, not in the signup routes, so the
+ * email/password and OAuth paths can't drift apart.
+ */
+export async function runPostSignupTasks(db: Database, userId: string): Promise<void> {
+  // Dynamic import to keep the services graph out of the auth modules (see
+  // subscribeToAnnouncementFeed).
+  const { tryCreateGettingStartedArticle } = await import("@/server/services/getting-started");
+  await Promise.all([
+    subscribeToAnnouncementFeed(db, userId),
+    tryCreateGettingStartedArticle(db, userId),
+  ]);
+}
+
+/**
  * Subscribe a newly created user to the announcement feed.
  * Runs async and catches all errors — must never interfere with signup.
  */
-export async function subscribeToAnnouncementFeed(db: Database, userId: string): Promise<void> {
+async function subscribeToAnnouncementFeed(db: Database, userId: string): Promise<void> {
   const feedUrl = announcementFeedConfig.url;
   if (!feedUrl) return;
 

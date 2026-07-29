@@ -45,7 +45,7 @@ import {
   validateDiscordCallback,
   isDiscordOAuthEnabled,
 } from "@/server/auth/oauth/discord";
-import { createUser, subscribeToAnnouncementFeed } from "@/server/auth/signup";
+import { createUser, runPostSignupTasks } from "@/server/auth/signup";
 import { processOAuthCallback } from "@/server/auth/oauth/callback";
 import { GOOGLE_DRIVE_SCOPE } from "@/server/google/docs";
 import {
@@ -234,8 +234,9 @@ export const authRouter = createTRPCRouter({
         return { user, token };
       });
 
-      // Auto-subscribe to announcement feed (fire-and-forget, errors are caught internally)
-      void subscribeToAnnouncementFeed(ctx.db, result.user.userId);
+      // Announcement-feed subscription + Getting Started article (fire-and-forget,
+      // errors are caught internally)
+      void runPostSignupTasks(ctx.db, result.user.userId);
 
       // Set the httpOnly session cookie for the browser (the returned sessionToken
       // stays in the body for REST/OpenAPI clients that read it directly).

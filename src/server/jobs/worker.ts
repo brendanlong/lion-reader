@@ -31,6 +31,7 @@ import {
   handleMonitorFeedHealth,
   handleCleanup,
   handleReconcileCounters,
+  handleBackfillGettingStarted,
   type JobHandlerResult,
 } from "./handlers";
 import type { Job } from "../db/schema";
@@ -487,6 +488,11 @@ function createWorker(config: WorkerConfig = {}): Worker {
         case "reconcile_counters": {
           const payload = getJobPayload<"reconcile_counters">(job);
           result = await handleReconcileCounters(payload);
+          break;
+        }
+        case "backfill_getting_started": {
+          const payload = getJobPayload<"backfill_getting_started">(job);
+          result = await handleBackfillGettingStarted(payload);
           break;
         }
         case "process_opml_import": {

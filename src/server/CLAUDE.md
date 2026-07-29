@@ -10,6 +10,17 @@ Business logic lives in pure service functions in `src/server/services/` — fun
 
 Entry content served by `getEntry`/`getEntries`/`toFullEntry` is **sanitized in the services layer on every read** (raw HTML is stored; see `src/server/html/CLAUDE.md`), so every consumer gets the same guarantee.
 
+## New-Account Onboarding
+
+Everything a brand-new account gets is in `runPostSignupTasks` (`src/server/auth/signup.ts`), called fire-and-forget by both signup paths (email/password and OAuth). **Add onboarding steps there, not in the routes** — otherwise the two paths drift. Each task swallows its own errors: none of them may fail a signup.
+
+Today that's the announcement-feed subscription and the **Getting Started article** (`src/server/services/getting-started.ts`, issue #1397) — a starred saved article inserted through the ordinary Markdown upload path, so it's an entirely normal saved article the user can unstar, read, or delete afterwards. Two rules hold it together:
+
+- **`users.getting_started_at` records that we inserted it, not that it still exists.** It's claimed atomically _before_ the insert (`UPDATE ... WHERE getting_started_at IS NULL RETURNING`) and released only if the insert then fails, so a signup racing the backfill can't double-insert, and deleting the article never brings it back (issue #1383).
+- **The content (`getting-started-content.ts`) is nearly all links into the app**, and they must be relative so they resolve on a self-hosted instance. `tests/unit/getting-started-content.test.ts` checks each in-app link against the routes that actually exist in `src/app`, so a renamed route fails CI instead of shipping dead links to every future user.
+
+Users who predate the feature are covered by the `backfill_getting_started` singleton job, which walks the same pending-users scan a batch at a time. It never parks: once the backlog drains it drops to a daily cadence, and the same scan then also retries anyone whose signup-path insert failed.
+
 ## Site Status (announcement banner + maintenance mode)
 
 Two admin-controlled global flags live in **Redis, not Postgres** (`src/server/services/site-status.ts`): a site-wide **announcement banner** and a **maintenance mode** kill switch. Redis is deliberate — maintenance mode is meant to be turned on _while Postgres is being migrated/locked_, so the code that reads it must not depend on the DB. Both reads are fail-safe (Redis down ⇒ no banner, maintenance = the `MAINTENANCE_MODE` env override only) and cached in-process for a few seconds so the hot paths issue no per-request Redis round-trip.
