@@ -163,12 +163,36 @@ function insideSubtreeSpeaker(el: Element): boolean {
   return false;
 }
 
+/** Selector matching the blocks that break a run of inline text. */
+const BLOCK_SELECTOR = BLOCK_ELEMENTS.filter((tagName) => tagName !== "img").join(", ");
+
+/**
+ * Blocks that already speak for their whole subtree when they turn up inside
+ * one — `SUBTREE_SPEAKERS` plus `figure`, which speaks its image rather than
+ * its markup and so must not be walked into like a generic wrapper.
+ */
+const SELF_CONTAINED = new Set([...SUBTREE_SPEAKERS, "figure"]);
+
+/**
+ * How deep the content walk descends before flattening what is left.
+ *
+ * Nothing a listener can follow nests this far, and the walk is recursive over
+ * feed-controlled markup — a document nesting thousands of quotes deep would
+ * otherwise overflow the stack instead of being narrated.
+ */
+const MAX_CONTENT_DEPTH = 64;
+
 /**
  * The paragraphs an element's content narrates as, in document order: inline
  * runs and block children interleaved the way they appear, so an attribution
  * that trails a quote is read after it rather than before it.
  */
-function contentParagraphs(el: Element): string[] {
+function contentParagraphs(el: Element, depth = 0): string[] {
+  if (depth >= MAX_CONTENT_DEPTH) {
+    const text = el.textContent?.trim();
+    return text ? [text] : [];
+  }
+
   const paragraphs: string[] = [];
   let inline = "";
 
@@ -180,21 +204,23 @@ function contentParagraphs(el: Element): string[] {
   el.childNodes.forEach((node) => {
     const child = node.nodeType === ELEMENT_NODE ? (node as Element) : null;
     const tagName = child?.tagName.toLowerCase() ?? "";
-    // An image belongs to the run of text around it — it gets no paragraph.
-    if (!child || tagName === "img" || !BLOCK_ELEMENTS_SET.has(tagName)) {
+    const isBlock = tagName !== "img" && BLOCK_ELEMENTS_SET.has(tagName);
+    // A `<div>`/`<section>` around the blocks is transparent, but one that only
+    // wraps text is part of the run around it — as is an image, always.
+    if (!child || (!isBlock && !child.querySelector(BLOCK_SELECTOR))) {
       inline += inlineNodeText(node);
       return;
     }
 
     flushInline();
-    if (SUBTREE_SPEAKERS.has(tagName)) {
+    if (SELF_CONTAINED.has(tagName)) {
       // Already speaks for everything below it, so don't descend twice.
-      const text = getOwnNarrationText(child);
+      const text = getOwnNarrationText(child, depth + 1);
       if (text) paragraphs.push(text);
       return;
     }
 
-    const inner = contentParagraphs(child);
+    const inner = contentParagraphs(child, depth + 1);
     if (tagName === "li" && inner.length > 0) {
       inner[0] = `${listItemMarker(child)}${inner[0]}`;
     }
@@ -223,9 +249,10 @@ function getElementNarrationText(el: Element): string {
 
 /**
  * The element's own narration text, before any marker it inherits from an
- * enclosing list item.
+ * enclosing list item. `depth` is how far a wrapper's content walk has already
+ * descended to reach this element (see `contentParagraphs`).
  */
-function getOwnNarrationText(el: Element): string {
+function getOwnNarrationText(el: Element, depth = 0): string {
   const tagName = el.tagName.toLowerCase();
 
   // Handle headings - just return the text (no marker)
@@ -250,7 +277,7 @@ function getOwnNarrationText(el: Element): string {
   // lines rather than run together, and the player speaks each of them as its
   // own paragraph (all highlighting this blockquote).
   if (tagName === "blockquote") {
-    const quoted = contentParagraphs(el);
+    const quoted = contentParagraphs(el, depth);
     return quoted.length > 0 ? `Quote: ${quoted.join("\n\n")} End quote.` : "";
   }
 
@@ -277,12 +304,15 @@ function getOwnNarrationText(el: Element): string {
 
   // Handle tables
   if (tagName === "table") {
-    // Extract table content in a readable format
+    // Extract table content in a readable format. Cells narrate the same way
+    // anything else does rather than through `textContent`, because the blocks
+    // inside them stay silent for the table's sake — so whatever they would
+    // have said (an image's alt text, a list's bullets) has to be said here.
     const rows: string[] = [];
     el.querySelectorAll("tr").forEach((tr) => {
       const cells: string[] = [];
       tr.querySelectorAll("th, td").forEach((cell) => {
-        cells.push(cell.textContent?.trim() || "");
+        cells.push(contentParagraphs(cell, depth + 1).join(" "));
       });
       if (cells.length > 0) {
         rows.push(cells.join(", "));

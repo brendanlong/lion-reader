@@ -868,6 +868,24 @@ describe("htmlToClientNarration", () => {
       ]);
     });
 
+    it("says what a silenced cell block would have said", () => {
+      // `textContent` would drop the alt text the cell's figure used to speak.
+      const html =
+        '<table><tr><td><figure><img alt="Sales chart"><figcaption>Fig 1</figcaption></figure></td>' +
+        "<td>B</td></tr></table>";
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("Image: Sales chart Fig 1, B");
+      expect(result.paragraphMap).toEqual([{ n: 0, o: 0 }]);
+    });
+
+    it("keeps inline markup in a cell glued to the text around it", () => {
+      const html = "<table><tr><td>50<sup>th</sup></td></tr></table>";
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("50th");
+    });
+
     it("does not let a code block's children narrate it back", () => {
       const html = "<pre><p>const x = 1;</p></pre>";
       const result = htmlToClientNarration(html);

@@ -172,6 +172,45 @@ describe("htmlToNarrationInput", () => {
       expect(result.paragraphs).toEqual([{ id: 2, text: "- Quote: x End quote." }]);
     });
 
+    it("reads through a wrapper between the quote and its paragraphs", () => {
+      // The pull-quote markup WordPress-style editors emit. `<div>`/`<section>`
+      // get no paragraph of their own, so the quote has to walk through them or
+      // its text is narrated nowhere at all.
+      const html =
+        '<blockquote><div class="quote-body"><p>Be excellent.</p></div><cite>Bill</cite></blockquote>';
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toEqual([
+        { id: 0, text: "Quote: Be excellent.\n\nBill End quote." },
+      ]);
+    });
+
+    it("keeps a wrapper that only holds text in the run around it", () => {
+      const html = "<blockquote>Hello <span>world</span> again</blockquote>";
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toEqual([{ id: 0, text: "Quote: Hello world again End quote." }]);
+    });
+
+    it("speaks a quoted image rather than walking into the figure", () => {
+      const html =
+        '<blockquote><figure><img alt="A cat"><figcaption>My cat</figcaption></figure></blockquote>';
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toEqual([{ id: 0, text: "Quote: Image: A cat End quote." }]);
+    });
+
+    it("narrates absurdly nested quotes instead of overflowing the stack", () => {
+      // Feed HTML is not depth-limited and the content walk is recursive, so
+      // past a point it flattens what is left rather than descending further.
+      const depth = 500;
+      const html = `${"<blockquote>".repeat(depth)}<p>the text</p>${"</blockquote>".repeat(depth)}`;
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toHaveLength(1);
+      expect(result.paragraphs[0].text).toContain("the text");
+    });
+
     it("drops an empty quote instead of speaking bare markers", () => {
       const html = "<blockquote></blockquote><p>after</p>";
       const result = htmlToNarrationInput(html);
@@ -387,6 +426,20 @@ describe("htmlToNarrationInput", () => {
       const result = htmlToNarrationInput(html);
 
       expect(result.paragraphs).toEqual([{ id: 0, text: "Table: Cell 1, Cell 2 End table." }]);
+    });
+
+    it("says what a silenced cell block would have said", () => {
+      // The blocks in a cell stay silent for the table's sake, so anything they
+      // would have narrated — an image's alt text, a list's bullets — has to
+      // come through in the cell instead of being lost.
+      const html =
+        '<table><tr><td><figure><img alt="Sales chart"></figure></td>' +
+        "<td><ul><li>a</li><li>b</li></ul></td></tr></table>";
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toEqual([
+        { id: 0, text: "Table: Image: Sales chart, - a - b End table." },
+      ]);
     });
   });
 

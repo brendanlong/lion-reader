@@ -233,6 +233,43 @@ function processInlineContent(el: Element): string {
 }
 
 /**
+ * Everything inside an element, block children included, with the blocks kept
+ * apart by a space.
+ *
+ * `processInlineContent` stops at block children because each narrates itself;
+ * a table cell's blocks don't (the table speaks for them), so their text has to
+ * come from here — and `textContent` won't do, since it drops image alt text.
+ */
+function subtreeNarrationText(el: Element): string {
+  let text = "";
+
+  el.childNodes.forEach((node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      text += node.textContent || "";
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+
+    const childEl = node as Element;
+    const childTag = childEl.tagName.toLowerCase();
+    if (childTag === "img") {
+      const alt = childEl.getAttribute("alt");
+      if (alt && alt.trim()) {
+        // Padded: nothing here guarantees whitespace around an image the way
+        // the text around an inline one does (a caption butts right up to it).
+        text += ` Image: ${alt.trim()} `;
+      }
+      return;
+    }
+    const inner = subtreeNarrationText(childEl);
+    // Inline markup continues the run of text; a block starts a new one.
+    text += BLOCK_ELEMENT_SET.has(childTag) ? ` ${inner} ` : inner;
+  });
+
+  return text.replace(/\s+/g, " ").trim();
+}
+
+/**
  * Blocks whose narration already accounts for everything inside them: a table
  * speaks all of its cells, and a code block is deliberately not spoken at all.
  * A block nested in one of those has to stay silent, or its text comes back —
@@ -301,7 +338,7 @@ function getElementNarrationText(el: Element): string {
     el.querySelectorAll("tr").forEach((tr) => {
       const cells: string[] = [];
       tr.querySelectorAll("th, td").forEach((cell) => {
-        cells.push(cell.textContent?.trim() || "");
+        cells.push(subtreeNarrationText(cell));
       });
       if (cells.length > 0 && cells.some((c) => c.length > 0)) {
         rows.push(cells.join(", "));
