@@ -943,6 +943,50 @@ img.content-img-loading {
 }
 
 /* =================================
+   Reader Prose Task Lists
+
+   GFM task lists (`- [x] done`) are a list whose items start with a disabled
+   checkbox; the sanitizer keeps it as an inert `<input type="checkbox">` (see
+   native/sanitizer). Drop the bullet -- the checkbox is the marker -- and pull
+   it into the marker's gutter so the text stays aligned with sibling items.
+   Matched structurally rather than by class, because only some sources emit
+   GitHub's `task-list-item` classes -- our Markdown renderer does not.
+   ================================= */
+
+.reader-prose li:has(> input[type="checkbox"]) {
+  list-style: none;
+}
+
+.reader-prose li > input[type="checkbox"] {
+  /* Sized in `em` so the checkbox tracks the user's article font size, which a
+     UA-default 13px checkbox would not. */
+  width: 1em;
+  height: 1em;
+  margin-inline-start: -1.4em;
+  margin-inline-end: 0.3em;
+  vertical-align: -0.1em;
+}
+
+/* =================================
+   Reader Prose Table Alignment
+
+   Markdown table alignment (`| :-: |`) arrives as `align` on the cells, a
+   presentational hint that loses to any author CSS -- and Typography sets
+   `th, td { text-align: start }`. These unlayered rules put the author's
+   alignment back.
+   ================================= */
+
+.reader-prose :is(th, td)[align="left"] {
+  text-align: left;
+}
+.reader-prose :is(th, td)[align="center"] {
+  text-align: center;
+}
+.reader-prose :is(th, td)[align="right"] {
+  text-align: right;
+}
+
+/* =================================
    Reader Prose Video Embeds
 
    The only iframes that survive sanitization are YouTube embeds (see
