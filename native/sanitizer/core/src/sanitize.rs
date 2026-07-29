@@ -18,7 +18,8 @@
 //! - Comments and doctypes are removed.
 //! - Transforms: external links get `target="_blank" rel="noopener
 //!   noreferrer"`; images get `loading="lazy"`; iframes survive only as
-//!   normalized allow-listed embeds with a forced sandbox.
+//!   normalized allow-listed embeds with a forced sandbox; `input` survives
+//!   only as an inert, attribute-stripped task-list checkbox.
 //!
 //! Unlike sanitize-html, lol_html does not re-serialize untouched markup:
 //! kept text and attribute values pass through byte-identical, and the
@@ -48,6 +49,11 @@ const ALLOWED_TAGS: &[&str] = &[
     "table", "thead", "tbody", "tfoot", "tr", "th", "td", "caption", "colgroup", "col",
     // Media
     "img", "picture", "source", "audio", "video", "track",
+    // `input` is allowed ONLY as an inert GFM task-list checkbox (issue #1439):
+    // handle_input drops every attribute, keeps `checked`, and forces
+    // `type="checkbox" disabled`, so it can carry no name/value/form binding and
+    // no event handler. Any other input type is removed entirely.
+    "input",
     // `iframe` is allowed ONLY for allow-listed media-embed providers (issue
     // #922): handle_iframe validates the src against normalize_embed and
     // rewrites it to the provider's canonical host with a forced sandbox;
@@ -147,12 +153,38 @@ fn attr_allowed(tag: &str, name: &str) -> bool {
         ),
         "audio" => matches!(name, "src" | "controls" | "loop" | "muted" | "preload"),
         "track" => matches!(name, "src" | "kind" | "srclang" | "label" | "default"),
-        "th" => matches!(name, "colspan" | "rowspan" | "scope" | "headers"),
-        "td" => matches!(name, "colspan" | "rowspan" | "headers"),
+        // `align` is how Markdown/GFM tables carry column alignment
+        // (`| :-: |`). Presentational only — no script or resource surface —
+        // and value-checked by `canonical_align`.
+        "th" => matches!(name, "colspan" | "rowspan" | "scope" | "headers" | "align"),
+        "td" => matches!(name, "colspan" | "rowspan" | "headers" | "align"),
         "col" | "colgroup" => name == "span",
         "time" => name == "datetime",
         "math" => name == "xmlns",
         _ => false,
+    }
+}
+
+/// `align` is the one keyword-valued attribute we allow, so its value is
+/// constrained to the three alignments GFM emits — an allow-listed attribute
+/// should never carry an arbitrary string. Returns the canonical spelling, or
+/// None to drop the attribute.
+///
+/// Canonicalizing, not just checking, is what makes the attribute *do*
+/// something: `align` is a presentational hint, so it only takes effect through
+/// the reader CSS, which matches the exact token. Accepting ` CENTER ` (or an
+/// entity-obfuscated `&#99;enter`) and writing it back raw would leave a cell
+/// that survived sanitization and still rendered unaligned.
+///
+/// `#[cold]` for the reason described on [`handle_input`].
+#[cold]
+#[inline(never)]
+fn canonical_align(value: &str) -> Option<&'static str> {
+    match decode_attr(value).trim().to_ascii_lowercase().as_str() {
+        "left" => Some("left"),
+        "center" => Some("center"),
+        "right" => Some("right"),
+        _ => None,
     }
 }
 
@@ -246,6 +278,50 @@ fn handle_iframe(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Sen
     Ok(())
 }
 
+/// `input` survives only as the inert checkbox GFM task lists are made of
+/// (`- [x] done`), which every Markdown renderer and GitHub itself emit as
+/// `<input type="checkbox" checked disabled>`. Without it the checkbox is
+/// stripped and a done item reads exactly like a not-done one (issue #1439).
+///
+/// Rebuilt from scratch rather than filtered, so the result is a fixed shape
+/// no matter what the source wrote: every attribute is dropped (no `name`/
+/// `value`/`form*` to submit, no event handler, no `id` to collide with our
+/// UI), only the checked bit is carried over, and `disabled` is forced — so it
+/// is not focusable, not editable and not submittable. Any other `type` is
+/// removed entirely: nothing else about a form control belongs in entry
+/// content.
+///
+/// `#[cold]`/`#[inline(never)]` are load-bearing, not decoration: inlined into
+/// `handle_element` this and `canonical_align` cost a **measured 4-8%** on
+/// article-shaped content (`scripts/bench-sanitize.mts`, `medium`/`large`),
+/// because `handle_element` runs for every element of every entry on every read
+/// while an `input` or an `align` appears in almost none of them. Keeping the
+/// rare paths out of the hot function's body returns it to parity. Re-run the
+/// bench before removing these — and note its run-to-run drift is a few percent,
+/// so interleave the variants and check an A/A control first.
+#[cold]
+#[inline(never)]
+fn handle_input(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let is_checkbox = el
+        .get_attribute("type")
+        .is_some_and(|t| decode_attr(&t).trim().eq_ignore_ascii_case("checkbox"));
+    if !is_checkbox {
+        el.remove();
+        return Ok(());
+    }
+    let checked = el.has_attribute("checked");
+    let to_remove: Vec<String> = el.attributes().iter().map(|a| a.name()).collect();
+    for name in to_remove {
+        el.remove_attribute(&name);
+    }
+    el.set_attribute("type", "checkbox")?;
+    if checked {
+        el.set_attribute("checked", "")?;
+    }
+    el.set_attribute("disabled", "")?;
+    Ok(())
+}
+
 /// Namespacing of ids and same-document references happens inline in
 /// `handle_element`'s attribute pass (see `idrefs.rs` for the reference surface).
 ///
@@ -293,6 +369,9 @@ fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Se
     if tag == "iframe" {
         return handle_iframe(el);
     }
+    if tag == "input" {
+        return handle_input(el);
+    }
 
     let mut to_remove: Vec<String> = Vec::new();
     // Id/idref rewrites (see `namespaced_value`) are collected in this same
@@ -306,6 +385,19 @@ fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Se
         let name = attr.name();
         if !attr_allowed(&tag, &name) {
             to_remove.push(name);
+            continue;
+        }
+        // Name test before `attr.value()`, which allocates. `align` is never an
+        // idref, so this arm can settle it and skip the rest of the loop body.
+        if name == "align" {
+            let value = attr.value();
+            match canonical_align(&value) {
+                None => to_remove.push(name),
+                Some(canonical) if canonical != value => {
+                    rewrites.push((name, canonical.to_string()))
+                }
+                Some(_) => {}
+            }
             continue;
         }
         if let Some(schemes) = url_schemes_for(&tag, &name) {
@@ -639,6 +731,81 @@ mod tests {
         );
         let ok = r#"<img srcset="data:image/png;base64,AAA= 1x, /b.png 2x" loading="lazy">"#;
         assert_eq!(sanitize(ok), ok);
+    }
+
+    #[test]
+    fn task_list_checkboxes_survive_as_inert_checkboxes() {
+        // The checked bit is the whole point: without it a done item and a
+        // not-done item render identically (issue #1439).
+        assert_eq!(
+            sanitize(
+                r#"<ul><li><input type="checkbox" checked="" disabled=""> done</li><li><input type="checkbox" disabled=""> todo</li></ul>"#
+            ),
+            r#"<ul><li><input type="checkbox" checked="" disabled=""> done</li><li><input type="checkbox" disabled=""> todo</li></ul>"#
+        );
+    }
+
+    #[test]
+    fn checkbox_is_rebuilt_so_it_can_carry_nothing_else() {
+        // Every source attribute is dropped and `disabled` forced, so the
+        // checkbox has no name/value/form binding, no handler and no id.
+        let out = sanitize(
+            r#"<input type="CheckBox" checked name="a" value="b" form="f" formaction="https://e.com" id="x" onclick="alert(1)" class="c">"#,
+        );
+        assert_eq!(out, r#"<input type="checkbox" checked="" disabled="">"#);
+    }
+
+    #[test]
+    fn non_checkbox_inputs_are_removed() {
+        for input in [
+            r#"<input type="text" value="x">"#,
+            r#"<input type="image" src="https://e.com/x.png">"#,
+            r#"<input type="password">"#,
+            r#"<input type="submit">"#,
+            // The one type the tree builder inserts in place inside a table
+            // (every other input is foster-parented out).
+            r#"<input type="hidden" name="csrf" value="x">"#,
+            "<input>",
+        ] {
+            let out = sanitize(&format!("<p>a</p>{input}<p>b</p>"));
+            assert_eq!(out, "<p>a</p><p>b</p>", "{input}");
+        }
+    }
+
+    #[test]
+    fn table_alignment_kept_only_for_real_alignments() {
+        let aligned = r#"<table><tr><th align="left">a</th><th align="center">b</th><td align="right">c</td></tr></table>"#;
+        assert_eq!(sanitize(aligned), aligned);
+        // Anything outside the GFM vocabulary is dropped, and `align` is not a
+        // global — it only exists on cells.
+        assert_eq!(
+            sanitize(r#"<table><tr><td align="expression(x)">c</td></tr></table>"#),
+            "<table><tr><td>c</td></tr></table>"
+        );
+        // `align` is scoped to cells, not global — including on the legacy-HTML
+        // tags where it used to be valid, which is where it would most plausibly
+        // creep back in from feed markup.
+        for tag in ["p", "table", "tr", "col", "colgroup", "div", "img", "mtd"] {
+            let out = sanitize(&format!("<{tag} align=\"center\">x</{tag}>"));
+            assert!(!out.contains("align"), "{tag}: {out}");
+        }
+    }
+
+    #[test]
+    fn surviving_align_is_always_canonical() {
+        // The CSS that gives `align` its effect matches the exact token, so a
+        // padded/uppercase/entity-obfuscated value must be rewritten, not just
+        // accepted — otherwise the cell renders unaligned despite the attribute.
+        for raw in [r#" CENTER "#, "Center", "&#99;enter"] {
+            let out = sanitize(&format!("<td align=\"{raw}\">x</td>"));
+            assert_eq!(out, r#"<td align="center">x</td>"#, "{raw}");
+        }
+        // Already canonical: left untouched, so no start-tag re-serialization.
+        let canonical = r#"<td align="center">x</td>"#;
+        assert_eq!(sanitize(canonical), canonical);
+        // Idempotent, like every other rewrite in this pass.
+        let once = sanitize(r#"<td align=" CENTER ">x</td>"#);
+        assert_eq!(sanitize(&once), once);
     }
 
     #[test]

@@ -24,10 +24,12 @@
 //! - SVG: `href`/`xlink:href` fragment refs, and `url(#id)` funcIRIs in the
 //!   paint/clip/mask/filter attributes ([`SVG_FUNC_IRI_ATTRS`]).
 //!
-//! Deliberately *not* covered, because the allow-lists make them unreachable:
-//! `style` attributes and `<style>` blocks (no CSS `#id` selectors),
-//! `label[for]`, `usemap`/`<map name>`, `input[list]`, and SVG `begin`/`end`
-//! event refs (no animation elements are allowed). Filter primitives' `in`,
+//! Deliberately *not* covered, because they are unreachable: `style` attributes
+//! and `<style>` blocks (no CSS `#id` selectors), `label[for]`, `usemap`/`<map
+//! name>` and SVG `begin`/`end` event refs (none of those tags or attributes is
+//! allow-listed), and `input[list]`/`input[id]` — `input` *is* allow-listed, but
+//! only as a task-list checkbox that `handle_input` rebuilds with no attributes
+//! at all, so an `input` never reaches this pass carrying an id or an idref. Filter primitives' `in`,
 //! `in2` and `result` are *not* document ids — they name values inside one
 //! filter — so they must keep their original values.
 

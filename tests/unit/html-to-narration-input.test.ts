@@ -173,6 +173,40 @@ describe("htmlToNarrationInput", () => {
         { id: 2, text: "- Step two" },
       ]);
     });
+
+    it("speaks task-list state, which the checkbox alone carries (issue #1439)", () => {
+      // The checkbox contributes no text, so without this a done item and a
+      // not-done item are read aloud identically.
+      const html =
+        '<ul><li><input type="checkbox" checked="" disabled=""> done</li>' +
+        '<li><input type="checkbox" disabled=""> todo</li></ul>';
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toEqual([
+        { id: 1, text: "- Done: done" },
+        { id: 2, text: "- Not done: todo" },
+      ]);
+    });
+
+    it("speaks task-list state for loose lists (checkbox inside the item's <p>)", () => {
+      // cmark-gfm/GitHub shape, which arrives via feed HTML.
+      const html = '<ul><li><p><input type="checkbox" checked="" disabled=""> done</p></li></ul>';
+      const result = htmlToNarrationInput(html);
+
+      // The <p> is also narrated on its own — an <li> wrapping block children is
+      // double-narrated, which predates this (issue #1441). What
+      // matters here is that the item itself carries the state.
+      expect(result.paragraphs[0]).toEqual({ id: 1, text: "- Done: done" });
+    });
+
+    it("leaves a checkbox mid-item alone (not a task list)", () => {
+      // `firstElementChild` would skip the leading text and misread this as a
+      // task item, announcing a state the author never wrote.
+      const html = '<ul><li>see <input type="checkbox" disabled=""> here</li></ul>';
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toEqual([{ id: 1, text: "- see here" }]);
+    });
   });
 
   describe("table handling", () => {

@@ -367,6 +367,19 @@ mod tests {
         assert!(out.contains("<table>"), "{out}");
         assert!(out.contains("<th>a</th>"), "{out}");
         assert!(out.contains(r#"<input type="checkbox" checked="" disabled="" />"#), "{out}");
+        // The reader CSS styles the checkbox via `li > input:first-child` (it has
+        // to replace the bullet), so the checkbox being a *direct, leading* child
+        // of the `<li>` is a contract, not an incidental detail of comrak's
+        // output — a version bump that nests it would silently unstyle every
+        // task list with the assertion above still green.
+        assert!(
+            out.contains(r#"<li><input type="checkbox" checked="" disabled="" /> done</li>"#),
+            "{out}"
+        );
+        // Alignment rows land on the cells, which the sanitizer allow-lists.
+        let aligned = html("| a | b |\n| :-: | --: |\n| 1 | 2 |\n");
+        assert!(aligned.contains(r#"<th align="center">a</th>"#), "{aligned}");
+        assert!(aligned.contains(r#"<th align="right">b</th>"#), "{aligned}");
     }
 
     #[test]

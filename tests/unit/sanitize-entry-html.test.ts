@@ -340,6 +340,40 @@ describe("sanitizeEntryHtml", () => {
       expect(out).not.toContain("data:text/html");
     });
 
+    it("keeps GFM task-list checkboxes so done and not-done differ (issue #1439)", () => {
+      const out =
+        sanitizeEntryHtml(
+          '<ul><li><input type="checkbox" checked="" disabled=""> done</li>' +
+            '<li><input type="checkbox" disabled=""> todo</li></ul>'
+        ) ?? "";
+      expect(out).toContain('<input type="checkbox" checked="" disabled="">');
+      expect(out).toContain('<input type="checkbox" disabled="">');
+    });
+
+    it("rebuilds the checkbox so it carries no form binding or handler", () => {
+      const out =
+        sanitizeEntryHtml(
+          '<input type="checkbox" name="a" value="b" form="f" onclick="alert(1)">'
+        ) ?? "";
+      expect(out).toBe('<input type="checkbox" disabled="">');
+    });
+
+    it("removes every non-checkbox input (entry content has no forms)", () => {
+      const out = sanitizeEntryHtml('<p>a</p><input type="text" value="x"><p>b</p>') ?? "";
+      expect(out).toBe("<p>a</p><p>b</p>");
+    });
+
+    it("keeps Markdown table alignment but only for real alignments", () => {
+      const out =
+        sanitizeEntryHtml(
+          '<table><tr><th align="center">h</th><td align="right">v</td>' +
+            '<td align="url(javascript:alert(1))">w</td></tr></table>'
+        ) ?? "";
+      expect(out).toContain('align="center"');
+      expect(out).toContain('align="right"');
+      expect(out).not.toContain("javascript");
+    });
+
     it("preserves the narration data-para-id attribute", () => {
       const out = sanitizeEntryHtml('<p data-para-id="3">x</p>') ?? "";
       expect(out).toContain('data-para-id="3"');

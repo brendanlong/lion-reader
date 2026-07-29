@@ -19,6 +19,11 @@ export { BLOCK_ELEMENTS };
  */
 const BLOCK_ELEMENTS_SET = new Set<string>(BLOCK_ELEMENTS);
 
+/** `Node.ELEMENT_NODE` etc., which linkedom doesn't expose as globals. */
+const ELEMENT_NODE = 1;
+const TEXT_NODE = 3;
+const COMMENT_NODE = 8;
+
 /**
  * A paragraph in the narration input, ready to be sent to LLM as JSON.
  */
@@ -35,6 +40,40 @@ export interface NarrationInputParagraph {
 export interface HtmlToNarrationInputResult {
   /** Array of paragraphs with IDs and text */
   paragraphs: NarrationInputParagraph[];
+}
+
+/**
+ * The element a node's content starts with, or null when text comes first.
+ * Not `firstElementChild`, which skips over text: `<li>see <input>` must not
+ * count as starting with the `<input>`.
+ */
+function leadingElement(parent: Element): Element | null {
+  for (const node of Array.from(parent.childNodes)) {
+    if (node.nodeType === TEXT_NODE) {
+      if ((node.textContent ?? "").trim() === "") continue;
+      return null;
+    }
+    if (node.nodeType === COMMENT_NODE) continue;
+    return node.nodeType === ELEMENT_NODE ? (node as Element) : null;
+  }
+  return null;
+}
+
+/**
+ * The GFM task-list checkbox a list item leads with, if it has one.
+ *
+ * Renderers put it in one of two places: directly in the `<li>` (a tight list,
+ * what our Markdown renderer emits) or inside the item's first `<p>` (a loose
+ * list, what cmark-gfm/GitHub emit). Walked rather than matched with a `:scope`
+ * selector so it can't reach into a nested list's items.
+ */
+function leadingTaskCheckbox(li: Element): Element | null {
+  const first = leadingElement(li);
+  const candidate = first?.tagName.toLowerCase() === "p" ? leadingElement(first) : first;
+  return candidate?.tagName.toLowerCase() === "input" &&
+    candidate.getAttribute("type")?.toLowerCase() === "checkbox"
+    ? candidate
+    : null;
 }
 
 /**
@@ -75,7 +114,15 @@ function getElementNarrationText(el: Element): string {
 
   // Handle list items
   if (tagName === "li") {
-    return `- ${el.textContent?.trim() || ""}`;
+    const text = el.textContent?.trim() || "";
+    // A task list carries its state in a leading checkbox, which contributes no
+    // text — so read aloud, a done item would be indistinguishable from a
+    // not-done one (the narration half of issue #1439). Speak the state.
+    const checkbox = leadingTaskCheckbox(el);
+    if (checkbox) {
+      return `- ${checkbox.hasAttribute("checked") ? "Done" : "Not done"}: ${text}`;
+    }
+    return `- ${text}`;
   }
 
   // Handle figures
