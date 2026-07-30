@@ -134,28 +134,80 @@ pub(crate) fn tag_name_end(bytes: &[u8], i: usize) -> usize {
     end
 }
 
-/// Scans from just past a tag name to the `>` that ends the tag, honoring
-/// quoted attribute values (which may contain `>`). Returns (index past `>`,
-/// self_closing). An unterminated tag consumes the rest of the input.
+/// Whitespace that separates a tag's parts (the tokenizer's definition).
+pub(crate) fn is_tag_ws(b: u8) -> bool {
+    matches!(b, b' ' | b'\t' | b'\n' | b'\r' | b'\x0c')
+}
+
+/// The tokenizer states a tag passes through after its name. Only what decides
+/// where the tag *ends* is modelled — names and values are skipped, not captured.
+#[derive(Clone, Copy)]
+enum TagScan {
+    BeforeName,
+    Name,
+    AfterName,
+    BeforeValue,
+    Quoted(u8),
+    Unquoted,
+    AfterQuotedValue,
+    SelfClosing,
+}
+
+/// Scans from just past a tag name to the `>` that ends the tag. Returns (index
+/// past `>`, self_closing); an unterminated tag consumes the rest of the input,
+/// matching the tokenizer, which drops such a token at EOF.
+///
+/// The states are load-bearing rather than pedantry: **a quote only opens an
+/// attribute value out of _before-attribute-value_ state**, i.e. right after an
+/// `=`. A quote anywhere else — `</p " a="x><img src=x onerror=alert(1)>">` — is
+/// a parse error that becomes part of the attribute *name*, so treating every
+/// quote as a delimiter desynchronizes: the scan pairs the stray quote with the
+/// real value's opening quote and then ends the tag at a `>` **inside** that
+/// value. That was an XSS bypass while `sanitize.rs` used this to decide which
+/// bytes an end tag occupies (issue #1455), and it mislocates MathJax/SVG ranges
+/// here.
 pub(crate) fn scan_to_tag_end(bytes: &[u8], mut i: usize) -> (usize, bool) {
-    let mut self_closing = false;
+    let mut state = TagScan::BeforeName;
     while i < bytes.len() {
-        match bytes[i] {
-            b'>' => return (i + 1, self_closing),
-            b'"' | b'\'' => {
-                let quote = bytes[i];
-                i = find_byte(bytes, i + 1, quote).map(|p| p + 1).unwrap_or(bytes.len());
-                self_closing = false;
-            }
-            b'/' => {
-                self_closing = true;
-                i += 1;
-            }
-            _ => {
-                self_closing = false;
-                i += 1;
-            }
-        }
+        let b = bytes[i];
+        i += 1;
+        state = match state {
+            // `/` and `>` are both reconsumed in after-attribute-name, so these
+            // two states differ only in what `=` means: a new attribute named
+            // `=` before a name, the start of a value after one.
+            TagScan::BeforeName | TagScan::Name | TagScan::AfterName => match b {
+                b'>' => return (i, false),
+                b'/' => TagScan::SelfClosing,
+                b'=' if matches!(state, TagScan::Name | TagScan::AfterName) => TagScan::BeforeValue,
+                _ if is_tag_ws(b) => match state {
+                    TagScan::BeforeName => TagScan::BeforeName,
+                    _ => TagScan::AfterName,
+                },
+                _ => TagScan::Name,
+            },
+            TagScan::BeforeValue => match b {
+                // Parse error (missing attribute value), but it still ends the tag.
+                b'>' => return (i, false),
+                b'"' | b'\'' => TagScan::Quoted(b),
+                _ if is_tag_ws(b) => TagScan::BeforeValue,
+                _ => TagScan::Unquoted,
+            },
+            TagScan::Quoted(quote) if b == quote => TagScan::AfterQuotedValue,
+            TagScan::Quoted(quote) => TagScan::Quoted(quote),
+            TagScan::Unquoted => match b {
+                b'>' => return (i, false),
+                _ if is_tag_ws(b) => TagScan::BeforeName,
+                _ => TagScan::Unquoted,
+            },
+            // Both of these reconsume anything unexpected in before-attribute-name,
+            // which starts an attribute name on it.
+            TagScan::AfterQuotedValue | TagScan::SelfClosing => match b {
+                b'>' => return (i, matches!(state, TagScan::SelfClosing)),
+                b'/' => TagScan::SelfClosing,
+                _ if is_tag_ws(b) => TagScan::BeforeName,
+                _ => TagScan::Name,
+            },
+        };
     }
     (bytes.len(), false)
 }
@@ -386,6 +438,45 @@ mod tests {
         let r = find_top_level_ranges(html, "svg", &[], false, Recovery::ToEof);
         assert_eq!(r.len(), 1);
         assert_eq!(&html[r[0].start..r[0].end], "<svg><style>a</svg>");
+    }
+
+    #[test]
+    fn a_quote_only_delimits_a_value_after_an_equals() {
+        // A quote in attribute-*name* position is a parse error that becomes part
+        // of the name, so it must not be paired with the next quote — which is
+        // the real value's opening one. Getting this wrong ends the tag inside
+        // that value and exposes its contents as markup (issue #1455).
+        for (html, expected) in [
+            // The stray quote before `a=` must not swallow `" a="`.
+            (r#"<x " a="y>z">t"#, r#"<x " a="y>z">"#),
+            // Unbalanced quotes in name position never open a value at all.
+            (r#"<x it's>t"#, "<x it's>"),
+            (r#"<x a=y"z>t"#, r#"<x a=y"z>"#),
+            // A second quote right after a quoted value starts a new name.
+            (r#"<x a="1" "b>t"#, r#"<x a="1" "b>"#),
+            // Values that really are quoted still hide a `>`.
+            (r#"<x a="p>q">t"#, r#"<x a="p>q">"#),
+            (r#"<x a = 'p>q'>t"#, r#"<x a = 'p>q'>"#),
+        ] {
+            let (end, _) = scan_to_tag_end(html.as_bytes(), tag_name_end(html.as_bytes(), 1));
+            assert_eq!(&html[..end], expected, "{html}");
+        }
+    }
+
+    #[test]
+    fn self_closing_only_when_the_slash_ends_the_tag() {
+        for (html, self_closing) in [
+            ("<x/>", true),
+            ("<x a=1 />", true),
+            ("<x/ >", false),
+            ("<x>", false),
+            // A `/` inside an unquoted value belongs to the value.
+            ("<x a=b/c>", false),
+            ("<x a='b/'>", false),
+        ] {
+            let (_, got) = scan_to_tag_end(html.as_bytes(), tag_name_end(html.as_bytes(), 1));
+            assert_eq!(got, self_closing, "{html}");
+        }
     }
 
     #[test]
