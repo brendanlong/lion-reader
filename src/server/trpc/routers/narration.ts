@@ -22,10 +22,11 @@ import {
 } from "@/server/services/narration";
 import { listAllModels } from "@/server/services/ai-providers";
 import { AI_PROVIDERS, formatModelRef } from "@/lib/ai/model-ref";
-import { NARRATION_PROVIDERS } from "@/lib/narration/constants";
+import { NARRATION_FORMAT_VERSION, NARRATION_PROVIDERS } from "@/lib/narration/constants";
 import { buildAlignedNarration } from "@/lib/narration/paragraph-map";
 import { selectDisplayedContent } from "@/lib/narration/select-content";
 import { getUserApiKeys } from "@/server/auth/session";
+import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
 import { logger } from "@/lib/logger";
 import {
   trackNarrationGenerated,
@@ -148,17 +149,29 @@ export const narrationRouter = createTRPCRouter({
       }
 
       const entry = entryResult[0];
-      // Narrate exactly the variant the user is viewing (same selector the
-      // renderer uses), so the paragraph map's element indices line up with the
-      // displayed DOM.
+      // Narrate exactly what the user is looking at: the variant the renderer
+      // picks (same selector), sanitized the way the read path sanitizes it.
+      // Sanitization is read-path-only, so the raw columns hold markup the page
+      // never shows — a `<style>` block narration would otherwise read aloud,
+      // and a lazy-loading `<noscript><img>` whose element the client never
+      // numbers, which would shift every paragraph after it onto the wrong one.
       const sourceContent =
-        selectDisplayedContent(entry, {
-          showFullContent: input.showFullContent,
-          showOriginal: input.showOriginal,
-        }) ?? "";
-      // Key the narration cache by the exact content being narrated, so
-      // different variants of the same entry don't collide.
-      const contentHash = createHash("sha256").update(sourceContent, "utf8").digest("hex");
+        (await sanitizeEntryHtmlAsync(
+          selectDisplayedContent(entry, {
+            showFullContent: input.showFullContent,
+            showOriginal: input.showOriginal,
+          })
+        )) ?? "";
+      // Key the cache by the exact content being narrated (so variants of one
+      // entry don't collide) and by the narration format: a stored paragraph
+      // map's element numbers only mean anything against the numbering that
+      // produced them, so a format bump has to miss rather than mis-highlight.
+      // In the key rather than a column so the release that wrote a row and the
+      // release that reads it can never disagree — a rollback simply looks
+      // somewhere else instead of overwriting a row it will misread later.
+      const contentHash = createHash("sha256")
+        .update(`${NARRATION_FORMAT_VERSION}\n${sourceContent}`, "utf8")
+        .digest("hex");
 
       // Handle empty content
       if (!sourceContent.trim()) {
@@ -196,25 +209,17 @@ export const narrationRouter = createTRPCRouter({
 
       const narrationRecord = narration[0];
 
-      // Return cached narration if available
-      if (narrationRecord.contentNarration) {
+      // Return cached narration if available — with the map persisted at
+      // generation time, which is the only one guaranteed to align with this
+      // exact text. A row with no stored map predates that column and its
+      // numbering is a format older than the cache key, so it regenerates.
+      if (narrationRecord.contentNarration && narrationRecord.paragraphMap) {
         trackNarrationGenerated(true, "llm");
-        // Prefer the paragraph map persisted at generation time — it is the only
-        // map guaranteed to align with the cached narration text. Legacy rows
-        // (generated before the paragraph_map column existed) have no stored
-        // map, so re-derive a best-effort one from the source content. This is
-        // aligned to the player's paragraph split (unlike the old positional
-        // reconstruction) and self-heals as those rows are regenerated.
-        const paragraphMap =
-          narrationRecord.paragraphMap ??
-          buildAlignedNarration(
-            htmlToNarrationInput(sourceContent).paragraphs.map((p) => ({ o: p.id, text: p.text }))
-          ).paragraphMap;
         return {
           narration: narrationRecord.contentNarration,
           cached: true,
           source: "llm" as const,
-          paragraphMap,
+          paragraphMap: narrationRecord.paragraphMap,
         };
       }
 
@@ -231,7 +236,7 @@ export const narrationRouter = createTRPCRouter({
         // Generate a fallback (plain-text) narration with a paragraph map aligned
         // to the player's paragraph split.
         const { narrationText: fallbackText, paragraphMap } = buildAlignedNarration(
-          htmlToNarrationInput(sourceContent).paragraphs.map((p) => ({ o: p.id, text: p.text }))
+          htmlToNarrationInput(sourceContent).paragraphs.map((p) => ({ o: p.o, text: p.text }))
         );
         trackNarrationGenerated(false, "fallback");
         return {
@@ -312,7 +317,7 @@ export const narrationRouter = createTRPCRouter({
 
         // Fall back to plain text with a paragraph map aligned to the split
         const { narrationText: fallbackText, paragraphMap } = buildAlignedNarration(
-          htmlToNarrationInput(sourceContent).paragraphs.map((p) => ({ o: p.id, text: p.text }))
+          htmlToNarrationInput(sourceContent).paragraphs.map((p) => ({ o: p.o, text: p.text }))
         );
         trackNarrationGenerated(false, "fallback");
         return {

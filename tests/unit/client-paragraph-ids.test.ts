@@ -10,10 +10,7 @@ import {
   processHtmlForHighlighting,
   createMemoizedAddParagraphIds,
   htmlToClientNarration,
-  BLOCK_ELEMENTS,
 } from "../../src/lib/narration/client-paragraph-ids";
-// html-to-narration-input.ts uses the same BLOCK_ELEMENTS for server-side processing
-import { BLOCK_ELEMENTS as SERVER_BLOCK_ELEMENTS } from "../../src/lib/narration/html-to-narration-input";
 
 describe("addParagraphIdsToHtml", () => {
   describe("basic paragraphs", () => {
@@ -94,7 +91,9 @@ describe("addParagraphIdsToHtml", () => {
       `;
       const result = addParagraphIdsToHtml(html);
 
-      expect(result.paragraphCount).toBe(4);
+      // Marking is structural: every block and image gets an id, including the
+      // ones a figure or a table speaks for (they simply never get highlighted).
+      expect(result.paragraphCount).toBe(6);
       expect(result.html).toContain("<figure data-para-id");
       expect(result.html).toContain("<table data-para-id");
     });
@@ -245,7 +244,9 @@ describe("addParagraphIdsToHtml", () => {
       `;
       const result = addParagraphIdsToHtml(html);
 
-      expect(result.paragraphCount).toBe(1);
+      // div, article, section, p — a wrapper can hold loose text of its own, so
+      // it is a highlight target too.
+      expect(result.paragraphCount).toBe(4);
       expect(result.html).toContain('data-para-id="para-0"');
     });
 
@@ -268,7 +269,8 @@ describe("addParagraphIdsToHtml", () => {
       `;
       const result = addParagraphIdsToHtml(html);
 
-      expect(result.paragraphCount).toBe(3);
+      // p, figure, img, p
+      expect(result.paragraphCount).toBe(4);
     });
 
     it("handles HTML entities", () => {
@@ -295,22 +297,33 @@ describe("addParagraphIdsToHtml", () => {
       expect(result.paragraphCount).toBe(3);
     });
 
-    it("does not mark non-block elements", () => {
+    it("keeps the whole article when a stray end tag closes a wrapper", () => {
+      // The sanitizer is a streaming rewriter, not a tree builder, so it passes
+      // an unmatched `</div>` straight through. This HTML is rendered from what
+      // we return, so losing the rest of it would empty the article on screen.
+      const html = "<p>one</p></div><p>two</p>";
+      const result = addParagraphIdsToHtml(html);
+
+      expect(result.paragraphCount).toBe(2);
+      expect(result.html).toContain("one");
+      expect(result.html).toContain("two");
+    });
+
+    it("marks blocks and images, but not inline elements", () => {
       const html = `
         <p>Paragraph</p>
-        <div>Not a block element for narration</div>
-        <span>Also not marked</span>
-        <section>Section not marked</section>
-        <article>Article not marked</article>
+        <div>Text an editor put in a div instead of a p</div>
+        <span>Inline, part of no paragraph</span>
+        <section>Section text</section>
       `;
       const result = addParagraphIdsToHtml(html);
 
-      // Only p should be marked
-      expect(result.paragraphCount).toBe(1);
-      expect(result.html).not.toContain("<div data-para-id");
+      // p, div, section. The span is phrasing content: it joins the run of text
+      // around it, which the block enclosing that run highlights.
+      expect(result.paragraphCount).toBe(3);
+      expect(result.html).toContain("<div data-para-id");
+      expect(result.html).toContain("<section data-para-id");
       expect(result.html).not.toContain("<span data-para-id");
-      expect(result.html).not.toContain("<section data-para-id");
-      expect(result.html).not.toContain("<article data-para-id");
     });
   });
 
@@ -372,12 +385,8 @@ console.log(result);</code></pre>
   });
 
   describe("consistency with server-side processing", () => {
-    it("uses the same block elements as server-side", () => {
-      // This test ensures client-side processing matches server-side
-      // by importing and comparing against the actual server definition
-      expect(BLOCK_ELEMENTS).toEqual(SERVER_BLOCK_ELEMENTS);
-    });
-
+    // The two sides number the same elements because they call the same
+    // `narrationTargets`; that invariant is held in narration-walk.test.ts.
     it("produces same ID format as server-side (para-N)", () => {
       const html = "<p>Test</p><h2>Header</h2><p>More</p>";
       const result = addParagraphIdsToHtml(html);
@@ -682,6 +691,84 @@ describe("htmlToClientNarration", () => {
     });
   });
 
+  describe("wrapper handling", () => {
+    it("narrates a wrapper that holds only text (issue #1451)", () => {
+      // What an editor that doesn't emit `<p>` leaves in a feed.
+      const html = "<p>Before</p><div>Some text</div><p>After</p>";
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("Before\n\nSome text\n\nAfter");
+      expect(result.paragraphMap).toEqual([
+        { n: 0, o: 0 },
+        { n: 1, o: 1 },
+        { n: 2, o: 2 },
+      ]);
+      expect(result.processedHtml).toContain('<div data-para-id="para-1">');
+    });
+
+    it("does not narrate a structural wrapper's blocks twice", () => {
+      const html = '<div class="post-body"><p>First</p><section><p>Second</p></section></div>';
+      const result = htmlToClientNarration(html);
+
+      // The wrappers hold no text of their own, so they narrate nothing — the
+      // paragraphs highlight themselves (the div is para-0, section para-2).
+      expect(result.narrationText).toBe("First\n\nSecond");
+      expect(result.paragraphMap).toEqual([
+        { n: 0, o: 1 },
+        { n: 1, o: 3 },
+      ]);
+    });
+
+    it("leaves a wrapper around a standalone image to the image", () => {
+      // How most editors emit a standalone image; the wrapper saying the alt
+      // text too would narrate it twice.
+      const html = '<div><img alt="A cat"></div>';
+      const result = htmlToClientNarration(html);
+
+      // The image is alone in its run, so it is the highlight target (para-1)
+      // rather than the wrapper around it (para-0).
+      expect(result.narrationText).toBe("Image: A cat");
+      expect(result.paragraphMap).toEqual([{ n: 0, o: 1 }]);
+      expect(result.processedHtml).toMatch(/<img[^>]*data-para-id="para-1"/);
+    });
+
+    it("narrates a wrapper that holds text alongside an image", () => {
+      const html = '<div>Credit: <img alt="A cat"></div>';
+      const result = htmlToClientNarration(html);
+
+      // One paragraph, on the wrapper: the image is read within its run rather
+      // than as a paragraph of its own, so nothing is said twice.
+      expect(result.narrationText).toBe("Credit: Image: A cat");
+      expect(result.paragraphMap).toEqual([{ n: 0, o: 0 }]);
+    });
+  });
+
+  describe("definition lists", () => {
+    it("narrates terms and definitions (issue #1451)", () => {
+      const html = "<dl><dt>Term</dt><dd>Definition</dd></dl>";
+      const result = htmlToClientNarration(html);
+
+      // dl is para-0 and says nothing of its own, like ul/ol.
+      expect(result.narrationText).toBe("Term\n\nDefinition");
+      expect(result.paragraphMap).toEqual([
+        { n: 0, o: 1 },
+        { n: 1, o: 2 },
+      ]);
+    });
+
+    it("does not repeat a definition's own paragraphs", () => {
+      const html = "<dl><dt>Term</dt><dd><p>First</p><p>Second</p></dd></dl>";
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("Term\n\nFirst\n\nSecond");
+      expect(result.paragraphMap).toEqual([
+        { n: 0, o: 1 },
+        { n: 1, o: 3 },
+        { n: 2, o: 4 },
+      ]);
+    });
+  });
+
   describe("heading handling", () => {
     it("includes headings in narration", () => {
       const html = "<h1>Main Title</h1><p>Content</p><h2>Section</h2>";
@@ -847,6 +934,19 @@ describe("htmlToClientNarration", () => {
       const result = htmlToClientNarration(html);
 
       expect(result.narrationText).toBe("Image: A cat. My cat");
+    });
+
+    it("narrates a figure whose image sits in a wrapper", () => {
+      // The shape WordPress-style editors emit: a `<div>` holding nothing but
+      // the image, which is the image's own paragraph rather than a block that
+      // takes the image away from the figure.
+      const html =
+        '<figure><div class="image-block"><img alt="A cat"></div>' +
+        "<figcaption>My cat</figcaption></figure>";
+      const result = htmlToClientNarration(html);
+
+      expect(result.narrationText).toBe("Image: A cat. My cat");
+      expect(result.paragraphMap).toEqual([{ n: 0, o: 0 }]);
     });
   });
 

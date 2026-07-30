@@ -1,87 +1,111 @@
 /**
- * Test to ensure server-side and client-side paragraph ID assignment is consistent.
+ * Server and client must number elements identically.
  *
- * This is critical for narration highlighting to work correctly - the paragraph IDs
- * assigned on the server (for narration generation) must match the IDs assigned on
- * the client (for highlighting).
+ * Narration is derived server-side (the LLM path) but highlighted client-side:
+ * the server hands back a paragraph map of element numbers and the client marks
+ * elements with `data-para-id="para-{n}"`. If the two number differently, every
+ * paragraph highlights the wrong thing.
+ *
+ * Both sides call `narrationTargets`, so the risk left isn't the numbering rule
+ * — it's that they parse the same HTML into different trees (linkedom
+ * server-side, `DOMParser` in the browser). That is what these tests pin down;
+ * the coverage invariants live in narration-walk.test.ts.
  *
  * @vitest-environment jsdom
  */
 
 import { describe, it, expect } from "vitest";
+import { parseHTML } from "linkedom";
+import { narrationTargets } from "../../src/lib/narration/block-elements";
 import { htmlToNarrationInput } from "../../src/lib/narration/html-to-narration-input";
 import { addParagraphIdsToHtml } from "../../src/lib/narration/client-paragraph-ids";
 
+/** The elements the server numbers, as tag names in numbering order. */
+function serverTargets(html: string): string[] {
+  const { document } = parseHTML(`<!DOCTYPE html><html><body>${html}</body></html>`);
+  return narrationTargets(document.body).map((el) => el.tagName.toLowerCase());
+}
+
+/** The elements the client marks, as tag names in the order it marked them. */
+function clientTargets(html: string): string[] {
+  const marked = addParagraphIdsToHtml(html).html;
+  return [...marked.matchAll(/<(\w+)(?=[^>]*\sdata-para-id)/g)].map((match) =>
+    match[1].toLowerCase()
+  );
+}
+
+/** The tag each narrated paragraph highlights, per the server's numbering. */
+function highlightedTags(html: string): string[] {
+  const targets = serverTargets(html);
+  return htmlToNarrationInput(html).paragraphs.map((paragraph) =>
+    paragraph.o < 0 ? "(none)" : targets[paragraph.o]
+  );
+}
+
+const SHAPES = [
+  '<p>1</p><img alt="2"><p>3</p>',
+  '<h2>Title</h2><p>First</p><img alt="pic"><p>Second</p>',
+  '<p>Text <img alt="inline"> more text</p><p>Next</p>',
+  '<p>Before</p><figure><img alt="fig"><figcaption>Cap</figcaption></figure><p>After</p>',
+  "<dl><dt>Term</dt><dd>Definition</dd></dl>",
+  "<div>Text an editor put in a div</div>",
+  '<div class="wrapper"><p>Wrapped</p></div>',
+  '<div><img alt="A cat"></div>',
+  "<ul><li>One</li><li><p>Two</p></li></ul>",
+  "<blockquote><p>Quoted</p><footer>Author</footer></blockquote>",
+  "<table><caption>C</caption><tr><th>H</th><td>Cell</td></tr></table>",
+  "<pre><code>const x = 1;</code></pre>",
+  "<details><summary>More</summary><p>Body</p></details>",
+  "<section><header>Head</header><p>Body</p><footer>Foot</footer></section>",
+  "<p>Unclosed<div>next</div>",
+  "<dt>Orphan term</dt><dd>Orphan definition</dd>",
+  "<div>a<p>b</p>c</div>",
+];
+
 describe("paragraph ID consistency between server and client", () => {
-  it("should produce the same paragraph count and order for standalone images", () => {
-    const html = '<p>1</p><img alt="2"><p>3</p>';
-
-    // Server-side processing
-    const serverResult = htmlToNarrationInput(html);
-
-    // Client-side processing
-    const clientResult = addParagraphIdsToHtml(html);
-
-    // Should produce same paragraph count
-    expect(serverResult.paragraphs.length).toBe(clientResult.paragraphCount);
-    expect(serverResult.paragraphs.length).toBe(3); // p, img, p
-
-    // Check server-side order
-    expect(serverResult.paragraphs.map((p) => p.id)).toEqual([0, 1, 2]);
-
-    // Verify client-side HTML has matching IDs
-    expect(clientResult.html).toContain('data-para-id="para-0"');
-    expect(clientResult.html).toContain('data-para-id="para-1"');
-    expect(clientResult.html).toContain('data-para-id="para-2"');
+  it.each(SHAPES)("numbers the same elements: %s", (html) => {
+    expect(clientTargets(html)).toEqual(serverTargets(html));
   });
 
-  it("should handle mix of paragraphs, images, and headings", () => {
-    const html = '<h2>Title</h2><p>First</p><img alt="pic"><p>Second</p>';
+  it("points each paragraph at the element that holds it", () => {
+    const html =
+      "<h2>Title</h2>" +
+      "<div>Loose text<p>Paragraph</p></div>" +
+      '<figure><img alt="A cat"><figcaption>My cat</figcaption></figure>' +
+      "<dl><dt>Term</dt><dd>Definition</dd></dl>" +
+      "<ul><li><p>Item</p></li></ul>" +
+      '<div><img alt="Standalone"></div>';
 
-    const serverResult = htmlToNarrationInput(html);
-    const clientResult = addParagraphIdsToHtml(html);
-
-    expect(serverResult.paragraphs.length).toBe(clientResult.paragraphCount);
-    expect(serverResult.paragraphs.length).toBe(4); // h2, p, img, p
+    expect(highlightedTags(html)).toEqual([
+      "h2", // the heading
+      "div", // the wrapper's own loose text
+      "p", // its paragraph
+      "figure", // the image and its caption, together
+      "dt",
+      "dd",
+      "p", // the loose list item's paragraph carries the bullet
+      "img", // an image alone in its run highlights itself
+    ]);
   });
 
-  it("should exclude images inside paragraphs", () => {
-    const html = '<p>Text <img alt="inline"> more text</p><p>Next</p>';
-
-    const serverResult = htmlToNarrationInput(html);
-    const clientResult = addParagraphIdsToHtml(html);
-
-    // Should only have 2 paragraphs (inline image shouldn't get its own ID)
-    expect(serverResult.paragraphs.length).toBe(clientResult.paragraphCount);
-    expect(serverResult.paragraphs.length).toBe(2); // p, p
+  it("marks every element a paragraph can point at", () => {
+    for (const html of SHAPES) {
+      const marked = clientTargets(html).length;
+      for (const paragraph of htmlToNarrationInput(html).paragraphs) {
+        expect(paragraph.o, `para-${paragraph.o} of ${marked} marked in ${html}`).toBeLessThan(
+          marked
+        );
+      }
+    }
   });
 
-  it("should exclude images inside figures", () => {
-    const html = '<p>Before</p><figure><img alt="fig"></figure><p>After</p>';
+  // Content that isn't allowed inside a table (text, a stray <div>) is
+  // foster-parented out of it by a browser's parser but left where it was
+  // written by linkedom, so the two number the elements around it differently.
+  // Pre-existing and not narration's doing — see issue #1453.
+  it.skip("numbers the same elements for foster-parented content", () => {
+    const html = "<p>x</p><table><div>h</div><tr><td>c</td></tr></table><p>y</p>";
 
-    const serverResult = htmlToNarrationInput(html);
-    const clientResult = addParagraphIdsToHtml(html);
-
-    // Should have 3 elements: p, figure, p (not the img inside figure)
-    expect(serverResult.paragraphs.length).toBe(clientResult.paragraphCount);
-    expect(serverResult.paragraphs.length).toBe(3); // p, figure, p
-  });
-
-  it("should handle complex article with multiple standalone images", () => {
-    const html = `
-      <h1>Article Title</h1>
-      <p>Introduction paragraph.</p>
-      <img alt="First image">
-      <p>Middle paragraph.</p>
-      <img alt="Second image">
-      <p>Conclusion paragraph.</p>
-    `;
-
-    const serverResult = htmlToNarrationInput(html);
-    const clientResult = addParagraphIdsToHtml(html);
-
-    // h1, p, img, p, img, p = 6 elements
-    expect(serverResult.paragraphs.length).toBe(clientResult.paragraphCount);
-    expect(serverResult.paragraphs.length).toBe(6);
+    expect(clientTargets(html)).toEqual(serverTargets(html));
   });
 });

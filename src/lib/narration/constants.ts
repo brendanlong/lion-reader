@@ -5,6 +5,19 @@
  */
 
 /**
+ * The narration format: bump this whenever the walk in `./runs` changes which
+ * elements it numbers or what it says.
+ *
+ * A cached narration is stored with the paragraph map built at generation time,
+ * and those element numbers only mean anything against the numbering the format
+ * produced. Serving an older row against today's `data-para-id`s would
+ * highlight the wrong paragraphs, so this is part of the `narration_content`
+ * cache key: a bump misses the cache instead, and two releases that disagree
+ * about the numbering never share a row.
+ */
+export const NARRATION_FORMAT_VERSION = 1;
+
+/**
  * Providers selectable for narration preprocessing. Narration preprocessing
  * only supports the OpenAI-compatible providers (Groq, Cerebras) — it relies
  * on JSON-object response formatting. This is also the preference order for the

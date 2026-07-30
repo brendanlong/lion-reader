@@ -134,7 +134,7 @@ function buildFallbackNarration(
   inputParagraphs: NarrationInputParagraph[]
 ): GenerateNarrationResult {
   const { narrationText, paragraphMap } = buildAlignedNarration(
-    inputParagraphs.map((p) => ({ o: p.id, text: p.text }))
+    inputParagraphs.map((p) => ({ o: p.o, text: p.text }))
   );
   return {
     text: narrationText,
@@ -263,7 +263,7 @@ export async function generateNarration(
     const elements = inputParagraphs.map((inputPara) => {
       const llmText = llmTextMap.get(inputPara.id);
       return {
-        o: inputPara.id,
+        o: inputPara.o,
         text: llmText !== undefined ? llmText : inputPara.text,
       };
     });
