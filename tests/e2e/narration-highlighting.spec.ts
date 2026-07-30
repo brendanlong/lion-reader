@@ -20,7 +20,12 @@ import {
 import * as schema from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 
-/** The shapes at issue: a bare wrapper, a definition list, a wrapped image. */
+/**
+ * The shapes at issue: a bare wrapper, a definition list, a wrapped image, and
+ * a `<div>` the browser foster-parents out of a table (issue #1453) — the one
+ * shape where the numbering depends on the two sides building the same tree,
+ * which only a real browser can hold the server to.
+ */
 const CONTENT = [
   "<h2>Narration shapes</h2>",
   "<div>An editor emitted this paragraph as a div.</div>",
@@ -29,6 +34,7 @@ const CONTENT = [
   '<figure><div class="wp-block-image"><img src="/icon.png" alt="A cat"></div>',
   "<figcaption>My cat</figcaption></figure>",
   "<div>Loose text<p>and a paragraph beside it.</p></div>",
+  "<table><div>Hoisted out of the table.</div><tr><td>A cell.</td></tr></table>",
 ].join("");
 
 test.afterAll(async () => {
@@ -95,8 +101,10 @@ test("narrates and highlights the shapes that used to be skipped", async ({ page
   );
 
   // The shapes this fixes: the div speaks for itself, the definition list's
-  // terms speak, the figure speaks its wrapped image with its caption, and the
-  // wrapper's loose text speaks without swallowing the paragraph beside it.
+  // terms speak, the figure speaks its wrapped image with its caption, the
+  // wrapper's loose text speaks without swallowing the paragraph beside it, and
+  // the div the browser hoisted out of the table is numbered where it landed —
+  // before the table, not after it.
   expect(paragraphs).toEqual([
     "Narration shapes",
     "An editor emitted this paragraph as a div.",
@@ -107,6 +115,20 @@ test("narrates and highlights the shapes that used to be skipped", async ({ page
     "Image: A cat. My cat",
     "Loose text",
     "and a paragraph beside it.",
+    "Hoisted out of the table.",
+    "Table: A cell. End table.",
   ]);
-  expect(highlighted).toEqual(["h2", "div", "dt", "dd", "summary", "p", "figure", "div", "p"]);
+  expect(highlighted).toEqual([
+    "h2",
+    "div",
+    "dt",
+    "dd",
+    "summary",
+    "p",
+    "figure",
+    "div",
+    "p",
+    "div",
+    "table",
+  ]);
 });

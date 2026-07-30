@@ -9,9 +9,9 @@
  *    property the run partition exists to guarantee (see the module docs on
  *    `runs.ts` for why the previous design couldn't), checked here rather than
  *    one markup shape at a time.
- * 2. **Numbering agreement**: the server (linkedom) and the client (DOMParser)
- *    must number the same elements, or a narration paragraph highlights the
- *    wrong one.
+ * 2. **Numbering agreement**: the server (parse5 + linkedom) and the client
+ *    (DOMParser) must number the same elements, or a narration paragraph
+ *    highlights the wrong one.
  *
  * @vitest-environment jsdom
  */

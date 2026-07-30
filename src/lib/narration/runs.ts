@@ -75,8 +75,8 @@ export interface NarrationRun {
  *
  * A marker rather than a newline because source formatting must not break a
  * paragraph — a feed that wraps its `<p>` text at 72 columns means nothing by
- * it. A document can contain a raw NUL of its own (linkedom keeps one where a
- * browser drops it), so `appendWords` strips them rather than trusting that.
+ * it. A parser is meant to drop a raw NUL, but `appendWords` strips them anyway
+ * rather than let a stray one fake a paragraph break.
  */
 const BREAK = "\u0000";
 
@@ -152,8 +152,7 @@ function collectRuns(root: Element, ctx: WalkContext, depth: number): NarrationR
   };
 
   const appendWords = (value: string) => {
-    // A raw NUL would fake a `<br><br>`, and the two parsers disagree about it
-    // (linkedom keeps it where a browser drops it), so it never reaches a run.
+    // A raw NUL would fake a `<br><br>`, so it never reaches a run.
     const words = value.includes(BREAK) ? value.replaceAll(BREAK, "") : value;
     text += words;
     if (words.trim()) spokeWords = true;

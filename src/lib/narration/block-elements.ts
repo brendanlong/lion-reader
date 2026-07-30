@@ -115,9 +115,8 @@ function isTarget(tagName: string): boolean {
  * given run *picks* does depend on what spoke; only the numbering is fixed.)
  * Elements that never own a run simply keep an id nothing highlights.
  *
- * The one thing it can't paper over is the two sides parsing the same HTML into
- * *different* trees — linkedom isn't a spec tree builder, so table content a
- * browser foster-parents out lands elsewhere (issue #1453).
+ * It can only number what it is given, so the two sides must also parse the
+ * same HTML into the same *tree*; that is `./parse-html`'s job (issue #1453).
  *
  * Changing what this numbers — or what `./runs` says — invalidates every cached
  * paragraph map, so it comes with a `NARRATION_FORMAT_VERSION` bump
