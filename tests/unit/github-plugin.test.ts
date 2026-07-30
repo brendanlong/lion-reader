@@ -12,6 +12,7 @@ import {
   isHtmlFile,
   processFileContent,
   buildGistHtml,
+  shouldRetryUnauthenticated,
 } from "../../src/server/plugins/github";
 import type { GistFile, GistResponse } from "../../src/server/plugins/github";
 
@@ -846,5 +847,27 @@ describe("buildGistHtml", () => {
       )
     );
     expect(html).toContain(`src="${rawBase}/${"a".repeat(40)}/chart.png"`);
+  });
+});
+
+describe("shouldRetryUnauthenticated (#1460)", () => {
+  it("retries a rejected token, since everything we read is public", () => {
+    expect(shouldRetryUnauthenticated(401, true)).toBe(true);
+  });
+
+  it("has nothing to retry when no token was sent", () => {
+    expect(shouldRetryUnauthenticated(401, false)).toBe(false);
+  });
+
+  // The unauthenticated limit is the lower of the two, so a retry would spend the
+  // shared per-IP budget only to fail again.
+  it("does not retry a rate limit", () => {
+    expect(shouldRetryUnauthenticated(403, true)).toBe(false);
+    expect(shouldRetryUnauthenticated(429, true)).toBe(false);
+  });
+
+  it("does not retry a 404 or a server error", () => {
+    expect(shouldRetryUnauthenticated(404, true)).toBe(false);
+    expect(shouldRetryUnauthenticated(500, true)).toBe(false);
   });
 });

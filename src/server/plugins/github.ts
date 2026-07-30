@@ -182,14 +182,14 @@ export function normalizeFilenameForFragment(filename: string): string {
 /**
  * Build headers for GitHub API requests.
  */
-function getApiHeaders(): HeadersInit {
+function getApiHeaders(authenticated = true): HeadersInit {
   const headers: HeadersInit = {
     Accept: "application/vnd.github+json",
     "User-Agent": USER_AGENT,
     "X-GitHub-Api-Version": "2022-11-28",
   };
 
-  if (githubConfig.apiToken) {
+  if (authenticated && githubConfig.apiToken) {
     headers.Authorization = `Bearer ${githubConfig.apiToken}`;
   }
 
@@ -197,21 +197,48 @@ function getApiHeaders(): HeadersInit {
 }
 
 /**
- * Log a GitHub API response we can't use, at the level its cause deserves.
+ * Whether a rejected response is worth retrying without our credentials.
  *
- * A 401 means *our own* credentials are bad, which is an operator problem rather
- * than a content one, and a silent one: the caller returns null, and a null makes
- * the saved-article path fall back to scraping GitHub's HTML page, so every gist
- * and repo save keeps "working" while quietly producing page chrome until the
- * token is rotated (#1460). Hence `error` — it reaches Sentry.
+ * Only a 401 — GitHub rejecting the token itself. A 403/429 is a rate limit, and
+ * the unauthenticated limit is the *lower* of the two, so retrying there would
+ * burn the shared per-IP budget to fail again.
+ */
+export function shouldRetryUnauthenticated(status: number, hasToken: boolean): boolean {
+  return status === 401 && hasToken;
+}
+
+/**
+ * GET a GitHub API URL, retrying once without credentials if GitHub rejects them.
+ *
+ * Everything we read here is public, so the token only buys rate limit (5000/hr
+ * vs 60/hr per IP) — an expired one must not leave us worse off than no token at
+ * all. Untreated, a 401 makes the caller return null, and the saved-article path
+ * turns that null into a scrape of GitHub's HTML page: an article body of page
+ * chrome that reads as a bug in the reader (#1460). `fetchRawContent` already
+ * reads the raw host unauthenticated, which is the only reason `blob` URLs kept
+ * working through a bad token while gists and repo roots silently degraded.
+ */
+async function fetchGitHubApi(url: string): Promise<Response> {
+  const response = await fetchWithSsrfProtection(url, { headers: getApiHeaders() });
+
+  if (!shouldRetryUnauthenticated(response.status, Boolean(githubConfig.apiToken))) {
+    return response;
+  }
+
+  // Only an operator can fix this, so it's logged every attempt, to reach Sentry.
+  logger.error("GitHub API rejected our credentials; check GITHUB_API_TOKEN", { url });
+  // We never read a rejection's body, so let go of the socket before retrying.
+  await response.body?.cancel();
+
+  return fetchWithSsrfProtection(url, { headers: getApiHeaders(false) });
+}
+
+/**
+ * Log a GitHub API response we can't use, at the level its cause deserves. A 401
+ * is logged by `fetchGitHubApi`, which is where the retry it triggers lives.
  */
 function logApiFailure(status: number, context: Record<string, string | undefined>): void {
-  if (status === 401) {
-    logger.error("GitHub API rejected our credentials; check GITHUB_API_TOKEN", {
-      status,
-      ...context,
-    });
-  } else if (status === 403 || status === 429) {
+  if (status === 403 || status === 429) {
     logger.warn("GitHub API rate limited", { status, ...context });
   } else {
     logger.warn("GitHub API request failed", { status, ...context });
@@ -222,9 +249,7 @@ function logApiFailure(status: number, context: Record<string, string | undefine
  * Fetch a gist by ID.
  */
 async function fetchGist(gistId: string): Promise<GistResponse | null> {
-  const response = await fetchWithSsrfProtection(`https://api.github.com/gists/${gistId}`, {
-    headers: getApiHeaders(),
-  });
+  const response = await fetchGitHubApi(`https://api.github.com/gists/${gistId}`);
 
   if (!response.ok) {
     if (response.status === 404) {
@@ -252,9 +277,7 @@ async function fetchRepoContents(
     url += `?ref=${encodeURIComponent(ref)}`;
   }
 
-  const response = await fetchWithSsrfProtection(url, {
-    headers: getApiHeaders(),
-  });
+  const response = await fetchGitHubApi(url);
 
   if (!response.ok) {
     if (response.status === 404) {
