@@ -18,7 +18,7 @@ type GitHubUrlType =
   | { type: "blob"; owner: string; repo: string; ref: string; path: string }
   | { type: "raw"; owner: string; repo: string; ref: string; path: string };
 
-interface GistFile {
+export interface GistFile {
   filename: string;
   language: string | null;
   content: string;
@@ -26,11 +26,13 @@ interface GistFile {
   raw_url: string;
 }
 
-interface GistResponse {
+export interface GistResponse {
   id: string;
   description: string | null;
   owner?: { login: string } | null;
   files: Record<string, GistFile>;
+  /** Revisions, newest first. */
+  history?: { version: string }[];
   created_at: string;
   updated_at: string;
 }
@@ -344,19 +346,25 @@ function isMarkdownLanguage(language: string | null): boolean {
  * raw.githubusercontent.com) for the repo-root README, which we fetch without one.
  */
 export interface RepoFileLocation {
+  kind: "repo";
   owner: string;
   repo: string;
   ref?: string;
   path: string;
 }
 
-/**
- * A gist file's own raw URL (`raw_url` from the gists API), which is where the
- * relative URLs in it resolve from. We take GitHub's URL rather than building one
- * out of the gist id, so an ownerless gist needs no guess at the user segment.
- */
+/** A gist file's location, used to resolve the relative URLs in it. */
 export interface GistFileLocation {
+  kind: "gist";
+  /**
+   * The file's own `raw_url` from the gists API, which the `{user}/{id}` the
+   * gist is served under is read back out of. Taking GitHub's URL avoids
+   * depending on `owner`, which the API leaves null for an ownerless gist —
+   * and the user segment is load-bearing (a wrong one 404s).
+   */
   rawUrl: string;
+  /** The gist's current commit sha, when the response carried its history. */
+  revision?: string;
 }
 
 /** Where a rendered file came from, which is what its relative URLs resolve to. */
@@ -387,35 +395,40 @@ function absolutizeGitHubUrls(html: string, file: RepoFileLocation): string {
   });
 }
 
+/** A git object name, which is all we'll put in a URL path we build. */
+const SHA_PATTERN = /^[0-9a-f]{40}$/;
+
 /**
- * The URL prefix every file in a gist is served under,
- * `https://gist.githubusercontent.com/{user}/{id}/raw/`, or null if the file's
- * `raw_url` isn't that shape.
+ * The directory a gist's files are served under, at `revision` when we know it:
+ * `https://gist.githubusercontent.com/{user}/{id}/raw/{revision}/`. Null if the
+ * file's `raw_url` isn't the shape we know — every URL in the document resolves
+ * against this base, so an unrecognized one is left alone rather than guessed at.
  *
- * The revision sha in a `raw_url` (`…/raw/{sha}/{filename}`) is deliberately
- * dropped. That sha names a *blob*, and the filename after it is then ignored, so
- * `…/raw/{sha-of-notes.md}/chart.png` serves notes.md's bytes under the sibling's
- * name — silently the wrong file. The sha-less form resolves by filename against
- * the current revision and 404s when there is no such file (both verified against
- * the live host).
+ * The sha already in a `raw_url` (`…/raw/{sha}/{filename}`) is *not* that
+ * revision and must be dropped: it names the file's own **blob**, and the
+ * filename after it is then ignored, so `…/raw/{sha-of-notes.md}/chart.png`
+ * serves notes.md's bytes under the sibling's name. The gist's commit sha
+ * (`history[0].version`, what GitHub's own links use) does honor the filename,
+ * and pins the article to the revision we rendered; without one the sha-less form
+ * tracks the gist's current revision. Both 404 for a file that isn't there
+ * (verified against the live host).
  */
-function gistRawBase(rawUrl: string): string | null {
+function gistRawBase(file: GistFileLocation): string | null {
   let url: URL;
   try {
-    url = new URL(rawUrl);
+    url = new URL(file.rawUrl);
   } catch {
     return null;
   }
 
-  // Every URL in the document resolves against this base, so anything but the
-  // raw host in the shape we know is left alone rather than guessed at.
   const [user, id, raw] = url.pathname.split("/").filter(Boolean);
   if (url.protocol !== "https:" || url.hostname !== "gist.githubusercontent.com" || raw !== "raw") {
-    logger.debug("Unexpected gist raw URL, leaving relative URLs alone", { rawUrl });
+    logger.debug("Unexpected gist raw URL, leaving relative URLs alone", { rawUrl: file.rawUrl });
     return null;
   }
 
-  return `https://gist.githubusercontent.com/${user}/${id}/raw/`;
+  const revision = file.revision && SHA_PATTERN.test(file.revision) ? `${file.revision}/` : "";
+  return `https://gist.githubusercontent.com/${user}/${id}/raw/${revision}`;
 }
 
 /**
@@ -426,14 +439,20 @@ function gistRawBase(rawUrl: string): string | null {
  * `gist.github.com/{user}/{id}` — the gist's HTML page, so an image renders
  * broken (#1424).
  *
- * A gist has no per-file page, so — unlike a repo file, whose links go to the
- * github.com blob view (see `absolutizeGitHubUrls`) — there's no second base to
- * split links off to, and `href` resolves to the raw file too. A gist's files are
- * also a flat list, so a leading slash can only mean a sibling as well: the root
- * base is the same one.
+ * Unlike a repo file, whose two bases split embeds from links (see
+ * `absolutizeGitHubUrls`), everything here resolves against the one raw base.
+ * GitHub rewrites a relative reference in gist Markdown — `href` *and* `src`
+ * alike — to a `#file-…` anchor on the gist page, which means its own rendering
+ * of a sibling image is broken: an `<img>` pointing at an HTML page. Raw beats
+ * that for `src`, and for `href` it costs the reader a rendered page but still
+ * serves the file. Matching GitHub for `href` alone would mean synthesizing that
+ * anchor from the sibling's filename, which a URL base can't express.
+ *
+ * A gist's files are a flat list, so a leading slash can only mean a sibling too:
+ * the root base is the same base.
  */
 function absolutizeGistUrls(html: string, file: GistFileLocation): string {
-  const base = gistRawBase(file.rawUrl);
+  const base = gistRawBase(file);
   if (!base) {
     return html;
   }
@@ -481,7 +500,7 @@ export async function processFileContent(
   location: FileLocation
 ): Promise<ProcessedRepoFile> {
   const absolutize = (html: string): string =>
-    "rawUrl" in location
+    location.kind === "gist"
       ? absolutizeGistUrls(html, location)
       : absolutizeGitHubUrls(html, location);
 
@@ -508,7 +527,7 @@ export async function processFileContent(
  * Build HTML from a gist with multiple files. Metadata a single file declared in
  * frontmatter is propagated; a concatenation of several has no one author/excerpt.
  */
-async function buildGistHtml(
+export async function buildGistHtml(
   gist: GistResponse,
   targetFilename?: string
 ): Promise<ProcessedRepoFile> {
@@ -517,6 +536,14 @@ async function buildGistHtml(
   if (files.length === 0) {
     return { html: "<p>Empty gist</p>", title: null, author: null, excerpt: null };
   }
+
+  // Newest first, so this is the revision whose contents we're rendering.
+  const revision = gist.history?.[0]?.version;
+  const locate = (file: GistFile): GistFileLocation => ({
+    kind: "gist",
+    rawUrl: file.raw_url,
+    revision,
+  });
 
   // If a specific file is requested, find it
   if (targetFilename) {
@@ -532,7 +559,7 @@ async function buildGistHtml(
         matchedFile.content,
         matchedFile.filename,
         matchedFile.language,
-        { rawUrl: matchedFile.raw_url }
+        locate(matchedFile)
       );
       // Use extracted title from markdown, fall back to filename
       return { ...file, title: file.title || matchedFile.filename };
@@ -542,9 +569,7 @@ async function buildGistHtml(
   // Single file: return it directly
   if (files.length === 1) {
     const only = files[0];
-    const file = await processFileContent(only.content, only.filename, only.language, {
-      rawUrl: only.raw_url,
-    });
+    const file = await processFileContent(only.content, only.filename, only.language, locate(only));
     // Use extracted title from markdown, fall back to filename
     return { ...file, title: file.title || only.filename };
   }
@@ -553,9 +578,12 @@ async function buildGistHtml(
   const parts: string[] = [];
   for (const file of files) {
     parts.push(`<h2>${escapeHtml(file.filename)}</h2>`);
-    const { html } = await processFileContent(file.content, file.filename, file.language, {
-      rawUrl: file.raw_url,
-    });
+    const { html } = await processFileContent(
+      file.content,
+      file.filename,
+      file.language,
+      locate(file)
+    );
     parts.push(html);
   }
 
@@ -608,6 +636,7 @@ async function fetchGitHubContent(url: URL): Promise<SavedArticleContent | null>
       }
 
       const file = await processFileContent(readme.content, readme.filename, null, {
+        kind: "repo",
         owner: parsed.owner,
         repo: parsed.repo,
         path: readme.filename,
@@ -637,7 +666,10 @@ async function fetchGitHubContent(url: URL): Promise<SavedArticleContent | null>
           return null;
         }
 
-        const file = await processFileContent(rawContent, parsed.path, null, parsed);
+        const file = await processFileContent(rawContent, parsed.path, null, {
+          kind: "repo",
+          ...parsed,
+        });
         const title = file.title || filename;
         return {
           html: file.html,
@@ -650,7 +682,10 @@ async function fetchGitHubContent(url: URL): Promise<SavedArticleContent | null>
       }
 
       const content = Buffer.from(contents.content, "base64").toString("utf-8");
-      const file = await processFileContent(content, parsed.path, null, parsed);
+      const file = await processFileContent(content, parsed.path, null, {
+        kind: "repo",
+        ...parsed,
+      });
       const title = file.title || filename;
 
       return {
@@ -671,7 +706,10 @@ async function fetchGitHubContent(url: URL): Promise<SavedArticleContent | null>
       }
 
       const filename = parsed.path.split("/").pop() ?? parsed.path;
-      const file = await processFileContent(content, parsed.path, null, parsed);
+      const file = await processFileContent(content, parsed.path, null, {
+        kind: "repo",
+        ...parsed,
+      });
       const title = file.title || filename;
 
       return {
