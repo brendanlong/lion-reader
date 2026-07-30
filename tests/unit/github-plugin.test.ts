@@ -12,6 +12,7 @@ import {
   isHtmlFile,
   processFileContent,
   buildGistHtml,
+  shouldRetryUnauthenticated,
 } from "../../src/server/plugins/github";
 import type { GistFile, GistResponse } from "../../src/server/plugins/github";
 
@@ -741,11 +742,12 @@ describe("processFileContent", () => {
 });
 
 describe("buildGistHtml", () => {
-  const gistFile = (filename: string, content: string): GistFile => ({
+  const gistFile = (filename: string, content: string, type = "text/plain"): GistFile => ({
     filename,
     language: filename.endsWith(".md") ? "Markdown" : null,
     content,
     raw_url: `https://gist.githubusercontent.com/brendanlong/abc123/raw/deadbeef/${filename}`,
+    type,
   });
   const gist = (files: GistFile[], history?: { version: string }[]): GistResponse => ({
     id: "abc123",
@@ -780,6 +782,63 @@ describe("buildGistHtml", () => {
     expect(html).toContain(`src="${rawBase}/chart.png"`);
   });
 
+  // The API returns a binary file's bytes base64-encoded in `content`, which the
+  // code-block fallback rendered as screenfuls of base64.
+  describe("binary files", () => {
+    const base64Png =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGP4DwABAQEAG7buVgAAAABJRU5ErkJggg==";
+
+    it("renders an image file as an image, not base64", async () => {
+      const { html } = await buildGistHtml(
+        gist([gistFile("README.md", "# Doc"), gistFile("chart.png", base64Png, "image/png")])
+      );
+      expect(html).toContain(`<img src="${rawBase}/chart.png" alt="chart.png">`);
+      expect(html).not.toContain("iVBORw0KGgo");
+    });
+
+    it("links other binary files instead of dumping them", async () => {
+      const { html } = await buildGistHtml(
+        gist([gistFile("README.md", "# Doc"), gistFile("clip.mp4", base64Png, "video/mp4")])
+      );
+      expect(html).toContain(`href="${rawBase}/clip.mp4"`);
+      expect(html).not.toContain("iVBORw0KGgo");
+    });
+
+    // An unknown application/* type is far more often source code than a binary.
+    it("still renders an unrecognized application type as text", async () => {
+      const { html } = await buildGistHtml(
+        gist([
+          gistFile("README.md", "# Doc"),
+          gistFile("script.py", "print(1)", "application/x-python"),
+        ])
+      );
+      expect(html).toContain("print(1)");
+    });
+
+    it("renders a lone image gist as an image", async () => {
+      const { html } = await buildGistHtml(gist([gistFile("chart.png", base64Png, "image/png")]));
+      expect(html).toContain(`<img src="${rawBase}/chart.png"`);
+      expect(html).not.toContain("iVBORw0KGgo");
+    });
+
+    it("renders a requested image file as an image", async () => {
+      const { html } = await buildGistHtml(
+        gist([gistFile("README.md", "# Doc"), gistFile("chart.png", base64Png, "image/png")]),
+        "chart-png"
+      );
+      expect(html).toContain(`<img src="${rawBase}/chart.png"`);
+      expect(html).not.toContain("iVBORw0KGgo");
+    });
+
+    it("escapes a filename with HTML-significant characters", async () => {
+      const { html } = await buildGistHtml(
+        gist([gistFile('a"<b>.png', base64Png, "image/png"), gistFile("README.md", "# Doc")])
+      );
+      expect(html).not.toContain('<b>.png"');
+      expect(html).toContain("&quot;");
+    });
+  });
+
   it("pins to the newest revision in the gist's history", async () => {
     const { html } = await buildGistHtml(
       gist(
@@ -788,5 +847,27 @@ describe("buildGistHtml", () => {
       )
     );
     expect(html).toContain(`src="${rawBase}/${"a".repeat(40)}/chart.png"`);
+  });
+});
+
+describe("shouldRetryUnauthenticated (#1460)", () => {
+  it("retries a rejected token, since everything we read is public", () => {
+    expect(shouldRetryUnauthenticated(401, true)).toBe(true);
+  });
+
+  it("has nothing to retry when no token was sent", () => {
+    expect(shouldRetryUnauthenticated(401, false)).toBe(false);
+  });
+
+  // The unauthenticated limit is the lower of the two, so a retry would spend the
+  // shared per-IP budget only to fail again.
+  it("does not retry a rate limit", () => {
+    expect(shouldRetryUnauthenticated(403, true)).toBe(false);
+    expect(shouldRetryUnauthenticated(429, true)).toBe(false);
+  });
+
+  it("does not retry a 404 or a server error", () => {
+    expect(shouldRetryUnauthenticated(404, true)).toBe(false);
+    expect(shouldRetryUnauthenticated(500, true)).toBe(false);
   });
 });

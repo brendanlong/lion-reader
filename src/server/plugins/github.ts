@@ -24,6 +24,8 @@ export interface GistFile {
   content: string;
   /** `https://gist.githubusercontent.com/{user}/{id}/raw/{sha}/{filename}`. */
   raw_url: string;
+  /** Media type GitHub detected, e.g. `text/markdown`, `image/png`. */
+  type: string;
 }
 
 export interface GistResponse {
@@ -180,14 +182,14 @@ export function normalizeFilenameForFragment(filename: string): string {
 /**
  * Build headers for GitHub API requests.
  */
-function getApiHeaders(): HeadersInit {
+function getApiHeaders(authenticated = true): HeadersInit {
   const headers: HeadersInit = {
     Accept: "application/vnd.github+json",
     "User-Agent": USER_AGENT,
     "X-GitHub-Api-Version": "2022-11-28",
   };
 
-  if (githubConfig.apiToken) {
+  if (authenticated && githubConfig.apiToken) {
     headers.Authorization = `Bearer ${githubConfig.apiToken}`;
   }
 
@@ -195,23 +197,66 @@ function getApiHeaders(): HeadersInit {
 }
 
 /**
+ * Whether a rejected response is worth retrying without our credentials.
+ *
+ * Only a 401 — GitHub rejecting the token itself. A 403/429 is a rate limit, and
+ * the unauthenticated limit is the *lower* of the two, so retrying there would
+ * burn the shared per-IP budget to fail again.
+ */
+export function shouldRetryUnauthenticated(status: number, hasToken: boolean): boolean {
+  return status === 401 && hasToken;
+}
+
+/**
+ * GET a GitHub API URL, retrying once without credentials if GitHub rejects them.
+ *
+ * Everything we read here is public, so the token only buys rate limit (5000/hr
+ * vs 60/hr per IP) — an expired one must not leave us worse off than no token at
+ * all. Untreated, a 401 makes the caller return null, and the saved-article path
+ * turns that null into a scrape of GitHub's HTML page: an article body of page
+ * chrome that reads as a bug in the reader (#1460). `fetchRawContent` already
+ * reads the raw host unauthenticated, which is the only reason `blob` URLs kept
+ * working through a bad token while gists and repo roots silently degraded.
+ */
+async function fetchGitHubApi(url: string): Promise<Response> {
+  const response = await fetchWithSsrfProtection(url, { headers: getApiHeaders() });
+
+  if (!shouldRetryUnauthenticated(response.status, Boolean(githubConfig.apiToken))) {
+    return response;
+  }
+
+  // Only an operator can fix this, so it's logged every attempt, to reach Sentry.
+  logger.error("GitHub API rejected our credentials; check GITHUB_API_TOKEN", { url });
+  // We never read a rejection's body, so let go of the socket before retrying.
+  await response.body?.cancel();
+
+  return fetchWithSsrfProtection(url, { headers: getApiHeaders(false) });
+}
+
+/**
+ * Log a GitHub API response we can't use, at the level its cause deserves. A 401
+ * is logged by `fetchGitHubApi`, which is where the retry it triggers lives.
+ */
+function logApiFailure(status: number, context: Record<string, string | undefined>): void {
+  if (status === 403 || status === 429) {
+    logger.warn("GitHub API rate limited", { status, ...context });
+  } else {
+    logger.warn("GitHub API request failed", { status, ...context });
+  }
+}
+
+/**
  * Fetch a gist by ID.
  */
 async function fetchGist(gistId: string): Promise<GistResponse | null> {
-  const response = await fetchWithSsrfProtection(`https://api.github.com/gists/${gistId}`, {
-    headers: getApiHeaders(),
-  });
+  const response = await fetchGitHubApi(`https://api.github.com/gists/${gistId}`);
 
   if (!response.ok) {
     if (response.status === 404) {
       logger.debug("Gist not found", { gistId });
       return null;
     }
-    if (response.status === 403 || response.status === 429) {
-      logger.warn("GitHub API rate limited", { gistId, status: response.status });
-      return null;
-    }
-    logger.warn("Failed to fetch gist", { gistId, status: response.status });
+    logApiFailure(response.status, { gistId });
     return null;
   }
 
@@ -232,20 +277,14 @@ async function fetchRepoContents(
     url += `?ref=${encodeURIComponent(ref)}`;
   }
 
-  const response = await fetchWithSsrfProtection(url, {
-    headers: getApiHeaders(),
-  });
+  const response = await fetchGitHubApi(url);
 
   if (!response.ok) {
     if (response.status === 404) {
       logger.debug("Repo content not found", { owner, repo, path, ref });
       return null;
     }
-    if (response.status === 403 || response.status === 429) {
-      logger.warn("GitHub API rate limited", { owner, repo, status: response.status });
-      return null;
-    }
-    logger.warn("Failed to fetch repo content", { owner, repo, path, status: response.status });
+    logApiFailure(response.status, { owner, repo, path });
     return null;
   }
 
@@ -330,6 +369,25 @@ export function isMarkdownFile(filename: string): boolean {
 export function isHtmlFile(filename: string): boolean {
   const lower = filename.toLowerCase();
   return lower.endsWith(".html") || lower.endsWith(".htm");
+}
+
+/**
+ * Whether a media type names bytes no one wants to read as text. Deliberately a
+ * list of what we can name: an unrecognized `application/*` is far more often
+ * source code (`application/x-python`, `application/json`) than a binary, and
+ * rendering that as text is the better guess.
+ */
+function isBinaryMediaType(type: string): boolean {
+  return (
+    ["image/", "audio/", "video/", "font/"].some((prefix) => type.startsWith(prefix)) ||
+    [
+      "application/pdf",
+      "application/zip",
+      "application/gzip",
+      "application/mp4",
+      "application/octet-stream",
+    ].includes(type)
+  );
 }
 
 /**
@@ -545,6 +603,34 @@ export async function buildGistHtml(
     revision,
   });
 
+  /**
+   * A gist holds whatever a git repo can, and the API returns a binary file's
+   * bytes base64-encoded in `content` — which the code-block fallback renders as
+   * screenfuls of base64. `type` is what GitHub knows about the file, so
+   * classify from it: an image becomes an image, any other binary a link to
+   * itself. Both are written as a *relative* reference so `absolutizeGistUrls`
+   * resolves them exactly as a sibling reference inside a file would be.
+   */
+  const renderFile = async (file: GistFile): Promise<ProcessedRepoFile> => {
+    const name = escapeHtml(file.filename);
+    const empty = { title: null, author: null, excerpt: null };
+
+    if (file.type.startsWith("image/")) {
+      return {
+        html: absolutizeGistUrls(`<img src="${name}" alt="${name}">`, locate(file)),
+        ...empty,
+      };
+    }
+    if (isBinaryMediaType(file.type)) {
+      return {
+        html: absolutizeGistUrls(`<p><a href="${name}">${name}</a></p>`, locate(file)),
+        ...empty,
+      };
+    }
+
+    return processFileContent(file.content, file.filename, file.language, locate(file));
+  };
+
   // If a specific file is requested, find it
   if (targetFilename) {
     const normalizedTarget = targetFilename.toLowerCase();
@@ -555,12 +641,7 @@ export async function buildGistHtml(
     );
 
     if (matchedFile) {
-      const file = await processFileContent(
-        matchedFile.content,
-        matchedFile.filename,
-        matchedFile.language,
-        locate(matchedFile)
-      );
+      const file = await renderFile(matchedFile);
       // Use extracted title from markdown, fall back to filename
       return { ...file, title: file.title || matchedFile.filename };
     }
@@ -569,7 +650,7 @@ export async function buildGistHtml(
   // Single file: return it directly
   if (files.length === 1) {
     const only = files[0];
-    const file = await processFileContent(only.content, only.filename, only.language, locate(only));
+    const file = await renderFile(only);
     // Use extracted title from markdown, fall back to filename
     return { ...file, title: file.title || only.filename };
   }
@@ -578,12 +659,7 @@ export async function buildGistHtml(
   const parts: string[] = [];
   for (const file of files) {
     parts.push(`<h2>${escapeHtml(file.filename)}</h2>`);
-    const { html } = await processFileContent(
-      file.content,
-      file.filename,
-      file.language,
-      locate(file)
-    );
+    const { html } = await renderFile(file);
     parts.push(html);
   }
 
