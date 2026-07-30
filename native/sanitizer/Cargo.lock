@@ -382,6 +382,7 @@ dependencies = [
  "html-escape",
  "html5ever",
  "lol_html",
+ "memchr",
  "regex",
  "scraper",
  "url",

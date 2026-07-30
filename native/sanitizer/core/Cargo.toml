@@ -19,3 +19,7 @@ html-escape = "0.2"
 url = "2"
 regex = "1"
 getrandom = "0.3"
+# SIMD substring search for the "is there anything to do?" pre-check in the
+# end-tag pass, which runs over every sanitized body (already in the tree via
+# lol_html, so this costs no extra build).
+memchr = "2"

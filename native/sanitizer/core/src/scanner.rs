@@ -9,6 +9,11 @@
 //! their matching close tag), and reports the byte range of each top-level
 //! occurrence of the target element with same-name depth tracking.
 //!
+//! The low-level pieces of that walk (`tag_name_end`, `scan_to_tag_end`,
+//! `skip_raw_text`, `RAW_TEXT_ELEMENTS`) are shared with `sanitize.rs`'s
+//! disallowed-end-tag pass, which is a second walk of the same shape — keep
+//! them here so the two agree on what a tag is.
+//!
 //! The scanner is intentionally *not* a full tree builder. Its failure mode
 //! on adversarial input is locating a wrong range — which downstream code
 //! guards by requiring the substring to actually parse to the target element
@@ -23,7 +28,7 @@
 /// text. This applies in the HTML namespace only — inside `<svg>`/`<math>`
 /// foreign content the tokenizer never switches to raw text, hence the
 /// `rawtext` flag on [`find_top_level_ranges`].
-const RAW_TEXT_ELEMENTS: &[&str] = &[
+pub(crate) const RAW_TEXT_ELEMENTS: &[&str] = &[
     "script", "style", "textarea", "title", "xmp", "iframe", "noembed", "noframes", "noscript",
 ];
 
@@ -67,7 +72,7 @@ struct Partial {
     inner_close_end: usize,
 }
 
-fn find_bytes(haystack: &[u8], from: usize, needle: &[u8]) -> Option<usize> {
+pub(crate) fn find_bytes(haystack: &[u8], from: usize, needle: &[u8]) -> Option<usize> {
     if from >= haystack.len() {
         return None;
     }
@@ -77,7 +82,7 @@ fn find_bytes(haystack: &[u8], from: usize, needle: &[u8]) -> Option<usize> {
         .map(|p| p + from)
 }
 
-fn find_byte(haystack: &[u8], from: usize, needle: u8) -> Option<usize> {
+pub(crate) fn find_byte(haystack: &[u8], from: usize, needle: u8) -> Option<usize> {
     haystack[from.min(haystack.len())..]
         .iter()
         .position(|&b| b == needle)
@@ -86,7 +91,7 @@ fn find_byte(haystack: &[u8], from: usize, needle: u8) -> Option<usize> {
 
 /// Case-insensitive search for `</name` starting at `from`; returns the
 /// offset just past the `>` that ends that close tag (or input length).
-fn skip_raw_text(bytes: &[u8], from: usize, name: &str) -> usize {
+pub(crate) fn skip_raw_text(bytes: &[u8], from: usize, name: &str) -> usize {
     let mut i = from;
     let name_bytes = name.as_bytes();
     while i < bytes.len() {
@@ -109,6 +114,16 @@ fn skip_raw_text(bytes: &[u8], from: usize, name: &str) -> usize {
 
 /// Reads a (lowercased) tag name starting at `i`; returns (name, index past it).
 fn read_tag_name(bytes: &[u8], i: usize) -> (String, usize) {
+    let end = tag_name_end(bytes, i);
+    (
+        String::from_utf8_lossy(&bytes[i..end]).to_ascii_lowercase(),
+        end,
+    )
+}
+
+/// Index just past the tag name starting at `i`. The allocation-free half of
+/// [`read_tag_name`], for walks that only need to compare the name.
+pub(crate) fn tag_name_end(bytes: &[u8], i: usize) -> usize {
     let mut end = i;
     while end < bytes.len() {
         match bytes[end] {
@@ -116,34 +131,83 @@ fn read_tag_name(bytes: &[u8], i: usize) -> (String, usize) {
             _ => end += 1,
         }
     }
-    (
-        String::from_utf8_lossy(&bytes[i..end]).to_ascii_lowercase(),
-        end,
-    )
+    end
 }
 
-/// Scans from just past a tag name to the `>` that ends the tag, honoring
-/// quoted attribute values (which may contain `>`). Returns (index past `>`,
-/// self_closing). An unterminated tag consumes the rest of the input.
-fn scan_to_tag_end(bytes: &[u8], mut i: usize) -> (usize, bool) {
-    let mut self_closing = false;
+/// Whitespace that separates a tag's parts (the tokenizer's definition).
+pub(crate) fn is_tag_ws(b: u8) -> bool {
+    matches!(b, b' ' | b'\t' | b'\n' | b'\r' | b'\x0c')
+}
+
+/// The tokenizer states a tag passes through after its name. Only what decides
+/// where the tag *ends* is modelled — names and values are skipped, not captured.
+#[derive(Clone, Copy)]
+enum TagScan {
+    BeforeName,
+    Name,
+    AfterName,
+    BeforeValue,
+    Quoted(u8),
+    Unquoted,
+    AfterQuotedValue,
+    SelfClosing,
+}
+
+/// Scans from just past a tag name to the `>` that ends the tag. Returns (index
+/// past `>`, self_closing); an unterminated tag consumes the rest of the input,
+/// matching the tokenizer, which drops such a token at EOF.
+///
+/// The states are load-bearing rather than pedantry: **a quote only opens an
+/// attribute value out of _before-attribute-value_ state**, i.e. right after an
+/// `=`. A quote anywhere else — `</p " a="x><img src=x onerror=alert(1)>">` — is
+/// a parse error that becomes part of the attribute *name*, so treating every
+/// quote as a delimiter desynchronizes: the scan pairs the stray quote with the
+/// real value's opening quote and then ends the tag at a `>` **inside** that
+/// value. That was an XSS bypass while `sanitize.rs` used this to decide which
+/// bytes an end tag occupies (issue #1455), and it mislocates MathJax/SVG ranges
+/// here.
+pub(crate) fn scan_to_tag_end(bytes: &[u8], mut i: usize) -> (usize, bool) {
+    let mut state = TagScan::BeforeName;
     while i < bytes.len() {
-        match bytes[i] {
-            b'>' => return (i + 1, self_closing),
-            b'"' | b'\'' => {
-                let quote = bytes[i];
-                i = find_byte(bytes, i + 1, quote).map(|p| p + 1).unwrap_or(bytes.len());
-                self_closing = false;
-            }
-            b'/' => {
-                self_closing = true;
-                i += 1;
-            }
-            _ => {
-                self_closing = false;
-                i += 1;
-            }
-        }
+        let b = bytes[i];
+        i += 1;
+        state = match state {
+            // `/` and `>` are both reconsumed in after-attribute-name, so these
+            // two states differ only in what `=` means: a new attribute named
+            // `=` before a name, the start of a value after one.
+            TagScan::BeforeName | TagScan::Name | TagScan::AfterName => match b {
+                b'>' => return (i, false),
+                b'/' => TagScan::SelfClosing,
+                b'=' if matches!(state, TagScan::Name | TagScan::AfterName) => TagScan::BeforeValue,
+                _ if is_tag_ws(b) => match state {
+                    TagScan::BeforeName => TagScan::BeforeName,
+                    _ => TagScan::AfterName,
+                },
+                _ => TagScan::Name,
+            },
+            TagScan::BeforeValue => match b {
+                // Parse error (missing attribute value), but it still ends the tag.
+                b'>' => return (i, false),
+                b'"' | b'\'' => TagScan::Quoted(b),
+                _ if is_tag_ws(b) => TagScan::BeforeValue,
+                _ => TagScan::Unquoted,
+            },
+            TagScan::Quoted(quote) if b == quote => TagScan::AfterQuotedValue,
+            TagScan::Quoted(quote) => TagScan::Quoted(quote),
+            TagScan::Unquoted => match b {
+                b'>' => return (i, false),
+                _ if is_tag_ws(b) => TagScan::BeforeName,
+                _ => TagScan::Unquoted,
+            },
+            // Both of these reconsume anything unexpected in before-attribute-name,
+            // which starts an attribute name on it.
+            TagScan::AfterQuotedValue | TagScan::SelfClosing => match b {
+                b'>' => return (i, matches!(state, TagScan::SelfClosing)),
+                b'/' => TagScan::SelfClosing,
+                _ if is_tag_ws(b) => TagScan::BeforeName,
+                _ => TagScan::Name,
+            },
+        };
     }
     (bytes.len(), false)
 }
@@ -374,6 +438,45 @@ mod tests {
         let r = find_top_level_ranges(html, "svg", &[], false, Recovery::ToEof);
         assert_eq!(r.len(), 1);
         assert_eq!(&html[r[0].start..r[0].end], "<svg><style>a</svg>");
+    }
+
+    #[test]
+    fn a_quote_only_delimits_a_value_after_an_equals() {
+        // A quote in attribute-*name* position is a parse error that becomes part
+        // of the name, so it must not be paired with the next quote — which is
+        // the real value's opening one. Getting this wrong ends the tag inside
+        // that value and exposes its contents as markup (issue #1455).
+        for (html, expected) in [
+            // The stray quote before `a=` must not swallow `" a="`.
+            (r#"<x " a="y>z">t"#, r#"<x " a="y>z">"#),
+            // Unbalanced quotes in name position never open a value at all.
+            (r#"<x it's>t"#, "<x it's>"),
+            (r#"<x a=y"z>t"#, r#"<x a=y"z>"#),
+            // A second quote right after a quoted value starts a new name.
+            (r#"<x a="1" "b>t"#, r#"<x a="1" "b>"#),
+            // Values that really are quoted still hide a `>`.
+            (r#"<x a="p>q">t"#, r#"<x a="p>q">"#),
+            (r#"<x a = 'p>q'>t"#, r#"<x a = 'p>q'>"#),
+        ] {
+            let (end, _) = scan_to_tag_end(html.as_bytes(), tag_name_end(html.as_bytes(), 1));
+            assert_eq!(&html[..end], expected, "{html}");
+        }
+    }
+
+    #[test]
+    fn self_closing_only_when_the_slash_ends_the_tag() {
+        for (html, self_closing) in [
+            ("<x/>", true),
+            ("<x a=1 />", true),
+            ("<x/ >", false),
+            ("<x>", false),
+            // A `/` inside an unquoted value belongs to the value.
+            ("<x a=b/c>", false),
+            ("<x a='b/'>", false),
+        ] {
+            let (_, got) = scan_to_tag_end(html.as_bytes(), tag_name_end(html.as_bytes(), 1));
+            assert_eq!(got, self_closing, "{html}");
+        }
     }
 
     #[test]

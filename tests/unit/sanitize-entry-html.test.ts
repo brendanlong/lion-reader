@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
+import { htmlToNarrationInput, htmlToPlainText } from "@/lib/narration/html-to-narration-input";
 import { sanitizeEntryHtml } from "@/server/html/sanitize";
+
+/** What the narration would say, in order. */
+function narrated(result: ReturnType<typeof htmlToNarrationInput>): string[] {
+  return result.paragraphs.map((paragraph) => paragraph.text);
+}
 
 describe("sanitizeEntryHtml", () => {
   describe("nullable passthrough", () => {
@@ -292,6 +298,40 @@ describe("sanitizeEntryHtml", () => {
     it("strips dangerous srcset entries on images", () => {
       const out = sanitizeEntryHtml('<img srcset="javascript:alert(1) 1x">') ?? "";
       expect(out).not.toContain("javascript");
+    });
+  });
+
+  describe("unpaired end tags (issue #1455)", () => {
+    // lol_html can only remove an end tag it can pair with an open element, so
+    // a stray `</body>`/`</html>` used to pass straight through — and every
+    // server-side tree build of the output then stopped there, silently
+    // truncating LLM narration and AI summaries. The allow-list has to cover
+    // end tags too.
+    it("drops end tags for tags the allow-list doesn't keep", () => {
+      expect(sanitizeEntryHtml("<p>a</p></body><p>b</p></html><p>c</p>")).toBe(
+        "<p>a</p><p>b</p><p>c</p>"
+      );
+      expect(sanitizeEntryHtml("<p>a</p></HEAD><p>b</p>")).toBe("<p>a</p><p>b</p>");
+      expect(sanitizeEntryHtml("<p>a</p></script><p>b</p>")).toBe("<p>a</p><p>b</p>");
+    });
+
+    it("keeps a stray end tag for an allow-listed tag", () => {
+      // Harmless everywhere (a browser and linkedom both ignore it), and
+      // dropping it would be a byte change nothing asked for.
+      expect(sanitizeEntryHtml("<p>a</p></div><p>b</p>")).toBe("<p>a</p></div><p>b</p>");
+    });
+
+    it("leaves end-tag-shaped text that isn't an end tag alone", () => {
+      const attr = '<p title="</body>">a</p>';
+      expect(sanitizeEntryHtml(attr)).toBe(attr);
+    });
+
+    it("keeps the whole document parseable server-side", () => {
+      // The user-visible symptom: narration and summaries parse the sanitized
+      // HTML with linkedom, which ends the body at a `</body>`.
+      const html = sanitizeEntryHtml("<p>a</p></body><p>b</p><p>c</p>") ?? "";
+      expect(narrated(htmlToNarrationInput(html))).toEqual(["a", "b", "c"]);
+      expect(htmlToPlainText(html)).toBe("a\n\nb\n\nc");
     });
   });
 
