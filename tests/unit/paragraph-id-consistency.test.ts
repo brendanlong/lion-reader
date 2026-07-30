@@ -95,6 +95,11 @@ const TREE_CONSTRUCTION_SHAPES = [
   '<a href="https://out.com/"><a href="https://in.com/"></a></a>',
   "<p>x<b>y</p>z</b>",
   "<form><p>a</p><form><p>b</p></form></form>",
+  // An embed's fallback markup is rawtext a browser never renders. Normalizing
+  // can't help here — serializing rawtext hands the markup back to linkedom to
+  // re-parse — so `NON_PROSE` keeps both walks out of it instead.
+  '<iframe src="https://www.youtube-nocookie.com/embed/x"><p>Fallback</p></iframe><p>After</p>',
+  '<iframe src="https://www.youtube-nocookie.com/embed/x"><p>Unclosed<p>Rest of article</p>',
 ];
 
 const ALL_SHAPES = [...SHAPES, ...TREE_CONSTRUCTION_SHAPES];
