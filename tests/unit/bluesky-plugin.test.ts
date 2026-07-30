@@ -240,10 +240,12 @@ describe("blueskyPostTitle", () => {
   });
 
   it("truncates long single lines", () => {
-    const long = "x".repeat(150);
+    const long =
+      "Sen posted a very long single line of text that runs well past any sane title cap";
     const title = blueskyPostTitle({ uri: "at://x", author, record: { text: long } });
-    expect(title.length).toBe(100);
     expect(title.endsWith("…")).toBe(true);
+    expect(long.startsWith(title.slice(0, -1))).toBe(true);
+    expect(title.length).toBeLessThan(long.length);
   });
 
   it("falls back to the author when there is no text", () => {

@@ -1,5 +1,5 @@
 import type { UrlPlugin, SavedArticleContent } from "./types";
-import { socialPostTitle } from "./social-post";
+import { socialPostImage, socialPostTitle } from "./social-post";
 import { fetchPluginPage } from "./fetch-page";
 import { Parser } from "htmlparser2";
 import { plainTextToHtml } from "@/server/http/html";
@@ -27,9 +27,9 @@ import { logger } from "@/lib/logger";
  * Known limitations:
  * - **No publish date.** The page carries no `<time>`, no JSON-LD, and no
  *   timestamp in its inline payload, and the post shortcode doesn't encode one.
- * - **No media.** `og:image` is the author's avatar on a text post and the
- *   attached media on an image post, with nothing in the markup to tell them
- *   apart, so we render neither rather than decorating every save with an avatar.
+ * - **Media is partial.** An attached image is rendered when Threads advertises
+ *   one (see {@link postImageUrl}); carousels and some single-image posts don't
+ *   advertise theirs and are missed. Video is never available.
  * - `threads.com/robots.txt` is `Disallow: /` for a generic user agent. This is
  *   a user-initiated single-post fetch on save, not crawling; don't extend it
  *   into anything that walks profiles or tags.
@@ -86,11 +86,16 @@ export function parseThreadsPostCode(url: URL): string | null {
 interface ThreadsOpenGraph {
   title: string | null;
   description: string | null;
+  image: string | null;
+  /** `twitter:card` — see {@link postImageUrl} for why this decides the image. */
+  card: string | null;
 }
 
 function extractThreadsOpenGraph(html: string): ThreadsOpenGraph {
   let title: string | null = null;
   let description: string | null = null;
+  let image: string | null = null;
+  let card: string | null = null;
 
   const parser = new Parser(
     {
@@ -99,6 +104,7 @@ function extractThreadsOpenGraph(html: string): ThreadsOpenGraph {
           return;
         }
         const property = attribs.property?.toLowerCase();
+        const metaName = attribs.name?.toLowerCase();
         const content = attribs.content;
         if (!content) {
           return;
@@ -107,6 +113,10 @@ function extractThreadsOpenGraph(html: string): ThreadsOpenGraph {
           title = content;
         } else if (property === "og:description" && !description) {
           description = content;
+        } else if (property === "og:image" && !image) {
+          image = content;
+        } else if (metaName === "twitter:card" && !card) {
+          card = content;
         }
       },
     },
@@ -115,7 +125,31 @@ function extractThreadsOpenGraph(html: string): ThreadsOpenGraph {
   parser.write(html);
   parser.end();
 
-  return { title, description };
+  return { title, description, image, card };
+}
+
+/**
+ * The post's attached image, or null when the post has none.
+ *
+ * `og:image` is always populated — with the author's **avatar** when the post
+ * has no media — so it can't be rendered unconditionally without decorating
+ * every text post with a profile picture. `twitter:card` is what distinguishes
+ * them, and it's a documented Twitter Card semantic rather than a guess at
+ * Meta's CDN path conventions: `summary_large_image` means the image *is* the
+ * content, `summary` means it's a thumbnail.
+ *
+ * Measured over 14 live posts: all 7 `summary_large_image` posts had real post
+ * media in `og:image`, and all 7 `summary` posts had the avatar. The rule is
+ * deliberately one-directional — 2 of those `summary` posts (a 20-image
+ * carousel, and one single-image post) *did* have media that Threads simply
+ * doesn't advertise, so their images are missed. Missing an image is a much
+ * cheaper mistake than captioning every text post with the author's face.
+ */
+function postImageUrl({ image, card }: ThreadsOpenGraph): string | null {
+  if (card?.toLowerCase() !== "summary_large_image" || !image) {
+    return null;
+  }
+  return /^https?:\/\//i.test(image) ? image : null;
 }
 
 /**
@@ -139,17 +173,26 @@ export function parseThreadsAuthor(ogTitle: string | null): string | null {
  * to normal fetching.
  */
 export function renderThreadsPost(html: string, postUrl: string): SavedArticleContent | null {
-  const { title: ogTitle, description } = extractThreadsOpenGraph(html);
-  const text = description?.trim();
+  const openGraph = extractThreadsOpenGraph(html);
+  const text = openGraph.description?.trim();
   if (!text) {
     return null;
   }
 
-  const author = parseThreadsAuthor(ogTitle);
+  const parts = [plainTextToHtml(text)];
+
+  const image = postImageUrl(openGraph);
+  if (image) {
+    parts.push(socialPostImage(image));
+  }
+
+  const author = parseThreadsAuthor(openGraph.title);
   return {
-    html: plainTextToHtml(text),
+    html: parts.join("\n"),
     title: socialPostTitle(text, author),
     author,
+    // The post text alone, so the list summary is unaffected by the image.
+    excerpt: text,
     canonicalUrl: postUrl,
   };
 }

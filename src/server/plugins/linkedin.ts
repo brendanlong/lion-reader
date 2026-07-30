@@ -1,5 +1,5 @@
 import type { UrlPlugin, SavedArticleContent } from "./types";
-import { socialPostTitle } from "./social-post";
+import { socialPostImage, socialPostTitle } from "./social-post";
 import { fetchPluginPage } from "./fetch-page";
 import { Parser } from "htmlparser2";
 import { z } from "zod";
@@ -248,13 +248,11 @@ export function renderLinkedInPost(html: string, postUrl: string): SavedArticleC
 
   const parts = [plainTextToHtml(body)];
 
-  // The post's attached image (or the shared link's thumbnail). Plugin HTML is a
-  // body fragment, so the save path's `og:image` scrape never sees this page —
-  // inlining it is the only way the image survives the save.
+  // The post's attached image, or the shared link's thumbnail.
   const image = firstMatching(jsonLdImageUrl, post.image);
   const thumbnail = firstMatching(jsonLdHttpUrl, post.thumbnailUrl);
   if (image) {
-    parts.push(`<figure><img src="${escapeHtml(image)}" alt="" loading="lazy"></figure>`);
+    parts.push(socialPostImage(image));
   } else if (thumbnail) {
     // A video post. The JSON-LD `contentUrl` is a progressive MP4, but it is
     // access-gated — it 403s to anyone but a logged-in LinkedIn session, so a

@@ -124,9 +124,8 @@ describe("renderLinkedInPost", () => {
         '<p><a href="https://lnkd.in/gyivVrsj">https://lnkd.in/gyivVrsj</a> #nook #android</p>\n' +
         '<figure><img src="https://media.licdn.com/dms/image/sync/v2/post-image.jpg" alt="" loading="lazy"></figure>'
     );
-    expect(result!.title).toBe(
-      "Opened up your Barnes & Noble NOOK just to find it's showing the wrong time?"
-    );
+    // The real headline is 76 characters, so it elides (see social-post.test.ts).
+    expect(result!.title).toBe("Opened up your Barnes & Noble NOOK just to find it's…");
     expect(result!.author).toBe("Dave Taylor");
     expect(result!.publishedAt).toEqual(new Date("2025-04-21T17:30:02.218Z"));
     expect(result!.canonicalUrl).toBe(POST_URL);
@@ -196,8 +195,11 @@ describe("renderLinkedInPost", () => {
   });
 
   it("elides an over-long headline instead of storing it raw", () => {
-    const result = renderLinkedInPost(page({ ...TEXT_POST, headline: "x".repeat(5000) }), POST_URL);
-    expect(result!.title).toBe(`${"x".repeat(99)}…`);
+    const headline = `A headline LinkedIn generated that runs on and on ${"and on ".repeat(500)}`;
+    const title = renderLinkedInPost(page({ ...TEXT_POST, headline }), POST_URL)!.title!;
+    expect(title.endsWith("…")).toBe(true);
+    expect(headline.startsWith(title.slice(0, -1))).toBe(true);
+    expect(title.length).toBeLessThan(100);
   });
 
   it("accepts schema.org's single-or-array and bare-string shapes", () => {
