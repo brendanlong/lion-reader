@@ -276,6 +276,15 @@ describe("htmlToNarrationInput", () => {
   });
 
   describe("inline code", () => {
+    it("keeps a line break inside the code span", () => {
+      // Two `<br>`s end a paragraph, but not inside inline code: splitting there
+      // would leave the code's backticks hanging open on either side.
+      const html = "<p><code>a<br><br>b</code></p>";
+      const result = htmlToNarrationInput(html);
+
+      expect(narrated(result)).toEqual(["`a b`"]);
+    });
+
     it("speaks what the code holds, not just its text", () => {
       const html = '<p>See <code><img alt="the icon"></code> here</p>';
       const result = htmlToNarrationInput(html);
@@ -698,6 +707,13 @@ describe("htmlToNarrationInput", () => {
   });
 
   describe("markup nested past the depth the walk descends", () => {
+    it("does not repeat an image an enclosing figure already spoke", () => {
+      const html = `${"<div>".repeat(62)}<figure><div><img alt="A cat"></div></figure>${"</div>".repeat(62)}`;
+      const result = htmlToNarrationInput(html);
+
+      expect(narrated(result)).toEqual(["Image: A cat"]);
+    });
+
     it("still speaks the text and the alt text it finds there", () => {
       // The cap keeps feed-controlled nesting from overflowing the stack; what
       // is below it is spoken as one paragraph rather than dropped.
@@ -717,6 +733,15 @@ describe("htmlToNarrationInput", () => {
       const result = htmlToNarrationInput(html);
 
       expect(narrated(result)).toEqual(["Real text."]);
+    });
+
+    it("stays silent inside a table, which reads its own children", () => {
+      // A table narrates by walking its rows, which is not a path the ordinary
+      // walk sees — the refusal has to hold there too.
+      const html = "<table><script>alert(1)</script><tr><td>Cell</td></tr></table>";
+      const result = htmlToNarrationInput(html);
+
+      expect(narrated(result)).toEqual(["Table: Cell End table."]);
     });
 
     it("numbers nothing inside it either", () => {
@@ -754,6 +779,30 @@ describe("htmlToNarrationInput", () => {
       const result = htmlToNarrationInput(html);
 
       expect(narrated(result)).toEqual(["Table: Image: A cat End table.", "Data"]);
+    });
+  });
+
+  describe("links", () => {
+    it("does not announce a link whose image a figure speaks", () => {
+      // What WordPress emits for an image linking to its full-size version. The
+      // image is narrated by the figure, so the link has content — announcing
+      // its target here would add a paragraph of pure boilerplate.
+      const html =
+        '<figure class="wp-block-image"><a href="https://example.com/cat-full.jpg">' +
+        '<img src="/cat.jpg" alt="A tabby cat"></a><figcaption>Fig 1.</figcaption></figure>';
+      const result = htmlToNarrationInput(html);
+
+      expect(narrated(result)).toEqual(["Image: A tabby cat. Fig 1."]);
+    });
+
+    it("announces a link whose only content is the URL, block or not", () => {
+      for (const html of [
+        '<p><a href="https://x.com/p">https://x.com/p</a></p>',
+        '<a href="https://x.com/p"><p>https://x.com/p</p></a>',
+        '<p><a href="https://x.com/p"></a></p>',
+      ]) {
+        expect(narrated(htmlToNarrationInput(html))).toEqual(["[link to x.com]"]);
+      }
     });
   });
 

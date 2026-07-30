@@ -90,6 +90,13 @@ const SHAPES = [
   '<figure><p><img alt="w0"></p><figcaption>w1</figcaption></figure>',
   '<div><figure><img alt="w0"><figcaption>w1</figcaption></figure></div>',
   '<table><tr><td><figure><img alt="w0"><figcaption>w1</figcaption></figure></td></tr></table>',
+  // A link around a figure's image: the image is spoken by the figure, so the
+  // link has content even though nothing was said where the link is.
+  '<figure><a href="https://example.com/full.jpg"><img alt="w0"></a><figcaption>w1</figcaption></figure>',
+  '<figure><div><a href="https://example.com/full.jpg"><img alt="w0"></a></div></figure>',
+  '<blockquote><figure><a href="https://example.com/f"><img alt="w0"></a></figure></blockquote>',
+  "<table><script>var unspoken = 1;</script><tr><td>w0</td></tr></table>",
+  "<p><code>w0<br><br>w1</code></p>",
 ];
 
 /** Every `w<n>` token in a string, in order. */
@@ -111,25 +118,50 @@ function expectedWords(html: string): string[] {
   return words(html);
 }
 
+/**
+ * How many links in a shape have nothing speakable in them — no word, no alt
+ * text — and so are announced by their target instead ("[link to example.com]").
+ *
+ * Narration adding boilerplate is invisible to the word count: it introduces no
+ * word the document contains, which is how a `<figure><a><img></a></figure>`
+ * announcing its href on top of speaking the image went unnoticed. Counting the
+ * announcements against the links that should produce one closes that.
+ */
+function emptyLinks(html: string): number {
+  return [...html.matchAll(/<a\b[^>]*\bhref[^>]*>(.*?)<\/a>/gs)].filter(
+    (match) => words(match[1]).length === 0
+  ).length;
+}
+
+/** How many paragraphs are a link announcement rather than the page's words. */
+function announcedLinks(texts: string[]): number {
+  return (texts.join(" ").match(/\[link to /g) ?? []).length;
+}
+
 describe("narration walk invariants", () => {
   describe("every word is narrated exactly once", () => {
     it.each(SHAPES)("server: %s", (html) => {
-      const spoken = wordCounts(htmlToNarrationInput(html).paragraphs.map((p) => p.text));
+      const texts = htmlToNarrationInput(html).paragraphs.map((p) => p.text);
+      const spoken = wordCounts(texts);
 
       for (const word of expectedWords(html)) {
         expect(spoken.get(word), `${word} narrated ${spoken.get(word) ?? 0}× in ${html}`).toBe(1);
       }
-      // And nothing invented: no word the document doesn't contain.
+      // And nothing invented: no word the document doesn't contain, and no link
+      // announced except the ones with nothing to say.
       expect([...spoken.keys()].sort()).toEqual([...new Set(expectedWords(html))].sort());
+      expect(announcedLinks(texts), `link boilerplate in ${html}`).toBe(emptyLinks(html));
     });
 
     it.each(SHAPES)("client: %s", (html) => {
-      const spoken = wordCounts([htmlToClientNarration(html).narrationText]);
+      const texts = [htmlToClientNarration(html).narrationText];
+      const spoken = wordCounts(texts);
 
       for (const word of expectedWords(html)) {
         expect(spoken.get(word), `${word} narrated ${spoken.get(word) ?? 0}× in ${html}`).toBe(1);
       }
       expect([...spoken.keys()].sort()).toEqual([...new Set(expectedWords(html))].sort());
+      expect(announcedLinks(texts), `link boilerplate in ${html}`).toBe(emptyLinks(html));
     });
   });
 

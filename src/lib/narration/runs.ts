@@ -126,6 +126,8 @@ function collectRuns(root: Element, ctx: WalkContext, depth: number): NarrationR
   let images = 0;
   let firstImage: Element | null = null;
   let spokeWords = false;
+  /** How much of this run's subtree an ancestor's narration already claimed. */
+  let claimed = 0;
 
   const push = (highlight: Element, value: string) => {
     // Two `<br>`s end a paragraph — with any amount of whitespace between them,
@@ -204,7 +206,7 @@ function collectRuns(root: Element, ctx: WalkContext, depth: number): NarrationR
     // text is a formatted whole (a table's rows, a code listing) that can't be
     // assembled from the paragraphs inside it.
     if (tagName === "pre") {
-      const code = (el.textContent ?? "").trim();
+      const code = flatText(el, voice, consumed).trim();
       if (voice.speakCodeBlocks && code) push(el, `Code block: ${code} End code block.`);
       return;
     }
@@ -214,7 +216,7 @@ function collectRuns(root: Element, ctx: WalkContext, depth: number): NarrationR
     }
 
     if (depth >= MAX_DEPTH) {
-      push(el, flatText(el, voice));
+      push(el, flatText(el, voice, consumed));
       return;
     }
 
@@ -245,28 +247,37 @@ function collectRuns(root: Element, ctx: WalkContext, depth: number): NarrationR
    * empty anchor, or the URL as its own text — does it announce where it goes
    * instead, because "[link to example.com]" beats silence but loses to words.
    *
-   * Decided from what the walk actually produced rather than by looking for
-   * content first: an image inside a link is content, and asking the DOM about
-   * it once per link is the single most expensive thing this walk did.
+   * Decided from what the walk produced rather than by looking for content
+   * first: an image inside a link is content, and asking the DOM about it once
+   * per link was the most expensive thing this walk did. "Produced" has to
+   * include content an ancestor already claimed — the `<a>` around a figure's
+   * image is the commonest markup there is, and the image is spoken, just not
+   * here. It also means an image with no alt text leaves a link with nothing to
+   * say, so the target is announced in the voice that skips such images and the
+   * alt text is spoken in the voice that reads them.
    */
   const visitLink = (el: Element, depth: number) => {
     const href = el.getAttribute("href");
     const runsBefore = runs.length;
     const imagesBefore = images;
+    const claimedBefore = claimed;
     const textBefore = text.length;
 
-    if (depth >= MAX_DEPTH) appendWords(el.textContent ?? "");
+    if (depth >= MAX_DEPTH) appendWords(flatText(el, voice, consumed));
     else visitChildren(el, depth);
 
     // What it said, when all of that landed in the run being built. A block
     // inside the link (legal, and always says something) flushed instead.
     const flushed = runs.length !== runsBefore;
     const said = flushed ? null : text.slice(textBefore);
-    if (flushed || images > imagesBefore || (said ?? "").trim() !== "") {
+    if (flushed || images > imagesBefore || claimed > claimedBefore || (said ?? "").trim() !== "") {
+      if (!href) return;
       // A URL as its own link text reads as noise; say where it goes instead.
-      if (href && said !== null && said.trim() === href) {
+      if (said !== null && said.trim() === href) {
         text = text.slice(0, textBefore);
         appendWords(linkTarget(href));
+      } else if (flushed && runs.length === runsBefore + 1 && runs[runsBefore].text === href) {
+        runs[runsBefore].text = linkTarget(href);
       }
       return;
     }
@@ -289,9 +300,12 @@ function collectRuns(root: Element, ctx: WalkContext, depth: number): NarrationR
       // Wrapped after the fact rather than read from `textContent`, so whatever
       // is inside (an image's alt text) is still spoken.
       const before = text.length;
+      const runsBefore = runs.length;
       visitChildren(el, depth);
-      const code = text.slice(before);
-      if (code.trim()) text = `${text.slice(0, before)}\`${code.trim()}\``;
+      const code = text.slice(before).replaceAll(BREAK, " ");
+      if (code.trim() && runs.length === runsBefore) {
+        text = `${text.slice(0, before)}\`${code.trim()}\``;
+      }
       return;
     }
     if (tagName === "a") {
@@ -299,7 +313,7 @@ function collectRuns(root: Element, ctx: WalkContext, depth: number): NarrationR
       return;
     }
     if (depth >= MAX_DEPTH) {
-      appendWords(el.textContent ?? "");
+      appendWords(flatText(el, voice, consumed));
       return;
     }
     // Everything else is phrasing content (strong, em, span, math, …) and
@@ -308,7 +322,10 @@ function collectRuns(root: Element, ctx: WalkContext, depth: number): NarrationR
   };
 
   const visit = (node: Node, depth: number) => {
-    if (consumed.has(node)) return;
+    if (consumed.has(node)) {
+      claimed += 1;
+      return;
+    }
     if (node.nodeType === TEXT_NODE) {
       appendWords(node.textContent ?? "");
       return;
@@ -351,11 +368,12 @@ function subtreeText(el: Element, ctx: WalkContext, depth: number): string {
  * `MAX_DEPTH`. Not `textContent`, which drops an image's alt text — and which
  * would read a code block aloud in the voice that skips them.
  */
-function flatText(el: Element, voice: NarrationVoice): string {
+function flatText(el: Element, voice: NarrationVoice, consumed: Set<Node>): string {
   const parts: string[] = [];
   const stack: Node[] = [el];
   while (stack.length > 0) {
     const node = stack.pop() as Node;
+    if (consumed.has(node)) continue;
     if (node.nodeType === TEXT_NODE) {
       parts.push(node.textContent ?? "");
       continue;
@@ -437,10 +455,12 @@ function tableText(el: Element, ctx: WalkContext, depth: number): string {
 
 /** What an element inside a table's structure contributes. */
 function nodeText(el: Element, ctx: WalkContext, depth: number): string {
+  const tagName = el.tagName.toLowerCase();
+  // Checked here as well as in the walk: a table reads its children as roots of
+  // their own sub-walk, which is not a path `visit` sees.
+  if (isNonProseTag(tagName)) return "";
   // An image speaks for itself; everything else speaks through its contents.
-  return el.tagName.toLowerCase() === "img"
-    ? imageText(el, ctx.voice)
-    : subtreeText(el, ctx, depth).trim();
+  return tagName === "img" ? imageText(el, ctx.voice) : subtreeText(el, ctx, depth).trim();
 }
 
 /** The image a figure narrates as, if it is a figure and it holds one. */

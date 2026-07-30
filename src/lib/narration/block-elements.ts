@@ -110,10 +110,14 @@ function isTarget(tagName: string): boolean {
  * number elements with this one function, which is what makes an `o` mean the
  * same element on both sides. It is deliberately a plain structural walk: no
  * element is filtered out for saying nothing, so the numbering is a property of
- * the tree alone — the same whichever voice narrates it, and stable for as long
- * as a cached paragraph map refers to it. (Which numbered element a given run
- * *picks* does depend on what spoke; only the numbering itself is fixed.)
+ * the parsed tree alone — the same whichever voice narrates it, and stable for
+ * as long as a cached paragraph map refers to it. (Which numbered element a
+ * given run *picks* does depend on what spoke; only the numbering is fixed.)
  * Elements that never own a run simply keep an id nothing highlights.
+ *
+ * The one thing it can't paper over is the two sides parsing the same HTML into
+ * *different* trees — linkedom isn't a spec tree builder, so table content a
+ * browser foster-parents out lands elsewhere (issue #1453).
  *
  * Changing what this numbers — or what `./runs` says — invalidates every cached
  * paragraph map, so it comes with a `NARRATION_FORMAT_VERSION` bump
