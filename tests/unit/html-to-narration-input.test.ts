@@ -95,6 +95,15 @@ describe("htmlToNarrationInput", () => {
       expect(narrated(result)).toEqual(["Code block: console.log('hello'); End code block."]);
     });
 
+    it("reads a line break in a code block as a break", () => {
+      // Feed HTML that renders code with `<br>` rather than newlines used to
+      // read as "line oneline two".
+      const html = "<pre>line one<br>line two</pre>";
+      const result = htmlToNarrationInput(html);
+
+      expect(narrated(result)).toEqual(["Code block: line one line two End code block."]);
+    });
+
     it("handles inline code within paragraph", () => {
       const html = "<p>Use the <code>npm</code> command.</p>";
       const result = htmlToNarrationInput(html);
@@ -283,6 +292,13 @@ describe("htmlToNarrationInput", () => {
       const result = htmlToNarrationInput(html);
 
       expect(narrated(result)).toEqual(["`a b`"]);
+    });
+
+    it("does not double up the markers on nested code", () => {
+      const html = "<p><code>outer <code>inner</code></code></p>";
+      const result = htmlToNarrationInput(html);
+
+      expect(narrated(result)).toEqual(["outer `inner`"]);
     });
 
     it("speaks what the code holds, not just its text", () => {

@@ -303,7 +303,7 @@ function collectRuns(root: Element, ctx: WalkContext, depth: number): NarrationR
       const runsBefore = runs.length;
       visitChildren(el, depth);
       const code = text.slice(before).replaceAll(BREAK, " ");
-      if (code.trim() && runs.length === runsBefore) {
+      if (code.trim() && !code.includes("`") && runs.length === runsBefore) {
         text = `${text.slice(0, before)}\`${code.trim()}\``;
       }
       return;
@@ -386,6 +386,12 @@ function flatText(el: Element, voice: NarrationVoice, consumed: Set<Node>): stri
     if (tagName === "pre" && !voice.speakCodeBlocks) continue;
     if (tagName === "img") {
       parts.push(` ${imageText(child, voice)} `);
+      continue;
+    }
+    // A line break separates words here as much as anywhere else, and this text
+    // is spoken as one paragraph either way.
+    if (tagName === "br") {
+      parts.push(" ");
       continue;
     }
     const children = child.childNodes;
