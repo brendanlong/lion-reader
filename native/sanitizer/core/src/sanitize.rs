@@ -16,6 +16,9 @@
 //!   sink); `data:image/svg+xml` is allowed because an SVG in an image context
 //!   is passive (see `is_image_url_allowed`).
 //! - Comments and doctypes are removed.
+//! - The tag allow-list applies to end tags too: an end tag lol_html could not
+//!   pair with an open element is dropped by `drop_disallowed_end_tags` unless
+//!   its name is allow-listed (issue #1455).
 //! - Transforms: external links get `target="_blank" rel="noopener
 //!   noreferrer"`; images get `loading="lazy"`; iframes survive only as
 //!   normalized allow-listed embeds with a forced sandbox; `input` survives
@@ -26,11 +29,16 @@
 //! tokenizer is HTML5-spec-conformant (the same tokenization a browser
 //! does), which removes the parser-differential class of bypasses.
 
+use std::sync::LazyLock;
+
 use lol_html::html_content::Element;
 use lol_html::{doc_comments, doctype, element, HtmlRewriter, Settings};
 
 use crate::embeds::normalize_embed;
 use crate::idrefs::{prefix_fragment_href, prefix_id, prefix_id_list, ARIA_IDREF_ATTRS};
+use crate::scanner::{
+    find_byte, find_bytes, scan_to_tag_end, skip_raw_text, tag_name_end, RAW_TEXT_ELEMENTS,
+};
 use crate::urls::{decode_attr, is_image_url_allowed};
 
 /// Tags allowed in entry content (sanitize.ts ALLOWED_TAGS + MATHML_TAGS).
@@ -130,6 +138,48 @@ const IMAGE_SCHEMES: &[&str] = &["http", "https", "data"];
 
 fn tag_allowed(tag: &str) -> bool {
     ALLOWED_TAGS.contains(&tag)
+}
+
+/// [`ALLOWED_TAGS`] bucketed by first letter, derived from that one list so
+/// there is still only one to edit. The end-tag pass tests a name for every `</`
+/// in the document, and scanning all ~90 entries each time was visible on
+/// `scripts/bench-sanitize.mts`; a bucket averages under ten.
+static ALLOWED_TAGS_BY_INITIAL: LazyLock<[Vec<&'static str>; 26]> = LazyLock::new(|| {
+    let mut buckets: [Vec<&'static str>; 26] = Default::default();
+    for tag in ALLOWED_TAGS {
+        // Every allow-listed name starts with an ASCII letter, so every one of
+        // them lands in a bucket — `tag_allowed_bytes_matches_tag_allowed`
+        // holds the two lookups to that.
+        if let Some(index) = bucket_index(tag.as_bytes()) {
+            buckets[index].push(tag);
+        }
+    }
+    buckets
+});
+
+/// The [`ALLOWED_TAGS_BY_INITIAL`] index for a raw tag name, or None when its
+/// first byte isn't an ASCII letter (so it can't be an allow-listed name).
+fn bucket_index(tag: &[u8]) -> Option<usize> {
+    let initial = tag.first()?.to_ascii_lowercase().wrapping_sub(b'a');
+    (initial < 26).then(|| usize::from(initial))
+}
+
+/// [`tag_allowed`] for a not-yet-lowercased raw name, so the end-tag walk can
+/// test a slice of the document instead of allocating a name per tag.
+fn tag_allowed_bytes(tag: &[u8]) -> bool {
+    bucket_index(tag).is_some_and(|index| {
+        ALLOWED_TAGS_BY_INITIAL[index]
+            .iter()
+            .any(|allowed| allowed.as_bytes().eq_ignore_ascii_case(tag))
+    })
+}
+
+/// The entry of `names` matching the raw tag name `tag`, if any.
+fn matching_name<'n>(tag: &[u8], names: &[&'n str]) -> Option<&'n str> {
+    names
+        .iter()
+        .copied()
+        .find(|name| name.as_bytes().eq_ignore_ascii_case(tag))
 }
 
 fn attr_allowed(tag: &str, name: &str) -> bool {
@@ -461,6 +511,119 @@ fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Se
     Ok(())
 }
 
+/// Apply the tag allow-list to *end* tags, which lol_html can't reach.
+///
+/// lol_html is a streaming rewriter with no tree, so it only ever hands us an
+/// element (and with it, the end tag to remove) when it can pair an end tag with
+/// an open element. An end tag that pairs with nothing is passed through
+/// verbatim — so a feed that ships a stray `</body>` got one back in the
+/// sanitized output. A browser ignores such a tag, but a *tree builder* need
+/// not: linkedom ends the body there and drops everything after it, which
+/// silently truncated LLM narration and AI summaries — both of which parse the
+/// sanitized HTML server-side (issue #1455). Applying the allow-list to end tags
+/// too fixes every consumer at once, and makes "the output contains only
+/// allow-listed tags" true of end tags as well as start tags.
+///
+/// **Every end tag reaching here whose name is not allow-listed is stray by
+/// construction**: a paired one was already removed with its start tag (or with
+/// the whole subtree, for [`DROP_WITH_CONTENT`]). That is why this needs no open
+/// element stack of its own, and why it can drop even a `</script>` — a real
+/// `<script>` element left no end tag behind.
+///
+/// Deleting a whole end-tag token leaves the tokenizer state identical on both
+/// sides of the cut, so the rest of the output re-tokenizes exactly as it did
+/// before: this can mangle content but can never fabricate markup. Two facts
+/// make that hold, and both must survive future edits to the allow-list:
+///
+/// * quoted attribute values are skipped, so a `title="</body>"` is left alone;
+/// * `iframe` is the only raw-text element the allow-list keeps, and it is
+///   allow-listed — so we can never delete the end tag that closes a raw-text
+///   run and spill its contents into the document as live markup.
+///
+/// Returns `None` when there was nothing to drop — the overwhelmingly common
+/// case, which [`has_disallowed_end_tag`] settles without walking tags at all.
+///
+/// Runs on the rewriter's output rather than its input because "unpaired" is
+/// only knowable afterwards — and it must therefore run **before SVG
+/// re-insertion**, since SVG content has its own allow-list (`svg.rs`) full of
+/// tags like `</desc>` that this one has never heard of.
+fn drop_disallowed_end_tags(html: &str) -> Option<String> {
+    if !has_disallowed_end_tag(html.as_bytes()) {
+        return None;
+    }
+    Some(rewrite_dropping_disallowed_end_tags(html))
+}
+
+/// Whether the walk below could find anything to drop: is there a `</name`
+/// anywhere in `bytes` — at a tag position or not — whose name isn't
+/// allow-listed?
+///
+/// A deliberate over-approximation of the walk (which only considers real tag
+/// positions), so it is safe to skip the walk when this says no. Almost every
+/// body takes that exit, and taking it on a SIMD substring search over the bytes
+/// is what keeps the whole pass off the profile: the walk itself has to visit
+/// every attribute byte to know where tags end.
+fn has_disallowed_end_tag(bytes: &[u8]) -> bool {
+    memchr::memmem::find_iter(bytes, b"</").any(|lt| {
+        let name = &bytes[lt + 2..tag_name_end(bytes, lt + 2)];
+        name.first().is_some_and(u8::is_ascii_alphabetic) && !tag_allowed_bytes(name)
+    })
+}
+
+/// The rare path of [`drop_disallowed_end_tags`]: walk the tags the way the
+/// tokenizer does and cut the end tags the allow-list rejects.
+fn rewrite_dropping_disallowed_end_tags(html: &str) -> String {
+    let bytes = html.as_bytes();
+    let mut out: Option<String> = None;
+    // Everything before this has either been copied into `out` or dropped.
+    let mut kept_to = 0usize;
+    let mut i = 0usize;
+    while let Some(lt) = find_byte(bytes, i, b'<') {
+        i = lt + 1;
+        if bytes[lt..].starts_with(b"<!--") {
+            i = find_bytes(bytes, lt + 4, b"-->").map(|p| p + 3).unwrap_or(bytes.len());
+        } else if i < bytes.len() && matches!(bytes[i], b'!' | b'?') {
+            // Bogus comment / doctype: ends at the first `>`.
+            i = find_byte(bytes, i, b'>').map(|p| p + 1).unwrap_or(bytes.len());
+        } else if i < bytes.len() && bytes[i] == b'/' {
+            if !(i + 1 < bytes.len() && bytes[i + 1].is_ascii_alphabetic()) {
+                // `</>` or `</ …`: a bogus comment per spec, not an end tag.
+                i = find_byte(bytes, i + 1, b'>').map(|p| p + 1).unwrap_or(bytes.len());
+                continue;
+            }
+            let after_name = tag_name_end(bytes, i + 1);
+            // An end tag may carry (ignored) attributes, so it ends like a
+            // start tag does — quotes included.
+            let (tag_end, _) = scan_to_tag_end(bytes, after_name);
+            if !tag_allowed_bytes(&bytes[i + 1..after_name]) {
+                out.get_or_insert_with(|| String::with_capacity(html.len()))
+                    .push_str(&html[kept_to..lt]);
+                kept_to = tag_end;
+            }
+            i = tag_end;
+        } else if i < bytes.len() && bytes[i].is_ascii_alphabetic() {
+            let after_name = tag_name_end(bytes, i);
+            let (tag_end, self_closing) = scan_to_tag_end(bytes, after_name);
+            // Markup inside a raw-text element is text, not tags (in practice
+            // only `<iframe>` gets here — every other raw-text element is
+            // dropped with its content by the main pass).
+            let raw_text = (!self_closing)
+                .then(|| matching_name(&bytes[i..after_name], RAW_TEXT_ELEMENTS))
+                .flatten();
+            i = match raw_text {
+                Some(name) => skip_raw_text(bytes, tag_end, name),
+                None => tag_end,
+            };
+        }
+        // Anything else is a lone `<` in text; `i` already stepped past it.
+    }
+    // `has_disallowed_end_tag` over-approximates, so the walk can find nothing
+    // to cut (a `</body>` that turned out to sit inside an attribute value).
+    let mut out = out.unwrap_or_else(|| String::with_capacity(html.len()));
+    out.push_str(&html[kept_to..]);
+    out
+}
+
 /// Run the allow-list pass over `html`. Errors (rewriter failure) must be
 /// treated as fatal by the caller — there is no partial output to serve.
 pub fn sanitize_html_pass(html: &str) -> Result<String, String> {
@@ -484,7 +647,8 @@ pub fn sanitize_html_pass(html: &str) -> Result<String, String> {
     );
     rewriter.write(html.as_bytes()).map_err(|e| e.to_string())?;
     rewriter.end().map_err(|e| e.to_string())?;
-    String::from_utf8(output).map_err(|e| e.to_string())
+    let rewritten = String::from_utf8(output).map_err(|e| e.to_string())?;
+    Ok(drop_disallowed_end_tags(&rewritten).unwrap_or(rewritten))
 }
 
 #[cfg(test)]
@@ -814,6 +978,71 @@ mod tests {
             sanitize(r#"<p data-para-id="7" class="a" bogus="1">x</p>"#),
             r#"<p data-para-id="7" class="a">x</p>"#
         );
+    }
+
+    #[test]
+    fn tag_allowed_bytes_matches_tag_allowed() {
+        // The end-tag pass reads the allow-list through a bucketed index, so a
+        // tag that lands in no bucket would silently lose its end tags.
+        for tag in ALLOWED_TAGS {
+            assert!(tag_allowed_bytes(tag.as_bytes()), "{tag} missing from the index");
+            assert!(
+                tag_allowed_bytes(tag.to_ascii_uppercase().as_bytes()),
+                "{tag} not matched case-insensitively"
+            );
+        }
+        for tag in DROP_WITH_CONTENT.iter().chain(&["body", "html", "head", ""]) {
+            assert!(!tag_allowed_bytes(tag.as_bytes()), "{tag} wrongly allow-listed");
+        }
+    }
+
+    #[test]
+    fn stray_end_tags_are_dropped_like_their_start_tags() {
+        // A stray `</body>`/`</html>` used to survive and truncate every
+        // server-side tree build of the output (issue #1455).
+        assert_eq!(
+            sanitize("<p>a</p></body><p>b</p></html><p>c</p>"),
+            "<p>a</p><p>b</p><p>c</p>"
+        );
+        // Case-insensitive, and attributes on the end tag don't rescue it.
+        assert_eq!(sanitize("<p>a</p></BODY  x=\"1\"><p>b</p>"), "<p>a</p><p>b</p>");
+        // Unpaired end tags for elements the main pass drops with their content
+        // are stray too — a real `<script>` leaves no end tag behind.
+        assert_eq!(sanitize("<p>a</p></script><p>b</p>"), "<p>a</p><p>b</p>");
+        assert_eq!(sanitize("<p>a</p></custom><p>b</p>"), "<p>a</p><p>b</p>");
+        // Allow-listed end tags are untouched, paired or not: a browser and a
+        // tree builder both just ignore a stray one.
+        assert_eq!(sanitize("<p>a</p></div><p>b</p>"), "<p>a</p></div><p>b</p>");
+    }
+
+    #[test]
+    fn end_tag_shaped_text_inside_markup_is_left_alone() {
+        // The pass walks tags the way the tokenizer does, so a `</body>` that is
+        // not an end tag at all must survive byte-identically.
+        let attr = "<p title=\"</body>\">a</p>";
+        assert_eq!(sanitize(attr), attr);
+        // Inside a raw-text element the "tags" are text. `iframe` is the only
+        // raw-text element that survives the allow-list, so it is the only place
+        // this can be observed.
+        let iframe = sanitize(
+            r#"<iframe src="https://www.youtube.com/embed/abc123"></body><p>fallback</p></iframe>"#,
+        );
+        assert!(iframe.contains("</body><p>fallback</p></iframe>"), "{iframe}");
+    }
+
+    #[test]
+    fn dropping_a_stray_end_tag_cannot_fabricate_markup() {
+        // Removing a complete end-tag token leaves the tokenizer state the same
+        // on both sides of the cut, so the halves cannot join into a new tag.
+        let out = sanitize("<p>&lt;img src=x onerror=alert(1)</body>&gt;</p>");
+        assert_eq!(out, "<p>&lt;img src=x onerror=alert(1)&gt;</p>");
+    }
+
+    #[test]
+    fn end_tag_drop_is_idempotent() {
+        // Stored summaries are re-sanitized on every read.
+        let once = sanitize("<p>a</p></body><p>b</p>");
+        assert_eq!(sanitize(&once), once);
     }
 
     #[test]

@@ -9,6 +9,11 @@
 //! their matching close tag), and reports the byte range of each top-level
 //! occurrence of the target element with same-name depth tracking.
 //!
+//! The low-level pieces of that walk (`tag_name_end`, `scan_to_tag_end`,
+//! `skip_raw_text`, `RAW_TEXT_ELEMENTS`) are shared with `sanitize.rs`'s
+//! disallowed-end-tag pass, which is a second walk of the same shape — keep
+//! them here so the two agree on what a tag is.
+//!
 //! The scanner is intentionally *not* a full tree builder. Its failure mode
 //! on adversarial input is locating a wrong range — which downstream code
 //! guards by requiring the substring to actually parse to the target element
@@ -23,7 +28,7 @@
 /// text. This applies in the HTML namespace only — inside `<svg>`/`<math>`
 /// foreign content the tokenizer never switches to raw text, hence the
 /// `rawtext` flag on [`find_top_level_ranges`].
-const RAW_TEXT_ELEMENTS: &[&str] = &[
+pub(crate) const RAW_TEXT_ELEMENTS: &[&str] = &[
     "script", "style", "textarea", "title", "xmp", "iframe", "noembed", "noframes", "noscript",
 ];
 
@@ -67,7 +72,7 @@ struct Partial {
     inner_close_end: usize,
 }
 
-fn find_bytes(haystack: &[u8], from: usize, needle: &[u8]) -> Option<usize> {
+pub(crate) fn find_bytes(haystack: &[u8], from: usize, needle: &[u8]) -> Option<usize> {
     if from >= haystack.len() {
         return None;
     }
@@ -77,7 +82,7 @@ fn find_bytes(haystack: &[u8], from: usize, needle: &[u8]) -> Option<usize> {
         .map(|p| p + from)
 }
 
-fn find_byte(haystack: &[u8], from: usize, needle: u8) -> Option<usize> {
+pub(crate) fn find_byte(haystack: &[u8], from: usize, needle: u8) -> Option<usize> {
     haystack[from.min(haystack.len())..]
         .iter()
         .position(|&b| b == needle)
@@ -86,7 +91,7 @@ fn find_byte(haystack: &[u8], from: usize, needle: u8) -> Option<usize> {
 
 /// Case-insensitive search for `</name` starting at `from`; returns the
 /// offset just past the `>` that ends that close tag (or input length).
-fn skip_raw_text(bytes: &[u8], from: usize, name: &str) -> usize {
+pub(crate) fn skip_raw_text(bytes: &[u8], from: usize, name: &str) -> usize {
     let mut i = from;
     let name_bytes = name.as_bytes();
     while i < bytes.len() {
@@ -109,6 +114,16 @@ fn skip_raw_text(bytes: &[u8], from: usize, name: &str) -> usize {
 
 /// Reads a (lowercased) tag name starting at `i`; returns (name, index past it).
 fn read_tag_name(bytes: &[u8], i: usize) -> (String, usize) {
+    let end = tag_name_end(bytes, i);
+    (
+        String::from_utf8_lossy(&bytes[i..end]).to_ascii_lowercase(),
+        end,
+    )
+}
+
+/// Index just past the tag name starting at `i`. The allocation-free half of
+/// [`read_tag_name`], for walks that only need to compare the name.
+pub(crate) fn tag_name_end(bytes: &[u8], i: usize) -> usize {
     let mut end = i;
     while end < bytes.len() {
         match bytes[end] {
@@ -116,16 +131,13 @@ fn read_tag_name(bytes: &[u8], i: usize) -> (String, usize) {
             _ => end += 1,
         }
     }
-    (
-        String::from_utf8_lossy(&bytes[i..end]).to_ascii_lowercase(),
-        end,
-    )
+    end
 }
 
 /// Scans from just past a tag name to the `>` that ends the tag, honoring
 /// quoted attribute values (which may contain `>`). Returns (index past `>`,
 /// self_closing). An unterminated tag consumes the rest of the input.
-fn scan_to_tag_end(bytes: &[u8], mut i: usize) -> (usize, bool) {
+pub(crate) fn scan_to_tag_end(bytes: &[u8], mut i: usize) -> (usize, bool) {
     let mut self_closing = false;
     while i < bytes.len() {
         match bytes[i] {
