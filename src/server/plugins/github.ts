@@ -24,6 +24,8 @@ export interface GistFile {
   content: string;
   /** `https://gist.githubusercontent.com/{user}/{id}/raw/{sha}/{filename}`. */
   raw_url: string;
+  /** Media type GitHub detected, e.g. `text/markdown`, `image/png`. */
+  type: string;
 }
 
 export interface GistResponse {
@@ -195,6 +197,28 @@ function getApiHeaders(): HeadersInit {
 }
 
 /**
+ * Log a GitHub API response we can't use, at the level its cause deserves.
+ *
+ * A 401 means *our own* credentials are bad, which is an operator problem rather
+ * than a content one, and a silent one: the caller returns null, and a null makes
+ * the saved-article path fall back to scraping GitHub's HTML page, so every gist
+ * and repo save keeps "working" while quietly producing page chrome until the
+ * token is rotated (#1460). Hence `error` — it reaches Sentry.
+ */
+function logApiFailure(status: number, context: Record<string, string | undefined>): void {
+  if (status === 401) {
+    logger.error("GitHub API rejected our credentials; check GITHUB_API_TOKEN", {
+      status,
+      ...context,
+    });
+  } else if (status === 403 || status === 429) {
+    logger.warn("GitHub API rate limited", { status, ...context });
+  } else {
+    logger.warn("GitHub API request failed", { status, ...context });
+  }
+}
+
+/**
  * Fetch a gist by ID.
  */
 async function fetchGist(gistId: string): Promise<GistResponse | null> {
@@ -207,11 +231,7 @@ async function fetchGist(gistId: string): Promise<GistResponse | null> {
       logger.debug("Gist not found", { gistId });
       return null;
     }
-    if (response.status === 403 || response.status === 429) {
-      logger.warn("GitHub API rate limited", { gistId, status: response.status });
-      return null;
-    }
-    logger.warn("Failed to fetch gist", { gistId, status: response.status });
+    logApiFailure(response.status, { gistId });
     return null;
   }
 
@@ -241,11 +261,7 @@ async function fetchRepoContents(
       logger.debug("Repo content not found", { owner, repo, path, ref });
       return null;
     }
-    if (response.status === 403 || response.status === 429) {
-      logger.warn("GitHub API rate limited", { owner, repo, status: response.status });
-      return null;
-    }
-    logger.warn("Failed to fetch repo content", { owner, repo, path, status: response.status });
+    logApiFailure(response.status, { owner, repo, path });
     return null;
   }
 
@@ -330,6 +346,25 @@ export function isMarkdownFile(filename: string): boolean {
 export function isHtmlFile(filename: string): boolean {
   const lower = filename.toLowerCase();
   return lower.endsWith(".html") || lower.endsWith(".htm");
+}
+
+/**
+ * Whether a media type names bytes no one wants to read as text. Deliberately a
+ * list of what we can name: an unrecognized `application/*` is far more often
+ * source code (`application/x-python`, `application/json`) than a binary, and
+ * rendering that as text is the better guess.
+ */
+function isBinaryMediaType(type: string): boolean {
+  return (
+    ["image/", "audio/", "video/", "font/"].some((prefix) => type.startsWith(prefix)) ||
+    [
+      "application/pdf",
+      "application/zip",
+      "application/gzip",
+      "application/mp4",
+      "application/octet-stream",
+    ].includes(type)
+  );
 }
 
 /**
@@ -545,6 +580,34 @@ export async function buildGistHtml(
     revision,
   });
 
+  /**
+   * A gist holds whatever a git repo can, and the API returns a binary file's
+   * bytes base64-encoded in `content` — which the code-block fallback renders as
+   * screenfuls of base64. `type` is what GitHub knows about the file, so
+   * classify from it: an image becomes an image, any other binary a link to
+   * itself. Both are written as a *relative* reference so `absolutizeGistUrls`
+   * resolves them exactly as a sibling reference inside a file would be.
+   */
+  const renderFile = async (file: GistFile): Promise<ProcessedRepoFile> => {
+    const name = escapeHtml(file.filename);
+    const empty = { title: null, author: null, excerpt: null };
+
+    if (file.type.startsWith("image/")) {
+      return {
+        html: absolutizeGistUrls(`<img src="${name}" alt="${name}">`, locate(file)),
+        ...empty,
+      };
+    }
+    if (isBinaryMediaType(file.type)) {
+      return {
+        html: absolutizeGistUrls(`<p><a href="${name}">${name}</a></p>`, locate(file)),
+        ...empty,
+      };
+    }
+
+    return processFileContent(file.content, file.filename, file.language, locate(file));
+  };
+
   // If a specific file is requested, find it
   if (targetFilename) {
     const normalizedTarget = targetFilename.toLowerCase();
@@ -555,12 +618,7 @@ export async function buildGistHtml(
     );
 
     if (matchedFile) {
-      const file = await processFileContent(
-        matchedFile.content,
-        matchedFile.filename,
-        matchedFile.language,
-        locate(matchedFile)
-      );
+      const file = await renderFile(matchedFile);
       // Use extracted title from markdown, fall back to filename
       return { ...file, title: file.title || matchedFile.filename };
     }
@@ -569,7 +627,7 @@ export async function buildGistHtml(
   // Single file: return it directly
   if (files.length === 1) {
     const only = files[0];
-    const file = await processFileContent(only.content, only.filename, only.language, locate(only));
+    const file = await renderFile(only);
     // Use extracted title from markdown, fall back to filename
     return { ...file, title: file.title || only.filename };
   }
@@ -578,12 +636,7 @@ export async function buildGistHtml(
   const parts: string[] = [];
   for (const file of files) {
     parts.push(`<h2>${escapeHtml(file.filename)}</h2>`);
-    const { html } = await processFileContent(
-      file.content,
-      file.filename,
-      file.language,
-      locate(file)
-    );
+    const { html } = await renderFile(file);
     parts.push(html);
   }
 
