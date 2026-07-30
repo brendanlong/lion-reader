@@ -11,7 +11,9 @@ import {
   isMarkdownFile,
   isHtmlFile,
   processFileContent,
+  buildGistHtml,
 } from "../../src/server/plugins/github";
+import type { GistFile, GistResponse } from "../../src/server/plugins/github";
 
 describe("GitHub plugin URL parsing", () => {
   describe("parseGitHubUrl - gists", () => {
@@ -357,6 +359,7 @@ describe("File type detection", () => {
 
 describe("processFileContent", () => {
   const repoFile = {
+    kind: "repo" as const,
     owner: "humanlayer",
     repo: "advanced-context-engineering-for-coding-agents",
     ref: "main",
@@ -427,6 +430,7 @@ describe("processFileContent", () => {
 
     it("defaults to the HEAD ref when the file was fetched without one", async () => {
       const { html } = await processFileContent("![Logo](logo.png)", "README.md", null, {
+        kind: "repo",
         owner: "brendanlong",
         repo: "lion-reader",
         path: "README.md",
@@ -434,16 +438,6 @@ describe("processFileContent", () => {
       expect(html).toContain(
         'src="https://raw.githubusercontent.com/brendanlong/lion-reader/HEAD/logo.png"'
       );
-    });
-
-    it("leaves content untouched when given no repo location (gists)", async () => {
-      const { html } = await processFileContent(
-        "![Chart](images/chart.png)",
-        "notes.md",
-        null,
-        null
-      );
-      expect(html).toContain('src="images/chart.png"');
     });
 
     it("resolves srcset candidates and video posters against the raw base", async () => {
@@ -461,6 +455,7 @@ describe("processFileContent", () => {
 
     it("resolves links against the blob view at the default HEAD ref", async () => {
       const { html } = await processFileContent("[Docs](docs/guide.md)", "README.md", null, {
+        kind: "repo",
         owner: "brendanlong",
         repo: "lion-reader",
         path: "README.md",
@@ -526,6 +521,123 @@ describe("processFileContent", () => {
         repoFile
       );
       expect(html).toContain('src="https://img.example.com/chart.png"');
+    });
+  });
+
+  describe("gist relative URL resolution (#1424)", () => {
+    const gistFile = {
+      kind: "gist" as const,
+      rawUrl: "https://gist.githubusercontent.com/brendanlong/abc123/raw/deadbeef/notes.md",
+    };
+    const gistRawBase = "https://gist.githubusercontent.com/brendanlong/abc123/raw";
+    const COMMIT_SHA = "cbc18f3161df2b2dd22f3c4944d67cebb97ae544";
+
+    it("resolves a sibling image reference to the gist's raw host", async () => {
+      const { html } = await processFileContent("![Chart](chart.png)", "notes.md", null, gistFile);
+      expect(html).toContain(`src="${gistRawBase}/chart.png"`);
+    });
+
+    it("drops the blob sha in raw_url, which would serve the wrong file", async () => {
+      const { html } = await processFileContent("![Chart](chart.png)", "notes.md", null, gistFile);
+      expect(html).not.toContain("deadbeef");
+    });
+
+    it("pins to the gist's revision when the response carried its history", async () => {
+      const { html } = await processFileContent("![Chart](chart.png)", "notes.md", null, {
+        ...gistFile,
+        revision: COMMIT_SHA,
+      });
+      expect(html).toContain(`src="${gistRawBase}/${COMMIT_SHA}/chart.png"`);
+    });
+
+    it("ignores a revision that isn't a git object name", async () => {
+      // It lands in a URL path we build, so it may only ever be a sha.
+      const { html } = await processFileContent("![Chart](chart.png)", "notes.md", null, {
+        ...gistFile,
+        revision: "../../../evil",
+      });
+      expect(html).toContain(`src="${gistRawBase}/chart.png"`);
+    });
+
+    it("resolves ./-prefixed references the same way", async () => {
+      const { html } = await processFileContent(
+        "![Chart](./chart.png)",
+        "notes.md",
+        null,
+        gistFile
+      );
+      expect(html).toContain(`src="${gistRawBase}/chart.png"`);
+    });
+
+    it("resolves a sibling link to the raw file", async () => {
+      const { html } = await processFileContent("[Setup](setup.md)", "notes.md", null, gistFile);
+      expect(html).toContain(`href="${gistRawBase}/setup.md"`);
+    });
+
+    it("resolves root-relative references to the sibling file", async () => {
+      const { html } = await processFileContent(
+        '<img src="/chart.png">',
+        "notes.md",
+        null,
+        gistFile
+      );
+      expect(html).toContain(`src="${gistRawBase}/chart.png"`);
+    });
+
+    it("leaves absolute URLs alone", async () => {
+      const { html } = await processFileContent(
+        "![Chart](https://img.example.com/chart.png)",
+        "notes.md",
+        null,
+        gistFile
+      );
+      expect(html).toContain('src="https://img.example.com/chart.png"');
+    });
+
+    it("keeps same-document fragments relative", async () => {
+      const { html } = await processFileContent(
+        "# Doc\n\n[Jump](#setup)\n\n## Setup\n\nBody.",
+        "notes.md",
+        null,
+        gistFile
+      );
+      expect(html).toContain('href="#setup"');
+    });
+
+    it("leaves content untouched when the raw URL isn't GitHub's raw gist host", async () => {
+      const { html } = await processFileContent("![Chart](chart.png)", "notes.md", null, {
+        kind: "gist",
+        rawUrl: "https://evil.example.com/brendanlong/abc123/raw/deadbeef/notes.md",
+      });
+      expect(html).toContain('src="chart.png"');
+    });
+
+    it("leaves content untouched when the raw URL isn't the shape we know", async () => {
+      const { html } = await processFileContent("![Chart](chart.png)", "notes.md", null, {
+        kind: "gist",
+        rawUrl: "https://gist.githubusercontent.com/brendanlong/abc123/notes.md",
+      });
+      expect(html).toContain('src="chart.png"');
+    });
+
+    it("leaves content untouched when the raw URL isn't https", async () => {
+      const { html } = await processFileContent("![Chart](chart.png)", "notes.md", null, {
+        kind: "gist",
+        rawUrl: "http://gist.githubusercontent.com/brendanlong/abc123/raw/deadbeef/notes.md",
+      });
+      expect(html).toContain('src="chart.png"');
+    });
+
+    it("resolves srcset candidates and video posters against the raw base", async () => {
+      const { html } = await processFileContent(
+        '<img srcset="small.png 1x, large.png 2x"><video poster="poster.png"></video>',
+        "notes.md",
+        null,
+        gistFile
+      );
+      expect(html).toContain(`${gistRawBase}/small.png 1x`);
+      expect(html).toContain(`${gistRawBase}/large.png 2x`);
+      expect(html).toContain(`poster="${gistRawBase}/poster.png"`);
     });
   });
 
@@ -625,5 +737,56 @@ describe("processFileContent", () => {
       expect(html).toContain("images/a.png");
       expect(html).not.toContain(rawBase);
     });
+  });
+});
+
+describe("buildGistHtml", () => {
+  const gistFile = (filename: string, content: string): GistFile => ({
+    filename,
+    language: filename.endsWith(".md") ? "Markdown" : null,
+    content,
+    raw_url: `https://gist.githubusercontent.com/brendanlong/abc123/raw/deadbeef/${filename}`,
+  });
+  const gist = (files: GistFile[], history?: { version: string }[]): GistResponse => ({
+    id: "abc123",
+    description: null,
+    files: Object.fromEntries(files.map((f) => [f.filename, f])),
+    history,
+    created_at: "2026-07-29T00:00:00Z",
+    updated_at: "2026-07-29T00:00:00Z",
+  });
+  const rawBase = "https://gist.githubusercontent.com/brendanlong/abc123/raw";
+
+  // The wiring the resolution above depends on: a gist file reaches
+  // processFileContent with a location built from its own raw_url.
+  it("resolves the sibling references of a gist's only file", async () => {
+    const { html } = await buildGistHtml(gist([gistFile("notes.md", "![Chart](chart.png)")]));
+    expect(html).toContain(`src="${rawBase}/chart.png"`);
+  });
+
+  it("resolves them for every file of a multi-file gist", async () => {
+    const { html } = await buildGistHtml(
+      gist([gistFile("a.md", "![A](a.png)"), gistFile("b.md", "![B](b.png)")])
+    );
+    expect(html).toContain(`src="${rawBase}/a.png"`);
+    expect(html).toContain(`src="${rawBase}/b.png"`);
+  });
+
+  it("resolves them for a single requested file", async () => {
+    const { html } = await buildGistHtml(
+      gist([gistFile("notes.md", "![Chart](chart.png)"), gistFile("other.md", "Other")]),
+      "notes-md"
+    );
+    expect(html).toContain(`src="${rawBase}/chart.png"`);
+  });
+
+  it("pins to the newest revision in the gist's history", async () => {
+    const { html } = await buildGistHtml(
+      gist(
+        [gistFile("notes.md", "![Chart](chart.png)")],
+        [{ version: "a".repeat(40) }, { version: "b".repeat(40) }]
+      )
+    );
+    expect(html).toContain(`src="${rawBase}/${"a".repeat(40)}/chart.png"`);
   });
 });
