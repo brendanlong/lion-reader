@@ -297,6 +297,18 @@ describe("addParagraphIdsToHtml", () => {
       expect(result.paragraphCount).toBe(3);
     });
 
+    it("keeps the whole article when a stray end tag closes a wrapper", () => {
+      // The sanitizer is a streaming rewriter, not a tree builder, so it passes
+      // an unmatched `</div>` straight through. This HTML is rendered from what
+      // we return, so losing the rest of it would empty the article on screen.
+      const html = "<p>one</p></div><p>two</p>";
+      const result = addParagraphIdsToHtml(html);
+
+      expect(result.paragraphCount).toBe(2);
+      expect(result.html).toContain("one");
+      expect(result.html).toContain("two");
+    });
+
     it("marks blocks and images, but not inline elements", () => {
       const html = `
         <p>Paragraph</p>

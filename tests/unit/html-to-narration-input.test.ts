@@ -165,7 +165,10 @@ describe("htmlToNarrationInput", () => {
       const html = "<ul><li><blockquote><p>x</p></blockquote></li></ul>";
       const result = htmlToNarrationInput(html);
 
+      // ul 0, li 1, blockquote 2, p 3 — the paragraph inside the quote speaks,
+      // and carries both the quote's markers and the item's bullet.
       expect(narrated(result)).toEqual(["- Quote: x End quote."]);
+      expect(result.paragraphs.map((p) => p.o)).toEqual([3]);
     });
 
     it("reads through a wrapper between the quote and its paragraphs", () => {
@@ -272,6 +275,15 @@ describe("htmlToNarrationInput", () => {
     });
   });
 
+  describe("inline code", () => {
+    it("speaks what the code holds, not just its text", () => {
+      const html = '<p>See <code><img alt="the icon"></code> here</p>';
+      const result = htmlToNarrationInput(html);
+
+      expect(narrated(result)).toEqual(["See `Image: the icon` here"]);
+    });
+  });
+
   describe("link handling", () => {
     it("preserves link text", () => {
       const html = '<p>Check out <a href="https://example.com">this link</a>.</p>';
@@ -336,6 +348,16 @@ describe("htmlToNarrationInput", () => {
       const result = htmlToNarrationInput(html);
 
       expect(narrated(result)).toEqual(["- Done: done"]);
+    });
+
+    it("highlights the paragraph that carries a loose item's bullet", () => {
+      const html = "<ul><li><p>Item 1</p></li><li><p>Item 2</p></li></ul>";
+      const result = htmlToNarrationInput(html);
+
+      // The <p>s (2, 4) speak; ul (0) and the items (1, 3) hold no text of
+      // their own, so the bullet rides on the paragraph and highlights it.
+      expect(narrated(result)).toEqual(["- Item 1", "- Item 2"]);
+      expect(result.paragraphs.map((p) => p.o)).toEqual([2, 4]);
     });
 
     it("narrates a loose list item once, not once per wrapper (issue #1441)", () => {
@@ -675,6 +697,66 @@ describe("htmlToNarrationInput", () => {
     });
   });
 
+  describe("markup nested past the depth the walk descends", () => {
+    it("still speaks the text and the alt text it finds there", () => {
+      // The cap keeps feed-controlled nesting from overflowing the stack; what
+      // is below it is spoken as one paragraph rather than dropped.
+      const html = `${"<div>".repeat(70)}<p>bottom text</p><img alt="deep alt">${"</div>".repeat(70)}`;
+      const result = htmlToNarrationInput(html);
+
+      expect(narrated(result)).toEqual(["bottom text Image: deep alt"]);
+    });
+  });
+
+  describe("content that is not prose", () => {
+    it("does not read a stylesheet or a script aloud", () => {
+      // Sanitization drops both with their content, but narration refuses them
+      // itself: read aloud, a stylesheet is not recoverable as speech.
+      const html =
+        "<style>.byline{color:#333}</style><p>Real text.</p><script>window.x=1;</script>";
+      const result = htmlToNarrationInput(html);
+
+      expect(narrated(result)).toEqual(["Real text."]);
+    });
+
+    it("numbers nothing inside it either", () => {
+      // A lazy-loading `<noscript><img>` (what Jetpack emits): the client never
+      // marks the element, so numbering it would shift every later paragraph.
+      const html = '<p>Before</p><noscript><img alt="A cat"></noscript><p>After</p>';
+      const result = htmlToNarrationInput(html);
+
+      expect(narrated(result)).toEqual(["Before", "After"]);
+      expect(result.paragraphs.map((p) => p.o)).toEqual([0, 1]);
+    });
+  });
+
+  describe("figures that hold an image through a wrapper", () => {
+    it("speaks a caption's image once, as the caption", () => {
+      const html = '<figure><figcaption><img alt="A cat"></figcaption></figure>';
+      const result = htmlToNarrationInput(html);
+
+      // The figure can't speak for an image inside its caption: the caption is
+      // narration of its own, so reaching in would say the alt text twice.
+      expect(narrated(result)).toEqual(["Image: A cat"]);
+    });
+
+    it("leaves a nested figure's image to that figure", () => {
+      const html = '<figure><figure><img alt="A cat"></figure></figure>';
+      const result = htmlToNarrationInput(html);
+
+      expect(narrated(result)).toEqual(["Image: A cat"]);
+    });
+
+    it("leaves an image in a table to the table", () => {
+      const html =
+        '<figure><table><tr><td><img alt="A cat"></td></tr></table>' +
+        "<figcaption>Data</figcaption></figure>";
+      const result = htmlToNarrationInput(html);
+
+      expect(narrated(result)).toEqual(["Table: Image: A cat End table.", "Data"]);
+    });
+  });
+
   describe("definition lists", () => {
     it("narrates terms and definitions (issue #1451)", () => {
       const html = "<dl><dt>Term</dt><dd>Definition</dd></dl>";
@@ -706,6 +788,18 @@ describe("htmlToNarrationInput", () => {
 
       expect(narrated(result)).toEqual(["Line one", "Line two"]);
       expect(result.paragraphs.map((p) => p.o)).toEqual([0, 0]);
+    });
+
+    it("ends a paragraph on two breaks however they are written", () => {
+      // `<br />\n<br />` is how feeds write a paragraph break; the whitespace
+      // between the two is still just whitespace.
+      for (const html of [
+        "<p>Line one<br><br>Line two</p>",
+        "<p>Line one<br>\n<br>\nLine two</p>",
+        "<p>Line one<br /> <br /> Line two</p>",
+      ]) {
+        expect(narrated(htmlToNarrationInput(html))).toEqual(["Line one", "Line two"]);
+      }
     });
 
     it("does not let source formatting break a paragraph", () => {

@@ -23,7 +23,7 @@
  * @module narration/runs
  */
 
-import { isBlockTag, narrationTargets } from "./block-elements";
+import { isBlockTag, isNonProseTag, narrationTargets } from "./block-elements";
 
 /**
  * What a narration path wants said out loud beyond the words themselves.
@@ -75,8 +75,8 @@ export interface NarrationRun {
  *
  * A marker rather than a newline because source formatting must not break a
  * paragraph — a feed that wraps its `<p>` text at 72 columns means nothing by
- * it. An HTML parser replaces a literal NUL with U+FFFD, so no document can
- * fake one.
+ * it. A document can contain a raw NUL of its own (linkedom keeps one where a
+ * browser drops it), so `appendWords` strips them rather than trusting that.
  */
 const BREAK = "\u0000";
 
@@ -93,21 +93,30 @@ const TEXT_NODE = 3;
  */
 const MAX_DEPTH = 64;
 
+/** What every level of the walk shares. */
+interface WalkContext {
+  voice: NarrationVoice;
+  /** Element → its `data-para-id` number. */
+  targets: Map<Element, number>;
+  /**
+   * Nodes an ancestor's own narration already covered — a figure's image and
+   * caption. Shared across nested walks (a table's cells, a caption): a set per
+   * walk would reset at those boundaries and say the image a second time.
+   */
+  consumed: Set<Node>;
+}
+
 /**
  * The paragraphs an element's content narrates as, in speech order.
  */
 export function narrationRuns(root: Element, voice: NarrationVoice): NarrationRun[] {
   const targets = new Map<Element, number>();
   narrationTargets(root).forEach((el, index) => targets.set(el, index));
-  return collectRuns(root, voice, targets, 0);
+  return collectRuns(root, { voice, targets, consumed: new Set() }, 0);
 }
 
-function collectRuns(
-  root: Element,
-  voice: NarrationVoice,
-  targets: Map<Element, number>,
-  depth: number
-): NarrationRun[] {
+function collectRuns(root: Element, ctx: WalkContext, depth: number): NarrationRun[] {
+  const { voice, targets, consumed } = ctx;
   /** Runs as they accumulate, each still naming the element it highlights. */
   const runs: { highlight: Element; text: string }[] = [];
 
@@ -118,14 +127,11 @@ function collectRuns(
   let firstImage: Element | null = null;
   let spokeWords = false;
 
-  /** Nodes an ancestor's own narration already covered — see the figure below. */
-  const consumed = new Set<Node>();
-
   const push = (highlight: Element, value: string) => {
-    // Two `<br>`s in a row end a paragraph; every other run of whitespace —
-    // including a single `<br>` and any newline the source happened to contain —
-    // is one space.
-    for (const segment of value.split(/\u0000{2,}/)) {
+    // Two `<br>`s end a paragraph — with any amount of whitespace between them,
+    // since `<br />\n<br />` is how feeds write it. Every other run of
+    // whitespace, a single `<br>` included, is one space.
+    for (const segment of value.replace(/\s*\u0000\s*/g, BREAK).split(/\u0000{2,}/)) {
       const paragraph = segment.replace(/[\s\u0000]+/g, " ").trim();
       if (paragraph) runs.push({ highlight, text: paragraph });
     }
@@ -144,8 +150,11 @@ function collectRuns(
   };
 
   const appendWords = (value: string) => {
-    text += value;
-    if (value.trim()) spokeWords = true;
+    // A raw NUL would fake a `<br><br>`, and the two parsers disagree about it
+    // (linkedom keeps it where a browser drops it), so it never reaches a run.
+    const words = value.includes(BREAK) ? value.replaceAll(BREAK, "") : value;
+    text += words;
+    if (words.trim()) spokeWords = true;
   };
 
   const appendImage = (img: Element) => {
@@ -200,12 +209,12 @@ function collectRuns(
       return;
     }
     if (tagName === "table") {
-      push(el, tableText(el, voice, targets, depth));
+      push(el, tableText(el, ctx, depth));
       return;
     }
 
     if (depth >= MAX_DEPTH) {
-      push(el, el.textContent ?? "");
+      push(el, flatText(el, voice));
       return;
     }
 
@@ -213,12 +222,12 @@ function collectRuns(
     // describes that image and nothing else. Both are marked consumed and the
     // walk still descends, so anything else the figure holds — a long
     // description in its own `<p>` — is narrated rather than swallowed.
-    const image = figureImage(el, tagName);
+    const image = figureImage(el, tagName, consumed);
     if (image) {
-      const caption = figurePart(el, "figcaption");
+      const caption = figurePart(el, "figcaption", consumed);
       consumed.add(image);
       if (caption) consumed.add(caption);
-      push(el, figureText(image, caption, voice, targets, depth));
+      push(el, figureText(image, caption, ctx, depth));
     }
 
     const start = runs.length;
@@ -235,15 +244,33 @@ function collectRuns(
    * A link speaks the words it wraps. Only when it wraps nothing speakable — an
    * empty anchor, or the URL as its own text — does it announce where it goes
    * instead, because "[link to example.com]" beats silence but loses to words.
+   *
+   * Decided from what the walk actually produced rather than by looking for
+   * content first: an image inside a link is content, and asking the DOM about
+   * it once per link is the single most expensive thing this walk did.
    */
   const visitLink = (el: Element, depth: number) => {
     const href = el.getAttribute("href");
-    const linkText = (el.textContent ?? "").trim();
-    if (href && (linkText === "" || linkText === href) && !el.querySelector("img")) {
-      appendWords(linkTarget(href));
+    const runsBefore = runs.length;
+    const imagesBefore = images;
+    const textBefore = text.length;
+
+    if (depth >= MAX_DEPTH) appendWords(el.textContent ?? "");
+    else visitChildren(el, depth);
+
+    // What it said, when all of that landed in the run being built. A block
+    // inside the link (legal, and always says something) flushed instead.
+    const flushed = runs.length !== runsBefore;
+    const said = flushed ? null : text.slice(textBefore);
+    if (flushed || images > imagesBefore || (said ?? "").trim() !== "") {
+      // A URL as its own link text reads as noise; say where it goes instead.
+      if (href && said !== null && said.trim() === href) {
+        text = text.slice(0, textBefore);
+        appendWords(linkTarget(href));
+      }
       return;
     }
-    visitChildren(el, depth);
+    if (href) appendWords(linkTarget(href));
   };
 
   const visitInline = (el: Element, tagName: string, depth: number) => {
@@ -259,8 +286,12 @@ function collectRuns(
     // its own; its item speaks the state, which is the only cue it carries.
     if (tagName === "input") return;
     if (tagName === "code" && voice.structuralMarkers) {
-      const code = el.textContent ?? "";
-      if (code.trim()) appendWords(`\`${code}\``);
+      // Wrapped after the fact rather than read from `textContent`, so whatever
+      // is inside (an image's alt text) is still spoken.
+      const before = text.length;
+      visitChildren(el, depth);
+      const code = text.slice(before);
+      if (code.trim()) text = `${text.slice(0, before)}\`${code.trim()}\``;
       return;
     }
     if (tagName === "a") {
@@ -286,6 +317,7 @@ function collectRuns(
 
     const el = node as Element;
     const tagName = el.tagName.toLowerCase();
+    if (isNonProseTag(tagName)) return;
     if (isBlockTag(tagName)) {
       visitBlock(el, tagName, depth);
       return;
@@ -308,15 +340,42 @@ function inNestedList(el: Element, li: Element): boolean {
 }
 
 /** The text of a subtree, as one string — the walk's output, joined. */
-function subtreeText(
-  el: Element,
-  voice: NarrationVoice,
-  targets: Map<Element, number>,
-  depth: number
-): string {
-  return collectRuns(el, voice, targets, depth + 1)
+function subtreeText(el: Element, ctx: WalkContext, depth: number): string {
+  return collectRuns(el, ctx, depth + 1)
     .map((run) => run.text)
     .join(" ");
+}
+
+/**
+ * Everything an element holds, without descending: the walk's fallback at
+ * `MAX_DEPTH`. Not `textContent`, which drops an image's alt text — and which
+ * would read a code block aloud in the voice that skips them.
+ */
+function flatText(el: Element, voice: NarrationVoice): string {
+  const parts: string[] = [];
+  const stack: Node[] = [el];
+  while (stack.length > 0) {
+    const node = stack.pop() as Node;
+    if (node.nodeType === TEXT_NODE) {
+      parts.push(node.textContent ?? "");
+      continue;
+    }
+    if (node.nodeType !== ELEMENT_NODE) continue;
+
+    const child = node as Element;
+    const tagName = child.tagName.toLowerCase();
+    if (isNonProseTag(tagName)) continue;
+    if (tagName === "pre" && !voice.speakCodeBlocks) continue;
+    if (tagName === "img") {
+      parts.push(` ${imageText(child, voice)} `);
+      continue;
+    }
+    const children = child.childNodes;
+    for (let i = children.length - 1; i >= 0; i--) {
+      stack.push(children[i]);
+    }
+  }
+  return parts.join("");
 }
 
 /**
@@ -329,12 +388,7 @@ function subtreeText(
  * narrate through the walk too — flattening them to `textContent` would drop the
  * alt text of an image in a cell and the bullets of a list in one (issue #1445).
  */
-function tableText(
-  el: Element,
-  voice: NarrationVoice,
-  targets: Map<Element, number>,
-  depth: number
-): string {
+function tableText(el: Element, ctx: WalkContext, depth: number): string {
   const parts: string[] = [];
 
   const readRow = (tr: Element): string => {
@@ -346,7 +400,7 @@ function tableText(
       }
       if (node.nodeType !== ELEMENT_NODE) return;
       // A `th`/`td`, or whatever else ended up in the row.
-      cells.push(nodeText(node as Element, voice, targets, depth));
+      cells.push(nodeText(node as Element, ctx, depth));
     });
     return cells.filter((cell) => cell.trim()).join(", ");
   };
@@ -371,33 +425,36 @@ function tableText(
         read(child);
         return;
       }
-      parts.push(nodeText(child, voice, targets, depth));
+      parts.push(nodeText(child, ctx, depth));
     });
   };
   read(el);
 
   const rows = parts.filter((part) => part.trim()).join(". ");
   if (!rows) return "";
-  return voice.structuralMarkers ? `Table: ${rows} End table.` : rows;
+  return ctx.voice.structuralMarkers ? `Table: ${rows} End table.` : rows;
 }
 
 /** What an element inside a table's structure contributes. */
-function nodeText(
-  el: Element,
-  voice: NarrationVoice,
-  targets: Map<Element, number>,
-  depth: number
-): string {
+function nodeText(el: Element, ctx: WalkContext, depth: number): string {
   // An image speaks for itself; everything else speaks through its contents.
   return el.tagName.toLowerCase() === "img"
-    ? imageText(el, voice)
-    : subtreeText(el, voice, targets, depth).trim();
+    ? imageText(el, ctx.voice)
+    : subtreeText(el, ctx, depth).trim();
 }
 
 /** The image a figure narrates as, if it is a figure and it holds one. */
-function figureImage(el: Element, tagName: string): Element | null {
-  return tagName === "figure" ? figurePart(el, "img") : null;
+function figureImage(el: Element, tagName: string, consumed: Set<Node>): Element | null {
+  return tagName === "figure" ? figurePart(el, "img", consumed) : null;
 }
+
+/**
+ * Blocks a figure cannot speak through, because they narrate their own subtree:
+ * a table reads its cells, a code block its listing, a nested figure its own
+ * image, and a `<figcaption>` is a caption in its own right. Reaching past one
+ * would say its contents twice.
+ */
+const OWN_NARRATION = new Set(["table", "pre", "figure", "figcaption"]);
 
 /**
  * The image or caption a figure speaks for: the first one it holds through
@@ -407,8 +464,9 @@ function figureImage(el: Element, tagName: string): Element | null {
  * A wrapper that has text of its own keeps what it holds, because the figure
  * speaking for it would leave that text narrated twice or not at all.
  */
-function figurePart(el: Element, selector: string): Element | null {
+function figurePart(el: Element, selector: string, consumed: Set<Node>): Element | null {
   for (const candidate of Array.from(el.querySelectorAll(selector))) {
+    if (consumed.has(candidate)) continue;
     const own = (candidate.textContent ?? "").trim();
     let held = true;
     for (
@@ -416,7 +474,10 @@ function figurePart(el: Element, selector: string): Element | null {
       parent && parent !== el;
       parent = parent.parentElement
     ) {
-      if ((parent.textContent ?? "").trim() !== own) {
+      if (
+        OWN_NARRATION.has(parent.tagName.toLowerCase()) ||
+        (parent.textContent ?? "").trim() !== own
+      ) {
         held = false;
         break;
       }
@@ -433,12 +494,11 @@ function figurePart(el: Element, selector: string): Element | null {
 function figureText(
   image: Element,
   caption: Element | null,
-  voice: NarrationVoice,
-  targets: Map<Element, number>,
+  ctx: WalkContext,
   depth: number
 ): string {
   const alt = image.getAttribute("alt")?.trim();
-  const captionText = caption ? subtreeText(caption, voice, targets, depth).trim() : "";
+  const captionText = caption ? subtreeText(caption, ctx, depth).trim() : "";
   if (alt) {
     return captionText ? `Image: ${alt}. ${captionText}` : `Image: ${alt}`;
   }
@@ -446,7 +506,7 @@ function figureText(
     // The caption is the only description there is.
     return `Image: ${captionText}`;
   }
-  return voice.speakUndescribedImages ? "Image: no description" : "";
+  return ctx.voice.speakUndescribedImages ? "Image: no description" : "";
 }
 
 /** What an image contributes to the run it sits in. */

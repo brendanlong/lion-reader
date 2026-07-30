@@ -31,18 +31,25 @@ export interface AddParagraphIdsResult {
  * `data-para-id="para-{index}"`, numbered in document order.
  *
  * The numbering is `narrationTargets`, which the server uses too — that is what
- * makes a narration paragraph's `o` name the same element here.
+ * makes a narration paragraph's `o` name the same element here. Parsed into a
+ * document with an explicit `<body>`, exactly as the server parses it, rather
+ * than into a wrapper element: a `</div>` with no opening tag (which the
+ * sanitizer passes through, being a streaming rewriter rather than a tree
+ * builder) closes a wrapper early, and everything after it would be dropped
+ * from the article this returns for rendering.
  */
-function markParagraphs(html: string): { container: Element; count: number } | null {
+function markParagraphs(html: string): { body: Element; count: number } | null {
   const parser = new DOMParser();
-  // Wrap in a container to handle fragment parsing correctly
-  const doc = parser.parseFromString(`<div>${html}</div>`, "text/html");
-  const container = doc.body.firstElementChild;
-  if (!container) return null;
+  const doc = parser.parseFromString(
+    `<!DOCTYPE html><html><body>${html}</body></html>`,
+    "text/html"
+  );
+  const body = doc.body;
+  if (!body) return null;
 
-  const targets = narrationTargets(container);
+  const targets = narrationTargets(body);
   targets.forEach((el, index) => el.setAttribute("data-para-id", `para-${index}`));
-  return { container, count: targets.length };
+  return { body, count: targets.length };
 }
 
 /**
@@ -69,7 +76,7 @@ export function addParagraphIdsToHtml(html: string): AddParagraphIdsResult {
   if (!marked) {
     return { html: "", paragraphCount: 0 };
   }
-  return { html: marked.container.innerHTML, paragraphCount: marked.count };
+  return { html: marked.body.innerHTML, paragraphCount: marked.count };
 }
 
 /**
@@ -171,12 +178,12 @@ export function htmlToClientNarration(html: string): ClientNarrationResult {
   // highlights; `buildAlignedNarration` keeps the map aligned with how the
   // player splits the text it is given (see `./paragraph-map`).
   const { narrationText, paragraphMap } = buildAlignedNarration(
-    narrationRuns(marked.container, DIRECT_TTS_VOICE)
+    narrationRuns(marked.body, DIRECT_TTS_VOICE)
   );
 
   return {
     narrationText,
     paragraphMap,
-    processedHtml: marked.container.innerHTML,
+    processedHtml: marked.body.innerHTML,
   };
 }

@@ -6,6 +6,10 @@
  * the client uses — so a paragraph's `o` names the element the client marked
  * with `data-para-id="para-{o}"` and highlighting stays in step.
  *
+ * The HTML must be **sanitized** first (the caller's job): the raw columns hold
+ * markup the page never renders, and narrating those numbers elements the client
+ * never marks.
+ *
  * @module narration/html-to-narration-input
  */
 

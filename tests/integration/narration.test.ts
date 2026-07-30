@@ -26,10 +26,18 @@ import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
 import { splitNarrationParagraphs } from "../../src/lib/narration/paragraph-map";
 import { NARRATION_FORMAT_VERSION } from "../../src/lib/narration/constants";
+import { sanitizeEntryHtml } from "../../src/server/html/sanitize";
 
-/** The narration cache key: sha256 of the exact content being narrated. */
-function narrationHash(content: string): string {
-  return createHash("sha256").update(content, "utf8").digest("hex");
+/**
+ * The narration cache key, mirroring the router: the narration format plus the
+ * exact content being narrated, which is the *sanitized* content — the raw
+ * columns hold markup the page never renders. A mismatch here shows up as the
+ * "serves the stored map verbatim" test missing the cache.
+ */
+function narrationHash(content: string, format = NARRATION_FORMAT_VERSION): string {
+  return createHash("sha256")
+    .update(`${format}\n${sanitizeEntryHtml(content) ?? ""}`, "utf8")
+    .digest("hex");
 }
 
 async function createTestUser(): Promise<string> {
@@ -190,7 +198,6 @@ describe("narration.generate cached read path", () => {
       contentHash,
       contentNarration: "First\n\nThird",
       paragraphMap: storedMap,
-      formatVersion: NARRATION_FORMAT_VERSION,
       generatedAt: new Date(),
       createdAt: new Date(),
     });
@@ -202,35 +209,28 @@ describe("narration.generate cached read path", () => {
     expect(result.paragraphMap).toEqual(storedMap);
   });
 
-  it.each([
-    ["an older narration format", NARRATION_FORMAT_VERSION - 1, [{ n: 0, o: 0 }]],
-    ["a row from before the format was tracked", null, null],
-  ])("does not serve %s", async (label, formatVersion, paragraphMap) => {
+  it("does not serve a row an older narration format wrote", async () => {
     // A <br><br>-formatted block: the second <p> holds two paragraphs, exactly
-    // the shape that used to desync highlighting. The label keeps each case's
-    // content (and so its content hash) distinct — see the note above.
-    const contentCleaned = [
-      `<p>Intro for ${label}.</p>`,
-      "<p>Line one.",
-      "<br /><br />",
-      "Line two.</p>",
-    ].join("\n");
-    const contentHash = narrationHash(contentCleaned);
+    // the shape that used to desync highlighting.
+    const contentCleaned = ["<p>Intro.</p>", "<p>Line one.", "<br /><br />", "Line two.</p>"].join(
+      "\n"
+    );
     const entryId = await createTestFeedAndEntry({ contentCleaned });
     await createUserEntry(userId, entryId);
 
-    // Its map numbers elements the way the walk of the day numbered them, so
-    // serving it against today's `data-para-id`s would highlight the wrong
-    // paragraphs. The row is regenerated instead — with no LLM key configured
-    // here, through the fallback path.
+    // Keyed by the previous format. Its map numbers elements the way that walk
+    // numbered them, so serving it against today's `data-para-id`s would
+    // highlight the wrong paragraphs — the format is in the cache key so this
+    // row is simply never found. Regeneration falls back to plain text, there
+    // being no LLM key configured here.
+    const staleHash = narrationHash(contentCleaned, NARRATION_FORMAT_VERSION - 1);
     const cachedNarration = "Stale narration text.";
-    createdNarrationHashes.push(contentHash);
+    createdNarrationHashes.push(staleHash, narrationHash(contentCleaned));
     await db.insert(narrationContent).values({
       id: generateUuidv7(),
-      contentHash,
+      contentHash: staleHash,
       contentNarration: cachedNarration,
-      paragraphMap,
-      formatVersion,
+      paragraphMap: [{ n: 0, o: 0 }],
       generatedAt: new Date(),
       createdAt: new Date(),
     });
@@ -249,6 +249,40 @@ describe("narration.generate cached read path", () => {
       { n: 0, o: 0 },
       { n: 1, o: 1 },
       { n: 2, o: 1 },
+    ]);
+  });
+
+  it("narrates the sanitized content, not the raw columns", async () => {
+    // Sanitization is read-path-only, so the raw columns hold markup the page
+    // never renders: a stylesheet narration would otherwise read aloud, and a
+    // lazy-loading `<noscript><img>` whose element the client never numbers,
+    // which would shift every paragraph after it onto the wrong one.
+    const contentCleaned = [
+      "<style>.byline{color:#333}</style>",
+      "<p>Real article text.</p>",
+      '<figure><img src="https://example.com/cat.jpg" alt="A cat">',
+      '<noscript><img src="https://example.com/cat.jpg" alt="A cat"></noscript>',
+      "<figcaption>My cat</figcaption></figure>",
+      "<p>The end.</p>",
+    ].join("");
+    const entryId = await createTestFeedAndEntry({ contentCleaned });
+    await createUserEntry(userId, entryId);
+    createdNarrationHashes.push(narrationHash(contentCleaned));
+
+    const caller = createCaller(createAuthContext(userId));
+    const result = await caller.narration.generate({ id: entryId, useLlmNormalization: false });
+
+    expect(splitNarrationParagraphs(result.narration)).toEqual([
+      "Real article text.",
+      "Image: A cat. My cat",
+      "The end.",
+    ]);
+    // p, figure, p — numbered over the sanitized HTML the client marks up, with
+    // no gap where the dropped markup was.
+    expect(result.paragraphMap).toEqual([
+      { n: 0, o: 0 },
+      { n: 1, o: 1 },
+      { n: 2, o: 4 },
     ]);
   });
 });

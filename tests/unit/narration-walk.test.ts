@@ -5,11 +5,10 @@
  * rather than one markup shape at a time — the per-shape expectations live in
  * `html-to-narration-input.test.ts` and `client-paragraph-ids.test.ts`.
  *
- * 1. **Coverage**: every word in the entry is narrated exactly once. Narration
- *    used to work from a list of elements that speak, so text in an element no
- *    rule claimed went unsaid and text two rules claimed was said twice
- *    (issues #1441, #1445, #1451). A run partition can't do either, and this is
- *    where that is checked instead of case by case.
+ 1. **Coverage**: every word in the entry is narrated exactly once — the
+ *    property the run partition exists to guarantee (see the module docs on
+ *    `runs.ts` for why the previous design couldn't), checked here rather than
+ *    one markup shape at a time.
  * 2. **Numbering agreement**: the server (linkedom) and the client (DOMParser)
  *    must number the same elements, or a narration paragraph highlights the
  *    wrong one.
@@ -81,6 +80,16 @@ const SHAPES = [
   "<p></p><p>w0</p><div></div>",
   "<p>w0 <!-- comment --> w1</p>",
   "<table>w0<tr><td>w1</td></tr></table>",
+  // A figure can claim an image through an empty wrapper, so these are the
+  // shapes where it could claim one twice — the fuzzer can't reach them,
+  // because it puts a word inside every element it generates.
+  '<figure><figcaption><img alt="w0"></figcaption></figure>',
+  '<figure><figure><img alt="w0"></figure></figure>',
+  '<figure><table><tr><td><img alt="w0"></td></tr></table><figcaption>w1</figcaption></figure>',
+  '<figure><div><img alt="w0"></div><div><img alt="w1"></div></figure>',
+  '<figure><p><img alt="w0"></p><figcaption>w1</figcaption></figure>',
+  '<div><figure><img alt="w0"><figcaption>w1</figcaption></figure></div>',
+  '<table><tr><td><figure><img alt="w0"><figcaption>w1</figcaption></figure></td></tr></table>',
 ];
 
 /** Every `w<n>` token in a string, in order. */
