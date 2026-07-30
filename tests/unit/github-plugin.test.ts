@@ -436,16 +436,6 @@ describe("processFileContent", () => {
       );
     });
 
-    it("leaves content untouched when given no repo location (gists)", async () => {
-      const { html } = await processFileContent(
-        "![Chart](images/chart.png)",
-        "notes.md",
-        null,
-        null
-      );
-      expect(html).toContain('src="images/chart.png"');
-    });
-
     it("resolves srcset candidates and video posters against the raw base", async () => {
       const { html } = await processFileContent(
         '<img srcset="images/small.png 1x, images/large.png 2x">' +
@@ -526,6 +516,88 @@ describe("processFileContent", () => {
         repoFile
       );
       expect(html).toContain('src="https://img.example.com/chart.png"');
+    });
+  });
+
+  describe("gist relative URL resolution (#1424)", () => {
+    const gistFile = {
+      rawUrl: "https://gist.githubusercontent.com/brendanlong/abc123/raw/deadbeef/notes.md",
+    };
+    const gistRawBase = "https://gist.githubusercontent.com/brendanlong/abc123/raw";
+
+    it("resolves a sibling image reference to the gist's raw host", async () => {
+      const { html } = await processFileContent("![Chart](chart.png)", "notes.md", null, gistFile);
+      expect(html).toContain(`src="${gistRawBase}/chart.png"`);
+    });
+
+    // A raw_url's sha names the file's own blob, and the filename after it is
+    // ignored — keeping it would serve notes.md's bytes as chart.png.
+    it("drops the revision sha, which names a blob rather than a tree", async () => {
+      const { html } = await processFileContent("![Chart](chart.png)", "notes.md", null, gistFile);
+      expect(html).not.toContain("deadbeef");
+    });
+
+    it("resolves ./-prefixed references the same way", async () => {
+      const { html } = await processFileContent(
+        "![Chart](./chart.png)",
+        "notes.md",
+        null,
+        gistFile
+      );
+      expect(html).toContain(`src="${gistRawBase}/chart.png"`);
+    });
+
+    // A gist has no per-file page, so a link resolves to the raw file too.
+    it("resolves a sibling link to the raw file", async () => {
+      const { html } = await processFileContent("[Setup](setup.md)", "notes.md", null, gistFile);
+      expect(html).toContain(`href="${gistRawBase}/setup.md"`);
+    });
+
+    // A gist is flat, so a leading slash can only mean a sibling.
+    it("resolves root-relative references to the sibling file", async () => {
+      const { html } = await processFileContent(
+        '<img src="/chart.png">',
+        "notes.md",
+        null,
+        gistFile
+      );
+      expect(html).toContain(`src="${gistRawBase}/chart.png"`);
+    });
+
+    it("leaves absolute URLs alone", async () => {
+      const { html } = await processFileContent(
+        "![Chart](https://img.example.com/chart.png)",
+        "notes.md",
+        null,
+        gistFile
+      );
+      expect(html).toContain('src="https://img.example.com/chart.png"');
+    });
+
+    it("keeps same-document fragments relative", async () => {
+      const { html } = await processFileContent(
+        "# Doc\n\n[Jump](#setup)\n\n## Setup\n\nBody.",
+        "notes.md",
+        null,
+        gistFile
+      );
+      expect(html).toContain('href="#setup"');
+    });
+
+    // Every URL in the document resolves against this base, so an unexpected one
+    // must not become the base.
+    it("leaves content untouched when the raw URL isn't GitHub's raw gist host", async () => {
+      const { html } = await processFileContent("![Chart](chart.png)", "notes.md", null, {
+        rawUrl: "https://evil.example.com/brendanlong/abc123/raw/deadbeef/notes.md",
+      });
+      expect(html).toContain('src="chart.png"');
+    });
+
+    it("leaves content untouched when the raw URL isn't the shape we know", async () => {
+      const { html } = await processFileContent("![Chart](chart.png)", "notes.md", null, {
+        rawUrl: "https://gist.githubusercontent.com/brendanlong/abc123/notes.md",
+      });
+      expect(html).toContain('src="chart.png"');
     });
   });
 

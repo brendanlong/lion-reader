@@ -22,6 +22,8 @@ interface GistFile {
   filename: string;
   language: string | null;
   content: string;
+  /** `https://gist.githubusercontent.com/{user}/{id}/raw/{sha}/{filename}`. */
+  raw_url: string;
 }
 
 interface GistResponse {
@@ -349,6 +351,18 @@ export interface RepoFileLocation {
 }
 
 /**
+ * A gist file's own raw URL (`raw_url` from the gists API), which is where the
+ * relative URLs in it resolve from. We take GitHub's URL rather than building one
+ * out of the gist id, so an ownerless gist needs no guess at the user segment.
+ */
+export interface GistFileLocation {
+  rawUrl: string;
+}
+
+/** Where a rendered file came from, which is what its relative URLs resolve to. */
+export type FileLocation = RepoFileLocation | GistFileLocation;
+
+/**
  * Absolutize the relative URLs in a rendered repo file against GitHub's *two*
  * bases: embedded files (`src`) resolve to raw.githubusercontent.com, which
  * serves the bytes, while links (`href`) resolve to the github.com blob view,
@@ -371,6 +385,60 @@ function absolutizeGitHubUrls(html: string, file: RepoFileLocation): string {
     rootBaseUrl: blobRoot,
     media: { baseUrl: `${rawRoot}${path}`, rootBaseUrl: rawRoot },
   });
+}
+
+/**
+ * The URL prefix every file in a gist is served under,
+ * `https://gist.githubusercontent.com/{user}/{id}/raw/`, or null if the file's
+ * `raw_url` isn't that shape.
+ *
+ * The revision sha in a `raw_url` (`…/raw/{sha}/{filename}`) is deliberately
+ * dropped. That sha names a *blob*, and the filename after it is then ignored, so
+ * `…/raw/{sha-of-notes.md}/chart.png` serves notes.md's bytes under the sibling's
+ * name — silently the wrong file. The sha-less form resolves by filename against
+ * the current revision and 404s when there is no such file (both verified against
+ * the live host).
+ */
+function gistRawBase(rawUrl: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+
+  // Every URL in the document resolves against this base, so anything but the
+  // raw host in the shape we know is left alone rather than guessed at.
+  const [user, id, raw] = url.pathname.split("/").filter(Boolean);
+  if (url.protocol !== "https:" || url.hostname !== "gist.githubusercontent.com" || raw !== "raw") {
+    logger.debug("Unexpected gist raw URL, leaving relative URLs alone", { rawUrl });
+    return null;
+  }
+
+  return `https://gist.githubusercontent.com/${user}/${id}/raw/`;
+}
+
+/**
+ * Absolutize the relative URLs in a rendered gist file against the raw host that
+ * serves the gist's files, so a reference to a sibling file (`chart.png`)
+ * resolves to that file. Without this the reference falls through to the generic
+ * single-base absolutizer downstream, which resolves it against
+ * `gist.github.com/{user}/{id}` — the gist's HTML page, so an image renders
+ * broken (#1424).
+ *
+ * A gist has no per-file page, so — unlike a repo file, whose links go to the
+ * github.com blob view (see `absolutizeGitHubUrls`) — there's no second base to
+ * split links off to, and `href` resolves to the raw file too. A gist's files are
+ * also a flat list, so a leading slash can only mean a sibling as well: the root
+ * base is the same one.
+ */
+function absolutizeGistUrls(html: string, file: GistFileLocation): string {
+  const base = gistRawBase(file.rawUrl);
+  if (!base) {
+    return html;
+  }
+
+  return absolutizeUrls(html, base, { rootBaseUrl: base });
 }
 
 /**
@@ -402,18 +470,20 @@ interface ProcessedRepoFile {
  * render — harmless in practice, since the standard delimiters don't fire on
  * prose (`costs $5 and $10` stays text) and there's a test for that.
  *
- * `location` is the repo file the content came from, so its relative URLs can be
- * resolved GitHub's way; pass null for gist files, whose sibling-file references
- * we don't resolve (they'd need gist.githubusercontent.com raw URLs, #1424).
+ * `location` is the repo or gist file the content came from, so its relative URLs
+ * can be resolved GitHub's way — the two hosts differ, so see the two
+ * absolutizers for what each resolves to.
  */
 export async function processFileContent(
   content: string,
   filename: string,
   language: string | null,
-  location: RepoFileLocation | null
+  location: FileLocation
 ): Promise<ProcessedRepoFile> {
   const absolutize = (html: string): string =>
-    location ? absolutizeGitHubUrls(html, location) : html;
+    "rawUrl" in location
+      ? absolutizeGistUrls(html, location)
+      : absolutizeGitHubUrls(html, location);
 
   if (isMarkdownFile(filename) || isMarkdownLanguage(language)) {
     const { html, title, summary, author } = await processMarkdown(content);
@@ -462,7 +532,7 @@ async function buildGistHtml(
         matchedFile.content,
         matchedFile.filename,
         matchedFile.language,
-        null
+        { rawUrl: matchedFile.raw_url }
       );
       // Use extracted title from markdown, fall back to filename
       return { ...file, title: file.title || matchedFile.filename };
@@ -472,7 +542,9 @@ async function buildGistHtml(
   // Single file: return it directly
   if (files.length === 1) {
     const only = files[0];
-    const file = await processFileContent(only.content, only.filename, only.language, null);
+    const file = await processFileContent(only.content, only.filename, only.language, {
+      rawUrl: only.raw_url,
+    });
     // Use extracted title from markdown, fall back to filename
     return { ...file, title: file.title || only.filename };
   }
@@ -481,7 +553,9 @@ async function buildGistHtml(
   const parts: string[] = [];
   for (const file of files) {
     parts.push(`<h2>${escapeHtml(file.filename)}</h2>`);
-    const { html } = await processFileContent(file.content, file.filename, file.language, null);
+    const { html } = await processFileContent(file.content, file.filename, file.language, {
+      rawUrl: file.raw_url,
+    });
     parts.push(html);
   }
 
