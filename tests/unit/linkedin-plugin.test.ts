@@ -195,9 +195,11 @@ describe("renderLinkedInPost", () => {
   });
 
   it("elides an over-long headline instead of storing it raw", () => {
-    const result = renderLinkedInPost(page({ ...TEXT_POST, headline: "x".repeat(5000) }), POST_URL);
-    expect(result!.title).toMatch(/^x+…$/);
-    expect(result!.title!.length).toBeLessThan(200);
+    const headline = `A headline LinkedIn generated that runs on and on ${"and on ".repeat(500)}`;
+    const title = renderLinkedInPost(page({ ...TEXT_POST, headline }), POST_URL)!.title!;
+    expect(title.endsWith("…")).toBe(true);
+    expect(headline.startsWith(title.slice(0, -1))).toBe(true);
+    expect(title.length).toBeLessThan(100);
   });
 
   it("accepts schema.org's single-or-array and bare-string shapes", () => {

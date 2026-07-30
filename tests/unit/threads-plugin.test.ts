@@ -181,9 +181,13 @@ describe("renderThreadsPost", () => {
   // The exact cap is pinned in social-post.test.ts; this only checks Threads
   // routes its title through that shared helper.
   it("elides a long first line into the title", () => {
-    const result = renderThreadsPost(page({ description: "a".repeat(150) }), POST_URL);
-    expect(result!.title).toMatch(/^a+…$/);
-    expect(result!.title!.length).toBeLessThan(150);
+    const line =
+      "The quick brown fox jumps over the lazy dog and keeps on running well past the cap";
+    const title = renderThreadsPost(page({ description: line }), POST_URL)!.title!;
+    expect(title.endsWith("…")).toBe(true);
+    // A prefix of the input, so a title of "…" alone can't satisfy this.
+    expect(line.startsWith(title.slice(0, -1))).toBe(true);
+    expect(title.length).toBeLessThan(line.length);
   });
 
   it("finds Open Graph tags that appear after </head>", () => {

@@ -1,8 +1,8 @@
 import type { UrlPlugin, SavedArticleContent } from "./types";
-import { socialPostTitle } from "./social-post";
+import { socialPostImage, socialPostTitle } from "./social-post";
 import { fetchPluginPage } from "./fetch-page";
 import { Parser } from "htmlparser2";
-import { escapeHtml, plainTextToHtml } from "@/server/http/html";
+import { plainTextToHtml } from "@/server/http/html";
 import { safeDecodeURIComponent } from "@/lib/url";
 import { logger } from "@/lib/logger";
 
@@ -181,12 +181,9 @@ export function renderThreadsPost(html: string, postUrl: string): SavedArticleCo
 
   const parts = [plainTextToHtml(text)];
 
-  // Plugin HTML is a body fragment, so the save path's own `og:image` scrape
-  // never sees this page — inlining the image is the only way it survives.
   const image = postImageUrl(openGraph);
   if (image) {
-    // No alt text: Threads exposes none, and inventing one is worse than none.
-    parts.push(`<figure><img src="${escapeHtml(image)}" alt="" loading="lazy"></figure>`);
+    parts.push(socialPostImage(image));
   }
 
   const author = parseThreadsAuthor(openGraph.title);

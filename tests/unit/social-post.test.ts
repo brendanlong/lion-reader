@@ -62,6 +62,32 @@ describe("socialPostTitle", () => {
     expect(title.endsWith("…")).toBe(true);
   });
 
+  // The case above has NO space inside the cap, so the backup is a no-op and the
+  // floor is never the reason for the result. This one has a boundary to back up
+  // over and is rejected *because* of the floor.
+  it("cuts mid-word when backing up would leave less than the floor", () => {
+    const title = socialPostTitle(`${"a".repeat(30)} ${"b".repeat(60)}`, "Sen");
+    // Backing up to the boundary would leave 30 characters, under the floor, so
+    // the mid-word cut is kept and the title stays full length.
+    expect([...title]).toHaveLength(60);
+    expect(title.startsWith("a".repeat(30))).toBe(true);
+  });
+
+  it("measures the floor in code points, not UTF-16 units", () => {
+    // 25 emoji are 25 characters of title but 50 UTF-16 units. Counting units
+    // would clear the 40 floor and collapse the title to 26 characters.
+    const title = socialPostTitle(`${"😀".repeat(25)} ${"b".repeat(60)}`, "Sen");
+    expect([...title]).toHaveLength(60);
+    expect(title).toContain("b");
+  });
+
+  it("collapses whitespace runs so they can't eat the title", () => {
+    // A long run of spaces inside the cap would otherwise leave just "a…".
+    expect(socialPostTitle(`a${" ".repeat(70)}b`, "Sen")).toBe("a b");
+    // Tabs and hard-wrapped lines collapse the same way.
+    expect(socialPostTitle("one\t\ttwo   three", "Sen")).toBe("one two three");
+  });
+
   it("falls back to the author when there is no text", () => {
     expect(socialPostTitle("", "Sen")).toBe("Post by Sen");
     expect(socialPostTitle(null, "Sen")).toBe("Post by Sen");
