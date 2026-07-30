@@ -5,8 +5,9 @@
  */
 
 /**
- * The narration format: bump this whenever the walk in `./runs` changes which
- * elements it numbers or what it says.
+ * The narration format: bump this whenever the walk in `./runs` changes what it
+ * says, or anything upstream of it changes which elements get numbered — the
+ * numbering in `./block-elements` or the tree it walks (`./parse-html`).
  *
  * A cached narration is stored with the paragraph map built at generation time,
  * and those element numbers only mean anything against the numbering the format
@@ -15,7 +16,7 @@
  * cache key: a bump misses the cache instead, and two releases that disagree
  * about the numbering never share a row.
  */
-export const NARRATION_FORMAT_VERSION = 1;
+export const NARRATION_FORMAT_VERSION = 2;
 
 /**
  * Providers selectable for narration preprocessing. Narration preprocessing

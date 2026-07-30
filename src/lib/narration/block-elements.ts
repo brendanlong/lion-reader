@@ -72,6 +72,14 @@ export function isBlockTag(tagName: string): boolean {
  * bad enough failure to refuse twice. Unlike the sanitizer's list, this one is
  * about speech: `option` and `title` hold words nobody is reading the article
  * for.
+ *
+ * `iframe` is the one entry the sanitizer *keeps* (an embed), and it is here for
+ * a second reason. Its content is rawtext — a browser reads an embed's fallback
+ * markup as text nobody sees — but linkedom parses it into elements, which is
+ * the one tree difference `./parse-html` can't normalize away (serializing
+ * rawtext writes the markup back out for linkedom to re-parse). Skipping the
+ * subtree on both sides sidesteps the disagreement, and stops the client
+ * speaking an embed's fallback markup aloud.
  */
 const NON_PROSE = new Set([
   "script",
@@ -79,6 +87,7 @@ const NON_PROSE = new Set([
   "textarea",
   "option",
   "title",
+  "iframe",
   "noscript",
   "noembed",
   "noframes",
@@ -115,9 +124,8 @@ function isTarget(tagName: string): boolean {
  * given run *picks* does depend on what spoke; only the numbering is fixed.)
  * Elements that never own a run simply keep an id nothing highlights.
  *
- * The one thing it can't paper over is the two sides parsing the same HTML into
- * *different* trees — linkedom isn't a spec tree builder, so table content a
- * browser foster-parents out lands elsewhere (issue #1453).
+ * It can only number what it is given, so the two sides must also parse the
+ * same HTML into the same *tree*; that is `./parse-html`'s job (issue #1453).
  *
  * Changing what this numbers — or what `./runs` says — invalidates every cached
  * paragraph map, so it comes with a `NARRATION_FORMAT_VERSION` bump

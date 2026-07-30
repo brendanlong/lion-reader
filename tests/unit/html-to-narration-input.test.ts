@@ -229,6 +229,18 @@ describe("htmlToNarrationInput", () => {
       expect(result.paragraphs[0].text).toContain("the text");
     });
 
+    it("narrates nesting too deep for the spec parser to serialize", () => {
+      // parse5's serializer recurses per element, so past a few thousand levels
+      // the normalizing parse in `parse-html` throws where linkedom's own parse
+      // copes. Narration degrades to that parse rather than to a 500 (which on
+      // the LLM path would also suppress retries for an hour). The depth where
+      // parse5 gives out moves with the environment; 10 000 is past it here.
+      const depth = 10000;
+      const html = `${"<div>".repeat(depth)}<p>the text</p>${"</div>".repeat(depth)}`;
+
+      expect(narrated(htmlToNarrationInput(html))).toEqual(["the text"]);
+    });
+
     it("drops an empty quote instead of speaking bare markers", () => {
       const html = "<blockquote></blockquote><p>after</p>";
       const result = htmlToNarrationInput(html);

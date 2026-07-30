@@ -13,8 +13,8 @@
  * @module narration/html-to-narration-input
  */
 
-import { parseHTML } from "linkedom";
 import { isBlockTag } from "./block-elements";
+import { parseBodyAsBrowser } from "./parse-html";
 import { LLM_INPUT_VOICE, narrationRuns } from "./runs";
 
 /**
@@ -61,11 +61,12 @@ export function htmlToNarrationInput(html: string): HtmlToNarrationInputResult {
     return { paragraphs: [] };
   }
 
-  // linkedom is faster than JSDOM; wrap the fragment so it parses as a document.
-  const { document: doc } = parseHTML(`<!DOCTYPE html><html><body>${html}</body></html>`);
+  // Parsed into the tree a browser builds, which is the one the client numbers
+  // against (see `./parse-html`).
+  const body = parseBodyAsBrowser(html);
 
   return {
-    paragraphs: narrationRuns(doc.body, LLM_INPUT_VOICE).map((run, index) => ({
+    paragraphs: narrationRuns(body, LLM_INPUT_VOICE).map((run, index) => ({
       id: index,
       o: run.o,
       text: run.text,
@@ -96,8 +97,9 @@ export function htmlToPlainText(html: string): string {
     return "";
   }
 
-  // Wrap in a full HTML document structure for proper parsing
-  const { document: doc } = parseHTML(`<!DOCTYPE html><html><body>${html}</body></html>`);
+  // The browser's tree here too: a summary should read the article in the order
+  // the reader sees it, and that is the order a spec tree builder produces.
+  const body = parseBodyAsBrowser(html);
 
   // Process the document to build plain text
   const parts: string[] = [];
@@ -135,7 +137,7 @@ export function htmlToPlainText(html: string): string {
     }
   }
 
-  processNode(doc.body);
+  processNode(body);
 
   // Join and normalize the text
   return parts
