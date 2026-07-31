@@ -731,6 +731,41 @@ describe("absolutizeUrls", () => {
     });
   });
 
+  describe("rewriteHref option", () => {
+    const toAnchor = (url: string): string =>
+      url === "https://example.com/docs/setup.md" ? "https://example.com/docs/#setup" : url;
+
+    it("should give the hook the last say over a resolved href", () => {
+      const html = '<a href="setup.md">Setup</a>';
+      const result = absolutizeUrls(html, "https://example.com/docs/page.md", {
+        rewriteHref: toAnchor,
+      });
+      expect(result).toContain('href="https://example.com/docs/#setup"');
+    });
+
+    it("should leave src alone", () => {
+      const html = '<img src="setup.md">';
+      const result = absolutizeUrls(html, "https://example.com/docs/page.md", {
+        rewriteHref: toAnchor,
+      });
+      expect(result).toContain('src="https://example.com/docs/setup.md"');
+    });
+
+    it("should pass through the values resolution leaves relative", () => {
+      // The hook sees the fragment as-written, so it can decline to touch it.
+      const seen: string[] = [];
+      const html = '<a href="#footnote-1">1</a>';
+      const result = absolutizeUrls(html, "https://example.com/docs/page.md", {
+        rewriteHref: (url) => {
+          seen.push(url);
+          return url;
+        },
+      });
+      expect(seen).toEqual(["#footnote-1"]);
+      expect(result).toContain('href="#footnote-1"');
+    });
+  });
+
   describe("edge cases", () => {
     it("should handle empty HTML", () => {
       const html = "";

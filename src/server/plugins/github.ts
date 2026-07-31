@@ -168,11 +168,30 @@ export function parseGistFilenameFromFragment(hash: string): string | undefined 
 }
 
 /**
- * Normalize a filename to match GitHub's fragment format.
- * "README.md" → "readme-md"
+ * Normalize a filename to the fragment GitHub anchors that file's section of a
+ * gist page under: `README.md` → `readme-md`, so the anchor is `#file-readme-md`.
+ *
+ * This is Rails' `parameterize`, which is what GitHub runs the filename through
+ * (each rule below verified against live gist pages): transliterate to ASCII
+ * (`datenschutzerklärung.md` → `datenschutzerklarung-md`), lowercase, replace
+ * runs of anything outside `[a-z0-9_-]` with a single dash, and trim dashes off
+ * the ends. **Underscores survive** (`_Summary.md` → `_summary-md`): dashing
+ * them out leaves a `#file-…` URL copied from GitHub matching no file, and gist
+ * filenames are full of them (`agent_patch.diff`).
+ *
+ * Both directions run through here — we emit these fragments for sibling links
+ * (`absolutizeGistUrls`) and match a saved URL's fragment back to a file
+ * (`buildGistHtml`) — so the two stay consistent even where transliteration
+ * can't match Rails exactly (it folds diacritics, not `ß`/`ø`-style mappings).
  */
 export function normalizeFilenameForFragment(filename: string): string {
-  return filename.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  return filename
+    .normalize("NFKD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-|-$/g, "");
 }
 
 // ============================================================================
@@ -423,6 +442,12 @@ export interface GistFileLocation {
   rawUrl: string;
   /** The gist's current commit sha, when the response carried its history. */
   revision?: string;
+  /**
+   * Every filename in the gist, which is what makes a relative link a *sibling*
+   * link — see `absolutizeGistUrls`. Omitted where a link is meant to reach the
+   * file's bytes no matter what.
+   */
+  filenames?: string[];
 }
 
 /** Where a rendered file came from, which is what its relative URLs resolve to. */
@@ -457,10 +482,31 @@ function absolutizeGitHubUrls(html: string, file: RepoFileLocation): string {
 const SHA_PATTERN = /^[0-9a-f]{40}$/;
 
 /**
+ * The `{user}/{id}` a gist is served under, read back out of one of its files'
+ * `raw_url`. Null if that URL isn't the shape we know — every URL in the
+ * document resolves against a base built from this, so an unrecognized one is
+ * left alone rather than guessed at.
+ */
+function parseGistRawUrl(rawUrl: string): { user: string; id: string } | null {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+
+  const [user, id, raw] = url.pathname.split("/").filter(Boolean);
+  if (url.protocol !== "https:" || url.hostname !== "gist.githubusercontent.com" || raw !== "raw") {
+    logger.debug("Unexpected gist raw URL, leaving relative URLs alone", { rawUrl });
+    return null;
+  }
+
+  return { user, id };
+}
+
+/**
  * The directory a gist's files are served under, at `revision` when we know it:
- * `https://gist.githubusercontent.com/{user}/{id}/raw/{revision}/`. Null if the
- * file's `raw_url` isn't the shape we know — every URL in the document resolves
- * against this base, so an unrecognized one is left alone rather than guessed at.
+ * `https://gist.githubusercontent.com/{user}/{id}/raw/{revision}/`.
  *
  * The sha already in a `raw_url` (`…/raw/{sha}/{filename}`) is *not* that
  * revision and must be dropped: it names the file's own **blob**, and the
@@ -471,22 +517,68 @@ const SHA_PATTERN = /^[0-9a-f]{40}$/;
  * tracks the gist's current revision. Both 404 for a file that isn't there
  * (verified against the live host).
  */
-function gistRawBase(file: GistFileLocation): string | null {
-  let url: URL;
-  try {
-    url = new URL(file.rawUrl);
-  } catch {
-    return null;
-  }
+function gistRawBase(gist: { user: string; id: string }, revision?: string): string {
+  const pinned = revision && SHA_PATTERN.test(revision) ? `${revision}/` : "";
+  return `https://gist.githubusercontent.com/${gist.user}/${gist.id}/raw/${pinned}`;
+}
 
-  const [user, id, raw] = url.pathname.split("/").filter(Boolean);
-  if (url.protocol !== "https:" || url.hostname !== "gist.githubusercontent.com" || raw !== "raw") {
-    logger.debug("Unexpected gist raw URL, leaving relative URLs alone", { rawUrl: file.rawUrl });
-    return null;
-  }
+/**
+ * Redirect a link that resolved to one of the gist's *own* files off the raw
+ * host and onto that file's anchor on the gist page
+ * (`gist.github.com/{user}/{id}#file-…`), which is what GitHub's own rendering
+ * of a relative link produces (#1459). Raw serves the file either way, but as
+ * `text/plain` under `nosniff` and a CSP sandbox — so a reader following
+ * `[Setup](setup.md)` lands on unrendered source. It's the same reasoning that
+ * sends a repo file's links to the blob view (`absolutizeGitHubUrls`), and the
+ * anchor round-trips: `parseGitHubUrl` parses it back, so the link is re-savable
+ * in Lion Reader.
+ *
+ * Only links, never `src` — GitHub gives an embedded image the same anchor,
+ * which is an `<img>` pointing at an HTML page, i.e. its own rendering of a
+ * sibling image in a gist is broken. And only for a reference naming a file the
+ * gist actually has, since nothing else has an anchor to land on; the match is
+ * on the normalized fragment, so a link written `readme.md` for `README.md`
+ * reaches the same anchor GitHub emits. A reference carrying a query or its own
+ * fragment keeps the raw URL rather than silently losing it.
+ */
+function gistSiblingLinkRewriter(
+  gist: { user: string; id: string },
+  rawBase: string,
+  filenames: string[]
+): (url: string) => string {
+  const base = new URL(rawBase);
+  const fragments = new Set(filenames.map(normalizeFilenameForFragment));
 
-  const revision = file.revision && SHA_PATTERN.test(file.revision) ? `${file.revision}/` : "";
-  return `https://gist.githubusercontent.com/${user}/${id}/raw/${revision}`;
+  return (url) => {
+    let target: URL;
+    try {
+      target = new URL(url);
+    } catch {
+      // Not absolute: a same-document fragment or other value resolution left alone.
+      return url;
+    }
+
+    if (
+      target.origin !== base.origin ||
+      !target.pathname.startsWith(base.pathname) ||
+      target.search ||
+      target.hash
+    ) {
+      return url;
+    }
+
+    let filename: string;
+    try {
+      filename = decodeURIComponent(target.pathname.slice(base.pathname.length));
+    } catch {
+      return url;
+    }
+
+    const fragment = normalizeFilenameForFragment(filename);
+    return fragments.has(fragment)
+      ? `https://gist.github.com/${gist.user}/${gist.id}#file-${fragment}`
+      : url;
+  };
 }
 
 /**
@@ -498,24 +590,26 @@ function gistRawBase(file: GistFileLocation): string | null {
  * broken (#1424).
  *
  * Unlike a repo file, whose two bases split embeds from links (see
- * `absolutizeGitHubUrls`), everything here resolves against the one raw base.
- * GitHub rewrites a relative reference in gist Markdown — `href` *and* `src`
- * alike — to a `#file-…` anchor on the gist page, which means its own rendering
- * of a sibling image is broken: an `<img>` pointing at an HTML page. Raw beats
- * that for `src`, and for `href` it costs the reader a rendered page but still
- * serves the file. Matching GitHub for `href` alone would mean synthesizing that
- * anchor from the sibling's filename, which a URL base can't express.
+ * `absolutizeGitHubUrls`), everything here resolves against the one raw base —
+ * links then get a second say, `gistSiblingLinkRewriter`, because the page a
+ * link should reach isn't expressible as a base.
  *
  * A gist's files are a flat list, so a leading slash can only mean a sibling too:
  * the root base is the same base.
  */
 function absolutizeGistUrls(html: string, file: GistFileLocation): string {
-  const base = gistRawBase(file);
-  if (!base) {
+  const gist = parseGistRawUrl(file.rawUrl);
+  if (!gist) {
     return html;
   }
 
-  return absolutizeUrls(html, base, { rootBaseUrl: base });
+  const base = gistRawBase(gist, file.revision);
+  return absolutizeUrls(html, base, {
+    rootBaseUrl: base,
+    rewriteHref: file.filenames?.length
+      ? gistSiblingLinkRewriter(gist, base, file.filenames)
+      : undefined,
+  });
 }
 
 /**
@@ -597,10 +691,12 @@ export async function buildGistHtml(
 
   // Newest first, so this is the revision whose contents we're rendering.
   const revision = gist.history?.[0]?.version;
+  const filenames = files.map((f) => f.filename);
   const locate = (file: GistFile): GistFileLocation => ({
     kind: "gist",
     rawUrl: file.raw_url,
     revision,
+    filenames,
   });
 
   /**
@@ -609,7 +705,8 @@ export async function buildGistHtml(
    * screenfuls of base64. `type` is what GitHub knows about the file, so
    * classify from it: an image becomes an image, any other binary a link to
    * itself. Both are written as a *relative* reference so `absolutizeGistUrls`
-   * resolves them exactly as a sibling reference inside a file would be.
+   * resolves them against the raw host the way a reference inside a file
+   * resolves, rather than duplicating that URL construction here.
    */
   const renderFile = async (file: GistFile): Promise<ProcessedRepoFile> => {
     const name = escapeHtml(file.filename);
@@ -623,7 +720,14 @@ export async function buildGistHtml(
     }
     if (isBinaryMediaType(file.type)) {
       return {
-        html: absolutizeGistUrls(`<p><a href="${name}">${name}</a></p>`, locate(file)),
+        // No `filenames`: this link stands in for the file itself, so it has to
+        // reach the bytes. It's the one place the sibling-link rewrite would be
+        // a step backwards — the gist page renders a binary's section, not the
+        // file, and there's nothing else here for the reader to click.
+        html: absolutizeGistUrls(`<p><a href="${name}">${name}</a></p>`, {
+          ...locate(file),
+          filenames: undefined,
+        }),
         ...empty,
       };
     }

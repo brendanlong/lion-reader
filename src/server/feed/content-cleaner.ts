@@ -40,6 +40,14 @@ const decoder = new TextDecoder();
  *   `src/server/plugins/github.ts`. The two bases travel together so a caller
  *   can't point media at another origin and leave its root base behind on this
  *   one, which is the bug this option exists to prevent.
+ * @param options.rewriteHref - Last say over each `href` (only), applied to the
+ *   already-resolved value. For sources where a link's real destination isn't
+ *   expressible as a base at all — a gist's sibling file is a `#file-…` anchor
+ *   on the gist page, see `absolutizeGistUrls` in
+ *   `src/server/plugins/github.ts`. It receives whatever resolution produced,
+ *   which for the values resolution passes through (same-document fragments,
+ *   `data:`) is still the relative original, so a hook must recognize the
+ *   inputs it acts on rather than assume an absolute URL.
  * @returns HTML with all relative URLs converted to absolute
  */
 export function absolutizeUrls(
@@ -48,6 +56,7 @@ export function absolutizeUrls(
   options: {
     rootBaseUrl?: string;
     media?: { baseUrl: string; rootBaseUrl?: string };
+    rewriteHref?: (url: string) => string;
   } = {}
 ): string {
   try {
@@ -112,7 +121,9 @@ export function absolutizeUrls(
         if (el.tagName === "base") return;
         const value = el.getAttribute("href");
         if (value) {
-          const absolute = resolveUrl(value, documentBase);
+          const resolved = resolveUrl(value, documentBase);
+          const absolute =
+            resolved !== null && options.rewriteHref ? options.rewriteHref(resolved) : resolved;
           if (absolute && absolute !== value) {
             el.setAttribute("href", absolute);
           }

@@ -299,8 +299,14 @@ describe("Gist filename fragment parsing", () => {
       expect(normalizeFilenameForFragment("config.prod.json")).toBe("config-prod-json");
     });
 
-    it("normalizes filenames with special characters", () => {
-      expect(normalizeFilenameForFragment("my_cool_script.py")).toBe("my-cool-script-py");
+    // The cases below are GitHub's live output for a gist holding that filename.
+    it("keeps underscores, which GitHub doesn't dash out", () => {
+      expect(normalizeFilenameForFragment("my_cool_script.py")).toBe("my_cool_script-py");
+    });
+
+    it("keeps a leading underscore but trims a leading dash", () => {
+      expect(normalizeFilenameForFragment("_Summary.md")).toBe("_summary-md");
+      expect(normalizeFilenameForFragment(".md")).toBe("md");
     });
 
     it("normalizes filenames with spaces", () => {
@@ -309,6 +315,15 @@ describe("Gist filename fragment parsing", () => {
 
     it("collapses consecutive special characters", () => {
       expect(normalizeFilenameForFragment("file--name.txt")).toBe("file-name-txt");
+      expect(normalizeFilenameForFragment("log-📂・outros・rlk_do_odio0188.html")).toBe(
+        "log-outros-rlk_do_odio0188-html"
+      );
+    });
+
+    it("transliterates accented characters instead of dropping them", () => {
+      expect(normalizeFilenameForFragment("datenschutzerklärung.md")).toBe(
+        "datenschutzerklarung-md"
+      );
     });
   });
 });
@@ -570,7 +585,7 @@ describe("processFileContent", () => {
       expect(html).toContain(`src="${gistRawBase}/chart.png"`);
     });
 
-    it("resolves a sibling link to the raw file", async () => {
+    it("resolves a link to the raw file when the gist's file list is unknown", async () => {
       const { html } = await processFileContent("[Setup](setup.md)", "notes.md", null, gistFile);
       expect(html).toContain(`href="${gistRawBase}/setup.md"`);
     });
@@ -639,6 +654,84 @@ describe("processFileContent", () => {
       expect(html).toContain(`${gistRawBase}/small.png 1x`);
       expect(html).toContain(`${gistRawBase}/large.png 2x`);
       expect(html).toContain(`poster="${gistRawBase}/poster.png"`);
+    });
+  });
+
+  describe("gist sibling links (#1459)", () => {
+    const gistFile = {
+      kind: "gist" as const,
+      rawUrl: "https://gist.githubusercontent.com/brendanlong/abc123/raw/deadbeef/notes.md",
+      filenames: ["notes.md", "setup.md", "chart.png", "my script.py"],
+    };
+    const gistRawBase = "https://gist.githubusercontent.com/brendanlong/abc123/raw";
+    const gistPage = "https://gist.github.com/brendanlong/abc123";
+
+    const render = (markdown: string): Promise<{ html: string }> =>
+      processFileContent(markdown, "notes.md", null, gistFile);
+
+    it("sends a link to a sibling file to that file's anchor on the gist page", async () => {
+      const { html } = await render("[Setup](setup.md)");
+      expect(html).toContain(`href="${gistPage}#file-setup-md"`);
+    });
+
+    it("resolves ./- and /-prefixed links to the same anchor", async () => {
+      const { html } = await render('[a](./setup.md) <a href="/setup.md">b</a>');
+      expect(html).not.toContain(gistRawBase);
+      expect(html.match(new RegExp(`${gistPage}#file-setup-md`, "g"))).toHaveLength(2);
+    });
+
+    it("emits the anchor GitHub generates for a filename it has to normalize", async () => {
+      const { html } = await render("[Script](my%20script.py)");
+      expect(html).toContain(`href="${gistPage}#file-my-script-py"`);
+    });
+
+    it("matches a filename whose case the link got wrong", async () => {
+      // The anchor GitHub generates is lowercased either way, so the link works.
+      const { html } = await render("[Setup](SETUP.md)");
+      expect(html).toContain(`href="${gistPage}#file-setup-md"`);
+    });
+
+    it("produces an anchor Lion Reader can parse back to the file", async () => {
+      const { html } = await render("[Setup](setup.md)");
+      const href = html.match(/href="([^"]+)"/)?.[1];
+      expect(parseGitHubUrl(new URL(href ?? ""))).toEqual({
+        type: "gist",
+        gistId: "abc123",
+        filename: "setup-md",
+      });
+    });
+
+    it("leaves an embedded image on the raw host", async () => {
+      // GitHub gives an <img> the same #file- anchor, which points at an HTML
+      // page — the one place its own gist rendering is broken.
+      const { html } = await render("![Chart](chart.png)");
+      expect(html).toContain(`src="${gistRawBase}/chart.png"`);
+    });
+
+    it("keeps the raw URL for a link naming a file the gist doesn't have", async () => {
+      const { html } = await render("[Missing](nope.md)");
+      expect(html).toContain(`href="${gistRawBase}/nope.md"`);
+    });
+
+    it("keeps the raw URL for a link carrying its own fragment or query", async () => {
+      const { html } = await render("[a](setup.md#install) [b](setup.md?raw=1)");
+      expect(html).toContain(`href="${gistRawBase}/setup.md#install"`);
+      expect(html).toContain(`href="${gistRawBase}/setup.md?raw=1"`);
+    });
+
+    it("leaves same-document fragments and absolute links alone", async () => {
+      const { html } = await render("[Jump](#setup) [Away](https://example.com/setup.md)");
+      expect(html).toContain('href="#setup"');
+      expect(html).toContain('href="https://example.com/setup.md"');
+    });
+
+    it("points at the revision-pinned file list's page, not the pinned raw path", async () => {
+      // The anchor is on the gist page, which has no per-revision form here.
+      const { html } = await processFileContent("[Setup](setup.md)", "notes.md", null, {
+        ...gistFile,
+        revision: "cbc18f3161df2b2dd22f3c4944d67cebb97ae544",
+      });
+      expect(html).toContain(`href="${gistPage}#file-setup-md"`);
     });
   });
 
@@ -774,12 +867,32 @@ describe("buildGistHtml", () => {
     expect(html).toContain(`src="${rawBase}/b.png"`);
   });
 
+  // The other half of that wiring (#1459): a link only becomes a gist-page
+  // anchor when the file it names is in the gist, which only buildGistHtml knows.
+  it("links between a gist's files through the gist page", async () => {
+    const { html } = await buildGistHtml(
+      gist([gistFile("a.md", "[B](b.md) [Gone](c.md)"), gistFile("b.md", "B")])
+    );
+    expect(html).toContain('href="https://gist.github.com/brendanlong/abc123#file-b-md"');
+    expect(html).toContain(`href="${rawBase}/c.md"`);
+  });
+
   it("resolves them for a single requested file", async () => {
     const { html } = await buildGistHtml(
       gist([gistFile("notes.md", "![Chart](chart.png)"), gistFile("other.md", "Other")]),
       "notes-md"
     );
     expect(html).toContain(`src="${rawBase}/chart.png"`);
+  });
+
+  it("finds the file a GitHub #file- fragment names when it has an underscore", async () => {
+    // GitHub keeps underscores in the fragment, so dashing them out matched no file.
+    const { html } = await buildGistHtml(
+      gist([gistFile("agent_patch.diff", "the patch"), gistFile("other.md", "Other")]),
+      "agent_patch-diff"
+    );
+    expect(html).toContain("the patch");
+    expect(html).not.toContain("Other");
   });
 
   // The API returns a binary file's bytes base64-encoded in `content`, which the
@@ -802,6 +915,20 @@ describe("buildGistHtml", () => {
       );
       expect(html).toContain(`href="${rawBase}/clip.mp4"`);
       expect(html).not.toContain("iVBORw0KGgo");
+    });
+
+    // That link stands in for the file itself, so unlike a link a file's author
+    // wrote (#1459) it must reach the bytes, not the gist page's "(not shown)".
+    it("links a binary file to its bytes, not the gist page", async () => {
+      const { html } = await buildGistHtml(
+        gist([
+          gistFile("README.md", "[Clip](clip.mp4)"),
+          gistFile("clip.mp4", base64Png, "video/mp4"),
+        ])
+      );
+      expect(html).toContain(`href="${rawBase}/clip.mp4">clip.mp4</a>`);
+      // The README's own link to it still goes to the gist page.
+      expect(html).toContain('href="https://gist.github.com/brendanlong/abc123#file-clip-mp4"');
     });
 
     // An unknown application/* type is far more often source code than a binary.
