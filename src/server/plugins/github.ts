@@ -181,8 +181,10 @@ export function parseGistFilenameFromFragment(hash: string): string | undefined 
  *
  * Both directions run through here — we emit these fragments for sibling links
  * (`absolutizeGistUrls`) and match a saved URL's fragment back to a file
- * (`buildGistHtml`) — so the two stay consistent even where transliteration
- * can't match Rails exactly (it folds diacritics, not `ß`/`ø`-style mappings).
+ * (`buildGistHtml`) — so the two stay consistent even for the exotic filenames
+ * where transliteration can't match Rails exactly. It approximates with Unicode
+ * decomposition, which both over- and under-shoots Rails' Latin-1 table (we fold
+ * `ș` where Rails dashes it; Rails maps `ß`→`ss` where we dash it).
  */
 export function normalizeFilenameForFragment(filename: string): string {
   return filename
@@ -518,31 +520,42 @@ function parseGistRawUrl(rawUrl: string): { user: string; id: string } | null {
  * (verified against the live host).
  */
 function gistRawBase(gist: { user: string; id: string }, revision?: string): string {
-  const pinned = revision && SHA_PATTERN.test(revision) ? `${revision}/` : "";
+  const pinned = revision ? `${revision}/` : "";
   return `https://gist.githubusercontent.com/${gist.user}/${gist.id}/raw/${pinned}`;
 }
 
 /**
+ * The gist's page, at `revision` when we know it — the same pin the raw base
+ * carries, so a link and an embed in one saved article can't drift apart as the
+ * gist is edited. GitHub links a gist's files unpinned even from a pinned page,
+ * but we're archiving what we rendered rather than tracking the gist; the pinned
+ * page serves the same `#file-…` anchors (verified against the live host).
+ */
+function gistPageUrl(gist: { user: string; id: string }, revision?: string): string {
+  const pinned = revision ? `/${revision}` : "";
+  return `https://gist.github.com/${gist.user}/${gist.id}${pinned}`;
+}
+
+/**
  * Redirect a link that resolved to one of the gist's *own* files off the raw
- * host and onto that file's anchor on the gist page
- * (`gist.github.com/{user}/{id}#file-…`), which is what GitHub's own rendering
- * of a relative link produces (#1459). Raw serves the file either way, but as
- * `text/plain` under `nosniff` and a CSP sandbox — so a reader following
- * `[Setup](setup.md)` lands on unrendered source. It's the same reasoning that
- * sends a repo file's links to the blob view (`absolutizeGitHubUrls`), and the
- * anchor round-trips: `parseGitHubUrl` parses it back, so the link is re-savable
- * in Lion Reader.
+ * host and onto that file's anchor on the gist page (`#file-…`), which is what
+ * GitHub's own rendering of a relative link produces (#1459). Raw serves the
+ * file either way, but as `text/plain` under `nosniff` and a CSP sandbox — so a
+ * reader following `[Setup](setup.md)` lands on unrendered source. It's the same
+ * reasoning that sends a repo file's links to the blob view
+ * (`absolutizeGitHubUrls`), and the anchor round-trips: `parseGitHubUrl` parses
+ * it back, so the link is re-savable in Lion Reader.
  *
- * Only links, never `src` — GitHub gives an embedded image the same anchor,
- * which is an `<img>` pointing at an HTML page, i.e. its own rendering of a
- * sibling image in a gist is broken. And only for a reference naming a file the
- * gist actually has, since nothing else has an anchor to land on; the match is
- * on the normalized fragment, so a link written `readme.md` for `README.md`
- * reaches the same anchor GitHub emits. A reference carrying a query or its own
- * fragment keeps the raw URL rather than silently losing it.
+ * Only `href`, never the embedded-resource attributes — GitHub gives an
+ * `<img src>` the same anchor, i.e. its own rendering of a sibling image in a
+ * gist is broken, an `<img>` pointing at an HTML page. And only for a reference
+ * naming a file the gist actually has, since nothing else has an anchor to land
+ * on; the match is on the normalized fragment, so a link written `readme.md` for
+ * `README.md` reaches the same anchor GitHub emits. A reference carrying a query
+ * or its own fragment keeps the raw URL rather than silently losing it.
  */
 function gistSiblingLinkRewriter(
-  gist: { user: string; id: string },
+  pageUrl: string,
   rawBase: string,
   filenames: string[]
 ): (url: string) => string {
@@ -554,7 +567,7 @@ function gistSiblingLinkRewriter(
     try {
       target = new URL(url);
     } catch {
-      // Not absolute: a same-document fragment or other value resolution left alone.
+      // The one value resolution leaves relative: a same-document fragment.
       return url;
     }
 
@@ -569,15 +582,21 @@ function gistSiblingLinkRewriter(
 
     let filename: string;
     try {
+      // A real filename can land here undecodable (`100%.md`), not just a
+      // hostile one — either way the raw URL is the honest answer.
       filename = decodeURIComponent(target.pathname.slice(base.pathname.length));
     } catch {
       return url;
     }
 
+    // A gist's files are flat, so anything with a path separator names no file
+    // — and normalizing would dash the slash out and land on an unrelated one.
+    if (filename.includes("/")) {
+      return url;
+    }
+
     const fragment = normalizeFilenameForFragment(filename);
-    return fragments.has(fragment)
-      ? `https://gist.github.com/${gist.user}/${gist.id}#file-${fragment}`
-      : url;
+    return fragments.has(fragment) ? `${pageUrl}#file-${fragment}` : url;
   };
 }
 
@@ -603,11 +622,13 @@ function absolutizeGistUrls(html: string, file: GistFileLocation): string {
     return html;
   }
 
-  const base = gistRawBase(gist, file.revision);
+  // Both URLs we build put it in a path, so it may only ever be an object name.
+  const revision = file.revision && SHA_PATTERN.test(file.revision) ? file.revision : undefined;
+  const base = gistRawBase(gist, revision);
   return absolutizeUrls(html, base, {
     rootBaseUrl: base,
     rewriteHref: file.filenames?.length
-      ? gistSiblingLinkRewriter(gist, base, file.filenames)
+      ? gistSiblingLinkRewriter(gistPageUrl(gist, revision), base, file.filenames)
       : undefined,
   });
 }
@@ -705,8 +726,8 @@ export async function buildGistHtml(
    * screenfuls of base64. `type` is what GitHub knows about the file, so
    * classify from it: an image becomes an image, any other binary a link to
    * itself. Both are written as a *relative* reference so `absolutizeGistUrls`
-   * resolves them against the raw host the way a reference inside a file
-   * resolves, rather than duplicating that URL construction here.
+   * builds the raw URL, rather than duplicating that construction here — with
+   * the one exception the link notes below.
    */
   const renderFile = async (file: GistFile): Promise<ProcessedRepoFile> => {
     const name = escapeHtml(file.filename);

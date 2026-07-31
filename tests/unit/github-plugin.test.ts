@@ -661,7 +661,7 @@ describe("processFileContent", () => {
     const gistFile = {
       kind: "gist" as const,
       rawUrl: "https://gist.githubusercontent.com/brendanlong/abc123/raw/deadbeef/notes.md",
-      filenames: ["notes.md", "setup.md", "chart.png", "my script.py"],
+      filenames: ["notes.md", "setup.md", "chart.png", "my script.py", "sub-dir.md"],
     };
     const gistRawBase = "https://gist.githubusercontent.com/brendanlong/abc123/raw";
     const gistPage = "https://gist.github.com/brendanlong/abc123";
@@ -725,11 +725,36 @@ describe("processFileContent", () => {
       expect(html).toContain('href="https://example.com/setup.md"');
     });
 
-    it("points at the revision-pinned file list's page, not the pinned raw path", async () => {
-      // The anchor is on the gist page, which has no per-revision form here.
+    it("keeps the raw URL for a path that merely normalizes to a file's anchor", async () => {
+      // A gist is flat, so `sub/dir.md` names nothing — but dashing the slash
+      // out would land it on the unrelated `sub-dir.md`.
+      const { html } = await render("[Nested](sub/dir.md)");
+      expect(html).toContain(`href="${gistRawBase}/sub/dir.md"`);
+    });
+
+    it("pins the anchor to the same revision the raw URLs are pinned to", async () => {
+      // Otherwise a saved article's embeds stay frozen while its links drift.
+      const sha = "cbc18f3161df2b2dd22f3c4944d67cebb97ae544";
       const { html } = await processFileContent("[Setup](setup.md)", "notes.md", null, {
         ...gistFile,
-        revision: "cbc18f3161df2b2dd22f3c4944d67cebb97ae544",
+        revision: sha,
+      });
+      expect(html).toContain(`href="${gistPage}/${sha}#file-setup-md"`);
+    });
+
+    it("still parses a pinned anchor back to the file", async () => {
+      const sha = "cbc18f3161df2b2dd22f3c4944d67cebb97ae544";
+      expect(parseGitHubUrl(new URL(`${gistPage}/${sha}#file-setup-md`))).toEqual({
+        type: "gist",
+        gistId: "abc123",
+        filename: "setup-md",
+      });
+    });
+
+    it("leaves the anchor unpinned when the revision isn't a git object name", async () => {
+      const { html } = await processFileContent("[Setup](setup.md)", "notes.md", null, {
+        ...gistFile,
+        revision: "../../../evil",
       });
       expect(html).toContain(`href="${gistPage}#file-setup-md"`);
     });
