@@ -122,6 +122,14 @@ ENV ASSET_PREFIX=$ASSET_PREFIX
 ARG NEXT_PUBLIC_SENTRY_DSN=""
 ENV NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN
 
+# GoatCounter count endpoint. Build-time for the same reason as the Sentry DSN.
+# Setting it here (even to "") is what makes Next inline it into the nodejs/edge
+# bundles too, which is load-bearing: the client beacon and the proxy's CSP then
+# read one frozen literal and cannot disagree about whether analytics is on.
+# A runtime -e on this var therefore does nothing. See src/lib/analytics/goatcounter.ts.
+ARG NEXT_PUBLIC_GOATCOUNTER_URL=""
+ENV NEXT_PUBLIC_GOATCOUNTER_URL=$NEXT_PUBLIC_GOATCOUNTER_URL
+
 # Deploy timestamp, inlined into the client bundle so the demo's "Welcome"
 # article shows a stable published time that matches the server render (see
 # src/app/(public)/demo/articles/welcome-published-at.ts). CI passes the same value as a

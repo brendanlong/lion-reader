@@ -77,6 +77,22 @@ Entry bodies, saved articles, and AI summaries are rendered with
   worker's own fetches for runtime caching of cross-origin images would be
   broken by the app's `connect-src`).
 
+- **Analytics reports a closed vocabulary, never a URL**
+  (`src/lib/analytics/`). We deliberately load **no third-party analytics
+  script**: GoatCounter's `count.js` reports the page's full query string (as
+  `p`, and again raw as `q`, which no setting suppresses) plus
+  `document.title`, and our URLs carry one-time invite tokens
+  (`/register?invite=…`) and entry/subscription/tag ids. Instead the beacon is
+  first-party and every reported path is a constant chosen by lookup in
+  `paths.ts` — an unmapped route reports nothing, and `AnalyticsPath` is a
+  closed union so a computed string can't be reported at all. **Adding a route
+  there is a security decision**: ask what that URL and title can contain. The
+  same rule kills the second-order leak — a same-origin `document.referrer`
+  would otherwise carry the previous page's query string, so only cross-origin
+  referrers are sent, origin only. Because no third-party script is involved,
+  `script-src` stays `'self'` in both tiers and analytics touches only
+  `connect-src`.
+
 ## 2. SSRF-safe outbound fetching
 
 **Docs:** `src/server/http/CLAUDE.md` · **Code:** `src/server/http/` (`ssrf.ts`,

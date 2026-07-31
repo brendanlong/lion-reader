@@ -17,7 +17,8 @@
  *
  * Everything document-level that both layouts share lives here — fonts,
  * metadata/viewport, the blocking theme/appearance scripts, the service-worker
- * registration — so the two can't drift. Only the nonce plumbing differs.
+ * registration, the analytics page-view tracker — so the two can't drift. Only
+ * the nonce plumbing differs.
  *
  * Navigating between the two groups is a full page load (multiple root
  * layouts), which is fine: public↔app transitions are login/logout flows.
@@ -25,6 +26,7 @@
 
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Merriweather, Literata, Inter, Source_Sans_3 } from "next/font/google";
+import { PageViewTracker } from "@/components/analytics/PageViewTracker";
 import { defaultOpenGraph } from "@/lib/metadata";
 import { appUrl } from "@/server/config/env";
 import { ThemeProvider } from "@/lib/theme/ThemeProvider";
@@ -206,6 +208,7 @@ export function RootDocument({ children, nonce }: RootDocumentProps) {
         />
       </head>
       <body className="antialiased">
+        <PageViewTracker />
         <ThemeProvider nonce={nonce}>{children}</ThemeProvider>
       </body>
     </html>

@@ -30,6 +30,9 @@ kill_timeout = 30
     # design.
     # NEXT_PUBLIC_SENTRY_DSN = "https://<key>@<org>.ingest.sentry.io/<project>"
 
+    # GoatCounter count endpoint. See src/lib/analytics/goatcounter.ts.
+    NEXT_PUBLIC_GOATCOUNTER_URL = "https://lionreader.goatcounter.com/count"
+
 [deploy]
   # Run migrations before starting the new app version
   release_command = "node dist/migrate.js"

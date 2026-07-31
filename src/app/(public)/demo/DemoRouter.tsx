@@ -16,6 +16,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { useSwipeGesture } from "@/lib/hooks/useSwipeGesture";
 import { useKeyboardShortcuts } from "@/lib/hooks/useKeyboardShortcuts";
 import { clientPush, extractParamsFromPathname } from "@/lib/navigation";
+import { useTrackDemoEntryView } from "@/lib/analytics/useTrackEntryView";
 import { DemoArticleView } from "./DemoArticleView";
 import { DemoEntryList } from "./DemoEntryList";
 import { DemoListHeader } from "./DemoListHeader";
@@ -39,6 +40,11 @@ function DemoRouterContent() {
   // #1359) — so the article stays up after hydration there too.
   const entryId =
     searchParams.get("entry") ?? pathname.match(/^\/demo\/entry\/([^/]+)/)?.[1] ?? null;
+
+  // Opening a demo article changes only the query string, so PageViewTracker
+  // (keyed on the pathname) never sees it. Report it here instead.
+  useTrackDemoEntryView(entryId);
+
   const demoState = useDemoState();
 
   // Parse the pathname to determine the current view
