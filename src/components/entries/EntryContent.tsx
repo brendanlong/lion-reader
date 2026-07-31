@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
 import { useShowOriginalPreference } from "@/lib/hooks/useShowOriginalPreference";
 import { useIsHydrated } from "@/lib/hooks/useIsHydrated";
+import { useTrackEntryView } from "@/lib/analytics/useTrackEntryView";
 import { ScrollContainer } from "@/components/layout/ScrollContainerContext";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { getDomain } from "@/lib/format";
@@ -95,6 +96,10 @@ function EntryContentInner({
   // Undefined while the query is loading; the `!entry` branch renders the
   // fallback. Every hook below already tolerates an absent entry.
   const entry = data?.entry;
+
+  // Count that an entry of this *type* was opened — never which one. Keyed on
+  // the displayed entry, so the neighbour prefetches below aren't counted.
+  useTrackEntryView(entry?.id, entry?.type);
 
   // Show original preference is stored per-feed in localStorage
   const [showOriginal, setShowOriginal] = useShowOriginalPreference(entry?.feedId);

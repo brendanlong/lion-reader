@@ -24,7 +24,7 @@ export const metadata: Metadata = {
 
 export default function PrivacyPolicyPage() {
   return (
-    <LegalPage title="Privacy Policy" lastUpdated="July 2026">
+    <LegalPage title="Privacy Policy" lastUpdated="July 31, 2026">
       <LegalSection title="Overview">
         <LegalParagraph>
           Lion Reader is committed to protecting your privacy. We collect only the data necessary to
@@ -93,6 +93,10 @@ export default function PrivacyPolicyPage() {
           <li>
             To monitor service health, diagnose errors, and improve performance (via Sentry and
             Grafana)
+          </li>
+          <li>
+            To count page views so we know how many people use the site and which parts get used
+            (via GoatCounter, which receives only the type of page, never which list or article)
           </li>
           <li>To prevent abuse and maintain security of the service</li>
           <li>
@@ -219,6 +223,13 @@ export default function PrivacyPolicyPage() {
               States. All data at rest is encrypted using Fly.io&apos;s managed PostgreSQL service.
               Fly.io has access to server data as part of providing infrastructure services.
             </LegalParagraph>
+            <LegalParagraph tight>
+              As part of running the platform, Fly.io records its own operational metrics for our
+              app — request counts, response times, error rates, and bandwidth — aggregated by the
+              edge region that served each request, which is a rough geographic area rather than a
+              location. This is standard infrastructure monitoring that comes with the platform, and
+              it is not tied to your account.
+            </LegalParagraph>
           </LegalSubsection>
 
           <LegalSubsection title="Error Tracking (Sentry)">
@@ -279,6 +290,64 @@ export default function PrivacyPolicyPage() {
             </p>
           </LegalSubsection>
 
+          <LegalSubsection title="Page Counts (GoatCounter)">
+            <LegalParagraph tight>
+              We count page views using GoatCounter, a cookie-less analytics service, so we can see
+              roughly how many people use Lion Reader and which parts of it get used. This covers
+              both our public pages and the app itself.
+            </LegalParagraph>
+            <LegalParagraph tight>
+              <strong>We deliberately do not load GoatCounter&apos;s tracking script.</strong> We
+              send the counts ourselves, so we control exactly what is reported: we report the{" "}
+              <strong>type of page</strong> you are on, chosen from a short fixed list, and nothing
+              user-specific.
+            </LegalParagraph>
+            <LegalList>
+              <li>
+                Reading an article reports that an article of a given kind was opened — a feed
+                article, a newsletter, or a saved article. <strong>Which</strong> article is not
+                part of what we report.
+              </li>
+              <li>
+                Other pages are reported by type — for example &quot;an entry list&quot;, &quot;the
+                subscribe page&quot;, or a specific settings page. A list is not identified as a
+                particular feed, tag, or subscription.
+              </li>
+              <li>
+                The one exception is our own <PageLink href="/demo">demo</PageLink>: because those
+                articles are marketing pages we wrote, not your content, we do record which demo
+                article is opened.
+              </li>
+              <li>
+                We do not report page titles, account identifiers, email addresses, or anything else
+                tied to your account.
+              </li>
+            </LegalList>
+            <LegalParagraph tight>
+              We report the site you arrived from, if any, as just its domain and never the specific
+              page, so we can tell where people find us. Your browser separately supplies its user
+              agent and language preferences with every web request, from which GoatCounter derives
+              your browser, operating system, and language, and it derives an approximate country
+              from your IP address — plus, for visitors from the United States, Russia, and China
+              only, a broad region such as a US state. We also send your screen width. GoatCounter
+              sets no cookies, stores nothing in your browser, and does not track you across sites.
+              It keeps only daily and hourly aggregate counts of the above. Your IP address and user
+              agent are used transiently (held in memory for up to eight hours) to recognize repeat
+              visits and filter bots, and are never written to their database. GoatCounter is
+              operated from Ireland with servers in Finland and Germany; deleted data may persist in
+              their backups for up to 30 days.
+            </LegalParagraph>
+            <p className="mt-2">
+              <TextLink
+                href="https://www.goatcounter.com/help/privacy"
+                external
+                className="ui-text-sm"
+              >
+                View GoatCounter&apos;s Privacy Policy &rarr;
+              </TextLink>
+            </p>
+          </LegalSubsection>
+
           <LegalSubsection title="Object Storage (Fly.io Tigris)">
             <LegalParagraph tight>
               Images embedded in some articles (for example, images from imported Google Docs) are
@@ -306,7 +375,8 @@ export default function PrivacyPolicyPage() {
           </li>
         </LegalList>
         <LegalParagraph>
-          We do not use third-party tracking cookies, analytics, or advertising cookies.
+          We do not use tracking cookies or advertising cookies. Our page counts (see Page Counts
+          above) set no cookies and store nothing in your browser.
         </LegalParagraph>
       </LegalSection>
 

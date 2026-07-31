@@ -25,6 +25,7 @@
  */
 
 import { embedCanonicalHostnames } from "@lion-reader/sanitizer";
+import { goatCounterConfig } from "@/lib/analytics/goatcounter";
 
 /**
  * Builds the Content-Security-Policy header value for a request.
@@ -61,7 +62,9 @@ import { embedCanonicalHostnames } from "@lion-reader/sanitizer";
  *   hosts like `cas-bridge.xethub.hf.co` today. A CSP host wildcard
  *   suffix-matches subdomains at ANY depth (unlike TLS certs), so
  *   `https://*.hf.co` covers the multi-label Xet hosts. Dev needs `ws:` for
- *   HMR.
+ *   HMR. The analytics beacon destination is also allowed when configured —
+ *   we load no third-party analytics *script*, so this is the only directive
+ *   analytics touches (see `src/lib/analytics/beacon.ts`).
  * - `worker-src`: the service worker is same-origin; the ONNX runtime spawns
  *   its threading helper workers from `blob:` URLs.
  * - `frame-src`: exactly the sanitizer's allow-listed embed providers — every
@@ -122,6 +125,13 @@ function buildPolicy(scriptSrcExtra: string): string {
   const frameSrc = embedCanonicalHostnames()
     .map((host) => `https://${host}`)
     .join(" ");
+  // The analytics beacon destination (leading space), "" when unconfigured.
+  // Only connect-src: we load no third-party script, so script-src is untouched.
+  // Scoped to the exact endpoint path, not just its origin — CSP host-sources
+  // may carry a path and ignore the query when matching, so this still allows
+  // our beacon while refusing any other path on that host.
+  const analytics = goatCounterConfig();
+  const gcConnect = analytics ? ` ${analytics.endpoint}` : "";
   return [
     `default-src 'self'${cdn}`,
     `script-src 'self'${cdn} ${scriptSrcExtra}`,
@@ -129,7 +139,7 @@ function buildPolicy(scriptSrcExtra: string): string {
     "img-src 'self' data: blob: http: https:",
     "media-src 'self' data: blob: http: https:",
     `font-src 'self'${cdn} data:`,
-    `connect-src 'self' https://huggingface.co https://*.huggingface.co https://*.hf.co https://cdn.jsdelivr.net${
+    `connect-src 'self' https://huggingface.co https://*.huggingface.co https://*.hf.co https://cdn.jsdelivr.net${gcConnect}${
       isDev ? " ws:" : ""
     }`,
     "worker-src 'self' blob:",

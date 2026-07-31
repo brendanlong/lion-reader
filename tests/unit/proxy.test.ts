@@ -203,6 +203,44 @@ describe("proxy CSP tiering (issue #1359)", () => {
   });
 });
 
+describe("proxy CSP: the analytics beacon", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("allows the beacon destination on BOTH policy tiers when configured", async () => {
+    vi.stubEnv("NEXT_PUBLIC_GOATCOUNTER_URL", "https://lionreader.goatcounter.com/count");
+    for (const path of ["/privacy", "/all"]) {
+      const csp = (await proxy(makeRequest(path))).headers.get("Content-Security-Policy")!;
+      expect(csp).toMatch(/connect-src[^;]*https:\/\/lionreader\.goatcounter\.com/);
+    }
+  });
+
+  it("never adds a third-party script origin — we load no third-party script", async () => {
+    vi.stubEnv("NEXT_PUBLIC_GOATCOUNTER_URL", "https://lionreader.goatcounter.com/count");
+    for (const path of ["/privacy", "/all"]) {
+      const csp = (await proxy(makeRequest(path))).headers.get("Content-Security-Policy")!;
+      const scriptSrc = csp.split(";").find((d) => d.trim().startsWith("script-src"))!;
+      expect(scriptSrc).not.toContain("goatcounter");
+      expect(scriptSrc).not.toContain("zgo.at");
+    }
+  });
+
+  it("allows nothing extra when analytics is unconfigured", async () => {
+    vi.stubEnv("NEXT_PUBLIC_GOATCOUNTER_URL", "");
+    const csp = (await proxy(makeRequest("/privacy"))).headers.get("Content-Security-Policy")!;
+    expect(csp).not.toContain("goatcounter");
+  });
+
+  it("allows nothing extra when the configured URL is malformed", async () => {
+    // The beacon and its CSP entry resolve through the same parse, so a bad
+    // value must disable both together rather than ship one without the other.
+    vi.stubEnv("NEXT_PUBLIC_GOATCOUNTER_URL", "not a url");
+    const csp = (await proxy(makeRequest("/privacy"))).headers.get("Content-Security-Policy")!;
+    expect(csp).not.toContain("goatcounter");
+  });
+});
+
 describe("proxy session redirects (issue #1359)", () => {
   it("GET / without a session cookie 307s straight to the demo landing page", async () => {
     const res = await proxy(makeRequest("/"));

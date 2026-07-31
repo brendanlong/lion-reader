@@ -13,6 +13,10 @@
  * — demo articles are dev-authored constants, and the auth forms render user
  * input only as escaped React text. If a page here ever renders untrusted
  * HTML, it must move to the `(spa)` group (strict nonce CSP). See SECURITY.md.
+ *
+ * Analytics is not wired here: it lives in the shared document shell for both
+ * layouts, and reports only closed-vocabulary paths — see
+ * `@/lib/analytics/paths`.
  */
 
 import { RootDocument, rootMetadata, rootViewport } from "../root-document";

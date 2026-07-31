@@ -71,7 +71,7 @@ const article: DemoArticle = {
       <li><strong>Subscription-based visibility</strong> &mdash; You only see entries fetched after you subscribed, preventing access to historical private content</li>
       <li><strong>Starred entry preservation</strong> &mdash; Entries you&rsquo;ve starred remain visible even after unsubscribing</li>
       <li><strong>Soft deletes</strong> &mdash; Unsubscribing preserves your read state and preferences for seamless resubscription</li>
-      <li><strong>Your data stays yours</strong> &mdash; No ads, no data selling, no third-party analytics. Your reading behavior is used only to sync your read and starred state across devices, and self-hosting gives you full control</li>
+      <li><strong>Your data stays yours</strong> &mdash; No ads, no data selling, and no third-party tracking script anywhere. We count page views ourselves and report only the <em>type</em> of page &mdash; that an article of some kind was opened, never which one. Your reading behavior is used only to sync your read and starred state across devices, and self-hosting gives you full control</li>
     </ul>
   `,
 };
