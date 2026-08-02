@@ -122,10 +122,15 @@ export interface CreateTestEntryOptions extends Partial<typeof entries.$inferIns
 /**
  * Inserts an entry on `feedId`, defaulting to a web entry fetched now.
  *
- * `lastSeenAt` is forced to null for non-web entries
- * (`entries_last_seen_only_fetched`), and defaults to `fetchedAt` for web
- * entries — which is what makes the entry "current" for the subscribe-time
- * visibility check (see "Entry Visibility" in `src/server/CLAUDE.md`).
+ * `lastSeenAt` defaults to `fetchedAt` on web entries and is forced to null
+ * otherwise, because `entries_last_seen_only_fetched` makes both mismatch
+ * directions illegal.
+ *
+ * Note this alone does NOT make the entry visible to a new subscriber: the
+ * subscribe-time populate also needs the feed's `lastEntriesUpdatedAt` set and
+ * not-null, which `createTestFeed` deliberately leaves unset (see "Entry
+ * Visibility" in `src/server/CLAUDE.md`). A test exercising that path has to
+ * stamp the feed's fetch timestamps itself.
  */
 export async function createTestEntry(
   feedId: string,
@@ -196,12 +201,14 @@ export async function createAuthContext(userId: string): Promise<Context> {
         revokedAt: null,
         lastActiveAt: now,
       },
-      // SessionData's user omits two columns the full row carries; the extra
-      // properties are structurally harmless.
-      user,
-      hasGroqApiKey: user.groqApiKey !== null,
-      hasAnthropicApiKey: user.anthropicApiKey !== null,
-      hasCerebrasApiKey: user.cerebrasApiKey !== null,
+      // validateSession never puts the key material in the session (both the
+      // Redis and DB paths null it out and expose only the booleans), so
+      // neither do we — otherwise a test could read a key off `ctx.session.user`
+      // that is always null in production.
+      user: { ...user, groqApiKey: null, anthropicApiKey: null, cerebrasApiKey: null },
+      hasGroqApiKey: !!user.groqApiKey,
+      hasAnthropicApiKey: !!user.anthropicApiKey,
+      hasCerebrasApiKey: !!user.cerebrasApiKey,
     },
     apiToken: null,
     authType: "session",

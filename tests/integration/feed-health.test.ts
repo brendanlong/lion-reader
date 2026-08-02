@@ -23,10 +23,6 @@ async function cleanup() {
   await db.delete(users);
 }
 
-async function createUser(): Promise<string> {
-  return createTestUser({ emailPrefix: "feed-health" });
-}
-
 async function createSubscribedFeed(
   userId: string,
   options: {
@@ -64,7 +60,7 @@ describe("getFeedFetchHealthSnapshot", () => {
   });
 
   it("reports the newest successful fetch among error-free feeds", async () => {
-    const userId = await createUser();
+    const userId = await createTestUser({ emailPrefix: "feed-health" });
     await createSubscribedFeed(userId, { lastFetchedAt: minutesAgo(90) });
     await createSubscribedFeed(userId, { lastFetchedAt: minutesAgo(10) });
     // Failing feed fetched most recently: must NOT count as a success
@@ -82,7 +78,7 @@ describe("getFeedFetchHealthSnapshot", () => {
   });
 
   it("ignores feeds without active subscribers", async () => {
-    const userId = await createUser();
+    const userId = await createTestUser({ emailPrefix: "feed-health" });
     await createSubscribedFeed(userId, {
       lastFetchedAt: minutesAgo(5),
       unsubscribed: true,
@@ -102,7 +98,7 @@ describe("handleMonitorFeedHealth", () => {
   afterAll(cleanup);
 
   it("reports healthy and schedules the next run ~15 minutes out", async () => {
-    const userId = await createUser();
+    const userId = await createTestUser({ emailPrefix: "feed-health" });
     await createSubscribedFeed(userId, { lastFetchedAt: minutesAgo(5) });
 
     const result = await handleMonitorFeedHealth({});
@@ -113,7 +109,7 @@ describe("handleMonitorFeedHealth", () => {
   });
 
   it("reports unhealthy when the newest success is older than the threshold", async () => {
-    const userId = await createUser();
+    const userId = await createTestUser({ emailPrefix: "feed-health" });
     // All feeds failing, newest success well beyond the 120-minute default
     await createSubscribedFeed(userId, {
       lastFetchedAt: minutesAgo(10),

@@ -27,11 +27,7 @@ Key design points:
 
 ## Integration test fixtures
 
-Build rows with the shared factories in `tests/integration/helpers.ts` (`createTestUser`, `createTestFeed`, `createTestSubscription`, `createTestEntry`) rather than hand-rolling a `db.insert` per file — they're the one place that knows how to satisfy the schema's check constraints (e.g. `last_seen_at` is web-only). Each takes Drizzle insert overrides, so a test needing an unusual column passes it instead of the factory growing a per-caller option.
-
-`createAuthContext(userId)` there builds a session-authenticated tRPC context by **reading the real user row**, so adding a `users` column never means updating a fabricated literal.
-
-Cleanup stays per-file: delete the users and feeds you created in `afterAll` (a user cascades to its subscriptions and `user_entries`).
+Seed rows with the shared factories in `tests/integration/helpers.ts` rather than hand-rolling a `db.insert` per file; its header documents them. Extend a factory (or pass an override) instead of reintroducing a local one — the duplication it replaced meant every schema change touched dozens of files.
 
 ## Asserting on Redis pub/sub events
 

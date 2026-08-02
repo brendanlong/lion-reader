@@ -71,7 +71,13 @@ describe("user_entries.subscription_id / is_spam denormalization", () => {
       // (entries_spam_only_email check constraint).
       const feedId = await createTestFeed({ type: "email", userId });
       const subscriptionId = await createTestSubscription(userId, feedId);
-      const entryId = await createTestEntry(feedId, { isSpam: true, type: "email" });
+      // publishedAt stays null so the sort key has to come from the trigger's
+      // fetched_at arm — the point of the assertion below.
+      const entryId = await createTestEntry(feedId, {
+        isSpam: true,
+        type: "email",
+        publishedAt: null,
+      });
 
       // Insert the way email ingest / saved articles / seeds do: identity only.
       await db.insert(userEntries).values({ userId, entryId });
@@ -86,7 +92,7 @@ describe("user_entries.subscription_id / is_spam denormalization", () => {
       const userId = await createTestUser();
       // Saved-articles feed: per-user, no subscription row.
       const feedId = await createTestFeed({ type: "saved", userId });
-      const entryId = await createTestEntry(feedId, { type: "saved" });
+      const entryId = await createTestEntry(feedId, { type: "saved", publishedAt: null });
 
       await db.insert(userEntries).values({ userId, entryId });
 
