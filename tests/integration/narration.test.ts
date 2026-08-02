@@ -20,7 +20,14 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { db } from "../../src/server/db";
-import { users, feeds, entries, userEntries, narrationContent } from "../../src/server/db/schema";
+import {
+  users,
+  feeds,
+  entries,
+  subscriptions,
+  userEntries,
+  narrationContent,
+} from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
@@ -53,10 +60,21 @@ async function createTestUser(): Promise<string> {
   return userId;
 }
 
-async function createTestFeedAndEntry(content: {
-  contentCleaned?: string;
-  contentOriginal?: string;
-}): Promise<string> {
+/**
+ * Creates a feed + entry and makes it visible to the user the way the app does:
+ * an active subscription plus the `user_entries` row that grants visibility.
+ * The router reads through `visible_entries`, so both are required —
+ * `unsubscribed: true` leaves the subscription soft-deleted, which hides an
+ * unstarred entry from that view.
+ */
+async function createTestEntry(
+  userId: string,
+  content: {
+    contentCleaned?: string;
+    contentOriginal?: string;
+  },
+  options: { unsubscribed?: boolean } = {}
+): Promise<string> {
   const feedId = generateUuidv7();
   const entryId = generateUuidv7();
   const now = new Date();
@@ -87,11 +105,16 @@ async function createTestFeedAndEntry(content: {
     createdAt: now,
     updatedAt: now,
   });
-  return entryId;
-}
-
-async function createUserEntry(userId: string, entryId: string): Promise<void> {
-  const now = new Date();
+  await db.insert(subscriptions).values({
+    id: generateUuidv7(),
+    userId,
+    feedId,
+    subscribedAt: now,
+    unsubscribedAt: options.unsubscribed ? now : null,
+    createdAt: now,
+    updatedAt: now,
+  });
+  // subscription_id is stamped by the user_entries_fill_denormalized trigger.
   await db.insert(userEntries).values({
     userId,
     entryId,
@@ -101,6 +124,7 @@ async function createUserEntry(userId: string, entryId: string): Promise<void> {
     starredChangedAt: now,
     updatedAt: now,
   });
+  return entryId;
 }
 
 function createAuthContext(userId: string): Context {
@@ -182,8 +206,7 @@ describe("narration.generate cached read path", () => {
   it("returns the persisted paragraph map verbatim on a cache hit", async () => {
     const contentCleaned = "<p>First</p><p>Second</p><p>Third</p>";
     const contentHash = narrationHash(contentCleaned);
-    const entryId = await createTestFeedAndEntry({ contentCleaned });
-    await createUserEntry(userId, entryId);
+    const entryId = await createTestEntry(userId, { contentCleaned });
 
     // A stored map that is deliberately NOT what naive reconstruction would
     // produce (element 1 dropped, so two narration paragraphs map to o=0 and
@@ -215,8 +238,7 @@ describe("narration.generate cached read path", () => {
     const contentCleaned = ["<p>Intro.</p>", "<p>Line one.", "<br /><br />", "Line two.</p>"].join(
       "\n"
     );
-    const entryId = await createTestFeedAndEntry({ contentCleaned });
-    await createUserEntry(userId, entryId);
+    const entryId = await createTestEntry(userId, { contentCleaned });
 
     // Keyed by the previous format. Its map numbers elements the way that walk
     // numbered them, so serving it against today's `data-para-id`s would
@@ -265,8 +287,7 @@ describe("narration.generate cached read path", () => {
       "<figcaption>My cat</figcaption></figure>",
       "<p>The end.</p>",
     ].join("");
-    const entryId = await createTestFeedAndEntry({ contentCleaned });
-    await createUserEntry(userId, entryId);
+    const entryId = await createTestEntry(userId, { contentCleaned });
     createdNarrationHashes.push(narrationHash(contentCleaned));
 
     const caller = createCaller(createAuthContext(userId));
@@ -306,8 +327,7 @@ describe("narration.generate narrates the displayed variant", () => {
     // cleaned up too — the check-then-insert doesn't collide on re-run, but we
     // still don't want to leave rows behind (issue #1210).
     createdNarrationHashes.push(narrationHash(contentCleaned), narrationHash(contentOriginal));
-    const entryId = await createTestFeedAndEntry({ contentCleaned, contentOriginal });
-    await createUserEntry(userId, entryId);
+    const entryId = await createTestEntry(userId, { contentCleaned, contentOriginal });
     const caller = createCaller(createAuthContext(userId));
 
     const cleaned = await caller.narration.generate({ id: entryId });
@@ -315,5 +335,35 @@ describe("narration.generate narrates the displayed variant", () => {
 
     const original = await caller.narration.generate({ id: entryId, showOriginal: true });
     expect(original.narration).toBe("Original body paragraph.");
+  });
+});
+
+describe("narration.generate entry visibility", () => {
+  let userId: string;
+
+  beforeEach(async () => {
+    userId = await createTestUser();
+    createdUserIds.push(userId);
+  });
+
+  // The router reads through `visible_entries`, so it applies exactly the rule
+  // the entry list does: a `user_entries` row alone doesn't grant access (#1468).
+  it("rejects an entry hidden by visibility even though a user_entries row exists", async () => {
+    const contentCleaned = "<p>Unsubscribed body paragraph.</p>";
+    const entryId = await createTestEntry(userId, { contentCleaned }, { unsubscribed: true });
+    const caller = createCaller(createAuthContext(userId));
+
+    await expect(caller.narration.generate({ id: entryId })).rejects.toThrow("Entry not found");
+  });
+
+  it("rejects another user's entry", async () => {
+    const otherUserId = await createTestUser();
+    createdUserIds.push(otherUserId);
+    const entryId = await createTestEntry(otherUserId, {
+      contentCleaned: "<p>Someone else's article.</p>",
+    });
+    const caller = createCaller(createAuthContext(userId));
+
+    await expect(caller.narration.generate({ id: entryId })).rejects.toThrow("Entry not found");
   });
 });

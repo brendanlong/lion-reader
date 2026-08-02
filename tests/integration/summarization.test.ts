@@ -12,7 +12,14 @@
 import { describe, it, expect, beforeEach, beforeAll, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { users, feeds, entries, userEntries, entrySummaries } from "../../src/server/db/schema";
+import {
+  users,
+  feeds,
+  entries,
+  subscriptions,
+  userEntries,
+  entrySummaries,
+} from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
@@ -34,7 +41,18 @@ async function createTestUser(): Promise<string> {
   return userId;
 }
 
-async function createTestFeedAndEntry(contentHash: string): Promise<string> {
+/**
+ * Creates a feed + entry and makes it visible to the user the way the app does:
+ * an active subscription plus the `user_entries` row that grants visibility.
+ * The router reads through `visible_entries`, so both are required —
+ * `unsubscribed: true` leaves the subscription soft-deleted, which hides an
+ * unstarred entry from that view.
+ */
+async function createTestEntry(
+  userId: string,
+  contentHash: string,
+  options: { unsubscribed?: boolean } = {}
+): Promise<string> {
   const feedId = generateUuidv7();
   const entryId = generateUuidv7();
   const now = new Date();
@@ -62,11 +80,16 @@ async function createTestFeedAndEntry(contentHash: string): Promise<string> {
     createdAt: now,
     updatedAt: now,
   });
-  return entryId;
-}
-
-async function createUserEntry(userId: string, entryId: string): Promise<void> {
-  const now = new Date();
+  await db.insert(subscriptions).values({
+    id: generateUuidv7(),
+    userId,
+    feedId,
+    subscribedAt: now,
+    unsubscribedAt: options.unsubscribed ? now : null,
+    createdAt: now,
+    updatedAt: now,
+  });
+  // subscription_id is stamped by the user_entries_fill_denormalized trigger.
   await db.insert(userEntries).values({
     userId,
     entryId,
@@ -76,6 +99,7 @@ async function createUserEntry(userId: string, entryId: string): Promise<void> {
     starredChangedAt: now,
     updatedAt: now,
   });
+  return entryId;
 }
 
 function createAuthContext(userId: string): Context {
@@ -161,8 +185,7 @@ describe("summarization.generate cached read path", () => {
 
   it("re-sanitizes a cached summary containing disallowed HTML on read", async () => {
     const contentHash = `hash-${generateUuidv7()}`;
-    const entryId = await createTestFeedAndEntry(contentHash);
-    await createUserEntry(userId, entryId);
+    const entryId = await createTestEntry(userId, contentHash);
 
     // Simulate a summary stored before a sanitizer hardening: it still carries a
     // <script> tag and an inline event handler that the current sanitizer strips.
@@ -187,5 +210,34 @@ describe("summarization.generate cached read path", () => {
     expect(result.summary).not.toContain("<script>");
     expect(result.summary.toLowerCase()).not.toContain("onclick");
     expect(result.summary.toLowerCase()).not.toContain("onerror");
+  });
+});
+
+describe("summarization.generate entry visibility", () => {
+  let userId: string;
+
+  beforeEach(async () => {
+    userId = await createTestUser();
+    createdUserIds.push(userId);
+  });
+
+  // The router reads through `visible_entries`, so it applies exactly the rule
+  // the entry list does: a `user_entries` row alone doesn't grant access (#1468).
+  it("rejects an entry hidden by visibility even though a user_entries row exists", async () => {
+    const entryId = await createTestEntry(userId, `hash-${generateUuidv7()}`, {
+      unsubscribed: true,
+    });
+    const caller = createCaller(createAuthContext(userId));
+
+    await expect(caller.summarization.generate({ entryId })).rejects.toThrow("Entry not found");
+  });
+
+  it("rejects another user's entry", async () => {
+    const otherUserId = await createTestUser();
+    createdUserIds.push(otherUserId);
+    const entryId = await createTestEntry(otherUserId, `hash-${generateUuidv7()}`);
+    const caller = createCaller(createAuthContext(userId));
+
+    await expect(caller.summarization.generate({ entryId })).rejects.toThrow("Entry not found");
   });
 });
