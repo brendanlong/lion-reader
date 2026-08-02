@@ -50,6 +50,8 @@ const article: DemoArticle = {
       <li><strong>Integrations &amp; Sync</strong> &mdash; MCP, WebSub push, the PWA, real-time updates, and compatibility APIs</li>
     </ul>
 
+    <p>Lion Reader is designed and built by <a href="https://www.brendanlong.com/pages/about-me.html" target="_blank" rel="noopener noreferrer">Brendan Long</a>.</p>
+
     <p>Ready to take control of your reading? Sign up to start using the full app, or <a href="https://github.com/brendanlong/lion-reader" target="_blank" rel="noopener noreferrer">check out the source code on GitHub</a> to self-host your own instance.</p>
 
   `,
