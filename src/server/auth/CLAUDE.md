@@ -27,10 +27,11 @@ Making the token httpOnly removes the XSS→session-token-theft path (an XSS on 
 
 ## Social Login (OAuth client)
 
-Google/Apple/Discord sign-in uses **`openid-client`** as the OAuth 2 / OIDC client, configured in `src/server/auth/oauth/config.ts`; `token-exchange.ts` holds the one code-for-tokens step all three share. Two decisions worth knowing before editing that module:
+Google/Apple/Discord sign-in uses **`openid-client`** as the OAuth 2 / OIDC client, configured in `src/server/auth/oauth/config.ts`; `token-exchange.ts` holds the one code-for-tokens step all three share. Decisions worth knowing before editing that module:
 
-- **Authorization-server metadata is hard-coded, not discovered.** These endpoints are stable and published, and skipping `client.discovery()` keeps a `.well-known` round-trip off the critical path of every login.
-- **Apple's `client_secret` is a short-lived ES256 JWT** signed with the developer key, not a static string, so the Apple configuration is async and mints a fresh one per token request.
+- **Authorization-server metadata is hard-coded, not discovered.** These endpoints are stable and published, and skipping `client.discovery()` keeps a `.well-known` round-trip off the critical path of every login. The `issuer` is load-bearing rather than decorative: any `id_token` in a token response is rejected unless its `iss` matches, so a wrong value breaks that provider's login outright. Google returns one (we request `openid`) even though the profile comes from the userinfo endpoint.
+- **All three use `client_secret_post`.** Don't "tidy" this to `client_secret_basic`: RFC 6749 §2.3.1 requires Basic credentials to be form-url-encoded before base64, which escapes the `-`/`.`/`_` that real Google and Discord credentials are full of. Post sends them verbatim, which is what each provider's own docs show.
+- **Apple's `client_secret` is a short-lived ES256 JWT** signed with the developer key, not a static string, so `getAppleTokenConfig` is async and mints a fresh one per token request. Building an authorization URL needs no credentials, so it takes the separate sync `getAppleAuthorizationConfig`.
 
 Apple's `id_token` is additionally verified with `jose` in `oauth/apple.ts`. That is not redundant: `openid-client` re-checks `iss`/`aud`/`exp` but deliberately skips the **signature** for a token read straight off the token endpoint (OIDC Core §3.1.3.7 permits TLS to stand in), so that step is the only thing that rejects a forged id_token — don't delete it as duplicated work.
 

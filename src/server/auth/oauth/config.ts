@@ -55,21 +55,31 @@ interface AppleOAuthConfig extends OAuthProviderConfig {
  * `client.discovery()`: these endpoints are stable and published, and hard-coding keeps
  * a `.well-known` round-trip off the critical path of every login.
  *
- * `jwks_uri` only matters where the provider returns an `id_token` (Google, Apple);
- * Discord is plain OAuth 2 and issues none.
+ * `issuer` is load-bearing, not decoration: any `id_token` in a token response is
+ * rejected unless its `iss` matches exactly. These are the values each provider
+ * publishes in its own discovery document.
  */
 const GOOGLE_SERVER: client.ServerMetadata = {
   issuer: "https://accounts.google.com",
   authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth",
   token_endpoint: "https://oauth2.googleapis.com/token",
-  jwks_uri: "https://www.googleapis.com/oauth2/v3/certs",
 };
 
+/** Apple's OpenID issuer, per https://appleid.apple.com/.well-known/openid-configuration */
+export const APPLE_ISSUER = "https://appleid.apple.com";
+
+/**
+ * Apple's JWKS endpoint. Apple signs id_tokens with rotating RS256 keys published here;
+ * `apple.ts` verifies against it with `jose` (fixed, trusted host — not user-influenced).
+ * The OAuth client never fetches it — it doesn't check token-endpoint id_token
+ * signatures — so this is the single source of truth for that one consumer.
+ */
+export const APPLE_JWKS_URI = "https://appleid.apple.com/auth/keys";
+
 const APPLE_SERVER: client.ServerMetadata = {
-  issuer: "https://appleid.apple.com",
+  issuer: APPLE_ISSUER,
   authorization_endpoint: "https://appleid.apple.com/auth/authorize",
   token_endpoint: "https://appleid.apple.com/auth/token",
-  jwks_uri: "https://appleid.apple.com/auth/keys",
 };
 
 const DISCORD_SERVER: client.ServerMetadata = {
@@ -167,6 +177,13 @@ export function getRedirectUri(provider: OAuthProviderName): string {
 // ============================================================================
 
 /**
+ * All three providers authenticate with `client_secret_post` — the client id and secret
+ * go in the request body verbatim. That is what each provider's own docs show, and it
+ * avoids `client_secret_basic`, whose RFC 6749 §2.3.1 form-url-encoding escapes the
+ * `-`/`.`/`_` that Google and Discord credentials are full of before base64-ing them.
+ */
+
+/**
  * Get the OAuth client configuration for Google
  * Returns null if Google OAuth is not configured
  */
@@ -179,15 +196,15 @@ export function getGoogleConfig(): client.Configuration | null {
     GOOGLE_SERVER,
     googleConfig.clientId,
     undefined,
-    client.ClientSecretBasic(googleConfig.clientSecret)
+    client.ClientSecretPost(googleConfig.clientSecret)
   );
 }
 
 /**
  * Apple never issues a static client secret: the `client_secret` its token endpoint
  * expects is a short-lived ES256 JWT signed with the developer key, so one has to be
- * minted per token request (which is why the Apple config is async). Apple allows up to
- * 6 months; we keep it to minutes because each is used for exactly one request.
+ * minted per token request. Apple allows up to 6 months; we keep it to minutes because
+ * each is used for exactly one request.
  */
 const APPLE_CLIENT_SECRET_LIFETIME = "5m";
 
@@ -197,26 +214,45 @@ async function createAppleClientSecret(
   keyId: string,
   privateKeyPem: string
 ): Promise<string> {
-  const privateKey = await importPKCS8(privateKeyPem, "ES256");
+  // The key is normally stored PEM-armored (see `.env.example`), but accept a bare
+  // base64 body too — that form used to work and silently breaking it on deploy would
+  // take Apple sign-in down.
+  const pem = privateKeyPem.includes("-----BEGIN")
+    ? privateKeyPem
+    : `-----BEGIN PRIVATE KEY-----\n${privateKeyPem}\n-----END PRIVATE KEY-----`;
+  const privateKey = await importPKCS8(pem, "ES256");
 
   return new SignJWT()
-    .setProtectedHeader({ alg: "ES256", kid: keyId })
+    .setProtectedHeader({ typ: "JWT", alg: "ES256", kid: keyId })
     .setIssuer(teamId)
     .setSubject(clientId)
-    .setAudience(APPLE_SERVER.issuer)
+    .setAudience(APPLE_ISSUER)
     .setIssuedAt()
     .setExpirationTime(APPLE_CLIENT_SECRET_LIFETIME)
     .sign(privateKey);
 }
 
 /**
- * Get the OAuth client configuration for Apple
- * Returns null if Apple OAuth is not configured
+ * Get the Apple configuration for building an authorization URL.
+ * Returns null if Apple OAuth is not configured.
  *
- * Apple wants its JWT client secret in the request body next to `client_id`
- * (`client_secret_post`), not in an HTTP Basic header.
+ * Separate from `getAppleTokenConfig` because an authorization request carries no client
+ * credentials: minting the JWT here would be wasted work, and would turn a bad signing
+ * key into a failure at button-render time rather than at the token exchange.
  */
-export async function getAppleConfig(): Promise<client.Configuration | null> {
+export function getAppleAuthorizationConfig(): client.Configuration | null {
+  if (!appleConfig.enabled || !appleConfig.clientId) {
+    return null;
+  }
+
+  return new client.Configuration(APPLE_SERVER, appleConfig.clientId, undefined, client.None());
+}
+
+/**
+ * Get the Apple configuration for the token endpoint, minting a fresh JWT client secret.
+ * Returns null if Apple OAuth is not configured.
+ */
+export async function getAppleTokenConfig(): Promise<client.Configuration | null> {
   if (
     !appleConfig.enabled ||
     !appleConfig.clientId ||
@@ -263,7 +299,7 @@ export function getDiscordConfig(): client.Configuration | null {
     DISCORD_SERVER,
     discordConfig.clientId,
     undefined,
-    client.ClientSecretBasic(discordConfig.clientSecret)
+    client.ClientSecretPost(discordConfig.clientSecret)
   );
 }
 

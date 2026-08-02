@@ -16,25 +16,24 @@
 
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import * as client from "openid-client";
-import { getAppleConfig, getAppleClientId, getRedirectUri, isProviderEnabled } from "./config";
+import {
+  APPLE_ISSUER,
+  APPLE_JWKS_URI,
+  getAppleAuthorizationConfig,
+  getAppleTokenConfig,
+  getAppleClientId,
+  getRedirectUri,
+  isProviderEnabled,
+} from "./config";
 import { accessTokenExpiresAt, exchangeAuthorizationCode } from "./token-exchange";
 import { redis } from "@/server/redis";
 
 /**
- * Apple's OpenID issuer, per https://appleid.apple.com/.well-known/openid-configuration
+ * Clock-skew allowance (seconds) when checking the id_token `exp` claim. Matches the
+ * OAuth client's own tolerance, which is applied to `exp` first during the exchange —
+ * a larger value here would be unreachable.
  */
-const APPLE_ISSUER = "https://appleid.apple.com";
-
-/**
- * Apple's JWKS endpoint. Apple signs id_tokens with rotating RS256 keys published
- * here; `jose` fetches and caches them (fixed, trusted host — not user-influenced).
- */
-const APPLE_JWKS_URL = new URL("https://appleid.apple.com/auth/keys");
-
-/**
- * Clock-skew allowance (seconds) when checking the id_token `exp` claim.
- */
-const CLOCK_SKEW_SECONDS = 60;
+const CLOCK_SKEW_SECONDS = 30;
 
 /**
  * Lazily-created remote JWKS resolver (cached across requests; `jose` handles key
@@ -44,7 +43,7 @@ const CLOCK_SKEW_SECONDS = 60;
 let appleJwks: ReturnType<typeof createRemoteJWKSet> | null = null;
 function getAppleJwks(): ReturnType<typeof createRemoteJWKSet> {
   if (!appleJwks) {
-    appleJwks = createRemoteJWKSet(APPLE_JWKS_URL);
+    appleJwks = createRemoteJWKSet(new URL(APPLE_JWKS_URI));
   }
   return appleJwks;
 }
@@ -296,7 +295,7 @@ async function extractUserInfoFromToken(idToken: string): Promise<AppleUserInfo>
  * @throws Error if Apple OAuth is not configured
  */
 export async function createAppleAuthUrl(inviteToken?: string): Promise<AppleAuthUrlResult> {
-  const config = await getAppleConfig();
+  const config = getAppleAuthorizationConfig();
 
   if (!config) {
     throw new Error("Apple OAuth is not configured");
@@ -343,7 +342,7 @@ export async function validateAppleCallback(
   state: string,
   userData?: string | AppleFirstAuthUserData
 ): Promise<AppleAuthResult> {
-  const config = await getAppleConfig();
+  const config = await getAppleTokenConfig();
 
   if (!config) {
     throw new Error("Apple OAuth is not configured");

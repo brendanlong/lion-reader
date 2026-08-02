@@ -259,7 +259,9 @@ export async function validateGoogleCallback(
   // Retrieve and consume the PKCE data (verifier + scopes)
   const pkceData = await consumePkceVerifier(state);
 
-  if (!pkceData) {
+  // An empty verifier must fail closed: the client treats a falsy `pkceCodeVerifier` as
+  // "this flow used no PKCE" and would silently drop the proof from the token request.
+  if (!pkceData?.verifier) {
     throw new Error("Invalid or expired OAuth state");
   }
 

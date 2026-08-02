@@ -15,8 +15,12 @@ import * as client from "openid-client";
  * `code`/`state` as plain arguments. Our callbacks don't all arrive as a URL — Apple
  * uses a cross-site form POST, and the tRPC callback mutations carry the pair as JSON —
  * so we rebuild the canonical callback URL from the registered redirect URI plus the
- * values we were handed. `expectedState` then re-checks the `state` the caller already
- * matched against Redis and the binding cookie (`state-cookie.ts`).
+ * values we were handed.
+ *
+ * `expectedState` is therefore compared against a `state` we just wrote ourselves and
+ * can't fail; it's passed because omitting it makes the client *reject* a response that
+ * carries `state` at all. The real binding is Redis + the `HttpOnly` cookie, which the
+ * caller has already checked (`state-cookie.ts`).
  *
  * @param config - The provider's client configuration
  * @param redirectUri - The redirect URI registered with the provider

@@ -89,7 +89,9 @@ async function refreshGoogleToken(oauthAccountId: string, refreshToken: string):
       .update(oauthAccounts)
       .set({
         accessToken: tokens.access_token,
-        expiresAt,
+        // `?? null` matters: Drizzle drops `undefined` from `set()`, which would leave
+        // the old (already past) expiry next to a fresh token and re-refresh forever.
+        expiresAt: expiresAt ?? null,
         // Some providers rotate refresh tokens - update if provided
         ...(tokens.refresh_token ? { refreshToken: tokens.refresh_token } : {}),
       })
