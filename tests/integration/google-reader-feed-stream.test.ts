@@ -11,7 +11,7 @@ import { describe, it, expect, afterAll } from "vitest";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { users, feeds, subscriptions } from "../../src/server/db/schema";
-import { generateUuidv7 } from "../../src/lib/uuidv7";
+import { createTestFeed, createTestSubscription, createTestUser } from "./helpers";
 import {
   feedStreamIdToSubscriptionUuid,
   resolveFeedStream,
@@ -30,35 +30,30 @@ afterAll(async () => {
 });
 
 async function createUser(): Promise<string> {
-  const id = generateUuidv7();
-  await db.insert(users).values({
-    id,
-    email: `feed-stream-${id}@test.com`,
-    passwordHash: "test-hash",
-  });
+  const id = await createTestUser({ emailPrefix: "feed-stream" });
   createdUserIds.push(id);
   return id;
 }
 
 async function createSubscription(userId: string): Promise<{ subId: string; streamId: bigint }> {
-  const feedId = generateUuidv7();
-  const subId = generateUuidv7();
-  await db.insert(feeds).values({ id: feedId, type: "web", url: `https://f/${feedId}` });
+  const feedId = await createTestFeed();
   createdFeedIds.push(feedId);
+  const subId = await createTestSubscription(userId, feedId);
   const [sub] = await db
-    .insert(subscriptions)
-    .values({ id: subId, userId, feedId })
-    .returning({ greaderStreamId: subscriptions.greaderStreamId });
+    .select({ greaderStreamId: subscriptions.greaderStreamId })
+    .from(subscriptions)
+    .where(eq(subscriptions.id, subId));
   return { subId, streamId: sub.greaderStreamId };
 }
 
 async function createSavedFeed(userId: string): Promise<{ feedId: string; streamId: bigint }> {
-  const feedId = generateUuidv7();
-  const [feed] = await db
-    .insert(feeds)
-    .values({ id: feedId, type: "saved", userId })
-    .returning({ greaderStreamId: feeds.greaderStreamId });
+  // Saved feeds carry no URL (see getOrCreateSavedFeed).
+  const feedId = await createTestFeed({ type: "saved", userId, url: null });
   createdFeedIds.push(feedId);
+  const [feed] = await db
+    .select({ greaderStreamId: feeds.greaderStreamId })
+    .from(feeds)
+    .where(eq(feeds.id, feedId));
   return { feedId, streamId: feed.greaderStreamId };
 }
 

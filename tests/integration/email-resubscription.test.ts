@@ -19,22 +19,11 @@ import {
 } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { processInboundEmail, type InboundEmail } from "../../src/server/email/process-inbound";
+import { createTestFeed, createTestSubscription, createTestUser } from "./helpers";
 
 // ============================================================================
 // Test Helpers
 // ============================================================================
-
-async function createTestUser(emailPrefix: string = "user"): Promise<string> {
-  const userId = generateUuidv7();
-  await db.insert(users).values({
-    id: userId,
-    email: `${emailPrefix}-${userId}@test.com`,
-    passwordHash: "test-hash",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-  return userId;
-}
 
 async function createTestIngestAddress(userId: string): Promise<{ id: string; token: string }> {
   const id = generateUuidv7();
@@ -48,41 +37,19 @@ async function createTestIngestAddress(userId: string): Promise<{ id: string; to
   return { id, token };
 }
 
+/** An email feed owned by `userId`; email feeds are per-user and have no URL. */
 async function createTestEmailFeed(
   userId: string,
   senderEmail: string,
   title: string = "Test Sender"
 ): Promise<string> {
-  const feedId = generateUuidv7();
-  const now = new Date();
-  await db.insert(feeds).values({
-    id: feedId,
+  return createTestFeed({
     type: "email",
     userId,
+    url: null,
     emailSenderPattern: senderEmail.toLowerCase(),
     title,
-    createdAt: now,
-    updatedAt: now,
   });
-  return feedId;
-}
-
-async function createTestSubscription(
-  userId: string,
-  feedId: string,
-  unsubscribedAt: Date | null = null
-): Promise<string> {
-  const subscriptionId = generateUuidv7();
-  await db.insert(subscriptions).values({
-    id: subscriptionId,
-    userId,
-    feedId,
-    subscribedAt: new Date(),
-    unsubscribedAt,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-  return subscriptionId;
 }
 
 async function blockSender(userId: string, senderEmail: string): Promise<void> {
@@ -162,11 +129,9 @@ describe("Email Feed Resubscription", () => {
       const { token } = await createTestIngestAddress(userId);
       const senderEmail = "newsletter@example.com";
       const feedId = await createTestEmailFeed(userId, senderEmail);
-      const subscriptionId = await createTestSubscription(
-        userId,
-        feedId,
-        new Date() // unsubscribed
-      );
+      const subscriptionId = await createTestSubscription(userId, feedId, {
+        unsubscribedAt: new Date(),
+      });
 
       // Verify subscription is initially unsubscribed
       let subscription = await getSubscription(subscriptionId);
@@ -189,7 +154,7 @@ describe("Email Feed Resubscription", () => {
       const { token } = await createTestIngestAddress(userId);
       const senderEmail = "blocked@example.com";
       const feedId = await createTestEmailFeed(userId, senderEmail);
-      await createTestSubscription(userId, feedId, new Date());
+      await createTestSubscription(userId, feedId, { unsubscribedAt: new Date() });
 
       // Block the sender
       await blockSender(userId, senderEmail);
@@ -232,7 +197,7 @@ describe("Email Feed Resubscription", () => {
       const { token } = await createTestIngestAddress(userId);
       const senderEmail = "active@example.com";
       const feedId = await createTestEmailFeed(userId, senderEmail);
-      const subscriptionId = await createTestSubscription(userId, feedId, null); // active
+      const subscriptionId = await createTestSubscription(userId, feedId); // active
 
       // Get original subscription state
       const originalSub = await getSubscription(subscriptionId);

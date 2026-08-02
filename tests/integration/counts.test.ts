@@ -21,78 +21,11 @@ import {
 } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { getEntryRelatedCounts, getBulkEntryRelatedCounts } from "../../src/server/services/counts";
+import { createTestEntry, createTestFeed, createTestSubscription, createTestUser } from "./helpers";
 
 // ============================================================================
 // Test Helpers
 // ============================================================================
-
-async function createTestUser(emailPrefix: string = "user"): Promise<string> {
-  const userId = generateUuidv7();
-  await db.insert(users).values({
-    id: userId,
-    email: `${emailPrefix}-${userId}@test.com`,
-    passwordHash: "test-hash",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-  return userId;
-}
-
-async function createTestFeed(url: string): Promise<string> {
-  const feedId = generateUuidv7();
-  await db.insert(feeds).values({
-    id: feedId,
-    type: "web",
-    url,
-    title: `Test Feed ${feedId}`,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-  return feedId;
-}
-
-async function createTestSubscription(userId: string, feedId: string): Promise<string> {
-  const subscriptionId = generateUuidv7();
-  await db.insert(subscriptions).values({
-    id: subscriptionId,
-    userId,
-    feedId,
-    subscribedAt: new Date(),
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-  return subscriptionId;
-}
-
-async function createTestEntry(feedId: string, userIds: string[]): Promise<string> {
-  const entryId = generateUuidv7();
-  const now = new Date();
-  await db.insert(entries).values({
-    id: entryId,
-    feedId,
-    type: "web",
-    guid: `guid-${entryId}`,
-    title: `Entry ${entryId}`,
-    contentHash: `hash-${entryId}`,
-    fetchedAt: now,
-    lastSeenAt: now,
-    createdAt: now,
-    updatedAt: now,
-  });
-
-  if (userIds.length > 0) {
-    await db.insert(userEntries).values(
-      userIds.map((userId) => ({
-        userId,
-        entryId,
-        read: false,
-        starred: false,
-      }))
-    );
-  }
-
-  return entryId;
-}
 
 /**
  * Creates the two-subscription fixture: sub1 covers feedA, sub2 covers feedB,
@@ -101,13 +34,13 @@ async function createTestEntry(feedId: string, userIds: string[]): Promise<strin
  * reachable through overlapping subscription_feeds rows and double-count).
  */
 async function createOverlappingSubscriptions(userId: string) {
-  const feedIdA = await createTestFeed("https://feed-a.com/rss");
-  const feedIdB = await createTestFeed("https://feed-b.com/rss");
+  const feedIdA = await createTestFeed({ url: "https://feed-a.com/rss" });
+  const feedIdB = await createTestFeed({ url: "https://feed-b.com/rss" });
   const subId1 = await createTestSubscription(userId, feedIdA);
   const subId2 = await createTestSubscription(userId, feedIdB);
 
-  const entryIdA = await createTestEntry(feedIdA, [userId]);
-  const entryIdB = await createTestEntry(feedIdB, [userId]);
+  const entryIdA = await createTestEntry(feedIdA, { userIds: [userId] });
+  const entryIdB = await createTestEntry(feedIdB, { userIds: [userId] });
 
   return { feedIdA, feedIdB, subId1, subId2, entryIdA, entryIdB };
 }
@@ -185,10 +118,10 @@ describe("Entry counts service", () => {
       // subscription has no tags", returning the uncategorized count instead.
       // The client sets counts absolutely, so the tag badge went stale.
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://events.com/rss");
+      const feedId = await createTestFeed({ url: "https://events.com/rss" });
       const subId = await createTestSubscription(userId, feedId);
       const tagId = await linkTag(userId, "Events", [subId]);
-      const entryId = await createTestEntry(feedId, [userId]);
+      const entryId = await createTestEntry(feedId, { userIds: [userId] });
       await markEntryRead(userId, entryId);
 
       const counts = await getEntryRelatedCounts(db, userId, entryId);
@@ -202,9 +135,9 @@ describe("Entry counts service", () => {
       // A caller patching these into the cache must not zero the user's
       // badges just because the target entry wasn't visible (issue #956).
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://mine.com/rss");
+      const feedId = await createTestFeed({ url: "https://mine.com/rss" });
       await createTestSubscription(userId, feedId);
-      await createTestEntry(feedId, [userId]); // one real unread entry
+      await createTestEntry(feedId, { userIds: [userId] }); // one real unread entry
 
       const counts = await getEntryRelatedCounts(db, userId, generateUuidv7());
 
@@ -230,13 +163,13 @@ describe("Entry counts service", () => {
       // entries are not visible unless starred/saved. The global count must
       // exclude them.
       const userId = await createTestUser();
-      const activeFeedId = await createTestFeed("https://active.com/rss");
+      const activeFeedId = await createTestFeed({ url: "https://active.com/rss" });
       await createTestSubscription(userId, activeFeedId);
-      const activeEntryId = await createTestEntry(activeFeedId, [userId]);
+      const activeEntryId = await createTestEntry(activeFeedId, { userIds: [userId] });
 
       // A feed the user has unsubscribed from, with an unread (non-starred,
       // non-saved) entry whose user_entries row still exists.
-      const goneFeedId = await createTestFeed("https://gone.com/rss");
+      const goneFeedId = await createTestFeed({ url: "https://gone.com/rss" });
       const goneSubId = generateUuidv7();
       await db.insert(subscriptions).values({
         id: goneSubId,
@@ -247,7 +180,7 @@ describe("Entry counts service", () => {
         createdAt: new Date(),
         updatedAt: new Date(),
       });
-      await createTestEntry(goneFeedId, [userId]);
+      await createTestEntry(goneFeedId, { userIds: [userId] });
 
       const counts = await getEntryRelatedCounts(db, userId, activeEntryId);
 
@@ -259,7 +192,7 @@ describe("Entry counts service", () => {
       // unsubscribed from, so they must still count toward All Articles and
       // Starred.
       const userId = await createTestUser();
-      const goneFeedId = await createTestFeed("https://gone-starred.com/rss");
+      const goneFeedId = await createTestFeed({ url: "https://gone-starred.com/rss" });
       const goneSubId = generateUuidv7();
       await db.insert(subscriptions).values({
         id: goneSubId,
@@ -270,7 +203,7 @@ describe("Entry counts service", () => {
         createdAt: new Date(),
         updatedAt: new Date(),
       });
-      const starredEntryId = await createTestEntry(goneFeedId, []);
+      const starredEntryId = await createTestEntry(goneFeedId);
       await db.insert(userEntries).values({
         userId,
         entryId: starredEntryId,
@@ -285,16 +218,16 @@ describe("Entry counts service", () => {
     });
 
     it("does not count other users' unread entries in tag counts", async () => {
-      const userId = await createTestUser("user-a");
-      const otherUserId = await createTestUser("user-b");
+      const userId = await createTestUser({ emailPrefix: "user-a" });
+      const otherUserId = await createTestUser({ emailPrefix: "user-b" });
 
-      const feedId = await createTestFeed("https://shared.com/rss");
+      const feedId = await createTestFeed({ url: "https://shared.com/rss" });
       const subId = await createTestSubscription(userId, feedId);
       await createTestSubscription(otherUserId, feedId);
       const tagId = await linkTag(userId, "Mine", [subId]);
 
-      const entryId = await createTestEntry(feedId, [userId, otherUserId]);
-      await createTestEntry(feedId, [otherUserId]);
+      const entryId = await createTestEntry(feedId, { userIds: [userId, otherUserId] });
+      await createTestEntry(feedId, { userIds: [otherUserId] });
 
       const counts = await getEntryRelatedCounts(db, userId, entryId);
 
@@ -334,10 +267,10 @@ describe("Entry counts service", () => {
       // result. The client applies these counts absolutely, so the sidebar
       // badge stayed at its previous value until a refresh.
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://events.com/rss");
+      const feedId = await createTestFeed({ url: "https://events.com/rss" });
       const subId = await createTestSubscription(userId, feedId);
       const tagId = await linkTag(userId, "Events", [subId]);
-      const entryId = await createTestEntry(feedId, [userId]);
+      const entryId = await createTestEntry(feedId, { userIds: [userId] });
       await markEntryRead(userId, entryId);
 
       const counts = await getBulkEntryRelatedCounts(db, userId, [
@@ -353,13 +286,13 @@ describe("Entry counts service", () => {
       // Two tagged subscriptions; only one is drained. The drained one must be
       // zero-filled while the shared tag keeps counting the other's entries.
       const userId = await createTestUser();
-      const feedIdA = await createTestFeed("https://drained.com/rss");
-      const feedIdB = await createTestFeed("https://active.com/rss");
+      const feedIdA = await createTestFeed({ url: "https://drained.com/rss" });
+      const feedIdB = await createTestFeed({ url: "https://active.com/rss" });
       const subIdA = await createTestSubscription(userId, feedIdA);
       const subIdB = await createTestSubscription(userId, feedIdB);
       const tagId = await linkTag(userId, "Mixed", [subIdA, subIdB]);
-      const entryIdA = await createTestEntry(feedIdA, [userId]);
-      await createTestEntry(feedIdB, [userId]);
+      const entryIdA = await createTestEntry(feedIdA, { userIds: [userId] });
+      await createTestEntry(feedIdB, { userIds: [userId] });
       await markEntryRead(userId, entryIdA);
 
       const counts = await getBulkEntryRelatedCounts(db, userId, [
@@ -373,9 +306,9 @@ describe("Entry counts service", () => {
 
     it("returns unread 0 for an uncategorized subscription drained of unread entries", async () => {
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://uncategorized.com/rss");
+      const feedId = await createTestFeed({ url: "https://uncategorized.com/rss" });
       const subId = await createTestSubscription(userId, feedId);
-      const entryId = await createTestEntry(feedId, [userId]);
+      const entryId = await createTestEntry(feedId, { userIds: [userId] });
       await markEntryRead(userId, entryId);
 
       const counts = await getBulkEntryRelatedCounts(db, userId, [

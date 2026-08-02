@@ -23,19 +23,18 @@ import {
   processEntries,
 } from "../../src/server/feed/entry-processor";
 import type { ParsedEntry, ParsedFeed } from "../../src/server/feed/types";
+import {
+  createTestEntry,
+  createTestSubscription,
+  createTestUser,
+  createTestFeed as insertTestFeed,
+} from "./helpers";
 
-// Helper to create a test feed in the database
+// Wraps the shared factory because these call sites want the feed row
+// (feed.url, feed.type), not just its id.
 async function createTestFeed(overrides: Partial<typeof feeds.$inferInsert> = {}) {
-  const [feed] = await db
-    .insert(feeds)
-    .values({
-      id: generateUuidv7(),
-      type: "web",
-      url: `https://example.com/feed-${generateUuidv7()}.xml`,
-      title: "Test Feed",
-      ...overrides,
-    })
-    .returning();
+  const feedId = await insertTestFeed({ title: "Test Feed", ...overrides });
+  const [feed] = await db.select().from(feeds).where(eq(feeds.id, feedId));
   return feed;
 }
 
@@ -258,16 +257,7 @@ describe("Entry Processor", () => {
       const guid = "entry-123";
 
       // Create entry directly
-      const now = new Date();
-      await db.insert(entries).values({
-        id: generateUuidv7(),
-        feedId: feed.id,
-        type: "web",
-        guid,
-        fetchedAt: now,
-        lastSeenAt: now,
-        contentHash: "abc123",
-      });
+      await createTestEntry(feed.id, { guid, contentHash: "abc123" });
 
       const found = await findEntryByGuid(feed.id, guid);
       expect(found).not.toBeNull();
@@ -288,16 +278,7 @@ describe("Entry Processor", () => {
       const guid = "shared-guid";
 
       // Create entry in feed1
-      const now = new Date();
-      await db.insert(entries).values({
-        id: generateUuidv7(),
-        feedId: feed1.id,
-        type: "web",
-        guid,
-        fetchedAt: now,
-        lastSeenAt: now,
-        contentHash: "abc123",
-      });
+      await createTestEntry(feed1.id, { guid, contentHash: "abc123" });
 
       // Should find in feed1
       const found1 = await findEntryByGuid(feed1.id, guid);
@@ -610,22 +591,8 @@ describe("Entry Processor", () => {
       );
 
       // A subscriber that joins AFTER the first fetch has no user_entries yet.
-      const userId = generateUuidv7();
-      await db.insert(users).values({
-        id: userId,
-        email: `aiv-${userId}@test.com`,
-        passwordHash: "test-hash",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-      await db.insert(subscriptions).values({
-        id: generateUuidv7(),
-        userId,
-        feedId: feed.id,
-        subscribedAt: new Date(),
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
+      const userId = await createTestUser({ emailPrefix: "aiv" });
+      await createTestSubscription(userId, feed.id);
 
       // Re-fetch the identical feed (nothing changed) with alwaysUpdateVisibility.
       const secondFetchedAt = new Date("2024-06-15T11:00:00Z");
@@ -729,22 +696,8 @@ describe("Entry Processor", () => {
         { fetchedAt: firstFetchedAt }
       );
 
-      const userId = generateUuidv7();
-      await db.insert(users).values({
-        id: userId,
-        email: `noaiv-${userId}@test.com`,
-        passwordHash: "test-hash",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-      await db.insert(subscriptions).values({
-        id: generateUuidv7(),
-        userId,
-        feedId: feed.id,
-        subscribedAt: new Date(),
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
+      const userId = await createTestUser({ emailPrefix: "noaiv" });
+      await createTestSubscription(userId, feed.id);
 
       const secondFetchedAt = new Date("2024-06-15T11:00:00Z");
       await processEntries(
@@ -919,22 +872,8 @@ describe("Entry Processor", () => {
       // already exists.
       const feed = await createTestFeed();
 
-      const userId = generateUuidv7();
-      await db.insert(users).values({
-        id: userId,
-        email: `fanout-${userId}@test.com`,
-        passwordHash: "test-hash",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-      await db.insert(subscriptions).values({
-        id: generateUuidv7(),
-        userId,
-        feedId: feed.id,
-        subscribedAt: new Date(),
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
+      const userId = await createTestUser({ emailPrefix: "fanout" });
+      await createTestSubscription(userId, feed.id);
 
       // On each delivered new_entry, immediately check (at arrival time)
       // whether the subscriber's user_entries row exists.
@@ -984,22 +923,8 @@ describe("Entry Processor", () => {
       // so any later fetch with activity heals it.
       const feed = await createTestFeed();
 
-      const userId = generateUuidv7();
-      await db.insert(users).values({
-        id: userId,
-        email: `heal-${userId}@test.com`,
-        passwordHash: "test-hash",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-      await db.insert(subscriptions).values({
-        id: generateUuidv7(),
-        userId,
-        feedId: feed.id,
-        subscribedAt: new Date(),
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
+      const userId = await createTestUser({ emailPrefix: "heal" });
+      await createTestSubscription(userId, feed.id);
 
       // Simulate the crash: insert the entry directly (as a fetch would) but
       // never fan out user_entries.

@@ -17,81 +17,11 @@ import {
 } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
-import type { Context } from "../../src/server/trpc/context";
+import { createAuthContext, createTestUser } from "./helpers";
 
 // ============================================================================
 // Test Helpers
 // ============================================================================
-
-/**
- * Creates a test user and returns their ID.
- */
-async function createTestUser(emailPrefix: string = "user"): Promise<string> {
-  const userId = generateUuidv7();
-  await db.insert(users).values({
-    id: userId,
-    email: `${emailPrefix}-${userId}@test.com`,
-    passwordHash: "test-hash",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-  return userId;
-}
-
-/**
- * Creates an authenticated context for a test user.
- */
-function createAuthContext(userId: string): Context {
-  const now = new Date();
-  return {
-    db,
-    session: {
-      session: {
-        id: generateUuidv7(),
-        userId,
-        tokenHash: "test-hash",
-        scopes: null,
-        userAgent: null,
-        ipAddress: null,
-        createdAt: now,
-        expiresAt: new Date(Date.now() + 3600000),
-        revokedAt: null,
-        lastActiveAt: now,
-      },
-      user: {
-        id: userId,
-        email: `${userId}@test.com`,
-        emailVerifiedAt: null,
-        tosAgreedAt: new Date(),
-        privacyPolicyAgreedAt: new Date(),
-        notEuAgreedAt: new Date(),
-        passwordHash: "test-hash",
-        inviteId: null,
-        showSpam: false,
-        lastActiveAt: null,
-        groqApiKey: null,
-        anthropicApiKey: null,
-        cerebrasApiKey: null,
-        summarizationModel: null,
-        summarizationMaxWords: null,
-        summarizationPrompt: null,
-        narrationModel: null,
-        savedUnreadCount: 0,
-        starredUnreadCount: 0,
-        createdAt: now,
-        updatedAt: now,
-      },
-      hasGroqApiKey: false,
-      hasAnthropicApiKey: false,
-      hasCerebrasApiKey: false,
-    },
-    apiToken: null,
-    authType: "session",
-    scopes: [],
-    sessionToken: "test-token",
-    headers: new Headers(),
-  };
-}
 
 /**
  * Generates a simple OPML string with the specified number of feeds.
@@ -136,7 +66,7 @@ describe("OPML Import", () => {
   describe("subscriptions.import", () => {
     it("imports a simple OPML with few feeds", async () => {
       const userId = await createTestUser();
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const opml = generateOpml(3);
@@ -160,7 +90,7 @@ describe("OPML Import", () => {
 
     it("imports OPML with many feeds (stress test)", async () => {
       const userId = await createTestUser();
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       // Generate OPML with 500+ feeds to simulate real-world usage
@@ -186,7 +116,7 @@ describe("OPML Import", () => {
 
     it("handles empty OPML", async () => {
       const userId = await createTestUser();
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const opml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -203,7 +133,7 @@ describe("OPML Import", () => {
 
     it("rejects invalid OPML", async () => {
       const userId = await createTestUser();
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const invalidOpml = "not valid xml at all";
@@ -215,7 +145,7 @@ describe("OPML Import", () => {
 
     it("handles OPML with special characters in feed titles", async () => {
       const userId = await createTestUser();
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const opml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -237,7 +167,7 @@ describe("OPML Import", () => {
   describe("imports.preview", () => {
     it("parses OPML server-side and returns the feed list without importing", async () => {
       const userId = await createTestUser();
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const result = await caller.imports.preview({ opml: generateOpml(3) });
@@ -258,7 +188,7 @@ describe("OPML Import", () => {
 
     it("rejects invalid OPML with a validation error", async () => {
       const userId = await createTestUser();
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       await expect(
@@ -270,7 +200,7 @@ describe("OPML Import", () => {
   describe("imports.get", () => {
     it("retrieves import status", async () => {
       const userId = await createTestUser();
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       // First create an import
@@ -290,16 +220,16 @@ describe("OPML Import", () => {
 
     it("rejects access to another user's import", async () => {
       const userId1 = await createTestUser();
-      const userId2 = await createTestUser("other");
+      const userId2 = await createTestUser({ emailPrefix: "other" });
 
       // User 1 creates an import
-      const ctx1 = createAuthContext(userId1);
+      const ctx1 = await createAuthContext(userId1);
       const caller1 = createCaller(ctx1);
       const opml = generateOpml(3);
       const importResult = await caller1.subscriptions.import({ opml });
 
       // User 2 tries to access it
-      const ctx2 = createAuthContext(userId2);
+      const ctx2 = await createAuthContext(userId2);
       const caller2 = createCaller(ctx2);
 
       await expect(caller2.imports.get({ id: importResult.importId })).rejects.toThrow(
@@ -311,7 +241,7 @@ describe("OPML Import", () => {
   describe("imports.list", () => {
     it("lists user imports", async () => {
       const userId = await createTestUser();
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       // Create multiple imports
@@ -328,7 +258,7 @@ describe("OPML Import", () => {
 
     it("returns empty list for user with no imports", async () => {
       const userId = await createTestUser();
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const result = await caller.imports.list();

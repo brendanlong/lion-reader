@@ -28,87 +28,11 @@ import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createUserEntriesForFeed } from "../../src/server/feed/entry-processor";
 import { migrateSubscriptionsToExistingFeed } from "../../src/server/jobs/handlers";
 import { createSubscription } from "../../src/server/services/subscriptions";
+import { createTestEntry, createTestFeed, createTestSubscription, createTestUser } from "./helpers";
 
 // ============================================================================
 // Test Helpers
 // ============================================================================
-
-async function createTestUser(prefix = "sub-id-user"): Promise<string> {
-  const userId = generateUuidv7();
-  await db.insert(users).values({
-    id: userId,
-    email: `${prefix}-${userId}@test.com`,
-    passwordHash: "test-hash",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-  return userId;
-}
-
-async function createTestFeed(options: {
-  url?: string;
-  type?: "web" | "email" | "saved";
-  lastEntriesUpdatedAt?: Date | null;
-  /** Required for email/saved feeds (feed_type_user_id check constraint). */
-  userId?: string;
-}): Promise<string> {
-  const feedId = generateUuidv7();
-  const now = new Date();
-  await db.insert(feeds).values({
-    id: feedId,
-    type: options.type ?? "web",
-    url: options.url ?? `https://example.com/feed-${feedId}.xml`,
-    userId: options.userId ?? null,
-    title: `Test Feed ${feedId}`,
-    lastEntriesUpdatedAt: options.lastEntriesUpdatedAt ?? null,
-    createdAt: now,
-    updatedAt: now,
-  });
-  return feedId;
-}
-
-async function createTestSubscription(
-  userId: string,
-  feedId: string,
-  options?: { unsubscribedAt?: Date | null }
-): Promise<string> {
-  const subscriptionId = generateUuidv7();
-  await db.insert(subscriptions).values({
-    id: subscriptionId,
-    userId,
-    feedId,
-    subscribedAt: new Date(),
-    unsubscribedAt: options?.unsubscribedAt ?? null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-  return subscriptionId;
-}
-
-async function createTestEntry(
-  feedId: string,
-  options: { isSpam?: boolean; lastSeenAt?: Date | null; type?: "web" | "email" | "saved" } = {}
-): Promise<string> {
-  const entryId = generateUuidv7();
-  const now = new Date();
-  const type = options.type ?? "web";
-  await db.insert(entries).values({
-    id: entryId,
-    feedId,
-    type,
-    guid: `guid-${entryId}`,
-    title: `Entry ${entryId}`,
-    contentHash: `hash-${entryId}`,
-    isSpam: options.isSpam ?? false,
-    fetchedAt: now,
-    // last_seen_at is only valid on fetched (web) entries
-    // (entries_last_seen_only_fetched check constraint).
-    lastSeenAt: type === "web" ? (options.lastSeenAt ?? now) : null,
-    createdAt: now,
-    updatedAt: now,
-  });
-  return entryId;
-}
 
 async function getUserEntry(userId: string, entryId: string) {
   const [row] = await db
@@ -147,7 +71,13 @@ describe("user_entries.subscription_id / is_spam denormalization", () => {
       // (entries_spam_only_email check constraint).
       const feedId = await createTestFeed({ type: "email", userId });
       const subscriptionId = await createTestSubscription(userId, feedId);
-      const entryId = await createTestEntry(feedId, { isSpam: true, type: "email" });
+      // publishedAt stays null so the sort key has to come from the trigger's
+      // fetched_at arm — the point of the assertion below.
+      const entryId = await createTestEntry(feedId, {
+        isSpam: true,
+        type: "email",
+        publishedAt: null,
+      });
 
       // Insert the way email ingest / saved articles / seeds do: identity only.
       await db.insert(userEntries).values({ userId, entryId });
@@ -162,7 +92,7 @@ describe("user_entries.subscription_id / is_spam denormalization", () => {
       const userId = await createTestUser();
       // Saved-articles feed: per-user, no subscription row.
       const feedId = await createTestFeed({ type: "saved", userId });
-      const entryId = await createTestEntry(feedId, { type: "saved" });
+      const entryId = await createTestEntry(feedId, { type: "saved", publishedAt: null });
 
       await db.insert(userEntries).values({ userId, entryId });
 
@@ -175,7 +105,7 @@ describe("user_entries.subscription_id / is_spam denormalization", () => {
       // Attribution is to the (user, feed) subscription whether or not it is
       // active — visibility rules, not attribution, decide what the user sees.
       const userId = await createTestUser();
-      const feedId = await createTestFeed({});
+      const feedId = await createTestFeed();
       const subscriptionId = await createTestSubscription(userId, feedId, {
         unsubscribedAt: new Date(),
       });
@@ -189,9 +119,9 @@ describe("user_entries.subscription_id / is_spam denormalization", () => {
 
     it("does not override explicitly provided values", async () => {
       const userId = await createTestUser();
-      const feedId = await createTestFeed({});
+      const feedId = await createTestFeed();
       await createTestSubscription(userId, feedId);
-      const otherFeedId = await createTestFeed({});
+      const otherFeedId = await createTestFeed();
       const otherSubscriptionId = await createTestSubscription(userId, otherFeedId);
       const entryId = await createTestEntry(feedId, { isSpam: false });
 
@@ -210,9 +140,9 @@ describe("user_entries.subscription_id / is_spam denormalization", () => {
 
   describe("feed fanout (createUserEntriesForFeed)", () => {
     it("stamps each subscriber's own subscription", async () => {
-      const feedId = await createTestFeed({});
-      const user1 = await createTestUser("fanout-1");
-      const user2 = await createTestUser("fanout-2");
+      const feedId = await createTestFeed();
+      const user1 = await createTestUser({ emailPrefix: "fanout-1" });
+      const user2 = await createTestUser({ emailPrefix: "fanout-2" });
       const sub1 = await createTestSubscription(user1, feedId);
       const sub2 = await createTestSubscription(user2, feedId);
       const entryId = await createTestEntry(feedId);
@@ -227,7 +157,7 @@ describe("user_entries.subscription_id / is_spam denormalization", () => {
     });
 
     it("copies is_spam from the entry", async () => {
-      const userId = await createTestUser("fanout-spam");
+      const userId = await createTestUser({ emailPrefix: "fanout-spam" });
       // Email feed (user-owned) so the spam entry passes entries_spam_only_email.
       const feedId = await createTestFeed({ type: "email", userId });
       await createTestSubscription(userId, feedId);
@@ -243,7 +173,7 @@ describe("user_entries.subscription_id / is_spam denormalization", () => {
 
   describe("subscribe-time populate (createSubscription)", () => {
     it("stamps the new subscription on the populated entries", async () => {
-      const userId = await createTestUser("subscribe");
+      const userId = await createTestUser({ emailPrefix: "subscribe" });
       const now = new Date();
       const url = `https://example.com/populate-${generateUuidv7()}.xml`;
       const feedId = await createTestFeed({ url, lastEntriesUpdatedAt: now });
@@ -259,7 +189,7 @@ describe("user_entries.subscription_id / is_spam denormalization", () => {
 
   describe("feed merge re-stamp (migrateSubscriptionsToExistingFeed)", () => {
     it("re-stamps old-feed entries to the newly created subscription", async () => {
-      const userId = await createTestUser("merge-new");
+      const userId = await createTestUser({ emailPrefix: "merge-new" });
       const oldFeedId = await createTestFeed({ url: "https://old.example.com/feed.xml" });
       const newFeedId = await createTestFeed({ url: "https://new.example.com/feed.xml" });
       const oldSubId = await createTestSubscription(userId, oldFeedId);
@@ -283,7 +213,7 @@ describe("user_entries.subscription_id / is_spam denormalization", () => {
     });
 
     it("re-stamps old-feed entries to the user's existing subscription to the target feed", async () => {
-      const userId = await createTestUser("merge-existing");
+      const userId = await createTestUser({ emailPrefix: "merge-existing" });
       const oldFeedId = await createTestFeed({ url: "https://old2.example.com/feed.xml" });
       const newFeedId = await createTestFeed({ url: "https://new2.example.com/feed.xml" });
       const oldSubId = await createTestSubscription(userId, oldFeedId);
@@ -318,8 +248,8 @@ describe("user_entries.subscription_id / is_spam denormalization", () => {
     it("re-stamps every affected user in a multi-subscriber merge", async () => {
       const oldFeedId = await createTestFeed({ url: "https://old3.example.com/feed.xml" });
       const newFeedId = await createTestFeed({ url: "https://new3.example.com/feed.xml" });
-      const userA = await createTestUser("merge-a");
-      const userB = await createTestUser("merge-b");
+      const userA = await createTestUser({ emailPrefix: "merge-a" });
+      const userB = await createTestUser({ emailPrefix: "merge-b" });
       await createTestSubscription(userA, oldFeedId);
       await createTestSubscription(userB, oldFeedId);
       const existingBSub = await createTestSubscription(userB, newFeedId);

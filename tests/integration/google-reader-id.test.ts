@@ -13,10 +13,11 @@
  */
 
 import { describe, it, expect, afterAll } from "vitest";
-import { inArray, eq, and } from "drizzle-orm";
+import { inArray, eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { feeds, entries, users, userEntries, subscriptions } from "../../src/server/db/schema";
+import { feeds, entries, users, subscriptions } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
+import { createTestEntry, createTestFeed, createTestUser } from "./helpers";
 import { greaderItemIdsToUuids } from "../../src/server/google-reader/id";
 
 const createdUserIds: string[] = [];
@@ -24,26 +25,13 @@ const createdFeedIds: string[] = [];
 const createdEntryIds: string[] = [];
 
 async function createUser(): Promise<string> {
-  const userId = generateUuidv7();
-  await db.insert(users).values({
-    id: userId,
-    email: `greader-id-${userId}@test.com`,
-    passwordHash: "test-hash",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
+  const userId = await createTestUser({ emailPrefix: "greader-id" });
   createdUserIds.push(userId);
   return userId;
 }
 
 async function createFeed(): Promise<string> {
-  const feedId = generateUuidv7();
-  await db.insert(feeds).values({
-    id: feedId,
-    type: "web",
-    url: `https://example.com/greader-id/${feedId}/feed.xml`,
-    title: "GReader ID Test Feed",
-  });
+  const feedId = await createTestFeed({ title: "GReader ID Test Feed" });
   createdFeedIds.push(feedId);
   return feedId;
 }
@@ -57,33 +45,17 @@ async function insertEntry(
   feedId: string,
   userId: string
 ): Promise<{ id: string; greaderItemId: bigint }> {
-  const id = generateUuidv7();
-  const when = new Date();
-  await db.insert(entries).values({
-    id,
-    feedId,
-    type: "web",
-    guid: `greader-id-${id}`,
-    title: `Entry ${id}`,
-    contentHash: `hash-${id}`,
-    fetchedAt: when,
-    publishedAt: when,
-    lastSeenAt: when,
-  });
-  createdEntryIds.push(id);
-
+  // Subscribe first: the `user_entries` BEFORE INSERT trigger stamps
+  // `subscription_id` from the user's subscription to the feed, and
+  // `visible_entries` hides rows without one. Every entry on a feed shares the
+  // one subscription, so this is an upsert rather than createTestSubscription.
   await db
     .insert(subscriptions)
     .values({ id: generateUuidv7(), userId, feedId })
     .onConflictDoNothing();
-  const [sub] = await db
-    .select({ id: subscriptions.id })
-    .from(subscriptions)
-    .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, feedId)));
-  await db
-    .insert(userEntries)
-    .values({ userId, entryId: id, subscriptionId: sub.id })
-    .onConflictDoNothing();
+
+  const id = await createTestEntry(feedId, { userIds: [userId] });
+  createdEntryIds.push(id);
 
   const [row] = await db
     .select({ greaderItemId: entries.greaderItemId })

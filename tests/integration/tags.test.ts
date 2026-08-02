@@ -20,81 +20,17 @@ import {
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
+import {
+  createAuthContext,
+  createTestEntry,
+  createTestFeed,
+  createTestSubscription,
+  createTestUser,
+} from "./helpers";
 
 // ============================================================================
 // Test Helpers
 // ============================================================================
-
-/**
- * Creates a test user and returns their ID.
- * Uses a unique email based on the userId to avoid conflicts in parallel tests.
- */
-async function createTestUser(emailPrefix: string = "user"): Promise<string> {
-  const userId = generateUuidv7();
-  await db.insert(users).values({
-    id: userId,
-    email: `${emailPrefix}-${userId}@test.com`,
-    passwordHash: "test-hash",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-  return userId;
-}
-
-/**
- * Creates an authenticated context for a test user.
- */
-function createAuthContext(userId: string): Context {
-  const now = new Date();
-  return {
-    db,
-    session: {
-      session: {
-        id: generateUuidv7(),
-        userId,
-        tokenHash: "test-hash",
-        scopes: null,
-        userAgent: null,
-        ipAddress: null,
-        createdAt: now,
-        expiresAt: new Date(Date.now() + 3600000),
-        revokedAt: null,
-        lastActiveAt: now,
-      },
-      user: {
-        id: userId,
-        email: `${userId}@test.com`,
-        emailVerifiedAt: null,
-        tosAgreedAt: new Date(),
-        privacyPolicyAgreedAt: new Date(),
-        notEuAgreedAt: new Date(),
-        passwordHash: "test-hash",
-        inviteId: null,
-        showSpam: false,
-        lastActiveAt: null,
-        groqApiKey: null,
-        anthropicApiKey: null,
-        cerebrasApiKey: null,
-        summarizationModel: null,
-        summarizationMaxWords: null,
-        summarizationPrompt: null,
-        narrationModel: null,
-        savedUnreadCount: 0,
-        starredUnreadCount: 0,
-        createdAt: now,
-        updatedAt: now,
-      },
-      hasGroqApiKey: false,
-      hasAnthropicApiKey: false,
-      hasCerebrasApiKey: false,
-    },
-    apiToken: null,
-    authType: "session",
-    scopes: [],
-    sessionToken: "test-token",
-    headers: new Headers(),
-  };
-}
 
 function createUnauthContext(): Context {
   return {
@@ -109,38 +45,6 @@ function createUnauthContext(): Context {
 }
 
 /**
- * Creates a test feed and returns its ID.
- */
-async function createTestFeed(url: string): Promise<string> {
-  const feedId = generateUuidv7();
-  await db.insert(feeds).values({
-    id: feedId,
-    type: "web",
-    url,
-    title: `Test Feed ${feedId}`,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-  return feedId;
-}
-
-/**
- * Creates a test subscription for a user and feed.
- */
-async function createTestSubscription(userId: string, feedId: string): Promise<string> {
-  const subscriptionId = generateUuidv7();
-  await db.insert(subscriptions).values({
-    id: subscriptionId,
-    userId,
-    feedId,
-    subscribedAt: new Date(),
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-  return subscriptionId;
-}
-
-/**
  * Links a tag to a subscription.
  */
 async function linkTagToSubscription(tagId: string, subscriptionId: string): Promise<void> {
@@ -149,43 +53,6 @@ async function linkTagToSubscription(tagId: string, subscriptionId: string): Pro
     subscriptionId,
     createdAt: new Date(),
   });
-}
-
-/**
- * Creates a test entry for a feed and optionally creates user_entries for visibility.
- */
-async function createTestEntry(
-  feedId: string,
-  options: { fetchedAt?: Date; title?: string; userIds?: string[] } = {}
-): Promise<string> {
-  const entryId = generateUuidv7();
-  const now = options.fetchedAt ?? new Date();
-  await db.insert(entries).values({
-    id: entryId,
-    feedId,
-    type: "web",
-    guid: `guid-${entryId}`,
-    title: options.title ?? `Entry ${entryId}`,
-    contentHash: `hash-${entryId}`,
-    fetchedAt: now,
-    lastSeenAt: now, // Required for web entries
-    createdAt: now,
-    updatedAt: now,
-  });
-
-  // Create user_entries for visibility
-  if (options.userIds && options.userIds.length > 0) {
-    await db.insert(userEntries).values(
-      options.userIds.map((userId) => ({
-        userId,
-        entryId,
-        read: false,
-        starred: false,
-      }))
-    );
-  }
-
-  return entryId;
 }
 
 // ============================================================================
@@ -218,7 +85,7 @@ describe("Tags API", () => {
   describe("tags.list", () => {
     it("returns empty list for user with no tags", async () => {
       const userId = await createTestUser();
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const result = await caller.tags.list();
@@ -228,7 +95,7 @@ describe("Tags API", () => {
 
     it("returns tags for the authenticated user only", async () => {
       const userId1 = await createTestUser();
-      const userId2 = await createTestUser("other");
+      const userId2 = await createTestUser({ emailPrefix: "other" });
 
       // Create tags for both users
       const tag1Id = generateUuidv7();
@@ -241,7 +108,7 @@ describe("Tags API", () => {
         { id: tag3Id, userId: userId2, name: "Sports", color: "#45b7d1", createdAt: new Date() },
       ]);
 
-      const ctx1 = createAuthContext(userId1);
+      const ctx1 = await createAuthContext(userId1);
       const caller1 = createCaller(ctx1);
       const result1 = await caller1.tags.list();
 
@@ -249,7 +116,7 @@ describe("Tags API", () => {
       expect(result1.items).toHaveLength(2);
       expect(result1.items.map((t) => t.name).sort()).toEqual(["News", "Tech"]);
 
-      const ctx2 = createAuthContext(userId2);
+      const ctx2 = await createAuthContext(userId2);
       const caller2 = createCaller(ctx2);
       const result2 = await caller2.tags.list();
 
@@ -272,8 +139,8 @@ describe("Tags API", () => {
       });
 
       // Create feeds and subscriptions
-      const feedId1 = await createTestFeed("https://feed1.com/rss");
-      const feedId2 = await createTestFeed("https://feed2.com/rss");
+      const feedId1 = await createTestFeed({ url: "https://feed1.com/rss" });
+      const feedId2 = await createTestFeed({ url: "https://feed2.com/rss" });
       const subId1 = await createTestSubscription(userId, feedId1);
       const subId2 = await createTestSubscription(userId, feedId2);
 
@@ -281,7 +148,7 @@ describe("Tags API", () => {
       await linkTagToSubscription(tagId, subId1);
       await linkTagToSubscription(tagId, subId2);
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
       const result = await caller.tags.list();
 
@@ -299,8 +166,8 @@ describe("Tags API", () => {
         { id: emptyTagId, userId, name: "Empty", createdAt: new Date() },
       ]);
 
-      const feedId1 = await createTestFeed("https://feed1.com/rss");
-      const feedId2 = await createTestFeed("https://feed2.com/rss");
+      const feedId1 = await createTestFeed({ url: "https://feed1.com/rss" });
+      const feedId2 = await createTestFeed({ url: "https://feed2.com/rss" });
       const subId1 = await createTestSubscription(userId, feedId1);
       const subId2 = await createTestSubscription(userId, feedId2);
       await linkTagToSubscription(techTagId, subId1);
@@ -316,7 +183,7 @@ describe("Tags API", () => {
         .set({ read: true })
         .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, readEntryId)));
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
       const result = await caller.tags.list();
 
@@ -336,8 +203,8 @@ describe("Tags API", () => {
       // attributed to exactly one subscription (user_entries.subscription_id),
       // so an unread entry in feedB counts once for the tag even though both
       // subscriptions carry the same tag.
-      const feedIdA = await createTestFeed("https://feed-a.com/rss");
-      const feedIdB = await createTestFeed("https://feed-b.com/rss");
+      const feedIdA = await createTestFeed({ url: "https://feed-a.com/rss" });
+      const feedIdB = await createTestFeed({ url: "https://feed-b.com/rss" });
       const subId1 = await createTestSubscription(userId, feedIdA);
       const subId2 = await createTestSubscription(userId, feedIdB);
       await linkTagToSubscription(tagId, subId1);
@@ -346,7 +213,7 @@ describe("Tags API", () => {
       await createTestEntry(feedIdA, { userIds: [userId] });
       await createTestEntry(feedIdB, { userIds: [userId] });
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
       const result = await caller.tags.list();
 
@@ -354,11 +221,11 @@ describe("Tags API", () => {
     });
 
     it("does not count other users' unread entries on shared feeds", async () => {
-      const userId = await createTestUser("user-a");
-      const otherUserId = await createTestUser("user-b");
+      const userId = await createTestUser({ emailPrefix: "user-a" });
+      const otherUserId = await createTestUser({ emailPrefix: "user-b" });
 
       // Both users subscribe to the same feed and tag their subscriptions
-      const feedId = await createTestFeed("https://shared.com/rss");
+      const feedId = await createTestFeed({ url: "https://shared.com/rss" });
       const subId = await createTestSubscription(userId, feedId);
       const otherSubId = await createTestSubscription(otherUserId, feedId);
 
@@ -375,7 +242,7 @@ describe("Tags API", () => {
       await createTestEntry(feedId, { userIds: [userId, otherUserId] });
       await createTestEntry(feedId, { userIds: [otherUserId] });
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
       const result = await caller.tags.list();
 
@@ -390,7 +257,7 @@ describe("Tags API", () => {
       const tagId = generateUuidv7();
       await db.insert(tags).values({ id: tagId, userId, name: "Tech", createdAt: new Date() });
 
-      const feedId = await createTestFeed("https://feed1.com/rss");
+      const feedId = await createTestFeed({ url: "https://feed1.com/rss" });
       const subId = await createTestSubscription(userId, feedId);
       await linkTagToSubscription(tagId, subId);
       await createTestEntry(feedId, { userIds: [userId] });
@@ -400,7 +267,7 @@ describe("Tags API", () => {
         .set({ unsubscribedAt: new Date() })
         .where(eq(subscriptions.id, subId));
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
       const result = await caller.tags.list();
 
@@ -416,7 +283,7 @@ describe("Tags API", () => {
       const tagId = generateUuidv7();
       await db.insert(tags).values({ id: tagId, userId, name: "Tech", createdAt: new Date() });
 
-      const feedId = await createTestFeed("https://feed1.com/rss");
+      const feedId = await createTestFeed({ url: "https://feed1.com/rss" });
       const subId = await createTestSubscription(userId, feedId);
       await linkTagToSubscription(tagId, subId);
       const entryId = await createTestEntry(feedId, { userIds: [userId] });
@@ -429,7 +296,7 @@ describe("Tags API", () => {
         .set({ unsubscribedAt: new Date() })
         .where(eq(subscriptions.id, subId));
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
       const result = await caller.tags.list();
 
@@ -442,7 +309,7 @@ describe("Tags API", () => {
       const tagId = generateUuidv7();
       await db.insert(tags).values({ id: tagId, userId, name: "Tech", createdAt: new Date() });
 
-      const feedId = await createTestFeed("https://feed1.com/rss");
+      const feedId = await createTestFeed({ url: "https://feed1.com/rss" });
       const subId = await createTestSubscription(userId, feedId);
       await linkTagToSubscription(tagId, subId);
       const entryId = await createTestEntry(feedId, { userIds: [userId] });
@@ -451,7 +318,7 @@ describe("Tags API", () => {
         .set({ read: true })
         .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, entryId)));
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
       const result = await caller.tags.list();
 
@@ -469,7 +336,7 @@ describe("Tags API", () => {
         { id: generateUuidv7(), userId, name: "Middle", createdAt: new Date() },
       ]);
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
       const result = await caller.tags.list();
 
@@ -480,7 +347,7 @@ describe("Tags API", () => {
   describe("tags.create", () => {
     it("creates a tag with name only", async () => {
       const userId = await createTestUser();
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const result = await caller.tags.create({ name: "Tech" });
@@ -500,7 +367,7 @@ describe("Tags API", () => {
 
     it("creates a tag with name and color", async () => {
       const userId = await createTestUser();
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const result = await caller.tags.create({ name: "News", color: "#4ecdc4" });
@@ -511,7 +378,7 @@ describe("Tags API", () => {
 
     it("trims whitespace from tag name", async () => {
       const userId = await createTestUser();
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const result = await caller.tags.create({ name: "  Tech  " });
@@ -521,7 +388,7 @@ describe("Tags API", () => {
 
     it("rejects duplicate tag names for the same user", async () => {
       const userId = await createTestUser();
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       await caller.tags.create({ name: "Tech" });
@@ -533,13 +400,13 @@ describe("Tags API", () => {
 
     it("allows same tag name for different users", async () => {
       const userId1 = await createTestUser();
-      const userId2 = await createTestUser("other");
+      const userId2 = await createTestUser({ emailPrefix: "other" });
 
-      const ctx1 = createAuthContext(userId1);
+      const ctx1 = await createAuthContext(userId1);
       const caller1 = createCaller(ctx1);
       await caller1.tags.create({ name: "Tech" });
 
-      const ctx2 = createAuthContext(userId2);
+      const ctx2 = await createAuthContext(userId2);
       const caller2 = createCaller(ctx2);
       const result = await caller2.tags.create({ name: "Tech" });
 
@@ -548,7 +415,7 @@ describe("Tags API", () => {
 
     it("allows recreating a tag whose name was soft-deleted (#952)", async () => {
       const userId = await createTestUser();
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const first = await caller.tags.create({ name: "News" });
@@ -571,7 +438,7 @@ describe("Tags API", () => {
 
     it("allows renaming a tag onto a soft-deleted name (#952)", async () => {
       const userId = await createTestUser();
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const deleted = await caller.tags.create({ name: "Archive" });
@@ -585,7 +452,7 @@ describe("Tags API", () => {
 
     it("rejects empty tag name", async () => {
       const userId = await createTestUser();
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       await expect(caller.tags.create({ name: "" })).rejects.toThrow();
@@ -593,7 +460,7 @@ describe("Tags API", () => {
 
     it("rejects tag name that is too long", async () => {
       const userId = await createTestUser();
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const longName = "a".repeat(51);
@@ -602,7 +469,7 @@ describe("Tags API", () => {
 
     it("rejects invalid color format", async () => {
       const userId = await createTestUser();
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       await expect(caller.tags.create({ name: "Tech", color: "red" })).rejects.toThrow();
@@ -622,7 +489,7 @@ describe("Tags API", () => {
         createdAt: new Date(),
       });
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const result = await caller.tags.update({ id: tagId, name: "Technology" });
@@ -641,7 +508,7 @@ describe("Tags API", () => {
         createdAt: new Date(),
       });
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const result = await caller.tags.update({ id: tagId, color: "#4ecdc4" });
@@ -660,7 +527,7 @@ describe("Tags API", () => {
         createdAt: new Date(),
       });
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const result = await caller.tags.update({ id: tagId, color: null });
@@ -679,7 +546,7 @@ describe("Tags API", () => {
         createdAt: new Date(),
       });
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const result = await caller.tags.update({
@@ -703,11 +570,11 @@ describe("Tags API", () => {
       });
 
       // Create feed, subscription, and link
-      const feedId = await createTestFeed("https://feed1.com/rss");
+      const feedId = await createTestFeed({ url: "https://feed1.com/rss" });
       const subId = await createTestSubscription(userId, feedId);
       await linkTagToSubscription(tagId, subId);
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const result = await caller.tags.update({ id: tagId, name: "Technology" });
@@ -716,16 +583,16 @@ describe("Tags API", () => {
     });
 
     it("returns unread count consistent with tags.list", async () => {
-      const userId = await createTestUser("user-a");
-      const otherUserId = await createTestUser("user-b");
+      const userId = await createTestUser({ emailPrefix: "user-a" });
+      const otherUserId = await createTestUser({ emailPrefix: "user-b" });
 
       const tagId = generateUuidv7();
       await db.insert(tags).values({ id: tagId, userId, name: "Tech", createdAt: new Date() });
 
       // Two tagged subscriptions plus a second user on the shared feed
       // (scoping case) — update must count the same way list does.
-      const feedIdA = await createTestFeed("https://feed-a.com/rss");
-      const feedIdB = await createTestFeed("https://feed-b.com/rss");
+      const feedIdA = await createTestFeed({ url: "https://feed-a.com/rss" });
+      const feedIdB = await createTestFeed({ url: "https://feed-b.com/rss" });
       const subId1 = await createTestSubscription(userId, feedIdA);
       const subId2 = await createTestSubscription(userId, feedIdB);
       await linkTagToSubscription(tagId, subId1);
@@ -735,7 +602,7 @@ describe("Tags API", () => {
       await createTestEntry(feedIdA, { userIds: [userId] });
       await createTestEntry(feedIdB, { userIds: [userId, otherUserId] });
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const updateResult = await caller.tags.update({ id: tagId, name: "Technology" });
@@ -747,7 +614,7 @@ describe("Tags API", () => {
 
     it("throws error when tag not found", async () => {
       const userId = await createTestUser();
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const nonExistentId = generateUuidv7();
@@ -758,7 +625,7 @@ describe("Tags API", () => {
 
     it("throws error when updating another user's tag", async () => {
       const userId1 = await createTestUser();
-      const userId2 = await createTestUser("other");
+      const userId2 = await createTestUser({ emailPrefix: "other" });
 
       const tagId = generateUuidv7();
       await db.insert(tags).values({
@@ -769,7 +636,7 @@ describe("Tags API", () => {
       });
 
       // User 2 tries to update User 1's tag
-      const ctx = createAuthContext(userId2);
+      const ctx = await createAuthContext(userId2);
       const caller = createCaller(ctx);
 
       await expect(caller.tags.update({ id: tagId, name: "Hacked" })).rejects.toThrow(
@@ -791,7 +658,7 @@ describe("Tags API", () => {
         .where(and(eq(tags.userId, userId), eq(tags.name, "Tech")))
         .limit(1);
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       await expect(caller.tags.update({ id: techTag[0].id, name: "News" })).rejects.toThrow(
@@ -809,7 +676,7 @@ describe("Tags API", () => {
         createdAt: new Date(),
       });
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       // This should not throw even though the name "Tech" exists
@@ -831,7 +698,7 @@ describe("Tags API", () => {
         createdAt: new Date(),
       });
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const result = await caller.tags.delete({ id: tagId });
@@ -855,7 +722,7 @@ describe("Tags API", () => {
       });
 
       // Create feed, subscription, and link
-      const feedId = await createTestFeed("https://feed1.com/rss");
+      const feedId = await createTestFeed({ url: "https://feed1.com/rss" });
       const subId = await createTestSubscription(userId, feedId);
       await linkTagToSubscription(tagId, subId);
 
@@ -866,7 +733,7 @@ describe("Tags API", () => {
         .where(eq(subscriptionTags.tagId, tagId));
       expect(linksBefore).toHaveLength(1);
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
       await caller.tags.delete({ id: tagId });
 
@@ -884,7 +751,7 @@ describe("Tags API", () => {
 
     it("throws error when tag not found", async () => {
       const userId = await createTestUser();
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const nonExistentId = generateUuidv7();
@@ -893,7 +760,7 @@ describe("Tags API", () => {
 
     it("throws error when deleting another user's tag", async () => {
       const userId1 = await createTestUser();
-      const userId2 = await createTestUser("other");
+      const userId2 = await createTestUser({ emailPrefix: "other" });
 
       const tagId = generateUuidv7();
       await db.insert(tags).values({
@@ -904,7 +771,7 @@ describe("Tags API", () => {
       });
 
       // User 2 tries to delete User 1's tag
-      const ctx = createAuthContext(userId2);
+      const ctx = await createAuthContext(userId2);
       const caller = createCaller(ctx);
 
       await expect(caller.tags.delete({ id: tagId })).rejects.toThrow("Tag not found");
@@ -952,7 +819,7 @@ describe("Tags API", () => {
   describe("subscriptions.setTags", () => {
     it("sets tags on a subscription", async () => {
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://feed1.com/rss");
+      const feedId = await createTestFeed({ url: "https://feed1.com/rss" });
       const subId = await createTestSubscription(userId, feedId);
 
       // Create tags
@@ -963,7 +830,7 @@ describe("Tags API", () => {
         { id: tag2Id, userId, name: "News", color: "#4ecdc4", createdAt: new Date() },
       ]);
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const result = await caller.subscriptions.setTags({ id: subId, tagIds: [tag1Id, tag2Id] });
@@ -981,7 +848,7 @@ describe("Tags API", () => {
 
     it("replaces existing tags", async () => {
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://feed1.com/rss");
+      const feedId = await createTestFeed({ url: "https://feed1.com/rss" });
       const subId = await createTestSubscription(userId, feedId);
 
       // Create tags
@@ -998,7 +865,7 @@ describe("Tags API", () => {
       await linkTagToSubscription(tag1Id, subId);
       await linkTagToSubscription(tag2Id, subId);
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       // Replace with new tag
@@ -1015,7 +882,7 @@ describe("Tags API", () => {
 
     it("removes all tags when given empty array", async () => {
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://feed1.com/rss");
+      const feedId = await createTestFeed({ url: "https://feed1.com/rss" });
       const subId = await createTestSubscription(userId, feedId);
 
       // Create and link a tag
@@ -1023,7 +890,7 @@ describe("Tags API", () => {
       await db.insert(tags).values({ id: tagId, userId, name: "Tech", createdAt: new Date() });
       await linkTagToSubscription(tagId, subId);
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       await caller.subscriptions.setTags({ id: subId, tagIds: [] });
@@ -1041,7 +908,7 @@ describe("Tags API", () => {
       const tagId = generateUuidv7();
       await db.insert(tags).values({ id: tagId, userId, name: "Tech", createdAt: new Date() });
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       await expect(
@@ -1051,9 +918,9 @@ describe("Tags API", () => {
 
     it("throws error for another user's subscription", async () => {
       const userId1 = await createTestUser();
-      const userId2 = await createTestUser("other");
+      const userId2 = await createTestUser({ emailPrefix: "other" });
 
-      const feedId = await createTestFeed("https://feed1.com/rss");
+      const feedId = await createTestFeed({ url: "https://feed1.com/rss" });
       const subId = await createTestSubscription(userId1, feedId);
 
       const tagId = generateUuidv7();
@@ -1062,7 +929,7 @@ describe("Tags API", () => {
         .values({ id: tagId, userId: userId2, name: "Tech", createdAt: new Date() });
 
       // User 2 tries to set tags on User 1's subscription
-      const ctx = createAuthContext(userId2);
+      const ctx = await createAuthContext(userId2);
       const caller = createCaller(ctx);
 
       await expect(caller.subscriptions.setTags({ id: subId, tagIds: [tagId] })).rejects.toThrow(
@@ -1072,10 +939,10 @@ describe("Tags API", () => {
 
     it("throws error for invalid tag IDs", async () => {
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://feed1.com/rss");
+      const feedId = await createTestFeed({ url: "https://feed1.com/rss" });
       const subId = await createTestSubscription(userId, feedId);
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       // Try to set a non-existent tag
@@ -1086,9 +953,9 @@ describe("Tags API", () => {
 
     it("throws error for another user's tags", async () => {
       const userId1 = await createTestUser();
-      const userId2 = await createTestUser("other");
+      const userId2 = await createTestUser({ emailPrefix: "other" });
 
-      const feedId = await createTestFeed("https://feed1.com/rss");
+      const feedId = await createTestFeed({ url: "https://feed1.com/rss" });
       const subId = await createTestSubscription(userId1, feedId);
 
       // Create tag owned by user 2
@@ -1098,7 +965,7 @@ describe("Tags API", () => {
         .values({ id: tagId, userId: userId2, name: "Tech", createdAt: new Date() });
 
       // User 1 tries to use User 2's tag
-      const ctx = createAuthContext(userId1);
+      const ctx = await createAuthContext(userId1);
       const caller = createCaller(ctx);
 
       await expect(caller.subscriptions.setTags({ id: subId, tagIds: [tagId] })).rejects.toThrow(
@@ -1110,7 +977,7 @@ describe("Tags API", () => {
   describe("subscriptions.list with tags", () => {
     it("returns subscriptions with their tags", async () => {
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://feed1.com/rss");
+      const feedId = await createTestFeed({ url: "https://feed1.com/rss" });
       const subId = await createTestSubscription(userId, feedId);
 
       // Create and link tags
@@ -1123,7 +990,7 @@ describe("Tags API", () => {
       await linkTagToSubscription(tag1Id, subId);
       await linkTagToSubscription(tag2Id, subId);
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const result = await caller.subscriptions.list();
@@ -1135,10 +1002,10 @@ describe("Tags API", () => {
 
     it("returns empty tags array for subscriptions without tags", async () => {
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://feed1.com/rss");
+      const feedId = await createTestFeed({ url: "https://feed1.com/rss" });
       await createTestSubscription(userId, feedId);
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const result = await caller.subscriptions.list();
@@ -1158,8 +1025,8 @@ describe("Tags API", () => {
       // subscription; counting only the current feed_id silently undercounts.
       const userId = await createTestUser();
 
-      const feedIdA = await createTestFeed("https://feed-a.com/rss"); // current feed
-      const feedIdB = await createTestFeed("https://feed-b.com/rss"); // merged-in old feed
+      const feedIdA = await createTestFeed({ url: "https://feed-a.com/rss" }); // current feed
+      const feedIdB = await createTestFeed({ url: "https://feed-b.com/rss" }); // merged-in old feed
       const subId = await createTestSubscription(userId, feedIdA);
 
       // 2 unread under the current feed, 1 unread under the merged-in feed.
@@ -1173,7 +1040,7 @@ describe("Tags API", () => {
         .set({ subscriptionId: subId })
         .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, mergedEntry)));
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
       const result = await caller.subscriptions.list();
 
@@ -1185,10 +1052,10 @@ describe("Tags API", () => {
       // The per-subscription count must stay user-scoped: user_entries
       // attribution is per-user and feeds are shared, so a missing user filter
       // would leak other users' unread counts.
-      const userId = await createTestUser("user-a");
-      const otherUserId = await createTestUser("user-b");
+      const userId = await createTestUser({ emailPrefix: "user-a" });
+      const otherUserId = await createTestUser({ emailPrefix: "user-b" });
 
-      const feedId = await createTestFeed("https://shared.com/rss");
+      const feedId = await createTestFeed({ url: "https://shared.com/rss" });
       await createTestSubscription(userId, feedId);
       await createTestSubscription(otherUserId, feedId);
 
@@ -1196,7 +1063,7 @@ describe("Tags API", () => {
       await createTestEntry(feedId, { userIds: [userId] });
       await createTestEntry(feedId, { userIds: [otherUserId] });
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
       const result = await caller.subscriptions.list();
 
@@ -1210,8 +1077,8 @@ describe("Tags API", () => {
       const userId = await createTestUser();
 
       // One tagged subscription, one untagged (uncategorized) subscription.
-      const taggedFeed = await createTestFeed("https://tagged.com/rss");
-      const untaggedFeed = await createTestFeed("https://untagged.com/rss");
+      const taggedFeed = await createTestFeed({ url: "https://tagged.com/rss" });
+      const untaggedFeed = await createTestFeed({ url: "https://untagged.com/rss" });
       const taggedSub = await createTestSubscription(userId, taggedFeed);
       await createTestSubscription(userId, untaggedFeed);
 
@@ -1223,7 +1090,7 @@ describe("Tags API", () => {
       await createTestEntry(untaggedFeed, { userIds: [userId] }); // uncategorized
       await createTestEntry(untaggedFeed, { userIds: [userId] }); // uncategorized
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const result = await createCaller(ctx).tags.list();
 
       expect(result.uncategorized.feedCount).toBe(1);
@@ -1233,8 +1100,8 @@ describe("Tags API", () => {
     it("counts uncategorized unread entries reachable through a merged feed", async () => {
       const userId = await createTestUser();
 
-      const feedIdA = await createTestFeed("https://feed-a.com/rss");
-      const feedIdB = await createTestFeed("https://feed-b.com/rss");
+      const feedIdA = await createTestFeed({ url: "https://feed-a.com/rss" });
+      const feedIdB = await createTestFeed({ url: "https://feed-b.com/rss" });
       const subId = await createTestSubscription(userId, feedIdA); // untagged
 
       await createTestEntry(feedIdA, { userIds: [userId] });
@@ -1245,7 +1112,7 @@ describe("Tags API", () => {
         .set({ subscriptionId: subId })
         .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, mergedEntry)));
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const result = await createCaller(ctx).tags.list();
 
       expect(result.uncategorized.unreadCount).toBe(2);
@@ -1257,11 +1124,11 @@ describe("Tags API", () => {
       // to Starred, not Uncategorized — the count must stay scoped to active subs.
       const userId = await createTestUser();
 
-      const activeFeed = await createTestFeed("https://active.com/rss");
+      const activeFeed = await createTestFeed({ url: "https://active.com/rss" });
       await createTestSubscription(userId, activeFeed);
       await createTestEntry(activeFeed, { userIds: [userId] }); // 1 active uncategorized unread
 
-      const goneFeed = await createTestFeed("https://gone.com/rss");
+      const goneFeed = await createTestFeed({ url: "https://gone.com/rss" });
       const goneSub = await createTestSubscription(userId, goneFeed);
       await db
         .update(subscriptions)
@@ -1273,7 +1140,7 @@ describe("Tags API", () => {
         .set({ starred: true })
         .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, starredEntry)));
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const result = await createCaller(ctx).tags.list();
 
       // Only the active subscription's unread entry — not the starred orphan.
@@ -1287,8 +1154,8 @@ describe("Tags API", () => {
       const userId = await createTestUser();
 
       // Create two feeds with subscriptions
-      const feedId1 = await createTestFeed("https://feed1.com/rss");
-      const feedId2 = await createTestFeed("https://feed2.com/rss");
+      const feedId1 = await createTestFeed({ url: "https://feed1.com/rss" });
+      const feedId2 = await createTestFeed({ url: "https://feed2.com/rss" });
       const subId1 = await createTestSubscription(userId, feedId1);
       await createTestSubscription(userId, feedId2);
 
@@ -1304,7 +1171,7 @@ describe("Tags API", () => {
       });
       await createTestEntry(feedId2, { title: "Entry from Feed 2", userIds: [userId] });
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       // Filter by tag - should only return entries from feed 1
@@ -1319,7 +1186,7 @@ describe("Tags API", () => {
       const userId = await createTestUser();
 
       // Create a feed with subscription
-      const feedId = await createTestFeed("https://feed1.com/rss");
+      const feedId = await createTestFeed({ url: "https://feed1.com/rss" });
       await createTestSubscription(userId, feedId);
 
       // Create a tag with no subscriptions linked
@@ -1329,7 +1196,7 @@ describe("Tags API", () => {
       // Create an entry
       await createTestEntry(feedId, { title: "Test Entry" });
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       // Filter by empty tag - should return empty
@@ -1341,11 +1208,11 @@ describe("Tags API", () => {
     it("returns empty list for non-existent tag", async () => {
       const userId = await createTestUser();
 
-      const feedId = await createTestFeed("https://feed1.com/rss");
+      const feedId = await createTestFeed({ url: "https://feed1.com/rss" });
       await createTestSubscription(userId, feedId);
       await createTestEntry(feedId);
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       // Filter by non-existent tag
@@ -1356,10 +1223,10 @@ describe("Tags API", () => {
 
     it("returns empty list for another user's tag", async () => {
       const userId1 = await createTestUser();
-      const userId2 = await createTestUser("other");
+      const userId2 = await createTestUser({ emailPrefix: "other" });
 
       // User 1 has a feed and subscription
-      const feedId = await createTestFeed("https://feed1.com/rss");
+      const feedId = await createTestFeed({ url: "https://feed1.com/rss" });
       await createTestSubscription(userId1, feedId);
       await createTestEntry(feedId);
 
@@ -1370,7 +1237,7 @@ describe("Tags API", () => {
         .values({ id: tagId, userId: userId2, name: "Tech", createdAt: new Date() });
 
       // User 1 tries to filter by user 2's tag
-      const ctx = createAuthContext(userId1);
+      const ctx = await createAuthContext(userId1);
       const caller = createCaller(ctx);
 
       const result = await caller.entries.list({ tagId });
@@ -1382,8 +1249,8 @@ describe("Tags API", () => {
       const userId = await createTestUser();
 
       // Create two feeds with subscriptions
-      const feedId1 = await createTestFeed("https://feed1.com/rss");
-      const feedId2 = await createTestFeed("https://feed2.com/rss");
+      const feedId1 = await createTestFeed({ url: "https://feed1.com/rss" });
+      const feedId2 = await createTestFeed({ url: "https://feed2.com/rss" });
       const subId1 = await createTestSubscription(userId, feedId1);
       const subId2 = await createTestSubscription(userId, feedId2);
 
@@ -1400,7 +1267,7 @@ describe("Tags API", () => {
       });
       await createTestEntry(feedId2, { title: "Entry from Feed 2", userIds: [userId] });
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       // Filter by tag AND subscriptionId - should only return entries from subscription 1
@@ -1414,8 +1281,8 @@ describe("Tags API", () => {
       const userId = await createTestUser();
 
       // Create two feeds with subscriptions
-      const feedId1 = await createTestFeed("https://feed1.com/rss");
-      const feedId2 = await createTestFeed("https://feed2.com/rss");
+      const feedId1 = await createTestFeed({ url: "https://feed1.com/rss" });
+      const feedId2 = await createTestFeed({ url: "https://feed2.com/rss" });
       const subId1 = await createTestSubscription(userId, feedId1);
       const subId2 = await createTestSubscription(userId, feedId2);
 
@@ -1428,7 +1295,7 @@ describe("Tags API", () => {
       await createTestEntry(feedId1);
       await createTestEntry(feedId2);
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       // Filter by tag AND subscriptionId (where subscription for feed2 is not in tag)

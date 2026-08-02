@@ -19,21 +19,21 @@ import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createTokens, validateAccessToken } from "../../src/server/oauth/service";
 import { requireAuth, passwordGrant } from "../../src/server/wallabag/auth";
 import { OAUTH_SCOPES } from "../../src/server/oauth/utils";
+import { createTestUser } from "./helpers";
 
 const createdUserIds: string[] = [];
 
-async function createTestUser(password?: string): Promise<{ id: string; email: string }> {
+/**
+ * A confirmed user. Pass `password` when the test signs in through the password
+ * grant, which needs a hash it can actually verify.
+ */
+async function createUser(password?: string): Promise<{ id: string; email: string }> {
   const id = generateUuidv7();
   const email = `wallabag-${id}@test.com`;
-  await db.insert(users).values({
+  await createTestUser({
     id,
     email,
     passwordHash: password ? await argon2.hash(password) : "test-hash",
-    tosAgreedAt: new Date(),
-    privacyPolicyAgreedAt: new Date(),
-    notEuAgreedAt: new Date(),
-    createdAt: new Date(),
-    updatedAt: new Date(),
   });
   createdUserIds.push(id);
   return { id, email };
@@ -58,7 +58,7 @@ afterAll(async () => {
 
 describe("Wallabag requireAuth scope enforcement", () => {
   it("accepts a reader:full-access token", async () => {
-    const user = await createTestUser();
+    const user = await createUser();
     const token = await mintToken(user.id, [OAUTH_SCOPES.READER_FULL_ACCESS]);
 
     const result = await requireAuth(bearerRequest(token));
@@ -70,7 +70,7 @@ describe("Wallabag requireAuth scope enforcement", () => {
   });
 
   it("rejects a saved:write-only token with 403 insufficient_scope", async () => {
-    const user = await createTestUser();
+    const user = await createUser();
     const token = await mintToken(user.id, [OAUTH_SCOPES.SAVED_WRITE]);
 
     const result = await requireAuth(bearerRequest(token));
@@ -82,7 +82,7 @@ describe("Wallabag requireAuth scope enforcement", () => {
   });
 
   it("rejects an mcp-scoped token with 403 (audience/scope confinement)", async () => {
-    const user = await createTestUser();
+    const user = await createUser();
     const token = await mintToken(user.id, [OAUTH_SCOPES.MCP]);
 
     const result = await requireAuth(bearerRequest(token));
@@ -132,7 +132,7 @@ describe("Wallabag requireAuth scope enforcement", () => {
 describe("Wallabag passwordGrant", () => {
   it("mints a reader:full-access token that requireAuth accepts", async () => {
     const password = "correct-horse-battery-staple";
-    const user = await createTestUser(password);
+    const user = await createUser(password);
 
     const grant = await passwordGrant(user.email, password, "wallabag");
     expect(grant).not.toBeNull();
@@ -148,7 +148,7 @@ describe("Wallabag passwordGrant", () => {
   });
 
   it("returns null for a wrong password", async () => {
-    const user = await createTestUser("the-right-password");
+    const user = await createUser("the-right-password");
     const grant = await passwordGrant(user.email, "the-wrong-password", "wallabag");
     expect(grant).toBeNull();
   });

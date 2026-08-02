@@ -16,10 +16,9 @@ import { createServer, type Server } from "node:http";
 import { type AddressInfo } from "node:net";
 import { TRPCError } from "@trpc/server";
 import { db } from "../../src/server/db";
-import { users } from "../../src/server/db/schema";
-import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { saveArticle } from "../../src/server/services/saved";
 import { getAppErrorCode } from "../../src/server/trpc/errors";
+import { createTestUser } from "./helpers";
 
 const RSS_BODY = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0"><channel><title>Example Feed</title>
@@ -84,21 +83,9 @@ afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
 });
 
-async function createTestUser(): Promise<string> {
-  const userId = generateUuidv7();
-  await db.insert(users).values({
-    id: userId,
-    email: `feed-detect-${userId}@test.com`,
-    passwordHash: "test-hash",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-  return userId;
-}
-
 describe("saveArticle feed detection", () => {
   it("throws URL_IS_FEED for a URL served as a feed content type", async () => {
-    const userId = await createTestUser();
+    const userId = await createTestUser({ emailPrefix: "feed-detect" });
     const promise = saveArticle(db, userId, { url: `${baseUrl}/feed.xml` });
     await expect(promise).rejects.toBeInstanceOf(TRPCError);
     await promise.catch((error) => {
@@ -108,14 +95,14 @@ describe("saveArticle feed detection", () => {
   });
 
   it("throws URL_IS_FEED for an ambiguous content type whose body is a feed", async () => {
-    const userId = await createTestUser();
+    const userId = await createTestUser({ emailPrefix: "feed-detect" });
     await expect(saveArticle(db, userId, { url: `${baseUrl}/ambiguous-feed` })).rejects.toThrow(
       "URL_IS_FEED"
     );
   });
 
   it("does not treat a non-feed XML document (sitemap) as a feed", async () => {
-    const userId = await createTestUser();
+    const userId = await createTestUser({ emailPrefix: "feed-detect" });
     const promise = saveArticle(db, userId, { url: `${baseUrl}/sitemap.xml` });
     // Not a feed → the original fetch failure surfaces, not URL_IS_FEED.
     await expect(promise).rejects.toThrow();
@@ -126,14 +113,14 @@ describe("saveArticle feed detection", () => {
   });
 
   it("throws URL_IS_FEED for a valid JSON Feed served as application/json", async () => {
-    const userId = await createTestUser();
+    const userId = await createTestUser({ emailPrefix: "feed-detect" });
     await expect(saveArticle(db, userId, { url: `${baseUrl}/json-feed` })).rejects.toThrow(
       "URL_IS_FEED"
     );
   });
 
   it("does not treat a plain JSON API response as a feed", async () => {
-    const userId = await createTestUser();
+    const userId = await createTestUser({ emailPrefix: "feed-detect" });
     const promise = saveArticle(db, userId, { url: `${baseUrl}/json-api` });
     await expect(promise).rejects.toThrow();
     await promise.catch((error) => {
@@ -143,7 +130,7 @@ describe("saveArticle feed detection", () => {
   });
 
   it("saves a normal HTML article without triggering feed detection", async () => {
-    const userId = await createTestUser();
+    const userId = await createTestUser({ emailPrefix: "feed-detect" });
     const result = await saveArticle(db, userId, { url: `${baseUrl}/article` });
     expect(result.outcome).toBe("created");
     expect(result.title).toBe("An Article");

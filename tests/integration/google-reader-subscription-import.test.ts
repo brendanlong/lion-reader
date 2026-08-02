@@ -12,7 +12,7 @@ import * as argon2 from "argon2";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { users, opmlImports, jobs } from "../../src/server/db/schema";
-import { generateUuidv7 } from "../../src/lib/uuidv7";
+import { createTestUser } from "./helpers";
 import { createSession } from "../../src/server/auth/session";
 import { OAUTH_SCOPES } from "../../src/server/oauth/utils";
 import { MAX_OPML_BYTES } from "../../src/server/services/imports";
@@ -22,16 +22,9 @@ const createdUserIds: string[] = [];
 const PASSWORD = "correct-horse-battery-staple";
 
 async function createConfirmedUser(): Promise<string> {
-  const id = generateUuidv7();
-  await db.insert(users).values({
-    id,
-    email: `greader-import-${id}@test.com`,
+  const id = await createTestUser({
+    emailPrefix: "greader-import",
     passwordHash: await argon2.hash(PASSWORD),
-    tosAgreedAt: new Date(),
-    privacyPolicyAgreedAt: new Date(),
-    notEuAgreedAt: new Date(),
-    createdAt: new Date(),
-    updatedAt: new Date(),
   });
   createdUserIds.push(id);
   return id;

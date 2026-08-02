@@ -25,6 +25,7 @@ import {
 } from "../../src/server/jobs/queue";
 import { startJobLeaseHeartbeat } from "../../src/server/jobs/worker";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
+import { createTestFeed, createTestSubscription, createTestUser } from "./helpers";
 
 // A valid UUID that doesn't exist in the database
 const NON_EXISTENT_JOB_ID = "00000000-0000-7000-8000-000000000000";
@@ -782,14 +783,7 @@ describe("Job Queue", () => {
   describe("claimFeedJob (data-driven)", () => {
     it("does not claim feed job when no active subscribers", async () => {
       // Create a feed
-      const feedId = generateUuidv7();
-      await db.insert(feeds).values({
-        id: feedId,
-        type: "web",
-        url: "https://example.com/feed.xml",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
+      const feedId = await createTestFeed();
 
       // Create a job due to run
       await createJob({
@@ -805,34 +799,13 @@ describe("Job Queue", () => {
 
     it("claims feed job when there are active subscribers", async () => {
       // Create a test user
-      const userId = generateUuidv7();
-      await db.insert(users).values({
-        id: userId,
-        email: "test@example.com",
-        passwordHash: "hash",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
+      const userId = await createTestUser();
 
       // Create a feed
-      const feedId = generateUuidv7();
-      await db.insert(feeds).values({
-        id: feedId,
-        type: "web",
-        url: "https://example.com/feed.xml",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
+      const feedId = await createTestFeed();
 
       // Create an active subscription
-      await db.insert(subscriptions).values({
-        id: generateUuidv7(),
-        userId,
-        feedId,
-        subscribedAt: new Date(),
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
+      await createTestSubscription(userId, feedId);
 
       // Create a job due to run
       await createJob({
@@ -849,35 +822,13 @@ describe("Job Queue", () => {
 
     it("does not claim feed job when subscriber has unsubscribed", async () => {
       // Create a test user
-      const userId = generateUuidv7();
-      await db.insert(users).values({
-        id: userId,
-        email: "test@example.com",
-        passwordHash: "hash",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
+      const userId = await createTestUser();
 
       // Create a feed
-      const feedId = generateUuidv7();
-      await db.insert(feeds).values({
-        id: feedId,
-        type: "web",
-        url: "https://example.com/feed.xml",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
+      const feedId = await createTestFeed();
 
       // Create an unsubscribed subscription
-      await db.insert(subscriptions).values({
-        id: generateUuidv7(),
-        userId,
-        feedId,
-        subscribedAt: new Date(),
-        unsubscribedAt: new Date(),
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
+      await createTestSubscription(userId, feedId, { unsubscribedAt: new Date() });
 
       // Create a job due to run
       await createJob({
@@ -893,34 +844,13 @@ describe("Job Queue", () => {
 
     it("does not claim feed job scheduled for the future", async () => {
       // Create a test user
-      const userId = generateUuidv7();
-      await db.insert(users).values({
-        id: userId,
-        email: "test@example.com",
-        passwordHash: "hash",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
+      const userId = await createTestUser();
 
       // Create a feed
-      const feedId = generateUuidv7();
-      await db.insert(feeds).values({
-        id: feedId,
-        type: "web",
-        url: "https://example.com/feed.xml",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
+      const feedId = await createTestFeed();
 
       // Create an active subscription
-      await db.insert(subscriptions).values({
-        id: generateUuidv7(),
-        userId,
-        feedId,
-        subscribedAt: new Date(),
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
+      await createTestSubscription(userId, feedId);
 
       // Create a job scheduled for the future
       await createJob({

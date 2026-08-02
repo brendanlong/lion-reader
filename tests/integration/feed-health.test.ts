@@ -14,25 +14,13 @@ import { db } from "../../src/server/db";
 import { jobs, feeds, subscriptions, users } from "../../src/server/db/schema";
 import { getFeedFetchHealthSnapshot } from "../../src/server/feed/health";
 import { handleMonitorFeedHealth } from "../../src/server/jobs/handlers";
-import { generateUuidv7 } from "../../src/lib/uuidv7";
+import { createTestFeed, createTestSubscription, createTestUser } from "./helpers";
 
 async function cleanup() {
   await db.delete(jobs);
   await db.delete(subscriptions);
   await db.delete(feeds);
   await db.delete(users);
-}
-
-async function createUser(): Promise<string> {
-  const userId = generateUuidv7();
-  await db.insert(users).values({
-    id: userId,
-    email: `feed-health-${userId}@example.com`,
-    passwordHash: "hash",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-  return userId;
 }
 
 async function createSubscribedFeed(
@@ -44,25 +32,13 @@ async function createSubscribedFeed(
     unsubscribed?: boolean;
   } = {}
 ): Promise<string> {
-  const feedId = generateUuidv7();
-  await db.insert(feeds).values({
-    id: feedId,
-    type: "web",
-    url: `https://example.com/${feedId}.xml`,
+  const feedId = await createTestFeed({
     lastFetchedAt: options.lastFetchedAt ?? null,
     lastError: options.lastError ?? null,
     consecutiveFailures: options.consecutiveFailures ?? 0,
-    createdAt: new Date(),
-    updatedAt: new Date(),
   });
-  await db.insert(subscriptions).values({
-    id: generateUuidv7(),
-    userId,
-    feedId,
-    subscribedAt: new Date(),
+  await createTestSubscription(userId, feedId, {
     unsubscribedAt: options.unsubscribed ? new Date() : null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
   });
   return feedId;
 }
@@ -84,7 +60,7 @@ describe("getFeedFetchHealthSnapshot", () => {
   });
 
   it("reports the newest successful fetch among error-free feeds", async () => {
-    const userId = await createUser();
+    const userId = await createTestUser({ emailPrefix: "feed-health" });
     await createSubscribedFeed(userId, { lastFetchedAt: minutesAgo(90) });
     await createSubscribedFeed(userId, { lastFetchedAt: minutesAgo(10) });
     // Failing feed fetched most recently: must NOT count as a success
@@ -102,7 +78,7 @@ describe("getFeedFetchHealthSnapshot", () => {
   });
 
   it("ignores feeds without active subscribers", async () => {
-    const userId = await createUser();
+    const userId = await createTestUser({ emailPrefix: "feed-health" });
     await createSubscribedFeed(userId, {
       lastFetchedAt: minutesAgo(5),
       unsubscribed: true,
@@ -122,7 +98,7 @@ describe("handleMonitorFeedHealth", () => {
   afterAll(cleanup);
 
   it("reports healthy and schedules the next run ~15 minutes out", async () => {
-    const userId = await createUser();
+    const userId = await createTestUser({ emailPrefix: "feed-health" });
     await createSubscribedFeed(userId, { lastFetchedAt: minutesAgo(5) });
 
     const result = await handleMonitorFeedHealth({});
@@ -133,7 +109,7 @@ describe("handleMonitorFeedHealth", () => {
   });
 
   it("reports unhealthy when the newest success is older than the threshold", async () => {
-    const userId = await createUser();
+    const userId = await createTestUser({ emailPrefix: "feed-health" });
     // All feeds failing, newest success well beyond the 120-minute default
     await createSubscribedFeed(userId, {
       lastFetchedAt: minutesAgo(10),

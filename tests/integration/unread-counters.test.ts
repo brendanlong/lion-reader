@@ -30,79 +30,11 @@ import {
 import { createUploadedArticle, deleteSavedArticle } from "../../src/server/services/saved";
 import { reconcileCounters } from "../../src/server/services/reconcile-counters";
 import { getBulkEntryRelatedCounts } from "../../src/server/services/counts";
+import { createTestEntry, createTestFeed, createTestSubscription, createTestUser } from "./helpers";
 
 // ============================================================================
 // Helpers
 // ============================================================================
-
-async function createTestUser(prefix = "counters-user"): Promise<string> {
-  const userId = generateUuidv7();
-  await db.insert(users).values({
-    id: userId,
-    email: `${prefix}-${userId}@test.com`,
-    passwordHash: "test-hash",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-  return userId;
-}
-
-async function createTestFeed(options: {
-  url?: string;
-  type?: "web" | "email" | "saved";
-  lastEntriesUpdatedAt?: Date | null;
-  userId?: string;
-}): Promise<string> {
-  const feedId = generateUuidv7();
-  const now = new Date();
-  await db.insert(feeds).values({
-    id: feedId,
-    type: options.type ?? "web",
-    url: options.url ?? `https://example.com/feed-${feedId}.xml`,
-    userId: options.userId ?? null,
-    title: `Test Feed ${feedId}`,
-    lastEntriesUpdatedAt: options.lastEntriesUpdatedAt ?? null,
-    createdAt: now,
-    updatedAt: now,
-  });
-  return feedId;
-}
-
-async function createTestSubscription(userId: string, feedId: string): Promise<string> {
-  const subscriptionId = generateUuidv7();
-  await db.insert(subscriptions).values({
-    id: subscriptionId,
-    userId,
-    feedId,
-    subscribedAt: new Date(),
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-  return subscriptionId;
-}
-
-async function createTestEntry(
-  feedId: string,
-  options: { isSpam?: boolean; lastSeenAt?: Date | null; type?: "web" | "email" | "saved" } = {}
-): Promise<string> {
-  const entryId = generateUuidv7();
-  const now = new Date();
-  const type = options.type ?? "web";
-  await db.insert(entries).values({
-    id: entryId,
-    feedId,
-    type,
-    guid: `guid-${entryId}`,
-    title: `Entry ${entryId}`,
-    contentHash: `hash-${entryId}`,
-    isSpam: options.isSpam ?? false,
-    fetchedAt: now,
-    lastSeenAt: type === "web" ? (options.lastSeenAt ?? now) : null,
-    createdAt: now,
-    updatedAt: now,
-  });
-  return entryId;
-}
 
 async function subscriptionCounters(subscriptionId: string) {
   const [row] = await db
@@ -187,7 +119,7 @@ describe("unread counters (triggers + reconciliation)", () => {
 
   it("tracks read / unread flips and ignores stale changedAt replays", async () => {
     const userId = await createTestUser();
-    const feedId = await createTestFeed({});
+    const feedId = await createTestFeed();
     const subId = await createTestSubscription(userId, feedId);
     const entryId = await createTestEntry(feedId);
     await db.insert(userEntries).values({ userId, entryId });
@@ -212,7 +144,7 @@ describe("unread counters (triggers + reconciliation)", () => {
 
   it("tracks starring, and reading a starred entry decrements both counters", async () => {
     const userId = await createTestUser();
-    const feedId = await createTestFeed({});
+    const feedId = await createTestFeed();
     const subId = await createTestSubscription(userId, feedId);
     const entryId = await createTestEntry(feedId);
     // starredChangedAt in the past — see the note in the merge test below.
@@ -234,7 +166,7 @@ describe("unread counters (triggers + reconciliation)", () => {
 
   it("mark-all-read zeroes the subscription counter in one statement", async () => {
     const userId = await createTestUser();
-    const feedId = await createTestFeed({});
+    const feedId = await createTestFeed();
     const subId = await createTestSubscription(userId, feedId);
     for (let i = 0; i < 5; i++) {
       const entryId = await createTestEntry(feedId);
@@ -293,7 +225,7 @@ describe("unread counters (triggers + reconciliation)", () => {
 
   it("keeps dead-subscription counters accurate (starred-orphan term of the all badge)", async () => {
     const userId = await createTestUser();
-    const feedId = await createTestFeed({});
+    const feedId = await createTestFeed();
     const subId = await createTestSubscription(userId, feedId);
     const entryId = await createTestEntry(feedId);
     // starredChangedAt in the past: the insert default is now() at microsecond
@@ -325,7 +257,7 @@ describe("unread counters (triggers + reconciliation)", () => {
     const userId = await createTestUser();
 
     // Active subscription with 2 unread entries.
-    const activeFeedId = await createTestFeed({});
+    const activeFeedId = await createTestFeed();
     await createTestSubscription(userId, activeFeedId);
     for (let i = 0; i < 2; i++) {
       const entryId = await createTestEntry(activeFeedId);
@@ -333,7 +265,7 @@ describe("unread counters (triggers + reconciliation)", () => {
     }
 
     // Unsubscribed subscription with 1 starred unread orphan (still visible).
-    const goneFeedId = await createTestFeed({});
+    const goneFeedId = await createTestFeed();
     const goneSubId = await createTestSubscription(userId, goneFeedId);
     const orphanId = await createTestEntry(goneFeedId);
     // starredChangedAt in the past — see the note in the merge test above.
@@ -389,7 +321,7 @@ describe("unread counters (triggers + reconciliation)", () => {
 
   it("reconcileCounters detects and repairs corruption", async () => {
     const userId = await createTestUser();
-    const feedId = await createTestFeed({});
+    const feedId = await createTestFeed();
     const subId = await createTestSubscription(userId, feedId);
     const entryId = await createTestEntry(feedId);
     // starredChangedAt in the past: the insert default is now() at microsecond

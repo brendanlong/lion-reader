@@ -18,79 +18,14 @@ import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
 import type { ApiTokenScope } from "../../src/server/auth/api-token";
 import { TRPCError } from "@trpc/server";
+import { createAuthContext, createTestUser } from "./helpers";
 
 const createdUserIds: string[] = [];
 
-async function createTestUser(): Promise<string> {
-  const userId = generateUuidv7();
-  await db.insert(users).values({
-    id: userId,
-    email: `scope-${userId}@test.com`,
-    passwordHash: "test-hash",
-    tosAgreedAt: new Date(),
-    privacyPolicyAgreedAt: new Date(),
-    notEuAgreedAt: new Date(),
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
+async function createUser(): Promise<string> {
+  const userId = await createTestUser({ emailPrefix: "scope" });
   createdUserIds.push(userId);
   return userId;
-}
-
-function buildSession(userId: string): NonNullable<Context["session"]> {
-  const now = new Date();
-  return {
-    session: {
-      id: generateUuidv7(),
-      userId,
-      tokenHash: "test-hash",
-      scopes: null,
-      userAgent: null,
-      ipAddress: null,
-      createdAt: now,
-      expiresAt: new Date(Date.now() + 3600000),
-      revokedAt: null,
-      lastActiveAt: now,
-    },
-    user: {
-      id: userId,
-      email: `${userId}@test.com`,
-      emailVerifiedAt: null,
-      tosAgreedAt: now,
-      privacyPolicyAgreedAt: now,
-      notEuAgreedAt: now,
-      passwordHash: "test-hash",
-      inviteId: null,
-      showSpam: false,
-      lastActiveAt: null,
-      groqApiKey: null,
-      anthropicApiKey: null,
-      cerebrasApiKey: null,
-      summarizationModel: null,
-      summarizationMaxWords: null,
-      summarizationPrompt: null,
-      narrationModel: null,
-      savedUnreadCount: 0,
-      starredUnreadCount: 0,
-      createdAt: now,
-      updatedAt: now,
-    },
-    hasGroqApiKey: false,
-    hasAnthropicApiKey: false,
-    hasCerebrasApiKey: false,
-  };
-}
-
-function createSessionContext(userId: string): Context {
-  return {
-    db,
-    session: buildSession(userId),
-    apiToken: null,
-    authType: "session",
-    scopes: [],
-    sessionToken: "test-token",
-    headers: new Headers(),
-  };
 }
 
 function createAnonymousContext(): Context {
@@ -105,17 +40,13 @@ function createAnonymousContext(): Context {
   };
 }
 
-function createTokenContext(userId: string, scopes: ApiTokenScope[]): Context {
-  return {
-    db,
-    // Synthetic session (matches what createContext builds for API tokens).
-    session: buildSession(userId),
-    apiToken: null,
-    authType: "api_token",
-    scopes,
-    sessionToken: "test-token",
-    headers: new Headers(),
-  };
+/**
+ * An API-token context carries the same synthetic session a browser gets (that's
+ * what `createContext` builds for tokens); only `authType` and `scopes` differ,
+ * which is exactly what the scope gate is supposed to key off.
+ */
+async function createTokenContext(userId: string, scopes: ApiTokenScope[]): Promise<Context> {
+  return { ...(await createAuthContext(userId)), authType: "api_token", scopes };
 }
 
 async function expectForbidden(promise: Promise<unknown>): Promise<void> {
@@ -145,16 +76,16 @@ afterAll(async () => {
 describe("API token scope enforcement", () => {
   describe("mcp-scoped token", () => {
     it("can access MCP-surface endpoints (entries.list, tags.list)", async () => {
-      const userId = await createTestUser();
-      const caller = createCaller(createTokenContext(userId, ["mcp"]));
+      const userId = await createUser();
+      const caller = createCaller(await createTokenContext(userId, ["mcp"]));
 
       await expect(caller.entries.list({})).resolves.toBeDefined();
       await expect(caller.tags.list()).resolves.toBeDefined();
     });
 
     it("cannot access session-only endpoints (sessions, narration)", async () => {
-      const userId = await createTestUser();
-      const caller = createCaller(createTokenContext(userId, ["mcp"]));
+      const userId = await createUser();
+      const caller = createCaller(await createTokenContext(userId, ["mcp"]));
 
       await expectForbidden(caller.users["me.sessions"]());
       await expectForbidden(caller.narration.isAiTextProcessingAvailable());
@@ -163,8 +94,8 @@ describe("API token scope enforcement", () => {
 
   describe("saved:write-only token", () => {
     it("cannot access mcp-scoped endpoints", async () => {
-      const userId = await createTestUser();
-      const caller = createCaller(createTokenContext(userId, ["saved:write"]));
+      const userId = await createUser();
+      const caller = createCaller(await createTokenContext(userId, ["saved:write"]));
 
       await expectForbidden(caller.entries.list({}));
       await expectForbidden(caller.tags.list());
@@ -173,8 +104,8 @@ describe("API token scope enforcement", () => {
 
   describe("token with no scopes", () => {
     it("cannot access mcp-scoped endpoints", async () => {
-      const userId = await createTestUser();
-      const caller = createCaller(createTokenContext(userId, []));
+      const userId = await createUser();
+      const caller = createCaller(await createTokenContext(userId, []));
 
       await expectForbidden(caller.entries.list({}));
     });
@@ -185,18 +116,18 @@ describe("API token scope enforcement", () => {
     // fails input validation (BAD_REQUEST) *after* the scope gate, proving the
     // gate allowed the request without performing a real network fetch.
     it("saved.save accepts both saved:write and mcp tokens", async () => {
-      const writeUser = await createTestUser();
-      const mcpUser = await createTestUser();
-      const writeCaller = createCaller(createTokenContext(writeUser, ["saved:write"]));
-      const mcpCaller = createCaller(createTokenContext(mcpUser, ["mcp"]));
+      const writeUser = await createUser();
+      const mcpUser = await createUser();
+      const writeCaller = createCaller(await createTokenContext(writeUser, ["saved:write"]));
+      const mcpCaller = createCaller(await createTokenContext(mcpUser, ["mcp"]));
 
       await expectPassedScopeGate(writeCaller.saved.save({ url: "not-a-url" }), "BAD_REQUEST");
       await expectPassedScopeGate(mcpCaller.saved.save({ url: "not-a-url" }), "BAD_REQUEST");
     });
 
     it("saved.save rejects a token with no scopes", async () => {
-      const userId = await createTestUser();
-      const caller = createCaller(createTokenContext(userId, []));
+      const userId = await createUser();
+      const caller = createCaller(await createTokenContext(userId, []));
 
       await expectForbidden(caller.saved.save({ url: "not-a-url" }));
     });
@@ -204,10 +135,10 @@ describe("API token scope enforcement", () => {
     // saved.delete requires the mcp scope. A non-existent id yields NOT_FOUND for
     // an mcp token (gate passed) but FORBIDDEN for a saved:write-only token.
     it("saved.delete requires mcp; saved:write is rejected", async () => {
-      const mcpUser = await createTestUser();
-      const writeUser = await createTestUser();
-      const mcpCaller = createCaller(createTokenContext(mcpUser, ["mcp"]));
-      const writeCaller = createCaller(createTokenContext(writeUser, ["saved:write"]));
+      const mcpUser = await createUser();
+      const writeUser = await createUser();
+      const mcpCaller = createCaller(await createTokenContext(mcpUser, ["mcp"]));
+      const writeCaller = createCaller(await createTokenContext(writeUser, ["saved:write"]));
 
       await expectPassedScopeGate(mcpCaller.saved.delete({ id: generateUuidv7() }), "NOT_FOUND");
       await expectForbidden(writeCaller.saved.delete({ id: generateUuidv7() }));
@@ -230,8 +161,8 @@ describe("API token scope enforcement", () => {
     });
 
     it("rejects API tokens (session-only)", async () => {
-      const userId = await createTestUser();
-      const caller = createCaller(createTokenContext(userId, ["mcp"]));
+      const userId = await createUser();
+      const caller = createCaller(await createTokenContext(userId, ["mcp"]));
 
       await expectForbidden(caller.feeds.preview({ url: "https://example.com/feed.xml" }));
       await expectForbidden(caller.feeds.discover({ url: "https://example.com/" }));
@@ -240,8 +171,8 @@ describe("API token scope enforcement", () => {
 
   describe("browser session", () => {
     it("retains full access to both mcp-surface and session-only endpoints", async () => {
-      const userId = await createTestUser();
-      const caller = createCaller(createSessionContext(userId));
+      const userId = await createUser();
+      const caller = createCaller(await createAuthContext(userId));
 
       await expect(caller.entries.list({})).resolves.toBeDefined();
       await expect(caller.users["me.sessions"]()).resolves.toBeDefined();

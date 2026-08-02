@@ -12,22 +12,16 @@ import { describe, it, expect, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { users, entries } from "../../src/server/db/schema";
-import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createSavedFromUpload, uploadArticle } from "../../src/server/services/saved";
 import { convertUploadedFile } from "../../src/server/file/process-upload";
 import { buildMinimalDocx } from "../utils/docx";
+import { createTestUser } from "./helpers";
 
 const createdUserIds: string[] = [];
 
-async function createTestUser(): Promise<string> {
-  const userId = generateUuidv7();
-  await db.insert(users).values({
-    id: userId,
-    email: `upload-${userId}@test.com`,
-    passwordHash: "test-hash",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
+/** Creates a user and registers it for `afterAll` cleanup. */
+async function createUser(): Promise<string> {
+  const userId = await createTestUser({ emailPrefix: "upload" });
   createdUserIds.push(userId);
   return userId;
 }
@@ -70,7 +64,7 @@ afterAll(async () => {
 
 describe("createSavedFromUpload (HTML)", () => {
   it("stores a null URL and an uploaded: guid", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
     const converted = await convertUploadedFile(
       `<html><head><title>Doc Title</title></head><body>${ARTICLE_BODY}</body></html>`,
       "notes.html"
@@ -84,7 +78,7 @@ describe("createSavedFromUpload (HTML)", () => {
   });
 
   it("prefers a provided title over the document title", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
     const converted = await convertUploadedFile(
       `<html><head><title>Document Title</title></head><body>${ARTICLE_BODY}</body></html>`,
       "notes.html"
@@ -94,7 +88,7 @@ describe("createSavedFromUpload (HTML)", () => {
   });
 
   it("falls back to the filename-derived title when content has none", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
     // No <title> and no heading Readability would pick up as a title.
     const converted = await convertUploadedFile(
       `<html><body>${ARTICLE_BODY}</body></html>`,
@@ -105,7 +99,7 @@ describe("createSavedFromUpload (HTML)", () => {
   });
 
   it("rewrites relative URLs against the dummy upload base (not Lion Reader)", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
     const converted = await convertUploadedFile(
       `<html><body>${ARTICLE_BODY}</body></html>`,
       "notes.html"
@@ -122,7 +116,7 @@ describe("createSavedFromUpload (HTML)", () => {
   });
 
   it("keeps the raw original when Readability fails (contentCleaned null, still readable)", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
     // Too short for Readability to extract → cleaned is null. Matches how a URL
     // save behaves on a page Readability can't parse: store the original, serve
     // `cleaned ?? original` on read.
@@ -140,7 +134,7 @@ describe("createSavedFromUpload (HTML)", () => {
   });
 
   it("extracts Open Graph metadata (author, image) from uploaded HTML", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
     const html =
       "<html><head>" +
       '<meta property="og:image" content="https://cdn.example.com/cover.jpg">' +
@@ -168,7 +162,7 @@ describe("createSavedFromUpload (.docx)", () => {
   ];
 
   it("uses docProps/core.xml for title, author, and summary", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
     const docx = buildMinimalDocx({
       paragraphs: DOCX_PARAGRAPHS,
       core: {
@@ -188,7 +182,7 @@ describe("createSavedFromUpload (.docx)", () => {
   });
 
   it("skips Readability: stores the mammoth body verbatim as cleaned content", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
     const docx = buildMinimalDocx({
       paragraphs: DOCX_PARAGRAPHS,
       core: { title: "Skip Readability Doc" },
@@ -204,7 +198,7 @@ describe("createSavedFromUpload (.docx)", () => {
   });
 
   it("falls back to the filename-derived title when core.xml has no title", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
     // core.xml present but with only an author — no dc:title.
     const docx = buildMinimalDocx({
       paragraphs: DOCX_PARAGRAPHS,
@@ -218,7 +212,7 @@ describe("createSavedFromUpload (.docx)", () => {
   });
 
   it("prefers a caller-provided title over the core.xml title", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
     const docx = buildMinimalDocx({
       paragraphs: DOCX_PARAGRAPHS,
       core: { title: "Core.xml Title" },
@@ -235,7 +229,7 @@ describe("createSavedFromUpload (.docx)", () => {
 
 describe("uploadArticle (Markdown)", () => {
   it("uses frontmatter title/summary/author", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
     const md = [
       "---",
       "title: Frontmatter Title",
@@ -256,14 +250,14 @@ describe("uploadArticle (Markdown)", () => {
   });
 
   it("prefers the provided title over frontmatter", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
     const md = ["---", "title: Frontmatter Title", "---", "", "Body text here."].join("\n");
     const article = await uploadArticle(db, userId, { content: md, title: "Explicit Title" });
     expect(article.title).toBe("Explicit Title");
   });
 
   it("prefers the provided author/excerpt over frontmatter", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
     const md = [
       "---",
       "title: Frontmatter Title",

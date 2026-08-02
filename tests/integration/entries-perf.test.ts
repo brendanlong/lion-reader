@@ -20,7 +20,7 @@ import {
 } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
-import type { Context } from "../../src/server/trpc/context";
+import { createAuthContext } from "./helpers";
 
 /** Format a JS string array as a PostgreSQL array literal for parameterized queries */
 function pgUuidArray(ids: string[]) {
@@ -56,58 +56,6 @@ const UNCATEGORIZED_FEEDS_PER_USER = 50;
 // ============================================================================
 // Helpers
 // ============================================================================
-
-function createAuthContext(userId: string): Context {
-  const now = new Date();
-  return {
-    db,
-    session: {
-      session: {
-        id: generateUuidv7(),
-        userId,
-        tokenHash: "test-hash",
-        scopes: null,
-        userAgent: null,
-        ipAddress: null,
-        createdAt: now,
-        expiresAt: new Date(Date.now() + 3600000),
-        revokedAt: null,
-        lastActiveAt: now,
-      },
-      user: {
-        id: userId,
-        email: `${userId}@test.com`,
-        emailVerifiedAt: null,
-        passwordHash: "test-hash",
-        inviteId: null,
-        showSpam: false,
-        lastActiveAt: null,
-        groqApiKey: null,
-        anthropicApiKey: null,
-        cerebrasApiKey: null,
-        summarizationModel: null,
-        summarizationMaxWords: null,
-        summarizationPrompt: null,
-        narrationModel: null,
-        savedUnreadCount: 0,
-        starredUnreadCount: 0,
-        tosAgreedAt: now,
-        privacyPolicyAgreedAt: now,
-        notEuAgreedAt: now,
-        createdAt: now,
-        updatedAt: now,
-      },
-      hasGroqApiKey: false,
-      hasAnthropicApiKey: false,
-      hasCerebrasApiKey: false,
-    },
-    apiToken: null,
-    authType: "session",
-    scopes: [],
-    sessionToken: "test-token",
-    headers: new Headers(),
-  };
-}
 
 interface Timing {
   label: string;
@@ -178,6 +126,11 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Entries Performance Profiling", ()
         id,
         email: `perf-test-${id}@test.com`,
         passwordHash: "test-hash",
+        // Confirmed signup: the tRPC profiling below goes through procedures
+        // gated on confirmation, and createAuthContext reads the real row.
+        tosAgreedAt: new Date(),
+        privacyPolicyAgreedAt: new Date(),
+        notEuAgreedAt: new Date(),
         createdAt: new Date(),
         updatedAt: new Date(),
       }))
@@ -662,7 +615,7 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Entries Performance Profiling", ()
 
   describe("tRPC endpoint profiling", () => {
     it("profiles entries.setStarred end-to-end", async () => {
-      const ctx = createAuthContext(testUserId);
+      const ctx = await createAuthContext(testUserId);
       const caller = createCaller(ctx);
 
       // Pick an unstarred entry
@@ -703,7 +656,7 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Entries Performance Profiling", ()
     }, 600000);
 
     it("profiles entries.markRead with 1 entry", async () => {
-      const ctx = createAuthContext(testUserId);
+      const ctx = await createAuthContext(testUserId);
       const caller = createCaller(ctx);
       const timings: Timing[] = [];
 
@@ -728,7 +681,7 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Entries Performance Profiling", ()
     }, 600000);
 
     it("profiles entries.markRead with 10 entries", async () => {
-      const ctx = createAuthContext(testUserId);
+      const ctx = await createAuthContext(testUserId);
       const caller = createCaller(ctx);
       const timings: Timing[] = [];
 
@@ -748,7 +701,7 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Entries Performance Profiling", ()
     }, 600000);
 
     it("profiles entries.markRead with 50 entries", async () => {
-      const ctx = createAuthContext(testUserId);
+      const ctx = await createAuthContext(testUserId);
       const caller = createCaller(ctx);
 
       const entryIds = testEntryIds.slice(500, 550);

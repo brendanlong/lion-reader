@@ -20,21 +20,20 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { db } from "../../src/server/db";
-import {
-  users,
-  feeds,
-  entries,
-  subscriptions,
-  userEntries,
-  narrationContent,
-} from "../../src/server/db/schema";
+import { users, userEntries, narrationContent } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
-import type { Context } from "../../src/server/trpc/context";
 import { splitNarrationParagraphs } from "../../src/lib/narration/paragraph-map";
 import { NARRATION_FORMAT_VERSION } from "../../src/lib/narration/constants";
 import { sanitizeEntryHtml } from "../../src/server/html/sanitize";
 import { getOrCreateSavedFeed } from "../../src/server/feed/saved-feed";
+import {
+  createAuthContext,
+  createTestEntry,
+  createTestFeed,
+  createTestSubscription,
+  createTestUser,
+} from "./helpers";
 
 /**
  * The narration cache key, mirroring the router: the narration format plus the
@@ -48,19 +47,6 @@ function narrationHash(content: string, format = NARRATION_FORMAT_VERSION): stri
     .digest("hex");
 }
 
-async function createTestUser(): Promise<string> {
-  const userId = generateUuidv7();
-  const now = new Date();
-  await db.insert(users).values({
-    id: userId,
-    email: `narr-${userId}@test.com`,
-    passwordHash: "test-hash",
-    createdAt: now,
-    updatedAt: now,
-  });
-  return userId;
-}
-
 /**
  * Creates an entry and makes it reachable the way the app does. The router
  * reads through `visible_entries`, so a `user_entries` row alone isn't enough:
@@ -68,7 +54,7 @@ async function createTestUser(): Promise<string> {
  * soft-deletes it, hiding an unstarred entry), while a `saved: true` article
  * lives in the per-user saved feed and is visible on its type alone.
  */
-async function createTestEntry(
+async function createVisibleEntry(
   userId: string,
   content: {
     contentCleaned?: string;
@@ -82,32 +68,20 @@ async function createTestEntry(
   if (options.saved) {
     feedId = await getOrCreateSavedFeed(db, userId);
   } else {
-    feedId = generateUuidv7();
-    await db.insert(feeds).values({
-      id: feedId,
-      type: "web",
-      url: `https://example.com/${feedId}.xml`,
+    // The fetch timestamps are what make the entry current for this
+    // subscription; createTestFeed builds a never-polled feed.
+    feedId = await createTestFeed({
       title: "Test Feed",
       lastFetchedAt: now,
       lastEntriesUpdatedAt: now,
-      createdAt: now,
-      updatedAt: now,
     });
-    await db.insert(subscriptions).values({
-      id: generateUuidv7(),
-      userId,
-      feedId,
-      subscribedAt: now,
+    await createTestSubscription(userId, feedId, {
       unsubscribedAt: options.unsubscribed ? now : null,
-      createdAt: now,
-      updatedAt: now,
     });
   }
-  await db.insert(entries).values({
+  await createTestEntry(feedId, {
     id: entryId,
-    feedId,
     type: options.saved ? "saved" : "web",
-    guid: `guid-${entryId}`,
     title: "Test Entry",
     contentCleaned: content.contentCleaned ?? null,
     contentOriginal: content.contentOriginal ?? null,
@@ -115,14 +89,10 @@ async function createTestEntry(
     // hashes the exact narrated content); any stable value works here.
     contentHash: `entry-${entryId}`,
     fetchedAt: now,
-    publishedAt: now,
-    // last_seen_at tracks a feed poll, and the entries_last_seen_only_fetched
-    // constraint requires it exactly for type='web'.
-    lastSeenAt: options.saved ? null : now,
-    createdAt: now,
-    updatedAt: now,
   });
-  // subscription_id is stamped by the user_entries_fill_denormalized trigger.
+  // Not createTestEntry's `userIds`, which can't express `starred` or the
+  // explicit change stamps. subscription_id is filled by the
+  // user_entries_fill_denormalized trigger.
   await db.insert(userEntries).values({
     userId,
     entryId,
@@ -133,58 +103,6 @@ async function createTestEntry(
     updatedAt: now,
   });
   return entryId;
-}
-
-function createAuthContext(userId: string): Context {
-  const now = new Date();
-  return {
-    db,
-    session: {
-      session: {
-        id: generateUuidv7(),
-        userId,
-        tokenHash: "test-hash",
-        scopes: null,
-        userAgent: null,
-        ipAddress: null,
-        createdAt: now,
-        expiresAt: new Date(Date.now() + 3600000),
-        revokedAt: null,
-        lastActiveAt: now,
-      },
-      user: {
-        id: userId,
-        email: `${userId}@test.com`,
-        emailVerifiedAt: null,
-        tosAgreedAt: new Date(),
-        privacyPolicyAgreedAt: new Date(),
-        notEuAgreedAt: new Date(),
-        passwordHash: "test-hash",
-        inviteId: null,
-        showSpam: false,
-        lastActiveAt: null,
-        groqApiKey: null,
-        anthropicApiKey: null,
-        cerebrasApiKey: null,
-        summarizationModel: null,
-        summarizationMaxWords: null,
-        summarizationPrompt: null,
-        narrationModel: null,
-        savedUnreadCount: 0,
-        starredUnreadCount: 0,
-        createdAt: now,
-        updatedAt: now,
-      },
-      hasGroqApiKey: false,
-      hasAnthropicApiKey: false,
-      hasCerebrasApiKey: false,
-    },
-    apiToken: null,
-    authType: "session",
-    scopes: [],
-    sessionToken: "test-token",
-    headers: new Headers(),
-  };
 }
 
 const createdUserIds: string[] = [];
@@ -207,14 +125,14 @@ describe("narration.generate cached read path", () => {
   let userId: string;
 
   beforeEach(async () => {
-    userId = await createTestUser();
+    userId = await createTestUser({ emailPrefix: "narr" });
     createdUserIds.push(userId);
   });
 
   it("returns the persisted paragraph map verbatim on a cache hit", async () => {
     const contentCleaned = "<p>First</p><p>Second</p><p>Third</p>";
     const contentHash = narrationHash(contentCleaned);
-    const entryId = await createTestEntry(userId, { contentCleaned });
+    const entryId = await createVisibleEntry(userId, { contentCleaned });
 
     // A stored map that is deliberately NOT what naive reconstruction would
     // produce (element 1 dropped, so two narration paragraphs map to o=0 and
@@ -233,7 +151,7 @@ describe("narration.generate cached read path", () => {
       createdAt: new Date(),
     });
 
-    const caller = createCaller(createAuthContext(userId));
+    const caller = createCaller(await createAuthContext(userId));
     const result = await caller.narration.generate({ id: entryId, useLlmNormalization: true });
 
     expect(result.cached).toBe(true);
@@ -246,7 +164,7 @@ describe("narration.generate cached read path", () => {
     const contentCleaned = ["<p>Intro.</p>", "<p>Line one.", "<br /><br />", "Line two.</p>"].join(
       "\n"
     );
-    const entryId = await createTestEntry(userId, { contentCleaned });
+    const entryId = await createVisibleEntry(userId, { contentCleaned });
 
     // Keyed by the previous format. Its map numbers elements the way that walk
     // numbered them, so serving it against today's `data-para-id`s would
@@ -265,7 +183,7 @@ describe("narration.generate cached read path", () => {
       createdAt: new Date(),
     });
 
-    const caller = createCaller(createAuthContext(userId));
+    const caller = createCaller(await createAuthContext(userId));
     const result = await caller.narration.generate({ id: entryId, useLlmNormalization: true });
 
     expect(result.cached).toBe(false);
@@ -295,10 +213,10 @@ describe("narration.generate cached read path", () => {
       "<figcaption>My cat</figcaption></figure>",
       "<p>The end.</p>",
     ].join("");
-    const entryId = await createTestEntry(userId, { contentCleaned });
+    const entryId = await createVisibleEntry(userId, { contentCleaned });
     createdNarrationHashes.push(narrationHash(contentCleaned));
 
-    const caller = createCaller(createAuthContext(userId));
+    const caller = createCaller(await createAuthContext(userId));
     const result = await caller.narration.generate({ id: entryId, useLlmNormalization: false });
 
     expect(splitNarrationParagraphs(result.narration)).toEqual([
@@ -320,7 +238,7 @@ describe("narration.generate narrates the displayed variant", () => {
   let userId: string;
 
   beforeEach(async () => {
-    userId = await createTestUser();
+    userId = await createTestUser({ emailPrefix: "narr" });
     createdUserIds.push(userId);
   });
 
@@ -335,8 +253,8 @@ describe("narration.generate narrates the displayed variant", () => {
     // cleaned up too — the check-then-insert doesn't collide on re-run, but we
     // still don't want to leave rows behind (issue #1210).
     createdNarrationHashes.push(narrationHash(contentCleaned), narrationHash(contentOriginal));
-    const entryId = await createTestEntry(userId, { contentCleaned, contentOriginal });
-    const caller = createCaller(createAuthContext(userId));
+    const entryId = await createVisibleEntry(userId, { contentCleaned, contentOriginal });
+    const caller = createCaller(await createAuthContext(userId));
 
     const cleaned = await caller.narration.generate({ id: entryId });
     expect(cleaned.narration).toBe("Cleaned body paragraph.");
@@ -350,7 +268,7 @@ describe("narration.generate entry visibility", () => {
   let userId: string;
 
   beforeEach(async () => {
-    userId = await createTestUser();
+    userId = await createTestUser({ emailPrefix: "narr" });
     createdUserIds.push(userId);
   });
 
@@ -358,8 +276,8 @@ describe("narration.generate entry visibility", () => {
   // the entry list does: a `user_entries` row alone doesn't grant access (#1468).
   it("rejects an entry hidden by visibility even though a user_entries row exists", async () => {
     const contentCleaned = "<p>Unsubscribed body paragraph.</p>";
-    const entryId = await createTestEntry(userId, { contentCleaned }, { unsubscribed: true });
-    const caller = createCaller(createAuthContext(userId));
+    const entryId = await createVisibleEntry(userId, { contentCleaned }, { unsubscribed: true });
+    const caller = createCaller(await createAuthContext(userId));
 
     await expect(caller.narration.generate({ id: entryId })).rejects.toThrow("Entry not found");
   });
@@ -370,8 +288,8 @@ describe("narration.generate entry visibility", () => {
   it("narrates a saved article, which has no subscription row", async () => {
     const contentCleaned = "<p>Saved article body.</p>";
     createdNarrationHashes.push(narrationHash(contentCleaned));
-    const entryId = await createTestEntry(userId, { contentCleaned }, { saved: true });
-    const caller = createCaller(createAuthContext(userId));
+    const entryId = await createVisibleEntry(userId, { contentCleaned }, { saved: true });
+    const caller = createCaller(await createAuthContext(userId));
 
     const result = await caller.narration.generate({ id: entryId });
     expect(result.narration).toBe("Saved article body.");
@@ -380,24 +298,24 @@ describe("narration.generate entry visibility", () => {
   it("narrates a starred entry left behind by an unsubscribe", async () => {
     const contentCleaned = "<p>Starred orphan body.</p>";
     createdNarrationHashes.push(narrationHash(contentCleaned));
-    const entryId = await createTestEntry(
+    const entryId = await createVisibleEntry(
       userId,
       { contentCleaned },
       { unsubscribed: true, starred: true }
     );
-    const caller = createCaller(createAuthContext(userId));
+    const caller = createCaller(await createAuthContext(userId));
 
     const result = await caller.narration.generate({ id: entryId });
     expect(result.narration).toBe("Starred orphan body.");
   });
 
   it("rejects another user's entry", async () => {
-    const otherUserId = await createTestUser();
+    const otherUserId = await createTestUser({ emailPrefix: "narr" });
     createdUserIds.push(otherUserId);
-    const entryId = await createTestEntry(otherUserId, {
+    const entryId = await createVisibleEntry(otherUserId, {
       contentCleaned: "<p>Someone else's article.</p>",
     });
-    const caller = createCaller(createAuthContext(userId));
+    const caller = createCaller(await createAuthContext(userId));
 
     await expect(caller.narration.generate({ id: entryId })).rejects.toThrow("Entry not found");
   });

@@ -22,136 +22,27 @@ import { createCaller } from "../../src/server/trpc/root";
 import { parseTimestamptz } from "../../src/server/db/temporal";
 import { advanceCursors, type SyncCursors } from "../../src/lib/events/cursors";
 import type { SyncEvent } from "../../src/lib/events/schemas";
-import type { Context } from "../../src/server/trpc/context";
+import {
+  createAuthContext,
+  createTestEntry,
+  createTestFeed,
+  createTestSubscription,
+  createTestUser,
+} from "./helpers";
 
 // ============================================================================
 // Test Helpers
 // ============================================================================
 
-async function createTestUser(): Promise<string> {
-  const userId = generateUuidv7();
-  await db.insert(users).values({
-    id: userId,
-    email: `sync-${userId}@test.com`,
-    passwordHash: "test-hash",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-  return userId;
-}
-
-function createAuthContext(userId: string): Context {
-  const now = new Date();
-  return {
-    db,
-    session: {
-      session: {
-        id: generateUuidv7(),
-        userId,
-        tokenHash: "test-hash",
-        scopes: null,
-        userAgent: null,
-        ipAddress: null,
-        createdAt: now,
-        expiresAt: new Date(Date.now() + 3600000),
-        revokedAt: null,
-        lastActiveAt: now,
-      },
-      user: {
-        id: userId,
-        email: `${userId}@test.com`,
-        emailVerifiedAt: null,
-        tosAgreedAt: new Date(),
-        privacyPolicyAgreedAt: new Date(),
-        notEuAgreedAt: new Date(),
-        passwordHash: "test-hash",
-        inviteId: null,
-        showSpam: false,
-        lastActiveAt: null,
-        groqApiKey: null,
-        anthropicApiKey: null,
-        cerebrasApiKey: null,
-        summarizationModel: null,
-        summarizationMaxWords: null,
-        summarizationPrompt: null,
-        narrationModel: null,
-        savedUnreadCount: 0,
-        starredUnreadCount: 0,
-        createdAt: now,
-        updatedAt: now,
-      },
-      hasGroqApiKey: false,
-      hasAnthropicApiKey: false,
-      hasCerebrasApiKey: false,
-    },
-    apiToken: null,
-    authType: "session",
-    scopes: [],
-    sessionToken: "test-token",
-    headers: new Headers(),
-  };
-}
-
-async function createTestFeed(url: string, title: string = "Test Feed"): Promise<string> {
-  const feedId = generateUuidv7();
-  const now = new Date();
-  await db.insert(feeds).values({
-    id: feedId,
-    type: "web",
-    url,
-    title,
-    lastFetchedAt: now,
-    lastEntriesUpdatedAt: now,
-    createdAt: now,
-    updatedAt: now,
-  });
-  return feedId;
-}
-
-async function createTestSubscription(
-  userId: string,
-  feedId: string,
-  options: { subscribedAt?: Date; updatedAt?: Date; customTitle?: string | null } = {}
+/**
+ * A feed that has been polled: the delta arms key off the poll timestamps, so
+ * every web feed in this file needs them (the shared factory leaves them NULL).
+ */
+async function createFetchedFeed(
+  overrides: Partial<typeof feeds.$inferInsert> = {}
 ): Promise<string> {
-  const subscriptionId = generateUuidv7();
-  const now = options.subscribedAt ?? new Date();
-  await db.insert(subscriptions).values({
-    id: subscriptionId,
-    userId,
-    feedId,
-    subscribedAt: now,
-    customTitle: options.customTitle ?? null,
-    createdAt: now,
-    updatedAt: options.updatedAt ?? now,
-  });
-  return subscriptionId;
-}
-
-async function createTestEntry(
-  feedId: string,
-  options: {
-    title?: string;
-    publishedAt?: Date;
-    createdAt?: Date;
-    updatedAt?: Date;
-  } = {}
-): Promise<string> {
-  const entryId = generateUuidv7();
   const now = new Date();
-  await db.insert(entries).values({
-    id: entryId,
-    feedId,
-    type: "web",
-    guid: `guid-${entryId}`,
-    title: options.title ?? `Entry ${entryId}`,
-    contentHash: `hash-${entryId}`,
-    fetchedAt: now,
-    publishedAt: options.publishedAt ?? now,
-    lastSeenAt: now,
-    createdAt: options.createdAt ?? now,
-    updatedAt: options.updatedAt ?? now,
-  });
-  return entryId;
+  return createTestFeed({ lastFetchedAt: now, lastEntriesUpdatedAt: now, ...overrides });
 }
 
 async function createSavedFeed(userId: string): Promise<string> {
@@ -249,7 +140,7 @@ async function drainEntrySync(userId: string, start: SyncCursors): Promise<SyncE
   let cursors = start;
   const collected: SyncEvent[] = [];
   for (let guard = 0; guard < 50; guard++) {
-    const result = await createCaller(createAuthContext(userId)).sync.events({
+    const result = await createCaller(await createAuthContext(userId)).sync.events({
       cursors: {
         entries: cursors.entries ?? undefined,
         entriesAfterId: cursors.entriesAfterId ?? undefined,
@@ -297,7 +188,7 @@ describe("sync.events", () => {
 
   it("returns empty events when no cursors provided", async () => {
     const userId = await createTestUser();
-    const ctx = createAuthContext(userId);
+    const ctx = await createAuthContext(userId);
     const caller = createCaller(ctx);
 
     const result = await caller.sync.events({ cursors: {} });
@@ -313,18 +204,18 @@ describe("sync.events", () => {
   describe("entry events", () => {
     it("returns new_entry for entry created after cursor", async () => {
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://example.com/sync-feed.xml");
+      const feedId = await createFetchedFeed({ url: "https://example.com/sync-feed.xml" });
       const subId = await createTestSubscription(userId, feedId);
 
       // Get cursor before creating entry
-      const cursorResult = await createCaller(createAuthContext(userId)).sync.cursors();
+      const cursorResult = await createCaller(await createAuthContext(userId)).sync.cursors();
       const baseCursor = cursorResult.entries ?? new Date("2020-01-01").toISOString();
 
       // Create entry after cursor
       const entryId = await createTestEntry(feedId, { title: "New Post" });
       await createUserEntry(userId, entryId);
 
-      const result = await createCaller(createAuthContext(userId)).sync.events({
+      const result = await createCaller(await createAuthContext(userId)).sync.events({
         cursors: { entries: baseCursor },
       });
 
@@ -349,18 +240,18 @@ describe("sync.events", () => {
 
     it("includes the subscription's tag in new_entry absolute counts", async () => {
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://example.com/tagged-sync-feed.xml");
+      const feedId = await createFetchedFeed({ url: "https://example.com/tagged-sync-feed.xml" });
       const subId = await createTestSubscription(userId, feedId);
       const tagId = await createTestTag(userId, "News");
       await linkTagToSubscription(tagId, subId);
 
-      const cursorResult = await createCaller(createAuthContext(userId)).sync.cursors();
+      const cursorResult = await createCaller(await createAuthContext(userId)).sync.cursors();
       const baseCursor = cursorResult.entries ?? new Date("2020-01-01").toISOString();
 
       const entryId = await createTestEntry(feedId, { title: "Tagged Post" });
       await createUserEntry(userId, entryId);
 
-      const result = await createCaller(createAuthContext(userId)).sync.events({
+      const result = await createCaller(await createAuthContext(userId)).sync.events({
         cursors: { entries: baseCursor },
       });
 
@@ -379,7 +270,7 @@ describe("sync.events", () => {
 
     it("returns entry_updated for metadata changes after cursor", async () => {
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://example.com/update-feed.xml");
+      const feedId = await createFetchedFeed({ url: "https://example.com/update-feed.xml" });
       await createTestSubscription(userId, feedId);
 
       // Create entry and user_entry
@@ -392,7 +283,7 @@ describe("sync.events", () => {
       await createUserEntry(userId, entryId, { updatedAt: entryCreatedAt });
 
       // Get cursor
-      const cursorResult = await createCaller(createAuthContext(userId)).sync.cursors();
+      const cursorResult = await createCaller(await createAuthContext(userId)).sync.cursors();
 
       // Update entry metadata
       const newUpdatedAt = new Date();
@@ -401,7 +292,7 @@ describe("sync.events", () => {
         .set({ title: "Updated Title", updatedAt: newUpdatedAt })
         .where(eq(entries.id, entryId));
 
-      const result = await createCaller(createAuthContext(userId)).sync.events({
+      const result = await createCaller(await createAuthContext(userId)).sync.events({
         cursors: { entries: cursorResult.entries! },
       });
 
@@ -416,7 +307,7 @@ describe("sync.events", () => {
 
     it("returns entry_state_changed for read/starred changes after cursor", async () => {
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://example.com/state-feed.xml");
+      const feedId = await createFetchedFeed({ url: "https://example.com/state-feed.xml" });
       await createTestSubscription(userId, feedId);
 
       const entryCreatedAt = new Date("2024-01-01");
@@ -426,7 +317,7 @@ describe("sync.events", () => {
       });
       await createUserEntry(userId, entryId, { updatedAt: entryCreatedAt });
 
-      const cursorResult = await createCaller(createAuthContext(userId)).sync.cursors();
+      const cursorResult = await createCaller(await createAuthContext(userId)).sync.cursors();
 
       // Update state
       const newUpdatedAt = new Date();
@@ -435,7 +326,7 @@ describe("sync.events", () => {
         .set({ read: true, starred: true, updatedAt: newUpdatedAt })
         .where(eq(userEntries.entryId, entryId));
 
-      const result = await createCaller(createAuthContext(userId)).sync.events({
+      const result = await createCaller(await createAuthContext(userId)).sync.events({
         cursors: { entries: cursorResult.entries! },
       });
 
@@ -453,7 +344,9 @@ describe("sync.events", () => {
 
     it("attaches the entry list payload to entry_state_changed for unread entries (#1237)", async () => {
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://example.com/unread-payload-feed.xml");
+      const feedId = await createFetchedFeed({
+        url: "https://example.com/unread-payload-feed.xml",
+      });
       const subscriptionId = await createTestSubscription(userId, feedId);
 
       const entryCreatedAt = new Date("2024-01-01");
@@ -464,7 +357,7 @@ describe("sync.events", () => {
       });
       await createUserEntry(userId, entryId, { read: true, updatedAt: entryCreatedAt });
 
-      const cursorResult = await createCaller(createAuthContext(userId)).sync.cursors();
+      const cursorResult = await createCaller(await createAuthContext(userId)).sync.cursors();
 
       // Marked unread on another device while this client was offline.
       await db
@@ -472,7 +365,7 @@ describe("sync.events", () => {
         .set({ read: false, updatedAt: new Date() })
         .where(eq(userEntries.entryId, entryId));
 
-      const result = await createCaller(createAuthContext(userId)).sync.events({
+      const result = await createCaller(await createAuthContext(userId)).sync.events({
         cursors: { entries: cursorResult.entries! },
       });
 
@@ -493,7 +386,7 @@ describe("sync.events", () => {
 
     it("returns both metadata and state events when both change", async () => {
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://example.com/both-feed.xml");
+      const feedId = await createFetchedFeed({ url: "https://example.com/both-feed.xml" });
       await createTestSubscription(userId, feedId);
 
       const entryCreatedAt = new Date("2024-01-01");
@@ -504,7 +397,7 @@ describe("sync.events", () => {
       });
       await createUserEntry(userId, entryId, { updatedAt: entryCreatedAt });
 
-      const cursorResult = await createCaller(createAuthContext(userId)).sync.cursors();
+      const cursorResult = await createCaller(await createAuthContext(userId)).sync.cursors();
 
       // Update both metadata and state
       const newUpdatedAt = new Date();
@@ -517,7 +410,7 @@ describe("sync.events", () => {
         .set({ starred: true, updatedAt: newUpdatedAt })
         .where(eq(userEntries.entryId, entryId));
 
-      const result = await createCaller(createAuthContext(userId)).sync.events({
+      const result = await createCaller(await createAuthContext(userId)).sync.events({
         cursors: { entries: cursorResult.entries! },
       });
 
@@ -528,16 +421,16 @@ describe("sync.events", () => {
 
     it("returns no entry events for entries before cursor", async () => {
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://example.com/before-feed.xml");
+      const feedId = await createFetchedFeed({ url: "https://example.com/before-feed.xml" });
       await createTestSubscription(userId, feedId);
 
       const entryId = await createTestEntry(feedId);
       await createUserEntry(userId, entryId);
 
       // Get cursor AFTER the entry was created
-      const cursorResult = await createCaller(createAuthContext(userId)).sync.cursors();
+      const cursorResult = await createCaller(await createAuthContext(userId)).sync.cursors();
 
-      const result = await createCaller(createAuthContext(userId)).sync.events({
+      const result = await createCaller(await createAuthContext(userId)).sync.events({
         cursors: { entries: cursorResult.entries! },
       });
 
@@ -559,13 +452,16 @@ describe("sync.events", () => {
       const userId = await createTestUser();
 
       // Get cursor before creating subscription
-      const cursorResult = await createCaller(createAuthContext(userId)).sync.cursors();
+      const cursorResult = await createCaller(await createAuthContext(userId)).sync.cursors();
       const baseCursor = cursorResult.subscriptions ?? new Date("2020-01-01").toISOString();
 
-      const feedId = await createTestFeed("https://example.com/sub-create.xml", "Sub Create Feed");
+      const feedId = await createFetchedFeed({
+        url: "https://example.com/sub-create.xml",
+        title: "Sub Create Feed",
+      });
       const subId = await createTestSubscription(userId, feedId);
 
-      const result = await createCaller(createAuthContext(userId)).sync.events({
+      const result = await createCaller(await createAuthContext(userId)).sync.events({
         cursors: { subscriptions: baseCursor },
       });
 
@@ -583,13 +479,13 @@ describe("sync.events", () => {
       const userId = await createTestUser();
 
       const baseCursor = new Date("2020-01-01").toISOString();
-      const feedId = await createTestFeed("https://example.com/sub-tags.xml");
+      const feedId = await createFetchedFeed({ url: "https://example.com/sub-tags.xml" });
       const subId = await createTestSubscription(userId, feedId);
 
       const tagId = await createTestTag(userId, "My Tag", { color: "#aabbcc" });
       await linkTagToSubscription(tagId, subId);
 
-      const result = await createCaller(createAuthContext(userId)).sync.events({
+      const result = await createCaller(await createAuthContext(userId)).sync.events({
         cursors: { subscriptions: baseCursor },
       });
 
@@ -605,15 +501,16 @@ describe("sync.events", () => {
 
     it("returns subscription_updated for property changes", async () => {
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://example.com/sub-update.xml");
+      const feedId = await createFetchedFeed({ url: "https://example.com/sub-update.xml" });
 
       const earlyDate = new Date("2024-01-01");
       const subId = await createTestSubscription(userId, feedId, {
         subscribedAt: earlyDate,
+        createdAt: earlyDate,
         updatedAt: earlyDate,
       });
 
-      const cursorResult = await createCaller(createAuthContext(userId)).sync.cursors();
+      const cursorResult = await createCaller(await createAuthContext(userId)).sync.cursors();
 
       // Update subscription
       await db
@@ -621,7 +518,7 @@ describe("sync.events", () => {
         .set({ customTitle: "My Title", updatedAt: new Date() })
         .where(eq(subscriptions.id, subId));
 
-      const result = await createCaller(createAuthContext(userId)).sync.events({
+      const result = await createCaller(await createAuthContext(userId)).sync.events({
         cursors: { subscriptions: cursorResult.subscriptions! },
       });
 
@@ -636,15 +533,16 @@ describe("sync.events", () => {
 
     it("returns subscription_deleted for unsubscribed feeds", async () => {
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://example.com/sub-delete.xml");
+      const feedId = await createFetchedFeed({ url: "https://example.com/sub-delete.xml" });
 
       const earlyDate = new Date("2024-01-01");
       const subId = await createTestSubscription(userId, feedId, {
         subscribedAt: earlyDate,
+        createdAt: earlyDate,
         updatedAt: earlyDate,
       });
 
-      const cursorResult = await createCaller(createAuthContext(userId)).sync.cursors();
+      const cursorResult = await createCaller(await createAuthContext(userId)).sync.cursors();
 
       // Soft-delete subscription
       await db
@@ -652,7 +550,7 @@ describe("sync.events", () => {
         .set({ unsubscribedAt: new Date(), updatedAt: new Date() })
         .where(eq(subscriptions.id, subId));
 
-      const result = await createCaller(createAuthContext(userId)).sync.events({
+      const result = await createCaller(await createAuthContext(userId)).sync.events({
         cursors: { subscriptions: cursorResult.subscriptions! },
       });
 
@@ -676,7 +574,7 @@ describe("sync.events", () => {
 
       const tagId = await createTestTag(userId, "New Tag", { color: "#123456" });
 
-      const result = await createCaller(createAuthContext(userId)).sync.events({
+      const result = await createCaller(await createAuthContext(userId)).sync.events({
         cursors: { tags: baseCursor },
       });
 
@@ -697,14 +595,14 @@ describe("sync.events", () => {
         updatedAt: earlyDate,
       });
 
-      const cursorResult = await createCaller(createAuthContext(userId)).sync.cursors();
+      const cursorResult = await createCaller(await createAuthContext(userId)).sync.cursors();
 
       await db
         .update(tags)
         .set({ name: "New Name", color: "#ffffff", updatedAt: new Date() })
         .where(eq(tags.id, tagId));
 
-      const result = await createCaller(createAuthContext(userId)).sync.events({
+      const result = await createCaller(await createAuthContext(userId)).sync.events({
         cursors: { tags: cursorResult.tags! },
       });
 
@@ -724,14 +622,14 @@ describe("sync.events", () => {
         updatedAt: earlyDate,
       });
 
-      const cursorResult = await createCaller(createAuthContext(userId)).sync.cursors();
+      const cursorResult = await createCaller(await createAuthContext(userId)).sync.cursors();
 
       await db
         .update(tags)
         .set({ deletedAt: new Date(), updatedAt: new Date() })
         .where(eq(tags.id, tagId));
 
-      const result = await createCaller(createAuthContext(userId)).sync.events({
+      const result = await createCaller(await createAuthContext(userId)).sync.events({
         cursors: { tags: cursorResult.tags! },
       });
 
@@ -767,7 +665,7 @@ describe("sync.events", () => {
         updatedAt: new Date("2024-06-03"),
       });
 
-      const result = await createCaller(createAuthContext(userId)).sync.events({
+      const result = await createCaller(await createAuthContext(userId)).sync.events({
         cursors: { tags: baseCursor },
       });
 
@@ -784,7 +682,7 @@ describe("sync.events", () => {
 
     it("preserves microsecond precision in cursors", async () => {
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://example.com/precision.xml");
+      const feedId = await createFetchedFeed({ url: "https://example.com/precision.xml" });
       await createTestSubscription(userId, feedId);
 
       // Use explicit timestamps to avoid setTimeout and ensure deterministic ordering
@@ -797,7 +695,7 @@ describe("sync.events", () => {
       await createUserEntry(userId, entry1Id, { updatedAt: entry1Time });
 
       // Get cursor after first entry - this captures entry1's timestamp
-      const midCursor = await createCaller(createAuthContext(userId)).sync.cursors();
+      const midCursor = await createCaller(await createAuthContext(userId)).sync.cursors();
 
       // Create second entry with a later explicit timestamp
       const entry2Time = new Date("2024-06-01T00:00:01.000Z");
@@ -809,7 +707,7 @@ describe("sync.events", () => {
       await createUserEntry(userId, entry2Id, { updatedAt: entry2Time });
 
       // Using the mid cursor should only return the second entry
-      const result = await createCaller(createAuthContext(userId)).sync.events({
+      const result = await createCaller(await createAuthContext(userId)).sync.events({
         cursors: { entries: midCursor.entries! },
       });
 
@@ -834,7 +732,7 @@ describe("sync.events", () => {
     it("returns a null entries cursor when the user has no entries", async () => {
       const userId = await createTestUser();
 
-      const cursor = await createCaller(createAuthContext(userId)).sync.cursors();
+      const cursor = await createCaller(await createAuthContext(userId)).sync.cursors();
 
       expect(cursor.entries).toBeNull();
       expect(cursor.entriesAfterId).toBeNull();
@@ -842,7 +740,7 @@ describe("sync.events", () => {
 
     it("uses user_entries.updated_at when a state change is newest", async () => {
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://example.com/argmax-state.xml");
+      const feedId = await createFetchedFeed({ url: "https://example.com/argmax-state.xml" });
       await createTestSubscription(userId, feedId);
 
       const contentTime = new Date("2024-06-01T00:00:00.000Z");
@@ -853,7 +751,7 @@ describe("sync.events", () => {
       });
       await createUserEntry(userId, entryId, { updatedAt: stateTime });
 
-      const cursor = await createCaller(createAuthContext(userId)).sync.cursors();
+      const cursor = await createCaller(await createAuthContext(userId)).sync.cursors();
 
       expect(cursor.entriesAfterId).toBe(entryId);
       expect(
@@ -863,7 +761,7 @@ describe("sync.events", () => {
 
     it("uses entries.updated_at when a content refetch is newer than any state change", async () => {
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://example.com/argmax-content.xml");
+      const feedId = await createFetchedFeed({ url: "https://example.com/argmax-content.xml" });
       await createTestSubscription(userId, feedId);
 
       const stateTime = new Date("2024-06-01T00:00:00.000Z");
@@ -874,7 +772,7 @@ describe("sync.events", () => {
       });
       await createUserEntry(userId, entryId, { updatedAt: stateTime });
 
-      const cursor = await createCaller(createAuthContext(userId)).sync.cursors();
+      const cursor = await createCaller(await createAuthContext(userId)).sync.cursors();
 
       // The naive query would still find this (it materialized GREATEST for every
       // row); the point is the index-driven arm_sub does too, without the scan.
@@ -886,7 +784,7 @@ describe("sync.events", () => {
 
     it("breaks a tie at the max timestamp by the larger entry id", async () => {
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://example.com/argmax-tie.xml");
+      const feedId = await createFetchedFeed({ url: "https://example.com/argmax-tie.xml" });
       await createTestSubscription(userId, feedId);
 
       // Two entries share the exact max timestamp: one via a state change, one via
@@ -901,7 +799,7 @@ describe("sync.events", () => {
       const contentEntryId = await createTestEntry(feedId, { createdAt: old, updatedAt: tie }); // content at tie
       await createUserEntry(userId, contentEntryId, { updatedAt: old });
 
-      const cursor = await createCaller(createAuthContext(userId)).sync.cursors();
+      const cursor = await createCaller(await createAuthContext(userId)).sync.cursors();
 
       const expectedId = stateEntryId > contentEntryId ? stateEntryId : contentEntryId;
       expect(cursor.entriesAfterId).toBe(expectedId);
@@ -922,7 +820,7 @@ describe("sync.events", () => {
       });
       await createUserEntry(userId, savedEntryId, { updatedAt: stateTime });
 
-      const cursor = await createCaller(createAuthContext(userId)).sync.cursors();
+      const cursor = await createCaller(await createAuthContext(userId)).sync.cursors();
 
       expect(cursor.entriesAfterId).toBe(savedEntryId);
       expect(
@@ -932,7 +830,7 @@ describe("sync.events", () => {
 
     it("includes content updates to starred orphans on unsubscribed feeds", async () => {
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://example.com/argmax-orphan.xml");
+      const feedId = await createFetchedFeed({ url: "https://example.com/argmax-orphan.xml" });
       const subId = await createTestSubscription(userId, feedId);
 
       const stateTime = new Date("2024-06-01T00:00:00.000Z");
@@ -949,7 +847,7 @@ describe("sync.events", () => {
         .where(eq(subscriptions.id, subId));
       await db.update(entries).set({ updatedAt: contentTime }).where(eq(entries.id, entryId));
 
-      const cursor = await createCaller(createAuthContext(userId)).sync.cursors();
+      const cursor = await createCaller(await createAuthContext(userId)).sync.cursors();
 
       expect(cursor.entriesAfterId).toBe(entryId);
       expect(
@@ -965,7 +863,7 @@ describe("sync.events", () => {
   describe("pagination", () => {
     it("sets hasMore when entries exceed limit", async () => {
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://example.com/pagination.xml");
+      const feedId = await createFetchedFeed({ url: "https://example.com/pagination.xml" });
       await createTestSubscription(userId, feedId);
       const baseCursor = new Date("2020-01-01").toISOString();
 
@@ -1004,7 +902,7 @@ describe("sync.events", () => {
         await db.insert(userEntries).values(userEntryValues.slice(i, i + batchSize));
       }
 
-      const result = await createCaller(createAuthContext(userId)).sync.events({
+      const result = await createCaller(await createAuthContext(userId)).sync.events({
         cursors: { entries: baseCursor },
       });
 
@@ -1028,7 +926,7 @@ describe("sync.events", () => {
   describe("keyset pagination (#1080)", () => {
     it("pages within a tied-timestamp group using entriesAfterId without losing rows", async () => {
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://example.com/tied.xml");
+      const feedId = await createFetchedFeed({ url: "https://example.com/tied.xml" });
       await createTestSubscription(userId, feedId);
 
       // Three entries sharing one exact timestamp (like markAllEntriesRead
@@ -1048,7 +946,7 @@ describe("sync.events", () => {
       // comparison would exclude every remaining tied row (data loss); the
       // keyset must instead return the two rows past `first`.
       const cursorTs = tiedTime.toISOString();
-      const afterFirst = await createCaller(createAuthContext(userId)).sync.events({
+      const afterFirst = await createCaller(await createAuthContext(userId)).sync.events({
         cursors: { entries: cursorTs, entriesAfterId: first },
       });
       const afterFirstNewIds = afterFirst.events
@@ -1057,7 +955,7 @@ describe("sync.events", () => {
       expect(afterFirstNewIds.sort()).toEqual([second, third]);
 
       // Cursor past the last tied row → nothing left in the group.
-      const afterLast = await createCaller(createAuthContext(userId)).sync.events({
+      const afterLast = await createCaller(await createAuthContext(userId)).sync.events({
         cursors: { entries: cursorTs, entriesAfterId: third },
       });
       expect(afterLast.events.filter((e) => ENTRY_EVENT_TYPES.has(e.type))).toHaveLength(0);
@@ -1065,7 +963,7 @@ describe("sync.events", () => {
 
     it("delivers every row of an oversized tied group across a full drain", async () => {
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://example.com/tied-large.xml");
+      const feedId = await createFetchedFeed({ url: "https://example.com/tied-large.xml" });
       await createTestSubscription(userId, feedId);
 
       // More than MAX_ENTRIES (500) rows sharing ONE timestamp — the exact
@@ -1127,7 +1025,7 @@ describe("sync.events", () => {
     // while none of the marked rows re-deliver.
     it("delivers an unrelated entry written in the same instant as a mark-all-read (#1102)", async () => {
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://example.com/mark-all-tied.xml");
+      const feedId = await createFetchedFeed({ url: "https://example.com/mark-all-tied.xml" });
       await createTestSubscription(userId, feedId);
 
       // Three unread entries; mark-all-read stamps them all with one
@@ -1142,7 +1040,7 @@ describe("sync.events", () => {
       const maxMarkedId = markedIds[markedIds.length - 1];
       const seededAtMs = Date.now();
 
-      const caller = createCaller(createAuthContext(userId));
+      const caller = createCaller(await createAuthContext(userId));
       const result = await caller.entries.markAllRead({});
       expect(result.count).toBe(3);
 
@@ -1215,7 +1113,7 @@ describe("sync.events", () => {
   describe("visibility (#1080)", () => {
     it("hides an orphaned user_entries row (no active subscription, not starred)", async () => {
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://example.com/orphan.xml");
+      const feedId = await createFetchedFeed({ url: "https://example.com/orphan.xml" });
       // No subscription row → orphaned. Old fail-open
       // predicate leaked this via `NULL IS NULL`; fail-closed must hide it.
       const entryId = await createTestEntry(feedId, {
@@ -1224,7 +1122,7 @@ describe("sync.events", () => {
       });
       await createUserEntry(userId, entryId, { updatedAt: new Date("2025-03-02T00:00:00.000Z") });
 
-      const result = await createCaller(createAuthContext(userId)).sync.events({
+      const result = await createCaller(await createAuthContext(userId)).sync.events({
         cursors: { entries: new Date("2025-03-01T00:00:00.000Z").toISOString() },
       });
 
@@ -1233,7 +1131,7 @@ describe("sync.events", () => {
 
     it("shows an orphaned entry when it is starred (starred exception)", async () => {
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://example.com/orphan-starred.xml");
+      const feedId = await createFetchedFeed({ url: "https://example.com/orphan-starred.xml" });
       const entryId = await createTestEntry(feedId, {
         createdAt: new Date("2025-03-02T00:00:00.000Z"),
         updatedAt: new Date("2025-03-02T00:00:00.000Z"),
@@ -1243,7 +1141,7 @@ describe("sync.events", () => {
         updatedAt: new Date("2025-03-02T00:00:00.000Z"),
       });
 
-      const result = await createCaller(createAuthContext(userId)).sync.events({
+      const result = await createCaller(await createAuthContext(userId)).sync.events({
         cursors: { entries: new Date("2025-03-01T00:00:00.000Z").toISOString() },
       });
 
@@ -1253,7 +1151,7 @@ describe("sync.events", () => {
 
     it("hides entries from an unsubscribed subscription (not starred)", async () => {
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://example.com/unsubscribed.xml");
+      const feedId = await createFetchedFeed({ url: "https://example.com/unsubscribed.xml" });
       // Subscription exists but is soft-deleted (unsubscribed).
       await createTestSubscription(userId, feedId);
       await db
@@ -1267,7 +1165,7 @@ describe("sync.events", () => {
       });
       await createUserEntry(userId, entryId, { updatedAt: new Date("2025-03-02T00:00:00.000Z") });
 
-      const result = await createCaller(createAuthContext(userId)).sync.events({
+      const result = await createCaller(await createAuthContext(userId)).sync.events({
         cursors: { entries: new Date("2025-03-01T00:00:00.000Z").toISOString() },
       });
 
@@ -1296,7 +1194,7 @@ describe("sync.events", () => {
 
     it("delivers a content refetch (entries.updated_at bumped, user_entries stale) via the subscribed-feed arm", async () => {
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://example.com/refetch.xml");
+      const feedId = await createFetchedFeed({ url: "https://example.com/refetch.xml" });
       await createTestSubscription(userId, feedId);
 
       const entryId = await createTestEntry(feedId, {
@@ -1315,7 +1213,7 @@ describe("sync.events", () => {
         .where(eq(entries.id, entryId));
       await db.update(feeds).set({ lastEntriesUpdatedAt: NEW }).where(eq(feeds.id, feedId));
 
-      const result = await createCaller(createAuthContext(userId)).sync.events({
+      const result = await createCaller(await createAuthContext(userId)).sync.events({
         cursors: { entries: CURSOR.toISOString() },
       });
 
@@ -1339,7 +1237,7 @@ describe("sync.events", () => {
       // window that must still be delivered. A `last_entries_updated_at >= cursor`
       // pre-filter (the original bug) would prune the feed and drop this entry.
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://example.com/refetch-lag.xml");
+      const feedId = await createFetchedFeed({ url: "https://example.com/refetch-lag.xml" });
       await createTestSubscription(userId, feedId);
       const entryId = await createTestEntry(feedId, { createdAt: OLD, updatedAt: OLD });
       await createUserEntry(userId, entryId, { updatedAt: OLD });
@@ -1349,7 +1247,7 @@ describe("sync.events", () => {
       await db.update(entries).set({ updatedAt: NEW }).where(eq(entries.id, entryId));
       await db.update(feeds).set({ lastEntriesUpdatedAt: OLD }).where(eq(feeds.id, feedId));
 
-      const result = await createCaller(createAuthContext(userId)).sync.events({
+      const result = await createCaller(await createAuthContext(userId)).sync.events({
         cursors: { entries: CURSOR.toISOString() },
       });
       expect(result.events.filter((e) => e.type === "entry_updated")).toHaveLength(1);
@@ -1375,7 +1273,7 @@ describe("sync.events", () => {
         .set({ title: "Saved Updated", updatedAt: NEW })
         .where(eq(entries.id, entryId));
 
-      const result = await createCaller(createAuthContext(userId)).sync.events({
+      const result = await createCaller(await createAuthContext(userId)).sync.events({
         cursors: { entries: CURSOR.toISOString() },
       });
 
@@ -1386,7 +1284,9 @@ describe("sync.events", () => {
 
     it("delivers a content refetch for a STARRED entry on an unsubscribed feed (visible via starred)", async () => {
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://example.com/starred-orphan-refetch.xml");
+      const feedId = await createFetchedFeed({
+        url: "https://example.com/starred-orphan-refetch.xml",
+      });
       await createTestSubscription(userId, feedId);
       // Soft-delete the subscription: the row still exists, so Arm B1 (which
       // drives from subscriptions without the unsubscribed filter) still reaches
@@ -1402,7 +1302,7 @@ describe("sync.events", () => {
       await db.update(entries).set({ updatedAt: NEW }).where(eq(entries.id, entryId));
       await db.update(feeds).set({ lastEntriesUpdatedAt: NEW }).where(eq(feeds.id, feedId));
 
-      const result = await createCaller(createAuthContext(userId)).sync.events({
+      const result = await createCaller(await createAuthContext(userId)).sync.events({
         cursors: { entries: CURSOR.toISOString() },
       });
       expect(result.events.filter((e) => e.type === "entry_updated")).toHaveLength(1);
@@ -1410,7 +1310,7 @@ describe("sync.events", () => {
 
     it("does NOT deliver a content refetch for a non-starred entry on an unsubscribed feed", async () => {
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://example.com/unsub-refetch.xml");
+      const feedId = await createFetchedFeed({ url: "https://example.com/unsub-refetch.xml" });
       await createTestSubscription(userId, feedId);
       await db
         .update(subscriptions)
@@ -1423,7 +1323,7 @@ describe("sync.events", () => {
       await db.update(entries).set({ updatedAt: NEW }).where(eq(entries.id, entryId));
       await db.update(feeds).set({ lastEntriesUpdatedAt: NEW }).where(eq(feeds.id, feedId));
 
-      const result = await createCaller(createAuthContext(userId)).sync.events({
+      const result = await createCaller(await createAuthContext(userId)).sync.events({
         cursors: { entries: CURSOR.toISOString() },
       });
       expect(result.events.filter((e) => ENTRY_EVENT_TYPES.has(e.type))).toHaveLength(0);
@@ -1436,7 +1336,7 @@ describe("sync.events", () => {
     // (on tiny test data it would otherwise seq-scan regardless of the index).
     it("candidate arms seek their indexes, not a full scan (EXPLAIN)", async () => {
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://example.com/explain.xml");
+      const feedId = await createFetchedFeed({ url: "https://example.com/explain.xml" });
       await createTestSubscription(userId, feedId);
       const savedFeedId = await createSavedFeed(userId);
       // Give both feeds volume with everything before the cursor, so the
@@ -1523,7 +1423,7 @@ describe("sync.events", () => {
   describe("microsecond precision", () => {
     it("sync.cursors preserves the microseconds of the newest change", async () => {
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://example.com/us-cursor.xml");
+      const feedId = await createFetchedFeed({ url: "https://example.com/us-cursor.xml" });
       await createTestSubscription(userId, feedId);
       const entryId = await createTestEntry(feedId);
       await createUserEntry(userId, entryId);
@@ -1540,13 +1440,13 @@ describe("sync.events", () => {
         sql`UPDATE user_entries SET updated_at = ${micros}::timestamptz WHERE entry_id = ${entryId}::uuid`
       );
 
-      const cursorResult = await createCaller(createAuthContext(userId)).sync.cursors();
+      const cursorResult = await createCaller(await createAuthContext(userId)).sync.cursors();
       expect(cursorResult.entries).toBe(micros);
     });
 
     it("sync.events emits microsecond-precise timestamps that advance the cursor", async () => {
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://example.com/us-events.xml");
+      const feedId = await createFetchedFeed({ url: "https://example.com/us-events.xml" });
       await createTestSubscription(userId, feedId);
       const entryId = await createTestEntry(feedId);
       await createUserEntry(userId, entryId);
@@ -1566,7 +1466,7 @@ describe("sync.events", () => {
 
       // A cursor pinned to the microsecond just before `newer` must still surface
       // the change — a millisecond-truncated comparison would have already passed it.
-      const result = await createCaller(createAuthContext(userId)).sync.events({
+      const result = await createCaller(await createAuthContext(userId)).sync.events({
         cursors: { entries: pinned },
       });
       const stateEvents = result.events.filter((e) => e.type === "entry_state_changed");

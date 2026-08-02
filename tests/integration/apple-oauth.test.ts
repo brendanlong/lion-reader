@@ -19,6 +19,7 @@ import { users, sessions, oauthAccounts } from "../../src/server/db/schema";
 import { redis } from "../../src/server/redis";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import * as argon2 from "argon2";
+import { createTestUser } from "./helpers";
 
 // Default mock Apple user info (embedded in JWT)
 const mockAppleUserSub = "apple-user-123.abc.def";
@@ -282,19 +283,11 @@ OF/2NxApJCzGCEDdfSp6VQO30hyhRANCAAQRWz+jn65BtOMvdyHKcvjBeBSDZH2r
 
   describe("OAuth callback integration", () => {
     // Helper to create a test user
-    async function createTestUser(email: string, withPassword = true) {
-      const userId = generateUuidv7();
-      const passwordHash = withPassword ? await argon2.hash("password123") : null;
-
-      await db.insert(users).values({
-        id: userId,
+    async function createUser(email: string, withPassword = true) {
+      return createTestUser({
         email,
-        passwordHash,
-        createdAt: new Date(),
-        updatedAt: new Date(),
+        passwordHash: withPassword ? await argon2.hash("password123") : null,
       });
-
-      return userId;
     }
 
     // Helper to create OAuth account
@@ -315,7 +308,7 @@ OF/2NxApJCzGCEDdfSp6VQO30hyhRANCAAQRWz+jn65BtOMvdyHKcvjBeBSDZH2r
 
     it("finds existing Apple OAuth account", async () => {
       // Create existing user and OAuth account
-      const userId = await createTestUser("existing@example.com");
+      const userId = await createUser("existing@example.com");
       await createAppleOAuthAccount(userId, mockAppleUserSub);
 
       // Verify OAuth account exists
@@ -336,7 +329,7 @@ OF/2NxApJCzGCEDdfSp6VQO30hyhRANCAAQRWz+jn65BtOMvdyHKcvjBeBSDZH2r
 
     it("can link Apple OAuth to existing user with matching email", async () => {
       // Create existing user with email that matches Apple user
-      const userId = await createTestUser(mockAppleEmail, true);
+      const userId = await createUser(mockAppleEmail, true);
 
       // Verify user exists
       const user = await db.select().from(users).where(eq(users.id, userId)).limit(1);

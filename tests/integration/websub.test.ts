@@ -29,6 +29,7 @@ import {
   recordHubAnnouncedEntries,
   recordBackupPollNewEntries,
 } from "../../src/server/feed/websub-hub-stats";
+import { createTestFeed as insertTestFeed } from "./helpers";
 
 // Sample RSS feed content for testing content notifications
 const SAMPLE_RSS_FEED = `<?xml version="1.0" encoding="UTF-8"?>
@@ -47,20 +48,16 @@ const SAMPLE_RSS_FEED = `<?xml version="1.0" encoding="UTF-8"?>
   </channel>
 </rss>`;
 
-// Helper to create a test feed in the database
+// Wraps the shared factory because these call sites want the feed row
+// (feed.url, feed.selfUrl), not just its id.
 async function createTestFeed(overrides: Partial<typeof feeds.$inferInsert> = {}) {
-  const [feed] = await db
-    .insert(feeds)
-    .values({
-      id: generateUuidv7(),
-      type: "web",
-      url: `https://example.com/feed-${generateUuidv7()}.xml`,
-      title: "Test Feed",
-      hubUrl: "https://hub.example.com/",
-      selfUrl: `https://example.com/feed-${generateUuidv7()}.xml`,
-      ...overrides,
-    })
-    .returning();
+  const feedId = await insertTestFeed({
+    title: "Test Feed",
+    hubUrl: "https://hub.example.com/",
+    selfUrl: `https://example.com/feed-${generateUuidv7()}.xml`,
+    ...overrides,
+  });
+  const [feed] = await db.select().from(feeds).where(eq(feeds.id, feedId));
   return feed;
 }
 

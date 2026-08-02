@@ -25,6 +25,10 @@ Key design points:
 - **Minimal-request assertions**: `recordTrpcProcedures(page)` records every tRPC procedure the page calls. Tests assert that SSE events update the UI with _zero_ `entries.*` refetches — this encodes the delta-update invariant documented in `src/FRONTEND_STATE.md` as a regression test instead of a code-review concern.
 - **Isolation**: each test creates its own user and feeds (unique IDs), so tests don't interfere with each other or with leftover data; the suite runs serially against one shared server.
 
+## Integration test fixtures
+
+Seed rows with the shared factories in `tests/integration/helpers.ts` rather than hand-rolling a `db.insert` per file; its header documents them. Extend a factory (or pass an override) instead of reintroducing a local one — the duplication it replaced meant every schema change touched dozens of files.
+
 ## Asserting on Redis pub/sub events
 
 Integration tests that assert on published events use the shared helpers in `tests/utils/pubsub.ts` — don't hand-roll listeners per file. A test whose **setup** mutates through a service or tRPC caller must establish that state with `subscribeAndDrain`, never by subscribing afterwards (publishing is fire-and-forget, so the setup's own event can land inside the window under test — see the file header and issue #1427).

@@ -19,6 +19,7 @@ import { eq, inArray } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { users, oauthClients, oauthRefreshTokens } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
+import { createTestUser } from "./helpers";
 import {
   createAuthorizationCode,
   validateAndConsumeAuthCode,
@@ -52,17 +53,9 @@ const CODE_CHALLENGE = crypto
   .update(CODE_VERIFIER, "ascii")
   .digest("base64url");
 
-async function createTestUser(): Promise<string> {
-  const userId = generateUuidv7();
-  await db.insert(users).values({
-    id: userId,
-    email: `oauth-service-${userId}@test.com`,
-    passwordHash: "test-hash",
-    tosAgreedAt: new Date(),
-    privacyPolicyAgreedAt: new Date(),
-    notEuAgreedAt: new Date(),
-    createdAt: new Date(),
-    updatedAt: new Date(),
+async function createUser(): Promise<string> {
+  const userId = await createTestUser({
+    emailPrefix: "oauth-service",
   });
   createdUserIds.push(userId);
   return userId;
@@ -104,7 +97,7 @@ afterAll(async () => {
 
 describe("validateAndConsumeAuthCode", () => {
   it("redeems a valid code exactly once", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
     const clientId = await createTestClient();
     const code = await createTestAuthCode(userId, clientId);
 
@@ -118,7 +111,7 @@ describe("validateAndConsumeAuthCode", () => {
   });
 
   it("allows at most one of many concurrent redemptions to succeed", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
     const clientId = await createTestClient();
     const code = await createTestAuthCode(userId, clientId);
 
@@ -133,7 +126,7 @@ describe("validateAndConsumeAuthCode", () => {
   });
 
   it("burns the code when PKCE verification fails", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
     const clientId = await createTestClient();
     const code = await createTestAuthCode(userId, clientId);
 
@@ -149,7 +142,7 @@ describe("validateAndConsumeAuthCode", () => {
 
 describe("rotateRefreshToken", () => {
   it("rotates a valid refresh token and invalidates the old one", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
     const clientId = await createTestClient();
     const tokens = await createTokens({ clientId, userId, scopes: ["mcp"] });
 
@@ -162,7 +155,7 @@ describe("rotateRefreshToken", () => {
   });
 
   it("allows at most one of many concurrent rotations to succeed", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
     const clientId = await createTestClient();
     const tokens = await createTokens({ clientId, userId, scopes: ["mcp"] });
 
@@ -182,7 +175,7 @@ describe("rotateRefreshToken", () => {
   });
 
   it("treats an immediate replay as benign concurrency and does not revoke the chain", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
     const clientId = await createTestClient();
     const tokens = await createTokens({ clientId, userId, scopes: ["mcp"] });
 
@@ -199,7 +192,7 @@ describe("rotateRefreshToken", () => {
   });
 
   it("revokes the whole grant when a rotated refresh token is replayed after the grace window", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
     const clientId = await createTestClient();
     const tokens = await createTokens({ clientId, userId, scopes: ["mcp"] });
 
@@ -223,7 +216,7 @@ describe("rotateRefreshToken", () => {
     // Two independent grants for the same user+client — e.g. two Wallabag
     // devices, which all share client_id "wallabag". A reuse event on one must
     // not sign the other out.
-    const userId = await createTestUser();
+    const userId = await createUser();
     const clientId = await createTestClient();
     const grantA = await createTokens({ clientId, userId, scopes: ["mcp"] });
     const grantB = await createTokens({ clientId, userId, scopes: ["mcp"] });
@@ -246,7 +239,7 @@ describe("rotateRefreshToken", () => {
   });
 
   it("does not revoke the grant for an unknown refresh token", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
     const clientId = await createTestClient();
     const tokens = await createTokens({ clientId, userId, scopes: ["mcp"] });
 
@@ -264,7 +257,7 @@ describe("rotateRefreshToken", () => {
   // mislabel a Wallabag credential (minted with a null resource) as MCP-audienced.
   describe("resource/audience preservation", () => {
     it("keeps a null resource null (does not stamp the MCP audience)", async () => {
-      const userId = await createTestUser();
+      const userId = await createUser();
       const clientId = await createTestClient();
       // Wallabag mints with no resource.
       const tokens = await createTokens({ clientId, userId, scopes: ["reader:full-access"] });
@@ -277,7 +270,7 @@ describe("rotateRefreshToken", () => {
     });
 
     it("migrates the legacy bare-origin audience to the canonical identifier", async () => {
-      const userId = await createTestUser();
+      const userId = await createUser();
       const clientId = await createTestClient();
       const tokens = await createTokens({
         clientId,
@@ -294,7 +287,7 @@ describe("rotateRefreshToken", () => {
     });
 
     it("preserves the canonical MCP audience across rotation", async () => {
-      const userId = await createTestUser();
+      const userId = await createUser();
       const clientId = await createTestClient();
       const tokens = await createTokens({
         clientId,
@@ -314,7 +307,7 @@ describe("rotateRefreshToken", () => {
 
 describe("revokeClientToken (RFC 7009)", () => {
   it("revokes an access token", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
     const clientId = await createTestClient();
     const tokens = await createTokens({ clientId, userId, scopes: ["mcp"] });
 
@@ -327,7 +320,7 @@ describe("revokeClientToken (RFC 7009)", () => {
   });
 
   it("revokes a refresh token and its linked access token", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
     const clientId = await createTestClient();
     const tokens = await createTokens({ clientId, userId, scopes: ["mcp"] });
 
@@ -345,7 +338,7 @@ describe("revokeClientToken (RFC 7009)", () => {
   });
 
   it("does not revoke a token owned by a different client", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
     const clientId = await createTestClient();
     const otherClientId = await createTestClient();
     const tokens = await createTokens({ clientId, userId, scopes: ["mcp"] });

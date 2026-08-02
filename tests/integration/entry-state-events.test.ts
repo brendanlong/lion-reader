@@ -34,6 +34,7 @@ import {
   waitForMessage,
   waitForMessages,
 } from "../utils/pubsub";
+import { createTestEntry, createTestFeed, createTestSubscription, createTestUser } from "./helpers";
 
 let subscriber: Redis;
 
@@ -63,15 +64,7 @@ beforeEach(async () => {
 });
 
 async function seedUser(): Promise<string> {
-  const userId = generateUuidv7();
-  await db.insert(users).values({
-    id: userId,
-    email: `entry-state-${userId}@test.com`,
-    passwordHash: "test-hash",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-  return userId;
+  return createTestUser({ emailPrefix: "entry-state" });
 }
 
 async function seedEntry(
@@ -81,43 +74,19 @@ async function seedEntry(
   // Spam is only valid on email entries (entries_spam_only_email constraint).
   const type = options.type ?? (options.isSpam ? "email" : "web");
   const now = new Date();
-  const feedId = generateUuidv7();
-  await db.insert(feeds).values({
-    id: feedId,
+  const feedId = await createTestFeed({
     type,
     // Email feeds are per-user (feed_type_user_id constraint)
     userId: type === "email" ? userId : null,
-    url: `https://example.com/${feedId}`,
     title: "Test Feed",
     lastFetchedAt: now,
     lastEntriesUpdatedAt: now,
-    createdAt: now,
-    updatedAt: now,
   });
-  const subscriptionId = generateUuidv7();
-  await db.insert(subscriptions).values({
-    id: subscriptionId,
-    userId,
-    feedId,
-    subscribedAt: now,
-    createdAt: now,
-    updatedAt: now,
-  });
+  await createTestSubscription(userId, feedId);
 
-  const entryId = generateUuidv7();
-  await db.insert(entries).values({
-    id: entryId,
-    feedId,
+  const entryId = await createTestEntry(feedId, {
     type,
-    guid: `guid-${entryId}`,
     title: "Entry",
-    contentHash: `hash-${entryId}`,
-    fetchedAt: now,
-    publishedAt: now,
-    // last_seen_at is web-only (entries_last_seen_only_fetched constraint)
-    lastSeenAt: type === "web" ? now : null,
-    createdAt: now,
-    updatedAt: now,
     isSpam: options.isSpam ?? false,
   });
   // starred_changed_at is NOT NULL (defaults to now()); seed an explicitly-old

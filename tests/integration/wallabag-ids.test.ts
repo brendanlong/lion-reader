@@ -13,18 +13,12 @@ import { db } from "../../src/server/db";
 import { users, entries, userEntries, feeds } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { resolveWallabagEntry, entryIdToWallabagId } from "../../src/server/wallabag/id";
+import { createTestUser } from "./helpers";
 
 const createdUserIds: string[] = [];
 
-async function createTestUser(): Promise<string> {
-  const userId = generateUuidv7();
-  await db.insert(users).values({
-    id: userId,
-    email: `wallabag-ids-${userId}@test.com`,
-    passwordHash: "test-hash",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
+async function createUser(): Promise<string> {
+  const userId = await createTestUser({ emailPrefix: "wallabag-ids" });
   createdUserIds.push(userId);
   return userId;
 }
@@ -77,20 +71,20 @@ afterAll(async () => {
 
 describe("entryIdToWallabagId", () => {
   it("returns the entry's stored serial as a number", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
     const { entryId, serial } = await createTestSavedArticle(userId);
 
     expect(await entryIdToWallabagId(db, userId, entryId)).toBe(Number(serial));
   });
 
   it("returns null for an unknown entry", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
     expect(await entryIdToWallabagId(db, userId, generateUuidv7())).toBeNull();
   });
 
   it("returns null for another user's entry (visibility scoping)", async () => {
-    const owner = await createTestUser();
-    const other = await createTestUser();
+    const owner = await createUser();
+    const other = await createUser();
     const { entryId } = await createTestSavedArticle(owner);
 
     expect(await entryIdToWallabagId(db, other, entryId)).toBeNull();
@@ -99,7 +93,7 @@ describe("entryIdToWallabagId", () => {
 
 describe("resolveWallabagEntry", () => {
   it("resolves a numeric Wallabag id to the entry UUID + serial", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
     const { entryId, serial } = await createTestSavedArticle(userId);
 
     const resolved = await resolveWallabagEntry(db, userId, serial.toString());
@@ -107,7 +101,7 @@ describe("resolveWallabagEntry", () => {
   });
 
   it("resolves a UUID param to the same entry", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
     const { entryId, serial } = await createTestSavedArticle(userId);
 
     const resolved = await resolveWallabagEntry(db, userId, entryId);
@@ -115,8 +109,8 @@ describe("resolveWallabagEntry", () => {
   });
 
   it("does not resolve another user's entry (visibility scoping)", async () => {
-    const owner = await createTestUser();
-    const other = await createTestUser();
+    const owner = await createUser();
+    const other = await createUser();
     const { entryId, serial } = await createTestSavedArticle(owner);
 
     expect(await resolveWallabagEntry(db, other, serial.toString())).toBeNull();
@@ -124,7 +118,7 @@ describe("resolveWallabagEntry", () => {
   });
 
   it("returns null for malformed or out-of-range params without erroring", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
 
     // Not a serial or UUID
     expect(await resolveWallabagEntry(db, userId, "not-an-id")).toBeNull();
@@ -138,7 +132,7 @@ describe("resolveWallabagEntry", () => {
   });
 
   it("does not resolve an unknown serial", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
     const { serial } = await createTestSavedArticle(userId);
 
     const unknown = (serial + BigInt(1000000)).toString();

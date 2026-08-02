@@ -21,9 +21,14 @@ import {
   jobs,
   type Feed,
 } from "../../src/server/db/schema";
-import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
-import type { Context } from "../../src/server/trpc/context";
+import {
+  createAuthContext,
+  createTestEntry,
+  createTestFeed,
+  createTestSubscription,
+  createTestUser,
+} from "./helpers";
 import { ensureFeedJob } from "../../src/server/jobs/queue";
 import { migrateSubscriptionsToExistingFeed } from "../../src/server/jobs/handlers";
 import { createUserEntriesForFeed } from "../../src/server/feed/entry-processor";
@@ -31,148 +36,6 @@ import { createUserEntriesForFeed } from "../../src/server/feed/entry-processor"
 // ============================================================================
 // Test Helpers
 // ============================================================================
-
-/**
- * Creates a test user and returns their ID.
- */
-async function createTestUser(emailPrefix: string = "user"): Promise<string> {
-  const userId = generateUuidv7();
-  await db.insert(users).values({
-    id: userId,
-    email: `${emailPrefix}-${userId}@test.com`,
-    passwordHash: "test-hash",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-  return userId;
-}
-
-/**
- * Creates an authenticated context for a test user.
- */
-function createAuthContext(userId: string): Context {
-  const now = new Date();
-  return {
-    db,
-    session: {
-      session: {
-        id: generateUuidv7(),
-        userId,
-        tokenHash: "test-hash",
-        scopes: null,
-        userAgent: null,
-        ipAddress: null,
-        createdAt: now,
-        expiresAt: new Date(Date.now() + 3600000),
-        revokedAt: null,
-        lastActiveAt: now,
-      },
-      user: {
-        id: userId,
-        email: `${userId}@test.com`,
-        emailVerifiedAt: null,
-        tosAgreedAt: new Date(),
-        privacyPolicyAgreedAt: new Date(),
-        notEuAgreedAt: new Date(),
-        passwordHash: "test-hash",
-        inviteId: null,
-        showSpam: false,
-        lastActiveAt: null,
-        groqApiKey: null,
-        anthropicApiKey: null,
-        cerebrasApiKey: null,
-        summarizationModel: null,
-        summarizationMaxWords: null,
-        summarizationPrompt: null,
-        narrationModel: null,
-        savedUnreadCount: 0,
-        starredUnreadCount: 0,
-        createdAt: now,
-        updatedAt: now,
-      },
-      hasGroqApiKey: false,
-      hasAnthropicApiKey: false,
-      hasCerebrasApiKey: false,
-    },
-    apiToken: null,
-    authType: "session",
-    scopes: [],
-    sessionToken: "test-token",
-    headers: new Headers(),
-  };
-}
-
-/**
- * Creates a test feed with specified parameters.
- */
-async function createTestFeed(options: {
-  url: string;
-  title?: string;
-  lastFetchedAt?: Date | null;
-  lastEntriesUpdatedAt?: Date | null;
-}): Promise<string> {
-  const feedId = generateUuidv7();
-  const now = new Date();
-  await db.insert(feeds).values({
-    id: feedId,
-    type: "web",
-    url: options.url,
-    title: options.title ?? `Test Feed ${feedId}`,
-    lastFetchedAt: options.lastFetchedAt ?? null,
-    lastEntriesUpdatedAt: options.lastEntriesUpdatedAt ?? null,
-    createdAt: now,
-    updatedAt: now,
-  });
-  return feedId;
-}
-
-/**
- * Creates a test subscription for a user and feed.
- */
-async function createTestSubscription(userId: string, feedId: string): Promise<string> {
-  const subscriptionId = generateUuidv7();
-  await db.insert(subscriptions).values({
-    id: subscriptionId,
-    userId,
-    feedId,
-    subscribedAt: new Date(),
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-  return subscriptionId;
-}
-
-/**
- * Creates a test entry with specified parameters.
- */
-async function createTestEntry(
-  feedId: string,
-  options: {
-    guid?: string;
-    title?: string;
-    fetchedAt?: Date;
-    lastSeenAt?: Date | null;
-  } = {}
-): Promise<string> {
-  const entryId = generateUuidv7();
-  const now = options.fetchedAt ?? new Date();
-  const guid = options.guid ?? `guid-${entryId}`;
-
-  await db.insert(entries).values({
-    id: entryId,
-    feedId,
-    type: "web",
-    guid,
-    title: options.title ?? `Entry ${entryId}`,
-    contentHash: `hash-${entryId}`,
-    fetchedAt: now,
-    lastSeenAt: options.lastSeenAt ?? now,
-    createdAt: now,
-    updatedAt: now,
-  });
-
-  return entryId;
-}
 
 /**
  * Creates user_entries for a user and entries.
@@ -494,8 +357,8 @@ describe("Feed Redirect Handling", () => {
 
   describe("Multiple users subscribed to old feed", () => {
     it("migrates all users' subscriptions when feed redirects", async () => {
-      const userA = await createTestUser("userA");
-      const userB = await createTestUser("userB");
+      const userA = await createTestUser({ emailPrefix: "userA" });
+      const userB = await createTestUser({ emailPrefix: "userB" });
       const fetchTime = new Date("2024-01-01T10:00:00Z");
 
       // Create old feed and new feed
@@ -638,7 +501,7 @@ describe("Feed Redirect Handling", () => {
       await createUserEntriesForFeed(newFeedId, [sharedEntryNew, newOnlyEntry]);
 
       // Query entries via the API
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
       const result = await caller.entries.list({});
       const entryIds = result.items.map((item) => item.id);
@@ -653,8 +516,8 @@ describe("Feed Redirect Handling", () => {
     });
 
     it("user subscribed only to new feed sees only new feed entries", async () => {
-      const userA = await createTestUser("userA"); // Migrated from old feed
-      const userB = await createTestUser("userB"); // Only subscribed to new feed
+      const userA = await createTestUser({ emailPrefix: "userA" }); // Migrated from old feed
+      const userB = await createTestUser({ emailPrefix: "userB" }); // Only subscribed to new feed
       const fetchTime = new Date("2024-01-01T10:00:00Z");
 
       // Create old feed and new feed
@@ -706,7 +569,7 @@ describe("Feed Redirect Handling", () => {
       await createUserEntriesForFeed(newFeedId, [newEntry]);
 
       // Query entries for User A
-      const ctxA = createAuthContext(userA);
+      const ctxA = await createAuthContext(userA);
       const callerA = createCaller(ctxA);
       const resultA = await callerA.entries.list({});
       const entryIdsA = resultA.items.map((item) => item.id);
@@ -716,7 +579,7 @@ describe("Feed Redirect Handling", () => {
       expect(entryIdsA).toContain(newEntry);
 
       // Query entries for User B
-      const ctxB = createAuthContext(userB);
+      const ctxB = await createAuthContext(userB);
       const callerB = createCaller(ctxB);
       const resultB = await callerB.entries.list({});
       const entryIdsB = resultB.items.map((item) => item.id);
@@ -781,7 +644,7 @@ describe("Feed Redirect Handling", () => {
       expect(unreadEntryState?.read).toBe(false);
 
       // Verify entries are still visible via API
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
       const result = await caller.entries.list({});
 
@@ -843,7 +706,7 @@ describe("Feed Redirect Handling", () => {
       expect(unstarredEntryState?.starred).toBe(false);
 
       // Verify starred entries are visible even when filtering
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
       const result = await caller.entries.list({ starredOnly: true });
 

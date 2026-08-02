@@ -24,21 +24,10 @@ import {
 } from "../../src/server/db/schema";
 import { runRetentionCleanup } from "../../src/server/services/retention";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
+import { createTestFeed, createTestSubscription, createTestUser } from "./helpers";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TEST_CLIENT_ID = "retention-test-client";
-
-async function createTestUser(): Promise<string> {
-  const userId = generateUuidv7();
-  await db.insert(users).values({
-    id: userId,
-    email: `retention-${userId}@test.com`,
-    passwordHash: "test-hash",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-  return userId;
-}
 
 async function createSession(userId: string, expiresAt: Date, revokedAt?: Date): Promise<string> {
   const id = generateUuidv7();
@@ -146,31 +135,6 @@ async function createAuthCode(userId: string, expiresAt: Date): Promise<string> 
   return id;
 }
 
-async function createFeed(): Promise<string> {
-  const id = generateUuidv7();
-  await db.insert(feeds).values({
-    id,
-    type: "web",
-    url: `https://retention-${id}.example.com/feed.xml`,
-  });
-  return id;
-}
-
-async function createSubscription(
-  userId: string,
-  feedId: string,
-  options: { unsubscribedAt?: Date } = {}
-): Promise<string> {
-  const id = generateUuidv7();
-  await db.insert(subscriptions).values({
-    id,
-    userId,
-    feedId,
-    unsubscribedAt: options.unsubscribedAt ?? null,
-  });
-  return id;
-}
-
 async function createFeedJob(
   feedId: string,
   options: { createdAt?: Date; runningSince?: Date } = {}
@@ -241,7 +205,7 @@ describe("runRetentionCleanup", () => {
   afterAll(cleanupTables);
 
   it("deletes expired sessions and keeps live ones", async () => {
-    const userId = await createTestUser();
+    const userId = await createTestUser({ emailPrefix: "retention" });
     const expired = await createSession(userId, new Date(Date.now() - 2 * DAY_MS));
     const live = await createSession(userId, new Date(Date.now() + DAY_MS));
     // Expired less than the 1-day grace period ago: kept.
@@ -263,7 +227,7 @@ describe("runRetentionCleanup", () => {
   });
 
   it("deletes expired/long-revoked API tokens and keeps live/non-expiring ones", async () => {
-    const userId = await createTestUser();
+    const userId = await createTestUser({ emailPrefix: "retention" });
     const expired = await createApiToken(userId, { expiresAt: new Date(Date.now() - 2 * DAY_MS) });
     const live = await createApiToken(userId, { expiresAt: new Date(Date.now() + 30 * DAY_MS) });
     // Non-expiring token (expiresAt NULL): never swept until revoked.
@@ -288,7 +252,7 @@ describe("runRetentionCleanup", () => {
   });
 
   it("deletes old terminal OPML imports and keeps recent/in-progress ones", async () => {
-    const userId = await createTestUser();
+    const userId = await createTestUser({ emailPrefix: "retention" });
     const oldCompleted = await createOpmlImport(userId, {
       status: "completed",
       createdAt: new Date(Date.now() - 31 * DAY_MS),
@@ -318,7 +282,7 @@ describe("runRetentionCleanup", () => {
   });
 
   it("deletes expired OAuth authorization codes, access tokens, and refresh tokens", async () => {
-    const userId = await createTestUser();
+    const userId = await createTestUser({ emailPrefix: "retention" });
 
     const expiredCode = await createAuthCode(userId, new Date(Date.now() - 2 * DAY_MS));
     const liveCode = await createAuthCode(userId, new Date(Date.now() + 10 * 60 * 1000));
@@ -355,7 +319,7 @@ describe("runRetentionCleanup", () => {
   });
 
   it("handles refresh-token rotation chains (replaced_by_id) without FK failures", async () => {
-    const userId = await createTestUser();
+    const userId = await createTestUser({ emailPrefix: "retention" });
 
     // Rotation: old token revoked long ago points at its expired replacement.
     // Both are deletable; the replaced_by_id FK is ON DELETE SET NULL so the
@@ -429,37 +393,37 @@ describe("runRetentionCleanup", () => {
   });
 
   it("deletes subscriber-less fetch_feed jobs but keeps subscribed, running, or fresh ones", async () => {
-    const userId = await createTestUser();
+    const userId = await createTestUser({ emailPrefix: "retention" });
 
     // Active subscriber: kept.
-    const subscribedFeed = await createFeed();
-    await createSubscription(userId, subscribedFeed);
+    const subscribedFeed = await createTestFeed();
+    await createTestSubscription(userId, subscribedFeed);
     const subscribedJobId = await createFeedJob(subscribedFeed);
 
     // Only an unsubscribed (soft-deleted) subscription: dead, deleted.
-    const unsubscribedFeed = await createFeed();
-    await createSubscription(userId, unsubscribedFeed, { unsubscribedAt: new Date() });
+    const unsubscribedFeed = await createTestFeed();
+    await createTestSubscription(userId, unsubscribedFeed, { unsubscribedAt: new Date() });
     const unsubscribedJobId = await createFeedJob(unsubscribedFeed);
 
     // No subscription at all (e.g. deleteUser orphan cleanup): dead, deleted.
-    const orphanFeed = await createFeed();
+    const orphanFeed = await createTestFeed();
     const orphanJobId = await createFeedJob(orphanFeed);
 
     // No subscribers but currently running: kept (never touch an in-flight job).
-    const runningFeed = await createFeed();
+    const runningFeed = await createTestFeed();
     const runningJobId = await createFeedJob(runningFeed, { runningSince: new Date() });
 
     // No subscribers, running_since set but stale (crashed mid-fetch): still
     // kept — the guard is intentionally stricter than claimFeedJob's staleness
     // check, deferring to a later sweep after the stale job is reclaimed.
-    const staleRunningFeed = await createFeed();
+    const staleRunningFeed = await createTestFeed();
     const staleRunningJobId = await createFeedJob(staleRunningFeed, {
       runningSince: new Date(Date.now() - 7 * DAY_MS),
     });
 
     // No subscribers but freshly created — races the first-ever subscribe, whose
     // job commits just before its subscription: kept by the created_at grace.
-    const freshFeed = await createFeed();
+    const freshFeed = await createTestFeed();
     const freshJobId = await createFeedJob(freshFeed, { createdAt: new Date() });
 
     const result = await runRetentionCleanup(db);
@@ -474,7 +438,7 @@ describe("runRetentionCleanup", () => {
   });
 
   it("deletes orphaned old DCR clients but keeps recent or actively-used ones", async () => {
-    const userId = await createTestUser();
+    const userId = await createTestUser({ emailPrefix: "retention" });
     const old = new Date(Date.now() - 40 * DAY_MS);
     const recentDate = new Date(Date.now() - 2 * DAY_MS);
 

@@ -16,22 +16,14 @@ import { db } from "../../src/server/db";
 import { users, oauthAccounts } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
-import type { Context } from "../../src/server/trpc/context";
+import { createAuthContext, createTestUser } from "./helpers";
 
 const createdUserIds: string[] = [];
 
-async function createTestUser(hasPassword: boolean): Promise<string> {
-  const userId = generateUuidv7();
-  const now = new Date();
-  await db.insert(users).values({
-    id: userId,
-    email: `unlink-${userId}@test.com`,
+async function createUser(hasPassword: boolean): Promise<string> {
+  const userId = await createTestUser({
+    emailPrefix: "unlink",
     passwordHash: hasPassword ? "test-hash" : null,
-    tosAgreedAt: now,
-    privacyPolicyAgreedAt: now,
-    notEuAgreedAt: now,
-    createdAt: now,
-    updatedAt: now,
   });
   createdUserIds.push(userId);
   return userId;
@@ -46,58 +38,6 @@ async function linkProvider(userId: string, provider: string): Promise<void> {
   });
 }
 
-function createAuthContext(userId: string): Context {
-  const now = new Date();
-  return {
-    db,
-    session: {
-      session: {
-        id: generateUuidv7(),
-        userId,
-        tokenHash: "test-hash",
-        scopes: null,
-        userAgent: null,
-        ipAddress: null,
-        createdAt: now,
-        expiresAt: new Date(Date.now() + 3600000),
-        revokedAt: null,
-        lastActiveAt: now,
-      },
-      user: {
-        id: userId,
-        email: `${userId}@test.com`,
-        emailVerifiedAt: null,
-        tosAgreedAt: now,
-        privacyPolicyAgreedAt: now,
-        notEuAgreedAt: now,
-        passwordHash: null,
-        inviteId: null,
-        showSpam: false,
-        lastActiveAt: null,
-        groqApiKey: null,
-        anthropicApiKey: null,
-        cerebrasApiKey: null,
-        summarizationModel: null,
-        summarizationMaxWords: null,
-        summarizationPrompt: null,
-        narrationModel: null,
-        savedUnreadCount: 0,
-        starredUnreadCount: 0,
-        createdAt: now,
-        updatedAt: now,
-      },
-      hasGroqApiKey: false,
-      hasAnthropicApiKey: false,
-      hasCerebrasApiKey: false,
-    },
-    apiToken: null,
-    authType: "session",
-    scopes: [],
-    sessionToken: "test-token",
-    headers: new Headers(),
-  };
-}
-
 afterAll(async () => {
   if (createdUserIds.length > 0) {
     await db.delete(users).where(inArray(users.id, createdUserIds));
@@ -106,10 +46,10 @@ afterAll(async () => {
 
 describe("auth.unlinkProvider", () => {
   it("unlinks one provider when the user has others", async () => {
-    const userId = await createTestUser(false);
+    const userId = await createUser(false);
     await linkProvider(userId, "google");
     await linkProvider(userId, "apple");
-    const caller = createCaller(createAuthContext(userId));
+    const caller = createCaller(await createAuthContext(userId));
 
     await caller.auth.unlinkProvider({ provider: "google" });
 
@@ -121,9 +61,9 @@ describe("auth.unlinkProvider", () => {
   });
 
   it("refuses to unlink the only auth method (no password, one provider)", async () => {
-    const userId = await createTestUser(false);
+    const userId = await createUser(false);
     await linkProvider(userId, "google");
-    const caller = createCaller(createAuthContext(userId));
+    const caller = createCaller(await createAuthContext(userId));
 
     await expect(caller.auth.unlinkProvider({ provider: "google" })).rejects.toThrow();
 
@@ -132,9 +72,9 @@ describe("auth.unlinkProvider", () => {
   });
 
   it("allows unlinking the last provider when the user has a password", async () => {
-    const userId = await createTestUser(true);
+    const userId = await createUser(true);
     await linkProvider(userId, "google");
-    const caller = createCaller(createAuthContext(userId));
+    const caller = createCaller(await createAuthContext(userId));
 
     await caller.auth.unlinkProvider({ provider: "google" });
 
@@ -143,9 +83,9 @@ describe("auth.unlinkProvider", () => {
   });
 
   it("is idempotent when the provider is already unlinked", async () => {
-    const userId = await createTestUser(true);
+    const userId = await createUser(true);
     await linkProvider(userId, "google");
-    const caller = createCaller(createAuthContext(userId));
+    const caller = createCaller(await createAuthContext(userId));
 
     const result = await caller.auth.unlinkProvider({ provider: "apple" });
     expect(result).toEqual({ success: true });
@@ -155,7 +95,7 @@ describe("auth.unlinkProvider", () => {
   });
 
   it("keeps at least one auth method when two providers are unlinked concurrently (#825)", async () => {
-    const userId = await createTestUser(false);
+    const userId = await createUser(false);
     await linkProvider(userId, "google");
     await linkProvider(userId, "apple");
 
@@ -163,7 +103,7 @@ describe("auth.unlinkProvider", () => {
     // The FOR UPDATE lock serializes them: the first to acquire the lock
     // succeeds; the second re-reads the (now single) remaining account and
     // is blocked by the "only auth method" guard.
-    const caller = createCaller(createAuthContext(userId));
+    const caller = createCaller(await createAuthContext(userId));
     const results = await Promise.allSettled([
       caller.auth.unlinkProvider({ provider: "google" }),
       caller.auth.unlinkProvider({ provider: "apple" }),
