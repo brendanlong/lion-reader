@@ -13,10 +13,10 @@
  */
 
 import { describe, it, expect, afterAll } from "vitest";
-import { inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { users, feeds, entries, userEntries, subscriptions } from "../../src/server/db/schema";
-import { generateUuidv7 } from "../../src/lib/uuidv7";
+import { users, feeds, userEntries, subscriptions } from "../../src/server/db/schema";
+import { createTestEntry, createTestFeed, createTestSubscription, createTestUser } from "./helpers";
 import { getGreaderUnreadCounts } from "../../src/server/google-reader/subscriptions";
 
 /**
@@ -44,14 +44,7 @@ afterAll(async () => {
 });
 
 async function createUser(): Promise<string> {
-  const id = generateUuidv7();
-  await db.insert(users).values({
-    id,
-    email: `newest-${id}@test.com`,
-    passwordHash: "test-hash",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
+  const id = await createTestUser({ emailPrefix: "newest" });
   createdUserIds.push(id);
   return id;
 }
@@ -59,31 +52,23 @@ async function createUser(): Promise<string> {
 async function createSubscribedFeed(
   userId: string
 ): Promise<{ feedId: string; subId: string; streamId: string }> {
-  const feedId = generateUuidv7();
-  const subId = generateUuidv7();
-  const now = new Date();
-  await db.insert(feeds).values({
-    id: feedId,
-    type: "web",
-    url: `https://f/${feedId}`,
-    createdAt: now,
-    updatedAt: now,
-  });
+  const feedId = await createTestFeed();
+  const subId = await createTestSubscription(userId, feedId);
   const [sub] = await db
-    .insert(subscriptions)
-    .values({ id: subId, userId, feedId, subscribedAt: now, createdAt: now, updatedAt: now })
-    .returning({ greaderStreamId: subscriptions.greaderStreamId });
+    .select({ greaderStreamId: subscriptions.greaderStreamId })
+    .from(subscriptions)
+    .where(eq(subscriptions.id, subId));
   createdFeedIds.push(feedId);
   return { feedId, subId, streamId: sub.greaderStreamId.toString() };
 }
 
 async function createSavedFeed(userId: string): Promise<{ feedId: string; streamId: string }> {
-  const feedId = generateUuidv7();
-  const now = new Date();
+  // Saved feeds carry no URL (see getOrCreateSavedFeed).
+  const feedId = await createTestFeed({ type: "saved", userId, url: null });
   const [feed] = await db
-    .insert(feeds)
-    .values({ id: feedId, type: "saved", userId, createdAt: now, updatedAt: now })
-    .returning({ greaderStreamId: feeds.greaderStreamId });
+    .select({ greaderStreamId: feeds.greaderStreamId })
+    .from(feeds)
+    .where(eq(feeds.id, feedId));
   createdFeedIds.push(feedId);
   return { feedId, streamId: feed.greaderStreamId.toString() };
 }
@@ -98,18 +83,10 @@ async function addEntry(opts: {
   read: boolean;
   withUserEntry: boolean;
 }): Promise<void> {
-  const entryId = generateUuidv7();
-  await db.insert(entries).values({
-    id: entryId,
-    feedId: opts.feedId,
+  const entryId = await createTestEntry(opts.feedId, {
     type: opts.type,
-    guid: `guid-${entryId}`,
-    contentHash: `hash-${entryId}`,
     publishedAt: opts.publishedAt,
     fetchedAt: opts.fetchedAt,
-    lastSeenAt: opts.type === "web" ? opts.fetchedAt : null,
-    createdAt: opts.fetchedAt,
-    updatedAt: opts.fetchedAt,
   });
   if (opts.withUserEntry) {
     // publishedOrFetchedAt is filled by the user_entries_fill_denormalized

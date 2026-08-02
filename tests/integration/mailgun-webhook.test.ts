@@ -21,8 +21,9 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { createHmac, randomBytes } from "crypto";
 import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { users, ingestAddresses, entries } from "../../src/server/db/schema";
+import { ingestAddresses, entries } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
+import { createTestUser } from "./helpers";
 
 const SIGNING_KEY = "test-mailgun-signing-key";
 process.env.MAILGUN_WEBHOOK_SIGNING_KEY = SIGNING_KEY;
@@ -76,21 +77,13 @@ function buildWebhookRequest(fields: WebhookFields): Request {
 
 /** Creates a user with an ingest address; returns the recipient address. */
 async function createIngestRecipient(): Promise<string> {
-  const userId = generateUuidv7();
-  const now = new Date();
-  await db.insert(users).values({
-    id: userId,
-    email: `mailgun-${userId}@test.com`,
-    passwordHash: "test-hash",
-    createdAt: now,
-    updatedAt: now,
-  });
+  const userId = await createTestUser({ emailPrefix: "mailgun" });
   const token = `mg${randomBytes(8).toString("hex")}`;
   await db.insert(ingestAddresses).values({
     id: generateUuidv7(),
     userId,
     token,
-    createdAt: now,
+    createdAt: new Date(),
   });
   return `${token}@ingest.lionreader.com`;
 }

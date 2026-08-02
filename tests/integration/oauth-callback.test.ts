@@ -12,20 +12,9 @@ import { db } from "../../src/server/db";
 import { users, sessions, oauthAccounts } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { processOAuthCallback } from "../../src/server/auth/oauth/callback";
+import { createTestUser } from "./helpers";
 
 const VICTIM_EMAIL = "victim@example.com";
-
-async function seedUser(email: string): Promise<string> {
-  const userId = generateUuidv7();
-  await db.insert(users).values({
-    id: userId,
-    email,
-    passwordHash: "not-a-real-hash",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-  return userId;
-}
 
 async function countOAuthAccounts(userId: string): Promise<number> {
   const rows = await db.select().from(oauthAccounts).where(eq(oauthAccounts.userId, userId));
@@ -46,7 +35,7 @@ describe("processOAuthCallback email verification", () => {
   });
 
   it("refuses to link an unverified provider email to an existing account", async () => {
-    const victimId = await seedUser(VICTIM_EMAIL);
+    const victimId = await createTestUser({ email: VICTIM_EMAIL });
 
     await expect(
       processOAuthCallback({
@@ -63,7 +52,7 @@ describe("processOAuthCallback email verification", () => {
   });
 
   it("links a verified provider email to the existing account", async () => {
-    const victimId = await seedUser(VICTIM_EMAIL);
+    const victimId = await createTestUser({ email: VICTIM_EMAIL });
 
     const result = await processOAuthCallback({
       provider: "google",
@@ -100,7 +89,7 @@ describe("processOAuthCallback email verification", () => {
   it("logs in a returning user by provider account id regardless of emailVerified", async () => {
     // Apple stops sending email/verification on subsequent sign-ins; a returning
     // user matched by providerAccountId must still work with emailVerified=false.
-    const userId = await seedUser("returning@example.com");
+    const userId = await createTestUser({ email: "returning@example.com" });
     await db.insert(oauthAccounts).values({
       id: generateUuidv7(),
       userId,

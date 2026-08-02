@@ -24,6 +24,7 @@ import {
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
+import { createTestFeed, createTestUser } from "./helpers";
 
 // ============================================================================
 // Test Helpers
@@ -76,42 +77,6 @@ function createWrongTokenContext(): Context {
       authorization: "Bearer wrong-secret",
     }),
   };
-}
-
-/**
- * Creates a test user and returns their ID.
- */
-async function createTestUser(emailPrefix: string = "admin-test"): Promise<string> {
-  const userId = generateUuidv7();
-  await db.insert(users).values({
-    id: userId,
-    email: `${emailPrefix}-${userId}@test.com`,
-    passwordHash: "test-hash",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-  return userId;
-}
-
-/**
- * Creates a test web feed and returns its ID.
- */
-async function createTestFeed(
-  url: string,
-  options: { consecutiveFailures?: number; lastError?: string | null; title?: string } = {}
-): Promise<string> {
-  const feedId = generateUuidv7();
-  await db.insert(feeds).values({
-    id: feedId,
-    type: "web",
-    url,
-    title: options.title ?? `Test Feed ${feedId}`,
-    consecutiveFailures: options.consecutiveFailures ?? 0,
-    lastError: options.lastError ?? null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-  return feedId;
 }
 
 /**
@@ -243,7 +208,7 @@ describe("Admin API", () => {
       const caller = createCaller(ctx);
 
       // Create a user and an invite used by that user
-      const userId = await createTestUser("searchable");
+      const userId = await createTestUser({ emailPrefix: "searchable" });
       const usedInvite = await createTestInvite({
         usedAt: new Date(),
         usedByUserId: userId,
@@ -288,8 +253,8 @@ describe("Admin API", () => {
       const ctx = createAdminContext();
       const caller = createCaller(ctx);
 
-      const feedId1 = await createTestFeed("https://example.com/feed1.xml");
-      const feedId2 = await createTestFeed("https://example.com/feed2.xml");
+      const feedId1 = await createTestFeed({ url: "https://example.com/feed1.xml" });
+      const feedId2 = await createTestFeed({ url: "https://example.com/feed2.xml" });
 
       const result = await caller.admin.listFeeds();
 
@@ -304,8 +269,8 @@ describe("Admin API", () => {
       const ctx = createAdminContext();
       const caller = createCaller(ctx);
 
-      await createTestFeed("https://example.com/unique-feed-abc.xml");
-      await createTestFeed("https://other.com/different.xml");
+      await createTestFeed({ url: "https://example.com/unique-feed-abc.xml" });
+      await createTestFeed({ url: "https://other.com/different.xml" });
 
       const result = await caller.admin.listFeeds({ urlFilter: "unique-feed-abc" });
 
@@ -317,8 +282,12 @@ describe("Admin API", () => {
       const ctx = createAdminContext();
       const caller = createCaller(ctx);
 
-      await createTestFeed("https://example.com/healthy.xml", { consecutiveFailures: 0 });
-      const brokenId = await createTestFeed("https://example.com/broken.xml", {
+      await createTestFeed({
+        url: "https://example.com/healthy.xml",
+        consecutiveFailures: 0,
+      });
+      const brokenId = await createTestFeed({
+        url: "https://example.com/broken.xml",
         consecutiveFailures: 5,
         lastError: "Connection timeout",
       });
@@ -340,7 +309,8 @@ describe("Admin API", () => {
       const ctx = createAdminContext();
       const caller = createCaller(ctx);
 
-      const feedId = await createTestFeed("https://example.com/retry-test.xml", {
+      const feedId = await createTestFeed({
+        url: "https://example.com/retry-test.xml",
         consecutiveFailures: 10,
         lastError: "Server error",
       });
@@ -367,8 +337,8 @@ describe("Admin API", () => {
       const ctx = createAdminContext();
       const caller = createCaller(ctx);
 
-      const userId1 = await createTestUser("user-a");
-      const userId2 = await createTestUser("user-b");
+      const userId1 = await createTestUser({ emailPrefix: "user-a" });
+      const userId2 = await createTestUser({ emailPrefix: "user-b" });
 
       const result = await caller.admin.listUsers();
 
@@ -392,8 +362,8 @@ describe("Admin API", () => {
       const ctx = createAdminContext();
       const caller = createCaller(ctx);
 
-      await createTestUser("findme-unique");
-      await createTestUser("other-user");
+      await createTestUser({ emailPrefix: "findme-unique" });
+      await createTestUser({ emailPrefix: "other-user" });
 
       const result = await caller.admin.listUsers({ search: "findme-unique" });
 
@@ -405,7 +375,7 @@ describe("Admin API", () => {
       const ctx = createAdminContext();
       const caller = createCaller(ctx);
 
-      const userId = await createTestUser("active-user");
+      const userId = await createTestUser({ emailPrefix: "active-user" });
 
       const activeTime = new Date("2026-03-15T12:00:00Z");
       await db.update(users).set({ lastActiveAt: activeTime }).where(eq(users.id, userId));
@@ -424,7 +394,7 @@ describe("Admin API", () => {
       const ctx = createAdminContext();
       const caller = createCaller(ctx);
 
-      const userId = await createTestUser("retained-user");
+      const userId = await createTestUser({ emailPrefix: "retained-user" });
       const activeTime = new Date("2026-02-01T09:00:00Z");
       await db.update(users).set({ lastActiveAt: activeTime }).where(eq(users.id, userId));
 
@@ -450,7 +420,7 @@ describe("Admin API", () => {
       const ctx = createAdminContext();
       const caller = createCaller(ctx);
 
-      const userId = await createTestUser("token-user");
+      const userId = await createTestUser({ emailPrefix: "token-user" });
 
       // Session activity and token use are independent signals.
       const sessionTime = new Date("2026-04-01T00:00:00Z");
@@ -481,7 +451,7 @@ describe("Admin API", () => {
       const ctx = createAdminContext();
       const caller = createCaller(ctx);
 
-      const userId = await createTestUser("greader-user");
+      const userId = await createTestUser({ emailPrefix: "greader-user" });
 
       // No full-access session activity: users.last_active_at stays NULL.
       const scopedActiveTime = new Date("2026-05-25T00:00:00Z");
@@ -508,7 +478,7 @@ describe("Admin API", () => {
       const ctx = createAdminContext();
       const caller = createCaller(ctx);
 
-      const userId = await createTestUser("browser-only-user");
+      const userId = await createTestUser({ emailPrefix: "browser-only-user" });
       await db.insert(sessions).values({
         id: generateUuidv7(),
         userId,
@@ -528,7 +498,7 @@ describe("Admin API", () => {
       const ctx = createAdminContext();
       const caller = createCaller(ctx);
 
-      await createTestUser("no-token-user");
+      await createTestUser({ emailPrefix: "no-token-user" });
 
       const result = await caller.admin.listUsers({ search: "no-token-user" });
 
@@ -540,9 +510,9 @@ describe("Admin API", () => {
       const ctx = createAdminContext();
       const caller = createCaller(ctx);
 
-      const idNever = await createTestUser("sort-never");
-      const idOld = await createTestUser("sort-old");
-      const idRecent = await createTestUser("sort-recent");
+      const idNever = await createTestUser({ emailPrefix: "sort-never" });
+      const idOld = await createTestUser({ emailPrefix: "sort-old" });
+      const idRecent = await createTestUser({ emailPrefix: "sort-recent" });
 
       await db
         .update(users)
@@ -566,8 +536,8 @@ describe("Admin API", () => {
 
       // Emails are prefixed with the UUIDv7 id, so create then rewrite them to
       // control alphabetical order independently of creation order.
-      const id1 = await createTestUser("email-sort");
-      const id2 = await createTestUser("email-sort");
+      const id1 = await createTestUser({ emailPrefix: "email-sort" });
+      const id2 = await createTestUser({ emailPrefix: "email-sort" });
       await db.update(users).set({ email: "zzz-emailsort@test.com" }).where(eq(users.id, id1));
       await db.update(users).set({ email: "aaa-emailsort@test.com" }).where(eq(users.id, id2));
 
@@ -582,7 +552,7 @@ describe("Admin API", () => {
 
       const ids: string[] = [];
       for (let i = 0; i < 3; i++) {
-        const id = await createTestUser("activity-page");
+        const id = await createTestUser({ emailPrefix: "activity-page" });
         ids.push(id);
         await db
           .update(users)
@@ -615,9 +585,9 @@ describe("Admin API", () => {
       const caller = createCaller(ctx);
 
       // Create enough users to paginate
-      await createTestUser("page-a");
-      await createTestUser("page-b");
-      await createTestUser("page-c");
+      await createTestUser({ emailPrefix: "page-a" });
+      await createTestUser({ emailPrefix: "page-b" });
+      await createTestUser({ emailPrefix: "page-c" });
 
       const page1 = await caller.admin.listUsers({ limit: 2 });
 

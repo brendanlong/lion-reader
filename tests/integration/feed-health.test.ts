@@ -14,7 +14,7 @@ import { db } from "../../src/server/db";
 import { jobs, feeds, subscriptions, users } from "../../src/server/db/schema";
 import { getFeedFetchHealthSnapshot } from "../../src/server/feed/health";
 import { handleMonitorFeedHealth } from "../../src/server/jobs/handlers";
-import { generateUuidv7 } from "../../src/lib/uuidv7";
+import { createTestFeed, createTestSubscription, createTestUser } from "./helpers";
 
 async function cleanup() {
   await db.delete(jobs);
@@ -24,15 +24,7 @@ async function cleanup() {
 }
 
 async function createUser(): Promise<string> {
-  const userId = generateUuidv7();
-  await db.insert(users).values({
-    id: userId,
-    email: `feed-health-${userId}@example.com`,
-    passwordHash: "hash",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-  return userId;
+  return createTestUser({ emailPrefix: "feed-health" });
 }
 
 async function createSubscribedFeed(
@@ -44,25 +36,13 @@ async function createSubscribedFeed(
     unsubscribed?: boolean;
   } = {}
 ): Promise<string> {
-  const feedId = generateUuidv7();
-  await db.insert(feeds).values({
-    id: feedId,
-    type: "web",
-    url: `https://example.com/${feedId}.xml`,
+  const feedId = await createTestFeed({
     lastFetchedAt: options.lastFetchedAt ?? null,
     lastError: options.lastError ?? null,
     consecutiveFailures: options.consecutiveFailures ?? 0,
-    createdAt: new Date(),
-    updatedAt: new Date(),
   });
-  await db.insert(subscriptions).values({
-    id: generateUuidv7(),
-    userId,
-    feedId,
-    subscribedAt: new Date(),
+  await createTestSubscription(userId, feedId, {
     unsubscribedAt: options.unsubscribed ? new Date() : null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
   });
   return feedId;
 }

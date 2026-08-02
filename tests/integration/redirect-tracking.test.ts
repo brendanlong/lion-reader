@@ -19,6 +19,7 @@ import {
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { REDIRECT_WAIT_PERIOD_MS } from "../../src/server/feed/redirect-utils";
 import { ensureFeedJob, getJobPayload, claimFeedJob } from "../../src/server/jobs/queue";
+import { createTestEntry, createTestFeed, createTestSubscription, createTestUser } from "./helpers";
 
 describe("Redirect Tracking", () => {
   // Clean up before each test
@@ -42,86 +43,11 @@ describe("Redirect Tracking", () => {
   });
 
   /**
-   * Helper to create a test user
-   */
-  async function createTestUser(): Promise<string> {
-    const userId = generateUuidv7();
-    await db.insert(users).values({
-      id: userId,
-      email: `test-${userId}@example.com`,
-      passwordHash: "hash",
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
-    return userId;
-  }
-
-  /**
-   * Helper to create a test feed
-   */
-  async function createTestFeed(
-    overrides: Partial<typeof feeds.$inferInsert> = {}
-  ): Promise<string> {
-    const feedId = generateUuidv7();
-    const now = new Date();
-    await db.insert(feeds).values({
-      id: feedId,
-      type: "web",
-      url: `https://example.com/feed-${feedId}.xml`,
-      createdAt: now,
-      updatedAt: now,
-      ...overrides,
-    });
-    return feedId;
-  }
-
-  /**
    * Helper to get a feed by ID
    */
   async function getFeed(feedId: string) {
     const [feed] = await db.select().from(feeds).where(eq(feeds.id, feedId)).limit(1);
     return feed;
-  }
-
-  /**
-   * Helper to create an active subscription
-   */
-  async function createSubscription(userId: string, feedId: string): Promise<string> {
-    const subscriptionId = generateUuidv7();
-    const now = new Date();
-    await db.insert(subscriptions).values({
-      id: subscriptionId,
-      userId,
-      feedId,
-      subscribedAt: now,
-      createdAt: now,
-      updatedAt: now,
-    });
-    return subscriptionId;
-  }
-
-  /**
-   * Helper to create an entry with a user_entries row. The BEFORE INSERT
-   * trigger stamps user_entries.subscription_id from the user's subscription
-   * to the entry's feed.
-   */
-  async function createEntryWithUserEntry(feedId: string, userId: string): Promise<string> {
-    const entryId = generateUuidv7();
-    const now = new Date();
-    await db.insert(entries).values({
-      id: entryId,
-      feedId,
-      type: "web",
-      guid: `guid-${entryId}`,
-      title: `Entry ${entryId}`,
-      contentHash: `hash-${entryId}`,
-      fetchedAt: now,
-      lastSeenAt: now,
-      createdAt: now,
-      updatedAt: now,
-    });
-    await db.insert(userEntries).values({ userId, entryId });
-    return entryId;
   }
 
   /**
@@ -279,10 +205,10 @@ describe("Redirect Tracking", () => {
       // Create old feed (being redirected)
       const oldFeedUrl = "https://oldsite.com/feed.xml";
       const oldFeedId = await createTestFeed({ url: oldFeedUrl });
-      const oldSubId = await createSubscription(userId, oldFeedId);
+      const oldSubId = await createTestSubscription(userId, oldFeedId);
       await ensureFeedJob(oldFeedId);
       // An old-feed entry the user can see, attributed to the old subscription.
-      const oldEntryId = await createEntryWithUserEntry(oldFeedId, userId);
+      const oldEntryId = await createTestEntry(oldFeedId, { userIds: [userId] });
       expect(await getStampedSubscriptionId(userId, oldEntryId)).toBe(oldSubId);
 
       // Create new feed (redirect destination)
@@ -366,11 +292,11 @@ describe("Redirect Tracking", () => {
       const newFeedId = await createTestFeed({ url: "https://newsite.com/feed.xml" });
 
       // User already subscribed to new feed
-      const existingSubId = await createSubscription(userId, newFeedId);
+      const existingSubId = await createTestSubscription(userId, newFeedId);
 
       // User also subscribed to old feed, with a visible old-feed entry
-      const oldSubId = await createSubscription(userId, oldFeedId);
-      const oldEntryId = await createEntryWithUserEntry(oldFeedId, userId);
+      const oldSubId = await createTestSubscription(userId, oldFeedId);
+      const oldEntryId = await createTestEntry(oldFeedId, { userIds: [userId] });
       expect(await getStampedSubscriptionId(userId, oldEntryId)).toBe(oldSubId);
 
       const now = new Date();
@@ -424,8 +350,8 @@ describe("Redirect Tracking", () => {
         updatedAt: unsubscribedAt,
       });
       // User subscribed to old feed, with a visible old-feed entry
-      const oldSubId = await createSubscription(userId, oldFeedId);
-      const oldEntryId = await createEntryWithUserEntry(oldFeedId, userId);
+      const oldSubId = await createTestSubscription(userId, oldFeedId);
+      const oldEntryId = await createTestEntry(oldFeedId, { userIds: [userId] });
       expect(await getStampedSubscriptionId(userId, oldEntryId)).toBe(oldSubId);
 
       // Simulate migration: reactivate new sub, unsubscribe old, re-stamp

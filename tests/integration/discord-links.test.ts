@@ -17,18 +17,7 @@ import {
   resolveDiscordApiTokenUserId,
   unlinkDiscordApiToken,
 } from "../../src/server/services/discord-links";
-
-async function createTestUser(emailPrefix = "discord-link"): Promise<string> {
-  const userId = generateUuidv7();
-  await db.insert(users).values({
-    id: userId,
-    email: `${emailPrefix}-${userId}@test.com`,
-    passwordHash: "test-hash",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-  return userId;
-}
+import { createTestUser } from "./helpers";
 
 // Discord snowflakes are numeric strings; make them unique per test.
 function makeDiscordId(): string {
@@ -38,7 +27,7 @@ function makeDiscordId(): string {
 const createdUserIds: string[] = [];
 
 async function createUser(): Promise<string> {
-  const userId = await createTestUser();
+  const userId = await createTestUser({ emailPrefix: "discord-link" });
   createdUserIds.push(userId);
   return userId;
 }

@@ -18,124 +18,37 @@ import {
 } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
-import type { Context } from "../../src/server/trpc/context";
 import {
   markAllEntriesRead,
   markEntriesRead,
   listEntries,
 } from "../../src/server/services/entries";
+import {
+  createAuthContext,
+  createTestSubscription,
+  createTestUser,
+  createTestEntry as createSharedTestEntry,
+  createTestFeed as createSharedTestFeed,
+} from "./helpers";
 
 // ============================================================================
 // Test Helpers
 // ============================================================================
 
 /**
- * Creates a test user and returns their ID.
- */
-async function createTestUser(emailPrefix: string = "user"): Promise<string> {
-  const userId = generateUuidv7();
-  await db.insert(users).values({
-    id: userId,
-    email: `${emailPrefix}-${userId}@test.com`,
-    passwordHash: "test-hash",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-  return userId;
-}
-
-/**
- * Creates an authenticated context for a test user.
- */
-function createAuthContext(userId: string): Context {
-  const now = new Date();
-  return {
-    db,
-    session: {
-      session: {
-        id: generateUuidv7(),
-        userId,
-        tokenHash: "test-hash",
-        scopes: null,
-        userAgent: null,
-        ipAddress: null,
-        createdAt: now,
-        expiresAt: new Date(Date.now() + 3600000),
-        revokedAt: null,
-        lastActiveAt: now,
-      },
-      user: {
-        id: userId,
-        email: `${userId}@test.com`,
-        emailVerifiedAt: null,
-        tosAgreedAt: new Date(),
-        privacyPolicyAgreedAt: new Date(),
-        notEuAgreedAt: new Date(),
-        passwordHash: "test-hash",
-        inviteId: null,
-        showSpam: false,
-        lastActiveAt: null,
-        groqApiKey: null,
-        anthropicApiKey: null,
-        cerebrasApiKey: null,
-        summarizationModel: null,
-        summarizationMaxWords: null,
-        summarizationPrompt: null,
-        narrationModel: null,
-        savedUnreadCount: 0,
-        starredUnreadCount: 0,
-        createdAt: now,
-        updatedAt: now,
-      },
-      hasGroqApiKey: false,
-      hasAnthropicApiKey: false,
-      hasCerebrasApiKey: false,
-    },
-    apiToken: null,
-    authType: "session",
-    scopes: [],
-    sessionToken: "test-token",
-    headers: new Headers(),
-  };
-}
-
-/**
- * Creates a test feed.
+ * Wraps the shared feed factory: every feed here stands in for one the fetcher
+ * has already pulled, so it carries the fetch timestamps the shared factory
+ * (which builds a never-fetched feed) leaves null.
  */
 async function createTestFeed(url: string, title: string = "Test Feed"): Promise<string> {
-  const feedId = generateUuidv7();
   const now = new Date();
-  await db.insert(feeds).values({
-    id: feedId,
-    type: "web",
-    url,
-    title,
-    lastFetchedAt: now,
-    lastEntriesUpdatedAt: now,
-    createdAt: now,
-    updatedAt: now,
-  });
-  return feedId;
+  return createSharedTestFeed({ url, title, lastFetchedAt: now, lastEntriesUpdatedAt: now });
 }
 
 /**
- * Creates a test subscription.
- */
-async function createTestSubscription(userId: string, feedId: string): Promise<string> {
-  const subscriptionId = generateUuidv7();
-  await db.insert(subscriptions).values({
-    id: subscriptionId,
-    userId,
-    feedId,
-    subscribedAt: new Date(),
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-  return subscriptionId;
-}
-
-/**
- * Creates a test entry.
+ * Wraps the shared entry factory: the search tests need every entry to have
+ * content (so search_vector is populated), and the spam tests need `isSpam` to
+ * pick the entry type for them.
  */
 async function createTestEntry(
   feedId: string,
@@ -151,17 +64,13 @@ async function createTestEntry(
 ): Promise<string> {
   const entryId = generateUuidv7();
   const now = new Date();
-  const guid = options.guid ?? `guid-${entryId}`;
-  // is_spam is only permitted on email entries (entries_spam_only_email);
-  // last_seen_at is only permitted on fetched/web entries
-  // (entries_last_seen_only_fetched).
+  // is_spam is only permitted on email entries (entries_spam_only_email).
   const type = options.type ?? (options.isSpam ? "email" : "web");
 
-  await db.insert(entries).values({
+  return createSharedTestEntry(feedId, {
     id: entryId,
-    feedId,
     type,
-    guid,
+    guid: options.guid ?? `guid-${entryId}`,
     title: options.title ?? `Entry ${entryId}`,
     // `=== undefined` (not `??`) so an explicit `null` stays null, letting a test
     // exercise the search_vector fallback to content_original (#1249).
@@ -170,16 +79,13 @@ async function createTestEntry(
         ? `Content for ${options.title ?? entryId}`
         : options.contentCleaned,
     contentOriginal: options.contentOriginal,
-    contentHash: `hash-${entryId}`,
     fetchedAt: options.publishedAt ?? now,
     publishedAt: options.publishedAt ?? now,
-    lastSeenAt: type === "web" ? now : null,
+    lastSeenAt: now,
     isSpam: options.isSpam ?? false,
     createdAt: now,
     updatedAt: now,
   });
-
-  return entryId;
 }
 
 /**
@@ -240,7 +146,7 @@ describe("Entries", () => {
       await createUserEntry(userId, entry1Id);
       await createUserEntry(userId, entry2Id);
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const result = await caller.entries.list({});
@@ -262,7 +168,7 @@ describe("Entries", () => {
       await createUserEntry(userId, orphanedId);
       await createUserEntry(userId, orphanedStarredId, { starred: true });
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const result = await caller.entries.list({});
@@ -281,7 +187,7 @@ describe("Entries", () => {
       await createUserEntry(userId, unreadId, { read: false });
       await createUserEntry(userId, readId, { read: true });
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const result = await caller.entries.list({ unreadOnly: true });
@@ -302,7 +208,7 @@ describe("Entries", () => {
       await createUserEntry(userId, starredId, { starred: true });
       await createUserEntry(userId, unstarredId, { starred: false });
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const result = await caller.entries.list({ starredOnly: true });
@@ -542,7 +448,7 @@ describe("Entries", () => {
       });
       await createUserEntry(userId, entryId);
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const result = await caller.entries.get({ id: entryId });
@@ -554,7 +460,7 @@ describe("Entries", () => {
 
     it("throws error for entry that doesn't exist", async () => {
       const userId = await createTestUser();
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const nonExistentId = generateUuidv7();
@@ -562,8 +468,8 @@ describe("Entries", () => {
     });
 
     it("throws error for entry user doesn't have access to", async () => {
-      const user1Id = await createTestUser("user1");
-      const user2Id = await createTestUser("user2");
+      const user1Id = await createTestUser({ emailPrefix: "user1" });
+      const user2Id = await createTestUser({ emailPrefix: "user2" });
       const feedId = await createTestFeed("https://example.com/feed.xml");
       await createTestSubscription(user1Id, feedId);
 
@@ -571,7 +477,7 @@ describe("Entries", () => {
       await createUserEntry(user1Id, entryId);
 
       // User 2 tries to access User 1's entry
-      const ctx2 = createAuthContext(user2Id);
+      const ctx2 = await createAuthContext(user2Id);
       const caller2 = createCaller(ctx2);
 
       await expect(caller2.entries.get({ id: entryId })).rejects.toThrow();
@@ -602,7 +508,7 @@ describe("Entries", () => {
       await createUserEntry(userId, entry2Id);
       await createUserEntry(userId, entry3Id);
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const result = await caller.entries.list({ query: "PostgreSQL" });
@@ -629,7 +535,7 @@ describe("Entries", () => {
       await createUserEntry(userId, entry1Id);
       await createUserEntry(userId, entry2Id);
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const result = await caller.entries.list({
@@ -662,7 +568,7 @@ describe("Entries", () => {
       await createUserEntry(userId, matchId);
       await createUserEntry(userId, otherId);
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const result = await caller.entries.list({ query: "photosynthesis" });
@@ -693,7 +599,7 @@ describe("Entries", () => {
       await createUserEntry(userId, entry2Id);
       await createUserEntry(userId, entry3Id);
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       // Should match both entry1 (title) and entry2 (content)
@@ -721,7 +627,7 @@ describe("Entries", () => {
       await createUserEntry(userId, unreadMatch, { read: false });
       await createUserEntry(userId, readMatch, { read: true });
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const result = await caller.entries.list({ query: "React", unreadOnly: true });
@@ -739,7 +645,7 @@ describe("Entries", () => {
       await createTestEntry(feedId, { title: "JavaScript Basics" });
       await createUserEntry(userId, await createTestEntry(feedId, { title: "Python Tutorial" }));
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const result = await caller.entries.list({ query: "nonexistentquery12345" });
@@ -760,7 +666,7 @@ describe("Entries", () => {
       await createUserEntry(userId, entry1Id, { read: false });
       await createUserEntry(userId, entry2Id, { read: false });
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const result = await caller.entries.markRead({
@@ -785,7 +691,7 @@ describe("Entries", () => {
       const entryId = await createTestEntry(feedId, { title: "Read Entry" });
       await createUserEntry(userId, entryId, { read: true });
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const result = await caller.entries.markRead({ entries: [{ id: entryId }], read: false });
@@ -816,7 +722,7 @@ describe("Entries", () => {
       await createUserEntry(userId, entry2Id, { read: false });
       await createUserEntry(userId, entry3Id, { read: false });
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       // Mark 2 as read
@@ -848,7 +754,7 @@ describe("Entries", () => {
       const entryId = await createTestEntry(feedId, { title: "Entry to star" });
       await createUserEntry(userId, entryId, { starred: false });
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const result = await caller.entries.setStarred({ id: entryId, starred: true });
@@ -874,7 +780,7 @@ describe("Entries", () => {
       const entryId = await createTestEntry(feedId, { title: "Starred entry" });
       await createUserEntry(userId, entryId, { starred: true });
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const result = await caller.entries.setStarred({ id: entryId, starred: false });
@@ -893,8 +799,8 @@ describe("Entries", () => {
     });
 
     it("throws error when starring entry user doesn't have access to", async () => {
-      const user1Id = await createTestUser("user1");
-      const user2Id = await createTestUser("user2");
+      const user1Id = await createTestUser({ emailPrefix: "user1" });
+      const user2Id = await createTestUser({ emailPrefix: "user2" });
       const feedId = await createTestFeed("https://example.com/feed.xml");
       await createTestSubscription(user1Id, feedId);
 
@@ -902,7 +808,7 @@ describe("Entries", () => {
       await createUserEntry(user1Id, entryId);
 
       // User 2 tries to star User 1's entry
-      const ctx2 = createAuthContext(user2Id);
+      const ctx2 = await createAuthContext(user2Id);
       const caller2 = createCaller(ctx2);
 
       await expect(caller2.entries.setStarred({ id: entryId, starred: true })).rejects.toThrow();
@@ -923,7 +829,7 @@ describe("Entries", () => {
       await createUserEntry(userId, entry2Id, { read: false });
       await createUserEntry(userId, entry3Id, { read: true });
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const result = await caller.entries.count({});
@@ -944,7 +850,7 @@ describe("Entries", () => {
       await createUserEntry(userId, unread2Id, { read: false });
       await createUserEntry(userId, readId, { read: true });
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const result = await caller.entries.count({ unreadOnly: true });
@@ -968,7 +874,7 @@ describe("Entries", () => {
       await createUserEntry(userId, entryA, { read: false });
       await createUserEntry(userId, entryB, { read: false });
 
-      const caller = createCaller(createAuthContext(userId));
+      const caller = createCaller(await createAuthContext(userId));
       const result = await caller.entries.count({});
 
       // Two distinct unread entries, not three.
@@ -980,8 +886,8 @@ describe("Entries", () => {
     it("scopes the tag filter to the caller's own tags", async () => {
       // The service is the documented reuse layer, so tag ownership must be
       // enforced here, not just by router pre-validation (issue #956).
-      const victimId = await createTestUser("victim");
-      const attackerId = await createTestUser("attacker");
+      const victimId = await createTestUser({ emailPrefix: "victim" });
+      const attackerId = await createTestUser({ emailPrefix: "attacker" });
 
       const feedId = await createTestFeed("https://victim-feed.com/rss");
       const subscriptionId = await createTestSubscription(victimId, feedId);
@@ -1054,7 +960,7 @@ describe("Entries", () => {
       const entryId = await createTestEntry(feedId, { title: "Entry" });
       await createUserEntry(userId, entryId, { read: false, readChangedAt: oldTimestamp });
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       // Update with newer timestamp should succeed
@@ -1087,7 +993,7 @@ describe("Entries", () => {
       const entryId = await createTestEntry(feedId, { title: "Entry" });
       await createUserEntry(userId, entryId, { read: true, readChangedAt: newerTimestamp });
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       // Update with older timestamp should be rejected (no-op)
@@ -1117,7 +1023,7 @@ describe("Entries", () => {
       const entryId = await createTestEntry(feedId, { title: "Entry" });
       await createUserEntry(userId, entryId, { read: true, readChangedAt: timestamp });
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       // Same timestamp, different value - should succeed with >= comparison
@@ -1152,7 +1058,7 @@ describe("Entries", () => {
         starredChangedAt: initialTimestamp,
       });
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       // Update read state
@@ -1191,7 +1097,7 @@ describe("Entries", () => {
       // Entry 2 has newer timestamp - should NOT be updated
       await createUserEntry(userId, entry2Id, { read: true, readChangedAt: newerTimestamp });
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       const result = await caller.entries.markRead({
@@ -1230,7 +1136,7 @@ describe("Entries", () => {
       const entryId = await createTestEntry(feedId, { title: "Entry" });
       await createUserEntry(userId, entryId, { starred: false, starredChangedAt: oldTimestamp });
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       // Star with newer timestamp should succeed
@@ -1272,7 +1178,7 @@ describe("Entries", () => {
       const entryId = await createTestEntry(feedId, { title: "Entry" });
       await createUserEntry(userId, entryId, { read: false, readChangedAt: time0 });
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       // Step 1: Mark read at time 1
@@ -1328,7 +1234,7 @@ describe("Entries", () => {
       const entryId = await createTestEntry(feedId, { title: "Entry" });
       await createUserEntry(userId, entryId, { starred: false, starredChangedAt: time0 });
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       // Step 1: Star at time 1
@@ -1384,7 +1290,7 @@ describe("Entries", () => {
       const entryId = await createTestEntry(feedId, { title: "Entry" });
       await createUserEntry(userId, entryId, { starred: true, starredChangedAt: newerTimestamp });
 
-      const ctx = createAuthContext(userId);
+      const ctx = await createAuthContext(userId);
       const caller = createCaller(ctx);
 
       // Unstar with older timestamp should be rejected

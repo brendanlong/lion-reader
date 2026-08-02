@@ -28,9 +28,14 @@ import {
 } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
-import type { Context } from "../../src/server/trpc/context";
 import { getUserEventsChannel } from "../../src/server/redis/pubsub";
 import { expectNoMessage, subscribeAndDrain, waitForMessage } from "../utils/pubsub";
+import {
+  createAuthContext,
+  createTestFeed,
+  createTestSubscription,
+  createTestUser,
+} from "./helpers";
 
 let subscriber: Redis;
 
@@ -65,99 +70,19 @@ beforeEach(async () => {
 // Test Helpers
 // ============================================================================
 
-async function createTestUser(): Promise<string> {
-  const userId = generateUuidv7();
-  await db.insert(users).values({
-    id: userId,
-    email: `sub-update-${userId}@test.com`,
-    passwordHash: "test-hash",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-  return userId;
-}
-
-function createAuthContext(userId: string): Context {
-  const now = new Date();
-  return {
-    db,
-    session: {
-      session: {
-        id: generateUuidv7(),
-        userId,
-        tokenHash: "test-hash",
-        scopes: null,
-        userAgent: null,
-        ipAddress: null,
-        createdAt: now,
-        expiresAt: new Date(Date.now() + 3600000),
-        revokedAt: null,
-        lastActiveAt: now,
-      },
-      user: {
-        id: userId,
-        email: `${userId}@test.com`,
-        emailVerifiedAt: null,
-        tosAgreedAt: new Date(),
-        privacyPolicyAgreedAt: new Date(),
-        notEuAgreedAt: new Date(),
-        passwordHash: "test-hash",
-        inviteId: null,
-        showSpam: false,
-        lastActiveAt: null,
-        groqApiKey: null,
-        anthropicApiKey: null,
-        cerebrasApiKey: null,
-        summarizationModel: null,
-        summarizationMaxWords: null,
-        summarizationPrompt: null,
-        narrationModel: null,
-        savedUnreadCount: 0,
-        starredUnreadCount: 0,
-        createdAt: now,
-        updatedAt: now,
-      },
-      hasGroqApiKey: false,
-      hasAnthropicApiKey: false,
-      hasCerebrasApiKey: false,
-    },
-    apiToken: null,
-    authType: "session",
-    scopes: [],
-    sessionToken: "test-token",
-    headers: new Headers(),
-  };
-}
-
 /**
- * Seeds a feed + active subscription; returns the subscription ID.
+ * Seeds a feed + active subscription; returns the subscription ID. Every test
+ * here needs both, and none cares about the feed itself.
  */
-async function createTestSubscription(
+async function createSubscribedFeed(
   userId: string,
   options: { customTitle?: string | null; fetchFullContent?: boolean } = {}
 ): Promise<string> {
-  const now = new Date();
-  const feedId = generateUuidv7();
-  await db.insert(feeds).values({
-    id: feedId,
-    type: "web",
-    url: `https://example.com/${feedId}`,
-    title: "Test Feed",
-    createdAt: now,
-    updatedAt: now,
-  });
-  const subscriptionId = generateUuidv7();
-  await db.insert(subscriptions).values({
-    id: subscriptionId,
-    userId,
-    feedId,
+  const feedId = await createTestFeed();
+  return createTestSubscription(userId, feedId, {
     customTitle: options.customTitle ?? null,
     fetchFullContent: options.fetchFullContent ?? false,
-    subscribedAt: now,
-    createdAt: now,
-    updatedAt: now,
   });
-  return subscriptionId;
 }
 
 async function createTestTag(userId: string, name: string): Promise<string> {
@@ -187,8 +112,8 @@ async function getSubscriptionUpdatedAt(subscriptionId: string): Promise<Date> {
 describe("subscriptions.update meaningful-change gating (issue #1160)", () => {
   it("publishes subscription_updated and advances updated_at on a real title change", async () => {
     const userId = await createTestUser();
-    const subscriptionId = await createTestSubscription(userId, { customTitle: "Old Title" });
-    const caller = createCaller(createAuthContext(userId));
+    const subscriptionId = await createSubscribedFeed(userId, { customTitle: "Old Title" });
+    const caller = createCaller(await createAuthContext(userId));
     const before = await getSubscriptionUpdatedAt(subscriptionId);
 
     const channel = getUserEventsChannel(userId);
@@ -211,11 +136,11 @@ describe("subscriptions.update meaningful-change gating (issue #1160)", () => {
 
   it("does not publish or advance updated_at when re-saving identical settings", async () => {
     const userId = await createTestUser();
-    const subscriptionId = await createTestSubscription(userId, {
+    const subscriptionId = await createSubscribedFeed(userId, {
       customTitle: "Same Title",
       fetchFullContent: true,
     });
-    const caller = createCaller(createAuthContext(userId));
+    const caller = createCaller(await createAuthContext(userId));
     const before = await getSubscriptionUpdatedAt(subscriptionId);
 
     const channel = getUserEventsChannel(userId);
@@ -239,8 +164,8 @@ describe("subscriptions.update meaningful-change gating (issue #1160)", () => {
 
   it("treats a NULL custom title re-save as a no-op (IS DISTINCT FROM semantics)", async () => {
     const userId = await createTestUser();
-    const subscriptionId = await createTestSubscription(userId, { customTitle: null });
-    const caller = createCaller(createAuthContext(userId));
+    const subscriptionId = await createSubscribedFeed(userId, { customTitle: null });
+    const caller = createCaller(await createAuthContext(userId));
     const before = await getSubscriptionUpdatedAt(subscriptionId);
 
     const channel = getUserEventsChannel(userId);
@@ -256,8 +181,8 @@ describe("subscriptions.update meaningful-change gating (issue #1160)", () => {
 
   it("does not publish or advance updated_at when no fields are provided", async () => {
     const userId = await createTestUser();
-    const subscriptionId = await createTestSubscription(userId);
-    const caller = createCaller(createAuthContext(userId));
+    const subscriptionId = await createSubscribedFeed(userId);
+    const caller = createCaller(await createAuthContext(userId));
     const before = await getSubscriptionUpdatedAt(subscriptionId);
 
     const channel = getUserEventsChannel(userId);
@@ -273,11 +198,11 @@ describe("subscriptions.update meaningful-change gating (issue #1160)", () => {
 
   it("publishes when only fetchFullContent flips alongside an identical title", async () => {
     const userId = await createTestUser();
-    const subscriptionId = await createTestSubscription(userId, {
+    const subscriptionId = await createSubscribedFeed(userId, {
       customTitle: "Same Title",
       fetchFullContent: false,
     });
-    const caller = createCaller(createAuthContext(userId));
+    const caller = createCaller(await createAuthContext(userId));
     const before = await getSubscriptionUpdatedAt(subscriptionId);
 
     const channel = getUserEventsChannel(userId);
@@ -302,9 +227,9 @@ describe("subscriptions.update meaningful-change gating (issue #1160)", () => {
 describe("subscriptions.setTags meaningful-change gating (issue #1160)", () => {
   it("publishes and advances updated_at when the tag set actually changes", async () => {
     const userId = await createTestUser();
-    const subscriptionId = await createTestSubscription(userId);
+    const subscriptionId = await createSubscribedFeed(userId);
     const tagId = await createTestTag(userId, "Tech");
-    const caller = createCaller(createAuthContext(userId));
+    const caller = createCaller(await createAuthContext(userId));
     const before = await getSubscriptionUpdatedAt(subscriptionId);
 
     const channel = getUserEventsChannel(userId);
@@ -323,10 +248,10 @@ describe("subscriptions.setTags meaningful-change gating (issue #1160)", () => {
 
   it("does not publish or advance updated_at when re-applying the identical tag set", async () => {
     const userId = await createTestUser();
-    const subscriptionId = await createTestSubscription(userId);
+    const subscriptionId = await createSubscribedFeed(userId);
     const tagA = await createTestTag(userId, "Tech");
     const tagB = await createTestTag(userId, "News");
-    const caller = createCaller(createAuthContext(userId));
+    const caller = createCaller(await createAuthContext(userId));
 
     // Setup mutates through the API, which publishes fire-and-forget — so
     // subscribe first and drain that event rather than racing it (issue #1427).
@@ -354,10 +279,10 @@ describe("subscriptions.setTags meaningful-change gating (issue #1160)", () => {
 
   it("publishes when the tag set partially overlaps the previous one", async () => {
     const userId = await createTestUser();
-    const subscriptionId = await createTestSubscription(userId);
+    const subscriptionId = await createSubscribedFeed(userId);
     const tagA = await createTestTag(userId, "Tech");
     const tagB = await createTestTag(userId, "News");
-    const caller = createCaller(createAuthContext(userId));
+    const caller = createCaller(await createAuthContext(userId));
 
     const channel = getUserEventsChannel(userId);
     await subscribeAndDrain(subscriber, channel, () =>
@@ -377,9 +302,9 @@ describe("subscriptions.setTags meaningful-change gating (issue #1160)", () => {
 
   it("publishes with empty tags when clearing a tagged subscription", async () => {
     const userId = await createTestUser();
-    const subscriptionId = await createTestSubscription(userId);
+    const subscriptionId = await createSubscribedFeed(userId);
     const tagId = await createTestTag(userId, "Tech");
-    const caller = createCaller(createAuthContext(userId));
+    const caller = createCaller(await createAuthContext(userId));
 
     const channel = getUserEventsChannel(userId);
     await subscribeAndDrain(subscriber, channel, () =>
@@ -400,8 +325,8 @@ describe("subscriptions.setTags meaningful-change gating (issue #1160)", () => {
 
   it("does not publish or advance updated_at when clearing an already-untagged subscription", async () => {
     const userId = await createTestUser();
-    const subscriptionId = await createTestSubscription(userId);
-    const caller = createCaller(createAuthContext(userId));
+    const subscriptionId = await createSubscribedFeed(userId);
+    const caller = createCaller(await createAuthContext(userId));
     const before = await getSubscriptionUpdatedAt(subscriptionId);
 
     const channel = getUserEventsChannel(userId);

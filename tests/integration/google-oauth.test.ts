@@ -13,6 +13,7 @@ import { users, sessions, oauthAccounts } from "../../src/server/db/schema";
 import { redis } from "../../src/server/redis";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import * as argon2 from "argon2";
+import { createTestUser } from "./helpers";
 
 // Mock the arctic library to avoid needing real Google credentials
 vi.mock("arctic", () => {
@@ -153,19 +154,11 @@ describe("Google OAuth", () => {
 
   describe("OAuth callback integration", () => {
     // Helper to create a test user
-    async function createTestUser(email: string, withPassword = true) {
-      const userId = generateUuidv7();
-      const passwordHash = withPassword ? await argon2.hash("password123") : null;
-
-      await db.insert(users).values({
-        id: userId,
+    async function createUser(email: string, withPassword = true) {
+      return createTestUser({
         email,
-        passwordHash,
-        createdAt: new Date(),
-        updatedAt: new Date(),
+        passwordHash: withPassword ? await argon2.hash("password123") : null,
       });
-
-      return userId;
     }
 
     // Helper to create OAuth account
@@ -208,7 +201,7 @@ describe("Google OAuth", () => {
 
     it("finds existing OAuth account", async () => {
       // Create existing user and OAuth account
-      const userId = await createTestUser("existing@example.com");
+      const userId = await createUser("existing@example.com");
       await createOAuthAccount(userId, "google-user-123");
 
       // Verify OAuth account exists
@@ -229,7 +222,7 @@ describe("Google OAuth", () => {
 
     it("can link OAuth to existing user with matching email", async () => {
       // Create existing user with email that matches Google user
-      const userId = await createTestUser("test@example.com", true);
+      const userId = await createUser("test@example.com", true);
 
       // Verify user exists
       const user = await db.select().from(users).where(eq(users.id, userId)).limit(1);

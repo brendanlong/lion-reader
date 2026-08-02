@@ -23,6 +23,7 @@ import { db } from "../../src/server/db";
 import { users, oauthAccounts } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { saveArticle } from "../../src/server/services/saved";
+import { createTestUser } from "./helpers";
 
 // A syntactically-valid but non-public Google Docs URL. The plugin's public
 // fetch no-ops (no service account), so this always reaches the private path.
@@ -30,15 +31,9 @@ const PRIVATE_DOC_URL = "https://docs.google.com/document/d/1PrIvAtEdOcIdAbCdEfG
 
 const createdUserIds: string[] = [];
 
-async function createTestUser(): Promise<string> {
-  const userId = generateUuidv7();
-  await db.insert(users).values({
-    id: userId,
-    email: `gdocs-${userId}@test.com`,
-    passwordHash: "test-hash",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
+/** Creates a user and registers it for `afterAll` cleanup. */
+async function createUser(): Promise<string> {
+  const userId = await createTestUser({ emailPrefix: "gdocs" });
   createdUserIds.push(userId);
   return userId;
 }
@@ -65,7 +60,7 @@ afterAll(async () => {
 
 describe("Saving private Google Docs via compat surfaces (issue #1165)", () => {
   it("returns a 401 with a web-app-pointing message when Google is not linked", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
 
     let thrown: unknown;
     try {
@@ -90,7 +85,7 @@ describe("Saving private Google Docs via compat surfaces (issue #1165)", () => {
   });
 
   it("returns a 403 with a web-app-pointing message when Docs scopes are missing", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
     // Linked, but only the base sign-in scopes — no Docs/Drive access.
     await linkGoogleAccount(userId, ["openid", "email", "profile"]);
 
@@ -113,7 +108,7 @@ describe("Saving private Google Docs via compat surfaces (issue #1165)", () => {
   });
 
   it("still throws the machine-readable NEEDS_* codes in interactive mode (web UI contract)", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
 
     // No Google account linked → interactive mode surfaces the code verbatim.
     await expect(

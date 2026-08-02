@@ -11,7 +11,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { McpError, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { db } from "../../src/server/db";
 import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
-import { generateUuidv7 } from "../../src/lib/uuidv7";
+import { createTestEntry, createTestFeed, createTestSubscription, createTestUser } from "./helpers";
 import { registerTools } from "../../src/server/mcp/tools";
 
 let userId: string;
@@ -25,54 +25,17 @@ function tool(name: string) {
 }
 
 beforeAll(async () => {
-  userId = generateUuidv7();
-  otherUserId = generateUuidv7();
-  const feedId = generateUuidv7();
-  const subscriptionId = generateUuidv7();
-  entryId = generateUuidv7();
   const now = new Date();
 
-  for (const id of [userId, otherUserId]) {
-    await db.insert(users).values({
-      id,
-      email: `mcp-tools-${id}@test.com`,
-      passwordHash: "test-hash",
-      createdAt: now,
-      updatedAt: now,
-    });
-  }
-  await db.insert(feeds).values({
-    id: feedId,
-    type: "web",
-    url: `https://example.com/${feedId}.xml`,
+  userId = await createTestUser({ emailPrefix: "mcp-tools" });
+  otherUserId = await createTestUser({ emailPrefix: "mcp-tools" });
+  const feedId = await createTestFeed({
     title: "MCP Tools Test Feed",
     lastFetchedAt: now,
     lastEntriesUpdatedAt: now,
-    createdAt: now,
-    updatedAt: now,
   });
-  await db.insert(subscriptions).values({
-    id: subscriptionId,
-    userId,
-    feedId,
-    subscribedAt: now,
-    createdAt: now,
-    updatedAt: now,
-  });
-  await db.insert(entries).values({
-    id: entryId,
-    feedId,
-    type: "web",
-    guid: `guid-${entryId}`,
-    title: "MCP visible entry",
-    contentHash: `hash-${entryId}`,
-    fetchedAt: now,
-    publishedAt: now,
-    lastSeenAt: now,
-    createdAt: now,
-    updatedAt: now,
-  });
-  await db.insert(userEntries).values({ userId, entryId, read: false, starred: false });
+  await createTestSubscription(userId, feedId);
+  entryId = await createTestEntry(feedId, { title: "MCP visible entry", userIds: [userId] });
 });
 
 afterAll(async () => {

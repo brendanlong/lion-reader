@@ -15,11 +15,16 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import Redis from "ioredis";
 import { db } from "../../src/server/db";
 import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
-import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import { getUserEventsChannel } from "../../src/server/redis/pubsub";
-import type { Context } from "../../src/server/trpc/context";
 import { expectNoMessage, waitForMessage } from "../utils/pubsub";
+import {
+  createAuthContext,
+  createTestEntry,
+  createTestFeed,
+  createTestSubscription,
+  createTestUser,
+} from "./helpers";
 
 let subscriber: Redis;
 
@@ -48,126 +53,30 @@ beforeEach(async () => {
   await db.delete(users);
 });
 
-function createAuthContext(userId: string): Context {
-  const now = new Date();
-  return {
-    db,
-    session: {
-      session: {
-        id: generateUuidv7(),
-        userId,
-        tokenHash: "test-hash",
-        scopes: null,
-        userAgent: null,
-        ipAddress: null,
-        createdAt: now,
-        expiresAt: new Date(Date.now() + 3600000),
-        revokedAt: null,
-        lastActiveAt: now,
-      },
-      user: {
-        id: userId,
-        email: `${userId}@test.com`,
-        emailVerifiedAt: null,
-        tosAgreedAt: new Date(),
-        privacyPolicyAgreedAt: new Date(),
-        notEuAgreedAt: new Date(),
-        passwordHash: "test-hash",
-        inviteId: null,
-        showSpam: false,
-        lastActiveAt: null,
-        groqApiKey: null,
-        anthropicApiKey: null,
-        cerebrasApiKey: null,
-        summarizationModel: null,
-        summarizationMaxWords: null,
-        summarizationPrompt: null,
-        narrationModel: null,
-        savedUnreadCount: 0,
-        starredUnreadCount: 0,
-        createdAt: now,
-        updatedAt: now,
-      },
-      hasGroqApiKey: false,
-      hasAnthropicApiKey: false,
-      hasCerebrasApiKey: false,
-    },
-    apiToken: null,
-    authType: "session",
-    scopes: [],
-    sessionToken: "test-token",
-    headers: new Headers(),
-  };
-}
-
 async function seedUnreadEntries(userId: string, count: number): Promise<string[]> {
   const now = new Date();
-  const feedId = generateUuidv7();
-  await db.insert(feeds).values({
-    id: feedId,
-    type: "web",
-    url: `https://example.com/${feedId}`,
-    title: "Test Feed",
-    lastFetchedAt: now,
-    lastEntriesUpdatedAt: now,
-    createdAt: now,
-    updatedAt: now,
-  });
-  const subscriptionId = generateUuidv7();
-  await db.insert(subscriptions).values({
-    id: subscriptionId,
-    userId,
-    feedId,
-    subscribedAt: now,
-    createdAt: now,
-    updatedAt: now,
-  });
+  const feedId = await createTestFeed({ lastFetchedAt: now, lastEntriesUpdatedAt: now });
+  await createTestSubscription(userId, feedId);
 
   const entryIds: string[] = [];
   for (let i = 0; i < count; i++) {
-    const entryId = generateUuidv7();
-    entryIds.push(entryId);
-    await db.insert(entries).values({
-      id: entryId,
-      feedId,
-      type: "web",
-      guid: `guid-${entryId}`,
-      title: `Entry ${i}`,
-      contentHash: `hash-${entryId}`,
-      fetchedAt: now,
-      publishedAt: now,
-      lastSeenAt: now,
-      createdAt: now,
-      updatedAt: now,
-    });
-    await db.insert(userEntries).values({
-      userId,
-      entryId,
-      read: false,
-      starred: false,
-      updatedAt: now,
-    });
+    entryIds.push(
+      await createTestEntry(feedId, { title: `Entry ${i}`, fetchedAt: now, userIds: [userId] })
+    );
   }
   return entryIds;
 }
 
 describe("entries.markAllRead SSE publishing", () => {
   it("publishes a mark_all_read signal carrying a cursor timestamp and the max marked id", async () => {
-    const userId = generateUuidv7();
-    await db.insert(users).values({
-      id: userId,
-      email: `mark-all-${userId}@test.com`,
-      passwordHash: "test-hash",
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
+    const userId = await createTestUser({ emailPrefix: "mark-all" });
     const entryIds = await seedUnreadEntries(userId, 3);
 
     const channel = getUserEventsChannel(userId);
     await subscriber.subscribe(channel);
     const messagePromise = waitForMessage(subscriber, channel);
 
-    const caller = createCaller(createAuthContext(userId));
+    const caller = createCaller(await createAuthContext(userId));
     const result = await caller.entries.markAllRead({});
     expect(result.count).toBe(3);
 
@@ -183,20 +92,13 @@ describe("entries.markAllRead SSE publishing", () => {
   });
 
   it("publishes no event when nothing was unread", async () => {
-    const userId = generateUuidv7();
-    await db.insert(users).values({
-      id: userId,
-      email: `mark-all-none-${userId}@test.com`,
-      passwordHash: "test-hash",
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
+    const userId = await createTestUser({ emailPrefix: "mark-all-none" });
 
     const channel = getUserEventsChannel(userId);
     await subscriber.subscribe(channel);
 
     await expectNoMessage(subscriber, channel, async () => {
-      const caller = createCaller(createAuthContext(userId));
+      const caller = createCaller(await createAuthContext(userId));
       const result = await caller.entries.markAllRead({});
       expect(result.count).toBe(0);
     });

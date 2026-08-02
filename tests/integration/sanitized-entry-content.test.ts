@@ -13,91 +13,23 @@ import { db } from "../../src/server/db";
 import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
-import type { Context } from "../../src/server/trpc/context";
 import * as entriesService from "../../src/server/services/entries";
-
-function createAuthContext(userId: string): Context {
-  const now = new Date();
-  return {
-    db,
-    session: {
-      session: {
-        id: generateUuidv7(),
-        userId,
-        tokenHash: "test-hash",
-        scopes: null,
-        userAgent: null,
-        ipAddress: null,
-        createdAt: now,
-        expiresAt: new Date(Date.now() + 3600000),
-        revokedAt: null,
-        lastActiveAt: now,
-      },
-      user: {
-        id: userId,
-        email: `${userId}@test.com`,
-        emailVerifiedAt: null,
-        tosAgreedAt: now,
-        privacyPolicyAgreedAt: now,
-        notEuAgreedAt: now,
-        passwordHash: "test-hash",
-        inviteId: null,
-        showSpam: false,
-        lastActiveAt: null,
-        groqApiKey: null,
-        anthropicApiKey: null,
-        cerebrasApiKey: null,
-        summarizationModel: null,
-        summarizationMaxWords: null,
-        summarizationPrompt: null,
-        narrationModel: null,
-        savedUnreadCount: 0,
-        starredUnreadCount: 0,
-        createdAt: now,
-        updatedAt: now,
-      },
-      hasGroqApiKey: false,
-      hasAnthropicApiKey: false,
-      hasCerebrasApiKey: false,
-    },
-    apiToken: null,
-    authType: "session",
-    scopes: [],
-    sessionToken: "test-token",
-    headers: new Headers(),
-  };
-}
+import {
+  createAuthContext,
+  createTestFeed,
+  createTestSubscription,
+  createTestUser,
+} from "./helpers";
 
 async function seedSubscribedUser(): Promise<{ userId: string; feedId: string }> {
-  const userId = generateUuidv7();
-  const feedId = generateUuidv7();
   const now = new Date();
-  await db.insert(users).values({
-    id: userId,
-    email: `user-${userId}@test.com`,
-    passwordHash: "test-hash",
-    createdAt: now,
-    updatedAt: now,
-  });
-  await db.insert(feeds).values({
-    id: feedId,
-    type: "web",
-    url: `https://example.com/${feedId}.xml`,
+  const userId = await createTestUser();
+  const feedId = await createTestFeed({
     title: "Test Feed",
     lastFetchedAt: now,
     lastEntriesUpdatedAt: now,
-    createdAt: now,
-    updatedAt: now,
   });
-  const subscriptionId = generateUuidv7();
-  await db.insert(subscriptions).values({
-    id: subscriptionId,
-    userId,
-    feedId,
-    subscribedAt: now,
-    createdAt: now,
-    updatedAt: now,
-  });
+  await createTestSubscription(userId, feedId);
   return { userId, feedId };
 }
 
@@ -145,7 +77,7 @@ describe("entries.get sanitized content", () => {
     });
     await makeEntryVisible(userId, entryId);
 
-    const caller = createCaller(createAuthContext(userId));
+    const caller = createCaller(await createAuthContext(userId));
     const { entry } = await caller.entries.get({ id: entryId });
 
     expect(entry.contentCleaned).toContain("hello");
@@ -175,7 +107,7 @@ describe("entries.get sanitized content", () => {
     });
     await makeEntryVisible(userId, entryId);
 
-    const caller = createCaller(createAuthContext(userId));
+    const caller = createCaller(await createAuthContext(userId));
     const { entry } = await caller.entries.get({ id: entryId });
     expect(entry.contentCleaned).toContain("hello");
     expect(entry.fullContentOriginal).toBeNull();
@@ -209,7 +141,7 @@ describe("entries.get sanitized content", () => {
     });
     await makeEntryVisible(userId, entryId);
 
-    const caller = createCaller(createAuthContext(userId));
+    const caller = createCaller(await createAuthContext(userId));
     const { entry } = await caller.entries.get({ id: entryId });
 
     expect(entry.fullContentCleaned).toContain("full cleaned");
@@ -242,7 +174,7 @@ describe("entries.get sanitized content", () => {
     });
     await makeEntryVisible(userId, entryId);
 
-    const caller = createCaller(createAuthContext(userId));
+    const caller = createCaller(await createAuthContext(userId));
     const { entry } = await caller.entries.get({ id: entryId });
 
     expect(entry.fullContentOriginal).toContain("raw page");

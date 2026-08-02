@@ -11,7 +11,6 @@ import { describe, it, expect, afterAll } from "vitest";
 import { and, eq, isNull, ne } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { users, entries, userEntries } from "../../src/server/db/schema";
-import { generateUuidv7 } from "../../src/lib/uuidv7";
 import {
   backfillGettingStartedArticles,
   createGettingStartedArticle,
@@ -19,18 +18,13 @@ import {
 import { GETTING_STARTED_TITLE } from "../../src/server/services/getting-started-content";
 import { deleteSavedArticle } from "../../src/server/services/saved";
 import { getSavedFeedId } from "../../src/server/feed/saved-feed";
+import { createTestUser } from "./helpers";
 
 const createdUserIds: string[] = [];
 
-async function createTestUser(): Promise<string> {
-  const userId = generateUuidv7();
-  await db.insert(users).values({
-    id: userId,
-    email: `getting-started-${userId}@test.com`,
-    passwordHash: "test-hash",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
+/** Creates a user and registers it for `afterAll` cleanup. */
+async function createUser(): Promise<string> {
+  const userId = await createTestUser({ emailPrefix: "getting-started" });
   createdUserIds.push(userId);
   return userId;
 }
@@ -91,7 +85,7 @@ afterAll(async () => {
 
 describe("createGettingStartedArticle", () => {
   it("adds a starred, unread saved article and stamps the user", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
 
     const entryId = await createGettingStartedArticle(db, userId);
     expect(entryId).not.toBeNull();
@@ -117,7 +111,7 @@ describe("createGettingStartedArticle", () => {
   });
 
   it("is a no-op the second time", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
 
     expect(await createGettingStartedArticle(db, userId)).not.toBeNull();
     expect(await createGettingStartedArticle(db, userId)).toBeNull();
@@ -126,7 +120,7 @@ describe("createGettingStartedArticle", () => {
   });
 
   it("does not re-add the article after the user deletes it", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
 
     const entryId = await createGettingStartedArticle(db, userId);
     expect(entryId).not.toBeNull();
@@ -145,7 +139,7 @@ describe("createGettingStartedArticle", () => {
   });
 
   it("leaves an unstarred copy unstarred", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
     const entryId = await createGettingStartedArticle(db, userId);
 
     await db
@@ -163,7 +157,7 @@ describe("createGettingStartedArticle", () => {
 
 describe("backfillGettingStartedArticles", () => {
   it("covers a user who predates the feature", async () => {
-    const userId = await createTestUser();
+    const userId = await createUser();
     expect(await gettingStartedAt(userId)).toBeNull();
     await claimEveryoneElse(userId);
 

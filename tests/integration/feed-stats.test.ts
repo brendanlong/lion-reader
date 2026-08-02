@@ -10,119 +10,14 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { db } from "../../src/server/db";
 import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
-import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
-import type { Context } from "../../src/server/trpc/context";
-
-// ============================================================================
-// Test Helpers
-// ============================================================================
-
-async function createTestUser(emailPrefix = "feedstats"): Promise<string> {
-  const userId = generateUuidv7();
-  await db.insert(users).values({
-    id: userId,
-    email: `${emailPrefix}-${userId}@test.com`,
-    passwordHash: "test-hash",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-  return userId;
-}
-
-function createAuthContext(userId: string): Context {
-  const now = new Date();
-  return {
-    db,
-    session: {
-      session: {
-        id: generateUuidv7(),
-        userId,
-        tokenHash: "test-hash",
-        scopes: null,
-        userAgent: null,
-        ipAddress: null,
-        createdAt: now,
-        expiresAt: new Date(Date.now() + 3600000),
-        revokedAt: null,
-        lastActiveAt: now,
-      },
-      user: {
-        id: userId,
-        email: `${userId}@test.com`,
-        emailVerifiedAt: null,
-        tosAgreedAt: new Date(),
-        privacyPolicyAgreedAt: new Date(),
-        notEuAgreedAt: new Date(),
-        passwordHash: "test-hash",
-        inviteId: null,
-        showSpam: false,
-        lastActiveAt: null,
-        groqApiKey: null,
-        anthropicApiKey: null,
-        cerebrasApiKey: null,
-        summarizationModel: null,
-        summarizationMaxWords: null,
-        summarizationPrompt: null,
-        narrationModel: null,
-        savedUnreadCount: 0,
-        starredUnreadCount: 0,
-        createdAt: now,
-        updatedAt: now,
-      },
-      hasGroqApiKey: false,
-      hasAnthropicApiKey: false,
-      hasCerebrasApiKey: false,
-    },
-    apiToken: null,
-    authType: "session",
-    scopes: [],
-    sessionToken: "test-token",
-    headers: new Headers(),
-  };
-}
-
-async function createTestFeed(title: string): Promise<string> {
-  const feedId = generateUuidv7();
-  await db.insert(feeds).values({
-    id: feedId,
-    type: "web",
-    url: `https://example.com/${feedId}.xml`,
-    title,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-  return feedId;
-}
-
-async function createTestSubscription(userId: string, feedId: string): Promise<string> {
-  const subscriptionId = generateUuidv7();
-  await db.insert(subscriptions).values({
-    id: subscriptionId,
-    userId,
-    feedId,
-    subscribedAt: new Date(),
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-  return subscriptionId;
-}
-
-async function createTestEntry(feedId: string, fetchedAt: Date): Promise<void> {
-  const entryId = generateUuidv7();
-  await db.insert(entries).values({
-    id: entryId,
-    feedId,
-    type: "web",
-    guid: `guid-${entryId}`,
-    title: `Entry ${entryId}`,
-    contentHash: `hash-${entryId}`,
-    fetchedAt,
-    lastSeenAt: fetchedAt,
-    createdAt: fetchedAt,
-    updatedAt: fetchedAt,
-  });
-}
+import {
+  createAuthContext,
+  createTestEntry,
+  createTestFeed,
+  createTestSubscription,
+  createTestUser,
+} from "./helpers";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -148,18 +43,18 @@ describe("Feed Stats API", () => {
   });
 
   it("reports totalEntryCount and entriesPerWeek for a feed with history", async () => {
-    const userId = await createTestUser();
-    const feedId = await createTestFeed("Feed With History");
+    const userId = await createTestUser({ emailPrefix: "feedstats" });
+    const feedId = await createTestFeed({ title: "Feed With History" });
     const subscriptionId = await createTestSubscription(userId, feedId);
 
     // Oldest entry 14 days ago, 4 entries total => ~2 entries/week.
     const now = Date.now();
-    await createTestEntry(feedId, new Date(now - 14 * DAY_MS));
-    await createTestEntry(feedId, new Date(now - 10 * DAY_MS));
-    await createTestEntry(feedId, new Date(now - 5 * DAY_MS));
-    await createTestEntry(feedId, new Date(now - 1 * DAY_MS));
+    await createTestEntry(feedId, { fetchedAt: new Date(now - 14 * DAY_MS) });
+    await createTestEntry(feedId, { fetchedAt: new Date(now - 10 * DAY_MS) });
+    await createTestEntry(feedId, { fetchedAt: new Date(now - 5 * DAY_MS) });
+    await createTestEntry(feedId, { fetchedAt: new Date(now - 1 * DAY_MS) });
 
-    const caller = createCaller(createAuthContext(userId));
+    const caller = createCaller(await createAuthContext(userId));
     const result = await caller.feedStats.list();
 
     expect(result.items).toHaveLength(1);
@@ -173,15 +68,15 @@ describe("Feed Stats API", () => {
   });
 
   it("returns null entriesPerWeek when the oldest entry is under a week old", async () => {
-    const userId = await createTestUser();
-    const feedId = await createTestFeed("Fresh Feed");
+    const userId = await createTestUser({ emailPrefix: "feedstats" });
+    const feedId = await createTestFeed({ title: "Fresh Feed" });
     await createTestSubscription(userId, feedId);
 
     const now = Date.now();
-    await createTestEntry(feedId, new Date(now - 2 * DAY_MS));
-    await createTestEntry(feedId, new Date(now - 1 * DAY_MS));
+    await createTestEntry(feedId, { fetchedAt: new Date(now - 2 * DAY_MS) });
+    await createTestEntry(feedId, { fetchedAt: new Date(now - 1 * DAY_MS) });
 
-    const caller = createCaller(createAuthContext(userId));
+    const caller = createCaller(await createAuthContext(userId));
     const result = await caller.feedStats.list();
 
     expect(result.items).toHaveLength(1);
@@ -190,11 +85,11 @@ describe("Feed Stats API", () => {
   });
 
   it("reports zero total and null entriesPerWeek for a feed with no entries", async () => {
-    const userId = await createTestUser();
-    const feedId = await createTestFeed("Empty Feed");
+    const userId = await createTestUser({ emailPrefix: "feedstats" });
+    const feedId = await createTestFeed({ title: "Empty Feed" });
     await createTestSubscription(userId, feedId);
 
-    const caller = createCaller(createAuthContext(userId));
+    const caller = createCaller(await createAuthContext(userId));
     const result = await caller.feedStats.list();
 
     expect(result.items).toHaveLength(1);
@@ -203,21 +98,21 @@ describe("Feed Stats API", () => {
   });
 
   it("computes stats independently per feed across multiple subscriptions", async () => {
-    const userId = await createTestUser();
-    const feedA = await createTestFeed("AAA Feed");
-    const feedB = await createTestFeed("BBB Feed");
+    const userId = await createTestUser({ emailPrefix: "feedstats" });
+    const feedA = await createTestFeed({ title: "AAA Feed" });
+    const feedB = await createTestFeed({ title: "BBB Feed" });
     await createTestSubscription(userId, feedA);
     await createTestSubscription(userId, feedB);
 
     const now = Date.now();
     // Feed A: 3 entries
-    await createTestEntry(feedA, new Date(now - 20 * DAY_MS));
-    await createTestEntry(feedA, new Date(now - 10 * DAY_MS));
-    await createTestEntry(feedA, new Date(now - 2 * DAY_MS));
+    await createTestEntry(feedA, { fetchedAt: new Date(now - 20 * DAY_MS) });
+    await createTestEntry(feedA, { fetchedAt: new Date(now - 10 * DAY_MS) });
+    await createTestEntry(feedA, { fetchedAt: new Date(now - 2 * DAY_MS) });
     // Feed B: 1 entry
-    await createTestEntry(feedB, new Date(now - 3 * DAY_MS));
+    await createTestEntry(feedB, { fetchedAt: new Date(now - 3 * DAY_MS) });
 
-    const caller = createCaller(createAuthContext(userId));
+    const caller = createCaller(await createAuthContext(userId));
     const result = await caller.feedStats.list();
 
     // Ordered by title ASC: "AAA Feed" then "BBB Feed".

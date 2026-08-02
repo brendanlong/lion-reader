@@ -20,22 +20,19 @@ import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createSession, validateSession } from "../../src/server/auth/session";
 import { clientLogin, requireAuth } from "../../src/server/google-reader/auth";
 import { OAUTH_SCOPES } from "../../src/server/oauth/utils";
+import { createTestUser } from "./helpers";
 
 const createdUserIds: string[] = [];
 const PASSWORD = "correct-horse-battery-staple";
 
-async function createTestUser(): Promise<{ id: string; email: string }> {
+/** A confirmed user with a real password hash, so ClientLogin can sign it in. */
+async function createUser(): Promise<{ id: string; email: string }> {
   const id = generateUuidv7();
   const email = `greader-${id}@test.com`;
-  await db.insert(users).values({
+  await createTestUser({
     id,
     email,
     passwordHash: await argon2.hash(PASSWORD),
-    tosAgreedAt: new Date(),
-    privacyPolicyAgreedAt: new Date(),
-    notEuAgreedAt: new Date(),
-    createdAt: new Date(),
-    updatedAt: new Date(),
   });
   createdUserIds.push(id);
   return { id, email };
@@ -55,7 +52,7 @@ afterAll(async () => {
 
 describe("Google Reader ClientLogin mints a reader-scoped session", () => {
   it("issues a token that requireAuth accepts", async () => {
-    const user = await createTestUser();
+    const user = await createUser();
     const login = await clientLogin(user.email, PASSWORD);
     expect(login).not.toBeNull();
     if (!login) throw new Error("unreachable");
@@ -68,7 +65,7 @@ describe("Google Reader ClientLogin mints a reader-scoped session", () => {
   });
 
   it("mints a session that is NOT usable as a full-access session", async () => {
-    const user = await createTestUser();
+    const user = await createUser();
     const login = await clientLogin(user.email, PASSWORD);
     if (!login) throw new Error("unreachable");
 
@@ -82,14 +79,14 @@ describe("Google Reader ClientLogin mints a reader-scoped session", () => {
   });
 
   it("returns null for a wrong password", async () => {
-    const user = await createTestUser();
+    const user = await createUser();
     expect(await clientLogin(user.email, "wrong-password")).toBeNull();
   });
 });
 
 describe("Google Reader requireAuth session acceptance", () => {
   it("accepts a full-access (unscoped) browser session", async () => {
-    const user = await createTestUser();
+    const user = await createUser();
     const { token } = await createSession(db, { userId: user.id });
 
     const result = await requireAuth(greaderRequest(token));
@@ -99,7 +96,7 @@ describe("Google Reader requireAuth session acceptance", () => {
   });
 
   it("rejects a session scoped to something other than reader:full-access with 403", async () => {
-    const user = await createTestUser();
+    const user = await createUser();
     const { token } = await createSession(db, {
       userId: user.id,
       scopes: [OAUTH_SCOPES.SAVED_WRITE],
@@ -146,14 +143,14 @@ describe("Google Reader requireAuth session acceptance", () => {
 
 describe("createSession scope validation", () => {
   it("rejects an unknown scope rather than minting a credential that matches nothing", async () => {
-    const user = await createTestUser();
+    const user = await createUser();
     await expect(
       createSession(db, { userId: user.id, scopes: ["not-a-real-scope"] })
     ).rejects.toThrow(/unknown scope/i);
   });
 
   it("accepts a known scope", async () => {
-    const user = await createTestUser();
+    const user = await createUser();
     const { token } = await createSession(db, {
       userId: user.id,
       scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
@@ -189,7 +186,7 @@ describe("last_active_at accounting for scoped vs full-access sessions", () => {
   }
 
   it("a scoped (Google Reader) session bumps its session row but never users.last_active_at", async () => {
-    const user = await createTestUser();
+    const user = await createUser();
     const login = await clientLogin(user.email, PASSWORD);
     if (!login) throw new Error("unreachable");
 
@@ -219,7 +216,7 @@ describe("last_active_at accounting for scoped vs full-access sessions", () => {
   });
 
   it("a full-access (browser) session bumps users.last_active_at", async () => {
-    const user = await createTestUser();
+    const user = await createUser();
     const { token } = await createSession(db, { userId: user.id });
 
     await db.update(users).set({ lastActiveAt: null }).where(eq(users.id, user.id));

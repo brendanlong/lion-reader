@@ -35,7 +35,13 @@ export interface CreateTestUserOptions extends Partial<typeof users.$inferInsert
   emailPrefix?: string;
 }
 
-/** Inserts a user with a password hash and a unique email. Returns its id. */
+/**
+ * Inserts a user with a password hash and a unique email. Returns its id.
+ *
+ * The signup agreements are accepted by default, because most procedures sit
+ * behind `confirmedMiddleware` and would otherwise throw FORBIDDEN. Pass them
+ * as null to test an unconfirmed account.
+ */
 export async function createTestUser(options: CreateTestUserOptions = {}): Promise<string> {
   const { emailPrefix = "user", ...overrides } = options;
   const userId = overrides.id ?? generateUuidv7();
@@ -44,6 +50,9 @@ export async function createTestUser(options: CreateTestUserOptions = {}): Promi
     id: userId,
     email: `${emailPrefix}-${userId}@test.com`,
     passwordHash: "test-hash",
+    tosAgreedAt: now,
+    privacyPolicyAgreedAt: now,
+    notEuAgreedAt: now,
     createdAt: now,
     updatedAt: now,
     ...overrides,
