@@ -6,15 +6,14 @@
  * - /pdf/XXXX.XXXXX - PDF version
  * - /html/XXXX.XXXXX - HTML version (not available for all papers)
  *
- * This module transforms abstract and PDF URLs to their HTML equivalents
- * when the HTML version is available, providing a better reading experience.
+ * URL helpers here let the saved-article plugin address a paper in either form,
+ * and `parseArxivAbsMetadata` reads the paper's title/abstract/authors off the
+ * abstract page — the plugin fetches both forms in parallel and picks the HTML
+ * render for content when it exists. Pure functions only; the plugin owns the
+ * fetching.
  */
 
 import { Parser } from "htmlparser2";
-import { logger } from "@/lib/logger";
-import { FEED_FETCH_TIMEOUT_MS, readResponseWithSizeLimit } from "@/server/http/fetch";
-import { fetchWithSsrfProtection } from "@/server/http/ssrf";
-import { USER_AGENT } from "@/server/http/user-agent";
 
 // ============================================================================
 // URL Parsing
@@ -41,23 +40,16 @@ export function isArxivUrl(url: string): boolean {
 }
 
 /**
- * Checks if a URL is an ArXiv abstract or PDF URL that could be transformed to HTML.
- * Excludes URLs that are already HTML.
- */
-export function isArxivTransformableUrl(url: string): boolean {
-  const match = url.match(ARXIV_URL_PATTERN);
-  if (!match) return false;
-  const type = match[1];
-  return type === "abs" || type === "pdf";
-}
-
-/**
  * Extracts the paper ID from an ArXiv URL.
  * Returns null if the URL is not a valid ArXiv paper URL.
  *
+ * The version suffix is **preserved**, and that is load-bearing: the id is fed
+ * straight back into `buildArxivHtmlUrl`/`buildArxivAbsUrl`, and a paper's
+ * abstract differs between versions, so dropping `v2` would save the wrong one.
+ *
  * @example
  * extractPaperId("https://arxiv.org/abs/2601.04649") // "2601.04649"
- * extractPaperId("https://arxiv.org/pdf/2601.04649v2") // "2601.04649"
+ * extractPaperId("https://arxiv.org/pdf/2601.04649v2") // "2601.04649v2"
  * extractPaperId("https://arxiv.org/abs/hep-th/9901001") // "hep-th/9901001"
  */
 export function extractPaperId(url: string): string | null {
@@ -86,114 +78,16 @@ export function buildArxivAbsUrl(paperId: string): string {
 }
 
 // ============================================================================
-// HTML Version Detection
+// Paper metadata (title / abstract / authors)
 // ============================================================================
 
-/**
- * Result of checking for ArXiv HTML version.
- */
-interface ArxivHtmlCheckResult {
-  /** Whether the HTML version exists */
-  exists: boolean;
-  /** The HTML URL (set regardless of whether it exists) */
-  htmlUrl: string;
-  /** The fallback URL to use if HTML doesn't exist (original URL) */
-  fallbackUrl: string;
-}
-
-/**
- * Checks if the HTML version of an ArXiv paper exists.
- *
- * Not all ArXiv papers have HTML versions - it depends on the source format
- * (TeX papers are more likely to have HTML versions).
- *
- * @param url - The ArXiv URL (abs or pdf)
- * @returns Result indicating if HTML version exists
- */
-async function checkArxivHtmlExists(url: string): Promise<ArxivHtmlCheckResult | null> {
-  const paperId = extractPaperId(url);
-  if (!paperId) {
-    logger.debug("Not a valid ArXiv URL", { url });
-    return null;
-  }
-
-  const htmlUrl = buildArxivHtmlUrl(paperId);
-  const fallbackUrl = buildArxivAbsUrl(paperId);
-
-  try {
-    // Use HEAD request to check if HTML version exists without downloading it
-    const response = await fetchWithSsrfProtection(htmlUrl, {
-      method: "HEAD",
-      headers: {
-        "User-Agent": USER_AGENT,
-      },
-      signal: AbortSignal.timeout(FEED_FETCH_TIMEOUT_MS),
-      redirect: "follow",
-    });
-
-    const exists = response.ok;
-    logger.debug("ArXiv HTML version check", {
-      paperId,
-      htmlUrl,
-      exists,
-      status: response.status,
-    });
-
-    return { exists, htmlUrl, fallbackUrl };
-  } catch (error) {
-    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
-      logger.warn("ArXiv HTML check timed out", { paperId, htmlUrl });
-    } else {
-      logger.warn("ArXiv HTML check failed", {
-        paperId,
-        htmlUrl,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-    // On error, assume HTML doesn't exist and fall back
-    return { exists: false, htmlUrl, fallbackUrl };
-  }
-}
-
-/**
- * Gets the best URL to fetch for an ArXiv paper.
- *
- * If the paper has an HTML version, returns that URL.
- * Otherwise, returns the original URL for normal fetching.
- *
- * @param url - The ArXiv URL (abs or pdf)
- * @returns The best URL to fetch, or null if not an ArXiv URL
- */
-export async function getArxivFetchUrl(url: string): Promise<string | null> {
-  if (!isArxivTransformableUrl(url)) {
-    return null;
-  }
-
-  const result = await checkArxivHtmlExists(url);
-  if (!result) {
-    return null;
-  }
-
-  return result.exists ? result.htmlUrl : result.fallbackUrl;
-}
-
-// ============================================================================
-// arXiv API metadata (title / abstract / authors)
-// ============================================================================
-
-/**
- * A single-entry Atom document from the arXiv API is a few KB; cap the read so a
- * misbehaving/hijacked response can't be buffered without bound.
- */
-const ARXIV_API_MAX_BYTES = 1024 * 1024;
-
-/** Structured metadata scraped from the arXiv Atom API for one paper. */
-export interface ArxivApiMetadata {
-  /** The paper title (feed-level query title is ignored). */
+/** Structured metadata for one paper, scraped from its arXiv abstract page. */
+export interface ArxivPaperMetadata {
+  /** The paper title, from `citation_title`. */
   title: string | null;
-  /** The abstract, from Atom `<summary>` — a far better excerpt than a scrape. */
+  /** The abstract, from `citation_abstract` — a far better excerpt than a scrape. */
   summary: string | null;
-  /** Author display names, in order, from `<author><name>`. */
+  /** Author display names, in order, from the repeated `citation_author` tags. */
   authors: string[];
 }
 
@@ -203,76 +97,75 @@ function normalizeArxivText(text: string): string {
 }
 
 /**
- * Parse an arXiv Atom API response (from `export.arxiv.org/api/query`) into the
+ * Convert a Highwire `citation_author` value to normal reading order.
+ *
+ * The abstract page emits authors surname-first ("Tay, Yi"), which is wrong for
+ * a byline. Split on the *first* comma only, so multi-part given names survive
+ * ("Tran, Vinh Q." -> "Vinh Q. Tran"). Values with no comma are group or
+ * collaboration names ("ATLAS Collaboration") and are left alone.
+ */
+function normalizeAuthorName(raw: string): string {
+  const name = normalizeArxivText(raw);
+  const comma = name.indexOf(",");
+  if (comma === -1) return name;
+
+  const surname = name.slice(0, comma).trim();
+  const given = name.slice(comma + 1).trim();
+  if (!surname || !given) return name;
+
+  return `${given} ${surname}`;
+}
+
+/**
+ * Parse an arXiv abstract page's Highwire `citation_*` meta tags into the
  * paper's title, abstract, and author names.
  *
- * SAX-parsed (xmlMode) for the same reasons the rest of the codebase prefers it.
- * Only the **first** `<entry>` is read, and feed-level `<title>`/`<author>`
- * elements (the query echo) are ignored — we only capture inside `<entry>`.
+ * The abstract page carries everything the `export.arxiv.org` Atom API returns,
+ * so reading it here means the save never touches that host — which throttles
+ * per source IP and, once throttled, stalls for 15-30s before returning 429.
+ * Behind a shared egress IP that made every arXiv save wait out the full fetch
+ * timeout and then discard the result.
  *
- * Pure (no network) so it can be unit-tested directly against fixture XML.
+ * SAX-parsed (and stopped at `</head>`, where the tags live) for the same
+ * reasons the rest of the codebase prefers it. Pure (no network) so it can be
+ * unit-tested directly against fixture HTML.
  */
-export function parseArxivApiResponse(xml: string): ArxivApiMetadata {
+export function parseArxivAbsMetadata(html: string): ArxivPaperMetadata {
   let title: string | null = null;
   let summary: string | null = null;
   const authors: string[] = [];
 
-  let inEntry = false;
-  let entryDone = false; // Stop capturing once the first <entry> closes.
-  let inAuthor = false;
-  let capture: "title" | "summary" | "name" | null = null;
-  let buffer = "";
-
   const parser = new Parser(
     {
-      onopentag(name) {
-        const tag = name.toLowerCase();
-        if (tag === "entry") {
-          if (!entryDone) inEntry = true;
-          return;
+      onopentag(name, attribs) {
+        if (name.toLowerCase() !== "meta") return;
+
+        const content = attribs.content;
+        if (!content) return;
+
+        switch (attribs.name?.toLowerCase()) {
+          case "citation_title":
+            title ??= normalizeArxivText(content) || null;
+            break;
+          case "citation_abstract":
+            summary ??= normalizeArxivText(content) || null;
+            break;
+          case "citation_author": {
+            const author = normalizeAuthorName(content);
+            if (author) authors.push(author);
+            break;
+          }
         }
-        if (!inEntry) return;
-        if (tag === "author") {
-          inAuthor = true;
-        } else if (tag === "title") {
-          capture = "title";
-          buffer = "";
-        } else if (tag === "summary") {
-          capture = "summary";
-          buffer = "";
-        } else if (tag === "name" && inAuthor) {
-          capture = "name";
-          buffer = "";
-        }
-      },
-      ontext(text) {
-        if (capture) buffer += text;
       },
       onclosetag(name) {
-        const tag = name.toLowerCase();
-        if (!inEntry) return;
-        if (tag === "entry") {
-          inEntry = false;
-          entryDone = true;
-        } else if (tag === "author") {
-          inAuthor = false;
-        } else if (tag === "title" && capture === "title") {
-          title = normalizeArxivText(buffer) || null;
-          capture = null;
-        } else if (tag === "summary" && capture === "summary") {
-          summary = normalizeArxivText(buffer) || null;
-          capture = null;
-        } else if (tag === "name" && capture === "name") {
-          const authorName = normalizeArxivText(buffer);
-          if (authorName) authors.push(authorName);
-          capture = null;
-        }
+        // Every citation_* tag lives in <head>; don't parse the whole document.
+        if (name.toLowerCase() === "head") parser.pause();
       },
     },
-    { decodeEntities: true, xmlMode: true }
+    { decodeEntities: true }
   );
 
-  parser.write(xml);
+  parser.write(html);
   parser.end();
 
   return { title, summary, authors };
@@ -288,53 +181,4 @@ export function formatArxivAuthors(authors: string[]): string | null {
   if (authors.length === 1) return authors[0];
   if (authors.length === 2) return `${authors[0]} and ${authors[1]}`;
   return `${authors[0]} et al.`;
-}
-
-/**
- * Fetch a paper's structured metadata (title / abstract / authors) from the
- * arXiv Atom API. Returns null on any failure so the caller falls back to the
- * scraped HTML / Readability metadata.
- *
- * All outbound traffic goes through `fetchWithSsrfProtection` with our custom
- * User-Agent. This is one request per save (not bulk harvesting), so it stays
- * well within arXiv's API rate limits.
- */
-export async function fetchArxivMetadata(paperId: string): Promise<ArxivApiMetadata | null> {
-  const apiUrl = `https://export.arxiv.org/api/query?id_list=${encodeURIComponent(paperId)}`;
-  try {
-    const response = await fetchWithSsrfProtection(apiUrl, {
-      headers: {
-        "User-Agent": USER_AGENT,
-      },
-      signal: AbortSignal.timeout(FEED_FETCH_TIMEOUT_MS),
-      redirect: "follow",
-    });
-
-    if (!response.ok) {
-      logger.warn("ArXiv API request failed", { paperId, status: response.status });
-      return null;
-    }
-
-    const xml = await readResponseWithSizeLimit(response, ARXIV_API_MAX_BYTES, apiUrl);
-    const metadata = parseArxivApiResponse(xml);
-
-    // A malformed / not-found response yields an empty entry — treat as a miss.
-    if (!metadata.title && !metadata.summary && metadata.authors.length === 0) {
-      logger.debug("ArXiv API returned no usable metadata", { paperId });
-      return null;
-    }
-
-    logger.debug("Fetched ArXiv API metadata", {
-      paperId,
-      hasSummary: metadata.summary !== null,
-      authorCount: metadata.authors.length,
-    });
-    return metadata;
-  } catch (error) {
-    logger.warn("ArXiv API request errored", {
-      paperId,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return null;
-  }
 }

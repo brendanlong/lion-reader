@@ -108,7 +108,7 @@ Entry bodies, saved articles, and AI summaries are rendered with
 - Applies to: feed polling/discovery, WebSub hub subscribe, full-content/save
   fetches, and content-source plugins. The content-source plugins that fetch
   hardcoded public hosts (`plugins/github.ts`, `plugins/bluesky.ts`,
-  `feed/arxiv.ts`, `feed/lesswrong.ts`, Google Docs/Drive) route through the guard
+  `plugins/arxiv.ts`, `feed/lesswrong.ts`, Google Docs/Drive) route through the guard
   too, so a future refactor that makes one of those hosts user-influenced can't
   silently regress into SSRF (#1265). Keep it that way; don't call `fetch`/`undici`
   directly on any content-source URL.
