@@ -82,7 +82,7 @@ export interface FontConfig {
   lineHeight: number;
 }
 
-export const FONT_CONFIGS: Record<FontFamily, FontConfig> = {
+const FONT_CONFIGS: Record<FontFamily, FontConfig> = {
   system: {
     family: "inherit",
     // Varies by platform (San Francisco, Segoe UI, Roboto, etc.)
@@ -116,7 +116,7 @@ export const FONT_CONFIGS: Record<FontFamily, FontConfig> = {
 };
 
 /** Base font size (rem) for each size option, before per-font sizeAdjust. */
-export const BASE_SIZES: Record<TextSize, number> = {
+const BASE_SIZES: Record<TextSize, number> = {
   small: 0.875,
   medium: 1,
   large: 1.125,

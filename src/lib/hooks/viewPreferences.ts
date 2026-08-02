@@ -9,13 +9,7 @@
  * View types for different entry list pages.
  */
 export type ViewType =
-  | "all"
-  | "starred"
-  | "subscription"
-  | "tag"
-  | "saved"
-  | "uncategorized"
-  | "recently-read";
+  "all" | "starred" | "subscription" | "tag" | "saved" | "uncategorized" | "recently-read";
 
 /**
  * View preference settings.

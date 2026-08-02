@@ -245,7 +245,7 @@ export const FEED_FETCH_TIMEOUT_MS = 10000;
  * Bounds slow-loris connection holding on webhook endpoints that must buffer
  * the body before authenticating it (see `readRequestBufferWithSizeLimit`).
  */
-export const REQUEST_BODY_READ_TIMEOUT_MS = 30000;
+const REQUEST_BODY_READ_TIMEOUT_MS = 30000;
 
 /**
  * Timeout for page fetch requests (30 seconds).

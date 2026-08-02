@@ -32,7 +32,7 @@ export const YOUTUBE_MIN_FETCH_INTERVAL_SECONDS = 60 * 60;
  * path (see transformTags.iframe in sanitize.ts); setting them here just keeps
  * the stored raw content self-contained.
  */
-export function buildYouTubeEmbedIframe(videoId: string, title?: string | null): string {
+function buildYouTubeEmbedIframe(videoId: string, title?: string | null): string {
   const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
   return (
     `<iframe src="https://www.youtube-nocookie.com/embed/${videoId}"` +

@@ -50,12 +50,7 @@ export const SSE_RETRY_INTERVAL_MS = 60_000;
 export type ConnectionStatus = "connecting" | "connected" | "disconnected" | "error" | "polling";
 
 export type ConnectionPhase =
-  | "disconnected"
-  | "connecting"
-  | "connected"
-  | "probing"
-  | "backoff"
-  | "polling";
+  "disconnected" | "connecting" | "connected" | "probing" | "backoff" | "polling";
 
 export interface ConnectionState {
   phase: ConnectionPhase;

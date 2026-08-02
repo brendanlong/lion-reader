@@ -30,6 +30,7 @@
     "format:check": "prettier --check .",
     "prepare": "husky",
     "social-preview": "tsx scripts/generate-social-preview.ts",
+    "bench:sanitize": "tsx scripts/bench-sanitize.mts",
     "db:migrate": "dotenv -- tsx scripts/migrate.ts",
     "db:schema": "dotenv -- tsx scripts/dump-schema.ts",
     "db:seed": "dotenv -- tsx scripts/seed.ts",
@@ -49,11 +50,11 @@
     "discord-bot": "dotenv -- tsx scripts/discord-bot.ts"
   },
   "lint-staged": {
-    "*.{ts,tsx,js,jsx,mjs,cjs}": [
+    "*.{ts,tsx,js,jsx,mjs,cjs,mts,cts}": [
       "eslint --fix --max-warnings 0 --no-warn-ignored",
       "prettier --write"
     ],
-    "*.{json,md,css,scss,yaml,yml}": [
+    "*.{json,md,css,scss,yaml,yml,html}": [
       "prettier --write"
     ]
   },

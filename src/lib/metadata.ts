@@ -6,8 +6,8 @@ import type { Metadata } from "next";
  * Emitting og:image:width/height lets crawlers reserve the card's space up front
  * (no layout shift, and some clients require dimensions to render a large card).
  */
-export const OG_IMAGE_WIDTH = 1200;
-export const OG_IMAGE_HEIGHT = 630;
+const OG_IMAGE_WIDTH = 1200;
+const OG_IMAGE_HEIGHT = 630;
 
 export const defaultOpenGraph: Metadata["openGraph"] = {
   images: [{ url: "/social-preview.png", width: OG_IMAGE_WIDTH, height: OG_IMAGE_HEIGHT }],

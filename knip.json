@@ -2,6 +2,7 @@
   "$schema": "https://unpkg.com/knip@5/schema.json",
   "workspaces": {
     ".": {
+      "entry": ["scripts/fixup-standalone.mjs"],
       "ignore": [
         "extension/**",
         "src/lib/stubs/**",

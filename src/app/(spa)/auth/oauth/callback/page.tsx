@@ -23,8 +23,7 @@ import { SpinnerIcon } from "@/components/ui/icon-button";
  * Validation result for OAuth callback parameters
  */
 type CallbackValidation =
-  | { valid: true; code: string; state: string }
-  | { valid: false; error: string; errorCode: string };
+  { valid: true; code: string; state: string } | { valid: false; error: string; errorCode: string };
 
 /**
  * Helper to map error messages to error codes for redirect
