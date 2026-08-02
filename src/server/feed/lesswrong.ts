@@ -535,8 +535,7 @@ async function fetchLessWrongComment(commentId: string): Promise<LessWrongCommen
  * Union type for content fetched from LessWrong.
  */
 export type LessWrongContent =
-  | (LessWrongPostContent & { type: "post" })
-  | (LessWrongCommentContent & { type: "comment" });
+  (LessWrongPostContent & { type: "post" }) | (LessWrongCommentContent & { type: "comment" });
 
 /**
  * Fetches LessWrong content from a URL, detecting whether it's a post or comment.

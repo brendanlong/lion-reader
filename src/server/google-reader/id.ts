@@ -177,8 +177,7 @@ export async function feedStreamIdToSubscriptionUuid(
  * see issue #730).
  */
 export type FeedStreamResolution =
-  | { kind: "subscription"; subscriptionId: string }
-  | { kind: "saved"; feedId: string };
+  { kind: "subscription"; subscriptionId: string } | { kind: "saved"; feedId: string };
 
 /**
  * Resolves a `feed/{int64}` stream ID to either a subscription or the user's
