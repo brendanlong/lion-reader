@@ -24,7 +24,7 @@
 /**
  * True for the (slash-trimmed) paths that must answer slashed URLs in place.
  */
-export function isOauthMcpSurfacePath(pathname: string): boolean {
+function isOauthMcpSurfacePath(pathname: string): boolean {
   return (
     pathname === "/api/mcp" ||
     pathname === "/token" ||

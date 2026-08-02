@@ -5,7 +5,7 @@
 /**
  * Postgres SQLSTATE for a unique-constraint violation.
  */
-export const PG_UNIQUE_VIOLATION = "23505";
+const PG_UNIQUE_VIOLATION = "23505";
 
 /**
  * Returns true if the error is a Postgres unique-constraint violation.

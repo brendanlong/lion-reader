@@ -1,7 +1,7 @@
 /**
  * Benchmark for the entry-content sanitizer (`sanitizeEntryHtml`).
  *
- * Run with: pnpm tsx scripts/bench-sanitize.mts
+ * Run with: pnpm bench:sanitize
  *
  * Measures the full native pipeline (MathJax CHTML→MathML + inline-SVG +
  * lol_html allow-list pass, one N-API call) across representative document

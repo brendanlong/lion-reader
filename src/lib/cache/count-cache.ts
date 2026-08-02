@@ -38,7 +38,7 @@ const subscriptionLookupMap = new Map<string, CachedSubscription>();
  * session (it isn't tied to the QueryClient), so without an explicit clear one
  * account's subscription data bleeds into the next login on a shared browser.
  */
-export function clearSubscriptionLookupMap(): void {
+function clearSubscriptionLookupMap(): void {
   subscriptionLookupMap.clear();
 }
 
