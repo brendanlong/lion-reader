@@ -14,9 +14,10 @@
  * - Apple requires response_mode=form_post for the callback
  */
 
-import { generateState } from "arctic";
 import { createRemoteJWKSet, jwtVerify } from "jose";
-import { getAppleProvider, getAppleClientId, isProviderEnabled } from "./config";
+import * as client from "openid-client";
+import { getAppleConfig, getAppleClientId, getRedirectUri, isProviderEnabled } from "./config";
+import { accessTokenExpiresAt, exchangeAuthorizationCode } from "./token-exchange";
 import { redis } from "@/server/redis";
 
 /**
@@ -221,6 +222,9 @@ async function consumeState(state: string): Promise<AppleStateData | null> {
  *
  * The token also arrives over a direct server-to-Apple TLS `authorization_code`
  * exchange, but we do not rely on that alone — the claims and signature are checked.
+ * `openid-client` re-checks `iss`/`aud`/`exp` during the exchange but deliberately
+ * skips the signature for tokens fetched straight from the token endpoint (OIDC Core
+ * §3.1.3.7 lets TLS stand in for it), so this step is what makes a forged id_token fail.
  *
  * @param idToken - The JWT id_token from Apple
  * @returns The verified payload
@@ -292,23 +296,26 @@ async function extractUserInfoFromToken(idToken: string): Promise<AppleUserInfo>
  * @throws Error if Apple OAuth is not configured
  */
 export async function createAppleAuthUrl(inviteToken?: string): Promise<AppleAuthUrlResult> {
-  const apple = getAppleProvider();
+  const config = await getAppleConfig();
 
-  if (!apple) {
+  if (!config) {
     throw new Error("Apple OAuth is not configured");
   }
 
   // Generate state parameter for CSRF protection
-  const state = generateState();
+  const state = client.randomState();
 
   // Store the state and invite token for later verification
   await storeState(state, inviteToken);
 
   // Create the authorization URL
-  const url = apple.createAuthorizationURL(state, APPLE_SCOPES);
-
   // Apple requires response_mode=form_post when requesting name or email scopes
-  url.searchParams.set("response_mode", "form_post");
+  const url = client.buildAuthorizationUrl(config, {
+    redirect_uri: getRedirectUri("apple"),
+    scope: APPLE_SCOPES.join(" "),
+    state,
+    response_mode: "form_post",
+  });
 
   return {
     url: url.toString(),
@@ -336,9 +343,9 @@ export async function validateAppleCallback(
   state: string,
   userData?: string | AppleFirstAuthUserData
 ): Promise<AppleAuthResult> {
-  const apple = getAppleProvider();
+  const config = await getAppleConfig();
 
-  if (!apple) {
+  if (!config) {
     throw new Error("Apple OAuth is not configured");
   }
 
@@ -349,11 +356,15 @@ export async function validateAppleCallback(
     throw new Error("Invalid or expired OAuth state");
   }
 
-  // Exchange the authorization code for tokens
-  const tokens = await apple.validateAuthorizationCode(code);
+  // Exchange the authorization code for tokens (Apple doesn't use PKCE)
+  const tokens = await exchangeAuthorizationCode(config, getRedirectUri("apple"), { code, state });
 
   // Apple returns an id_token that contains user info
-  const idToken = tokens.idToken();
+  const idToken = tokens.id_token;
+
+  if (!idToken) {
+    throw new Error("Apple did not return an id_token");
+  }
 
   // Verify and extract user info from the id_token
   const userInfo = await extractUserInfoFromToken(idToken);
@@ -377,10 +388,10 @@ export async function validateAppleCallback(
     userInfo,
     firstAuthData,
     tokens: {
-      accessToken: tokens.accessToken(),
-      refreshToken: tokens.hasRefreshToken() ? tokens.refreshToken() : undefined,
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
       idToken,
-      expiresAt: tokens.accessTokenExpiresAt(),
+      expiresAt: accessTokenExpiresAt(tokens),
     },
     inviteToken: stateData.inviteToken,
   };

@@ -6,9 +6,11 @@
  */
 
 import { eq, and } from "drizzle-orm";
+import * as client from "openid-client";
 import { db } from "@/server/db";
 import { oauthAccounts } from "@/server/db/schema";
-import { getGoogleProvider } from "@/server/auth/oauth/config";
+import { getGoogleConfig } from "@/server/auth/oauth/config";
+import { accessTokenExpiresAt } from "@/server/auth/oauth/token-exchange";
 import { logger } from "@/lib/logger";
 
 /**
@@ -72,33 +74,33 @@ export async function getValidGoogleToken(userId: string): Promise<string> {
  * @throws Error if refresh fails
  */
 async function refreshGoogleToken(oauthAccountId: string, refreshToken: string): Promise<string> {
-  const google = getGoogleProvider();
+  const config = getGoogleConfig();
 
-  if (!google) {
+  if (!config) {
     throw new Error("Google OAuth is not configured");
   }
 
   try {
-    // Use arctic's refreshAccessToken method
-    const tokens = await google.refreshAccessToken(refreshToken);
+    const tokens = await client.refreshTokenGrant(config, refreshToken);
+    const expiresAt = accessTokenExpiresAt(tokens);
 
     // Update stored tokens in database
     await db
       .update(oauthAccounts)
       .set({
-        accessToken: tokens.accessToken(),
-        expiresAt: tokens.accessTokenExpiresAt(),
+        accessToken: tokens.access_token,
+        expiresAt,
         // Some providers rotate refresh tokens - update if provided
-        ...(tokens.hasRefreshToken() ? { refreshToken: tokens.refreshToken() } : {}),
+        ...(tokens.refresh_token ? { refreshToken: tokens.refresh_token } : {}),
       })
       .where(eq(oauthAccounts.id, oauthAccountId));
 
     logger.info("Successfully refreshed Google access token", {
       oauthAccountId,
-      expiresAt: tokens.accessTokenExpiresAt(),
+      expiresAt,
     });
 
-    return tokens.accessToken();
+    return tokens.access_token;
   } catch (error) {
     logger.error("Failed to refresh Google access token", {
       oauthAccountId,
