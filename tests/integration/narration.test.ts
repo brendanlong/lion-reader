@@ -34,6 +34,7 @@ import type { Context } from "../../src/server/trpc/context";
 import { splitNarrationParagraphs } from "../../src/lib/narration/paragraph-map";
 import { NARRATION_FORMAT_VERSION } from "../../src/lib/narration/constants";
 import { sanitizeEntryHtml } from "../../src/server/html/sanitize";
+import { getOrCreateSavedFeed } from "../../src/server/feed/saved-feed";
 
 /**
  * The narration cache key, mirroring the router: the narration format plus the
@@ -61,11 +62,11 @@ async function createTestUser(): Promise<string> {
 }
 
 /**
- * Creates a feed + entry and makes it visible to the user the way the app does:
- * an active subscription plus the `user_entries` row that grants visibility.
- * The router reads through `visible_entries`, so both are required —
- * `unsubscribed: true` leaves the subscription soft-deleted, which hides an
- * unstarred entry from that view.
+ * Creates an entry and makes it reachable the way the app does. The router
+ * reads through `visible_entries`, so a `user_entries` row alone isn't enough:
+ * an ordinary entry also needs an active subscription (`unsubscribed: true`
+ * soft-deletes it, hiding an unstarred entry), while a `saved: true` article
+ * lives in the per-user saved feed and is visible on its type alone.
  */
 async function createTestEntry(
   userId: string,
@@ -73,25 +74,39 @@ async function createTestEntry(
     contentCleaned?: string;
     contentOriginal?: string;
   },
-  options: { unsubscribed?: boolean } = {}
+  options: { unsubscribed?: boolean; saved?: boolean; starred?: boolean } = {}
 ): Promise<string> {
-  const feedId = generateUuidv7();
   const entryId = generateUuidv7();
   const now = new Date();
-  await db.insert(feeds).values({
-    id: feedId,
-    type: "web",
-    url: `https://example.com/${feedId}.xml`,
-    title: "Test Feed",
-    lastFetchedAt: now,
-    lastEntriesUpdatedAt: now,
-    createdAt: now,
-    updatedAt: now,
-  });
+  let feedId: string;
+  if (options.saved) {
+    feedId = await getOrCreateSavedFeed(db, userId);
+  } else {
+    feedId = generateUuidv7();
+    await db.insert(feeds).values({
+      id: feedId,
+      type: "web",
+      url: `https://example.com/${feedId}.xml`,
+      title: "Test Feed",
+      lastFetchedAt: now,
+      lastEntriesUpdatedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await db.insert(subscriptions).values({
+      id: generateUuidv7(),
+      userId,
+      feedId,
+      subscribedAt: now,
+      unsubscribedAt: options.unsubscribed ? now : null,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
   await db.insert(entries).values({
     id: entryId,
     feedId,
-    type: "web",
+    type: options.saved ? "saved" : "web",
     guid: `guid-${entryId}`,
     title: "Test Entry",
     contentCleaned: content.contentCleaned ?? null,
@@ -101,16 +116,9 @@ async function createTestEntry(
     contentHash: `entry-${entryId}`,
     fetchedAt: now,
     publishedAt: now,
-    lastSeenAt: now,
-    createdAt: now,
-    updatedAt: now,
-  });
-  await db.insert(subscriptions).values({
-    id: generateUuidv7(),
-    userId,
-    feedId,
-    subscribedAt: now,
-    unsubscribedAt: options.unsubscribed ? now : null,
+    // last_seen_at tracks a feed poll, and the entries_last_seen_only_fetched
+    // constraint requires it exactly for type='web'.
+    lastSeenAt: options.saved ? null : now,
     createdAt: now,
     updatedAt: now,
   });
@@ -119,7 +127,7 @@ async function createTestEntry(
     userId,
     entryId,
     read: false,
-    starred: false,
+    starred: options.starred ?? false,
     readChangedAt: now,
     starredChangedAt: now,
     updatedAt: now,
@@ -354,6 +362,33 @@ describe("narration.generate entry visibility", () => {
     const caller = createCaller(createAuthContext(userId));
 
     await expect(caller.narration.generate({ id: entryId })).rejects.toThrow("Entry not found");
+  });
+
+  // ...and the arms of that rule that don't involve an active subscription still
+  // narrate, which is the risk in reading through the view: a saved article has
+  // no subscription row at all, and a starred entry outlives its subscription.
+  it("narrates a saved article, which has no subscription row", async () => {
+    const contentCleaned = "<p>Saved article body.</p>";
+    createdNarrationHashes.push(narrationHash(contentCleaned));
+    const entryId = await createTestEntry(userId, { contentCleaned }, { saved: true });
+    const caller = createCaller(createAuthContext(userId));
+
+    const result = await caller.narration.generate({ id: entryId });
+    expect(result.narration).toBe("Saved article body.");
+  });
+
+  it("narrates a starred entry left behind by an unsubscribe", async () => {
+    const contentCleaned = "<p>Starred orphan body.</p>";
+    createdNarrationHashes.push(narrationHash(contentCleaned));
+    const entryId = await createTestEntry(
+      userId,
+      { contentCleaned },
+      { unsubscribed: true, starred: true }
+    );
+    const caller = createCaller(createAuthContext(userId));
+
+    const result = await caller.narration.generate({ id: entryId });
+    expect(result.narration).toBe("Starred orphan body.");
   });
 
   it("rejects another user's entry", async () => {

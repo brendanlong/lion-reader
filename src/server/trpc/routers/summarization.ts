@@ -17,7 +17,7 @@ import { errors } from "../errors";
 import { uuidSchema } from "../validation";
 import { entrySummaries } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
-import { getOwnedEntryContent } from "@/server/services/entries";
+import { getOwnedEntryRawContent } from "@/server/services/entries";
 import {
   generateSummary,
   isSummarizationAvailable,
@@ -155,7 +155,7 @@ export const summarizationRouter = createTRPCRouter({
       }
 
       // Fetch the entry with the same visibility rule the entry list applies
-      const entry = await getOwnedEntryContent(ctx.db, userId, input.entryId);
+      const entry = await getOwnedEntryRawContent(ctx.db, userId, input.entryId);
 
       // Determine which content version and hash to use based on useFullContent param:
       // - true: use full content (error if not available)

@@ -13,7 +13,7 @@ import { createTRPCRouter, confirmedProtectedProcedure as protectedProcedure } f
 import { uuidSchema } from "../validation";
 import { narrationContent } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
-import { getOwnedEntryContent } from "@/server/services/entries";
+import { getOwnedEntryRawContent } from "@/server/services/entries";
 import {
   generateNarration,
   htmlToNarrationInput,
@@ -131,7 +131,7 @@ export const narrationRouter = createTRPCRouter({
 
       // Fetch the entry with the same visibility rule the entry list applies.
       // Both regular entries and saved articles are in the entries table now.
-      const entry = await getOwnedEntryContent(ctx.db, userId, input.id);
+      const entry = await getOwnedEntryRawContent(ctx.db, userId, input.id);
 
       // Narrate exactly what the user is looking at: the variant the renderer
       // picks (same selector), sanitized the way the read path sanitizes it.

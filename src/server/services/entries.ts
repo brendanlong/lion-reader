@@ -369,11 +369,13 @@ export async function selectFullEntry(db: typeof dbType, userId: string, entryId
 /**
  * The stored content family of an entry, plus the fields the AI paths key their
  * caches on (`contentHash`/`fullContentHash`) and prompt with (`title`).
+ * Deliberately one shape for both callers even though each reads a subset: the
+ * point of the shared read is that they can't drift, and the row it saves is
+ * noise next to the LLM call that follows.
  */
-const entryContentSelectFields = {
-  id: visibleEntries.id,
+const entryRawContentSelectFields = {
   title: visibleEntries.title,
-  // Raw (untrusted) content — see getOwnedEntryContent.
+  // Raw (untrusted) content — see getOwnedEntryRawContent.
   contentOriginal: visibleEntries.contentOriginal,
   contentCleaned: visibleEntries.contentCleaned,
   contentHash: visibleEntries.contentHash,
@@ -382,8 +384,7 @@ const entryContentSelectFields = {
   fullContentHash: visibleEntries.fullContentHash,
 };
 
-export interface OwnedEntryContent {
-  id: string;
+export interface OwnedEntryRawContent {
   title: string | null;
   contentOriginal: string | null;
   contentCleaned: string | null;
@@ -400,19 +401,20 @@ export interface OwnedEntryContent {
  * door either (a raw `user_entries` join would let e.g. an unsubscribed,
  * unstarred entry through).
  *
- * The content is deliberately **raw**: callers here hash it and hand it to an
- * LLM rather than render it. Anything that reaches a client must be sanitized
- * first (`sanitizeEntryHtml`; the ordinary read path does this in `toFullEntry`).
+ * Unlike every other read out of this service, the content is **raw**: this is
+ * for callers that hash it or feed it to an LLM, not ones that return it.
+ * Anything that reaches a client must be sanitized first (`sanitizeEntryHtml`;
+ * the ordinary read path does it in `toFullEntry`).
  *
  * @throws entryNotFound if the entry doesn't exist or isn't visible to the user
  */
-export async function getOwnedEntryContent(
+export async function getOwnedEntryRawContent(
   db: typeof dbType,
   userId: string,
   entryId: string
-): Promise<OwnedEntryContent> {
+): Promise<OwnedEntryRawContent> {
   const result = await db
-    .select(entryContentSelectFields)
+    .select(entryRawContentSelectFields)
     .from(visibleEntries)
     .where(and(eq(visibleEntries.id, entryId), eq(visibleEntries.userId, userId)))
     .limit(1);
