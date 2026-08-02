@@ -52,15 +52,21 @@ jobs:
       - name: Run linter
         run: pnpm lint
 
+      # These run even when an earlier check fails, so one push surfaces every
+      # problem instead of one per round-trip.
+
       # The husky pre-commit hook also formats, but it is bypassable
       # (`--no-verify`, or edits from tools that skip hooks), so gate it here.
       - name: Check formatting
+        if: ${{ !cancelled() }}
         run: pnpm format:check
 
       - name: Check for unused files, exports, and dependencies
+        if: ${{ !cancelled() }}
         run: pnpm knip
 
       - name: Check for raw color utilities
+        if: ${{ !cancelled() }}
         run: pnpm check:colors
 
   # The Rust `.node` binaries depend only on native/, so build them once here
@@ -68,6 +74,10 @@ jobs:
   # independent cargo builds. The cache makes even that one build a no-op when
   # native/ is unchanged; the artifact is what downstream jobs consume, so they
   # never depend on a cache hit.
+  #
+  # Trade-off: a PR that *does* touch native/ pays one cold cargo build on the
+  # critical path ahead of the test jobs, rather than in parallel inside each.
+  # Total runner minutes still drop; wall clock for those PRs is slightly worse.
   build-native:
     name: Build Native Modules
     runs-on: ubuntu-latest
@@ -98,12 +108,15 @@ jobs:
         if: steps.native-cache.outputs.cache-hit != 'true'
         run: pnpm build:native
 
+      # Retention must outlive a plausible "Re-run failed jobs": that reruns
+      # only the failed job, so an expired artifact here breaks the download in
+      # every downstream job with no way to regenerate it short of a full rerun.
       - name: Upload native modules
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: native-modules
           path: native/*/*.node
-          retention-days: 1
+          retention-days: 7
 
   unit-tests:
     name: Unit Tests

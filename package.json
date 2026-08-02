@@ -50,11 +50,11 @@
     "discord-bot": "dotenv -- tsx scripts/discord-bot.ts"
   },
   "lint-staged": {
-    "*.{ts,tsx,js,jsx,mjs,cjs}": [
+    "*.{ts,tsx,js,jsx,mjs,cjs,mts,cts}": [
       "eslint --fix --max-warnings 0 --no-warn-ignored",
       "prettier --write"
     ],
-    "*.{json,md,css,scss,yaml,yml}": [
+    "*.{json,md,css,scss,yaml,yml,html}": [
       "prettier --write"
     ]
   },
