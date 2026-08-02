@@ -15,8 +15,9 @@ import {
 } from "../trpc";
 import { errors } from "../errors";
 import { uuidSchema } from "../validation";
-import { entries, entrySummaries, userEntries } from "@/server/db/schema";
+import { entrySummaries } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
+import { getOwnedEntryRawContent } from "@/server/services/entries";
 import {
   generateSummary,
   isSummarizationAvailable,
@@ -153,27 +154,8 @@ export const summarizationRouter = createTRPCRouter({
         );
       }
 
-      // Fetch the entry with visibility check via user_entries join
-      const entryResult = await ctx.db
-        .select({
-          id: entries.id,
-          contentCleaned: entries.contentCleaned,
-          contentOriginal: entries.contentOriginal,
-          contentHash: entries.contentHash,
-          fullContentCleaned: entries.fullContentCleaned,
-          fullContentHash: entries.fullContentHash,
-          title: entries.title,
-        })
-        .from(entries)
-        .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
-        .where(and(eq(entries.id, input.entryId), eq(userEntries.userId, userId)))
-        .limit(1);
-
-      if (entryResult.length === 0) {
-        throw errors.entryNotFound();
-      }
-
-      const entry = entryResult[0];
+      // Fetch the entry with the same visibility rule the entry list applies
+      const entry = await getOwnedEntryRawContent(ctx.db, userId, input.entryId);
 
       // Determine which content version and hash to use based on useFullContent param:
       // - true: use full content (error if not available)

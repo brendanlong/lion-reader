@@ -6,14 +6,14 @@
  */
 
 import { z } from "zod";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { createHash } from "node:crypto";
 
 import { createTRPCRouter, confirmedProtectedProcedure as protectedProcedure } from "../trpc";
-import { errors } from "../errors";
 import { uuidSchema } from "../validation";
-import { entries, narrationContent, userEntries } from "@/server/db/schema";
+import { narrationContent } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
+import { getOwnedEntryRawContent } from "@/server/services/entries";
 import {
   generateNarration,
   htmlToNarrationInput,
@@ -129,26 +129,10 @@ export const narrationRouter = createTRPCRouter({
       // Fetch API keys from DB on demand (not cached in session for security)
       const keys = await getUserApiKeys(userId);
 
-      // Fetch the entry with visibility check via user_entries join
-      // Both regular entries and saved articles are in the entries table now
-      const entryResult = await ctx.db
-        .select({
-          id: entries.id,
-          contentCleaned: entries.contentCleaned,
-          contentOriginal: entries.contentOriginal,
-          fullContentCleaned: entries.fullContentCleaned,
-          fullContentOriginal: entries.fullContentOriginal,
-        })
-        .from(entries)
-        .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
-        .where(and(eq(entries.id, input.id), eq(userEntries.userId, userId)))
-        .limit(1);
+      // Fetch the entry with the same visibility rule the entry list applies.
+      // Both regular entries and saved articles are in the entries table now.
+      const entry = await getOwnedEntryRawContent(ctx.db, userId, input.id);
 
-      if (entryResult.length === 0) {
-        throw errors.entryNotFound();
-      }
-
-      const entry = entryResult[0];
       // Narrate exactly what the user is looking at: the variant the renderer
       // picks (same selector), sanitized the way the read path sanitizes it.
       // Sanitization is read-path-only, so the raw columns hold markup the page

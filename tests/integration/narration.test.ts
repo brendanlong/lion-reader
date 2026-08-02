@@ -20,13 +20,21 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { db } from "../../src/server/db";
-import { users, feeds, entries, userEntries, narrationContent } from "../../src/server/db/schema";
+import {
+  users,
+  feeds,
+  entries,
+  subscriptions,
+  userEntries,
+  narrationContent,
+} from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
 import { splitNarrationParagraphs } from "../../src/lib/narration/paragraph-map";
 import { NARRATION_FORMAT_VERSION } from "../../src/lib/narration/constants";
 import { sanitizeEntryHtml } from "../../src/server/html/sanitize";
+import { getOrCreateSavedFeed } from "../../src/server/feed/saved-feed";
 
 /**
  * The narration cache key, mirroring the router: the narration format plus the
@@ -53,27 +61,52 @@ async function createTestUser(): Promise<string> {
   return userId;
 }
 
-async function createTestFeedAndEntry(content: {
-  contentCleaned?: string;
-  contentOriginal?: string;
-}): Promise<string> {
-  const feedId = generateUuidv7();
+/**
+ * Creates an entry and makes it reachable the way the app does. The router
+ * reads through `visible_entries`, so a `user_entries` row alone isn't enough:
+ * an ordinary entry also needs an active subscription (`unsubscribed: true`
+ * soft-deletes it, hiding an unstarred entry), while a `saved: true` article
+ * lives in the per-user saved feed and is visible on its type alone.
+ */
+async function createTestEntry(
+  userId: string,
+  content: {
+    contentCleaned?: string;
+    contentOriginal?: string;
+  },
+  options: { unsubscribed?: boolean; saved?: boolean; starred?: boolean } = {}
+): Promise<string> {
   const entryId = generateUuidv7();
   const now = new Date();
-  await db.insert(feeds).values({
-    id: feedId,
-    type: "web",
-    url: `https://example.com/${feedId}.xml`,
-    title: "Test Feed",
-    lastFetchedAt: now,
-    lastEntriesUpdatedAt: now,
-    createdAt: now,
-    updatedAt: now,
-  });
+  let feedId: string;
+  if (options.saved) {
+    feedId = await getOrCreateSavedFeed(db, userId);
+  } else {
+    feedId = generateUuidv7();
+    await db.insert(feeds).values({
+      id: feedId,
+      type: "web",
+      url: `https://example.com/${feedId}.xml`,
+      title: "Test Feed",
+      lastFetchedAt: now,
+      lastEntriesUpdatedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await db.insert(subscriptions).values({
+      id: generateUuidv7(),
+      userId,
+      feedId,
+      subscribedAt: now,
+      unsubscribedAt: options.unsubscribed ? now : null,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
   await db.insert(entries).values({
     id: entryId,
     feedId,
-    type: "web",
+    type: options.saved ? "saved" : "web",
     guid: `guid-${entryId}`,
     title: "Test Entry",
     contentCleaned: content.contentCleaned ?? null,
@@ -83,24 +116,23 @@ async function createTestFeedAndEntry(content: {
     contentHash: `entry-${entryId}`,
     fetchedAt: now,
     publishedAt: now,
-    lastSeenAt: now,
+    // last_seen_at tracks a feed poll, and the entries_last_seen_only_fetched
+    // constraint requires it exactly for type='web'.
+    lastSeenAt: options.saved ? null : now,
     createdAt: now,
     updatedAt: now,
   });
-  return entryId;
-}
-
-async function createUserEntry(userId: string, entryId: string): Promise<void> {
-  const now = new Date();
+  // subscription_id is stamped by the user_entries_fill_denormalized trigger.
   await db.insert(userEntries).values({
     userId,
     entryId,
     read: false,
-    starred: false,
+    starred: options.starred ?? false,
     readChangedAt: now,
     starredChangedAt: now,
     updatedAt: now,
   });
+  return entryId;
 }
 
 function createAuthContext(userId: string): Context {
@@ -182,8 +214,7 @@ describe("narration.generate cached read path", () => {
   it("returns the persisted paragraph map verbatim on a cache hit", async () => {
     const contentCleaned = "<p>First</p><p>Second</p><p>Third</p>";
     const contentHash = narrationHash(contentCleaned);
-    const entryId = await createTestFeedAndEntry({ contentCleaned });
-    await createUserEntry(userId, entryId);
+    const entryId = await createTestEntry(userId, { contentCleaned });
 
     // A stored map that is deliberately NOT what naive reconstruction would
     // produce (element 1 dropped, so two narration paragraphs map to o=0 and
@@ -215,8 +246,7 @@ describe("narration.generate cached read path", () => {
     const contentCleaned = ["<p>Intro.</p>", "<p>Line one.", "<br /><br />", "Line two.</p>"].join(
       "\n"
     );
-    const entryId = await createTestFeedAndEntry({ contentCleaned });
-    await createUserEntry(userId, entryId);
+    const entryId = await createTestEntry(userId, { contentCleaned });
 
     // Keyed by the previous format. Its map numbers elements the way that walk
     // numbered them, so serving it against today's `data-para-id`s would
@@ -265,8 +295,7 @@ describe("narration.generate cached read path", () => {
       "<figcaption>My cat</figcaption></figure>",
       "<p>The end.</p>",
     ].join("");
-    const entryId = await createTestFeedAndEntry({ contentCleaned });
-    await createUserEntry(userId, entryId);
+    const entryId = await createTestEntry(userId, { contentCleaned });
     createdNarrationHashes.push(narrationHash(contentCleaned));
 
     const caller = createCaller(createAuthContext(userId));
@@ -306,8 +335,7 @@ describe("narration.generate narrates the displayed variant", () => {
     // cleaned up too — the check-then-insert doesn't collide on re-run, but we
     // still don't want to leave rows behind (issue #1210).
     createdNarrationHashes.push(narrationHash(contentCleaned), narrationHash(contentOriginal));
-    const entryId = await createTestFeedAndEntry({ contentCleaned, contentOriginal });
-    await createUserEntry(userId, entryId);
+    const entryId = await createTestEntry(userId, { contentCleaned, contentOriginal });
     const caller = createCaller(createAuthContext(userId));
 
     const cleaned = await caller.narration.generate({ id: entryId });
@@ -315,5 +343,62 @@ describe("narration.generate narrates the displayed variant", () => {
 
     const original = await caller.narration.generate({ id: entryId, showOriginal: true });
     expect(original.narration).toBe("Original body paragraph.");
+  });
+});
+
+describe("narration.generate entry visibility", () => {
+  let userId: string;
+
+  beforeEach(async () => {
+    userId = await createTestUser();
+    createdUserIds.push(userId);
+  });
+
+  // The router reads through `visible_entries`, so it applies exactly the rule
+  // the entry list does: a `user_entries` row alone doesn't grant access (#1468).
+  it("rejects an entry hidden by visibility even though a user_entries row exists", async () => {
+    const contentCleaned = "<p>Unsubscribed body paragraph.</p>";
+    const entryId = await createTestEntry(userId, { contentCleaned }, { unsubscribed: true });
+    const caller = createCaller(createAuthContext(userId));
+
+    await expect(caller.narration.generate({ id: entryId })).rejects.toThrow("Entry not found");
+  });
+
+  // ...and the arms of that rule that don't involve an active subscription still
+  // narrate, which is the risk in reading through the view: a saved article has
+  // no subscription row at all, and a starred entry outlives its subscription.
+  it("narrates a saved article, which has no subscription row", async () => {
+    const contentCleaned = "<p>Saved article body.</p>";
+    createdNarrationHashes.push(narrationHash(contentCleaned));
+    const entryId = await createTestEntry(userId, { contentCleaned }, { saved: true });
+    const caller = createCaller(createAuthContext(userId));
+
+    const result = await caller.narration.generate({ id: entryId });
+    expect(result.narration).toBe("Saved article body.");
+  });
+
+  it("narrates a starred entry left behind by an unsubscribe", async () => {
+    const contentCleaned = "<p>Starred orphan body.</p>";
+    createdNarrationHashes.push(narrationHash(contentCleaned));
+    const entryId = await createTestEntry(
+      userId,
+      { contentCleaned },
+      { unsubscribed: true, starred: true }
+    );
+    const caller = createCaller(createAuthContext(userId));
+
+    const result = await caller.narration.generate({ id: entryId });
+    expect(result.narration).toBe("Starred orphan body.");
+  });
+
+  it("rejects another user's entry", async () => {
+    const otherUserId = await createTestUser();
+    createdUserIds.push(otherUserId);
+    const entryId = await createTestEntry(otherUserId, {
+      contentCleaned: "<p>Someone else's article.</p>",
+    });
+    const caller = createCaller(createAuthContext(userId));
+
+    await expect(caller.narration.generate({ id: entryId })).rejects.toThrow("Entry not found");
   });
 });

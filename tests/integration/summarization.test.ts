@@ -12,11 +12,19 @@
 import { describe, it, expect, beforeEach, beforeAll, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { users, feeds, entries, userEntries, entrySummaries } from "../../src/server/db/schema";
+import {
+  users,
+  feeds,
+  entries,
+  subscriptions,
+  userEntries,
+  entrySummaries,
+} from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
 import { CURRENT_PROMPT_VERSION } from "../../src/server/services/summarization";
+import { getOrCreateSavedFeed } from "../../src/server/feed/saved-feed";
 
 async function createTestUser(): Promise<string> {
   const userId = generateUuidv7();
@@ -34,39 +42,62 @@ async function createTestUser(): Promise<string> {
   return userId;
 }
 
-async function createTestFeedAndEntry(contentHash: string): Promise<string> {
-  const feedId = generateUuidv7();
+/**
+ * Creates an entry and makes it reachable the way the app does. The router
+ * reads through `visible_entries`, so a `user_entries` row alone isn't enough:
+ * an ordinary entry also needs an active subscription (`unsubscribed: true`
+ * soft-deletes it, hiding an unstarred entry), while a `saved: true` article
+ * lives in the per-user saved feed and is visible on its type alone.
+ */
+async function createTestEntry(
+  userId: string,
+  contentHash: string,
+  options: { unsubscribed?: boolean; saved?: boolean } = {}
+): Promise<string> {
   const entryId = generateUuidv7();
   const now = new Date();
-  await db.insert(feeds).values({
-    id: feedId,
-    type: "web",
-    url: `https://example.com/${feedId}.xml`,
-    title: "Test Feed",
-    lastFetchedAt: now,
-    lastEntriesUpdatedAt: now,
-    createdAt: now,
-    updatedAt: now,
-  });
+  let feedId: string;
+  if (options.saved) {
+    feedId = await getOrCreateSavedFeed(db, userId);
+  } else {
+    feedId = generateUuidv7();
+    await db.insert(feeds).values({
+      id: feedId,
+      type: "web",
+      url: `https://example.com/${feedId}.xml`,
+      title: "Test Feed",
+      lastFetchedAt: now,
+      lastEntriesUpdatedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await db.insert(subscriptions).values({
+      id: generateUuidv7(),
+      userId,
+      feedId,
+      subscribedAt: now,
+      unsubscribedAt: options.unsubscribed ? now : null,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
   await db.insert(entries).values({
     id: entryId,
     feedId,
-    type: "web",
+    type: options.saved ? "saved" : "web",
     guid: `guid-${entryId}`,
     title: "Test Entry",
     contentCleaned: "<p>Some article content to summarize.</p>",
     contentHash,
     fetchedAt: now,
     publishedAt: now,
-    lastSeenAt: now,
+    // last_seen_at tracks a feed poll, and the entries_last_seen_only_fetched
+    // constraint requires it exactly for type='web'.
+    lastSeenAt: options.saved ? null : now,
     createdAt: now,
     updatedAt: now,
   });
-  return entryId;
-}
-
-async function createUserEntry(userId: string, entryId: string): Promise<void> {
-  const now = new Date();
+  // subscription_id is stamped by the user_entries_fill_denormalized trigger.
   await db.insert(userEntries).values({
     userId,
     entryId,
@@ -76,6 +107,7 @@ async function createUserEntry(userId: string, entryId: string): Promise<void> {
     starredChangedAt: now,
     updatedAt: now,
   });
+  return entryId;
 }
 
 function createAuthContext(userId: string): Context {
@@ -161,8 +193,7 @@ describe("summarization.generate cached read path", () => {
 
   it("re-sanitizes a cached summary containing disallowed HTML on read", async () => {
     const contentHash = `hash-${generateUuidv7()}`;
-    const entryId = await createTestFeedAndEntry(contentHash);
-    await createUserEntry(userId, entryId);
+    const entryId = await createTestEntry(userId, contentHash);
 
     // Simulate a summary stored before a sanitizer hardening: it still carries a
     // <script> tag and an inline event handler that the current sanitizer strips.
@@ -187,5 +218,57 @@ describe("summarization.generate cached read path", () => {
     expect(result.summary).not.toContain("<script>");
     expect(result.summary.toLowerCase()).not.toContain("onclick");
     expect(result.summary.toLowerCase()).not.toContain("onerror");
+  });
+});
+
+describe("summarization.generate entry visibility", () => {
+  let userId: string;
+
+  beforeEach(async () => {
+    userId = await createTestUser();
+    createdUserIds.push(userId);
+  });
+
+  // The router reads through `visible_entries`, so it applies exactly the rule
+  // the entry list does: a `user_entries` row alone doesn't grant access (#1468).
+  it("rejects an entry hidden by visibility even though a user_entries row exists", async () => {
+    const entryId = await createTestEntry(userId, `hash-${generateUuidv7()}`, {
+      unsubscribed: true,
+    });
+    const caller = createCaller(createAuthContext(userId));
+
+    await expect(caller.summarization.generate({ entryId })).rejects.toThrow("Entry not found");
+  });
+
+  it("rejects another user's entry", async () => {
+    const otherUserId = await createTestUser();
+    createdUserIds.push(otherUserId);
+    const entryId = await createTestEntry(otherUserId, `hash-${generateUuidv7()}`);
+    const caller = createCaller(createAuthContext(userId));
+
+    await expect(caller.summarization.generate({ entryId })).rejects.toThrow("Entry not found");
+  });
+
+  // ...and the arm of that rule with no subscription row at all still resolves,
+  // which is the risk in reading through the view.
+  it("summarizes a saved article, which has no subscription row", async () => {
+    const contentHash = `hash-${generateUuidv7()}`;
+    const entryId = await createTestEntry(userId, contentHash, { saved: true });
+    await db.insert(entrySummaries).values({
+      id: generateUuidv7(),
+      userId,
+      contentHash,
+      summaryText: "<p>Saved article summary</p>",
+      modelId: "claude-test",
+      promptVersion: CURRENT_PROMPT_VERSION,
+      generatedAt: new Date(),
+      createdAt: new Date(),
+    });
+
+    const caller = createCaller(createAuthContext(userId));
+    const result = await caller.summarization.generate({ entryId, useFullContent: false });
+
+    expect(result.cached).toBe(true);
+    expect(result.summary).toContain("Saved article summary");
   });
 });

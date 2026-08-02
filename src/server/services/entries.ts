@@ -367,6 +367,66 @@ export async function selectFullEntry(db: typeof dbType, userId: string, entryId
 }
 
 /**
+ * The stored content family of an entry, plus the fields the AI paths key their
+ * caches on (`contentHash`/`fullContentHash`) and prompt with (`title`).
+ * Deliberately one shape for both callers even though each reads a subset: the
+ * point of the shared read is that they can't drift, and the row it saves is
+ * noise next to the LLM call that follows.
+ */
+const entryRawContentSelectFields = {
+  title: visibleEntries.title,
+  // Raw (untrusted) content — see getOwnedEntryRawContent.
+  contentOriginal: visibleEntries.contentOriginal,
+  contentCleaned: visibleEntries.contentCleaned,
+  contentHash: visibleEntries.contentHash,
+  fullContentOriginal: visibleEntries.fullContentOriginal,
+  fullContentCleaned: visibleEntries.fullContentCleaned,
+  fullContentHash: visibleEntries.fullContentHash,
+};
+
+export interface OwnedEntryRawContent {
+  title: string | null;
+  contentOriginal: string | null;
+  contentCleaned: string | null;
+  contentHash: string;
+  fullContentOriginal: string | null;
+  fullContentCleaned: string | null;
+  fullContentHash: string | null;
+}
+
+/**
+ * Fetch an entry's stored content for a user, enforcing ownership through
+ * `visible_entries` — the same visibility rule `listEntries`/`getEntry` apply,
+ * so an entry the user can't see in a list can't be reached through a side
+ * door either (a raw `user_entries` join would let e.g. an unsubscribed,
+ * unstarred entry through).
+ *
+ * Unlike every other read out of this service, the content is **raw**: this is
+ * for callers that hash it or feed it to an LLM, not ones that return it.
+ * Anything that reaches a client must be sanitized first (`sanitizeEntryHtml`;
+ * the ordinary read path does it in `toFullEntry`).
+ *
+ * @throws entryNotFound if the entry doesn't exist or isn't visible to the user
+ */
+export async function getOwnedEntryRawContent(
+  db: typeof dbType,
+  userId: string,
+  entryId: string
+): Promise<OwnedEntryRawContent> {
+  const result = await db
+    .select(entryRawContentSelectFields)
+    .from(visibleEntries)
+    .where(and(eq(visibleEntries.id, entryId), eq(visibleEntries.userId, userId)))
+    .limit(1);
+
+  if (result.length === 0) {
+    throw errors.entryNotFound();
+  }
+
+  return result[0];
+}
+
+/**
  * Sanitize both content families of a full entry for display.
  *
  * Entry bodies come from untrusted feeds and are rendered via
