@@ -18,8 +18,8 @@ import {
  *
  * Faithful in the ways the parser depends on: authors are surname-first in one
  * repeated tag, the abstract is hard-wrapped across lines with a leading blank,
- * and a decoy <meta name="title"> plus an og:title sit alongside the citation
- * tags. Taken from the real markup of arxiv.org/abs/2503.11926v1.
+ * and a decoy <title> element plus an og:title sit alongside the citation tags.
+ * Taken from the real markup of arxiv.org/abs/2503.11926v1.
  */
 const ARXIV_ABS_HTML = `<!DOCTYPE html>
 <html><head>
@@ -218,6 +218,42 @@ describe("parseArxivAbsMetadata", () => {
       <meta name="citation_title" content="Second" />
     </head>`;
     expect(parseArxivAbsMetadata(html).title).toBe("First");
+  });
+
+  it("still ignores body tags when the page omits </head>", () => {
+    // htmlparser2 emits the implied close at <body>, so the pause still fires.
+    const html =
+      `<head><meta name="citation_author" content="Real, Ada" />` +
+      `<body><meta name="citation_author" content="Injected, Body" />`;
+    expect(parseArxivAbsMetadata(html).authors).toEqual(["Ada Real"]);
+  });
+
+  it("decodes HTML entities in citation values", () => {
+    const html = `<head>
+      <meta name="citation_title" content="Cats &amp; Dogs: A Study" />
+      <meta name="citation_author" content="Balázs, Csaba" />
+    </head>`;
+    const result = parseArxivAbsMetadata(html);
+    expect(result.title).toBe("Cats & Dogs: A Study");
+    expect(result.authors).toEqual(["Csaba Balázs"]);
+  });
+
+  it("matches tag names case-insensitively", () => {
+    const html = `<HEAD><META NAME="CITATION_TITLE" CONTENT="Shouty" /></HEAD>`;
+    expect(parseArxivAbsMetadata(html).title).toBe("Shouty");
+  });
+
+  it("drops a stray comma when one side of the author name is empty", () => {
+    const html = `<head>
+      <meta name="citation_author" content="Surnameonly," />
+      <meta name="citation_author" content=", Givenonly" />
+    </head>`;
+    expect(parseArxivAbsMetadata(html).authors).toEqual(["Surnameonly", "Givenonly"]);
+  });
+
+  it("keeps a suffix attached to the given name, as arXiv emits it", () => {
+    const html = `<head><meta name="citation_author" content="Galapon, Arthur Jr." /></head>`;
+    expect(parseArxivAbsMetadata(html).authors).toEqual(["Arthur Jr. Galapon"]);
   });
 
   it("returns nulls / empty authors for a page with no citation tags", () => {

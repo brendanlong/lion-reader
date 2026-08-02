@@ -111,7 +111,9 @@ function normalizeAuthorName(raw: string): string {
 
   const surname = name.slice(0, comma).trim();
   const given = name.slice(comma + 1).trim();
-  if (!surname || !given) return name;
+  // One side empty ("Smith," / ", John") — no swap to make, but don't hand back
+  // the stray comma either.
+  if (!surname || !given) return surname || given;
 
   return `${given} ${surname}`;
 }

@@ -6,7 +6,7 @@ import {
   formatArxivAuthors,
   parseArxivAbsMetadata,
 } from "@/server/feed/arxiv";
-import { fetchHtmlPage, HttpFetchError } from "@/server/http/fetch";
+import { fetchPluginPage } from "./fetch-page";
 import { logger } from "@/lib/logger";
 
 /**
@@ -41,47 +41,16 @@ export const arxivPlugin: UrlPlugin = {
   capabilities: {
     savedArticle: {
       async fetchContent(url: URL): Promise<SavedArticleContent | null> {
+        // `matchUrl` is a looser path test than the id pattern, so the id can
+        // fail to parse. An /html/ URL is still fetchable as given (it is
+        // already the render); the other forms need the id to build a URL.
         const paperId = extractPaperId(url.href);
-        if (!paperId) {
-          return null;
-        }
-
-        // An /html/ URL is fetched as given; /abs/ and /pdf/ are mapped to the
-        // render, which may not exist (404 -> fall back to the abstract page).
         const isHtmlUrl = /^\/html\//.test(url.pathname);
-        const renderUrl = isHtmlUrl ? url.href : buildArxivHtmlUrl(paperId);
-        const absUrl = buildArxivAbsUrl(paperId);
 
-        const [render, abs] = await Promise.all([
-          fetchArxivPage(renderUrl, "html render"),
-          fetchArxivPage(absUrl, "abstract page"),
-        ]);
+        const renderUrl = isHtmlUrl ? url.href : paperId ? buildArxivHtmlUrl(paperId) : null;
+        const absUrl = paperId ? buildArxivAbsUrl(paperId) : null;
 
-        // The render is the better read, but the abstract page is a fine
-        // article in its own right when there is no render.
-        const content = render ?? abs;
-        if (!content) {
-          return null;
-        }
-
-        logger.debug("Fetched ArXiv paper", {
-          paperId,
-          usedRender: render !== null,
-          hasMetadata: abs !== null,
-        });
-
-        // Prefer the abstract page's structured fields; each falls back to null
-        // so Readability/metadata still fill them when that fetch failed.
-        const metadata = abs ? parseArxivAbsMetadata(abs.content) : null;
-
-        return {
-          html: content.content,
-          title: metadata?.title ?? null,
-          author: metadata ? formatArxivAuthors(metadata.authors) : null,
-          excerpt: metadata?.summary ?? null,
-          publishedAt: null,
-          canonicalUrl: content.finalUrl,
-        };
+        return fetchArxivPaper(renderUrl, absUrl);
       },
 
       skipReadability: false, // Still want cleanup with Readability
@@ -91,35 +60,72 @@ export const arxivPlugin: UrlPlugin = {
 };
 
 /**
- * Fetch one of a paper's two pages, returning null if it isn't there.
+ * Fetch a paper's render and abstract page concurrently and combine them.
  *
- * A 404 on the render is the ordinary case for older papers, so it isn't worth
- * a warning. Rate limiting is rethrown per the convention in `fetch-page.ts`:
- * swallowing it would drop us into `acquireArticleContent`'s generic fetch,
- * re-requesting the host that just throttled us.
+ * Exported for the integration test, which drives the combination rules — which
+ * page wins, and when a rate limit is fatal — against a loopback server.
+ *
+ * Rate limiting is held rather than thrown eagerly: `Promise.all` would abandon
+ * a render we had already fetched just because the abstract page came back 429,
+ * failing a save that could have succeeded with Readability-derived metadata.
+ * The convention exists to stop us re-requesting a throttled host, and with a
+ * body in hand there is nothing to re-request — so the rejection only surfaces
+ * when neither page produced content.
+ *
+ * A render that blows the size cap likewise falls back to the abstract page
+ * rather than failing the save. This is a deliberate exception to
+ * `acquireArticleContent`'s "a size-limit violation is a hard failure" rule,
+ * which exists to stop us silently degrading to a scrape of *the same*
+ * oversized page; here the abstract page is a different, perfectly good
+ * representation of the paper.
  */
-async function fetchArxivPage(
-  url: string,
-  what: string
-): Promise<{ content: string; finalUrl: string } | null> {
-  try {
-    const result = await fetchHtmlPage(url);
-    return { content: result.content, finalUrl: result.finalUrl };
-  } catch (error) {
-    if (error instanceof HttpFetchError) {
-      if (error.isRateLimited()) {
-        throw error;
-      }
-      if (error.status === 404) {
-        logger.debug("ArXiv page not available", { url, what });
-        return null;
-      }
-    }
-    logger.warn("ArXiv page fetch failed", {
-      url,
-      what,
-      error: error instanceof Error ? error.message : String(error),
-    });
+export async function fetchArxivPaper(
+  renderUrl: string | null,
+  absUrl: string | null
+): Promise<SavedArticleContent | null> {
+  if (!renderUrl && !absUrl) {
     return null;
   }
+
+  const [renderResult, absResult] = await Promise.allSettled([
+    renderUrl
+      ? fetchPluginPage(new URL(renderUrl), "arxiv", { notFoundIsExpected: true })
+      : Promise.resolve(null),
+    absUrl ? fetchPluginPage(new URL(absUrl), "arxiv") : Promise.resolve(null),
+  ]);
+
+  const render = renderResult.status === "fulfilled" ? renderResult.value : null;
+  const abs = absResult.status === "fulfilled" ? absResult.value : null;
+
+  // The render is the better read, but the abstract page is a fine article in
+  // its own right when there is no render.
+  const content = render ?? abs;
+  if (!content) {
+    // Nothing to save. If a fetch was rejected (only rate limiting rejects),
+    // surface that so the save reports `upstreamRateLimited` instead of
+    // falling through to a generic fetch of the same throttled host.
+    const rejected = [renderResult, absResult].find((r) => r.status === "rejected");
+    if (rejected) {
+      throw rejected.reason;
+    }
+    return null;
+  }
+
+  logger.debug("Fetched ArXiv paper", {
+    usedRender: render !== null,
+    hasMetadata: abs !== null,
+  });
+
+  // Prefer the abstract page's structured fields; each falls back to null so
+  // Readability/metadata still fill them when that fetch failed.
+  const metadata = abs ? parseArxivAbsMetadata(abs.html) : null;
+
+  return {
+    html: content.html,
+    title: metadata?.title ?? null,
+    author: metadata ? formatArxivAuthors(metadata.authors) : null,
+    excerpt: metadata?.summary ?? null,
+    publishedAt: null,
+    canonicalUrl: content.finalUrl,
+  };
 }
