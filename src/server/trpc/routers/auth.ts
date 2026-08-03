@@ -8,7 +8,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import * as argon2 from "argon2";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 
 import { checkAccountRateLimit } from "@/server/rate-limit";
 import { verifyPassword } from "@/server/auth/password";
@@ -23,7 +23,6 @@ import {
 import { errors } from "../errors";
 import { users, oauthAccounts } from "@/server/db/schema";
 import { signupConfig, ALL_SIGNUP_PROVIDERS } from "@/server/config/env";
-import { generateUuidv7 } from "@/lib/uuidv7";
 import { createSession, revokeSessionByToken } from "@/server/auth/session";
 import { setSessionCookie, clearSessionCookie } from "@/server/auth/session-cookie";
 import { setOAuthStateCookie } from "@/server/auth/oauth/state-cookie";
@@ -47,6 +46,7 @@ import {
 } from "@/server/auth/oauth/discord";
 import { createUser, runPostSignupTasks } from "@/server/auth/signup";
 import { processOAuthCallback } from "@/server/auth/oauth/callback";
+import { linkOAuthAccount, unlinkOAuthAccount } from "@/server/services/oauth-accounts";
 import { GOOGLE_DRIVE_SCOPE } from "@/server/google/docs";
 import {
   DISCORD_BOT_ENABLED,
@@ -1019,67 +1019,17 @@ export const authRouter = createTRPCRouter({
       const googleResult = await validateOAuthCallback(() => validateGoogleCallback(code, state));
 
       const { userInfo, tokens, scopes } = googleResult;
-      const now = new Date();
 
-      // Check if user already has a Google account linked
-      const existingLink = await ctx.db
-        .select({
-          id: oauthAccounts.id,
-          providerAccountId: oauthAccounts.providerAccountId,
-        })
-        .from(oauthAccounts)
-        .where(and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, "google")))
-        .limit(1);
-
-      if (existingLink.length > 0) {
-        // User already has Google linked - this might be incremental authorization
-        // (e.g., adding Google Docs scope to existing account)
-        if (existingLink[0].providerAccountId !== userInfo.sub) {
-          // User is trying to link a different Google account
-          throw errors.oauthAlreadyLinked("Google");
-        }
-
-        // Same Google account - update with new tokens and scopes (incremental auth)
-        await ctx.db
-          .update(oauthAccounts)
-          .set({
-            accessToken: tokens.accessToken,
-            refreshToken: tokens.refreshToken ?? null,
-            expiresAt: tokens.expiresAt ?? null,
-            scopes,
-          })
-          .where(eq(oauthAccounts.id, existingLink[0].id));
-
-        return { success: true };
-      }
-
-      // Check if this Google account is already linked to another user
-      const existingOAuthAccount = await ctx.db
-        .select({ userId: oauthAccounts.userId })
-        .from(oauthAccounts)
-        .where(
-          and(
-            eq(oauthAccounts.provider, "google"),
-            eq(oauthAccounts.providerAccountId, userInfo.sub)
-          )
-        )
-        .limit(1);
-
-      if (existingOAuthAccount.length > 0) {
-        throw errors.oauthCallbackFailed("This Google account is already linked to another user");
-      }
-
-      // Link the OAuth account to the current user
-      await ctx.db.insert(oauthAccounts).values({
-        id: generateUuidv7(),
+      // Re-linking the same Google account updates the stored tokens/scopes,
+      // which is how incremental authorization (adding the Docs scope) lands.
+      await linkOAuthAccount(ctx.db, {
         userId,
         provider: "google",
         providerAccountId: userInfo.sub,
         accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken ?? null,
-        expiresAt: tokens.expiresAt ?? null,
+        refreshToken: tokens.refreshToken,
+        expiresAt: tokens.expiresAt,
         scopes,
-        createdAt: now,
       });
 
       return { success: true };
@@ -1135,50 +1085,19 @@ export const authRouter = createTRPCRouter({
         throw errors.oauthProviderNotConfigured("Apple");
       }
 
-      // Check if user already has an Apple account linked
-      const existingLink = await ctx.db
-        .select({ id: oauthAccounts.id })
-        .from(oauthAccounts)
-        .where(and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, "apple")))
-        .limit(1);
-
-      if (existingLink.length > 0) {
-        throw errors.oauthAlreadyLinked("Apple");
-      }
-
       const appleResult = await validateOAuthCallback(() =>
         validateAppleCallback(code, state, userDataInput)
       );
 
       const { userInfo, tokens } = appleResult;
-      const now = new Date();
 
-      // Check if this Apple account is already linked to another user
-      const existingOAuthAccount = await ctx.db
-        .select({ userId: oauthAccounts.userId })
-        .from(oauthAccounts)
-        .where(
-          and(
-            eq(oauthAccounts.provider, "apple"),
-            eq(oauthAccounts.providerAccountId, userInfo.sub)
-          )
-        )
-        .limit(1);
-
-      if (existingOAuthAccount.length > 0) {
-        throw errors.oauthCallbackFailed("This Apple account is already linked to another user");
-      }
-
-      // Link the OAuth account to the current user
-      await ctx.db.insert(oauthAccounts).values({
-        id: generateUuidv7(),
+      await linkOAuthAccount(ctx.db, {
         userId,
         provider: "apple",
         providerAccountId: userInfo.sub,
         accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken ?? null,
-        expiresAt: tokens.expiresAt ?? null,
-        createdAt: now,
+        refreshToken: tokens.refreshToken,
+        expiresAt: tokens.expiresAt,
       });
 
       return { success: true };
@@ -1219,48 +1138,17 @@ export const authRouter = createTRPCRouter({
         throw errors.oauthProviderNotConfigured("Discord");
       }
 
-      // Check if user already has a Discord account linked
-      const existingLink = await ctx.db
-        .select({ id: oauthAccounts.id })
-        .from(oauthAccounts)
-        .where(and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, "discord")))
-        .limit(1);
-
-      if (existingLink.length > 0) {
-        throw errors.oauthAlreadyLinked("Discord");
-      }
-
       const discordResult = await validateOAuthCallback(() => validateDiscordCallback(code, state));
 
       const { userInfo, tokens } = discordResult;
-      const now = new Date();
 
-      // Check if this Discord account is already linked to another user
-      const existingOAuthAccount = await ctx.db
-        .select({ userId: oauthAccounts.userId })
-        .from(oauthAccounts)
-        .where(
-          and(
-            eq(oauthAccounts.provider, "discord"),
-            eq(oauthAccounts.providerAccountId, userInfo.id)
-          )
-        )
-        .limit(1);
-
-      if (existingOAuthAccount.length > 0) {
-        throw errors.oauthCallbackFailed("This Discord account is already linked to another user");
-      }
-
-      // Link the OAuth account to the current user
-      await ctx.db.insert(oauthAccounts).values({
-        id: generateUuidv7(),
+      await linkOAuthAccount(ctx.db, {
         userId,
         provider: "discord",
         providerAccountId: userInfo.id,
         accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken ?? null,
-        expiresAt: tokens.expiresAt ?? null,
-        createdAt: now,
+        refreshToken: tokens.refreshToken,
+        expiresAt: tokens.expiresAt,
       });
 
       return { success: true };
@@ -1291,54 +1179,7 @@ export const authRouter = createTRPCRouter({
     )
     .output(z.object({ success: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
-      const { provider } = input;
-      const userId = ctx.session.user.id;
-
-      await ctx.db.transaction(async (tx) => {
-        // Serialize concurrent unlinks for this user by taking a row lock
-        // on the user. Without it, two requests unlinking *different*
-        // providers (e.g. Google in one tab, Apple in another) target
-        // different oauth_accounts rows, so neither blocks the other. A
-        // single atomic DELETE with an embedded count check does not close
-        // this race either: under READ COMMITTED the count subquery reads a
-        // snapshot and takes no lock on the other provider's row, so both
-        // requests observe two linked accounts, both pass the check, and
-        // both delete — leaving the user with zero auth methods (#825).
-        await tx.execute(sql`SELECT 1 FROM ${users} WHERE ${users.id} = ${userId} FOR UPDATE`);
-
-        // Idempotent: unlinking an already-unlinked provider succeeds
-        // without error rather than 404-ing.
-        const account = await tx
-          .select({ id: oauthAccounts.id })
-          .from(oauthAccounts)
-          .where(and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, provider)))
-          .limit(1);
-
-        if (account.length === 0) {
-          return;
-        }
-
-        // Safety check: refuse to remove the user's only remaining auth
-        // method. The FOR UPDATE lock above guarantees this count and the
-        // delete below can't interleave with another unlink for this user.
-        const user = await tx
-          .select({ passwordHash: users.passwordHash })
-          .from(users)
-          .where(eq(users.id, userId))
-          .limit(1);
-
-        const hasPassword = !!user[0]?.passwordHash;
-        const linkedAccountsCount = await tx.$count(
-          oauthAccounts,
-          eq(oauthAccounts.userId, userId)
-        );
-
-        if (!hasPassword && linkedAccountsCount <= 1) {
-          throw errors.cannotUnlinkOnlyAuth();
-        }
-
-        await tx.delete(oauthAccounts).where(eq(oauthAccounts.id, account[0].id));
-      });
+      await unlinkOAuthAccount(ctx.db, ctx.session.user.id, input.provider);
 
       return { success: true };
     }),
