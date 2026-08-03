@@ -13,12 +13,10 @@ import type { Database } from "@/server/db";
 import { oauthAccounts, users } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { errors } from "@/server/trpc/errors";
-
-/** Providers a user can link to an existing account. */
-export type OAuthProvider = "google" | "apple" | "discord";
+import type { OAuthProviderName } from "@/server/auth/oauth/config";
 
 /** Human-readable provider name, for error messages. */
-const PROVIDER_LABELS: Record<OAuthProvider, string> = {
+const PROVIDER_LABELS: Record<OAuthProviderName, string> = {
   google: "Google",
   apple: "Apple",
   discord: "Discord",
@@ -27,7 +25,7 @@ const PROVIDER_LABELS: Record<OAuthProvider, string> = {
 export interface LinkOAuthAccountParams {
   /** The signed-in user the provider account is being attached to. */
   userId: string;
-  provider: OAuthProvider;
+  provider: OAuthProviderName;
   /** The provider's stable id for the account (`sub` / Discord user id). */
   providerAccountId: string;
   accessToken: string;
@@ -42,8 +40,17 @@ export interface LinkOAuthAccountParams {
  *
  * Re-linking the *same* provider account is an update rather than an error, so
  * Google's incremental authorization (granting the Docs scope later) refreshes
- * the stored tokens and scopes in place. Linking a *different* account for a
- * provider the user already linked is refused — one link per provider.
+ * the stored tokens and scopes in place. This holds for **every** provider, not
+ * just Google: Apple and Discord used to reject any re-link, only because they
+ * checked for an existing row before the callback gave them a
+ * `providerAccountId` to compare against (#1467). Linking a *different* account
+ * for a provider the user already linked is refused — one link per provider.
+ *
+ * Identity comes from the caller's **session**, not from the provider's email,
+ * so — unlike `processOAuthCallback`, which picks the account by email — there
+ * is deliberately no `emailVerified` check here (SECURITY.md §4). Don't add one,
+ * and don't reuse this from a path where the session doesn't establish who the
+ * user is.
  *
  * @returns `"updated"` when an existing link was refreshed, `"linked"` for a new one
  * @throws `oauthAlreadyLinked` when a different account of this provider is linked
@@ -57,19 +64,27 @@ export async function linkOAuthAccount(
     params;
   const label = PROVIDER_LABELS[provider];
 
+  // What the provider omits is not the same as what it cleared. A re-consent
+  // typically returns no refresh token and no scope list, and dropping either
+  // would lose access we still hold — so both are only written when present
+  // (the same rule `refreshGoogleToken` follows). `expiresAt` is the exception
+  // and is always written: it belongs to the access token in this response, so
+  // keeping a stale one next to a fresh token would re-refresh forever.
   const tokenColumns = {
     accessToken,
-    refreshToken: refreshToken ?? null,
     expiresAt: expiresAt ?? null,
-    // Leave stored scopes alone for providers that don't report them, rather
-    // than clobbering them with NULL.
+    ...(refreshToken ? { refreshToken } : {}),
     ...(scopes !== undefined ? { scopes } : {}),
   };
 
+  // Ordered so a user who somehow has two rows for one provider (nothing
+  // enforces uniqueness on (user_id, provider)) resolves to their oldest link
+  // deterministically, rather than to whichever row the planner returns.
   const existingLink = await db
     .select({ id: oauthAccounts.id, providerAccountId: oauthAccounts.providerAccountId })
     .from(oauthAccounts)
     .where(and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, provider)))
+    .orderBy(oauthAccounts.createdAt)
     .limit(1);
 
   if (existingLink.length > 0) {
@@ -118,7 +133,7 @@ export async function linkOAuthAccount(
 export async function unlinkOAuthAccount(
   db: Database,
   userId: string,
-  provider: OAuthProvider
+  provider: OAuthProviderName
 ): Promise<void> {
   await db.transaction(async (tx) => {
     // Serialize concurrent unlinks for this user by taking a row lock on the
