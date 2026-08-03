@@ -11,6 +11,26 @@ updates:
     # https://daniakash.com/posts/simplest-supply-chain-defense/
     cooldown:
       default-days: 7
+    # React refuses to run unless react and react-dom are the *exact* same
+    # version, so a PR that bumps one and not the other fails every React
+    # unit test with "Incompatible React versions". Group them (plus their
+    # types) so they always move together. Groups default to version
+    # updates, so security updates need their own entry.
+    groups:
+      react:
+        applies-to: version-updates
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
+      react-security:
+        applies-to: security-updates
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
