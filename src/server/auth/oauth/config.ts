@@ -8,9 +8,15 @@
  * - Providers are automatically enabled/disabled based on env var presence
  * - UI can query /v1/auth/providers to know which buttons to show
  * - Self-hosters can omit OAuth config and still use email/password auth
+ *
+ * The client is `openid-client` (a certified OpenID Connect relying party, from the
+ * author of `jose`). It hands back `Configuration` objects, which are what the
+ * per-provider flow modules (`google.ts`, `apple.ts`, `discord.ts`) and the shared
+ * `token-exchange.ts` operate on.
  */
 
-import { Google, Apple, Discord } from "arctic";
+import { importPKCS8, SignJWT } from "jose";
+import * as client from "openid-client";
 
 // ============================================================================
 // Types
@@ -39,6 +45,48 @@ interface AppleOAuthConfig extends OAuthProviderConfig {
   keyId?: string;
   privateKey?: string;
 }
+
+// ============================================================================
+// Authorization Server Metadata
+// ============================================================================
+
+/**
+ * Authorization-server metadata is hard-coded rather than fetched with
+ * `client.discovery()`: these endpoints are stable and published, and hard-coding keeps
+ * a `.well-known` round-trip off the critical path of every login.
+ *
+ * `issuer` is load-bearing, not decoration: any `id_token` in a token response is
+ * rejected unless its `iss` matches exactly. These are the values each provider
+ * publishes in its own discovery document.
+ */
+const GOOGLE_SERVER: client.ServerMetadata = {
+  issuer: "https://accounts.google.com",
+  authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth",
+  token_endpoint: "https://oauth2.googleapis.com/token",
+};
+
+/** Apple's OpenID issuer, per https://appleid.apple.com/.well-known/openid-configuration */
+export const APPLE_ISSUER = "https://appleid.apple.com";
+
+/**
+ * Apple's JWKS endpoint. Apple signs id_tokens with rotating RS256 keys published here;
+ * `apple.ts` verifies against it with `jose` (fixed, trusted host — not user-influenced).
+ * The OAuth client never fetches it — it doesn't check token-endpoint id_token
+ * signatures — so this is the single source of truth for that one consumer.
+ */
+export const APPLE_JWKS_URI = "https://appleid.apple.com/auth/keys";
+
+const APPLE_SERVER: client.ServerMetadata = {
+  issuer: APPLE_ISSUER,
+  authorization_endpoint: "https://appleid.apple.com/auth/authorize",
+  token_endpoint: "https://appleid.apple.com/auth/token",
+};
+
+const DISCORD_SERVER: client.ServerMetadata = {
+  issuer: "https://discord.com",
+  authorization_endpoint: "https://discord.com/oauth2/authorize",
+  token_endpoint: "https://discord.com/api/oauth2/token",
+};
 
 // ============================================================================
 // Environment Variables
@@ -116,35 +164,95 @@ const oauthProviders: Record<OAuthProviderName, OAuthProviderConfig | AppleOAuth
   discord: discordConfig,
 };
 
+/**
+ * The redirect URI registered with a provider. The authorization request and the token
+ * request must carry an identical value, so both take it from here.
+ */
+export function getRedirectUri(provider: OAuthProviderName): string {
+  return `${APP_URL}/api/v1/auth/oauth/${provider}/callback`;
+}
+
 // ============================================================================
-// Provider Instances
+// Client Configurations
 // ============================================================================
 
 /**
- * Get Google OAuth provider instance
+ * All three providers authenticate with `client_secret_post` — the client id and secret
+ * go in the request body verbatim. That is what each provider's own docs show, and it
+ * avoids `client_secret_basic`, whose RFC 6749 §2.3.1 form-url-encoding escapes the
+ * `-`/`.`/`_` that Google and Discord credentials are full of before base64-ing them.
+ */
+
+/**
+ * Get the OAuth client configuration for Google
  * Returns null if Google OAuth is not configured
  */
-export function getGoogleProvider(): Google | null {
+export function getGoogleConfig(): client.Configuration | null {
   if (!googleConfig.enabled || !googleConfig.clientId || !googleConfig.clientSecret) {
     return null;
   }
 
-  return new Google(
+  return new client.Configuration(
+    GOOGLE_SERVER,
     googleConfig.clientId,
-    googleConfig.clientSecret,
-    `${APP_URL}/api/v1/auth/oauth/google/callback`
+    undefined,
+    client.ClientSecretPost(googleConfig.clientSecret)
   );
 }
 
 /**
- * Get Apple OAuth provider instance
- * Returns null if Apple OAuth is not configured
- *
- * Note: Arctic expects the private key as a Uint8Array (PKCS8 format).
- * The environment variable should contain the PEM-encoded key,
- * which we convert to bytes by extracting the base64-encoded portion.
+ * Apple never issues a static client secret: the `client_secret` its token endpoint
+ * expects is a short-lived ES256 JWT signed with the developer key, so one has to be
+ * minted per token request. Apple allows up to 6 months; we keep it to minutes because
+ * each is used for exactly one request.
  */
-export function getAppleProvider(): Apple | null {
+const APPLE_CLIENT_SECRET_LIFETIME = "5m";
+
+async function createAppleClientSecret(
+  clientId: string,
+  teamId: string,
+  keyId: string,
+  privateKeyPem: string
+): Promise<string> {
+  // The key is normally stored PEM-armored (see `.env.example`), but accept a bare
+  // base64 body too — that form used to work and silently breaking it on deploy would
+  // take Apple sign-in down.
+  const pem = privateKeyPem.includes("-----BEGIN")
+    ? privateKeyPem
+    : `-----BEGIN PRIVATE KEY-----\n${privateKeyPem}\n-----END PRIVATE KEY-----`;
+  const privateKey = await importPKCS8(pem, "ES256");
+
+  return new SignJWT()
+    .setProtectedHeader({ typ: "JWT", alg: "ES256", kid: keyId })
+    .setIssuer(teamId)
+    .setSubject(clientId)
+    .setAudience(APPLE_ISSUER)
+    .setIssuedAt()
+    .setExpirationTime(APPLE_CLIENT_SECRET_LIFETIME)
+    .sign(privateKey);
+}
+
+/**
+ * Get the Apple configuration for building an authorization URL.
+ * Returns null if Apple OAuth is not configured.
+ *
+ * Separate from `getAppleTokenConfig` because an authorization request carries no client
+ * credentials: minting the JWT here would be wasted work, and would turn a bad signing
+ * key into a failure at button-render time rather than at the token exchange.
+ */
+export function getAppleAuthorizationConfig(): client.Configuration | null {
+  if (!appleConfig.enabled || !appleConfig.clientId) {
+    return null;
+  }
+
+  return new client.Configuration(APPLE_SERVER, appleConfig.clientId, undefined, client.None());
+}
+
+/**
+ * Get the Apple configuration for the token endpoint, minting a fresh JWT client secret.
+ * Returns null if Apple OAuth is not configured.
+ */
+export async function getAppleTokenConfig(): Promise<client.Configuration | null> {
   if (
     !appleConfig.enabled ||
     !appleConfig.clientId ||
@@ -155,21 +263,18 @@ export function getAppleProvider(): Apple | null {
     return null;
   }
 
-  // Convert PEM-encoded private key to Uint8Array
-  // The key should be in PKCS8 format
-  const privateKeyPem = appleConfig.privateKey;
-  const privateKeyBase64 = privateKeyPem
-    .replace(/-----BEGIN PRIVATE KEY-----/g, "")
-    .replace(/-----END PRIVATE KEY-----/g, "")
-    .replace(/\s/g, "");
-  const privateKeyBytes = Uint8Array.from(atob(privateKeyBase64), (c) => c.charCodeAt(0));
-
-  return new Apple(
+  const clientSecret = await createAppleClientSecret(
     appleConfig.clientId,
     appleConfig.teamId,
     appleConfig.keyId,
-    privateKeyBytes,
-    `${APP_URL}/api/v1/auth/oauth/apple/callback`
+    appleConfig.privateKey
+  );
+
+  return new client.Configuration(
+    APPLE_SERVER,
+    appleConfig.clientId,
+    undefined,
+    client.ClientSecretPost(clientSecret)
   );
 }
 
@@ -182,18 +287,19 @@ export function getAppleClientId(): string | undefined {
 }
 
 /**
- * Get Discord OAuth provider instance
+ * Get the OAuth client configuration for Discord
  * Returns null if Discord OAuth is not configured
  */
-export function getDiscordProvider(): Discord | null {
+export function getDiscordConfig(): client.Configuration | null {
   if (!discordConfig.enabled || !discordConfig.clientId || !discordConfig.clientSecret) {
     return null;
   }
 
-  return new Discord(
+  return new client.Configuration(
+    DISCORD_SERVER,
     discordConfig.clientId,
-    discordConfig.clientSecret,
-    `${APP_URL}/api/v1/auth/oauth/discord/callback`
+    undefined,
+    client.ClientSecretPost(discordConfig.clientSecret)
   );
 }
 

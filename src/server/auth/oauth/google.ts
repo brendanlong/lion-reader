@@ -8,8 +8,9 @@
  * - Fetching user info from Google
  */
 
-import { generateCodeVerifier, generateState } from "arctic";
-import { getGoogleProvider, isProviderEnabled } from "./config";
+import * as client from "openid-client";
+import { getGoogleConfig, getRedirectUri, isProviderEnabled } from "./config";
+import { accessTokenExpiresAt, exchangeAuthorizationCode } from "./token-exchange";
 import { redis } from "@/server/redis";
 
 // ============================================================================
@@ -199,15 +200,15 @@ export async function createGoogleAuthUrl(
   returnUrl?: string,
   inviteToken?: string
 ): Promise<GoogleAuthUrlResult> {
-  const google = getGoogleProvider();
+  const config = getGoogleConfig();
 
-  if (!google) {
+  if (!config) {
     throw new Error("Google OAuth is not configured");
   }
 
   // Generate PKCE and state parameters
-  const state = generateState();
-  const codeVerifier = generateCodeVerifier();
+  const state = client.randomState();
+  const codeVerifier = client.randomPKCECodeVerifier();
 
   // Combine base scopes with additional scopes (if any)
   const scopes = additionalScopes
@@ -218,7 +219,13 @@ export async function createGoogleAuthUrl(
   await storePkceVerifier(state, codeVerifier, scopes, mode, returnUrl, inviteToken);
 
   // Create the authorization URL
-  const url = google.createAuthorizationURL(state, codeVerifier, scopes);
+  const url = client.buildAuthorizationUrl(config, {
+    redirect_uri: getRedirectUri("google"),
+    scope: scopes.join(" "),
+    state,
+    code_challenge: await client.calculatePKCECodeChallenge(codeVerifier),
+    code_challenge_method: "S256",
+  });
 
   return {
     url: url.toString(),
@@ -243,31 +250,37 @@ export async function validateGoogleCallback(
   code: string,
   state: string
 ): Promise<GoogleAuthResult> {
-  const google = getGoogleProvider();
+  const config = getGoogleConfig();
 
-  if (!google) {
+  if (!config) {
     throw new Error("Google OAuth is not configured");
   }
 
   // Retrieve and consume the PKCE data (verifier + scopes)
   const pkceData = await consumePkceVerifier(state);
 
-  if (!pkceData) {
+  // An empty verifier must fail closed: the client treats a falsy `pkceCodeVerifier` as
+  // "this flow used no PKCE" and would silently drop the proof from the token request.
+  if (!pkceData?.verifier) {
     throw new Error("Invalid or expired OAuth state");
   }
 
   // Exchange the authorization code for tokens
-  const tokens = await google.validateAuthorizationCode(code, pkceData.verifier);
+  const tokens = await exchangeAuthorizationCode(config, getRedirectUri("google"), {
+    code,
+    state,
+    codeVerifier: pkceData.verifier,
+  });
 
   // Fetch user info from Google
-  const userInfo = await fetchGoogleUserInfo(tokens.accessToken());
+  const userInfo = await fetchGoogleUserInfo(tokens.access_token);
 
   return {
     userInfo,
     tokens: {
-      accessToken: tokens.accessToken(),
-      refreshToken: tokens.hasRefreshToken() ? tokens.refreshToken() : undefined,
-      expiresAt: tokens.accessTokenExpiresAt(),
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      expiresAt: accessTokenExpiresAt(tokens),
     },
     scopes: pkceData.scopes,
     mode: pkceData.mode,

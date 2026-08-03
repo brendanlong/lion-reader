@@ -8,8 +8,9 @@
  * - Fetching user info from Discord
  */
 
-import { generateState } from "arctic";
-import { getDiscordProvider, isProviderEnabled } from "./config";
+import * as client from "openid-client";
+import { getDiscordConfig, getRedirectUri, isProviderEnabled } from "./config";
+import { accessTokenExpiresAt, exchangeAuthorizationCode } from "./token-exchange";
 import { redis } from "@/server/redis";
 
 // ============================================================================
@@ -154,21 +155,24 @@ async function consumeState(state: string): Promise<StateData | null> {
  * @throws Error if Discord OAuth is not configured
  */
 export async function createDiscordAuthUrl(inviteToken?: string): Promise<DiscordAuthUrlResult> {
-  const discord = getDiscordProvider();
+  const config = getDiscordConfig();
 
-  if (!discord) {
+  if (!config) {
     throw new Error("Discord OAuth is not configured");
   }
 
   // Generate state parameter
-  const state = generateState();
+  const state = client.randomState();
 
   // Store state and invite token for later use
   await storeState(state, inviteToken);
 
-  // Create the authorization URL
-  // Discord doesn't require PKCE, so we pass null for the code verifier
-  const url = discord.createAuthorizationURL(state, null, DISCORD_SCOPES);
+  // Create the authorization URL (Discord doesn't require PKCE)
+  const url = client.buildAuthorizationUrl(config, {
+    redirect_uri: getRedirectUri("discord"),
+    scope: DISCORD_SCOPES.join(" "),
+    state,
+  });
 
   return {
     url: url.toString(),
@@ -193,9 +197,9 @@ export async function validateDiscordCallback(
   code: string,
   state: string
 ): Promise<DiscordAuthResult> {
-  const discord = getDiscordProvider();
+  const config = getDiscordConfig();
 
-  if (!discord) {
+  if (!config) {
     throw new Error("Discord OAuth is not configured");
   }
 
@@ -206,19 +210,21 @@ export async function validateDiscordCallback(
     throw new Error("Invalid or expired OAuth state");
   }
 
-  // Exchange the authorization code for tokens
-  // Discord doesn't require PKCE, so we pass null for the code verifier
-  const tokens = await discord.validateAuthorizationCode(code, null);
+  // Exchange the authorization code for tokens (Discord doesn't require PKCE)
+  const tokens = await exchangeAuthorizationCode(config, getRedirectUri("discord"), {
+    code,
+    state,
+  });
 
   // Fetch user info from Discord
-  const userInfo = await fetchDiscordUserInfo(tokens.accessToken());
+  const userInfo = await fetchDiscordUserInfo(tokens.access_token);
 
   return {
     userInfo,
     tokens: {
-      accessToken: tokens.accessToken(),
-      refreshToken: tokens.hasRefreshToken() ? tokens.refreshToken() : undefined,
-      expiresAt: tokens.accessTokenExpiresAt(),
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      expiresAt: accessTokenExpiresAt(tokens),
     },
     inviteToken: stateData.inviteToken,
   };

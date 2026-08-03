@@ -8,6 +8,7 @@
 
 import { describe, it, expect, beforeEach, afterAll, vi, beforeAll, afterEach } from "vitest";
 import { eq, and } from "drizzle-orm";
+import { generateKeyPair, SignJWT } from "jose";
 import { db } from "../../src/server/db";
 import { users, sessions, oauthAccounts } from "../../src/server/db/schema";
 import { redis } from "../../src/server/redis";
@@ -15,29 +16,37 @@ import { generateUuidv7 } from "../../src/lib/uuidv7";
 import * as argon2 from "argon2";
 import { createTestUser } from "./helpers";
 
-// Mock the arctic library to avoid needing real Google credentials
-vi.mock("arctic", () => {
-  // Create a mock class for Google that can be instantiated with `new`
-  class MockGoogle {
-    createAuthorizationURL(state: string) {
-      return new URL(`https://accounts.google.com/o/oauth2/v2/auth?state=${state}`);
-    }
-    validateAuthorizationCode() {
-      return {
-        accessToken: () => "mock-access-token",
-        hasRefreshToken: () => true,
-        refreshToken: () => "mock-refresh-token",
-        accessTokenExpiresAt: () => new Date(Date.now() + 3600000),
-      };
-    }
-  }
+const GOOGLE_ISSUER = "https://accounts.google.com";
+const GOOGLE_CLIENT_ID = "test-client-id";
 
-  return {
-    Google: MockGoogle,
-    generateCodeVerifier: vi.fn().mockReturnValue("mock-code-verifier"),
-    generateState: vi.fn().mockReturnValue("mock-state"),
-  };
-});
+/**
+ * Because we request the `openid` scope, Google's token response carries an `id_token`,
+ * and the OAuth client hard-validates its `iss`/`aud`/`exp` even though we read the
+ * profile from the userinfo endpoint instead. A wrong `issuer` in our server metadata
+ * would therefore break every Google login, so the exchange is exercised with a real one.
+ */
+async function signGoogleIdToken(overrides: { iss?: string; aud?: string } = {}) {
+  const { privateKey } = await generateKeyPair("RS256", { extractable: true });
+  return new SignJWT({ email: "test@example.com", email_verified: true })
+    .setProtectedHeader({ alg: "RS256" })
+    .setIssuer(overrides.iss ?? GOOGLE_ISSUER)
+    .setAudience(overrides.aud ?? GOOGLE_CLIENT_ID)
+    .setSubject("google-user-123")
+    .setIssuedAt()
+    .setExpirationTime("1h")
+    .sign(privateKey);
+}
+
+// What Google's token endpoint returns for our mocked authorization code. Stubbing at
+// the HTTP boundary (rather than mocking the OAuth client) keeps the real code exchange,
+// including PKCE, state and id_token handling, under test.
+const mockTokenResponse: Record<string, unknown> = {
+  access_token: "mock-access-token",
+  token_type: "Bearer",
+  expires_in: 3600,
+  refresh_token: "mock-refresh-token",
+  scope: "openid email profile",
+};
 
 // Mock Google user info fetch
 const mockGoogleUserInfo = {
@@ -53,23 +62,40 @@ const mockGoogleUserInfo = {
 // We need to mock the fetch for Google user info
 const originalFetch = global.fetch;
 
+// Captured from the stubbed token endpoint so a test can assert what we put on the wire
+let lastTokenRequest: { body: URLSearchParams; headers: Headers } | null = null;
+
 describe("Google OAuth", () => {
   // Mock Google OAuth config to be enabled
-  beforeAll(() => {
+  beforeAll(async () => {
     // Set the environment variables for Google OAuth
-    process.env.GOOGLE_CLIENT_ID = "test-client-id";
+    process.env.GOOGLE_CLIENT_ID = GOOGLE_CLIENT_ID;
     process.env.GOOGLE_CLIENT_SECRET = "test-client-secret";
     process.env.NEXT_PUBLIC_APP_URL = "http://localhost:3000";
 
     // Mock global fetch for Google API calls
-    global.fetch = vi.fn().mockImplementation((url: string) => {
+    global.fetch = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url =
+        input instanceof URL ? input.href : input instanceof Request ? input.url : String(input);
+      if (url.startsWith("https://oauth2.googleapis.com/token")) {
+        lastTokenRequest = {
+          body: new URLSearchParams(String(init?.body)),
+          headers: new Headers(init?.headers),
+        };
+        return Promise.resolve(
+          new Response(JSON.stringify(mockTokenResponse), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          })
+        );
+      }
       if (url.includes("googleapis.com/oauth2/v3/userinfo")) {
         return Promise.resolve({
           ok: true,
           json: () => Promise.resolve(mockGoogleUserInfo),
         });
       }
-      return originalFetch(url);
+      return originalFetch(input, init);
     });
   });
 
@@ -83,6 +109,8 @@ describe("Google OAuth", () => {
 
   // Clean up tables before each test
   beforeEach(async () => {
+    // Default to a valid id_token; negative tests overwrite it.
+    mockTokenResponse.id_token = await signGoogleIdToken();
     await db.delete(sessions);
     await db.delete(oauthAccounts);
     await db.delete(users);
@@ -110,14 +138,19 @@ describe("Google OAuth", () => {
 
       const result = await createGoogleAuthUrl();
 
-      expect(result.url).toContain("https://accounts.google.com");
-      expect(result.state).toBe("mock-state");
+      const url = new URL(result.url);
+      expect(url.origin).toBe("https://accounts.google.com");
+      expect(url.searchParams.get("state")).toBe(result.state);
+      expect(url.searchParams.get("code_challenge_method")).toBe("S256");
+      expect(url.searchParams.get("code_challenge")).toBeTruthy();
+      expect(url.searchParams.get("scope")).toBe("openid email profile");
+      expect(result.state).not.toBe("");
 
       // Verify PKCE verifier is stored in Redis (as JSON with verifier and scopes)
-      const storedData = await redis.get("oauth:pkce:mock-state");
+      const storedData = await redis.get(`oauth:pkce:${result.state}`);
       expect(storedData).not.toBeNull();
       const parsedData = JSON.parse(storedData!);
-      expect(parsedData.verifier).toBe("mock-code-verifier");
+      expect(parsedData.verifier).toEqual(expect.any(String));
       expect(parsedData.scopes).toEqual(["openid", "email", "profile"]);
     });
   });
@@ -128,10 +161,10 @@ describe("Google OAuth", () => {
         await import("../../src/server/auth/oauth/google");
 
       // First create auth URL to store PKCE verifier
-      await createGoogleAuthUrl();
+      const { state } = await createGoogleAuthUrl();
 
       // Now validate the callback
-      const result = await validateGoogleCallback("mock-auth-code", "mock-state");
+      const result = await validateGoogleCallback("mock-auth-code", state);
 
       expect(result.userInfo.sub).toBe("google-user-123");
       expect(result.userInfo.email).toBe("test@example.com");
@@ -139,7 +172,7 @@ describe("Google OAuth", () => {
       expect(result.tokens.refreshToken).toBe("mock-refresh-token");
 
       // PKCE verifier should be consumed (deleted)
-      const storedVerifier = await redis.get("oauth:pkce:mock-state");
+      const storedVerifier = await redis.get(`oauth:pkce:${state}`);
       expect(storedVerifier).toBeNull();
     });
 
@@ -149,6 +182,64 @@ describe("Google OAuth", () => {
       await expect(validateGoogleCallback("mock-auth-code", "invalid-state")).rejects.toThrow(
         "Invalid or expired OAuth state"
       );
+    });
+
+    it("fails closed when the stored PKCE verifier is empty", async () => {
+      const { validateGoogleCallback } = await import("../../src/server/auth/oauth/google");
+
+      await redis.setex(
+        "oauth:pkce:empty-verifier-state",
+        600,
+        JSON.stringify({ verifier: "", scopes: ["openid", "email", "profile"], mode: "login" })
+      );
+
+      // Must not fall through to an exchange with no PKCE proof at all
+      await expect(
+        validateGoogleCallback("mock-auth-code", "empty-verifier-state")
+      ).rejects.toThrow("Invalid or expired OAuth state");
+    });
+
+    it("sends the token request Google documents", async () => {
+      const { createGoogleAuthUrl, validateGoogleCallback } =
+        await import("../../src/server/auth/oauth/google");
+
+      const { state } = await createGoogleAuthUrl();
+      lastTokenRequest = null;
+      await validateGoogleCallback("mock-auth-code", state);
+
+      const { body, headers } = lastTokenRequest!;
+      expect(body.get("grant_type")).toBe("authorization_code");
+      expect(body.get("code")).toBe("mock-auth-code");
+      // Must match the redirect_uri sent on the authorization request, verbatim
+      expect(body.get("redirect_uri")).toBe(
+        "http://localhost:3000/api/v1/auth/oauth/google/callback"
+      );
+      expect(body.get("code_verifier")).toBeTruthy();
+      // client_secret_post: raw credentials in the body, no Basic header whose
+      // form-url-encoding would escape the punctuation in real Google credentials
+      expect(body.get("client_id")).toBe(GOOGLE_CLIENT_ID);
+      expect(body.get("client_secret")).toBe("test-client-secret");
+      expect(headers.get("authorization")).toBeNull();
+    });
+
+    it("accepts the id_token issuer Google's discovery document publishes", async () => {
+      const { createGoogleAuthUrl, validateGoogleCallback } =
+        await import("../../src/server/auth/oauth/google");
+
+      mockTokenResponse.id_token = await signGoogleIdToken({ iss: GOOGLE_ISSUER });
+      const { state } = await createGoogleAuthUrl();
+
+      await expect(validateGoogleCallback("mock-auth-code", state)).resolves.toBeDefined();
+    });
+
+    it("rejects an id_token minted for a different client", async () => {
+      const { createGoogleAuthUrl, validateGoogleCallback } =
+        await import("../../src/server/auth/oauth/google");
+
+      mockTokenResponse.id_token = await signGoogleIdToken({ aud: "some-other-clients-id" });
+      const { state } = await createGoogleAuthUrl();
+
+      await expect(validateGoogleCallback("mock-auth-code", state)).rejects.toThrow();
     });
   });
 
@@ -184,10 +275,6 @@ describe("Google OAuth", () => {
         scopes: ["openid", "email", "profile"],
       });
       await redis.setex("oauth:pkce:new-user-state", 600, pkceData);
-
-      // Reset mock to use a different state
-      const { generateState } = await import("arctic");
-      vi.mocked(generateState).mockReturnValueOnce("new-user-state");
 
       const { validateGoogleCallback } = await import("../../src/server/auth/oauth/google");
 
@@ -258,13 +345,13 @@ describe("Google OAuth", () => {
       const { createGoogleAuthUrl, validateGoogleCallback } =
         await import("../../src/server/auth/oauth/google");
 
-      await createGoogleAuthUrl();
+      const { state } = await createGoogleAuthUrl();
 
       // First use should succeed
-      await validateGoogleCallback("mock-auth-code", "mock-state");
+      await validateGoogleCallback("mock-auth-code", state);
 
       // Second use should fail (verifier consumed)
-      await expect(validateGoogleCallback("mock-auth-code", "mock-state")).rejects.toThrow(
+      await expect(validateGoogleCallback("mock-auth-code", state)).rejects.toThrow(
         "Invalid or expired OAuth state"
       );
     });

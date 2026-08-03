@@ -8,7 +8,7 @@
  * `code`+`state` for the attacker's account, and deliver the callback URL to a victim,
  * whose browser then logs into the **attacker's** account.
  *
- * We close it with the arctic/Lucia double-submit pattern: when the authorization URL
+ * We close it with the double-submit cookie pattern: when the authorization URL
  * is generated we set a short-lived `HttpOnly` cookie holding the same `state`, and the
  * browser-facing callback route requires the cookie to match the `state` it received.
  * The attacker cannot set (or read) the victim's `HttpOnly` cookie, so a delivered

@@ -28,45 +28,10 @@ const APPLE_ISSUER = "https://appleid.apple.com";
 const APPLE_AUD = "test-apple-client-id";
 const APPLE_KID = "test-key";
 
-// The signed id_token the mocked arctic returns. Set (with a real signature over
-// a test key) in beforeEach; individual tests overwrite it to exercise the real
-// jose verification path (bad signature / issuer / audience / expiry).
-const { appleMock } = vi.hoisted(() => ({ appleMock: { idToken: "" } }));
-
-// Mock the arctic library
-vi.mock("arctic", () => {
-  // Create a mock class for Apple that can be instantiated with `new`
-  class MockApple {
-    createAuthorizationURL(state: string) {
-      return new URL(`https://appleid.apple.com/auth/authorize?state=${state}`);
-    }
-    validateAuthorizationCode() {
-      return {
-        accessToken: () => "mock-apple-access-token",
-        hasRefreshToken: () => true,
-        refreshToken: () => "mock-apple-refresh-token",
-        idToken: () => appleMock.idToken,
-        accessTokenExpiresAt: () => new Date(Date.now() + 3600000),
-      };
-    }
-  }
-
-  // Create a mock class for Google
-  class MockGoogle {
-    createAuthorizationURL() {
-      return new URL("https://accounts.google.com/o/oauth2/v2/auth");
-    }
-    validateAuthorizationCode() {
-      return {};
-    }
-  }
-
-  return {
-    Apple: MockApple,
-    Google: MockGoogle,
-    generateState: () => "mock-apple-state",
-  };
-});
+// The signed id_token Apple's stubbed token endpoint returns. Set (with a real signature
+// over a test key) in beforeEach; individual tests overwrite it to exercise the real
+// verification path (bad signature / issuer / audience / expiry).
+const appleMock = { idToken: "" };
 
 // A real RSA key that "Apple" signs id_tokens with; its public half is served from
 // a stubbed JWKS endpoint so jose's signature verification runs for real.
@@ -144,6 +109,22 @@ OF/2NxApJCzGCEDdfSp6VQO30hyhRANCAAQRWz+jn65BtOMvdyHKcvjBeBSDZH2r
           })
         );
       }
+      // Stub Apple's token endpoint at the HTTP boundary so the real OAuth client (and
+      // its own id_token claim checks) stay under test.
+      if (url.startsWith("https://appleid.apple.com/auth/token")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              access_token: "mock-apple-access-token",
+              token_type: "Bearer",
+              expires_in: 3600,
+              refresh_token: "mock-apple-refresh-token",
+              id_token: appleMock.idToken,
+            }),
+            { status: 200, headers: { "content-type": "application/json" } }
+          )
+        );
+      }
       return realFetch(input, init);
     });
   });
@@ -187,11 +168,16 @@ OF/2NxApJCzGCEDdfSp6VQO30hyhRANCAAQRWz+jn65BtOMvdyHKcvjBeBSDZH2r
 
       const result = await createAppleAuthUrl();
 
-      expect(result.url).toContain("https://appleid.apple.com");
-      expect(result.state).toBe("mock-apple-state");
+      const url = new URL(result.url);
+      expect(url.origin).toBe("https://appleid.apple.com");
+      expect(url.searchParams.get("state")).toBe(result.state);
+      // Apple requires form_post when name/email scopes are requested
+      expect(url.searchParams.get("response_mode")).toBe("form_post");
+      expect(url.searchParams.get("scope")).toBe("name email");
+      expect(result.state).not.toBe("");
 
       // Verify state is stored in Redis (stored as JSON with optional inviteToken)
-      const storedState = await redis.get("oauth:apple:state:mock-apple-state");
+      const storedState = await redis.get(`oauth:apple:state:${result.state}`);
       expect(storedState).not.toBeNull();
       const stateData = JSON.parse(storedState!);
       expect(stateData).toEqual({});
@@ -204,10 +190,10 @@ OF/2NxApJCzGCEDdfSp6VQO30hyhRANCAAQRWz+jn65BtOMvdyHKcvjBeBSDZH2r
         await import("../../src/server/auth/oauth/apple");
 
       // First create auth URL to store state
-      await createAppleAuthUrl();
+      const { state } = await createAppleAuthUrl();
 
       // Now validate the callback
-      const result = await validateAppleCallback("mock-auth-code", "mock-apple-state");
+      const result = await validateAppleCallback("mock-auth-code", state);
 
       expect(result.userInfo.sub).toBe(mockAppleUserSub);
       expect(result.userInfo.email).toBe(mockAppleEmail);
@@ -217,7 +203,7 @@ OF/2NxApJCzGCEDdfSp6VQO30hyhRANCAAQRWz+jn65BtOMvdyHKcvjBeBSDZH2r
       expect(result.tokens.refreshToken).toBe("mock-apple-refresh-token");
 
       // State should be consumed (deleted)
-      const storedState = await redis.get("oauth:apple:state:mock-apple-state");
+      const storedState = await redis.get(`oauth:apple:state:${state}`);
       expect(storedState).toBeNull();
     });
 
@@ -225,7 +211,7 @@ OF/2NxApJCzGCEDdfSp6VQO30hyhRANCAAQRWz+jn65BtOMvdyHKcvjBeBSDZH2r
       const { createAppleAuthUrl, validateAppleCallback } =
         await import("../../src/server/auth/oauth/apple");
 
-      await createAppleAuthUrl();
+      const { state } = await createAppleAuthUrl();
 
       const firstAuthData = JSON.stringify({
         name: {
@@ -235,11 +221,7 @@ OF/2NxApJCzGCEDdfSp6VQO30hyhRANCAAQRWz+jn65BtOMvdyHKcvjBeBSDZH2r
         email: "john@example.com",
       });
 
-      const result = await validateAppleCallback(
-        "mock-auth-code",
-        "mock-apple-state",
-        firstAuthData
-      );
+      const result = await validateAppleCallback("mock-auth-code", state, firstAuthData);
 
       expect(result.firstAuthData).toBeDefined();
       expect(result.firstAuthData?.name?.firstName).toBe("John");
@@ -251,7 +233,7 @@ OF/2NxApJCzGCEDdfSp6VQO30hyhRANCAAQRWz+jn65BtOMvdyHKcvjBeBSDZH2r
       const { createAppleAuthUrl, validateAppleCallback } =
         await import("../../src/server/auth/oauth/apple");
 
-      await createAppleAuthUrl();
+      const { state } = await createAppleAuthUrl();
 
       const firstAuthData = {
         name: {
@@ -261,11 +243,7 @@ OF/2NxApJCzGCEDdfSp6VQO30hyhRANCAAQRWz+jn65BtOMvdyHKcvjBeBSDZH2r
         email: "jane@example.com",
       };
 
-      const result = await validateAppleCallback(
-        "mock-auth-code",
-        "mock-apple-state",
-        firstAuthData
-      );
+      const result = await validateAppleCallback("mock-auth-code", state, firstAuthData);
 
       expect(result.firstAuthData).toBeDefined();
       expect(result.firstAuthData?.name?.firstName).toBe("Jane");
@@ -362,10 +340,10 @@ OF/2NxApJCzGCEDdfSp6VQO30hyhRANCAAQRWz+jn65BtOMvdyHKcvjBeBSDZH2r
     it("stores state with TTL", async () => {
       const { createAppleAuthUrl } = await import("../../src/server/auth/oauth/apple");
 
-      await createAppleAuthUrl();
+      const { state } = await createAppleAuthUrl();
 
       // Check TTL is set (should be 600 seconds)
-      const ttl = await redis.ttl("oauth:apple:state:mock-apple-state");
+      const ttl = await redis.ttl(`oauth:apple:state:${state}`);
       expect(ttl).toBeGreaterThan(0);
       expect(ttl).toBeLessThanOrEqual(600);
     });
@@ -374,19 +352,42 @@ OF/2NxApJCzGCEDdfSp6VQO30hyhRANCAAQRWz+jn65BtOMvdyHKcvjBeBSDZH2r
       const { createAppleAuthUrl, validateAppleCallback } =
         await import("../../src/server/auth/oauth/apple");
 
-      await createAppleAuthUrl();
+      const { state } = await createAppleAuthUrl();
 
       // First use should succeed
-      await validateAppleCallback("mock-auth-code", "mock-apple-state");
+      await validateAppleCallback("mock-auth-code", state);
 
       // Second use should fail (state consumed)
-      await expect(validateAppleCallback("mock-auth-code", "mock-apple-state")).rejects.toThrow(
+      await expect(validateAppleCallback("mock-auth-code", state)).rejects.toThrow(
         "Invalid or expired OAuth state"
       );
     });
   });
 
   describe("JWT id_token decoding", () => {
+    /**
+     * Runs a callback that is expected to be rejected and returns every message along
+     * the error's `cause` chain. The OAuth client wraps a failed claim check in a
+     * generic error, so the claim that actually failed is only named on a nested cause.
+     */
+    async function rejectionReason(state: string): Promise<string> {
+      const { validateAppleCallback } = await import("../../src/server/auth/oauth/apple");
+
+      const sentinel = Symbol("resolved");
+      let thrown: unknown = await validateAppleCallback("mock-auth-code", state).then(
+        () => sentinel,
+        (error: unknown) => error
+      );
+      expect(thrown).not.toBe(sentinel);
+
+      const messages: string[] = [];
+      while (thrown instanceof Error) {
+        messages.push(thrown.message);
+        thrown = thrown.cause;
+      }
+      return messages.join(" | ");
+    }
+
     it("extracts user info from valid JWT", async () => {
       // Store state first
       await redis.setex("oauth:apple:state:jwt-test-state", 600, "valid");
@@ -404,27 +405,21 @@ OF/2NxApJCzGCEDdfSp6VQO30hyhRANCAAQRWz+jn65BtOMvdyHKcvjBeBSDZH2r
       appleMock.idToken = await signAppleIdToken({ aud: "some-other-clients-id" });
       await redis.setex("oauth:apple:state:bad-aud-state", 600, "valid");
 
-      const { validateAppleCallback } = await import("../../src/server/auth/oauth/apple");
-
-      await expect(validateAppleCallback("mock-auth-code", "bad-aud-state")).rejects.toThrow(/aud/);
+      expect(await rejectionReason("bad-aud-state")).toMatch(/aud/);
     });
 
     it("rejects an id_token with an unexpected issuer", async () => {
       appleMock.idToken = await signAppleIdToken({ iss: "https://evil.example.com" });
       await redis.setex("oauth:apple:state:bad-iss-state", 600, "valid");
 
-      const { validateAppleCallback } = await import("../../src/server/auth/oauth/apple");
-
-      await expect(validateAppleCallback("mock-auth-code", "bad-iss-state")).rejects.toThrow(/iss/);
+      expect(await rejectionReason("bad-iss-state")).toMatch(/iss/);
     });
 
     it("rejects an expired id_token", async () => {
       appleMock.idToken = await signAppleIdToken({ exp: Math.floor(Date.now() / 1000) - 3600 });
       await redis.setex("oauth:apple:state:expired-state", 600, "valid");
 
-      const { validateAppleCallback } = await import("../../src/server/auth/oauth/apple");
-
-      await expect(validateAppleCallback("mock-auth-code", "expired-state")).rejects.toThrow(/exp/);
+      expect(await rejectionReason("expired-state")).toMatch(/exp/);
     });
 
     it("rejects an id_token signed by a key not in Apple's JWKS", async () => {

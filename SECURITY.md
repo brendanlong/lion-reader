@@ -143,7 +143,10 @@ Entry bodies, saved articles, and AI summaries are rendered with
 - **OAuth sign-in is the only email-verification path**, so the shared OAuth
   processor (`src/server/auth/oauth/callback.ts`) **refuses to link or create an
   account from an unverified provider email** (`emailVerified` must be true).
-  Apple id_tokens are claim-validated (iss/aud/exp) in `oauth/apple.ts`.
+  Apple id_tokens are verified in `oauth/apple.ts` — signature against Apple's
+  JWKS **and** iss/aud/exp. **Keep the signature check**: the OAuth client
+  re-validates the claims but deliberately skips the signature for tokens read
+  straight off the token endpoint, so nothing else covers a forged id_token.
 - **OAuth `state` is bound to the initiating browser** to stop login CSRF /
   session fixation (#1263): generating an auth URL sets a short-lived `HttpOnly`
   state cookie (`oauth/state-cookie.ts`), and the browser-facing callback routes

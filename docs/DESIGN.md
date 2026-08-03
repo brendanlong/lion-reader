@@ -134,7 +134,7 @@ Each of these is specified in full in `src/server/CLAUDE.md`; the summaries here
 
 Details (session flow, cookie design, scopes, brute-force protection): `src/server/auth/CLAUDE.md`.
 
-Custom auth using battle-tested primitives: **`arctic`** (OAuth for Google/Apple/Discord), **`argon2`** (password hashing), and custom token-based session management stored in Postgres with a Redis cache. Session tokens are 32 random bytes, base64url encoded; only the SHA-256 hash is stored.
+Custom auth using battle-tested primitives: **`openid-client`** (OAuth client for Google/Apple/Discord), **`argon2`** (password hashing), and custom token-based session management stored in Postgres with a Redis cache. Session tokens are 32 random bytes, base64url encoded; only the SHA-256 hash is stored.
 
 ### OAuth Providers
 
