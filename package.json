@@ -68,7 +68,7 @@
     "@lion-reader/sanitizer": "workspace:*",
     "@mintplex-labs/piper-tts-web": "^1.0.4",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@sentry/nextjs": "^10.48.0",
+    "@sentry/nextjs": "^10.68.0",
     "@tanstack/react-query": "^5.101.4",
     "@trpc/client": "^11.10.0",
     "@trpc/react-query": "^11.10.0",
