@@ -135,20 +135,20 @@ function formatSubscriptionRow(row: SubscriptionQueryRow): Subscription {
 }
 
 // ============================================================================
-// Service Functions
+// Cursor Helpers
 // ============================================================================
 
-/**
- * Keyset cursor for the alphabetical subscription list. `title` is nullable
- * (NULL titles sort first, COALESCEd to '') and defaults to null so a cursor
- * whose title was JSON-dropped as undefined still decodes.
- */
+/** Keyset cursor for the alphabetical subscription list. NULL titles sort first. */
 const subscriptionCursor = createCursorCodec(
   z.object({
-    title: z.string().nullable().default(null),
+    title: z.string().nullable(),
     id: cursorUuid,
   })
 );
+
+// ============================================================================
+// Service Functions
+// ============================================================================
 
 export interface ListSubscriptionsParams {
   userId: string;

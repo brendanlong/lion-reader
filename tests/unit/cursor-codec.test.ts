@@ -44,11 +44,10 @@ describe("cursor codec", () => {
     expect(() => codec.decode(cursor)).toThrow(/Invalid cursor format/);
   });
 
-  it("applies schema defaults to absent optional fields", () => {
-    const titleCodec = createCursorCodec(
-      z.object({ title: z.string().nullable().default(null), id: cursorUuid })
+  it("ignores extra keys so a cursor from an older release still decodes", () => {
+    const cursor = Buffer.from(JSON.stringify({ ts: "x", id: UUID, legacy: 1 })).toString(
+      "base64url"
     );
-    const cursor = Buffer.from(JSON.stringify({ id: UUID })).toString("base64url");
-    expect(titleCodec.decode(cursor)).toEqual({ title: null, id: UUID });
+    expect(codec.decode(cursor)).toEqual({ ts: "x", id: UUID });
   });
 });

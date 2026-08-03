@@ -329,7 +329,7 @@ function getPublisherClient(): Redis | null {
  * @param event - The event to publish
  * @returns The number of subscribers that received the message (0 if Redis unavailable)
  */
-async function publishEvent(
+async function publishToChannel(
   channel: string,
   event: FeedEvent | UserEvent | SiteStatusEvent
 ): Promise<number> {
@@ -338,6 +338,25 @@ async function publishEvent(
     return 0;
   }
   return client.publish(channel, JSON.stringify(event));
+}
+
+// Each event scope derives its own channel from the event, so a user event can't
+// be published to a feed's channel (which every subscriber of that feed reads)
+// by passing the wrong channel name. See SECURITY.md on cross-user isolation.
+
+/** Publishes a feed event to its feed's channel. */
+async function publishFeedEvent(event: FeedEvent): Promise<number> {
+  return publishToChannel(getFeedEventsChannel(event.feedId), event);
+}
+
+/** Publishes a user event to that user's channel. */
+async function publishUserEvent(event: UserEvent): Promise<number> {
+  return publishToChannel(getUserEventsChannel(event.userId), event);
+}
+
+/** Publishes an event to the single global site-status channel. */
+async function publishSiteStatusEvent(event: SiteStatusEvent): Promise<number> {
+  return publishToChannel(getSiteStatusChannel(), event);
 }
 
 /**
@@ -368,7 +387,7 @@ export async function publishNewEntry(
     feedType,
     ...(entry ? { entry } : {}),
   };
-  return publishEvent(getFeedEventsChannel(feedId), event);
+  return publishFeedEvent(event);
 }
 
 /**
@@ -394,7 +413,7 @@ async function publishEntryUpdated(
     updatedAt: updatedAt.toISOString(),
     metadata,
   };
-  return publishEvent(getFeedEventsChannel(feedId), event);
+  return publishFeedEvent(event);
 }
 
 /**
@@ -466,7 +485,7 @@ export async function publishSubscriptionCreated(
     feed,
     counts,
   };
-  return publishEvent(getUserEventsChannel(userId), event);
+  return publishUserEvent(event);
 }
 
 /**
@@ -497,7 +516,7 @@ export async function publishSubscriptionDeleted(
     updatedAt: updatedAt.toISOString(),
     counts,
   };
-  return publishEvent(getUserEventsChannel(userId), event);
+  return publishUserEvent(event);
 }
 
 /**
@@ -527,7 +546,7 @@ export async function publishSubscriptionUpdated(
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
   };
-  return publishEvent(getUserEventsChannel(userId), event);
+  return publishUserEvent(event);
 }
 
 /**
@@ -555,7 +574,7 @@ export async function publishImportProgress(
     total: counts.total,
     timestamp: new Date().toISOString(),
   };
-  return publishEvent(getUserEventsChannel(userId), event);
+  return publishUserEvent(event);
 }
 
 /**
@@ -579,7 +598,7 @@ export async function publishImportCompleted(
     total: counts.total,
     timestamp: new Date().toISOString(),
   };
-  return publishEvent(getUserEventsChannel(userId), event);
+  return publishUserEvent(event);
 }
 
 /**
@@ -627,7 +646,7 @@ export async function publishEntryStateChanged(
     updatedAt: updatedAt.toISOString(),
     ...(listData ?? {}),
   };
-  return publishEvent(getUserEventsChannel(userId), event);
+  return publishUserEvent(event);
 }
 
 /**
@@ -661,7 +680,7 @@ export async function publishMarkAllRead(
     updatedAt: updatedAt.toISOString(),
     entryId: maxEntryId,
   };
-  return publishEvent(getUserEventsChannel(userId), event);
+  return publishUserEvent(event);
 }
 
 /**
@@ -684,7 +703,7 @@ export async function publishTagCreated(
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
   };
-  return publishEvent(getUserEventsChannel(userId), event);
+  return publishUserEvent(event);
 }
 
 /**
@@ -707,7 +726,7 @@ export async function publishTagUpdated(
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
   };
-  return publishEvent(getUserEventsChannel(userId), event);
+  return publishUserEvent(event);
 }
 
 /**
@@ -730,7 +749,7 @@ export async function publishTagDeleted(
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
   };
-  return publishEvent(getUserEventsChannel(userId), event);
+  return publishUserEvent(event);
 }
 
 /**
@@ -750,7 +769,7 @@ export async function publishSavedFeedCreated(userId: string, feedId: string): P
     feedId,
     timestamp: new Date().toISOString(),
   };
-  return publishEvent(getUserEventsChannel(userId), event);
+  return publishUserEvent(event);
 }
 
 /**
@@ -768,7 +787,7 @@ export async function publishAnnouncementChanged(
     announcement,
     timestamp: new Date().toISOString(),
   };
-  return publishEvent(getSiteStatusChannel(), event);
+  return publishSiteStatusEvent(event);
 }
 
 // ============================================================================
