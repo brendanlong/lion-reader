@@ -8,7 +8,7 @@
  * egress failure) rather than individual feeds misbehaving.
  *
  * The snapshot/evaluation split keeps the decision logic pure and unit-testable;
- * the periodic monitor_feed_health job (src/server/jobs/handlers.ts) takes a
+ * the periodic monitor_feed_health job (src/server/jobs/handlers/monitor-feed-health.ts) takes a
  * snapshot, evaluates it, and alerts on status transitions.
  */
 

@@ -9,7 +9,7 @@
  * - Graceful shutdown on SIGTERM/SIGINT
  * - Stale job recovery (handled automatically in claim query)
  *
- * See docs/job-queue-design.md for the overall architecture.
+ * See src/server/jobs/CLAUDE.md for the overall architecture.
  */
 
 import {
@@ -24,16 +24,14 @@ import {
   SINGLETON_JOB_TYPES,
   type JobType,
 } from "./queue";
-import {
-  handleFetchFeed,
-  handleRenewWebsub,
-  handleProcessOpmlImport,
-  handleMonitorFeedHealth,
-  handleCleanup,
-  handleReconcileCounters,
-  handleBackfillGettingStarted,
-  type JobHandlerResult,
-} from "./handlers";
+import { handleFetchFeed } from "./handlers/fetch-feed";
+import { handleRenewWebsub } from "./handlers/renew-websub";
+import { handleProcessOpmlImport } from "./handlers/process-opml-import";
+import { handleMonitorFeedHealth } from "./handlers/monitor-feed-health";
+import { handleCleanup } from "./handlers/cleanup";
+import { handleReconcileCounters } from "./handlers/reconcile-counters";
+import { handleBackfillGettingStarted } from "./handlers/backfill-getting-started";
+import type { JobHandlerResult } from "./handlers/types";
 import type { Job } from "../db/schema";
 import { logger as appLogger } from "@/lib/logger";
 import * as Sentry from "@sentry/nextjs";

@@ -9,7 +9,7 @@ import { describe, it, expect } from "vitest";
 import { createWorkerCore, type WorkerLogger } from "../../src/server/jobs/worker-core";
 import type { Job } from "../../src/server/db/schema";
 
-// Use the core worker directly to avoid importing handlers.ts which requires DATABASE_URL
+// Use the core worker directly to avoid importing the job handlers, which require DATABASE_URL
 const createWorker = createWorkerCore;
 
 /**

@@ -19,7 +19,7 @@ import { db } from "../../src/server/db";
 import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createUserEntriesForFeed } from "../../src/server/feed/entry-processor";
-import { migrateSubscriptionsToExistingFeed } from "../../src/server/jobs/handlers";
+import { migrateSubscriptionsToExistingFeed } from "../../src/server/jobs/handlers/fetch-feed";
 import { createSubscription } from "../../src/server/services/subscriptions";
 import {
   countEntries,

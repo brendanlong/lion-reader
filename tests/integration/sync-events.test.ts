@@ -1205,7 +1205,7 @@ describe("sync.events", () => {
       await createUserEntry(userId, entryId, { read: true, updatedAt: OLD });
 
       // A content refetch bumps entries.updated_at AND the feed's
-      // last_entries_updated_at (handlers.ts sets it on hasChanges), but never
+      // last_entries_updated_at (handlers/fetch-feed.ts sets it on hasChanges), but never
       // touches the user_entries row — exactly what updateEntryContent does.
       await db
         .update(entries)

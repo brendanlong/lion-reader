@@ -12,7 +12,7 @@
  * claimed based on the actual data state. For example, feed jobs are only
  * claimed if the feed has active subscribers.
  *
- * See docs/job-queue-design.md for detailed documentation.
+ * See src/server/jobs/CLAUDE.md for the overall architecture.
  */
 
 import { and, eq, sql } from "drizzle-orm";

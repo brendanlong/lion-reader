@@ -5,7 +5,7 @@
  * for unit testing without requiring database access. The actual job
  * handlers are injected through the config.
  *
- * See docs/job-queue-design.md for the overall architecture.
+ * See src/server/jobs/CLAUDE.md for the overall architecture.
  */
 
 import type { Job } from "../db/schema";

@@ -13,7 +13,7 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { db } from "../../src/server/db";
 import { jobs, feeds, subscriptions, users } from "../../src/server/db/schema";
 import { getFeedFetchHealthSnapshot } from "../../src/server/feed/health";
-import { handleMonitorFeedHealth } from "../../src/server/jobs/handlers";
+import { handleMonitorFeedHealth } from "../../src/server/jobs/handlers/monitor-feed-health";
 import { createTestFeed, createTestSubscription, createTestUser } from "./helpers";
 
 async function cleanup() {
