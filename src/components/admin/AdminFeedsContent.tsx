@@ -22,7 +22,7 @@ import {
   ChevronDownIcon,
   ChevronUpIcon,
   RssIcon,
-} from "@/components/ui/icon-button";
+} from "@/components/ui/icons";
 
 // ============================================================================
 // Constants

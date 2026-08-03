@@ -4,6 +4,7 @@
  * Business logic for subscription operations. Used by both tRPC routers and MCP server.
  */
 
+import { z } from "zod";
 import { eq, and, gt, isNull, sql } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import {
@@ -22,6 +23,7 @@ import { ensureFeedJob } from "@/server/jobs/queue";
 import { feedDefaultsToFullContent } from "@/server/plugins";
 import { publishSubscriptionCreated } from "@/server/redis/pubsub";
 import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
+import { createCursorCodec, cursorUuid } from "@/server/services/cursor";
 import { errors } from "@/server/trpc/errors";
 
 // ============================================================================
@@ -133,6 +135,18 @@ function formatSubscriptionRow(row: SubscriptionQueryRow): Subscription {
 }
 
 // ============================================================================
+// Cursor Helpers
+// ============================================================================
+
+/** Keyset cursor for the alphabetical subscription list. NULL titles sort first. */
+const subscriptionCursor = createCursorCodec(
+  z.object({
+    title: z.string().nullable(),
+    id: cursorUuid,
+  })
+);
+
+// ============================================================================
 // Service Functions
 // ============================================================================
 
@@ -207,26 +221,9 @@ export async function listSubscriptions(
 
   // Cursor pagination using (title, id) keyset for alphabetical ordering
   if (cursor) {
-    // Invalid cursors are a validation error, matching the entries service —
-    // silently restarting from page one would hide client bugs.
-    let decoded: { title: string | null; id: string };
-    try {
-      decoded = JSON.parse(Buffer.from(cursor, "base64url").toString("utf-8")) as {
-        title: string | null;
-        id: string;
-      };
-      // The id is interpolated into a uuid comparison — reject non-UUID
-      // values here so they surface as a validation error, not a Postgres
-      // "invalid input syntax for type uuid" 500.
-      if (
-        typeof decoded.id !== "string" ||
-        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(decoded.id)
-      ) {
-        throw new Error("Invalid cursor structure");
-      }
-    } catch {
-      throw errors.validation("Invalid cursor format");
-    }
+    // Invalid cursors are a validation error — silently restarting from page one
+    // would hide client bugs.
+    const decoded = subscriptionCursor.decode(cursor);
     // Keyset pagination: (title, id) > (cursor.title, cursor.id)
     // NULL titles sort first (COALESCE to empty string)
     conditions.push(sql`(
@@ -253,13 +250,10 @@ export async function listSubscriptions(
     subscriptions = subscriptions.slice(0, effectiveLimit);
   }
 
-  // Encode cursor as base64url JSON with title and id for keyset pagination
   let nextCursor: string | undefined;
   if (hasMore) {
     const lastSub = subscriptions[subscriptions.length - 1];
-    nextCursor = Buffer.from(JSON.stringify({ title: lastSub.title, id: lastSub.id })).toString(
-      "base64url"
-    );
+    nextCursor = subscriptionCursor.encode({ title: lastSub.title, id: lastSub.id });
   }
 
   return {

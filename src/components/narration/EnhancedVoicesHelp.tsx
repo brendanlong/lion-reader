@@ -10,7 +10,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDownIcon, QuestionCircleIcon } from "@/components/ui/icon-button";
+import { ChevronDownIcon, QuestionCircleIcon } from "@/components/ui/icons";
 
 /**
  * FAQ item definition.

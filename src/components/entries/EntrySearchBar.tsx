@@ -10,7 +10,7 @@
 "use client";
 
 import { useState, type KeyboardEvent, type RefObject } from "react";
-import { CloseIcon, SearchIcon } from "@/components/ui/icon-button";
+import { CloseIcon, SearchIcon } from "@/components/ui/icons";
 
 interface EntrySearchBarProps {
   /** The committed search query from the URL (undefined when not searching). */

@@ -18,7 +18,7 @@ import { SettingsSectionHeading } from "@/components/settings/SettingsSection";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { Card } from "@/components/ui/card";
-import { UploadIcon, DownloadIcon, SpinnerIcon } from "@/components/ui/icon-button";
+import { UploadIcon, DownloadIcon, SpinnerIcon } from "@/components/ui/icons";
 import type { OpmlFeed } from "@/server/feed/opml";
 
 // ============================================================================

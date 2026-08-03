@@ -8,7 +8,7 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircleIcon } from "@/components/ui/icon-button";
+import { CheckCircleIcon } from "@/components/ui/icons";
 import { MarkAllReadDialog } from "@/components/feeds/MarkAllReadDialog";
 
 interface MarkAllReadButtonProps {

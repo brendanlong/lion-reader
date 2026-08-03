@@ -16,7 +16,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { findEntryInListCache } from "@/lib/cache/entry-cache";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
 import { ScrollContainer } from "@/components/layout/ScrollContainerContext";
-import { ArrowLeftIcon, ExternalLinkIcon } from "@/components/ui/icon-button";
+import { ArrowLeftIcon, ExternalLinkIcon } from "@/components/ui/icons";
 import { StarButton, ReadToggleButton } from "@/components/entries/EntryStateButtons";
 import { EntryContentSkeleton, ContentSkeleton } from "./EntryContentStates";
 import { getDomain } from "@/lib/format";

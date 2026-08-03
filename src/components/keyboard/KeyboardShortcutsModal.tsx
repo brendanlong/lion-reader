@@ -11,7 +11,8 @@
 import { useEffect, useRef } from "react";
 import { Dialog, DialogHeader, DialogBody, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { IconButton, CloseIcon } from "@/components/ui/icon-button";
+import { IconButton } from "@/components/ui/icon-button";
+import { CloseIcon } from "@/components/ui/icons";
 import { Kbd } from "@/components/ui/kbd";
 
 /**

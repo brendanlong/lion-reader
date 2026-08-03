@@ -12,7 +12,7 @@ import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
 import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
 import { CardSection } from "@/components/ui/card";
-import { AlertIcon, InfoCircleIcon } from "@/components/ui/icon-button";
+import { AlertIcon, InfoCircleIcon } from "@/components/ui/icons";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { useNarrationSettings } from "@/lib/narration/settings";
 import { getNarrationSupportInfo, isFirefox } from "@/lib/narration/feature-detection";

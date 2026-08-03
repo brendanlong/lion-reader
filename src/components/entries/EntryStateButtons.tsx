@@ -17,12 +17,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import {
-  StarIcon,
-  StarFilledIcon,
-  CircleIcon,
-  CircleFilledIcon,
-} from "@/components/ui/icon-button";
+import { StarIcon, StarFilledIcon, CircleIcon, CircleFilledIcon } from "@/components/ui/icons";
 
 interface StarButtonProps {
   starred: boolean;

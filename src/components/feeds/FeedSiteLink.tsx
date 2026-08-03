@@ -8,7 +8,7 @@
  * when the feed has no site URL.
  */
 
-import { ExternalLinkIcon } from "@/components/ui/icon-button";
+import { ExternalLinkIcon } from "@/components/ui/icons";
 
 interface FeedSiteLinkProps {
   siteUrl: string | null | undefined;

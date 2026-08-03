@@ -13,7 +13,7 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
 import { Card, StatusCard } from "@/components/ui/card";
-import { SpinnerIcon } from "@/components/ui/icon-button";
+import { SpinnerIcon } from "@/components/ui/icons";
 import { AnnouncementBannerView } from "@/components/layout/AnnouncementBanner";
 import type { AnnouncementLevel } from "@/server/services/site-status";
 

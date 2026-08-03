@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ClientLink } from "@/components/ui/client-link";
-import { SpinnerIcon, GoogleIcon, AppleIcon, DiscordIcon } from "@/components/ui/icon-button";
+import { SpinnerIcon, GoogleIcon, AppleIcon, DiscordIcon } from "@/components/ui/icons";
 
 // ============================================================================
 // Constants

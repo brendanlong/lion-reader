@@ -17,7 +17,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
 import { broadcastOAuthComplete } from "@/lib/oauth-channel";
-import { SpinnerIcon } from "@/components/ui/icon-button";
+import { SpinnerIcon } from "@/components/ui/icons";
 
 /**
  * Validation result for OAuth callback parameters

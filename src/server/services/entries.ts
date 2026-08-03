@@ -4,6 +4,7 @@
  * Business logic for entry operations. Used by both tRPC routers and MCP server.
  */
 
+import { z } from "zod";
 import {
   eq,
   and,
@@ -20,10 +21,10 @@ import {
 import type { db as dbType, DbOrTx } from "@/server/db";
 import { entries, feeds, userEntries, subscriptions, visibleEntries } from "@/server/db/schema";
 import { parseTimestamptzOrNull } from "@/server/db/temporal";
-import { isValidUuid } from "@/lib/uuidv7";
 import { sanitizeEntryContentFamily } from "@/server/html/sanitize-entry";
 import { errors } from "@/server/trpc/errors";
 import { publishMarkAllRead } from "@/server/redis/pubsub";
+import { createCursorCodec, cursorUuid } from "./cursor";
 import {
   getBulkEntryRelatedCounts,
   getEntryRelatedCounts,
@@ -258,42 +259,24 @@ function toEntryListItem(row: EntryListRow): EntryListItem {
 // Cursor Helpers
 // ============================================================================
 
-interface CursorData {
-  ts: string;
-  id: string;
-}
+// The two entry cursors share a `{ ts, id }` shape but differ in what `ts`
+// means, so each validates it: an ISO timestamp for the timeline (cast to
+// ::timestamptz), a float rank for search (compared against the rank column).
+// Rejecting here keeps a bad value from surfacing as a Postgres cast 500 or a
+// NaN comparison.
+const timelineCursor = createCursorCodec(
+  z.object({
+    ts: z.string().refine((ts) => !Number.isNaN(Date.parse(ts))),
+    id: cursorUuid,
+  })
+);
 
-function decodeCursor(cursor: string): CursorData {
-  try {
-    // Node's "base64" decoder accepts both the standard (+/=) and URL-safe
-    // (-_) alphabets, so this still decodes cursors we emitted before switching
-    // encodeCursor to base64url, as well as any the client mangled by not
-    // URL-encoding the standard form (e.g. "+" arriving as a space).
-    const decoded = Buffer.from(cursor, "base64").toString("utf8");
-    const parsed = JSON.parse(decoded) as CursorData;
-    // Both callers interpolate `id` into a uuid comparison, so a non-UUID would
-    // reach Postgres as "invalid input syntax for type uuid" and 500 (Sentry
-    // noise) — reject it here, matching the subscriptions cursor hardening. `ts`
-    // is validated per-caller since its meaning differs (an ISO timestamp for
-    // the timeline, a float rank for search).
-    if (typeof parsed.ts !== "string" || typeof parsed.id !== "string" || !isValidUuid(parsed.id)) {
-      throw new Error("Invalid cursor structure");
-    }
-    return parsed;
-  } catch {
-    throw errors.validation("Invalid cursor format");
-  }
-}
-
-function encodeCursor(ts: string, entryId: string): string {
-  const data: CursorData = { ts, id: entryId };
-  // base64url (no "+", "/", or "=" padding) so the cursor is safe to place in a
-  // URL query string. It is surfaced as the Google Reader `continuation` token,
-  // and some clients (e.g. Read You) concatenate query params without
-  // URL-encoding — a "+" in standard base64 would decode to a space server-side
-  // and corrupt the cursor, 400ing every page past the first and aborting sync.
-  return Buffer.from(JSON.stringify(data), "utf8").toString("base64url");
-}
+const searchCursor = createCursorCodec(
+  z.object({
+    ts: z.string().refine((ts) => Number.isFinite(parseFloat(ts))),
+    id: cursorUuid,
+  })
+);
 
 // ============================================================================
 // Sanitized Content Resolution
@@ -615,12 +598,7 @@ export async function listEntries(
   // microsecond precision. Using new Date(ts) would truncate to milliseconds,
   // causing entries to fall into gaps between cursor and actual timestamps.
   if (params.cursor) {
-    const { ts, id } = decodeCursor(params.cursor);
-    // ts is cast to ::timestamptz below; reject a non-date string here so it
-    // surfaces as a validation error rather than a Postgres cast 500.
-    if (Number.isNaN(Date.parse(ts))) {
-      throw errors.validation("Invalid cursor format");
-    }
+    const { ts, id } = timelineCursor.decode(params.cursor);
     if (sortOrder === "newest") {
       conditions.push(
         sql`(${sortColumn} < ${ts}::timestamptz OR (${sortColumn} = ${ts}::timestamptz AND ${visibleEntries.id} < ${id}))`
@@ -682,7 +660,7 @@ export async function listEntries(
     // sortTs is only null for the offset-paginated "archived" sort (which ignores
     // nextCursor); the cursor-paginated sorts always have a non-null sort key.
     if (lastEntry.sortTs) {
-      nextCursor = encodeCursor(lastEntry.sortTs.toString(), lastEntry.id);
+      nextCursor = timelineCursor.encode({ ts: lastEntry.sortTs.toString(), id: lastEntry.id });
     }
   }
 
@@ -752,13 +730,8 @@ async function searchEntries(
 
   // Cursor for search results (based on rank)
   if (params.cursor) {
-    const { ts: rankStr, id } = decodeCursor(params.cursor);
+    const { ts: rankStr, id } = searchCursor.decode(params.cursor);
     const cursorRank = parseFloat(rankStr);
-    // The search cursor encodes a float rank in the ts field; reject a
-    // non-numeric value so NaN never reaches the rank comparison.
-    if (!Number.isFinite(cursorRank)) {
-      throw errors.validation("Invalid cursor format");
-    }
     conditions.push(
       sql`(${rankColumn} < ${cursorRank} OR (${rankColumn} = ${cursorRank} AND ${visibleEntries.id} < ${id}))`
     );
@@ -836,7 +809,7 @@ async function searchEntries(
     const lastEntry = resultEntries[resultEntries.length - 1];
     // Drizzle infers the sql<number> rank column as `never` through the subquery
     // boundary; Number() recovers the value (a float rank) for cursor encoding.
-    nextCursor = encodeCursor(Number(lastEntry.rank).toString(), lastEntry.id);
+    nextCursor = searchCursor.encode({ ts: Number(lastEntry.rank).toString(), id: lastEntry.id });
   }
 
   return { items, nextCursor };

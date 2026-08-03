@@ -23,7 +23,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { SettingsListContainer } from "@/components/settings/SettingsListContainer";
-import { PlusIcon, CheckIcon, CopyIcon, EditIcon } from "@/components/ui/icon-button";
+import { PlusIcon, CheckIcon, CopyIcon, EditIcon } from "@/components/ui/icons";
 import BlockedSendersSettingsContent from "./BlockedSendersSettingsContent";
 
 // ============================================================================

@@ -7,7 +7,7 @@
 
 "use client";
 
-import { SortDescendingIcon, SortAscendingIcon } from "@/components/ui/icon-button";
+import { SortDescendingIcon, SortAscendingIcon } from "@/components/ui/icons";
 import { StateToggleButton } from "@/components/ui/state-toggle-button";
 
 interface SortToggleProps {

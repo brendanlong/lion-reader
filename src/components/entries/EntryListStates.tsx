@@ -9,7 +9,7 @@
 
 import { type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
-import { AlertIcon, SpinnerIcon, DefaultEmptyIcon } from "@/components/ui/icon-button";
+import { AlertIcon, SpinnerIcon, DefaultEmptyIcon } from "@/components/ui/icons";
 
 /**
  * Props for the EntryListEmpty component.

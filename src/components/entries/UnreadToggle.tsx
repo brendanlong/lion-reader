@@ -7,7 +7,7 @@
 
 "use client";
 
-import { EyeIcon, EyeSlashIcon } from "@/components/ui/icon-button";
+import { EyeIcon, EyeSlashIcon } from "@/components/ui/icons";
 import { StateToggleButton } from "@/components/ui/state-toggle-button";
 
 interface UnreadToggleProps {

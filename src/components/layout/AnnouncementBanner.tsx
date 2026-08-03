@@ -18,7 +18,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { CloseIcon } from "@/components/ui/icon-button";
+import { CloseIcon } from "@/components/ui/icons";
 import { useLiveAnnouncement } from "@/lib/site-status/announcement-store";
 import { ANNOUNCEMENT_DISMISSED_COOKIE } from "@/lib/site-status/announcement-cookie";
 import type { AnnouncementLevel } from "@/server/services/site-status";

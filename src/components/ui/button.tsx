@@ -5,7 +5,7 @@
  */
 
 import type { ButtonHTMLAttributes, Ref } from "react";
-import { SpinnerIcon } from "@/components/ui/icon-button";
+import { SpinnerIcon } from "@/components/ui/icons";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: "primary" | "secondary" | "ghost" | "danger";

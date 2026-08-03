@@ -9,7 +9,7 @@
 
 import { formatRelativeTime } from "@/lib/format";
 import { getItemClasses } from "@/components/entries/entryItemClasses";
-import { StarIcon, StarFilledIcon } from "@/components/ui/icon-button";
+import { StarIcon, StarFilledIcon } from "@/components/ui/icons";
 import { DemoListHeader } from "./DemoListHeader";
 import { type DemoEntry } from "./data";
 

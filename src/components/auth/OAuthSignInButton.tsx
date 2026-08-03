@@ -14,7 +14,7 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { STATIC_CONFIG_QUERY_OPTIONS } from "@/lib/trpc/query-client";
-import { SpinnerIcon } from "@/components/ui/icon-button";
+import { SpinnerIcon } from "@/components/ui/icons";
 import { type OAuthProvider, providerNames, ProviderIcon, useAuthUrlQuery } from "./oauth-helpers";
 
 interface OAuthSignInButtonProps {

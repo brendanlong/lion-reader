@@ -18,7 +18,7 @@ import { clientReplace } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
-import { CheckIcon } from "@/components/ui/icon-button";
+import { CheckIcon } from "@/components/ui/icons";
 import { LinkedAccounts } from "@/components/settings/LinkedAccounts";
 import { KeyboardShortcutsSettings } from "@/components/settings/KeyboardShortcutsSettings";
 import { AboutSection } from "@/components/settings/AboutSection";

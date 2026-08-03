@@ -26,7 +26,7 @@ import {
   SpinnerIcon,
   ChevronRightIcon,
   ExternalLinkIcon,
-} from "@/components/ui/icon-button";
+} from "@/components/ui/icons";
 
 // ============================================================================
 // Types

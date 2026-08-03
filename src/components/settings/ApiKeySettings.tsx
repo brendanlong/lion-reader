@@ -11,7 +11,7 @@
 import { useState, useCallback } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { CheckIcon } from "@/components/ui/icon-button";
+import { CheckIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TextLink } from "@/components/ui/text-link";

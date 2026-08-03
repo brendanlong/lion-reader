@@ -3,7 +3,7 @@
  */
 
 import { trpc } from "@/lib/trpc/client";
-import { GoogleIcon, AppleIcon, DiscordIcon } from "@/components/ui/icon-button";
+import { GoogleIcon, AppleIcon, DiscordIcon } from "@/components/ui/icons";
 
 export type OAuthProvider = "google" | "apple" | "discord";
 

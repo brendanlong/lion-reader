@@ -12,7 +12,7 @@ import { usePathname } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
 import { useExpandedTags } from "@/lib/hooks/useExpandedTags";
 import { NavLinkWithIcon } from "@/components/ui/nav-link";
-import { ChevronDownIcon, ChevronRightIcon } from "@/components/ui/icon-button";
+import { ChevronDownIcon, ChevronRightIcon } from "@/components/ui/icons";
 import { ColorDot } from "@/components/ui/color-picker";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { TagSubscriptionList } from "./TagSubscriptionList";

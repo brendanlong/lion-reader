@@ -36,7 +36,7 @@ import {
   SkipBackwardIcon,
   SkipForwardIcon,
   NarrationIcon,
-} from "@/components/ui/icon-button";
+} from "@/components/ui/icons";
 
 /**
  * Props for the NarrationControls component.
