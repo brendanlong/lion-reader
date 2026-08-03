@@ -1,39 +1,45 @@
 /**
- * Unit tests for ArXiv URL detection and paper ID extraction.
- *
- * These test the pure functions that determine if a URL is from ArXiv
- * and extract the paper ID for HTML version checking.
+ * Unit tests for ArXiv URL detection, paper ID extraction, and reading a
+ * paper's metadata off its abstract page.
  */
 
 import { describe, it, expect } from "vitest";
 import {
   isArxivUrl,
-  isArxivTransformableUrl,
   extractPaperId,
   buildArxivHtmlUrl,
   buildArxivAbsUrl,
-  parseArxivApiResponse,
+  parseArxivAbsMetadata,
   formatArxivAuthors,
 } from "../../src/server/feed/arxiv";
 
-/** A trimmed-down but structurally faithful arXiv Atom API response. */
-const ARXIV_API_XML = `<?xml version="1.0" encoding="UTF-8"?>
-<feed xmlns="http://www.w3.org/2005/Atom">
-  <title type="html">ArXiv Query: search_query=&amp;id_list=2503.11926</title>
-  <entry>
-    <id>http://arxiv.org/abs/2503.11926v1</id>
-    <title>Monitoring Reasoning Models for Misbehavior and the Risks of
-      Promoting Obfuscation</title>
-    <summary>  Mitigating reward hacking--where AI systems misbehave due to flaws
+/**
+ * A trimmed-down but structurally faithful arXiv abstract page <head>.
+ *
+ * Faithful in the ways the parser depends on: authors are surname-first in one
+ * repeated tag, the abstract is hard-wrapped across lines with a leading blank,
+ * and a decoy <title> element plus an og:title sit alongside the citation tags.
+ * Taken from the real markup of arxiv.org/abs/2503.11926v1.
+ */
+const ARXIV_ABS_HTML = `<!DOCTYPE html>
+<html><head>
+  <title>[2503.11926] Monitoring Reasoning Models for Misbehavior</title>
+  <meta name="citation_title" content="Monitoring Reasoning Models for Misbehavior and the Risks of
+      Promoting Obfuscation" />
+  <meta name="citation_author" content="Baker, Bowen" />
+  <meta name="citation_author" content="Huizinga, Joost" />
+  <meta name="citation_author" content="Gao, Leo" />
+  <meta name="citation_date" content="2025/03/11" />
+  <meta name="citation_arxiv_id" content="2503.11926" />
+  <meta name="citation_abstract" content="  Mitigating reward hacking--where AI systems misbehave due to flaws
       or misspecifications in their learning objectives--remains a key challenge.
       We show that we can monitor a frontier reasoning model, such as OpenAI
       o3-mini, for reward hacking.
-    </summary>
-    <author><name>Bowen Baker</name></author>
-    <author><name>Joost Huizinga</name></author>
-    <author><name>Leo Gao</name></author>
-  </entry>
-</feed>`;
+" />
+  <meta property="og:title" content="Some other title" />
+</head><body>
+  <meta name="citation_author" content="Ignored, Body" />
+</body></html>`;
 
 describe("ArXiv URL detection", () => {
   describe("isArxivUrl", () => {
@@ -90,25 +96,6 @@ describe("ArXiv URL detection", () => {
       expect(isArxivUrl("not a url")).toBe(false);
       expect(isArxivUrl("")).toBe(false);
       expect(isArxivUrl("arxiv.org/abs/2601.04649")).toBe(false);
-    });
-  });
-
-  describe("isArxivTransformableUrl", () => {
-    it("returns true for ArXiv abstract URLs", () => {
-      expect(isArxivTransformableUrl("https://arxiv.org/abs/2601.04649")).toBe(true);
-    });
-
-    it("returns true for ArXiv PDF URLs", () => {
-      expect(isArxivTransformableUrl("https://arxiv.org/pdf/2601.04649")).toBe(true);
-      expect(isArxivTransformableUrl("https://arxiv.org/pdf/2601.04649.pdf")).toBe(true);
-    });
-
-    it("returns false for ArXiv HTML URLs (already HTML)", () => {
-      expect(isArxivTransformableUrl("https://arxiv.org/html/2601.04649")).toBe(false);
-    });
-
-    it("returns false for non-ArXiv URLs", () => {
-      expect(isArxivTransformableUrl("https://example.com/abs/2601.04649")).toBe(false);
     });
   });
 
@@ -186,9 +173,9 @@ describe("ArXiv URL detection", () => {
   });
 });
 
-describe("parseArxivApiResponse", () => {
-  it("extracts the title, abstract, and author names from the entry", () => {
-    const result = parseArxivApiResponse(ARXIV_API_XML);
+describe("parseArxivAbsMetadata", () => {
+  it("extracts the title, abstract, and author names from the citation tags", () => {
+    const result = parseArxivAbsMetadata(ARXIV_ABS_HTML);
     // Whitespace (including the line wrapping arXiv uses) is collapsed.
     expect(result.title).toBe(
       "Monitoring Reasoning Models for Misbehavior and the Risks of Promoting Obfuscation"
@@ -198,32 +185,80 @@ describe("parseArxivApiResponse", () => {
         "misspecifications in their learning objectives--remains a key challenge. We show " +
         "that we can monitor a frontier reasoning model, such as OpenAI o3-mini, for reward hacking."
     );
+  });
+
+  it("rewrites surname-first author names into reading order, preserving order", () => {
+    const result = parseArxivAbsMetadata(ARXIV_ABS_HTML);
     expect(result.authors).toEqual(["Bowen Baker", "Joost Huizinga", "Leo Gao"]);
   });
 
-  it("ignores the feed-level query title (only reads inside <entry>)", () => {
-    const result = parseArxivApiResponse(ARXIV_API_XML);
-    expect(result.title).not.toContain("ArXiv Query");
+  it("keeps multi-part given names together when swapping", () => {
+    const html = `<head><meta name="citation_author" content="Tran, Vinh Q." /></head>`;
+    expect(parseArxivAbsMetadata(html).authors).toEqual(["Vinh Q. Tran"]);
   });
 
-  it("only reads the first entry when the API returns several", () => {
-    const multi = `<feed xmlns="http://www.w3.org/2005/Atom">
-      <entry><title>First</title><summary>First abstract</summary>
-        <author><name>Author One</name></author></entry>
-      <entry><title>Second</title><summary>Second abstract</summary>
-        <author><name>Author Two</name></author></entry>
-    </feed>`;
-    const result = parseArxivApiResponse(multi);
-    expect(result.title).toBe("First");
-    expect(result.summary).toBe("First abstract");
-    expect(result.authors).toEqual(["Author One"]);
+  it("leaves collaboration names without a comma alone", () => {
+    const html = `<head><meta name="citation_author" content="ATLAS Collaboration" /></head>`;
+    expect(parseArxivAbsMetadata(html).authors).toEqual(["ATLAS Collaboration"]);
   });
 
-  it("returns nulls / empty authors for a response with no entry", () => {
-    const empty = `<feed xmlns="http://www.w3.org/2005/Atom">
-      <title>ArXiv Query: id_list=9999.99999</title>
-    </feed>`;
-    expect(parseArxivApiResponse(empty)).toEqual({
+  it("prefers citation_title over the page title and og:title", () => {
+    const result = parseArxivAbsMetadata(ARXIV_ABS_HTML);
+    expect(result.title).not.toContain("[2503.11926]");
+    expect(result.title).not.toBe("Some other title");
+  });
+
+  it("stops at </head> so body content cannot inject authors", () => {
+    expect(parseArxivAbsMetadata(ARXIV_ABS_HTML).authors).not.toContain("Body Ignored");
+  });
+
+  it("keeps the first value when a tag is repeated", () => {
+    const html = `<head>
+      <meta name="citation_title" content="First" />
+      <meta name="citation_title" content="Second" />
+    </head>`;
+    expect(parseArxivAbsMetadata(html).title).toBe("First");
+  });
+
+  it("still ignores body tags when the page omits </head>", () => {
+    // htmlparser2 emits the implied close at <body>, so the pause still fires.
+    const html =
+      `<head><meta name="citation_author" content="Real, Ada" />` +
+      `<body><meta name="citation_author" content="Injected, Body" />`;
+    expect(parseArxivAbsMetadata(html).authors).toEqual(["Ada Real"]);
+  });
+
+  it("decodes HTML entities in citation values", () => {
+    const html = `<head>
+      <meta name="citation_title" content="Cats &amp; Dogs: A Study" />
+      <meta name="citation_author" content="Balázs, Csaba" />
+    </head>`;
+    const result = parseArxivAbsMetadata(html);
+    expect(result.title).toBe("Cats & Dogs: A Study");
+    expect(result.authors).toEqual(["Csaba Balázs"]);
+  });
+
+  it("matches tag names case-insensitively", () => {
+    const html = `<HEAD><META NAME="CITATION_TITLE" CONTENT="Shouty" /></HEAD>`;
+    expect(parseArxivAbsMetadata(html).title).toBe("Shouty");
+  });
+
+  it("drops a stray comma when one side of the author name is empty", () => {
+    const html = `<head>
+      <meta name="citation_author" content="Surnameonly," />
+      <meta name="citation_author" content=", Givenonly" />
+    </head>`;
+    expect(parseArxivAbsMetadata(html).authors).toEqual(["Surnameonly", "Givenonly"]);
+  });
+
+  it("keeps a suffix attached to the given name, as arXiv emits it", () => {
+    const html = `<head><meta name="citation_author" content="Galapon, Arthur Jr." /></head>`;
+    expect(parseArxivAbsMetadata(html).authors).toEqual(["Arthur Jr. Galapon"]);
+  });
+
+  it("returns nulls / empty authors for a page with no citation tags", () => {
+    const html = `<head><title>arXiv is down</title></head>`;
+    expect(parseArxivAbsMetadata(html)).toEqual({
       title: null,
       summary: null,
       authors: [],

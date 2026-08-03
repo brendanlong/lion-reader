@@ -15,7 +15,7 @@ const MAX_EXCERPT_LENGTH = 300;
  * source — the same top tier a caller-provided title occupies for the title. Like
  * the plugin excerpt it's plain text, so it's just clipped to the summary length.
  *
- * A plugin-supplied `excerpt` (e.g. the arXiv API abstract) is authoritative and
+ * A plugin-supplied `excerpt` (e.g. the arXiv abstract page) is authoritative and
  * outranks everything extracted, including Readability — the whole point of
  * fetching it is that it beats any scrape of the HTML render. It's plain text, so
  * it's just clipped to the summary length (arXiv abstracts run long — see #1399).

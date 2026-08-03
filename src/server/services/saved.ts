@@ -295,7 +295,7 @@ interface ArticleContentBundle {
     html: string;
     title?: string | null;
     author?: string | null;
-    /** Plugin-supplied excerpt (e.g. arXiv API abstract); preferred over Readability's. */
+    /** Plugin-supplied excerpt (e.g. arXiv abstract page); preferred over Readability's. */
     excerpt?: string | null;
     siteName?: string;
     skipReadability?: boolean;
@@ -850,7 +850,7 @@ interface AcquiredArticleContent {
     html: string;
     title?: string | null;
     author?: string | null;
-    /** Plugin-supplied excerpt (e.g. arXiv API abstract); preferred over Readability's. */
+    /** Plugin-supplied excerpt (e.g. arXiv abstract page); preferred over Readability's. */
     excerpt?: string | null;
     siteName?: string;
     skipReadability?: boolean;
