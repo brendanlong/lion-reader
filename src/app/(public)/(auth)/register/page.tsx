@@ -32,7 +32,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
 import { PageLink } from "@/components/ui/page-link";
-import { SpinnerIcon } from "@/components/ui/icon-button";
+import { SpinnerIcon } from "@/components/ui/icons";
 import { OAuthButtons } from "@/components/auth/OAuthButtons";
 import { AuthFooter } from "@/components/auth/AuthFooter";
 import { EuRestrictionReason } from "@/components/auth/EuRestrictionNotice";

@@ -11,7 +11,7 @@ import { memo } from "react";
 import { formatRelativeTime } from "@/lib/format";
 import type { EntryType } from "@/lib/hooks/useEntryMutations";
 import type { ListDensity } from "@/lib/appearance/settings";
-import { StarIcon, StarFilledIcon } from "@/components/ui/icon-button";
+import { StarIcon, StarFilledIcon } from "@/components/ui/icons";
 import { getItemClasses } from "./entryItemClasses";
 
 /**

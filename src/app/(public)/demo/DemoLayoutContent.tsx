@@ -12,7 +12,7 @@
 "use client";
 
 import { useState, useSyncExternalStore, type ReactNode } from "react";
-import { CloseIcon, MenuIcon } from "@/components/ui/icon-button";
+import { CloseIcon, MenuIcon } from "@/components/ui/icons";
 import { PageLink } from "@/components/ui/page-link";
 import { LayoutShell } from "@/components/layout/LayoutShell";
 import {

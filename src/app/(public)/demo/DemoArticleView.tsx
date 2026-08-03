@@ -20,7 +20,7 @@ import { ClientLink } from "@/components/ui/client-link";
 import { PageLink } from "@/components/ui/page-link";
 import { ScrollContainer } from "@/components/layout/ScrollContainerContext";
 import { Button } from "@/components/ui/button";
-import { ArrowLeftIcon, SparklesIcon } from "@/components/ui/icon-button";
+import { ArrowLeftIcon, SparklesIcon } from "@/components/ui/icons";
 import { StarButton, ReadToggleButton } from "@/components/entries/EntryStateButtons";
 import { EntryArticle } from "@/components/entries/EntryArticle";
 import { SummaryCard } from "@/components/summarization/SummaryCard";

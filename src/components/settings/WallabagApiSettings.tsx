@@ -14,7 +14,7 @@ import { trpc } from "@/lib/trpc/client";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { CardSection } from "@/components/ui/card";
 import { CopyButton } from "@/components/ui/copy-button";
-import { MobileIcon } from "@/components/ui/icon-button";
+import { MobileIcon } from "@/components/ui/icons";
 import { InlineCode } from "@/components/ui/inline-code";
 import { NoteBox } from "@/components/ui/note-box";
 import { TextLink } from "@/components/ui/text-link";

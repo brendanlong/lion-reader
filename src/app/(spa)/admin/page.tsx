@@ -9,7 +9,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { SpinnerIcon } from "@/components/ui/icon-button";
+import { SpinnerIcon } from "@/components/ui/icons";
 
 export default function AdminPage() {
   const router = useRouter();

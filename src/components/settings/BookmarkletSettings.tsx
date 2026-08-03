@@ -11,12 +11,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { CardSection } from "@/components/ui/card";
 import { NoteBox } from "@/components/ui/note-box";
-import {
-  BookmarkIcon,
-  ChevronRightIcon,
-  ChromeIcon,
-  FirefoxIcon,
-} from "@/components/ui/icon-button";
+import { BookmarkIcon, ChevronRightIcon, ChromeIcon, FirefoxIcon } from "@/components/ui/icons";
 
 export function BookmarkletSettings() {
   const [showCode, setShowCode] = useState(false);

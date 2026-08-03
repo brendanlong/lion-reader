@@ -9,7 +9,7 @@
 
 import { useEntryTextStyles } from "@/lib/appearance/AppearanceProvider";
 import { formatModelName } from "@/lib/summarization/format-model-name";
-import { CloseIcon, SparklesIcon, SpinnerIcon } from "@/components/ui/icon-button";
+import { CloseIcon, SparklesIcon, SpinnerIcon } from "@/components/ui/icons";
 
 /**
  * Format a date for display.

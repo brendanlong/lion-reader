@@ -13,7 +13,7 @@ import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { SettingsListContainer } from "@/components/settings/SettingsListContainer";
-import { MobileIcon, DesktopIcon } from "@/components/ui/icon-button";
+import { MobileIcon, DesktopIcon } from "@/components/ui/icons";
 import { formatRelativeTime } from "@/lib/format";
 
 /**

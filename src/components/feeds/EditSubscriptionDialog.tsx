@@ -15,7 +15,7 @@ import { Dialog, DialogTitle, DialogBody, DialogFooter } from "@/components/ui/d
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
-import { CheckIcon } from "@/components/ui/icon-button";
+import { CheckIcon } from "@/components/ui/icons";
 import { ColorDot } from "@/components/ui/color-picker";
 import { ClientLink } from "@/components/ui/client-link";
 

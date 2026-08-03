@@ -18,7 +18,7 @@ import { useFormMessages } from "@/lib/hooks/useFormMessages";
 import { type Tag, TAG_COLORS, DEFAULT_TAG_COLOR } from "@/lib/types/tag";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ChevronDownIcon, EditIcon, TrashIcon } from "@/components/ui/icon-button";
+import { ChevronDownIcon, EditIcon, TrashIcon } from "@/components/ui/icons";
 import { ColorPicker, ColorDot } from "@/components/ui/color-picker";
 import { CardSection } from "@/components/ui/card";
 import { NoteBox } from "@/components/ui/note-box";

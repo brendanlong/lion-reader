@@ -13,7 +13,7 @@ import { SettingsSection } from "@/components/settings/SettingsSection";
 import { CardSection } from "@/components/ui/card";
 import { NoteBox } from "@/components/ui/note-box";
 import { InlineCode } from "@/components/ui/inline-code";
-import { DiscordIcon, ExternalLinkIcon } from "@/components/ui/icon-button";
+import { DiscordIcon, ExternalLinkIcon } from "@/components/ui/icons";
 
 /**
  * Check if a string is a custom Discord emoji name (word) vs a unicode emoji.

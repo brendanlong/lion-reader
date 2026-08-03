@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
-import { UploadIcon, DocumentIcon } from "@/components/ui/icon-button";
+import { UploadIcon, DocumentIcon } from "@/components/ui/icons";
 import {
   Dialog,
   DialogHeader,

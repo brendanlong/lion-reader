@@ -19,7 +19,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { SettingsListContainer } from "@/components/settings/SettingsListContainer";
-import { ProhibitionIcon, CheckIcon } from "@/components/ui/icon-button";
+import { ProhibitionIcon, CheckIcon } from "@/components/ui/icons";
 import { formatRelativeTime } from "@/lib/format";
 
 // ============================================================================

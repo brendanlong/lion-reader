@@ -23,7 +23,7 @@ import {
   DownloadIcon,
   CloseIcon,
   AlertIcon,
-} from "@/components/ui/icon-button";
+} from "@/components/ui/icons";
 import type { NarrationSettings } from "@/lib/narration/settings";
 import { useEnhancedVoices, type EnhancedVoiceState } from "./useEnhancedVoices";
 import { trackEnhancedVoiceSelected } from "@/lib/telemetry";

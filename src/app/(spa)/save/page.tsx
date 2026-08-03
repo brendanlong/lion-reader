@@ -17,7 +17,7 @@ import { useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
-import { SpinnerIcon, CheckIcon, LockIcon, CloseIcon } from "@/components/ui/icon-button";
+import { SpinnerIcon, CheckIcon, LockIcon, CloseIcon } from "@/components/ui/icons";
 
 export default function SavePage() {
   return (

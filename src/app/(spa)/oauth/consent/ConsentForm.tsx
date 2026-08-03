@@ -7,7 +7,7 @@
 
 "use client";
 
-import { CheckIcon, ShieldCheckIcon, WarningTriangleIcon } from "@/components/ui/icon-button";
+import { CheckIcon, ShieldCheckIcon, WarningTriangleIcon } from "@/components/ui/icons";
 
 interface ScopeInfo {
   name: string;

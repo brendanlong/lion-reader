@@ -5,7 +5,7 @@
  * Used by subscription and tag pages when the requested entity doesn't exist.
  */
 
-import { AlertIcon } from "./icon-button";
+import { AlertIcon } from "./icons";
 
 interface NotFoundCardProps {
   /** The title of the error (e.g., "Subscription not found") */

@@ -9,7 +9,7 @@
 
 import { Component, type ReactNode } from "react";
 import { Button } from "./button";
-import { AlertIcon } from "@/components/ui/icon-button";
+import { AlertIcon } from "@/components/ui/icons";
 
 interface ErrorBoundaryProps {
   /**

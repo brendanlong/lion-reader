@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
 import { Card } from "@/components/ui/card";
 import { SettingsListContainer } from "@/components/settings/SettingsListContainer";
-import { CloseIcon, KeyIcon } from "@/components/ui/icon-button";
+import { CloseIcon, KeyIcon } from "@/components/ui/icons";
 import { formatRelativeTime } from "@/lib/format";
 
 /**

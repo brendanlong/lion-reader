@@ -9,12 +9,7 @@
 "use client";
 
 import { useState, useEffect, type RefObject } from "react";
-import {
-  StarIcon,
-  StarFilledIcon,
-  CircleIcon,
-  CircleFilledIcon,
-} from "@/components/ui/icon-button";
+import { StarIcon, StarFilledIcon, CircleIcon, CircleFilledIcon } from "@/components/ui/icons";
 import { useScrollContainer } from "@/components/layout/ScrollContainerContext";
 
 interface StickyEntryControlsProps {

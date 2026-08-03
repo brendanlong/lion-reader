@@ -10,13 +10,7 @@
 
 import { useState } from "react";
 import { ClientLink } from "@/components/ui/client-link";
-import {
-  CloseIcon,
-  MenuIcon,
-  PlusIcon,
-  UserIcon,
-  ChevronDownIcon,
-} from "@/components/ui/icon-button";
+import { CloseIcon, MenuIcon, PlusIcon, UserIcon, ChevronDownIcon } from "@/components/ui/icons";
 import { Toaster, toast } from "sonner";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { FileUploadButton } from "@/components/saved/FileUploadButton";

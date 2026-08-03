@@ -10,7 +10,7 @@
 import { useEffect, useRef, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Button } from "@/components/ui/button";
-import { SpinnerIcon, SparklesIcon, AlertIcon, ArrowLeftIcon } from "@/components/ui/icon-button";
+import { SpinnerIcon, SparklesIcon, AlertIcon, ArrowLeftIcon } from "@/components/ui/icons";
 import { StarButton, ReadToggleButton } from "@/components/entries/EntryStateButtons";
 import { SummaryCard } from "@/components/summarization/SummaryCard";
 import { NarrationControls } from "@/components/narration";

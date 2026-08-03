@@ -9,7 +9,7 @@
 
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
-import { SpinnerIcon } from "@/components/ui/icon-button";
+import { SpinnerIcon } from "@/components/ui/icons";
 
 // ============================================================================
 // Stat Card

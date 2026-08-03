@@ -14,7 +14,7 @@ import { useUnsubscribeMutation } from "@/lib/hooks/useUnsubscribeMutation";
 import { getFeedDisplayName, formatRelativeTime, formatFutureTime } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { SettingsListContainer } from "@/components/settings/SettingsListContainer";
-import { CheckIcon, AlertCircleIcon } from "@/components/ui/icon-button";
+import { CheckIcon, AlertCircleIcon } from "@/components/ui/icons";
 import { UnsubscribeDialog } from "@/components/feeds/UnsubscribeDialog";
 import { FileFeedIssueDialog } from "@/components/feeds/FileFeedIssueDialog";
 import type { FeedIssueInput } from "@/lib/github-issue";

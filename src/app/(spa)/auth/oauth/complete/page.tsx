@@ -20,7 +20,7 @@
 import { Suspense, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { broadcastOAuthComplete } from "@/lib/oauth-channel";
-import { SpinnerIcon } from "@/components/ui/icon-button";
+import { SpinnerIcon } from "@/components/ui/icons";
 import { safeRedirectPath } from "@/lib/safe-redirect";
 
 export default function OAuthCompletePage() {

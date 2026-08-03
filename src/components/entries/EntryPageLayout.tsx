@@ -17,7 +17,7 @@ import { type MarkAllReadOptions, useEntryMutations } from "@/lib/hooks/useEntry
 import { useUrlViewPreferences } from "@/lib/hooks/useUrlViewPreferences";
 import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
 import { useKeyboardShortcutsContext } from "@/components/keyboard/KeyboardShortcutsProvider";
-import { SearchIcon } from "@/components/ui/icon-button";
+import { SearchIcon } from "@/components/ui/icons";
 import { StateToggleButton } from "@/components/ui/state-toggle-button";
 import { UnreadToggle } from "./UnreadToggle";
 import { SortToggle } from "./SortToggle";

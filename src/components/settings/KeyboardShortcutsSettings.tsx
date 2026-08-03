@@ -10,7 +10,7 @@
 import { useKeyboardShortcutsContext } from "@/components/keyboard/KeyboardShortcutsProvider";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { CardSection } from "@/components/ui/card";
-import { InfoCircleIcon } from "@/components/ui/icon-button";
+import { InfoCircleIcon } from "@/components/ui/icons";
 import { Kbd } from "@/components/ui/kbd";
 
 export function KeyboardShortcutsSettings() {

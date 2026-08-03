@@ -7,7 +7,7 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { WarningTriangleIcon } from "@/components/ui/icon-button";
+import { WarningTriangleIcon } from "@/components/ui/icons";
 import { validateSession } from "@/server/auth/session";
 import { resolveClient } from "@/server/oauth/service";
 import {
