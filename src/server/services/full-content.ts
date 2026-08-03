@@ -176,7 +176,7 @@ export async function fetchFullContent(
  * This is the single write site for the full-content invariants — hash
  * derivation for summary caching and error persistence — shared by the
  * user-initiated fetch (fetchAndStoreFullContent) and the background worker
- * (fetchFullContentForEntries in jobs/handlers.ts).
+ * (fetchFullContentForNewEntries in jobs/handlers/fetch-feed.ts).
  *
  * Stores only the raw full-content columns; the read path sanitizes per read
  * (issue #1282).

@@ -30,7 +30,7 @@ import {
   createTestUser,
 } from "./helpers";
 import { ensureFeedJob } from "../../src/server/jobs/queue";
-import { migrateSubscriptionsToExistingFeed } from "../../src/server/jobs/handlers";
+import { migrateSubscriptionsToExistingFeed } from "../../src/server/jobs/handlers/fetch-feed";
 import { createUserEntriesForFeed } from "../../src/server/feed/entry-processor";
 
 // ============================================================================

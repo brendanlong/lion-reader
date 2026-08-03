@@ -6,18 +6,28 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
   users,
   feeds,
+  jobs,
   subscriptions,
+  subscriptionTags,
+  tags,
   opmlImports,
+  type NewOpmlImport,
   type OpmlImportFeedData,
 } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
+import { processOpmlImport } from "../../src/server/services/imports";
 import { createCaller } from "../../src/server/trpc/root";
-import { createAuthContext, createTestUser } from "./helpers";
+import {
+  createAuthContext,
+  createTestFeed,
+  createTestSubscription,
+  createTestUser,
+} from "./helpers";
 
 // ============================================================================
 // Test Helpers
@@ -42,26 +52,60 @@ ${outlines}
 </opml>`;
 }
 
+/**
+ * Records a queued import the way {@link importOpml} would, so the worker-side
+ * {@link processOpmlImport} can be driven directly.
+ */
+async function seedImport(
+  userId: string,
+  feedsData: OpmlImportFeedData[],
+  overrides: Partial<NewOpmlImport> = {}
+): Promise<string> {
+  const importId = generateUuidv7();
+  const now = new Date();
+  await db.insert(opmlImports).values({
+    id: importId,
+    userId,
+    status: "pending",
+    totalFeeds: feedsData.length,
+    importedCount: 0,
+    skippedCount: 0,
+    failedCount: 0,
+    feedsData,
+    results: [],
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  });
+  return importId;
+}
+
+/** The user's active subscription URLs, in subscribe order. */
+async function subscribedUrls(userId: string): Promise<(string | null)[]> {
+  const rows = await db
+    .select({ url: feeds.url })
+    .from(subscriptions)
+    .innerJoin(feeds, eq(subscriptions.feedId, feeds.id))
+    .where(eq(subscriptions.userId, userId))
+    .orderBy(asc(subscriptions.id));
+  return rows.map((r) => r.url);
+}
+
 // ============================================================================
 // Tests
 // ============================================================================
 
 describe("OPML Import", () => {
-  // Clean up tables before each test
-  beforeEach(async () => {
+  async function cleanupTables() {
     await db.delete(opmlImports);
     await db.delete(subscriptions);
+    await db.delete(jobs);
     await db.delete(feeds);
     await db.delete(users);
-  });
+  }
 
-  // Clean up after all tests
-  afterAll(async () => {
-    await db.delete(opmlImports);
-    await db.delete(subscriptions);
-    await db.delete(feeds);
-    await db.delete(users);
-  });
+  beforeEach(cleanupTables);
+  afterAll(cleanupTables);
 
   describe("subscriptions.import", () => {
     it("imports a simple OPML with few feeds", async () => {
@@ -305,6 +349,118 @@ describe("OPML Import", () => {
 
       expect(record).toHaveLength(1);
       expect(record[0].feedsData).toHaveLength(550);
+    });
+  });
+
+  describe("processOpmlImport", () => {
+    it("subscribes to each feed, applies category tags, and completes the import", async () => {
+      const userId = await createTestUser();
+      const importId = await seedImport(userId, [
+        { xmlUrl: "https://a.example.com/feed.xml", title: "A", category: ["News"] },
+        { xmlUrl: "https://b.example.com/feed.xml", title: "B", category: ["News"] },
+        { xmlUrl: "https://c.example.com/feed.xml", title: "C" },
+      ]);
+
+      const result = await processOpmlImport(db, importId);
+
+      expect(result).toEqual({
+        status: "completed",
+        recovered: false,
+        counts: { imported: 3, skipped: 0, failed: 0, total: 3 },
+      });
+
+      expect(await subscribedUrls(userId)).toEqual([
+        "https://a.example.com/feed.xml",
+        "https://b.example.com/feed.xml",
+        "https://c.example.com/feed.xml",
+      ]);
+
+      // The category is created once and attached to both feeds that named it.
+      const taggedSubscriptions = await db
+        .select({ feedUrl: feeds.url, tagName: tags.name })
+        .from(subscriptionTags)
+        .innerJoin(subscriptions, eq(subscriptionTags.subscriptionId, subscriptions.id))
+        .innerJoin(feeds, eq(subscriptions.feedId, feeds.id))
+        .innerJoin(tags, eq(subscriptionTags.tagId, tags.id))
+        .where(eq(subscriptions.userId, userId));
+
+      expect(taggedSubscriptions.map((t) => t.feedUrl).sort()).toEqual([
+        "https://a.example.com/feed.xml",
+        "https://b.example.com/feed.xml",
+      ]);
+      expect(new Set(taggedSubscriptions.map((t) => t.tagName))).toEqual(new Set(["News"]));
+
+      const [record] = await db
+        .select()
+        .from(opmlImports)
+        .where(eq(opmlImports.id, importId))
+        .limit(1);
+      expect(record.status).toBe("completed");
+      expect(record.importedCount).toBe(3);
+      expect(record.completedAt).not.toBeNull();
+      expect(record.results.map((r) => r.status)).toEqual(["imported", "imported", "imported"]);
+    });
+
+    it("skips feeds the user is already subscribed to", async () => {
+      const userId = await createTestUser();
+      const url = "https://already.example.com/feed.xml";
+      const feedId = await createTestFeed({ url });
+      await createTestSubscription(userId, feedId);
+
+      const importId = await seedImport(userId, [
+        { xmlUrl: url, title: "Already subscribed" },
+        { xmlUrl: "https://new.example.com/feed.xml", title: "New" },
+      ]);
+
+      const result = await processOpmlImport(db, importId);
+
+      expect(result).toEqual({
+        status: "completed",
+        recovered: false,
+        counts: { imported: 1, skipped: 1, failed: 0, total: 2 },
+      });
+      expect(await subscribedUrls(userId)).toEqual([url, "https://new.example.com/feed.xml"]);
+    });
+
+    it("does nothing for an import a previous run already finished", async () => {
+      const userId = await createTestUser();
+      const importId = await seedImport(userId, [{ xmlUrl: "https://a.example.com/feed.xml" }], {
+        status: "completed",
+      });
+
+      expect(await processOpmlImport(db, importId)).toEqual({ status: "already_finished" });
+      expect(await subscribedUrls(userId)).toEqual([]);
+    });
+
+    it("recovers an import whose feeds were processed but never marked completed", async () => {
+      const userId = await createTestUser();
+      const url = "https://a.example.com/feed.xml";
+      const importId = await seedImport(userId, [{ xmlUrl: url, title: "A" }], {
+        status: "processing",
+        results: [{ url, title: "A", status: "imported" }],
+      });
+
+      const result = await processOpmlImport(db, importId);
+
+      expect(result).toEqual({
+        status: "completed",
+        recovered: true,
+        counts: { imported: 1, skipped: 0, failed: 0, total: 1 },
+      });
+      // Recovery only writes the final status — it must not re-subscribe.
+      expect(await subscribedUrls(userId)).toEqual([]);
+
+      const [record] = await db
+        .select()
+        .from(opmlImports)
+        .where(eq(opmlImports.id, importId))
+        .limit(1);
+      expect(record.status).toBe("completed");
+      expect(record.importedCount).toBe(1);
+    });
+
+    it("reports a missing import record", async () => {
+      expect(await processOpmlImport(db, generateUuidv7())).toEqual({ status: "not_found" });
     });
   });
 });
