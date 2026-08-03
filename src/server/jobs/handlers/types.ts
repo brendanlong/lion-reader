@@ -1,7 +1,7 @@
 /**
  * Shared shape returned by every job handler.
  *
- * See docs/job-queue-design.md for the overall architecture.
+ * See src/server/jobs/CLAUDE.md for the overall architecture.
  */
 
 /**

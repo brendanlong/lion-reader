@@ -905,7 +905,7 @@ export const visibleEntries = pgView("visible_entries", {
 
 // ============================================================================
 // JOB QUEUE
-// See docs/job-queue-design.md for detailed documentation.
+// See src/server/jobs/CLAUDE.md for the overall architecture.
 // ============================================================================
 
 /**

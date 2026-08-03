@@ -5,7 +5,8 @@
  * including large imports that might trigger edge cases.
  */
 
-import { describe, it, expect, beforeEach, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
+import Redis from "ioredis";
 import { asc, eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
@@ -20,14 +21,30 @@ import {
   type OpmlImportFeedData,
 } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
+import { getUserEventsChannel } from "../../src/server/redis/pubsub";
 import { processOpmlImport } from "../../src/server/services/imports";
 import { createCaller } from "../../src/server/trpc/root";
+import { waitForMessages } from "../utils/pubsub";
 import {
   createAuthContext,
   createTestFeed,
   createTestSubscription,
   createTestUser,
 } from "./helpers";
+
+let subscriber: Redis;
+
+beforeAll(() => {
+  const redisUrl = process.env.REDIS_URL;
+  if (!redisUrl) {
+    throw new Error("REDIS_URL must be set for integration tests");
+  }
+  subscriber = new Redis(redisUrl);
+});
+
+afterAll(async () => {
+  await subscriber.quit();
+});
 
 // ============================================================================
 // Test Helpers
@@ -457,10 +474,77 @@ describe("OPML Import", () => {
         .limit(1);
       expect(record.status).toBe("completed");
       expect(record.importedCount).toBe(1);
+      // The stored per-feed results are already final and must be left alone.
+      expect(record.results).toEqual([{ url, title: "A", status: "imported" }]);
+    });
+
+    it("recovers from the counters when the results array lagged behind them", async () => {
+      const userId = await createTestUser();
+      const importId = await seedImport(
+        userId,
+        [
+          { xmlUrl: "https://a.example.com/feed.xml" },
+          { xmlUrl: "https://b.example.com/feed.xml" },
+          { xmlUrl: "https://c.example.com/feed.xml" },
+        ],
+        { status: "processing", results: [], importedCount: 2, skippedCount: 1 }
+      );
+
+      const result = await processOpmlImport(db, importId);
+
+      expect(result).toEqual({
+        status: "completed",
+        recovered: true,
+        counts: { imported: 2, skipped: 1, failed: 0, total: 3 },
+      });
+      expect(await subscribedUrls(userId)).toEqual([]);
+    });
+
+    it("subscribes only once when the same URL appears twice in one import", async () => {
+      const userId = await createTestUser();
+      const url = "https://dupe.example.com/feed.xml";
+      const importId = await seedImport(userId, [{ xmlUrl: url }, { xmlUrl: url }]);
+
+      const result = await processOpmlImport(db, importId);
+
+      expect(result).toEqual({
+        status: "completed",
+        recovered: false,
+        counts: { imported: 1, skipped: 1, failed: 0, total: 2 },
+      });
+      expect(await subscribedUrls(userId)).toEqual([url]);
     });
 
     it("reports a missing import record", async () => {
       expect(await processOpmlImport(db, generateUuidv7())).toEqual({ status: "not_found" });
+    });
+
+    it("publishes running progress per feed and final totals on completion", async () => {
+      const userId = await createTestUser();
+      const importId = await seedImport(userId, [
+        { xmlUrl: "https://p1.example.com/feed.xml" },
+        { xmlUrl: "https://p2.example.com/feed.xml" },
+      ]);
+
+      const channel = getUserEventsChannel(userId);
+      await subscriber.subscribe(channel);
+      // 2 import_progress + 1 import_completed. The subscription_created events
+      // createSubscription publishes go to the same channel, so filter by type.
+      const messages = waitForMessages(subscriber, channel, 5);
+      await processOpmlImport(db, importId);
+
+      const events = (await messages)
+        .map((m) => JSON.parse(m) as { type: string; imported?: number; total?: number })
+        .filter((e) => e.type === "import_progress" || e.type === "import_completed");
+
+      // Each progress event must carry the totals as of *that* feed, not the
+      // final tally — the UI renders them as a running count.
+      expect(events).toMatchObject([
+        { type: "import_progress", imported: 1, skipped: 0, failed: 0, total: 2 },
+        { type: "import_progress", imported: 2, skipped: 0, failed: 0, total: 2 },
+        { type: "import_completed", imported: 2, skipped: 0, failed: 0, total: 2 },
+      ]);
+      await subscriber.unsubscribe(channel);
     });
   });
 });

@@ -4,7 +4,7 @@
  * Fetches a feed, applies the fetch result (parse + entry processing, backoff on
  * error, permanent-redirect tracking/migration) and reports the next fetch time.
  *
- * See docs/job-queue-design.md for the overall architecture and
+ * See src/server/jobs/CLAUDE.md for the overall architecture and
  * docs/diagrams/feed-fetcher.d2 for the pipeline.
  */
 

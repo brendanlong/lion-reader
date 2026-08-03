@@ -257,6 +257,7 @@ async function applyImportTags(
   db: typeof dbType,
   userId: string,
   subscriptionId: string,
+  feedUrl: string,
   categories: string[],
   tagNameToInfo: Map<string, ImportTagInfo>
 ): Promise<void> {
@@ -293,6 +294,7 @@ async function applyImportTags(
 
   logger.debug("OPML import: associated subscription with tags", {
     subscriptionId,
+    feedUrl,
     tagIds: tagInfos.map((t) => t.id),
   });
 }
@@ -411,7 +413,7 @@ export async function processOpmlImport(
         });
         counts.skipped++;
 
-        await publishImportProgress(userId, importId, feedUrl, "skipped", counts);
+        await publishImportProgress(userId, importId, feedUrl, "skipped", { ...counts });
         await flushProgressToDb();
 
         continue;
@@ -427,7 +429,14 @@ export async function processOpmlImport(
         const subscriptionId = subscriptionResult.subscriptionId;
         const feedId = subscriptionResult.feed.id;
 
-        await applyImportTags(db, userId, subscriptionId, opmlFeed.category ?? [], tagNameToInfo);
+        await applyImportTags(
+          db,
+          userId,
+          subscriptionId,
+          feedUrl,
+          opmlFeed.category ?? [],
+          tagNameToInfo
+        );
 
         // Prevents a duplicate URL later in the same import from re-subscribing.
         existingUrls.add(feedUrl);
@@ -441,7 +450,7 @@ export async function processOpmlImport(
         });
         counts.imported++;
 
-        await publishImportProgress(userId, importId, feedUrl, "imported", counts);
+        await publishImportProgress(userId, importId, feedUrl, "imported", { ...counts });
         await flushProgressToDb();
 
         logger.info("OPML import: feed imported", { feedUrl, userId, importId });
@@ -455,7 +464,7 @@ export async function processOpmlImport(
         });
         counts.failed++;
 
-        await publishImportProgress(userId, importId, feedUrl, "failed", counts);
+        await publishImportProgress(userId, importId, feedUrl, "failed", { ...counts });
         await flushProgressToDb();
 
         logger.warn("OPML import: feed import failed", {
@@ -471,7 +480,7 @@ export async function processOpmlImport(
 
     logger.info("OPML import completed", { importId, userId, ...counts });
 
-    return { status: "completed", counts, recovered: false };
+    return { status: "completed", counts: { ...counts }, recovered: false };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
 

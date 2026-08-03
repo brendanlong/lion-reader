@@ -9,7 +9,7 @@
  * - Graceful shutdown on SIGTERM/SIGINT
  * - Stale job recovery (handled automatically in claim query)
  *
- * See docs/job-queue-design.md for the overall architecture.
+ * See src/server/jobs/CLAUDE.md for the overall architecture.
  */
 
 import {
