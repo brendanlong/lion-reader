@@ -321,19 +321,23 @@ function getPublisherClient(): Redis | null {
 }
 
 /**
- * Publishes a feed event to the feed-specific Redis channel.
+ * Publishes an event to a Redis channel. Every `publish*` function below funnels
+ * through here: they own the typed signature and the event shape, this owns the
+ * client lookup, serialization, and the Redis-unavailable no-op.
  *
+ * @param channel - The channel to publish on
  * @param event - The event to publish
  * @returns The number of subscribers that received the message (0 if Redis unavailable)
  */
-async function publishFeedEvent(event: FeedEvent): Promise<number> {
+async function publishEvent(
+  channel: string,
+  event: FeedEvent | UserEvent | SiteStatusEvent
+): Promise<number> {
   const client = getPublisherClient();
   if (!client) {
     return 0;
   }
-  const channel = getFeedEventsChannel(event.feedId);
-  const message = JSON.stringify(event);
-  return client.publish(channel, message);
+  return client.publish(channel, JSON.stringify(event));
 }
 
 /**
@@ -364,7 +368,7 @@ export async function publishNewEntry(
     feedType,
     ...(entry ? { entry } : {}),
   };
-  return publishFeedEvent(event);
+  return publishEvent(getFeedEventsChannel(feedId), event);
 }
 
 /**
@@ -390,7 +394,7 @@ async function publishEntryUpdated(
     updatedAt: updatedAt.toISOString(),
     metadata,
   };
-  return publishFeedEvent(event);
+  return publishEvent(getFeedEventsChannel(feedId), event);
 }
 
 /**
@@ -451,10 +455,6 @@ export async function publishSubscriptionCreated(
   feed: SubscriptionCreatedEventFeed,
   counts?: z.infer<typeof unreadCountsSchema>
 ): Promise<number> {
-  const client = getPublisherClient();
-  if (!client) {
-    return 0;
-  }
   const event: SubscriptionCreatedEvent = {
     type: "subscription_created",
     userId,
@@ -466,8 +466,7 @@ export async function publishSubscriptionCreated(
     feed,
     counts,
   };
-  const channel = getUserEventsChannel(userId);
-  return client.publish(channel, JSON.stringify(event));
+  return publishEvent(getUserEventsChannel(userId), event);
 }
 
 /**
@@ -489,10 +488,6 @@ export async function publishSubscriptionDeleted(
   updatedAt: Date,
   counts?: z.infer<typeof unreadCountsSchema>
 ): Promise<number> {
-  const client = getPublisherClient();
-  if (!client) {
-    return 0;
-  }
   const event: SubscriptionDeletedEvent = {
     type: "subscription_deleted",
     userId,
@@ -502,8 +497,7 @@ export async function publishSubscriptionDeleted(
     updatedAt: updatedAt.toISOString(),
     counts,
   };
-  const channel = getUserEventsChannel(userId);
-  return client.publish(channel, JSON.stringify(event));
+  return publishEvent(getUserEventsChannel(userId), event);
 }
 
 /**
@@ -524,10 +518,6 @@ export async function publishSubscriptionUpdated(
   tags: Array<{ id: string; name: string; color: string | null }>,
   customTitle: string | null
 ): Promise<number> {
-  const client = getPublisherClient();
-  if (!client) {
-    return 0;
-  }
   const event: SubscriptionUpdatedEvent = {
     type: "subscription_updated",
     userId,
@@ -537,8 +527,7 @@ export async function publishSubscriptionUpdated(
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
   };
-  const channel = getUserEventsChannel(userId);
-  return client.publish(channel, JSON.stringify(event));
+  return publishEvent(getUserEventsChannel(userId), event);
 }
 
 /**
@@ -554,10 +543,6 @@ export async function publishImportProgress(
   feedStatus: "imported" | "skipped" | "failed",
   counts: { imported: number; skipped: number; failed: number; total: number }
 ): Promise<number> {
-  const client = getPublisherClient();
-  if (!client) {
-    return 0;
-  }
   const event: ImportProgressEvent = {
     type: "import_progress",
     userId,
@@ -570,8 +555,7 @@ export async function publishImportProgress(
     total: counts.total,
     timestamp: new Date().toISOString(),
   };
-  const channel = getUserEventsChannel(userId);
-  return client.publish(channel, JSON.stringify(event));
+  return publishEvent(getUserEventsChannel(userId), event);
 }
 
 /**
@@ -585,10 +569,6 @@ export async function publishImportCompleted(
   importId: string,
   counts: { imported: number; skipped: number; failed: number; total: number }
 ): Promise<number> {
-  const client = getPublisherClient();
-  if (!client) {
-    return 0;
-  }
   const event: ImportCompletedEvent = {
     type: "import_completed",
     userId,
@@ -599,8 +579,7 @@ export async function publishImportCompleted(
     total: counts.total,
     timestamp: new Date().toISOString(),
   };
-  const channel = getUserEventsChannel(userId);
-  return client.publish(channel, JSON.stringify(event));
+  return publishEvent(getUserEventsChannel(userId), event);
 }
 
 /**
@@ -637,10 +616,6 @@ export async function publishEntryStateChanged(
   counts: z.infer<typeof unreadCountsSchema>,
   listData?: EntryStateListData
 ): Promise<number> {
-  const client = getPublisherClient();
-  if (!client) {
-    return 0;
-  }
   const event: EntryStateChangedEvent = {
     type: "entry_state_changed",
     userId,
@@ -652,8 +627,7 @@ export async function publishEntryStateChanged(
     updatedAt: updatedAt.toISOString(),
     ...(listData ?? {}),
   };
-  const channel = getUserEventsChannel(userId);
-  return client.publish(channel, JSON.stringify(event));
+  return publishEvent(getUserEventsChannel(userId), event);
 }
 
 /**
@@ -680,10 +654,6 @@ export async function publishMarkAllRead(
   updatedAt: Date,
   maxEntryId: string
 ): Promise<number> {
-  const client = getPublisherClient();
-  if (!client) {
-    return 0;
-  }
   const event: MarkAllReadEvent = {
     type: "mark_all_read",
     userId,
@@ -691,8 +661,7 @@ export async function publishMarkAllRead(
     updatedAt: updatedAt.toISOString(),
     entryId: maxEntryId,
   };
-  const channel = getUserEventsChannel(userId);
-  return client.publish(channel, JSON.stringify(event));
+  return publishEvent(getUserEventsChannel(userId), event);
 }
 
 /**
@@ -708,10 +677,6 @@ export async function publishTagCreated(
   tag: { id: string; name: string; color: string | null },
   updatedAt: Date
 ): Promise<number> {
-  const client = getPublisherClient();
-  if (!client) {
-    return 0;
-  }
   const event: TagCreatedEvent = {
     type: "tag_created",
     userId,
@@ -719,8 +684,7 @@ export async function publishTagCreated(
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
   };
-  const channel = getUserEventsChannel(userId);
-  return client.publish(channel, JSON.stringify(event));
+  return publishEvent(getUserEventsChannel(userId), event);
 }
 
 /**
@@ -736,10 +700,6 @@ export async function publishTagUpdated(
   tag: { id: string; name: string; color: string | null },
   updatedAt: Date
 ): Promise<number> {
-  const client = getPublisherClient();
-  if (!client) {
-    return 0;
-  }
   const event: TagUpdatedEvent = {
     type: "tag_updated",
     userId,
@@ -747,8 +707,7 @@ export async function publishTagUpdated(
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
   };
-  const channel = getUserEventsChannel(userId);
-  return client.publish(channel, JSON.stringify(event));
+  return publishEvent(getUserEventsChannel(userId), event);
 }
 
 /**
@@ -764,10 +723,6 @@ export async function publishTagDeleted(
   tagId: string,
   updatedAt: Date
 ): Promise<number> {
-  const client = getPublisherClient();
-  if (!client) {
-    return 0;
-  }
   const event: TagDeletedEvent = {
     type: "tag_deleted",
     userId,
@@ -775,8 +730,7 @@ export async function publishTagDeleted(
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
   };
-  const channel = getUserEventsChannel(userId);
-  return client.publish(channel, JSON.stringify(event));
+  return publishEvent(getUserEventsChannel(userId), event);
 }
 
 /**
@@ -790,18 +744,13 @@ export async function publishTagDeleted(
  * @returns The number of subscribers that received the message (0 if Redis unavailable)
  */
 export async function publishSavedFeedCreated(userId: string, feedId: string): Promise<number> {
-  const client = getPublisherClient();
-  if (!client) {
-    return 0;
-  }
   const event: SavedFeedCreatedEvent = {
     type: "saved_feed_created",
     userId,
     feedId,
     timestamp: new Date().toISOString(),
   };
-  const channel = getUserEventsChannel(userId);
-  return client.publish(channel, JSON.stringify(event));
+  return publishEvent(getUserEventsChannel(userId), event);
 }
 
 /**
@@ -814,16 +763,12 @@ export async function publishSavedFeedCreated(userId: string, feedId: string): P
 export async function publishAnnouncementChanged(
   announcement: Announcement | null
 ): Promise<number> {
-  const client = getPublisherClient();
-  if (!client) {
-    return 0;
-  }
   const event: SiteStatusEvent = {
     type: "announcement_changed",
     announcement,
     timestamp: new Date().toISOString(),
   };
-  return client.publish(getSiteStatusChannel(), JSON.stringify(event));
+  return publishEvent(getSiteStatusChannel(), event);
 }
 
 // ============================================================================
