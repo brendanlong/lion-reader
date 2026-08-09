@@ -228,9 +228,11 @@ export function createWorkerCore(config: InternalWorkerConfig): Worker {
   async function runLoop(): Promise<void> {
     // Whether we've already reported the current run of claim failures. A
     // Postgres restart makes every poll's claim throw for the duration of the
-    // outage; reporting each one would flood Sentry (and `pool.on("error")`
-    // already reports the underlying drop). We report the first failure, then
-    // stay quiet until a claim succeeds again. Every attempt is still logged.
+    // outage; reporting each one would flood Sentry. We report the first failure,
+    // then stay quiet until a claim succeeds again. Every attempt is still logged.
+    // This first report is the *only* Sentry signal for such an outage —
+    // `pool.on("error")` treats the underlying drop as routine (see
+    // `src/server/db/index.ts`).
     let claimFailureReported = false;
 
     while (!state.shuttingDown) {

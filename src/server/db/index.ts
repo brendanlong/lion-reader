@@ -3,6 +3,8 @@ import { Pool } from "pg";
 import * as Sentry from "@sentry/nextjs";
 
 import { logger } from "@/lib/logger";
+import { trackDbPoolClientError } from "@/server/metrics/metrics";
+import { isDisconnectError } from "./errors";
 import * as schema from "./schema";
 import { timestamptzRawParserConfig } from "./temporal";
 
@@ -30,14 +32,39 @@ export const pool = new Pool({
   idleTimeoutMillis: 30000,
 });
 
-// Handle unexpected errors on idle clients in the pool.
+// Handle errors on idle clients in the pool.
 // Without this handler, connection failures cause uncaughtException and crash the process.
 // The pool automatically removes failed clients and creates new ones when needed.
+//
+// pg-pool only routes an error here for a client that is IDLE in the pool: it detaches
+// this listener while a client is checked out, so an error during a query rejects that
+// query instead and is reported by whoever ran it. By the time we get here the pool has
+// already removed the client, so there is nothing to recover.
+//
+// That makes a plain disconnect uninteresting, and there are a lot of them: Fly's
+// Postgres proxy tears down every established connection whenever its health check
+// flaps, so each occurrence produces one error per idle connection on every machine at
+// once. Reporting those to Sentry buried real errors under thousands of events, so they
+// are logged and counted instead; only genuinely unexpected errors are captured.
+//
+// Filtered here rather than via Sentry's `ignoreErrors` (src/server/sentry.ts) because
+// that matches on message globally: it would also silence the worker's claim-failure
+// report, which is how a Postgres restart that stalls the job loop becomes visible.
 pool.on("error", (err) => {
-  logger.error("Unexpected error on idle database client", {
+  const disconnected = isDisconnectError(err);
+  trackDbPoolClientError(disconnected ? "disconnect" : "unexpected");
+
+  const context = {
     code: (err as { code?: string }).code,
     message: err.message,
-  });
+  };
+
+  if (disconnected) {
+    logger.warn("Idle database connection closed by the server", context);
+    return;
+  }
+
+  logger.error("Unexpected error on idle database client", context);
   Sentry.captureException(err, {
     tags: { source: "pg-pool" },
   });
