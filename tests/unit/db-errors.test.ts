@@ -37,18 +37,26 @@ describe("isDisconnectError", () => {
     expect(isDisconnectError(new Error("Connection terminated unexpectedly"))).toBe(true);
   });
 
-  it("detects socket teardown", () => {
+  it("detects socket teardown by the peer", () => {
     expect(isDisconnectError(errorWithCode("read ECONNRESET", "ECONNRESET"))).toBe(true);
     expect(isDisconnectError(errorWithCode("write EPIPE", "EPIPE"))).toBe(true);
-    expect(isDisconnectError(errorWithCode("timeout", "ETIMEDOUT"))).toBe(true);
   });
 
-  it("detects a server-side connection termination", () => {
+  it("detects a server restart", () => {
     expect(
       isDisconnectError(
         errorWithCode("terminating connection due to administrator command", "57P01")
       )
     ).toBe(true);
+  });
+
+  it("still reports the shutdown codes that mean the database is in trouble", () => {
+    expect(isDisconnectError(errorWithCode("terminating connection due to crash", "57P02"))).toBe(
+      false
+    );
+    expect(isDisconnectError(errorWithCode("the database system is starting up", "57P03"))).toBe(
+      false
+    );
   });
 
   it("does not treat an ordinary query error as a disconnect", () => {

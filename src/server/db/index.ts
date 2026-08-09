@@ -46,6 +46,10 @@ export const pool = new Pool({
 // flaps, so each occurrence produces one error per idle connection on every machine at
 // once. Reporting those to Sentry buried real errors under thousands of events, so they
 // are logged and counted instead; only genuinely unexpected errors are captured.
+//
+// Filtered here rather than via Sentry's `ignoreErrors` (src/server/sentry.ts) because
+// that matches on message globally: it would also silence the worker's claim-failure
+// report, which is how a Postgres restart that stalls the job loop becomes visible.
 pool.on("error", (err) => {
   const disconnected = isDisconnectError(err);
   trackDbPoolClientError(disconnected ? "disconnect" : "unexpected");
