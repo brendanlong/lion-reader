@@ -555,6 +555,27 @@ export function updateDbPoolMetrics(stats: {
   dbPoolWaitingRequests?.set(stats.waitingCount);
 }
 
+/**
+ * Counter for errors raised on idle connections in the database pool, split by
+ * whether the connection merely went away (`disconnect`) or something else went
+ * wrong (`unexpected`). Disconnects are not reported to Sentry — they are routine
+ * and arrive in bursts — so this counter is how they stay visible.
+ */
+const dbPoolClientErrorsTotal = getOrCreateCounter({
+  name: "db_pool_client_errors_total",
+  help: "Errors on idle database pool connections",
+  labelNames: ["reason"] as const,
+});
+
+/**
+ * Tracks an error raised on an idle database pool connection.
+ * This function has zero overhead when metrics are disabled.
+ */
+export function trackDbPoolClientError(reason: "disconnect" | "unexpected"): void {
+  if (!metricsEnabled) return;
+  dbPoolClientErrorsTotal?.inc({ reason });
+}
+
 // ============================================================================
 // Business Metrics
 // ============================================================================

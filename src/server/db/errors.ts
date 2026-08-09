@@ -23,3 +23,32 @@ export function isUniqueViolation(error: unknown): boolean {
   }
   return false;
 }
+
+/**
+ * The exact message `pg` synthesizes when a client's socket closes without the
+ * client having called `end()` — i.e. the far end hung up. It carries no `code`,
+ * so the message is the only thing to match on (see `pg/lib/client.js`).
+ */
+const PG_REMOTE_DISCONNECT_MESSAGE = "Connection terminated unexpectedly";
+
+/**
+ * Error codes that mean a pooled connection went away, rather than that a query
+ * or the database is broken: socket-level teardown plus Postgres `admin_shutdown`
+ * (57P01), which is what a server restart or a `pg_terminate_backend` looks like.
+ */
+const DISCONNECT_CODES = new Set(["ECONNRESET", "EPIPE", "ETIMEDOUT", "57P01"]);
+
+/**
+ * Returns true if the error just means "this connection went away".
+ *
+ * Used to keep routine disconnects out of Sentry (see `src/server/db/index.ts`).
+ * Deliberately narrow: anything that isn't recognizably a disconnect is still
+ * treated as a real error.
+ */
+export function isDisconnectError(error: Error): boolean {
+  if (error.message === PG_REMOTE_DISCONNECT_MESSAGE) {
+    return true;
+  }
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" && DISCONNECT_CODES.has(code);
+}
