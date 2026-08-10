@@ -31,6 +31,29 @@ updates:
           - "react-dom"
           - "@types/react"
           - "@types/react-dom"
+      # Every npm PR rewrites pnpm-lock.yaml, and two of them merged from
+      # stale bases combine textually into a lockfile with a duplicated key
+      # that no longer parses — which took CI and deploys down (#1501). One
+      # grouped PR per week means one lockfile rewrite to land, not six
+      # racing each other. Majors stay ungrouped: they need individual
+      # review, and a single bad one shouldn't hold the rest hostage.
+      #
+      # Security updates are deliberately left ungrouped (apart from React
+      # above) so a fix can land on its own without waiting for the batch.
+      npm-minor-and-patch:
+        applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"
+        patterns:
+          - "*"
+        # A dependency joins every group it matches, so React has to be
+        # excluded here or it would land in two PRs at once.
+        exclude-patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
