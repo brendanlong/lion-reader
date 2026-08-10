@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { stripHtml, summarizeCleanedContent } from "@/server/html/strip-html";
+import { sanitizeEntryHtml } from "@/server/html/sanitize";
 
 describe("stripHtml", () => {
   describe("basic text extraction", () => {
@@ -105,6 +106,84 @@ describe("stripHtml", () => {
       const html =
         "<!DOCTYPE html><html><head><title>Page Title</title></head><body><p>Body content here.</p></body></html>";
       expect(stripHtml(html, 300)).toBe("Body content here.");
+    });
+  });
+
+  describe("raw-text elements", () => {
+    // The HTML tokenizer reads these elements' contents as a single *text* run,
+    // so `ontext` receives the inner markup verbatim. Skipping them is what
+    // keeps an excerpt from reading "<p>Fallback <b>text</b></p>".
+    it("drops iframe fallback content rather than leaking its markup", () => {
+      const html =
+        '<p>Before</p><iframe src="https://example.com/x"><p>Fallback <b>text</b></p></iframe><p>After</p>';
+      expect(stripHtml(html, 300)).toBe("Before After");
+    });
+
+    it("drops noframes content", () => {
+      const html = "<p>A</p><noframes><p>Use a real browser</p></noframes><p>B</p>";
+      expect(stripHtml(html, 300)).toBe("A B");
+    });
+
+    it("drops noembed content", () => {
+      const html = "<p>A</p><noembed><p>No embed support</p></noembed><p>B</p>";
+      expect(stripHtml(html, 300)).toBe("A B");
+    });
+
+    it("drops noscript content", () => {
+      const html = "<p>A</p><noscript><p>Enable JavaScript</p></noscript><p>B</p>";
+      expect(stripHtml(html, 300)).toBe("A B");
+    });
+
+    it("drops everything after plaintext, which never closes", () => {
+      const html = "<p>Visible</p><plaintext><p>Swallowed by the tokenizer</p>";
+      expect(stripHtml(html, 300)).toBe("Visible");
+    });
+
+    it("drops xmp content", () => {
+      const html = "<p>A</p><xmp><b>literal</b></xmp><p>B</p>";
+      expect(stripHtml(html, 300)).toBe("A B");
+    });
+
+    it("drops textarea and option content (form defaults, not prose)", () => {
+      const html =
+        "<p>A</p><textarea>typed &amp; saved</textarea><select><option>Choice</option></select><p>B</p>";
+      expect(stripHtml(html, 300)).toBe("A B");
+    });
+
+    it("keeps surrounding prose when a raw-text element is unclosed", () => {
+      const html = '<p>Before</p><iframe src="x">fallback<p>After</p>';
+      // The implied close lands at EOF, so nothing after it survives — but the
+      // skip counter must not go negative and swallow the whole document.
+      expect(stripHtml(html, 300)).toBe("Before");
+    });
+  });
+
+  // The excerpt describes what the reader will see, so it must never surface
+  // text the sanitizer removes before rendering. Both halves run for real
+  // rather than being re-encoded here, so a regression on either side fails.
+  // The list mirrors the sanitizer's DROP_WITH_CONTENT — extend both together.
+  describe("agrees with the sanitizer about dropped subtrees (sync guard)", () => {
+    const DROPPED_WITH_CONTENT = [
+      "script",
+      "style",
+      "textarea",
+      "option",
+      "title",
+      "xmp",
+      "iframe",
+      "noembed",
+      "noframes",
+      "noscript",
+      "plaintext",
+      "annotation",
+      "annotation-xml",
+    ];
+
+    it.each(DROPPED_WITH_CONTENT)("%s content reaches neither surface", (tag) => {
+      const html = `<p>Visible</p><${tag}>NOTFORREADERS</${tag}><p>Tail</p>`;
+
+      expect(sanitizeEntryHtml(html)).not.toContain("NOTFORREADERS");
+      expect(stripHtml(html, 300)).not.toContain("NOTFORREADERS");
     });
   });
 
