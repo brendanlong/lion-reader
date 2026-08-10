@@ -127,7 +127,7 @@
     "eslint-config-next": "16.2.10",
     "fake-indexeddb": "^6.2.5",
     "husky": "^9.1.7",
-    "jsdom": "^29.1.1",
+    "jsdom": "^30.0.1",
     "knip": "^5.83.1",
     "lint-staged": "^17.2.0",
     "prettier": "^3.9.5",
