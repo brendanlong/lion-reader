@@ -41,15 +41,45 @@ const BLOCK_TAGS = new Set([
 /**
  * Tags whose content should be skipped entirely.
  *
- * `annotation`/`annotation-xml` hold MathML's alternate encodings (e.g. a copy
- * of the TeX source alongside the presentation MathML). Including them would
- * duplicate each equation in the plain-text excerpt — once from the presentation
- * glyphs and once from the TeX annotation (#1386) — so we drop their content,
- * mirroring the read-path sanitizer's DROP_WITH_CONTENT policy. Neither our own
- * Markdown renderer nor feed math (MathJax→MathML) emits one, so this only
- * matters for MathML that arrives with an annotation already attached.
+ * An excerpt describes what the reader will actually see, so this mirrors the
+ * read-path sanitizer's `DROP_WITH_CONTENT` (`native/sanitizer/core/src/
+ * sanitize.rs`) — anything the sanitizer removes subtree-and-all can never
+ * reach the rendered entry, so it must not reach the excerpt either. `iframe`
+ * is here for the same reason: the sanitizer rebuilds allowed embeds from
+ * scratch and drops the rest, so an iframe's fallback children are never
+ * displayed.
+ *
+ * That set is mostly the HTML tokenizer's **raw text / RCDATA** elements, and
+ * for those this is load-bearing rather than cosmetic: the tokenizer reads
+ * their contents as a single *text* run, so `ontext` hands us the inner markup
+ * verbatim and an excerpt would otherwise read `<p>Fallback <b>text</b></p>`
+ * instead of dropping it. (htmlparser2 12 made `iframe`/`noembed`/`noframes`/
+ * `plaintext` raw text to match the spec; `script`/`style` always were.)
+ *
+ * `annotation`/`annotation-xml` are not raw text but belong for the sibling
+ * reason: they hold MathML's alternate encodings (e.g. a copy of the TeX source
+ * alongside the presentation MathML), so including them would duplicate each
+ * equation in the excerpt — once from the presentation glyphs and once from the
+ * TeX annotation (#1386).
+ *
+ * `head` is ours alone (the sanitizer never sees a whole document).
  */
-const SKIP_TAGS = new Set(["script", "style", "head", "annotation", "annotation-xml"]);
+const SKIP_TAGS = new Set([
+  "script",
+  "style",
+  "textarea",
+  "option",
+  "title",
+  "xmp",
+  "iframe",
+  "noembed",
+  "noframes",
+  "noscript",
+  "plaintext",
+  "annotation",
+  "annotation-xml",
+  "head",
+]);
 
 /**
  * Extracts text from HTML with proper spacing between block elements.
