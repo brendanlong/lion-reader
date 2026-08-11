@@ -201,13 +201,11 @@ export async function generateChatCompletion(
           { role: "user" as const, content: options.userPrompt },
         ],
       });
-      // The SDK's non-streaming return type is a union that includes chunk
-      // shapes; narrow to the completed-response shape.
-      const text =
-        "choices" in response && Array.isArray(response.choices)
-          ? (response.choices[0]?.message?.content ?? "")
-          : "";
-      return typeof text === "string" ? text : "";
+      // The SDK's non-streaming return type is a union that includes the error
+      // and chunk shapes; narrow to the completed-response choice, which is the
+      // only one carrying `message` (chunks carry `delta` instead).
+      const choice = "choices" in response ? response.choices?.[0] : undefined;
+      return choice && "message" in choice ? (choice.message.content ?? "") : "";
     }
   }
 }
