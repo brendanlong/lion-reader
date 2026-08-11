@@ -167,3 +167,6 @@ extension/*.zip
 test-results/
 playwright-report/
 .playwright-mcp/
+
+# Locally unpacked Node toolchain (see "Node Version" in CLAUDE.md)
+/.node26/

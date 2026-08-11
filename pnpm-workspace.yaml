@@ -26,13 +26,25 @@ onlyBuiltDependencies:
   - esbuild
   - protobufjs
 
+# Transitive dependencies pinned above a vulnerable range. A dependency only
+# needs an entry here while its parent still resolves below the patched
+# version — once the parent's own range catches up, drop the override rather
+# than leaving a floor nobody is enforcing.
 overrides:
   trpc-to-openapi>h3: ^1.15.9
   serialize-javascript: ^7.0.5
   "@modelcontextprotocol/sdk>hono": ^4.12.21
-  express-rate-limit>ip-address: ^10.1.1
+  express-rate-limit>ip-address: ^10.3.1
   "@discordjs/ws>ws": ^8.20.1
   knip>smol-toml: ^1.6.1
   qs: ^6.15.2
   postcss: ^8.5.10
   fast-xml-parser: ^5.8.0
+  js-yaml: ^4.3.1
+  fast-uri: ^3.1.5
+  # brace-expansion is pulled in at three majors at once, and the advisory
+  # patches each separately, so it needs one floor per major rather than a
+  # single range that would drag 1.x/2.x consumers onto 5.x.
+  brace-expansion@1: ^1.1.18
+  brace-expansion@2: ^2.1.4
+  brace-expansion@5: ^5.0.9

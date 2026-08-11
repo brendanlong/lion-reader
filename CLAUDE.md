@@ -24,6 +24,18 @@ Docs (this file, per-directory `CLAUDE.md`s, `docs/`) explain **why and where**;
 - **No non-decisions**: don't document things we haven't done or have merely deferred — that reads as a commitment to never do them.
 - Keep docs current **both ways**: when you change code whose docs are stale, or notice bloat/duplication, fix the docs in the same change — pruning is as valuable as adding.
 
+## Node Version
+
+**Node 26** (`.nvmrc`, the single source of truth — CI reads it via `node-version-file`; the Dockerfile pins `node:26-alpine` separately). pnpm only _warns_ on a mismatch, so an older Node gets a long way in before failing: `next build`, unit tests and integration tests all pass on Node 22, and then Playwright dies at collection with a `TypeError: Cannot read properties of undefined (reading 'exports')` thrown deep inside `@sentry/nextjs` → `@apm-js-collab/code-transformer` → `require('meriyah')`. **If e2e fails that way, check `node --version` before debugging the dependency.**
+
+With a version manager installed, `nvm use` / `fnm use` / `mise install` picks up `.nvmrc`. In a sandbox with none (no nvm/fnm/volta/mise/asdf on PATH), unpack a toolchain into the worktree and prepend it — don't touch system or `$HOME` config:
+
+```bash
+mkdir -p .node26 && curl -sL https://nodejs.org/dist/v26.7.0/node-v26.7.0-linux-x64.tar.xz \
+  | tar -xJ -C .node26 --strip-components=1
+export PATH="$PWD/.node26/bin:$PATH"
+```
+
 ## Commands
 
 - `pnpm build:native` - Build the native Rust modules (sanitizer, readability, feed-parser, markdown). **Required once per checkout before tests or the app** — if tests fail with "Failed to load the native …", run this. Needs the Rust toolchain (`cargo` — if missing from PATH, try `~/.cargo/bin`). The SessionStart hook starts it in the background, so it may already be done or in flight (log: `/tmp/lion-reader-build-native.log`).
