@@ -24,7 +24,7 @@ jobs:
 
       - uses: actions/setup-node@v7.0.0
         with:
-          node-version: "26"
+          node-version-file: ".nvmrc"
           cache: "pnpm"
 
       - name: Install dependencies
@@ -43,7 +43,7 @@ jobs:
 
       - uses: actions/setup-node@v7.0.0
         with:
-          node-version: "26"
+          node-version-file: ".nvmrc"
           cache: "pnpm"
 
       - name: Install dependencies
@@ -97,7 +97,7 @@ jobs:
       - uses: actions/setup-node@v7.0.0
         if: steps.native-cache.outputs.cache-hit != 'true'
         with:
-          node-version: "26"
+          node-version-file: ".nvmrc"
           cache: "pnpm"
 
       - name: Install dependencies
@@ -129,7 +129,7 @@ jobs:
 
       - uses: actions/setup-node@v7.0.0
         with:
-          node-version: "26"
+          node-version-file: ".nvmrc"
           cache: "pnpm"
 
       - name: Install dependencies
@@ -203,7 +203,7 @@ jobs:
 
       - uses: actions/setup-node@v7.0.0
         with:
-          node-version: "26"
+          node-version-file: ".nvmrc"
           cache: "pnpm"
 
       - name: Install dependencies
@@ -253,7 +253,7 @@ jobs:
 
       - uses: actions/setup-node@v7.0.0
         with:
-          node-version: "26"
+          node-version-file: ".nvmrc"
           cache: "pnpm"
 
       - name: Install dependencies
