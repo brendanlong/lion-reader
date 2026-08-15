@@ -330,21 +330,18 @@ show` reports healthy/recent archiving.
 - On [fly-metrics.net](https://fly-metrics.net), watch the primary's `pg_wal` directory —
   WAL segments piling up locally means archiving is failing to drain them.
 - Eyeball the Tigris backup bucket occasionally for recent WAL objects.
-  **Automated:** the `monitor_backup_health` singleton job (hourly) reads the barman catalog
-  straight out of the backup bucket and pings a healthchecks.io check — success when a base
-  backup completed within `BACKUP_HEALTH_MAX_AGE_HOURS` (default 36), `/fail` with the
-  newest backup's id, age and failure count otherwise. It also exports
-  `backup_last_success_age_seconds` and `backups_failing`. See `src/server/backup/health.ts`.
 
-Note **base backups, not WAL**: WAL archiving stayed green throughout the 2026-08 outage
-in which every base backup failed for 14 days, so archive health cannot stand in for this
-— WAL is only replayable from a base backup.
+**Automated:** the `monitor_backup_health` singleton job (hourly) reads the barman catalog
+straight out of the backup bucket and alerts via healthchecks.io when no base backup has
+completed within `BACKUP_HEALTH_MAX_AGE_HOURS` (default 36). It checks **base backups, not
+WAL** — see the monitoring table in `docs/DESIGN.md` for how it sits alongside the other
+checks, and `src/server/backup/health.ts` for the rule.
 
-Setup (all optional; the job no-ops when unset):
+Setup (all optional; the job no-ops when unset). Read the four storage values off the PG
+app's `S3_ARCHIVE_CONFIG` secret, which has the form
+`https://<key>:<secret>@<endpoint>/<bucket>/<app-name>`:
 
 ```bash
-# Read-only Tigris key scoped to the backup bucket — this is a monitor, it never writes.
-fly storage create ...            # or reuse the PG app's bucket with a read-only key
 fly secrets set --app lion-reader \
   BACKUP_BUCKET=<bucket> \
   BACKUP_ACCESS_KEY_ID=<read-only key> \
@@ -353,8 +350,15 @@ fly secrets set --app lion-reader \
   BACKUP_HEALTH_HEARTBEAT_URL=https://hc-ping.com/<uuid>
 ```
 
-`BACKUP_SERVER_NAME` is the **top-level directory in the bucket** (the Postgres app name),
-not the `flexctl backup list` "Server Name" field, which is always `cloud`.
+Use a **read-only** key: this is a monitor and never writes. `BACKUP_SERVER_NAME` is the
+top-level directory in the bucket (the Postgres app name, the last path segment of
+`S3_ARCHIVE_CONFIG`), not the `flexctl backup list` "Server Name" field, which is always
+`cloud`.
 
 On the healthchecks.io check, set period 1h with a grace of ~2h: the ping is hourly, so a
+missing ping means the worker is dead or the bucket is unreachable — both worth knowing.
+
+**Still missing:** nothing alerts on a _stalled WAL archive_. `monitor_backup_health`
+covers base backups only, so a healthy daily backup plus a broken archive would still
+silently cap PITR at the last backup. The manual checks above remain the interim.
 missing ping means the worker is dead or the bucket is unreachable — both worth knowing.

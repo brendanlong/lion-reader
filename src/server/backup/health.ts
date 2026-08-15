@@ -3,20 +3,27 @@
  *
  * Implements the invariant "a base backup must have completed successfully in
  * the last N hours". Our Fly Postgres cluster takes a daily `barman-cloud-backup`
- * to object storage; when that starts failing, **nothing else notices**:
- * WAL archiving keeps working and reports healthy, the app keeps serving, and
- * the only record of the failure is `flexctl backup list` on the database
- * machine. Backups failed for 14 days before anyone looked (2026-08-01 →
- * 2026-08-15), so this check reads the backup catalog directly.
+ * to object storage; when that starts failing, **nothing else notices**: WAL
+ * archiving keeps working and reports healthy, the app keeps serving, and the
+ * only record is `flexctl backup list` on the database machine. Backups failed
+ * for 14 days before anyone looked, so this check reads the catalog directly.
  *
- * WAL archiving health is deliberately *not* a proxy for this: WAL is only
+ * WAL-archive health is deliberately *not* a proxy for this: WAL is only
  * replayable from a base backup, so an archive that is perfectly current is
  * still unrestorable once the newest base backup ages out of retention.
+ *
+ * Catalog layout and formats below follow barman's `CloudBackup._upload_backup_info`
+ * and `FieldListFile.save` (EnterpriseDB/barman `src/barman/cloud.py`,
+ * `src/barman/infofile.py`).
  *
  * The snapshot/evaluation split keeps the alerting rule pure and unit-testable;
  * the periodic monitor_backup_health job
  * (src/server/jobs/handlers/monitor-backup-health.ts) takes a snapshot,
  * evaluates it, and pings the configured healthchecks.io check.
+ *
+ * Scope: this checks that a backup *reported* success, not that its data
+ * objects are still intact — it is a "did the backup run" monitor, not a
+ * restore drill. See the drill runbook in docs/fly-postgres-ops.md.
  */
 
 import { AwsClient } from "aws4fetch";
@@ -29,15 +36,22 @@ import { USER_AGENT } from "@/server/http/user-agent";
 /**
  * How many of the newest backups to inspect per run.
  *
- * Each one costs a small GET, and a broken cluster retries ~11 times a day, so
- * this is roughly three days of history — comfortably more than the alert
- * threshold while keeping the request count bounded. Looking further back adds
- * nothing: a successful backup older than the threshold is just as much of an
- * alert as none at all.
+ * Each costs a small GET. A broken cluster retries ~11 times a day, so this is
+ * roughly a week of history — enough that the alert body can still name the
+ * last good backup well after the threshold trips, which is the most useful
+ * line in the notification.
  */
-const BACKUP_SCAN_LIMIT = 30;
+const BACKUP_SCAN_LIMIT = 80;
 
-const REQUEST_TIMEOUT_MS = 15_000;
+const REQUEST_TIMEOUT_MS = 10_000;
+
+/**
+ * Overall budget for a snapshot, well inside the worker's 300s job timeout.
+ * Without it, the failure path (one list plus up to BACKUP_SCAN_LIMIT GETs,
+ * each able to burn REQUEST_TIMEOUT_MS) could outlive the job and be reported
+ * as a wedged handler.
+ */
+const SNAPSHOT_BUDGET_MS = 120_000;
 
 /** Returns true when the backup catalog is configured and can be read. */
 export function isBackupHealthConfigured(): boolean {
@@ -77,7 +91,7 @@ function bucketUrl(): string {
 interface ListResponse {
   ListBucketResult?: {
     CommonPrefixes?: { Prefix?: string } | { Prefix?: string }[];
-    IsTruncated?: boolean;
+    IsTruncated?: boolean | string;
     NextContinuationToken?: string;
   };
 }
@@ -88,21 +102,62 @@ function toArray<T>(value: T | T[] | undefined): T[] {
 }
 
 /**
+ * `parseTagValue: false` keeps every value a string. A continuation token can be
+ * all digits, and coercing one to a JS number silently loses precision past 2^53
+ * — the next page request would then 400. Booleans are compared as strings for
+ * the same reason.
+ */
+const listParser = new XMLParser({ ignoreAttributes: true, parseTagValue: false });
+
+/** One page of a backup listing. Exported for testing; see parseBackupListPage. */
+export interface BackupListPage {
+  ids: string[];
+  nextContinuationToken: string | null;
+}
+
+/**
+ * Parses one `ListObjectsV2` page into backup IDs.
+ *
+ * Pure, so the XML shapes that are easy to get wrong — a single `CommonPrefixes`
+ * element arriving unwrapped, an empty listing, a truncated page — are covered
+ * by unit tests rather than discovered in production.
+ */
+export function parseBackupListPage(xml: string, prefix: string): BackupListPage {
+  const parsed = listParser.parse(xml) as ListResponse;
+  const result = parsed.ListBucketResult;
+
+  const ids: string[] = [];
+  for (const entry of toArray(result?.CommonPrefixes)) {
+    // "<server>/base/<id>/" -> "<id>"
+    const raw = entry.Prefix;
+    if (typeof raw !== "string" || !raw.startsWith(prefix)) continue;
+    const id = raw.slice(prefix.length).replace(/\/$/, "");
+    if (id) ids.push(id);
+  }
+
+  const truncated = String(result?.IsTruncated) === "true";
+  const token = result?.NextContinuationToken;
+  return {
+    ids,
+    nextContinuationToken: truncated && token ? String(token) : null,
+  };
+}
+
+/**
  * Lists the backup IDs in the catalog, newest first.
  *
  * Uses `delimiter=/` so the listing returns one entry per backup directory
  * rather than every file inside it — a base backup contains multi-GB data
  * objects we have no reason to enumerate.
  */
-async function listBackupIds(): Promise<string[]> {
+async function listBackupIds(deadline: number): Promise<string[]> {
   const client = getBackupClient();
-  const parser = new XMLParser({ ignoreAttributes: true });
   const prefix = `${backupHealthConfig.serverName}/base/`;
   const ids: string[] = [];
-  let continuationToken: string | undefined;
+  let continuationToken: string | null = null;
 
-  // Bounded: a catalog large enough to need more pages than this would mean
-  // retention is broken too, and we'd still have plenty of IDs to judge on.
+  // Bounded: a catalog needing more pages than this would mean retention is
+  // broken too, and we'd still have plenty of IDs to judge on.
   for (let page = 0; page < 10; page++) {
     const url = new URL(bucketUrl());
     url.searchParams.set("list-type", "2");
@@ -114,59 +169,98 @@ async function listBackupIds(): Promise<string[]> {
 
     const response = await client.fetch(url.toString(), {
       headers: { "User-Agent": USER_AGENT },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.timeout(Math.min(REQUEST_TIMEOUT_MS, deadline - Date.now())),
     });
     if (!response.ok) {
       throw new Error(`Listing backups failed: HTTP ${response.status}`);
     }
 
-    const parsed = parser.parse(await response.text()) as ListResponse;
-    const result = parsed.ListBucketResult;
-    for (const entry of toArray(result?.CommonPrefixes)) {
-      // "<server>/base/<id>/" -> "<id>"
-      const id = entry.Prefix?.slice(prefix.length).replace(/\/$/, "");
-      if (id) ids.push(id);
-    }
+    const parsedPage = parseBackupListPage(await response.text(), prefix);
+    ids.push(...parsedPage.ids);
 
-    if (!result?.IsTruncated || !result.NextContinuationToken) break;
-    continuationToken = result.NextContinuationToken;
+    continuationToken = parsedPage.nextContinuationToken;
+    if (!continuationToken || Date.now() >= deadline) break;
   }
 
-  // Backup IDs are `YYYYMMDDTHHMMSS`, so lexicographic order is chronological.
+  // Backup IDs are `datetime.now().strftime("%Y%m%dT%H%M%S")`, so lexicographic
+  // order is chronological.
   return ids.sort().reverse();
 }
 
+/** Status values barman writes into `backup.info`. */
+export type BarmanBackupStatus = "DONE" | "STARTED" | "FAILED" | "UNKNOWN";
+
+/** What one backup's `backup.info` says. */
+export interface BackupInfo {
+  status: BarmanBackupStatus;
+  /** Completion time, or null if absent/unparseable. */
+  endTime: Date | null;
+}
+
 /**
- * Reads one backup's status.
+ * Parses the fields we care about out of a barman `backup.info`.
  *
- * Returns the completion time from the object's `Last-Modified` rather than
- * parsing `end_time` out of the body: barman writes that field in `ctime`
- * format (`Fri Aug  1 01:43:04 2026`) with no timezone, whereas `Last-Modified`
- * is unambiguous UTC and is stamped when the final status is written.
+ * The file is `key=value` lines (`FieldListFile.save` writes `"%s=%s\n"`).
+ * `end_time` is a timezone-aware Python datetime rendered by `str()`, e.g.
+ * `2026-08-01 01:43:04.123456+00:00` — space-separated and with microseconds,
+ * neither of which `Date` is required to accept, so both are normalised first.
+ *
+ * (The `Fri Aug  1 01:43:04 2026` ctime form is a different representation,
+ * produced only by `BackupInfo.to_json` — i.e. by `barman-cloud-backup-list
+ * --format json`, which is what `flexctl backup list` renders. It never appears
+ * in the file itself.)
  */
-async function readBackupStatus(
-  id: string
-): Promise<{ done: boolean; completedAt: Date | null } | null> {
+export function parseBackupInfo(body: string): BackupInfo {
+  const statusMatch = /^status\s*=\s*(\S+)\s*$/m.exec(body);
+  const rawStatus = statusMatch?.[1];
+  const status: BarmanBackupStatus =
+    rawStatus === "DONE" || rawStatus === "STARTED" || rawStatus === "FAILED"
+      ? rawStatus
+      : "UNKNOWN";
+
+  const endTimeMatch = /^end_time\s*=\s*(.+?)\s*$/m.exec(body);
+  let endTime: Date | null = null;
+  if (endTimeMatch?.[1] && endTimeMatch[1] !== "None") {
+    const normalized = endTimeMatch[1]
+      .replace(" ", "T")
+      .replace(/(\.\d{3})\d+/, "$1")
+      .replace(/([+-]\d{2})(\d{2})$/, "$1:$2");
+    const parsed = new Date(normalized);
+    if (!Number.isNaN(parsed.getTime())) endTime = parsed;
+  }
+
+  return { status, endTime };
+}
+
+/**
+ * Reads one backup's `backup.info`.
+ *
+ * Falls back to the object's `Last-Modified` when `end_time` is missing:
+ * barman's final write of `backup.info` happens at backup end, so it is a close
+ * approximation — but `end_time` is preferred because it survives any later
+ * re-save of the object.
+ */
+async function readBackupInfo(id: string, deadline: number): Promise<BackupInfo | null> {
   const client = getBackupClient();
   const key = `${backupHealthConfig.serverName}/base/${id}/backup.info`;
 
   const response = await client.fetch(`${bucketUrl()}/${key}`, {
     headers: { "User-Agent": USER_AGENT },
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    signal: AbortSignal.timeout(Math.min(REQUEST_TIMEOUT_MS, Math.max(deadline - Date.now(), 1))),
   });
   if (response.status === 404) return null;
   if (!response.ok) {
     throw new Error(`Reading ${key} failed: HTTP ${response.status}`);
   }
 
-  const body = await response.text();
-  const done = /^status\s*=\s*DONE\s*$/m.test(body);
-  const lastModified = response.headers.get("last-modified");
-  const completedAt = lastModified ? new Date(lastModified) : null;
+  const info = parseBackupInfo(await response.text());
+  if (info.endTime) return info;
 
+  const lastModified = response.headers.get("last-modified");
+  const fallback = lastModified ? new Date(lastModified) : null;
   return {
-    done,
-    completedAt: completedAt && !Number.isNaN(completedAt.getTime()) ? completedAt : null,
+    status: info.status,
+    endTime: fallback && !Number.isNaN(fallback.getTime()) ? fallback : null,
   };
 }
 
@@ -176,10 +270,12 @@ export interface BackupHealthSnapshot {
   lastSuccessfulBackupAt: Date | null;
   /** ID of that backup, for the alert body. */
   lastSuccessfulBackupId: string | null;
-  /** How many backups were inspected (newest first, up to BACKUP_SCAN_LIMIT). */
+  /** How many backups were inspected (newest first). */
   scannedCount: number;
-  /** How many of those were not DONE. */
+  /** How many inspected backups had failed, excluding any still in progress. */
   failedCount: number;
+  /** Whether a backup was running when we looked (its status is not yet final). */
+  backupInProgress: boolean;
   /** Oldest backup ID inspected, so an alert can say how far back we looked. */
   oldestScannedId: string | null;
   /** Total backups in the catalog. Zero means backups have never run. */
@@ -192,32 +288,53 @@ export interface BackupHealthSnapshot {
  * Scans newest-first and stops at the first successful backup, so a healthy
  * cluster costs one list plus one GET.
  */
-export async function getBackupHealthSnapshot(): Promise<BackupHealthSnapshot> {
-  const ids = await listBackupIds();
+export async function getBackupHealthSnapshot(
+  now: Date = new Date()
+): Promise<BackupHealthSnapshot> {
+  const deadline = now.getTime() + SNAPSHOT_BUDGET_MS;
+  const ids = await listBackupIds(deadline);
   const scanned = ids.slice(0, BACKUP_SCAN_LIMIT);
 
   let failedCount = 0;
+  let backupInProgress = false;
+  let inspected = 0;
+  let oldestScannedId: string | null = null;
+
   for (const id of scanned) {
-    const status = await readBackupStatus(id);
-    if (status?.done) {
+    if (Date.now() >= deadline) break;
+    inspected++;
+    oldestScannedId = id;
+
+    const info = await readBackupInfo(id, deadline);
+    if (info?.status === "DONE") {
       return {
-        lastSuccessfulBackupAt: status.completedAt,
+        lastSuccessfulBackupAt: info.endTime,
         lastSuccessfulBackupId: id,
-        scannedCount: failedCount + 1,
+        scannedCount: inspected,
         failedCount,
-        oldestScannedId: id,
+        backupInProgress,
+        oldestScannedId,
         catalogSize: ids.length,
       };
     }
-    failedCount++;
+
+    // A backup running right now is the newest ID and has status=STARTED. It
+    // hasn't failed, so counting it would put `backups_failing` at >=1 during
+    // every healthy nightly run.
+    if (info?.status === "STARTED") {
+      backupInProgress = true;
+    } else {
+      failedCount++;
+    }
   }
 
   return {
     lastSuccessfulBackupAt: null,
     lastSuccessfulBackupId: null,
-    scannedCount: scanned.length,
+    scannedCount: inspected,
     failedCount,
-    oldestScannedId: scanned.at(-1) ?? null,
+    backupInProgress,
+    oldestScannedId,
     catalogSize: ids.length,
   };
 }
@@ -239,12 +356,12 @@ export interface BackupHealthEvaluation {
  * Pure function (no I/O) so the alerting rule itself is unit-testable.
  *
  * - Empty catalog: unhealthy. Backups are configured (the job doesn't run
- *   otherwise) but have never produced anything, which is exactly as bad as
- *   them having stopped.
+ *   otherwise) but have never produced anything, which is as bad as them
+ *   having stopped.
  * - No successful backup within the scanned window: unhealthy.
  * - Newest success older than maxAgeMs: unhealthy.
  *
- * A successful backup with an unknown completion time is treated as unhealthy
+ * A successful backup whose completion time is unknown is treated as unhealthy
  * rather than assumed current: this check exists because a silent failure went
  * unnoticed for two weeks, so it fails closed.
  */
@@ -265,11 +382,10 @@ export function evaluateBackupHealth(
     const scope = snapshot.oldestScannedId
       ? ` (checked the newest ${snapshot.scannedCount}, back to ${snapshot.oldestScannedId})`
       : "";
-    return {
-      status: "unhealthy",
-      reason: `No successful base backup found${scope}`,
-      lastSuccessAgeMs: null,
-    };
+    const qualifier = snapshot.lastSuccessfulBackupId
+      ? `Newest successful base backup ${snapshot.lastSuccessfulBackupId} has no recorded completion time`
+      : `No successful base backup found${scope}`;
+    return { status: "unhealthy", reason: qualifier, lastSuccessAgeMs: null };
   }
 
   const ageMs = now.getTime() - snapshot.lastSuccessfulBackupAt.getTime();
@@ -299,24 +415,29 @@ export function buildBackupHealthPingBody(
   snapshot: BackupHealthSnapshot,
   evaluation: BackupHealthEvaluation
 ): string {
+  const newest = snapshot.lastSuccessfulBackupId
+    ? `${snapshot.lastSuccessfulBackupId} (${
+        snapshot.lastSuccessfulBackupAt?.toISOString() ?? "completion time unknown"
+      })`
+    : `none found in the newest ${snapshot.scannedCount}`;
+
   const lines = [
     `Status: ${evaluation.status}`,
     evaluation.reason,
-    `Newest successful backup: ${
-      snapshot.lastSuccessfulBackupId
-        ? `${snapshot.lastSuccessfulBackupId} (${snapshot.lastSuccessfulBackupAt?.toISOString() ?? "completion time unknown"})`
-        : "none found"
-    }`,
+    `Newest successful backup: ${newest}`,
     `Failed backups newer than that: ${snapshot.failedCount}`,
     `Backups in catalog: ${snapshot.catalogSize}`,
   ];
+  if (snapshot.backupInProgress) {
+    lines.push("A backup is currently in progress.");
+  }
   if (evaluation.status === "unhealthy") {
     lines.push("", "Investigate: fly ssh console -a lion-reader-pg -C 'flexctl backup list'");
   }
   return lines.join("\n");
 }
 
-/** Logs and swallows a catalog read failure, so monitoring never breaks the worker. */
+/** Logs a catalog read failure. The caller reports it; monitoring never throws into the worker. */
 export function logBackupHealthReadFailure(error: unknown): void {
   logger.error("Could not read the backup catalog", {
     error: error instanceof Error ? error.message : "Unknown error",

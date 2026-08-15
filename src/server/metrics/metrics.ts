@@ -749,19 +749,27 @@ export function updateFeedHealthMetrics(
 // ============================================================================
 
 /**
- * Gauge for the age of the most recent successful Postgres base backup.
- * Updated by the monitor_backup_health job. Backups run daily, so alert if this
- * exceeds ~36h.
+ * Gauge for when the most recent successful Postgres base backup completed,
+ * as a Unix timestamp in seconds.
+ *
+ * A timestamp rather than an age: an age gauge can only be refreshed while a
+ * successful backup is still findable, so once the last good one ages out of
+ * the scan window the gauge freezes at a stale-but-plausible value — the exact
+ * direction of lie this check exists to prevent. Dashboards and alerts should
+ * use `time() - backup_last_success_timestamp_seconds`, which keeps growing on
+ * its own. Updated by the monitor_backup_health job; backups run daily, so
+ * alert past ~36h.
  */
-const backupLastSuccessAgeSeconds = getOrCreateGauge({
-  name: "backup_last_success_age_seconds",
-  help: "Seconds since the most recent successful Postgres base backup",
+const backupLastSuccessTimestampSeconds = getOrCreateGauge({
+  name: "backup_last_success_timestamp_seconds",
+  help: "Unix timestamp of the most recent successful Postgres base backup",
 });
 
 /**
  * Gauge for the number of failed base backups newer than the last successful
- * one. Updated by the monitor_backup_health job. A non-zero value means the
- * cluster is retrying and failing, which is the shape of the 2026-08 outage.
+ * one, excluding any backup still in progress. Updated by the
+ * monitor_backup_health job. Non-zero means the cluster is retrying and
+ * failing. Bounded by the job's scan window, so treat it as "at least N".
  */
 const backupsFailing = getOrCreateGauge({
   name: "backups_failing",
@@ -772,19 +780,17 @@ const backupsFailing = getOrCreateGauge({
  * Updates base-backup health gauges from a monitor_backup_health run.
  * This function has zero overhead when metrics are disabled.
  *
- * @param lastSuccessAgeSeconds - Age of the newest successful backup, or null if none exists
- * @param failedCount - Failed backups newer than that, or null if the catalog was unreadable
+ * @param lastSuccessAtSeconds - Completion time of the newest successful backup
+ *   as a Unix timestamp, or null if none was found or the catalog was unreadable
+ * @param failedCount - Failed backups newer than that, or null if unreadable
  */
 export function updateBackupHealthMetrics(
-  lastSuccessAgeSeconds: number | null,
+  lastSuccessAtSeconds: number | null,
   failedCount: number | null
 ): void {
   if (!metricsEnabled) return;
-  // null = no successful backup found (or the catalog could not be read), so
-  // there is no age to report. Left untouched rather than zeroed, which would
-  // read as "just backed up" — the worst possible way for this gauge to lie.
-  if (lastSuccessAgeSeconds !== null) {
-    backupLastSuccessAgeSeconds?.set(lastSuccessAgeSeconds);
+  if (lastSuccessAtSeconds !== null) {
+    backupLastSuccessTimestampSeconds?.set(lastSuccessAtSeconds);
   }
   if (failedCount !== null) {
     backupsFailing?.set(failedCount);

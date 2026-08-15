@@ -4,6 +4,7 @@
  * See src/server/backup/health.ts for the invariant this checks.
  */
 
+import type { BackupHealthSnapshot } from "../../backup/health";
 import {
   getBackupHealthSnapshot,
   evaluateBackupHealth,
@@ -37,7 +38,7 @@ const BACKUP_HEALTH_CHECK_INTERVAL_MS = 60 * 60 * 1000;
  *
  * A catalog we cannot read is reported as a `/fail`, not skipped: "the monitor
  * is broken" and "backups are broken" both need a human, and staying silent
- * about the former is how the original 14-day outage went unnoticed.
+ * about either is the failure mode this check exists to remove.
  *
  * No alert state is kept here: healthchecks.io de-duplicates notifications and
  * sends its own recovery email, so the job just reports status each run.
@@ -54,9 +55,9 @@ export async function handleMonitorBackupHealth(
     return { success: true, nextRunAt, metadata: { status: "not_configured" } };
   }
 
-  let snapshot;
+  let snapshot: BackupHealthSnapshot;
   try {
-    snapshot = await getBackupHealthSnapshot();
+    snapshot = await getBackupHealthSnapshot(now);
   } catch (error) {
     logBackupHealthReadFailure(error);
     updateBackupHealthMetrics(null, null);
@@ -78,16 +79,24 @@ export async function handleMonitorBackupHealth(
   );
 
   updateBackupHealthMetrics(
-    evaluation.lastSuccessAgeMs !== null ? evaluation.lastSuccessAgeMs / 1000 : null,
+    snapshot.lastSuccessfulBackupAt !== null
+      ? snapshot.lastSuccessfulBackupAt.getTime() / 1000
+      : null,
     snapshot.failedCount
   );
 
   if (evaluation.status === "unhealthy") {
-    logger.error("Base backup health check failed", {
+    // warn, not error: logger.error reports to Sentry, and this check runs
+    // hourly for as long as an outage lasts — long outages are the norm here,
+    // so that would be hundreds of duplicate events. healthchecks.io de-dupes
+    // and sends its own recovery notification, so it owns alerting — the same
+    // split as monitor_feed_health.
+    logger.warn("Base backup health check failed", {
       reason: evaluation.reason,
       lastSuccessfulBackupId: snapshot.lastSuccessfulBackupId,
       lastSuccessfulBackupAt: snapshot.lastSuccessfulBackupAt?.toISOString(),
       failedCount: snapshot.failedCount,
+      backupInProgress: snapshot.backupInProgress,
       catalogSize: snapshot.catalogSize,
     });
   }
