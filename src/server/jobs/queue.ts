@@ -77,6 +77,7 @@ export interface JobPayloads {
   // de-duplication are owned by the external healthchecks.io monitor, so no
   // state is carried across runs.
   monitor_feed_health: Record<string, never>;
+  monitor_backup_health: Record<string, never>;
   // Daily retention cleanup of expired/revoked credentials and parked
   // one-time jobs. See src/server/services/retention.ts.
   cleanup: Record<string, never>;
@@ -581,6 +582,7 @@ export async function listJobs(
 export const SINGLETON_JOB_TYPES: JobType[] = [
   "renew_websub",
   "monitor_feed_health",
+  "monitor_backup_health",
   "cleanup",
   "reconcile_counters",
   // Last on purpose: while a backlog remains it reschedules itself in seconds,

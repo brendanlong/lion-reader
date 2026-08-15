@@ -330,5 +330,31 @@ show` reports healthy/recent archiving.
 - On [fly-metrics.net](https://fly-metrics.net), watch the primary's `pg_wal` directory —
   WAL segments piling up locally means archiving is failing to drain them.
 - Eyeball the Tigris backup bucket occasionally for recent WAL objects.
-- **Follow-up:** wire an automated alert (worker job or external cron) that pages if the
-  newest archived WAL is older than N minutes — the manual checks above are the interim.
+  **Automated:** the `monitor_backup_health` singleton job (hourly) reads the barman catalog
+  straight out of the backup bucket and pings a healthchecks.io check — success when a base
+  backup completed within `BACKUP_HEALTH_MAX_AGE_HOURS` (default 36), `/fail` with the
+  newest backup's id, age and failure count otherwise. It also exports
+  `backup_last_success_age_seconds` and `backups_failing`. See `src/server/backup/health.ts`.
+
+Note **base backups, not WAL**: WAL archiving stayed green throughout the 2026-08 outage
+in which every base backup failed for 14 days, so archive health cannot stand in for this
+— WAL is only replayable from a base backup.
+
+Setup (all optional; the job no-ops when unset):
+
+```bash
+# Read-only Tigris key scoped to the backup bucket — this is a monitor, it never writes.
+fly storage create ...            # or reuse the PG app's bucket with a read-only key
+fly secrets set --app lion-reader \
+  BACKUP_BUCKET=<bucket> \
+  BACKUP_ACCESS_KEY_ID=<read-only key> \
+  BACKUP_SECRET_ACCESS_KEY=<read-only secret> \
+  BACKUP_SERVER_NAME=lion-reader-pg \
+  BACKUP_HEALTH_HEARTBEAT_URL=https://hc-ping.com/<uuid>
+```
+
+`BACKUP_SERVER_NAME` is the **top-level directory in the bucket** (the Postgres app name),
+not the `flexctl backup list` "Server Name" field, which is always `cloud`.
+
+On the healthchecks.io check, set period 1h with a grace of ~2h: the ping is hourly, so a
+missing ping means the worker is dead or the bucket is unreachable — both worth knowing.

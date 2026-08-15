@@ -745,6 +745,53 @@ export function updateFeedHealthMetrics(
 }
 
 // ============================================================================
+// Base Backup Health Metrics
+// ============================================================================
+
+/**
+ * Gauge for the age of the most recent successful Postgres base backup.
+ * Updated by the monitor_backup_health job. Backups run daily, so alert if this
+ * exceeds ~36h.
+ */
+const backupLastSuccessAgeSeconds = getOrCreateGauge({
+  name: "backup_last_success_age_seconds",
+  help: "Seconds since the most recent successful Postgres base backup",
+});
+
+/**
+ * Gauge for the number of failed base backups newer than the last successful
+ * one. Updated by the monitor_backup_health job. A non-zero value means the
+ * cluster is retrying and failing, which is the shape of the 2026-08 outage.
+ */
+const backupsFailing = getOrCreateGauge({
+  name: "backups_failing",
+  help: "Failed base backups newer than the most recent successful one",
+});
+
+/**
+ * Updates base-backup health gauges from a monitor_backup_health run.
+ * This function has zero overhead when metrics are disabled.
+ *
+ * @param lastSuccessAgeSeconds - Age of the newest successful backup, or null if none exists
+ * @param failedCount - Failed backups newer than that, or null if the catalog was unreadable
+ */
+export function updateBackupHealthMetrics(
+  lastSuccessAgeSeconds: number | null,
+  failedCount: number | null
+): void {
+  if (!metricsEnabled) return;
+  // null = no successful backup found (or the catalog could not be read), so
+  // there is no age to report. Left untouched rather than zeroed, which would
+  // read as "just backed up" — the worst possible way for this gauge to lie.
+  if (lastSuccessAgeSeconds !== null) {
+    backupLastSuccessAgeSeconds?.set(lastSuccessAgeSeconds);
+  }
+  if (failedCount !== null) {
+    backupsFailing?.set(failedCount);
+  }
+}
+
+// ============================================================================
 // Narration Metrics
 // ============================================================================
 
