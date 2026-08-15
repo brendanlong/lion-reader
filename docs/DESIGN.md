@@ -380,17 +380,20 @@ The `monitor_feed_health` singleton job (worker, every 15 minutes) enforces the 
 
 On each run the job **pings a healthchecks.io check** (`FEED_HEALTH_HEARTBEAT_URL`): a success ping when healthy, a `/fail` ping when not, with a plain-text body explaining _why_ so the notification email is self-contained. The external monitor owns alert delivery and cadence (de-dupes, sends its own recovery email). The job also updates the Prometheus gauges `feed_last_successful_fetch_age_seconds` and `feeds_failing`.
 
-#### Monitoring layout: three independent checks
+#### Monitoring layout: four independent checks
 
 Alerting uses [healthchecks.io](https://healthchecks.io) (or any compatible dead-man's-switch) via the shared `pingHealthcheck`/`startHeartbeat` helpers in `src/server/notifications/healthchecks.ts`. Each ping URL is a **separate** check, so the long-running processes get distinct ones — that way concurrent failures are individually visible and a dead worker is distinguishable from a fetch regression:
 
-| Check                    | Env var                     | Pinged by                            | Signals                                                                                                              |
-| ------------------------ | --------------------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| **Feed fetch health**    | `FEED_HEALTH_HEARTBEAT_URL` | `monitor_feed_health` (every 15 min) | `/fail` when no feed has fetched successfully within the threshold (fetch/parse pipeline quality)                    |
-| **Worker liveness**      | `WORKER_HEARTBEAT_URL`      | worker process (every 1 min)         | success while the job loop is active; `/fail` if the loop wedges past the staleness threshold; missing = worker dead |
-| **Discord bot liveness** | `DISCORD_BOT_HEARTBEAT_URL` | discord-bot process (every 5 min)    | missing pings = bot dead or crash-looping                                                                            |
+| Check                    | Env var                       | Pinged by                            | Signals                                                                                                              |
+| ------------------------ | ----------------------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| **Feed fetch health**    | `FEED_HEALTH_HEARTBEAT_URL`   | `monitor_feed_health` (every 15 min) | `/fail` when no feed has fetched successfully within the threshold (fetch/parse pipeline quality)                    |
+| **Worker liveness**      | `WORKER_HEARTBEAT_URL`        | worker process (every 1 min)         | success while the job loop is active; `/fail` if the loop wedges past the staleness threshold; missing = worker dead |
+| **Discord bot liveness** | `DISCORD_BOT_HEARTBEAT_URL`   | discord-bot process (every 5 min)    | missing pings = bot dead or crash-looping                                                                            |
+| **Base backup health**   | `BACKUP_HEALTH_HEARTBEAT_URL` | `monitor_backup_health` (hourly)     | `/fail` when no Postgres base backup completed within `BACKUP_HEALTH_MAX_AGE_HOURS` (default 36)                     |
 
-All three are optional (a process skips pinging when its URL is unset). A fully dead worker trips both the worker-liveness and feed-health checks (the monitor job stops pinging too); the worker-liveness check is the more specific signal, while a feed-health `/fail` with a green worker check points at the fetch pipeline rather than the process.
+All four are optional (a process skips pinging when its URL is unset). A fully dead worker trips both the worker-liveness and feed-health checks (the monitor job stops pinging too); the worker-liveness check is the more specific signal, while a feed-health `/fail` with a green worker check points at the fetch pipeline rather than the process.
+
+Base-backup health is the odd one out: it reads an **external** system (the barman catalog in object storage) rather than our own state, and it is deliberately not derived from WAL-archive health — WAL is only replayable from a base backup, so an archive that looks perfectly current is still unrestorable once the newest base backup ages out of retention. Setup and the read-only credentials it needs: `docs/fly-postgres-ops.md`. Gauges: `backup_last_success_timestamp_seconds`, `backups_failing`.
 
 ---
 
