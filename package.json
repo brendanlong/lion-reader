@@ -83,7 +83,7 @@
     "groq-sdk": "^1.5.0",
     "html-rewriter-wasm": "^0.4.1",
     "htmlparser2": "^12.0.0",
-    "ioredis": "^5.11.1",
+    "ioredis": "^6.0.0",
     "jose": "6.2.8",
     "jszip": "^3.10.1",
     "linkedom": "^0.18.13",
