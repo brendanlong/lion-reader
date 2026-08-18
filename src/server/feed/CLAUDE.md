@@ -16,6 +16,12 @@ This file governs feed fetching, scheduling, entry processing, and WebSub push. 
    - 4xx/5xx: increment failures, backoff. This includes a 404/410 with no tracked redirect: a single 404 is **not** proof the feed is gone (YouTube returns 404 for all of its feeds for a few hours most days — issue #1114), so instead of jumping straight to a 7-day next fetch, the ordinary backoff ladder applies — it converges to the same 7-day cadence if the 404 persists, and one success resets it. A 404/410 with a tracked redirect URL still applies the redirect immediately
 5. Calculate `next_fetch_at` based on Cache-Control (10min with cache hint, 60min default min, 7day max). A URL plugin can raise the minimum for its source (`FeedCapability.minFetchIntervalSeconds`): YouTube serves `max-age=900` but rate-limits RSS fetches per IP, so its plugin floors polling at 1 hour
 
+## Entry Limit & Ingest Anomalies
+
+A single parse keeps at most `MAX_FEED_ENTRIES` (100) entries, and picks them by **publication date, newest first** — not by document position (`selectEntriesWithinLimit`, `parser.ts`). Feeds are only conventionally newest-first; for an oldest-first feed, taking the first N kept the archive and dropped everything recent, so an over-long fetch imported old articles and hid the new ones (#1500). Entries with no usable date can't be ranked, so a feed containing any of those falls back to document order.
+
+Both truncation and **backfill** (a feed we already poll introducing entries published long before the previous poll) are reported by `reportFeedIngestAnomalies` (`ingest-anomalies.ts`) from the poll path and the WebSub ingest path: a warning with the feed context, plus the `feed_entries_dropped_total` / `feed_backfilled_entries_total` counters, which are steady-state zero and outlive log retention. Neither is necessarily our bug — a publisher lengthening their feed, re-issuing guids after a platform migration, or briefly serving an archive all produce them — but without this they are invisible, which is what made #1500 undiagnosable after the fact. Keep both ingest paths reporting; a push is measured against the last real poll (`last_fetched_at`, which pushes deliberately never advance).
+
 ## WebSub Push & Backup Polling
 
 When a feed advertises a hub, we subscribe via WebSub and drop the feed to a 24h **backup poll** cadence (`reason: "websub_backup"`), trusting the hub to push new content in real time. A hub can silently stop delivering while we still believe it's active, so two mechanisms bound how long a dead hub can keep a feed stale:

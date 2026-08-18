@@ -274,6 +274,58 @@ function trackFeedFetch(status: FeedFetchStatus, durationMs: number): void {
 }
 
 /**
+ * Where a batch of entries reached us: a scheduled/backup poll or a WebSub push.
+ */
+export type FeedIngestSource = "poll" | "websub";
+
+/**
+ * Counter for entries dropped by the MAX_FEED_ENTRIES limit.
+ * Labels: source (poll, websub)
+ *
+ * Steady state is zero: normal feeds serve far fewer entries than the limit. A
+ * non-zero rate means some publisher is serving more than we keep, so we are
+ * silently discarding content — the state that precedes a flood of old articles
+ * (issue #1500).
+ */
+const feedEntriesDroppedTotal = getOrCreateCounter({
+  name: "feed_entries_dropped_total",
+  help: "Feed entries discarded because the feed exceeded MAX_FEED_ENTRIES",
+  labelNames: ["source"] as const,
+});
+
+/**
+ * Counter for newly-created entries published long before our previous fetch of
+ * the same feed — i.e. old articles a feed we were already polling handed us.
+ * Labels: source (poll, websub)
+ *
+ * Also steady-state zero: a feed we poll should only ever introduce entries
+ * published since the last poll. See `reportFeedIngestAnomalies`.
+ */
+const feedBackfilledEntriesTotal = getOrCreateCounter({
+  name: "feed_backfilled_entries_total",
+  help: "Newly-created feed entries published well before the previous fetch of that feed",
+  labelNames: ["source"] as const,
+});
+
+/**
+ * Records entries dropped by the feed entry limit.
+ * Zero overhead when metrics are disabled.
+ */
+export function trackFeedEntriesDropped(source: FeedIngestSource, count: number): void {
+  if (!metricsEnabled || count <= 0) return;
+  feedEntriesDroppedTotal?.inc({ source }, count);
+}
+
+/**
+ * Records newly-created entries that predate the feed's previous fetch.
+ * Zero overhead when metrics are disabled.
+ */
+export function trackFeedBackfilledEntries(source: FeedIngestSource, count: number): void {
+  if (!metricsEnabled || count <= 0) return;
+  feedBackfilledEntriesTotal?.inc({ source }, count);
+}
+
+/**
  * Creates a timer for tracking feed fetch duration.
  * Returns a function to call when the fetch completes.
  * Returns a no-op function when metrics are disabled.

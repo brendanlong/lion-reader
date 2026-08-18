@@ -5,7 +5,7 @@
  * Uses SAX-style parsing for memory efficiency.
  */
 
-import type { ParsedFeed } from "./types";
+import type { ParsedEntry, ParsedFeed } from "./types";
 import type { FeedParseResult } from "./streaming/types";
 import {
   parseFeed as parseFeedInternal,
@@ -20,9 +20,52 @@ import { startFeedParseTimer } from "../metrics/metrics";
 // Re-export for backwards compatibility
 export { UnknownFeedFormatError };
 /**
+ * Picks which entries survive the `MAX_FEED_ENTRIES` limit.
+ *
+ * Rank by publication date, newest first, and keep the winners in the
+ * publisher's original document order so downstream code still sees the feed's
+ * ordering. Ties (identical dates) break on document position.
+ *
+ * We used to just take the first N, assuming newest-first document order. Plenty
+ * of feeds aren't: WordPress serves an ascending feed for `?order=ASC`, and
+ * generators emit oldest-first often enough to matter. For those, taking the
+ * first N kept the archive and dropped everything recent — an over-long fetch
+ * would import a pile of old articles and hide the new ones (issue #1500).
+ *
+ * Entries with no (or an unparseable) date can't be ranked, so a feed with any
+ * such entry falls back to document order — the same assumption as before, but
+ * now only where there is nothing better to go on.
+ *
+ * @param entries - All entries the parser found, in document order
+ * @param limit - Maximum number of entries to keep
+ * @returns At most `limit` entries, in document order
+ */
+export function selectEntriesWithinLimit(entries: ParsedEntry[], limit: number): ParsedEntry[] {
+  if (entries.length <= limit) {
+    return entries;
+  }
+
+  const ranked: Array<{ entry: ParsedEntry; index: number; time: number }> = [];
+  for (const [index, entry] of entries.entries()) {
+    const time = entry.pubDate?.getTime();
+    if (time === undefined || Number.isNaN(time)) {
+      return entries.slice(0, limit);
+    }
+    ranked.push({ entry, index, time });
+  }
+
+  return ranked
+    .sort((a, b) => b.time - a.time || a.index - b.index)
+    .slice(0, limit)
+    .sort((a, b) => a.index - b.index)
+    .map((ranked) => ranked.entry);
+}
+
+/**
  * Converts a FeedParseResult to a ParsedFeed, applying the entry count limit.
- * Entries beyond the limit are silently dropped (we keep the most recent ones,
- * which are typically at the top of the feed).
+ * Entries beyond the limit are dropped (see `selectEntriesWithinLimit`);
+ * `totalItemCount` records how many there were so callers with feed context can
+ * report the truncation.
  */
 function resultToParsedFeed(result: FeedParseResult, maxEntries?: number): ParsedFeed {
   const limit = maxEntries ?? usageLimitsConfig.maxFeedEntries;
@@ -35,7 +78,8 @@ function resultToParsedFeed(result: FeedParseResult, maxEntries?: number): Parse
     selfUrl: result.selfUrl,
     ttlMinutes: result.ttlMinutes,
     syndication: result.syndication,
-    items: result.entries.slice(0, limit),
+    items: selectEntriesWithinLimit(result.entries, limit),
+    totalItemCount: result.entries.length,
   };
 }
 
