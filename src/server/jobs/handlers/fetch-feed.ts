@@ -17,6 +17,7 @@ import { fetchFeed, type FetchFeedResult, type RedirectInfo } from "../../feed/f
 import type { WebSubLinkHeaders } from "../../feed/link-header";
 import { parseFeed } from "../../feed/parser";
 import { processEntries } from "../../feed/entry-processor";
+import { reportFeedIngestAnomalies } from "../../feed/ingest-anomalies";
 import { calculateNextFetch } from "../../feed/scheduling";
 import {
   canUseWebSub,
@@ -415,6 +416,14 @@ async function processSuccessfulFetch(
     alwaysUpdateVisibility: forceReprocess,
   });
 
+  // Report truncated feeds and old-article backfills. `feed` was read before the
+  // fetch, so `feed.lastFetchedAt` is still the *previous* fetch here.
+  const anomalies = reportFeedIngestAnomalies(
+    { feedId: feed.id, feedUrl: feed.url, source: "poll", previousFetchAt: feed.lastFetchedAt },
+    parsedFeed,
+    processResult
+  );
+
   // Fetch full content for new entries if any subscriber has fetchFullContent
   // enabled. This is done after processEntries so entries exist in the database.
   const newEntries = processResult.entries.filter((e) => e.isNew);
@@ -565,6 +574,8 @@ async function processSuccessfulFetch(
       updatedEntries: processResult.updatedCount,
       unchangedEntries: processResult.unchangedCount,
       disappearedEntries: processResult.disappearedCount,
+      ...(anomalies.droppedItemCount > 0 ? { droppedEntries: anomalies.droppedItemCount } : {}),
+      ...(anomalies.backfilledCount > 0 ? { backfilledEntries: anomalies.backfilledCount } : {}),
       nextFetchReason: nextFetch.reason,
       ...websubMetadata,
       ...fullContentMetadata,

@@ -114,6 +114,16 @@ export interface ParsedFeed {
   /** Feed entries */
   items: ParsedEntry[];
 
+  /**
+   * How many entries the feed actually contained, before `MAX_FEED_ENTRIES`
+   * truncated `items`. Set by `parseFeed` and friends; omitted by the synthetic
+   * feeds plugins and tests build by hand. `totalItemCount > items.length` means
+   * the publisher served more than we keep — worth reporting, because a feed
+   * that suddenly serves its whole archive is how subscribers get flooded with
+   * old articles (issue #1500).
+   */
+  totalItemCount?: number;
+
   /** WebSub hub URL for push notifications */
   hubUrl?: string;
   /** Self link URL (canonical URL of the feed) */

@@ -7,8 +7,10 @@ import {
   parseFeed,
   parseFeedWithFormat,
   detectFeedType,
+  selectEntriesWithinLimit,
   UnknownFeedFormatError,
 } from "../../src/server/feed/parser";
+import type { ParsedEntry } from "../../src/server/feed/types";
 
 describe("detectFeedType", () => {
   describe("RSS detection", () => {
@@ -488,5 +490,78 @@ Links: https://example.com/sponsor &amp; more</media:description>
     // masquerade as either (it's plain text, not HTML).
     expect(entry.content).toBeUndefined();
     expect(entry.summary).toBeUndefined();
+  });
+});
+
+describe("selectEntriesWithinLimit", () => {
+  const entry = (guid: string, pubDate?: string): ParsedEntry => ({
+    guid,
+    title: guid,
+    ...(pubDate ? { pubDate: new Date(pubDate) } : {}),
+  });
+
+  it("returns every entry when the feed is within the limit", () => {
+    const entries = [entry("a", "2026-01-03"), entry("b", "2026-01-02")];
+
+    expect(selectEntriesWithinLimit(entries, 10)).toEqual(entries);
+  });
+
+  it("keeps the newest entries from a newest-first feed", () => {
+    const entries = [
+      entry("newest", "2026-01-03"),
+      entry("middle", "2026-01-02"),
+      entry("oldest", "2026-01-01"),
+    ];
+
+    expect(selectEntriesWithinLimit(entries, 2).map((e) => e.guid)).toEqual(["newest", "middle"]);
+  });
+
+  // The #1500 case: an oldest-first feed used to lose everything recent and keep
+  // its archive, so an over-long fetch imported old articles and hid the new ones.
+  it("keeps the newest entries from an oldest-first feed", () => {
+    const entries = [
+      entry("oldest", "2022-03-01"),
+      entry("middle", "2024-06-01"),
+      entry("newest", "2026-01-01"),
+    ];
+
+    expect(selectEntriesWithinLimit(entries, 2).map((e) => e.guid)).toEqual(["middle", "newest"]);
+  });
+
+  it("preserves the publisher's document order among the entries it keeps", () => {
+    const entries = [
+      entry("second-newest", "2026-01-02"),
+      entry("oldest", "2026-01-01"),
+      entry("newest", "2026-01-03"),
+    ];
+
+    expect(selectEntriesWithinLimit(entries, 2).map((e) => e.guid)).toEqual([
+      "second-newest",
+      "newest",
+    ]);
+  });
+
+  it("breaks ties on document position", () => {
+    const entries = [
+      entry("first", "2026-01-01"),
+      entry("second", "2026-01-01"),
+      entry("third", "2026-01-01"),
+    ];
+
+    expect(selectEntriesWithinLimit(entries, 2).map((e) => e.guid)).toEqual(["first", "second"]);
+  });
+
+  // Undated entries can't be ranked, so we fall back to the old assumption
+  // (document order is newest-first) rather than guessing.
+  it("falls back to document order when any entry has no date", () => {
+    const entries = [entry("a", "2022-01-01"), entry("b"), entry("c", "2026-01-01")];
+
+    expect(selectEntriesWithinLimit(entries, 2).map((e) => e.guid)).toEqual(["a", "b"]);
+  });
+
+  it("falls back to document order when a date is unparseable", () => {
+    const entries = [entry("a", "2022-01-01"), entry("b", "not a date"), entry("c", "2026-01-01")];
+
+    expect(selectEntriesWithinLimit(entries, 2).map((e) => e.guid)).toEqual(["a", "b"]);
   });
 });

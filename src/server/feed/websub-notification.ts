@@ -9,6 +9,7 @@ import { db } from "../db";
 import { feeds, type Feed } from "../db/schema";
 import { parseFeedAsync } from "./parser";
 import { processEntries } from "./entry-processor";
+import { reportFeedIngestAnomalies } from "./ingest-anomalies";
 import { recordHubAnnouncedEntries } from "./websub-hub-stats";
 import { WEBSUB_BACKUP_POLL_INTERVAL_SECONDS } from "./scheduling";
 import { updateFeedJobNextRun } from "../jobs/queue";
@@ -73,6 +74,20 @@ export async function ingestWebsubNotification(feed: Feed, bodyText: string): Pr
       // same title a later entries.list refetch would return.
       feedTitle: parsedFeed.title || feed.title,
     });
+
+    // A hub can push whatever it likes, so the same truncation/backfill checks a
+    // poll runs apply here (a push is measured against the last real poll, which
+    // is what `last_fetched_at` means — pushes deliberately never advance it).
+    reportFeedIngestAnomalies(
+      {
+        feedId,
+        feedUrl: feed.url,
+        source: "websub",
+        previousFetchAt: feed.lastFetchedAt,
+      },
+      parsedFeed,
+      result
+    );
 
     // Refresh feed metadata, but deliberately do NOT touch `last_fetched_at`: a
     // push is not a full poll, so `last_fetched_at` must keep meaning "last time
