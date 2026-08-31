@@ -181,24 +181,23 @@ export function getAuthorizationServerMetadata(host?: string | null) {
     // settings) unsupported. Shared with /oauth/register validation so the two
     // can't drift apart again.
     token_endpoint_auth_methods_supported: SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS,
-    // NB: we intentionally do NOT advertise CIMD *support* (i.e. never `true`).
-    // Clients pick their registration method by priority: pre-registered → CIMD →
-    // DCR. claude.ai treats CIMD (when advertised alongside `"none"` auth) as
-    // preferred and sets up the client entirely client-side (its own metadata-doc
-    // URL as client_id, no /oauth/register call). In practice that CIMD setup
-    // fails inside claude.ai's connector flow and it aborts *before* ever calling
-    // /oauth/authorize — observed in prod logs as discovery completing, then a
-    // silent ~3s gap, then "Couldn't register with the sign-in service" with no
-    // register/authorize request reaching us. Not advertising CIMD drops claude.ai
-    // (and other clients) to Dynamic Client Registration, which works. The
-    // server-side CIMD resolution in `resolveClient` is retained, so a client that
-    // explicitly presents a URL client_id still works.
+    // Client ID Metadata Documents (MCP authorization spec 2025-11-25 / CIMD):
+    // clients whose client_id is an HTTPS URL pointing at a hosted metadata
+    // document. claude.ai's connector uses this as its recommended "Use
+    // Anthropic's hosted client metadata" option (client_id
+    // https://claude.ai/oauth/mcp-oauth-client-metadata) — but only when the
+    // server advertises support here AND `token_endpoint_auth_methods_supported`
+    // includes "none" (CIMD clients are public); otherwise it silently falls
+    // back to DCR. Resolution/validation lives in `resolveClient` + `cimd.ts`.
     //
-    // The flag is set to an EXPLICIT `false` (rather than omitted) for parity
-    // with Sentry, which works with the claude.ai connector while advertising
-    // exactly this. Omission and false should read the same to a spec-correct
-    // client, but a strict/buggy one may treat a missing key differently.
-    client_id_metadata_document_supported: false,
+    // History: this was an explicit `false` during 2026-07 because claude.ai's
+    // then-connector auto-preferred CIMD when advertised and aborted client-side
+    // before ever calling /oauth/authorize ("Couldn't register with the sign-in
+    // service", issue #986). The 2026-08 connector rework made CIMD an explicit,
+    // documented option in the UI, so support is advertised again — if the old
+    // abort-before-authorize behavior reappears in prod logs
+    // (LOG_MCP_REQUESTS), flip this back to `false` to force DCR.
+    client_id_metadata_document_supported: true,
   };
 }
 

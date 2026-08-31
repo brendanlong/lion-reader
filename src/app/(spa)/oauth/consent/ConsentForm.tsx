@@ -16,6 +16,12 @@ interface ScopeInfo {
 
 interface ConsentFormProps {
   clientName: string;
+  /**
+   * For CIMD clients (URL client_ids), the hostname of the metadata document.
+   * Shown alongside the name because the name is self-asserted by whoever
+   * hosts the document; null for clients registered with this server.
+   */
+  clientHost: string | null;
   clientId: string;
   redirectUri: string;
   scopes: ScopeInfo[];
@@ -27,6 +33,7 @@ interface ConsentFormProps {
 
 export function ConsentForm({
   clientName,
+  clientHost,
   clientId,
   redirectUri,
   scopes,
@@ -42,7 +49,10 @@ export function ConsentForm({
         <div className="control-outline bg-surface-muted mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full">
           <ShieldCheckIcon className="text-muted h-8 w-8" />
         </div>
-        <h2 className="ui-text-lg text-body font-semibold">Authorize {clientName}</h2>
+        <h2 className="ui-text-lg text-body font-semibold">
+          Authorize {clientName}
+          {clientHost && <span className="text-muted font-normal"> ({clientHost})</span>}
+        </h2>
         <p className="ui-text-sm text-muted mt-2">
           This application wants to access your Lion Reader account
         </p>

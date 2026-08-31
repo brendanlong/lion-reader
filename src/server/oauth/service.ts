@@ -36,20 +36,16 @@ import { USER_AGENT } from "@/server/http/user-agent";
 import { fetchWithSsrfProtection } from "@/server/http/ssrf";
 import { readResponseBufferWithSizeLimit } from "@/server/http/fetch";
 
+import {
+  isValidClientIdMetadataUrl,
+  parseClientMetadataDocument,
+  PINNED_CLIENT_METADATA,
+  type ClientMetadata,
+} from "./cimd";
+
 // ============================================================================
 // Types
 // ============================================================================
-
-/**
- * Client metadata from Client ID Metadata Document
- */
-export interface ClientMetadata {
-  client_id: string;
-  client_name?: string;
-  redirect_uris: string[];
-  grant_types?: string[];
-  scope?: string;
-}
 
 /**
  * Resolved client information (from DB or CIMD)
@@ -117,8 +113,8 @@ export async function resolveClient(clientId: string): Promise<ResolvedClient | 
     };
   }
 
-  // If clientId is a URL, try to fetch Client ID Metadata Document
-  if (clientId.startsWith("https://")) {
+  // If clientId is a well-formed CIMD URL, try to fetch the metadata document
+  if (isValidClientIdMetadataUrl(clientId)) {
     try {
       const metadata = await fetchClientMetadata(clientId);
       if (metadata) {
@@ -134,7 +130,7 @@ export async function resolveClient(clientId: string): Promise<ResolvedClient | 
         };
       }
     } catch (error) {
-      console.error("Failed to fetch client metadata:", error);
+      logger.error("Failed to fetch client metadata", { clientId, error });
     }
   }
 
@@ -152,13 +148,58 @@ const CLIENT_METADATA_TIMEOUT_MS = 10000;
 const CLIENT_METADATA_MAX_BYTES = 256 * 1024;
 
 /**
- * Fetches Client ID Metadata Document from URL.
+ * Successful CIMD fetches are cached in-process for 5 minutes (matching the
+ * `max-age=300` Anthropic serves on its documents) — claude.ai re-runs
+ * discovery on every connect, and each authorize + consent + token round trip
+ * would otherwise refetch the same document three times. Only successes are
+ * cached (the spec forbids caching errors/invalid documents), and the cache is
+ * capped because client_id URLs are attacker-suppliable via unauthenticated
+ * /oauth/authorize requests.
+ */
+const CLIENT_METADATA_CACHE_TTL_MS = 5 * 60 * 1000;
+const CLIENT_METADATA_CACHE_MAX_ENTRIES = 100;
+const clientMetadataCache = new Map<string, { metadata: ClientMetadata; expiresAt: number }>();
+
+/**
+ * Fetches a Client ID Metadata Document from its URL.
  *
  * The URL is an arbitrary client_id reachable via unauthenticated
  * /oauth/authorize requests, so the fetch is SSRF-protected, time-limited,
- * and size-limited.
+ * and size-limited. When the live fetch fails for one of Anthropic's known
+ * documents, a vendored pinned copy is used instead — Cloudflare intermittently
+ * challenges datacenter egress IPs fetching claude.ai (see
+ * PINNED_CLIENT_METADATA in cimd.ts).
  */
 async function fetchClientMetadata(url: string): Promise<ClientMetadata | null> {
+  const cached = clientMetadataCache.get(url);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.metadata;
+  }
+
+  const live = await fetchClientMetadataLive(url);
+  if (live) {
+    if (clientMetadataCache.size >= CLIENT_METADATA_CACHE_MAX_ENTRIES) {
+      // Plain FIFO eviction — the cap only exists to bound memory against
+      // attacker-minted URLs; legitimate traffic is a handful of documents.
+      const oldest = clientMetadataCache.keys().next().value;
+      if (oldest !== undefined) clientMetadataCache.delete(oldest);
+    }
+    clientMetadataCache.set(url, {
+      metadata: live,
+      expiresAt: Date.now() + CLIENT_METADATA_CACHE_TTL_MS,
+    });
+    return live;
+  }
+
+  const pinned = PINNED_CLIENT_METADATA.get(url);
+  if (pinned) {
+    logger.warn("CIMD live fetch failed; using pinned client metadata", { url });
+    return pinned;
+  }
+  return null;
+}
+
+async function fetchClientMetadataLive(url: string): Promise<ClientMetadata | null> {
   try {
     const response = await fetchWithSsrfProtection(url, {
       headers: {
@@ -173,19 +214,7 @@ async function fetchClientMetadata(url: string): Promise<ClientMetadata | null> 
     }
 
     const body = await readResponseBufferWithSizeLimit(response, CLIENT_METADATA_MAX_BYTES, url);
-    const metadata = JSON.parse(body.toString()) as ClientMetadata;
-
-    // Validate required fields
-    if (!metadata.client_id || !metadata.redirect_uris || !Array.isArray(metadata.redirect_uris)) {
-      return null;
-    }
-
-    // Ensure client_id matches the URL
-    if (metadata.client_id !== url) {
-      return null;
-    }
-
-    return metadata;
+    return parseClientMetadataDocument(url, body.toString());
   } catch {
     return null;
   }
