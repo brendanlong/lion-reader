@@ -10,6 +10,7 @@ import { describe, it, expect } from "vitest";
 import {
   isValidClientIdMetadataUrl,
   parseClientMetadataDocument,
+  selectClientMetadata,
   PINNED_CLIENT_METADATA,
 } from "@/server/oauth/cimd";
 
@@ -113,7 +114,7 @@ describe("parseClientMetadataDocument", () => {
     ).toBeNull();
   });
 
-  it("rejects malformed redirect_uris", () => {
+  it("rejects redirect_uris when no entry is well-formed", () => {
     for (const bad of [
       ["not a url"],
       ["https://claude.ai/cb#frag"],
@@ -127,6 +128,54 @@ describe("parseClientMetadataDocument", () => {
         )
       ).toBeNull();
     }
+  });
+
+  it("keeps the well-formed subset when some redirect_uris are unrecognized", () => {
+    // An upstream addition of e.g. a custom-scheme deep link must not disable
+    // the client's existing https callback.
+    const doc = {
+      ...CLAUDE_CIMD_DOC,
+      redirect_uris: ["claude://auth/callback", "https://claude.ai/api/mcp/auth_callback"],
+    };
+    expect(
+      parseClientMetadataDocument(CLAUDE_CIMD_URL, JSON.stringify(doc))?.redirect_uris
+    ).toEqual(["https://claude.ai/api/mcp/auth_callback"]);
+  });
+
+  it("rejects oversized field values", () => {
+    const manyUris = Array.from({ length: 33 }, (_, i) => `https://claude.ai/cb${String(i)}`);
+    expect(
+      parseClientMetadataDocument(
+        CLAUDE_CIMD_URL,
+        JSON.stringify({ ...CLAUDE_CIMD_DOC, redirect_uris: manyUris })
+      )
+    ).toBeNull();
+    expect(
+      parseClientMetadataDocument(
+        CLAUDE_CIMD_URL,
+        JSON.stringify({ ...CLAUDE_CIMD_DOC, scope: "x".repeat(513) })
+      )
+    ).toBeNull();
+  });
+
+  it("sanitizes the self-asserted client_name (bidi/control stripped, length capped)", () => {
+    // A name using a right-to-left override or padding must not be able to
+    // reorder or displace the hostname shown next to it on the consent screen.
+    const sneaky = "Claude\u202e (claude.ai)\u0000" + "x".repeat(500);
+    const parsed = parseClientMetadataDocument(
+      CLAUDE_CIMD_URL,
+      JSON.stringify({ ...CLAUDE_CIMD_DOC, client_name: sneaky })
+    );
+    expect(parsed?.client_name).toBeDefined();
+    expect(parsed?.client_name).not.toContain("\u202e");
+    expect(parsed?.client_name).not.toContain("\u0000");
+    expect(parsed!.client_name!.length).toBeLessThanOrEqual(100);
+    // A name that is nothing but stripped characters falls back to undefined.
+    const emptyAfterStrip = parseClientMetadataDocument(
+      CLAUDE_CIMD_URL,
+      JSON.stringify({ ...CLAUDE_CIMD_DOC, client_name: "\u202e\u202d " })
+    );
+    expect(emptyAfterStrip?.client_name).toBeUndefined();
   });
 
   it("accepts loopback http redirect_uris (native clients like Claude Code)", () => {
@@ -175,7 +224,38 @@ describe("parseClientMetadataDocument", () => {
   });
 });
 
+describe("selectClientMetadata", () => {
+  const PINNED_URL = "https://claude.ai/oauth/mcp-oauth-client-metadata";
+
+  it("returns the live document on success", () => {
+    const metadata = parseClientMetadataDocument(CLAUDE_CIMD_URL, JSON.stringify(CLAUDE_CIMD_DOC))!;
+    expect(selectClientMetadata(CLAUDE_CIMD_URL, { kind: "ok", metadata })).toBe(metadata);
+  });
+
+  it("uses the pin only for transport-shaped failures on pinned URLs", () => {
+    expect(selectClientMetadata(PINNED_URL, { kind: "transport-failure" })).toBe(
+      PINNED_CLIENT_METADATA.get(PINNED_URL)
+    );
+    expect(
+      selectClientMetadata("https://evil.example/doc", { kind: "transport-failure" })
+    ).toBeNull();
+  });
+
+  it("never resurrects a withdrawn or invalid document from the pin", () => {
+    // If Anthropic 404s the document (CIMD's revocation mechanism) or serves a
+    // document our validation rejects, the pin must not override that.
+    expect(selectClientMetadata(PINNED_URL, { kind: "rejected" })).toBeNull();
+  });
+});
+
 describe("PINNED_CLIENT_METADATA", () => {
+  it("pinned documents are frozen (they are shared security allowlists)", () => {
+    for (const doc of PINNED_CLIENT_METADATA.values()) {
+      expect(Object.isFrozen(doc)).toBe(true);
+      expect(Object.isFrozen(doc.redirect_uris)).toBe(true);
+    }
+  });
+
   it("every pinned document passes the same validation as a live fetch", () => {
     // The pinned copies are the fallback when Cloudflare challenges our egress
     // IP; they must be at least as valid as what a live fetch would accept, so

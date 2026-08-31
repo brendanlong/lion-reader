@@ -27,6 +27,7 @@ import {
   getAuthCodeExpiry,
   isValidRedirectUriFormat,
   isResourceForThisServer,
+  parseScopes,
   OAUTH_SCOPES,
   SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS,
 } from "./utils";
@@ -38,8 +39,9 @@ import { readResponseBufferWithSizeLimit } from "@/server/http/fetch";
 
 import {
   isValidClientIdMetadataUrl,
-  parseClientMetadataDocument,
-  PINNED_CLIENT_METADATA,
+  validateClientMetadataDocument,
+  selectClientMetadata,
+  type CimdFetchOutcome,
   type ClientMetadata,
 } from "./cimd";
 
@@ -115,22 +117,27 @@ export async function resolveClient(clientId: string): Promise<ResolvedClient | 
 
   // If clientId is a well-formed CIMD URL, try to fetch the metadata document
   if (isValidClientIdMetadataUrl(clientId)) {
-    try {
-      const metadata = await fetchClientMetadata(clientId);
-      if (metadata) {
-        return {
-          clientId: metadata.client_id,
-          name: metadata.client_name ?? "Unknown Application",
-          redirectUris: metadata.redirect_uris,
-          grantTypes: metadata.grant_types ?? ["authorization_code", "refresh_token"],
-          scopes: metadata.scope ? metadata.scope.split(" ") : null,
-          isPublic: true, // CIMD clients are always public
-          clientSecretHash: null,
-          fromDatabase: false,
-        };
-      }
-    } catch (error) {
-      logger.error("Failed to fetch client metadata", { clientId, error });
+    const metadata = await fetchClientMetadata(clientId);
+    if (metadata) {
+      return {
+        clientId: metadata.client_id,
+        name: metadata.client_name ?? "Unknown Application",
+        // Defensive copies: cached/pinned metadata objects are shared (and the
+        // pins are frozen); redirectUris is a security allowlist a caller must
+        // not be able to mutate process-wide.
+        redirectUris: [...metadata.redirect_uris],
+        grantTypes: metadata.grant_types
+          ? [...metadata.grant_types]
+          : ["authorization_code", "refresh_token"],
+        // Filter to scopes we support (parseScopes drops unrecognized values,
+        // matching the DCR registration policy). A document offering only
+        // unknown scopes yields [] — which fails closed at authorize time with
+        // invalid_scope — never null, which would mean "no restriction".
+        scopes: metadata.scope !== undefined ? parseScopes(metadata.scope) : null,
+        isPublic: true, // CIMD clients are always public
+        clientSecretHash: null,
+        fromDatabase: false,
+      };
     }
   }
 
@@ -143,32 +150,67 @@ export async function resolveClient(clientId: string): Promise<ResolvedClient | 
 const CLIENT_METADATA_TIMEOUT_MS = 10000;
 
 /**
- * Maximum Client ID Metadata Document size (256 KiB — real documents are tiny).
+ * Maximum Client ID Metadata Document size. The spec recommends documents stay
+ * under ~5 KB; 16 KiB is generous headroom while bounding what one cache entry
+ * can retain of attacker-supplied bytes.
  */
-const CLIENT_METADATA_MAX_BYTES = 256 * 1024;
+const CLIENT_METADATA_MAX_BYTES = 16 * 1024;
 
 /**
- * Successful CIMD fetches are cached in-process for 5 minutes (matching the
- * `max-age=300` Anthropic serves on its documents) — claude.ai re-runs
- * discovery on every connect, and each authorize + consent + token round trip
- * would otherwise refetch the same document three times. Only successes are
- * cached (the spec forbids caching errors/invalid documents), and the cache is
- * capped because client_id URLs are attacker-suppliable via unauthenticated
- * /oauth/authorize requests.
+ * CIMD resolution results are cached in-process — claude.ai re-runs discovery
+ * on every connect, and each authorize + consent + token round trip would
+ * otherwise refetch the same document three times. Successes cache for 5
+ * minutes (matching the `max-age=300` Anthropic serves). Failures cache as
+ * `null` for 60 seconds — NOT as a document (the spec forbids caching
+ * errors/invalid documents as metadata), but as a short negative entry so an
+ * unauthenticated attacker hammering /oauth/authorize with a failing URL
+ * client_id can't turn us into a fetch amplifier against a third party.
+ *
+ * The cache is capped because client_id URLs are attacker-suppliable via
+ * unauthenticated requests; eviction deletes-before-set so refreshing a hot
+ * key (claude.ai's document) moves it to the back of the FIFO instead of
+ * leaving it permanently first in line for eviction.
  */
 const CLIENT_METADATA_CACHE_TTL_MS = 5 * 60 * 1000;
+const CLIENT_METADATA_NEGATIVE_TTL_MS = 60 * 1000;
 const CLIENT_METADATA_CACHE_MAX_ENTRIES = 100;
-const clientMetadataCache = new Map<string, { metadata: ClientMetadata; expiresAt: number }>();
+const clientMetadataCache = new Map<
+  string,
+  { metadata: ClientMetadata | null; expiresAt: number }
+>();
+
+/** Test-only: reset the module-level cache between cases. */
+export function clearClientMetadataCacheForTesting(): void {
+  clientMetadataCache.clear();
+}
+
+function cacheClientMetadata(url: string, metadata: ClientMetadata | null): void {
+  clientMetadataCache.delete(url);
+  if (clientMetadataCache.size >= CLIENT_METADATA_CACHE_MAX_ENTRIES) {
+    const oldest = clientMetadataCache.keys().next().value;
+    if (oldest !== undefined) clientMetadataCache.delete(oldest);
+  }
+  clientMetadataCache.set(url, {
+    metadata,
+    expiresAt:
+      Date.now() + (metadata ? CLIENT_METADATA_CACHE_TTL_MS : CLIENT_METADATA_NEGATIVE_TTL_MS),
+  });
+}
 
 /**
  * Fetches a Client ID Metadata Document from its URL.
  *
  * The URL is an arbitrary client_id reachable via unauthenticated
  * /oauth/authorize requests, so the fetch is SSRF-protected, time-limited,
- * and size-limited. When the live fetch fails for one of Anthropic's known
- * documents, a vendored pinned copy is used instead — Cloudflare intermittently
- * challenges datacenter egress IPs fetching claude.ai (see
- * PINNED_CLIENT_METADATA in cimd.ts).
+ * size-limited — and **never follows redirects**: the document ↔ client_id
+ * binding is a string comparison against the URL we resolved, so following a
+ * redirect would let an open redirect on any trusted HTTPS host serve an
+ * attacker's document while the consent screen displays the trusted hostname.
+ *
+ * When the live fetch fails transport-wise for one of Anthropic's known
+ * documents, a vendored pinned copy is used instead (Cloudflare intermittently
+ * challenges datacenter egress IPs fetching claude.ai); a withdrawn or invalid
+ * document is never pinned over — see `selectClientMetadata`.
  */
 async function fetchClientMetadata(url: string): Promise<ClientMetadata | null> {
   const cached = clientMetadataCache.get(url);
@@ -176,48 +218,56 @@ async function fetchClientMetadata(url: string): Promise<ClientMetadata | null> 
     return cached.metadata;
   }
 
-  const live = await fetchClientMetadataLive(url);
-  if (live) {
-    if (clientMetadataCache.size >= CLIENT_METADATA_CACHE_MAX_ENTRIES) {
-      // Plain FIFO eviction — the cap only exists to bound memory against
-      // attacker-minted URLs; legitimate traffic is a handful of documents.
-      const oldest = clientMetadataCache.keys().next().value;
-      if (oldest !== undefined) clientMetadataCache.delete(oldest);
-    }
-    clientMetadataCache.set(url, {
-      metadata: live,
-      expiresAt: Date.now() + CLIENT_METADATA_CACHE_TTL_MS,
+  const outcome = await fetchClientMetadataLive(url);
+  const metadata = selectClientMetadata(url, outcome);
+  if (outcome.kind !== "ok") {
+    logger.warn("CIMD client metadata fetch did not return a usable document", {
+      url,
+      kind: outcome.kind,
+      usingPinnedFallback: metadata !== null,
     });
-    return live;
   }
-
-  const pinned = PINNED_CLIENT_METADATA.get(url);
-  if (pinned) {
-    logger.warn("CIMD live fetch failed; using pinned client metadata", { url });
-    return pinned;
-  }
-  return null;
+  cacheClientMetadata(url, metadata);
+  return metadata;
 }
 
-async function fetchClientMetadataLive(url: string): Promise<ClientMetadata | null> {
+async function fetchClientMetadataLive(url: string): Promise<CimdFetchOutcome> {
+  let response: Response;
   try {
-    const response = await fetchWithSsrfProtection(url, {
+    response = await fetchWithSsrfProtection(url, {
       headers: {
         Accept: "application/json",
         "User-Agent": USER_AGENT,
       },
+      // Return 3xx unfollowed; treated as a transport failure below.
+      redirect: "manual",
       signal: AbortSignal.timeout(CLIENT_METADATA_TIMEOUT_MS),
     });
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const body = await readResponseBufferWithSizeLimit(response, CLIENT_METADATA_MAX_BYTES, url);
-    return parseClientMetadataDocument(url, body.toString());
   } catch {
-    return null;
+    return { kind: "transport-failure" };
   }
+
+  // 404/410 are the origin authoritatively withdrawing the document — CIMD's
+  // revocation mechanism. Everything else non-2xx (Cloudflare 403 challenge,
+  // 5xx, a redirect) says nothing authoritative about the client.
+  if (response.status === 404 || response.status === 410) {
+    return { kind: "rejected" };
+  }
+  if (!response.ok) {
+    return { kind: "transport-failure" };
+  }
+
+  let parsed: unknown;
+  try {
+    const body = await readResponseBufferWithSizeLimit(response, CLIENT_METADATA_MAX_BYTES, url);
+    parsed = JSON.parse(body.toString());
+  } catch {
+    // Unreadable or non-JSON body (e.g. a challenge page served with a 200).
+    return { kind: "transport-failure" };
+  }
+
+  const metadata = validateClientMetadataDocument(url, parsed);
+  return metadata ? { kind: "ok", metadata } : { kind: "rejected" };
 }
 
 // ============================================================================

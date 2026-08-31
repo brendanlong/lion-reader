@@ -52,24 +52,55 @@ export function isValidClientIdMetadataUrl(clientId: string): boolean {
 }
 
 /**
- * Parses and validates a Client ID Metadata Document body fetched from `url`.
- * Returns null on any violation (never throws):
+ * Cap on the self-asserted client_name after sanitization. The name is
+ * rendered on the consent screen; an unbounded one could push the trustworthy
+ * hostname out of view.
+ */
+const CLIENT_NAME_MAX_LENGTH = 100;
+
+/** Caps on list/string fields — real documents are tiny; these bound abuse. */
+const REDIRECT_URIS_MAX_ENTRIES = 32;
+const GRANT_TYPES_MAX_ENTRIES = 32;
+const SCOPE_MAX_LENGTH = 512;
+
+/**
+ * Strips control characters and Unicode bidi/direction-override characters
+ * from a self-asserted display string — a client_name containing e.g. a
+ * U+202E right-to-left override must not be able to reorder or hide the
+ * hostname the consent screen renders next to it.
+ */
+function sanitizeDisplayName(name: string): string | undefined {
+  const cleaned = name
+
+    .replaceAll(/[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "")
+    .trim()
+    .slice(0, CLIENT_NAME_MAX_LENGTH);
+  return cleaned.length > 0 ? cleaned : undefined;
+}
+
+/**
+ * Validates an already-JSON-parsed Client ID Metadata Document fetched from
+ * `url`. Returns null on any violation (never throws):
  *
  * - must be a JSON object with `client_id` (string) and a non-empty
- *   `redirect_uris` array of well-formed redirect URIs
- * - `client_id` must equal the URL the document was fetched from, by simple
- *   string comparison (the spec's binding between document and identifier)
+ *   `redirect_uris` array containing at least one well-formed redirect URI
+ *   (malformed entries are dropped rather than failing the whole document, so
+ *   an upstream addition of e.g. a custom-scheme URI can't disable a client)
+ * - `client_id` must equal the **raw** URL string the caller resolved the
+ *   document for — this simple string comparison is the spec's binding
+ *   between document and identifier, and it is what defeats
+ *   normalization-alias and redirect games: a URL that merely *normalizes or
+ *   redirects to* the document's location won't equal the `client_id` inside it
  * - `token_endpoint_auth_method`, if present, must be `none` — a CIMD client
  *   is inherently public; this server has no secret to verify, so a document
  *   demanding secret-based auth is misconfigured or malicious
+ * - the self-asserted `client_name` is sanitized (control/bidi characters
+ *   stripped) and length-capped before it can reach the consent screen
  */
-export function parseClientMetadataDocument(url: string, body: string): ClientMetadata | null {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(body);
-  } catch {
-    return null;
-  }
+export function validateClientMetadataDocument(
+  url: string,
+  parsed: unknown
+): ClientMetadata | null {
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
     return null;
   }
@@ -81,8 +112,14 @@ export function parseClientMetadataDocument(url: string, body: string): ClientMe
   if (
     !Array.isArray(doc.redirect_uris) ||
     doc.redirect_uris.length === 0 ||
-    !doc.redirect_uris.every((u) => typeof u === "string" && isValidRedirectUriFormat(u))
+    doc.redirect_uris.length > REDIRECT_URIS_MAX_ENTRIES
   ) {
+    return null;
+  }
+  const redirectUris = doc.redirect_uris.filter(
+    (u): u is string => typeof u === "string" && isValidRedirectUriFormat(u)
+  );
+  if (redirectUris.length === 0) {
     return null;
   }
   if (doc.token_endpoint_auth_method !== undefined && doc.token_endpoint_auth_method !== "none") {
@@ -91,24 +128,76 @@ export function parseClientMetadataDocument(url: string, body: string): ClientMe
   if (doc.client_name !== undefined && typeof doc.client_name !== "string") {
     return null;
   }
-  if (doc.scope !== undefined && typeof doc.scope !== "string") {
+  if (
+    doc.scope !== undefined &&
+    (typeof doc.scope !== "string" || doc.scope.length > SCOPE_MAX_LENGTH)
+  ) {
     return null;
   }
   if (
     doc.grant_types !== undefined &&
-    (!Array.isArray(doc.grant_types) || !doc.grant_types.every((g) => typeof g === "string"))
+    (!Array.isArray(doc.grant_types) ||
+      doc.grant_types.length > GRANT_TYPES_MAX_ENTRIES ||
+      !doc.grant_types.every((g) => typeof g === "string"))
   ) {
     return null;
   }
 
   return {
     client_id: doc.client_id,
-    client_name: doc.client_name as string | undefined,
-    redirect_uris: doc.redirect_uris as string[],
+    client_name: doc.client_name !== undefined ? sanitizeDisplayName(doc.client_name) : undefined,
+    redirect_uris: redirectUris,
     grant_types: doc.grant_types as string[] | undefined,
     scope: doc.scope as string | undefined,
     token_endpoint_auth_method: doc.token_endpoint_auth_method as string | undefined,
   };
+}
+
+/**
+ * String-body convenience wrapper over `validateClientMetadataDocument`.
+ */
+export function parseClientMetadataDocument(url: string, body: string): ClientMetadata | null {
+  try {
+    return validateClientMetadataDocument(url, JSON.parse(body));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Outcome of a live CIMD fetch, classified for the fallback decision below.
+ */
+export type CimdFetchOutcome =
+  /** Document fetched and validated. */
+  | { kind: "ok"; metadata: ClientMetadata }
+  /**
+   * The fetch itself failed — network error, timeout, SSRF block, a redirect
+   * (never followed; see fetchClientMetadataLive), a non-2xx status other
+   * than 404/410, or a body that isn't JSON (a Cloudflare challenge page).
+   * The document's origin said nothing authoritative about the client.
+   */
+  | { kind: "transport-failure" }
+  /**
+   * The origin answered authoritatively and the answer disqualifies the
+   * client: 404/410 (document withdrawn — CIMD's revocation mechanism), or a
+   * well-formed JSON body that failed validation.
+   */
+  | { kind: "rejected" };
+
+/**
+ * Picks the metadata to use for a client_id given the live fetch outcome.
+ * The pinned fallback applies ONLY to transport-shaped failures — a
+ * withdrawn (404) or invalid document must not be resurrected from the pin,
+ * or pinning would defeat upstream revocation for exactly the highest-value
+ * client_ids.
+ */
+export function selectClientMetadata(
+  url: string,
+  outcome: CimdFetchOutcome
+): ClientMetadata | null {
+  if (outcome.kind === "ok") return outcome.metadata;
+  if (outcome.kind === "transport-failure") return PINNED_CLIENT_METADATA.get(url) ?? null;
+  return null;
 }
 
 /**
@@ -119,12 +208,22 @@ export function parseClientMetadataDocument(url: string, body: string): ClientMe
  * fallback, connecting the claude.ai connector would fail whenever our egress
  * IP is having a bad reputation day. The live fetch always takes precedence,
  * so a changed upstream document only needs this updated when the fetch is
- * ALSO being challenged. Vendored 2026-08-31.
+ * ALSO being challenged — and the pin is used only for transport-shaped
+ * failures, never for a withdrawn (404/410) or invalid document (see
+ * `selectClientMetadata`). Deep-frozen: these arrays are security allowlists
+ * handed out by reference; a caller mutating one would corrupt the process.
+ * Vendored 2026-08-31.
  */
+function frozenMetadata(doc: ClientMetadata): ClientMetadata {
+  doc.redirect_uris = Object.freeze(doc.redirect_uris) as string[];
+  if (doc.grant_types) doc.grant_types = Object.freeze(doc.grant_types) as string[];
+  return Object.freeze(doc);
+}
+
 export const PINNED_CLIENT_METADATA: ReadonlyMap<string, ClientMetadata> = new Map([
   [
     "https://claude.ai/oauth/mcp-oauth-client-metadata",
-    {
+    frozenMetadata({
       client_id: "https://claude.ai/oauth/mcp-oauth-client-metadata",
       client_name: "Claude",
       redirect_uris: ["https://claude.ai/api/mcp/auth_callback"],
@@ -134,16 +233,16 @@ export const PINNED_CLIENT_METADATA: ReadonlyMap<string, ClientMetadata> = new M
         "urn:ietf:params:oauth:grant-type:jwt-bearer",
       ],
       token_endpoint_auth_method: "none",
-    },
+    }),
   ],
   [
     "https://claude.ai/oauth/claude-code-client-metadata",
-    {
+    frozenMetadata({
       client_id: "https://claude.ai/oauth/claude-code-client-metadata",
       client_name: "Claude Code",
       redirect_uris: ["http://localhost/callback", "http://127.0.0.1/callback"],
       grant_types: ["authorization_code", "refresh_token"],
       token_endpoint_auth_method: "none",
-    },
+    }),
   ],
 ]);
