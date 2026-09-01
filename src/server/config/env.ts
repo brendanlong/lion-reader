@@ -345,24 +345,6 @@ export const storageConfig = {
 
 export const mcpConfig = {
   /**
-   * Dedicated host that serves the MCP endpoint at `/mcp` with the OAuth
-   * endpoints at the origin root — the exact shape of every remote MCP server
-   * that works with the claude.ai web connector (Notion/Linear/Sentry all use a
-   * `mcp.*` subdomain). This is the issue #986 workaround: on a dedicated host
-   * the paths claude.ai synthesizes at the origin root (`/authorize`, `/token`,
-   * `/register`) collide with nothing, and the resource identifier is a clean
-   * `https://{host}/mcp`.
-   *
-   * When unset (the default), the MCP surface is served only under the apex
-   * `/api/mcp` and nothing here changes. Set it once DNS + a Fly cert for the
-   * host exist; the same `app` process answers it (no extra process). Compared
-   * case-insensitively with any port stripped.
-   */
-  get host(): string | undefined {
-    return process.env.MCP_HOST?.trim().toLowerCase() || undefined;
-  },
-
-  /**
    * When "true", the proxy logs one structured line per request to the OAuth/MCP
    * surface: host, method, path, redacted query, user-agent, and whether an
    * `Authorization` header was present (a boolean — never the token, per the

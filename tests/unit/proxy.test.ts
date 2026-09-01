@@ -1,11 +1,10 @@
 /**
  * Unit tests for the Next.js proxy (middleware).
  *
- * The proxy's only job is the claude.ai OAuth workaround: rewriting POST/OPTIONS
- * `/register` to the Dynamic Client Registration handler at `/oauth/register`.
- * Route authentication is deliberately NOT handled here — it lives in the
- * server-side layout guards (see issue #984). These tests pin down the rewrite
- * behavior and that nothing else is redirected/rewritten.
+ * The proxy handles session redirects, CSP tiering, and optional OAuth/MCP
+ * request logging. Route authentication is deliberately NOT handled here — it
+ * lives in the server-side layout guards (see issue #984). These tests pin
+ * down that nothing is redirected/rewritten beyond the session redirects.
  */
 
 import { describe, it, expect, vi, afterEach } from "vitest";
@@ -22,23 +21,6 @@ function makeRequest(path: string, method = "GET", headers?: Record<string, stri
 }
 
 describe("proxy", () => {
-  it.each(["POST", "OPTIONS"])(
-    "rewrites %s /register to the OAuth DCR handler at /oauth/register",
-    async (method) => {
-      const res = await proxy(makeRequest("/register", method));
-      const rewrite = new URL(res.headers.get("x-middleware-rewrite")!);
-      expect(rewrite.pathname).toBe("/oauth/register");
-      // A rewrite is not a redirect — the URL stays /register for the client.
-      expect(res.headers.get("location")).toBeNull();
-    }
-  );
-
-  it("does not rewrite GET /register (the human signup page)", async () => {
-    const res = await proxy(makeRequest("/register"));
-    expect(res.headers.get("x-middleware-rewrite")).toBeNull();
-    expect(res.headers.get("location")).toBeNull();
-  });
-
   it("does not gate auth: an unauthenticated protected path passes through untouched", async () => {
     // Auth is handled by the server-side layout guards, not the proxy (#984).
     const res = await proxy(makeRequest("/all"));
@@ -46,24 +28,19 @@ describe("proxy", () => {
     expect(res.headers.get("x-middleware-rewrite")).toBeNull();
   });
 
-  it("only rewrites the exact /register path, not method-matching other paths", async () => {
-    // Defensive: the pathname guard keeps the rewrite scoped even if the
-    // matcher is ever widened.
-    const res = await proxy(makeRequest("/register-something", "POST"));
-    expect(res.headers.get("x-middleware-rewrite")).toBeNull();
-  });
+  it.each(["GET", "POST", "OPTIONS"])(
+    "%s /register is never rewritten (the old claude.ai DCR method-split is gone)",
+    async (method) => {
+      const res = await proxy(makeRequest("/register", method));
+      expect(res.headers.get("x-middleware-rewrite")).toBeNull();
+      expect(res.headers.get("location")).toBeNull();
+    }
+  );
 });
 
 describe("proxy request logging (LOG_MCP_REQUESTS)", () => {
-  const originalMcpHost = process.env.MCP_HOST;
-
   afterEach(() => {
     delete process.env.LOG_MCP_REQUESTS;
-    if (originalMcpHost === undefined) {
-      delete process.env.MCP_HOST;
-    } else {
-      process.env.MCP_HOST = originalMcpHost;
-    }
     vi.restoreAllMocks();
   });
 
@@ -99,34 +76,22 @@ describe("proxy request logging (LOG_MCP_REQUESTS)", () => {
     expect(entry.hasAuthorization).toBe(false);
   });
 
-  it("does NOT log ordinary (non-surface) apex traffic even when enabled", async () => {
-    // No MCP host configured, so only the OAuth/MCP surface is logged on the apex.
+  it("does NOT log ordinary (non-surface) traffic even when enabled", async () => {
     process.env.LOG_MCP_REQUESTS = "true";
-    delete process.env.MCP_HOST;
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
     await proxy(makeRequest("/all"));
     await proxy(makeRequest("/api/trpc/entries.list"));
     expect(spy).not.toHaveBeenCalled();
   });
 
-  it("logs EVERY path on the dedicated MCP host, including unexpected ones", async () => {
-    // The point: catch a request to a path we didn't anticipate (the "wrong URL"
-    // / origin-root-fallback failure modes) so it doesn't slip through unlogged.
+  it("logs probes to the unserved root OAuth paths (misbehaving-connector diagnostics)", async () => {
+    // /register, /authorize, /token, /mcp are 404s now, but misbehaving
+    // connectors (claude.ai) probe them instead of the advertised endpoints —
+    // the logged 404 is the evidence that identifies that failure mode.
     process.env.LOG_MCP_REQUESTS = "true";
-    process.env.MCP_HOST = "mcp.example.com";
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
-    await proxy(makeRequest("/some/unexpected/path", "GET", { host: "MCP.example.com:443" }));
+    await proxy(makeRequest("/authorize", "GET"));
     expect(spy).toHaveBeenCalledOnce();
-    const entry = JSON.parse(spy.mock.calls[0][0] as string);
-    expect(entry.path).toBe("/some/unexpected/path");
-  });
-
-  it("does not log unexpected paths on a host that isn't the MCP host", async () => {
-    process.env.LOG_MCP_REQUESTS = "true";
-    process.env.MCP_HOST = "mcp.example.com";
-    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
-    await proxy(makeRequest("/some/unexpected/path", "GET", { host: "reader.example.com" }));
-    expect(spy).not.toHaveBeenCalled();
   });
 
   it("redacts sensitive query params (auth code) but keeps public ones", async () => {
@@ -139,14 +104,6 @@ describe("proxy request logging (LOG_MCP_REQUESTS)", () => {
     expect(query.get("state")).toBe("xyz");
     expect(query.get("code")).toBe("[redacted]");
     expect(spy.mock.calls[0][0]).not.toContain("SECRET_CODE");
-  });
-
-  it("still performs the /register rewrite while logging is enabled", async () => {
-    process.env.LOG_MCP_REQUESTS = "true";
-    vi.spyOn(console, "log").mockImplementation(() => {});
-    const res = await proxy(makeRequest("/register", "POST"));
-    const rewrite = new URL(res.headers.get("x-middleware-rewrite")!);
-    expect(rewrite.pathname).toBe("/oauth/register");
   });
 });
 
@@ -187,15 +144,6 @@ describe("proxy CSP tiering (issue #1359)", () => {
     expect(res.headers.get("Content-Security-Policy")).toMatch(/script-src[^;]*'unsafe-inline'/);
     expect(res.headers.get("x-middleware-rewrite")).toBeNull();
   });
-
-  it.each(["POST", "OPTIONS"])(
-    "%s /register (the OAuth DCR rewrite) keeps the strict nonce'd CSP",
-    async (method) => {
-      const res = await proxy(makeRequest("/register", method));
-      expect(new URL(res.headers.get("x-middleware-rewrite")!).pathname).toBe("/oauth/register");
-      expect(res.headers.get("Content-Security-Policy")).toContain("'nonce-");
-    }
-  );
 
   it("does not treat demo-prefixed lookalike paths as public", async () => {
     const res = await proxy(makeRequest("/demonstration"));
@@ -256,14 +204,6 @@ describe("proxy session redirects (issue #1359)", () => {
       expect(res.status, path).toBe(200);
       expect(res.headers.get("location"), path).toBeNull();
     }
-  });
-
-  it("POST /register with a session cookie still hits the DCR rewrite untouched", async () => {
-    // The session redirect must never intercept the method-split OAuth
-    // registration POST, even for a browser that happens to carry a session.
-    const res = await proxy(makeRequest("/register", "POST", { cookie: "session=some-token" }));
-    expect(new URL(res.headers.get("x-middleware-rewrite")!).pathname).toBe("/oauth/register");
-    expect(res.headers.get("location")).toBeNull();
   });
 
   // The cookie-present validation paths (valid session → /all or
