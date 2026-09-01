@@ -15,9 +15,6 @@
 
 import { isValidRedirectUriFormat } from "./utils";
 
-/**
- * Client metadata from a Client ID Metadata Document.
- */
 export interface ClientMetadata {
   client_id: string;
   client_name?: string;
@@ -31,13 +28,11 @@ export interface ClientMetadata {
  * Whether a client_id is a well-formed CIMD URL worth fetching.
  *
  * Per the CIMD draft: https scheme, a non-root path component, and no
- * fragment, userinfo, or dot-segments. No explicit dot-segment check is
- * needed: WHATWG URL parsing collapses both literal (`..`) and
- * percent-encoded (`%2e%2e`) dot-segments before they reach `pathname`
- * (verified in tests/unit/oauth-cimd.test.ts), and a client_id that only
- * *normalizes* to a document's URL is rejected anyway by
- * `parseClientMetadataDocument`'s string-equality binding between the raw
- * client_id and the document's `client_id` field.
+ * fragment, userinfo, or dot-segments. The dot-segment rule needs no explicit
+ * check — WHATWG URL parsing collapses literal and percent-encoded segments
+ * before they reach `pathname`, and a client_id that only *normalizes* to a
+ * document's URL still fails the raw-string binding in
+ * `validateClientMetadataDocument`.
  */
 export function isValidClientIdMetadataUrl(clientId: string): boolean {
   let url: URL;
@@ -52,9 +47,8 @@ export function isValidClientIdMetadataUrl(clientId: string): boolean {
 }
 
 /**
- * Cap on the self-asserted client_name after sanitization. The name is
- * rendered on the consent screen; an unbounded one could push the trustworthy
- * hostname out of view.
+ * The consent screen renders client_name beside the hostname — cap it so it
+ * can't crowd the hostname out.
  */
 const CLIENT_NAME_MAX_LENGTH = 100;
 
@@ -94,8 +88,6 @@ function sanitizeDisplayName(name: string): string | undefined {
  * - `token_endpoint_auth_method`, if present, must be `none` — a CIMD client
  *   is inherently public; this server has no secret to verify, so a document
  *   demanding secret-based auth is misconfigured or malicious
- * - the self-asserted `client_name` is sanitized (control/bidi characters
- *   stripped) and length-capped before it can reach the consent screen
  */
 export function validateClientMetadataDocument(
   url: string,
@@ -200,26 +192,24 @@ export function selectClientMetadata(
   return null;
 }
 
-/**
- * Vendored copies of Anthropic's hosted client metadata documents, used as a
- * fallback when the live fetch fails. claude.ai fronts these with Cloudflare,
- * which intermittently serves datacenter IPs (Fly.io included) a managed
- * challenge instead of the JSON (anthropics/claude-ai-mcp#650) — without a
- * fallback, connecting the claude.ai connector would fail whenever our egress
- * IP is having a bad reputation day. The live fetch always takes precedence,
- * so a changed upstream document only needs this updated when the fetch is
- * ALSO being challenged — and the pin is used only for transport-shaped
- * failures, never for a withdrawn (404/410) or invalid document (see
- * `selectClientMetadata`). Deep-frozen: these arrays are security allowlists
- * handed out by reference; a caller mutating one would corrupt the process.
- * Vendored 2026-08-31.
- */
+/** Freezes a pin's arrays — they are security allowlists handed out by reference. */
 function frozenMetadata(doc: ClientMetadata): ClientMetadata {
   doc.redirect_uris = Object.freeze(doc.redirect_uris) as string[];
   if (doc.grant_types) doc.grant_types = Object.freeze(doc.grant_types) as string[];
   return Object.freeze(doc);
 }
 
+/**
+ * Vendored copies of Anthropic's hosted client metadata documents, used per
+ * `selectClientMetadata` when the live fetch fails. claude.ai fronts these
+ * with Cloudflare, which intermittently serves datacenter IPs (Fly.io
+ * included) a managed challenge instead of the JSON
+ * (anthropics/claude-ai-mcp#650) — without a fallback, connecting the
+ * claude.ai connector would fail whenever our egress IP is having a bad
+ * reputation day. The live fetch always takes precedence, so a changed
+ * upstream document only needs this updated when the fetch is ALSO being
+ * challenged. Vendored 2026-08-31.
+ */
 export const PINNED_CLIENT_METADATA: ReadonlyMap<string, ClientMetadata> = new Map([
   [
     "https://claude.ai/oauth/mcp-oauth-client-metadata",

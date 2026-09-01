@@ -61,10 +61,8 @@ describe("isValidClientIdMetadataUrl", () => {
   });
 
   it("dot-segments (literal and percent-encoded) are collapsed by URL parsing", () => {
-    // The spec's dot-segment rejection is satisfied by WHATWG normalization —
-    // this test documents the parser behavior isValidClientIdMetadataUrl's
-    // no-explicit-check design relies on. A normalized-but-unequal client_id is
-    // then rejected by parseClientMetadataDocument's string-equality binding.
+    // Documents the WHATWG normalization that isValidClientIdMetadataUrl's
+    // lack of an explicit dot-segment check relies on.
     expect(new URL("https://claude.ai/a/%2e%2e/metadata").pathname).toBe("/metadata");
     expect(new URL("https://claude.ai/a/../metadata").pathname).toBe("/metadata");
     expect(isValidClientIdMetadataUrl("https://claude.ai/a/%2e%2e/metadata")).toBe(true);
@@ -131,8 +129,6 @@ describe("parseClientMetadataDocument", () => {
   });
 
   it("keeps the well-formed subset when some redirect_uris are unrecognized", () => {
-    // An upstream addition of e.g. a custom-scheme deep link must not disable
-    // the client's existing https callback.
     const doc = {
       ...CLAUDE_CIMD_DOC,
       redirect_uris: ["claude://auth/callback", "https://claude.ai/api/mcp/auth_callback"],
@@ -159,8 +155,6 @@ describe("parseClientMetadataDocument", () => {
   });
 
   it("sanitizes the self-asserted client_name (bidi/control stripped, length capped)", () => {
-    // A name using a right-to-left override or padding must not be able to
-    // reorder or displace the hostname shown next to it on the consent screen.
     const sneaky = "Claude\u202e (claude.ai)\u0000" + "x".repeat(500);
     const parsed = parseClientMetadataDocument(
       CLAUDE_CIMD_URL,
@@ -242,8 +236,6 @@ describe("selectClientMetadata", () => {
   });
 
   it("never resurrects a withdrawn or invalid document from the pin", () => {
-    // If Anthropic 404s the document (CIMD's revocation mechanism) or serves a
-    // document our validation rejects, the pin must not override that.
     expect(selectClientMetadata(PINNED_URL, { kind: "rejected" })).toBeNull();
   });
 });
@@ -257,9 +249,8 @@ describe("PINNED_CLIENT_METADATA", () => {
   });
 
   it("every pinned document passes the same validation as a live fetch", () => {
-    // The pinned copies are the fallback when Cloudflare challenges our egress
-    // IP; they must be at least as valid as what a live fetch would accept, so
-    // the fallback path can never resurrect a document validation would reject.
+    // The pins bypass a live fetch, so they must satisfy exactly the
+    // validation a live fetch would apply.
     for (const [url, doc] of PINNED_CLIENT_METADATA) {
       expect(isValidClientIdMetadataUrl(url)).toBe(true);
       const reparsed = parseClientMetadataDocument(url, JSON.stringify(doc));

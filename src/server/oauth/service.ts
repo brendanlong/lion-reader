@@ -115,23 +115,20 @@ export async function resolveClient(clientId: string): Promise<ResolvedClient | 
     };
   }
 
-  // If clientId is a well-formed CIMD URL, try to fetch the metadata document
   if (isValidClientIdMetadataUrl(clientId)) {
     const metadata = await fetchClientMetadata(clientId);
     if (metadata) {
       return {
         clientId: metadata.client_id,
         name: metadata.client_name ?? "Unknown Application",
-        // Defensive copies: cached/pinned metadata objects are shared (and the
-        // pins are frozen); redirectUris is a security allowlist a caller must
-        // not be able to mutate process-wide.
+        // redirectUris is a security allowlist and cached/pinned metadata is
+        // shared by reference — hand out copies.
         redirectUris: [...metadata.redirect_uris],
         grantTypes: metadata.grant_types
           ? [...metadata.grant_types]
           : ["authorization_code", "refresh_token"],
-        // Filter to scopes we support (parseScopes drops unrecognized values,
-        // matching the DCR registration policy). A document offering only
-        // unknown scopes yields [] — which fails closed at authorize time with
+        // parseScopes drops unrecognized scopes (same policy as DCR). A
+        // document offering only unknown scopes yields [] — fails closed with
         // invalid_scope — never null, which would mean "no restriction".
         scopes: metadata.scope !== undefined ? parseScopes(metadata.scope) : null,
         isPublic: true, // CIMD clients are always public
@@ -164,7 +161,9 @@ const CLIENT_METADATA_MAX_BYTES = 16 * 1024;
  * `null` for 60 seconds — NOT as a document (the spec forbids caching
  * errors/invalid documents as metadata), but as a short negative entry so an
  * unauthenticated attacker hammering /oauth/authorize with a failing URL
- * client_id can't turn us into a fetch amplifier against a third party.
+ * client_id can't turn us into a fetch amplifier against a third party. (A
+ * transport failure that falls back to a pin caches the pin, under the
+ * positive TTL.)
  *
  * The cache is capped because client_id URLs are attacker-suppliable via
  * unauthenticated requests; eviction deletes-before-set so refreshing a hot
@@ -198,19 +197,8 @@ function cacheClientMetadata(url: string, metadata: ClientMetadata | null): void
 }
 
 /**
- * Fetches a Client ID Metadata Document from its URL.
- *
- * The URL is an arbitrary client_id reachable via unauthenticated
- * /oauth/authorize requests, so the fetch is SSRF-protected, time-limited,
- * size-limited — and **never follows redirects**: the document ↔ client_id
- * binding is a string comparison against the URL we resolved, so following a
- * redirect would let an open redirect on any trusted HTTPS host serve an
- * attacker's document while the consent screen displays the trusted hostname.
- *
- * When the live fetch fails transport-wise for one of Anthropic's known
- * documents, a vendored pinned copy is used instead (Cloudflare intermittently
- * challenges datacenter egress IPs fetching claude.ai); a withdrawn or invalid
- * document is never pinned over — see `selectClientMetadata`.
+ * Resolves a Client ID Metadata Document for `url`: cache → live fetch →
+ * pinned fallback (`selectClientMetadata`).
  */
 async function fetchClientMetadata(url: string): Promise<ClientMetadata | null> {
   const cached = clientMetadataCache.get(url);
@@ -231,6 +219,14 @@ async function fetchClientMetadata(url: string): Promise<ClientMetadata | null> 
   return metadata;
 }
 
+/**
+ * The URL is an arbitrary client_id reachable via unauthenticated
+ * /oauth/authorize requests, so the fetch is SSRF-protected, time- and
+ * size-limited — and **never follows redirects**: the document ↔ client_id
+ * binding is a string comparison against the URL we resolved, so an open
+ * redirect on any trusted HTTPS host could otherwise serve an attacker's
+ * document while the consent screen displays the trusted hostname.
+ */
 async function fetchClientMetadataLive(url: string): Promise<CimdFetchOutcome> {
   let response: Response;
   try {
@@ -239,7 +235,6 @@ async function fetchClientMetadataLive(url: string): Promise<CimdFetchOutcome> {
         Accept: "application/json",
         "User-Agent": USER_AGENT,
       },
-      // Return 3xx unfollowed; treated as a transport failure below.
       redirect: "manual",
       signal: AbortSignal.timeout(CLIENT_METADATA_TIMEOUT_MS),
     });
@@ -247,9 +242,8 @@ async function fetchClientMetadataLive(url: string): Promise<CimdFetchOutcome> {
     return { kind: "transport-failure" };
   }
 
-  // 404/410 are the origin authoritatively withdrawing the document — CIMD's
-  // revocation mechanism. Everything else non-2xx (Cloudflare 403 challenge,
-  // 5xx, a redirect) says nothing authoritative about the client.
+  // 404/410 = the origin withdrawing the document; any other non-2xx is not
+  // authoritative.
   if (response.status === 404 || response.status === 410) {
     return { kind: "rejected" };
   }

@@ -74,11 +74,8 @@ describe("OAuth resource identifiers", () => {
   });
 
   it("advertises Client ID Metadata Document support alongside 'none' auth", () => {
-    // claude.ai's connector uses its hosted client metadata document (CIMD) only
-    // when BOTH gates hold: this flag is true AND
-    // token_endpoint_auth_methods_supported includes "none" (CIMD clients are
-    // public). Missing either silently drops claude.ai to DCR. See
-    // getAuthorizationServerMetadata for the 2026-07 history of this flag.
+    // Both gates must hold or claude.ai silently drops to DCR; see
+    // client_id_metadata_document_supported in config.ts.
     const metadata = getAuthorizationServerMetadata();
     expect(metadata.client_id_metadata_document_supported).toBe(true);
     expect(metadata.token_endpoint_auth_methods_supported).toContain("none");

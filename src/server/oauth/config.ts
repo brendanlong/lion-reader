@@ -181,22 +181,16 @@ export function getAuthorizationServerMetadata(host?: string | null) {
     // settings) unsupported. Shared with /oauth/register validation so the two
     // can't drift apart again.
     token_endpoint_auth_methods_supported: SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS,
-    // Client ID Metadata Documents (MCP authorization spec 2025-11-25 / CIMD):
-    // clients whose client_id is an HTTPS URL pointing at a hosted metadata
-    // document. claude.ai's connector uses this as its recommended "Use
-    // Anthropic's hosted client metadata" option (client_id
-    // https://claude.ai/oauth/mcp-oauth-client-metadata) — but only when the
-    // server advertises support here AND `token_endpoint_auth_methods_supported`
-    // includes "none" (CIMD clients are public); otherwise it silently falls
-    // back to DCR. Resolution/validation lives in `resolveClient` + `cimd.ts`.
+    // Client ID Metadata Documents (see cimd.ts). claude.ai's connector only
+    // offers its hosted metadata document when this flag is true AND
+    // token_endpoint_auth_methods_supported includes "none" (CIMD clients are
+    // public); missing either, it silently falls back to DCR.
     //
-    // History: this was an explicit `false` during 2026-07 because claude.ai's
-    // then-connector auto-preferred CIMD when advertised and aborted client-side
-    // before ever calling /oauth/authorize ("Couldn't register with the sign-in
-    // service", issue #986). The 2026-08 connector rework made CIMD an explicit,
-    // documented option in the UI, so support is advertised again — if the old
-    // abort-before-authorize behavior reappears in prod logs
-    // (LOG_MCP_REQUESTS), flip this back to `false` to force DCR.
+    // Rollback criterion: an earlier claude.ai connector auto-preferred CIMD
+    // whenever it was advertised, then aborted client-side before ever calling
+    // /oauth/authorize ("Couldn't register with the sign-in service", #986). If
+    // that signature reappears in LOG_MCP_REQUESTS — discovery completes, no
+    // register/authorize follows — set this back to false to force DCR.
     client_id_metadata_document_supported: true,
   };
 }

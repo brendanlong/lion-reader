@@ -16,11 +16,7 @@ interface ScopeInfo {
 
 interface ConsentFormProps {
   clientName: string;
-  /**
-   * For CIMD clients (URL client_ids), the hostname of the metadata document.
-   * Shown alongside the name because the name is self-asserted by whoever
-   * hosts the document; null for clients registered with this server.
-   */
+  /** Hostname of a CIMD client's metadata document; null for registered clients. */
   clientHost: string | null;
   clientId: string;
   redirectUri: string;
@@ -49,9 +45,8 @@ export function ConsentForm({
         <div className="control-outline bg-surface-muted mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full">
           <ShieldCheckIcon className="text-muted h-8 w-8" />
         </div>
-        {/* For CIMD clients the hostname leads: the name below it is whatever
-            the metadata document claims, so it must never be able to stand in
-            for (or visually precede) the verifiable identity. */}
+        {/* The hostname must lead: the name under it is self-asserted by
+            whoever hosts the metadata document. */}
         <h2 className="ui-text-lg text-body font-semibold">Authorize {clientHost ?? clientName}</h2>
         {clientHost && (
           <p className="ui-text-sm text-muted mt-1">
