@@ -20,6 +20,7 @@ import {
 import { API_TOKEN_SCOPES } from "@/server/auth/api-token";
 import { errors } from "../errors";
 import { uuidSchema } from "../validation";
+import { entriesListOutputSchema, entryFullCoreSchema } from "../entry-output";
 import { tags } from "@/server/db/schema";
 import * as fullContentService from "@/server/services/full-content";
 import * as entriesService from "@/server/services/entries";
@@ -83,52 +84,13 @@ const booleanQueryParam = z
 // ============================================================================
 // Output Schemas
 // ============================================================================
-
-/**
- * Lightweight entry output schema for list view (no full content).
- */
-const entryListItemSchema = z.object({
-  id: z.string(),
-  subscriptionId: z.string().nullable(), // null for orphaned starred entries
-  feedId: z.string(), // Internal use only - kept for cache invalidation
-  type: feedTypeSchema,
-  url: z.string().nullable(),
-  title: z.string().nullable(),
-  author: z.string().nullable(),
-  summary: z.string().nullable(),
-  publishedAt: z.date().nullable(),
-  fetchedAt: z.date(),
-  read: z.boolean(),
-  starred: z.boolean(),
-  updatedAt: z.date(), // Max of entry and user state updated_at - for cache freshness
-  feedTitle: z.string().nullable(),
-  siteName: z.string().nullable(),
-});
+// The entry shapes are shared with the MCP tool surface — see
+// `src/server/trpc/entry-output.ts`.
 
 /**
  * Full entry output schema for single entry view (includes content).
  */
-const entryFullSchema = z.object({
-  id: z.string(),
-  subscriptionId: z.string().nullable(), // null for orphaned starred entries
-  feedId: z.string(), // Internal use only - kept for cache invalidation
-  type: feedTypeSchema,
-  url: z.string().nullable(),
-  title: z.string().nullable(),
-  author: z.string().nullable(),
-  contentOriginal: z.string().nullable(),
-  contentCleaned: z.string().nullable(),
-  summary: z.string().nullable(),
-  publishedAt: z.date().nullable(),
-  fetchedAt: z.date(),
-  read: z.boolean(),
-  starred: z.boolean(),
-  updatedAt: z.date(), // Max of entry and user state updated_at - for cache freshness
-  feedTitle: z.string().nullable(),
-  feedUrl: z.string().nullable(),
-  siteName: z.string().nullable(),
-  // Unsubscribe link from email HTML (for email entries)
-  unsubscribeUrl: z.string().nullable(),
+const entryFullSchema = entryFullCoreSchema.extend({
   // Full content fields
   fullContentOriginal: z.string().nullable(),
   fullContentCleaned: z.string().nullable(),
@@ -136,14 +98,6 @@ const entryFullSchema = z.object({
   fullContentError: z.string().nullable(),
   // Subscription field - included to avoid separate subscriptions.get query
   fetchFullContent: z.boolean(), // subscription setting for auto-fetching full content
-});
-
-/**
- * Paginated entries list output schema.
- */
-const entriesListOutputSchema = z.object({
-  items: z.array(entryListItemSchema),
-  nextCursor: z.string().optional(),
 });
 
 /**

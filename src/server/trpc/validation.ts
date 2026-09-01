@@ -25,6 +25,17 @@ export const uuidSchema = z.string().uuid("Invalid ID");
  * router and the MCP create_tag/update_tag tools so the two surfaces enforce
  * the same invariant (tag colors are rendered into inline styles).
  */
+/**
+ * Tag name validation schema. Shared by the tags router and the MCP
+ * create_tag/update_tag tools so both surfaces enforce identical constraints
+ * (including the trim).
+ */
+export const tagNameSchema = z
+  .string()
+  .min(1, "Tag name is required")
+  .max(50, "Tag name must be less than 50 characters")
+  .trim();
+
 export const tagColorSchema = z
   .string()
   .regex(/^#[0-9a-fA-F]{6}$/, "Color must be a valid hex color (e.g., #ff6b6b)")

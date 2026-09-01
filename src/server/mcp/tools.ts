@@ -15,7 +15,8 @@ import { z } from "zod";
 import { McpError, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { TRPCError } from "@trpc/server";
 import type { db as dbType } from "@/server/db";
-import { uuidSchema, tagColorSchema } from "@/server/trpc/validation";
+import { uuidSchema, tagColorSchema, tagNameSchema } from "@/server/trpc/validation";
+import { entriesListOutputSchema, entryFullCoreSchema } from "@/server/trpc/entry-output";
 import * as entriesService from "@/server/services/entries";
 import * as subscriptionsService from "@/server/services/subscriptions";
 import * as savedService from "@/server/services/saved";
@@ -78,26 +79,6 @@ export function toMcpError(error: unknown): unknown {
     return new McpError(ErrorCode.InternalError, "An internal error occurred");
   }
   return error;
-}
-
-/**
- * Strips the Google Reader-internal compat ids (`greaderItemId` and the feed
- * stream serials) from an entry before it reaches an MCP response. They are
- * bigints, which the transports' `JSON.stringify` can't serialize (it throws),
- * and they're meaningless to MCP clients — only the Google Reader compat layer
- * consumes them. The tRPC/REST surfaces strip them via their Zod output schemas;
- * MCP serializes service results directly, so they must be dropped here.
- */
-function stripGreaderIds<
-  T extends {
-    greaderItemId: bigint;
-    subscriptionGreaderStreamId: bigint | null;
-    feedGreaderStreamId: bigint;
-  },
->(entry: T): Omit<T, "greaderItemId" | "subscriptionGreaderStreamId" | "feedGreaderStreamId"> {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { greaderItemId, subscriptionGreaderStreamId, feedGreaderStreamId, ...rest } = entry;
-  return rest;
 }
 
 /**
@@ -250,7 +231,7 @@ const getSubscriptionArgs = z.object({
 const listTagsArgs = z.object({});
 
 const createTagArgs = z.object({
-  name: z.string().min(1).max(50).describe("Tag name (max 50 characters, must be unique per user)"),
+  name: tagNameSchema.describe("Tag name (max 50 characters, must be unique per user)"),
   color: tagColorSchema
     .optional()
     .describe("Optional hex color (e.g., #ff6b6b). Null to remove color."),
@@ -258,10 +239,7 @@ const createTagArgs = z.object({
 
 const updateTagArgs = z.object({
   tagId: uuidSchema.describe("Tag ID"),
-  name: z
-    .string()
-    .min(1)
-    .max(50)
+  name: tagNameSchema
     .optional()
     .describe("New tag name (max 50 characters, must be unique per user)"),
   color: tagColorSchema.optional().describe("New hex color (e.g., #ff6b6b). Null to remove color."),
@@ -308,7 +286,10 @@ function buildTools(): Tool[] {
           ...params,
           showSpam: false, // Default to hiding spam for MCP
         });
-        return { ...result, items: result.items.map(stripGreaderIds) };
+        // Parsing through the shared output schema strips service-internal
+        // fields (the Google Reader compat bigints, which JSON.stringify can't
+        // serialize) — same contract as the tRPC/REST entries.list output.
+        return entriesListOutputSchema.parse(result);
       },
     },
 
@@ -319,7 +300,8 @@ function buildTools(): Tool[] {
       handler: async (db, userId, args) => {
         const params = parseArgs(getEntryArgs, args);
         const entry = await entriesService.getEntry(db, userId, params.entryId);
-        return entry ? stripGreaderIds(entry) : entry;
+        // Shared output contract with tRPC/REST; strips the compat-only ids.
+        return entryFullCoreSchema.parse(entry);
       },
     },
 
