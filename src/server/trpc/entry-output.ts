@@ -17,7 +17,7 @@ const feedTypeSchema = z.enum(["web", "email", "saved"]);
  * Lightweight entry output schema for list views (no full content).
  * Matches the service layer's `EntryListItem` minus the compat-only ids.
  */
-export const entryListItemSchema = z.object({
+const entryListItemSchema = z.object({
   id: z.string(),
   subscriptionId: z.string().nullable(), // null for orphaned starred entries
   feedId: z.string(), // Internal use only - kept for cache invalidation
