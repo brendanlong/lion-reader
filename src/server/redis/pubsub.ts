@@ -17,6 +17,7 @@ import {
   feedCreatedDataSchema,
   subscriptionCreatedDataSchema,
   unreadCountsSchema,
+  SYNC_PROTOCOL_VERSION,
   type NewEntryListData,
 } from "@/lib/events/schemas";
 import { type Announcement } from "@/server/services/site-status";
@@ -32,7 +33,12 @@ import { type Announcement } from "@/server/services/site-status";
 // client-facing `subscriptionId`/`counts` — those are per-user and attached by
 // the SSE route when it forwards the event.
 
-const userScoped = { userId: z.string() };
+// Wire envelope: `v` is the protocol version publishToChannel stamps on every
+// published event (optional here so events from a previous release still
+// parse; the client is what acts on a version mismatch). `userId` routes user
+// events to their channel.
+const versioned = { v: z.number().optional() };
+const userScoped = { ...versioned, userId: z.string() };
 
 /**
  * Zod schema for feed events published/received via Redis pub/sub.
@@ -40,8 +46,10 @@ const userScoped = { userId: z.string() };
 const feedEventSchema = z.discriminatedUnion("type", [
   eventBaseSchemas.newEntry
     .omit({ subscriptionId: true, counts: true, feedId: true })
-    .extend({ feedId: z.string() }),
-  eventBaseSchemas.entryUpdated.omit({ subscriptionId: true }).extend({ feedId: z.string() }),
+    .extend({ ...versioned, feedId: z.string() }),
+  eventBaseSchemas.entryUpdated
+    .omit({ subscriptionId: true })
+    .extend({ ...versioned, feedId: z.string() }),
 ]);
 
 /**
@@ -79,7 +87,9 @@ const userEventSchema = z.discriminatedUnion("type", [
  * change reaches every connected client. Kept a discriminated union so more
  * global signals can be added later.
  */
-const siteStatusEventSchema = z.discriminatedUnion("type", [eventBaseSchemas.announcementChanged]);
+const siteStatusEventSchema = z.discriminatedUnion("type", [
+  eventBaseSchemas.announcementChanged.extend(versioned),
+]);
 
 /** Union type for all site-status events. */
 export type SiteStatusEvent = z.infer<typeof siteStatusEventSchema>;
@@ -215,7 +225,10 @@ async function publishToChannel(
   if (!client) {
     return 0;
   }
-  return client.publish(channel, JSON.stringify(event));
+  // Stamp the wire protocol version on every published event — clients treat
+  // an event from a different release as "run a catch-up sync" instead of
+  // parsing it (see SYNC_PROTOCOL_VERSION in src/lib/events/schemas.ts).
+  return client.publish(channel, JSON.stringify({ ...event, v: SYNC_PROTOCOL_VERSION }));
 }
 
 // Each event scope derives its own channel from the event, so a user event can't

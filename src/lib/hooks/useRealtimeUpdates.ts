@@ -186,6 +186,15 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
   const handleEvent = useCallback(
     (event: MessageEvent) => {
       const data = parseSyncEvent(event.data);
+      if (data === "outdated") {
+        // The event was published by a different release (rolling deploy
+        // window) and may lack fields the current schemas require. Don't try
+        // to interpret it — drain the authoritative server sequence instead.
+        // requestSync coalesces (#897), so a burst of old events costs one
+        // catch-up sync, not one per event.
+        requestSyncRef.current();
+        return;
+      }
       if (!data) return;
 
       // Only advance the persisted sync cursor from live events once the

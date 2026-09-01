@@ -43,12 +43,12 @@ function tagEvent(updatedAt: string): SyncEvent {
   };
 }
 
-function markAllReadEvent(updatedAt: string, entryId?: string): SyncEvent {
+function markAllReadEvent(updatedAt: string, entryId = "entry-max"): SyncEvent {
   return {
     type: "mark_all_read",
     timestamp: updatedAt,
     updatedAt,
-    ...(entryId !== undefined ? { entryId } : {}),
+    entryId,
   };
 }
 
@@ -204,15 +204,6 @@ describe("advanceCursors", () => {
     it("does not move the tiebreaker backward for a mark_all_read with a smaller max id", () => {
       const cursors = advanceCursors(EMPTY_CURSORS, entryEvent(T, "e"));
       expect(advanceCursors(cursors, markAllReadEvent(T, "c"))).toBe(cursors);
-    });
-
-    it("falls back to skipping the whole tied group when mark_all_read has no entryId", () => {
-      // Events from servers predating the entryId field (#1102).
-      const cursors = advanceCursors(EMPTY_CURSORS, entryEvent(T, "b"));
-      const next = advanceCursors(cursors, markAllReadEvent(T));
-      expect(next.entries).toBe(T);
-      // ffff… is larger than any real uuid, so the next sync skips every tied row.
-      expect(next.entriesAfterId).toBe("ffffffff-ffff-ffff-ffff-ffffffffffff");
     });
   });
 });

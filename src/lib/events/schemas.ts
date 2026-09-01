@@ -25,6 +25,30 @@
 import { z } from "zod";
 
 // ============================================================================
+// Protocol Version
+// ============================================================================
+
+/**
+ * Version of the live-event wire protocol. Injected as `v` into every
+ * published Redis event (see publishToChannel in src/server/redis/pubsub.ts)
+ * and checked by the client before parsing an SSE event: a missing or
+ * different `v` means the event came from a different release, and the client
+ * responds with one full catch-up sync instead of trying to interpret it.
+ *
+ * This is the deploy-window story for event-shape changes: when an event
+ * gains/changes a field, declare it as the current release actually sends it
+ * and bump this version — do NOT mark it `.optional()` just so old-release
+ * events still parse (each such optional forks a client fallback branch that
+ * must be independently tested and never dies). `.optional()` is only for
+ * fields that are legitimately absent at runtime (e.g. spam entries' list
+ * payload, counts when the count query failed).
+ *
+ * The polling sync path is exempt: a sync.events response is generated whole
+ * by one server and is internally consistent at that server's version.
+ */
+export const SYNC_PROTOCOL_VERSION = 1;
+
+// ============================================================================
 // Reusable Sub-Schemas
 // ============================================================================
 
@@ -172,14 +196,14 @@ const newEntryEventBase = z.object({
   // these directly rather than applying a +1 delta, so a new_entry delivered
   // by both the live SSE stream and a reconnect catch-up sync can't
   // double-count. Optional because the SSE route omits them when the count
-  // query fails (and on events from servers predating the field — deploy
-  // window); when absent, counts are left untouched and self-heal on the next
-  // count-bearing event or refetch.
+  // query fails; when absent, counts are left untouched and self-heal on the
+  // next count-bearing event or refetch.
   counts: unreadCountsSchema.optional(),
   // List-item data so the client can insert the entry into cached
-  // entries.list pages directly. Optional for the deploy-window reason above;
-  // when absent, the entry appears on the next list refresh
-  // (navigation-triggered invalidation) instead of live.
+  // entries.list pages directly. Optional because publishers deliberately omit
+  // it for spam entries (the default entries.list filters them out, so clients
+  // must only update counts and never insert a ghost row); when absent, the
+  // entry appears on the next list refresh instead of live.
   feedId: z.string().optional(),
   entry: newEntryListDataSchema.optional(),
 });
@@ -207,8 +231,8 @@ const entryStateChangedEventBase = z.object({
   // so a client that doesn't have the entry in any cached list can insert it
   // into the lists it now belongs to — the same way new_entry payloads make
   // new entries appear live (issue #1237). Absent for entries becoming read
-  // (nothing to insert) and on events from servers predating this field; the
-  // client then falls back to restoring from another cached list's copy.
+  // (nothing to insert); the client then falls back to restoring from another
+  // cached list's copy.
   subscriptionId: z.string().nullable().optional(),
   feedId: z.string().optional(),
   feedType: feedTypeSchema.optional(),
@@ -226,9 +250,8 @@ const markAllReadEventBase = z.object({
   // The largest entry id among the marked rows: the entries keyset cursor
   // advances to (updatedAt, entryId), which skips every marked row in a
   // catch-up while still admitting an unrelated entry written in the same
-  // millisecond (#1102). Absent on events from servers predating the field;
-  // the client then falls back to skipping the whole tied-timestamp group.
-  entryId: z.string().optional(),
+  // millisecond (#1102).
+  entryId: z.string(),
 });
 
 const subscriptionCreatedEventBase = z.object({
@@ -241,8 +264,9 @@ const subscriptionCreatedEventBase = z.object({
   feed: feedCreatedDataSchema,
   // Absolute unread counts for the lists the new (untagged) subscription
   // affects — All Articles, Uncategorized, and the subscription itself. The
-  // client sets these directly instead of adding deltas. Optional so events
-  // from servers predating this field still parse.
+  // client sets these directly instead of adding deltas. Optional because the
+  // email-ingest publish path and the sync.events catch-up path don't compute
+  // them; the client then falls back to invalidating the affected counts.
   counts: unreadCountsSchema.optional(),
 });
 
