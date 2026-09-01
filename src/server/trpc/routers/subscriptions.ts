@@ -18,6 +18,7 @@ import {
 import { API_TOKEN_SCOPES } from "@/server/auth/api-token";
 import { errors } from "../errors";
 import { feedUrlSchema, uuidSchema } from "../validation";
+import { feedTypeSchema } from "@/lib/events/schemas";
 import { fetchUrl, isHtmlContent } from "@/server/http/fetch";
 import {
   feeds,
@@ -78,7 +79,7 @@ const tagOutputSchema = z.object({
  */
 const subscriptionOutputSchema = z.object({
   id: z.string(), // subscription ID (primary key)
-  type: z.enum(["web", "email", "saved"]),
+  type: feedTypeSchema,
   url: z.string().nullable(),
   title: z.string().nullable(), // resolved title (custom or original)
   originalTitle: z.string().nullable(), // feed's original title for rename UI

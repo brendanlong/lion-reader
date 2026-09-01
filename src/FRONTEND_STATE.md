@@ -102,6 +102,8 @@ Tag mutations (`tags.create/update/delete`) invalidate/patch via their component
 
 `useRealtimeUpdates` manages the SSE connection (polling fallback via `sync.events`) and feeds every event through `handleSyncEvent`.
 
+**Wire protocol version (`SYNC_PROTOCOL_VERSION` in `src/lib/events/schemas.ts`):** every published event carries a `v`; the client treats a live SSE event with a missing/different `v` (rolling deploy window) as "run one catch-up sync" instead of parsing it. When changing an event's shape, declare the field as the current release actually sends it and bump the version — don't add `.optional()` (plus a client fallback branch) just so old-release events parse. `.optional()` is only for fields legitimately absent at runtime.
+
 **Key principle:** SSE events patch caches directly and must NOT trigger `entries.*` refetches (enforced by e2e tests via `recordTrpcProcedures`). Counts are always set to absolute server-provided values (idempotent — duplicate SSE/sync delivery can't drift them). The **one deliberate exception** is `mark_all_read`: mark-all-read is unbounded, so patching every entry (or shipping every id) isn't worth it, and the event invalidates `entries.list` instead — refetching a list the user just cleared is an acceptable rare cost.
 
 **Catch-up sync after (re)connect (#1081):** on SSE `open`, `useRealtimeUpdates` runs a catch-up sync against `sync.events` from the current cursors. Two invariants keep it from losing changes made while disconnected:

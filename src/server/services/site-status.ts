@@ -18,6 +18,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { announcementLevels } from "@/lib/events/schemas";
 import { getRedisClient } from "@/server/redis";
 import { logger } from "@/lib/logger";
 import { MAINTENANCE_KEY, ANNOUNCEMENT_KEY } from "@/server/services/site-status-keys";
@@ -25,7 +26,9 @@ import { MAINTENANCE_KEY, ANNOUNCEMENT_KEY } from "@/server/services/site-status
 /** How long a read is cached in-process before it's refreshed from Redis. */
 const CACHE_TTL_MS = 5_000;
 
-export const ANNOUNCEMENT_LEVELS = ["info", "warning"] as const;
+// Re-exported from the shared event schemas (the announcement_changed wire
+// type) so the admin validation and the wire schema can't drift.
+export const ANNOUNCEMENT_LEVELS = announcementLevels;
 export type AnnouncementLevel = (typeof ANNOUNCEMENT_LEVELS)[number];
 
 /** Stored maintenance flag. */

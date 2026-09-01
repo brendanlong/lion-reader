@@ -16,8 +16,10 @@
  * statement snapshot. A row-state change committing concurrently can, in a
  * narrow race, make the written value miss that change's trigger delta — the
  * next sweep corrects it, and at this write rate the window is negligible.
- * "Ground truth" mirrors the trigger contribution exactly: unread, non-spam
- * rows; starred subset; NULL subscription_id = saved.
+ * "Ground truth" mirrors the trigger contribution by construction: both this
+ * sweep and the triggers call user_entry_counter_contrib /
+ * user_entry_counts_toward_unread (migration 0108), the single definition of
+ * which rows count toward which counter.
  */
 
 import { sql } from "drizzle-orm";
@@ -30,18 +32,23 @@ export interface ReconcileCountersResult {
 }
 
 export async function reconcileCounters(db: typeof dbType): Promise<ReconcileCountersResult> {
+  // The WHERE prefilter uses the inlined boolean helper purely to keep the
+  // scan on unread rows; the counted values come from the shared contrib
+  // function, same as the triggers.
   const subscriptionsResult = await db.execute(sql`
     UPDATE subscriptions s
     SET unread_count = COALESCE(t.u, 0),
         starred_unread_count = COALESCE(t.su, 0)
     FROM subscriptions s2
     LEFT JOIN (
-      SELECT subscription_id,
-             count(*)::int AS u,
-             count(*) FILTER (WHERE starred)::int AS su
-      FROM user_entries
-      WHERE subscription_id IS NOT NULL AND NOT read AND NOT is_spam
-      GROUP BY subscription_id
+      SELECT ue.subscription_id,
+             sum(c.sub_unread)::int AS u,
+             sum(c.sub_starred_unread)::int AS su
+      FROM user_entries ue,
+           LATERAL user_entry_counter_contrib(ue.read, ue.starred, ue.is_spam, ue.subscription_id) c
+      WHERE ue.subscription_id IS NOT NULL
+        AND user_entry_counts_toward_unread(ue.read, ue.is_spam)
+      GROUP BY ue.subscription_id
     ) t ON t.subscription_id = s2.id
     WHERE s.id = s2.id
       AND (s2.unread_count IS DISTINCT FROM COALESCE(t.u, 0)
@@ -54,12 +61,13 @@ export async function reconcileCounters(db: typeof dbType): Promise<ReconcileCou
         starred_unread_count = COALESCE(t.st, 0)
     FROM users u2
     LEFT JOIN (
-      SELECT user_id,
-             count(*) FILTER (WHERE subscription_id IS NULL)::int AS sv,
-             count(*) FILTER (WHERE starred)::int AS st
-      FROM user_entries
-      WHERE NOT read AND NOT is_spam
-      GROUP BY user_id
+      SELECT ue.user_id,
+             sum(c.saved_unread)::int AS sv,
+             sum(c.starred_unread)::int AS st
+      FROM user_entries ue,
+           LATERAL user_entry_counter_contrib(ue.read, ue.starred, ue.is_spam, ue.subscription_id) c
+      WHERE user_entry_counts_toward_unread(ue.read, ue.is_spam)
+      GROUP BY ue.user_id
     ) t ON t.user_id = u2.id
     WHERE u.id = u2.id
       AND (u2.saved_unread_count IS DISTINCT FROM COALESCE(t.sv, 0)
