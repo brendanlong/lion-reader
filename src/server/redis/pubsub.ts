@@ -13,166 +13,58 @@ import Redis from "ioredis";
 import { z } from "zod";
 import {
   entryMetadataSchema,
-  newEntryListDataSchema,
-  syncTagSchema,
-  subscriptionCreatedDataSchema,
+  eventBaseSchemas,
   feedCreatedDataSchema,
+  subscriptionCreatedDataSchema,
   unreadCountsSchema,
   type NewEntryListData,
 } from "@/lib/events/schemas";
-import { ANNOUNCEMENT_LEVELS, type Announcement } from "@/server/services/site-status";
+import { type Announcement } from "@/server/services/site-status";
 
 // ============================================================================
 // Event Schemas (single source of truth for both publishing and parsing)
 // ============================================================================
+//
+// Every event's shape is declared once, in `src/lib/events/schemas.ts`. The
+// Redis wire forms below derive from those base schemas, adding only routing
+// fields: `userId` (which user channel the event belongs on) and, where the
+// client form doesn't already carry it, `feedId`. Feed events omit the
+// client-facing `subscriptionId`/`counts` — those are per-user and attached by
+// the SSE route when it forwards the event.
+
+const userScoped = { userId: z.string() };
 
 /**
  * Zod schema for feed events published/received via Redis pub/sub.
- * Reuses entryMetadataSchema from the shared event schemas.
  */
 const feedEventSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("new_entry"),
-    feedId: z.string(),
-    entryId: z.string(),
-    timestamp: z.string(),
-    updatedAt: z.string(),
-    feedType: z.enum(["web", "email", "saved"]),
-    // List-item data forwarded to clients so they can insert the entry into
-    // cached lists. Optional so events published by a previous release (no
-    // entry data) still parse during a deploy window.
-    entry: newEntryListDataSchema.optional(),
-  }),
-  z.object({
-    type: z.literal("entry_updated"),
-    feedId: z.string(),
-    entryId: z.string(),
-    timestamp: z.string(),
-    updatedAt: z.string(),
-    feedType: z.enum(["web", "email", "saved"]).optional(),
-    metadata: entryMetadataSchema,
-  }),
+  eventBaseSchemas.newEntry
+    .omit({ subscriptionId: true, counts: true, feedId: true })
+    .extend({ feedId: z.string() }),
+  eventBaseSchemas.entryUpdated.omit({ subscriptionId: true }).extend({ feedId: z.string() }),
 ]);
 
 /**
  * Zod schema for user events published/received via Redis pub/sub.
- * Composes from shared sub-schemas (syncTagSchema, subscriptionCreatedDataSchema, etc.)
- * to stay in sync with the client-side event definitions.
  */
 const userEventSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("subscription_created"),
-    userId: z.string(),
-    feedId: z.string(),
-    subscriptionId: z.string(),
-    timestamp: z.string(),
-    updatedAt: z.string(),
-    subscription: subscriptionCreatedDataSchema,
-    feed: feedCreatedDataSchema,
-    counts: unreadCountsSchema.optional(),
-  }),
-  z.object({
-    type: z.literal("subscription_updated"),
-    userId: z.string(),
-    subscriptionId: z.string(),
-    tags: z.array(syncTagSchema),
-    customTitle: z.string().nullable(),
-    timestamp: z.string(),
-    updatedAt: z.string(),
-  }),
-  z.object({
-    type: z.literal("subscription_deleted"),
-    userId: z.string(),
-    feedId: z.string(),
-    subscriptionId: z.string(),
-    timestamp: z.string(),
-    updatedAt: z.string(),
-    counts: unreadCountsSchema.optional(),
-  }),
-  z.object({
-    type: z.literal("import_progress"),
-    userId: z.string(),
-    importId: z.string(),
-    feedUrl: z.string(),
-    feedStatus: z.enum(["imported", "skipped", "failed"]),
-    imported: z.number(),
-    skipped: z.number(),
-    failed: z.number(),
-    total: z.number(),
-    timestamp: z.string(),
-  }),
-  z.object({
-    type: z.literal("import_completed"),
-    userId: z.string(),
-    importId: z.string(),
-    imported: z.number(),
-    skipped: z.number(),
-    failed: z.number(),
-    total: z.number(),
-    timestamp: z.string(),
-  }),
-  z.object({
-    type: z.literal("entry_state_changed"),
-    userId: z.string(),
-    entryId: z.string(),
-    read: z.boolean(),
-    starred: z.boolean(),
-    counts: unreadCountsSchema,
-    timestamp: z.string(),
-    updatedAt: z.string(),
-    // List-item data, attached when the entry flipped to unread (and isn't
-    // spam), so clients can insert it into cached lists it's missing from —
-    // mirroring the new_entry payload (issue #1237).
-    subscriptionId: z.string().nullable().optional(),
-    feedId: z.string().optional(),
-    feedType: z.enum(["web", "email", "saved"]).optional(),
-    entry: newEntryListDataSchema.optional(),
-  }),
-  // Mark-all-read signal. Mark-all-read is unbounded, so instead of shipping
-  // every affected id (or one entry_state_changed per entry, which would storm
-  // every connection), we publish a single lightweight event and let each
-  // client invalidate its entry lists + counts. `updatedAt` is the mark-all-read
-  // timestamp, used to advance the entries sync cursor so a reconnect catch-up
-  // doesn't re-deliver every marked entry.
-  z.object({
-    type: z.literal("mark_all_read"),
-    userId: z.string(),
-    timestamp: z.string(),
-    updatedAt: z.string(),
-    // The largest entry id among the marked rows. The client advances its
-    // entries keyset cursor to (updatedAt, entryId): every marked row sorts at
-    // or below it (no catch-up re-delivery), while an unrelated entry written
-    // in the same millisecond — whose UUIDv7 id sorts above every
-    // earlier-created marked entry — stays past the cursor, so a catch-up can
-    // still deliver it (#1102). Optional so events published by a previous
-    // release still parse during a rolling deploy.
-    entryId: z.string().optional(),
-  }),
-  z.object({
-    type: z.literal("tag_created"),
-    userId: z.string(),
-    tag: syncTagSchema,
-    timestamp: z.string(),
-    updatedAt: z.string(),
-  }),
-  z.object({
-    type: z.literal("tag_updated"),
-    userId: z.string(),
-    tag: syncTagSchema,
-    timestamp: z.string(),
-    updatedAt: z.string(),
-  }),
-  z.object({
-    type: z.literal("tag_deleted"),
-    userId: z.string(),
-    tagId: z.string(),
-    timestamp: z.string(),
-    updatedAt: z.string(),
-  }),
+  eventBaseSchemas.subscriptionCreated.extend(userScoped),
+  eventBaseSchemas.subscriptionUpdated.extend(userScoped),
+  // subscription_deleted additionally carries feedId so the SSE route can
+  // unsubscribe from the feed's channel (the client form doesn't need it).
+  eventBaseSchemas.subscriptionDeleted.extend({ ...userScoped, feedId: z.string() }),
+  eventBaseSchemas.importProgress.extend(userScoped),
+  eventBaseSchemas.importCompleted.extend(userScoped),
+  eventBaseSchemas.entryStateChanged.extend(userScoped),
+  eventBaseSchemas.markAllRead.extend(userScoped),
+  eventBaseSchemas.tagCreated.extend(userScoped),
+  eventBaseSchemas.tagUpdated.extend(userScoped),
+  eventBaseSchemas.tagDeleted.extend(userScoped),
   // Server-internal signal that a user's saved-articles feed was just created.
   // It tells already-open SSE connections to subscribe to the new feed's channel
   // so the first saved article is broadcast live (the saved feed didn't exist
-  // when the connection was established). Not forwarded to the client.
+  // when the connection was established). Not forwarded to the client, so it
+  // has no base schema in the shared event declarations.
   z.object({
     type: z.literal("saved_feed_created"),
     userId: z.string(),
@@ -187,21 +79,7 @@ const userEventSchema = z.discriminatedUnion("type", [
  * change reaches every connected client. Kept a discriminated union so more
  * global signals can be added later.
  */
-const siteStatusEventSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("announcement_changed"),
-    // The active announcement (with its message-derived id), or null when it
-    // was disabled/cleared so clients hide the banner.
-    announcement: z
-      .object({
-        id: z.string(),
-        message: z.string(),
-        level: z.enum(ANNOUNCEMENT_LEVELS),
-      })
-      .nullable(),
-    timestamp: z.string(),
-  }),
-]);
+const siteStatusEventSchema = z.discriminatedUnion("type", [eventBaseSchemas.announcementChanged]);
 
 /** Union type for all site-status events. */
 export type SiteStatusEvent = z.infer<typeof siteStatusEventSchema>;
