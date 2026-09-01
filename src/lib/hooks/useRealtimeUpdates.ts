@@ -88,6 +88,18 @@ export interface UseRealtimeUpdatesResult {
 const INITIAL_SYNC_RETRY_DELAY_MS = 2_000;
 const MAX_SYNC_RETRY_DELAY_MS = 30_000;
 
+/**
+ * Minimum spacing between catch-up syncs triggered by unusable SSE events
+ * (version mismatch or a current-version parse failure). Unlike the other
+ * sync triggers (connect, poll tick, visibility), this one is driven by the
+ * inbound event rate: during a rolling deploy an old worker can publish a
+ * burst of version-less events, and without a floor each one would chain
+ * another sync (the scheduler coalesces concurrent requests but not
+ * back-to-back ones). One sync drains everything, so within this window the
+ * rest of the burst adds nothing.
+ */
+const UNUSABLE_EVENT_SYNC_MIN_INTERVAL_MS = 10_000;
+
 const SSE_EVENT_NAMES = [
   "new_entry",
   "entry_updated",
@@ -168,6 +180,10 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
   // delta-based cache updates (#897). State is pure; the glue below executes it.
   const syncSchedulerStateRef = useRef<SyncSchedulerState>(INITIAL_SYNC_SCHEDULER_STATE);
 
+  // Timestamp of the last sync triggered by an unusable SSE event, for the
+  // UNUSABLE_EVENT_SYNC_MIN_INTERVAL_MS rate limit in handleEvent.
+  const lastUnusableSyncAtRef = useRef<number>(0);
+
   // Check if user is authenticated
   const userQuery = trpc.auth.me.useQuery(undefined, {
     retry: false,
@@ -186,16 +202,21 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
   const handleEvent = useCallback(
     (event: MessageEvent) => {
       const data = parseSyncEvent(event.data);
-      if (data === "outdated") {
-        // The event was published by a different release (rolling deploy
-        // window) and may lack fields the current schemas require. Don't try
-        // to interpret it — drain the authoritative server sequence instead.
-        // requestSync coalesces (#897), so a burst of old events costs one
-        // catch-up sync, not one per event.
-        requestSyncRef.current();
+      if (data === "outdated" || data === null) {
+        // Unusable event: either published by a different release (rolling
+        // deploy window) or failing the current-version schema (a contract
+        // violation — e.g. an old app machine forwarding a newer worker's
+        // payload reshaped to its own older schema while propagating the
+        // worker's `v`). Don't try to interpret it — drain the authoritative
+        // server sequence instead, rate-limited because this trigger scales
+        // with the inbound event rate rather than anything user-driven.
+        const now = Date.now();
+        if (now - lastUnusableSyncAtRef.current >= UNUSABLE_EVENT_SYNC_MIN_INTERVAL_MS) {
+          lastUnusableSyncAtRef.current = now;
+          requestSyncRef.current();
+        }
         return;
       }
-      if (!data) return;
 
       // Only advance the persisted sync cursor from live events once the
       // post-connect catch-up sync has succeeded. Before then the cursor must

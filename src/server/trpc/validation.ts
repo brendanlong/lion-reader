@@ -20,12 +20,6 @@ export const uuidSchema = z.string().uuid("Invalid ID");
 // ============================================================================
 
 /**
- * Tag color validation schema.
- * Accepts hex colors like #ff6b6b or null. Shared between the tRPC tags
- * router and the MCP create_tag/update_tag tools so the two surfaces enforce
- * the same invariant (tag colors are rendered into inline styles).
- */
-/**
  * Tag name validation schema. Shared by the tags router and the MCP
  * create_tag/update_tag tools so both surfaces enforce identical constraints
  * (including the trim).
@@ -36,6 +30,12 @@ export const tagNameSchema = z
   .max(50, "Tag name must be less than 50 characters")
   .trim();
 
+/**
+ * Tag color validation schema.
+ * Accepts hex colors like #ff6b6b or null. Shared between the tRPC tags
+ * router and the MCP create_tag/update_tag tools so the two surfaces enforce
+ * the same invariant (tag colors are rendered into inline styles).
+ */
 export const tagColorSchema = z
   .string()
   .regex(/^#[0-9a-fA-F]{6}$/, "Color must be a valid hex color (e.g., #ff6b6b)")

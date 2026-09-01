@@ -17,6 +17,7 @@ import { TRPCError } from "@trpc/server";
 import type { db as dbType } from "@/server/db";
 import { uuidSchema, tagColorSchema, tagNameSchema } from "@/server/trpc/validation";
 import { entriesListOutputSchema, entryFullCoreSchema } from "@/server/trpc/entry-output";
+import { feedTypeSchema } from "@/lib/events/schemas";
 import * as entriesService from "@/server/services/entries";
 import * as subscriptionsService from "@/server/services/subscriptions";
 import * as savedService from "@/server/services/saved";
@@ -103,7 +104,7 @@ const listEntriesArgs = z.object({
   subscriptionId: uuidSchema.optional().describe("Filter by subscription ID"),
   tagId: uuidSchema.optional().describe("Filter by tag ID"),
   uncategorized: z.boolean().optional().describe("Show only uncategorized entries"),
-  type: z.enum(["web", "email", "saved"]).optional().describe("Filter by entry type"),
+  type: feedTypeSchema.optional().describe("Filter by entry type"),
   unreadOnly: z.boolean().optional().describe("Show only unread entries"),
   readOnly: z.boolean().optional().describe("Show only read entries"),
   starredOnly: z.boolean().optional().describe("Show only starred entries"),
@@ -137,7 +138,7 @@ const countEntriesArgs = z.object({
   subscriptionId: uuidSchema.optional().describe("Filter by subscription ID"),
   tagId: uuidSchema.optional().describe("Filter by tag ID"),
   uncategorized: z.boolean().optional().describe("Count only uncategorized entries"),
-  type: z.enum(["web", "email", "saved"]).optional().describe("Filter by entry type"),
+  type: feedTypeSchema.optional().describe("Filter by entry type"),
   unreadOnly: z.boolean().optional().describe("Count only unread entries"),
   readOnly: z.boolean().optional().describe("Count only read entries"),
   starredOnly: z.boolean().optional().describe("Count only starred entries"),

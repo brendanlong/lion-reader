@@ -21,6 +21,7 @@ import { API_TOKEN_SCOPES } from "@/server/auth/api-token";
 import { errors } from "../errors";
 import { uuidSchema } from "../validation";
 import { entriesListOutputSchema, entryFullCoreSchema } from "../entry-output";
+import { feedTypeSchema } from "@/lib/events/schemas";
 import { tags } from "@/server/db/schema";
 import * as fullContentService from "@/server/services/full-content";
 import * as entriesService from "@/server/services/entries";
@@ -61,11 +62,6 @@ const sortOrderSchema = z.enum(["newest", "oldest"]).optional();
  * Sort by validation schema for choosing which timestamp to sort entries by.
  */
 const sortBySchema = z.enum(["published", "readChanged"]).optional();
-
-/**
- * Feed type validation schema for filtering entries by type.
- */
-const feedTypeSchema = z.enum(["web", "email", "saved"]);
 
 /**
  * Boolean query parameter schema that handles string coercion.

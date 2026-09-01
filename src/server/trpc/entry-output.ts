@@ -10,8 +10,7 @@
  */
 
 import { z } from "zod";
-
-const feedTypeSchema = z.enum(["web", "email", "saved"]);
+import { feedTypeSchema } from "@/lib/events/schemas";
 
 /**
  * Lightweight entry output schema for list views (no full content).

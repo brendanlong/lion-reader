@@ -45,6 +45,13 @@ import { z } from "zod";
  *
  * The polling sync path is exempt: a sync.events response is generated whole
  * by one server and is internally consistent at that server's version.
+ *
+ * Known deploy-window tradeoff: sync.events doesn't return the SSE-only
+ * events (import_progress/import_completed, announcement_changed), so those
+ * are simply dropped when they arrive from a different release — an import
+ * dialog or the banner can go stale until reload. And an old-release
+ * mark_all_read degrades to draining every marked entry through sync.events.
+ * Both are bounded to the minutes a rolling deploy overlaps releases.
  */
 export const SYNC_PROTOCOL_VERSION = 1;
 
@@ -161,11 +168,17 @@ export const subscriptionCreatedDataSchema = z.object({
 });
 
 /**
+ * The three feed types. The single declaration — shared by the event schemas
+ * below, the tRPC entry/subscription schemas, and the MCP tool args.
+ */
+export const feedTypeSchema = z.enum(["web", "email", "saved"]);
+
+/**
  * Feed data for subscription_created events.
  */
 export const feedCreatedDataSchema = z.object({
   id: z.string(),
-  type: z.enum(["web", "email", "saved"]),
+  type: feedTypeSchema,
   url: z.string().nullable(),
   title: z.string().nullable(),
   description: z.string().nullable(),
@@ -182,8 +195,6 @@ export const announcementLevels = ["info", "warning"] as const;
 // ============================================================================
 // Base Event Schemas (server-canonical, one per event type)
 // ============================================================================
-
-const feedTypeSchema = z.enum(["web", "email", "saved"]);
 
 const newEntryEventBase = z.object({
   type: z.literal("new_entry"),
