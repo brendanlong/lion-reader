@@ -178,11 +178,6 @@ const clientMetadataCache = new Map<
   { metadata: ClientMetadata | null; expiresAt: number }
 >();
 
-/** Test-only: reset the module-level cache between cases. */
-export function clearClientMetadataCacheForTesting(): void {
-  clientMetadataCache.clear();
-}
-
 function cacheClientMetadata(url: string, metadata: ClientMetadata | null): void {
   clientMetadataCache.delete(url);
   if (clientMetadataCache.size >= CLIENT_METADATA_CACHE_MAX_ENTRIES) {
