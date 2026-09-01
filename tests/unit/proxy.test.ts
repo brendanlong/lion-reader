@@ -29,7 +29,7 @@ describe("proxy", () => {
   });
 
   it.each(["GET", "POST", "OPTIONS"])(
-    "%s /register is never rewritten (the old claude.ai DCR method-split is gone)",
+    "%s /register is never rewritten — DCR lives only at /oauth/register",
     async (method) => {
       const res = await proxy(makeRequest("/register", method));
       expect(res.headers.get("x-middleware-rewrite")).toBeNull();
@@ -94,6 +94,15 @@ describe("proxy request logging (LOG_MCP_REQUESTS)", () => {
     expect(spy).toHaveBeenCalledOnce();
   });
 
+  it("logs POST /register (a misplaced DCR attempt) but not GET (the signup page)", async () => {
+    process.env.LOG_MCP_REQUESTS = "true";
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await proxy(makeRequest("/register", "GET"));
+    expect(spy).not.toHaveBeenCalled();
+    await proxy(makeRequest("/register", "POST"));
+    expect(spy).toHaveBeenCalledOnce();
+  });
+
   it("redacts sensitive query params (auth code) but keeps public ones", async () => {
     process.env.LOG_MCP_REQUESTS = "true";
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -139,11 +148,15 @@ describe("proxy CSP tiering (issue #1359)", () => {
     expect(csp).not.toMatch(/script-src[^;]*'unsafe-inline'/);
   });
 
-  it("GET /register (the signup page) gets the relaxed static CSP", async () => {
-    const res = await proxy(makeRequest("/register"));
-    expect(res.headers.get("Content-Security-Policy")).toMatch(/script-src[^;]*'unsafe-inline'/);
-    expect(res.headers.get("x-middleware-rewrite")).toBeNull();
-  });
+  it.each(["GET", "POST", "OPTIONS"])(
+    "%s /register gets the relaxed static CSP (no route handler exists; a non-GET is a bodyless 405)",
+    async (method) => {
+      const res = await proxy(makeRequest("/register", method));
+      expect(res.headers.get("Content-Security-Policy")).toMatch(/script-src[^;]*'unsafe-inline'/);
+      expect(res.headers.get("Content-Security-Policy")).not.toContain("'nonce-");
+      expect(res.headers.get("x-middleware-rewrite")).toBeNull();
+    }
+  );
 
   it("does not treat demo-prefixed lookalike paths as public", async () => {
     const res = await proxy(makeRequest("/demonstration"));

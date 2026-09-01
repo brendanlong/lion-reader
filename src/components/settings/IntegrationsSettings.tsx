@@ -57,6 +57,7 @@ export function IntegrationsSettings() {
       setClaudeAiToken(data.token);
       // Keep the API Tokens settings page's list in sync.
       utils.apiTokens.list.invalidate();
+      toast.success("MCP token created");
     },
     onError: (error) => {
       toast.error(error.message || "Failed to create token");

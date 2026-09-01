@@ -1,7 +1,7 @@
 /**
  * Next.js Proxy (middleware)
  *
- * Four jobs:
+ * Three jobs:
  *
  * 0. Session-aware redirects for `/` and the static auth pages
  *    (`maybeSessionRedirect`, issue #1359): anonymous visitors to `/` 307
@@ -81,11 +81,13 @@ const SAFE_QUERY_PARAMS = new Set([
  * stay in this list purely as diagnostics, because misbehaving connectors
  * (claude.ai) have been observed probing them instead of the advertised
  * endpoints, and a logged 404 there is exactly the evidence that identifies
- * that failure mode.
+ * that failure mode. `/register` is method-gated: GET is the human signup
+ * page (ordinary traffic), while a non-GET there is a connector's misplaced
+ * DCR attempt.
  */
-function isOAuthMcpSurfacePath(pathname: string): boolean {
+function isOAuthMcpSurfacePath(pathname: string, method: string): boolean {
   return (
-    pathname === "/register" ||
+    (pathname === "/register" && method !== "GET" && method !== "HEAD") ||
     pathname === "/mcp" ||
     pathname === "/api/mcp" ||
     pathname === "/authorize" ||
@@ -121,7 +123,7 @@ function isPublicStaticPath(pathname: string): boolean {
 function shouldLog(request: NextRequest): boolean {
   if (!mcpConfig.logRequests) return false;
   // Only the OAuth/MCP surface, so ordinary user traffic isn't logged.
-  return isOAuthMcpSurfacePath(request.nextUrl.pathname);
+  return isOAuthMcpSurfacePath(request.nextUrl.pathname, request.method);
 }
 
 function redactedQuery(url: URL): string | undefined {
@@ -183,7 +185,7 @@ import { DEMO_LANDING_PATH } from "@/lib/routes";
  */
 async function maybeSessionRedirect(request: NextRequest): Promise<NextResponse | null> {
   if (request.method !== "GET" && request.method !== "HEAD") {
-    return null;
+    return null; // redirects only apply to navigations
   }
   const { pathname } = request.nextUrl;
   const isRoot = pathname === "/";
