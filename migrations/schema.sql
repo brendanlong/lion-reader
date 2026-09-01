@@ -29,26 +29,26 @@ BEGIN
   SET unread_count = s.unread_count - d.u,
       starred_unread_count = s.starred_unread_count - d.su
   FROM (
-    SELECT subscription_id,
-           count(*) FILTER (WHERE NOT read AND NOT is_spam)::int AS u,
-           count(*) FILTER (WHERE starred AND NOT read AND NOT is_spam)::int AS su
-    FROM old_rows
-    WHERE subscription_id IS NOT NULL
-    GROUP BY subscription_id
+    SELECT o.subscription_id, sum(c.sub_unread)::int AS u, sum(c.sub_starred_unread)::int AS su
+    FROM old_rows o,
+         LATERAL public.user_entry_counter_contrib(o.read, o.starred, o.is_spam, o.subscription_id) c
+    WHERE o.subscription_id IS NOT NULL
+    GROUP BY o.subscription_id
+    HAVING sum(c.sub_unread) <> 0 OR sum(c.sub_starred_unread) <> 0
   ) d
-  WHERE s.id = d.subscription_id AND (d.u <> 0 OR d.su <> 0);
+  WHERE s.id = d.subscription_id;
 
   UPDATE users usr
   SET saved_unread_count = usr.saved_unread_count - d.sv,
       starred_unread_count = usr.starred_unread_count - d.st
   FROM (
-    SELECT user_id,
-           count(*) FILTER (WHERE subscription_id IS NULL AND NOT read AND NOT is_spam)::int AS sv,
-           count(*) FILTER (WHERE starred AND NOT read AND NOT is_spam)::int AS st
-    FROM old_rows
-    GROUP BY user_id
+    SELECT o.user_id, sum(c.saved_unread)::int AS sv, sum(c.starred_unread)::int AS st
+    FROM old_rows o,
+         LATERAL public.user_entry_counter_contrib(o.read, o.starred, o.is_spam, o.subscription_id) c
+    GROUP BY o.user_id
+    HAVING sum(c.saved_unread) <> 0 OR sum(c.starred_unread) <> 0
   ) d
-  WHERE usr.id = d.user_id AND (d.sv <> 0 OR d.st <> 0);
+  WHERE usr.id = d.user_id;
   RETURN NULL;
 END;
 $$;
@@ -61,26 +61,26 @@ BEGIN
   SET unread_count = s.unread_count + d.u,
       starred_unread_count = s.starred_unread_count + d.su
   FROM (
-    SELECT subscription_id,
-           count(*) FILTER (WHERE NOT read AND NOT is_spam)::int AS u,
-           count(*) FILTER (WHERE starred AND NOT read AND NOT is_spam)::int AS su
-    FROM new_rows
-    WHERE subscription_id IS NOT NULL
-    GROUP BY subscription_id
+    SELECT n.subscription_id, sum(c.sub_unread)::int AS u, sum(c.sub_starred_unread)::int AS su
+    FROM new_rows n,
+         LATERAL public.user_entry_counter_contrib(n.read, n.starred, n.is_spam, n.subscription_id) c
+    WHERE n.subscription_id IS NOT NULL
+    GROUP BY n.subscription_id
+    HAVING sum(c.sub_unread) <> 0 OR sum(c.sub_starred_unread) <> 0
   ) d
-  WHERE s.id = d.subscription_id AND (d.u <> 0 OR d.su <> 0);
+  WHERE s.id = d.subscription_id;
 
   UPDATE users usr
   SET saved_unread_count = usr.saved_unread_count + d.sv,
       starred_unread_count = usr.starred_unread_count + d.st
   FROM (
-    SELECT user_id,
-           count(*) FILTER (WHERE subscription_id IS NULL AND NOT read AND NOT is_spam)::int AS sv,
-           count(*) FILTER (WHERE starred AND NOT read AND NOT is_spam)::int AS st
-    FROM new_rows
-    GROUP BY user_id
+    SELECT n.user_id, sum(c.saved_unread)::int AS sv, sum(c.starred_unread)::int AS st
+    FROM new_rows n,
+         LATERAL public.user_entry_counter_contrib(n.read, n.starred, n.is_spam, n.subscription_id) c
+    GROUP BY n.user_id
+    HAVING sum(c.saved_unread) <> 0 OR sum(c.starred_unread) <> 0
   ) d
-  WHERE usr.id = d.user_id AND (d.sv <> 0 OR d.st <> 0);
+  WHERE usr.id = d.user_id;
   RETURN NULL;
 END;
 $$;
@@ -95,17 +95,15 @@ BEGIN
   FROM (
     SELECT subscription_id, sum(u)::int AS u, sum(su)::int AS su
     FROM (
-      SELECT subscription_id,
-             (NOT read AND NOT is_spam)::int AS u,
-             (starred AND NOT read AND NOT is_spam)::int AS su
-      FROM new_rows
-      WHERE subscription_id IS NOT NULL
+      SELECT n.subscription_id, c.sub_unread AS u, c.sub_starred_unread AS su
+      FROM new_rows n,
+           LATERAL public.user_entry_counter_contrib(n.read, n.starred, n.is_spam, n.subscription_id) c
+      WHERE n.subscription_id IS NOT NULL
       UNION ALL
-      SELECT subscription_id,
-             -((NOT read AND NOT is_spam)::int),
-             -((starred AND NOT read AND NOT is_spam)::int)
-      FROM old_rows
-      WHERE subscription_id IS NOT NULL
+      SELECT o.subscription_id, -c.sub_unread, -c.sub_starred_unread
+      FROM old_rows o,
+           LATERAL public.user_entry_counter_contrib(o.read, o.starred, o.is_spam, o.subscription_id) c
+      WHERE o.subscription_id IS NOT NULL
     ) x
     GROUP BY subscription_id
     HAVING sum(u) <> 0 OR sum(su) <> 0
@@ -118,15 +116,13 @@ BEGIN
   FROM (
     SELECT user_id, sum(sv)::int AS sv, sum(st)::int AS st
     FROM (
-      SELECT user_id,
-             (subscription_id IS NULL AND NOT read AND NOT is_spam)::int AS sv,
-             (starred AND NOT read AND NOT is_spam)::int AS st
-      FROM new_rows
+      SELECT n.user_id, c.saved_unread AS sv, c.starred_unread AS st
+      FROM new_rows n,
+           LATERAL public.user_entry_counter_contrib(n.read, n.starred, n.is_spam, n.subscription_id) c
       UNION ALL
-      SELECT user_id,
-             -((subscription_id IS NULL AND NOT read AND NOT is_spam)::int),
-             -((starred AND NOT read AND NOT is_spam)::int)
-      FROM old_rows
+      SELECT o.user_id, -c.saved_unread, -c.starred_unread
+      FROM old_rows o,
+           LATERAL public.user_entry_counter_contrib(o.read, o.starred, o.is_spam, o.subscription_id) c
     ) x
     GROUP BY user_id
     HAVING sum(sv) <> 0 OR sum(st) <> 0
@@ -162,6 +158,21 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+
+CREATE FUNCTION public.user_entry_counter_contrib(p_read boolean, p_starred boolean, p_is_spam boolean, p_subscription_id uuid) RETURNS TABLE(sub_unread integer, sub_starred_unread integer, saved_unread integer, starred_unread integer)
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    AS $$
+  SELECT
+    (b.counts AND p_subscription_id IS NOT NULL)::int,
+    (b.counts AND p_subscription_id IS NOT NULL AND p_starred)::int,
+    (b.counts AND p_subscription_id IS NULL)::int,
+    (b.counts AND p_starred)::int
+  FROM (SELECT public.user_entry_counts_toward_unread(p_read, p_is_spam) AS counts) b
+$$;
+
+CREATE FUNCTION public.user_entry_counts_toward_unread(p_read boolean, p_is_spam boolean) RETURNS boolean
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    AS $$ SELECT NOT p_read AND NOT p_is_spam $$;
 
 CREATE TABLE public.api_tokens (
     id uuid NOT NULL,
@@ -236,7 +247,6 @@ ALTER TABLE ONLY public.entries ALTER COLUMN full_content_original SET COMPRESSI
 ALTER TABLE ONLY public.entries ALTER COLUMN full_content_cleaned SET COMPRESSION lz4;
 
 CREATE SEQUENCE public.entries_greader_item_id_seq
-    AS bigint
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -244,14 +254,6 @@ CREATE SEQUENCE public.entries_greader_item_id_seq
     CACHE 1;
 
 ALTER SEQUENCE public.entries_greader_item_id_seq OWNED BY public.entries.greader_item_id;
-
-CREATE SEQUENCE public.greader_id_seq
-    AS bigint
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
 
 CREATE TABLE public.entry_summaries (
     id uuid NOT NULL,
@@ -268,6 +270,13 @@ CREATE TABLE public.entry_summaries (
     prompt_hash text
 );
 ALTER TABLE ONLY public.entry_summaries ALTER COLUMN summary_text SET COMPRESSION lz4;
+
+CREATE SEQUENCE public.greader_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
 
 CREATE TABLE public.feeds (
     id uuid NOT NULL,
@@ -442,13 +451,13 @@ CREATE TABLE public.sessions (
     id uuid NOT NULL,
     user_id uuid NOT NULL,
     token_hash text NOT NULL,
-    scopes text[],
     user_agent text,
     ip_address text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     expires_at timestamp with time zone NOT NULL,
     revoked_at timestamp with time zone,
-    last_active_at timestamp with time zone DEFAULT now() NOT NULL
+    last_active_at timestamp with time zone DEFAULT now() NOT NULL,
+    scopes text[]
 );
 
 CREATE TABLE public.subscription_tags (
@@ -484,10 +493,10 @@ CREATE TABLE public.tags (
 );
 
 CREATE TABLE public.user_entries (
-    user_id uuid NOT NULL,
-    entry_id uuid NOT NULL,
-    read boolean DEFAULT false NOT NULL,
-    starred boolean DEFAULT false NOT NULL,
+    user_id uuid CONSTRAINT user_entry_states_user_id_not_null NOT NULL,
+    entry_id uuid CONSTRAINT user_entry_states_entry_id_not_null NOT NULL,
+    read boolean DEFAULT false CONSTRAINT user_entry_states_read_not_null NOT NULL,
+    starred boolean DEFAULT false CONSTRAINT user_entry_states_starred_not_null NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     read_changed_at timestamp with time zone,
     starred_changed_at timestamp with time zone DEFAULT now() NOT NULL,
