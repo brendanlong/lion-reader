@@ -27,6 +27,7 @@ import {
   getAuthCodeExpiry,
   isValidRedirectUriFormat,
   isResourceForThisServer,
+  parseScopes,
   OAUTH_SCOPES,
   SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS,
 } from "./utils";
@@ -36,20 +37,17 @@ import { USER_AGENT } from "@/server/http/user-agent";
 import { fetchWithSsrfProtection } from "@/server/http/ssrf";
 import { readResponseBufferWithSizeLimit } from "@/server/http/fetch";
 
+import {
+  isValidClientIdMetadataUrl,
+  validateClientMetadataDocument,
+  selectClientMetadata,
+  type CimdFetchOutcome,
+  type ClientMetadata,
+} from "./cimd";
+
 // ============================================================================
 // Types
 // ============================================================================
-
-/**
- * Client metadata from Client ID Metadata Document
- */
-export interface ClientMetadata {
-  client_id: string;
-  client_name?: string;
-  redirect_uris: string[];
-  grant_types?: string[];
-  scope?: string;
-}
 
 /**
  * Resolved client information (from DB or CIMD)
@@ -117,24 +115,26 @@ export async function resolveClient(clientId: string): Promise<ResolvedClient | 
     };
   }
 
-  // If clientId is a URL, try to fetch Client ID Metadata Document
-  if (clientId.startsWith("https://")) {
-    try {
-      const metadata = await fetchClientMetadata(clientId);
-      if (metadata) {
-        return {
-          clientId: metadata.client_id,
-          name: metadata.client_name ?? "Unknown Application",
-          redirectUris: metadata.redirect_uris,
-          grantTypes: metadata.grant_types ?? ["authorization_code", "refresh_token"],
-          scopes: metadata.scope ? metadata.scope.split(" ") : null,
-          isPublic: true, // CIMD clients are always public
-          clientSecretHash: null,
-          fromDatabase: false,
-        };
-      }
-    } catch (error) {
-      console.error("Failed to fetch client metadata:", error);
+  if (isValidClientIdMetadataUrl(clientId)) {
+    const metadata = await fetchClientMetadata(clientId);
+    if (metadata) {
+      return {
+        clientId: metadata.client_id,
+        name: metadata.client_name ?? "Unknown Application",
+        // redirectUris is a security allowlist and cached/pinned metadata is
+        // shared by reference — hand out copies.
+        redirectUris: [...metadata.redirect_uris],
+        grantTypes: metadata.grant_types
+          ? [...metadata.grant_types]
+          : ["authorization_code", "refresh_token"],
+        // parseScopes drops unrecognized scopes (same policy as DCR). A
+        // document offering only unknown scopes yields [] — fails closed with
+        // invalid_scope — never null, which would mean "no restriction".
+        scopes: metadata.scope !== undefined ? parseScopes(metadata.scope) : null,
+        isPublic: true, // CIMD clients are always public
+        clientSecretHash: null,
+        fromDatabase: false,
+      };
     }
   }
 
@@ -147,48 +147,116 @@ export async function resolveClient(clientId: string): Promise<ResolvedClient | 
 const CLIENT_METADATA_TIMEOUT_MS = 10000;
 
 /**
- * Maximum Client ID Metadata Document size (256 KiB — real documents are tiny).
+ * Maximum Client ID Metadata Document size. The spec recommends documents stay
+ * under ~5 KB; 16 KiB is generous headroom while bounding what one cache entry
+ * can retain of attacker-supplied bytes.
  */
-const CLIENT_METADATA_MAX_BYTES = 256 * 1024;
+const CLIENT_METADATA_MAX_BYTES = 16 * 1024;
 
 /**
- * Fetches Client ID Metadata Document from URL.
+ * CIMD resolution results are cached in-process — claude.ai re-runs discovery
+ * on every connect, and each authorize + consent + token round trip would
+ * otherwise refetch the same document three times. Successes cache for 5
+ * minutes (matching the `max-age=300` Anthropic serves). Failures cache as
+ * `null` for 60 seconds — NOT as a document (the spec forbids caching
+ * errors/invalid documents as metadata), but as a short negative entry so an
+ * unauthenticated attacker hammering /oauth/authorize with a failing URL
+ * client_id can't turn us into a fetch amplifier against a third party. (A
+ * transport failure that falls back to a pin caches the pin, under the
+ * positive TTL.)
  *
- * The URL is an arbitrary client_id reachable via unauthenticated
- * /oauth/authorize requests, so the fetch is SSRF-protected, time-limited,
- * and size-limited.
+ * The cache is capped because client_id URLs are attacker-suppliable via
+ * unauthenticated requests; eviction deletes-before-set so refreshing a hot
+ * key (claude.ai's document) moves it to the back of the FIFO instead of
+ * leaving it permanently first in line for eviction.
+ */
+const CLIENT_METADATA_CACHE_TTL_MS = 5 * 60 * 1000;
+const CLIENT_METADATA_NEGATIVE_TTL_MS = 60 * 1000;
+const CLIENT_METADATA_CACHE_MAX_ENTRIES = 100;
+const clientMetadataCache = new Map<
+  string,
+  { metadata: ClientMetadata | null; expiresAt: number }
+>();
+
+function cacheClientMetadata(url: string, metadata: ClientMetadata | null): void {
+  clientMetadataCache.delete(url);
+  if (clientMetadataCache.size >= CLIENT_METADATA_CACHE_MAX_ENTRIES) {
+    const oldest = clientMetadataCache.keys().next().value;
+    if (oldest !== undefined) clientMetadataCache.delete(oldest);
+  }
+  clientMetadataCache.set(url, {
+    metadata,
+    expiresAt:
+      Date.now() + (metadata ? CLIENT_METADATA_CACHE_TTL_MS : CLIENT_METADATA_NEGATIVE_TTL_MS),
+  });
+}
+
+/**
+ * Resolves a Client ID Metadata Document for `url`: cache → live fetch →
+ * pinned fallback (`selectClientMetadata`).
  */
 async function fetchClientMetadata(url: string): Promise<ClientMetadata | null> {
+  const cached = clientMetadataCache.get(url);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.metadata;
+  }
+
+  const outcome = await fetchClientMetadataLive(url);
+  const metadata = selectClientMetadata(url, outcome);
+  if (outcome.kind !== "ok") {
+    logger.warn("CIMD client metadata fetch did not return a usable document", {
+      url,
+      kind: outcome.kind,
+      usingPinnedFallback: metadata !== null,
+    });
+  }
+  cacheClientMetadata(url, metadata);
+  return metadata;
+}
+
+/**
+ * The URL is an arbitrary client_id reachable via unauthenticated
+ * /oauth/authorize requests, so the fetch is SSRF-protected, time- and
+ * size-limited — and **never follows redirects**: the document ↔ client_id
+ * binding is a string comparison against the URL we resolved, so an open
+ * redirect on any trusted HTTPS host could otherwise serve an attacker's
+ * document while the consent screen displays the trusted hostname.
+ */
+async function fetchClientMetadataLive(url: string): Promise<CimdFetchOutcome> {
+  let response: Response;
   try {
-    const response = await fetchWithSsrfProtection(url, {
+    response = await fetchWithSsrfProtection(url, {
       headers: {
         Accept: "application/json",
         "User-Agent": USER_AGENT,
       },
+      redirect: "manual",
       signal: AbortSignal.timeout(CLIENT_METADATA_TIMEOUT_MS),
     });
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const body = await readResponseBufferWithSizeLimit(response, CLIENT_METADATA_MAX_BYTES, url);
-    const metadata = JSON.parse(body.toString()) as ClientMetadata;
-
-    // Validate required fields
-    if (!metadata.client_id || !metadata.redirect_uris || !Array.isArray(metadata.redirect_uris)) {
-      return null;
-    }
-
-    // Ensure client_id matches the URL
-    if (metadata.client_id !== url) {
-      return null;
-    }
-
-    return metadata;
   } catch {
-    return null;
+    return { kind: "transport-failure" };
   }
+
+  // 404/410 = the origin withdrawing the document; any other non-2xx is not
+  // authoritative.
+  if (response.status === 404 || response.status === 410) {
+    return { kind: "rejected" };
+  }
+  if (!response.ok) {
+    return { kind: "transport-failure" };
+  }
+
+  let parsed: unknown;
+  try {
+    const body = await readResponseBufferWithSizeLimit(response, CLIENT_METADATA_MAX_BYTES, url);
+    parsed = JSON.parse(body.toString());
+  } catch {
+    // Unreadable or non-JSON body (e.g. a challenge page served with a 200).
+    return { kind: "transport-failure" };
+  }
+
+  const metadata = validateClientMetadataDocument(url, parsed);
+  return metadata ? { kind: "ok", metadata } : { kind: "rejected" };
 }
 
 // ============================================================================

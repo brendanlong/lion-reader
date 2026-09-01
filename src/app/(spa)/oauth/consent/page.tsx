@@ -102,10 +102,17 @@ export default async function ConsentPage({ searchParams }: ConsentPageProps) {
     description: SCOPE_DESCRIPTIONS[s as OAuthScope] ?? `Access to ${s}`,
   }));
 
+  // For CIMD clients (URL client_ids) the name is self-asserted by whoever
+  // hosts the metadata document, so the spec says to identify the client by the
+  // client_id's hostname. Registered (DB) clients went through our own
+  // registration and keep name-only display.
+  const clientHost = client.fromDatabase ? null : new URL(client_id).hostname;
+
   return (
     <ConsentLayout>
       <ConsentForm
         clientName={client.name}
+        clientHost={clientHost}
         clientId={client_id}
         redirectUri={redirect_uri}
         scopes={scopeInfo}

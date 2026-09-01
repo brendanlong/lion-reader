@@ -16,6 +16,8 @@ interface ScopeInfo {
 
 interface ConsentFormProps {
   clientName: string;
+  /** Hostname of a CIMD client's metadata document; null for registered clients. */
+  clientHost: string | null;
   clientId: string;
   redirectUri: string;
   scopes: ScopeInfo[];
@@ -27,6 +29,7 @@ interface ConsentFormProps {
 
 export function ConsentForm({
   clientName,
+  clientHost,
   clientId,
   redirectUri,
   scopes,
@@ -42,7 +45,14 @@ export function ConsentForm({
         <div className="control-outline bg-surface-muted mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full">
           <ShieldCheckIcon className="text-muted h-8 w-8" />
         </div>
-        <h2 className="ui-text-lg text-body font-semibold">Authorize {clientName}</h2>
+        {/* The hostname must lead: the name under it is self-asserted by
+            whoever hosts the metadata document. */}
+        <h2 className="ui-text-lg text-body font-semibold">Authorize {clientHost ?? clientName}</h2>
+        {clientHost && (
+          <p className="ui-text-sm text-muted mt-1">
+            identifies itself as &ldquo;{clientName}&rdquo;
+          </p>
+        )}
         <p className="ui-text-sm text-muted mt-2">
           This application wants to access your Lion Reader account
         </p>
@@ -50,7 +60,9 @@ export function ConsentForm({
 
       {/* Requested permissions */}
       <div className="border-edge-strong bg-surface-subtle mb-6 rounded-lg border p-4">
-        <h3 className="ui-text-sm text-body mb-3 font-medium">This will allow {clientName} to:</h3>
+        <h3 className="ui-text-sm text-body mb-3 font-medium">
+          This will allow {clientHost ?? clientName} to:
+        </h3>
         <ul className="space-y-2">
           {scopes.map((scope) => (
             <li key={scope.name} className="flex items-start gap-2">

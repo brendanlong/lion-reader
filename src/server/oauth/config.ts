@@ -181,24 +181,17 @@ export function getAuthorizationServerMetadata(host?: string | null) {
     // settings) unsupported. Shared with /oauth/register validation so the two
     // can't drift apart again.
     token_endpoint_auth_methods_supported: SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS,
-    // NB: we intentionally do NOT advertise CIMD *support* (i.e. never `true`).
-    // Clients pick their registration method by priority: pre-registered → CIMD →
-    // DCR. claude.ai treats CIMD (when advertised alongside `"none"` auth) as
-    // preferred and sets up the client entirely client-side (its own metadata-doc
-    // URL as client_id, no /oauth/register call). In practice that CIMD setup
-    // fails inside claude.ai's connector flow and it aborts *before* ever calling
-    // /oauth/authorize — observed in prod logs as discovery completing, then a
-    // silent ~3s gap, then "Couldn't register with the sign-in service" with no
-    // register/authorize request reaching us. Not advertising CIMD drops claude.ai
-    // (and other clients) to Dynamic Client Registration, which works. The
-    // server-side CIMD resolution in `resolveClient` is retained, so a client that
-    // explicitly presents a URL client_id still works.
+    // Client ID Metadata Documents (see cimd.ts). claude.ai's connector only
+    // offers its hosted metadata document when this flag is true AND
+    // token_endpoint_auth_methods_supported includes "none" (CIMD clients are
+    // public); missing either, it silently falls back to DCR.
     //
-    // The flag is set to an EXPLICIT `false` (rather than omitted) for parity
-    // with Sentry, which works with the claude.ai connector while advertising
-    // exactly this. Omission and false should read the same to a spec-correct
-    // client, but a strict/buggy one may treat a missing key differently.
-    client_id_metadata_document_supported: false,
+    // Rollback criterion: an earlier claude.ai connector auto-preferred CIMD
+    // whenever it was advertised, then aborted client-side before ever calling
+    // /oauth/authorize ("Couldn't register with the sign-in service", #986). If
+    // that signature reappears in LOG_MCP_REQUESTS — discovery completes, no
+    // register/authorize follows — set this back to false to force DCR.
+    client_id_metadata_document_supported: true,
   };
 }
 
