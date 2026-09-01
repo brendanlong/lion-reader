@@ -2,13 +2,7 @@
  * Registration Page
  *
  * Allows new users to create an account with email/password or OAuth.
- *
- * IMPORTANT INVARIANT: this page must submit via tRPC (see `registerMutation`), NEVER a
- * plain-HTML `POST` to `/register`. `src/proxy.ts` method-splits this URL —
- * `POST /register` is rewritten to the OAuth Dynamic Client Registration handler
- * `/oauth/register` (a HACK to satisfy claude.ai's root-path synthesis; see the
- * comment in proxy.ts and anthropics/claude-ai-mcp#341). A form `POST` here
- * would be silently hijacked into OAuth registration.
+ * Submits via tRPC (see `registerMutation`), like every other form.
  *
  * This page is statically prerendered (issue #1359). The signup config is
  * SSR'd via the layout's request-free prefetch (re-rendered at process

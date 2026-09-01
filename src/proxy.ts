@@ -1,7 +1,7 @@
 /**
  * Next.js Proxy (middleware)
  *
- * Four jobs:
+ * Three jobs:
  *
  * 0. Session-aware redirects for `/` and the static auth pages
  *    (`maybeSessionRedirect`, issue #1359): anonymous visitors to `/` 307
@@ -21,24 +21,21 @@
  *    Exception: the statically-prerendered public routes (`isPublicStaticPath`)
  *    get a static, relaxed CSP with no nonce (issue #1359) — their prerendered
  *    HTML can't carry a per-request nonce, and they render no untrusted HTML.
- * 2. The claude.ai OAuth workaround: rewriting POST/OPTIONS `/register` to the
- *    Dynamic Client Registration handler at `/oauth/register` (see the big
- *    comment in `proxy()`).
- * 3. Optional request logging for debugging remote MCP connectors: when
+ * 2. Optional request logging for debugging remote MCP connectors: when
  *    `LOG_MCP_REQUESTS=true`, one structured line per request — host, method,
  *    path, redacted query, user-agent, whether an Authorization header was
- *    present. This is how we see exactly what claude.ai sends — most importantly
- *    whether the authenticated `initialize` POST carries a Bearer token (issue
- *    #986 / the connector header-drop bug), AND whether it hits any path we don't
- *    expect (the "wrong URL" / origin-root-fallback failure modes).
+ *    present. This is how we see exactly what a connector sends — most
+ *    importantly whether the authenticated `initialize` POST carries a Bearer
+ *    token (issue #986 / the connector header-drop bug), AND whether it hits
+ *    any path we don't expect (the "wrong URL" / origin-root-fallback failure
+ *    modes — claude.ai has been observed synthesizing OAuth endpoints at the
+ *    origin root instead of using the advertised metadata).
  *
- * The matcher runs on all requests (minus static assets) so job 3 can see
+ * The matcher runs on all requests (minus static assets) so job 2 can see
  * unexpected paths, but logging is gated: nothing is logged unless
- * `LOG_MCP_REQUESTS=true`, and even then only for (a) **every** request to the
- * dedicated MCP host (`MCP_HOST`) — full visibility on the debug host — and
- * (b) the OAuth/MCP surface paths on any host, so ordinary apex traffic (tRPC,
- * SSE, pages) stays out of the logs. When the flag is off the proxy is a
- * near-no-op that only performs the `/register` rewrite.
+ * `LOG_MCP_REQUESTS=true`, and even then only for the OAuth/MCP surface paths,
+ * so ordinary traffic (tRPC, SSE, pages) stays out of the logs. When the flag
+ * is off the proxy skips logging entirely.
  *
  * Route authentication is intentionally NOT handled here. It lives in one place:
  * the server-side layout guards — `src/app/(spa)/(app)/layout.tsx` (via
@@ -79,13 +76,18 @@ const SAFE_QUERY_PARAMS = new Set([
 ]);
 
 /**
- * OAuth/MCP surface paths, logged on ANY host (so apex-surface debugging works
- * even without MCP_HOST set). Requests to the MCP host are logged regardless of
- * path — see `shouldLog`.
+ * OAuth/MCP surface paths worth logging. The root-path entries (`/register`,
+ * `/mcp`, `/authorize`, `/token`, `/revoke`) are NOT served endpoints — they
+ * stay in this list purely as diagnostics, because misbehaving connectors
+ * (claude.ai) have been observed probing them instead of the advertised
+ * endpoints, and a logged 404 there is exactly the evidence that identifies
+ * that failure mode. `/register` is method-gated: GET is the human signup
+ * page (ordinary traffic), while a non-GET there is a connector's misplaced
+ * DCR attempt.
  */
-function isOAuthMcpSurfacePath(pathname: string): boolean {
+function isOAuthMcpSurfacePath(pathname: string, method: string): boolean {
   return (
-    pathname === "/register" ||
+    (pathname === "/register" && method !== "GET" && method !== "HEAD") ||
     pathname === "/mcp" ||
     pathname === "/api/mcp" ||
     pathname === "/authorize" ||
@@ -106,8 +108,6 @@ function isOAuthMcpSurfacePath(pathname: string): boolean {
  * list in sync with the contents of `src/app/(public)/` — a route added there
  * without an entry here gets the strict CSP and breaks (scripts blocked), the
  * safe failure direction.
- *
- * `POST`/`OPTIONS /register` is NOT public: it's the OAuth DCR rewrite below.
  */
 function isPublicStaticPath(pathname: string): boolean {
   return (
@@ -120,22 +120,10 @@ function isPublicStaticPath(pathname: string): boolean {
   );
 }
 
-/** Strip a `:port` suffix and lower-case a Host header (leaves IPv6 literals). */
-function normalizeHost(host: string): string {
-  const lowered = host.trim().toLowerCase();
-  if (lowered.startsWith("[")) return lowered;
-  const colon = lowered.indexOf(":");
-  return colon === -1 ? lowered : lowered.slice(0, colon);
-}
-
 function shouldLog(request: NextRequest): boolean {
   if (!mcpConfig.logRequests) return false;
-  const host = request.headers.get("host");
-  const mcpHost = mcpConfig.host;
-  // Every request to the dedicated MCP host — including paths we don't expect.
-  if (mcpHost && host && normalizeHost(host) === mcpHost) return true;
-  // Otherwise only the OAuth/MCP surface, so apex user traffic isn't logged.
-  return isOAuthMcpSurfacePath(request.nextUrl.pathname);
+  // Only the OAuth/MCP surface, so ordinary user traffic isn't logged.
+  return isOAuthMcpSurfacePath(request.nextUrl.pathname, request.method);
 }
 
 function redactedQuery(url: URL): string | undefined {
@@ -197,7 +185,7 @@ import { DEMO_LANDING_PATH } from "@/lib/routes";
  */
 async function maybeSessionRedirect(request: NextRequest): Promise<NextResponse | null> {
   if (request.method !== "GET" && request.method !== "HEAD") {
-    return null; // never touch POST/OPTIONS /register (the DCR rewrite below)
+    return null; // redirects only apply to navigations
   }
   const { pathname } = request.nextUrl;
   const isRoot = pathname === "/";
@@ -262,15 +250,8 @@ export async function proxy(request: NextRequest) {
 
   // Statically-prerendered public routes (issue #1359): no nonce — the
   // prerendered HTML was built without one — just the relaxed static CSP on
-  // the response. Checked before the nonce flow but after the /register
-  // method-split below can't apply (this matcher excludes POST/OPTIONS).
-  if (
-    isPublicStaticPath(request.nextUrl.pathname) &&
-    !(
-      request.nextUrl.pathname === "/register" &&
-      (request.method === "POST" || request.method === "OPTIONS")
-    )
-  ) {
+  // the response.
+  if (isPublicStaticPath(request.nextUrl.pathname)) {
     const response = NextResponse.next();
     response.headers.set("Content-Security-Policy", buildPublicContentSecurityPolicy());
     // Override the year-long shared-cache lifetime Next stamps on fully-static
@@ -300,59 +281,18 @@ export async function proxy(request: NextRequest) {
   requestHeaders.set("x-nonce", nonce);
   requestHeaders.set("Content-Security-Policy", csp);
 
-  // ==========================================================================
-  // HACK: claude.ai OAuth "root path" workaround — `/register` is METHOD-SPLIT.
-  //
-  //   GET      /register  ->  the human signup PAGE (normal; app/(public)/(auth)/register)
-  //   POST     /register  ->  rewritten to the OAuth DCR handler at /oauth/register
-  //   OPTIONS  /register  ->  same rewrite, so an in-browser MCP client's CORS
-  //                           preflight for the DCR POST is answered (the DCR
-  //                           route exports an OPTIONS handler; the signup page
-  //                           does not). claude.ai itself is server-side and
-  //                           sends no preflight, but this keeps browser clients
-  //                           (MCP Inspector, playgrounds) working at the root.
-  //
-  // Why this exists: claude.ai's remote-MCP connector synthesizes OAuth
-  // endpoints at the ORIGIN ROOT (/authorize, /token, /register) and ignores the
-  // authorization_endpoint/token_endpoint/registration_endpoint we advertise in
-  // RFC 8414 metadata. So its Dynamic Client Registration POST lands on
-  // `/register`, not our real `/oauth/register`. (The /authorize + /token root
-  // aliases live in src/app/{authorize,token}/route.ts.)
-  //
-  // This is deliberately ugly — ONE url doing two unrelated things by HTTP
-  // method. We accept it only because (a) Next.js can't host a page and a route
-  // handler at the same path, so we can't add a POST handler to /register
-  // directly, and (b) nothing in the app POSTs to /register (signup submits via
-  // tRPC to /api/trpc/*), so hijacking POST is safe. Anyone editing the /register
-  // page or this proxy MUST keep that invariant.
-  //
-  // REMOVE THIS once claude.ai honors the advertised registration_endpoint:
-  //   https://github.com/anthropics/claude-ai-mcp/issues/341  (tracking bug)
-  //   https://github.com/anthropics/claude-ai-mcp/issues/82   (root-path synthesis)
-  // ==========================================================================
-  let response: NextResponse;
-  if (
-    request.nextUrl.pathname === "/register" &&
-    (request.method === "POST" || request.method === "OPTIONS")
-  ) {
-    const dcrUrl = request.nextUrl.clone();
-    dcrUrl.pathname = "/oauth/register";
-    response = NextResponse.rewrite(dcrUrl, { request: { headers: requestHeaders } });
-  } else {
-    // GET /register (and anything else) falls through to the normal route.
-    response = NextResponse.next({ request: { headers: requestHeaders } });
-  }
+  const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set("Content-Security-Policy", csp);
   return response;
 }
 
 /**
  * Run the proxy on all requests except Next's build assets. The broad matcher
- * is what lets `LOG_MCP_REQUESTS` capture requests to unexpected paths on the
- * MCP host (the "wrong URL" failure mode), and it also puts the nonce'd CSP on
- * every response — including API/JSON responses, where a CSP is inert but
- * hardens any content-type-confusion angle. `_next/static`/`_next/image` are
- * excluded so middleware doesn't run per-asset (a CSP on those subresources is
+ * is what lets `LOG_MCP_REQUESTS` capture requests to unexpected paths (the
+ * "wrong URL" failure mode), and it also puts the nonce'd CSP on every
+ * response — including API/JSON responses, where a CSP is inert but hardens
+ * any content-type-confusion angle. `_next/static`/`_next/image` are excluded
+ * so middleware doesn't run per-asset (a CSP on those subresources is
  * meaningless); `/sw.js` is matched but bypassed inside `proxy()` (see there).
  */
 export const config = {

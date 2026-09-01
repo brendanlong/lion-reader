@@ -53,7 +53,7 @@ const article: DemoArticle = {
 
     <h3>Security and Usage</h3>
 
-    <p>Remote access uses OAuth 2.1 access tokens carrying the <code>mcp</code> scope and audience-bound to the MCP endpoint, so a token minted for another service can&rsquo;t be replayed here; scoped API tokens work too. Connect an OAuth client like claude.ai, or generate an API token with the <code>mcp</code> scope from your account settings. To run a local server for Claude Desktop and other stdio clients, use <code>pnpm mcp:serve</code> and point your assistant at it.</p>
+    <p>Remote access uses OAuth 2.1 access tokens carrying the <code>mcp</code> scope and audience-bound to the MCP endpoint, so a token minted for another service can&rsquo;t be replayed here; scoped API tokens work too. Connect an OAuth client like Claude Code, or generate an API token with the <code>mcp</code> scope from your account settings (the token path is how claude.ai connects). To run a local server for Claude Desktop and other stdio clients, use <code>pnpm mcp:serve</code> and point your assistant at it.</p>
   `,
 };
 

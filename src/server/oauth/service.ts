@@ -902,13 +902,10 @@ function generateClientId(): string {
  * Supports open registration (no initial access token required).
  *
  * @param request - Client registration request
- * @param host - Request Host header; picks the OAuth surface (apex vs MCP host)
- *   the `registration_client_uri` is expressed on
  * @returns Client registration response or error
  */
 export async function registerClient(
-  request: ClientRegistrationRequest,
-  host?: string | null
+  request: ClientRegistrationRequest
 ): Promise<
   | { success: true; data: ClientRegistrationResponse }
   | { success: false; error: ClientRegistrationError }
@@ -1052,9 +1049,8 @@ export async function registerClient(
     // Notion), which all include this field. RFC 7592 client management is not
     // implemented (theirs isn't either — Linear's URI 404s), and per RFC 7592 a
     // client can't use it anyway without a registration_access_token, which we
-    // don't issue. Host-derived so a registration on the MCP host doesn't
-    // reference the apex origin.
-    registration_client_uri: getRegistrationClientUri(clientId, host),
+    // don't issue.
+    registration_client_uri: getRegistrationClientUri(clientId),
   };
 
   // Add client_secret for confidential clients

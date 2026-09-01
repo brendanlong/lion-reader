@@ -66,7 +66,7 @@ async function handleRegister(request: NextRequest): Promise<Response> {
   }
 
   // Register the client
-  const result = await registerClient(body, host);
+  const result = await registerClient(body);
 
   // Log the OUTCOME either way — a client like claude.ai reports registration
   // failures with an opaque error, so the server log is the only place that says

@@ -290,7 +290,7 @@ Lion Reader exposes functionality to AI assistants via the [Model Context Protoc
 
 Both transports register the same tools (defined once in `src/server/mcp/tools.ts`) and call the same services layer, exactly mirroring the `mcp`-scoped tRPC endpoints: entries list/get/mark-read/star/count, saved-article save/delete/upload, subscriptions list/get, and tag CRUD. See `src/server/mcp/README.md`.
 
-The OAuth 2.1 authorization surface backing remote MCP auth (discovery documents, audience binding, dedicated `MCP_HOST`) is specified in `src/server/oauth/CLAUDE.md`.
+The OAuth 2.1 authorization surface backing remote MCP auth (discovery documents, audience binding) is specified in `src/server/oauth/CLAUDE.md`.
 
 ---
 
