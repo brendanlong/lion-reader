@@ -25,7 +25,7 @@ const article: DemoArticle = {
 
     <h3>Stage 1: AI Text Preprocessing</h3>
 
-    <p>Raw article HTML isn&rsquo;t ready for text-to-speech. Abbreviations like &ldquo;Dr.&rdquo; get mispronounced, URLs sound terrible when read aloud, and technical notation confuses speech engines. To solve this, Lion Reader first sends article content through an LLM (<a href="https://openai.com/index/introducing-gpt-oss/" target="_blank" rel="noopener noreferrer">GPT-OSS</a> via <a href="https://groq.com/" target="_blank" rel="noopener noreferrer">Groq</a>) that transforms the text for natural narration.</p>
+    <p>Raw article HTML isn&rsquo;t ready for text-to-speech. Abbreviations like &ldquo;Dr.&rdquo; get mispronounced, URLs sound terrible when read aloud, and technical notation confuses speech engines. To solve this, Lion Reader first sends article content through a fast LLM (<a href="https://openai.com/index/introducing-gpt-oss/" target="_blank" rel="noopener noreferrer">GPT-OSS-120B</a> by default, on <a href="https://www.cerebras.ai/" target="_blank" rel="noopener noreferrer">Cerebras</a> or <a href="https://groq.com/" target="_blank" rel="noopener noreferrer">Groq</a> &mdash; your pick under Settings &rarr; AI &amp; Narration) that transforms the text for natural narration.</p>
 
     <p>The AI expands abbreviations (&ldquo;Dr.&rdquo; becomes &ldquo;Doctor&rdquo;), converts URLs to readable phrases, formats lists and tables as natural language, and handles code blocks with clear verbal markers. Crucially, it maintains paragraph-level mapping so the app can synchronize highlighting as the audio plays. This preprocessing is cached by content hash, so the same article is only processed once &mdash; even if multiple users narrate it.</p>
 
