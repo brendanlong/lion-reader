@@ -40,11 +40,32 @@ export interface UseNarrationConfig {
 }
 
 /**
+ * The state `useNarration` exposes, which spans **two index spaces**.
+ *
+ * The player (`ArticleNarrator` or `StreamingAudioPlayer`) counts *narration
+ * paragraphs* — the segments `splitIntoParagraphs` produces — while highlighting
+ * needs the *DOM element* the current segment came from. The paragraph map
+ * translates one to the other, and it is not the identity: one element can
+ * narrate as several paragraphs and an element can narrate as none (see
+ * `@/lib/narration/paragraph-map`).
+ *
+ * So `currentParagraph` is a DOM element index and `currentNarrationParagraph`
+ * is the untranslated player index. `totalParagraphs` is a count of *narration*
+ * paragraphs, so anything comparing a position against it (skip bounds, the
+ * "X of Y" readout) must use `currentNarrationParagraph`; only highlighting uses
+ * `currentParagraph`.
+ */
+export interface UseNarrationState extends NarrationState {
+  /** Index of the current paragraph in the player's own (narration) space. */
+  currentNarrationParagraph: number;
+}
+
+/**
  * Return type for the useNarration hook.
  */
 export interface UseNarrationReturn {
   /** Current narration state */
-  state: NarrationState;
+  state: UseNarrationState;
   /** Whether narration text is being generated */
   isLoading: boolean;
   /** Start or resume playback */
@@ -70,9 +91,10 @@ export interface UseNarrationReturn {
 /**
  * Default narration state when no article is loaded.
  */
-export const DEFAULT_NARRATION_STATE: NarrationState = {
+export const DEFAULT_NARRATION_STATE: UseNarrationState = {
   status: "idle",
   currentParagraph: 0,
+  currentNarrationParagraph: 0,
   totalParagraphs: 0,
   selectedVoice: null,
 };

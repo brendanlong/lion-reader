@@ -16,17 +16,13 @@
  * ```tsx
  * import { NarrationControls } from "@/components/narration";
  *
- * <NarrationControls
- *   articleId="..."
- *   title="Article Title"
- *   feedTitle="Feed Name"
- * />
+ * <NarrationControls narration={narration} />
  * ```
  */
 
 "use client";
 
-import { useNarration } from "./useNarration";
+import type { UseNarrationReturn } from "./useNarrationTypes";
 import { useNarrationKeyboardShortcuts } from "@/lib/hooks/useNarrationKeyboardShortcuts";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,25 +38,12 @@ import {
  * Props for the NarrationControls component.
  */
 export interface NarrationControlsProps {
-  /** The article ID (entry or saved article) */
-  articleId: string;
-  /** Title of the article (for Media Session) */
-  title: string;
-  /** Feed or site name (for Media Session) */
-  feedTitle: string;
-  /** Optional artwork URL for Media Session */
-  artwork?: string;
   /**
-   * Optional HTML content for client-side processing.
-   * Used in uncontrolled mode when LLM normalization is disabled.
+   * The narration engine to drive. Owned by the parent because it also needs
+   * the state for highlighting, and because a second `useNarration` would mean
+   * a second speech engine for the same article.
    */
-  content?: string | null;
-  /**
-   * Optional external narration state for controlled mode.
-   * When provided, the component won't create its own useNarration hook.
-   * This is used when the parent needs access to narration state (e.g., for highlighting).
-   */
-  narration?: ReturnType<typeof useNarration>;
+  narration: UseNarrationReturn;
 }
 
 /**
@@ -71,32 +54,9 @@ export interface NarrationControlsProps {
  *
  * Renders playback controls for article narration. Only renders
  * if the Web Speech API is supported in the current browser.
- *
- * Can be used in two modes:
- * 1. Uncontrolled: Component manages its own narration state
- * 2. Controlled: Parent provides narration state via the `narration` prop
- *    (used when parent needs access to state for highlighting)
  */
-export function NarrationControlsImpl({
-  articleId,
-  title,
-  feedTitle,
-  artwork,
-  content,
-  narration: externalNarration,
-}: NarrationControlsProps) {
-  // Use internal narration hook only when external state is not provided
-  const internalNarration = useNarration({
-    id: articleId,
-    title,
-    feedTitle,
-    artwork,
-    content,
-  });
-
-  // Use external narration if provided, otherwise use internal
-  const { state, isLoading, play, pause, skipForward, skipBackward, isSupported } =
-    externalNarration ?? internalNarration;
+export function NarrationControlsImpl({ narration }: NarrationControlsProps) {
+  const { state, isLoading, play, pause, skipForward, skipBackward, isSupported } = narration;
 
   // Enable keyboard shortcuts for narration (must be called before early return)
   useNarrationKeyboardShortcuts({
@@ -112,7 +72,11 @@ export function NarrationControlsImpl({
     return null;
   }
 
-  const { status, currentParagraph, totalParagraphs } = state;
+  // `currentNarrationParagraph`, not `currentParagraph`: the skip bounds and the
+  // readout below are all relative to `totalParagraphs`, which counts narration
+  // paragraphs, while `currentParagraph` is a DOM element index (see
+  // `UseNarrationState`).
+  const { status, currentNarrationParagraph, totalParagraphs } = state;
   const isPlaying = status === "playing";
   const isPaused = status === "paused";
   // "loading" once we already have paragraphs means we're generating the next
@@ -166,7 +130,7 @@ export function NarrationControlsImpl({
           variant="ghost"
           size="sm"
           onClick={skipBackward}
-          disabled={currentParagraph === 0}
+          disabled={currentNarrationParagraph === 0}
           aria-label="Previous paragraph"
           className="min-w-[36px] px-2"
         >
@@ -192,7 +156,7 @@ export function NarrationControlsImpl({
           variant="ghost"
           size="sm"
           onClick={skipForward}
-          disabled={currentParagraph >= totalParagraphs - 1}
+          disabled={currentNarrationParagraph >= totalParagraphs - 1}
           aria-label="Next paragraph"
           className="min-w-[36px] px-2"
         >
@@ -203,7 +167,7 @@ export function NarrationControlsImpl({
       {/* Paragraph indicator - only show when active */}
       {isActive && totalParagraphs > 0 && (
         <span className="ui-text-xs text-muted tabular-nums">
-          {currentParagraph + 1} of {totalParagraphs}
+          {currentNarrationParagraph + 1} of {totalParagraphs}
         </span>
       )}
     </div>
