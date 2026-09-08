@@ -25,27 +25,20 @@ import { NotFoundCard } from "@/components/ui/not-found-card";
 import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
 import { useUrlViewPreferences } from "@/lib/hooks/useUrlViewPreferences";
 import { useEntriesListInput } from "@/lib/hooks/useEntriesListInput";
+import { getFiltersFromPathname } from "@/lib/queries/entries-list-input";
 import { useCanRenderFromCache } from "@/lib/hooks/useIsHydrated";
 import { useAppPathname } from "@/lib/hooks/useAppLocation";
 import { extractParamsFromPathname } from "@/lib/navigation";
 import { type ViewType } from "@/lib/hooks/viewPreferences";
 import { trpc } from "@/lib/trpc/client";
 import { findCachedSubscription } from "@/lib/cache/count-cache";
-import { type EntryType } from "@/lib/hooks/useEntryMutations";
+import { type MarkAllReadOptions } from "@/lib/hooks/useEntryMutations";
 
 /**
  * Route info derived from the current pathname.
  */
 interface RouteInfo {
   viewId: ViewType;
-  filters: {
-    subscriptionId?: string;
-    tagId?: string;
-    uncategorized?: boolean;
-    starredOnly?: boolean;
-    type?: EntryType;
-    sortBy?: "published" | "readChanged";
-  };
   /** Static title (null means we need to fetch it) */
   title: string | null;
   /** Whether this route needs to fetch a subscription for its title */
@@ -58,12 +51,12 @@ interface RouteInfo {
   emptyMessageAll: string;
   /** Description for mark all read dialog */
   markAllReadDescription: string;
-  /** Whether to hide the sort toggle (e.g., for algorithmic feed) */
-  hideSortToggle?: boolean;
 }
 
 /**
- * Parse the current pathname to derive route info.
+ * Parse the current pathname to derive route info (titles and empty/mark-all-read
+ * copy). The query filters for a route come from `getFiltersFromPathname`, which
+ * is their single source of truth.
  */
 function useRouteInfo(): RouteInfo {
   const pathname = useAppPathname();
@@ -75,7 +68,6 @@ function useRouteInfo(): RouteInfo {
     if (pathname === "/all") {
       return {
         viewId: "all" as const,
-        filters: {},
         title: "All Items",
         emptyMessageUnread: "No unread entries. Toggle to show all items.",
         emptyMessageAll: "No entries yet. Subscribe to some feeds to see entries here.",
@@ -87,7 +79,6 @@ function useRouteInfo(): RouteInfo {
     if (pathname === "/starred") {
       return {
         viewId: "starred" as const,
-        filters: { starredOnly: true },
         title: "Starred",
         emptyMessageUnread: "No unread starred entries. Toggle to show all starred items.",
         emptyMessageAll: "No starred entries yet. Star entries to save them for later.",
@@ -99,7 +90,6 @@ function useRouteInfo(): RouteInfo {
     if (pathname === "/saved") {
       return {
         viewId: "saved" as const,
-        filters: { type: "saved" as const },
         title: "Saved",
         emptyMessageUnread: "No unread saved articles. Toggle to show all items.",
         emptyMessageAll: "No saved articles yet. Save articles to read them later.",
@@ -112,7 +102,6 @@ function useRouteInfo(): RouteInfo {
       const subscriptionId = params.subscriptionId;
       return {
         viewId: "subscription" as const,
-        filters: { subscriptionId },
         title: null, // Fetched from API
         subscriptionId,
         emptyMessageUnread: "No unread entries in this subscription. Toggle to show all items.",
@@ -126,7 +115,6 @@ function useRouteInfo(): RouteInfo {
     if (pathname === "/uncategorized") {
       return {
         viewId: "uncategorized" as const,
-        filters: { uncategorized: true },
         title: "Uncategorized",
         emptyMessageUnread: "No unread entries from uncategorized feeds. Toggle to show all items.",
         emptyMessageAll: "No entries from uncategorized feeds yet.",
@@ -142,7 +130,6 @@ function useRouteInfo(): RouteInfo {
       if (tagId === "uncategorized") {
         return {
           viewId: "uncategorized" as const,
-          filters: { uncategorized: true },
           title: "Uncategorized",
           emptyMessageUnread:
             "No unread entries from uncategorized feeds. Toggle to show all items.",
@@ -153,7 +140,6 @@ function useRouteInfo(): RouteInfo {
 
       return {
         viewId: "tag" as const,
-        filters: { tagId },
         title: null, // Fetched from API
         tagId,
         emptyMessageUnread: "No unread entries from this tag. Toggle to show all items.",
@@ -166,7 +152,6 @@ function useRouteInfo(): RouteInfo {
     if (pathname === "/recently-read") {
       return {
         viewId: "recently-read" as const,
-        filters: { sortBy: "readChanged" as const },
         title: "Recently Read",
         emptyMessageUnread: "No unread entries. Toggle to show all items.",
         emptyMessageAll:
@@ -178,7 +163,6 @@ function useRouteInfo(): RouteInfo {
     // Default fallback to /all
     return {
       viewId: "all" as const,
-      filters: {},
       title: "All Items",
       emptyMessageUnread: "No unread entries. Toggle to show all items.",
       emptyMessageAll: "No entries yet. Subscribe to some feeds to see entries here.",
@@ -262,6 +246,7 @@ function EntryListTitle({ routeInfo }: { routeInfo: RouteInfo }) {
  * inline loading state (no Suspense boundaries).
  */
 function UnifiedEntriesContentInner() {
+  const pathname = useAppPathname();
   const routeInfo = useRouteInfo();
   const { showUnreadOnly, searchQuery } = useUrlViewPreferences();
   const { openEntryId, setOpenEntryId, closeEntry } = useEntryUrlState();
@@ -314,26 +299,13 @@ function UnifiedEntriesContentInner() {
     };
   }, [routeInfo, tagsQuery.data]);
 
-  // Build mark all read options
-  const markAllReadOptions = useMemo(() => {
-    const options: Record<string, unknown> = {};
-    if (routeInfo.filters.subscriptionId) {
-      options.subscriptionId = routeInfo.filters.subscriptionId;
-    }
-    if (routeInfo.filters.tagId) {
-      options.tagId = routeInfo.filters.tagId;
-    }
-    if (routeInfo.filters.uncategorized) {
-      options.uncategorized = true;
-    }
-    if (routeInfo.filters.starredOnly) {
-      options.starredOnly = true;
-    }
-    if (routeInfo.filters.type) {
-      options.type = routeInfo.filters.type;
-    }
-    return options;
-  }, [routeInfo.filters]);
+  // Mark-all-read acts on the current view, so it reuses the route's query
+  // filters. `sortBy` only orders the list, so it isn't one of them.
+  const markAllReadOptions = useMemo<MarkAllReadOptions>(() => {
+    const { subscriptionId, tagId, uncategorized, starredOnly, type } =
+      getFiltersFromPathname(pathname);
+    return { subscriptionId, tagId, uncategorized, starredOnly, type };
+  }, [pathname]);
 
   // Get adjacent entry IDs from query data for swipe navigation. Pagination
   // near the end of the loaded pages is triggered by EntryListContainer, which
@@ -422,7 +394,6 @@ function UnifiedEntriesContentInner() {
       entryListSlot={entryListSlot}
       markAllReadDescription={emptyMessages.markAllReadDescription}
       markAllReadOptions={markAllReadOptions}
-      hideSortToggle={routeInfo.hideSortToggle}
     />
   );
 }

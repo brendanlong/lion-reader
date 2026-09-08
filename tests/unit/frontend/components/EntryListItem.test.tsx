@@ -287,17 +287,12 @@ describe("EntryListItem", () => {
     });
 
     it("calls onToggleRead with correct parameters when read indicator clicked", () => {
-      const entry = createMockEntry({
-        id: "entry-123",
-        read: false,
-        type: "web",
-        subscriptionId: "sub-456",
-      });
+      const entry = createMockEntry({ id: "entry-123", read: false });
       const onToggleRead = vi.fn();
       render(<EntryListItem entry={entry} onToggleRead={onToggleRead} />);
 
       fireEvent.click(screen.getByRole("button", { name: "Mark as read" }));
-      expect(onToggleRead).toHaveBeenCalledWith("entry-123", false, "web", "sub-456");
+      expect(onToggleRead).toHaveBeenCalledWith("entry-123", false);
     });
 
     it("calls onToggleStar with correct parameters when star clicked", () => {

@@ -61,7 +61,7 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
   // would pin for 300ms on warm-cache navigations. `throwOnError` preserves the
   // surrounding ErrorBoundary behavior. Shares cache with the parent's
   // useInfiniteQuery via the same queryInput.
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, refetch, isLoading } =
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } =
     trpc.entries.list.useInfiniteQuery(queryInput, {
       getNextPageParam: (lastPage) => lastPage.nextCursor,
       staleTime: Infinity,
@@ -219,15 +219,11 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
   // Query state for the presentational EntryList
   const externalQueryState: ExternalQueryState = useMemo(
     () => ({
-      isLoading,
-      isError: false, // throwOnError sends errors to the ErrorBoundary
-      errorMessage: undefined,
       isFetchingNextPage,
       hasNextPage: hasNextPage ?? false,
       fetchNextPage: fetchNextPageAndReconcile,
-      refetch,
     }),
-    [isLoading, isFetchingNextPage, hasNextPage, fetchNextPageAndReconcile, refetch]
+    [isFetchingNextPage, hasNextPage, fetchNextPageAndReconcile]
   );
 
   // Deterministic skeleton on the server + first client render so hydration

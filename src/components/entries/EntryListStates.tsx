@@ -1,15 +1,16 @@
 /**
  * Shared state components for article lists.
  *
- * Provides empty state, error state, and loading indicator
- * components used by EntryList for all entry types.
+ * Provides the empty state, the "loading more" indicator, and the end-of-list
+ * marker used by EntryList for all entry types. Load errors never reach here:
+ * the container query uses `throwOnError`, so they surface via the
+ * surrounding ErrorBoundary.
  */
 
 "use client";
 
 import { type ReactNode } from "react";
-import { Button } from "@/components/ui/button";
-import { AlertIcon, SpinnerIcon, DefaultEmptyIcon } from "@/components/ui/icons";
+import { SpinnerIcon, DefaultEmptyIcon } from "@/components/ui/icons";
 
 /**
  * Props for the EntryListEmpty component.
@@ -29,29 +30,6 @@ export function EntryListEmpty({ message, icon }: EntryListEmptyProps) {
     <div className="flex flex-col items-center justify-center py-12 text-center">
       {icon ?? <DefaultEmptyIcon className="text-faint mb-4 h-12 w-12" />}
       <p className="ui-text-sm text-muted">{message}</p>
-    </div>
-  );
-}
-
-/**
- * Props for the EntryListError component.
- */
-export interface EntryListErrorProps {
-  /** Error message to display */
-  message: string;
-  /** Callback when retry button is clicked */
-  onRetry: () => void;
-}
-
-/**
- * Error state component for entry lists.
- */
-export function EntryListError({ message, onRetry }: EntryListErrorProps) {
-  return (
-    <div className="flex flex-col items-center justify-center py-12 text-center">
-      <AlertIcon className="text-danger mb-4 h-12 w-12" />
-      <p className="ui-text-sm text-muted mb-4">{message}</p>
-      <Button onClick={onRetry}>Try again</Button>
     </div>
   );
 }
