@@ -7,16 +7,17 @@
 import { type MouseEvent } from "react";
 
 /** Serializable state stored on a history entry. */
-export type HistoryState = Record<string, unknown>;
+type HistoryState = Record<string, unknown>;
 
 /**
- * Next's patched pushState/replaceState write their internal keys (`__NA`,
- * `__PRIVATE_NEXTJS_INTERNALS_TREE`) *into the object we pass* rather than
- * copying it, and then treat any object that already carries `__NA` as one of
- * their own internal calls — updating the URL but skipping the router sync that
- * makes `usePathname`/`useSearchParams` see it. Handing the same object over
- * twice therefore makes the second navigation a silent no-op, so every call
- * gets a fresh copy.
+ * Next's patched pushState/replaceState carry their internal keys (`__NA`,
+ * `__PRIVATE_NEXTJS_INTERNALS_TREE`) forward from the current history entry by
+ * writing them *into the object we pass* rather than copying it, and then treat
+ * any object that already carries `__NA` as one of their own internal calls —
+ * updating the URL but skipping the router sync that makes
+ * `usePathname`/`useSearchParams` see it. Handing the same object over twice
+ * therefore makes the second navigation a silent no-op, so every call gets a
+ * fresh copy.
  */
 function freshHistoryState(state: HistoryState | null): HistoryState | null {
   return state === null ? null : { ...state };
