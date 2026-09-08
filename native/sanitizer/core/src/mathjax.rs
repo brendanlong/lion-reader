@@ -23,6 +23,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 use scraper::{ElementRef, Html, Node};
 
+use crate::depth::{exceeds_max_depth, MAX_DOM_DEPTH};
 use crate::scanner::{find_top_level_ranges, Recovery};
 use crate::serialize::{serialize_mnodes, serialize_subtree, MNode};
 
@@ -508,10 +509,19 @@ pub fn convert_mathjax_chtml(html: &str, warnings: &mut Vec<String>) -> Option<S
     let mut result = String::with_capacity(html.len());
     let mut cursor = 0usize;
     let mut converted = false;
+    let mut too_deep = 0usize;
 
     for range in &ranges {
         let substring = &html[range.start..range.end];
         let fragment = Html::parse_fragment(substring);
+        // Conversion recurses per nesting level, so a container deeper than
+        // MAX_DOM_DEPTH is spliced through verbatim un-walked (see depth.rs)
+        // — the same degradation an unparseable range gets below. The
+        // sanitize pass still runs over it, stripping the mjx-* markup.
+        if exceeds_max_depth(&fragment) {
+            too_deep += 1;
+            continue;
+        }
         // The located range must actually parse to a container (the scanner
         // is not a tree builder); otherwise splice it through verbatim.
         let Some(container) = find_container(&fragment) else {
@@ -527,6 +537,14 @@ pub fn convert_mathjax_chtml(html: &str, warnings: &mut Vec<String>) -> Option<S
         }
         cursor = range.end;
         converted = true;
+    }
+
+    // Reported even when nothing converted (the early return below still
+    // leaves this on the caller's list).
+    if too_deep > 0 {
+        warnings.push(format!(
+            "Passed through {too_deep} MathJax container(s) nested deeper than {MAX_DOM_DEPTH}"
+        ));
     }
 
     if !converted {
@@ -659,6 +677,64 @@ mod tests {
         assert_eq!(
             out,
             format!(r#"<math xmlns="{MATHML_NS}"><mn>1</mn></math><p>article continues</p>"#)
+        );
+    }
+
+    #[test]
+    fn container_nested_past_the_depth_limit_is_passed_through() {
+        // Conversion recurses per level; this depth would overflow the stack
+        // and kill the process. The container must instead be spliced through
+        // verbatim, exactly as an unparseable range is.
+        let html = format!(
+            "<p>before</p><mjx-container><mjx-math>{}<mjx-mi><mjx-c class=\"mjx-c31\"></mjx-c></mjx-mi>{}</mjx-math></mjx-container><p>after</p>",
+            "<mjx-mrow>".repeat(20_000),
+            "</mjx-mrow>".repeat(20_000)
+        );
+        let mut warnings = Vec::new();
+        let out = convert_mathjax_chtml(&html, &mut warnings);
+        // Nothing converted, so the pass reports "unchanged" and the raw
+        // markup reaches the sanitize pass, which strips the mjx-* tags.
+        assert!(out.is_none(), "{out:?}");
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(warnings[0].contains("nested deeper"), "{warnings:?}");
+    }
+
+    #[test]
+    fn a_deep_container_does_not_break_its_shallow_siblings() {
+        // Degradation is per-container: the normal one still converts.
+        let deep = format!(
+            "{}<mjx-mi></mjx-mi>{}",
+            "<mjx-mrow>".repeat(20_000),
+            "</mjx-mrow>".repeat(20_000)
+        );
+        let html = format!(
+            "<mjx-container><mjx-math>{deep}</mjx-math></mjx-container><mjx-container><mjx-math><mjx-mn><mjx-c class=\"mjx-c31\"></mjx-c></mjx-mn></mjx-math></mjx-container>"
+        );
+        let mut warnings = Vec::new();
+        let out = convert_mathjax_chtml(&html, &mut warnings).expect("second container converts");
+        let expected = format!(r#"<math xmlns="{MATHML_NS}"><mn>1</mn></math>"#);
+        assert!(out.ends_with(&expected), "tail: {}", &out[out.len() - expected.len().min(out.len())..]);
+        assert!(out.starts_with("<mjx-container>"), "deep container must survive verbatim");
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+    }
+
+    #[test]
+    fn deeply_but_legitimately_nested_container_still_converts() {
+        // The guard must not clip real math: nesting under MAX_DOM_DEPTH
+        // converts exactly as before. (100 levels is already far past real
+        // math; the debug build's fat frames keep this test off the limit
+        // itself — see the margin note in depth.rs.)
+        let levels = 100;
+        let html = format!(
+            "<mjx-container><mjx-math>{}<mjx-mn><mjx-c class=\"mjx-c31\"></mjx-c></mjx-mn>{}</mjx-math></mjx-container>",
+            "<mjx-mrow>".repeat(levels),
+            "</mjx-mrow>".repeat(levels)
+        );
+        // mjx-mrow is a known layout-only wrapper, so it unwraps: the result
+        // is the same MathML a one-level container produces.
+        assert_eq!(
+            convert(&html),
+            format!(r#"<math xmlns="{MATHML_NS}"><mn>1</mn></math>"#)
         );
     }
 

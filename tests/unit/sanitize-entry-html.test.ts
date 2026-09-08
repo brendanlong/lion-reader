@@ -1,4 +1,6 @@
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import path from "node:path";
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { htmlToNarrationInput, htmlToPlainText } from "@/lib/narration/html-to-narration-input";
 import { sanitizeEntryHtml, sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
@@ -546,6 +548,60 @@ describe("sanitizeEntryHtml", () => {
       const out =
         sanitizeEntryHtml('<iframe src="https://codepen.io/team/embed/abcDEF"></iframe>') ?? "";
       expect(out).toContain('src="https://codepen.io/team/embed/abcDEF"');
+    });
+  });
+
+  describe("pathologically nested markup", () => {
+    // The MathJax and SVG passes build a DOM and walk it recursively, so
+    // without a depth cap a few hundred KB of nesting overflows the stack —
+    // which is a SIGSEGV, not a catchable exception, so it kills the whole
+    // process instead of failing one sanitize call. Sanitization runs on
+    // every read, so one such stored entry would crash the app server on
+    // every read of it (including whole Google Reader stream-contents
+    // batches). Hence the child process: an in-process regression would take
+    // the vitest worker down with every other test in it.
+    function sanitizeInChildProcess(makeHtml: string): { html: string; warnings: string[] } {
+      const stdout = execFileSync(
+        process.execPath,
+        [
+          "--input-type=module",
+          "-e",
+          `import { sanitizeEntryHtml } from "@lion-reader/sanitizer";
+           process.stdout.write(JSON.stringify(sanitizeEntryHtml(${makeHtml})));`,
+        ],
+        { encoding: "utf8", cwd: path.resolve(import.meta.dirname, "../..") }
+      );
+      return JSON.parse(stdout) as { html: string; warnings: string[] };
+    }
+
+    it("drops a deeply nested <svg> instead of crashing the process", () => {
+      const result = sanitizeInChildProcess(
+        `"<svg>" + "<g>".repeat(20000) + "x" + "</g>".repeat(20000) + "</svg>"`
+      );
+      expect(result.html).toBe("x");
+      expect(result.warnings.join(" ")).toContain("nested deeper than");
+    });
+
+    it("passes a deeply nested <mjx-container> through instead of crashing the process", () => {
+      const result = sanitizeInChildProcess(
+        `"<mjx-container><mjx-math>" + "<mjx-mrow>".repeat(20000) + "x" +
+         "</mjx-mrow>".repeat(20000) + "</mjx-math></mjx-container>"`
+      );
+      // Spliced through verbatim, so the allow-list pass strips the mjx-*
+      // wrappers and keeps the text.
+      expect(result.html).toBe("x");
+      expect(result.warnings.join(" ")).toContain("nested deeper than");
+    });
+
+    it("still sanitizes normal-depth SVG and MathJax around a pathological one", () => {
+      const result = sanitizeInChildProcess(
+        `'<svg viewBox="0 0 1 1"><circle r="1"/></svg>' +
+         "<svg>" + "<g>".repeat(20000) + "x" + "</g>".repeat(20000) + "</svg>" +
+         '<mjx-container><mjx-math><mjx-mi><mjx-c class="mjx-c1D465"></mjx-c></mjx-mi></mjx-math></mjx-container>'`
+      );
+      expect(result.html).toContain('viewBox="0 0 1 1"');
+      expect(result.html).toContain("<circle");
+      expect(result.html).toContain("<mi>\u{1D465}</mi>");
     });
   });
 });

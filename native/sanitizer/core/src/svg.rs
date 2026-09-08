@@ -20,6 +20,7 @@
 
 use scraper::{ElementRef, Html};
 
+use crate::depth::{exceeds_max_depth, MAX_DOM_DEPTH};
 use crate::idrefs::{prefix_fragment_href, prefix_func_iris, prefix_id, SVG_FUNC_IRI_ATTRS};
 use crate::scanner::{find_top_level_ranges, Recovery};
 use crate::serialize::{attr_display_name, escape_attr, escape_text};
@@ -210,8 +211,16 @@ fn emit_svg_element(el: ElementRef, out: &mut String) {
 
 /// Sanitize one `<svg>…</svg>` substring, returning safe SVG markup — or ""
 /// when it parses to nothing (so the caller drops it).
-fn sanitize_svg_subtree(svg_html: &str) -> String {
+///
+/// `None` means the subtree nests deeper than [`MAX_DOM_DEPTH`]: `emit_svg_element`
+/// recurses per level, so it is dropped un-walked (see `depth.rs`) and the
+/// caller reports it. That is the same outcome an unparseable range already
+/// gets — the SVG disappears and the rest of the entry is unaffected.
+fn sanitize_svg_subtree(svg_html: &str) -> Option<String> {
     let fragment = Html::parse_fragment(svg_html);
+    if exceeds_max_depth(&fragment) {
+        return None;
+    }
     let svg = fragment
         .tree
         .root()
@@ -219,11 +228,11 @@ fn sanitize_svg_subtree(svg_html: &str) -> String {
         .filter_map(ElementRef::wrap)
         .find(|el| el.value().name().eq_ignore_ascii_case("svg"));
     let Some(svg) = svg else {
-        return String::new();
+        return Some(String::new());
     };
     let mut out = String::new();
     emit_svg_element(svg, &mut out);
-    out
+    Some(out)
 }
 
 /// Result of extracting inline SVG.
@@ -259,8 +268,9 @@ fn contains_svg(html: &str) -> bool {
 
 /// Replace each top-level `<svg>` subtree with an opaque placeholder token,
 /// returning the sanitized markup for each. Returns the input unchanged
-/// (empty `svgs`) when there is no `<svg>` — a cheap no-op scan.
-pub fn extract_inline_svg(html: &str) -> SvgExtraction {
+/// (empty `svgs`) when there is no `<svg>` — a cheap no-op scan. `warnings`
+/// collects non-fatal diagnostics for the caller to log.
+pub fn extract_inline_svg(html: &str, warnings: &mut Vec<String>) -> SvgExtraction {
     if !contains_svg(html) {
         return SvgExtraction { html: html.to_string(), svgs: Vec::new(), nonce: String::new() };
     }
@@ -276,14 +286,26 @@ pub fn extract_inline_svg(html: &str) -> SvgExtraction {
     let mut svgs: Vec<String> = Vec::new();
     let mut result = String::with_capacity(html.len());
     let mut cursor = 0usize;
+    let mut too_deep = 0usize;
     for range in &ranges {
-        let sanitized = sanitize_svg_subtree(&html[range.start..range.end]);
+        let sanitized = match sanitize_svg_subtree(&html[range.start..range.end]) {
+            Some(sanitized) => sanitized,
+            None => {
+                too_deep += 1;
+                String::new()
+            }
+        };
         result.push_str(&html[cursor..range.start]);
         if !sanitized.is_empty() {
             result.push_str(&svg_placeholder(&nonce, svgs.len()));
             svgs.push(sanitized);
         }
         cursor = range.end;
+    }
+    if too_deep > 0 {
+        warnings.push(format!(
+            "Dropped {too_deep} inline SVG element(s) nested deeper than {MAX_DOM_DEPTH}"
+        ));
     }
     if svgs.is_empty() {
         return SvgExtraction { html: html.to_string(), svgs, nonce };
@@ -306,15 +328,19 @@ pub fn reinsert_inline_svg(html: &str, extraction: &SvgExtraction) -> String {
 mod tests {
     use super::*;
 
+    fn extract(html: &str) -> SvgExtraction {
+        extract_inline_svg(html, &mut Vec::new())
+    }
+
     fn roundtrip(html: &str) -> String {
-        let extraction = extract_inline_svg(html);
+        let extraction = extract(html);
         // Simulate the main pass being a no-op on the placeholder text.
         reinsert_inline_svg(&extraction.html, &extraction)
     }
 
     #[test]
     fn no_svg_is_a_no_op() {
-        let extraction = extract_inline_svg("<p>plain</p>");
+        let extraction = extract("<p>plain</p>");
         assert_eq!(extraction.html, "<p>plain</p>");
         assert!(extraction.svgs.is_empty());
     }
@@ -368,13 +394,59 @@ mod tests {
     #[test]
     fn multiple_svgs_reinsert_in_order() {
         let html = r#"<p>a</p><svg id="one"/><p>b</p><svg id="two"/>"#;
-        let extraction = extract_inline_svg(html);
+        let extraction = extract(html);
         assert_eq!(extraction.svgs.len(), 2);
         let out = reinsert_inline_svg(&extraction.html, &extraction);
         // ids are namespaced (see idrefs.rs), hence the `uc-` prefix here.
         let one = out.find("id=\"uc-one\"").unwrap_or_else(|| panic!("{out}"));
         let two = out.find("id=\"uc-two\"").unwrap_or_else(|| panic!("{out}"));
         assert!(one < two, "{out}");
+    }
+
+    #[test]
+    fn drops_svg_nested_past_the_depth_limit() {
+        // `emit_svg_element` recurses per level; this depth would overflow the
+        // stack and take the process down with it (a stack overflow is not an
+        // unwind, so lib.rs's catch_unwind never sees it).
+        let deep = format!(
+            "<svg>{}<circle r=\"1\"/>{}</svg>",
+            "<g>".repeat(20_000),
+            "</g>".repeat(20_000)
+        );
+        let mut warnings = Vec::new();
+        let extraction = extract_inline_svg(&deep, &mut warnings);
+        assert!(extraction.svgs.is_empty(), "over-deep SVG must be dropped, not emitted");
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(warnings[0].contains("nested deeper"), "{warnings:?}");
+    }
+
+    #[test]
+    fn a_deep_svg_does_not_drop_its_shallow_siblings() {
+        // Degradation is per-SVG: only the offending element is lost.
+        let deep = format!("{}<circle/>{}", "<g>".repeat(20_000), "</g>".repeat(20_000));
+        let html = format!("<svg id=\"ok\"><rect width=\"5\"/></svg><svg>{deep}</svg>");
+        let mut warnings = Vec::new();
+        let extraction = extract_inline_svg(&html, &mut warnings);
+        assert_eq!(extraction.svgs.len(), 1, "{:?}", extraction.svgs);
+        assert!(extraction.svgs[0].contains("id=\"uc-ok\""), "{:?}", extraction.svgs);
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+    }
+
+    #[test]
+    fn deeply_but_legitimately_nested_svg_still_round_trips() {
+        // The guard must not clip real (merely group-heavy) illustrations: a
+        // tree that fits under MAX_DOM_DEPTH is emitted in full. 100 levels is
+        // already far past anything real; the debug build's fat frames keep
+        // these tests off the limit itself (see the margin note in depth.rs).
+        let levels = 100;
+        let deep = format!(
+            "<svg>{}<circle r=\"1\"/>{}</svg>",
+            "<g>".repeat(levels),
+            "</g>".repeat(levels)
+        );
+        let out = roundtrip(&deep);
+        assert_eq!(out.matches("<g").count(), levels, "{}", &out[..out.len().min(200)]);
+        assert!(out.contains("<circle r=\"1\"/>"), "{out}");
     }
 
     // Namespacing tests use escaped strings rather than `r#"…"#`: the literals

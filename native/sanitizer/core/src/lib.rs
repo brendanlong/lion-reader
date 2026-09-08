@@ -18,6 +18,7 @@
 //! sanitized copy, so the next read of every entry uses the new rules (see
 //! "Per-read sanitization" in `src/server/html/CLAUDE.md`).
 
+pub mod depth;
 pub mod embeds;
 pub mod idrefs;
 pub mod mathjax;
@@ -51,13 +52,23 @@ pub fn sanitize_entry_html(html: &str, warnings: &mut Vec<String>) -> Result<Str
 
     // Inline SVG extraction. Degrades to "SVG stripped" (the main pass drops
     // <svg>) on error.
-    let extraction = std::panic::catch_unwind(|| svg::extract_inline_svg(transformed)).ok();
+    let extraction = match std::panic::catch_unwind(|| {
+        let mut w = Vec::new();
+        let out = svg::extract_inline_svg(transformed, &mut w);
+        (out, w)
+    }) {
+        Ok((extraction, w)) => {
+            warnings.extend(w);
+            Some(extraction)
+        }
+        Err(_) => {
+            warnings.push("Inline SVG extraction panicked; sanitizing without it".to_string());
+            None
+        }
+    };
     let (body, extraction) = match &extraction {
         Some(extraction) => (extraction.html.as_str(), Some(extraction)),
-        None => {
-            warnings.push("Inline SVG extraction panicked; sanitizing without it".to_string());
-            (transformed, None)
-        }
+        None => (transformed, None),
     };
 
     // The allow-list pass is the security-critical step; on any internal
@@ -111,6 +122,32 @@ mod tests {
     #[test]
     fn empty_input() {
         assert_eq!(run(""), "");
+    }
+
+    #[test]
+    fn pathologically_nested_input_degrades_instead_of_crashing() {
+        // The tree-building passes recurse per nesting level, so without a
+        // depth cap this input overflows the stack — which is not an unwind,
+        // so the catch_unwind guards above never see it and the whole process
+        // dies. Sanitization is per-read, so one such stored entry would
+        // crash the server on every read of it.
+        for html in [
+            format!("<svg>{}x{}</svg>", "<g>".repeat(20_000), "</g>".repeat(20_000)),
+            format!(
+                "<mjx-container><mjx-math>{}x{}</mjx-math></mjx-container>",
+                "<mjx-mrow>".repeat(20_000),
+                "</mjx-mrow>".repeat(20_000)
+            ),
+        ] {
+            let mut warnings = Vec::new();
+            let out = sanitize_entry_html(&html, &mut warnings).expect("must not fail");
+            // Degraded, not crashed: the markup is gone, the text survives,
+            // and the degradation is reported.
+            assert!(!out.contains('<'), "no markup should survive: {}", &out[..out.len().min(80)]);
+            assert!(out.contains('x'), "text content should survive");
+            assert_eq!(warnings.len(), 1, "{warnings:?}");
+            assert!(warnings[0].contains("nested deeper"), "{warnings:?}");
+        }
     }
 
     #[test]
