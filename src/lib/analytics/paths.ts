@@ -28,7 +28,10 @@ const STATIC_ROUTES = {
   // Public
   "/demo": "/demo",
   "/demo/all": "/demo/list",
-  "/demo/highlights": "/demo/list",
+  "/demo/starred": "/demo/list",
+  "/demo/saved": "/demo/list",
+  "/demo/recently-read": "/demo/list",
+  "/demo/uncategorized": "/demo/list",
   "/login": "/login",
   "/register": "/register",
   "/terms": "/terms",
@@ -142,8 +145,8 @@ export function analyticsPathForRoute(pathname: string): AnalyticsPath | null {
   if (segments[0] === "demo" && segments.length === 3) {
     // /demo/entry/<id> is the internal destination of the next.config.ts
     // rewrite, so a browser is normally on /demo/all?entry=<id> and never here
-    // — but a direct visit to the rewrite target renders too, and DemoRouter
-    // resolves the article from the pathname in that case. Handle both.
+    // — but a direct visit to the rewrite target renders too (the demo then
+    // normalizes the URL to the query form). Handle both.
     if (segments[1] === "entry") return analyticsPathForDemoEntry(segments[2]);
     if (segments[1] === "subscription" || segments[1] === "tag") return "/demo/list";
   }

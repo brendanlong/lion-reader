@@ -10,18 +10,22 @@
 
 import { type MouseEvent, type ReactNode, type AnchorHTMLAttributes } from "react";
 import { handleClientNav } from "@/lib/navigation";
+import { useAppHref } from "@/lib/hooks/useAppLocation";
 
 export interface ClientLinkProps extends Omit<
   AnchorHTMLAttributes<HTMLAnchorElement>,
   "href" | "onClick"
 > {
-  /** Link destination */
+  /**
+   * Link destination, relative to the SPA mount point (`/all`, `/tag/:id`).
+   * The route base is prefixed automatically — `/demo/all` under the demo.
+   */
   href: string;
   /** Link content */
   children: ReactNode;
-  /** Called with the link href after navigation (e.g., to close a menu) */
+  /** Called with the (SPA-relative) href after navigation (e.g., to close a menu) */
   onNavigate?: (href: string) => void;
-  /** Called on mousedown with the link href (e.g., to prefetch data) */
+  /** Called on mousedown with the (SPA-relative) href (e.g., to prefetch data) */
   onPrefetch?: (href: string) => void;
 }
 
@@ -42,11 +46,13 @@ export interface ClientLinkProps extends Omit<
  * ```
  */
 export function ClientLink({ href, children, onNavigate, onPrefetch, ...props }: ClientLinkProps) {
+  const appHref = useAppHref();
+  const target = appHref(href);
   return (
     <a
-      href={href}
+      href={target}
       onClick={(e: MouseEvent<HTMLAnchorElement>) =>
-        handleClientNav(e, href, onNavigate ? () => onNavigate(href) : undefined)
+        handleClientNav(e, target, onNavigate ? () => onNavigate(href) : undefined)
       }
       onMouseDown={onPrefetch ? () => onPrefetch(href) : undefined}
       {...props}

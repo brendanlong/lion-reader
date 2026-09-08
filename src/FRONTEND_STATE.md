@@ -212,6 +212,7 @@ bump `updated_at` and re-deliver as before.
 | `src/components/entries/UnifiedEntriesContent.tsx` | Unified entry page with navigation and pagination                   |
 | `src/components/layout/Sidebar.tsx`                | Subscription delete via `useUnsubscribeMutation`                    |
 | `src/lib/hooks/useUnsubscribeMutation.ts`          | Shared `subscriptions.delete` choreography (sidebar + broken feeds) |
+| `src/lib/trpc/handler-link.ts`                     | In-process tRPC link (component tests, the public demo's store)     |
 
 ## Adding New Cache Updates
 

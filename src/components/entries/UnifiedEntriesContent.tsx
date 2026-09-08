@@ -5,7 +5,7 @@
  * the current URL to determine what to render. This enables client-side
  * navigation via pushState without triggering SSR.
  *
- * When the URL changes via pushState, usePathname() updates, which causes
+ * When the URL changes via pushState, useAppPathname() updates, which causes
  * this component to re-derive filters and render the appropriate content.
  *
  * Server components still handle prefetching via EntryListPage - this just
@@ -15,7 +15,6 @@
 "use client";
 
 import { useMemo, useEffect, useRef } from "react";
-import { usePathname } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { EntryPageLayout, TitleSkeleton, TitleText } from "./EntryPageLayout";
 import { EntryContent } from "./EntryContent";
@@ -26,7 +25,8 @@ import { NotFoundCard } from "@/components/ui/not-found-card";
 import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
 import { useUrlViewPreferences } from "@/lib/hooks/useUrlViewPreferences";
 import { useEntriesListInput } from "@/lib/hooks/useEntriesListInput";
-import { useIsHydrated } from "@/lib/hooks/useIsHydrated";
+import { useCanRenderFromCache } from "@/lib/hooks/useIsHydrated";
+import { useAppPathname } from "@/lib/hooks/useAppLocation";
 import { extractParamsFromPathname } from "@/lib/navigation";
 import { type ViewType } from "@/lib/hooks/viewPreferences";
 import { trpc } from "@/lib/trpc/client";
@@ -67,7 +67,7 @@ interface RouteInfo {
  * Parse the current pathname to derive route info.
  */
 function useRouteInfo(): RouteInfo {
-  const pathname = usePathname();
+  const pathname = useAppPathname();
 
   return useMemo(() => {
     const params = extractParamsFromPathname(pathname);
@@ -196,14 +196,14 @@ function useRouteInfo(): RouteInfo {
  * feed's website link beneath the title when the feed advertises one.
  */
 function SubscriptionTitle({ subscriptionId }: { subscriptionId: string }) {
-  const isHydrated = useIsHydrated();
+  const canRenderFromCache = useCanRenderFromCache();
   const queryClient = useQueryClient();
   const { data: subscription } = trpc.subscriptions.get.useQuery(
     { id: subscriptionId },
     { throwOnError: true }
   );
 
-  if (!isHydrated) {
+  if (!canRenderFromCache) {
     return <TitleSkeleton />;
   }
   // Prefer the freshly fetched subscription; fall back to the sidebar list cache
@@ -225,10 +225,10 @@ function SubscriptionTitle({ subscriptionId }: { subscriptionId: string }) {
  * hydrated, then the tag name from the (globally prefetched) tags.list cache.
  */
 function TagTitle({ tagId }: { tagId: string }) {
-  const isHydrated = useIsHydrated();
+  const canRenderFromCache = useCanRenderFromCache();
   const { data: tagsData } = trpc.tags.list.useQuery(undefined, { throwOnError: true });
 
-  if (!isHydrated || !tagsData) {
+  if (!canRenderFromCache || !tagsData) {
     return <TitleSkeleton />;
   }
   const tag = tagsData.items.find((t) => t.id === tagId);
@@ -457,7 +457,7 @@ function UnifiedEntriesContentInner() {
  * Unified entry content component.
  *
  * This single component handles all entry list pages by reading the current URL
- * to determine what to render. When navigation happens via pushState, usePathname()
+ * to determine what to render. When navigation happens via pushState, useAppPathname()
  * updates and this component re-renders with the appropriate content.
  *
  * Note: No Suspense is used. The title, entry list, and entry content each use

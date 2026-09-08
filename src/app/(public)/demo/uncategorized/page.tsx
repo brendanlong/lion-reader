@@ -1,5 +1,5 @@
 /**
- * /demo/all — every demo article
+ * /demo/uncategorized — demo articles from untagged subscriptions
  *
  * Statically prerendered. Article views (`?entry=`) never reach this page: the
  * `beforeFiles` rewrite in next.config.ts serves them from the prerendered
@@ -11,9 +11,8 @@ import { type Metadata } from "next";
 import { pageOpenGraph } from "@/lib/metadata";
 import { DemoApp } from "../DemoApp";
 
-const TITLE = "All Items - Lion Reader";
-const DESCRIPTION =
-  "Explore all of Lion Reader's features: feed support, reading experience, organization, and integrations.";
+const TITLE = "Uncategorized - Lion Reader";
+const DESCRIPTION = "Articles from untagged feeds in Lion Reader.";
 
 export const metadata: Metadata = {
   title: TITLE,
@@ -22,5 +21,5 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return <DemoApp location={{ pathname: "/all", search: "" }} />;
+  return <DemoApp location={{ pathname: "/uncategorized", search: "" }} />;
 }

@@ -25,6 +25,7 @@ import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { type EntryType } from "./useEntryMutations";
 import { clientPush } from "@/lib/navigation";
+import { useAppHref } from "./useAppLocation";
 
 /**
  * Entry data needed for keyboard actions.
@@ -186,6 +187,7 @@ export interface UseKeyboardShortcutsResult {
 export function useKeyboardShortcuts(
   options: UseKeyboardShortcutsOptions
 ): UseKeyboardShortcutsResult {
+  const appHref = useAppHref();
   const {
     entries,
     onOpenEntry,
@@ -454,7 +456,7 @@ export function useKeyboardShortcuts(
       if (gPrefixActive) {
         e.preventDefault();
         clearGPrefix();
-        clientPush("/starred");
+        clientPush(appHref("/starred"));
         return;
       }
 
@@ -476,6 +478,7 @@ export function useKeyboardShortcuts(
       enabled,
       gPrefixActive,
       clearGPrefix,
+      appHref,
     ]
   );
 
@@ -549,13 +552,13 @@ export function useKeyboardShortcuts(
       if (!gPrefixActive) return;
       e.preventDefault();
       clearGPrefix();
-      clientPush("/all");
+      clientPush(appHref("/all"));
     },
     {
       enabled: enabled && !isEntryOpen && gPrefixActive,
       enableOnFormTags: false,
     },
-    [gPrefixActive, clearGPrefix, isEntryOpen, enabled]
+    [gPrefixActive, clearGPrefix, isEntryOpen, enabled, appHref]
   );
 
   // l - go to Saved/Later (when g prefix is active)
@@ -565,13 +568,13 @@ export function useKeyboardShortcuts(
       if (!gPrefixActive) return;
       e.preventDefault();
       clearGPrefix();
-      clientPush("/saved");
+      clientPush(appHref("/saved"));
     },
     {
       enabled: enabled && !isEntryOpen && gPrefixActive,
       enableOnFormTags: false,
     },
-    [gPrefixActive, clearGPrefix, isEntryOpen, enabled]
+    [gPrefixActive, clearGPrefix, isEntryOpen, enabled, appHref]
   );
 
   return {

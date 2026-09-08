@@ -7,8 +7,9 @@
 
 "use client";
 
-import { memo } from "react";
+import { memo, type MouseEvent } from "react";
 import { formatRelativeTime } from "@/lib/format";
+import { LocalTime } from "@/components/ui/local-time";
 import type { EntryType } from "@/lib/hooks/useEntryMutations";
 import type { ListDensity } from "@/lib/appearance/settings";
 import { StarIcon, StarFilledIcon } from "@/components/ui/icons";
@@ -37,6 +38,12 @@ export interface EntryListItemData {
 
 interface EntryListItemProps {
   entry: EntryListItemData;
+  /**
+   * Href that opens this entry. Rendered as a real `<a>` on the title so the
+   * list is crawlable and middle/modifier clicks open a new tab; a plain click
+   * is still handled by the row (`onClick`), so nothing navigates twice.
+   */
+  href?: string;
   onClick?: (entryId: string) => void;
   /**
    * Callback when mousedown fires on the entry (used for prefetching).
@@ -84,6 +91,7 @@ interface EntryListItemProps {
  */
 export const EntryListItem = memo(function EntryListItem({
   entry,
+  href,
   onClick,
   onMouseDown,
   selected = false,
@@ -132,6 +140,17 @@ export const EntryListItem = memo(function EntryListItem({
       e.preventDefault();
       onClick?.(id);
     }
+  };
+
+  const handleTitleLinkClick = (e: MouseEvent<HTMLAnchorElement>) => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) {
+      // Let the browser open the link its own way, without the row also
+      // opening the entry in place.
+      e.stopPropagation();
+      return;
+    }
+    // The row's onClick (bubbling) opens the entry.
+    e.preventDefault();
   };
 
   const handleToggleRead = (e: React.MouseEvent) => {
@@ -200,7 +219,15 @@ export const EntryListItem = memo(function EntryListItem({
                 read ? "text-muted font-normal" : "text-body font-semibold"
               }`}
             >
-              {displayTitle}
+              {href ? (
+                // Out of the tab order like the toggles below: keyboard users
+                // open the focused row with Enter.
+                <a href={href} tabIndex={-1} onClick={handleTitleLinkClick}>
+                  {displayTitle}
+                </a>
+              ) : (
+                displayTitle
+              )}
             </h3>
 
             {/* Starred Indicator */}
@@ -240,9 +267,7 @@ export const EntryListItem = memo(function EntryListItem({
           <div className="ui-text-xs text-muted mt-1 flex items-center gap-2">
             <span className="truncate">{source}</span>
             <span aria-hidden="true">·</span>
-            <time dateTime={date.toISOString()} className="shrink-0">
-              {formatRelativeTime(date)}
-            </time>
+            <LocalTime date={date} format={formatRelativeTime} className="shrink-0" />
           </div>
 
           {/* Preview (hidden in compact density to pack more items per screen) */}

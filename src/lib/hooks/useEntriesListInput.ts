@@ -8,7 +8,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { usePathname } from "next/navigation";
+import { useAppPathname } from "./useAppLocation";
 import { useUrlViewPreferences } from "./useUrlViewPreferences";
 import {
   buildEntriesListInput,
@@ -26,7 +26,7 @@ import {
  * @returns The query input object for entries.list
  */
 export function useEntriesListInput(): EntriesListInput {
-  const pathname = usePathname();
+  const pathname = useAppPathname();
   const { showUnreadOnly, sortOrder, searchQuery } = useUrlViewPreferences();
 
   return useMemo(() => {
