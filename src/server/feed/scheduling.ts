@@ -4,7 +4,7 @@
  */
 
 import { type CacheControl, getEffectiveMaxAge } from "./cache-headers";
-import type { SyndicationHints } from "./types";
+import type { SyndicationHints, UpdatePeriod } from "./types";
 
 /**
  * Default minimum interval between fetches: 60 minutes.
@@ -75,7 +75,7 @@ export const RATE_LIMIT_MAX_BACKOFF_SECONDS = 6 * 60 * 60; // 21600
 /**
  * Seconds per syndication period.
  */
-const PERIOD_SECONDS: Record<NonNullable<SyndicationHints["updatePeriod"]>, number> = {
+const PERIOD_SECONDS: Record<UpdatePeriod, number> = {
   hourly: 60 * 60,
   daily: 24 * 60 * 60,
   weekly: 7 * 24 * 60 * 60,
