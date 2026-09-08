@@ -163,6 +163,54 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       expect(userBEntryIds).not.toContain(entry1Id); // Old entry should not be visible
     });
 
+    it("grants a backfilled entry already read to a new subscriber (#1500)", async () => {
+      // A WebSub push stamps last_seen_at above last_entries_updated_at and
+      // deliberately doesn't advance it, so an archive replay sits inside the
+      // current generation until the next backup poll — up to 24h during which a
+      // new subscriber would otherwise be populated with hundreds of unread
+      // years-old articles. The populate copies entries.is_backfill instead.
+      const feedUrl = "https://example.com/backfill-feed.xml";
+      const pollTime = new Date("2026-08-10T00:00:00Z");
+      const pushTime = new Date("2026-08-10T01:00:00Z");
+
+      const feedId = await createTestFeed({
+        url: feedUrl,
+        lastFetchedAt: pollTime,
+        lastEntriesUpdatedAt: pollTime,
+      });
+
+      const currentEntryId = await createTestEntry(feedId, {
+        guid: "current-1",
+        title: "Today's post",
+        publishedAt: pollTime,
+        fetchedAt: pollTime,
+        lastSeenAt: pollTime,
+      });
+      const backfilledEntryId = await createTestEntry(feedId, {
+        guid: "archive-1",
+        title: "Ukraine Post #5",
+        publishedAt: new Date("2022-03-01T00:00:00Z"),
+        fetchedAt: pushTime,
+        lastSeenAt: pushTime,
+        isBackfill: true,
+      });
+
+      const userId = await createTestUser({ emailPrefix: "backfillsub" });
+      const caller = createCaller(await createAuthContext(userId));
+      const result = await caller.subscriptions.create({ url: feedUrl });
+
+      // Both are in the current generation, so both are granted...
+      const rows = await db
+        .select({ entryId: userEntries.entryId, read: userEntries.read })
+        .from(userEntries)
+        .where(eq(userEntries.userId, userId));
+      expect(rows).toHaveLength(2);
+      // ...but only the genuinely current one is unread.
+      expect(rows.find((r) => r.entryId === currentEntryId)?.read).toBe(false);
+      expect(rows.find((r) => r.entryId === backfilledEntryId)?.read).toBe(true);
+      expect(result.unreadCount).toBe(1);
+    });
+
     it("shows all entries when lastEntriesUpdatedAt matches all entries lastSeenAt", async () => {
       const userId = await createTestUser();
 

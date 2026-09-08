@@ -1,0 +1,17 @@
+-- Mark entries that arrived as an archive re-announcement rather than as news
+-- (issue #1500).
+--
+-- A publisher that bulk-edits or re-imports its archive re-announces every post
+-- it touched — through the feed, or as one WebSub push per post. Each is a first
+-- sighting for us, so without this they land in every subscriber's unread list
+-- dated years ago. `isBackfilledEntry` classifies them at insert time, and this
+-- column carries that verdict so every path that grants visibility later — the
+-- state-driven fetch fanout (including its #952 self-heal) and the subscribe-time
+-- populate — inserts the `user_entries` row already read from one shared fact,
+-- instead of each caller re-deriving it from context it no longer has.
+--
+-- Additive, NOT NULL DEFAULT false → expand/contract-compatible: the previous
+-- release ignores the column, and release_command runs before the canary, so old
+-- code runs against the new schema during rollout and on rollback. No backfill:
+-- entries already ingested keep their existing read state either way.
+ALTER TABLE entries ADD COLUMN is_backfill boolean NOT NULL DEFAULT false;

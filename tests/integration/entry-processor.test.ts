@@ -183,6 +183,12 @@ describe("Entry Processor", () => {
       expect(isBackfilledEntry(new Date("2026-08-04T00:00:00Z"), previousFetch)).toBe(false);
     });
 
+    it("treats exactly the threshold as news (strict comparison)", () => {
+      const exactly30Days = new Date(previousFetch.getTime() - 30 * 24 * 60 * 60 * 1000);
+      expect(isBackfilledEntry(exactly30Days, previousFetch)).toBe(false);
+      expect(isBackfilledEntry(new Date(exactly30Days.getTime() - 1), previousFetch)).toBe(true);
+    });
+
     it("is inert on a feed's first fetch", () => {
       expect(isBackfilledEntry(new Date("2010-01-01T00:00:00Z"), null)).toBe(false);
       expect(isBackfilledEntry(new Date("2010-01-01T00:00:00Z"), undefined)).toBe(false);
@@ -909,13 +915,25 @@ describe("Entry Processor", () => {
       expect(result.backfillCount).toBe(1);
 
       const rows = await db
-        .select({ guid: entries.guid, read: userEntries.read })
+        .select({
+          guid: entries.guid,
+          read: userEntries.read,
+          readChangedAt: userEntries.readChangedAt,
+          isBackfill: entries.isBackfill,
+        })
         .from(userEntries)
         .innerJoin(entries, eq(entries.id, userEntries.entryId))
         .where(eq(userEntries.userId, userId));
       expect(rows).toHaveLength(2);
       expect(rows.find((r) => r.guid === "fresh-1")?.read).toBe(false);
       expect(rows.find((r) => r.guid === "archive-1")?.read).toBe(true);
+      // The verdict is persisted on the entry, so every later path that grants
+      // visibility reads the same fact instead of re-deriving it.
+      expect(rows.find((r) => r.guid === "archive-1")?.isBackfill).toBe(true);
+      expect(rows.find((r) => r.guid === "fresh-1")?.isBackfill).toBe(false);
+      // Left NULL so a later explicit mark-unread by the user wins the
+      // last-writer-wins comparison in markEntriesRead.
+      expect(rows.find((r) => r.guid === "archive-1")?.readChangedAt).toBeNull();
 
       // The unread badge only counts the genuinely new article.
       const [subscription] = await db
@@ -948,6 +966,91 @@ describe("Entry Processor", () => {
         .from(userEntries)
         .where(eq(userEntries.userId, userId));
       expect(row.read).toBe(false);
+    });
+
+    it("keeps a backfill read when the same document repeats its GUID (#1500)", async () => {
+      // deriveGuid falls back to link and then to title, so two archive posts
+      // sharing a title collapse onto one entry: the second occurrence resolves
+      // to the already-created row and reports isNew/isBackfill false. Reading
+      // the read state off entries.is_backfill rather than off which list the id
+      // landed in is what keeps that from fanning the row out unread.
+      const feed = await createTestFeed();
+      const userId = await createTestUser({ emailPrefix: "dupguid" });
+      await createTestSubscription(userId, feed.id);
+
+      const item = { title: "Ukraine Post #5", pubDate: new Date("2022-03-01T00:00:00Z") };
+      const result = await processEntries(
+        feed.id,
+        feed.type,
+        { title: "Test Feed", items: [item, item] },
+        {
+          fetchedAt: new Date("2026-08-10T01:00:00Z"),
+          previousLastFetchedAt: new Date("2026-08-10T00:00:00Z"),
+        }
+      );
+      expect(result.newCount).toBe(1);
+      expect(result.backfillCount).toBe(1);
+
+      const rows = await db
+        .select({ read: userEntries.read })
+        .from(userEntries)
+        .where(eq(userEntries.userId, userId));
+      expect(rows).toHaveLength(1);
+      expect(rows[0].read).toBe(true);
+    });
+
+    it("heals a backfill orphaned by a crashed fetch to read, not unread (#1500)", async () => {
+      // The #952 self-heal re-covers entries a crashed fetch never fanned out.
+      // It reports them isNew:false and has no memory of how they were
+      // classified, so the read state has to come from entries.is_backfill.
+      const feed = await createTestFeed();
+      const userId = await createTestUser({ emailPrefix: "healbackfill" });
+      await createTestSubscription(userId, feed.id);
+
+      const archived: ParsedEntry = {
+        guid: "archive-1",
+        title: "Ukraine Post #5",
+        pubDate: new Date("2022-03-01T00:00:00Z"),
+      };
+      // Simulate the crash: the entry row exists, the user_entries row doesn't.
+      await createEntry(
+        feed.id,
+        "web",
+        archived,
+        generateContentHash(archived),
+        new Date("2026-08-10T01:00:00Z"),
+        undefined,
+        new Date("2026-08-10T00:00:00Z")
+      );
+      expect(
+        await db.select().from(userEntries).where(eq(userEntries.userId, userId))
+      ).toHaveLength(0);
+
+      // A later fetch brings a genuinely new entry, so the fanout runs over
+      // every current entry and heals the orphan.
+      await processEntries(
+        feed.id,
+        feed.type,
+        {
+          title: "Test Feed",
+          items: [
+            archived,
+            { guid: "fresh-1", title: "New", pubDate: new Date("2026-08-10T02:00:00Z") },
+          ],
+        },
+        {
+          fetchedAt: new Date("2026-08-10T02:30:00Z"),
+          previousLastFetchedAt: new Date("2026-08-10T01:00:00Z"),
+        }
+      );
+
+      const rows = await db
+        .select({ guid: entries.guid, read: userEntries.read })
+        .from(userEntries)
+        .innerJoin(entries, eq(entries.id, userEntries.entryId))
+        .where(eq(userEntries.userId, userId));
+      expect(rows.find((r) => r.guid === "archive-1")?.read).toBe(true);
+      expect(rows.find((r) => r.guid === "fresh-1")?.read).toBe(false);
     });
 
     it("leaves a backfilled entry read when a later fetch re-lists it (#1500)", async () => {
