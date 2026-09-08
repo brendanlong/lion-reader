@@ -48,12 +48,13 @@ restored this way; it reappears on the next navigation refresh.)
 
 ## Cache Helpers (`src/lib/cache/`)
 
-| File                | Role                                                                                                                                                                                                    |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `operations.ts`     | High-level operations (primary API): `setCounts`/`setBulkCounts`/`setEntryRelatedCounts` (absolute counts), `handleSubscriptionCreated`/`handleSubscriptionDeleted`, optimistic read/starred updates    |
-| `entry-cache.ts`    | Entry list/get patching: `updateEntriesReadStatus`, `updateEntryStarredStatus`, `updateEntryMetadataInCache`, `insertEntryIntoListCaches`, `restoreUnreadEntriesToListCaches`, `findEntryInListCache`   |
-| `count-cache.ts`    | Subscription lookup map + tag helpers: `addSubscriptionToCache`, `updateSubscriptionInCache`, `removeSubscriptionFromCache`, `setSubscriptionUnreadCountInMap`, `applySyncTagChanges`, `removeSyncTags` |
-| `event-handlers.ts` | `handleSyncEvent` — dispatches SSE/sync events to the operations above                                                                                                                                  |
+| File                        | Role                                                                                                                                                                                                                     |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `operations.ts`             | High-level operations (primary API): `setCounts`/`setBulkCounts`/`setEntryRelatedCounts` (absolute counts), `handleSubscriptionCreated`/`handleSubscriptionDeleted`, `removeSubscriptionFromCaches`                      |
+| `entry-cache.ts`            | Entry list/get patching: `updateEntriesReadStatus`, `updateEntryStarredStatus`, `updateEntryState`, `getCachedEntryState`, `updateEntryMetadataInCache`, `insertEntryIntoListCaches`, `restoreUnreadEntriesToListCaches` |
+| `entry-mutation-tracker.ts` | `EntryMutationTracker` — per-QueryClient reconciliation of concurrent read/starred mutations (see "Optimistic Updates")                                                                                                  |
+| `count-cache.ts`            | Subscription lookup map + tag helpers: `addSubscriptionToCache`, `updateSubscriptionInCache`, `removeSubscriptionFromCache`, `setSubscriptionUnreadCountInMap`, `applySyncTagChanges`, `removeSyncTags`                  |
+| `event-handlers.ts`         | `handleSyncEvent` — dispatches SSE/sync events to the operations above                                                                                                                                                   |
 
 ## Core Queries
 
@@ -127,25 +128,65 @@ Tag mutations (`tags.create/update/delete`) invalidate/patch via their component
 
 ## Optimistic Updates
 
-Optimistic updates do NOT cancel in-flight queries (cancelling can abort content fetches and strand placeholder data). Races are handled by timestamp tracking instead.
+Optimistic updates never cancel in-flight queries (cancelling `entries.get`
+aborts content fetches and strands placeholder data), so React Query's stock
+`onMutate` + `cancelQueries` + rollback recipe is not used anywhere. Three
+patterns exist; pick by what the mutation changes, and don't add a fourth:
 
-### Timestamp-based State Tracking
+| Mutation changes                                                | Pattern                                                  | Used by                                                        |
+| --------------------------------------------------------------- | -------------------------------------------------------- | -------------------------------------------------------------- |
+| Per-entry state that several mutations can touch at once        | Optimistic write + timestamp reconciliation              | `useEntryMutations` (`entries.markRead`, `entries.setStarred`) |
+| Removal of a row the client already holds                       | Optimistic remove + invalidate-to-truth on error         | `useUnsubscribeMutation` (`subscriptions.delete`)              |
+| Data only the server can produce (ids, resolved titles, counts) | No optimistic phase; apply the response via the SSE path | `subscriptions.create` → `handleSubscriptionCreated`           |
 
-Entry mutations (markRead, setStarred) track concurrent operations per entry:
+### Optimistic write + timestamp reconciliation
 
-1. Each entry tracks how many mutations are in flight
-2. As mutations complete, responses are compared by `updatedAt`; the newest wins
-3. When all mutations for an entry complete, the winning state is merged into cache only if newer than the cached state
+Read/starred mutations for one entry can overlap (auto-mark-read on open, a
+keyboard toggle a moment later, star while the mark-read is in flight) and
+their responses can complete out of order. `useEntryMutations` therefore never
+writes a response straight to the cache:
 
-The server's `updatedAt` (`GREATEST(entry.updated_at, user_entry.updated_at)`) determines truth, so parallel get+markRead and out-of-order completion resolve correctly without flicker.
+1. `onMutate` writes the intended state to `entries.get` and the entry lists and
+   registers the mutation with the `EntryMutationTracker`
+   (`src/lib/cache/entry-mutation-tracker.ts`) together with the pre-mutation
+   state from `getCachedEntryState` (`entries.get`, else the list copy — never a
+   guessed default, #1081). The tracker is **per QueryClient**, not per hook
+   instance, so mutations issued from different components for the same entry
+   reconcile against each other instead of flickering through each other's
+   responses.
+2. `onSuccess` records the server's state; the newest `updatedAt`
+   (`GREATEST(entry.updated_at, user_entry.updated_at)`) wins. `onError` only
+   toasts.
+3. `onSettled` settles the entry (it runs after both success and failure).
+   Once nothing is in flight for the entry, the winning state is written to
+   `entries.get` and the lists in one pass (`updateEntryState`) unless the
+   cached `entries.get` is already newer (a fetch completed mid-flight); if
+   every mutation failed, only the fields those mutations wrote are restored
+   to their pre-mutation values, so a change to the other field that arrived
+   mid-flight (an SSE event) survives. Settling an entry that was never
+   registered throws — it is a programming error, not a case to degrade into
+   last-write-wins.
+
+Counts are applied separately from the response (absolute values, see
+"Mutation Response Shapes") and are not subject to the timestamp guard.
+
+### Optimistic remove + invalidate-to-truth
+
+A removal has nothing to reconcile — there is no second concurrent delete and
+no server timestamp to compare — so on error the caches are invalidated rather
+than the row hand-restored. `useUnsubscribeMutation` is the one implementation;
+reserve the pattern for removals.
+
+### No optimistic phase
+
+When the client can't build the row itself, apply the mutation response
+through the same function the corresponding SSE event uses
+(`handleSubscriptionCreated`), so the response and the event — which may arrive
+in either order — stay duplicate-safe.
 
 ### Auto-mark-read (EntryContent)
 
-Opening an entry fires `entries.get` and (if unread per placeholder data) `markRead` immediately in parallel; the optimistic update shows read state instantly and timestamp tracking resolves whichever completes last.
-
-### subscriptions.delete / create
-
-Delete: `onMutate` removes the subscription from all caches (`removeSubscriptionFromCaches`); `onSuccess` applies server-absolute `counts` and invalidates `entries.list`. Create: `handleSubscriptionCreated` adds to the lookup map and sets absolute counts; the SSE `subscription_created` handler calls the same function (duplicate-safe).
+Opening an entry fires `entries.get` and (if unread per placeholder data) `markRead` immediately in parallel; the optimistic update shows read state instantly and timestamp reconciliation resolves whichever completes last.
 
 ## Mutation Response Shapes
 
@@ -203,7 +244,7 @@ bump `updated_at` and re-deliver as before.
 | File                                               | Purpose                                                             |
 | -------------------------------------------------- | ------------------------------------------------------------------- |
 | `src/lib/cache/*` (see table above)                | Cache operations, entry/count helpers, SSE event dispatch           |
-| `src/lib/hooks/useEntryMutations.ts`               | Entry mutations with optimistic updates + timestamp tracking        |
+| `src/lib/hooks/useEntryMutations.ts`               | Entry mutations: optimistic write + timestamp reconciliation        |
 | `src/lib/hooks/useEntryListRefreshOnNavigate.ts`   | Navigation-triggered entry list invalidation (pathname change)      |
 | `src/lib/hooks/useRealtimeUpdates.ts`              | SSE/polling glue feeding the connection machine                     |
 | `src/lib/events/connection-state.ts`               | Pure connection state machine (reconnect/backoff/polling fallback)  |

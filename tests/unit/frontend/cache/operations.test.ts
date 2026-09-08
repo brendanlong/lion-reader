@@ -20,7 +20,6 @@ import {
   handleSubscriptionCreated,
   handleSubscriptionDeleted,
   setEntryRelatedCounts,
-  applyOptimisticReadUpdate,
   type SubscriptionData,
 } from "@/lib/cache/operations";
 import {
@@ -319,55 +318,5 @@ describe("setEntryRelatedCounts saved-count handling", () => {
     setEntryRelatedCounts(utils, { ...baseCounts, saved: { unread: 7 } }, queryClient);
 
     expect(utils.entries.count.getData({ type: "saved" })).toEqual({ unread: 7 });
-  });
-});
-
-describe("applyOptimisticReadUpdate previous-state snapshot", () => {
-  let queryClient: QueryClient;
-  let utils: TRPCClientUtils;
-
-  beforeEach(() => {
-    _resetSubscriptionLookupMap();
-    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    utils = createRealTrpcUtils(queryClient);
-  });
-
-  function seedListEntry(entry: { id: string; read: boolean; starred: boolean }): void {
-    queryClient.setQueryData([["entries", "list"], { input: { limit: 25 }, type: "infinite" }], {
-      pages: [{ items: [entry], nextCursor: undefined }],
-      pageParams: [undefined],
-    });
-  }
-
-  it("falls back to the list cache for the previous read state when entries.get is absent", async () => {
-    // Entry acted on from the list view: it lives in entries.list but has no
-    // entries.get cache entry. The rollback snapshot must capture its real read
-    // state (true) so a failed mark-unread rolls back to read, not to the state
-    // the failed mutation wanted.
-    seedListEntry({ id: "e1", read: true, starred: false });
-
-    const context = await applyOptimisticReadUpdate(utils, queryClient, ["e1"], false);
-
-    expect(context.previousEntries.get("e1")).toEqual({ read: true });
-  });
-
-  it("prefers the entries.get value when it exists", async () => {
-    setUtilsData(
-      utils.entries.get,
-      { id: "e1" },
-      { entry: { id: "e1", read: true, starred: false, updatedAt: new Date() } }
-    );
-    // A stale list copy with a different value must not win over entries.get.
-    seedListEntry({ id: "e1", read: false, starred: false });
-
-    const context = await applyOptimisticReadUpdate(utils, queryClient, ["e1"], false);
-
-    expect(context.previousEntries.get("e1")).toEqual({ read: true });
-  });
-
-  it("records undefined when the entry is in no cache", async () => {
-    const context = await applyOptimisticReadUpdate(utils, queryClient, ["e1"], false);
-
-    expect(context.previousEntries.get("e1")).toBeUndefined();
   });
 });
