@@ -77,7 +77,8 @@ export function ConsentForm({
       <div className="border-warning-border bg-warning-subtle mb-6 flex items-start gap-2 rounded-lg border p-3">
         <WarningTriangleIcon className="text-warning mt-0.5 h-4 w-4 shrink-0" />
         <p className="ui-text-sm text-warning-subtle-foreground">
-          Only authorize applications you trust. You can revoke access at any time in Settings.
+          Only authorize applications you trust. You can revoke access at any time under Settings
+          &rarr; Connected Apps.
         </p>
       </div>
 

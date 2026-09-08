@@ -15,7 +15,7 @@ import { logger } from "@/lib/logger";
 export async function GET(request: NextRequest) {
   const host = request.headers.get("host");
   logger.info("OAuth authorization server metadata requested", { host });
-  const metadata = getAuthorizationServerMetadata(host);
+  const metadata = getAuthorizationServerMetadata();
 
   return withMcpCorsHeaders(
     NextResponse.json(metadata, {

@@ -19,7 +19,7 @@ import { logger } from "@/lib/logger";
 export async function GET(request: NextRequest) {
   const host = request.headers.get("host");
   logger.info("OAuth protected resource metadata requested (path-inserted)", { host });
-  const metadata = getProtectedResourceMetadata(host);
+  const metadata = getProtectedResourceMetadata();
 
   return withMcpCorsHeaders(
     NextResponse.json(metadata, {

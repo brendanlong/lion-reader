@@ -9,6 +9,7 @@
 
 import { type ReactNode, type CSSProperties, type RefObject } from "react";
 import { ExternalLinkIcon } from "@/components/ui/icons";
+import { LocalTime } from "@/components/ui/local-time";
 import { getDomain } from "@/lib/format";
 import { formatDate } from "./EntryContentHelpers";
 import { EntryContentRenderer } from "./EntryContentRenderer";
@@ -27,10 +28,9 @@ export interface EntryArticleProps {
   date: Date;
   /**
    * Optional IANA time zone for formatting `date`. Omit to use the ambient zone
-   * (the visitor's local zone). The demo passes a fixed zone on the server so
-   * its SSR'd date doesn't render in the host's UTC; the `<time>` is marked
-   * suppressHydrationWarning so switching to the visitor's local zone on the
-   * client is not flagged as a hydration error.
+   * (the visitor's local zone). A prerendered mount passes a fixed zone on the
+   * server so its SSR'd date doesn't render in the host's UTC; the `<time>`
+   * re-renders in the visitor's zone after hydration (see LocalTime).
    */
   dateTimeZone?: string;
   /** Optional prefix for the date (e.g., "Saved") */
@@ -142,17 +142,11 @@ export function EntryArticle({
             <span aria-hidden="true" className="text-faint hidden sm:inline">
               |
             </span>
-            <time
-              dateTime={date.toISOString()}
+            <LocalTime
+              date={date}
+              format={(d) => `${datePrefix ? `${datePrefix} ` : ""}${formatDate(d, dateTimeZone)}`}
               className="basis-full sm:basis-auto"
-              // The server may format in a fixed zone (see dateTimeZone) while
-              // the client uses the visitor's local zone; that difference is
-              // intentional, not a hydration bug.
-              suppressHydrationWarning
-            >
-              {datePrefix ? `${datePrefix} ` : ""}
-              {formatDate(date, dateTimeZone)}
-            </time>
+            />
           </div>
         </div>
 

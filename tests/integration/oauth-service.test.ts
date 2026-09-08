@@ -18,8 +18,7 @@ import crypto from "crypto";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { users, oauthClients, oauthRefreshTokens } from "../../src/server/db/schema";
-import { generateUuidv7 } from "../../src/lib/uuidv7";
-import { createTestUser } from "./helpers";
+import { createTestUser, createTestOAuthClient } from "./helpers";
 import {
   createAuthorizationCode,
   validateAndConsumeAuthCode,
@@ -62,15 +61,7 @@ async function createUser(): Promise<string> {
 }
 
 async function createTestClient(): Promise<string> {
-  const clientId = generateUuidv7();
-  await db.insert(oauthClients).values({
-    id: generateUuidv7(),
-    clientId,
-    name: "Test Client",
-    redirectUris: [REDIRECT_URI],
-    scopes: ["mcp"],
-    isPublic: true,
-  });
+  const clientId = await createTestOAuthClient({ redirectUris: [REDIRECT_URI] });
   createdClientIds.push(clientId);
   return clientId;
 }

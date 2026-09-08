@@ -169,9 +169,9 @@ const article: DemoArticle = {
 };
 ```
 
-`data.ts` resolves each import to its built `.src` URL: `getDemoEntryArticleProps`
-prepends the hero `<figure>` to the content (the reader applies `rounded-lg`
-automatically via `reader-prose`), and each demo page's `generateMetadata` passes
+`data.ts` resolves each import to its built `.src` URL: the demo store prepends
+the hero `<figure>` (`heroFigureHtml`) to the article content (the reader applies
+`rounded-lg` automatically via `reader-prose`), and each demo page's `generateMetadata` passes
 `entry?.ogImage` to `pageOpenGraph`, so the opaque variant is the social preview
 on whatever `/demo/...?entry=` URL is shared. No manifest or cache-buster to
 maintain — the content hash is in the filename Next emits.

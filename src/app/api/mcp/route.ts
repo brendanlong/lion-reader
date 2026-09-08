@@ -125,12 +125,9 @@ async function authenticateRequest(request: NextRequest): Promise<AuthResult> {
  * NOT include a `scope` parameter: working servers omit it, and ours would carry
  * a colon/space value (`mcp saved:write`) that risks tripping strict parsers.
  *
- * The `resource_metadata` URL is host-derived so a request to the dedicated MCP
- * host points at that host's `/.well-known/oauth-protected-resource/mcp`, while
- * the apex points at `.../api/mcp`.
  */
-function buildWwwAuthenticateHeader(host: string | null): string {
-  const metadataUrl = getProtectedResourceMetadataUrl(host);
+function buildWwwAuthenticateHeader(): string {
+  const metadataUrl = getProtectedResourceMetadataUrl();
   return `Bearer realm="OAuth", resource_metadata="${metadataUrl}", error="invalid_token", error_description="Missing or invalid access token"`;
 }
 
@@ -213,7 +210,7 @@ function unauthorizedResponse(failure: AuthFailure, host: string | null): Respon
     status,
     headers: {
       "Content-Type": "application/json",
-      "WWW-Authenticate": buildWwwAuthenticateHeader(host),
+      "WWW-Authenticate": buildWwwAuthenticateHeader(),
     },
   });
 }

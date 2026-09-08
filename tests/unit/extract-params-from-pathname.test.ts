@@ -31,18 +31,7 @@ describe("extractParamsFromPathname", () => {
     expect(extractParamsFromPathname("/tag/")).toEqual({});
   });
 
-  it("strips a basePath before matching", () => {
-    expect(extractParamsFromPathname("/demo/subscription/abc", "/demo")).toEqual({
-      subscriptionId: "abc",
-    });
-    expect(extractParamsFromPathname("/demo/tag/xyz", "/demo")).toEqual({ tagId: "xyz" });
-  });
-
-  it("does not match when basePath is given but missing from the pathname", () => {
-    expect(extractParamsFromPathname("/subscription/abc", "/demo")).toEqual({});
-  });
-
-  it("does not match prefixed routes without the basePath argument", () => {
+  it("expects an app-relative pathname (a mount prefix is stripped by useAppPathname)", () => {
     expect(extractParamsFromPathname("/demo/subscription/abc")).toEqual({});
   });
 });

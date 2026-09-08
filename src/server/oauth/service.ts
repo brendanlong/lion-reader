@@ -5,7 +5,7 @@
  * Handles clients, authorization codes, tokens, and consent.
  */
 
-import { eq, and, isNull, gt, inArray, sql } from "drizzle-orm";
+import { eq, and, isNull, gt, inArray, sql, desc, max } from "drizzle-orm";
 import { db, type DbOrTx } from "@/server/db";
 import {
   oauthClients,
@@ -38,6 +38,7 @@ import { fetchWithSsrfProtection } from "@/server/http/ssrf";
 import { readResponseBufferWithSizeLimit } from "@/server/http/fetch";
 
 import {
+  cimdClientHost,
   isValidClientIdMetadataUrl,
   validateClientMetadataDocument,
   selectClientMetadata,
@@ -499,12 +500,13 @@ async function updateAccessTokenLastUsed(tokenId: string): Promise<void> {
  */
 export async function rotateRefreshToken(
   refreshToken: string,
-  clientId: string
+  clientId: string,
+  options: { requireUserConsent?: boolean } = {}
 ): Promise<TokenPair | null> {
   const tokenHash = hashToken(refreshToken);
   const now = new Date();
 
-  const newTokens = await db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx): Promise<RotationResult> => {
     // Atomically claim (revoke) the presented refresh token
     const claimed = await tx
       .update(oauthRefreshTokens)
@@ -522,10 +524,37 @@ export async function rotateRefreshToken(
     if (claimed.length === 0) {
       // Nothing claimed — roll back (a no-op) and let the caller run reuse
       // detection outside the transaction.
-      return null;
+      return { rejected: "no_claim" };
     }
 
     const oldRefreshToken = claimed[0];
+
+    // A user who revoked this client in Settings must not be walked back in by
+    // a refresh: the consent grant is what suppresses the consent prompt, so a
+    // live rotation chain would silently outlive the revocation. Checked here
+    // rather than in the revocation sweep because a rotation racing the sweep
+    // can commit a successor the sweep's snapshot never sees; that successor is
+    // then born unusable. Only for OAuth-server flows — the Wallabag password
+    // grant shares this rotation path and has no consent grant to check.
+    if (options.requireUserConsent) {
+      const activeGrant = await tx
+        .select({ id: oauthConsentGrants.id })
+        .from(oauthConsentGrants)
+        .where(
+          and(
+            eq(oauthConsentGrants.userId, oldRefreshToken.userId),
+            eq(oauthConsentGrants.clientId, clientId),
+            isNull(oauthConsentGrants.revokedAt)
+          )
+        )
+        .limit(1);
+
+      if (activeGrant.length === 0) {
+        // The claim stands (the presented token is revoked): consent is gone,
+        // so the whole chain should be dead anyway.
+        return { rejected: "no_consent" };
+      }
+    }
 
     // Revoke the old access token if it exists
     if (oldRefreshToken.accessTokenId) {
@@ -574,10 +603,18 @@ export async function rotateRefreshToken(
         .where(eq(oauthRefreshTokens.id, oldRefreshToken.id));
     }
 
-    return created;
+    return { tokens: created };
   });
 
-  if (!newTokens) {
+  if ("rejected" in result) {
+    if (result.rejected === "no_consent") {
+      logger.warn("OAuth refresh rejected: user revoked this client's consent", {
+        component: "oauth",
+        clientId,
+      });
+      return null;
+    }
+
     // The claim matched nothing: the token was unknown, expired, or already
     // rotated. The last case is either a genuine reuse (leak) or a benign
     // concurrent refresh racing the winner — handlePossibleRefreshTokenReuse
@@ -586,8 +623,10 @@ export async function rotateRefreshToken(
     return null;
   }
 
-  return newTokens;
+  return result.tokens;
 }
+
+type RotationResult = { tokens: TokenPair } | { rejected: "no_claim" | "no_consent" };
 
 /**
  * Grace window for rotation reuse detection. A rotated (revoked) refresh token
@@ -828,6 +867,142 @@ export async function recordConsent(
     });
 }
 
+/**
+ * A consent grant as presented to the user in Settings.
+ *
+ * CIMD clients are never stored in `oauth_clients`, so a grant to one has no
+ * name here: `clientHost` (the client_id URL's hostname) is its only identity
+ * we can vouch for, matching what the consent screen leads with. We
+ * deliberately don't re-fetch metadata documents to label a list — that would
+ * be one outbound fetch per row, on a page render, for a self-asserted name.
+ */
+export interface UserConsentGrantSummary {
+  clientId: string;
+  /** Name from our own client registry; null for CIMD clients. */
+  clientName: string | null;
+  /** Hostname of a CIMD client's client_id URL; null for registered clients. */
+  clientHost: string | null;
+  scopes: string[];
+  /** When consent was last recorded — re-consenting refreshes it. */
+  grantedAt: Date;
+  /**
+   * Most recent use of an access token for this client. Null once the tokens
+   * that recorded it have been reaped, so "no recent use", not "never used".
+   */
+  lastUsedAt: Date | null;
+}
+
+/**
+ * Lists the user's active consent grants for the Settings UI.
+ */
+export async function listUserConsentGrants(userId: string): Promise<UserConsentGrantSummary[]> {
+  const grants = await db
+    .select({
+      clientId: oauthConsentGrants.clientId,
+      clientName: oauthClients.name,
+      scopes: oauthConsentGrants.scopes,
+      grantedAt: oauthConsentGrants.updatedAt,
+    })
+    .from(oauthConsentGrants)
+    .leftJoin(oauthClients, eq(oauthClients.clientId, oauthConsentGrants.clientId))
+    .where(and(eq(oauthConsentGrants.userId, userId), isNull(oauthConsentGrants.revokedAt)))
+    .orderBy(desc(oauthConsentGrants.updatedAt));
+
+  const lastUsed = await db
+    .select({
+      clientId: oauthAccessTokens.clientId,
+      lastUsedAt: max(oauthAccessTokens.lastUsedAt),
+    })
+    .from(oauthAccessTokens)
+    .where(eq(oauthAccessTokens.userId, userId))
+    .groupBy(oauthAccessTokens.clientId);
+
+  const lastUsedByClient = new Map(lastUsed.map((row) => [row.clientId, row.lastUsedAt]));
+
+  return grants.map((grant) => ({
+    clientId: grant.clientId,
+    clientName: grant.clientName,
+    clientHost: cimdClientHost(grant.clientId, { fromDatabase: grant.clientName !== null }),
+    scopes: grant.scopes,
+    grantedAt: grant.grantedAt,
+    lastUsedAt: lastUsedByClient.get(grant.clientId) ?? null,
+  }));
+}
+
+/**
+ * Revokes the user's consent for a client and kills everything outstanding it
+ * could still trade for access.
+ *
+ * Every half matters: dropping only the consent grant would leave live access
+ * and refresh tokens (and the refresh chain renewing itself indefinitely),
+ * dropping only the tokens would let the client walk back through
+ * /oauth/authorize silently since consent is what suppresses the prompt, and
+ * leaving an unredeemed authorization code would buy it a fresh hour-long
+ * access token plus a 30-day refresh chain minutes after the user said no.
+ *
+ * The consent grant is revoked **first**, so the two token-redemption paths
+ * that re-check it (`rotateRefreshToken({ requireUserConsent })` and the
+ * authorization-code exchange) fail closed for anything racing this sweep.
+ *
+ * Returns false if the user has no active grant for the client.
+ */
+export async function revokeUserConsentGrant(userId: string, clientId: string): Promise<boolean> {
+  const now = new Date();
+
+  const revokedGrants = await db
+    .update(oauthConsentGrants)
+    .set({ revokedAt: now, updatedAt: now })
+    .where(
+      and(
+        eq(oauthConsentGrants.userId, userId),
+        eq(oauthConsentGrants.clientId, clientId),
+        isNull(oauthConsentGrants.revokedAt)
+      )
+    )
+    .returning({ id: oauthConsentGrants.id });
+
+  if (revokedGrants.length === 0) {
+    return false;
+  }
+
+  await db
+    .update(oauthAuthorizationCodes)
+    .set({ usedAt: now })
+    .where(
+      and(
+        eq(oauthAuthorizationCodes.userId, userId),
+        eq(oauthAuthorizationCodes.clientId, clientId),
+        isNull(oauthAuthorizationCodes.usedAt)
+      )
+    );
+
+  await db
+    .update(oauthRefreshTokens)
+    .set({ revokedAt: now })
+    .where(
+      and(
+        eq(oauthRefreshTokens.userId, userId),
+        eq(oauthRefreshTokens.clientId, clientId),
+        isNull(oauthRefreshTokens.revokedAt)
+      )
+    );
+
+  await db
+    .update(oauthAccessTokens)
+    .set({ revokedAt: now })
+    .where(
+      and(
+        eq(oauthAccessTokens.userId, userId),
+        eq(oauthAccessTokens.clientId, clientId),
+        isNull(oauthAccessTokens.revokedAt)
+      )
+    );
+
+  logger.info("User revoked OAuth consent grant", { component: "oauth", userId, clientId });
+
+  return true;
+}
+
 // ============================================================================
 // Dynamic Client Registration (RFC 7591)
 // ============================================================================
@@ -902,13 +1077,10 @@ function generateClientId(): string {
  * Supports open registration (no initial access token required).
  *
  * @param request - Client registration request
- * @param host - Request Host header; picks the OAuth surface (apex vs MCP host)
- *   the `registration_client_uri` is expressed on
  * @returns Client registration response or error
  */
 export async function registerClient(
-  request: ClientRegistrationRequest,
-  host?: string | null
+  request: ClientRegistrationRequest
 ): Promise<
   | { success: true; data: ClientRegistrationResponse }
   | { success: false; error: ClientRegistrationError }
@@ -1052,9 +1224,8 @@ export async function registerClient(
     // Notion), which all include this field. RFC 7592 client management is not
     // implemented (theirs isn't either — Linear's URI 404s), and per RFC 7592 a
     // client can't use it anyway without a registration_access_token, which we
-    // don't issue. Host-derived so a registration on the MCP host doesn't
-    // reference the apex origin.
-    registration_client_uri: getRegistrationClientUri(clientId, host),
+    // don't issue.
+    registration_client_uri: getRegistrationClientUri(clientId),
   };
 
   // Add client_secret for confidential clients

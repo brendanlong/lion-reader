@@ -18,7 +18,6 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { maybeCompressResponse } from "../src/server/http/compression";
-import { stripOauthSurfaceTrailingSlash } from "../src/server/http/trailing-slash";
 import {
   startMaintenancePoller,
   getCurrentMaintenance,
@@ -127,15 +126,6 @@ app.prepare().then(() => {
   startMaintenancePoller();
 
   const server = createServer((req, res) => {
-    // OAuth/MCP endpoints must answer trailing-slash URLs in place instead of
-    // Next's default 308 (server-to-server OAuth clients don't follow
-    // redirects on POST). Normalizing req.url here keeps the built-in
-    // trailing-slash redirect intact for the rest of the site — see
-    // src/server/http/trailing-slash.ts.
-    if (req.url) {
-      req.url = stripOauthSurfaceTrailingSlash(req.url);
-    }
-
     // Maintenance mode: short-circuit everything except the exempt surfaces
     // (demo, admin, health, static). Demo stays up because it never touches the
     // database, which is the whole point during a DB migration.
