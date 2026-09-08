@@ -47,6 +47,7 @@ const STATIC_ROUTES = {
   "/settings": "/app/settings",
   "/settings/ai": "/app/settings/ai",
   "/settings/appearance": "/app/settings/appearance",
+  "/settings/connected-apps": "/app/settings/connected-apps",
   "/settings/delete-account": "/app/settings/delete-account",
   "/settings/email": "/app/settings/email",
   "/settings/feed-health": "/app/settings/feed-health",

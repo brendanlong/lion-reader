@@ -5,7 +5,7 @@
  * Handles clients, authorization codes, tokens, and consent.
  */
 
-import { eq, and, isNull, gt, inArray, sql } from "drizzle-orm";
+import { eq, and, isNull, gt, inArray, sql, desc, max } from "drizzle-orm";
 import { db, type DbOrTx } from "@/server/db";
 import {
   oauthClients,
@@ -826,6 +826,132 @@ export async function recordConsent(
         revokedAt: null, // Clear any previous revocation
       },
     });
+}
+
+/**
+ * A consent grant as presented to the user in Settings.
+ *
+ * CIMD clients are never stored in `oauth_clients`, so a grant to one has no
+ * name here: `clientHost` (the client_id URL's hostname) is its only identity
+ * we can vouch for, matching what the consent screen leads with. We
+ * deliberately don't re-fetch metadata documents to label a list — that would
+ * be one outbound fetch per row, on a page render, for a self-asserted name.
+ */
+export interface UserConsentGrantSummary {
+  clientId: string;
+  /** Name from our own client registry; null for CIMD clients. */
+  clientName: string | null;
+  /** Hostname of a CIMD client's client_id URL; null for registered clients. */
+  clientHost: string | null;
+  scopes: string[];
+  /** When consent was last recorded — re-consenting refreshes it. */
+  grantedAt: Date;
+  /**
+   * Most recent use of an access token for this client. Null once the tokens
+   * that recorded it have been reaped, so "no recent use", not "never used".
+   */
+  lastUsedAt: Date | null;
+}
+
+/**
+ * Lists the user's active consent grants for the Settings UI.
+ */
+export async function listUserConsentGrants(userId: string): Promise<UserConsentGrantSummary[]> {
+  const grants = await db
+    .select({
+      clientId: oauthConsentGrants.clientId,
+      clientName: oauthClients.name,
+      scopes: oauthConsentGrants.scopes,
+      grantedAt: oauthConsentGrants.updatedAt,
+    })
+    .from(oauthConsentGrants)
+    .leftJoin(oauthClients, eq(oauthClients.clientId, oauthConsentGrants.clientId))
+    .where(and(eq(oauthConsentGrants.userId, userId), isNull(oauthConsentGrants.revokedAt)))
+    .orderBy(desc(oauthConsentGrants.updatedAt));
+
+  const lastUsed = await db
+    .select({
+      clientId: oauthAccessTokens.clientId,
+      lastUsedAt: max(oauthAccessTokens.lastUsedAt),
+    })
+    .from(oauthAccessTokens)
+    .where(eq(oauthAccessTokens.userId, userId))
+    .groupBy(oauthAccessTokens.clientId);
+
+  const lastUsedByClient = new Map(lastUsed.map((row) => [row.clientId, row.lastUsedAt]));
+
+  return grants.map((grant) => ({
+    clientId: grant.clientId,
+    clientName: grant.clientName,
+    clientHost: grant.clientName === null ? getClientIdHost(grant.clientId) : null,
+    scopes: grant.scopes,
+    grantedAt: grant.grantedAt,
+    lastUsedAt: lastUsedByClient.get(grant.clientId) ?? null,
+  }));
+}
+
+function getClientIdHost(clientId: string): string | null {
+  try {
+    return new URL(clientId).hostname;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Revokes the user's consent for a client and kills its outstanding tokens.
+ *
+ * Both halves matter: dropping only the consent grant would leave live access
+ * and refresh tokens (and the refresh chain renewing itself indefinitely),
+ * while dropping only the tokens would let the client walk back through
+ * /oauth/authorize silently, since consent is what suppresses the prompt.
+ *
+ * Returns false if the user has no active grant for the client.
+ */
+export async function revokeUserConsentGrant(userId: string, clientId: string): Promise<boolean> {
+  const now = new Date();
+
+  const revokedGrants = await db
+    .update(oauthConsentGrants)
+    .set({ revokedAt: now, updatedAt: now })
+    .where(
+      and(
+        eq(oauthConsentGrants.userId, userId),
+        eq(oauthConsentGrants.clientId, clientId),
+        isNull(oauthConsentGrants.revokedAt)
+      )
+    )
+    .returning({ id: oauthConsentGrants.id });
+
+  if (revokedGrants.length === 0) {
+    return false;
+  }
+
+  await db
+    .update(oauthRefreshTokens)
+    .set({ revokedAt: now })
+    .where(
+      and(
+        eq(oauthRefreshTokens.userId, userId),
+        eq(oauthRefreshTokens.clientId, clientId),
+        isNull(oauthRefreshTokens.revokedAt)
+      )
+    );
+
+  await db
+    .update(oauthAccessTokens)
+    .set({ revokedAt: now })
+    .where(
+      and(
+        eq(oauthAccessTokens.userId, userId),
+        eq(oauthAccessTokens.clientId, clientId),
+        isNull(oauthAccessTokens.revokedAt)
+      )
+    );
+
+  logger.info("User revoked OAuth consent grant", { component: "oauth", userId, clientId });
+
+  return true;
 }
 
 // ============================================================================
