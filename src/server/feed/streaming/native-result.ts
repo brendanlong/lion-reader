@@ -9,8 +9,7 @@
  */
 
 import type { DateCandidate, RawParsedFeed } from "@lion-reader/feed-parser";
-import type { SyndicationHints } from "../types";
-import type { UpdatePeriod } from "./syndication";
+import { isUpdatePeriod, type SyndicationHints } from "../types";
 import type { FeedParseResult } from "./types";
 
 /**
@@ -50,11 +49,15 @@ export function toFeedParseResult(
   raw: RawParsedFeed,
   parseDate: (value: string) => Date | undefined
 ): FeedParseResult {
+  const updatePeriod =
+    raw.updatePeriod !== undefined && isUpdatePeriod(raw.updatePeriod)
+      ? raw.updatePeriod
+      : undefined;
+
   let syndication: SyndicationHints | undefined;
-  if (raw.updatePeriod !== undefined || raw.updateFrequency !== undefined) {
+  if (updatePeriod !== undefined || raw.updateFrequency !== undefined) {
     syndication = {};
-    // The native side already lowercased and validated the period value.
-    if (raw.updatePeriod) syndication.updatePeriod = raw.updatePeriod as UpdatePeriod;
+    if (updatePeriod !== undefined) syndication.updatePeriod = updatePeriod;
     if (raw.updateFrequency) syndication.updateFrequency = raw.updateFrequency;
   }
 

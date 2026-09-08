@@ -80,6 +80,27 @@ export interface ParsedEntry {
   mediaThumbnailUrl?: string;
 }
 
+const UPDATE_PERIODS = ["hourly", "daily", "weekly", "monthly", "yearly"] as const;
+
+/** Valid `sy:updatePeriod` value. */
+export type UpdatePeriod = (typeof UPDATE_PERIODS)[number];
+
+/**
+ * Narrows a `sy:updatePeriod` string from a parser to `UpdatePeriod`.
+ *
+ * The native parser already lowercases and rejects unknown periods, so this
+ * only re-checks what crosses the napi boundary as a bare `string`. Callers
+ * should drop the hint when it returns false, matching what the native parser
+ * does with an unrecognized value.
+ *
+ * `UPDATE_PERIODS` must stay in sync with `VALID_UPDATE_PERIODS` in
+ * `native/feed-parser/core/src/types.rs` — if Rust ever accepts a period this
+ * list lacks, the hint is silently dropped here rather than honored.
+ */
+export function isUpdatePeriod(value: string): value is UpdatePeriod {
+  return (UPDATE_PERIODS as readonly string[]).includes(value);
+}
+
 /**
  * Update interval hints from RSS Syndication namespace.
  * Used to calculate refresh intervals based on feed-provided hints.
@@ -88,10 +109,10 @@ export interface ParsedEntry {
  */
 export interface SyndicationHints {
   /**
-   * Period for updates: "hourly", "daily", "weekly", "monthly", "yearly"
+   * Period for updates.
    * @example "daily" means the feed updates once per day
    */
-  updatePeriod?: "hourly" | "daily" | "weekly" | "monthly" | "yearly";
+  updatePeriod?: UpdatePeriod;
   /**
    * Frequency of updates within the period.
    * @example updatePeriod="daily" + updateFrequency=2 means twice per day
