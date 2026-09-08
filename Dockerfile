@@ -40,7 +40,32 @@ RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile --ignore-scripts
 
 # =============================================================================
-# Stage 3: Build the native (Rust) modules for this image's platform (musl)
+# Stage 3a: The Rust toolchain production compiles with
+# =============================================================================
+# The Alpine version is pinned here (the other stages float) so this rustc only
+# moves when someone edits this line; rust-toolchain.toml says why CI has to
+# match it. Its own stage so CI can run the check below with
+# `docker build --target rust-base .` in seconds — otherwise the bump that
+# breaks the pin passes CI and fails the deploy build.
+FROM node:26-alpine3.24 AS rust-base
+
+WORKDIR /app
+
+RUN apk add --no-cache rust cargo
+
+COPY rust-toolchain.toml ./
+RUN pinned="$(sed -n 's/^channel *= *"\([^"]*\)".*/\1/p' rust-toolchain.toml)" && \
+    actual="$(rustc --version | cut -d' ' -f2)" && \
+    case "$actual" in \
+      "$pinned" | "$pinned".*) ;; \
+      *) echo "Alpine ships rustc $actual but rust-toolchain.toml pins $pinned." \
+              "Set channel = \"${actual%.*}\" there (and re-run CI) or pin an" \
+              "Alpine tag that ships $pinned." >&2; \
+         exit 1 ;; \
+    esac
+
+# =============================================================================
+# Stage 3b: Build the native (Rust) modules for this image's platform (musl)
 # =============================================================================
 # A separate stage keyed only on native/ sources: pure-TS deploys hit the layer
 # cache and skip the Rust toolchain install and cargo build entirely, and when
@@ -48,11 +73,7 @@ RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
 # The build.mjs scripts are plain `node` + `cargo` — no pnpm/node_modules needed.
 # Cache mounts keep crate downloads and incremental build artifacts across
 # builds (each build.mjs copies its artifact out of target/ to <name>.node).
-FROM node:26-alpine AS native-builder
-
-WORKDIR /app
-
-RUN apk add --no-cache rust cargo
+FROM rust-base AS native-builder
 
 # .dockerignore excludes native/*/target/ and native/*/*.node so local build
 # artifacts can't leak into (or bust the cache of) this layer.

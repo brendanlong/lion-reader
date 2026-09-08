@@ -36,6 +36,12 @@ mkdir -p .node26 && curl -sL https://nodejs.org/dist/v26.7.0/node-v26.7.0-linux-
 export PATH="$PWD/.node26/bin:$PATH"
 ```
 
+## Rust Version
+
+Pinned to the rustc Alpine ships in the Dockerfile's `rust-base` stage
+(`rust-toolchain.toml`, which says why). Bump the two together — CI fails
+otherwise.
+
 ## Commands
 
 - `pnpm build:native` - Build the native Rust modules (sanitizer, readability, feed-parser, markdown). **Required once per checkout before tests or the app** — if tests fail with "Failed to load the native …", run this. Needs the Rust toolchain (`cargo` — if missing from PATH, try `~/.cargo/bin`). The SessionStart hook starts it in the background, so it may already be done or in flight (log: `/tmp/lion-reader-build-native.log`).

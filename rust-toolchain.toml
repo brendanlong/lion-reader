@@ -1,0 +1,13 @@
+# The Rust compiler version, for CI and local dev. Deliberately equal to the
+# rustc Alpine ships in the Dockerfile's pinned rust-base stage: the native
+# crates are compiled with that rustc in production, so CI has to use it too,
+# or a call to an API stabilized later passes every check here and only fails
+# when the image is built. Bump this together with that Alpine tag — CI builds
+# the rust-base stage, which fails if the two disagree.
+#
+# rustup honors this; a distro-installed cargo ignores it, which is why the
+# check lives in the image rather than here.
+[toolchain]
+channel = "1.96"
+profile = "minimal"
+components = ["clippy", "rustfmt"]
