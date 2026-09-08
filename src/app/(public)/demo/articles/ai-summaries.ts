@@ -24,9 +24,13 @@ const article: DemoArticle = {
 
     <h3>Privacy-Respecting Design</h3>
 
-    <p>Unlike some readers that automatically summarize everything (consuming API credits and sharing your reading habits), Lion Reader only generates summaries when you explicitly request them. Click the &ldquo;Summarize&rdquo; button in the article header, and <a href="https://www.anthropic.com/" target="_blank" rel="noopener noreferrer">Anthropic Claude</a> generates a concise overview focusing on the main topic, key findings, and important conclusions.</p>
+    <p>Unlike some readers that automatically summarize everything (consuming API credits and sharing your reading habits), Lion Reader only generates summaries when you explicitly request them. Click the &ldquo;Summarize&rdquo; button in the article header, and your chosen model generates a concise overview focusing on the main topic, key findings, and important conclusions.</p>
 
     <p>The summary appears in a collapsible card above the article content. You can expand or collapse it as needed, or dismiss it entirely if you decide to read the full article instead.</p>
+
+    <h3>Bring Your Own Model</h3>
+
+    <p>Add an API key under Settings &rarr; AI &amp; Narration and pick any model from <a href="https://groq.com/" target="_blank" rel="noopener noreferrer">Groq</a>, <a href="https://www.anthropic.com/" target="_blank" rel="noopener noreferrer">Anthropic</a>, or <a href="https://www.cerebras.ai/" target="_blank" rel="noopener noreferrer">Cerebras</a>. For most people we recommend <a href="https://openai.com/index/introducing-gpt-oss/" target="_blank" rel="noopener noreferrer">GPT-OSS-120B</a> on Cerebras &mdash; summaries come back near-instantly at roughly a tenth of the price of Claude Sonnet &mdash; but Anthropic&rsquo;s Claude models are there when you want the sharpest possible summary.</p>
 
     <h3>Efficient Caching</h3>
 
