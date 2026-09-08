@@ -1,14 +1,9 @@
 {
-  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "$schema": "https://unpkg.com/knip@6/schema.json",
   "workspaces": {
     ".": {
       "entry": ["scripts/fixup-standalone.mjs"],
-      "ignore": [
-        "extension/**",
-        "src/lib/stubs/**",
-        "worker/index.ts",
-        "src/app/demo/articles/scoring.ts"
-      ]
+      "ignore": ["extension/**", "src/lib/stubs/**", "worker/index.ts"]
     },
     "native/sanitizer": {},
     "native/markdown": {}
