@@ -150,23 +150,15 @@ interface BrokenFeedRowProps {
 }
 
 function BrokenFeedRow({ feed, onUnsubscribe, onFileIssue }: BrokenFeedRowProps) {
-  const [isRetrying, setIsRetrying] = useState(false);
-
   const utils = trpc.useUtils();
 
   const retryMutation = trpc.brokenFeeds.retryFetch.useMutation({
-    onMutate: () => {
-      setIsRetrying(true);
-    },
     onSuccess: () => {
       utils.brokenFeeds.list.invalidate();
       toast.success("Feed fetch scheduled");
     },
     onError: (error) => {
       toast.error(error.message || "Failed to retry fetch");
-    },
-    onSettled: () => {
-      setIsRetrying(false);
     },
   });
 
@@ -215,7 +207,12 @@ function BrokenFeedRow({ feed, onUnsubscribe, onFileIssue }: BrokenFeedRowProps)
 
         {/* Action Buttons */}
         <div className="flex shrink-0 flex-wrap gap-2">
-          <Button variant="secondary" size="sm" onClick={handleRetry} loading={isRetrying}>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={handleRetry}
+            loading={retryMutation.isPending}
+          >
             Retry Now
           </Button>
           <Button

@@ -11,6 +11,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { CardSection } from "@/components/ui/card";
 import { NoteBox } from "@/components/ui/note-box";
+import { CopyButton } from "@/components/ui/copy-button";
 import { BookmarkIcon, ChevronRightIcon, ChromeIcon, FirefoxIcon } from "@/components/ui/icons";
 
 export function BookmarkletSettings() {
@@ -134,15 +135,7 @@ export function BookmarkletSettings() {
               <pre className="ui-text-xs border-edge-strong bg-surface-muted text-body overflow-x-auto rounded-md border p-3 font-mono">
                 <code className="break-all whitespace-pre-wrap">{bookmarkletHref}</code>
               </pre>
-              <button
-                type="button"
-                onClick={() => {
-                  navigator.clipboard.writeText(bookmarkletHref);
-                }}
-                className="ui-text-xs border-edge-input absolute top-2 right-2 rounded border bg-white px-2 py-1 font-medium text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600 dark:hover:text-zinc-100"
-              >
-                Copy
-              </button>
+              <CopyButton value={bookmarkletHref} className="absolute top-2 right-2 px-2 py-1" />
             </div>
           </div>
         )}

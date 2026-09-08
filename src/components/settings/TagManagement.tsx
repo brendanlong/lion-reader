@@ -199,7 +199,7 @@ interface TagItemProps {
 }
 
 function TagItem({ tag, onSuccess, onError }: TagItemProps) {
-  const [isEditing, setIsEditing] = useState(false);
+  // `editingValues !== null` *is* the editing state; no separate flag to keep in sync.
   const [editingValues, setEditingValues] = useState<EditingTag | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
@@ -209,7 +209,6 @@ function TagItem({ tag, onSuccess, onError }: TagItemProps) {
   const updateMutation = trpc.tags.update.useMutation({
     onSuccess: () => {
       onSuccess("Tag updated successfully");
-      setIsEditing(false);
       setEditingValues(null);
       setShowColorPicker(false);
       utils.tags.list.invalidate();
@@ -238,11 +237,9 @@ function TagItem({ tag, onSuccess, onError }: TagItemProps) {
       name: tag.name,
       color: tag.color,
     });
-    setIsEditing(true);
   };
 
   const cancelEditing = () => {
-    setIsEditing(false);
     setEditingValues(null);
     setShowColorPicker(false);
   };
@@ -301,7 +298,7 @@ function TagItem({ tag, onSuccess, onError }: TagItemProps) {
     );
   }
 
-  if (isEditing && editingValues) {
+  if (editingValues) {
     return (
       <NoteBox className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="flex flex-1 items-center gap-3">

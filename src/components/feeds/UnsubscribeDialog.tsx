@@ -7,7 +7,6 @@
 
 "use client";
 
-import { useEffect, useRef } from "react";
 import { Dialog, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 
@@ -26,15 +25,6 @@ export function UnsubscribeDialog({
   onConfirm,
   onCancel,
 }: UnsubscribeDialogProps) {
-  const cancelButtonRef = useRef<HTMLButtonElement>(null);
-
-  // Focus the cancel button when dialog opens
-  useEffect(() => {
-    if (isOpen) {
-      cancelButtonRef.current?.focus();
-    }
-  }, [isOpen]);
-
   return (
     <Dialog
       isOpen={isOpen}
@@ -51,7 +41,7 @@ export function UnsubscribeDialog({
       </DialogDescription>
 
       <DialogFooter>
-        <Button ref={cancelButtonRef} variant="secondary" onClick={onCancel} disabled={isLoading}>
+        <Button variant="secondary" onClick={onCancel} disabled={isLoading}>
           Cancel
         </Button>
         <Button variant="danger" onClick={onConfirm} loading={isLoading}>
