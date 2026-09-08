@@ -8,12 +8,15 @@
  * The input covering the zone used to be `opacity-0`, which also erased the
  * global `:focus-visible` outline: a keyboard user could tab to it with no way
  * to see that they had (#1573). These tests pin the replacement — a named,
- * rendered, focusable `<input type="file">` hidden without opacity.
+ * rendered, focusable `<input type="file">` hidden without opacity. What that
+ * shared class string must and must not contain is pinned in
+ * `drop-zone-file-input.test.ts`.
  */
 
 import { describe, it, expect } from "vitest";
 import { screen, fireEvent } from "@testing-library/react";
 import { OpmlImportExport } from "@/components/settings/OpmlImportExport";
+import { DROP_ZONE_FILE_INPUT_CLASSES } from "@/components/ui/drop-zone-file-input";
 import { renderWithTrpc, type ProcedureHandlers } from "../../../utils/component-test-helpers";
 
 const handlers: ProcedureHandlers = {
@@ -33,17 +36,11 @@ describe("OpmlImportExport drop zone accessibility", () => {
     expect(input.type).toBe("file");
   });
 
-  it("keeps the file input visible to the focus outline and in the tab order", () => {
+  it("keeps the file input in the tab order", () => {
     renderWithTrpc(<OpmlImportExport />, { handlers });
 
     const input = getFileInput();
-    const classes = input.className.split(/\s+/);
-    // `opacity-0` would hide the global :focus-visible outline the zone relies
-    // on; `hidden` (display: none) and a negative tabindex would drop the input
-    // out of the tab order entirely. It is hidden with transparent text plus
-    // `file:hidden` on its file-selector button instead.
-    expect(classes).not.toContain("opacity-0");
-    expect(classes).not.toContain("hidden");
+    expect(input).toHaveClass(DROP_ZONE_FILE_INPUT_CLASSES);
     expect(input).not.toHaveAttribute("hidden");
     expect(input.tabIndex).toBeGreaterThanOrEqual(0);
     expect(input).not.toBeDisabled();
