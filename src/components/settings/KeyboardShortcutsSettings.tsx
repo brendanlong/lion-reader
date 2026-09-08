@@ -21,7 +21,9 @@ export function KeyboardShortcutsSettings() {
       {/* Enable/Disable Toggle */}
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="ui-text-sm text-body font-medium">Enable keyboard shortcuts</h3>
+          <h3 id="keyboard-shortcuts-label" className="ui-text-sm text-body font-medium">
+            Enable keyboard shortcuts
+          </h3>
           <p className="ui-text-sm text-muted mt-1">
             Use keyboard shortcuts to navigate entries and perform actions quickly.
           </p>
@@ -30,6 +32,7 @@ export function KeyboardShortcutsSettings() {
           type="button"
           role="switch"
           aria-checked={enabled}
+          aria-labelledby="keyboard-shortcuts-label"
           onClick={() => setEnabled(!enabled)}
           className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
             enabled ? "bg-primary-solid" : "bg-fill-muted"

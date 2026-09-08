@@ -419,7 +419,9 @@ function SpamPreferenceSection() {
       <Card>
         <div className="flex items-center justify-between">
           <div>
-            <h4 className="ui-text-sm text-body font-medium">Show spam entries</h4>
+            <h4 id="show-spam-label" className="ui-text-sm text-body font-medium">
+              Show spam entries
+            </h4>
             <p className="ui-text-sm text-muted mt-1">
               Display entries that were flagged as spam by our email provider.
             </p>
@@ -428,6 +430,7 @@ function SpamPreferenceSection() {
             type="button"
             role="switch"
             aria-checked={showSpam}
+            aria-labelledby="show-spam-label"
             onClick={handleToggle}
             disabled={preferencesQuery.isLoading || updateMutation.isPending}
             className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out disabled:cursor-not-allowed disabled:opacity-50 ${
