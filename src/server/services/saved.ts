@@ -379,11 +379,14 @@ async function buildArticleFields(
     : await cleanContentAsync(html, { url: baseUrl, ...cleanOptions });
 
   // When Readability ran, its output already has absolutized URLs; when it was
-  // skipped for plugin/pre-cleaned content, absolutize here. When neither produced
-  // anything (Readability failed on a plain page), store NULL rather than the raw
-  // full page — readers fall back to the sanitized original content.
+  // skipped for plugin/pre-cleaned content, absolutize here (neither the Markdown
+  // renderer nor the sanitizer resolves relative URLs, so nothing else will —
+  // and for an upload that means a relative link would otherwise point back into
+  // Lion Reader itself, which is what UPLOAD_BASE_URL exists to prevent). When
+  // neither produced anything (Readability failed on a plain page), store NULL
+  // rather than the raw full page — readers fall back to the sanitized original.
   const contentCleaned =
-    preCleanedContent?.html ??
+    (preCleanedContent ? absolutizeUrls(preCleanedContent.html, baseUrl) : null) ??
     cleaned?.content ??
     (pluginContent ? absolutizeUrls(pluginContent.html, baseUrl) : null);
 

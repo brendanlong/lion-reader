@@ -126,17 +126,21 @@ export async function fetchFullContent(
     // separate chrome from content is already gone.
     if (result.isMarkdown) {
       logger.debug("Converting Markdown to HTML (skipping Readability)", { url });
-      const { html: contentCleaned } = await processMarkdown(result.content, {
+      const { html } = await processMarkdown(result.content, {
         offload: offloadClean,
       });
 
-      // Absolutize URLs in the original HTML (before title stripping)
-      const contentOriginal = absolutizeUrls(contentCleaned, resolveUrl);
+      // Readability is what absolutizes on the other branches, and it didn't
+      // run here — neither the Markdown renderer nor the sanitizer resolves
+      // relative URLs, so do it once and store the same copy in both fields.
+      // Markdown has no "original" HTML distinct from the rendered output, and
+      // the cleaned copy is the one that gets displayed.
+      const content = absolutizeUrls(html, resolveUrl);
 
       return {
         success: true,
-        contentOriginal,
-        contentCleaned,
+        contentOriginal: content,
+        contentCleaned: content,
       };
     }
 

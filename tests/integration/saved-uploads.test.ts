@@ -256,6 +256,31 @@ describe("uploadArticle (Markdown)", () => {
     expect(article.title).toBe("Explicit Title");
   });
 
+  it("rewrites relative URLs against the dummy upload base (not Lion Reader)", async () => {
+    const userId = await createUser();
+    const md = [
+      "# Uploaded Notes",
+      "",
+      "A paragraph with enough prose that the content is unambiguously an article.",
+      "",
+      "![A figure](img/fig.png)",
+      "",
+      "Go to [settings](/settings) or the [next note](notes/next.md).",
+    ].join("\n");
+
+    const article = await uploadArticle(db, userId, { content: md, title: "" });
+
+    const stored = await readStored(article.id);
+    // Readability is skipped for Markdown, so nothing downstream resolves these
+    // — a root-relative link left as-is would point back into the Lion Reader
+    // app, which is exactly what the deliberately-broken upload base prevents.
+    expect(stored.contentCleaned).toContain("https://uploaded.invalid/settings");
+    expect(stored.contentCleaned).toContain("https://uploaded.invalid/img/fig.png");
+    expect(stored.contentCleaned).toContain("https://uploaded.invalid/notes/next.md");
+    expect(stored.contentCleaned).not.toContain('href="/settings"');
+    expect(stored.contentCleaned).not.toContain('src="img/fig.png"');
+  });
+
   it("prefers the provided author/excerpt over frontmatter", async () => {
     const userId = await createUser();
     const md = [
