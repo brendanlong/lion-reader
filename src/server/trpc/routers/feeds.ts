@@ -455,11 +455,12 @@ export const feedsRouter = createTRPCRouter({
 
       // Step 3: Fetch the URL and try to discover feeds from HTML
       try {
-        const { text: content, contentType } = await fetchUrl(inputUrl);
+        const { text: content, contentType, finalUrl } = await fetchUrl(inputUrl);
 
         if (isHtmlContent(contentType, content)) {
-          // Look for <link rel="alternate"> tags in the HTML
-          const htmlFeeds = discoverFeeds(content, inputUrl);
+          // Resolve relative hrefs against the URL the HTML actually came from,
+          // not the one we asked for — a redirect can change host and path.
+          const htmlFeeds = discoverFeeds(content, finalUrl);
           for (const feed of htmlFeeds) {
             addFeed(feed);
           }
