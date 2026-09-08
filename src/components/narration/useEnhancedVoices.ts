@@ -152,11 +152,6 @@ export interface UseEnhancedVoicesReturn {
   previewingVoiceId: string | null;
 
   /**
-   * Refresh the voice status from storage.
-   */
-  refreshStatus: () => Promise<void>;
-
-  /**
    * Error message if an operation failed.
    */
   error: string | null;
@@ -340,37 +335,6 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
     return () => {
       isMountedRef.current = false;
     };
-  }, [updateStorageStats]);
-
-  // Refresh status from storage
-  const refreshStatus = useCallback(async () => {
-    try {
-      const provider = getPiperTTSProvider();
-      const storedVoices = await provider.getStoredVoiceIds();
-      const storedSet = new Set(storedVoices);
-
-      if (!isMountedRef.current) return;
-
-      setVoiceStates((prev) => {
-        const newStates = new Map(prev);
-        for (const voice of ENHANCED_VOICES) {
-          const current = newStates.get(voice.id);
-          // Only update if not currently downloading
-          if (current?.status !== "downloading") {
-            newStates.set(voice.id, {
-              status: storedSet.has(voice.id) ? "downloaded" : "not-downloaded",
-              progress: 0,
-            });
-          }
-        }
-        return newStates;
-      });
-
-      // Update storage statistics
-      await updateStorageStats();
-    } catch {
-      // Silently fail - keep existing state
-    }
   }, [updateStorageStats]);
 
   // Download a voice
@@ -636,7 +600,6 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
     stopPreview,
     isPreviewing,
     previewingVoiceId,
-    refreshStatus,
     error,
     lastErrorInfo,
     failedVoiceId,

@@ -44,6 +44,8 @@ export PATH="$PWD/.node26/bin:$PATH"
 - `pnpm test:native` / `pnpm lint:native` - `cargo test` / `cargo clippy -D warnings` across all four native crates. Both gate CI.
 - `pnpm test:integration` - Backend tests against real Postgres/Redis (docker-compose)
 - `pnpm test:e2e` - Playwright browser tests against a real app server (docker-compose)
+- `pnpm knip` - Unused files, exports, and dependencies
+- `pnpm knip:production` - The same sweep from **production entry points only** — `knip.production.json` lists the shipped binaries and the service worker; knip's Next plugin supplies the app-router entries. Tests are entry points for `pnpm knip`, so only this run catches code that is dead in production and stays "used" because its own tests import it (#1551). Both gate CI. Delete what it reports, or tag an export that has to stay purely for tests `@testonly` — the sweep skips those. It deliberately ignores exports their own module still calls (otherwise ~100 ordinary test seams drown the signal), so it sees dead modules and dead exports, not a live helper that is merely exported too widely.
 
 ## Local Services (no Docker)
 

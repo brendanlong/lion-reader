@@ -1,0 +1,18 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignoreExportsUsedInFile": true,
+  "workspaces": {
+    ".": {
+      "entry": [
+        "scripts/server.ts!",
+        "scripts/worker.ts!",
+        "scripts/discord-bot.ts!",
+        "scripts/migrate.ts!",
+        "worker/index.ts!",
+        "src/server/mcp/bin.ts!"
+      ],
+      "project": ["src/**/*.{ts,tsx}!"],
+      "ignore": ["src/lib/stubs/**"]
+    }
+  }
+}

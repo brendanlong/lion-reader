@@ -7,7 +7,6 @@ import {
   calculateNextFetch,
   calculateFailureBackoff,
   calculateJitter,
-  getNextFetchTime,
   syndicationToSeconds,
   getMinFetchIntervalSeconds,
   shouldRefetchOnSubscribe,
@@ -762,33 +761,6 @@ describe("calculateFailureBackoff", () => {
     for (const [failures, expected] of Object.entries(expectedBackoffs)) {
       expect(calculateFailureBackoff(Number(failures))).toBe(expected);
     }
-  });
-});
-
-describe("getNextFetchTime", () => {
-  const fixedNow = new Date("2024-01-15T12:00:00Z");
-
-  it("returns just the Date without metadata", () => {
-    const result = getNextFetchTime({
-      cacheControl: createCacheControl({ maxAge: 7200 }),
-      now: fixedNow,
-      randomSource: noJitter,
-    });
-
-    expect(result).toEqual(new Date("2024-01-15T14:00:00Z"));
-    expect(result).toBeInstanceOf(Date);
-  });
-
-  it("uses default interval when no options", () => {
-    const before = new Date();
-    const result = getNextFetchTime({ randomSource: noJitter });
-    const after = new Date();
-
-    const expectedMin = new Date(before.getTime() + DEFAULT_FETCH_INTERVAL_SECONDS * 1000);
-    const expectedMax = new Date(after.getTime() + DEFAULT_FETCH_INTERVAL_SECONDS * 1000);
-
-    expect(result.getTime()).toBeGreaterThanOrEqual(expectedMin.getTime());
-    expect(result.getTime()).toBeLessThanOrEqual(expectedMax.getTime());
   });
 });
 

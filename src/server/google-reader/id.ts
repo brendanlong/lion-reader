@@ -40,13 +40,6 @@ export function int64ToLongFormId(id: bigint): string {
 }
 
 /**
- * Formats an int64 as a short hex string (16 chars, zero-padded).
- */
-export function int64ToShortHex(id: bigint): string {
-  return id.toString(16).padStart(16, "0");
-}
-
-/**
  * Parses a Google Reader item ID from any of the three formats clients send:
  * - Long hex: "tag:google.com,2005:reader/item/000000000000001F"
  * - Short hex: "000000000000001F"
@@ -134,17 +127,6 @@ export async function greaderItemIdsToUuids(
  */
 export function feedStreamId(streamId: bigint): string {
   return `feed/${streamId.toString()}`;
-}
-
-/**
- * Converts a Google Reader feed stream ID to its int64.
- * Input: "feed/{int64}" -> bigint
- */
-export function parseFeedStreamId(streamId: string): bigint {
-  if (!streamId.startsWith("feed/")) {
-    throw new Error(`Invalid feed stream ID: ${streamId}`);
-  }
-  return BigInt(streamId.slice(5));
 }
 
 /**

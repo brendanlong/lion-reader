@@ -3,12 +3,8 @@
  */
 
 import { describe, it, expect } from "vitest";
-import {
-  parseFeed,
-  parseFeedWithFormat,
-  detectFeedType,
-  UnknownFeedFormatError,
-} from "../../src/server/feed/parser";
+import { parseFeed, detectFeedType } from "../../src/server/feed/parser";
+import { UnknownFeedFormatError } from "../../src/server/feed/streaming/parser";
 
 describe("detectFeedType", () => {
   describe("RSS detection", () => {
@@ -343,82 +339,6 @@ describe("parseFeed", () => {
       expect(rssFeed.items[0].pubDate).toEqual(atomFeed.items[0].pubDate);
       expect(rssFeed.items[0].pubDate).toEqual(jsonParsed.items[0].pubDate);
     });
-  });
-});
-
-describe("parseFeedWithFormat", () => {
-  it("parses RSS feed with explicit format", () => {
-    const xml = `<?xml version="1.0" encoding="UTF-8"?>
-      <rss version="2.0">
-        <channel>
-          <title>RSS Feed</title>
-        </channel>
-      </rss>`;
-
-    const feed = parseFeedWithFormat(xml, "rss");
-
-    expect(feed.title).toBe("RSS Feed");
-  });
-
-  it("parses Atom feed with explicit format", () => {
-    const xml = `<?xml version="1.0" encoding="UTF-8"?>
-      <feed xmlns="http://www.w3.org/2005/Atom">
-        <title>Atom Feed</title>
-        <id>urn:uuid:atom</id>
-        <updated>2024-01-01T00:00:00Z</updated>
-      </feed>`;
-
-    const feed = parseFeedWithFormat(xml, "atom");
-
-    expect(feed.title).toBe("Atom Feed");
-  });
-
-  it("parses JSON Feed with explicit format", () => {
-    const json = JSON.stringify({
-      version: "https://jsonfeed.org/version/1.1",
-      title: "JSON Feed",
-      items: [],
-    });
-
-    const feed = parseFeedWithFormat(json, "json");
-
-    expect(feed.title).toBe("JSON Feed");
-  });
-
-  it("returns empty result when parsing Atom as RSS", () => {
-    const atomXml = `<?xml version="1.0" encoding="UTF-8"?>
-      <feed xmlns="http://www.w3.org/2005/Atom">
-        <title>Atom Feed</title>
-      </feed>`;
-
-    // Streaming parser is lenient and returns empty result for mismatched format
-    const feed = parseFeedWithFormat(atomXml, "rss");
-    expect(feed.items).toHaveLength(0);
-  });
-
-  it("returns empty result when parsing RSS as Atom", () => {
-    const rssXml = `<?xml version="1.0" encoding="UTF-8"?>
-      <rss version="2.0">
-        <channel>
-          <title>RSS Feed</title>
-        </channel>
-      </rss>`;
-
-    // Streaming parser is lenient and returns empty result for mismatched format
-    const feed = parseFeedWithFormat(rssXml, "atom");
-    expect(feed.items).toHaveLength(0);
-  });
-
-  it("throws when format doesn't match content (JSON)", () => {
-    const rssXml = `<?xml version="1.0" encoding="UTF-8"?>
-      <rss version="2.0">
-        <channel>
-          <title>RSS Feed</title>
-        </channel>
-      </rss>`;
-
-    // Trying to parse RSS as JSON should fail
-    expect(() => parseFeedWithFormat(rssXml, "json")).toThrow();
   });
 });
 

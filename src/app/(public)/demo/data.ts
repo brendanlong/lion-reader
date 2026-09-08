@@ -14,8 +14,6 @@ import { DEMO_ARTICLES, type DemoArticle } from "./articles";
 // Types
 // ============================================================================
 
-export type { DemoArticle } from "./articles";
-
 export interface DemoTag {
   id: string;
   name: string;

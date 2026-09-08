@@ -170,17 +170,6 @@ export function validateClientMetadataDocument(
 }
 
 /**
- * String-body convenience wrapper over `validateClientMetadataDocument`.
- */
-export function parseClientMetadataDocument(url: string, body: string): ClientMetadata | null {
-  try {
-    return validateClientMetadataDocument(url, JSON.parse(body));
-  } catch {
-    return null;
-  }
-}
-
-/**
  * Outcome of a live CIMD fetch, classified for the fallback decision below.
  */
 export type CimdFetchOutcome =

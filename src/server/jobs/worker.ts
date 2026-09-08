@@ -39,8 +39,7 @@ import { trackJobProcessed } from "../metrics/metrics";
 import { getMaintenance } from "../services/site-status";
 import { createWorkerCore, type WorkerLogger, type Worker } from "./worker-core";
 
-// Re-export types for backwards compatibility
-export type { WorkerLogger, Worker, WorkerStats } from "./worker-core";
+export type { WorkerLogger, Worker } from "./worker-core";
 
 /**
  * Default job timeout: 5 minutes.
