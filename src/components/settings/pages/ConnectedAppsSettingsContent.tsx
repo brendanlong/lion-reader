@@ -82,8 +82,9 @@ export default function ConnectedAppsSettingsContent() {
 }
 
 /**
- * The hostname leads for CIMD clients (their name is self-asserted in a
- * document we don't control), matching the consent screen.
+ * The hostname leads for CIMD clients, matching the consent screen — see
+ * `cimdClientHost`. A CIMD grant has no name of ours to fall back to, so the
+ * full client_id URL is shown underneath instead.
  */
 function appDisplayName(app: ConnectedApp): string {
   return app.clientHost ?? app.clientName ?? app.clientId;
@@ -108,11 +109,7 @@ function ConnectedAppCard({
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-body font-medium break-all">{appDisplayName(app)}</p>
-              {app.clientHost && app.clientName && (
-                <p className="ui-text-sm text-muted break-all">
-                  identifies itself as &ldquo;{app.clientName}&rdquo;
-                </p>
-              )}
+              {app.clientHost && <p className="ui-text-xs text-muted break-all">{app.clientId}</p>}
             </div>
           </div>
 

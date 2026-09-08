@@ -9,24 +9,38 @@
  */
 
 import { describe, it, expect, afterAll } from "vitest";
-import { eq, inArray } from "drizzle-orm";
+import crypto from "node:crypto";
+import { and, eq, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { db } from "../../src/server/db";
-import { users, oauthClients, oauthAccessTokens } from "../../src/server/db/schema";
-import { generateUuidv7 } from "../../src/lib/uuidv7";
-import { createTestUser, createAuthContext } from "./helpers";
+import {
+  users,
+  oauthClients,
+  oauthAccessTokens,
+  oauthConsentGrants,
+} from "../../src/server/db/schema";
+import { createTestUser, createTestOAuthClient, createAuthContext } from "./helpers";
 import { createCaller } from "../../src/server/trpc/root";
 import {
+  createAuthorizationCode,
   createTokens,
   hasConsent,
   recordConsent,
   rotateRefreshToken,
   validateAccessToken,
+  validateAndConsumeAuthCode,
 } from "../../src/server/oauth/service";
 import { hashToken } from "../../src/server/oauth/utils";
 
 const createdUserIds: string[] = [];
 const createdClientIds: string[] = [];
+
+const REDIRECT_URI = "https://example.com/callback";
+const CODE_VERIFIER = "test-code-verifier-that-is-long-enough-for-rfc-7636";
+const CODE_CHALLENGE = crypto
+  .createHash("sha256")
+  .update(CODE_VERIFIER, "ascii")
+  .digest("base64url");
 
 async function createUser(): Promise<string> {
   const userId = await createTestUser({ emailPrefix: "oauth-grants" });
@@ -36,15 +50,7 @@ async function createUser(): Promise<string> {
 
 /** A registered (DCR) client — the case where we have a name of our own. */
 async function createRegisteredClient(name: string): Promise<string> {
-  const clientId = generateUuidv7();
-  await db.insert(oauthClients).values({
-    id: generateUuidv7(),
-    clientId,
-    name,
-    redirectUris: ["https://example.com/callback"],
-    scopes: ["mcp"],
-    isPublic: true,
-  });
+  const clientId = await createTestOAuthClient({ name });
   createdClientIds.push(clientId);
   return clientId;
 }
@@ -188,6 +194,65 @@ describe("oauthGrants.revoke", () => {
     await expect(caller.oauthGrants.revoke({ clientId })).rejects.toMatchObject({
       code: "NOT_FOUND",
     });
+  });
+});
+
+describe("oauthGrants.revoke closes the paths back in", () => {
+  it("kills an authorization code the client hasn't redeemed yet", async () => {
+    // A code minted moments before the user clicks Revoke would otherwise stay
+    // redeemable for its full 10-minute life and buy a fresh access token plus a
+    // 30-day refresh chain — silently undoing the revocation.
+    const userId = await createUser();
+    const clientId = await createRegisteredClient("Client With A Pending Code");
+    await recordConsent(userId, clientId, ["mcp"]);
+    const code = await createAuthorizationCode({
+      clientId,
+      userId,
+      redirectUri: REDIRECT_URI,
+      scopes: ["mcp"],
+      codeChallenge: CODE_CHALLENGE,
+    });
+
+    const caller = await callerFor(userId);
+    await caller.oauthGrants.revoke({ clientId });
+
+    expect(
+      await validateAndConsumeAuthCode(code, clientId, REDIRECT_URI, CODE_VERIFIER)
+    ).toBeNull();
+  });
+
+  it("refuses to rotate a refresh token once consent is gone", async () => {
+    // The narrow race the token sweep can't cover: a rotation that commits its
+    // successor after the sweep's snapshot leaves a live refresh token behind.
+    // Revoking only the grant reproduces exactly the state that successor is
+    // born in, and the rotation-time consent check is what makes it unusable.
+    const userId = await createUser();
+    const clientId = await createRegisteredClient("Racing Client");
+    await recordConsent(userId, clientId, ["mcp"]);
+    const { refreshToken } = await createTokens({ clientId, userId, scopes: ["mcp"] });
+
+    await db
+      .update(oauthConsentGrants)
+      .set({ revokedAt: new Date() })
+      .where(and(eq(oauthConsentGrants.userId, userId), eq(oauthConsentGrants.clientId, clientId)));
+
+    expect(
+      await rotateRefreshToken(refreshToken, clientId, { requireUserConsent: true })
+    ).toBeNull();
+  });
+
+  it("does not impose the consent check on callers that have no grant (Wallabag)", async () => {
+    // The Wallabag password grant shares rotateRefreshToken and never records a
+    // consent grant, so it must keep rotating without one.
+    const userId = await createUser();
+    const clientId = await createRegisteredClient("Wallabag-style Client");
+    const { refreshToken } = await createTokens({
+      clientId,
+      userId,
+      scopes: ["reader:full-access"],
+    });
+
+    expect(await rotateRefreshToken(refreshToken, clientId)).not.toBeNull();
   });
 });
 
