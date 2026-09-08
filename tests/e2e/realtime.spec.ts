@@ -161,14 +161,19 @@ function newEntryListData(entry: TestEntry, feed: TestFeed) {
 /**
  * Procedures that must never fire in response to a sync event — counts and
  * entry state are patched directly into the cache (the delta-update invariant
- * from src/FRONTEND_STATE.md).
+ * from src/FRONTEND_STATE.md). `sync.` is included because a live event that
+ * fails the protocol-version gate falls back to a `sync.events` catch-up
+ * query: every event these tests publish is current-version, so a sync call
+ * in the recorded window means `v` stamping/propagation regressed and the UI
+ * only *looked* live because the fallback quietly covered for it.
  */
 function refetchProcedures(trpcCalls: string[]): string[] {
   return trpcCalls.filter(
     (procedure) =>
       procedure.startsWith("entries.") ||
       procedure.startsWith("tags.") ||
-      procedure.startsWith("subscriptions.")
+      procedure.startsWith("subscriptions.") ||
+      procedure.startsWith("sync.")
   );
 }
 

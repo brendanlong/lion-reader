@@ -27,7 +27,11 @@ function cleanupSchema(schema: string): string {
   const lines = schema.split("\n");
   const cleanedLines: string[] = [];
 
-  // Session settings to remove (not migration-controlled)
+  // Session settings to remove (not migration-controlled).
+  // "SET check_function_bodies = false" is deliberately KEPT: pg_dump emits it
+  // so the dump stays replayable when a SQL-language function body references
+  // another function that pg_dump emits later (alphabetical order) — stripping
+  // it makes `psql -f schema.sql` fail on such forward references.
   const sessionSettingsToRemove = new Set([
     "SET statement_timeout",
     "SET lock_timeout",
@@ -36,7 +40,6 @@ function cleanupSchema(schema: string): string {
     "SET client_encoding",
     "SET standard_conforming_strings",
     "SELECT pg_catalog.set_config",
-    "SET check_function_bodies",
     "SET xmloption",
     "SET client_min_messages",
     "SET row_security",

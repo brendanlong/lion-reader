@@ -42,8 +42,10 @@ import {
   parseSiteStatusEvent,
   checkRedisHealth,
   type PubSubSubscription,
+  type SiteStatusEvent,
   type UserEvent,
 } from "@/server/redis/pubsub";
+import type { ServerSyncEvent } from "@/lib/events/schemas";
 import { eq, and, isNull } from "drizzle-orm";
 import {
   incrementSSEConnections,
@@ -114,10 +116,15 @@ async function getUserFeedSubscriptionMap(userId: string): Promise<Map<string, s
 }
 
 /**
- * Formats an SSE event message for user events.
+ * Formats an SSE event message. Outgoing events built by this route are typed
+ * as ServerSyncEvent so they're checked against the shared event schemas;
+ * user/site-status events are forwarded in their Redis wire form (the client
+ * schema strips the extra routing fields).
  * Includes an `id` field with server timestamp for client sync cursor tracking.
  */
-function formatSSEUserEvent(event: UserEvent): string {
+function formatSSEEvent(
+  event: (ServerSyncEvent & { v?: number }) | UserEvent | SiteStatusEvent
+): string {
   const cursor = new Date().toISOString();
   return `event: ${event.type}\nid: ${cursor}\ndata: ${JSON.stringify(event)}\n\n`;
 }
@@ -370,8 +377,7 @@ export async function GET(req: Request): Promise<Response> {
           const event = parseSiteStatusEvent(message);
           if (!event) return;
           enqueueSend(() => {
-            const cursor = new Date().toISOString();
-            send(`event: ${event.type}\nid: ${cursor}\ndata: ${JSON.stringify(event)}\n\n`);
+            send(formatSSEEvent(event));
             trackSSEEventSent(event.type);
           });
           return;
@@ -403,7 +409,7 @@ export async function GET(req: Request): Promise<Response> {
 
           // All user events are forwarded to the client
           enqueueSend(() => {
-            send(formatSSEUserEvent(event));
+            send(formatSSEEvent(event));
             trackSSEEventSent(event.type);
           });
           return;
@@ -440,22 +446,26 @@ export async function GET(req: Request): Promise<Response> {
                 // self-heals on the next count-bearing event or refetch.
                 console.error("Failed to compute new_entry counts:", err);
               }
-              const cursor = new Date().toISOString();
-              send(
-                `event: new_entry\nid: ${cursor}\ndata: ${JSON.stringify({
-                  type: "new_entry",
-                  subscriptionId,
-                  entryId: event.entryId,
-                  timestamp: event.timestamp,
-                  updatedAt: event.updatedAt,
-                  feedType: event.feedType,
-                  feedId: event.feedId,
-                  ...(counts ? { counts } : {}),
-                  // List-item data (absent from events published by a previous
-                  // release) lets the client insert the entry into cached lists.
-                  ...(event.entry ? { entry: event.entry } : {}),
-                })}\n\n`
-              );
+              const clientEvent: Extract<ServerSyncEvent, { type: "new_entry" }> & {
+                v?: number;
+              } = {
+                type: "new_entry",
+                subscriptionId,
+                entryId: event.entryId,
+                timestamp: event.timestamp,
+                updatedAt: event.updatedAt,
+                feedType: event.feedType,
+                feedId: event.feedId,
+                ...(counts ? { counts } : {}),
+                // List-item data (absent for spam entries) lets the client
+                // insert the entry into cached lists.
+                ...(event.entry ? { entry: event.entry } : {}),
+                // Propagate the publisher's protocol version: the payload came
+                // from the worker that published the event, so the client must
+                // judge compatibility by that release, not this server's.
+                ...(event.v !== undefined ? { v: event.v } : {}),
+              };
+              send(formatSSEEvent(clientEvent));
               trackSSEEventSent("new_entry");
             });
             return;
@@ -463,18 +473,18 @@ export async function GET(req: Request): Promise<Response> {
 
           // entry_updated: include metadata so the client can update caches directly
           enqueueSend(() => {
-            const cursor = new Date().toISOString();
-            send(
-              `event: entry_updated\nid: ${cursor}\ndata: ${JSON.stringify({
-                type: "entry_updated",
-                subscriptionId,
-                entryId: event.entryId,
-                timestamp: event.timestamp,
-                updatedAt: event.updatedAt, // Database updated_at for cursor tracking
-                feedType: event.feedType,
-                metadata: event.metadata,
-              })}\n\n`
-            );
+            const clientEvent: Extract<ServerSyncEvent, { type: "entry_updated" }> & {
+              v?: number;
+            } = {
+              type: "entry_updated",
+              subscriptionId,
+              entryId: event.entryId,
+              timestamp: event.timestamp,
+              updatedAt: event.updatedAt, // Database updated_at for cursor tracking
+              metadata: event.metadata,
+              ...(event.v !== undefined ? { v: event.v } : {}),
+            };
+            send(formatSSEEvent(clientEvent));
             trackSSEEventSent(event.type);
           });
         }

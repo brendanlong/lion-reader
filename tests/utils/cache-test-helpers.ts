@@ -448,6 +448,7 @@ export function createMarkAllReadEvent(
     type: "mark_all_read",
     timestamp: defaultTimestamp,
     updatedAt: defaultTimestamp,
+    entryId: "entry-max",
     ...overrides,
   };
 }

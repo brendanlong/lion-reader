@@ -32,20 +32,8 @@ function compareTimestamps(a: string, b: string): number {
 }
 
 /**
- * Largest possible UUID. Fallback id tiebreaker for `mark_all_read` events
- * that don't carry `entryId` (published by servers predating the field):
- * advancing past `(T, MAX_UUID)` skips every entry tied at timestamp T, so a
- * catch-up doesn't re-deliver the marked entries one by one.
- *
- * Known limitation of this fallback (#1102): if an unrelated new entry lands
- * on the same timestamp T as the mark-all-read (both stamps come from JS
- * `new Date()`, so a collision needs only the same *millisecond*) and its live
- * `new_entry` is missed, the sentinel makes a later catch-up skip it too
- * (`GREATEST = T AND id > MAX_UUID` is always false). Current servers instead
- * send the largest marked entry id, which excludes exactly the marked rows
- * while still admitting the tied newcomer (see entryEventAfterId). Either way
- * `mark_all_read` also invalidates the entry lists, so a skipped entry
- * reappears on the next list refetch.
+ * Largest possible UUID. Used only as the (unreachable) default id tiebreaker
+ * in entryEventAfterId — every entries-cursor event carries an entryId.
  */
 const MAX_UUID = "ffffffff-ffff-ffff-ffff-ffffffffffff";
 
@@ -106,19 +94,17 @@ function entryEventAfterId(event: SyncEvent): string {
       return event.entryId;
     case "mark_all_read":
       // Advancing to the largest marked id skips every row the mark-all-read
-      // stamped at this timestamp (no catch-up re-delivery), but — unlike the
-      // MAX_UUID sentinel — keeps the cursor *inside* the tied-timestamp
-      // group: an unrelated entry written in the same millisecond has a
-      // UUIDv7 id above every earlier-created marked entry, so a catch-up can
-      // still deliver it when its live event was missed (#1102). That ordering
-      // comes from the UUIDv7 millisecond timestamp prefix (our generator has
-      // no intra-ms counter — sub-timestamp bits are random), so a marked
-      // entry *created in the same millisecond* as the mark-all-read can
-      // still randomly out-sort the newcomer; that residual, like the
-      // fallback below, is covered by the entries.list invalidation the event
-      // also triggers. Events from servers predating the field fall back to
-      // skipping the whole group.
-      return event.entryId ?? MAX_UUID;
+      // stamped at this timestamp (no catch-up re-delivery) while keeping the
+      // cursor *inside* the tied-timestamp group: an unrelated entry written
+      // in the same millisecond has a UUIDv7 id above every earlier-created
+      // marked entry, so a catch-up can still deliver it when its live event
+      // was missed (#1102). That ordering comes from the UUIDv7 millisecond
+      // timestamp prefix (our generator has no intra-ms counter —
+      // sub-timestamp bits are random), so a marked entry *created in the
+      // same millisecond* as the mark-all-read can still randomly out-sort
+      // the newcomer; that residual is covered by the entries.list
+      // invalidation the event also triggers.
+      return event.entryId;
     default:
       // Unreachable: only the entries-cursor events above are passed here.
       return MAX_UUID;

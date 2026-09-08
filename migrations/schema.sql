@@ -7,6 +7,8 @@
 -- Do not edit manually - changes should be made via migrations.
 --
 
+SET check_function_bodies = false;
+
 CREATE EXTENSION IF NOT EXISTS citext WITH SCHEMA public;
 
 CREATE TYPE public.feed_type AS ENUM (
@@ -29,26 +31,26 @@ BEGIN
   SET unread_count = s.unread_count - d.u,
       starred_unread_count = s.starred_unread_count - d.su
   FROM (
-    SELECT subscription_id,
-           count(*) FILTER (WHERE NOT read AND NOT is_spam)::int AS u,
-           count(*) FILTER (WHERE starred AND NOT read AND NOT is_spam)::int AS su
-    FROM old_rows
-    WHERE subscription_id IS NOT NULL
-    GROUP BY subscription_id
+    SELECT o.subscription_id, sum(c.sub_unread)::int AS u, sum(c.sub_starred_unread)::int AS su
+    FROM old_rows o,
+         LATERAL public.user_entry_counter_contrib(o.read, o.starred, o.is_spam, o.subscription_id) c
+    WHERE o.subscription_id IS NOT NULL
+    GROUP BY o.subscription_id
+    HAVING sum(c.sub_unread) <> 0 OR sum(c.sub_starred_unread) <> 0
   ) d
-  WHERE s.id = d.subscription_id AND (d.u <> 0 OR d.su <> 0);
+  WHERE s.id = d.subscription_id;
 
   UPDATE users usr
   SET saved_unread_count = usr.saved_unread_count - d.sv,
       starred_unread_count = usr.starred_unread_count - d.st
   FROM (
-    SELECT user_id,
-           count(*) FILTER (WHERE subscription_id IS NULL AND NOT read AND NOT is_spam)::int AS sv,
-           count(*) FILTER (WHERE starred AND NOT read AND NOT is_spam)::int AS st
-    FROM old_rows
-    GROUP BY user_id
+    SELECT o.user_id, sum(c.saved_unread)::int AS sv, sum(c.starred_unread)::int AS st
+    FROM old_rows o,
+         LATERAL public.user_entry_counter_contrib(o.read, o.starred, o.is_spam, o.subscription_id) c
+    GROUP BY o.user_id
+    HAVING sum(c.saved_unread) <> 0 OR sum(c.starred_unread) <> 0
   ) d
-  WHERE usr.id = d.user_id AND (d.sv <> 0 OR d.st <> 0);
+  WHERE usr.id = d.user_id;
   RETURN NULL;
 END;
 $$;
@@ -61,26 +63,26 @@ BEGIN
   SET unread_count = s.unread_count + d.u,
       starred_unread_count = s.starred_unread_count + d.su
   FROM (
-    SELECT subscription_id,
-           count(*) FILTER (WHERE NOT read AND NOT is_spam)::int AS u,
-           count(*) FILTER (WHERE starred AND NOT read AND NOT is_spam)::int AS su
-    FROM new_rows
-    WHERE subscription_id IS NOT NULL
-    GROUP BY subscription_id
+    SELECT n.subscription_id, sum(c.sub_unread)::int AS u, sum(c.sub_starred_unread)::int AS su
+    FROM new_rows n,
+         LATERAL public.user_entry_counter_contrib(n.read, n.starred, n.is_spam, n.subscription_id) c
+    WHERE n.subscription_id IS NOT NULL
+    GROUP BY n.subscription_id
+    HAVING sum(c.sub_unread) <> 0 OR sum(c.sub_starred_unread) <> 0
   ) d
-  WHERE s.id = d.subscription_id AND (d.u <> 0 OR d.su <> 0);
+  WHERE s.id = d.subscription_id;
 
   UPDATE users usr
   SET saved_unread_count = usr.saved_unread_count + d.sv,
       starred_unread_count = usr.starred_unread_count + d.st
   FROM (
-    SELECT user_id,
-           count(*) FILTER (WHERE subscription_id IS NULL AND NOT read AND NOT is_spam)::int AS sv,
-           count(*) FILTER (WHERE starred AND NOT read AND NOT is_spam)::int AS st
-    FROM new_rows
-    GROUP BY user_id
+    SELECT n.user_id, sum(c.saved_unread)::int AS sv, sum(c.starred_unread)::int AS st
+    FROM new_rows n,
+         LATERAL public.user_entry_counter_contrib(n.read, n.starred, n.is_spam, n.subscription_id) c
+    GROUP BY n.user_id
+    HAVING sum(c.saved_unread) <> 0 OR sum(c.starred_unread) <> 0
   ) d
-  WHERE usr.id = d.user_id AND (d.sv <> 0 OR d.st <> 0);
+  WHERE usr.id = d.user_id;
   RETURN NULL;
 END;
 $$;
@@ -95,17 +97,15 @@ BEGIN
   FROM (
     SELECT subscription_id, sum(u)::int AS u, sum(su)::int AS su
     FROM (
-      SELECT subscription_id,
-             (NOT read AND NOT is_spam)::int AS u,
-             (starred AND NOT read AND NOT is_spam)::int AS su
-      FROM new_rows
-      WHERE subscription_id IS NOT NULL
+      SELECT n.subscription_id, c.sub_unread AS u, c.sub_starred_unread AS su
+      FROM new_rows n,
+           LATERAL public.user_entry_counter_contrib(n.read, n.starred, n.is_spam, n.subscription_id) c
+      WHERE n.subscription_id IS NOT NULL
       UNION ALL
-      SELECT subscription_id,
-             -((NOT read AND NOT is_spam)::int),
-             -((starred AND NOT read AND NOT is_spam)::int)
-      FROM old_rows
-      WHERE subscription_id IS NOT NULL
+      SELECT o.subscription_id, -c.sub_unread, -c.sub_starred_unread
+      FROM old_rows o,
+           LATERAL public.user_entry_counter_contrib(o.read, o.starred, o.is_spam, o.subscription_id) c
+      WHERE o.subscription_id IS NOT NULL
     ) x
     GROUP BY subscription_id
     HAVING sum(u) <> 0 OR sum(su) <> 0
@@ -118,15 +118,13 @@ BEGIN
   FROM (
     SELECT user_id, sum(sv)::int AS sv, sum(st)::int AS st
     FROM (
-      SELECT user_id,
-             (subscription_id IS NULL AND NOT read AND NOT is_spam)::int AS sv,
-             (starred AND NOT read AND NOT is_spam)::int AS st
-      FROM new_rows
+      SELECT n.user_id, c.saved_unread AS sv, c.starred_unread AS st
+      FROM new_rows n,
+           LATERAL public.user_entry_counter_contrib(n.read, n.starred, n.is_spam, n.subscription_id) c
       UNION ALL
-      SELECT user_id,
-             -((subscription_id IS NULL AND NOT read AND NOT is_spam)::int),
-             -((starred AND NOT read AND NOT is_spam)::int)
-      FROM old_rows
+      SELECT o.user_id, -c.saved_unread, -c.starred_unread
+      FROM old_rows o,
+           LATERAL public.user_entry_counter_contrib(o.read, o.starred, o.is_spam, o.subscription_id) c
     ) x
     GROUP BY user_id
     HAVING sum(sv) <> 0 OR sum(st) <> 0
@@ -162,6 +160,21 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+
+CREATE FUNCTION public.user_entry_counter_contrib(p_read boolean, p_starred boolean, p_is_spam boolean, p_subscription_id uuid) RETURNS TABLE(sub_unread integer, sub_starred_unread integer, saved_unread integer, starred_unread integer)
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    AS $$
+  SELECT
+    (b.counts AND p_subscription_id IS NOT NULL)::int,
+    (b.counts AND p_subscription_id IS NOT NULL AND p_starred)::int,
+    (b.counts AND p_subscription_id IS NULL)::int,
+    (b.counts AND p_starred)::int
+  FROM (SELECT public.user_entry_counts_toward_unread(p_read, p_is_spam) AS counts) b
+$$;
+
+CREATE FUNCTION public.user_entry_counts_toward_unread(p_read boolean, p_is_spam boolean) RETURNS boolean
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    AS $$ SELECT NOT p_read AND NOT p_is_spam $$;
 
 CREATE TABLE public.api_tokens (
     id uuid NOT NULL,

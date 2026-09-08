@@ -20,6 +20,17 @@ export const uuidSchema = z.string().uuid("Invalid ID");
 // ============================================================================
 
 /**
+ * Tag name validation schema. Shared by the tags router and the MCP
+ * create_tag/update_tag tools so both surfaces enforce identical constraints
+ * (including the trim).
+ */
+export const tagNameSchema = z
+  .string()
+  .min(1, "Tag name is required")
+  .max(50, "Tag name must be less than 50 characters")
+  .trim();
+
+/**
  * Tag color validation schema.
  * Accepts hex colors like #ff6b6b or null. Shared between the tRPC tags
  * router and the MCP create_tag/update_tag tools so the two surfaces enforce

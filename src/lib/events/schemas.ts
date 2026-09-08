@@ -1,11 +1,21 @@
 /**
  * Shared SSE/Sync Event Schemas
  *
- * Zod schemas for all real-time event types. These are the single source of truth
- * for event shapes, used by:
- * - SSE event parsing (client-side)
- * - sync.events endpoint output validation (server-side)
- * - Cache event handlers (type derivation)
+ * Zod schemas for all real-time event types — the single declaration of each
+ * event's shape. Every event type is defined once as a *base* schema
+ * (server-canonical: strict timestamps, no client fallbacks), and every wire
+ * derives from the bases:
+ *
+ * - `serverSyncEventSchema` (sync.events output validation) uses them directly
+ * - `syncEventSchema` (client-side SSE/sync parsing) adds client leniency
+ *   (timestamp defaults, updatedAt fallbacks)
+ * - the Redis pub/sub wire schemas in `src/server/redis/pubsub.ts` extend them
+ *   with routing fields (`userId`, `feedId`)
+ * - the SSE route constructs its outgoing events as `ServerSyncEvent` values,
+ *   so the objects it sends are type-checked against these schemas
+ *
+ * Adding a field to an event means editing its base schema here (and, if the
+ * field is server-routing-only, the pubsub extension) — nothing else.
  *
  * SSE events from the server may include extra fields (userId, feedId) that
  * aren't relevant to the client. Using Zod's default strip behavior, these
@@ -13,6 +23,37 @@
  */
 
 import { z } from "zod";
+
+// ============================================================================
+// Protocol Version
+// ============================================================================
+
+/**
+ * Version of the live-event wire protocol. Injected as `v` into every
+ * published Redis event (see publishToChannel in src/server/redis/pubsub.ts)
+ * and checked by the client before parsing an SSE event: a missing or
+ * different `v` means the event came from a different release, and the client
+ * responds with one full catch-up sync instead of trying to interpret it.
+ *
+ * This is the deploy-window story for event-shape changes: when an event
+ * gains/changes a field, declare it as the current release actually sends it
+ * and bump this version — do NOT mark it `.optional()` just so old-release
+ * events still parse (each such optional forks a client fallback branch that
+ * must be independently tested and never dies). `.optional()` is only for
+ * fields that are legitimately absent at runtime (e.g. spam entries' list
+ * payload, counts when the count query failed).
+ *
+ * The polling sync path is exempt: a sync.events response is generated whole
+ * by one server and is internally consistent at that server's version.
+ *
+ * Known deploy-window tradeoff: sync.events doesn't return the SSE-only
+ * events (import_progress/import_completed, announcement_changed), so those
+ * are simply dropped when they arrive from a different release — an import
+ * dialog or the banner can go stale until reload. And an old-release
+ * mark_all_read degrades to draining every marked entry through sync.events.
+ * Both are bounded to the minutes a rolling deploy overlaps releases.
+ */
+export const SYNC_PROTOCOL_VERSION = 1;
 
 // ============================================================================
 // Reusable Sub-Schemas
@@ -127,19 +168,225 @@ export const subscriptionCreatedDataSchema = z.object({
 });
 
 /**
+ * The three feed types. The single declaration — shared by the event schemas
+ * below, the tRPC entry/subscription schemas, and the MCP tool args.
+ */
+export const feedTypeSchema = z.enum(["web", "email", "saved"]);
+
+/**
  * Feed data for subscription_created events.
  */
 export const feedCreatedDataSchema = z.object({
   id: z.string(),
-  type: z.enum(["web", "email", "saved"]),
+  type: feedTypeSchema,
   url: z.string().nullable(),
   title: z.string().nullable(),
   description: z.string().nullable(),
   siteUrl: z.string().nullable(),
 });
 
+/**
+ * Announcement-banner levels. Also the source of truth for the server's
+ * ANNOUNCEMENT_LEVELS (src/server/services/site-status.ts imports it), so the
+ * wire schema and the admin validation can't drift.
+ */
+export const announcementLevels = ["info", "warning"] as const;
+
 // ============================================================================
-// Timestamp Helpers
+// Base Event Schemas (server-canonical, one per event type)
+// ============================================================================
+
+const newEntryEventBase = z.object({
+  type: z.literal("new_entry"),
+  subscriptionId: z.string().nullable(),
+  entryId: z.string(),
+  timestamp: z.string(),
+  updatedAt: z.string(),
+  feedType: feedTypeSchema,
+  // Absolute unread counts, computed per-user at emit time. The client sets
+  // these directly rather than applying a +1 delta, so a new_entry delivered
+  // by both the live SSE stream and a reconnect catch-up sync can't
+  // double-count. Optional because the SSE route omits them when the count
+  // query fails; when absent, counts are left untouched and self-heal on the
+  // next count-bearing event or refetch.
+  counts: unreadCountsSchema.optional(),
+  // List-item data so the client can insert the entry into cached
+  // entries.list pages directly. Optional because publishers deliberately omit
+  // it for spam entries (the default entries.list filters them out, so clients
+  // must only update counts and never insert a ghost row); when absent, the
+  // entry appears on the next list refresh instead of live.
+  feedId: z.string().optional(),
+  entry: newEntryListDataSchema.optional(),
+});
+
+const entryUpdatedEventBase = z.object({
+  type: z.literal("entry_updated"),
+  subscriptionId: z.string().nullable(),
+  entryId: z.string(),
+  timestamp: z.string(),
+  updatedAt: z.string(),
+  metadata: entryMetadataSchema,
+});
+
+const entryStateChangedEventBase = z.object({
+  type: z.literal("entry_state_changed"),
+  entryId: z.string(),
+  read: z.boolean(),
+  starred: z.boolean(),
+  // Absolute unread counts from the server. The client sets these directly
+  // instead of estimating deltas from cached state.
+  counts: unreadCountsSchema,
+  timestamp: z.string(),
+  updatedAt: z.string(),
+  // List-item data, present when the entry flipped to unread (and isn't spam),
+  // so a client that doesn't have the entry in any cached list can insert it
+  // into the lists it now belongs to — the same way new_entry payloads make
+  // new entries appear live (issue #1237). Absent for entries becoming read
+  // (nothing to insert); the client then falls back to restoring from another
+  // cached list's copy.
+  subscriptionId: z.string().nullable().optional(),
+  feedId: z.string().optional(),
+  feedType: feedTypeSchema.optional(),
+  entry: newEntryListDataSchema.optional(),
+});
+
+const markAllReadEventBase = z.object({
+  type: z.literal("mark_all_read"),
+  // Mark-all-read is unbounded, so instead of a per-entry event or a huge id
+  // list, the server sends this single signal and the client invalidates its
+  // entry lists + counts (see handleSyncEvent). `updatedAt` is the
+  // mark-all-read timestamp, used to advance the entries cursor.
+  timestamp: z.string(),
+  updatedAt: z.string(),
+  // The largest entry id among the marked rows: the entries keyset cursor
+  // advances to (updatedAt, entryId), which skips every marked row in a
+  // catch-up while still admitting an unrelated entry written in the same
+  // millisecond (#1102).
+  entryId: z.string(),
+});
+
+const subscriptionCreatedEventBase = z.object({
+  type: z.literal("subscription_created"),
+  subscriptionId: z.string(),
+  feedId: z.string(),
+  timestamp: z.string(),
+  updatedAt: z.string(),
+  subscription: subscriptionCreatedDataSchema,
+  feed: feedCreatedDataSchema,
+  // Absolute unread counts for the lists the new (untagged) subscription
+  // affects — All Articles, Uncategorized, and the subscription itself. The
+  // client sets these directly instead of adding deltas. Optional because the
+  // email-ingest publish path and the sync.events catch-up path don't compute
+  // them; the client then falls back to invalidating the affected counts.
+  counts: unreadCountsSchema.optional(),
+});
+
+const subscriptionDeletedEventBase = z.object({
+  type: z.literal("subscription_deleted"),
+  subscriptionId: z.string(),
+  timestamp: z.string(),
+  updatedAt: z.string(),
+  // Absolute unread counts for the affected lists (All Articles + the
+  // subscription's former tags / Uncategorized), computed at delete time. The
+  // live mutation/SSE path includes these; the sync.events catch-up path can't
+  // (the tag associations are already gone server-side), so it omits them and
+  // the client falls back to invalidating tags.list + entries.count.
+  counts: unreadCountsSchema.optional(),
+});
+
+const subscriptionUpdatedEventBase = z.object({
+  type: z.literal("subscription_updated"),
+  subscriptionId: z.string(),
+  tags: z.array(syncTagSchema),
+  customTitle: z.string().nullable(),
+  timestamp: z.string(),
+  updatedAt: z.string(),
+});
+
+const tagCreatedEventBase = z.object({
+  type: z.literal("tag_created"),
+  tag: syncTagSchema,
+  timestamp: z.string(),
+  updatedAt: z.string(),
+});
+
+const tagUpdatedEventBase = z.object({
+  type: z.literal("tag_updated"),
+  tag: syncTagSchema,
+  timestamp: z.string(),
+  updatedAt: z.string(),
+});
+
+const tagDeletedEventBase = z.object({
+  type: z.literal("tag_deleted"),
+  tagId: z.string(),
+  timestamp: z.string(),
+  updatedAt: z.string(),
+});
+
+// Import events carry no updatedAt on the wire (the client derives it from
+// timestamp — see the client derivations below).
+const importProgressEventBase = z.object({
+  type: z.literal("import_progress"),
+  importId: z.string(),
+  feedUrl: z.string(),
+  feedStatus: z.enum(["imported", "skipped", "failed"]),
+  imported: z.number(),
+  skipped: z.number(),
+  failed: z.number(),
+  total: z.number(),
+  timestamp: z.string(),
+});
+
+const importCompletedEventBase = z.object({
+  type: z.literal("import_completed"),
+  importId: z.string(),
+  imported: z.number(),
+  skipped: z.number(),
+  failed: z.number(),
+  total: z.number(),
+  timestamp: z.string(),
+});
+
+/**
+ * Global announcement-banner change, broadcast on the site-status channel (not
+ * per-user). `announcement` is null when the banner was disabled/cleared.
+ */
+const announcementChangedEventBase = z.object({
+  type: z.literal("announcement_changed"),
+  announcement: z
+    .object({
+      id: z.string(),
+      message: z.string(),
+      level: z.enum(announcementLevels),
+    })
+    .nullable(),
+  timestamp: z.string(),
+});
+
+/**
+ * Base schemas re-exported for the Redis pub/sub wire, which extends them with
+ * routing fields (`userId`; `feedId` where the client form doesn't carry it).
+ * See `src/server/redis/pubsub.ts`.
+ */
+export const eventBaseSchemas = {
+  newEntry: newEntryEventBase,
+  entryUpdated: entryUpdatedEventBase,
+  entryStateChanged: entryStateChangedEventBase,
+  markAllRead: markAllReadEventBase,
+  subscriptionCreated: subscriptionCreatedEventBase,
+  subscriptionDeleted: subscriptionDeletedEventBase,
+  subscriptionUpdated: subscriptionUpdatedEventBase,
+  tagCreated: tagCreatedEventBase,
+  tagUpdated: tagUpdatedEventBase,
+  tagDeleted: tagDeletedEventBase,
+  importProgress: importProgressEventBase,
+  importCompleted: importCompletedEventBase,
+  announcementChanged: announcementChangedEventBase,
+} as const;
+
+// ============================================================================
+// Client-Side Derivations (timestamp defaults, updatedAt fallbacks)
 // ============================================================================
 
 /**
@@ -152,227 +399,59 @@ const timestampWithDefault = z
   .optional()
   .default(() => new Date().toISOString());
 
-/**
- * updatedAt field that falls back to timestamp if not provided.
- * Import events don't always include updatedAt from the server.
- */
-const updatedAtWithFallback = z.string().optional();
-
-// ============================================================================
-// Individual Event Schemas
-// ============================================================================
-
-const newEntryEventSchema = z.object({
-  type: z.literal("new_entry"),
-  subscriptionId: z.string().nullable(),
-  entryId: z.string(),
-  timestamp: timestampWithDefault,
-  updatedAt: z.string(),
-  feedType: z.enum(["web", "email", "saved"]),
-  // Absolute unread counts from the server, computed per-user at emit time.
-  // The client sets these directly rather than applying a +1 delta, so a
-  // new_entry delivered by both the live SSE stream and a reconnect catch-up
-  // sync can't double-count. Optional only so events from servers predating
-  // this field (deploy window) still parse; when absent, counts are left
-  // untouched and self-heal on the next count-bearing event or refetch.
-  counts: unreadCountsSchema.optional(),
-  // List-item data so the client can insert the entry into cached
-  // entries.list pages directly. Optional for the same deploy-window reason
-  // as counts; when absent, the entry appears on the next list refresh
-  // (navigation-triggered invalidation) instead of live.
-  feedId: z.string().optional(),
-  entry: newEntryListDataSchema.optional(),
-});
-
-const entryUpdatedEventSchema = z.object({
-  type: z.literal("entry_updated"),
-  subscriptionId: z.string().nullable(),
-  entryId: z.string(),
-  timestamp: timestampWithDefault,
-  updatedAt: z.string(),
-  metadata: entryMetadataSchema,
-});
-
-const entryStateChangedEventSchema = z.object({
-  type: z.literal("entry_state_changed"),
-  entryId: z.string(),
-  read: z.boolean(),
-  starred: z.boolean(),
-  // Absolute unread counts from the server. The client sets these directly
-  // instead of estimating deltas from cached state.
-  counts: unreadCountsSchema,
-  timestamp: timestampWithDefault,
-  updatedAt: z.string(),
-  // List-item data, present when the entry flipped to unread (and isn't spam),
-  // so a client that doesn't have the entry in any cached list can insert it
-  // into the lists it now belongs to — the same way new_entry payloads make
-  // new entries appear live (issue #1237). Absent for entries becoming read
-  // (nothing to insert) and on events from servers predating this field; the
-  // client then falls back to restoring from another cached list's copy.
-  subscriptionId: z.string().nullable().optional(),
-  feedId: z.string().optional(),
-  feedType: z.enum(["web", "email", "saved"]).optional(),
-  entry: newEntryListDataSchema.optional(),
-});
-
-const markAllReadEventSchema = z.object({
-  type: z.literal("mark_all_read"),
-  // Mark-all-read is unbounded, so instead of a per-entry event or a huge id
-  // list, the server sends this single signal and the client invalidates its
-  // entry lists + counts (see handleSyncEvent). `updatedAt` is the
-  // mark-all-read timestamp, used to advance the entries cursor.
-  timestamp: timestampWithDefault,
-  updatedAt: z.string(),
-  // The largest entry id among the marked rows: the entries keyset cursor
-  // advances to (updatedAt, entryId), which skips every marked row in a
-  // catch-up while still admitting an unrelated entry written in the same
-  // millisecond (#1102). Absent on events from servers predating the field;
-  // the client then falls back to skipping the whole tied-timestamp group.
-  entryId: z.string().optional(),
-});
-
-const subscriptionCreatedEventSchema = z.object({
-  type: z.literal("subscription_created"),
-  subscriptionId: z.string(),
-  feedId: z.string(),
-  timestamp: timestampWithDefault,
-  updatedAt: z.string(),
-  subscription: subscriptionCreatedDataSchema,
-  feed: feedCreatedDataSchema,
-  // Absolute unread counts for the lists the new (untagged) subscription
-  // affects — All Articles, Uncategorized, and the subscription itself. The
-  // client sets these directly instead of adding deltas. Optional so events
-  // from servers predating this field still parse.
-  counts: unreadCountsSchema.optional(),
-});
-
-const subscriptionDeletedEventSchema = z.object({
-  type: z.literal("subscription_deleted"),
-  subscriptionId: z.string(),
-  timestamp: timestampWithDefault,
-  updatedAt: z.string(),
-  // Absolute unread counts for the affected lists (All Articles + the
-  // subscription's former tags / Uncategorized), computed at delete time. The
-  // live mutation/SSE path includes these; the sync.events catch-up path can't
-  // (the tag associations are already gone server-side), so it omits them and
-  // the client falls back to invalidating tags.list + entries.count.
-  counts: unreadCountsSchema.optional(),
-});
-
-const subscriptionUpdatedEventSchema = z.object({
-  type: z.literal("subscription_updated"),
-  subscriptionId: z.string(),
-  tags: z.array(syncTagSchema),
-  customTitle: z.string().nullable(),
-  timestamp: timestampWithDefault,
-  updatedAt: z.string(),
-});
-
-const tagCreatedEventSchema = z.object({
-  type: z.literal("tag_created"),
-  tag: syncTagSchema,
-  timestamp: timestampWithDefault,
-  updatedAt: z.string(),
-});
-
-const tagUpdatedEventSchema = z.object({
-  type: z.literal("tag_updated"),
-  tag: syncTagSchema,
-  timestamp: timestampWithDefault,
-  updatedAt: z.string(),
-});
-
-const tagDeletedEventSchema = z.object({
-  type: z.literal("tag_deleted"),
-  tagId: z.string(),
-  timestamp: timestampWithDefault,
-  updatedAt: z.string(),
-});
-
-const importProgressEventSchema = z
-  .object({
-    type: z.literal("import_progress"),
-    importId: z.string(),
-    feedUrl: z.string(),
-    feedStatus: z.enum(["imported", "skipped", "failed"]),
-    imported: z.number(),
-    skipped: z.number(),
-    failed: z.number(),
-    total: z.number(),
-    timestamp: timestampWithDefault,
-    updatedAt: updatedAtWithFallback,
-  })
-  .transform((event) => ({
-    ...event,
-    updatedAt: event.updatedAt ?? event.timestamp,
-  }));
-
-const importCompletedEventSchema = z
-  .object({
-    type: z.literal("import_completed"),
-    importId: z.string(),
-    imported: z.number(),
-    skipped: z.number(),
-    failed: z.number(),
-    total: z.number(),
-    timestamp: timestampWithDefault,
-    updatedAt: updatedAtWithFallback,
-  })
-  .transform((event) => ({
-    ...event,
-    updatedAt: event.updatedAt ?? event.timestamp,
-  }));
-
-// ============================================================================
-// Unified Event Schema
-// ============================================================================
+const clientTimestamp = { timestamp: timestampWithDefault };
 
 /**
- * Discriminated union of all SSE/sync event types.
+ * Discriminated union of the core events as the client parses them.
  *
- * Note: import events use .transform() for updatedAt fallback, so they can't
- * be members of z.discriminatedUnion(). We use z.union() with the discriminated
- * union for the core events plus the import events.
+ * Note: import and announcement events use .transform() for an updatedAt
+ * fallback, so they can't be members of z.discriminatedUnion(). We use
+ * z.union() with the discriminated union for the core events plus those.
  */
 const coreEventSchema = z.discriminatedUnion("type", [
-  newEntryEventSchema,
-  entryUpdatedEventSchema,
-  entryStateChangedEventSchema,
-  markAllReadEventSchema,
-  subscriptionCreatedEventSchema,
-  subscriptionDeletedEventSchema,
-  subscriptionUpdatedEventSchema,
-  tagCreatedEventSchema,
-  tagUpdatedEventSchema,
-  tagDeletedEventSchema,
+  newEntryEventBase.extend(clientTimestamp),
+  entryUpdatedEventBase.extend(clientTimestamp),
+  entryStateChangedEventBase.extend(clientTimestamp),
+  markAllReadEventBase.extend(clientTimestamp),
+  subscriptionCreatedEventBase.extend(clientTimestamp),
+  subscriptionDeletedEventBase.extend(clientTimestamp),
+  subscriptionUpdatedEventBase.extend(clientTimestamp),
+  tagCreatedEventBase.extend(clientTimestamp),
+  tagUpdatedEventBase.extend(clientTimestamp),
+  tagDeletedEventBase.extend(clientTimestamp),
 ]);
 
 /**
- * Global announcement-banner change, broadcast on the site-status channel (not
- * per-user). `announcement` is null when the banner was disabled/cleared. Kept
- * out of `coreEventSchema`/`serverSyncEventSchema` because it's an SSE-only
- * global signal, not part of the per-user entries/subscriptions/tags sync.
+ * Adds the client-side updatedAt fallback for events whose wire form carries
+ * no updatedAt (imports, announcement): cursor bookkeeping reads `updatedAt`
+ * uniformly, so it defaults to `timestamp`.
  */
-const announcementChangedEventSchema = z
-  .object({
-    type: z.literal("announcement_changed"),
-    announcement: z
-      .object({
-        id: z.string(),
-        message: z.string(),
-        // Must stay in sync with ANNOUNCEMENT_LEVELS in
-        // src/server/services/site-status.ts (can't import it here — server
-        // only). A new level added there but not here would make this parse
-        // reject the whole event and the banner would silently not update.
-        level: z.enum(["info", "warning"]),
-      })
-      .nullable(),
-    timestamp: timestampWithDefault,
-    // Carried only to keep every SyncEvent uniform (cursor bookkeeping reads
-    // `updatedAt`); this event never advances a cursor. Defaults to `timestamp`.
-    updatedAt: z.string().optional(),
-  })
-  .transform((event) => ({ ...event, updatedAt: event.updatedAt ?? event.timestamp }));
+function withUpdatedAtFallback<T extends z.ZodObject<z.ZodRawShape>>(base: T) {
+  return base.extend({ ...clientTimestamp, updatedAt: z.string().optional() }).transform(
+    (
+      event
+    ): z.output<T> & {
+      timestamp: string;
+      updatedAt: string;
+    } =>
+      ({
+        ...event,
+        updatedAt: event.updatedAt ?? event.timestamp,
+      }) as z.output<T> & { timestamp: string; updatedAt: string }
+  );
+}
+
+const importProgressEventSchema = withUpdatedAtFallback(importProgressEventBase);
+const importCompletedEventSchema = withUpdatedAtFallback(importCompletedEventBase);
+
+/**
+ * announcement_changed is kept out of `coreEventSchema`/`serverSyncEventSchema`
+ * because it's an SSE-only global signal, not part of the per-user
+ * entries/subscriptions/tags sync. Its `updatedAt` exists only to keep every
+ * SyncEvent uniform (cursor bookkeeping reads `updatedAt`); this event never
+ * advances a cursor.
+ */
+const announcementChangedEventSchema = withUpdatedAtFallback(announcementChangedEventBase);
 
 export const syncEventSchema = z.union([
   coreEventSchema,
@@ -388,25 +467,31 @@ export const syncEventSchema = z.union([
 export type SyncEvent = z.infer<typeof syncEventSchema>;
 
 // ============================================================================
-// Server-Only Event Schema (without defaults/transforms)
+// Server-Only Event Schema (no defaults/transforms)
 // ============================================================================
 
 /**
- * Strict event schema used by the sync.events server endpoint.
- * Derived from the client-side schemas by overriding `timestamp` to require
- * a string (no default), since the server always provides timestamps.
+ * Strict event schema used by the sync.events server endpoint — the base
+ * schemas directly, since the server always provides timestamps.
  *
- * This also excludes import events which are SSE-only (not returned by sync.events).
+ * This excludes import events and mark_all_read, which are SSE-only (not
+ * returned by sync.events).
  */
-const strictTimestamp = { timestamp: z.string() };
 export const serverSyncEventSchema = z.discriminatedUnion("type", [
-  newEntryEventSchema.extend(strictTimestamp),
-  entryUpdatedEventSchema.extend(strictTimestamp),
-  entryStateChangedEventSchema.extend(strictTimestamp),
-  subscriptionCreatedEventSchema.extend(strictTimestamp),
-  subscriptionDeletedEventSchema.extend(strictTimestamp),
-  subscriptionUpdatedEventSchema.extend(strictTimestamp),
-  tagCreatedEventSchema.extend(strictTimestamp),
-  tagUpdatedEventSchema.extend(strictTimestamp),
-  tagDeletedEventSchema.extend(strictTimestamp),
+  newEntryEventBase,
+  entryUpdatedEventBase,
+  entryStateChangedEventBase,
+  subscriptionCreatedEventBase,
+  subscriptionDeletedEventBase,
+  subscriptionUpdatedEventBase,
+  tagCreatedEventBase,
+  tagUpdatedEventBase,
+  tagDeletedEventBase,
 ]);
+
+/**
+ * Server-side event type: what the SSE route and sync.events construct and
+ * send. Building outgoing events as this type (rather than untyped JSON
+ * literals) keeps them checked against the single event declaration above.
+ */
+export type ServerSyncEvent = z.infer<typeof serverSyncEventSchema>;
