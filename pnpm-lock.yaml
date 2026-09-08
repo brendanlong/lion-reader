@@ -10,7 +10,6 @@ overrides:
   '@modelcontextprotocol/sdk>hono': ^4.12.21
   express-rate-limit>ip-address: ^10.3.1
   '@discordjs/ws>ws': ^8.20.1
-  knip>smol-toml: ^1.6.1
   qs: ^6.15.2
   postcss: ^8.5.10
   fast-xml-parser: ^5.8.0
