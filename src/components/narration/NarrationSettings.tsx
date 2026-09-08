@@ -198,13 +198,16 @@ export function NarrationSettings() {
       {/* Enable/Disable Toggle */}
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="ui-text-sm text-body font-medium">Enable narration</h3>
+          <h3 id="narration-enabled-label" className="ui-text-sm text-body font-medium">
+            Enable narration
+          </h3>
           <p className="ui-text-sm text-muted mt-1">Listen to articles using text-to-speech.</p>
         </div>
         <button
           type="button"
           role="switch"
           aria-checked={settings.enabled}
+          aria-labelledby="narration-enabled-label"
           onClick={() => setSettings((prev) => ({ ...prev, enabled: !prev.enabled }))}
           className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
             settings.enabled ? "bg-primary-solid" : "bg-fill-muted"
@@ -424,7 +427,9 @@ export function NarrationSettings() {
               {/* LLM Normalization Toggle */}
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="ui-text-sm text-body">Use AI text processing</p>
+                  <p id="narration-llm-label" className="ui-text-sm text-body">
+                    Use AI text processing
+                  </p>
                   <p className="ui-text-xs text-muted">
                     Improves narration quality by expanding abbreviations and formatting content
                   </p>
@@ -433,6 +438,7 @@ export function NarrationSettings() {
                   type="button"
                   role="switch"
                   aria-checked={settings.useLlmNormalization}
+                  aria-labelledby="narration-llm-label"
                   onClick={() =>
                     setSettings((prev) => ({
                       ...prev,
@@ -461,13 +467,16 @@ export function NarrationSettings() {
             {/* Highlight Current Paragraph Toggle */}
             <div className="flex items-center justify-between">
               <div>
-                <p className="ui-text-sm text-body">Highlight current paragraph</p>
+                <p id="narration-highlight-label" className="ui-text-sm text-body">
+                  Highlight current paragraph
+                </p>
                 <p className="ui-text-xs text-muted">Visually highlight the paragraph being read</p>
               </div>
               <button
                 type="button"
                 role="switch"
                 aria-checked={settings.highlightEnabled}
+                aria-labelledby="narration-highlight-label"
                 onClick={() =>
                   setSettings((prev) => ({ ...prev, highlightEnabled: !prev.highlightEnabled }))
                 }
@@ -487,7 +496,9 @@ export function NarrationSettings() {
             {/* Auto-scroll to Current Paragraph Toggle */}
             <div className="flex items-center justify-between">
               <div>
-                <p className="ui-text-sm text-body">Auto-scroll to current paragraph</p>
+                <p id="narration-autoscroll-label" className="ui-text-sm text-body">
+                  Auto-scroll to current paragraph
+                </p>
                 <p className="ui-text-xs text-muted">
                   Automatically scroll the page to keep the current paragraph visible
                 </p>
@@ -496,6 +507,7 @@ export function NarrationSettings() {
                 type="button"
                 role="switch"
                 aria-checked={settings.autoScrollEnabled}
+                aria-labelledby="narration-autoscroll-label"
                 onClick={() =>
                   setSettings((prev) => ({ ...prev, autoScrollEnabled: !prev.autoScrollEnabled }))
                 }
