@@ -154,8 +154,20 @@ export async function POST(
     return new Response("Feed not found", { status: 404 });
   }
 
-  await ingestWebsubNotification(feed, bodyBuffer.toString());
+  const outcome = await ingestWebsubNotification(feed, bodyBuffer.toString());
 
-  // Always return 200 to acknowledge receipt
+  if (outcome === "failed") {
+    // Infrastructure failure, not bad content: acknowledging it would make the
+    // hub record a successful delivery and drop the push for good. Ask it to
+    // redeliver instead — re-ingesting the same body is idempotent.
+    logger.error("WebSub notification ingest failed - asking hub to retry", {
+      feedId,
+      subscriptionId,
+    });
+    return new Response("Ingest failed", { status: 503 });
+  }
+
+  // Acknowledge receipt (an unparseable body included - a redelivery of the
+  // same bytes would fail identically).
   return new Response("OK", { status: 200 });
 }

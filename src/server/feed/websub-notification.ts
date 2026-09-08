@@ -16,12 +16,47 @@ import { trackWebsubNotificationReceived } from "../metrics/metrics";
 import { logger } from "@/lib/logger";
 
 /**
- * Schedules a backup polling job for a feed after a WebSub notification.
- * Uses a longer interval than normal since WebSub is active, so we still get
- * updates if WebSub stops working. Updates the existing job's next_run_at.
+ * Result of ingesting a pushed notification, so the callback route can pick a
+ * status code: only `failed` asks the hub to retry.
  */
-async function scheduleBackupPoll(feedId: string): Promise<void> {
-  const nextRunAt = new Date(Date.now() + WEBSUB_BACKUP_POLL_INTERVAL_SECONDS * 1000);
+export type WebsubIngestOutcome =
+  /** Entries were processed (or there were none) and the backup poll rescheduled. */
+  | "processed"
+  /** The body wasn't a parseable feed. Nothing to do; a retry can't help. */
+  | "unparseable"
+  /** Infrastructure failure (DB down, etc.). The push is lost unless the hub retries. */
+  | "failed";
+
+/**
+ * Pushes the feed's backup poll out, so a push-active feed isn't polled on the
+ * ordinary cadence — but never past `WEBSUB_BACKUP_POLL_INTERVAL_SECONDS` after
+ * the last **real** poll.
+ *
+ * A push doesn't advance `feeds.last_fetched_at` (see `ingestWebsubNotification`),
+ * so deferring to "now + 24h" on every push starves the backup poll of any feed
+ * whose hub pushes more often than daily: the poll is deferred again before it
+ * ever runs, and it never runs. That poll is load-bearing — it reconciles entries
+ * the publisher removed (the reason the push nulls `body_hash`), refreshes
+ * `last_fetched_at` so `shouldRefetchOnSubscribe` doesn't force a refetch for
+ * every new subscriber, and is the only way a push miss gets tallied — so bound
+ * the deferral by the last real poll instead of by "now".
+ *
+ * A feed with no successful poll yet has no bound to compute, and its first poll
+ * is what establishes one: leave its job alone rather than deferring it a day.
+ */
+async function scheduleBackupPoll(feed: Feed): Promise<void> {
+  const feedId = feed.id;
+  const intervalMs = WEBSUB_BACKUP_POLL_INTERVAL_SECONDS * 1000;
+  const lastFetchedAt = feed.lastFetchedAt;
+
+  if (!lastFetchedAt) {
+    logger.debug("Skipping WebSub backup poll deferral for a never-fetched feed", { feedId });
+    return;
+  }
+
+  const nextRunAt = new Date(
+    Math.min(Date.now() + intervalMs, lastFetchedAt.getTime() + intervalMs)
+  );
 
   try {
     await updateFeedJobNextRun(feedId, nextRunAt);
@@ -40,14 +75,24 @@ async function scheduleBackupPoll(feedId: string): Promise<void> {
 
 /**
  * Parses a pushed WebSub notification body and processes its entries into the
- * given feed, then schedules a backup poll. Best-effort: never throws, so the
- * route can always acknowledge the hub with 200 (a retry wouldn't help — we
- * already have the content, or it was unparseable).
+ * given feed, then schedules a backup poll.
+ *
+ * Never throws; it reports what happened instead, because the two failure modes
+ * want opposite answers to the hub. An unparseable body is final — a redelivery
+ * of the same bytes would fail identically — so the route acknowledges it. A
+ * failure *processing* a parsed feed is infrastructure (`processEntries` handles
+ * per-entry errors internally), and swallowing it loses the pushed entry for
+ * good: the hub records a successful delivery and never retries. So the route
+ * answers 503 on that path and lets the hub redeliver, which is safe because
+ * ingest is idempotent (entries match on `content_hash`).
  *
  * The caller is responsible for authenticating the notification (HMAC) and
  * loading the feed before calling this.
  */
-export async function ingestWebsubNotification(feed: Feed, bodyText: string): Promise<void> {
+export async function ingestWebsubNotification(
+  feed: Feed,
+  bodyText: string
+): Promise<WebsubIngestOutcome> {
   const feedId = feed.id;
   trackWebsubNotificationReceived();
 
@@ -61,7 +106,7 @@ export async function ingestWebsubNotification(feed: Feed, bodyText: string): Pr
       error: error instanceof Error ? error.message : "Unknown error",
     });
     // Nothing to process; don't schedule a backup poll off garbage content.
-    return;
+    return "unparseable";
   }
 
   const now = new Date();
@@ -117,8 +162,11 @@ export async function ingestWebsubNotification(feed: Feed, bodyText: string): Pr
       feedId,
       error: error instanceof Error ? error.message : "Unknown error",
     });
-    // Fall through to schedule the backup poll so the feed still refreshes.
+    // Don't defer the backup poll: nothing was ingested, so the feed still needs
+    // a real poll, and pushing it a day out would delay recovery by that long.
+    return "failed";
   }
 
-  await scheduleBackupPoll(feedId);
+  await scheduleBackupPoll(feed);
+  return "processed";
 }

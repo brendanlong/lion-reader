@@ -959,7 +959,19 @@ export async function renewExpiringSubscriptions(
     // compare-and-swap (still active AND still stale) so a verification landing
     // between the select above and here — which advances expiresAt out of the
     // stale window — isn't torn down.
-    if (subscription.expiresAt && subscription.expiresAt < staleCutoff) {
+    //
+    // Only give up on a renewal we actually attempted: `updatedAt` past
+    // `expiresAt` is the proof, since every subscribeToHub path stamps it (and
+    // for an `active` row nothing else writes it without also advancing
+    // `expiresAt` out of the stale window). Without that check, a sweep that
+    // simply didn't run for longer than the grace window — a stuck
+    // `renew_websub` singleton, a deploy incident, a DB outage — comes back to
+    // find every lapsed subscription past the cutoff and tears them all down
+    // without a single hub POST. Requiring an attempt means the first sweep
+    // after downtime renews instead, and only a subsequent sweep reverts.
+    const attemptedSinceExpiry =
+      subscription.expiresAt !== null && subscription.updatedAt > subscription.expiresAt;
+    if (subscription.expiresAt && subscription.expiresAt < staleCutoff && attemptedSinceExpiry) {
       const reverted = await revertStalledSubscription(subscription.id, feed.id, staleCutoff);
       if (reverted) {
         result.failed++;
