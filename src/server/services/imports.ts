@@ -209,10 +209,14 @@ async function ensureImportTags(
     return tagNameToInfo;
   }
 
+  // Only live tags: `deleteTag` tombstones, and `uq_tags_user_name` is partial
+  // (`WHERE deleted_at IS NULL`), so a deleted tag can share a name with a live
+  // one. Reusing a tombstone would attach the imported subscriptions to a tag
+  // that no sidebar group lists.
   const existingTags = await db
     .select({ id: tags.id, name: tags.name, color: tags.color })
     .from(tags)
-    .where(eq(tags.userId, userId));
+    .where(and(eq(tags.userId, userId), isNull(tags.deletedAt)));
 
   for (const existingTag of existingTags) {
     if (tagNames.has(existingTag.name)) {

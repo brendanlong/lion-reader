@@ -35,7 +35,7 @@ import {
 async function createVisibleEntry(
   userId: string,
   contentHash: string,
-  options: { unsubscribed?: boolean; saved?: boolean } = {}
+  options: { unsubscribed?: boolean; saved?: boolean; fullContentHash?: string } = {}
 ): Promise<string> {
   const now = new Date();
   let feedId: string;
@@ -59,6 +59,12 @@ async function createVisibleEntry(
     contentCleaned: "<p>Some article content to summarize.</p>",
     // The summary cache is keyed off this, so it's the caller's value verbatim.
     contentHash,
+    ...(options.fullContentHash
+      ? {
+          fullContentHash: options.fullContentHash,
+          fullContentCleaned: "<p>The full article body, fetched from the site.</p>",
+        }
+      : {}),
     fetchedAt: now,
   });
   // Not createTestEntry's `userIds`, which can't express the explicit change
@@ -78,12 +84,18 @@ async function createVisibleEntry(
 
 const createdUserIds: string[] = [];
 let previousAnthropicKey: string | undefined;
+let previousGroqKey: string | undefined;
 
 beforeAll(() => {
   // Make summarization "available" via the server key so the router reaches the
   // cached read path (no real LLM call — a cached summary is returned first).
   previousAnthropicKey = process.env.ANTHROPIC_API_KEY;
   process.env.ANTHROPIC_API_KEY = "sk-ant-test-server-key";
+  // ...and make sure Groq is *not* configured: the regenerate tests below point
+  // the user at a Groq model so the generation path fails at "no key" instead
+  // of making a real network call.
+  previousGroqKey = process.env.GROQ_API_KEY;
+  delete process.env.GROQ_API_KEY;
 });
 
 afterAll(async () => {
@@ -91,6 +103,11 @@ afterAll(async () => {
     delete process.env.ANTHROPIC_API_KEY;
   } else {
     process.env.ANTHROPIC_API_KEY = previousAnthropicKey;
+  }
+  if (previousGroqKey === undefined) {
+    delete process.env.GROQ_API_KEY;
+  } else {
+    process.env.GROQ_API_KEY = previousGroqKey;
   }
   for (const userId of createdUserIds) {
     await db.delete(users).where(eq(users.id, userId));
@@ -184,5 +201,98 @@ describe("summarization.generate entry visibility", () => {
 
     expect(result.cached).toBe(true);
     expect(result.summary).toContain("Saved article summary");
+  });
+});
+
+/**
+ * `regenerate: true` is documented as "skip the cache and regenerate", and the
+ * REST/OpenAPI and MCP surfaces can send it without `useFullContent` (the web
+ * client always sends the flag). These lock in that the `useFullContent`-omitted
+ * branch honours it too.
+ *
+ * The user is pointed at a Groq model while only the Anthropic server key is
+ * set, so once the router gets past the cache it fails deterministically with
+ * "Groq API key not configured" — no network call, and reaching that error is
+ * itself the proof that the cached summary was not served.
+ */
+describe("summarization.generate regenerate bypasses the cache", () => {
+  const UNCONFIGURED_MODEL = "groq:llama-3.3-70b-versatile";
+
+  async function createUser(): Promise<string> {
+    const userId = await createTestUser({
+      emailPrefix: "summ",
+      summarizationModel: UNCONFIGURED_MODEL,
+    });
+    createdUserIds.push(userId);
+    return userId;
+  }
+
+  async function cacheSummary(userId: string, contentHash: string, text: string): Promise<void> {
+    await db.insert(entrySummaries).values({
+      id: generateUuidv7(),
+      userId,
+      contentHash,
+      summaryText: text,
+      modelId: UNCONFIGURED_MODEL,
+      promptVersion: CURRENT_PROMPT_VERSION,
+      generatedAt: new Date(),
+      createdAt: new Date(),
+    });
+  }
+
+  it("serves the cached feed summary when regenerate is not set", async () => {
+    const userId = await createUser();
+    const contentHash = `hash-${generateUuidv7()}`;
+    const entryId = await createVisibleEntry(userId, contentHash);
+    await cacheSummary(userId, contentHash, "<p>Cached feed summary</p>");
+
+    const caller = createCaller(await createAuthContext(userId));
+    const result = await caller.summarization.generate({ entryId });
+
+    expect(result.cached).toBe(true);
+    expect(result.summary).toContain("Cached feed summary");
+  });
+
+  it("skips the cached feed summary when regenerate is true", async () => {
+    const userId = await createUser();
+    const contentHash = `hash-${generateUuidv7()}`;
+    const entryId = await createVisibleEntry(userId, contentHash);
+    await cacheSummary(userId, contentHash, "<p>Cached feed summary</p>");
+
+    const caller = createCaller(await createAuthContext(userId));
+
+    await expect(caller.summarization.generate({ entryId, regenerate: true })).rejects.toThrow(
+      "Groq API key not configured"
+    );
+
+    // The generation attempt is recorded on the cached row, so the request
+    // really reached the LLM call rather than short-circuiting on the cache.
+    const [row] = await db
+      .select()
+      .from(entrySummaries)
+      .where(eq(entrySummaries.userId, userId))
+      .limit(1);
+    expect(row.errorAt).not.toBeNull();
+    // The stored summary is left alone for the next non-regenerate read.
+    expect(row.summaryText).toContain("Cached feed summary");
+  });
+
+  it("skips the cached full-content summary when regenerate is true", async () => {
+    const userId = await createUser();
+    const contentHash = `hash-${generateUuidv7()}`;
+    const fullContentHash = `full-hash-${generateUuidv7()}`;
+    const entryId = await createVisibleEntry(userId, contentHash, { fullContentHash });
+    await cacheSummary(userId, fullContentHash, "<p>Cached full-content summary</p>");
+
+    const caller = createCaller(await createAuthContext(userId));
+
+    // Control: without the flag the full-content summary is served.
+    const cached = await caller.summarization.generate({ entryId });
+    expect(cached.cached).toBe(true);
+    expect(cached.summary).toContain("Cached full-content summary");
+
+    await expect(caller.summarization.generate({ entryId, regenerate: true })).rejects.toThrow(
+      "Groq API key not configured"
+    );
   });
 });

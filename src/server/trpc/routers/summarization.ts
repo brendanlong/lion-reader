@@ -163,6 +163,12 @@ export const summarizationRouter = createTRPCRouter({
       // - undefined: return any cached summary, or generate from feed content
       let sourceContent: string;
       let contentHash: string;
+      /**
+       * The `(userId, contentHash)` row the `undefined` branch already looked
+       * up, carried forward so the generation path below doesn't re-run the
+       * byte-identical query.
+       */
+      let cachedFeedSummary: (typeof entrySummaries.$inferSelect)[] | undefined;
 
       if (input.useFullContent === true) {
         // Explicit full content request
@@ -179,9 +185,12 @@ export const summarizationRouter = createTRPCRouter({
         sourceContent = entry.contentCleaned || entry.contentOriginal || "";
         contentHash = entry.contentHash;
       } else {
-        // undefined: try to return whichever cached summary exists, preferring full content
+        // undefined: try to return whichever cached summary exists, preferring
+        // full content. `regenerate` means the caller explicitly asked to skip
+        // the cache, so don't serve (or even look up) a stored summary here —
+        // fall through to generating from feed content.
         // Check full content summary first (if available)
-        if (entry.fullContentHash) {
+        if (!input.regenerate && entry.fullContentHash) {
           const fullSummary = await ctx.db
             .select()
             .from(entrySummaries)
@@ -224,7 +233,7 @@ export const summarizationRouter = createTRPCRouter({
           .limit(1);
 
         const feedRecord = feedSummary[0];
-        if (feedRecord?.summaryText) {
+        if (!input.regenerate && feedRecord?.summaryText) {
           return {
             summary: sanitizeEntryHtml(feedRecord.summaryText) ?? "",
             cached: true,
@@ -234,9 +243,10 @@ export const summarizationRouter = createTRPCRouter({
           };
         }
 
-        // No cached summary found — generate from feed content
+        // No usable cached summary — generate from feed content
         sourceContent = entry.contentCleaned || entry.contentOriginal || "";
         contentHash = entry.contentHash;
+        cachedFeedSummary = feedSummary;
       }
 
       // Handle empty content
@@ -245,11 +255,15 @@ export const summarizationRouter = createTRPCRouter({
       }
 
       // Look up existing summary by user + content hash
-      let summary = await ctx.db
-        .select()
-        .from(entrySummaries)
-        .where(and(eq(entrySummaries.userId, userId), eq(entrySummaries.contentHash, contentHash)))
-        .limit(1);
+      let summary =
+        cachedFeedSummary ??
+        (await ctx.db
+          .select()
+          .from(entrySummaries)
+          .where(
+            and(eq(entrySummaries.userId, userId), eq(entrySummaries.contentHash, contentHash))
+          )
+          .limit(1));
 
       // Create placeholder record if not found
       if (summary.length === 0) {
