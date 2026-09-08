@@ -18,13 +18,17 @@ import {
 import { API_TOKEN_SCOPES } from "@/server/auth/api-token";
 import { errors } from "../errors";
 import { feedUrlSchema, uuidSchema } from "../validation";
-import { fetchUrl, isHtmlContent } from "@/server/http/fetch";
+import { fetchUrl, HttpFetchError, isHtmlContent } from "@/server/http/fetch";
 import { feeds, subscriptions, tags, subscriptionTags, blockedSenders } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { parseFeedAsync } from "@/server/feed/parser";
 import { discoverFeeds } from "@/server/feed/discovery";
 import { getDomainFromUrl } from "@/server/feed/types";
-import { extractUserIdFromFeedUrl, fetchLessWrongUserById } from "@/server/feed/lesswrong";
+import {
+  extractUserIdFromFeedUrl,
+  fetchLessWrongUserById,
+  type LessWrongUser,
+} from "@/server/feed/lesswrong";
 import { generateOpml, OpmlParseError, type OpmlSubscription } from "@/server/feed/opml";
 import { scheduleFeedRefreshNow } from "@/server/jobs/queue";
 import { shouldRefetchOnSubscribe } from "@/server/feed/scheduling";
@@ -155,7 +159,20 @@ async function fetchAndResolveFeed(inputUrl: string): Promise<{
   let feedTitle = parsedFeed.title || getDomainFromUrl(finalFeedUrl);
   const lessWrongUserId = extractUserIdFromFeedUrl(finalFeedUrl);
   if (lessWrongUserId && feedTitle) {
-    const lwUser = await fetchLessWrongUserById(lessWrongUserId);
+    let lwUser: LessWrongUser | null = null;
+    try {
+      lwUser = await fetchLessWrongUserById(lessWrongUserId);
+    } catch (error) {
+      // The feed itself fetched fine, so don't fail the subscribe over the title
+      // decoration: the next poll appends the author via transformFeedTitle
+      if (!(error instanceof HttpFetchError && error.isRateLimited())) {
+        throw error;
+      }
+      logger.warn("LessWrong rate limited the user lookup; subscribing without author suffix", {
+        feedUrl: finalFeedUrl,
+        userId: lessWrongUserId,
+      });
+    }
     if (lwUser?.displayName) {
       feedTitle = `${feedTitle} - ${lwUser.displayName}`;
     }

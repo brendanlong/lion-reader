@@ -13,6 +13,7 @@ import { errors } from "../errors";
 import { feedUrlSchema } from "../validation";
 import {
   fetchUrl,
+  HttpFetchError,
   isHtmlContent,
   readResponseWithSizeLimit,
   FEED_FETCH_TIMEOUT_MS,
@@ -240,6 +241,11 @@ async function transformPageUrlToFeed(url: string): Promise<string | null> {
     const feedUrl = await transform(new URL(url));
     return feedUrl?.href ?? null;
   } catch (error) {
+    // Don't fall through to fetching the page itself: that's a second request
+    // to the site that just throttled us
+    if (error instanceof HttpFetchError && error.isRateLimited()) {
+      throw errors.upstreamRateLimited(url);
+    }
     logger.warn("Failed to transform page URL to feed URL", {
       url,
       error: error instanceof Error ? error.message : String(error),

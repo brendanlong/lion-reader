@@ -51,6 +51,9 @@ export const lessWrongPlugin: UrlPlugin = {
   capabilities: {
     feed: {
       async transformToFeedUrl(url: URL): Promise<URL | null> {
+        // A 429 from the lookups below propagates (see lessWrongGraphql): the
+        // fallbacks — fetching the profile page, or guessing the comment feed for
+        // a post that may be a shortform — would be wrong or hit the same limit
         const href = url.href;
 
         // Front page → frontpage feed

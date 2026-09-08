@@ -358,9 +358,9 @@ export function getAppErrorCode(error: unknown): string | undefined {
  * URL, so it must not be reported to Sentry even though `SITE_BLOCKED` maps to
  * HTTP 502 (an honest status to return to the client).
  *
- * 4xx-mapped app codes (e.g. `SAVED_ARTICLE_FETCH_ERROR`, `UPSTREAM_RATE_LIMITED`,
- * `CONTENT_TOO_LARGE`) are already treated as client errors by their HTTP status
- * and don't need to be listed here.
+ * App codes that map to a tRPC code the middleware already exempts (`BAD_REQUEST`,
+ * `TOO_MANY_REQUESTS`, ... — see the list in `src/server/trpc/trpc.ts`) don't need
+ * to be listed here.
  */
 const EXPECTED_CLIENT_ERROR_CODES: ReadonlySet<string> = new Set([ErrorCodes.SITE_BLOCKED]);
 

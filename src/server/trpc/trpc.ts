@@ -101,11 +101,14 @@ const timingMiddleware = t.middleware(async ({ path, type, next, ctx }) => {
     const isTRPCError = error instanceof TRPCError;
 
     // Only log unexpected errors (not client errors like UNAUTHORIZED, NOT_FOUND,
-    // nor expected upstream conditions like SITE_BLOCKED that map to a 5xx status
-    // but aren't server bugs — see isExpectedClientError)
+    // nor rate limiting — ours or an upstream site's — nor expected upstream
+    // conditions like SITE_BLOCKED that map to a 5xx status but aren't server
+    // bugs — see isExpectedClientError)
     if (
       !isTRPCError ||
-      (!["UNAUTHORIZED", "NOT_FOUND", "BAD_REQUEST", "FORBIDDEN"].includes(error.code) &&
+      (!["UNAUTHORIZED", "NOT_FOUND", "BAD_REQUEST", "FORBIDDEN", "TOO_MANY_REQUESTS"].includes(
+        error.code
+      ) &&
         !isExpectedClientError(error))
     ) {
       logger.error("tRPC request failed", {
