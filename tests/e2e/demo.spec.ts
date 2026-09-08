@@ -6,25 +6,31 @@
  *
  * - the prerendered HTML already carries the article / list content (SEO and
  *   first paint — no skeleton swap), with crawlable entry links;
- * - hydration is clean: no React hydration errors in the console;
+ * - hydration is clean: no console errors (hydration mismatches, React
+ *   warnings) on the landing URL, on a tag-route article (prerendered as /all
+ *   and re-derived from the real URL after hydration), and on a list page;
  * - the tree is live after hydration: opening, starring, marking read and
  *   searching all work through the real cache layer, with no `/api/trpc`
  *   traffic at all (every procedure resolves in-process);
  * - the URL plumbing: the old /demo/highlights URL redirects, and the internal
- *   rewrite target normalizes to the public `?entry=` form.
+ *   rewrite target normalizes to the public `?entry=` form without closing
+ *   and reopening the article.
  */
 
 import { test, expect, type Page } from "@playwright/test";
 
-/** Collects console errors that indicate a hydration problem or a React error. */
+/**
+ * Collects every console error and page error (hydration mismatches, React
+ * warnings such as duplicate keys, thrown errors). The dev server has no
+ * service worker, so its registration 404 is the one expected noise.
+ */
 function collectRenderErrors(page: Page): string[] {
   const errors: string[] = [];
   page.on("console", (message) => {
     if (message.type() !== "error") return;
     const text = message.text();
-    if (/hydrat|did not match|Minified React error|recoverable/i.test(text)) {
-      errors.push(text);
-    }
+    if (/sw\.js|ServiceWorker|bad HTTP response code \(404\)/.test(text)) return;
+    errors.push(text);
   });
   page.on("pageerror", (error) => errors.push(error.message));
   return errors;
@@ -55,28 +61,32 @@ test("the prerendered article page carries the article and the list", async ({ r
   expect(html).toContain("Mark as unread");
 });
 
-test("the prerendered list page carries the entries and sidebar counts", async ({ request }) => {
+test("the prerendered list page carries the entries", async ({ request }) => {
   const html = await (await request.get("/demo/tag/features")).text();
   expect(html).toContain('href="/demo/tag/features?entry=performance"');
   expect(html).toContain("Features");
-  // A list page must not prerender an open article.
-  expect(html).not.toContain("Mark as unread");
+  // A list page prerenders the list, not a reader.
+  expect(html).not.toContain("Back to list");
 });
 
-test("the demo hydrates cleanly and runs entirely in-process", async ({ page }) => {
-  const renderErrors = collectRenderErrors(page);
-  const apiRequests = recordApiRequests(page);
+for (const url of [
+  "/demo/all?entry=welcome",
+  "/demo/tag/features?entry=performance",
+  "/demo/starred",
+]) {
+  test(`${url} hydrates cleanly and runs entirely in-process`, async ({ page }) => {
+    const renderErrors = collectRenderErrors(page);
+    const apiRequests = recordApiRequests(page);
 
-  await page.goto("/demo/all?entry=welcome");
-  await expect(
-    page.getByRole("heading", { name: "Welcome to Lion Reader", level: 1 })
-  ).toBeVisible();
-  // Give hydration and the post-hydration effects time to settle.
-  await page.waitForTimeout(1500);
+    await page.goto(url);
+    await expect(page.getByRole("main")).toBeVisible();
+    // Give hydration and the post-hydration effects time to settle.
+    await page.waitForTimeout(1500);
 
-  expect(renderErrors).toEqual([]);
-  expect(apiRequests).toEqual([]);
-});
+    expect(renderErrors).toEqual([]);
+    expect(apiRequests).toEqual([]);
+  });
+}
 
 test("reading, starring and navigating work through the real reader", async ({ page }) => {
   const apiRequests = recordApiRequests(page);
@@ -104,7 +114,7 @@ test("reading, starring and navigating work through the real reader", async ({ p
   await expect(starred).toContainText(`(${starredBefore + 1})`);
 
   // Back to the list: the entry stays visible (lists don't drop rows until a
-  // navigation), and the summarize flow shows the canned summary on reopen.
+  // navigation).
   await page.getByRole("button", { name: "Back to list" }).click();
   await expect(page).toHaveURL(/\/demo\/all$/);
   await expect(page.getByRole("button", { name: /article: Obsessive Performance/ })).toBeVisible();
@@ -115,9 +125,9 @@ test("reading, starring and navigating work through the real reader", async ({ p
   await expect(page.getByRole("heading", { name: "Starred" })).toBeVisible();
   await expect(page.getByRole("button", { name: /article: Welcome to Lion Reader/ })).toBeVisible();
 
-  // Search runs against the store.
+  // Search runs against the store, over body text: a term only the performance
+  // article contains.
   await page.getByRole("button", { name: "Search entries" }).click();
-  // A term only the performance article's body contains (search covers body text).
   await page.getByRole("searchbox").fill("sub-100ms");
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/q=sub-100ms/);
@@ -152,9 +162,15 @@ test("the old highlights URL redirects to the starred list", async ({ request })
 test("a direct visit to the internal entry route normalizes to the public URL", async ({
   page,
 }) => {
+  const renderErrors = collectRenderErrors(page);
   await page.goto("/demo/entry/welcome");
   await expect(page).toHaveURL(/\/demo\/all\?entry=welcome$/);
   await expect(
     page.getByRole("heading", { name: "Welcome to Lion Reader", level: 1 })
   ).toBeVisible();
+  await page.waitForTimeout(1000);
+  expect(renderErrors).toEqual([]);
+  // The article stayed open across the normalization (it was never closed and
+  // reopened): its single auto-mark-read leaves the count at 25.
+  await expect(page.getByRole("link", { name: /^All Items/ })).toContainText("(25)");
 });

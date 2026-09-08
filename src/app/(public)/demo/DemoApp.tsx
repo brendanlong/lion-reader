@@ -12,8 +12,9 @@
  *   cache is pre-seeded for the prerendered location (`./seed.ts`) so the static
  *   HTML carries the real content — `PrerenderedCacheProvider` lets the
  *   cache-gated components render it during SSR.
- * - `AppLocationProvider` strips the `/demo` prefix and, until hydration,
- *   reports the location the page was prerendered for (see useAppLocation).
+ * - `AppLocationProvider` strips the `/demo` prefix and, until the URL has
+ *   settled after hydration, reports the location the page was prerendered
+ *   for (see useAppLocation).
  * - No realtime/SSE, announcement banner, or auth-error handling: those are
  *   session features. The header offers sign-up/sign-in instead of the user
  *   menu.
@@ -79,26 +80,12 @@ interface DemoAppProps {
   location: AppLocation;
 }
 
-function DemoShell({ location }: DemoAppProps) {
+function DemoShell() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Always-mounted shell hooks (see AppRouter for why they must live here).
   useEntryListRefreshOnNavigate();
   useEntryListScrollResetOnNavigate();
-
-  // A direct visit to the internal rewrite target (/demo/entry/<id>) works, but
-  // the public form of that URL is the query one; normalize so navigation from
-  // here builds the URLs everything else links to. Deferred past this commit's
-  // effects: Next patches history.replaceState (to sync usePathname) in its own
-  // root effect, which runs after this child's, so a synchronous replace here
-  // would change the URL without the router noticing.
-  useEffect(() => {
-    const match = window.location.pathname.match(/^\/demo\/entry\/([^/]+)$/);
-    if (!match) return;
-    const publicUrl = `${DEMO_BASE_PATH}${location.pathname}?entry=${match[1]}`;
-    const timer = setTimeout(() => clientReplace(publicUrl), 0);
-    return () => clearTimeout(timer);
-  }, [location.pathname]);
 
   return (
     <LayoutShell
@@ -162,17 +149,38 @@ export function DemoApp({ location }: DemoAppProps) {
   const [links] = useState(() => [createHandlerLink(store.handlers)]);
   const [dehydratedState] = useState(() => buildDemoDehydratedState(store, location));
 
+  // The prerendered location stays authoritative through hydration and until
+  // the browser URL is settled, then the live URL takes over.
+  const [ssrLocation, setSsrLocation] = useState<AppLocation | null>(location);
+  useEffect(() => {
+    // Deferred past this commit's effects: Next patches history.replaceState
+    // (to sync usePathname) in its own root effect, which runs after this one,
+    // so a synchronous replace here would change the URL without the router
+    // noticing.
+    const timer = setTimeout(() => {
+      // A direct visit to the internal rewrite target (/demo/entry/<id>) works,
+      // but the public form of that URL is the query one; normalize so
+      // navigation from here builds the URLs everything else links to.
+      const match = window.location.pathname.match(/^\/demo\/entry\/([^/]+)$/);
+      if (match) {
+        clientReplace(`${DEMO_BASE_PATH}${location.pathname}?entry=${match[1]}`);
+      }
+      setSsrLocation(null);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [location.pathname]);
+
   return (
     <TRPCProvider links={links}>
       <HydrationBoundary state={dehydratedState}>
-        <AppLocationProvider basePath={DEMO_BASE_PATH} ssrLocation={location}>
+        <AppLocationProvider basePath={DEMO_BASE_PATH} ssrLocation={ssrLocation}>
           <PrerenderedCacheProvider>
             <EntryContentOptionsProvider value={ENTRY_CONTENT_OPTIONS}>
               <AppearanceProvider>
                 <KeyboardShortcutsProvider>
                   <ScrollContainerProvider>
                     <Toaster position="bottom-right" richColors closeButton />
-                    <DemoShell location={location} />
+                    <DemoShell />
                   </ScrollContainerProvider>
                 </KeyboardShortcutsProvider>
               </AppearanceProvider>

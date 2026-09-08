@@ -60,6 +60,34 @@ describe("createDemoStore", () => {
       expect(first.items.length + second.items.length + last.items.length).toBe(TOTAL);
     });
 
+    it("continues after a cursor entry that dropped out of the filter, without repeats", () => {
+      const { procedures } = createDemoStore();
+      const first = procedures["entries.list"]({ unreadOnly: true, limit: 10 });
+      // Read the last entry of page 1 (as opening it from the list would).
+      const last = first.items[9];
+      procedures["entries.markRead"]({ entries: [{ id: last.id }], read: true });
+
+      const second = procedures["entries.list"]({
+        unreadOnly: true,
+        limit: 10,
+        cursor: first.nextCursor,
+      });
+      const seen = new Set(first.items.map((i) => i.id));
+      expect(second.items.some((i) => seen.has(i.id))).toBe(false);
+      expect(second.items).toHaveLength(10);
+
+      // Every entry is served exactly once (the read one was already on page 1).
+      const rest = procedures["entries.list"]({
+        unreadOnly: true,
+        limit: 100,
+        cursor: second.nextCursor,
+      });
+      expect(rest.nextCursor).toBeUndefined();
+      const all = [...first.items, ...second.items, ...rest.items].map((i) => i.id);
+      expect(new Set(all).size).toBe(all.length);
+      expect(all).toHaveLength(TOTAL);
+    });
+
     it("filters by subscription, tag, type and starred", () => {
       const { procedures } = createDemoStore();
       const sub = DEMO_SUBSCRIPTIONS[0];

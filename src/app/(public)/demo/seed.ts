@@ -53,7 +53,14 @@ export function buildDemoDehydratedState(store: DemoStore, location: AppLocation
   // read toggle and the counts don't flip after hydration.
   const entryId = searchParams.get("entry");
   if (entryId) {
-    procedures["entries.markRead"]({ entries: [{ id: entryId }], read: true });
+    // Stamped with a fixed time (the article's own date) rather than the clock,
+    // so the seeded `updatedAt`/`readChangedAt` are identical on the server and
+    // the client; the reader's own mark-read on mount re-stamps them live.
+    const { entry } = procedures["entries.get"]({ id: entryId });
+    procedures["entries.markRead"]({
+      entries: [{ id: entryId, changedAt: entry.publishedAt ?? entry.fetchedAt }],
+      read: true,
+    });
     queryClient.setQueryData(
       getQueryKey(trpc.entries.get, { id: entryId }, "query"),
       procedures["entries.get"]({ id: entryId })

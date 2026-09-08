@@ -54,6 +54,9 @@ describe("buildDemoDehydratedState", () => {
     expect(byPath.get("entries.count:{}")).toEqual({ unread: DEMO_ENTRIES.length - 1 });
     // …and the store itself was updated, so later queries agree.
     expect(store.procedures["entries.get"]({ id: "welcome" }).entry.read).toBe(true);
+    // Deterministic stamps (no clock), so server and client seed identical data.
+    const again = seeded("/all", "entry=welcome").byPath.get('entries.get:{"id":"welcome"}');
+    expect(again).toEqual(byPath.get('entries.get:{"id":"welcome"}'));
 
     const listKey = [...byPath.keys()].find((k) => k.startsWith("entries.list:infinite:"))!;
     const list = byPath.get(listKey) as { pages: { items: { id: string; read: boolean }[] }[] };

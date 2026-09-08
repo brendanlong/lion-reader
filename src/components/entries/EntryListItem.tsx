@@ -220,8 +220,11 @@ export const EntryListItem = memo(function EntryListItem({
               }`}
             >
               {href ? (
-                // Out of the tab order like the toggles below: keyboard users
-                // open the focused row with Enter.
+                // Nested inside the role="button" row like the toggles below —
+                // not exposed as a link to assistive tech (the row is the
+                // control; Enter opens it), so it's out of the tab order. It
+                // exists for crawlers and for middle/modifier-click "open in
+                // a new tab".
                 <a href={href} tabIndex={-1} onClick={handleTitleLinkClick}>
                   {displayTitle}
                 </a>

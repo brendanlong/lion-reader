@@ -13,7 +13,7 @@
 
 "use client";
 
-import { useIsHydrated } from "@/lib/hooks/useIsHydrated";
+import { useIsHydrated, useIsPrerendered } from "@/lib/hooks/useIsHydrated";
 
 interface LocalTimeProps {
   date: Date;
@@ -24,8 +24,15 @@ interface LocalTimeProps {
 export function LocalTime({ date, format, className }: LocalTimeProps) {
   // Subscribed only for its post-hydration re-render (see module comment).
   useIsHydrated();
+  // Only a prerendered mount expects the text to differ; in the app a mismatch
+  // would be a real bug and must stay visible.
+  const prerendered = useIsPrerendered();
   return (
-    <time dateTime={date.toISOString()} className={className} suppressHydrationWarning>
+    <time
+      dateTime={date.toISOString()}
+      className={className}
+      suppressHydrationWarning={prerendered}
+    >
       {format(date)}
     </time>
   );

@@ -51,12 +51,17 @@ export function PrerenderedCacheProvider({ children }: { children: ReactNode }) 
   return createElement(PrerenderedCacheContext.Provider, { value: true }, children);
 }
 
+/** Whether this subtree is inside a PrerenderedCacheProvider (baked at build time). */
+export function useIsPrerendered(): boolean {
+  return useContext(PrerenderedCacheContext);
+}
+
 /**
  * Whether cache-dependent rendering is safe: after hydration, or anywhere the
  * cache is known to be identical on both sides (see PrerenderedCacheProvider).
  */
 export function useCanRenderFromCache(): boolean {
-  const prerendered = useContext(PrerenderedCacheContext);
+  const prerendered = useIsPrerendered();
   const isHydrated = useIsHydrated();
   return prerendered || isHydrated;
 }

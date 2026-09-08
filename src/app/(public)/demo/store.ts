@@ -118,6 +118,17 @@ function toDate(value: unknown, fallback: Date): Date {
   return value instanceof Date ? value : fallback;
 }
 
+function encodeCursor(position: { key: number; id: string }): string {
+  return `${position.key}:${position.id}`;
+}
+
+function decodeCursor(cursor: string | undefined): { key: number; id: string } | null {
+  if (!cursor) return null;
+  const separator = cursor.indexOf(":");
+  const key = Number(cursor.slice(0, separator));
+  return separator > 0 && Number.isFinite(key) ? { key, id: cursor.slice(separator + 1) } : null;
+}
+
 function plainText(html: string): string {
   return html
     .replace(/<[^>]+>/g, " ")
@@ -353,22 +364,28 @@ export function createDemoStore(): DemoStore {
           ? (state.readChangedAt?.getTime() ?? 0)
           : (state.entry.publishedAt ?? state.entry.fetchedAt).getTime();
       const direction = input.sortOrder === "oldest" ? 1 : -1;
+      const compare = (a: { key: number; id: string }, b: { key: number; id: string }) =>
+        direction * (a.key - b.key) || a.id.localeCompare(b.id);
+      const position = (state: EntryState) => ({ key: sortKey(state), id: state.entry.id });
 
       const sorted = select(filter)
         // The recently-read view lists only entries whose read state has changed.
         .filter((state) => sortBy !== "readChanged" || state.readChangedAt !== null)
-        .sort(
-          (a, b) => direction * (sortKey(a) - sortKey(b)) || a.entry.id.localeCompare(b.entry.id)
-        );
+        .sort((a, b) => compare(position(a), position(b)));
 
-      // The cursor is the id of the last item served; opaque enough for a demo.
-      const start = input.cursor ? sorted.findIndex((s) => s.entry.id === input.cursor) + 1 : 0;
+      // Keyset cursor (sort key + id of the last item served), like the real
+      // service: the page continues after that position even if the cursor
+      // entry itself has since dropped out of the filter (e.g. marked read in
+      // an unread-only view), so nothing is repeated.
+      const cursor = decodeCursor(input.cursor);
+      const start = cursor ? sorted.findIndex((s) => compare(position(s), cursor) > 0) : 0;
       const limit = Math.min(input.limit ?? 50, 100);
-      const page = sorted.slice(start, start + limit);
-      const hasMore = start + limit < sorted.length;
+      const page = start === -1 ? [] : sorted.slice(start, start + limit);
+      const hasMore = start !== -1 && start + limit < sorted.length;
+      const last = page[page.length - 1];
       return {
         items: page.map(toListItem),
-        nextCursor: hasMore ? page[page.length - 1].entry.id : undefined,
+        nextCursor: hasMore && last ? encodeCursor(position(last)) : undefined,
       };
     },
 
@@ -393,16 +410,19 @@ export function createDemoStore(): DemoStore {
       for (const { id, changedAt } of input.entries) {
         const state = entries.get(id);
         if (!state || !isVisible(state)) continue;
+        // In-process there is no separate server clock: the caller's timestamp
+        // is the write time (the seed relies on this to stay deterministic).
+        const writtenAt = toDate(changedAt, now);
         // Same-value re-asserts advance the read-changed watermark (so the entry
         // surfaces in Recently Read) without counting as a change (#1118).
         if (state.read !== input.read) {
           state.read = input.read;
-          state.updatedAt = now;
+          state.updatedAt = writtenAt;
           flipped = true;
           const sub = subscriptionOf(state);
           if (sub) affected.set(sub.id, sub);
         }
-        state.readChangedAt = toDate(changedAt, now);
+        state.readChangedAt = writtenAt;
         results.push({
           id,
           subscriptionId: subscriptionOf(state)?.id ?? null,
@@ -490,7 +510,9 @@ export function createDemoStore(): DemoStore {
         .filter((sub) => !input?.uncategorized || sub.tagIds.length === 0)
         .filter((sub) => !input?.unreadOnly || unread({ subscriptionId: sub.id }) > 0)
         .filter((sub) => !needle || sub.title.toLowerCase().includes(needle));
-      const start = input?.cursor ? matching.findIndex((s) => s.id === input.cursor) + 1 : 0;
+      const after = input?.cursor ? matching.findIndex((s) => s.id === input.cursor) : -1;
+      // A cursor that no longer matches (unsubscribed meanwhile) ends the list.
+      const start = input?.cursor ? (after === -1 ? matching.length : after + 1) : 0;
       const limit = input?.limit ?? 50;
       const page = matching.slice(start, start + limit);
       return {

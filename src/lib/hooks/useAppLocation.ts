@@ -1,32 +1,27 @@
 /**
  * App-relative location.
  *
- * The SPA's routing/state layer (`UnifiedEntriesContent`, the sidebar, the URL
- * hooks) is written against app-relative paths — `/all`, `/tag/:id`,
- * `?entry=` — and is mounted at two places: the root for the authenticated app,
- * and `/demo` for the public demo. Components read the location through these
- * hooks instead of `usePathname()`/`useSearchParams()` directly so the same
- * tree works under either mount point:
+ * The SPA's routing/state layer is written against app-relative paths (`/all`,
+ * `/tag/:id`, `?entry=`) and is mounted at two places: the root for the
+ * authenticated app, and `/demo` for the public demo. Components read the
+ * location through these hooks instead of `usePathname()`/`useSearchParams()`
+ * so the same tree works under either mount point (`useAppPathname()` strips
+ * the base; `useAppHref()`/`ClientLink` prefix it back onto hrefs). Hooks that
+ * only watch the pathname for *changes* may still use `usePathname()` directly.
  *
- * - `useAppPathname()` strips the route base (`/demo/all` → `/all`).
- * - `useRouteBase()` / `useAppHref()` prefix it back onto SPA-relative hrefs
- *   (`ClientLink` does this for every link automatically).
- *
- * `ssrLocation` covers statically prerendered mounts (the demo, issue #1359):
- * at prerender time there is no request, so `useSearchParams()` is empty (the
- * route is `force-static`) and `usePathname()` is the internal route being
- * rendered — for the `?entry=` article URLs that is the rewrite target
- * `/demo/entry/[id]`, not the URL the browser shows. The page knows the
- * location it is being prerendered for and passes it here; the hooks return
- * it during the server render AND the client's hydration render (the two must
- * agree), then hand over to the live URL once hydration has committed.
+ * `ssrLocation` is for statically prerendered mounts, where the URL Next
+ * reports during the prerender is not the one the browser will show (the demo
+ * serves `?entry=` URLs from an internal route — see the demo layout). While
+ * the provider supplies it, the hooks report it instead of the live URL; the
+ * mount clears it once hydration has committed and the URL is settled, and it
+ * must keep supplying it through the hydration render so server and client
+ * output agree.
  */
 
 "use client";
 
 import { createContext, createElement, useContext, useMemo, type ReactNode } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useIsHydrated } from "./useIsHydrated";
 
 export interface AppLocation {
   /** App-relative pathname (base already stripped), e.g. "/all". */
@@ -49,7 +44,7 @@ interface AppLocationProviderProps {
   /** Route prefix the SPA is mounted under, without a trailing slash (e.g. "/demo"). */
   basePath: string;
   /** The location this render was prerendered for; see the module comment. */
-  ssrLocation?: AppLocation;
+  ssrLocation?: AppLocation | null;
   children: ReactNode;
 }
 
@@ -68,11 +63,9 @@ function stripRouteBase(pathname: string, basePath: string): string {
   return pathname.startsWith(`${basePath}/`) ? pathname.slice(basePath.length) : pathname;
 }
 
-/** Whether the prerendered location should still be reported (see module comment). */
+/** The prerendered location, while the mount still supplies it (see module comment). */
 function useSsrLocation(): AppLocation | null {
-  const { ssrLocation } = useContext(AppLocationContext);
-  const isHydrated = useIsHydrated();
-  return ssrLocation && !isHydrated ? ssrLocation : null;
+  return useContext(AppLocationContext).ssrLocation;
 }
 
 /** The route prefix the SPA is mounted under ("" for the app itself). */
