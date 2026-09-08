@@ -764,7 +764,9 @@ export const subscriptionsRouter = createTRPCRouter({
         .leftJoin(subscriptionTags, eq(subscriptionTags.subscriptionId, userFeeds.id))
         .leftJoin(tags, eq(tags.id, subscriptionTags.tagId))
         .where(eq(userFeeds.userId, userId))
-        .groupBy(userFeeds.id)
+        // user_feeds is a view, so Postgres can't infer the other columns from
+        // its id the way it would for a table's primary key (#1516).
+        .groupBy(userFeeds.id, userFeeds.title, userFeeds.url, userFeeds.siteUrl)
         .orderBy(userFeeds.title);
 
       // Convert to OPML subscription format
