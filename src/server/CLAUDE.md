@@ -33,7 +33,7 @@ These flags are the **source of truth, not a cache**, so they must survive a dep
 
 Use the database views for frontend queries instead of manual joins:
 
-- **`user_feeds`**: Active subscriptions with feed data merged, including the trigger-maintained `unread_count` (no aggregation needed). Use for the subscription-list surfaces (`subscriptions.list/get/export`); resolves title (custom or original) and filters out unsubscribed subscriptions. **Display-only** — link/ownership/scoping checks must query the `subscriptions` table directly, not this view.
+- **`user_feeds`**: Active subscriptions with feed data merged, including the trigger-maintained `unread_count` (no aggregation needed). Use for the subscription-list surfaces (`subscriptions.list/get/export`); resolves title (custom or original) and filters out unsubscribed subscriptions. **Display-only** — link/ownership/scoping checks must query the `subscriptions` table directly, not this view. When grouping a query over this (or any) view, list every selected column in `GROUP BY`: Postgres infers functional dependencies from a base table's primary key, never through a view (#1516).
 - **`visible_entries`**: Entries with visibility rules applied. Use for `entries.list/get`. Unread **counts do not scan this view** — they read the denormalized counters (see `src/server/services/counts.ts` and "Unread counts" below).
 
 The view definitions live in `migrations/schema.sql`, with Drizzle schemas in `src/server/db/schema.ts`.

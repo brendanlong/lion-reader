@@ -441,3 +441,44 @@ describe("EntryListItem", () => {
     });
   });
 });
+
+describe("EntryListItem title link", () => {
+  it("renders the title as a real link to the entry's href, kept out of the tab order", () => {
+    render(<EntryListItem entry={createMockEntry()} href="/all?entry=entry-1" />);
+
+    const link = screen.getByRole("link", { name: "Test Article Title" });
+    expect(link).toHaveAttribute("href", "/all?entry=entry-1");
+    expect(link).toHaveAttribute("tabindex", "-1");
+  });
+
+  it("renders plain text when no href is given (the fallback list)", () => {
+    render(<EntryListItem entry={createMockEntry()} />);
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+  });
+
+  it("lets the row open the entry on a plain click without navigating the link", () => {
+    const onClick = vi.fn();
+    render(<EntryListItem entry={createMockEntry()} href="/all?entry=entry-1" onClick={onClick} />);
+
+    const link = screen.getByRole("link", { name: "Test Article Title" });
+    const event = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 });
+    link.dispatchEvent(event);
+
+    // Default prevented (no browser navigation); the row's handler still ran once.
+    expect(event.defaultPrevented).toBe(true);
+    expect(onClick).toHaveBeenCalledTimes(1);
+    expect(onClick).toHaveBeenCalledWith("entry-1");
+  });
+
+  it("leaves a modifier click to the browser and does not also open the entry in place", () => {
+    const onClick = vi.fn();
+    render(<EntryListItem entry={createMockEntry()} href="/all?entry=entry-1" onClick={onClick} />);
+
+    const link = screen.getByRole("link", { name: "Test Article Title" });
+    const event = new MouseEvent("click", { bubbles: true, cancelable: true, metaKey: true });
+    link.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(onClick).not.toHaveBeenCalled();
+  });
+});

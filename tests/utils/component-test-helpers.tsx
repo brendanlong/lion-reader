@@ -3,8 +3,9 @@
  *
  * Renders React components that embed tRPC queries/mutations against a REAL
  * tRPC React client + real QueryClient, exactly like the app's TRPCProvider —
- * the only difference is a terminating "mock link" that resolves each procedure
- * from a caller-supplied handler map instead of hitting the network. This keeps
+ * the only difference is the terminating handler link (`createHandlerLink`,
+ * the same one the public demo runs on) that resolves each procedure from a
+ * caller-supplied handler map instead of hitting the network. This keeps
  * tRPC's real key hashing, React Query caching, and hook wiring in play (no
  * internal mocks) while letting a test define canned responses per procedure.
  *
@@ -20,8 +21,6 @@
 
 import type { ReactElement, ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { TRPCClientError, type TRPCLink } from "@trpc/client";
-import { observable } from "@trpc/server/observable";
 import {
   render,
   renderHook,
@@ -30,7 +29,13 @@ import {
 } from "@testing-library/react";
 import { vi } from "vitest";
 import { trpc } from "@/lib/trpc/client";
-import type { AppRouter } from "@/server/trpc/root";
+import {
+  createHandlerLink,
+  type ProcedureHandlers,
+  type RecordedCall,
+} from "@/lib/trpc/handler-link";
+
+export type { ProcedureHandler, ProcedureHandlers, RecordedCall } from "@/lib/trpc/handler-link";
 
 /**
  * Installs a fresh in-memory `localStorage` on the global via `vi.stubGlobal`.
@@ -59,67 +64,6 @@ export function stubMemoryLocalStorage(): Storage {
   };
   vi.stubGlobal("localStorage", mock);
   return mock;
-}
-
-/**
- * A handler for a single tRPC procedure. Receives the procedure input and
- * returns the data the client should observe (sync or async). Throw to simulate
- * a procedure error; a plain Error is wrapped in a TRPCClientError.
- */
-export type ProcedureHandler = (input: unknown) => unknown;
-
-/** Map of tRPC procedure path (e.g. "entries.get") to its handler. */
-export type ProcedureHandlers = Record<string, ProcedureHandler>;
-
-/** A tRPC operation observed by the mock link. */
-export interface RecordedCall {
-  path: string;
-  type: "query" | "mutation" | "subscription";
-  input: unknown;
-}
-
-/**
- * Builds a terminating tRPC link that resolves operations from `handlers`.
- * Because there is no HTTP layer, no transformer runs: handler return values
- * reach the hooks as-is (Date objects stay Dates), which matches what the
- * superjson-decoded client would produce. Unhandled procedures error loudly so
- * a test that forgets a handler fails with a clear message instead of hanging.
- */
-function mockLink(handlers: ProcedureHandlers, calls: RecordedCall[]): TRPCLink<AppRouter> {
-  return () =>
-    ({ op }) =>
-      observable((observer) => {
-        calls.push({ path: op.path, type: op.type, input: op.input });
-
-        const handler = handlers[op.path];
-        if (!handler) {
-          observer.error(
-            new TRPCClientError(`No mock handler registered for tRPC procedure "${op.path}"`)
-          );
-          return;
-        }
-
-        let cancelled = false;
-        Promise.resolve()
-          .then(() => handler(op.input))
-          .then((data) => {
-            if (cancelled) return;
-            observer.next({ result: { data } });
-            observer.complete();
-          })
-          .catch((error: unknown) => {
-            if (cancelled) return;
-            observer.error(
-              error instanceof TRPCClientError
-                ? error
-                : new TRPCClientError(error instanceof Error ? error.message : String(error))
-            );
-          });
-
-        return () => {
-          cancelled = true;
-        };
-      });
 }
 
 export interface RenderWithTrpcOptions {
@@ -160,7 +104,9 @@ function createTrpcWrapper(options: RenderWithTrpcOptions = {}): {
     },
   });
 
-  const trpcClient = trpc.createClient({ links: [mockLink(handlers, calls)] });
+  const trpcClient = trpc.createClient({
+    links: [createHandlerLink(handlers, (call) => calls.push(call))],
+  });
 
   function Wrapper({ children }: { children: ReactNode }) {
     const inner = options.wrapper ? options.wrapper(children) : children;

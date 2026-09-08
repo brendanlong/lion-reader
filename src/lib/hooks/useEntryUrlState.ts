@@ -9,8 +9,8 @@
 "use client";
 
 import { useCallback, useMemo, useRef } from "react";
-import { useSearchParams, usePathname } from "next/navigation";
 import { clientPush, clientReplace } from "@/lib/navigation";
+import { useAppHref, useAppPathname, useAppSearchParams } from "./useAppLocation";
 
 export interface UseEntryUrlStateResult {
   /** The currently open entry ID, or null if no entry is open */
@@ -19,6 +19,8 @@ export interface UseEntryUrlStateResult {
   setOpenEntryId: (entryId: string | null) => void;
   /** Close the entry (removes from URL) */
   closeEntry: () => void;
+  /** The browser href that opens `entryId` in the current view (for real `<a>` links) */
+  entryHref: (entryId: string) => string;
 }
 
 /**
@@ -41,8 +43,9 @@ export interface UseEntryUrlStateResult {
  * ```
  */
 export function useEntryUrlState(): UseEntryUrlStateResult {
-  const searchParams = useSearchParams();
-  const pathname = usePathname();
+  const searchParams = useAppSearchParams();
+  const pathname = useAppPathname();
+  const appHref = useAppHref();
 
   // Track whether we pushed to history when opening an entry
   // This allows us to use history.back() when closing, which preserves React state
@@ -53,20 +56,26 @@ export function useEntryUrlState(): UseEntryUrlStateResult {
     return searchParams.get("entry");
   }, [searchParams]);
 
-  // Update the URL with a new entry ID (or remove it)
-  const setOpenEntryId = useCallback(
+  // The current view's URL with `entry` set (or removed)
+  const buildEntryUrl = useCallback(
     (entryId: string | null) => {
       const params = new URLSearchParams(searchParams.toString());
-      const currentEntryId = searchParams.get("entry");
-
       if (entryId) {
         params.set("entry", entryId);
       } else {
         params.delete("entry");
       }
-
       const queryString = params.toString();
-      const newUrl = queryString ? `${pathname}?${queryString}` : pathname;
+      return appHref(queryString ? `${pathname}?${queryString}` : pathname);
+    },
+    [searchParams, pathname, appHref]
+  );
+
+  // Update the URL with a new entry ID (or remove it)
+  const setOpenEntryId = useCallback(
+    (entryId: string | null) => {
+      const currentEntryId = searchParams.get("entry");
+      const newUrl = buildEntryUrl(entryId);
 
       // Use push when opening an entry from the list (null -> entryId)
       // This adds the entry view to browser history, so back gesture returns to list
@@ -80,7 +89,7 @@ export function useEntryUrlState(): UseEntryUrlStateResult {
         clientReplace(newUrl);
       }
     },
-    [searchParams, pathname]
+    [searchParams, buildEntryUrl]
   );
 
   // Close the entry - uses history.back() if we pushed when opening, to preserve React state
@@ -98,5 +107,6 @@ export function useEntryUrlState(): UseEntryUrlStateResult {
     openEntryId,
     setOpenEntryId,
     closeEntry,
+    entryHref: buildEntryUrl,
   };
 }

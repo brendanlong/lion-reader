@@ -26,8 +26,6 @@ export interface SubscriptionItemProps {
   onClose: (href: string) => void;
   onEdit: () => void;
   onUnsubscribe: () => void;
-  /** Optional href override (e.g., for demo page query-param navigation) */
-  href?: string;
   /** Called on mousedown with the link href (e.g., to prefetch data) */
   onPrefetch?: (href: string) => void;
 }
@@ -42,11 +40,10 @@ export function SubscriptionItem({
   onClose,
   onEdit,
   onUnsubscribe,
-  href,
   onPrefetch,
 }: SubscriptionItemProps) {
   const displayTitle = subscription.title || "Untitled Feed";
-  const subHref = href ?? `/subscription/${subscription.id}`;
+  const subHref = `/subscription/${subscription.id}`;
 
   return (
     <li className="group relative flex items-center">

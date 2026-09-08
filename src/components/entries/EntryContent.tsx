@@ -17,7 +17,7 @@ import { trpc } from "@/lib/trpc/client";
 import { toast } from "sonner";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
 import { useShowOriginalPreference } from "@/lib/hooks/useShowOriginalPreference";
-import { useIsHydrated } from "@/lib/hooks/useIsHydrated";
+import { useCanRenderFromCache } from "@/lib/hooks/useIsHydrated";
 import { useTrackEntryView } from "@/lib/analytics/useTrackEntryView";
 import { ScrollContainer } from "@/components/layout/ScrollContainerContext";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
@@ -25,6 +25,7 @@ import { getDomain } from "@/lib/format";
 import { EntryContentBody } from "./EntryContentBody";
 import { EntryContentFallback } from "./EntryContentFallback";
 import { EntryContentSkeleton } from "./EntryContentStates";
+import { useEntryContentOptions } from "./EntryContentOptions";
 
 /**
  * Props for the EntryContent component.
@@ -75,11 +76,12 @@ function EntryContentInner({
   previousEntryId,
 }: EntryContentProps) {
   const utils = trpc.useUtils();
+  const { hideNarration, ssrDateTimeZone, renderSlots } = useEntryContentOptions();
 
   // False during SSR + first client render. The cache-reading fallback below
   // would mismatch (empty server cache vs. hydrated client cache), so until
   // hydration we render a deterministic skeleton. See useIsHydrated.
-  const isHydrated = useIsHydrated();
+  const canRenderFromCache = useCanRenderFromCache();
 
   // Track whether we've sent the auto-mark-read mutation
   const hasSentMarkReadMutation = useRef(false);
@@ -322,7 +324,7 @@ function EntryContentInner({
   // Deterministic skeleton on the server + first client render so hydration
   // matches (the smart fallback below reads the cache, which differs between
   // server and client at that point).
-  if (!isHydrated) {
+  if (!canRenderFromCache) {
     return (
       <ScrollContainer className="h-full overflow-y-auto">
         <EntryContentSkeleton />
@@ -338,6 +340,8 @@ function EntryContentInner({
     return <EntryContentFallback entryId={entryId} onBack={onBack} />;
   }
 
+  const slots = renderSlots?.(entryId);
+
   // Wrap in scroll container - each entry gets its own container that starts at scroll 0
   // ScrollContainer provides context so useImagePrefetch can observe this container
   return (
@@ -351,6 +355,9 @@ function EntryContentInner({
         author={entry.author}
         url={entry.url}
         date={entry.publishedAt ?? entry.fetchedAt}
+        // Server renders format in the mount's chosen zone; the visitor's own
+        // zone takes over on the client (see EntryContentOptions).
+        dateTimeZone={typeof window === "undefined" ? ssrDateTimeZone : undefined}
         contentOriginal={entry.contentOriginal}
         contentCleaned={entry.contentCleaned}
         fallbackContent={entry.summary}
@@ -382,6 +389,9 @@ function EntryContentInner({
         onSummarize={handleSummarize}
         onSummaryClose={handleSummaryClose}
         onSummaryRegenerate={handleSummaryRegenerate}
+        hideNarration={hideNarration}
+        beforeContent={slots?.beforeContent}
+        afterContent={slots?.afterContent}
       />
     </ScrollContainer>
   );

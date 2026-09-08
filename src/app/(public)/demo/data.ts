@@ -1,12 +1,12 @@
 /**
- * Demo Landing Page Data
+ * Demo Data
  *
  * Tags and subscriptions are configured here.
  * Articles live in individual files under ./articles/.
  * Entry counts, lookup maps, and helper functions are generated automatically.
+ * The demo store (./store.ts) serves this data through the app's tRPC hooks.
  */
 
-import { type EntryArticleProps } from "@/components/entries/EntryArticle";
 import type { EntryListData } from "@/lib/hooks/types";
 import { DEMO_ARTICLES, type DemoArticle } from "./articles";
 
@@ -157,21 +157,6 @@ export const DEMO_ENTRIES: DemoEntry[] = DEMO_ARTICLES.map(articleToEntry);
 // Lookup helpers
 // ============================================================================
 
-/** Sort entries newest-first by publishedAt date */
-export function sortNewestFirst(entries: DemoEntry[]): DemoEntry[] {
-  return [...entries].sort(
-    (a, b) => (b.publishedAt?.getTime() ?? 0) - (a.publishedAt?.getTime() ?? 0)
-  );
-}
-
-const entriesBySubscription = new Map<string, DemoEntry[]>();
-for (const entry of DEMO_ENTRIES) {
-  const subId = entry.subscriptionId!;
-  const existing = entriesBySubscription.get(subId) ?? [];
-  existing.push(entry);
-  entriesBySubscription.set(subId, existing);
-}
-
 const entriesById = new Map<string, DemoEntry>();
 for (const entry of DEMO_ENTRIES) {
   entriesById.set(entry.id, entry);
@@ -180,20 +165,6 @@ for (const entry of DEMO_ENTRIES) {
 const subscriptionsById = new Map<string, DemoSubscription>();
 for (const sub of DEMO_SUBSCRIPTIONS) {
   subscriptionsById.set(sub.id, sub);
-}
-
-export function getDemoEntriesForSubscription(subscriptionId: string): DemoEntry[] {
-  return sortNewestFirst(entriesBySubscription.get(subscriptionId) ?? []);
-}
-
-/** Get entries for a tag (entries from all subscriptions in that tag) */
-export function getDemoEntriesForTag(tagId: string): DemoEntry[] {
-  const tag = DEMO_TAGS.find((t) => t.id === tagId);
-  if (!tag) return [];
-  const subIds = new Set(tag.subscriptionIds);
-  return sortNewestFirst(
-    DEMO_ENTRIES.filter((e) => e.subscriptionId && subIds.has(e.subscriptionId))
-  );
 }
 
 export function getDemoTag(tagId: string): DemoTag | undefined {
@@ -216,29 +187,11 @@ export function getDemoSubscription(subscriptionId: string): DemoSubscription | 
  * (same trust level as the surrounding contentHtml, which is also emitted raw),
  * so they're interpolated without escaping — keep alt text quote-free.
  */
-function heroFigureHtml(entry: DemoEntry): string {
+export function heroFigureHtml(entry: DemoEntry): string {
   if (!entry.heroImage) return "";
   const alt = entry.heroImageAlt ?? `${entry.title ?? "Article"} illustration`;
   // All demo hero images are 1200x630; the intrinsic width/height lets the
   // browser reserve the aspect-ratio box up front (prose caps them at
   // max-width:100%; height:auto) so they don't flash/reflow on load.
   return `<figure><img src="${entry.heroImage}" alt="${alt}" width="1200" height="630" /></figure>\n`;
-}
-
-/** Get EntryArticle props for a demo entry */
-export function getDemoEntryArticleProps(
-  entry: DemoEntry
-): Pick<
-  EntryArticleProps,
-  "title" | "url" | "source" | "author" | "date" | "contentHtml" | "fallbackContent"
-> {
-  return {
-    title: entry.title ?? "Untitled",
-    url: entry.url,
-    source: entry.feedTitle ?? "Lion Reader",
-    author: entry.author,
-    date: entry.publishedAt ?? entry.fetchedAt,
-    contentHtml: heroFigureHtml(entry) + entry.contentHtml,
-    fallbackContent: entry.summary,
-  };
 }

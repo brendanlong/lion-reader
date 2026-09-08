@@ -28,11 +28,17 @@ vi.mock("@/lib/analytics/beacon", () => ({
 let mockPathname = "/all";
 vi.mock("next/navigation", () => ({
   usePathname: () => mockPathname,
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 const { PageViewTracker } = await import("@/components/analytics/PageViewTracker");
-const { useTrackEntryView, useTrackDemoEntryView } =
-  await import("@/lib/analytics/useTrackEntryView");
+const { useTrackEntryView } = await import("@/lib/analytics/useTrackEntryView");
+const { AppLocationProvider } = await import("@/lib/hooks/useAppLocation");
+
+/** Renders a hook inside the demo mount (`/demo` route base). */
+function demoWrapper({ children }: { children: React.ReactNode }) {
+  return <AppLocationProvider basePath="/demo">{children}</AppLocationProvider>;
+}
 
 beforeEach(() => {
   trackPageView.mockClear();
@@ -111,21 +117,21 @@ describe("useTrackEntryView", () => {
   });
 });
 
-describe("useTrackDemoEntryView", () => {
+describe("useTrackEntryView under the demo mount", () => {
   it("reports an allowlisted demo article by id", () => {
     // The demo opens articles with a query-only pushState, so this hook — not
     // PageViewTracker — is what makes demo article reads visible at all.
-    renderHook(() => useTrackDemoEntryView("welcome"));
+    renderHook(() => useTrackEntryView("welcome", "web"), { wrapper: demoWrapper });
     expect(trackPageView.mock.calls).toEqual([["/demo/entry/welcome"]]);
   });
 
   it("reports the bare route for an id that isn't a demo article", () => {
-    renderHook(() => useTrackDemoEntryView("../../secret"));
+    renderHook(() => useTrackEntryView("../../secret", "web"), { wrapper: demoWrapper });
     expect(trackPageView.mock.calls).toEqual([["/demo/entry"]]);
   });
 
-  it("reports nothing when no article is open", () => {
-    renderHook(() => useTrackDemoEntryView(null));
+  it("reports nothing until an article is open", () => {
+    renderHook(() => useTrackEntryView(undefined, undefined), { wrapper: demoWrapper });
     expect(trackPageView).not.toHaveBeenCalled();
   });
 });

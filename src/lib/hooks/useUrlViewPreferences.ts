@@ -14,8 +14,8 @@
 "use client";
 
 import { useCallback, useMemo } from "react";
-import { useSearchParams, usePathname } from "next/navigation";
 import { clientPush, clientReplace } from "@/lib/navigation";
+import { useAppHref, useAppPathname, useAppSearchParams } from "./useAppLocation";
 import { parseViewPreferencesFromParams } from "./viewPreferences";
 import { getDefaultViewPreferences } from "@/lib/queries/entries-list-input";
 
@@ -75,8 +75,9 @@ export interface UseUrlViewPreferencesResult {
  * ```
  */
 export function useUrlViewPreferences(): UseUrlViewPreferencesResult {
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
+  const pathname = useAppPathname();
+  const searchParams = useAppSearchParams();
+  const appHref = useAppHref();
   const routeDefaultUnreadOnly = getDefaultViewPreferences(pathname).unreadOnly;
 
   // Get current values from URL
@@ -93,7 +94,7 @@ export function useUrlViewPreferences(): UseUrlViewPreferencesResult {
   // Helper to update URL with new params
   const updateUrl = useCallback(
     (updates: { unreadOnly?: boolean; sort?: "newest" | "oldest" }) => {
-      const params = new URLSearchParams(searchParams?.toString() ?? "");
+      const params = new URLSearchParams(searchParams.toString());
 
       // Update unreadOnly param
       if (updates.unreadOnly !== undefined) {
@@ -116,10 +117,9 @@ export function useUrlViewPreferences(): UseUrlViewPreferencesResult {
       }
 
       const queryString = params.toString();
-      const url = queryString ? `${pathname}?${queryString}` : pathname;
-      clientReplace(url);
+      clientReplace(appHref(queryString ? `${pathname}?${queryString}` : pathname));
     },
-    [pathname, searchParams, defaultUnreadOnly]
+    [pathname, searchParams, defaultUnreadOnly, appHref]
   );
 
   const toggleShowUnreadOnly = useCallback(() => {
@@ -133,14 +133,14 @@ export function useUrlViewPreferences(): UseUrlViewPreferencesResult {
   const setSearchQuery = useCallback(
     (query: string | null) => {
       const trimmed = query?.trim() ?? "";
-      const params = new URLSearchParams(searchParams?.toString() ?? "");
+      const params = new URLSearchParams(searchParams.toString());
       if (trimmed) {
         params.set("q", trimmed);
       } else {
         params.delete("q");
       }
       const queryString = params.toString();
-      const url = queryString ? `${pathname}?${queryString}` : pathname;
+      const url = appHref(queryString ? `${pathname}?${queryString}` : pathname);
       // Entering a search pushes a history entry so Back exits the search;
       // refining or clearing one replaces, so each keystroke-level tweak
       // doesn't pile up in history.
@@ -150,7 +150,7 @@ export function useUrlViewPreferences(): UseUrlViewPreferencesResult {
         clientReplace(url);
       }
     },
-    [pathname, searchParams, searchQuery]
+    [pathname, searchParams, searchQuery, appHref]
   );
 
   return useMemo(
