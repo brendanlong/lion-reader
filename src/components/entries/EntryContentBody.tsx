@@ -413,12 +413,7 @@ export function EntryContentBody({
 
           {/* Narration controls - pass narration state for controlled mode */}
           {!hideNarration && narrationSettings.enabled && (
-            <NarrationControls
-              articleId={articleId}
-              title={title}
-              feedTitle={source}
-              narration={narration}
-            />
+            <NarrationControls narration={narration} />
           )}
 
           {/* Summarize button */}

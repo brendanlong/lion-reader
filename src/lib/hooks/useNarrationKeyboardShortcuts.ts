@@ -26,8 +26,12 @@ import { useKeyboardShortcutsContext } from "@/components/keyboard/KeyboardShort
 interface NarrationShortcutState {
   /** Current playback status */
   status: "idle" | "loading" | "playing" | "paused";
-  /** Current paragraph index (0-based) */
-  currentParagraph: number;
+  /**
+   * Current paragraph index (0-based) in the player's own space — the one
+   * `totalParagraphs` counts. Not the DOM element index (`currentParagraph`),
+   * which highlighting uses and which does not share these bounds.
+   */
+  currentNarrationParagraph: number;
   /** Total number of paragraphs */
   totalParagraphs: number;
 }
@@ -93,7 +97,7 @@ export function useNarrationKeyboardShortcuts(options: UseNarrationKeyboardShort
   const { state, controls, isLoading, isSupported } = options;
   const { enabled: keyboardShortcutsEnabled, isModalOpen } = useKeyboardShortcutsContext();
 
-  const { status, currentParagraph, totalParagraphs } = state;
+  const { status, currentNarrationParagraph, totalParagraphs } = state;
   const { play, pause, skipForward, skipBackward } = controls;
 
   const isPlaying = status === "playing";
@@ -134,10 +138,20 @@ export function useNarrationKeyboardShortcuts(options: UseNarrationKeyboardShort
     },
     {
       enabled:
-        baseEnabled && !isLoading && isControllable && currentParagraph < totalParagraphs - 1,
+        baseEnabled &&
+        !isLoading &&
+        isControllable &&
+        currentNarrationParagraph < totalParagraphs - 1,
       enableOnFormTags: false,
     },
-    [skipForward, isLoading, isControllable, currentParagraph, totalParagraphs, baseEnabled]
+    [
+      skipForward,
+      isLoading,
+      isControllable,
+      currentNarrationParagraph,
+      totalParagraphs,
+      baseEnabled,
+    ]
   );
 
   // Shift+P - Skip to previous paragraph
@@ -148,9 +162,9 @@ export function useNarrationKeyboardShortcuts(options: UseNarrationKeyboardShort
       skipBackward();
     },
     {
-      enabled: baseEnabled && !isLoading && isControllable && currentParagraph > 0,
+      enabled: baseEnabled && !isLoading && isControllable && currentNarrationParagraph > 0,
       enableOnFormTags: false,
     },
-    [skipBackward, isLoading, isControllable, currentParagraph, baseEnabled]
+    [skipBackward, isLoading, isControllable, currentNarrationParagraph, baseEnabled]
   );
 }

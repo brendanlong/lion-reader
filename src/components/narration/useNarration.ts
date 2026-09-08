@@ -5,21 +5,14 @@
  * or Piper TTS (enhanced voices). Handles narration generation, playback controls,
  * and Media Session integration.
  *
- * Usage:
+ * The owning component holds the hook (it also needs `state.currentParagraph`
+ * for highlighting) and hands the whole thing to the controls:
+ *
  * ```tsx
  * function ArticleView({ articleId }: { articleId: string }) {
  *   const narration = useNarration({ id: articleId, title: 'Article Title', feedTitle: 'Feed' });
  *
- *   return (
- *     <NarrationControls
- *       state={narration.state}
- *       isLoading={narration.isLoading}
- *       onPlay={narration.play}
- *       onPause={narration.pause}
- *       onSkipForward={narration.skipForward}
- *       onSkipBackward={narration.skipBackward}
- *     />
- *   );
+ *   return <NarrationControls narration={narration} />;
  * }
  * ```
  */
@@ -28,7 +21,7 @@
 
 import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from "react";
 import { trpc } from "@/lib/trpc/client";
-import { ArticleNarrator, type NarrationState } from "@/lib/narration/ArticleNarrator";
+import { ArticleNarrator } from "@/lib/narration/ArticleNarrator";
 import { useNarrationSettings } from "@/lib/narration/settings";
 import { findVoiceByUri, waitForVoices } from "@/lib/narration/voices";
 import { isNarrationSupported } from "@/lib/narration/feature-detection";
@@ -49,6 +42,7 @@ import {
 import {
   type UseNarrationConfig,
   type UseNarrationReturn,
+  type UseNarrationState,
   DEFAULT_NARRATION_STATE,
   splitIntoParagraphs,
   mapPlaybackStatus,
@@ -74,7 +68,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   const { id, title, feedTitle, artwork, content, showFullContent, showOriginal } = config;
 
   // State
-  const [state, setState] = useState<NarrationState>(DEFAULT_NARRATION_STATE);
+  const [state, setState] = useState<UseNarrationState>(DEFAULT_NARRATION_STATE);
   const [isLoading, setIsLoading] = useState(false);
   const [narrationText, setNarrationText] = useState<string | null>(null);
   // Defer browser support check until after hydration to avoid SSR mismatch
@@ -123,6 +117,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
         setState({
           ...newState,
           currentParagraph: domElementIndex,
+          currentNarrationParagraph: newState.currentParagraph,
         });
       }
     });
@@ -198,6 +193,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
           setState((prev) => ({
             ...prev,
             currentParagraph: domElementIndex,
+            currentNarrationParagraph: position.paragraph,
             totalParagraphs,
           }));
         },
@@ -210,6 +206,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
             ...prev,
             status: "idle",
             currentParagraph: 0,
+            currentNarrationParagraph: 0,
           }));
         },
       });
@@ -523,6 +520,11 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   // Clear audio cache and refs when the article, voice, or displayed content
   // variant changes
   useEffect(() => {
+    // Stop the Web Speech utterance too, not just the streaming player: toggling
+    // the content variant does not remount this hook (EntryContent is keyed only
+    // by the entry id), so without this the browser voice keeps reading the old
+    // variant while the paragraph map below is cleared out from under it.
+    narratorRef.current?.stop();
     // Stop and clear the streaming player
     if (streamingPlayerRef.current) {
       streamingPlayerRef.current.stop();
