@@ -40,7 +40,7 @@ const article: DemoArticle = {
 
     <h3>Smart Content Extraction</h3>
 
-    <p>When you save a URL from a supported source &mdash; like arXiv, GitHub, Google Docs, LessWrong, YouTube, or Bluesky &mdash; Lion Reader&rsquo;s <a href="/demo/all?entry=plugins"><strong>smart content sources</strong></a> pull in cleaner, more complete content than a generic web save. For everything else, Lion Reader still extracts the readable article automatically.</p>
+    <p>When you save a URL from a supported source &mdash; like arXiv, GitHub, Google Docs, LessWrong, Notion, YouTube, or Bluesky &mdash; Lion Reader&rsquo;s <a href="/demo/all?entry=plugins"><strong>smart content sources</strong></a> pull in cleaner, more complete content than a generic web save. For everything else, Lion Reader still extracts the readable article automatically.</p>
 
     <h3>Custom Metadata &amp; Organization</h3>
 
