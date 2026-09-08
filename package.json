@@ -26,6 +26,7 @@
     "lint:native": "bash scripts/cargo-native.sh clippy --workspace --all-targets -- -D warnings",
     "check:colors": "node scripts/check-raw-colors.mjs",
     "knip": "knip --include files,dependencies,devDependencies,exports",
+    "knip:production": "knip -c knip.production.json --production --workspace . --tags=-testonly --include files,exports,types",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

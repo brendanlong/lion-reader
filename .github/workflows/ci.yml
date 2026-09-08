@@ -65,6 +65,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm knip
 
+      - name: Check for production-unreachable code
+        if: ${{ !cancelled() }}
+        run: pnpm knip:production
+
       - name: Check for raw color utilities
         if: ${{ !cancelled() }}
         run: pnpm check:colors

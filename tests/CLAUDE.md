@@ -4,6 +4,8 @@ This file governs the test suites: `tests/unit/` (pure logic, no mocks, no DB), 
 
 Philosophy: structure code so business logic is pure and unit-testable without mocks. **No mocks of internal code** — refactor if mocking is needed. Integration tests use real databases. (The intended-behavior/skipped-test rule is in the root CLAUDE.md "Code Quality" section.)
 
+**Test the live path, not a lookalike.** A test is not a reason for code in `src/` to exist: `pnpm knip:production` (root CLAUDE.md "Commands") fails when something there is reachable only from tests. When it fires, assert against whatever production actually calls and delete the stray helper — a near-duplicate kept alive by its own test documents behavior the app doesn't have. Query helpers that only read rows back to assert on them belong in the test file.
+
 ## Frontend Testing
 
 The realtime SSE/cache-update code is the hardest part of the app to verify by review — always test it instead:
