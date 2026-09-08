@@ -22,33 +22,6 @@ export type ClaimJobFn = (options?: { types?: any }) => Promise<Job | null>;
 export type ProcessJobFn = (job: Job) => Promise<void>;
 
 /**
- * Worker configuration options.
- */
-export interface WorkerConfig {
-  /** Polling interval in milliseconds (default: 5000) */
-  pollIntervalMs?: number;
-  /** Maximum concurrent jobs to process (default: 5) */
-  concurrency?: number;
-  /** Maximum time a single job can run before being timed out (default: no timeout) */
-  jobTimeoutMs?: number;
-  /** Job types to process (default: all types) */
-  jobTypes?: string[];
-  /** Logger function for worker events */
-  logger?: WorkerLogger;
-  /**
-   * Override for claiming jobs (for testing).
-   * @internal
-   */
-  _claimJob?: ClaimJobFn;
-  /**
-   * Override for processing jobs (for testing).
-   * When provided, bypasses the default job handler dispatch.
-   * @internal
-   */
-  _processJob?: ProcessJobFn;
-}
-
-/**
  * Logger interface for worker events.
  */
 export interface WorkerLogger {
@@ -143,6 +116,11 @@ interface InternalWorkerConfig {
   logger: WorkerLogger;
   claimJob: ClaimJobFn;
   processJob: ProcessJobFn;
+  /**
+   * Called once for every job that fails, whether `processJob` rejected or the
+   * job exceeded `jobTimeoutMs`. The loop already logs; this hook is for
+   * side-channel reporting (Sentry). It must not throw.
+   */
   onJobError?: (job: Job, error: unknown) => void;
   /**
    * Called when a `claimJob` attempt throws (e.g. the DB connection was dropped
@@ -272,9 +250,9 @@ export function createWorkerCore(config: InternalWorkerConfig): Worker {
         if (job === null) break;
 
         // Wrap processJob with .catch() to ensure no unhandled rejections escape
-        // into Promise.race()/Promise.all(). The error is already logged and
-        // reported to Sentry inside processJob, so we just need to prevent
-        // the rejection from propagating.
+        // into Promise.race()/Promise.all(), and to count the failure. This
+        // catch is also where a failed job is reported (via onJobError) — the
+        // one place that sees both a handler exception and a timeout.
         const promise = processJobWithTimeout(job)
           .then(() => {
             totalSucceeded++;
@@ -288,8 +266,9 @@ export function createWorkerCore(config: InternalWorkerConfig): Worker {
                 timeoutMs: jobTimeoutMs,
               });
             } else {
-              // This should rarely happen since processJob has its own try/catch,
-              // but handle it defensively
+              // The injected processJob rejected. The production one already
+              // logged the details before re-throwing; this is the loop-level
+              // record, and the only one for an injected processJob.
               logger.error("Unexpected error in job execution", {
                 jobId: job.id,
                 error: error instanceof Error ? error.message : "Unknown error",

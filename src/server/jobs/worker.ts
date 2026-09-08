@@ -574,18 +574,8 @@ function createWorker(config: WorkerConfig = {}): Worker {
         error: errorMessage,
       });
 
-      // Report to Sentry with job context
-      Sentry.captureException(error, {
-        tags: { jobType: job.type },
-        extra: {
-          jobId: job.id,
-          consecutiveFailures: job.consecutiveFailures,
-          payload: job.payload,
-          durationMs: duration,
-        },
-      });
-
-      // Re-throw to let the core worker count it as a failure
+      // Re-throw so the core worker counts it as a failure and reports it via
+      // onJobError (the single Sentry reporter for job failures — see below).
       throw error;
     } finally {
       // Safety net: ensure the heartbeat is stopped even if finishWithLease was
@@ -603,10 +593,18 @@ function createWorker(config: WorkerConfig = {}): Worker {
     logger,
     claimJob: guardedClaimJob,
     processJob,
+    // The single Sentry reporter for a failed job. It covers both ways a job
+    // can fail: `processJob` finishes the job with backoff, logs, and re-throws
+    // (so the loop counts the failure), and the loop's own timeout wrapper
+    // rejects with a JobTimeoutError that never reaches `processJob`'s catch.
     onJobError: (job, error) => {
       Sentry.captureException(error, {
-        tags: { jobType: job.type, context: "executeJob-unhandled" },
-        extra: { jobId: job.id },
+        tags: { jobType: job.type, context: "job-execution" },
+        extra: {
+          jobId: job.id,
+          consecutiveFailures: job.consecutiveFailures,
+          payload: job.payload,
+        },
       });
     },
     onClaimError: (error) => {

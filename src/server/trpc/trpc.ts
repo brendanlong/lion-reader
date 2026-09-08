@@ -348,17 +348,9 @@ function createPublicRateLimitMiddleware(type: RateLimitType) {
  */
 function createAuthenticatedRateLimitMiddleware(type: RateLimitType) {
   return t.middleware(async ({ ctx, next }) => {
-    // At this point, session is guaranteed non-null due to authMiddleware
-    const session = ctx.session;
-    const sessionToken = ctx.sessionToken;
-
-    // TypeScript guard to ensure we have authenticated context
-    if (!session || !sessionToken) {
-      throw new TRPCError({
-        code: "UNAUTHORIZED",
-        message: "Authentication required",
-      });
-    }
+    // Session and sessionToken are guaranteed non-null after authMiddleware
+    const session = ctx.session!;
+    const sessionToken = ctx.sessionToken!;
 
     const rateLimitHeaders = await performRateLimitCheck(session.user.id, ctx.headers, type);
 
