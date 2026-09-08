@@ -1260,6 +1260,52 @@ export async function markAllEntriesRead(
 }
 
 /**
+ * Reads back the post-update state of star-mutated entries from `user_entries`
+ * rather than from `visible_entries`.
+ *
+ * A star write is the one entry mutation that can change an entry's own
+ * **visibility**: `visible_entries` keeps a starred entry from an unsubscribed
+ * subscription visible (the starred-orphan arm of its predicate), so unstarring
+ * one drops it straight out of the view. Reading the result back through the
+ * view therefore saw zero rows for a write that had just landed — the single
+ * path raised `entryNotFound` and the bulk path silently returned nothing, so
+ * in both cases the counts and the `entry_state_changed` publish were skipped
+ * and the user's tabs kept a stale star and stale badges.
+ *
+ * The `user_entries` row is the durable record of visibility (see "Entry
+ * Visibility" in `src/server/CLAUDE.md`), so its existence is the same
+ * not-found signal, and it does not move when the star does. The `user_id`
+ * predicate keeps the read scoped to the caller, so another user's entry id
+ * still matches no row.
+ *
+ * The projected columns are exactly what the view computes: it emits
+ * `GREATEST(entries.updated_at, user_entries.updated_at)` as `updated_at`, and
+ * its `subscription_id` is `subscriptions.id` from a LEFT JOIN on
+ * `user_entries.subscription_id` — whose FK is `ON DELETE SET NULL`, so the
+ * column is NULL in exactly the cases the join would produce NULL.
+ */
+async function selectStarredEntryStates(
+  db: DbOrTx,
+  userId: string,
+  entryIds: string[]
+): Promise<MarkReadEntryState[]> {
+  return db
+    .select({
+      id: userEntries.entryId,
+      subscriptionId: userEntries.subscriptionId,
+      read: userEntries.read,
+      starred: userEntries.starred,
+      type: entries.type,
+      updatedAt: sql`GREATEST(${entries.updatedAt}, ${userEntries.updatedAt})`.mapWith(
+        userEntries.updatedAt
+      ),
+    })
+    .from(userEntries)
+    .innerJoin(entries, eq(entries.id, userEntries.entryId))
+    .where(and(eq(userEntries.userId, userId), inArray(userEntries.entryId, entryIds)));
+}
+
+/**
  * Stars or unstars an entry.
  *
  * Uses idempotent updates: only applies if changedAt is newer than the stored
@@ -1335,22 +1381,25 @@ export async function updateEntryStarred(
   // value differed. A same-value write advanced the watermark above.
   const flipped = updated.rows.length > 0 && updated.rows[0].old_starred !== starred;
 
-  // Always resolve final state from visibleEntries (includes computed updatedAt)
-  const result = await db
-    .select({
-      id: visibleEntries.id,
-      read: visibleEntries.read,
-      starred: visibleEntries.starred,
-      updatedAt: visibleEntries.updatedAt,
-    })
-    .from(visibleEntries)
-    .where(and(eq(visibleEntries.userId, userId), eq(visibleEntries.id, entryId)));
+  // Always resolve the final state from `user_entries`, never `visible_entries`
+  // — unstarring an orphan removes it from the view (see
+  // selectStarredEntryStates). A missing `user_entries` row is still not-found.
+  const result = await selectStarredEntryStates(db, userId, [entryId]);
 
   if (result.length === 0) {
     throw errors.entryNotFound();
   }
 
-  const entry = result[0];
+  // Narrow to EntryState rather than passing the row through: the shared
+  // read-back also carries `subscriptionId`/`type`, which this function's
+  // callers (tRPC, MCP, Wallabag) serialize straight to the client.
+  const row = result[0];
+  const entry: EntryState = {
+    id: row.id,
+    read: row.read,
+    starred: row.starred,
+    updatedAt: row.updatedAt,
+  };
 
   // Compute absolute counts once, for both the return value and the SSE
   // publish — but only when the value actually flipped; a re-assert changes no
@@ -1415,17 +1464,11 @@ export async function updateEntriesStarred(
     updated.rows.filter((row) => row.old_starred !== starred).map((row) => row.entry_id)
   );
 
-  const entriesState = await db
-    .select({
-      id: visibleEntries.id,
-      subscriptionId: visibleEntries.subscriptionId,
-      read: visibleEntries.read,
-      starred: visibleEntries.starred,
-      type: visibleEntries.type,
-      updatedAt: visibleEntries.updatedAt,
-    })
-    .from(visibleEntries)
-    .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.id, entryIds)));
+  // Resolved from `user_entries`, not `visible_entries`, for the same reason as
+  // the single-entry path: unstarring an orphan drops it out of the view, and a
+  // silently empty read-back here would skip the counts and the SSE publish
+  // (see selectStarredEntryStates).
+  const entriesState = await selectStarredEntryStates(db, userId, entryIds);
 
   // Only entries whose starred value actually flipped warrant SSE events and
   // count recomputation (issue #1118); a batch of pure re-asserts still
