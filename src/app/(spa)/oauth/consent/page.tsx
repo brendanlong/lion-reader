@@ -10,6 +10,7 @@ import { redirect } from "next/navigation";
 import { WarningTriangleIcon } from "@/components/ui/icons";
 import { validateSession } from "@/server/auth/session";
 import { resolveClient } from "@/server/oauth/service";
+import { cimdClientHost } from "@/server/oauth/cimd";
 import {
   validateRedirectUri,
   isValidRedirectUriFormat,
@@ -102,11 +103,7 @@ export default async function ConsentPage({ searchParams }: ConsentPageProps) {
     description: SCOPE_DESCRIPTIONS[s as OAuthScope] ?? `Access to ${s}`,
   }));
 
-  // For CIMD clients (URL client_ids) the name is self-asserted by whoever
-  // hosts the metadata document, so the spec says to identify the client by the
-  // client_id's hostname. Registered (DB) clients went through our own
-  // registration and keep name-only display.
-  const clientHost = client.fromDatabase ? null : new URL(client_id).hostname;
+  const clientHost = cimdClientHost(client_id, client);
 
   return (
     <ConsentLayout>

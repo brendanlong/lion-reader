@@ -30,6 +30,7 @@ import AiSettingsContent from "./pages/AiSettingsContent";
 import IntegrationsSettingsContent from "./pages/IntegrationsSettingsContent";
 import FeedHealthSettingsContent from "./pages/FeedHealthSettingsContent";
 import SessionsSettingsContent from "./pages/SessionsSettingsContent";
+import ConnectedAppsSettingsContent from "./pages/ConnectedAppsSettingsContent";
 import DeleteAccountSettingsContent from "./pages/DeleteAccountSettingsContent";
 
 const settingsLinks = [
@@ -41,6 +42,7 @@ const settingsLinks = [
   { href: "/settings/integrations", label: "Integrations" },
   { href: "/settings/feed-health", label: "Feed Health" },
   { href: "/settings/sessions", label: "Sessions" },
+  { href: "/settings/connected-apps", label: "Connected Apps" },
   { href: "/settings/delete-account", label: "Delete Account" },
 ];
 
@@ -68,6 +70,8 @@ function SettingsContentRouter() {
       return <FeedHealthSettingsContent />;
     case "/settings/sessions":
       return <SessionsSettingsContent />;
+    case "/settings/connected-apps":
+      return <ConnectedAppsSettingsContent />;
     case "/settings/delete-account":
       return <DeleteAccountSettingsContent />;
     default:
