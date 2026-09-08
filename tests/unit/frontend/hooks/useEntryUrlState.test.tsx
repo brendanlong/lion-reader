@@ -58,6 +58,34 @@ describe("useEntryUrlState", () => {
     expect(replaceState).not.toHaveBeenCalled();
   });
 
+  it("re-opens an entry after Back when pushState mutates the state it is given", () => {
+    // Next's patched pushState/replaceState add their internal `__NA` key to the
+    // object they are handed and skip the router sync (the part that updates
+    // usePathname/useSearchParams) for any object that already has it. Mirror
+    // that, and count the syncs: open → back → open must sync twice.
+    let routerSyncs = 0;
+    const originalPushState = window.history.pushState.bind(window.history);
+    vi.spyOn(window.history, "pushState").mockImplementation((data, unused, url) => {
+      if (data?.__NA) return originalPushState(data, unused, url);
+      data = data ?? {};
+      data.__NA = true;
+      routerSyncs++;
+      return originalPushState(data, unused, url);
+    });
+    const { result, rerender } = renderHook(() => useEntryUrlState());
+
+    act(() => result.current.setOpenEntryId("entry-1"));
+    expect(routerSyncs).toBe(1);
+
+    // Browser Back: the list is showing again with no entry open.
+    window.history.replaceState(null, "", "/all");
+    navigate("", rerender);
+
+    act(() => result.current.setOpenEntryId("entry-1"));
+    expect(routerSyncs).toBe(2);
+    expect(window.location.search).toBe("?entry=entry-1");
+  });
+
   it("marks the history entry it pushes when opening from the list", () => {
     const { result } = renderHook(() => useEntryUrlState());
 

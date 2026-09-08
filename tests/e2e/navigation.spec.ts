@@ -175,3 +175,32 @@ test("closing an entry pops its history entry, so browser Back still works", asy
   await page.goBack();
   await expect(page).toHaveURL(/\/starred$/);
 });
+
+test("can re-open an entry after closing it", async ({ page, baseURL }) => {
+  const db = getDb();
+  const user = await createConfirmedUser(db);
+  const feed = await createSubscribedFeed(db, user.id);
+  const entry = await createUnreadEntry(db, {
+    feedId: feed.feedId,
+    userId: user.id,
+    title: "Only Post",
+  });
+
+  await loginAs(page.context(), user, baseURL!);
+  await page.goto("/all");
+  const row = page.locator(`[data-entry-id="${entry.id}"]`);
+  await expect(row).toBeVisible();
+
+  await row.click();
+  await expect(page).toHaveURL(new RegExp(`entry=${entry.id}`));
+  await page.getByRole("button", { name: /back to list/i }).click();
+  await expect(page).toHaveURL(/\/all$/);
+  await expect(row).toBeVisible();
+
+  // Opening pushes history state; Next's router patch mutates that object, so
+  // reusing it made this second open change the URL without rendering anything.
+  await row.click();
+  await expect(page).toHaveURL(new RegExp(`entry=${entry.id}`));
+  await expect(page.getByRole("button", { name: /back to list/i })).toBeVisible();
+  await expect(row).toBeHidden();
+});
