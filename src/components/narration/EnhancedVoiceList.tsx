@@ -108,25 +108,15 @@ function VoiceItem({
   const isDownloaded = status === "downloaded";
   const hasError = errorInfo !== undefined;
 
-  // Handle click on the voice item (for selection)
+  const inputId = `enhanced-voice-${voice.id}`;
+
+  // Clicking anywhere on the card is a shortcut for the radio; the radio itself
+  // owns the keyboard behavior (arrow keys / Space), so there is no key handler.
   const handleClick = useCallback(() => {
     if (isDownloaded) {
       onSelect();
     }
   }, [isDownloaded, onSelect]);
-
-  // Handle keyboard selection
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        if (isDownloaded) {
-          onSelect();
-        }
-      }
-    },
-    [isDownloaded, onSelect]
-  );
 
   return (
     <div
@@ -138,31 +128,38 @@ function VoiceItem({
             : "border-edge-strong epaper:border-fill-muted"
       }`}
       onClick={handleClick}
-      onKeyDown={handleKeyDown}
-      role={isDownloaded ? "radio" : undefined}
-      aria-checked={isDownloaded ? isSelected : undefined}
-      tabIndex={isDownloaded ? 0 : undefined}
     >
       <div className="flex items-start justify-between gap-3">
         {/* Left side: radio button + voice info */}
         <div className="flex min-w-0 flex-1 items-start gap-3">
-          {/* Radio button (only for downloaded voices) */}
-          <div
-            className={`mt-0.5 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border ${
+          {/*
+            A real radio, so the group gets native arrow-key navigation, a single
+            tab stop, and the global focus outline. `appearance-none` +
+            `bg-clip-content` paints the same 8px inner dot the custom markup did.
+          */}
+          <input
+            type="radio"
+            id={inputId}
+            name="enhanced-voice"
+            value={voice.id}
+            checked={isSelected}
+            disabled={!isDownloaded}
+            onChange={() => onSelect()}
+            className={`mt-0.5 h-4 w-4 flex-shrink-0 appearance-none rounded-full border bg-clip-content p-[3px] ${
               isSelected
-                ? "border-control-selected"
+                ? "border-control-selected bg-control-selected"
                 : isDownloaded
-                  ? "border-zinc-400 dark:border-zinc-500"
-                  : "border-edge-input"
+                  ? "border-zinc-400 bg-transparent dark:border-zinc-500"
+                  : "border-edge-input bg-transparent"
             }`}
-          >
-            {isSelected && <div className="bg-control-selected h-2 w-2 rounded-full" />}
-          </div>
+          />
 
           {/* Voice info */}
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className="ui-text-sm text-body font-medium">{voice.displayName}</span>
+              <label htmlFor={inputId} className="ui-text-sm text-body font-medium">
+                {voice.displayName}
+              </label>
               <span className="ui-text-xs text-muted">- {voice.description}</span>
             </div>
 
@@ -404,21 +401,23 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
       )}
 
       {/* Voice list */}
-      {voices.map((voiceState) => (
-        <VoiceItem
-          key={voiceState.voice.id}
-          voiceState={voiceState}
-          isSelected={settings.voiceId === voiceState.voice.id}
-          onSelect={() => handleSelectVoice(voiceState.voice.id)}
-          onDownload={() => downloadVoice(voiceState.voice.id)}
-          onRetry={() => retryVoiceDownload(voiceState.voice.id)}
-          onPreview={() => previewVoice(voiceState.voice.id)}
-          onStopPreview={stopPreview}
-          onDelete={() => handleDeleteVoice(voiceState.voice.id)}
-          isPreviewing={isPreviewing}
-          isThisVoicePreviewing={previewingVoiceId === voiceState.voice.id}
-        />
-      ))}
+      <div role="radiogroup" aria-label="Enhanced voices" className="space-y-3">
+        {voices.map((voiceState) => (
+          <VoiceItem
+            key={voiceState.voice.id}
+            voiceState={voiceState}
+            isSelected={settings.voiceId === voiceState.voice.id}
+            onSelect={() => handleSelectVoice(voiceState.voice.id)}
+            onDownload={() => downloadVoice(voiceState.voice.id)}
+            onRetry={() => retryVoiceDownload(voiceState.voice.id)}
+            onPreview={() => previewVoice(voiceState.voice.id)}
+            onStopPreview={stopPreview}
+            onDelete={() => handleDeleteVoice(voiceState.voice.id)}
+            isPreviewing={isPreviewing}
+            isThisVoicePreviewing={previewingVoiceId === voiceState.voice.id}
+          />
+        ))}
+      </div>
 
       {/* Storage info section */}
       {downloadedCount > 0 && (

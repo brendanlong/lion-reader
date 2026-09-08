@@ -176,8 +176,9 @@ export default function ApiTokensSettingsContent() {
           <div className="space-y-4">
             {/* Token Name */}
             <div>
-              <label className="ui-text-sm text-body mb-1 block font-medium">Token Name</label>
               <Input
+                id="api-token-name"
+                label="Token Name"
                 value={tokenName}
                 onChange={(e) => setTokenName(e.target.value)}
                 placeholder="e.g., Claude Desktop, Browser Extension"
@@ -214,10 +215,9 @@ export default function ApiTokensSettingsContent() {
 
             {/* Expiration (Optional) */}
             <div>
-              <label className="ui-text-sm text-body mb-1 block font-medium">
-                Expiration (Optional)
-              </label>
               <Input
+                id="api-token-expires-in-days"
+                label="Expiration (Optional)"
                 type="number"
                 value={expiresInDays}
                 onChange={(e) => setExpiresInDays(e.target.value)}

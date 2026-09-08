@@ -7,7 +7,7 @@
 
 "use client";
 
-import { useState, useRef, useCallback, type ChangeEvent, type DragEvent } from "react";
+import { useState, useCallback, type ChangeEvent, type DragEvent } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
@@ -64,7 +64,6 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const utils = trpc.useUtils();
   const uploadMutation = trpc.saved.uploadFile.useMutation({
@@ -167,10 +166,6 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
     reader.readAsDataURL(selectedFile);
   };
 
-  const handleBrowseClick = () => {
-    fileInputRef.current?.click();
-  };
-
   return (
     <>
       {/* Upload Button */}
@@ -207,8 +202,7 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
-            onClick={handleBrowseClick}
-            className={`cursor-pointer rounded-lg border-2 border-dashed p-8 text-center transition-colors ${
+            className={`relative rounded-lg border-2 border-dashed p-8 text-center transition-colors ${
               isDragging
                 ? "bg-surface-muted epaper:border-edge border-zinc-500 dark:border-zinc-400"
                 : selectedFile
@@ -216,16 +210,23 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
                   : "border-edge-input epaper:border-fill-muted hover:bg-surface-muted hover:border-zinc-400 dark:hover:border-zinc-500"
             }`}
           >
+            {/*
+              The input is the affordance: it covers the whole zone, so a click
+              anywhere opens the picker and Tab lands on it. It is made invisible
+              by hiding its file-selector button and its filename text rather
+              than with `opacity-0`, because opacity would also erase the global
+              focus outline — which is what draws the zone's focus indicator.
+            */}
             <input
-              ref={fileInputRef}
               type="file"
+              aria-label="Choose a file to upload"
               accept={SUPPORTED_EXTENSIONS.join(",")}
               onChange={handleInputChange}
-              className="hidden"
+              className="absolute inset-0 h-full w-full cursor-pointer bg-transparent text-transparent file:hidden"
             />
 
             {selectedFile ? (
-              <div className="flex flex-col items-center">
+              <div className="pointer-events-none flex flex-col items-center">
                 <DocumentIcon className="text-success h-10 w-10" />
                 <p className="text-body mt-2 font-medium">{selectedFile.name}</p>
                 <p className="ui-text-sm text-muted">{formatFileSize(selectedFile.size)}</p>
@@ -234,7 +235,7 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
                 </p>
               </div>
             ) : (
-              <div className="flex flex-col items-center">
+              <div className="pointer-events-none flex flex-col items-center">
                 <UploadIcon className="text-faint h-10 w-10" />
                 <p className="text-body mt-2 font-medium">Drop file here or click to browse</p>
                 <p className="ui-text-sm text-muted">.docx, .html, .md up to 10MB</p>
