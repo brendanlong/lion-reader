@@ -24,7 +24,11 @@ import { generateUuidv7 } from "@/lib/uuidv7";
 import { parseFeedAsync } from "@/server/feed/parser";
 import { discoverFeeds } from "@/server/feed/discovery";
 import { getDomainFromUrl } from "@/server/feed/types";
-import { extractUserIdFromFeedUrl, fetchLessWrongUserById } from "@/server/feed/lesswrong";
+import {
+  extractUserIdFromFeedUrl,
+  fetchLessWrongUserById,
+  type LessWrongUser,
+} from "@/server/feed/lesswrong";
 import { generateOpml, OpmlParseError, type OpmlSubscription } from "@/server/feed/opml";
 import { scheduleFeedRefreshNow } from "@/server/jobs/queue";
 import { shouldRefetchOnSubscribe } from "@/server/feed/scheduling";
@@ -155,16 +159,19 @@ async function fetchAndResolveFeed(inputUrl: string): Promise<{
   let feedTitle = parsedFeed.title || getDomainFromUrl(finalFeedUrl);
   const lessWrongUserId = extractUserIdFromFeedUrl(finalFeedUrl);
   if (lessWrongUserId && feedTitle) {
-    let lwUser;
+    let lwUser: LessWrongUser | null = null;
     try {
       lwUser = await fetchLessWrongUserById(lessWrongUserId);
     } catch (error) {
-      // Subscribing anyway would store the title without its author suffix for
-      // good, indistinguishable from the user having no display name
-      if (error instanceof HttpFetchError && error.isRateLimited()) {
-        throw errors.upstreamRateLimited(finalFeedUrl);
+      // The feed itself fetched fine, so don't fail the subscribe over the title
+      // decoration: the next poll appends the author via transformFeedTitle
+      if (!(error instanceof HttpFetchError && error.isRateLimited())) {
+        throw error;
       }
-      throw error;
+      logger.warn("LessWrong rate limited the user lookup; subscribing without author suffix", {
+        feedUrl: finalFeedUrl,
+        userId: lessWrongUserId,
+      });
     }
     if (lwUser?.displayName) {
       feedTitle = `${feedTitle} - ${lwUser.displayName}`;

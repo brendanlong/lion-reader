@@ -13,13 +13,13 @@ import { errors } from "../errors";
 import { feedUrlSchema } from "../validation";
 import {
   fetchUrl,
+  HttpFetchError,
   isHtmlContent,
   readResponseWithSizeLimit,
   FEED_FETCH_TIMEOUT_MS,
   ACCEPT_ENCODING,
 } from "@/server/http/fetch";
 import { fetchWithSsrfProtection } from "@/server/http/ssrf";
-import { HttpFetchError } from "@/server/http/fetch";
 import { usageLimitsConfig } from "@/server/config/env";
 import { stripHtml } from "@/server/html/strip-html";
 import { USER_AGENT } from "@/server/http/user-agent";

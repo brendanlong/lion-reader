@@ -146,10 +146,14 @@ const graphqlEnvelopeSchema = z.object({
  * contract:
  *
  * - A non-OK status, an invalid body, GraphQL `errors`, a timeout, or a network
- *   failure logs a warning and returns null.
+ *   failure logs a warning and returns null; `data: null` returns null silently
+ *   (the caller logs its own "not found").
  * - HTTP 429 **throws** `HttpFetchError` instead. Returning null would let a
  *   caller fall back to fetching the same throttled site, or persist a result
  *   with data missing that's indistinguishable from the data not existing.
+ *
+ * Callers pass an object schema, so a null return always means "no data", never
+ * a legitimately-null value.
  *
  * `endpoint` is a parameter so tests can drive this against a loopback server.
  */
@@ -191,7 +195,7 @@ export async function lessWrongGraphql<T extends z.ZodType>(
 
     const envelope = graphqlEnvelopeSchema.safeParse(await response.json());
     if (!envelope.success) {
-      logger.warn("LessWrong GraphQL response validation failed", {
+      logger.warn("LessWrong GraphQL response is not a GraphQL envelope", {
         ...logContext,
         error: envelope.error.message,
       });
@@ -212,7 +216,7 @@ export async function lessWrongGraphql<T extends z.ZodType>(
 
     const data = dataSchema.safeParse(envelope.data.data);
     if (!data.success) {
-      logger.warn("LessWrong GraphQL response validation failed", {
+      logger.warn("LessWrong GraphQL data does not match schema", {
         ...logContext,
         error: data.error.message,
       });

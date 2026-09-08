@@ -40,6 +40,8 @@ function respond(path: string): { status: number; body: string } {
       return { status: 200, body: JSON.stringify({ data: { user: { result: { _id: "u1" } } } }) };
     case "/missing":
       return { status: 200, body: JSON.stringify({ data: { user: { result: null } } }) };
+    case "/null-data":
+      return { status: 200, body: JSON.stringify({ data: null }) };
     case "/graphql-errors":
       return {
         status: 200,
@@ -51,8 +53,10 @@ function respond(path: string): { status: number; body: string } {
       return { status: 200, body: "<html>maintenance</html>" };
     case "/rate-limited":
       return { status: 429, body: "slow down" };
-    default:
+    case "/server-error":
       return { status: 500, body: "boom" };
+    default:
+      return { status: 404, body: "no such route" };
   }
 }
 
@@ -112,13 +116,20 @@ describe("lessWrongGraphql", () => {
   it("throws HttpFetchError on 429 so callers can't fall back to the same throttled site", async () => {
     const error = await query("/rate-limited").catch((e: unknown) => e);
 
-    expect(error).toBeInstanceOf(HttpFetchError);
-    expect((error as HttpFetchError).isRateLimited()).toBe(true);
-    expect((error as HttpFetchError).url).toBe(`${baseUrl}/rate-limited`);
+    if (!(error instanceof HttpFetchError)) {
+      throw new Error(`expected HttpFetchError, got ${String(error)}`);
+    }
+    expect(error.isRateLimited()).toBe(true);
+    expect(error.url).toBe(`${baseUrl}/rate-limited`);
   });
 
   it("returns null on other HTTP failures", async () => {
     expect(await query("/server-error")).toBeNull();
+    expect(await query("/nonexistent")).toBeNull();
+  });
+
+  it("returns null when data is null without errors", async () => {
+    expect(await query("/null-data")).toBeNull();
   });
 
   it("returns null when the response carries GraphQL errors", async () => {
