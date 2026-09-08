@@ -5,7 +5,6 @@
 
 import { describe, it, expect } from "vitest";
 import {
-  isArxivUrl,
   extractPaperId,
   buildArxivHtmlUrl,
   buildArxivAbsUrl,
@@ -42,63 +41,6 @@ const ARXIV_ABS_HTML = `<!DOCTYPE html>
 </body></html>`;
 
 describe("ArXiv URL detection", () => {
-  describe("isArxivUrl", () => {
-    it("returns true for ArXiv abstract URLs with new format IDs", () => {
-      expect(isArxivUrl("https://arxiv.org/abs/2601.04649")).toBe(true);
-      expect(isArxivUrl("https://www.arxiv.org/abs/2601.04649")).toBe(true);
-    });
-
-    it("returns true for ArXiv PDF URLs", () => {
-      expect(isArxivUrl("https://arxiv.org/pdf/2601.04649")).toBe(true);
-      expect(isArxivUrl("https://arxiv.org/pdf/2601.04649.pdf")).toBe(true);
-    });
-
-    it("returns true for ArXiv HTML URLs", () => {
-      expect(isArxivUrl("https://arxiv.org/html/2601.04649")).toBe(true);
-    });
-
-    it("returns true for ArXiv URLs with version numbers", () => {
-      expect(isArxivUrl("https://arxiv.org/abs/2601.04649v1")).toBe(true);
-      expect(isArxivUrl("https://arxiv.org/abs/2601.04649v2")).toBe(true);
-      expect(isArxivUrl("https://arxiv.org/pdf/2601.04649v3")).toBe(true);
-    });
-
-    it("returns true for ArXiv URLs with old format IDs (category/number)", () => {
-      expect(isArxivUrl("https://arxiv.org/abs/hep-th/9901001")).toBe(true);
-      expect(isArxivUrl("https://arxiv.org/pdf/math.GT/0309136")).toBe(true);
-      expect(isArxivUrl("https://arxiv.org/abs/cond-mat/0001234")).toBe(true);
-    });
-
-    it("returns true for HTTP URLs (not just HTTPS)", () => {
-      expect(isArxivUrl("http://arxiv.org/abs/2601.04649")).toBe(true);
-    });
-
-    it("returns true for URLs with query parameters", () => {
-      expect(isArxivUrl("https://arxiv.org/abs/2601.04649?ref=foo")).toBe(true);
-    });
-
-    it("returns true for URLs with hash fragments", () => {
-      expect(isArxivUrl("https://arxiv.org/abs/2601.04649#section")).toBe(true);
-    });
-
-    it("returns false for non-ArXiv URLs", () => {
-      expect(isArxivUrl("https://example.com/abs/2601.04649")).toBe(false);
-      expect(isArxivUrl("https://google.com")).toBe(false);
-    });
-
-    it("returns false for ArXiv non-paper URLs", () => {
-      expect(isArxivUrl("https://arxiv.org")).toBe(false);
-      expect(isArxivUrl("https://arxiv.org/list/cs.AI/recent")).toBe(false);
-      expect(isArxivUrl("https://arxiv.org/search/?query=test")).toBe(false);
-    });
-
-    it("returns false for invalid URLs", () => {
-      expect(isArxivUrl("not a url")).toBe(false);
-      expect(isArxivUrl("")).toBe(false);
-      expect(isArxivUrl("arxiv.org/abs/2601.04649")).toBe(false);
-    });
-  });
-
   describe("extractPaperId", () => {
     it("extracts paper ID from ArXiv abstract URLs", () => {
       expect(extractPaperId("https://arxiv.org/abs/2601.04649")).toBe("2601.04649");

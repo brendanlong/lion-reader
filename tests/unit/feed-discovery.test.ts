@@ -410,6 +410,19 @@ describe("discoverFeeds", () => {
       expect(feeds[0].title).toBe("Uppercase");
     });
 
+    it("handles mixed-case tags and attributes", () => {
+      const html = `
+        <Link Rel="alternate" Type="application/rss+xml" Href="/feed.xml" Title="MixedCase">
+      `;
+
+      const feeds = discoverFeeds(html, "https://example.com");
+
+      expect(feeds).toHaveLength(1);
+      expect(feeds[0].url).toBe("https://example.com/feed.xml");
+      expect(feeds[0].type).toBe("rss");
+      expect(feeds[0].title).toBe("MixedCase");
+    });
+
     it("handles link tags mixed with other content", () => {
       const html = `
         <!DOCTYPE html>

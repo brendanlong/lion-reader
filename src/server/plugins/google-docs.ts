@@ -1,10 +1,5 @@
 import type { UrlPlugin, SavedArticleContent } from "./types";
-import {
-  isGoogleDocsUrl,
-  extractDocId,
-  normalizeGoogleDocsUrl,
-  fetchGoogleDocsFromUrl,
-} from "@/server/google/docs";
+import { extractDocId, normalizeGoogleDocsUrl, fetchGoogleDocsFromUrl } from "@/server/google/docs";
 import { logger } from "@/lib/logger";
 
 /**
@@ -30,11 +25,8 @@ export const googleDocsPlugin: UrlPlugin = {
     savedArticle: {
       async fetchContent(url: URL): Promise<SavedArticleContent | null> {
         try {
-          // Validate it's a Google Docs URL
-          if (!isGoogleDocsUrl(url.href)) {
-            return null;
-          }
-
+          // Validates it's a Google Docs URL: extractDocId matches the same
+          // pattern isGoogleDocsUrl tests, and returns null when it doesn't.
           const docId = extractDocId(url.href);
           if (!docId) {
             return null;

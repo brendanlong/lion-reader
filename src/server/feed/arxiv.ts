@@ -33,13 +33,6 @@ const ARXIV_URL_PATTERN =
   /^https?:\/\/(?:www\.)?arxiv\.org\/(abs|pdf|html)\/([a-zA-Z0-9.\-/]+?(?:v\d+)?)(?:\.pdf)?(?:[?#].*)?$/;
 
 /**
- * Checks if a URL is an ArXiv paper URL (abs, pdf, or html).
- */
-export function isArxivUrl(url: string): boolean {
-  return ARXIV_URL_PATTERN.test(url);
-}
-
-/**
  * Extracts the paper ID from an ArXiv URL.
  * Returns null if the URL is not a valid ArXiv paper URL.
  *

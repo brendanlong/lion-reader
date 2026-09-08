@@ -45,8 +45,6 @@ export interface OpmlSubscription {
   xmlUrl: string;
   /** URL to the feed's website */
   htmlUrl?: string;
-  /** Category/folder name (optional, single folder) */
-  folder?: string;
   /** Tags/folders the feed belongs to (optional, multiple tags) */
   tags?: string[];
 }
@@ -92,27 +90,6 @@ export function parseOpml(xml: string): OpmlFeed[] {
 export async function parseOpmlAsync(xml: string): Promise<OpmlFeed[]> {
   const result = await parseOpmlAsyncInternal(xml);
   return result.feeds as OpmlFeed[];
-}
-
-/**
- * Groups subscriptions by folder (legacy single-folder support).
- */
-function groupByFolder(
-  subscriptions: OpmlSubscription[]
-): Map<string | undefined, OpmlSubscription[]> {
-  const groups = new Map<string | undefined, OpmlSubscription[]>();
-
-  for (const sub of subscriptions) {
-    const folder = sub.folder;
-    const existing = groups.get(folder);
-    if (existing) {
-      existing.push(sub);
-    } else {
-      groups.set(folder, [sub]);
-    }
-  }
-
-  return groups;
 }
 
 /**
@@ -190,13 +167,9 @@ interface OpmlDocument {
 /**
  * Generates OPML XML from a list of subscriptions.
  *
- * When subscriptions have `tags`, the export format is:
+ * The export format is:
  * - All feeds listed at top level (no folder)
  * - Feeds re-listed inside each tag folder they belong to
- *
- * When subscriptions use `folder` (legacy), the format is:
- * - Feeds without folder at top level
- * - Feeds with folder inside their respective folder
  *
  * @param subscriptions - Array of subscriptions to export
  * @param metadata - Optional document metadata
@@ -216,51 +189,24 @@ export function generateOpml(
 ): string {
   const dateCreated = new Date().toISOString();
 
-  // Check if any subscriptions use the new tags format
-  const hasTagsFormat = subscriptions.some((sub) => sub.tags !== undefined);
-
-  // Build outline elements
+  // Build outline elements: all feeds at top level + re-listed in tag folders
   const outlines: OutlineElement[] = [];
 
-  if (hasTagsFormat) {
-    // New format: all feeds at top level + re-listed in tag folders
-    // First, add ALL subscriptions at top level
-    for (const sub of subscriptions) {
-      outlines.push(buildOutlineObject(sub));
-    }
+  // First, add ALL subscriptions at top level
+  for (const sub of subscriptions) {
+    outlines.push(buildOutlineObject(sub));
+  }
 
-    // Then, add tag folders with their subscriptions
-    const tagGroups = groupByTags(subscriptions);
-    // Sort tag folders alphabetically for consistent output
-    const sortedTags = Array.from(tagGroups.keys()).sort();
-    for (const tag of sortedTags) {
-      const subs = tagGroups.get(tag)!;
-      outlines.push({
-        "@_text": tag,
-        outline: subs.map((sub) => buildOutlineObject(sub)),
-      });
-    }
-  } else {
-    // Legacy format: group by single folder
-    const grouped = groupByFolder(subscriptions);
-
-    // First, add subscriptions without folders
-    const noFolder = grouped.get(undefined);
-    if (noFolder) {
-      for (const sub of noFolder) {
-        outlines.push(buildOutlineObject(sub));
-      }
-    }
-
-    // Then, add folders with their subscriptions
-    for (const [folder, subs] of grouped) {
-      if (folder === undefined) continue;
-
-      outlines.push({
-        "@_text": folder,
-        outline: subs.map((sub) => buildOutlineObject(sub)),
-      });
-    }
+  // Then, add tag folders with their subscriptions
+  const tagGroups = groupByTags(subscriptions);
+  // Sort tag folders alphabetically for consistent output
+  const sortedTags = Array.from(tagGroups.keys()).sort();
+  for (const tag of sortedTags) {
+    const subs = tagGroups.get(tag)!;
+    outlines.push({
+      "@_text": tag,
+      outline: subs.map((sub) => buildOutlineObject(sub)),
+    });
   }
 
   const title = metadata.title || "Lion Reader Subscriptions";
@@ -297,17 +243,4 @@ export function generateOpml(
   });
 
   return builder.build(doc) as string;
-}
-
-/**
- * Validates that a string is valid OPML.
- * Returns true if valid, false otherwise.
- */
-export function isValidOpml(xml: string): boolean {
-  try {
-    parseOpml(xml);
-    return true;
-  } catch {
-    return false;
-  }
 }

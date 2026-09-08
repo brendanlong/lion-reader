@@ -372,7 +372,9 @@ export function calculateNextFetch(options: CalculateNextFetchOptions = {}): Nex
  * - 5 failures: 8 hours
  * - 6 failures: 16 hours
  * - 7 failures: 32 hours (~1.3 days)
- * - 8+ failures: 7 days (max)
+ * - 8 failures: 64 hours (~2.7 days)
+ * - 9 failures: 128 hours (~5.3 days)
+ * - 10+ failures: 7 days (max)
  *
  * @param consecutiveFailures - Number of consecutive failures (1 or more)
  * @returns Backoff interval in seconds
@@ -386,11 +388,10 @@ export function calculateFailureBackoff(consecutiveFailures: number): number {
     return MAX_FETCH_INTERVAL_SECONDS;
   }
 
-  // Exponential backoff: base * 2^(failures-1)
-  const backoffSeconds = FAILURE_BASE_BACKOFF_SECONDS * Math.pow(2, cappedFailures - 1);
-
-  // Cap at max interval
-  return Math.min(backoffSeconds, MAX_FETCH_INTERVAL_SECONDS);
+  // Exponential backoff: base * 2^(failures-1). The early return above caps the
+  // exponent at 8, so the largest value here (1800 * 2^8 = 128 h) is already
+  // below MAX_FETCH_INTERVAL_SECONDS — no further clamp is needed.
+  return FAILURE_BASE_BACKOFF_SECONDS * Math.pow(2, cappedFailures - 1);
 }
 
 /**

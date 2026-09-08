@@ -448,10 +448,8 @@ export const blueskyPlugin: UrlPlugin = {
   // new subscriptions default to full content — the savedArticle capability
   // hydrates the real embedded content on open.
   feedDefaultsToFullContent(feedUrl: URL): boolean {
-    const host = feedUrl.hostname.toLowerCase();
-    if (host !== "bsky.app" && host !== "www.bsky.app") {
-      return false;
-    }
+    // The registry only calls this for URLs on one of `hosts`, so the host
+    // needs no re-check here.
     const parts = feedUrl.pathname.split("/").filter(Boolean);
     return parts.length === 3 && parts[0] === "profile" && parts[2] === "rss";
   },

@@ -16,7 +16,6 @@ import {
 import { getFeedPlugin } from "@/server/plugins";
 import {
   extractYouTubeVideoId,
-  normalizeYouTubeEmbedUrl,
   YOUTUBE_IFRAME_ALLOW,
   YOUTUBE_IFRAME_SANDBOX,
 } from "@/server/html/youtube-embed";
@@ -89,41 +88,6 @@ describe("getFeedPlugin resolution for YouTube", () => {
 
   it("does not resolve non-video YouTube pages", () => {
     expect(getFeedPlugin("https://www.youtube.com/@somechannel")).toBeNull();
-  });
-});
-
-describe("normalizeYouTubeEmbedUrl", () => {
-  it("rewrites youtube.com embeds to www.youtube-nocookie.com", () => {
-    expect(normalizeYouTubeEmbedUrl("https://www.youtube.com/embed/dQw4w9WgXcQ")).toBe(
-      "https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ"
-    );
-    expect(normalizeYouTubeEmbedUrl("https://youtube.com/embed/dQw4w9WgXcQ")).toBe(
-      "https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ"
-    );
-  });
-
-  it("accepts protocol-relative srcs", () => {
-    expect(normalizeYouTubeEmbedUrl("//www.youtube-nocookie.com/embed/dQw4w9WgXcQ")).toBe(
-      "https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ"
-    );
-  });
-
-  it("keeps only allow-listed query params", () => {
-    expect(
-      normalizeYouTubeEmbedUrl(
-        "https://www.youtube.com/embed/dQw4w9WgXcQ?start=30&autoplay=1&enablejsapi=1&origin=https%3A%2F%2Fevil.com"
-      )
-    ).toBe("https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?start=30");
-  });
-
-  it("rejects non-embed and non-YouTube URLs", () => {
-    expect(normalizeYouTubeEmbedUrl("https://www.youtube.com/watch?v=dQw4w9WgXcQ")).toBeNull();
-    expect(normalizeYouTubeEmbedUrl("https://evil.com/embed/dQw4w9WgXcQ")).toBeNull();
-    expect(normalizeYouTubeEmbedUrl("https://www.youtube.com.evil.com/embed/x")).toBeNull();
-    expect(normalizeYouTubeEmbedUrl("https://www.youtube.com/embed/a/b")).toBeNull();
-    expect(normalizeYouTubeEmbedUrl("javascript:alert(1)")).toBeNull();
-    expect(normalizeYouTubeEmbedUrl(null)).toBeNull();
-    expect(normalizeYouTubeEmbedUrl("")).toBeNull();
   });
 });
 

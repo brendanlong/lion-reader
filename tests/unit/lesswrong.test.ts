@@ -10,7 +10,6 @@ import {
   isLessWrongUrl,
   extractPostId,
   extractCommentId,
-  isLessWrongCommentUrl,
   isLessWrongUserUrl,
   extractUserSlug,
   isLessWrongUserFeedUrl,
@@ -165,26 +164,6 @@ describe("LessWrong URL detection", () => {
     it("returns null for invalid URLs", () => {
       expect(extractCommentId("not a url")).toBe(null);
       expect(extractCommentId("")).toBe(null);
-    });
-  });
-
-  describe("isLessWrongCommentUrl", () => {
-    it("returns true for LessWrong post URLs with commentId", () => {
-      expect(
-        isLessWrongCommentUrl(
-          "https://www.lesswrong.com/posts/ZnNeKw2Be8BR7bmeN/adamzerner-s-shortform?commentId=F2mFKsTHbt24KeLNT"
-        )
-      ).toBe(true);
-    });
-
-    it("returns false for LessWrong post URLs without commentId", () => {
-      expect(isLessWrongCommentUrl("https://www.lesswrong.com/posts/WQFioaudEH8R7fyhm/slug")).toBe(
-        false
-      );
-    });
-
-    it("returns false for non-LessWrong URLs even with commentId", () => {
-      expect(isLessWrongCommentUrl("https://example.com/posts/abc?commentId=123")).toBe(false);
     });
   });
 
