@@ -212,7 +212,7 @@ const nextConfig: NextConfig = {
   ],
   // Handle piper-tts-web which has conditional Node.js code (require('fs'))
   // that the bundler tries to resolve even though it only runs in Node.js
-  webpack: (config, { isServer, nextRuntime }) => {
+  webpack: (config, { isServer }) => {
     if (!isServer) {
       // Stub out Node.js modules for client bundles
       config.resolve.fallback = {
@@ -235,20 +235,6 @@ const nextConfig: NextConfig = {
         ...config.resolve.alias,
         "onnxruntime-web$": "onnxruntime-web/wasm",
       };
-    }
-    // isomorphic-dompurify pulls in jsdom during SSR of `"use client"` components
-    // (e.g. EntryContentBody). jsdom reads browser/default-stylesheet.css via
-    // `path.resolve(__dirname, ...)` at runtime; bundling breaks __dirname so the
-    // read resolves to a bogus path (e.g. /app/browser/default-stylesheet.css) and
-    // throws ENOENT mid-stream, producing a 500 status even though the shell already
-    // rendered. `serverExternalPackages` doesn't cover deps reached through the
-    // client-component SSR graph, so force-externalize jsdom on the Node server build
-    // to load it from node_modules where the __dirname-relative read resolves.
-    if (isServer && nextRuntime === "nodejs") {
-      // Bare string (not { jsdom: "commonjs jsdom" }) so webpack emits the external
-      // in whatever module format the server build uses, staying correct if Next
-      // ever switches the Node server output to ESM.
-      config.externals.push("jsdom");
     }
     // Silence known-benign "Critical dependency" warnings from Sentry's Node SDK.
     // @sentry/node pulls in OpenTelemetry auto-instrumentation, which uses
