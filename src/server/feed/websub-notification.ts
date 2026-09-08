@@ -113,6 +113,10 @@ export async function ingestWebsubNotification(
   try {
     const result = await processEntries(feedId, feed.type, parsedFeed, {
       fetchedAt: now,
+      // A push never advances last_fetched_at, so this stays the last full poll:
+      // anything the hub announces that predates it by a wide margin is the
+      // publisher replaying its archive, not news (issue #1500).
+      previousLastFetchedAt: feed.lastFetchedAt,
       feedUrl: feed.url ?? undefined,
       // Matches the feeds.title update below so new_entry events carry the
       // same title a later entries.list refetch would return.
@@ -150,12 +154,16 @@ export async function ingestWebsubNotification(
       newEntries: result.newCount,
       updatedEntries: result.updatedCount,
       unchangedEntries: result.unchangedCount,
+      backfilledEntries: result.backfillCount,
     });
 
     // Credit the hub for any new entries it pushed, so we can later compare this
     // against entries the backup poll had to discover (see websub-hub-stats.ts).
-    if (result.newCount > 0 && feed.hubUrl) {
-      await recordHubAnnouncedEntries(feed.hubUrl, result.newCount);
+    // Backfill doesn't count: the tally is about how *new articles* first reach
+    // us, and an archive replay isn't one.
+    const announcedCount = result.newCount - result.backfillCount;
+    if (announcedCount > 0 && feed.hubUrl) {
+      await recordHubAnnouncedEntries(feed.hubUrl, announcedCount);
     }
   } catch (error) {
     logger.error("WebSub notification processing failed", {

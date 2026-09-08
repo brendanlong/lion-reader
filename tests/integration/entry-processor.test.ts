@@ -18,6 +18,7 @@ import {
   createEntry,
   updateEntryContent,
   processEntries,
+  isBackfilledEntry,
 } from "../../src/server/feed/entry-processor";
 import type { ParsedEntry, ParsedFeed } from "../../src/server/feed/types";
 import {
@@ -163,6 +164,32 @@ describe("Entry Processor", () => {
       const fetchedAt = new Date("2024-06-01T00:00:00Z");
       const pubDate = new Date("2030-01-01T00:00:00Z");
       expect(clampPublishedAt(pubDate, fetchedAt)).toBe(fetchedAt);
+    });
+  });
+
+  describe("isBackfilledEntry", () => {
+    const previousFetch = new Date("2026-08-10T00:00:00Z");
+
+    it("flags an article published long before our previous fetch", () => {
+      expect(isBackfilledEntry(new Date("2022-03-01T00:00:00Z"), previousFetch)).toBe(true);
+    });
+
+    it("does not flag an article published since our previous fetch", () => {
+      expect(isBackfilledEntry(new Date("2026-08-10T00:05:00Z"), previousFetch)).toBe(false);
+    });
+
+    it("does not flag an article that is merely a few days stale", () => {
+      // Stale CDN copies, clock skew and slight backdating must stay news.
+      expect(isBackfilledEntry(new Date("2026-08-04T00:00:00Z"), previousFetch)).toBe(false);
+    });
+
+    it("is inert on a feed's first fetch", () => {
+      expect(isBackfilledEntry(new Date("2010-01-01T00:00:00Z"), null)).toBe(false);
+      expect(isBackfilledEntry(new Date("2010-01-01T00:00:00Z"), undefined)).toBe(false);
+    });
+
+    it("is inert without a publication date", () => {
+      expect(isBackfilledEntry(null, previousFetch)).toBe(false);
     });
   });
 
@@ -846,6 +873,177 @@ describe("Entry Processor", () => {
         }
         expect(rowExistedAtDelivery).toHaveLength(2);
         expect(await Promise.all(rowExistedAtDelivery)).toEqual([true, true]);
+      } finally {
+        handle!.close();
+      }
+    });
+
+    it("fans out an archive re-announcement as read, not unread (#1500)", async () => {
+      // A publisher that bulk-edits its archive re-announces posts we have never
+      // seen, dated years ago. They are stored and made visible, but they are not
+      // news, so they must not land in anyone's unread count.
+      const feed = await createTestFeed();
+      const userId = await createTestUser({ emailPrefix: "backfill" });
+      const subscriptionId = await createTestSubscription(userId, feed.id);
+
+      const previousLastFetchedAt = new Date("2026-08-10T00:00:00Z");
+      const fetchedAt = new Date("2026-08-10T01:00:00Z");
+      const parsedFeed: ParsedFeed = {
+        title: "Test Feed",
+        items: [
+          { guid: "fresh-1", title: "Today's post", pubDate: new Date("2026-08-10T00:30:00Z") },
+          {
+            guid: "archive-1",
+            title: "Ukraine Post #5",
+            pubDate: new Date("2022-03-01T00:00:00Z"),
+          },
+        ],
+      };
+
+      const result = await processEntries(feed.id, feed.type, parsedFeed, {
+        fetchedAt,
+        previousLastFetchedAt,
+      });
+
+      expect(result.newCount).toBe(2);
+      expect(result.backfillCount).toBe(1);
+
+      const rows = await db
+        .select({ guid: entries.guid, read: userEntries.read })
+        .from(userEntries)
+        .innerJoin(entries, eq(entries.id, userEntries.entryId))
+        .where(eq(userEntries.userId, userId));
+      expect(rows).toHaveLength(2);
+      expect(rows.find((r) => r.guid === "fresh-1")?.read).toBe(false);
+      expect(rows.find((r) => r.guid === "archive-1")?.read).toBe(true);
+
+      // The unread badge only counts the genuinely new article.
+      const [subscription] = await db
+        .select({ unreadCount: subscriptions.unreadCount })
+        .from(subscriptions)
+        .where(eq(subscriptions.id, subscriptionId));
+      expect(subscription.unreadCount).toBe(1);
+    });
+
+    it("keeps old entries unread on a feed's first fetch (#1500)", async () => {
+      // Without a previous fetch we were never watching the feed, so its whole
+      // current window is legitimately new to us however old it is.
+      const feed = await createTestFeed();
+      const userId = await createTestUser({ emailPrefix: "firstfetch" });
+      await createTestSubscription(userId, feed.id);
+
+      const result = await processEntries(
+        feed.id,
+        feed.type,
+        {
+          title: "Test Feed",
+          items: [{ guid: "old-1", title: "Old", pubDate: new Date("2022-03-01T00:00:00Z") }],
+        },
+        { fetchedAt: new Date("2026-08-10T01:00:00Z"), previousLastFetchedAt: null }
+      );
+
+      expect(result.backfillCount).toBe(0);
+      const [row] = await db
+        .select({ read: userEntries.read })
+        .from(userEntries)
+        .where(eq(userEntries.userId, userId));
+      expect(row.read).toBe(false);
+    });
+
+    it("leaves a backfilled entry read when a later fetch re-lists it (#1500)", async () => {
+      // The backfill classification only applies to entries created by that
+      // fetch; the ordinary fanout that re-covers the entry later must not flip
+      // it back to unread.
+      const feed = await createTestFeed();
+      const userId = await createTestUser({ emailPrefix: "rebackfill" });
+      await createTestSubscription(userId, feed.id);
+
+      const archived = {
+        guid: "archive-1",
+        title: "Ukraine Post #5",
+        pubDate: new Date("2022-03-01T00:00:00Z"),
+      };
+      await processEntries(
+        feed.id,
+        feed.type,
+        { title: "Test Feed", items: [archived] },
+        {
+          fetchedAt: new Date("2026-08-10T01:00:00Z"),
+          previousLastFetchedAt: new Date("2026-08-10T00:00:00Z"),
+        }
+      );
+
+      // A later fetch adds a genuinely new entry, so the fanout runs again over
+      // every current entry — including the backfilled one.
+      const result = await processEntries(
+        feed.id,
+        feed.type,
+        {
+          title: "Test Feed",
+          items: [
+            archived,
+            { guid: "fresh-1", title: "New", pubDate: new Date("2026-08-10T02:00:00Z") },
+          ],
+        },
+        {
+          fetchedAt: new Date("2026-08-10T02:30:00Z"),
+          previousLastFetchedAt: new Date("2026-08-10T01:00:00Z"),
+        }
+      );
+      expect(result.newCount).toBe(1);
+      expect(result.backfillCount).toBe(0);
+
+      const rows = await db
+        .select({ guid: entries.guid, read: userEntries.read })
+        .from(userEntries)
+        .innerJoin(entries, eq(entries.id, userEntries.entryId))
+        .where(eq(userEntries.userId, userId));
+      expect(rows.find((r) => r.guid === "archive-1")?.read).toBe(true);
+      expect(rows.find((r) => r.guid === "fresh-1")?.read).toBe(false);
+    });
+
+    it("does not publish new_entry for a backfilled entry (#1500)", async () => {
+      // A backfilled entry is fanned out as read, so there is no new unread item
+      // for a connected client to insert or count.
+      const feed = await createTestFeed();
+      const userId = await createTestUser({ emailPrefix: "backfillevent" });
+      await createTestSubscription(userId, feed.id);
+
+      const newEntryIds: string[] = [];
+      const handle = createPubSubSubscription((_channel, message) => {
+        const event = JSON.parse(message) as { type: string; entryId: string };
+        if (event.type === "new_entry") newEntryIds.push(event.entryId);
+      });
+      expect(handle).not.toBeNull();
+      await handle!.subscribe(getFeedEventsChannel(feed.id));
+
+      try {
+        await processEntries(
+          feed.id,
+          feed.type,
+          {
+            title: "Test Feed",
+            items: [
+              { guid: "archive-1", title: "Old", pubDate: new Date("2022-03-01T00:00:00Z") },
+              { guid: "fresh-1", title: "New", pubDate: new Date("2026-08-10T00:30:00Z") },
+            ],
+          },
+          {
+            fetchedAt: new Date("2026-08-10T01:00:00Z"),
+            previousLastFetchedAt: new Date("2026-08-10T00:00:00Z"),
+          }
+        );
+
+        // Publishes are fire-and-forget; wait long enough that a second event
+        // would have arrived if one were published for the backfilled entry.
+        const deadline = Date.now() + 5000;
+        while (newEntryIds.length < 1 && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        await new Promise((resolve) => setTimeout(resolve, 250));
+
+        const fresh = await findEntryByGuid(feed.id, "fresh-1");
+        expect(newEntryIds).toEqual([fresh!.id]);
       } finally {
         handle!.close();
       }

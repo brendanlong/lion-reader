@@ -16,6 +16,14 @@ This file governs feed fetching, scheduling, entry processing, and WebSub push. 
    - 4xx/5xx: increment failures, backoff. This includes a 404/410 with no tracked redirect: a single 404 is **not** proof the feed is gone (YouTube returns 404 for all of its feeds for a few hours most days — issue #1114), so instead of jumping straight to a 7-day next fetch, the ordinary backoff ladder applies — it converges to the same 7-day cadence if the 404 persists, and one success resets it. A 404/410 with a tracked redirect URL still applies the redirect immediately
 5. Calculate `next_fetch_at` based on Cache-Control (10min with cache hint, 60min default min, 7day max). A URL plugin can raise the minimum for its source (`FeedCapability.minFetchIntervalSeconds`): YouTube serves `max-age=900` but rate-limits RSS fetches per IP, so its plugin floors polling at 1 hour
 
+## Backfill Guard
+
+A publisher that bulk-edits or re-imports its archive re-announces every post it touched — through the feed, or as one WebSub push per post. Every one of them is new to _us_, so without a guard they arrive as unread news dated years ago: one WordPress bulk edit put ~600 four-year-old articles into subscribers' unread counts (issue #1500).
+
+`isBackfilledEntry` (`entry-processor.ts`) classifies a **first sighting** as a backfill when the article was published well before `feeds.last_fetched_at` as of the previous fetch — i.e. it was already old when we last pulled the whole feed and it wasn't there, so it's history, not a release. Backfilled entries are stored and fanned out normally, but **already read**, and they publish no `new_entry` event and aren't charged against the hub's push-reliability tally. Nothing is hidden: they stay in the feed's list and in search, they just don't move an unread badge.
+
+The threshold is wide (a month) because the only thing it has to clear is the noise floor of ordinary syndication — stale CDN copies, clock skew, mild backdating — and archive replays miss it by years. The guard is deliberately inert on a feed's first fetch (`last_fetched_at` is null: we weren't watching, so the whole current window is legitimately new), on a feed that was dormant and is polled again (everything published during the gap is _after_ the previous fetch), and on entries with no publication date.
+
 ## WebSub Push & Backup Polling
 
 When a feed advertises a hub, we subscribe via WebSub and drop the feed to a 24h **backup poll** cadence (`reason: "websub_backup"`), trusting the hub to push new content in real time. A hub can silently stop delivering while we still believe it's active, so two mechanisms bound how long a dead hub can keep a feed stale:
