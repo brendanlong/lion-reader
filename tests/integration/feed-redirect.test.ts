@@ -7,10 +7,12 @@
  * 3. User read/starred state is preserved through the migration
  * 4. Users see entries from both old and new feeds without duplicates
  *    (attribution via user_entries.subscription_id, re-stamped by the merge job)
+ * 5. The surviving feed always ends up with a fetch_feed job, even when no new
+ *    subscription row had to be created
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
   users,
@@ -30,6 +32,7 @@ import {
   createTestUser,
 } from "./helpers";
 import { ensureFeedJob } from "../../src/server/jobs/queue";
+import { runRetentionCleanup } from "../../src/server/services/retention";
 import { migrateSubscriptionsToExistingFeed } from "../../src/server/jobs/handlers/fetch-feed";
 import { createUserEntriesForFeed } from "../../src/server/feed/entry-processor";
 
@@ -128,6 +131,18 @@ async function getStampedSubscriptionId(userId: string, entryId: string): Promis
     .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, entryId)))
     .limit(1);
   return row?.subscriptionId ?? null;
+}
+
+/**
+ * Gets the single fetch_feed job for a feed, if one exists.
+ */
+async function getFeedJob(feedId: string): Promise<{ id: string; nextRunAt: Date | null } | null> {
+  const [row] = await db
+    .select({ id: jobs.id, nextRunAt: jobs.nextRunAt })
+    .from(jobs)
+    .where(and(eq(jobs.type, "fetch_feed"), sql`${jobs.payload}->>'feedId' = ${feedId}`))
+    .limit(1);
+  return row ?? null;
 }
 
 /**
@@ -352,6 +367,82 @@ describe("Feed Redirect Handling", () => {
       expect(newSub).not.toBeNull();
       expect(newSub!.unsubscribedAt).toBeNull(); // Reactivated
       expect(await getStampedSubscriptionId(userId, oldEntry)).toBe(newSub!.id);
+    });
+  });
+
+  describe("fetch_feed job for the surviving feed", () => {
+    it("recreates a reaped job when every migrated user already had a subscription", async () => {
+      const userId = await createTestUser();
+
+      const oldFeedId = await createTestFeed({
+        url: "https://old-domain.com/feed.xml",
+        title: "Old Feed",
+      });
+      const newFeedId = await createTestFeed({
+        url: "https://new-domain.com/feed.xml",
+        title: "New Feed",
+      });
+
+      // The user subscribed to the new feed once and left. Retention deletes
+      // the fetch_feed job of a feed with no active subscriber, so run the real
+      // sweep here - backdating created_at past DEAD_FEED_JOB_GRACE_MS (1h) is
+      // all it takes for the job to be eligible.
+      const staleSubId = await createTestSubscription(userId, newFeedId);
+      await ensureFeedJob(newFeedId);
+      await db
+        .update(jobs)
+        .set({ createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000) })
+        .where(eq(jobs.type, "fetch_feed"));
+      await db
+        .update(subscriptions)
+        .set({ unsubscribedAt: new Date() })
+        .where(eq(subscriptions.id, staleSubId));
+
+      await runRetentionCleanup(db);
+      expect(await getFeedJob(newFeedId)).toBeNull();
+
+      // Now the user subscribes to a different feed, which 301s onto that one.
+      // The merge finds an existing (unsubscribed) subscription row to
+      // reactivate, so it creates no new subscription rows at all.
+      await createTestSubscription(userId, oldFeedId);
+      await ensureFeedJob(oldFeedId);
+
+      await migrateSubscriptionsToExistingFeed(await getFeed(oldFeedId), await getFeed(newFeedId));
+
+      // The user's only active subscription is now to the new feed, so the new
+      // feed must have a job - without one it would never be fetched again.
+      const activeSubs = await getActiveSubscriptions(userId);
+      expect(activeSubs.map((s) => s.feedId)).toEqual([newFeedId]);
+      expect(await getFeedJob(newFeedId)).not.toBeNull();
+    });
+
+    it("does not disturb the schedule of a feed that already has a job", async () => {
+      const userId = await createTestUser();
+
+      const oldFeedId = await createTestFeed({
+        url: "https://old-domain.com/feed.xml",
+        title: "Old Feed",
+      });
+      const newFeedId = await createTestFeed({
+        url: "https://new-domain.com/feed.xml",
+        title: "New Feed",
+      });
+
+      // The new feed has a live subscriber and is scheduled well into the future.
+      const otherUserId = await createTestUser({ emailPrefix: "other" });
+      await createTestSubscription(otherUserId, newFeedId);
+      const scheduledFor = new Date(Date.now() + 6 * 60 * 60 * 1000);
+      await ensureFeedJob(newFeedId, scheduledFor);
+
+      await createTestSubscription(userId, oldFeedId);
+      await migrateSubscriptionsToExistingFeed(await getFeed(oldFeedId), await getFeed(newFeedId));
+
+      // ensureFeedJob is an idempotent upsert that keeps a non-null
+      // next_run_at, so calling it unconditionally can't pull a backing-off
+      // feed forward.
+      const job = await getFeedJob(newFeedId);
+      expect(job).not.toBeNull();
+      expect(job!.nextRunAt?.getTime()).toBe(scheduledFor.getTime());
     });
   });
 
