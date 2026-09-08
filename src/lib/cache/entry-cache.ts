@@ -914,6 +914,15 @@ interface TypedInfiniteData {
 
 /**
  * Finds a cached query matching specific filters.
+ *
+ * Search results and Recently Read are never usable as placeholder data, no
+ * matter how their remaining filters line up: search membership depends on a
+ * `query` this code can't evaluate, and `sortBy: "readChanged"` orders by a
+ * field the placeholder path has no way to re-sort by. Neither `filtersEqual`
+ * nor `areFiltersCompatible` looks at those two keys, so without this guard a
+ * cached `/all?q=react` list is an "exact match" for plain `/all` and its
+ * handful of hits render, unfiltered, as All Items. Same guard as
+ * `insertEntryIntoListCaches`, for the same reason.
  */
 function findCachedQuery(
   queries: [readonly unknown[], InfiniteData | undefined][],
@@ -924,6 +933,10 @@ function findCachedQuery(
 
     const keyMeta = queryKey[1] as TRPCQueryKey | undefined;
     const parentFilters: EntryListFilters = keyMeta?.input ?? {};
+
+    if (parentFilters.query || (parentFilters.sortBy && parentFilters.sortBy !== "published")) {
+      continue;
+    }
 
     if (matchFilters(parentFilters)) {
       return data;

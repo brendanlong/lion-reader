@@ -58,6 +58,10 @@ export function SubscribeContent() {
   const [selectedFeedUrl, setSelectedFeedUrl] = useState<string | null>(null);
   const [discoveryError, setDiscoveryError] = useState<string | null>(null);
   const [feedBuilderUrl, setFeedBuilderUrl] = useState<string | null>(null);
+  // Preview of a *discovered* feed runs outside `previewQuery` (see
+  // handleSelectFeed), so it needs its own pending/error state.
+  const [isPreviewingSelection, setIsPreviewingSelection] = useState(false);
+  const [selectionError, setSelectionError] = useState<string | null>(null);
 
   const utils = trpc.useUtils();
 
@@ -118,6 +122,7 @@ export function SubscribeContent() {
     setDiscoveredFeeds([]);
     setDiscoveryError(null);
     setFeedBuilderUrl(null);
+    setSelectionError(null);
   }, []);
 
   /**
@@ -185,14 +190,25 @@ export function SubscribeContent() {
 
   const handleSelectFeed = async (feedUrl: string) => {
     setSelectedFeedUrl(feedUrl);
-
-    // Preview the selected feed
-    const result = await previewQuery.refetch();
-
-    if (result.data) {
+    setSelectionError(null);
+    setIsPreviewingSelection(true);
+    try {
+      // Fetch by explicit input rather than previewQuery.refetch(): the query's
+      // key only picks up the new `selectedFeedUrl` after the re-render this
+      // setState schedules, so a refetch here would re-run the *previous* URL
+      // and settle onto a key nothing is reading — leaving the first click on a
+      // discovered feed a visible no-op. The result lands in the cache under
+      // the key previewQuery adopts on that re-render, so it renders the
+      // preview step without a second request.
+      await utils.feeds.preview.fetch({ url: feedUrl }, { retry: false });
       setStep("preview");
+    } catch (error) {
+      setSelectionError(
+        error instanceof Error ? error.message : "Failed to load a preview for this feed."
+      );
+    } finally {
+      setIsPreviewingSelection(false);
     }
-    // If preview fails, error will be shown via previewQuery.error
   };
 
   const handleSubscribe = () => {
@@ -232,7 +248,7 @@ export function SubscribeContent() {
     }
   };
 
-  const isLoading = previewQuery.isFetching || discoverQuery.isFetching;
+  const isLoading = previewQuery.isFetching || discoverQuery.isFetching || isPreviewingSelection;
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-4 sm:p-6">
@@ -325,9 +341,9 @@ export function SubscribeContent() {
             <p className="ui-text-sm text-muted mb-4">Select a feed to preview and subscribe:</p>
 
             {/* Show error if preview of selected feed failed */}
-            {selectedFeedUrl && previewQuery.error && (
+            {selectionError && (
               <Alert variant="error" className="mb-4">
-                {previewQuery.error.message}
+                {selectionError}
               </Alert>
             )}
 

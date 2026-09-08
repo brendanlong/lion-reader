@@ -9,17 +9,24 @@ import { type MouseEvent } from "react";
 /**
  * Navigate using pushState without triggering SSR.
  * UnifiedEntriesContent reads usePathname() to determine what to render.
+ *
+ * `state` is stored on the created history entry, so a later handler can tell
+ * which entry it created (see `useEntryUrlState`). Next's app router merges its
+ * own internal keys into whatever we pass, so an object is safe here.
  */
-export function clientPush(href: string): void {
-  window.history.pushState(null, "", href);
+export function clientPush(href: string, state: unknown = null): void {
+  window.history.pushState(state, "", href);
 }
 
 /**
  * Navigate using replaceState without triggering SSR.
  * UnifiedEntriesContent reads usePathname() to determine what to render.
+ *
+ * Note that replacing overwrites the current entry's state, so callers that
+ * need to keep a marker set by `clientPush` must pass it through again.
  */
-export function clientReplace(href: string): void {
-  window.history.replaceState(null, "", href);
+export function clientReplace(href: string, state: unknown = null): void {
+  window.history.replaceState(state, "", href);
 }
 
 /**
