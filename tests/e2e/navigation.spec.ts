@@ -142,3 +142,36 @@ test("does not reset the entry-list scroll when opening and closing an entry", a
   await expect(centerEntry).toBeVisible();
   await expect.poll(() => mainScrollTop(page)).toBeGreaterThan(0);
 });
+
+test("closing an entry pops its history entry, so browser Back still works", async ({
+  page,
+  baseURL,
+}) => {
+  const db = getDb();
+  const user = await createConfirmedUser(db);
+  const feed = await createSubscribedFeed(db, user.id);
+  const entry = await createUnreadEntry(db, {
+    feedId: feed.feedId,
+    userId: user.id,
+    title: "Only Post",
+  });
+  await starEntry(db, user.id, entry.id);
+
+  await loginAs(page.context(), user, baseURL!);
+  await page.goto("/starred");
+  await expect(page.locator('[aria-label*="article: Only Post"]')).toBeVisible();
+
+  // Soft-navigate to All, so there is a real previous page to go back to.
+  await page.getByRole("link", { name: /All Items/ }).click();
+  await expect(page).toHaveURL(/\/all$/);
+
+  // Opening pushes a history entry; closing must pop it rather than replacing
+  // it, or the stranded entry swallows the user's next Back press.
+  await page.locator(`[data-entry-id="${entry.id}"]`).click();
+  await expect(page).toHaveURL(new RegExp(`entry=${entry.id}`));
+  await page.getByRole("button", { name: /back to list/i }).click();
+  await expect(page).toHaveURL(/\/all$/);
+
+  await page.goBack();
+  await expect(page).toHaveURL(/\/starred$/);
+});
