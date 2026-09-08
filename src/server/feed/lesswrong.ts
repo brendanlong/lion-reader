@@ -127,56 +127,151 @@ export function extractUserSlug(url: string): string | null {
 }
 
 // ============================================================================
-// GraphQL Types
+// GraphQL Transport
 // ============================================================================
 
 /**
- * Zod schema for the GraphQL response.
+ * The response envelope every GraphQL request comes back in; `data` is validated
+ * separately against the caller's schema.
  */
-const graphqlResponseSchema = z.object({
-  data: z
+const graphqlEnvelopeSchema = z.object({
+  data: z.unknown().nullable(),
+  errors: z.array(z.object({ message: z.string() })).optional(),
+});
+
+/**
+ * Sends one query to the LessWrong GraphQL API and returns its validated `data`.
+ *
+ * Every lookup in this module goes through here so they all share one failure
+ * contract:
+ *
+ * - A non-OK status, an invalid body, GraphQL `errors`, a timeout, or a network
+ *   failure logs a warning and returns null.
+ * - HTTP 429 **throws** `HttpFetchError` instead. Returning null would let a
+ *   caller fall back to fetching the same throttled site, or persist a result
+ *   with data missing that's indistinguishable from the data not existing.
+ *
+ * `endpoint` is a parameter so tests can drive this against a loopback server.
+ */
+export async function lessWrongGraphql<T extends z.ZodType>(
+  request: {
+    query: string;
+    variables: Record<string, string>;
+    dataSchema: T;
+    /** Included in every log line for this request (e.g. `{ operation, postId }`). */
+    logContext: Record<string, string>;
+  },
+  endpoint: string = LESSWRONG_GRAPHQL_ENDPOINT
+): Promise<z.output<T> | null> {
+  const { query, variables, dataSchema, logContext } = request;
+
+  try {
+    const response = await fetchWithSsrfProtection(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": USER_AGENT,
+        Accept: "application/json",
+      },
+      body: JSON.stringify({ query, variables }),
+      signal: AbortSignal.timeout(GRAPHQL_TIMEOUT_MS),
+    });
+
+    if (!response.ok) {
+      logger.warn("LessWrong GraphQL request failed", {
+        ...logContext,
+        status: response.status,
+        statusText: response.statusText,
+      });
+      if (response.status === 429) {
+        throw new HttpFetchError(response.status, response.statusText, endpoint);
+      }
+      return null;
+    }
+
+    const envelope = graphqlEnvelopeSchema.safeParse(await response.json());
+    if (!envelope.success) {
+      logger.warn("LessWrong GraphQL response validation failed", {
+        ...logContext,
+        error: envelope.error.message,
+      });
+      return null;
+    }
+
+    if (envelope.data.errors && envelope.data.errors.length > 0) {
+      logger.warn("LessWrong GraphQL returned errors", {
+        ...logContext,
+        errors: envelope.data.errors.map((e) => e.message),
+      });
+      return null;
+    }
+
+    if (envelope.data.data == null) {
+      return null;
+    }
+
+    const data = dataSchema.safeParse(envelope.data.data);
+    if (!data.success) {
+      logger.warn("LessWrong GraphQL response validation failed", {
+        ...logContext,
+        error: data.error.message,
+      });
+      return null;
+    }
+
+    return data.data;
+  } catch (error) {
+    if (error instanceof HttpFetchError) {
+      throw error;
+    }
+    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
+      logger.warn("LessWrong GraphQL request timed out", logContext);
+    } else {
+      logger.warn("LessWrong GraphQL request error", {
+        ...logContext,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return null;
+  }
+}
+
+/**
+ * The `user` shape LessWrong returns on posts and comments.
+ */
+const authorSchema = z.object({
+  displayName: z.string().nullable(),
+  username: z.string().nullable(),
+});
+
+/**
+ * Picks the name to show for an author: display name, falling back to username.
+ */
+function authorName(user: z.output<typeof authorSchema> | null | undefined): string | null {
+  return user?.displayName || user?.username || null;
+}
+
+// ============================================================================
+// Post Content
+// ============================================================================
+
+const postDataSchema = z.object({
+  post: z
     .object({
-      post: z
+      result: z
         .object({
-          result: z
-            .object({
-              _id: z.string(),
-              title: z.string().nullable(),
-              slug: z.string().nullable(),
-              pageUrl: z.string().nullable(),
-              postedAt: z.string().nullable(),
-              user: z
-                .object({
-                  displayName: z.string().nullable(),
-                  username: z.string().nullable(),
-                })
-                .nullable(),
-              coauthors: z
-                .array(
-                  z.object({
-                    displayName: z.string().nullable(),
-                    username: z.string().nullable(),
-                  })
-                )
-                .nullable(),
-              contents: z
-                .object({
-                  html: z.string().nullable(),
-                })
-                .nullable(),
-            })
-            .nullable(),
+          _id: z.string(),
+          title: z.string().nullable(),
+          slug: z.string().nullable(),
+          pageUrl: z.string().nullable(),
+          postedAt: z.string().nullable(),
+          user: authorSchema.nullable(),
+          coauthors: z.array(authorSchema).nullable(),
+          contents: z.object({ html: z.string().nullable() }).nullable(),
         })
         .nullable(),
     })
     .nullable(),
-  errors: z
-    .array(
-      z.object({
-        message: z.string(),
-      })
-    )
-    .optional(),
 });
 
 /**
@@ -196,73 +291,6 @@ interface LessWrongPostContent {
   /** Canonical URL */
   url: string | null;
 }
-
-/**
- * Zod schema for the comment GraphQL response.
- */
-const commentGraphqlResponseSchema = z.object({
-  data: z
-    .object({
-      comment: z
-        .object({
-          result: z
-            .object({
-              _id: z.string(),
-              postId: z.string().nullable(),
-              pageUrl: z.string().nullable(),
-              postedAt: z.string().nullable(),
-              user: z
-                .object({
-                  displayName: z.string().nullable(),
-                  username: z.string().nullable(),
-                })
-                .nullable(),
-              post: z
-                .object({
-                  title: z.string().nullable(),
-                })
-                .nullable(),
-              contents: z
-                .object({
-                  html: z.string().nullable(),
-                })
-                .nullable(),
-            })
-            .nullable(),
-        })
-        .nullable(),
-    })
-    .nullable(),
-  errors: z
-    .array(
-      z.object({
-        message: z.string(),
-      })
-    )
-    .optional(),
-});
-
-/**
- * Result from fetching LessWrong comment content.
- */
-interface LessWrongCommentContent {
-  /** Comment ID */
-  commentId: string;
-  /** Parent post title (for context) */
-  postTitle: string | null;
-  /** HTML content of the comment */
-  html: string;
-  /** Author display name */
-  author: string | null;
-  /** Comment post date */
-  publishedAt: Date | null;
-  /** Canonical URL */
-  url: string | null;
-}
-
-// ============================================================================
-// GraphQL Fetching
-// ============================================================================
 
 /**
  * GraphQL query to fetch post content.
@@ -298,109 +326,80 @@ const POST_QUERY = `
  *
  * @param postId - The LessWrong post ID (17-character alphanumeric)
  * @returns Post content including HTML, or null if fetch fails
+ * @throws HttpFetchError when LessWrong rate limits us (see `lessWrongGraphql`)
  */
 async function fetchLessWrongPost(postId: string): Promise<LessWrongPostContent | null> {
-  try {
-    const response = await fetchWithSsrfProtection(LESSWRONG_GRAPHQL_ENDPOINT, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": USER_AGENT,
-        Accept: "application/json",
-      },
-      body: JSON.stringify({
-        query: POST_QUERY,
-        variables: { postId },
-      }),
-      signal: AbortSignal.timeout(GRAPHQL_TIMEOUT_MS),
-    });
+  const data = await lessWrongGraphql({
+    query: POST_QUERY,
+    variables: { postId },
+    dataSchema: postDataSchema,
+    logContext: { operation: "post", postId },
+  });
 
-    if (!response.ok) {
-      logger.warn("LessWrong GraphQL request failed", {
-        postId,
-        status: response.status,
-        statusText: response.statusText,
-      });
-      // Throw on rate limiting so callers can handle it specifically
-      // (returning null would cause a pointless fallback fetch to the same site)
-      if (response.status === 429) {
-        throw new HttpFetchError(response.status, response.statusText, LESSWRONG_GRAPHQL_ENDPOINT);
-      }
-      return null;
-    }
-
-    const json = await response.json();
-    const parsed = graphqlResponseSchema.safeParse(json);
-
-    if (!parsed.success) {
-      logger.warn("LessWrong GraphQL response validation failed", {
-        postId,
-        error: parsed.error.message,
-      });
-      return null;
-    }
-
-    // Check for GraphQL errors
-    if (parsed.data.errors && parsed.data.errors.length > 0) {
-      logger.warn("LessWrong GraphQL returned errors", {
-        postId,
-        errors: parsed.data.errors.map((e) => e.message),
-      });
-      return null;
-    }
-
-    const post = parsed.data.data?.post?.result;
-    if (!post) {
-      logger.debug("LessWrong post not found", { postId });
-      return null;
-    }
-
-    const html = post.contents?.html;
-    if (!html) {
-      logger.debug("LessWrong post has no content", { postId });
-      return null;
-    }
-
-    // Build author string from user and coauthors
-    const authors: string[] = [];
-    if (post.user?.displayName) {
-      authors.push(post.user.displayName);
-    } else if (post.user?.username) {
-      authors.push(post.user.username);
-    }
-    if (post.coauthors) {
-      for (const coauthor of post.coauthors) {
-        if (coauthor.displayName) {
-          authors.push(coauthor.displayName);
-        } else if (coauthor.username) {
-          authors.push(coauthor.username);
-        }
-      }
-    }
-
-    return {
-      postId: post._id,
-      title: post.title,
-      html,
-      author: authors.length > 0 ? authors.join(", ") : null,
-      publishedAt: post.postedAt ? new Date(post.postedAt) : null,
-      url: post.pageUrl,
-    };
-  } catch (error) {
-    // Let HttpFetchError propagate (e.g., 429 rate limiting)
-    if (error instanceof HttpFetchError) {
-      throw error;
-    }
-    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
-      logger.warn("LessWrong GraphQL request timed out", { postId });
-    } else {
-      logger.warn("LessWrong GraphQL request error", {
-        postId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+  const post = data?.post?.result;
+  if (!post) {
+    logger.debug("LessWrong post not found", { postId });
     return null;
   }
+
+  const html = post.contents?.html;
+  if (!html) {
+    logger.debug("LessWrong post has no content", { postId });
+    return null;
+  }
+
+  const authors = [post.user, ...(post.coauthors ?? [])]
+    .map(authorName)
+    .filter((name): name is string => name !== null);
+
+  return {
+    postId: post._id,
+    title: post.title,
+    html,
+    author: authors.length > 0 ? authors.join(", ") : null,
+    publishedAt: post.postedAt ? new Date(post.postedAt) : null,
+    url: post.pageUrl,
+  };
+}
+
+// ============================================================================
+// Comment Content
+// ============================================================================
+
+const commentDataSchema = z.object({
+  comment: z
+    .object({
+      result: z
+        .object({
+          _id: z.string(),
+          postId: z.string().nullable(),
+          pageUrl: z.string().nullable(),
+          postedAt: z.string().nullable(),
+          user: authorSchema.nullable(),
+          post: z.object({ title: z.string().nullable() }).nullable(),
+          contents: z.object({ html: z.string().nullable() }).nullable(),
+        })
+        .nullable(),
+    })
+    .nullable(),
+});
+
+/**
+ * Result from fetching LessWrong comment content.
+ */
+interface LessWrongCommentContent {
+  /** Comment ID */
+  commentId: string;
+  /** Parent post title (for context) */
+  postTitle: string | null;
+  /** HTML content of the comment */
+  html: string;
+  /** Author display name */
+  author: string | null;
+  /** Comment post date */
+  publishedAt: Date | null;
+  /** Canonical URL */
+  url: string | null;
 }
 
 /**
@@ -435,93 +434,36 @@ const COMMENT_QUERY = `
  *
  * @param commentId - The LessWrong comment ID
  * @returns Comment content including HTML, or null if fetch fails
+ * @throws HttpFetchError when LessWrong rate limits us (see `lessWrongGraphql`)
  */
 async function fetchLessWrongComment(commentId: string): Promise<LessWrongCommentContent | null> {
-  try {
-    const response = await fetchWithSsrfProtection(LESSWRONG_GRAPHQL_ENDPOINT, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": USER_AGENT,
-        Accept: "application/json",
-      },
-      body: JSON.stringify({
-        query: COMMENT_QUERY,
-        variables: { commentId },
-      }),
-      signal: AbortSignal.timeout(GRAPHQL_TIMEOUT_MS),
-    });
+  const data = await lessWrongGraphql({
+    query: COMMENT_QUERY,
+    variables: { commentId },
+    dataSchema: commentDataSchema,
+    logContext: { operation: "comment", commentId },
+  });
 
-    if (!response.ok) {
-      logger.warn("LessWrong GraphQL comment request failed", {
-        commentId,
-        status: response.status,
-        statusText: response.statusText,
-      });
-      if (response.status === 429) {
-        throw new HttpFetchError(response.status, response.statusText, LESSWRONG_GRAPHQL_ENDPOINT);
-      }
-      return null;
-    }
-
-    const json = await response.json();
-    const parsed = commentGraphqlResponseSchema.safeParse(json);
-
-    if (!parsed.success) {
-      logger.warn("LessWrong GraphQL comment response validation failed", {
-        commentId,
-        error: parsed.error.message,
-      });
-      return null;
-    }
-
-    // Check for GraphQL errors
-    if (parsed.data.errors && parsed.data.errors.length > 0) {
-      logger.warn("LessWrong GraphQL comment returned errors", {
-        commentId,
-        errors: parsed.data.errors.map((e) => e.message),
-      });
-      return null;
-    }
-
-    const comment = parsed.data.data?.comment?.result;
-    if (!comment) {
-      logger.debug("LessWrong comment not found", { commentId });
-      return null;
-    }
-
-    const html = comment.contents?.html;
-    if (!html) {
-      logger.debug("LessWrong comment has no content", { commentId });
-      return null;
-    }
-
-    // Get author name
-    const author = comment.user?.displayName || comment.user?.username || null;
-
-    return {
-      commentId: comment._id,
-      postTitle: comment.post?.title ?? null,
-      html,
-      author,
-      publishedAt: comment.postedAt ? new Date(comment.postedAt) : null,
-      url: comment.pageUrl,
-    };
-  } catch (error) {
-    // Let HttpFetchError propagate (e.g., 429 rate limiting)
-    if (error instanceof HttpFetchError) {
-      throw error;
-    }
-    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
-      logger.warn("LessWrong GraphQL comment request timed out", { commentId });
-    } else {
-      logger.warn("LessWrong GraphQL comment request error", {
-        commentId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+  const comment = data?.comment?.result;
+  if (!comment) {
+    logger.debug("LessWrong comment not found", { commentId });
     return null;
   }
+
+  const html = comment.contents?.html;
+  if (!html) {
+    logger.debug("LessWrong comment has no content", { commentId });
+    return null;
+  }
+
+  return {
+    commentId: comment._id,
+    postTitle: comment.post?.title ?? null,
+    html,
+    author: authorName(comment.user),
+    publishedAt: comment.postedAt ? new Date(comment.postedAt) : null,
+    url: comment.pageUrl,
+  };
 }
 
 /**
@@ -538,6 +480,7 @@ export type LessWrongContent =
  *
  * @param url - The LessWrong URL (post or comment)
  * @returns Content including HTML, or null if URL is invalid or fetch fails
+ * @throws HttpFetchError when LessWrong rate limits us (see `lessWrongGraphql`)
  */
 export async function fetchLessWrongContentFromUrl(url: string): Promise<LessWrongContent | null> {
   if (!isLessWrongUrl(url)) {
@@ -573,32 +516,18 @@ export async function fetchLessWrongContentFromUrl(url: string): Promise<LessWro
 // User Lookup
 // ============================================================================
 
-/**
- * Zod schema for the user GraphQL response.
- */
-const userGraphqlResponseSchema = z.object({
-  data: z
+const userDataSchema = z.object({
+  user: z
     .object({
-      user: z
+      result: z
         .object({
-          result: z
-            .object({
-              _id: z.string(),
-              displayName: z.string().nullable(),
-              slug: z.string().nullable(),
-            })
-            .nullable(),
+          _id: z.string(),
+          displayName: z.string().nullable(),
+          slug: z.string().nullable(),
         })
         .nullable(),
     })
     .nullable(),
-  errors: z
-    .array(
-      z.object({
-        message: z.string(),
-      })
-    )
-    .optional(),
 });
 
 /**
@@ -629,79 +558,65 @@ const USER_BY_SLUG_QUERY = `
 `;
 
 /**
+ * GraphQL query to fetch user by ID.
+ */
+const USER_BY_ID_QUERY = `
+  query GetUserById($userId: String!) {
+    user(input: { selector: { _id: $userId } }) {
+      result {
+        _id
+        displayName
+        slug
+      }
+    }
+  }
+`;
+
+async function fetchLessWrongUser(
+  query: string,
+  variables: Record<string, string>,
+  logContext: Record<string, string>
+): Promise<LessWrongUser | null> {
+  const data = await lessWrongGraphql({ query, variables, dataSchema: userDataSchema, logContext });
+
+  const user = data?.user?.result;
+  if (!user) {
+    logger.debug("LessWrong user not found", logContext);
+    return null;
+  }
+
+  return {
+    userId: user._id,
+    displayName: user.displayName,
+    slug: user.slug,
+  };
+}
+
+/**
  * Fetches a LessWrong user by their slug using the GraphQL API.
  *
  * @param slug - The user's URL slug (e.g., "brendan-long")
  * @returns User info including ID, or null if not found
+ * @throws HttpFetchError when LessWrong rate limits us (see `lessWrongGraphql`)
  */
 export async function fetchLessWrongUserBySlug(slug: string): Promise<LessWrongUser | null> {
-  try {
-    const response = await fetchWithSsrfProtection(LESSWRONG_GRAPHQL_ENDPOINT, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": USER_AGENT,
-        Accept: "application/json",
-      },
-      body: JSON.stringify({
-        query: USER_BY_SLUG_QUERY,
-        variables: { slug },
-      }),
-      signal: AbortSignal.timeout(GRAPHQL_TIMEOUT_MS),
-    });
-
-    if (!response.ok) {
-      logger.warn("LessWrong GraphQL user request failed", {
-        slug,
-        status: response.status,
-        statusText: response.statusText,
-      });
-      return null;
-    }
-
-    const json = await response.json();
-    const parsed = userGraphqlResponseSchema.safeParse(json);
-
-    if (!parsed.success) {
-      logger.warn("LessWrong GraphQL user response validation failed", {
-        slug,
-        error: parsed.error.message,
-      });
-      return null;
-    }
-
-    // Check for GraphQL errors
-    if (parsed.data.errors && parsed.data.errors.length > 0) {
-      logger.warn("LessWrong GraphQL user returned errors", {
-        slug,
-        errors: parsed.data.errors.map((e) => e.message),
-      });
-      return null;
-    }
-
-    const user = parsed.data.data?.user?.result;
-    if (!user) {
-      logger.debug("LessWrong user not found", { slug });
-      return null;
-    }
-
-    return {
-      userId: user._id,
-      displayName: user.displayName,
-      slug: user.slug,
-    };
-  } catch (error) {
-    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
-      logger.warn("LessWrong GraphQL user request timed out", { slug });
-    } else {
-      logger.warn("LessWrong GraphQL user request error", {
-        slug,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-    return null;
-  }
+  return fetchLessWrongUser(USER_BY_SLUG_QUERY, { slug }, { operation: "userBySlug", slug });
 }
+
+/**
+ * Fetches a LessWrong user by their ID using the GraphQL API.
+ *
+ * @param userId - The user's internal ID
+ * @returns User info, or null if not found
+ * @throws HttpFetchError when LessWrong rate limits us (see `lessWrongGraphql`)
+ */
+export async function fetchLessWrongUserById(userId: string): Promise<LessWrongUser | null> {
+  return fetchLessWrongUser(USER_BY_ID_QUERY, { userId }, { operation: "userById", userId });
+}
+
+// ============================================================================
+// Feed URLs
+// ============================================================================
 
 /**
  * Builds the RSS feed URL for a LessWrong user.
@@ -776,126 +691,22 @@ export function extractUserIdFromFeedUrl(url: string): string | null {
   }
 }
 
-/**
- * GraphQL query to fetch user by ID.
- */
-const USER_BY_ID_QUERY = `
-  query GetUserById($userId: String!) {
-    user(input: { selector: { _id: $userId } }) {
-      result {
-        _id
-        displayName
-        slug
-      }
-    }
-  }
-`;
-
-/**
- * Fetches a LessWrong user by their ID using the GraphQL API.
- *
- * @param userId - The user's internal ID
- * @returns User info, or null if not found
- */
-export async function fetchLessWrongUserById(userId: string): Promise<LessWrongUser | null> {
-  try {
-    const response = await fetchWithSsrfProtection(LESSWRONG_GRAPHQL_ENDPOINT, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": USER_AGENT,
-        Accept: "application/json",
-      },
-      body: JSON.stringify({
-        query: USER_BY_ID_QUERY,
-        variables: { userId },
-      }),
-      signal: AbortSignal.timeout(GRAPHQL_TIMEOUT_MS),
-    });
-
-    if (!response.ok) {
-      logger.warn("LessWrong GraphQL user-by-id request failed", {
-        userId,
-        status: response.status,
-        statusText: response.statusText,
-      });
-      return null;
-    }
-
-    const json = await response.json();
-    const parsed = userGraphqlResponseSchema.safeParse(json);
-
-    if (!parsed.success) {
-      logger.warn("LessWrong GraphQL user-by-id response validation failed", {
-        userId,
-        error: parsed.error.message,
-      });
-      return null;
-    }
-
-    // Check for GraphQL errors
-    if (parsed.data.errors && parsed.data.errors.length > 0) {
-      logger.warn("LessWrong GraphQL user-by-id returned errors", {
-        userId,
-        errors: parsed.data.errors.map((e) => e.message),
-      });
-      return null;
-    }
-
-    const user = parsed.data.data?.user?.result;
-    if (!user) {
-      logger.debug("LessWrong user not found by id", { userId });
-      return null;
-    }
-
-    return {
-      userId: user._id,
-      displayName: user.displayName,
-      slug: user.slug,
-    };
-  } catch (error) {
-    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
-      logger.warn("LessWrong GraphQL user-by-id request timed out", { userId });
-    } else {
-      logger.warn("LessWrong GraphQL user-by-id request error", {
-        userId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-    return null;
-  }
-}
-
 // ============================================================================
 // Post Metadata Lookup (for shortform detection)
 // ============================================================================
 
-/**
- * Zod schema for the post metadata GraphQL response.
- */
-const postMetadataGraphqlResponseSchema = z.object({
-  data: z
+const postMetadataDataSchema = z.object({
+  post: z
     .object({
-      post: z
+      result: z
         .object({
-          result: z
-            .object({
-              _id: z.string(),
-              shortform: z.boolean().nullable(),
-              userId: z.string().nullable(),
-            })
-            .nullable(),
+          _id: z.string(),
+          shortform: z.boolean().nullable(),
+          userId: z.string().nullable(),
         })
         .nullable(),
     })
     .nullable(),
-  errors: z
-    .array(
-      z.object({
-        message: z.string(),
-      })
-    )
-    .optional(),
 });
 
 /**
@@ -930,73 +741,27 @@ const POST_METADATA_QUERY = `
  *
  * @param postId - The LessWrong post ID (17-character alphanumeric)
  * @returns Post metadata including shortform status, or null if fetch fails
+ * @throws HttpFetchError when LessWrong rate limits us (see `lessWrongGraphql`)
  */
 export async function fetchLessWrongPostMetadata(
   postId: string
 ): Promise<LessWrongPostMetadata | null> {
-  try {
-    const response = await fetchWithSsrfProtection(LESSWRONG_GRAPHQL_ENDPOINT, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": USER_AGENT,
-        Accept: "application/json",
-      },
-      body: JSON.stringify({
-        query: POST_METADATA_QUERY,
-        variables: { postId },
-      }),
-      signal: AbortSignal.timeout(GRAPHQL_TIMEOUT_MS),
-    });
+  const data = await lessWrongGraphql({
+    query: POST_METADATA_QUERY,
+    variables: { postId },
+    dataSchema: postMetadataDataSchema,
+    logContext: { operation: "postMetadata", postId },
+  });
 
-    if (!response.ok) {
-      logger.warn("LessWrong GraphQL post metadata request failed", {
-        postId,
-        status: response.status,
-        statusText: response.statusText,
-      });
-      return null;
-    }
-
-    const json = await response.json();
-    const parsed = postMetadataGraphqlResponseSchema.safeParse(json);
-
-    if (!parsed.success) {
-      logger.warn("LessWrong GraphQL post metadata response validation failed", {
-        postId,
-        error: parsed.error.message,
-      });
-      return null;
-    }
-
-    if (parsed.data.errors && parsed.data.errors.length > 0) {
-      logger.warn("LessWrong GraphQL post metadata returned errors", {
-        postId,
-        errors: parsed.data.errors.map((e) => e.message),
-      });
-      return null;
-    }
-
-    const post = parsed.data.data?.post?.result;
-    if (!post) {
-      logger.debug("LessWrong post not found for metadata", { postId });
-      return null;
-    }
-
-    return {
-      postId: post._id,
-      shortform: post.shortform ?? false,
-      userId: post.userId,
-    };
-  } catch (error) {
-    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
-      logger.warn("LessWrong GraphQL post metadata request timed out", { postId });
-    } else {
-      logger.warn("LessWrong GraphQL post metadata request error", {
-        postId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+  const post = data?.post?.result;
+  if (!post) {
+    logger.debug("LessWrong post not found for metadata", { postId });
     return null;
   }
+
+  return {
+    postId: post._id,
+    shortform: post.shortform ?? false,
+    userId: post.userId,
+  };
 }

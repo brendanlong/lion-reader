@@ -18,7 +18,7 @@ import {
 import { API_TOKEN_SCOPES } from "@/server/auth/api-token";
 import { errors } from "../errors";
 import { feedUrlSchema, uuidSchema } from "../validation";
-import { fetchUrl, isHtmlContent } from "@/server/http/fetch";
+import { fetchUrl, HttpFetchError, isHtmlContent } from "@/server/http/fetch";
 import { feeds, subscriptions, tags, subscriptionTags, blockedSenders } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { parseFeedAsync } from "@/server/feed/parser";
@@ -155,7 +155,17 @@ async function fetchAndResolveFeed(inputUrl: string): Promise<{
   let feedTitle = parsedFeed.title || getDomainFromUrl(finalFeedUrl);
   const lessWrongUserId = extractUserIdFromFeedUrl(finalFeedUrl);
   if (lessWrongUserId && feedTitle) {
-    const lwUser = await fetchLessWrongUserById(lessWrongUserId);
+    let lwUser;
+    try {
+      lwUser = await fetchLessWrongUserById(lessWrongUserId);
+    } catch (error) {
+      // Subscribing anyway would store the title without its author suffix for
+      // good, indistinguishable from the user having no display name
+      if (error instanceof HttpFetchError && error.isRateLimited()) {
+        throw errors.upstreamRateLimited(finalFeedUrl);
+      }
+      throw error;
+    }
     if (lwUser?.displayName) {
       feedTitle = `${feedTitle} - ${lwUser.displayName}`;
     }
