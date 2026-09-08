@@ -1,5 +1,6 @@
 import { escapeHtml } from "@/server/http/html";
 import type { NotionBlock, NotionBlockMap } from "./api";
+import { formatNotionId } from "./page-id";
 
 /**
  * Renders a Notion block tree (as loaded by `fetchNotionPageBlocks`) to a bare
@@ -9,6 +10,10 @@ import type { NotionBlock, NotionBlockMap } from "./api";
  * decoration is `[kind, ...args]`: `b`old, `i`talic, `s`trike, `_` underline,
  * `c`ode, `a` link (href), `e` inline equation (TeX), `h` color (ignored), and
  * mentions on the placeholder text `‣` — `p` page, `d` date, `u` user.
+ *
+ * Rendering amplifies: synced-block references re-expand their source, so a
+ * small block map can describe a huge document. The output budget is enforced
+ * here, as each block is emitted, not by callers on the finished string.
  */
 
 type Decoration = [string, ...unknown[]];
@@ -19,12 +24,27 @@ export interface RenderedNotionPage {
   title: string | null;
 }
 
+export interface RenderNotionPageOptions {
+  /** Upper bound on the rendered HTML length; exceeding it throws. */
+  maxHtmlLength: number;
+}
+
+export class NotionRenderTooLargeError extends Error {
+  constructor(maxHtmlLength: number) {
+    super(`Rendered Notion page exceeds ${maxHtmlLength} characters`);
+    this.name = "NotionRenderTooLargeError";
+  }
+}
+
 interface RenderContext {
   blocks: NotionBlockMap;
   /** Page URL the article was requested at; sibling pages link within its origin. */
   baseUrl: URL;
   /** Blocks whose children are being rendered, to break reference cycles. */
   rendering: Set<string>;
+  maxHtmlLength: number;
+  /** Length of everything emitted so far, kept accurate across nesting. */
+  emitted: number;
 }
 
 const MAX_DEPTH = 64;
@@ -97,8 +117,10 @@ function pageTitle(id: string, ctx: RenderContext): string {
   return title || "Untitled";
 }
 
-function pageHref(id: string, ctx: RenderContext): string {
-  return new URL(`/${id.replace(/-/g, "")}`, ctx.baseUrl).href;
+/** Link to another page on this site, or null if `id` isn't a Notion id. */
+function pageHref(id: string, ctx: RenderContext): string | null {
+  const normalized = formatNotionId(id);
+  return normalized ? new URL(`/${normalized.replace(/-/g, "")}`, ctx.baseUrl).href : null;
 }
 
 /**
@@ -137,12 +159,11 @@ function plainText(richText: RichTextSegment[]): string {
 function renderMention(decorations: Decoration[], ctx: RenderContext): string {
   for (const decoration of decorations) {
     switch (decoration[0]) {
-      case "p":
-        if (typeof decoration[1] === "string") {
-          const id = decoration[1];
-          return `<a href="${escapeHtml(pageHref(id, ctx))}">${escapeHtml(pageTitle(id, ctx))}</a>`;
-        }
-        break;
+      case "p": {
+        const href = typeof decoration[1] === "string" ? pageHref(decoration[1], ctx) : null;
+        if (!href) return "";
+        return `<a href="${escapeHtml(href)}">${escapeHtml(pageTitle(decoration[1] as string, ctx))}</a>`;
+      }
       case "d":
         return escapeHtml(formatDateMention(decoration[1]));
     }
@@ -244,17 +265,20 @@ function renderChildren(block: NotionBlock, ctx: RenderContext, depth: number): 
 }
 
 function renderPageLink(id: string, ctx: RenderContext): string {
+  const href = pageHref(id, ctx);
+  if (!href) return "";
   const page = ctx.blocks.get(id);
   const icon = page ? emojiIcon(page) : null;
   const label = `${icon ? `${icon} ` : ""}${pageTitle(id, ctx)}`;
-  return `<p><a href="${escapeHtml(pageHref(id, ctx))}">${escapeHtml(label)}</a></p>`;
+  return `<p><a href="${escapeHtml(href)}">${escapeHtml(label)}</a></p>`;
 }
 
-function renderLink(href: string | null, label: string, ctx: RenderContext): string {
+function renderLink(href: string | null, label: string, ctx: RenderContext, extra = ""): string {
   const safe = href ? safeHref(href, ctx) : null;
   const text = escapeHtml(label || safe || "");
   if (!text) return "";
-  return safe ? `<p><a href="${escapeHtml(safe)}">${text}</a></p>` : `<p>${text}</p>`;
+  const anchor = safe ? `<a href="${escapeHtml(safe)}">${text}</a>` : text;
+  return `<p>${anchor}${extra}</p>`;
 }
 
 function renderImage(block: NotionBlock, ctx: RenderContext): string {
@@ -353,11 +377,13 @@ function renderBlock(block: NotionBlock, ctx: RenderContext, depth: number): str
     case "image":
       return renderImage(block, ctx);
     case "bookmark": {
-      const link = plainText(property(block, "link"));
       const description = renderRichText(property(block, "description"), ctx);
-      const anchor = renderLink(link, plainText(property(block, "title")), ctx);
-      if (!anchor || !description) return anchor;
-      return anchor.replace(/<\/p>$/, `<br>${description}</p>`);
+      return renderLink(
+        plainText(property(block, "link")),
+        plainText(property(block, "title")),
+        ctx,
+        description ? `<br>${description}` : ""
+      );
     }
     case "page":
     case "collection_view_page":
@@ -394,6 +420,19 @@ function renderBlock(block: NotionBlock, ctx: RenderContext, depth: number): str
 }
 
 /**
+ * Account for one emitted piece. `piece` already contains whatever nested
+ * calls emitted (and counted) while producing it, so the running total is
+ * reset to the length before the piece plus the piece, rather than added to.
+ */
+function emit(ctx: RenderContext, lengthBefore: number, piece: string): string {
+  ctx.emitted = lengthBefore + piece.length;
+  if (ctx.emitted > ctx.maxHtmlLength) {
+    throw new NotionRenderTooLargeError(ctx.maxHtmlLength);
+  }
+  return piece;
+}
+
+/**
  * Render sibling blocks in order. Consecutive list items of one kind become a
  * single `<ul>`/`<ol>`; Notion stores each item as its own block.
  */
@@ -405,22 +444,25 @@ function renderBlocks(ids: string[], ctx: RenderContext, depth: number): string 
     .filter(
       (b): b is NotionBlock => b !== undefined && (b.type === "page" || !ctx.rendering.has(b.id))
     );
+  const start = ctx.emitted;
   let html = "";
   let i = 0;
   while (i < blocks.length) {
     const block = blocks[i]!;
     const listTag = block.type ? LIST_TAGS[block.type] : undefined;
     if (!listTag) {
-      html += renderBlock(block, ctx, depth);
+      html += emit(ctx, start + html.length, renderBlock(block, ctx, depth));
       i++;
       continue;
     }
     let items = "";
+    const listStart = start + html.length + listTag.length + 2;
     while (i < blocks.length && blocks[i]!.type === block.type) {
-      items += renderListItem(blocks[i]!, ctx, depth);
+      items += emit(ctx, listStart + items.length, renderListItem(blocks[i]!, ctx, depth));
       i++;
     }
     html += `<${listTag}>${items}</${listTag}>`;
+    ctx.emitted = start + html.length;
   }
   return html;
 }
@@ -428,17 +470,25 @@ function renderBlocks(ids: string[], ctx: RenderContext, depth: number): string 
 /**
  * Render the page `pageId` from a loaded block map. Returns null when the page
  * block itself isn't in the map — the endpoint's way of saying the page isn't
- * published (or doesn't exist).
+ * published (or doesn't exist). Throws `NotionRenderTooLargeError` once the
+ * output passes `maxHtmlLength`.
  */
 export function renderNotionPage(
   blocks: NotionBlockMap,
   pageId: string,
-  baseUrl: URL
+  baseUrl: URL,
+  options: RenderNotionPageOptions
 ): RenderedNotionPage | null {
   const page = blocks.get(pageId);
   if (!page || page.type !== "page") return null;
 
-  const ctx: RenderContext = { blocks, baseUrl, rendering: new Set([pageId]) };
+  const ctx: RenderContext = {
+    blocks,
+    baseUrl,
+    rendering: new Set([pageId]),
+    maxHtmlLength: options.maxHtmlLength,
+    emitted: 0,
+  };
   return {
     html: renderBlocks(page.content ?? [], ctx, 0),
     title: plainText(property(page, "title")) || null,

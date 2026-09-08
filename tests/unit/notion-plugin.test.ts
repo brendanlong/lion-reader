@@ -6,10 +6,10 @@ import { describe, it, expect } from "vitest";
 import {
   extractNotionPageId,
   extractNotionPageIdFromShell,
-  formatNotionId,
   isNotionShell,
   notionPlugin,
 } from "../../src/server/plugins/notion";
+import { formatNotionId } from "../../src/server/notion/page-id";
 
 const PAGE_ID = "37bb1284-725b-81c6-9167-c4b2a67c26e1";
 const BARE_ID = "37bb1284725b81c69167c4b2a67c26e1";
@@ -96,6 +96,22 @@ describe("Notion shell detection", () => {
       false
     );
     expect(isNotionShell("")).toBe(false);
+  });
+
+  it("inspects only the root element, not a later <html in the body", () => {
+    expect(
+      isNotionShell('<html><body>&lt;html class="notion-html"&gt;<html class="notion-html"></body>')
+    ).toBe(false);
+    expect(isNotionShell('<html lang="en" class="dark notion-html"><head></head></html>')).toBe(
+      true
+    );
+  });
+
+  it("stays linear on a document made of repeated <html fragments", () => {
+    const hostile = "<html".repeat(13000);
+    const started = performance.now();
+    expect(isNotionShell(hostile)).toBe(false);
+    expect(performance.now() - started).toBeLessThan(100);
   });
 
   it("reads the served page id from the shell", () => {

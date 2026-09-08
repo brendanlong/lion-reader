@@ -1,6 +1,8 @@
 import type { UrlPlugin, SavedArticleContent, FetchedPage } from "./types";
 import { fetchNotionPageBlocks } from "@/server/notion/api";
 import { renderNotionPage } from "@/server/notion/render";
+import { formatNotionId } from "@/server/notion/page-id";
+import { usageLimitsConfig } from "@/server/config/env";
 import { logger } from "@/lib/logger";
 
 /**
@@ -30,24 +32,14 @@ import { logger } from "@/lib/logger";
  * disallowed.
  */
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const BARE_ID_PATTERN = /^[0-9a-f]{32}$/i;
 /** Page URLs end in the bare id, after a `/` or the slug's trailing `-`. */
 const PATH_ID_PATTERN = /(?:^|[/-])([0-9a-f]{32})\/?$/i;
 /** The shell's `requiredRedirectMetadata` names the page being served. */
 const SHELL_PAGE_ID_PATTERN =
   /"pageId":"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"/;
-const SHELL_ROOT_PATTERN = /<html[^>]*\sclass="(?:[^"]*\s)?notion-html(?:\s[^"]*)?"/;
+const CLASS_ATTRIBUTE_PATTERN = /\sclass="([^"]*)"/;
 /** The markers sit in the shell's head; don't scan a whole 5 MB page for them. */
 const SHELL_SCAN_BYTES = 65536;
-
-/** Normalize a bare 32-hex or dashed Notion id to dashed UUID form. */
-export function formatNotionId(id: string): string | null {
-  const lower = id.toLowerCase();
-  if (UUID_PATTERN.test(lower)) return lower;
-  if (!BARE_ID_PATTERN.test(lower)) return null;
-  return `${lower.slice(0, 8)}-${lower.slice(8, 12)}-${lower.slice(12, 16)}-${lower.slice(16, 20)}-${lower.slice(20)}`;
-}
 
 /**
  * The page id a Notion URL points at, as a dashed UUID, or null if the URL has
@@ -64,8 +56,20 @@ export function extractNotionPageId(url: URL): string | null {
   return match ? formatNotionId(match[1]!) : null;
 }
 
+/**
+ * Whether this document is Notion's page shell: its root `<html>` element
+ * carries the `notion-html` class. Only the first `<html` tag is inspected —
+ * a document has one root element, and this runs on every generic fetch, so
+ * it must stay linear in the input.
+ */
 export function isNotionShell(html: string): boolean {
-  return SHELL_ROOT_PATTERN.test(html.slice(0, SHELL_SCAN_BYTES));
+  const head = html.slice(0, SHELL_SCAN_BYTES);
+  const start = head.indexOf("<html");
+  if (start < 0) return false;
+  const end = head.indexOf(">", start);
+  const tag = head.slice(start, end < 0 ? undefined : end);
+  const classes = CLASS_ATTRIBUTE_PATTERN.exec(tag)?.[1];
+  return classes !== undefined && classes.split(/\s+/).includes("notion-html");
 }
 
 export function extractNotionPageIdFromShell(html: string): string | null {
@@ -88,8 +92,10 @@ function canonicalNotionUrl(url: URL, pageId: string): string {
 async function fetchNotionArticle(pageId: string, url: URL): Promise<SavedArticleContent | null> {
   try {
     const blocks = await fetchNotionPageBlocks(pageId);
-    const rendered = renderNotionPage(blocks, pageId, url);
-    if (!rendered) {
+    const rendered = renderNotionPage(blocks, pageId, url, {
+      maxHtmlLength: usageLimitsConfig.maxSavedArticleSizeBytes,
+    });
+    if (!rendered?.html) {
       logger.info("Notion page has no readable content (not published?)", {
         url: url.href,
         pageId,

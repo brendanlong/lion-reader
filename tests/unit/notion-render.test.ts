@@ -4,7 +4,11 @@
 
 import { describe, it, expect } from "vitest";
 import type { NotionBlock, NotionBlockMap } from "../../src/server/notion/api";
-import { proxiedImageUrl, renderNotionPage } from "../../src/server/notion/render";
+import {
+  NotionRenderTooLargeError,
+  proxiedImageUrl,
+  renderNotionPage,
+} from "../../src/server/notion/render";
 
 const PAGE_ID = "37bb1284-725b-81c6-9167-c4b2a67c26e1";
 const BASE_URL = new URL(
@@ -43,22 +47,24 @@ function page(children: NotionBlock[], extra: NotionBlock[] = [], title = "Test 
   return map;
 }
 
+const OPTIONS = { maxHtmlLength: 1_000_000 };
+
 function render(children: NotionBlock[], extra: NotionBlock[] = []): string {
-  const rendered = renderNotionPage(page(children, extra), PAGE_ID, BASE_URL);
+  const rendered = renderNotionPage(page(children, extra), PAGE_ID, BASE_URL, OPTIONS);
   expect(rendered).not.toBeNull();
   return rendered!.html;
 }
 
 describe("renderNotionPage", () => {
   it("returns the page title and null for a page the reader can't see", () => {
-    const rendered = renderNotionPage(page([]), PAGE_ID, BASE_URL);
+    const rendered = renderNotionPage(page([]), PAGE_ID, BASE_URL, OPTIONS);
     expect(rendered).toEqual({ html: "", title: "Test page" });
-    expect(renderNotionPage(new Map(), PAGE_ID, BASE_URL)).toBeNull();
+    expect(renderNotionPage(new Map(), PAGE_ID, BASE_URL, OPTIONS)).toBeNull();
   });
 
   it("returns a null title for an untitled page", () => {
     const map = page([], [], "");
-    expect(renderNotionPage(map, PAGE_ID, BASE_URL)?.title).toBeNull();
+    expect(renderNotionPage(map, PAGE_ID, BASE_URL, OPTIONS)?.title).toBeNull();
   });
 
   it("renders paragraphs and headings, skipping empty spacer paragraphs", () => {
@@ -278,6 +284,27 @@ describe("renderNotionPage", () => {
     );
   });
 
+  it("drops page links and mentions whose id is not a Notion id", () => {
+    const html = render([
+      block("text", { title: [["see ", []], ["‣", [["p", "//evil.example/x"]]], ["!"]] }),
+      block("alias", {}, { format: { alias_pointer: { id: "//evil.example/y" } } }),
+    ]);
+    expect(html).toBe("<p>see !</p>");
+  });
+
+  it("keeps a bookmark description containing replacement patterns intact", () => {
+    const html = render([
+      block("bookmark", {
+        link: text("https://example.com/a"),
+        title: text("T"),
+        description: text("costs $& or $` or $' or $1"),
+      }),
+    ]);
+    expect(html).toBe(
+      '<p><a href="https://example.com/a">T</a><br>costs $&amp; or $` or $&#039; or $1</p>'
+    );
+  });
+
   it("renders page and date mentions, and drops user mentions", () => {
     const other = block("page", { title: text("Other page") });
     const html = render(
@@ -363,6 +390,46 @@ describe("renderNotionPage", () => {
     expect(render([callout])).toBe(
       `<blockquote><p>Links</p><p><a href="https://handbook.sparai.org/${bareId}">Test page</a></p></blockquote>`
     );
+  });
+});
+
+describe("renderNotionPage output budget", () => {
+  it("stops once the output passes maxHtmlLength", () => {
+    const paragraphs = Array.from({ length: 50 }, (_, i) =>
+      block("text", { title: text(`paragraph ${i} `.repeat(10)) })
+    );
+    const map = page(paragraphs);
+    expect(() => renderNotionPage(map, PAGE_ID, BASE_URL, { maxHtmlLength: 500 })).toThrow(
+      NotionRenderTooLargeError
+    );
+    expect(renderNotionPage(map, PAGE_ID, BASE_URL, OPTIONS)?.html.length).toBeGreaterThan(500);
+  });
+
+  it("cuts off a synced-block chain that fans out exponentially", () => {
+    // Container N holds two references to container N+1; the last holds a
+    // paragraph. 2^links leaf expansions from a handful of blocks.
+    const leaf = block("text", { title: text("leaf ".repeat(20)) });
+    const extra: NotionBlock[] = [leaf];
+    let next = block("transclusion_container", {}, { content: [leaf.id] });
+    extra.push(next);
+    for (let i = 0; i < 30; i++) {
+      const ref = (target: string) =>
+        block(
+          "transclusion_reference",
+          {},
+          { format: { transclusion_reference_pointer: { id: target, table: "block" } } }
+        );
+      const a = ref(next.id);
+      const b = ref(next.id);
+      next = block("transclusion_container", {}, { content: [a.id, b.id] });
+      extra.push(a, b, next);
+    }
+    const map = page([next], extra);
+    const started = performance.now();
+    expect(() => renderNotionPage(map, PAGE_ID, BASE_URL, { maxHtmlLength: 100_000 })).toThrow(
+      NotionRenderTooLargeError
+    );
+    expect(performance.now() - started).toBeLessThan(1000);
   });
 });
 

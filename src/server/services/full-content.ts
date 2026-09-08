@@ -66,10 +66,11 @@ export async function fetchFullContent(
   // Readability only if the plugin didn't declare it clean.
   const resultFromPlugin = async (
     pluginContent: SavedArticleContent,
-    skipReadability: boolean | undefined
+    skipReadability: boolean | undefined,
+    fallbackResolveUrl: string
   ): Promise<FetchFullContentResult> => {
     const html = pluginContent.html;
-    const resolveUrl = pluginContent.canonicalUrl || url;
+    const resolveUrl = pluginContent.canonicalUrl || fallbackResolveUrl;
     const contentOriginal = absolutizeUrls(html, resolveUrl);
     if (skipReadability) {
       return { success: true, contentOriginal };
@@ -100,7 +101,8 @@ export async function fetchFullContent(
           });
           return await resultFromPlugin(
             pluginContent,
-            plugin.capabilities.savedArticle.skipReadability
+            plugin.capabilities.savedArticle.skipReadability,
+            url
           );
         }
       } catch (error) {
@@ -151,7 +153,8 @@ export async function fetchFullContent(
         logger.debug("Plugin claimed the fetched page", { url, plugin: claimed.plugin.name });
         return await resultFromPlugin(
           claimed.content,
-          claimed.plugin.capabilities.savedArticle.skipReadability
+          claimed.plugin.capabilities.savedArticle.skipReadability,
+          resolveUrl
         );
       }
     }

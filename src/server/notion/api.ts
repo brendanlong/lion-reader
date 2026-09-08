@@ -17,7 +17,8 @@ const LOAD_PAGE_CHUNK_URL = "https://www.notion.so/api/v3/loadPageChunk";
 const CHUNK_LIMIT = 100;
 /** Bound on chunk requests per page; a page needing more is stored truncated. */
 const MAX_CHUNKS = 20;
-const REQUEST_TIMEOUT_MS = 15000;
+/** Deadline for the whole page load — all chunks — matching the generic page fetch. */
+const TOTAL_TIMEOUT_MS = 30000;
 
 /**
  * A block record as the endpoint returns it. `properties` holds rich text and
@@ -41,14 +42,22 @@ export type NotionBlock = z.infer<typeof blockSchema>;
 
 export type NotionBlockMap = Map<string, NotionBlock>;
 
+const cursorSchema = z.object({ stack: z.array(z.unknown()) });
+
 const responseSchema = z.object({
-  cursor: z.object({ stack: z.array(z.unknown()) }).optional(),
+  cursor: cursorSchema.optional(),
   recordMap: z
     .object({
       block: z.record(z.string(), z.unknown()).optional(),
     })
     .optional(),
 });
+
+export interface LoadPageChunkResult {
+  blocks: NotionBlockMap;
+  /** The cursor to send for the next chunk, or null when this was the last one. */
+  nextCursor: z.infer<typeof cursorSchema> | null;
+}
 
 /**
  * Records come as `{ value: <block>, role }` or, in newer responses,
@@ -67,11 +76,23 @@ function unwrapBlockRecord(record: unknown): NotionBlock | null {
   return parsed.success ? parsed.data : null;
 }
 
+/** Parse one `loadPageChunk` response body. Throws on a malformed envelope. */
+export function parseLoadPageChunkResponse(json: string): LoadPageChunkResult {
+  const parsed = responseSchema.parse(JSON.parse(json));
+  const blocks: NotionBlockMap = new Map();
+  for (const [id, record] of Object.entries(parsed.recordMap?.block ?? {})) {
+    const block = unwrapBlockRecord(record);
+    if (block) blocks.set(id, block);
+  }
+  const cursor = parsed.cursor;
+  return { blocks, nextCursor: cursor && cursor.stack.length > 0 ? cursor : null };
+}
+
 /**
  * Load every block of a published Notion page, following the endpoint's chunk
  * cursor. Throws on HTTP errors (`HttpFetchError`), oversized responses
  * (`ContentTooLargeError`, bounded by the saved-article size limit across all
- * chunks), timeouts, and malformed responses.
+ * chunks), the overall deadline, and malformed responses.
  *
  * An unpublished or nonexistent page is not an error here: the endpoint
  * answers 200 with no readable records, so the returned map simply lacks the
@@ -79,8 +100,9 @@ function unwrapBlockRecord(record: unknown): NotionBlock | null {
  */
 export async function fetchNotionPageBlocks(pageId: string): Promise<NotionBlockMap> {
   const maxBytes = usageLimitsConfig.maxSavedArticleSizeBytes;
+  const signal = AbortSignal.timeout(TOTAL_TIMEOUT_MS);
   const blocks: NotionBlockMap = new Map();
-  let cursor: unknown = { stack: [] };
+  let cursor: LoadPageChunkResult["nextCursor"] = { stack: [] };
   let bytesRead = 0;
 
   for (let chunkNumber = 0; chunkNumber < MAX_CHUNKS; chunkNumber++) {
@@ -98,7 +120,7 @@ export async function fetchNotionPageBlocks(pageId: string): Promise<NotionBlock
         chunkNumber,
         verticalColumns: false,
       }),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal,
     });
 
     if (!response.ok) {
@@ -112,19 +134,14 @@ export async function fetchNotionPageBlocks(pageId: string): Promise<NotionBlock
     );
     bytesRead += Buffer.byteLength(text);
 
-    const parsed = responseSchema.parse(JSON.parse(text));
-    for (const [id, record] of Object.entries(parsed.recordMap?.block ?? {})) {
-      const block = unwrapBlockRecord(record);
-      if (block && !blocks.has(id)) {
-        blocks.set(id, block);
-      }
+    const chunk = parseLoadPageChunkResponse(text);
+    for (const [id, block] of chunk.blocks) {
+      if (!blocks.has(id)) blocks.set(id, block);
     }
-
-    const stack = parsed.cursor?.stack ?? [];
-    if (stack.length === 0) {
+    if (!chunk.nextCursor) {
       return blocks;
     }
-    cursor = parsed.cursor;
+    cursor = chunk.nextCursor;
   }
 
   logger.warn("Notion page exceeded the chunk limit; rendering what was loaded", {

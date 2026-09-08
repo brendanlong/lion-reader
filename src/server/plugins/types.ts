@@ -121,13 +121,10 @@ export interface SavedArticleCapability {
   fetchContent(url: URL): Promise<SavedArticleContent | null>;
 
   /**
-   * Fetch content for a page the generic path has already fetched, for a
-   * source that can't be recognized from its URL alone — e.g. a Notion page
-   * served from a customer's own domain. Runs after the generic HTML fetch and
-   * before Readability, only when no hostname-matched plugin handled the URL.
-   * It runs on every such fetch, so it must decline cheaply, and it must claim
-   * a page only from markers the page itself declares (see "Plugin System" in
-   * docs/DESIGN.md). Return null to keep the page as fetched.
+   * Claim a page the generic path has already fetched, for a source that can't
+   * be recognized from its URL alone (a Notion page on a customer's domain).
+   * Return null to keep the page as fetched. When it runs and what it may
+   * claim: "Plugin System" in docs/DESIGN.md.
    */
   fetchContentFromPage?(page: FetchedPage): Promise<SavedArticleContent | null>;
 

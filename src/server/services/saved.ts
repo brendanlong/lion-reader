@@ -1055,7 +1055,13 @@ async function acquireArticleContent(
   // recognizes from the document itself (a Notion page on a custom domain).
   if (!plugin) {
     const claimed = await claimFetchedPage({ html: result.content, url: new URL(result.finalUrl) });
-    if (claimed) {
+    if (claimed && claimed.content.html.length > maxSize) {
+      // Unlike the hostname-matched path, a claimed page has a fallback in hand.
+      logger.warn("Plugin content for the fetched page is too large, keeping the page as fetched", {
+        url: result.finalUrl,
+        plugin: claimed.plugin.name,
+      });
+    } else if (claimed) {
       const bundle = bundleFromPlugin(
         claimed.content,
         claimed.plugin.capabilities.savedArticle,
