@@ -338,6 +338,54 @@ export function updateEntryStarredStatus(
 }
 
 /**
+ * Reads an entry's current read/starred state from the cache, preferring
+ * entries.get and falling back to the list caches: entries acted on from the
+ * list view usually have no entries.get entry, and guessing (say, defaulting
+ * a previous value to `false`) would make a failed mark-unread of a read entry
+ * "roll back" to the state the failed mutation wanted, silently diverging from
+ * the server (#1081).
+ *
+ * @returns undefined when the entry is in no cache
+ */
+export function getCachedEntryState(
+  utils: TRPCClientUtils,
+  queryClient: QueryClient,
+  entryId: string
+): { read: boolean; starred: boolean } | undefined {
+  const entry = utils.entries.get.getData({ id: entryId })?.entry;
+  if (entry) {
+    return { read: entry.read, starred: entry.starred };
+  }
+  const listEntry = findEntryInListCache(queryClient, entryId);
+  return listEntry ? { read: listEntry.read, starred: listEntry.starred } : undefined;
+}
+
+/**
+ * Writes an entry's read and starred state to entries.get and every entry
+ * list in one pass (the reconciled result of a mutation, which carries both
+ * fields). Like updateEntriesReadStatus, an entry becoming unread is restored
+ * into the unreadOnly caches that lack it.
+ */
+export function updateEntryState(
+  utils: TRPCClientUtils,
+  queryClient: QueryClient,
+  entryId: string,
+  state: { read: boolean; starred: boolean }
+): void {
+  utils.entries.get.setData({ id: entryId }, (oldData) => {
+    if (!oldData) return oldData;
+    return {
+      ...oldData,
+      entry: { ...oldData.entry, read: state.read, starred: state.starred },
+    };
+  });
+  updateEntriesInListCache(queryClient, [entryId], state);
+  if (!state.read) {
+    restoreUnreadEntriesToListCaches(queryClient, [entryId]);
+  }
+}
+
+/**
  * Entry metadata that can be updated from SSE events.
  */
 export interface EntryMetadataUpdate {

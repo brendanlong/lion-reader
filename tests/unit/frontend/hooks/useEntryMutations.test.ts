@@ -20,7 +20,11 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
 import type { BulkUnreadCounts, UnreadCounts } from "@/lib/cache/operations";
-import { renderHookWithTrpc } from "../../../utils/component-test-helpers";
+import { getEntryMutationTracker } from "@/lib/cache/entry-mutation-tracker";
+import {
+  renderHookWithTrpc,
+  type RenderWithTrpcOptions,
+} from "../../../utils/component-test-helpers";
 
 vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 
@@ -339,5 +343,233 @@ describe("useEntryMutations star/unstar", () => {
     });
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Failed to star entry"));
+  });
+});
+
+// ============================================================================
+// Concurrent mutations: the per-QueryClient EntryMutationTracker
+// ============================================================================
+
+interface Deferred<T> {
+  resolve: (value: T) => void;
+  reject: (error: Error) => void;
+}
+
+/** Handler whose responses the test releases one at a time, in any order. */
+function deferredHandler<T>(): { handler: () => Promise<T>; calls: Deferred<T>[] } {
+  const calls: Deferred<T>[] = [];
+  const handler = () =>
+    new Promise<T>((resolve, reject) => {
+      calls.push({ resolve, reject });
+    });
+  return { handler, calls };
+}
+
+const listKey = [["entries", "list"], { input: { limit: 25 }, type: "infinite" }];
+
+type ListItem = { id: string; read: boolean; starred: boolean; subscriptionId: string };
+
+function markReadResponse(id: string, state: { read: boolean; starred: boolean }, updatedAt: Date) {
+  return {
+    entries: [{ id, subscriptionId: "sub-1", type: "web" as const, ...state, updatedAt }],
+    counts: bulkCounts(),
+  };
+}
+
+describe("useEntryMutations concurrent mutations", () => {
+  const t1 = new Date("2026-07-05T00:00:01.000Z");
+  const t2 = new Date("2026-07-05T00:00:02.000Z");
+
+  function renderTwoInstances(handlers: RenderWithTrpcOptions["handlers"]) {
+    // Two hook instances on one QueryClient, like the reader (auto-mark-read)
+    // and the list (keyboard toggle) both mounted for the same entry.
+    const rendered = renderHookWithTrpc(
+      () => ({ reader: useEntryMutations(), list: useEntryMutations(), utils: trpc.useUtils() }),
+      { handlers }
+    );
+    rendered.queryClient.setQueryData(listKey, {
+      pages: [
+        {
+          items: [{ id: "e1", read: false, starred: false, subscriptionId: "sub-1" }],
+          nextCursor: undefined,
+        },
+      ],
+      pageParams: [undefined],
+    });
+    const listItem = () =>
+      rendered.queryClient.getQueryData<{ pages: Array<{ items: ListItem[] }> }>(listKey)?.pages[0]
+        .items[0];
+    return { ...rendered, listItem };
+  }
+
+  it("keeps the optimistic state while another instance's mutation is still in flight", async () => {
+    const markRead = deferredHandler<ReturnType<typeof markReadResponse>>();
+    const { result, listItem, callsFor } = renderTwoInstances({
+      "entries.markRead": markRead.handler,
+    });
+
+    act(() => {
+      result.current.reader.markRead(["e1"], true);
+      result.current.list.toggleRead("e1", true);
+    });
+    await waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(2));
+    expect(listItem()?.read).toBe(false);
+
+    // The first (mark-read) response lands while the mark-unread is pending:
+    // with per-instance tracking it would flash the entry to read.
+    await act(async () => {
+      markRead.calls[0].resolve(markReadResponse("e1", { read: true, starred: false }, t1));
+    });
+    expect(listItem()?.read).toBe(false);
+
+    await act(async () => {
+      markRead.calls[1].resolve(markReadResponse("e1", { read: false, starred: false }, t2));
+    });
+    await waitFor(() => expect(listItem()?.read).toBe(false));
+  });
+
+  it("applies the newest updatedAt when responses complete out of order", async () => {
+    const markRead = deferredHandler<ReturnType<typeof markReadResponse>>();
+    const { result, listItem, callsFor } = renderTwoInstances({
+      "entries.markRead": markRead.handler,
+    });
+
+    act(() => {
+      result.current.reader.markRead(["e1"], true);
+      result.current.list.toggleRead("e1", true);
+    });
+    await waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(2));
+
+    await act(async () => {
+      markRead.calls[1].resolve(markReadResponse("e1", { read: false, starred: false }, t2));
+    });
+    await act(async () => {
+      markRead.calls[0].resolve(markReadResponse("e1", { read: true, starred: false }, t1));
+    });
+
+    await waitFor(() => expect(listItem()?.read).toBe(false));
+  });
+
+  it("rolls back to the pre-mutation list state when every mutation fails", async () => {
+    const { result, queryClient, listItem } = renderTwoInstances({
+      "entries.markRead": () => {
+        throw new Error("boom");
+      },
+    });
+    queryClient.setQueryData(listKey, {
+      pages: [
+        {
+          items: [{ id: "e1", read: true, starred: true, subscriptionId: "sub-1" }],
+          nextCursor: undefined,
+        },
+      ],
+      pageParams: [undefined],
+    });
+
+    act(() => {
+      result.current.list.toggleRead("e1", true);
+    });
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    await waitFor(() => expect(listItem()).toMatchObject({ read: true, starred: true }));
+  });
+
+  it("keeps the successful mutation's state when a concurrent one fails", async () => {
+    const markRead = deferredHandler<ReturnType<typeof markReadResponse>>();
+    const { result, queryClient, listItem, callsFor } = renderTwoInstances({
+      "entries.markRead": markRead.handler,
+      "entries.setStarred": (input: { id: string }) => ({
+        entry: { id: input.id, read: false, starred: true, updatedAt: t1 },
+        counts: singleCounts(),
+      }),
+    });
+
+    act(() => {
+      result.current.reader.markRead(["e1"], true);
+      result.current.list.toggleStar("e1", false);
+    });
+    await waitFor(() => expect(callsFor("entries.setStarred")).toHaveLength(1));
+    await waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(1));
+
+    await act(async () => {
+      markRead.calls[0].reject(new Error("boom"));
+    });
+
+    await waitFor(() => expect(listItem()).toMatchObject({ read: false, starred: true }));
+    expect(getEntryMutationTracker(queryClient).hasPending("e1")).toBe(false);
+  });
+
+  it("does not overwrite an entries.get that was refetched newer than the response", async () => {
+    const markRead = deferredHandler<ReturnType<typeof markReadResponse>>();
+    const { result, callsFor } = renderTwoInstances({ "entries.markRead": markRead.handler });
+    const utils = result.current.utils;
+    utils.entries.get.setData({ id: "e1" }, {
+      entry: { id: "e1", read: false, starred: false, updatedAt: fixedDate },
+    } as never);
+
+    act(() => {
+      result.current.reader.markRead(["e1"], true);
+    });
+    await waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(1));
+
+    // A fetch completes mid-flight with state newer than what this mutation
+    // will report (e.g. another device already acted on the entry).
+    act(() => {
+      utils.entries.get.setData({ id: "e1" }, {
+        entry: { id: "e1", read: false, starred: true, updatedAt: t2 },
+      } as never);
+    });
+    await act(async () => {
+      markRead.calls[0].resolve(markReadResponse("e1", { read: true, starred: false }, t1));
+    });
+
+    expect(utils.entries.get.getData({ id: "e1" })?.entry).toMatchObject({
+      read: false,
+      starred: true,
+    });
+  });
+
+  it("settles entries the server omitted from the response by rolling them back", async () => {
+    const { result, queryClient, callsFor } = renderTwoInstances({
+      "entries.markRead": () => markReadResponse("e1", { read: true, starred: false }, t1),
+    });
+    queryClient.setQueryData(listKey, {
+      pages: [
+        {
+          items: [
+            { id: "e1", read: false, starred: false, subscriptionId: "sub-1" },
+            { id: "e2", read: false, starred: false, subscriptionId: "sub-1" },
+          ],
+          nextCursor: undefined,
+        },
+      ],
+      pageParams: [undefined],
+    });
+
+    act(() => {
+      result.current.list.markRead(["e1", "e2"], true);
+    });
+    await waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(1));
+
+    const items = () =>
+      queryClient.getQueryData<{ pages: Array<{ items: ListItem[] }> }>(listKey)?.pages[0].items;
+    await waitFor(() => expect(items()?.[1].read).toBe(false));
+    expect(items()?.[0].read).toBe(true);
+    const tracker = getEntryMutationTracker(queryClient);
+    expect(tracker.hasPending("e1")).toBe(false);
+    expect(tracker.hasPending("e2")).toBe(false);
+  });
+
+  it("writes the response's starred state to the lists together with read", async () => {
+    const { result, listItem, callsFor } = renderTwoInstances({
+      "entries.markRead": () => markReadResponse("e1", { read: true, starred: true }, t1),
+    });
+
+    act(() => {
+      result.current.list.markRead(["e1"], true);
+    });
+    await waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(1));
+
+    await waitFor(() => expect(listItem()).toMatchObject({ read: true, starred: true }));
   });
 });
