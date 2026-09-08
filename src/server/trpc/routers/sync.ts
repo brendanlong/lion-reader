@@ -17,7 +17,6 @@ import {
   subscriptionTags,
   userEntries,
   tags,
-  visibleEntries,
 } from "@/server/db/schema";
 import { syncTagSchema, serverSyncEventSchema, toNewEntryListData } from "@/lib/events/schemas";
 import type { Database } from "@/server/db";
@@ -617,7 +616,7 @@ export const syncRouter = createTRPCRouter({
           )
           .orderBy(subscriptions.updatedAt);
 
-        // Collect active subscription IDs for batch tag/unread fetching
+        // Collect active subscription IDs for batch tag fetching
         const activeSubscriptions = subscriptionResults.filter(
           ({ subscription }) => subscription.unsubscribedAt === null
         );
@@ -627,34 +626,6 @@ export const syncRouter = createTRPCRouter({
           ctx.db,
           activeSubscriptions.map(({ subscription }) => subscription.id)
         );
-
-        // Batch-fetch unread counts for all active subscriptions in one query
-        const unreadBySubscription = new Map<string, number>();
-        if (activeSubscriptions.length > 0) {
-          const activeSubscriptionIds = activeSubscriptions.map(
-            ({ subscription }) => subscription.id
-          );
-
-          const unreadResults = await ctx.db
-            .select({
-              subscriptionId: visibleEntries.subscriptionId,
-              count: sql<number>`count(*)::int`,
-            })
-            .from(visibleEntries)
-            .where(
-              and(
-                eq(visibleEntries.userId, userId),
-                eq(visibleEntries.read, false),
-                inArray(visibleEntries.subscriptionId, activeSubscriptionIds)
-              )
-            )
-            .groupBy(visibleEntries.subscriptionId);
-
-          for (const { subscriptionId, count } of unreadResults) {
-            // subscriptionId is guaranteed non-null by the inArray filter above
-            unreadBySubscription.set(subscriptionId!, count);
-          }
-        }
 
         const subscriptionsCursorDate = new Date(subscriptionsCursor);
         for (const { subscription, feed, updatedAtInstant } of subscriptionResults) {
@@ -676,7 +647,7 @@ export const syncRouter = createTRPCRouter({
                   feedId: subscription.feedId,
                   customTitle: subscription.customTitle,
                   subscribedAt: subscription.subscribedAt.toISOString(),
-                  unreadCount: unreadBySubscription.get(subscription.id) ?? 0,
+                  unreadCount: subscription.unreadCount,
                   tags: tagsBySubscription.get(subscription.id) ?? [],
                 },
                 feed: {

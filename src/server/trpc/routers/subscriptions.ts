@@ -19,14 +19,7 @@ import { API_TOKEN_SCOPES } from "@/server/auth/api-token";
 import { errors } from "../errors";
 import { feedUrlSchema, uuidSchema } from "../validation";
 import { fetchUrl, isHtmlContent } from "@/server/http/fetch";
-import {
-  feeds,
-  subscriptions,
-  tags,
-  subscriptionTags,
-  blockedSenders,
-  visibleEntries,
-} from "@/server/db/schema";
+import { feeds, subscriptions, tags, subscriptionTags, blockedSenders } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { parseFeedAsync } from "@/server/feed/parser";
 import { discoverFeeds } from "@/server/feed/discovery";
@@ -427,6 +420,7 @@ export const subscriptionsRouter = createTRPCRouter({
           customTitle: subscriptions.customTitle,
           fetchFullContent: subscriptions.fetchFullContent,
           subscribedAt: subscriptions.subscribedAt,
+          unreadCount: subscriptions.unreadCount,
           changed: sql<boolean>`${meaningfulChange}`,
         });
 
@@ -436,9 +430,10 @@ export const subscriptionsRouter = createTRPCRouter({
 
       const subscription = updateResult[0];
 
-      // Fetch feed, tags, and unread count in separate queries to avoid
-      // cross-join between tags and entries that multiplies COUNT results (#680).
-      const [feedResult, tagsResult, unreadResult] = await Promise.all([
+      // Fetch feed and tags in separate queries to avoid a cross-join that
+      // multiplies rows (#680). The unread count comes off the UPDATE's
+      // RETURNING — the trigger-maintained counter, not a scan.
+      const [feedResult, tagsResult] = await Promise.all([
         // Feed metadata
         ctx.db
           .select({
@@ -463,22 +458,6 @@ export const subscriptionsRouter = createTRPCRouter({
           .from(subscriptionTags)
           .innerJoin(tags, eq(tags.id, subscriptionTags.tagId))
           .where(eq(subscriptionTags.subscriptionId, subscription.id)),
-
-        // Unread count (use visibleEntries view to include entries from redirected feeds).
-        // read=false lives in WHERE (not a FILTER over all entries) so the partial
-        // idx_user_entries_unread index can drive the scan, matching counts.ts.
-        ctx.db
-          .select({
-            count: sql<number>`COUNT(*)::int`,
-          })
-          .from(visibleEntries)
-          .where(
-            and(
-              eq(visibleEntries.userId, userId),
-              eq(visibleEntries.subscriptionId, subscription.id),
-              eq(visibleEntries.read, false)
-            )
-          ),
       ]);
 
       const result = feedResult[0];
@@ -491,7 +470,6 @@ export const subscriptionsRouter = createTRPCRouter({
         name: t.name,
         color: t.color,
       }));
-      const unreadCount = unreadResult[0]?.count ?? 0;
 
       // Publish SSE event for other tabs/devices — only when something
       // actually changed. A no-op re-save (identical customTitle /
@@ -522,7 +500,7 @@ export const subscriptionsRouter = createTRPCRouter({
         description: result.description,
         siteUrl: result.siteUrl,
         subscribedAt: subscription.subscribedAt,
-        unreadCount,
+        unreadCount: subscription.unreadCount,
         tags: subscriptionTagsList,
         fetchFullContent: subscription.fetchFullContent,
       };
