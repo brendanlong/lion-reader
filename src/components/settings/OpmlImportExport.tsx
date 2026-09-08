@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { Card } from "@/components/ui/card";
 import { UploadIcon, DownloadIcon, SpinnerIcon } from "@/components/ui/icons";
+import { DROP_ZONE_FILE_INPUT_CLASSES } from "@/components/ui/drop-zone-file-input";
 import type { OpmlFeed } from "@/server/feed/opml";
 
 // ============================================================================
@@ -274,9 +275,10 @@ function ImportSection() {
           <input
             ref={fileInputRef}
             type="file"
+            aria-label="Choose an OPML file to import"
             accept=".opml,.xml"
             onChange={handleInputChange}
-            className="absolute inset-0 cursor-pointer opacity-0"
+            className={DROP_ZONE_FILE_INPUT_CLASSES}
           />
           <div className="pointer-events-none">
             <UploadIcon className="text-faint mx-auto h-12 w-12" />

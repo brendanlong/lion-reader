@@ -13,6 +13,7 @@ import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { UploadIcon, DocumentIcon } from "@/components/ui/icons";
+import { DROP_ZONE_FILE_INPUT_CLASSES } from "@/components/ui/drop-zone-file-input";
 import {
   Dialog,
   DialogHeader,
@@ -210,19 +211,12 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
                   : "border-edge-input epaper:border-fill-muted hover:bg-surface-muted hover:border-zinc-400 dark:hover:border-zinc-500"
             }`}
           >
-            {/*
-              The input is the affordance: it covers the whole zone, so a click
-              anywhere opens the picker and Tab lands on it. It is made invisible
-              by hiding its file-selector button and its filename text rather
-              than with `opacity-0`, because opacity would also erase the global
-              focus outline — which is what draws the zone's focus indicator.
-            */}
             <input
               type="file"
               aria-label="Choose a file to upload"
               accept={SUPPORTED_EXTENSIONS.join(",")}
               onChange={handleInputChange}
-              className="absolute inset-0 h-full w-full cursor-pointer bg-transparent text-transparent file:hidden"
+              className={DROP_ZONE_FILE_INPUT_CLASSES}
             />
 
             {selectedFile ? (
