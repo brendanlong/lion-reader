@@ -129,6 +129,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
 
+      # No toolchain setup step: the runner's rustup installs the version
+      # rust-toolchain.toml pins on the first cargo call.
       - uses: Swatinem/rust-cache@v2.9.2
         with:
           # Without this a red run saves nothing, so a PR iterating on a Rust

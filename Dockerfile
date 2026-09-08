@@ -48,11 +48,25 @@ RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
 # The build.mjs scripts are plain `node` + `cargo` — no pnpm/node_modules needed.
 # Cache mounts keep crate downloads and incremental build artifacts across
 # builds (each build.mjs copies its artifact out of target/ to <name>.node).
-FROM node:26-alpine AS native-builder
+# The Alpine version is pinned (the other stages float) because apk's rustc is
+# the compiler production ships, and CI has to compile against that same
+# version to be a gate at all. rust-toolchain.toml pins CI to it; the check
+# below fails the build if bumping this tag moves rustc out from under it.
+FROM node:26-alpine3.24 AS native-builder
 
 WORKDIR /app
 
 RUN apk add --no-cache rust cargo
+
+COPY rust-toolchain.toml ./
+RUN pinned="$(sed -n 's/^channel *= *"\([^"]*\)".*/\1/p' rust-toolchain.toml)" && \
+    actual="$(rustc --version | cut -d' ' -f2)" && \
+    case "$actual" in \
+      "$pinned" | "$pinned".*) ;; \
+      *) echo "Alpine ships rustc $actual but rust-toolchain.toml pins $pinned." \
+              "Set channel = \"$actual\" there (and re-run CI) or pin an Alpine tag that ships $pinned." >&2; \
+         exit 1 ;; \
+    esac
 
 # .dockerignore excludes native/*/target/ and native/*/*.node so local build
 # artifacts can't leak into (or bust the cache of) this layer.
