@@ -102,6 +102,26 @@ async function seedEntry(
   return entryId;
 }
 
+/**
+ * Unsubscribes the subscription that owns `entryId`. A starred entry from an
+ * unsubscribed subscription is a "starred orphan": `visible_entries` keeps it
+ * visible through the `starred` arm of its predicate, so it stays in the
+ * Starred list — but only for as long as it stays starred.
+ */
+async function unsubscribeEntryFeed(userId: string, entryId: string): Promise<void> {
+  const [row] = await db
+    .select({ subscriptionId: userEntries.subscriptionId })
+    .from(userEntries)
+    .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, entryId)));
+  if (!row?.subscriptionId) {
+    throw new Error("seeded entry has no subscription to unsubscribe");
+  }
+  await db
+    .update(subscriptions)
+    .set({ unsubscribedAt: new Date() })
+    .where(eq(subscriptions.id, row.subscriptionId));
+}
+
 // Reads the user_entries state row directly, for asserting on the LWW
 // watermark columns that the service return value doesn't expose.
 async function getUserEntryRow(userId: string, entryId: string) {
@@ -414,6 +434,51 @@ describe("updateEntryStarred SSE publishing", () => {
     expect(row.starred).toBe(true);
     expect(row.starredChangedAt).toEqual(t2);
   });
+
+  it("unstars a starred orphan, returning counts and publishing", async () => {
+    const userId = await seedUser();
+    const entryId = await seedEntry(userId);
+    const channel = getUserEventsChannel(userId);
+
+    await subscribeAndDrain(subscriber, channel, () =>
+      entriesService.updateEntryStarred(db, userId, entryId, true)
+    );
+    // Unsubscribing leaves the entry visible only through the starred arm of
+    // visible_entries — so unstarring it removes it from that view. The
+    // post-update read must not go through the view, or the write lands and
+    // then reports "Entry not found" with no counts and no SSE event.
+    await unsubscribeEntryFeed(userId, entryId);
+
+    const messagePromise = waitForMessage(subscriber, channel);
+    const { entry, counts } = await entriesService.updateEntryStarred(db, userId, entryId, false);
+    expect(entry.id).toBe(entryId);
+    expect(entry.starred).toBe(false);
+    // The entry left every list it was in: starred is empty, and with the
+    // subscription inactive it no longer contributes to `all` either.
+    expect(counts?.starred.unread).toBe(0);
+    expect(counts?.all.unread).toBe(0);
+
+    const event = JSON.parse(await messagePromise);
+    expect(event.type).toBe("entry_state_changed");
+    expect(event.entryId).toBe(entryId);
+    expect(event.starred).toBe(false);
+    expect(event.counts.starred.unread).toBe(0);
+
+    expect((await getUserEntryRow(userId, entryId)).starred).toBe(false);
+  });
+
+  it("reports another user's entry as not found", async () => {
+    const ownerId = await seedUser();
+    const otherId = await seedUser();
+    const entryId = await seedEntry(ownerId);
+
+    // The read-back is scoped by user_entries.user_id, so a user with no row
+    // for this entry gets not-found rather than someone else's state.
+    await expect(entriesService.updateEntryStarred(db, otherId, entryId, true)).rejects.toThrow(
+      /Entry not found/
+    );
+    expect((await getUserEntryRow(ownerId, entryId)).starred).toBe(false);
+  });
 });
 
 describe("updateEntriesStarred (bulk) SSE publishing", () => {
@@ -480,5 +545,52 @@ describe("updateEntriesStarred (bulk) SSE publishing", () => {
     const row = await getUserEntryRow(userId, entryId);
     expect(row.starredChangedAt).toEqual(t2);
     expect(row.updatedAt).toEqual(before.updatedAt);
+  });
+
+  it("unstars a starred orphan, returning counts and publishing", async () => {
+    const userId = await seedUser();
+    const entryId = await seedEntry(userId);
+    const channel = getUserEventsChannel(userId);
+
+    await subscribeAndDrain(subscriber, channel, () =>
+      entriesService.updateEntriesStarred(db, userId, [entryId], true)
+    );
+    // As in the single-entry case: once unsubscribed, the entry is visible only
+    // because it's starred, so a post-update read through visible_entries comes
+    // back empty and the bulk path fails *silently* — no counts, no event, and
+    // other tabs keep a stale star.
+    await unsubscribeEntryFeed(userId, entryId);
+
+    const messagePromise = waitForMessage(subscriber, channel);
+    const {
+      entries: state,
+      changed,
+      counts,
+    } = await entriesService.updateEntriesStarred(db, userId, [entryId], false);
+    expect(state.map((e) => e.id)).toEqual([entryId]);
+    expect(state[0].starred).toBe(false);
+    expect(changed.map((e) => e.id)).toEqual([entryId]);
+    expect(counts?.starred.unread).toBe(0);
+    expect(counts?.all.unread).toBe(0);
+
+    const event = JSON.parse(await messagePromise);
+    expect(event.type).toBe("entry_state_changed");
+    expect(event.entryId).toBe(entryId);
+    expect(event.starred).toBe(false);
+
+    expect((await getUserEntryRow(userId, entryId)).starred).toBe(false);
+  });
+
+  it("returns no state for another user's entry", async () => {
+    const ownerId = await seedUser();
+    const otherId = await seedUser();
+    const entryId = await seedEntry(ownerId);
+
+    // Scoped by user_entries.user_id: a user with no row for this entry gets
+    // nothing back, and the owner's state is untouched.
+    const result = await entriesService.updateEntriesStarred(db, otherId, [entryId], true);
+    expect(result.entries).toEqual([]);
+    expect(result.changed).toEqual([]);
+    expect((await getUserEntryRow(ownerId, entryId)).starred).toBe(false);
   });
 });
