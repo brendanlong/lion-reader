@@ -7,15 +7,7 @@
 import { z } from "zod";
 import { eq, and, gt, isNull, sql } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
-import {
-  feeds,
-  entries,
-  subscriptions,
-  userEntries,
-  tags,
-  subscriptionTags,
-  userFeeds,
-} from "@/server/db/schema";
+import { feeds, subscriptions, tags, subscriptionTags, userFeeds } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { logger } from "@/lib/logger";
 import { usageLimitsConfig } from "@/server/config/env";
@@ -328,7 +320,7 @@ export interface CreateSubscriptionResult {
   subscriptionId: string;
   /** When the subscription was created */
   subscribedAt: Date;
-  /** Number of unread entries populated */
+  /** Unread count for the subscription (trigger-maintained counter, spam excluded) */
   unreadCount: number;
   /** True if the subscription already existed and was active (idempotent return) */
   alreadyActive: boolean;
@@ -451,7 +443,6 @@ export async function createSubscription(
         kind: "created";
         subscriptionId: string;
         subscribedAt: Date;
-        unreadCount: number;
         customTitle: string | null;
         fetchFullContent: boolean;
       };
@@ -586,20 +577,10 @@ export async function createSubscription(
       `);
     }
 
-    // Count unread entries (rowCount may be 0 for reactivations where entries already exist)
-    const [{ count }] = await tx
-      .select({ count: sql<number>`count(*)::int` })
-      .from(userEntries)
-      .innerJoin(entries, eq(entries.id, userEntries.entryId))
-      .where(
-        and(eq(userEntries.userId, userId), eq(entries.feedId, feedId), eq(userEntries.read, false))
-      );
-
     return {
       kind: "created",
       subscriptionId,
       subscribedAt,
-      unreadCount: count,
       customTitle,
       fetchFullContent,
     };
@@ -623,13 +604,7 @@ export async function createSubscription(
     };
   }
 
-  const { subscriptionId, subscribedAt, unreadCount, customTitle, fetchFullContent } = txResult;
-
-  logger.debug("Populated initial user entries via lastSeenAt", {
-    userId,
-    feedId,
-    entryCount: unreadCount,
-  });
+  const { subscriptionId, subscribedAt, customTitle, fetchFullContent } = txResult;
 
   // 7. Compute absolute unread counts for the affected lists. A newly created
   // or reactivated subscription is untagged, so it only moves All Articles and
@@ -637,6 +612,18 @@ export async function createSubscription(
   const counts = await getBulkEntryRelatedCounts(db, userId, [
     { subscriptionId, type: feedData.type },
   ]);
+
+  // The subscription's own badge is the trigger-maintained counter this bulk
+  // read already returned (spam excluded), never a scan — see "Unread Counts"
+  // in `src/server/CLAUDE.md`. `getBulkEntryRelatedCounts` zero-fills every
+  // requested subscription, so the entry for ours is always present.
+  const unreadCount = counts.subscriptions.find((s) => s.id === subscriptionId)?.unread ?? 0;
+
+  logger.debug("Populated initial user entries via lastSeenAt", {
+    userId,
+    feedId,
+    entryCount: unreadCount,
+  });
 
   // 8. Publish SSE event for new/reactivated subscriptions
   publishSubscriptionCreated(
