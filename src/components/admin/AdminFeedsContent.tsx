@@ -15,7 +15,12 @@ import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { formatRelativeTime, formatFutureTime, formatBytes } from "@/lib/format";
+import {
+  formatRelativeTime,
+  formatFutureTime,
+  formatBytes,
+  getFeedDisplayName,
+} from "@/lib/format";
 import {
   SpinnerIcon,
   ExternalLinkIcon,
@@ -60,18 +65,6 @@ interface FeedItem {
 function truncateUrl(url: string, maxLength: number = 60): string {
   if (url.length <= maxLength) return url;
   return url.slice(0, maxLength) + "...";
-}
-
-function getFeedDisplayTitle(feed: FeedItem): string {
-  if (feed.title) return feed.title;
-  if (feed.url) {
-    try {
-      return new URL(feed.url).hostname;
-    } catch {
-      return feed.url;
-    }
-  }
-  return "Unknown Feed";
 }
 
 // ============================================================================
@@ -150,7 +143,7 @@ interface FeedRowProps {
 }
 
 function FeedRow({ feed, onRetry, isRetrying }: FeedRowProps) {
-  const displayTitle = getFeedDisplayTitle(feed);
+  const displayTitle = getFeedDisplayName(feed);
 
   return (
     <div className="border-edge border-b p-4 last:border-b-0">

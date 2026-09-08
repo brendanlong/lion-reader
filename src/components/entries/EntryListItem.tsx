@@ -64,14 +64,8 @@ interface EntryListItemProps {
   onFocus?: (entryId: string) => void;
   /**
    * Callback when the read status indicator is clicked.
-   * entryType and subscriptionId are required (but subscriptionId can be null) to force explicit handling.
    */
-  onToggleRead?: (
-    entryId: string,
-    currentlyRead: boolean,
-    entryType: EntryType,
-    subscriptionId: string | null
-  ) => void;
+  onToggleRead?: (entryId: string, currentlyRead: boolean) => void;
   /**
    * Callback when the star indicator is clicked.
    */
@@ -100,19 +94,8 @@ export const EntryListItem = memo(function EntryListItem({
   onToggleStar,
   density = "comfortable",
 }: EntryListItemProps) {
-  const {
-    id,
-    title,
-    summary,
-    read,
-    starred,
-    type,
-    subscriptionId,
-    feedTitle,
-    siteName,
-    publishedAt,
-    fetchedAt,
-  } = entry;
+  const { id, title, summary, read, starred, type, feedTitle, siteName, publishedAt, fetchedAt } =
+    entry;
   const displayTitle = title ?? "Untitled";
   // For saved articles, prefer siteName (extracted from page metadata) over feedTitle
   // feedTitle for saved articles is always "Saved Articles" (the feed name)
@@ -155,8 +138,7 @@ export const EntryListItem = memo(function EntryListItem({
 
   const handleToggleRead = (e: React.MouseEvent) => {
     e.stopPropagation();
-    // Always pass entryType and subscriptionId so page components must handle them explicitly
-    onToggleRead?.(id, read, type, subscriptionId);
+    onToggleRead?.(id, read);
   };
 
   const handleToggleStar = (e: React.MouseEvent) => {

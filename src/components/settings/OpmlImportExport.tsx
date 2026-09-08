@@ -68,20 +68,7 @@ export function OpmlImportExport() {
 
 function ImportSection() {
   // Base state for the import flow
-  const [baseState, setBaseState] = useState<
-    | { type: "idle" }
-    | { type: "parsing" }
-    | { type: "preview"; feeds: OpmlFeed[]; opmlContent: string }
-    | { type: "queuing" }
-    | { type: "importing"; importId: string; totalFeeds: number }
-    | {
-        type: "complete";
-        imported: number;
-        skipped: number;
-        failed: number;
-        results: ImportResult[];
-      }
-  >({ type: "idle" });
+  const [baseState, setBaseState] = useState<ImportState>({ type: "idle" });
   const [error, setError] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -310,12 +297,7 @@ function ImportSection() {
       )}
 
       {importState.type === "preview" && (
-        <ImportPreview
-          feeds={importState.feeds}
-          onImport={handleImport}
-          onCancel={handleReset}
-          isImporting={false}
-        />
+        <ImportPreview feeds={importState.feeds} onImport={handleImport} onCancel={handleReset} />
       )}
 
       {(importState.type === "queuing" || importState.type === "importing") && (
@@ -369,10 +351,10 @@ interface ImportPreviewProps {
   feeds: OpmlFeed[];
   onImport: () => void;
   onCancel: () => void;
-  isImporting: boolean;
 }
 
-function ImportPreview({ feeds, onImport, onCancel, isImporting }: ImportPreviewProps) {
+/** The preview unmounts as soon as the import starts, so it has no busy state. */
+function ImportPreview({ feeds, onImport, onCancel }: ImportPreviewProps) {
   const [showAll, setShowAll] = useState(false);
   const displayedFeeds = showAll ? feeds : feeds.slice(0, 10);
   const hasMore = feeds.length > 10;
@@ -410,10 +392,10 @@ function ImportPreview({ feeds, onImport, onCancel, isImporting }: ImportPreview
       )}
 
       <div className="flex gap-3">
-        <Button onClick={onImport} loading={isImporting}>
+        <Button onClick={onImport}>
           Import {feeds.length} feed{feeds.length !== 1 ? "s" : ""}
         </Button>
-        <Button variant="secondary" onClick={onCancel} disabled={isImporting}>
+        <Button variant="secondary" onClick={onCancel}>
           Cancel
         </Button>
       </div>

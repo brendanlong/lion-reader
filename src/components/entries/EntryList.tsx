@@ -3,8 +3,9 @@
  *
  * Presentational paginated entry list with infinite scroll. The entries and
  * query state are always supplied by the parent container (which owns the
- * `entries.list` query); this component only renders them, wires up the
- * infinite-scroll observer, and shows loading/error/empty states.
+ * `entries.list` query, its loading fallback, and — via `throwOnError` — its
+ * error handling); this component only renders them, wires up the
+ * infinite-scroll observer, and shows the empty/end-of-list states.
  */
 
 "use client";
@@ -14,34 +15,13 @@ import type { EntryListData } from "@/lib/hooks/types";
 import { useScrollContainer } from "@/components/layout/ScrollContainerContext";
 import { useAppearance } from "@/lib/appearance/AppearanceProvider";
 import { EntryListItem } from "./EntryListItem";
-import { EntryListSkeleton } from "./EntryListSkeleton";
-import {
-  EntryListEmpty,
-  EntryListError,
-  EntryListLoadingMore,
-  EntryListEnd,
-} from "./EntryListStates";
+import { EntryListEmpty, EntryListLoadingMore, EntryListEnd } from "./EntryListStates";
 
 /**
  * Query state for the list, supplied by the parent container that owns the
  * `entries.list` query.
  */
 export interface ExternalQueryState {
-  /**
-   * Whether the initial load is in progress.
-   */
-  isLoading: boolean;
-
-  /**
-   * Whether there was an error loading entries.
-   */
-  isError: boolean;
-
-  /**
-   * Error message if isError is true.
-   */
-  errorMessage?: string;
-
   /**
    * Whether more entries are being fetched.
    */
@@ -56,11 +36,6 @@ export interface ExternalQueryState {
    * Fetch the next page of entries.
    */
   fetchNextPage: () => void;
-
-  /**
-   * Refetch all entries.
-   */
-  refetch: () => void;
 }
 
 interface EntryListProps {
@@ -115,14 +90,6 @@ interface EntryListProps {
    * Query state for the entries (the parent container owns the query).
    */
   externalQueryState: ExternalQueryState;
-
-  /**
-   * CSS value for IntersectionObserver rootMargin.
-   * Controls how far from the viewport edge to trigger loading more entries.
-   * Larger values trigger earlier loading for smoother scrolling.
-   * @default "100px"
-   */
-  rootMargin?: string;
 }
 
 /**
@@ -139,7 +106,6 @@ export function EntryList({
   onToggleStar,
   externalEntries: allEntries,
   externalQueryState,
-  rootMargin = "100px",
 }: EntryListProps) {
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useScrollContainer();
@@ -147,15 +113,7 @@ export function EntryList({
     settings: { listDensity },
   } = useAppearance();
 
-  const {
-    isLoading,
-    isError,
-    errorMessage,
-    isFetchingNextPage,
-    hasNextPage,
-    fetchNextPage,
-    refetch,
-  } = externalQueryState;
+  const { isFetchingNextPage, hasNextPage, fetchNextPage } = externalQueryState;
 
   // Intersection Observer for infinite scroll
   const handleObserver = useCallback(
@@ -174,7 +132,7 @@ export function EntryList({
 
     const observer = new IntersectionObserver(handleObserver, {
       root,
-      rootMargin,
+      rootMargin: "100px",
       threshold: 0,
     });
 
@@ -188,26 +146,9 @@ export function EntryList({
         observer.unobserve(currentRef);
       }
     };
-  }, [handleObserver, rootMargin, scrollContainerRef]);
+  }, [handleObserver, scrollContainerRef]);
 
-  // Initial loading state - only show skeleton if we have no entries to display
-  // (placeholder data from parent lists provides entries even while loading)
-  if (isLoading && allEntries.length === 0) {
-    return <EntryListSkeleton count={5} density={listDensity} />;
-  }
-
-  // Error state
-  if (isError) {
-    return (
-      <EntryListError
-        message={errorMessage ?? "Failed to load entries"}
-        onRetry={() => refetch()}
-      />
-    );
-  }
-
-  // Empty state - only show when not loading (loading with 0 entries shows skeleton above)
-  if (!isLoading && allEntries.length === 0) {
+  if (allEntries.length === 0) {
     return <EntryListEmpty message={emptyMessage} />;
   }
 
@@ -241,7 +182,7 @@ export function EntryList({
       {isFetchingNextPage && <EntryListLoadingMore label="Loading more entries..." />}
 
       {/* End of list indicator */}
-      {!hasNextPage && allEntries.length > 0 && <EntryListEnd message="No more entries" />}
+      {!hasNextPage && <EntryListEnd message="No more entries" />}
     </div>
   );
 }

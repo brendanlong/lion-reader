@@ -53,9 +53,6 @@ interface EntryPageLayoutProps {
 
   /** Options to pass to handleMarkAllRead */
   markAllReadOptions: MarkAllReadOptions;
-
-  /** Whether to hide the sort toggle (e.g., for algorithmic feed) */
-  hideSortToggle?: boolean;
 }
 
 export function EntryPageLayout({
@@ -64,7 +61,6 @@ export function EntryPageLayout({
   entryListSlot,
   markAllReadDescription,
   markAllReadOptions,
-  hideSortToggle = false,
 }: EntryPageLayoutProps) {
   // Use non-suspending hooks directly so buttons render immediately
   const {
@@ -162,9 +158,7 @@ export function EntryPageLayout({
                 onConfirm={() => markAllRead(markAllReadOptions)}
               />
             )}
-            {!hideSortToggle && !isSearching && (
-              <SortToggle sortOrder={sortOrder} onToggle={toggleSortOrder} />
-            )}
+            {!isSearching && <SortToggle sortOrder={sortOrder} onToggle={toggleSortOrder} />}
             <UnreadToggle showUnreadOnly={showUnreadOnly} onToggle={toggleShowUnreadOnly} />
           </div>
         </div>

@@ -32,9 +32,9 @@ replaces the data with `snapshot + newPage` — silently dropping any
 `setQueryData` applied to the old pages mid-fetch. j/k navigation triggers this
 (opening an entry near the end auto-marks it read at the same moment
 `fetchNextPage` fires), so the completing fetch would revert the entry to unread.
-Every next-page fetch (keyboard- and scroll-triggered, in both
-`EntryListContainer` and `UnifiedEntriesContent`) therefore calls
-`snapshotEntryGetStates` **before** starting the fetch and
+`EntryListContainer` owns every next-page fetch (keyboard- and
+scroll-triggered) for exactly this reason — one place to wrap, and one request
+per trigger. It therefore calls `snapshotEntryGetStates` **before** starting the fetch and
 `reconcileListFromChangedEntryGets` **after** it settles, re-asserting onto the
 list only the entries whose `entries.get` read/starred state **changed during
 the fetch window**. It is a diff, not a blanket re-assert, because `entries.get`

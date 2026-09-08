@@ -21,14 +21,13 @@ import type {
   ListDensity,
 } from "@/lib/appearance/settings";
 
-interface OptionButtonProps<T extends string> {
-  value: T;
+interface OptionButtonProps {
   selected: boolean;
   onClick: () => void;
   children: React.ReactNode;
 }
 
-function OptionButton<T extends string>({ selected, onClick, children }: OptionButtonProps<T>) {
+function OptionButton({ selected, onClick, children }: OptionButtonProps) {
   return (
     <button
       type="button"
@@ -66,7 +65,6 @@ function OptionGroup<T extends string>({
         {options.map((option) => (
           <OptionButton
             key={option.value}
-            value={option.value}
             selected={value === option.value}
             onClick={() => onChange(option.value)}
           >
