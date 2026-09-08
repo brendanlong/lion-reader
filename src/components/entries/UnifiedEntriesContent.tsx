@@ -14,7 +14,7 @@
 
 "use client";
 
-import { useMemo, useEffect, useRef } from "react";
+import { useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { EntryPageLayout, TitleSkeleton, TitleText } from "./EntryPageLayout";
 import { EntryContent } from "./EntryContent";
@@ -31,7 +31,6 @@ import { extractParamsFromPathname } from "@/lib/navigation";
 import { type ViewType } from "@/lib/hooks/viewPreferences";
 import { trpc } from "@/lib/trpc/client";
 import { findCachedSubscription } from "@/lib/cache/count-cache";
-import { snapshotEntryGetStates, reconcileListFromChangedEntryGets } from "@/lib/cache/entry-cache";
 import { type EntryType } from "@/lib/hooks/useEntryMutations";
 
 /**
@@ -264,7 +263,6 @@ function EntryListTitle({ routeInfo }: { routeInfo: RouteInfo }) {
  */
 function UnifiedEntriesContentInner() {
   const routeInfo = useRouteInfo();
-  const queryClient = useQueryClient();
   const { showUnreadOnly, searchQuery } = useUrlViewPreferences();
   const { openEntryId, setOpenEntryId, closeEntry } = useEntryUrlState();
 
@@ -337,49 +335,25 @@ function UnifiedEntriesContentInner() {
     return options;
   }, [routeInfo.filters]);
 
-  // Get adjacent entry IDs from query data for navigation
-  // Also compute distance to end for pagination triggering
+  // Get adjacent entry IDs from query data for swipe navigation. Pagination
+  // near the end of the loaded pages is triggered by EntryListContainer, which
+  // owns the same query.
   const pages = entriesQuery.data?.pages;
-  const { nextEntryId, previousEntryId, distanceToEnd } = useMemo(() => {
+  const { nextEntryId, previousEntryId } = useMemo(() => {
     if (!openEntryId || !pages) {
-      return { nextEntryId: undefined, previousEntryId: undefined, distanceToEnd: Infinity };
+      return { nextEntryId: undefined, previousEntryId: undefined };
     }
     const allEntries = pages.flatMap((page) => page.items);
     const currentIndex = allEntries.findIndex((e) => e.id === openEntryId);
     if (currentIndex === -1) {
-      return { nextEntryId: undefined, previousEntryId: undefined, distanceToEnd: Infinity };
+      return { nextEntryId: undefined, previousEntryId: undefined };
     }
     return {
       nextEntryId:
         currentIndex < allEntries.length - 1 ? allEntries[currentIndex + 1].id : undefined,
       previousEntryId: currentIndex > 0 ? allEntries[currentIndex - 1].id : undefined,
-      distanceToEnd: allEntries.length - 1 - currentIndex,
     };
   }, [openEntryId, pages]);
-
-  // Trigger pagination when navigating close to the end of loaded entries
-  // This ensures swipe navigation can continue beyond the initial page
-  const prevDistanceToEnd = useRef(distanceToEnd);
-  useEffect(() => {
-    const PAGINATION_THRESHOLD = 3;
-    if (
-      distanceToEnd <= PAGINATION_THRESHOLD &&
-      distanceToEnd < prevDistanceToEnd.current &&
-      entriesQuery.hasNextPage &&
-      !entriesQuery.isFetchingNextPage
-    ) {
-      // Re-assert read/starred that changed during the fetch: the completing
-      // next-page fetch replaces the pages snapshot and would clobber writes
-      // applied mid-fetch, e.g. auto-mark-read from swipe/j-k. Snapshot before,
-      // diff after, so stale gets (e.g. after mark_all_read) aren't resurrected
-      // (#1081).
-      const before = snapshotEntryGetStates(queryClient);
-      void entriesQuery.fetchNextPage().then(() => {
-        reconcileListFromChangedEntryGets(queryClient, before);
-      });
-    }
-    prevDistanceToEnd.current = distanceToEnd;
-  }, [distanceToEnd, entriesQuery, queryClient]);
 
   // Navigation callbacks - just update URL, React re-renders
   const handleSwipeNext = useMemo(() => {
