@@ -176,6 +176,7 @@ export const usersRouter = createTRPCRouter({
     .output(z.object({ success: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
+      const currentSessionId = ctx.session.session.id;
       const { newPassword } = input;
 
       // Hash the new password
@@ -194,6 +195,11 @@ export const usersRouter = createTRPCRouter({
       if (updated.length === 0) {
         throw errors.validation("Account already has a password. Use change password instead.");
       }
+
+      // Adding a credential is a credential change: an OAuth-only user securing a
+      // possibly-compromised account expects it to take effect everywhere, so
+      // revoke every other session just as a password change does.
+      await revokeOtherUserSessions(userId, currentSessionId);
 
       return { success: true };
     }),
