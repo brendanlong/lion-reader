@@ -1,20 +1,17 @@
 /**
- * /demo/all — All features demo page
+ * /demo/all — every demo article
  *
- * Statically prerendered entry list with crawlable links. Article views
- * (`?entry=`) never reach this page: the `beforeFiles` rewrite in
- * next.config.ts serves them from the prerendered /demo/entry/[entryId] route
- * instead (issue #1359) — do NOT read `searchParams` here, that would force
- * per-request rendering. After hydration, DemoLayoutContent switches to
- * DemoRouter for full client-side interactivity.
+ * Statically prerendered. Article views (`?entry=`) never reach this page: the
+ * `beforeFiles` rewrite in next.config.ts serves them from the prerendered
+ * /demo/entry/[entryId] route instead (issue #1359) — do NOT read
+ * `searchParams` here, that would force per-request rendering.
  */
 
 import { type Metadata } from "next";
 import { pageOpenGraph } from "@/lib/metadata";
-import { DEMO_ENTRIES, sortNewestFirst } from "../data";
-import { DemoEntryListSSR } from "../DemoEntryListSSR";
+import { DemoApp } from "../DemoApp";
 
-const TITLE = "All Features - Lion Reader";
+const TITLE = "All Items - Lion Reader";
 const DESCRIPTION =
   "Explore all of Lion Reader's features: feed support, reading experience, organization, and integrations.";
 
@@ -24,12 +21,6 @@ export const metadata: Metadata = {
   openGraph: pageOpenGraph(TITLE, DESCRIPTION),
 };
 
-export default function DemoAllPage() {
-  return (
-    <DemoEntryListSSR
-      entries={sortNewestFirst([...DEMO_ENTRIES])}
-      backHref="/demo/all"
-      title="All Features"
-    />
-  );
+export default function Page() {
+  return <DemoApp location={{ pathname: "/all", search: "" }} />;
 }

@@ -75,6 +75,12 @@ interface EntryListProps {
   onEntryMouseDown?: (entryId: string) => void;
 
   /**
+   * The href that opens an entry, rendered as a real link on the title so the
+   * list is crawlable and middle/modifier clicks open a new tab.
+   */
+  getEntryHref?: (entryId: string) => string;
+
+  /**
    * Custom empty state message.
    */
   emptyMessage?: string;
@@ -125,6 +131,7 @@ interface EntryListProps {
 export function EntryList({
   onEntryClick,
   onEntryMouseDown,
+  getEntryHref,
   emptyMessage = "No entries to display",
   selectedEntryId,
   onEntryFocus,
@@ -215,6 +222,7 @@ export function EntryList({
           <EntryListItem
             key={entry.id}
             entry={entry}
+            href={getEntryHref?.(entry.id)}
             onClick={onEntryClick}
             onMouseDown={onEntryMouseDown}
             onFocus={onEntryFocus}

@@ -11,7 +11,7 @@
 "use client";
 
 import { Suspense } from "react";
-import { usePathname } from "next/navigation";
+import { useAppPathname } from "@/lib/hooks/useAppLocation";
 import { UnifiedEntriesContent } from "@/components/entries/UnifiedEntriesContent";
 import { UnifiedSettingsContent } from "@/components/settings/UnifiedSettingsContent";
 import { SubscribeContent } from "@/components/subscribe/SubscribeContent";
@@ -41,7 +41,7 @@ function PageSkeleton() {
  * Determines which page section to render based on pathname.
  */
 function AppRouterContent() {
-  const pathname = usePathname();
+  const pathname = useAppPathname();
 
   // Central navigation-triggered refresh for entry lists (must live in this
   // always-mounted shell — see the hook's doc comment).

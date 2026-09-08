@@ -118,15 +118,19 @@ const nextConfig: NextConfig = {
   // zstd/brotli/gzip/deflate compression to streaming SSR responses, and
   // Fly.io's edge handles non-streaming responses.
   compress: false,
+  // The demo's starred list used to live at /demo/highlights; it now uses the
+  // app's own route name so the shared reader tree maps it to a filter.
+  async redirects() {
+    return [{ source: "/demo/highlights", destination: "/demo/starred", permanent: true }];
+  },
   // Serve the demo article URLs (`?entry=` on any /demo page) from the
   // statically-prerendered /demo/entry/[entryId] route (issue #1359). Reading
   // `searchParams` in a server component forces per-request rendering, so the
   // demo pages themselves never look at the query — this server-internal
   // rewrite (the browser URL is unchanged) picks the article page instead.
-  // DemoRouter re-derives the view client-side from the real URL after
-  // hydration, exactly as before. An `entry` value that doesn't match the id
-  // charset falls through to the (static) list page, which ignores the query —
-  // the same treatment such values got from the old `?entry=` lookup.
+  // The reader tree re-derives the view client-side from the real URL after
+  // hydration (see DemoApp). An `entry` value that doesn't match the id
+  // charset falls through to the (static) list page, which ignores the query.
   async rewrites() {
     return {
       beforeFiles: [

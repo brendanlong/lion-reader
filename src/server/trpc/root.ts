@@ -16,6 +16,7 @@ import { feedsRouter } from "./routers/feeds";
 import { tagsRouter } from "./routers/tags";
 import { savedRouter } from "./routers/saved";
 import { narrationRouter } from "./routers/narration";
+import { oauthGrantsRouter } from "./routers/oauth-grants";
 import { summarizationRouter } from "./routers/summarization";
 import { ingestAddressesRouter } from "./routers/ingestAddresses";
 import { blockedSendersRouter } from "./routers/blockedSenders";
@@ -39,6 +40,7 @@ export const appRouter = createTRPCRouter({
   tags: tagsRouter,
   saved: savedRouter,
   narration: narrationRouter,
+  oauthGrants: oauthGrantsRouter,
   summarization: summarizationRouter,
   ingestAddresses: ingestAddressesRouter,
   blockedSenders: blockedSendersRouter,

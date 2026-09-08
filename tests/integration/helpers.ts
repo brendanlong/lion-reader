@@ -19,7 +19,14 @@
 
 import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
+import {
+  users,
+  feeds,
+  entries,
+  subscriptions,
+  userEntries,
+  oauthClients,
+} from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import type { Context } from "../../src/server/trpc/context";
 
@@ -167,6 +174,33 @@ export async function createTestEntry(
   }
 
   return entryId;
+}
+
+// ============================================================================
+// OAuth clients
+// ============================================================================
+
+/**
+ * Inserts a registered (DCR-style) OAuth client. Returns its `client_id`, which
+ * is what every OAuth code path keys on rather than the row's uuid.
+ *
+ * Cleanup is per-file like the other factories: `oauth_clients` has no user FK,
+ * so deleting the test's users doesn't cascade to it.
+ */
+export async function createTestOAuthClient(
+  overrides: Partial<typeof oauthClients.$inferInsert> = {}
+): Promise<string> {
+  const clientId = overrides.clientId ?? generateUuidv7();
+  await db.insert(oauthClients).values({
+    id: generateUuidv7(),
+    clientId,
+    name: `Test Client ${clientId.slice(-6)}`,
+    redirectUris: ["https://example.com/callback"],
+    scopes: ["mcp"],
+    isPublic: true,
+    ...overrides,
+  });
+  return clientId;
 }
 
 // ============================================================================

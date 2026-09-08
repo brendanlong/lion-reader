@@ -12,7 +12,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { usePathname } from "next/navigation";
+import { useAppPathname } from "@/lib/hooks/useAppLocation";
 import { useQueryClient } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc/client";
 import { useUnsubscribeMutation } from "@/lib/hooks/useUnsubscribeMutation";
@@ -31,7 +31,7 @@ interface SidebarProps {
 
 export function Sidebar({ onClose }: SidebarProps) {
   const queryClient = useQueryClient();
-  const pathname = usePathname();
+  const pathname = useAppPathname();
   const { sidebarUnreadOnly, toggleSidebarUnreadOnly } = useSidebarUnreadOnly();
   const [unsubscribeTarget, setUnsubscribeTarget] = useState<{
     id: string;

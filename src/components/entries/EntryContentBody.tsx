@@ -7,7 +7,7 @@
 
 "use client";
 
-import { useEffect, useRef, useMemo } from "react";
+import { useEffect, useRef, useMemo, type ReactNode } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Button } from "@/components/ui/button";
 import { SpinnerIcon, SparklesIcon, AlertIcon, ArrowLeftIcon } from "@/components/ui/icons";
@@ -41,6 +41,8 @@ export interface EntryContentBodyProps {
   url: string | null;
   /** The date to display */
   date: Date;
+  /** Zone to format `date` in during a server render; see EntryArticle */
+  dateTimeZone?: string;
   /** Optional prefix for the date (e.g., "Saved") */
   datePrefix?: string;
   /** The original HTML content */
@@ -110,8 +112,12 @@ export interface EntryContentBodyProps {
   onSummaryRegenerate?: () => void;
   /** Whether the main content is still loading (for progressive rendering) */
   isContentLoading?: boolean;
-  /** Whether to hide narration controls (e.g., in demo mode) */
+  /** Whether to hide narration controls (see EntryContentOptions) */
   hideNarration?: boolean;
+  /** Host-supplied content rendered after the summary card, before the body */
+  beforeContent?: ReactNode;
+  /** Host-supplied content rendered after the body, before the footer */
+  afterContent?: ReactNode;
 }
 
 /**
@@ -125,6 +131,7 @@ export function EntryContentBody({
   author,
   url,
   date,
+  dateTimeZone,
   datePrefix,
   contentOriginal,
   contentCleaned,
@@ -161,6 +168,8 @@ export function EntryContentBody({
   isContentLoading,
   // Narration toggle
   hideNarration,
+  beforeContent,
+  afterContent,
 }: EntryContentBodyProps) {
   const contentRef = useRef<HTMLDivElement>(null);
   const actionButtonsRef = useRef<HTMLDivElement>(null);
@@ -325,6 +334,7 @@ export function EntryContentBody({
       source={source}
       author={author}
       date={date}
+      dateTimeZone={dateTimeZone}
       datePrefix={datePrefix}
       contentHtml={sanitizedContent}
       fallbackContent={fallbackContent}
@@ -464,8 +474,11 @@ export function EntryContentBody({
               enabled={narrationSettings.highlightEnabled}
             />
           )}
+
+          {beforeContent}
         </>
       }
+      afterContent={afterContent}
       stickyControls={
         <StickyEntryControls
           actionButtonsRef={actionButtonsRef}

@@ -89,6 +89,10 @@ describe("API token scope enforcement", () => {
 
       await expectForbidden(caller.users["me.sessions"]());
       await expectForbidden(caller.narration.isAiTextProcessingAvailable());
+      // Grant management especially: a token must not be able to enumerate or
+      // revoke grants, least of all the one it was issued under (#1520).
+      await expectForbidden(caller.oauthGrants.list());
+      await expectForbidden(caller.oauthGrants.revoke({ clientId: "any" }));
     });
   });
 

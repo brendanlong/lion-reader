@@ -21,7 +21,13 @@
 
 "use client";
 
-import { useSyncExternalStore } from "react";
+import {
+  createContext,
+  createElement,
+  useContext,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 
 const emptySubscribe = () => () => {};
 const getClientSnapshot = () => true;
@@ -29,4 +35,33 @@ const getServerSnapshot = () => false;
 
 export function useIsHydrated(): boolean {
   return useSyncExternalStore(emptySubscribe, getClientSnapshot, getServerSnapshot);
+}
+
+const PrerenderedCacheContext = createContext(false);
+
+/**
+ * Declares that the React Query cache holds the same data on the server and on
+ * the client's hydration render — the mount seeded it synchronously from fixed
+ * data on both sides (the public demo) rather than streaming a prefetch. Under
+ * it, `useCanRenderFromCache` is true from the first server render, so the
+ * cache-gated components render real content into the prerendered HTML instead
+ * of the skeleton described above.
+ */
+export function PrerenderedCacheProvider({ children }: { children: ReactNode }) {
+  return createElement(PrerenderedCacheContext.Provider, { value: true }, children);
+}
+
+/** Whether this subtree is inside a PrerenderedCacheProvider (baked at build time). */
+export function useIsPrerendered(): boolean {
+  return useContext(PrerenderedCacheContext);
+}
+
+/**
+ * Whether cache-dependent rendering is safe: after hydration, or anywhere the
+ * cache is known to be identical on both sides (see PrerenderedCacheProvider).
+ */
+export function useCanRenderFromCache(): boolean {
+  const prerendered = useIsPrerendered();
+  const isHydrated = useIsHydrated();
+  return prerendered || isHydrated;
 }

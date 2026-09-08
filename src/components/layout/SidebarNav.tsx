@@ -8,7 +8,7 @@
 "use client";
 
 import { Suspense } from "react";
-import { usePathname } from "next/navigation";
+import { useAppPathname } from "@/lib/hooks/useAppLocation";
 import { trpc } from "@/lib/trpc/client";
 import { NavLink } from "@/components/ui/nav-link";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
@@ -63,7 +63,7 @@ function SuspenseCount({ children }: { children: React.ReactNode }) {
  * Main navigation links with independently streaming unread counts.
  */
 export function SidebarNav({ onNavigate, onPrefetch }: SidebarNavProps) {
-  const pathname = usePathname();
+  const pathname = useAppPathname();
 
   const isActiveLink = (href: string) => pathname === href;
 
