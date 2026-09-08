@@ -13,7 +13,8 @@ import { entries, narrationContent } from "@/server/db/schema";
 import { fetchHtmlPage, HttpFetchError } from "@/server/http/fetch";
 import { cleanContent, cleanContentAsync, absolutizeUrls } from "@/server/feed/content-cleaner";
 import { sanitizeEntryContentFamily } from "@/server/html/sanitize-entry";
-import { pluginRegistry } from "@/server/plugins";
+import { pluginRegistry, claimFetchedPage } from "@/server/plugins";
+import type { SavedArticleContent } from "@/server/plugins/types";
 import { logger } from "@/lib/logger";
 import { processMarkdown } from "@/server/markdown";
 import { errors } from "@/server/trpc/errors";
@@ -61,6 +62,23 @@ export async function fetchFullContent(
       ? cleanContentAsync(html, { url: resolveUrl })
       : Promise.resolve(cleanContent(html, { url: resolveUrl }));
 
+  // Plugin content is already the article: store it as the original and run
+  // Readability only if the plugin didn't declare it clean.
+  const resultFromPlugin = async (
+    pluginContent: SavedArticleContent,
+    skipReadability: boolean | undefined,
+    fallbackResolveUrl: string
+  ): Promise<FetchFullContentResult> => {
+    const html = pluginContent.html;
+    const resolveUrl = pluginContent.canonicalUrl || fallbackResolveUrl;
+    const contentOriginal = absolutizeUrls(html, resolveUrl);
+    if (skipReadability) {
+      return { success: true, contentOriginal };
+    }
+    const cleaned = await runClean(html, resolveUrl);
+    return { success: true, contentOriginal, contentCleaned: cleaned?.content };
+  };
+
   try {
     const urlObj = new URL(url);
 
@@ -81,28 +99,11 @@ export async function fetchFullContent(
             url,
             plugin: plugin.name,
           });
-
-          const html = pluginContent.html;
-          const resolveUrl = pluginContent.canonicalUrl || url;
-
-          const contentOriginal = absolutizeUrls(html, resolveUrl);
-
-          // Respect plugin's skipReadability setting
-          if (plugin.capabilities.savedArticle.skipReadability) {
-            return {
-              success: true,
-              contentOriginal,
-            };
-          }
-
-          // Run Readability on plugin content
-          const cleaned = await runClean(html, resolveUrl);
-
-          return {
-            success: true,
-            contentOriginal,
-            contentCleaned: cleaned?.content,
-          };
+          return await resultFromPlugin(
+            pluginContent,
+            plugin.capabilities.savedArticle.skipReadability,
+            url
+          );
         }
       } catch (error) {
         logger.warn("Plugin fetch failed, falling back to standard fetching", {
@@ -142,6 +143,20 @@ export async function fetchFullContent(
         contentOriginal: content,
         contentCleaned: content,
       };
+    }
+
+    // A page no hostname-matched plugin handled may still be a source a plugin
+    // recognizes from the document itself (a Notion page on a custom domain).
+    if (!plugin) {
+      const claimed = await claimFetchedPage({ html: result.content, url: new URL(resolveUrl) });
+      if (claimed) {
+        logger.debug("Plugin claimed the fetched page", { url, plugin: claimed.plugin.name });
+        return await resultFromPlugin(
+          claimed.content,
+          claimed.plugin.capabilities.savedArticle.skipReadability,
+          resolveUrl
+        );
+      }
     }
 
     // For HTML, absolutize URLs in the original

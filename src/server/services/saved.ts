@@ -41,7 +41,8 @@ import { toNewEntryListData } from "@/lib/events/schemas";
 import { errors } from "@/server/trpc/errors";
 import { markEntriesRead } from "@/server/services/entries";
 import { publishMarkReadStateChanges } from "@/server/services/entry-events";
-import { pluginRegistry } from "@/server/plugins";
+import { pluginRegistry, claimFetchedPage } from "@/server/plugins";
+import type { SavedArticleCapability, SavedArticleContent } from "@/server/plugins/types";
 import {
   isGoogleDocsUrl,
   normalizeGoogleDocsUrl,
@@ -918,29 +919,18 @@ async function acquireArticleContent(
     try {
       const content = await plugin.capabilities.savedArticle.fetchContent(urlObj!);
       if (content) {
-        // Check plugin content size
-        if (content.html.length > maxSize) {
-          throw errors.contentTooLarge("Article", maxSize);
-        }
-
+        const bundle = bundleFromPlugin(
+          content,
+          plugin.capabilities.savedArticle,
+          params.url,
+          maxSize
+        );
         logger.debug("Successfully fetched content via plugin", {
           url: params.url,
           plugin: plugin.name,
           title: content.title,
         });
-        return {
-          html: content.html,
-          contentUrl: content.canonicalUrl ?? params.url,
-          pluginContent: {
-            html: content.html,
-            title: content.title,
-            author: content.author,
-            excerpt: content.excerpt,
-            siteName: plugin.capabilities.savedArticle.siteName,
-            skipReadability: plugin.capabilities.savedArticle.skipReadability,
-          },
-          preCleanedContent: null,
-        };
+        return bundle;
       }
     } catch (error) {
       // A size-limit violation is a hard failure — surfacing it beats
@@ -1061,10 +1051,61 @@ async function acquireArticleContent(
       preCleanedContent: markdownResult,
     };
   }
+  // A page no hostname-matched plugin handled may still be a source a plugin
+  // recognizes from the document itself (a Notion page on a custom domain).
+  if (!plugin) {
+    const claimed = await claimFetchedPage({ html: result.content, url: new URL(result.finalUrl) });
+    if (claimed && claimed.content.html.length > maxSize) {
+      // Unlike the hostname-matched path, a claimed page has a fallback in hand.
+      logger.warn("Plugin content for the fetched page is too large, keeping the page as fetched", {
+        url: result.finalUrl,
+        plugin: claimed.plugin.name,
+      });
+    } else if (claimed) {
+      const bundle = bundleFromPlugin(
+        claimed.content,
+        claimed.plugin.capabilities.savedArticle,
+        result.finalUrl,
+        maxSize
+      );
+      logger.debug("Plugin claimed the fetched page", {
+        url: result.finalUrl,
+        plugin: claimed.plugin.name,
+        title: claimed.content.title,
+      });
+      return bundle;
+    }
+  }
+
   return {
     html: result.content,
     contentUrl: result.finalUrl,
     pluginContent: null,
+    preCleanedContent: null,
+  };
+}
+
+/** Wrap plugin-fetched content as a bundle; a size-limit breach is a hard failure. */
+function bundleFromPlugin(
+  content: SavedArticleContent,
+  capability: SavedArticleCapability,
+  fallbackUrl: string,
+  maxSize: number
+): AcquiredArticleContent {
+  if (content.html.length > maxSize) {
+    throw errors.contentTooLarge("Article", maxSize);
+  }
+  return {
+    html: content.html,
+    contentUrl: content.canonicalUrl ?? fallbackUrl,
+    pluginContent: {
+      html: content.html,
+      title: content.title,
+      author: content.author,
+      excerpt: content.excerpt,
+      siteName: capability.siteName,
+      skipReadability: capability.skipReadability,
+    },
     preCleanedContent: null,
   };
 }
