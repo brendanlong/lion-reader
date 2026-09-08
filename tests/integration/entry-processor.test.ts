@@ -15,11 +15,9 @@ import {
   generateContentHash,
   clampPublishedAt,
   deriveGuid,
-  generateEntrySummary,
   findEntryByGuid,
   createEntry,
   updateEntryContent,
-  processEntry,
   processEntries,
 } from "../../src/server/feed/entry-processor";
 import type { ParsedEntry, ParsedFeed } from "../../src/server/feed/types";
@@ -205,52 +203,6 @@ describe("Entry Processor", () => {
     });
   });
 
-  describe("generateEntrySummary", () => {
-    it("strips HTML tags", () => {
-      const entry: ParsedEntry = {
-        content: "<p>This is <strong>bold</strong> text.</p>",
-      };
-
-      expect(generateEntrySummary(entry)).toBe("This is bold text.");
-    });
-
-    it("removes style tags and their content", () => {
-      const entry: ParsedEntry = {
-        content: "<style>#content img { max-width: 100% }</style><p>Actual content here.</p>",
-      };
-
-      expect(generateEntrySummary(entry)).toBe("Actual content here.");
-    });
-
-    it("removes script tags and their content", () => {
-      const entry: ParsedEntry = {
-        content:
-          '<script>alert("bad")</script><p>Visible text.</p><script type="text/javascript">more code</script>',
-      };
-
-      expect(generateEntrySummary(entry)).toBe("Visible text.");
-    });
-
-    it("truncates long content to 300 characters", () => {
-      const longContent = "A".repeat(500);
-      const entry: ParsedEntry = {
-        content: longContent,
-      };
-
-      const summary = generateEntrySummary(entry);
-      expect(summary).toHaveLength(300);
-      expect(summary.endsWith("...")).toBe(true);
-    });
-
-    it("uses summary when content is missing", () => {
-      const entry: ParsedEntry = {
-        summary: "This is the summary.",
-      };
-
-      expect(generateEntrySummary(entry)).toBe("This is the summary.");
-    });
-  });
-
   describe("findEntryByGuid", () => {
     it("finds existing entry by feed ID and GUID", async () => {
       const feed = await createTestFeed();
@@ -383,7 +335,7 @@ describe("Entry Processor", () => {
     });
   });
 
-  describe("processEntry", () => {
+  describe("processEntries per-entry results", () => {
     it("creates new entry when not exists", async () => {
       const feed = await createTestFeed();
 
@@ -393,12 +345,16 @@ describe("Entry Processor", () => {
         content: "New content",
       };
 
-      const result = await processEntry(feed.id, "web", parsedEntry, new Date());
+      const { entries: results } = await processEntries(feed.id, feed.type, {
+        title: "Test Feed",
+        items: [parsedEntry],
+      });
 
-      expect(result.isNew).toBe(true);
-      expect(result.isUpdated).toBe(false);
-      expect(result.guid).toBe("new-entry-1");
-      expect(result.id).toBeDefined();
+      expect(results).toHaveLength(1);
+      expect(results[0].isNew).toBe(true);
+      expect(results[0].isUpdated).toBe(false);
+      expect(results[0].guid).toBe("new-entry-1");
+      expect(results[0].id).toBeDefined();
 
       // Verify entry exists in database
       const found = await findEntryByGuid(feed.id, "new-entry-1");
@@ -415,8 +371,11 @@ describe("Entry Processor", () => {
         content: "Original content",
       };
 
-      const createResult = await processEntry(feed.id, "web", initialEntry, new Date());
-      expect(createResult.isNew).toBe(true);
+      const createResult = await processEntries(feed.id, feed.type, {
+        title: "Test Feed",
+        items: [initialEntry],
+      });
+      expect(createResult.entries[0].isNew).toBe(true);
 
       // Process with different content
       const updatedEntry: ParsedEntry = {
@@ -425,11 +384,14 @@ describe("Entry Processor", () => {
         content: "New content here",
       };
 
-      const updateResult = await processEntry(feed.id, "web", updatedEntry, new Date());
+      const updateResult = await processEntries(feed.id, feed.type, {
+        title: "Test Feed",
+        items: [updatedEntry],
+      });
 
-      expect(updateResult.isNew).toBe(false);
-      expect(updateResult.isUpdated).toBe(true);
-      expect(updateResult.id).toBe(createResult.id); // Same entry ID
+      expect(updateResult.entries[0].isNew).toBe(false);
+      expect(updateResult.entries[0].isUpdated).toBe(true);
+      expect(updateResult.entries[0].id).toBe(createResult.entries[0].id); // Same entry ID
 
       // Verify content was updated
       const found = await findEntryByGuid(feed.id, "entry-to-update");
@@ -446,15 +408,21 @@ describe("Entry Processor", () => {
       };
 
       // First process
-      const result1 = await processEntry(feed.id, "web", entry, new Date());
-      expect(result1.isNew).toBe(true);
+      const result1 = await processEntries(feed.id, feed.type, {
+        title: "Test Feed",
+        items: [entry],
+      });
+      expect(result1.entries[0].isNew).toBe(true);
 
       // Second process with same content
-      const result2 = await processEntry(feed.id, "web", entry, new Date());
+      const result2 = await processEntries(feed.id, feed.type, {
+        title: "Test Feed",
+        items: [entry],
+      });
 
-      expect(result2.isNew).toBe(false);
-      expect(result2.isUpdated).toBe(false);
-      expect(result2.id).toBe(result1.id);
+      expect(result2.entries[0].isNew).toBe(false);
+      expect(result2.entries[0].isUpdated).toBe(false);
+      expect(result2.entries[0].id).toBe(result1.entries[0].id);
     });
   });
 

@@ -56,24 +56,6 @@ export const COMMON_FEED_PATHS = [
 ];
 
 /**
- * Gets an attribute value case-insensitively from an attributes object.
- *
- * @param attribs - The attributes object from htmlparser2
- * @param name - The attribute name (lowercase)
- * @returns The attribute value, or undefined if not found
- */
-function getAttributeCI(attribs: Record<string, string>, name: string): string | undefined {
-  // Try lowercase first (most common case)
-  if (name in attribs) return attribs[name];
-
-  // Try uppercase
-  const upperName = name.toUpperCase();
-  if (upperName in attribs) return attribs[upperName];
-
-  return undefined;
-}
-
-/**
  * Checks if a rel attribute value indicates an alternate link.
  * The rel attribute can contain multiple space-separated values.
  *
@@ -151,26 +133,21 @@ export function discoverFeeds(html: string, baseUrl: string): DiscoveredFeed[] {
   const parser = new Parser(
     {
       onopentag(name, attribs) {
-        const tagName = name.toLowerCase();
-
-        // Check for link tags
-        if (tagName === "link") {
+        // Check for link tags (htmlparser2 lowercases tag and attribute names)
+        if (name === "link") {
           // Check if this is a rel="alternate" link
-          const rel = getAttributeCI(attribs, "rel");
-          if (!isAlternateRel(rel)) {
+          if (!isAlternateRel(attribs.rel)) {
             return;
           }
 
           // Check if the type is a feed type
-          const type = getAttributeCI(attribs, "type");
-          const feedType = getFeedTypeFromMime(type);
+          const feedType = getFeedTypeFromMime(attribs.type);
           if (feedType === null) {
             return;
           }
 
           // Extract and resolve the href
-          const href = getAttributeCI(attribs, "href");
-          const resolvedUrl = resolveUrl(href, baseUrl);
+          const resolvedUrl = resolveUrl(attribs.href, baseUrl);
           if (!resolvedUrl) {
             return;
           }
@@ -181,24 +158,22 @@ export function discoverFeeds(html: string, baseUrl: string): DiscoveredFeed[] {
           }
           seenUrls.add(resolvedUrl);
 
-          // Extract title if present
-          const title = getAttributeCI(attribs, "title");
-
           feeds.push({
             url: resolvedUrl,
             type: feedType,
-            title: title || undefined,
+            // Extract title if present
+            title: attribs.title || undefined,
           });
         }
       },
       onclosetag(name) {
         // Exit early after </head> - no feed links in body
-        if (name.toLowerCase() === "head") {
+        if (name === "head") {
           parser.pause();
         }
       },
     },
-    { decodeEntities: true, lowerCaseTags: false, lowerCaseAttributeNames: false }
+    { decodeEntities: true }
   );
 
   parser.write(html);

@@ -95,11 +95,7 @@ export function parseGitHubUrl(url: URL): GitHubUrlType | null {
     }
 
     // gist.github.com/{user}/{gist_id}
-    if (parts.length >= 2) {
-      return { type: "gist", gistId: parts[1], filename };
-    }
-
-    return null;
+    return { type: "gist", gistId: parts[1], filename };
   }
 
   // Raw URLs: raw.githubusercontent.com/{owner}/{repo}/{ref}/{path}

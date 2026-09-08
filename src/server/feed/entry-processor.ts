@@ -15,7 +15,6 @@ import { publishNewEntry, publishEntryUpdatedFromEntry } from "../redis/pubsub";
 import { toNewEntryListData, type NewEntryListDataSource } from "@/lib/events/schemas";
 import { deriveEntryUrl, type ParsedEntry, type ParsedFeed } from "./types";
 import { cleanEntryContent } from "./content-utils";
-import { generateSummary } from "../html/strip-html";
 import { logger } from "@/lib/logger";
 
 /**
@@ -95,8 +94,8 @@ export interface ProcessEntriesOptions {
  * The hash covers title, content, author, and URL — the fields that
  * `updateEntryContent` actually rewrites when the hash changes. Previously only
  * title+content were hashed, so a feed correcting an entry's URL or author
- * without touching its text was silently ignored (see `processEntry`, which only
- * updates on a hash change).
+ * without touching its text was silently ignored (see `processEntryWithCache`,
+ * which only updates on a hash change).
  *
  * `pubDate` is deliberately NOT hashed: `updateEntryContent` never rewrites
  * `published_at` because it is denormalized into `user_entries.published_or_fetched_at`
@@ -170,24 +169,6 @@ export function deriveGuid(entry: ParsedEntry): string {
   }
 
   throw new Error("Cannot derive GUID: entry has no guid, link, or title");
-}
-
-/**
- * Generates a summary from entry content.
- *
- * Prefers the feed-provided summary (from <description> or <summary> elements)
- * when available, as that's what the publisher intended as the excerpt.
- * Falls back to generating from full content if no summary is provided.
- *
- * Strips HTML and truncates to 300 characters.
- *
- * @param entry - The parsed entry
- * @returns Summary string
- */
-export function generateEntrySummary(entry: ParsedEntry): string {
-  // Prefer explicit summary from feed, fall back to content
-  const source = entry.summary ?? entry.content ?? "";
-  return generateSummary(source);
 }
 
 /**
@@ -302,83 +283,6 @@ export async function updateEntryContent(
     .returning();
 
   return entry;
-}
-
-/**
- * Processes a single entry from a feed.
- * Creates new entries or updates existing ones based on content hash.
- *
- * @param feedId - The feed's UUID
- * @param feedType - The feed type
- * @param parsedEntry - The parsed entry from the feed
- * @param fetchedAt - Timestamp when the entry was fetched
- * @param feedUrl - The URL of the feed (for feed-specific cleaning)
- * @returns Processing result for this entry
- */
-export async function processEntry(
-  feedId: string,
-  feedType: "web" | "email" | "saved",
-  parsedEntry: ParsedEntry,
-  fetchedAt: Date,
-  feedUrl?: string
-): Promise<ProcessedEntry> {
-  const guid = deriveGuid(parsedEntry);
-  const contentHash = generateContentHash(parsedEntry);
-
-  // Check if entry already exists
-  const existing = await findEntryByGuid(feedId, guid);
-
-  if (!existing) {
-    // New entry - create it.
-    // Note: the new_entry event is NOT published here. It's published by
-    // processEntries AFTER createUserEntriesForFeed, because the SSE endpoint
-    // computes per-user absolute counts from visible_entries when the event
-    // arrives — publishing before the user_entries fanout would produce counts
-    // that exclude this entry.
-    const entry = await createEntry(feedId, feedType, parsedEntry, contentHash, fetchedAt, feedUrl);
-
-    return {
-      id: entry.id,
-      guid,
-      isNew: true,
-      isUpdated: false,
-      updatedAt: entry.updatedAt,
-      newEntryData: toNewEntryData(entry),
-    };
-  }
-
-  // Entry exists - check if content changed
-  if (existing.contentHash !== contentHash) {
-    // Content changed - update it
-    const entry = await updateEntryContent(existing.id, parsedEntry, contentHash, feedUrl);
-
-    // Publish entry_updated event for real-time updates (safe to publish here:
-    // subscribers' user_entries rows already exist for a previously-seen entry).
-    // Fire and forget - we don't want publishing failures to affect entry processing
-    publishEntryUpdatedFromEntry(feedId, entry).catch((err) => {
-      logger.error("Failed to publish entry_updated event", {
-        feedId,
-        entryId: entry.id,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    });
-
-    return {
-      id: entry.id,
-      guid,
-      isNew: false,
-      isUpdated: true,
-      updatedAt: entry.updatedAt,
-    };
-  }
-
-  // Content unchanged
-  return {
-    id: existing.id,
-    guid,
-    isNew: false,
-    isUpdated: false,
-  };
 }
 
 /**

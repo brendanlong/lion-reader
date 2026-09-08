@@ -6,7 +6,6 @@ import { describe, it, expect } from "vitest";
 import {
   parseOpml,
   generateOpml,
-  isValidOpml,
   OpmlParseError,
   type OpmlSubscription,
 } from "../../src/server/feed/opml";
@@ -467,27 +466,27 @@ describe("generateOpml", () => {
     });
   });
 
-  describe("folder grouping", () => {
-    it("groups subscriptions by folder", () => {
+  describe("tag grouping", () => {
+    it("groups subscriptions by tag", () => {
       const subscriptions: OpmlSubscription[] = [
-        { title: "Tech Blog", xmlUrl: "https://tech.example.com/feed", folder: "Technology" },
-        { title: "News Site", xmlUrl: "https://news.example.com/feed", folder: "News" },
+        { title: "Tech Blog", xmlUrl: "https://tech.example.com/feed", tags: ["Technology"] },
+        { title: "News Site", xmlUrl: "https://news.example.com/feed", tags: ["News"] },
         { title: "Ungrouped", xmlUrl: "https://other.example.com/feed" },
       ];
 
       const xml = generateOpml(subscriptions);
 
-      // Should have folder outlines
+      // Should have tag folder outlines
       expect(xml).toContain('text="Technology"');
       expect(xml).toContain('text="News"');
-      // Ungrouped should be at top level
+      // Every feed, tagged or not, is also listed at top level
       expect(xml).toMatch(/<outline type="rss" text="Ungrouped"/);
     });
 
-    it("places multiple feeds in the same folder", () => {
+    it("places multiple feeds in the same tag folder", () => {
       const subscriptions: OpmlSubscription[] = [
-        { title: "Blog 1", xmlUrl: "https://blog1.example.com/feed", folder: "Blogs" },
-        { title: "Blog 2", xmlUrl: "https://blog2.example.com/feed", folder: "Blogs" },
+        { title: "Blog 1", xmlUrl: "https://blog1.example.com/feed", tags: ["Blogs"] },
+        { title: "Blog 2", xmlUrl: "https://blog2.example.com/feed", tags: ["Blogs"] },
       ];
 
       const xml = generateOpml(subscriptions);
@@ -523,9 +522,9 @@ describe("generateOpml", () => {
       expect(xml).toContain("https://example.com/feed?a=1&amp;b=2");
     });
 
-    it("escapes special characters in folder names", () => {
+    it("escapes special characters in tag folder names", () => {
       const subscriptions: OpmlSubscription[] = [
-        { title: "Blog", xmlUrl: "https://example.com/feed", folder: "Tech & News" },
+        { title: "Blog", xmlUrl: "https://example.com/feed", tags: ["Tech & News"] },
       ];
 
       const xml = generateOpml(subscriptions);
@@ -542,32 +541,36 @@ describe("generateOpml", () => {
           xmlUrl: "https://blog1.example.com/feed",
           htmlUrl: "https://blog1.example.com",
         },
-        { title: "Blog Two", xmlUrl: "https://blog2.example.com/feed", folder: "Tech" },
+        { title: "Blog Two", xmlUrl: "https://blog2.example.com/feed", tags: ["Tech"] },
       ];
 
       const xml = generateOpml(subscriptions, { title: "Test Export" });
       const parsed = parseOpml(xml);
 
-      expect(parsed).toHaveLength(2);
+      // Both feeds at top level, plus Blog Two re-listed inside its "Tech" folder
+      expect(parsed).toHaveLength(3);
       expect(parsed[0].title).toBe("Blog One");
       expect(parsed[0].xmlUrl).toBe("https://blog1.example.com/feed");
       expect(parsed[0].htmlUrl).toBe("https://blog1.example.com");
       expect(parsed[1].title).toBe("Blog Two");
-      expect(parsed[1].category).toEqual(["Tech"]);
+      expect(parsed[1].category).toBeUndefined();
+      expect(parsed[2].title).toBe("Blog Two");
+      expect(parsed[2].category).toEqual(["Tech"]);
     });
 
-    it("preserves folder structure in round-trip", () => {
+    it("preserves tag folder structure in round-trip", () => {
       const subscriptions: OpmlSubscription[] = [
-        { title: "Blog 1", xmlUrl: "https://blog1.example.com/feed", folder: "Category A" },
-        { title: "Blog 2", xmlUrl: "https://blog2.example.com/feed", folder: "Category A" },
-        { title: "Blog 3", xmlUrl: "https://blog3.example.com/feed", folder: "Category B" },
+        { title: "Blog 1", xmlUrl: "https://blog1.example.com/feed", tags: ["Category A"] },
+        { title: "Blog 2", xmlUrl: "https://blog2.example.com/feed", tags: ["Category A"] },
+        { title: "Blog 3", xmlUrl: "https://blog3.example.com/feed", tags: ["Category B"] },
         { title: "Blog 4", xmlUrl: "https://blog4.example.com/feed" },
       ];
 
       const xml = generateOpml(subscriptions);
       const parsed = parseOpml(xml);
 
-      expect(parsed).toHaveLength(4);
+      // 4 at top level + 2 in "Category A" + 1 in "Category B"
+      expect(parsed).toHaveLength(7);
 
       // Check category assignments
       const categoryA = parsed.filter((f) => f.category?.includes("Category A"));
@@ -576,33 +579,7 @@ describe("generateOpml", () => {
 
       expect(categoryA).toHaveLength(2);
       expect(categoryB).toHaveLength(1);
-      expect(uncategorized).toHaveLength(1);
+      expect(uncategorized).toHaveLength(4);
     });
-  });
-});
-
-describe("isValidOpml", () => {
-  it("returns true for valid OPML", () => {
-    const xml = `<?xml version="1.0" encoding="UTF-8"?>
-      <opml version="2.0">
-        <head><title>Valid</title></head>
-        <body></body>
-      </opml>`;
-
-    expect(isValidOpml(xml)).toBe(true);
-  });
-
-  it("returns false for invalid XML", () => {
-    expect(isValidOpml("not xml")).toBe(false);
-  });
-
-  it("returns false for non-OPML XML", () => {
-    const xml = `<?xml version="1.0"?><rss><channel></channel></rss>`;
-    expect(isValidOpml(xml)).toBe(false);
-  });
-
-  it("returns false for OPML without body", () => {
-    const xml = `<?xml version="1.0"?><opml version="2.0"><head></head></opml>`;
-    expect(isValidOpml(xml)).toBe(false);
   });
 });

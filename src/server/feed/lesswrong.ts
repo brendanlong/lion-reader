@@ -111,13 +111,6 @@ export function extractCommentId(url: string): string | null {
 }
 
 /**
- * Checks if a LessWrong URL points to a specific comment.
- */
-export function isLessWrongCommentUrl(url: string): boolean {
-  return isLessWrongUrl(url) && extractCommentId(url) !== null;
-}
-
-/**
  * Checks if a URL is a LessWrong user profile URL.
  */
 export function isLessWrongUserUrl(url: string): boolean {

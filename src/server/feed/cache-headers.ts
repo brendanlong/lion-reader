@@ -165,7 +165,9 @@ export function parseCacheHeaders(headers: Headers): ParsedCacheHeaders {
  * @returns The effective max-age in seconds, or undefined if not cacheable
  */
 export function getEffectiveMaxAge(cacheControl: CacheControl): number | undefined {
-  // If no-store or no-cache, don't cache
+  // Only no-store suppresses a max-age here. `no-cache` deliberately doesn't:
+  // it means "revalidate before reuse", and every poll already sends a
+  // conditional GET, so the max-age still tells us how often to do that.
   if (cacheControl.noStore) {
     return undefined;
   }
