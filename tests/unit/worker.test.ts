@@ -649,6 +649,81 @@ describe("Worker", () => {
     });
   });
 
+  describe("job failure reporting", () => {
+    // onJobError is the single side-channel reporter for a failed job (the
+    // standalone worker wires it to Sentry). Both ways a job can fail must go
+    // through it exactly once — the production processJob logs and re-throws,
+    // so a second reporter anywhere would double-report every failure.
+    it("reports a rejected job to onJobError exactly once, with the job", async () => {
+      const reported: { job: Job; error: unknown }[] = [];
+      const failure = new Error("handler blew up");
+      let jobsClaimed = 0;
+
+      const worker = createWorker({
+        concurrency: 1,
+        pollIntervalMs: 10,
+        logger: silentLogger,
+        onJobError: (job, error) => reported.push({ job, error }),
+        claimJob: async () => {
+          if (jobsClaimed === 0) {
+            jobsClaimed++;
+            return createMockJob("failing-job");
+          }
+          return null;
+        },
+        processJob: async () => {
+          throw failure;
+        },
+      });
+
+      await worker.start();
+      await tick(100);
+
+      expect(reported).toHaveLength(1);
+      expect(reported[0].error).toBe(failure);
+      // The job is passed through so the reporter can attach its context
+      // (type, payload, consecutive failure count).
+      expect(reported[0].job.id).toBe("failing-job");
+      expect(reported[0].job.payload).toEqual({ feedId: "feed-failing-job" });
+      expect(worker.getStats().totalFailed).toBe(1);
+
+      await worker.stop();
+    });
+
+    it("reports a timed-out job to onJobError exactly once", async () => {
+      const reported: { job: Job; error: unknown }[] = [];
+      let jobsClaimed = 0;
+
+      const worker = createWorker({
+        concurrency: 1,
+        pollIntervalMs: 10,
+        jobTimeoutMs: 50,
+        logger: silentLogger,
+        onJobError: (job, error) => reported.push({ job, error }),
+        claimJob: async () => {
+          if (jobsClaimed === 0) {
+            jobsClaimed++;
+            return createMockJob("wedged-job");
+          }
+          return null;
+        },
+        // Never settles: the timeout wrapper rejects, and that rejection never
+        // reaches processJob's own error handling.
+        processJob: () => new Promise(() => {}),
+      });
+
+      await worker.start();
+      await tick(200);
+
+      expect(reported).toHaveLength(1);
+      expect(reported[0].job.id).toBe("wedged-job");
+      expect(reported[0].error).toBeInstanceOf(Error);
+      expect((reported[0].error as Error).message).toMatch(/timed out/);
+
+      await worker.stop();
+    });
+  });
+
   describe("liveness tracking", () => {
     it("updates lastActivityAt when polling", async () => {
       const worker = createWorker({

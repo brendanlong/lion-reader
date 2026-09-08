@@ -259,16 +259,10 @@ export const savedRouter = createTRPCRouter({
         });
       }
 
-      // Decode base64 content
-      let fileBuffer: Buffer;
-      try {
-        fileBuffer = Buffer.from(input.content, "base64");
-      } catch {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Invalid file content encoding. Expected base64.",
-        });
-      }
+      // Decode base64 content. Node's decoder never throws — it skips
+      // non-base64 characters — so content that isn't really base64 decodes to
+      // garbage bytes and is rejected by `convertUploadedFile` below.
+      const fileBuffer = Buffer.from(input.content, "base64");
 
       // Enforce the size limit on the decoded bytes before any conversion
       // (mammoth/Readability/Markdown), so a large upload can't burn memory/CPU.

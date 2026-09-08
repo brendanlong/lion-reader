@@ -13,6 +13,8 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
+import { TRPCError } from "@trpc/server";
+import { getHTTPStatusCodeFromError } from "@trpc/server/http";
 import { eq, and } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { users, entries, userEntries, feeds } from "../../src/server/db/schema";
@@ -1262,6 +1264,44 @@ describe("Saved Articles API", () => {
       ).rejects.toThrow(/exceeds the maximum size/i);
 
       // Nothing persisted for this user.
+      const savedFeed = await db
+        .select({ id: feeds.id })
+        .from(feeds)
+        .where(and(eq(feeds.type, "saved"), eq(feeds.userId, userId)));
+      const savedEntries =
+        savedFeed.length > 0
+          ? await db
+              .select({ id: entries.id })
+              .from(entries)
+              .where(eq(entries.feedId, savedFeed[0].id))
+          : [];
+      expect(savedEntries).toHaveLength(0);
+    });
+  });
+
+  describe("saved.uploadFile content decoding", () => {
+    // Node's base64 decoder silently skips characters outside the alphabet
+    // instead of throwing, so content that isn't base64 at all decodes to
+    // garbage bytes and reaches the converter. That must still be the user's
+    // problem (a 400), never an unhandled 500.
+    it("rejects content that isn't really base64 with a client error", async () => {
+      const userId = await createTestUser();
+      const caller = createCaller(await createAuthContext(userId));
+
+      let thrown: unknown;
+      try {
+        await caller.saved.uploadFile({
+          content: "!!!not base64@@@",
+          filename: "garbage.docx",
+        });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(TRPCError);
+      expect(getHTTPStatusCodeFromError(thrown as TRPCError)).toBe(400);
+
+      // Nothing was persisted for this user.
       const savedFeed = await db
         .select({ id: feeds.id })
         .from(feeds)

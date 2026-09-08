@@ -9,6 +9,7 @@ import { z } from "zod";
 import { eq, and, gt, isNull, sql } from "drizzle-orm";
 
 import { createTRPCRouter, confirmedProtectedProcedure as protectedProcedure } from "../trpc";
+import { errors } from "../errors";
 import { feeds, subscriptions, jobs } from "@/server/db/schema";
 
 // ============================================================================
@@ -142,7 +143,7 @@ export const brokenFeedsRouter = createTRPCRouter({
         .limit(1);
 
       if (subscription.length === 0) {
-        throw new Error("Feed not found or not subscribed");
+        throw errors.feedNotFound();
       }
 
       const now = new Date();

@@ -605,17 +605,23 @@ export async function claimSingletonJob(type: JobType): Promise<Job | null> {
   const now = new Date();
   const staleThreshold = new Date(now.getTime() - STALE_JOB_THRESHOLD_MS);
 
+  // Claims the singleton row if it is due and not held by a live worker. Used
+  // both for the initial attempt and for the post-INSERT-race retry below, which
+  // must apply exactly the same predicate.
+  const tryClaim = () =>
+    db.execute<RawJobRow>(sql`
+      UPDATE ${jobs}
+      SET
+        running_since = ${now},
+        updated_at = ${now}
+      WHERE type = ${type}
+        AND next_run_at <= ${now}
+        AND (running_since IS NULL OR running_since < ${staleThreshold})
+      RETURNING *
+    `);
+
   // First, try to claim an existing job
-  const claimResult = await db.execute<RawJobRow>(sql`
-    UPDATE ${jobs}
-    SET
-      running_since = ${now},
-      updated_at = ${now}
-    WHERE type = ${type}
-      AND next_run_at <= ${now}
-      AND (running_since IS NULL OR running_since < ${staleThreshold})
-    RETURNING *
-  `);
+  const claimResult = await tryClaim();
 
   if (claimResult.rows.length > 0) {
     return rowToJob(claimResult.rows[0]);
@@ -656,19 +662,10 @@ export async function claimSingletonJob(type: JobType): Promise<Job | null> {
       throw error;
     }
 
-    // Another worker created the job first - try to claim it. Keep the
-    // next_run_at <= now check: if the winner already ran and rescheduled the
-    // job, we must not immediately re-run it.
-    const retryResult = await db.execute<RawJobRow>(sql`
-      UPDATE ${jobs}
-      SET
-        running_since = ${now},
-        updated_at = ${now}
-      WHERE type = ${type}
-        AND next_run_at <= ${now}
-        AND (running_since IS NULL OR running_since < ${staleThreshold})
-      RETURNING *
-    `);
+    // Another worker created the job first - try to claim it. The shared
+    // predicate keeps the next_run_at <= now check: if the winner already ran
+    // and rescheduled the job, we must not immediately re-run it.
+    const retryResult = await tryClaim();
 
     if (retryResult.rows.length > 0) {
       return rowToJob(retryResult.rows[0]);
