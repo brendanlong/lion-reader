@@ -97,6 +97,40 @@ describe("Feed Stats API", () => {
     expect(result.items[0].entriesPerWeek).toBeNull();
   });
 
+  // A cursor reaches the SQL as a `uuid` comparison, so an unparseable value
+  // used to surface as a Postgres "invalid input syntax for type uuid" 500
+  // instead of a validation error.
+  it("rejects a malformed cursor as a validation error", async () => {
+    const userId = await createTestUser({ emailPrefix: "feedstats" });
+    const caller = createCaller(await createAuthContext(userId));
+
+    await expect(caller.feedStats.list({ cursor: "not-a-uuid" })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+  });
+
+  // The boundary-row subquery resolves a caller-supplied subscription id, so it
+  // must carry a user predicate: a subscription belonging to somebody else is
+  // not a valid pagination boundary and must not decide what this user sees.
+  it("does not resolve a foreign subscription as the pagination boundary", async () => {
+    const userId = await createTestUser({ emailPrefix: "feedstats" });
+    const otherUserId = await createTestUser({ emailPrefix: "feedstats-other" });
+
+    await createTestSubscription(userId, await createTestFeed({ title: "AAA Feed" }));
+    await createTestSubscription(userId, await createTestFeed({ title: "ZZZ Feed" }));
+    const foreignSubscriptionId = await createTestSubscription(
+      otherUserId,
+      await createTestFeed({ title: "MMM Feed" })
+    );
+
+    const caller = createCaller(await createAuthContext(userId));
+    const result = await caller.feedStats.list({ cursor: foreignSubscriptionId });
+
+    // Without the user predicate the boundary resolves to "MMM Feed" and this
+    // user gets back everything sorted after it ("ZZZ Feed").
+    expect(result.items).toEqual([]);
+  });
+
   it("computes stats independently per feed across multiple subscriptions", async () => {
     const userId = await createTestUser({ emailPrefix: "feedstats" });
     const feedA = await createTestFeed({ title: "AAA Feed" });

@@ -434,7 +434,16 @@ const feedHealthEndpoints = {
         })
         .from(feeds)
         .where(whereClause)
-        .orderBy(desc(feeds.consecutiveFailures), asc(feeds.title), asc(feeds.id))
+        // Must match the cursor comparison above exactly: the cursor compares
+        // COALESCE(title, ''), so ordering by the bare column (Postgres
+        // `ASC` = NULLS LAST) would sort untitled feeds after every titled one
+        // while the cursor sorts them first, making them unreachable past the
+        // first page.
+        .orderBy(
+          desc(feeds.consecutiveFailures),
+          sql`COALESCE(${feeds.title}, '') ASC`,
+          asc(feeds.id)
+        )
         .limit(limit + 1);
 
       const hasMore = rows.length > limit;
@@ -785,7 +794,9 @@ const overviewEndpoints = {
         ctx.db
           .select({
             active7d: sql<number>`COUNT(*) FILTER (WHERE ${users.lastActiveAt} > ${sevenDaysAgo})`,
-            active30d: sql<number>`COUNT(*) FILTER (WHERE ${users.lastActiveAt} > ${thirtyDaysAgo})`,
+            // No FILTER needed: the WHERE below already restricts the scan to
+            // the 30-day window (and `gt` excludes NULL last_active_at).
+            active30d: count(),
           })
           .from(users)
           .where(gt(users.lastActiveAt, thirtyDaysAgo)),

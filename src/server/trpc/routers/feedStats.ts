@@ -71,7 +71,10 @@ export const feedStatsRouter = createTRPCRouter({
     .input(
       z
         .object({
-          cursor: z.string().optional(),
+          // Validated as a UUID so a malformed cursor is a 400 rather than a
+          // Postgres `invalid input syntax for type uuid` 500 from the keyset
+          // comparison below.
+          cursor: z.string().uuid().optional(),
           limit: z.number().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT),
         })
         .optional()
@@ -97,20 +100,22 @@ export const feedStatsRouter = createTRPCRouter({
       // Cursor-based pagination matching ORDER BY (resolved_title ASC, id DESC).
       // We need composite logic since the primary sort (title) differs from the cursor column (id).
       if (cursor) {
+        // The boundary-row lookups are scoped to the requesting user: never
+        // resolve a caller-supplied id without a user predicate.
         conditions.push(
           sql`(
             COALESCE(${subscriptions.customTitle}, ${feeds.title}, ${feeds.url}) > (
               SELECT COALESCE(s2.custom_title, f2.title, f2.url)
               FROM subscriptions s2
               JOIN feeds f2 ON f2.id = s2.feed_id
-              WHERE s2.id = ${cursor}
+              WHERE s2.id = ${cursor} AND s2.user_id = ${userId}
             )
             OR (
               COALESCE(${subscriptions.customTitle}, ${feeds.title}, ${feeds.url}) = (
                 SELECT COALESCE(s2.custom_title, f2.title, f2.url)
                 FROM subscriptions s2
                 JOIN feeds f2 ON f2.id = s2.feed_id
-                WHERE s2.id = ${cursor}
+                WHERE s2.id = ${cursor} AND s2.user_id = ${userId}
               )
               AND ${subscriptions.id} < ${cursor}
             )

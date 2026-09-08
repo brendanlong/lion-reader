@@ -7,7 +7,7 @@
 
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import Redis from "ioredis";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
   users,
@@ -23,6 +23,7 @@ import {
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { getUserEventsChannel } from "../../src/server/redis/pubsub";
 import { processOpmlImport } from "../../src/server/services/imports";
+import { createTag, deleteTag, listTags } from "../../src/server/services/tags";
 import { createCaller } from "../../src/server/trpc/root";
 import { waitForMessages } from "../utils/pubsub";
 import {
@@ -416,6 +417,46 @@ describe("OPML Import", () => {
       expect(record.importedCount).toBe(3);
       expect(record.completedAt).not.toBeNull();
       expect(record.results.map((r) => r.status)).toEqual(["imported", "imported", "imported"]);
+    });
+
+    // `deleteTag` only tombstones, and `uq_tags_user_name` is partial
+    // (`WHERE deleted_at IS NULL`), so a live and a deleted tag can share a
+    // name. Reusing the tombstone would attach the imported subscriptions to a
+    // tag `listTags` hides — and `buildUncategorizedSubscriptionIdsSubquery`
+    // excludes anything with a subscription_tags row, so the feeds would show
+    // up in no sidebar group at all.
+    it("creates a new tag rather than reusing a soft-deleted one of the same name", async () => {
+      const userId = await createTestUser();
+      const created = await createTag(db, userId, { name: "News" });
+      await deleteTag(db, userId, created.id);
+
+      const importId = await seedImport(userId, [
+        { xmlUrl: "https://a.example.com/feed.xml", title: "A", category: ["News"] },
+      ]);
+      await processOpmlImport(db, importId);
+
+      const newsTags = await db
+        .select()
+        .from(tags)
+        .where(and(eq(tags.userId, userId), eq(tags.name, "News")));
+      expect(newsTags).toHaveLength(2);
+
+      const liveTags = newsTags.filter((t) => t.deletedAt === null);
+      expect(liveTags).toHaveLength(1);
+      expect(liveTags[0].id).not.toBe(created.id);
+
+      // The imported subscription is attached to the live tag, so it appears
+      // under "News" in the sidebar.
+      const associations = await db
+        .select({ tagId: subscriptionTags.tagId })
+        .from(subscriptionTags)
+        .innerJoin(subscriptions, eq(subscriptionTags.subscriptionId, subscriptions.id))
+        .where(eq(subscriptions.userId, userId));
+      expect(associations).toEqual([{ tagId: liveTags[0].id }]);
+
+      const listed = await listTags(db, userId);
+      expect(listed.items.map((t) => t.name)).toEqual(["News"]);
+      expect(listed.items[0].id).toBe(liveTags[0].id);
     });
 
     it("skips feeds the user is already subscribed to", async () => {

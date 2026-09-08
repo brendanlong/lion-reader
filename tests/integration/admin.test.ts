@@ -26,6 +26,8 @@ import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
 import { createTestFeed, createTestUser } from "./helpers";
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 // ============================================================================
 // Test Helpers
 // ============================================================================
@@ -301,6 +303,67 @@ describe("Admin API", () => {
 
       const feedIds = result.items.map((f) => f.feedId);
       expect(feedIds).toContain(brokenId);
+    });
+  });
+
+  describe("admin.listFeeds pagination", () => {
+    // The keyset cursor compares COALESCE(title, ''), so the ORDER BY has to
+    // do the same: with a bare `ASC` (Postgres NULLS LAST) an untitled feed
+    // sorts after every titled one while the cursor puts it first, and it
+    // becomes unreachable past the first page. Untitled feeds are exactly the
+    // never-successfully-fetched ones this admin page exists to surface.
+    it("reaches an untitled feed while paging", async () => {
+      const ctx = createAdminContext();
+      const caller = createCaller(ctx);
+
+      const untitledId = await createTestFeed({
+        url: "https://example.com/untitled.xml",
+        title: null,
+        consecutiveFailures: 0,
+      });
+      const alphaId = await createTestFeed({
+        url: "https://example.com/alpha.xml",
+        title: "Alpha",
+        consecutiveFailures: 0,
+      });
+      const zetaId = await createTestFeed({
+        url: "https://example.com/zeta.xml",
+        title: "Zeta",
+        consecutiveFailures: 0,
+      });
+
+      const seen: string[] = [];
+      let cursor: string | undefined;
+      for (let page = 0; page < 10; page++) {
+        const result = await caller.admin.listFeeds({ limit: 1, cursor });
+        seen.push(...result.items.map((f) => f.feedId));
+        cursor = result.nextCursor;
+        if (!cursor) break;
+      }
+
+      // Untitled first (COALESCE(title, '') sorts '' before every title), then
+      // alphabetically — and every feed is returned exactly once.
+      expect(seen).toEqual([untitledId, alphaId, zetaId]);
+    });
+  });
+
+  describe("admin.getOverview", () => {
+    it("counts active users in the 7- and 30-day windows", async () => {
+      const ctx = createAdminContext();
+      const caller = createCaller(ctx);
+
+      const now = Date.now();
+      await createTestUser({ emailPrefix: "recent", lastActiveAt: new Date(now - 3 * DAY_MS) });
+      await createTestUser({ emailPrefix: "midway", lastActiveAt: new Date(now - 20 * DAY_MS) });
+      await createTestUser({ emailPrefix: "stale", lastActiveAt: new Date(now - 40 * DAY_MS) });
+      // Never active: excluded from both windows (NULL fails the > comparison).
+      await createTestUser({ emailPrefix: "never", lastActiveAt: null });
+
+      const stats = await caller.admin.getOverview();
+
+      expect(stats.totalUsers).toBe(4);
+      expect(stats.activeUsersLast7Days).toBe(1);
+      expect(stats.activeUsersLast30Days).toBe(2);
     });
   });
 
