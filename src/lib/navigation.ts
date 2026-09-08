@@ -6,16 +6,32 @@
 
 import { type MouseEvent } from "react";
 
+/** Serializable state stored on a history entry. */
+type HistoryState = Record<string, unknown>;
+
+/**
+ * Next's patched pushState/replaceState carry their internal keys (`__NA`,
+ * `__PRIVATE_NEXTJS_INTERNALS_TREE`) forward from the current history entry by
+ * writing them *into the object we pass* rather than copying it, and then treat
+ * any object that already carries `__NA` as one of their own internal calls —
+ * updating the URL but skipping the router sync that makes
+ * `usePathname`/`useSearchParams` see it. Handing the same object over twice
+ * therefore makes the second navigation a silent no-op, so every call gets a
+ * fresh copy.
+ */
+function freshHistoryState(state: HistoryState | null): HistoryState | null {
+  return state === null ? null : { ...state };
+}
+
 /**
  * Navigate using pushState without triggering SSR.
  * UnifiedEntriesContent reads usePathname() to determine what to render.
  *
  * `state` is stored on the created history entry, so a later handler can tell
- * which entry it created (see `useEntryUrlState`). Next's app router merges its
- * own internal keys into whatever we pass, so an object is safe here.
+ * which entry it created (see `useEntryUrlState`).
  */
-export function clientPush(href: string, state: unknown = null): void {
-  window.history.pushState(state, "", href);
+export function clientPush(href: string, state: HistoryState | null = null): void {
+  window.history.pushState(freshHistoryState(state), "", href);
 }
 
 /**
@@ -25,8 +41,8 @@ export function clientPush(href: string, state: unknown = null): void {
  * Note that replacing overwrites the current entry's state, so callers that
  * need to keep a marker set by `clientPush` must pass it through again.
  */
-export function clientReplace(href: string, state: unknown = null): void {
-  window.history.replaceState(state, "", href);
+export function clientReplace(href: string, state: HistoryState | null = null): void {
+  window.history.replaceState(freshHistoryState(state), "", href);
 }
 
 /**

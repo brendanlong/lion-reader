@@ -2,13 +2,16 @@
  * E2E tests for client-side navigation behavior.
  *
  * In-app navigation is shallow (`pushState` + AppRouter re-deriving from
- * `usePathname()`), so there's no browser-native scroll reset. These tests
- * pin the behaviors that need to be reproduced by hand:
+ * `usePathname()`), so there's no browser-native scroll reset and the history
+ * stack is ours to manage. These tests pin the behaviors that need to be
+ * reproduced by hand:
  *
  * - list→list navigation resets the entry-list scroll container to the top
  *   (issue #1013), while
  * - opening/closing an entry (a `?entry=` search-param change, same pathname)
- *   does NOT reset it — the list stays put under the reader.
+ *   does NOT reset it — the list stays put under the reader;
+ * - opening an entry pushes one history entry and closing pops it, and the
+ *   cycle can repeat — Next's router patch mutates the pushed state object.
  */
 
 import { test, expect, type Page } from "@playwright/test";
@@ -143,7 +146,7 @@ test("does not reset the entry-list scroll when opening and closing an entry", a
   await expect.poll(() => mainScrollTop(page)).toBeGreaterThan(0);
 });
 
-test("closing an entry pops its history entry, so browser Back still works", async ({
+test("opening and closing an entry can repeat, and closing pops its history entry", async ({
   page,
   baseURL,
 }) => {
@@ -167,9 +170,22 @@ test("closing an entry pops its history entry, so browser Back still works", asy
 
   // Opening pushes a history entry; closing must pop it rather than replacing
   // it, or the stranded entry swallows the user's next Back press.
-  await page.locator(`[data-entry-id="${entry.id}"]`).click();
+  const row = page.locator(`[data-entry-id="${entry.id}"]`);
+  const backToList = page.getByRole("button", { name: /back to list/i });
+  await row.click();
   await expect(page).toHaveURL(new RegExp(`entry=${entry.id}`));
-  await page.getByRole("button", { name: /back to list/i }).click();
+  await backToList.click();
+  await expect(page).toHaveURL(/\/all$/);
+  await expect(row).toBeVisible();
+
+  // Opening again must render the reader, not just change the URL: Next's
+  // router patch mutates the state object pushed, so reusing it made the
+  // second open a silent no-op.
+  await row.click();
+  await expect(page).toHaveURL(new RegExp(`entry=${entry.id}`));
+  await expect(backToList).toBeVisible();
+  await expect(row).toBeHidden();
+  await backToList.click();
   await expect(page).toHaveURL(/\/all$/);
 
   await page.goBack();

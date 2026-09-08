@@ -58,6 +58,38 @@ describe("useEntryUrlState", () => {
     expect(replaceState).not.toHaveBeenCalled();
   });
 
+  it("re-opens an entry after Back when pushState mutates the state it is given", () => {
+    // Next's patched pushState copies its internal `__NA` key from the current
+    // history entry *onto the object it is handed*, and skips the router sync
+    // (the part that updates usePathname/useSearchParams) for any object that
+    // already carries it. Mirror that, with every entry Next-managed (so `__NA`
+    // is set, as in the app), and count the syncs: open → back → open must sync
+    // twice. A shared state object gets `__NA` on the first open and is then
+    // mistaken for an internal call on the second.
+    let routerSyncs = 0;
+    const originalPushState = window.history.pushState.bind(window.history);
+    vi.spyOn(window.history, "pushState").mockImplementation((data, unused, url) => {
+      if (data?.__NA) return originalPushState(data, unused, url);
+      data = data ?? {};
+      if (window.history.state?.__NA) data.__NA = true;
+      routerSyncs++;
+      return originalPushState(data, unused, url);
+    });
+    window.history.replaceState({ __NA: true }, "", "/all");
+    const { result, rerender } = renderHook(() => useEntryUrlState());
+
+    act(() => result.current.setOpenEntryId("entry-1"));
+    expect(routerSyncs).toBe(1);
+
+    // Browser Back restores the list's entry, which Next had stamped too.
+    window.history.replaceState({ __NA: true }, "", "/all");
+    navigate("", rerender);
+
+    act(() => result.current.setOpenEntryId("entry-1"));
+    expect(routerSyncs).toBe(2);
+    expect(window.location.search).toBe("?entry=entry-1");
+  });
+
   it("marks the history entry it pushes when opening from the list", () => {
     const { result } = renderHook(() => useEntryUrlState());
 
