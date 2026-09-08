@@ -89,7 +89,7 @@ jobs:
         uses: actions/cache@v6.1.0
         with:
           path: native/*/*.node
-          key: native-modules-${{ runner.os }}-${{ hashFiles('native/**') }}
+          key: native-modules-${{ runner.os }}-${{ hashFiles('native/**', 'rust-toolchain.toml') }}
 
       - uses: pnpm/action-setup@v6.0.10
         if: steps.native-cache.outputs.cache-hit != 'true'
@@ -150,6 +150,13 @@ jobs:
       - name: Run clippy
         if: ${{ !cancelled() }}
         run: ./scripts/cargo-native.sh clippy --workspace --all-targets -- -D warnings
+
+      # The stage is just `apk add rust` plus the check, so this costs a pull
+      # and no cargo build. Without it, a base-image bump that moves Alpine's
+      # rustc off the pin is green here and red in the deploy build.
+      - name: Check the pin still matches the image's rustc
+        if: ${{ !cancelled() }}
+        run: docker build --target rust-base .
 
   unit-tests:
     name: Unit Tests

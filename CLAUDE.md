@@ -38,9 +38,9 @@ export PATH="$PWD/.node26/bin:$PATH"
 
 ## Rust Version
 
-Pinned in `rust-toolchain.toml`, which explains what it must stay equal to and
-when to bump it. Read it before changing the Rust toolchain or the Dockerfile's
-`native-builder` base image.
+Pinned to the rustc Alpine ships in the Dockerfile's `rust-base` stage
+(`rust-toolchain.toml`, which says why). Bump the two together — CI fails
+otherwise.
 
 ## Commands
 
