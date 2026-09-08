@@ -349,65 +349,6 @@ export class ArticleNarrator {
   }
 
   /**
-   * Gets the current speech rate.
-   */
-  getRate(): number {
-    return this.rate;
-  }
-
-  /**
-   * Gets the current speech pitch.
-   */
-  getPitch(): number {
-    return this.pitch;
-  }
-
-  /**
-   * Gets the current paragraph index.
-   */
-  getCurrentParagraphIndex(): number {
-    return this.currentIndex;
-  }
-
-  /**
-   * Gets the text of the current paragraph.
-   */
-  getCurrentParagraphText(): string | null {
-    if (this.currentIndex >= 0 && this.currentIndex < this.paragraphs.length) {
-      return this.paragraphs[this.currentIndex];
-    }
-    return null;
-  }
-
-  /**
-   * Jumps to a specific paragraph index.
-   *
-   * @param index - The paragraph index to jump to
-   */
-  jumpToParagraph(index: number): void {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-      return;
-    }
-
-    if (index < 0 || index >= this.paragraphs.length) {
-      return;
-    }
-
-    // Cancel current playback
-    speechSynthesis.cancel();
-    this.utterance = null;
-
-    this.currentIndex = index;
-
-    // If we were playing, continue playing from new position
-    if (this.status === "playing" || this.status === "paused") {
-      this.speakCurrentParagraph();
-    } else {
-      this.notifyStateChange();
-    }
-  }
-
-  /**
    * Speaks the current paragraph.
    */
   private speakCurrentParagraph(): void {

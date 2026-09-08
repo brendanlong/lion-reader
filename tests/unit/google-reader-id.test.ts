@@ -8,13 +8,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import {
-  int64ToLongFormId,
-  int64ToShortHex,
-  parseItemId,
-  feedStreamId,
-  parseFeedStreamId,
-} from "../../src/server/google-reader/id";
+import { int64ToLongFormId, parseItemId, feedStreamId } from "../../src/server/google-reader/id";
 import {
   parseStreamId,
   stateStreamId,
@@ -42,14 +36,6 @@ describe("int64ToLongFormId", () => {
     // The hex should be 16 chars
     const hex = result.split("/item/")[1];
     expect(hex).toHaveLength(16);
-  });
-});
-
-describe("int64ToShortHex", () => {
-  it("formats as 16-char zero-padded hex", () => {
-    expect(int64ToShortHex(BigInt(31))).toBe("000000000000001f");
-    expect(int64ToShortHex(BigInt(255))).toBe("00000000000000ff");
-    expect(int64ToShortHex(BigInt(0))).toBe("0000000000000000");
   });
 });
 
@@ -86,13 +72,6 @@ describe("parseItemId", () => {
     expect(parsed).toBe(original);
   });
 
-  it("roundtrips through int64ToShortHex", () => {
-    const original = BigInt(987654321);
-    const shortHex = int64ToShortHex(original);
-    const parsed = parseItemId(shortHex);
-    expect(parsed).toBe(original);
-  });
-
   it("roundtrips through decimal string", () => {
     const original = BigInt(42);
     const decimal = original.toString();
@@ -105,23 +84,6 @@ describe("feedStreamId", () => {
   it("formats a stream serial as feed/{int64}", () => {
     expect(feedStreamId(BigInt("56525179323085689"))).toBe("feed/56525179323085689");
     expect(feedStreamId(BigInt(1))).toBe("feed/1");
-  });
-
-  it("round-trips through parseFeedStreamId", () => {
-    const streamId = BigInt(987654321);
-    expect(parseFeedStreamId(feedStreamId(streamId))).toBe(streamId);
-  });
-});
-
-describe("parseFeedStreamId", () => {
-  it("parses feed/{int64} format", () => {
-    expect(parseFeedStreamId("feed/12345")).toBe(BigInt(12345));
-  });
-
-  it("throws on non-feed stream IDs", () => {
-    expect(() => parseFeedStreamId("user/-/state/com.google/read")).toThrow(
-      "Invalid feed stream ID"
-    );
   });
 });
 

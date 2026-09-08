@@ -36,35 +36,11 @@ import { visibleEntries, subscriptionTags, subscriptions, users } from "@/server
 // ============================================================================
 
 /**
- * Global entry counts (all articles, starred).
- */
-export interface GlobalCounts {
-  all: { unread: number };
-  starred: { unread: number };
-}
-
-/**
- * Saved article counts.
- */
-export interface SavedCounts {
-  saved: { unread: number };
-}
-
-/**
  * Tag unread count.
  */
 export interface TagCount {
   id: string;
   unread: number;
-}
-
-/**
- * Subscription-related counts (subscription itself + its tags or uncategorized).
- */
-export interface SubscriptionCounts {
-  subscription: { id: string; unread: number };
-  tags: TagCount[];
-  uncategorized: { unread: number } | null;
 }
 
 /**

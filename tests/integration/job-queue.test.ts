@@ -13,15 +13,14 @@ import {
   createJob,
   claimJob,
   finishJob,
-  getJob,
   getJobPayload,
-  listJobs,
   ensureFeedJob,
   updateFeedJobNextRun,
   scheduleFeedRefreshNow,
   claimFeedJob,
   claimSingletonJob,
   renewJobLease,
+  type JobType,
 } from "../../src/server/jobs/queue";
 import { startJobLeaseHeartbeat } from "../../src/server/jobs/worker";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
@@ -29,6 +28,25 @@ import { createTestFeed, createTestSubscription, createTestUser } from "./helper
 
 // A valid UUID that doesn't exist in the database
 const NON_EXISTENT_JOB_ID = "00000000-0000-7000-8000-000000000000";
+
+// Row readers for asserting on queue state. The queue itself never reads rows
+// back like this — it claims and finishes — so these live here rather than in
+// src/, where they would be production-dead.
+async function getJob(jobId: string) {
+  const [job] = await db.select().from(jobs).where(eq(jobs.id, jobId)).limit(1);
+
+  return job ?? null;
+}
+
+async function listJobs(options: { type?: JobType; limit?: number } = {}) {
+  const { type, limit = 100 } = options;
+
+  if (type) {
+    return db.select().from(jobs).where(eq(jobs.type, type)).limit(limit);
+  }
+
+  return db.select().from(jobs).limit(limit);
+}
 
 describe("Job Queue", () => {
   // Clean up jobs table before each test
@@ -542,69 +560,6 @@ describe("Job Queue", () => {
       expect(after!.nextRunAt!.getTime()).toBe(bNextRunAt.getTime());
       expect(after!.lastError).toBeNull();
       expect(after!.consecutiveFailures).toBe(0);
-    });
-  });
-
-  describe("getJob", () => {
-    it("retrieves a job by ID", async () => {
-      const created = await createJob({
-        type: "fetch_feed",
-        payload: { feedId: "test-feed-id" },
-      });
-
-      const retrieved = await getJob(created.id);
-
-      expect(retrieved).not.toBeNull();
-      expect(retrieved!.id).toBe(created.id);
-      expect(retrieved!.type).toBe("fetch_feed");
-    });
-
-    it("returns null for non-existent job", async () => {
-      const retrieved = await getJob(NON_EXISTENT_JOB_ID);
-      expect(retrieved).toBeNull();
-    });
-  });
-
-  describe("listJobs", () => {
-    it("lists all jobs", async () => {
-      await createJob({
-        type: "fetch_feed",
-        payload: { feedId: "feed-1" },
-      });
-      await createJob({
-        type: "renew_websub",
-        payload: {},
-      });
-
-      const allJobs = await listJobs();
-      expect(allJobs).toHaveLength(2);
-    });
-
-    it("filters by type", async () => {
-      await createJob({
-        type: "fetch_feed",
-        payload: { feedId: "feed-1" },
-      });
-      await createJob({
-        type: "renew_websub",
-        payload: {},
-      });
-
-      const fetchJobs = await listJobs({ type: "fetch_feed" });
-      expect(fetchJobs).toHaveLength(1);
-      expect(fetchJobs[0].type).toBe("fetch_feed");
-    });
-
-    it("respects limit", async () => {
-      for (let i = 0; i < 10; i++) {
-        await createJob({
-          type: "fetch_feed",
-          payload: { feedId: `feed-${i}` },
-        });
-      }
-
-      const limitedJobs = await listJobs({ limit: 5 });
-      expect(limitedJobs).toHaveLength(5);
     });
   });
 

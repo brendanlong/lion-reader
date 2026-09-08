@@ -9,7 +9,7 @@
 import { describe, it, expect } from "vitest";
 import {
   isValidClientIdMetadataUrl,
-  parseClientMetadataDocument,
+  validateClientMetadataDocument,
   selectClientMetadata,
   PINNED_CLIENT_METADATA,
 } from "@/server/oauth/cimd";
@@ -67,17 +67,17 @@ describe("isValidClientIdMetadataUrl", () => {
     expect(new URL("https://claude.ai/a/../metadata").pathname).toBe("/metadata");
     expect(isValidClientIdMetadataUrl("https://claude.ai/a/%2e%2e/metadata")).toBe(true);
     expect(
-      parseClientMetadataDocument(
-        "https://claude.ai/a/%2e%2e/metadata",
-        JSON.stringify({ ...CLAUDE_CIMD_DOC, client_id: "https://claude.ai/metadata" })
-      )
+      validateClientMetadataDocument("https://claude.ai/a/%2e%2e/metadata", {
+        ...CLAUDE_CIMD_DOC,
+        client_id: "https://claude.ai/metadata",
+      })
     ).toBeNull();
   });
 });
 
-describe("parseClientMetadataDocument", () => {
+describe("validateClientMetadataDocument", () => {
   it("accepts claude.ai's live document", () => {
-    const parsed = parseClientMetadataDocument(CLAUDE_CIMD_URL, JSON.stringify(CLAUDE_CIMD_DOC));
+    const parsed = validateClientMetadataDocument(CLAUDE_CIMD_URL, CLAUDE_CIMD_DOC);
     expect(parsed).not.toBeNull();
     expect(parsed?.client_id).toBe(CLAUDE_CIMD_URL);
     expect(parsed?.client_name).toBe("Claude");
@@ -87,28 +87,20 @@ describe("parseClientMetadataDocument", () => {
 
   it("rejects a document whose client_id does not match the fetch URL", () => {
     const doc = { ...CLAUDE_CIMD_DOC, client_id: "https://evil.example/impersonation" };
-    expect(parseClientMetadataDocument(CLAUDE_CIMD_URL, JSON.stringify(doc))).toBeNull();
+    expect(validateClientMetadataDocument(CLAUDE_CIMD_URL, doc)).toBeNull();
   });
 
-  it("rejects non-JSON bodies (e.g. a Cloudflare challenge page)", () => {
-    expect(parseClientMetadataDocument(CLAUDE_CIMD_URL, "<html>challenge</html>")).toBeNull();
-  });
-
-  it("rejects non-object JSON", () => {
-    expect(parseClientMetadataDocument(CLAUDE_CIMD_URL, '"string"')).toBeNull();
-    expect(parseClientMetadataDocument(CLAUDE_CIMD_URL, "[1,2]")).toBeNull();
-    expect(parseClientMetadataDocument(CLAUDE_CIMD_URL, "null")).toBeNull();
+  it("rejects non-object documents", () => {
+    expect(validateClientMetadataDocument(CLAUDE_CIMD_URL, "string")).toBeNull();
+    expect(validateClientMetadataDocument(CLAUDE_CIMD_URL, [1, 2])).toBeNull();
+    expect(validateClientMetadataDocument(CLAUDE_CIMD_URL, null)).toBeNull();
   });
 
   it("rejects missing or empty redirect_uris", () => {
-    // JSON.stringify drops undefined-valued keys, yielding a doc without the field.
     const noUris = { ...CLAUDE_CIMD_DOC, redirect_uris: undefined };
-    expect(parseClientMetadataDocument(CLAUDE_CIMD_URL, JSON.stringify(noUris))).toBeNull();
+    expect(validateClientMetadataDocument(CLAUDE_CIMD_URL, noUris)).toBeNull();
     expect(
-      parseClientMetadataDocument(
-        CLAUDE_CIMD_URL,
-        JSON.stringify({ ...CLAUDE_CIMD_DOC, redirect_uris: [] })
-      )
+      validateClientMetadataDocument(CLAUDE_CIMD_URL, { ...CLAUDE_CIMD_DOC, redirect_uris: [] })
     ).toBeNull();
   });
 
@@ -120,10 +112,7 @@ describe("parseClientMetadataDocument", () => {
       [42],
     ]) {
       expect(
-        parseClientMetadataDocument(
-          CLAUDE_CIMD_URL,
-          JSON.stringify({ ...CLAUDE_CIMD_DOC, redirect_uris: bad })
-        )
+        validateClientMetadataDocument(CLAUDE_CIMD_URL, { ...CLAUDE_CIMD_DOC, redirect_uris: bad })
       ).toBeNull();
     }
   });
@@ -133,42 +122,42 @@ describe("parseClientMetadataDocument", () => {
       ...CLAUDE_CIMD_DOC,
       redirect_uris: ["claude://auth/callback", "https://claude.ai/api/mcp/auth_callback"],
     };
-    expect(
-      parseClientMetadataDocument(CLAUDE_CIMD_URL, JSON.stringify(doc))?.redirect_uris
-    ).toEqual(["https://claude.ai/api/mcp/auth_callback"]);
+    expect(validateClientMetadataDocument(CLAUDE_CIMD_URL, doc)?.redirect_uris).toEqual([
+      "https://claude.ai/api/mcp/auth_callback",
+    ]);
   });
 
   it("rejects oversized field values", () => {
     const manyUris = Array.from({ length: 33 }, (_, i) => `https://claude.ai/cb${String(i)}`);
     expect(
-      parseClientMetadataDocument(
-        CLAUDE_CIMD_URL,
-        JSON.stringify({ ...CLAUDE_CIMD_DOC, redirect_uris: manyUris })
-      )
+      validateClientMetadataDocument(CLAUDE_CIMD_URL, {
+        ...CLAUDE_CIMD_DOC,
+        redirect_uris: manyUris,
+      })
     ).toBeNull();
     expect(
-      parseClientMetadataDocument(
-        CLAUDE_CIMD_URL,
-        JSON.stringify({ ...CLAUDE_CIMD_DOC, scope: "x".repeat(513) })
-      )
+      validateClientMetadataDocument(CLAUDE_CIMD_URL, {
+        ...CLAUDE_CIMD_DOC,
+        scope: "x".repeat(513),
+      })
     ).toBeNull();
   });
 
   it("sanitizes the self-asserted client_name (bidi/control stripped, length capped)", () => {
     const sneaky = "Claude\u202e (claude.ai)\u0000" + "x".repeat(500);
-    const parsed = parseClientMetadataDocument(
-      CLAUDE_CIMD_URL,
-      JSON.stringify({ ...CLAUDE_CIMD_DOC, client_name: sneaky })
-    );
+    const parsed = validateClientMetadataDocument(CLAUDE_CIMD_URL, {
+      ...CLAUDE_CIMD_DOC,
+      client_name: sneaky,
+    });
     expect(parsed?.client_name).toBeDefined();
     expect(parsed?.client_name).not.toContain("\u202e");
     expect(parsed?.client_name).not.toContain("\u0000");
     expect(parsed!.client_name!.length).toBeLessThanOrEqual(100);
     // A name that is nothing but stripped characters falls back to undefined.
-    const emptyAfterStrip = parseClientMetadataDocument(
-      CLAUDE_CIMD_URL,
-      JSON.stringify({ ...CLAUDE_CIMD_DOC, client_name: "\u202e\u202d " })
-    );
+    const emptyAfterStrip = validateClientMetadataDocument(CLAUDE_CIMD_URL, {
+      ...CLAUDE_CIMD_DOC,
+      client_name: "\u202e\u202d ",
+    });
     expect(emptyAfterStrip?.client_name).toBeUndefined();
   });
 
@@ -177,43 +166,38 @@ describe("parseClientMetadataDocument", () => {
       ...CLAUDE_CIMD_DOC,
       redirect_uris: ["http://localhost/callback", "http://127.0.0.1/callback"],
     };
-    expect(
-      parseClientMetadataDocument(CLAUDE_CIMD_URL, JSON.stringify(doc))?.redirect_uris
-    ).toEqual(["http://localhost/callback", "http://127.0.0.1/callback"]);
+    expect(validateClientMetadataDocument(CLAUDE_CIMD_URL, doc)?.redirect_uris).toEqual([
+      "http://localhost/callback",
+      "http://127.0.0.1/callback",
+    ]);
   });
 
   it("rejects secret-based token_endpoint_auth_method (CIMD clients are public)", () => {
     for (const method of ["client_secret_basic", "client_secret_post", "private_key_jwt"]) {
       expect(
-        parseClientMetadataDocument(
-          CLAUDE_CIMD_URL,
-          JSON.stringify({ ...CLAUDE_CIMD_DOC, token_endpoint_auth_method: method })
-        )
+        validateClientMetadataDocument(CLAUDE_CIMD_URL, {
+          ...CLAUDE_CIMD_DOC,
+          token_endpoint_auth_method: method,
+        })
       ).toBeNull();
     }
     // Absent is fine — defaults to public.
     const noMethod = { ...CLAUDE_CIMD_DOC, token_endpoint_auth_method: undefined };
-    expect(parseClientMetadataDocument(CLAUDE_CIMD_URL, JSON.stringify(noMethod))).not.toBeNull();
+    expect(validateClientMetadataDocument(CLAUDE_CIMD_URL, noMethod)).not.toBeNull();
   });
 
   it("rejects wrong-typed optional fields", () => {
     expect(
-      parseClientMetadataDocument(
-        CLAUDE_CIMD_URL,
-        JSON.stringify({ ...CLAUDE_CIMD_DOC, client_name: 42 })
-      )
+      validateClientMetadataDocument(CLAUDE_CIMD_URL, { ...CLAUDE_CIMD_DOC, client_name: 42 })
     ).toBeNull();
     expect(
-      parseClientMetadataDocument(
-        CLAUDE_CIMD_URL,
-        JSON.stringify({ ...CLAUDE_CIMD_DOC, grant_types: "authorization_code" })
-      )
+      validateClientMetadataDocument(CLAUDE_CIMD_URL, {
+        ...CLAUDE_CIMD_DOC,
+        grant_types: "authorization_code",
+      })
     ).toBeNull();
     expect(
-      parseClientMetadataDocument(
-        CLAUDE_CIMD_URL,
-        JSON.stringify({ ...CLAUDE_CIMD_DOC, scope: ["mcp"] })
-      )
+      validateClientMetadataDocument(CLAUDE_CIMD_URL, { ...CLAUDE_CIMD_DOC, scope: ["mcp"] })
     ).toBeNull();
   });
 });
@@ -222,7 +206,7 @@ describe("selectClientMetadata", () => {
   const PINNED_URL = "https://claude.ai/oauth/mcp-oauth-client-metadata";
 
   it("returns the live document on success", () => {
-    const metadata = parseClientMetadataDocument(CLAUDE_CIMD_URL, JSON.stringify(CLAUDE_CIMD_DOC))!;
+    const metadata = validateClientMetadataDocument(CLAUDE_CIMD_URL, CLAUDE_CIMD_DOC)!;
     expect(selectClientMetadata(CLAUDE_CIMD_URL, { kind: "ok", metadata })).toBe(metadata);
   });
 
@@ -253,7 +237,7 @@ describe("PINNED_CLIENT_METADATA", () => {
     // validation a live fetch would apply.
     for (const [url, doc] of PINNED_CLIENT_METADATA) {
       expect(isValidClientIdMetadataUrl(url)).toBe(true);
-      const reparsed = parseClientMetadataDocument(url, JSON.stringify(doc));
+      const reparsed = validateClientMetadataDocument(url, doc);
       expect(reparsed).not.toBeNull();
       expect(reparsed?.client_id).toBe(url);
     }

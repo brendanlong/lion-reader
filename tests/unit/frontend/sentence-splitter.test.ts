@@ -1,13 +1,12 @@
 /**
  * Unit tests for sentence splitter utilities.
  *
- * Tests splitIntoSentences and splitIntoSentencesWithInfo functions.
+ * Tests splitIntoSentences and splitLongSentence.
  */
 
 import { describe, it, expect } from "vitest";
 import {
   splitIntoSentences,
-  splitIntoSentencesWithInfo,
   splitLongSentence,
   MAX_CHUNK_CHARS,
 } from "@/lib/narration/sentence-splitter";
@@ -191,91 +190,5 @@ describe("long sentence chunking", () => {
     for (const chunk of chunks) {
       expect(chunk.length).toBeLessThanOrEqual(MAX_CHUNK_CHARS);
     }
-  });
-});
-
-describe("splitIntoSentencesWithInfo", () => {
-  describe("basic functionality", () => {
-    it("returns sentence info objects with text", () => {
-      const text = "First. Second.";
-      const result = splitIntoSentencesWithInfo(text);
-
-      expect(result).toHaveLength(2);
-      expect(result[0].text).toBe("First.");
-      expect(result[1].text).toBe("Second.");
-    });
-
-    it("includes start and end positions", () => {
-      const text = "Hello. World.";
-      const result = splitIntoSentencesWithInfo(text);
-
-      expect(result[0].start).toBe(0);
-      expect(result[0].end).toBeGreaterThan(0);
-      expect(result[1].start).toBeGreaterThan(result[0].start);
-    });
-
-    it("positions allow extracting original text", () => {
-      const text = "First sentence. Second sentence.";
-      const result = splitIntoSentencesWithInfo(text);
-
-      for (const info of result) {
-        const extracted = text.slice(info.start, info.end).trim();
-        expect(extracted).toBe(info.text);
-      }
-    });
-  });
-
-  describe("empty input", () => {
-    it("returns empty array for empty string", () => {
-      expect(splitIntoSentencesWithInfo("")).toEqual([]);
-    });
-
-    it("returns empty array for whitespace-only string", () => {
-      expect(splitIntoSentencesWithInfo("   ")).toEqual([]);
-    });
-  });
-
-  describe("text without punctuation", () => {
-    it("returns single sentence info for unpunctuated text", () => {
-      const text = "No punctuation here";
-      const result = splitIntoSentencesWithInfo(text);
-
-      expect(result).toHaveLength(1);
-      expect(result[0].text).toBe("No punctuation here");
-      expect(result[0].start).toBe(0);
-      expect(result[0].end).toBe(text.length);
-    });
-  });
-
-  describe("info object structure", () => {
-    it("each info object has text, start, and end properties", () => {
-      const text = "Test sentence.";
-      const result = splitIntoSentencesWithInfo(text);
-
-      expect(result[0]).toHaveProperty("text");
-      expect(result[0]).toHaveProperty("start");
-      expect(result[0]).toHaveProperty("end");
-      expect(typeof result[0].text).toBe("string");
-      expect(typeof result[0].start).toBe("number");
-      expect(typeof result[0].end).toBe("number");
-    });
-
-    it("end is always greater than or equal to start", () => {
-      const text = "A. B. C. D.";
-      const result = splitIntoSentencesWithInfo(text);
-
-      for (const info of result) {
-        expect(info.end).toBeGreaterThanOrEqual(info.start);
-      }
-    });
-
-    it("sentences are in order of appearance", () => {
-      const text = "First. Second. Third.";
-      const result = splitIntoSentencesWithInfo(text);
-
-      for (let i = 1; i < result.length; i++) {
-        expect(result[i].start).toBeGreaterThan(result[i - 1].start);
-      }
-    });
   });
 });

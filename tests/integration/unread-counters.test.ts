@@ -27,7 +27,7 @@ import {
   markAllEntriesRead,
   updateEntryStarred,
 } from "../../src/server/services/entries";
-import { createUploadedArticle, deleteSavedArticle } from "../../src/server/services/saved";
+import { uploadArticle, deleteSavedArticle } from "../../src/server/services/saved";
 import { reconcileCounters } from "../../src/server/services/reconcile-counters";
 import { getBulkEntryRelatedCounts } from "../../src/server/services/counts";
 import { createTestEntry, createTestFeed, createTestSubscription, createTestUser } from "./helpers";
@@ -210,10 +210,9 @@ describe("unread counters (triggers + reconciliation)", () => {
   it("tracks saved articles through upload and hard-delete cascade", async () => {
     const userId = await createTestUser();
 
-    const article = await createUploadedArticle(db, userId, {
-      contentHtml: "<p>Some uploaded content for the saved counter test.</p>",
+    const article = await uploadArticle(db, userId, {
+      content: "Some uploaded content for the saved counter test.",
       title: "Saved Counter Test",
-      siteName: "Uploaded Document",
     });
 
     expect((await userCounters(userId)).savedUnread).toBe(1);
@@ -279,10 +278,9 @@ describe("unread counters (triggers + reconciliation)", () => {
       .where(eq(subscriptions.id, goneSubId));
 
     // One unread saved article.
-    await createUploadedArticle(db, userId, {
-      contentHtml: "<p>Saved content for the all-badge algebra test.</p>",
+    await uploadArticle(db, userId, {
+      content: "Saved content for the all-badge algebra test.",
       title: "All Badge Algebra",
-      siteName: "Uploaded Document",
     });
 
     const counts = await getBulkEntryRelatedCounts(db, userId, []);

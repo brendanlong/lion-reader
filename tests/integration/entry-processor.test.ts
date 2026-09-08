@@ -15,18 +15,26 @@ import {
   generateContentHash,
   clampPublishedAt,
   deriveGuid,
-  findEntryByGuid,
   createEntry,
   updateEntryContent,
   processEntries,
 } from "../../src/server/feed/entry-processor";
 import type { ParsedEntry, ParsedFeed } from "../../src/server/feed/types";
 import {
-  createTestEntry,
   createTestSubscription,
   createTestUser,
   createTestFeed as insertTestFeed,
 } from "./helpers";
+
+async function findEntryByGuid(feedId: string, guid: string) {
+  const [entry] = await db
+    .select()
+    .from(entries)
+    .where(and(eq(entries.feedId, feedId), eq(entries.guid, guid)))
+    .limit(1);
+
+  return entry ?? null;
+}
 
 // Wraps the shared factory because these call sites want the feed row
 // (feed.url, feed.type), not just its id.
@@ -200,45 +208,6 @@ describe("Entry Processor", () => {
       };
 
       expect(deriveGuid(entry)).toBe("spaced-guid");
-    });
-  });
-
-  describe("findEntryByGuid", () => {
-    it("finds existing entry by feed ID and GUID", async () => {
-      const feed = await createTestFeed();
-      const guid = "entry-123";
-
-      // Create entry directly
-      await createTestEntry(feed.id, { guid, contentHash: "abc123" });
-
-      const found = await findEntryByGuid(feed.id, guid);
-      expect(found).not.toBeNull();
-      expect(found?.guid).toBe(guid);
-      expect(found?.feedId).toBe(feed.id);
-    });
-
-    it("returns null for non-existent entry", async () => {
-      const feed = await createTestFeed();
-
-      const found = await findEntryByGuid(feed.id, "non-existent");
-      expect(found).toBeNull();
-    });
-
-    it("respects feed ID scope (same GUID, different feeds)", async () => {
-      const feed1 = await createTestFeed();
-      const feed2 = await createTestFeed();
-      const guid = "shared-guid";
-
-      // Create entry in feed1
-      await createTestEntry(feed1.id, { guid, contentHash: "abc123" });
-
-      // Should find in feed1
-      const found1 = await findEntryByGuid(feed1.id, guid);
-      expect(found1).not.toBeNull();
-
-      // Should not find in feed2
-      const found2 = await findEntryByGuid(feed2.id, guid);
-      expect(found2).toBeNull();
     });
   });
 

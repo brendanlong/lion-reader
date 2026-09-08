@@ -97,46 +97,6 @@ export function processHtmlForHighlighting(html: string): string {
 }
 
 /**
- * Creates a memoized version of addParagraphIdsToHtml using a simple cache.
- * This is useful when the same content may be processed multiple times.
- *
- * @param cacheSize - Maximum number of entries to cache (default: 10)
- * @returns A memoized version of addParagraphIdsToHtml
- *
- * @example
- * const memoizedAdd = createMemoizedAddParagraphIds(5);
- * const result1 = memoizedAdd('<p>Hello</p>'); // Processes
- * const result2 = memoizedAdd('<p>Hello</p>'); // Returns cached
- */
-export function createMemoizedAddParagraphIds(
-  cacheSize = 10
-): (html: string) => AddParagraphIdsResult {
-  const cache = new Map<string, AddParagraphIdsResult>();
-
-  return (html: string): AddParagraphIdsResult => {
-    // Check cache first
-    const cached = cache.get(html);
-    if (cached) {
-      return cached;
-    }
-
-    // Process and cache the result
-    const result = addParagraphIdsToHtml(html);
-
-    // Enforce cache size limit (LRU-like: delete oldest entries)
-    if (cache.size >= cacheSize) {
-      const firstKey = cache.keys().next().value;
-      if (firstKey !== undefined) {
-        cache.delete(firstKey);
-      }
-    }
-
-    cache.set(html, result);
-    return result;
-  };
-}
-
-/**
  * Result of converting HTML to narration input on the client side.
  */
 export interface ClientNarrationResult {

@@ -404,13 +404,3 @@ export async function validateAppleCallback(
 export function isAppleOAuthEnabled(): boolean {
   return isProviderEnabled("apple");
 }
-
-/**
- * Checks if an email is an Apple private relay email
- *
- * @param email - The email to check
- * @returns Whether the email is a private relay address
- */
-export function isApplePrivateRelayEmail(email: string): boolean {
-  return email.endsWith("@privaterelay.appleid.com");
-}

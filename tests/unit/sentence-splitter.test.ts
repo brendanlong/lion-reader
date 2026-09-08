@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { splitIntoSentences, splitIntoSentencesWithInfo } from "@/lib/narration/sentence-splitter";
+import { splitIntoSentences } from "@/lib/narration/sentence-splitter";
 
 describe("splitIntoSentences", () => {
   it("splits a simple paragraph into sentences", () => {
@@ -74,22 +74,5 @@ describe("splitIntoSentences", () => {
     const sentences = splitIntoSentences(text);
 
     expect(sentences).toHaveLength(2);
-  });
-});
-
-describe("splitIntoSentencesWithInfo", () => {
-  it("returns sentence info with offsets", () => {
-    const text = "Hello world. Goodbye world.";
-    const info = splitIntoSentencesWithInfo(text);
-
-    expect(info).toHaveLength(2);
-    expect(info[0].text).toBe("Hello world.");
-    expect(info[0].start).toBe(0);
-    expect(info[1].text).toBe("Goodbye world.");
-    expect(info[1].start).toBeGreaterThan(0);
-  });
-
-  it("returns empty array for empty string", () => {
-    expect(splitIntoSentencesWithInfo("")).toEqual([]);
   });
 });

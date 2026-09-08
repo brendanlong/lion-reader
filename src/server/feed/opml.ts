@@ -12,11 +12,7 @@
  */
 
 import { XMLBuilder } from "fast-xml-parser";
-import {
-  parseOpml as parseOpmlInternal,
-  parseOpmlAsync as parseOpmlAsyncInternal,
-  OpmlParseError,
-} from "./streaming/opml-parser";
+import { parseOpmlAsync as parseOpmlAsyncInternal, OpmlParseError } from "./streaming/opml-parser";
 
 /**
  * A feed parsed from OPML.
@@ -64,28 +60,13 @@ export interface OpmlMetadata {
 /**
  * Parses an OPML XML string into an array of feeds.
  *
+ * The native parser runs on the libuv thread pool, so a large OPML upload
+ * never blocks the event loop that serves UI requests (small inputs parse
+ * inline).
+ *
  * @param xml - The OPML XML content as a string
  * @returns Array of parsed feeds with their categories
  * @throws OpmlParseError if the XML is not valid OPML
- *
- * @example
- * ```ts
- * const feeds = parseOpml(opmlXml);
- * // [
- * //   { title: "Blog Name", xmlUrl: "https://...", category: ["Tech"] },
- * //   { title: "News", xmlUrl: "https://...", category: ["News", "Daily"] }
- * // ]
- * ```
- */
-export function parseOpml(xml: string): OpmlFeed[] {
-  const result = parseOpmlInternal(xml);
-  return result.feeds as OpmlFeed[];
-}
-
-/**
- * Async form of `parseOpml` for app-server request paths: the native parser
- * runs on the libuv thread pool, so a large OPML upload never blocks the
- * event loop that serves UI requests (small inputs parse inline).
  */
 export async function parseOpmlAsync(xml: string): Promise<OpmlFeed[]> {
   const result = await parseOpmlAsyncInternal(xml);

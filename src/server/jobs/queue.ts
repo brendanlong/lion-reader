@@ -419,18 +419,6 @@ export async function renewJobLease(
 }
 
 /**
- * Gets a job by ID.
- *
- * @param jobId The ID of the job
- * @returns The job, or null if not found
- */
-export async function getJob(jobId: string): Promise<Job | null> {
-  const [job] = await db.select().from(jobs).where(eq(jobs.id, jobId)).limit(1);
-
-  return job ?? null;
-}
-
-/**
  * Gets the parsed payload for a job.
  *
  * @param job The job
@@ -545,27 +533,6 @@ export async function scheduleFeedRefreshNow(feedId: string): Promise<Job> {
   `);
 
   return rowToJob(result.rows[0]);
-}
-
-/**
- * Lists jobs with optional filtering.
- *
- * @param options Filter options
- * @returns List of jobs
- */
-export async function listJobs(
-  options: {
-    type?: JobType;
-    limit?: number;
-  } = {}
-): Promise<Job[]> {
-  const { type, limit = 100 } = options;
-
-  if (type) {
-    return db.select().from(jobs).where(eq(jobs.type, type)).limit(limit);
-  }
-
-  return db.select().from(jobs).limit(limit);
 }
 
 /**

@@ -11,12 +11,7 @@ import {
   buildEntriesListInput,
   getDefaultViewPreferences,
   getFiltersFromPathname,
-  type EntriesListFilters,
-  type EntriesListInput,
 } from "@/lib/queries/entries-list-input";
-
-// Re-export for consumers
-export type { EntriesListFilters, EntriesListInput };
 
 interface EntryListPageProps {
   /**

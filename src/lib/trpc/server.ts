@@ -7,7 +7,6 @@
 
 import { cookies } from "next/headers";
 import { cache } from "react";
-import type { QueryClient } from "@tanstack/react-query";
 import { createHydrationHelpers } from "@trpc/react-query/rsc";
 import { db } from "@/server/db";
 import { validateSession } from "@/server/auth/session";
@@ -127,26 +126,6 @@ export const createStaticHydrationHelpers = cache(async () => {
   });
   return createHydrationHelpers<AppRouter>(caller, getQueryClient);
 });
-
-/**
- * Helper type for prefetch function results.
- * Includes the query client and sync cursor for SSE.
- */
-export interface PrefetchResult {
-  queryClient: QueryClient;
-  /**
-   * Initial sync cursors for each entity type.
-   * Null values indicate an initial sync that will fetch all recent data
-   * and establish baseline cursors for subsequent incremental syncs.
-   */
-  initialCursors: {
-    entries: string | null;
-    entryStates: string | null;
-    subscriptions: string | null;
-    removedSubscriptions: string | null;
-    tags: string | null;
-  };
-}
 
 /**
  * Checks if the current user is authenticated.

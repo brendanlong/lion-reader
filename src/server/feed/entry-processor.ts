@@ -172,23 +172,6 @@ export function deriveGuid(entry: ParsedEntry): string {
 }
 
 /**
- * Finds an existing entry by feed ID and GUID.
- *
- * @param feedId - The feed's UUID
- * @param guid - The entry's GUID
- * @returns The existing entry or null
- */
-export async function findEntryByGuid(feedId: string, guid: string): Promise<Entry | null> {
-  const [entry] = await db
-    .select()
-    .from(entries)
-    .where(and(eq(entries.feedId, feedId), eq(entries.guid, guid)))
-    .limit(1);
-
-  return entry ?? null;
-}
-
-/**
  * Creates a new entry in the database.
  *
  * @param feedId - The feed's UUID

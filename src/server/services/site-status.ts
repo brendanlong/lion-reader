@@ -181,7 +181,11 @@ export async function setAnnouncement(input: {
   invalidateCache();
 }
 
-/** Test-only: clear the in-process caches so a fresh Redis read happens. */
+/**
+ * Clear the in-process caches so a fresh Redis read happens.
+ *
+ * @testonly
+ */
 export function __resetSiteStatusCacheForTests(): void {
   invalidateCache();
 }

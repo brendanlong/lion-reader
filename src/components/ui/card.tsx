@@ -20,10 +20,8 @@ export interface CardProps {
  * @example
  * ```tsx
  * <Card>
- *   <CardHeader>
- *     <CardTitle>Settings</CardTitle>
- *   </CardHeader>
- *   <CardBody>Content here</CardBody>
+ *   <h2>Settings</h2>
+ *   <CardSection>Content here</CardSection>
  * </Card>
  * ```
  */
@@ -42,66 +40,6 @@ export function Card({ children, padding = "lg", className = "" }: CardProps) {
       {children}
     </div>
   );
-}
-
-/**
- * Card header section.
- */
-export interface CardHeaderProps {
-  children: ReactNode;
-  className?: string;
-}
-
-export function CardHeader({ children, className = "" }: CardHeaderProps) {
-  return <div className={`mb-4 ${className}`}>{children}</div>;
-}
-
-/**
- * Card title with consistent styling.
- */
-export interface CardTitleProps {
-  children: ReactNode;
-  className?: string;
-}
-
-export function CardTitle({ children, className = "" }: CardTitleProps) {
-  return <h3 className={`ui-text-base text-body font-semibold ${className}`}>{children}</h3>;
-}
-
-/**
- * Card description/subtitle text.
- */
-export interface CardDescriptionProps {
-  children: ReactNode;
-  className?: string;
-}
-
-export function CardDescription({ children, className = "" }: CardDescriptionProps) {
-  return <p className={`ui-text-sm text-muted mt-1 ${className}`}>{children}</p>;
-}
-
-/**
- * Card body section for main content.
- */
-export interface CardBodyProps {
-  children: ReactNode;
-  className?: string;
-}
-
-export function CardBody({ children, className = "" }: CardBodyProps) {
-  return <div className={className}>{children}</div>;
-}
-
-/**
- * Card footer section, typically for actions.
- */
-export interface CardFooterProps {
-  children: ReactNode;
-  className?: string;
-}
-
-export function CardFooter({ children, className = "" }: CardFooterProps) {
-  return <div className={`mt-4 flex items-center justify-end gap-3 ${className}`}>{children}</div>;
 }
 
 /**

@@ -157,7 +157,6 @@ export class StreamingAudioPlayer {
   // (which stops and discards the paused buffer). Restarting replays the cached
   // chunk if one exists, or regenerates it.
   private resumeByRestart = false;
-  private currentSentenceEndCallback: (() => void) | null = null;
 
   constructor(
     generateAudio: GenerateAudioFn,
@@ -323,13 +322,6 @@ export class StreamingAudioPlayer {
   }
 
   /**
-   * Get current playback position.
-   */
-  getPosition(): PlaybackPosition {
-    return { ...this.position };
-  }
-
-  /**
    * Get current status.
    */
   getStatus(): PlaybackStatus {
@@ -391,14 +383,6 @@ export class StreamingAudioPlayer {
    */
   private getTotalBufferedDurationInParagraph(paragraphIndex: number): number {
     return this.getBufferedDurationInParagraph(paragraphIndex, 0);
-  }
-
-  /**
-   * Check if a sentence is buffered.
-   */
-  private isSentenceBuffered(paragraphIndex: number, sentenceIndex: number): boolean {
-    const cached = this.cache.get(paragraphIndex);
-    return cached?.audio[sentenceIndex] != null;
   }
 
   /**

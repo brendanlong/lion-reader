@@ -78,20 +78,3 @@ export async function parseFeedAsync(content: string): Promise<FeedParseResult> 
       throw new UnknownFeedFormatError();
   }
 }
-
-/**
- * Parses a feed from a string with explicit format.
- */
-export function parseFeedWithFormat(
-  content: string,
-  format: "rss" | "atom" | "json"
-): FeedParseResult {
-  switch (format) {
-    case "rss":
-      return parseRss(content);
-    case "atom":
-      return parseAtom(content);
-    case "json":
-      return parseJson(content);
-  }
-}

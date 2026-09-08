@@ -8,7 +8,6 @@ import { describe, it, expect } from "vitest";
 import {
   addParagraphIdsToHtml,
   processHtmlForHighlighting,
-  createMemoizedAddParagraphIds,
   htmlToClientNarration,
 } from "../../src/lib/narration/client-paragraph-ids";
 
@@ -419,78 +418,6 @@ describe("processHtmlForHighlighting", () => {
 
     expect(processed).toContain("data-para-id");
     expect(processed).toContain("Article content");
-  });
-});
-
-describe("createMemoizedAddParagraphIds", () => {
-  it("caches results for repeated calls", () => {
-    const memoized = createMemoizedAddParagraphIds(5);
-    const html = "<p>Test</p>";
-
-    const result1 = memoized(html);
-    const result2 = memoized(html);
-
-    // Should return exact same object reference
-    expect(result1).toBe(result2);
-  });
-
-  it("produces correct results", () => {
-    const memoized = createMemoizedAddParagraphIds();
-    const html = "<p>First</p><p>Second</p>";
-
-    const result = memoized(html);
-
-    expect(result.paragraphCount).toBe(2);
-    expect(result.html).toContain('data-para-id="para-0"');
-    expect(result.html).toContain('data-para-id="para-1"');
-  });
-
-  it("respects cache size limit", () => {
-    const memoized = createMemoizedAddParagraphIds(2);
-
-    // Add 3 entries, exceeding cache size of 2
-    const result1 = memoized("<p>First</p>");
-    const result2 = memoized("<p>Second</p>");
-    const result3 = memoized("<p>Third</p>");
-
-    // All should produce correct results
-    expect(result1.paragraphCount).toBe(1);
-    expect(result2.paragraphCount).toBe(1);
-    expect(result3.paragraphCount).toBe(1);
-
-    // First entry should have been evicted
-    const result1Again = memoized("<p>First</p>");
-    expect(result1Again).not.toBe(result1); // Different object reference (recomputed)
-    expect(result1Again.paragraphCount).toBe(1); // But same content
-  });
-
-  it("handles empty input with caching", () => {
-    const memoized = createMemoizedAddParagraphIds();
-
-    const result1 = memoized("");
-    const result2 = memoized("");
-
-    expect(result1).toBe(result2);
-    expect(result1.html).toBe("");
-    expect(result1.paragraphCount).toBe(0);
-  });
-
-  it("caches different inputs separately", () => {
-    const memoized = createMemoizedAddParagraphIds(10);
-
-    const html1 = "<p>First</p>";
-    const html2 = "<p>Second</p>";
-
-    const result1 = memoized(html1);
-    const result2 = memoized(html2);
-
-    expect(result1).not.toBe(result2);
-    expect(result1.html).toContain("First");
-    expect(result2.html).toContain("Second");
-
-    // Both should still be cached
-    expect(memoized(html1)).toBe(result1);
-    expect(memoized(html2)).toBe(result2);
   });
 });
 

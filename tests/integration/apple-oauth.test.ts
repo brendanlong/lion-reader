@@ -326,16 +326,6 @@ OF/2NxApJCzGCEDdfSp6VQO30hyhRANCAAQRWz+jn65BtOMvdyHKcvjBeBSDZH2r
     });
   });
 
-  describe("Apple private relay email handling", () => {
-    it("identifies private relay emails", async () => {
-      const { isApplePrivateRelayEmail } = await import("../../src/server/auth/oauth/apple");
-
-      expect(isApplePrivateRelayEmail("abc123@privaterelay.appleid.com")).toBe(true);
-      expect(isApplePrivateRelayEmail("user@example.com")).toBe(false);
-      expect(isApplePrivateRelayEmail("test@gmail.com")).toBe(false);
-    });
-  });
-
   describe("State storage", () => {
     it("stores state with TTL", async () => {
       const { createAppleAuthUrl } = await import("../../src/server/auth/oauth/apple");

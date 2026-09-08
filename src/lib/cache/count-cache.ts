@@ -46,6 +46,8 @@ function clearSubscriptionLookupMap(): void {
  * Resets the subscription lookup map.
  * Exported for test isolation only - this map is module-level state
  * that persists across tests and must be cleared between them.
+ *
+ * @testonly
  */
 export function _resetSubscriptionLookupMap(): void {
   clearSubscriptionLookupMap();

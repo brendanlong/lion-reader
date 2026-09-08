@@ -10,15 +10,11 @@ import type { FeedParseResult } from "./streaming/types";
 import {
   parseFeed as parseFeedInternal,
   parseFeedAsync as parseFeedAsyncInternal,
-  parseFeedWithFormat as parseFeedWithFormatInternal,
   detectFeedType as detectFeedTypeInternal,
-  UnknownFeedFormatError,
 } from "./streaming/parser";
 import { usageLimitsConfig } from "../config/env";
 import { startFeedParseTimer } from "../metrics/metrics";
 
-// Re-export for backwards compatibility
-export { UnknownFeedFormatError };
 /**
  * Converts a FeedParseResult to a ParsedFeed, applying the entry count limit.
  * Entries beyond the limit are silently dropped (we keep the most recent ones,
@@ -86,25 +82,6 @@ export async function parseFeedAsync(content: string): Promise<ParsedFeed> {
   const stopTimer = startFeedParseTimer();
   try {
     const result = await parseFeedAsyncInternal(content);
-    return resultToParsedFeed(result);
-  } finally {
-    stopTimer();
-  }
-}
-
-/**
- * Parses a feed string with explicit format.
- * Use this when you know the feed type ahead of time (e.g., from Content-Type header).
- *
- * @param content - The feed content as a string
- * @param format - The feed format ("rss", "atom", or "json")
- * @returns A ParsedFeed object with normalized feed data
- * @throws Error if the feed is invalid
- */
-export function parseFeedWithFormat(content: string, format: "rss" | "atom" | "json"): ParsedFeed {
-  const stopTimer = startFeedParseTimer();
-  try {
-    const result = parseFeedWithFormatInternal(content, format);
     return resultToParsedFeed(result);
   } finally {
     stopTimer();

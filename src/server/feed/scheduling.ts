@@ -437,17 +437,6 @@ export function calculateJitter(intervalSeconds: number, randomValue: number): n
 }
 
 /**
- * Simplified version that just returns the next fetch time.
- * Useful when you only need the Date and not the reasoning.
- *
- * @param options - Calculation options
- * @returns The next fetch time as a Date
- */
-export function getNextFetchTime(options: CalculateNextFetchOptions = {}): Date {
-  return calculateNextFetch(options).nextFetchAt;
-}
-
-/**
  * Whether the interactive subscribe flow should force a fresh fetch of an
  * existing feed before granting a new subscriber visibility.
  *

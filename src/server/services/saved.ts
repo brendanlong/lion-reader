@@ -31,7 +31,7 @@ import { usageLimitsConfig } from "@/server/config/env";
 import { absolutizeUrls, cleanContentAsync } from "@/server/feed/content-cleaner";
 import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
 import { getOrCreateSavedFeed, getSavedFeedId, SAVED_FEED_TITLE } from "@/server/feed/saved-feed";
-import { generateSummary, stripHtml } from "@/server/html/strip-html";
+import { stripHtml } from "@/server/html/strip-html";
 import { computeSavedArticleExcerpt } from "@/server/services/saved-excerpt";
 import { escapeHtml } from "@/server/http/html";
 import { sanitizeEntryContentFamily } from "@/server/html/sanitize-entry";
@@ -134,19 +134,6 @@ export interface UploadArticleParams {
    * summary length like the other excerpt sources.
    */
   excerpt?: string;
-}
-
-export interface CreateUploadedArticleParams {
-  /** HTML content (already processed/cleaned) */
-  contentHtml: string;
-  /** Article title */
-  title: string | null;
-  /** Excerpt/summary (optional, will be generated from content if not provided) */
-  excerpt?: string | null;
-  /** Site name to display (e.g., "Uploaded Document", "Uploaded Markdown") */
-  siteName: string;
-  /** Author (optional) */
-  author?: string | null;
 }
 
 export interface SavedArticle {
@@ -1544,34 +1531,6 @@ export async function deleteSavedArticle(
   await db.delete(entries).where(and(eq(entries.id, articleId), eq(entries.feedId, savedFeedId)));
 
   return true;
-}
-
-/**
- * Create a saved article from pre-processed HTML content.
- *
- * Accepts already-cleaned HTML plus caller-supplied metadata and inserts it
- * as-is (no Readability, no metadata extraction) — for callers that already hold
- * final content. The file/Markdown upload entry points instead run their content
- * through {@link buildArticleFields} (see {@link createSavedFromUpload} /
- * {@link uploadArticle}).
- */
-export async function createUploadedArticle(
-  db: typeof dbType,
-  userId: string,
-  params: CreateUploadedArticleParams
-): Promise<SavedArticle> {
-  // Original and cleaned are the same string here; stored raw and sanitized per
-  // read (issue #1282).
-  return insertUploadedArticle(db, userId, {
-    title: params.title,
-    author: params.author ?? null,
-    siteName: params.siteName,
-    contentOriginal: params.contentHtml,
-    contentCleaned: params.contentHtml,
-    summary: params.excerpt ?? generateSummary(params.contentHtml) ?? null,
-    imageUrl: null,
-    contentHash: generateContentHash(params.title, params.contentHtml),
-  });
 }
 
 /**

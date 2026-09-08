@@ -115,7 +115,11 @@ export type AnalyticsPath =
 
 const DEMO_ARTICLE_ID_SET: ReadonlySet<string> = new Set(DEMO_ARTICLE_IDS);
 
-/** Exposed for the test that pins the list against the article registry. */
+/**
+ * Exposed for the test that pins the list against the article registry.
+ *
+ * @testonly
+ */
 export const demoArticleIds: readonly string[] = DEMO_ARTICLE_IDS;
 
 /**

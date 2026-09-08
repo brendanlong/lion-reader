@@ -6,12 +6,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import {
-  classifyVoiceError,
-  getVoiceErrorInfo,
-  getVoiceErrorMessage,
-  isVoiceErrorRetryable,
-} from "../../src/lib/narration/errors";
+import { classifyVoiceError, getVoiceErrorInfo } from "../../src/lib/narration/errors";
 
 describe("classifyVoiceError", () => {
   describe("quota exceeded errors", () => {
@@ -264,81 +259,6 @@ describe("getVoiceErrorInfo", () => {
     expect(info.type).toBe("unknown");
     expect(info.message).toBeDefined();
     expect(info.retryable).toBe(true);
-  });
-});
-
-describe("getVoiceErrorMessage", () => {
-  it("returns user-friendly message for quota exceeded", () => {
-    const error = new Error("Quota exceeded");
-    error.name = "QuotaExceededError";
-
-    const message = getVoiceErrorMessage(error);
-
-    expect(message).toContain("storage");
-    expect(message.length).toBeLessThan(100); // Should be concise
-  });
-
-  it("returns user-friendly message for network error", () => {
-    const error = new Error("Failed to fetch");
-
-    const message = getVoiceErrorMessage(error);
-
-    expect(message).toContain("network");
-    expect(message.length).toBeLessThan(100);
-  });
-
-  it("returns user-friendly message for unknown error", () => {
-    const error = new Error("Unknown problem");
-
-    const message = getVoiceErrorMessage(error);
-
-    expect(message).toBeDefined();
-    expect(message.length).toBeGreaterThan(0);
-  });
-});
-
-describe("isVoiceErrorRetryable", () => {
-  it("returns false for quota exceeded", () => {
-    const error = new Error("Quota exceeded");
-    error.name = "QuotaExceededError";
-
-    expect(isVoiceErrorRetryable(error)).toBe(false);
-  });
-
-  it("returns false for voice not found", () => {
-    const error = new Error("HTTP 404: Not Found");
-
-    expect(isVoiceErrorRetryable(error)).toBe(false);
-  });
-
-  it("returns true for network error", () => {
-    const error = new Error("Network error");
-    error.name = "NetworkError";
-
-    expect(isVoiceErrorRetryable(error)).toBe(true);
-  });
-
-  it("returns true for download interrupted", () => {
-    const error = new Error("Download was aborted");
-
-    expect(isVoiceErrorRetryable(error)).toBe(true);
-  });
-
-  it("returns true for corrupted cache", () => {
-    const error = new Error("Cache data is corrupt");
-
-    expect(isVoiceErrorRetryable(error)).toBe(true);
-  });
-
-  it("returns true for unknown error", () => {
-    const error = new Error("Something went wrong");
-
-    expect(isVoiceErrorRetryable(error)).toBe(true);
-  });
-
-  it("returns true for non-Error values", () => {
-    expect(isVoiceErrorRetryable("string error")).toBe(true);
-    expect(isVoiceErrorRetryable(null)).toBe(true);
   });
 });
 
