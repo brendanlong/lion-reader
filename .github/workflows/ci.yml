@@ -118,6 +118,37 @@ jobs:
           path: native/*/*.node
           retention-days: 7
 
+  # The Rust suites gate merges on their own, separately from build-native:
+  # that job short-circuits on a cache hit, and a check that can be skipped is
+  # not a gate. native/sanitizer is our primary XSS defense (SECURITY.md §1)
+  # and its allow-list and escaping tests live in the crate, so a PR must not
+  # be able to redden them and still merge.
+  rust-checks:
+    name: Rust Tests & Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: Swatinem/rust-cache@v2.9.2
+        with:
+          # Without this a red run saves nothing, so a PR iterating on a Rust
+          # failure never warms its own branch cache.
+          cache-on-failure: true
+          workspaces: |
+            native/feed-parser
+            native/markdown
+            native/readability
+            native/sanitizer
+
+      # Invoked directly rather than through `pnpm test:native` / `pnpm
+      # lint:native` so the job needs no Node toolchain; keep them in sync.
+      - name: Run Rust tests
+        run: ./scripts/cargo-native.sh test --workspace
+
+      - name: Run clippy
+        if: ${{ !cancelled() }}
+        run: ./scripts/cargo-native.sh clippy --workspace --all-targets -- -D warnings
+
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest

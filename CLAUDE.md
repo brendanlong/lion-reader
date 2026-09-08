@@ -41,6 +41,7 @@ export PATH="$PWD/.node26/bin:$PATH"
 - `pnpm build:native` - Build the native Rust modules (sanitizer, readability, feed-parser, markdown). **Required once per checkout before tests or the app** — if tests fail with "Failed to load the native …", run this. Needs the Rust toolchain (`cargo` — if missing from PATH, try `~/.cargo/bin`). The SessionStart hook starts it in the background, so it may already be done or in flight (log: `/tmp/lion-reader-build-native.log`).
 - `pnpm typecheck` - Run before committing (no `any`, no `@ts-ignore`)
 - `pnpm test:unit` - Pure logic tests (fast, no DB)
+- `pnpm test:native` / `pnpm lint:native` - `cargo test` / `cargo clippy -D warnings` across all four native crates. Both gate CI.
 - `pnpm test:integration` - Backend tests against real Postgres/Redis (docker-compose)
 - `pnpm test:e2e` - Playwright browser tests against a real app server (docker-compose)
 
