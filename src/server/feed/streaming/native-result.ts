@@ -57,7 +57,7 @@ export function toFeedParseResult(
   let syndication: SyndicationHints | undefined;
   if (updatePeriod !== undefined || raw.updateFrequency !== undefined) {
     syndication = {};
-    if (updatePeriod) syndication.updatePeriod = updatePeriod;
+    if (updatePeriod !== undefined) syndication.updatePeriod = updatePeriod;
     if (raw.updateFrequency) syndication.updateFrequency = raw.updateFrequency;
   }
 

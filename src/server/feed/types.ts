@@ -92,6 +92,10 @@ export type UpdatePeriod = (typeof UPDATE_PERIODS)[number];
  * only re-checks what crosses the napi boundary as a bare `string`. Callers
  * should drop the hint when it returns false, matching what the native parser
  * does with an unrecognized value.
+ *
+ * `UPDATE_PERIODS` must stay in sync with `VALID_UPDATE_PERIODS` in
+ * `native/feed-parser/core/src/types.rs` — if Rust ever accepts a period this
+ * list lacks, the hint is silently dropped here rather than honored.
  */
 export function isUpdatePeriod(value: string): value is UpdatePeriod {
   return (UPDATE_PERIODS as readonly string[]).includes(value);
