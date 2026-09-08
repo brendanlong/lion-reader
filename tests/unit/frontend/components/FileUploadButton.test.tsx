@@ -15,6 +15,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, fireEvent, waitFor } from "@testing-library/react";
 import { FileUploadButton } from "@/components/saved/FileUploadButton";
+import { DROP_ZONE_FILE_INPUT_CLASSES } from "@/components/ui/drop-zone-file-input";
 import { renderWithTrpc, type ProcedureHandlers } from "../../../utils/component-test-helpers";
 
 // sonner's toast is a side-effecting singleton (renders a portal); stub it so
@@ -56,9 +57,9 @@ describe("FileUploadButton drop zone accessibility", () => {
     const input = getFileInput();
     // `hidden` (display: none) and a negative tabindex are the two ways to drop
     // a control out of the tab order; the input must use neither. It is hidden
-    // visually instead — transparent text plus `file:hidden` on its
-    // file-selector button — while still covering the drop zone.
-    expect(input.className.split(/\s+/)).not.toContain("hidden");
+    // visually instead, by the shared class string that
+    // `drop-zone-file-input.test.ts` pins.
+    expect(input).toHaveClass(DROP_ZONE_FILE_INPUT_CLASSES);
     expect(input).not.toHaveAttribute("hidden");
     expect(input.tabIndex).toBeGreaterThanOrEqual(0);
     expect(input).not.toBeDisabled();
