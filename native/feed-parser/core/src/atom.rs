@@ -85,7 +85,7 @@ impl SaxHandler for AtomHandler {
                 let rel = attrs.get("rel");
                 if let Some(href) = attrs.get_nonempty("href") {
                     // `!rel` — absent OR empty (falsy) rel means alternate.
-                    let rel_falsy = rel.map_or(true, |r| r.is_empty());
+                    let rel_falsy = rel.is_none_or(|r| r.is_empty());
                     if rel == Some("alternate") || rel_falsy {
                         self.feed.site_url = Some(href.to_string());
                     } else if rel == Some("hub") {
@@ -126,7 +126,7 @@ impl SaxHandler for AtomHandler {
                 if tag == "link" {
                     let rel = attrs.get("rel");
                     if let Some(href) = attrs.get_nonempty("href") {
-                        let rel_falsy = rel.map_or(true, |r| r.is_empty());
+                        let rel_falsy = rel.is_none_or(|r| r.is_empty());
                         if rel == Some("alternate") || rel_falsy {
                             entry.entry.link = Some(href.to_string());
                         }

@@ -370,7 +370,7 @@ mod tests {
         let html = r#"<mjx-container data-x="a>b">x</mjx-container>"#;
         let r = ranges(html, "mjx-container");
         assert_eq!(r.len(), 1);
-        assert_eq!(r[0].2, true);
+        assert!(r[0].2);
         assert_eq!(&html[r[0].0..r[0].1], html);
     }
 

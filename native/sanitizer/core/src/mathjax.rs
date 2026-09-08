@@ -434,7 +434,6 @@ fn convert_element(el: ElementRef, ctx: &mut ConvertContext, out: &mut Vec<MNode
     if tag.starts_with("mjx-") {
         ctx.unknown_tags.insert(tag.to_string());
         convert_children(el, ctx, out);
-        return;
     }
 
     // A stray non-MathJax element inside the math tree: drop it.
