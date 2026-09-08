@@ -52,46 +52,30 @@ Entry bodies, saved articles, and AI summaries are rendered with
   `X-Frame-Options`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, and
   (prod) HSTS. The **Content-Security-Policy** is set in `src/proxy.ts` with
   the policies built in `src/server/http/csp.ts`, and is **two-tier** (#1359):
-  - **Strict nonce'd policy (the default, on every dynamic route)**: locks
-    `script-src` down to a random per-request nonce (`'strict-dynamic'`), sets
-    `default-src 'self'`, restricts `frame-src` to the sanitizer's allow-listed
-    embed hosts, and keeps `frame-ancestors 'none'` / `object-src 'none'` /
-    `base-uri 'self'`. The nonce is threaded to the inline `<script>`s in
+  - **Strict nonce'd policy (the default, on every dynamic route)**: a random
+    per-request nonce, threaded to the inline `<script>`s in
     `src/app/root-document.tsx` (and next-themes) via the `x-nonce` request
     header, so an injected `<script>` (or inline event handler) that survives a
     sanitizer regression is blocked by the browser instead of executing — the
     sanitizer is the primary XSS gate, the CSP is the backstop.
   - **Relaxed static policy (only the statically-prerendered public pages —
-    `isPublicStaticPath` in `src/proxy.ts`: demo, login, register, terms,
-    privacy)**: `script-src 'unsafe-inline'` instead of a nonce (prerendered
-    HTML can't carry one), no `'strict-dynamic'`. **Invariant: these pages must
-    render zero user-supplied HTML** — demo articles are dev-authored
-    constants, and the auth forms render user input only as escaped React
-    text. Any page that renders untrusted HTML must live under the `(spa)`
-    route group (strict CSP); adding untrusted HTML to a `(public)` page
-    re-triggers the strict-CSP requirement and needs a security review.
+    `isPublicStaticPath` in `src/proxy.ts`)**: prerendered HTML can't carry a
+    nonce. **Invariant: these pages must render zero user-supplied HTML** —
+    demo articles are dev-authored constants, and the auth forms render user
+    input only as escaped React text. Any page that renders untrusted HTML must
+    live under the `(spa)` route group (strict CSP); adding untrusted HTML to a
+    `(public)` page re-triggers the strict-CSP requirement and needs a security
+    review.
 
-  Directive rationale lives in `csp.ts`; the maintenance short-circuit in
-  `scripts/server.ts` carries its own static, script-less CSP (it bypasses Next
-  and has no scripts). `/sw.js` is deliberately CSP-exempt (the service
-  worker's own fetches for runtime caching of cross-origin images would be
-  broken by the app's `connect-src`).
+  Directive rationale lives in `csp.ts`.
 
 - **Analytics reports a closed vocabulary, never a URL**
-  (`src/lib/analytics/`). We deliberately load **no third-party analytics
-  script**: GoatCounter's `count.js` reports the page's full query string (as
-  `p`, and again raw as `q`, which no setting suppresses) plus
-  `document.title`, and our URLs carry one-time invite tokens
-  (`/register?invite=…`) and entry/subscription/tag ids. Instead the beacon is
-  first-party and every reported path is a constant chosen by lookup in
-  `paths.ts` — an unmapped route reports nothing, and `AnalyticsPath` is a
-  closed union so a computed string can't be reported at all. **Adding a route
-  there is a security decision**: ask what that URL and title can contain. The
-  same rule kills the second-order leak — a same-origin `document.referrer`
-  would otherwise carry the previous page's query string, so only cross-origin
-  referrers are sent, origin only. Because no third-party script is involved,
-  `script-src` stays `'self'` in both tiers and analytics touches only
-  `connect-src`.
+  (`src/lib/analytics/`): we load **no third-party analytics script**, and every
+  reported path is a constant looked up in `paths.ts`, so `AnalyticsPath` is
+  closed by construction and an unmapped route reports nothing. **Adding a route
+  there is a security decision** — ask what that URL and title can contain. The
+  rationale (and the matching referrer rule) is in the file headers of
+  `paths.ts`, `beacon.ts`, and `goatcounter.ts`.
 
 ## 2. SSRF-safe outbound fetching
 
@@ -174,7 +158,7 @@ Entry bodies, saved articles, and AI summaries are rendered with
 ## 6. OAuth 2.1 server & MCP auth
 
 **Docs:** `src/server/oauth/CLAUDE.md` · **Code:** `src/server/oauth/`,
-`src/app/oauth/`, `src/app/api/mcp/`
+`src/app/(spa)/oauth/`, `src/app/api/mcp/`
 
 - PKCE mandatory and verified; auth codes single-use + expiry + client/redirect
   bound; `redirect_uri` exact-match allowlist; refresh-token rotation with reuse

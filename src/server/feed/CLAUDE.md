@@ -38,4 +38,4 @@ Feed fetching, WebSub ingest, and email ingest **store only the raw content colu
 
 ## Feed Fetch Health
 
-The `monitor_feed_health` singleton job (worker, every 15 minutes) enforces "at least one feed must fetch successfully every N minutes" (default 120, `FEED_HEALTH_MAX_SUCCESS_AGE_MINUTES`) — zero successes anywhere means fetching is broken globally (worker stuck, fetch/parse regression, egress failure), which per-feed failure tracking doesn't surface. See `src/server/feed/health.ts` and "Observability" in `docs/DESIGN.md` for the healthchecks.io/Prometheus wiring.
+The global "at least one feed must fetch successfully" invariant and its alerting wiring are documented under "Feed Fetch Health Alerting" in `docs/DESIGN.md`; the code is `src/server/feed/health.ts`.

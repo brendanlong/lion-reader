@@ -117,7 +117,7 @@ src/server/
   services/      # Reusable business logic (shared across APIs)
   db/            # Database schemas and client
   jobs/          # Background job queue
-  plugins/       # Content source plugins (LessWrong, Google Docs, ArXiv, GitHub)
+  plugins/       # Content source plugins (registry in plugins/index.ts)
   mcp/           # MCP server
 src/lib/         # Shared utilities (client and server)
 src/components/  # React components
@@ -146,14 +146,7 @@ tests/e2e/       # Playwright browser tests (real server + DB + Redis)
 
 ## Services Layer
 
-Business logic should be extracted into reusable service functions in `src/server/services/`:
-
-- **Purpose**: Share logic between tRPC routers, MCP server, background jobs, etc.
-- **Pattern**: Pure functions that accept `db` and parameters, return plain data objects
-- **Location**: `src/server/services/{domain}.ts` (e.g., `entries.ts`, `subscriptions.ts`)
-- **Naming**: `verbNoun` (e.g., `listEntries`, `searchSubscriptions`, `markEntriesRead`)
-
-Don't try to invalidate the cache or look things up in the cache. Pass data down as props if needed (and add to the backend API if necessary).
+Business logic shared across tRPC routers, the MCP server, and background jobs belongs in `src/server/services/` — see "Services Layer" in `src/server/CLAUDE.md` for the conventions.
 
 ## Outgoing HTTP Requests
 
