@@ -25,7 +25,6 @@ import {
   tags,
   subscriptionTags,
   blockedSenders,
-  userFeeds,
   visibleEntries,
 } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
@@ -744,30 +743,7 @@ export const subscriptionsRouter = createTRPCRouter({
     .query(async ({ ctx }) => {
       const userId = ctx.session.user.id;
 
-      // Get all active subscriptions with feed info and tags using user_feeds view
-      // View already filters out unsubscribed and resolves title
-      const userSubscriptions = await ctx.db
-        .select({
-          id: userFeeds.id,
-          title: userFeeds.title, // already resolved (custom or original)
-          url: userFeeds.url,
-          siteUrl: userFeeds.siteUrl,
-          // Tags aggregated as JSON array
-          tagNames: sql<string[]>`
-            COALESCE(
-              array_agg(${tags.name}) FILTER (WHERE ${tags.id} IS NOT NULL),
-              '{}'::text[]
-            )
-          `,
-        })
-        .from(userFeeds)
-        .leftJoin(subscriptionTags, eq(subscriptionTags.subscriptionId, userFeeds.id))
-        .leftJoin(tags, eq(tags.id, subscriptionTags.tagId))
-        .where(eq(userFeeds.userId, userId))
-        // user_feeds is a view, so Postgres can't infer the other columns from
-        // its id the way it would for a table's primary key (#1516).
-        .groupBy(userFeeds.id, userFeeds.title, userFeeds.url, userFeeds.siteUrl)
-        .orderBy(userFeeds.title);
+      const userSubscriptions = await subscriptionsService.listAllSubscriptions(ctx.db, userId);
 
       // Convert to OPML subscription format
       const opmlSubscriptions: OpmlSubscription[] = userSubscriptions
@@ -776,7 +752,7 @@ export const subscriptionsRouter = createTRPCRouter({
           title: row.title || row.url || "Untitled Feed",
           xmlUrl: row.url!,
           htmlUrl: row.siteUrl ?? undefined,
-          tags: row.tagNames.length > 0 ? row.tagNames : undefined,
+          tags: row.tags.length > 0 ? row.tags.map((tag) => tag.name) : undefined,
         }));
 
       // Generate OPML
