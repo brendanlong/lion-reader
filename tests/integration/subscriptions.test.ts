@@ -14,6 +14,8 @@ import {
   feeds,
   entries,
   subscriptions,
+  subscriptionTags,
+  tags,
   userEntries,
   jobs,
 } from "../../src/server/db/schema";
@@ -1141,6 +1143,70 @@ describe("listAllSubscriptions", () => {
     const userId = await createTestUser();
     const all = await subscriptionsService.listAllSubscriptions(db, userId);
     expect(all).toEqual([]);
+  });
+});
+
+describe("subscriptions.export", () => {
+  afterAll(async () => {
+    await db.delete(users);
+    await db.delete(feeds);
+  });
+
+  it("exports active subscriptions with resolved titles and tag folders (#1516)", async () => {
+    const userId = await createTestUser();
+    const ctx = await createAuthContext(userId);
+    const caller = createCaller(ctx);
+
+    const feedA = await createTestFeed({
+      url: `https://example.com/export-${userId}/a.xml`,
+      title: "Feed A",
+      siteUrl: "https://example.com/a",
+    });
+    const feedB = await createTestFeed({ title: "Feed B" });
+    const feedGone = await createTestFeed({
+      url: `https://example.com/export-${userId}/gone.xml`,
+      title: "Gone",
+    });
+    const subA = await createTestSubscription(userId, feedA);
+    const subB = await createTestSubscription(userId, feedB, { customTitle: "My B" });
+    await createTestSubscription(userId, feedGone, { unsubscribedAt: new Date() });
+
+    const techTagId = generateUuidv7();
+    const newsTagId = generateUuidv7();
+    await db.insert(tags).values([
+      { id: techTagId, userId, name: "Tech", createdAt: new Date() },
+      { id: newsTagId, userId, name: "News", createdAt: new Date() },
+    ]);
+    await db.insert(subscriptionTags).values([
+      { tagId: techTagId, subscriptionId: subA, createdAt: new Date() },
+      { tagId: newsTagId, subscriptionId: subA, createdAt: new Date() },
+      { tagId: techTagId, subscriptionId: subB, createdAt: new Date() },
+    ]);
+
+    const result = await caller.subscriptions.export();
+
+    expect(result.feedCount).toBe(2);
+    expect(result.opml).toContain('text="Feed A"');
+    expect(result.opml).toContain('htmlUrl="https://example.com/a"');
+    expect(result.opml).toContain('text="My B"');
+    expect(result.opml).toContain('text="Tech"');
+    expect(result.opml).toContain('text="News"');
+    expect(result.opml).not.toContain("gone.xml");
+    // Feed A sits in two tag folders, so it appears once at the top level plus
+    // once per folder; a wrong GROUP BY would fan the join out further.
+    expect(result.opml.split(`xmlUrl="https://example.com/export-${userId}/a.xml"`)).toHaveLength(
+      4
+    );
+  });
+
+  it("returns an empty OPML document for a user with no subscriptions", async () => {
+    const userId = await createTestUser();
+    const caller = createCaller(await createAuthContext(userId));
+
+    const result = await caller.subscriptions.export();
+
+    expect(result.feedCount).toBe(0);
+    expect(result.opml).not.toContain("<outline");
   });
 });
 
