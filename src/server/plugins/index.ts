@@ -14,6 +14,8 @@ import { youtubePlugin } from "./youtube";
 import { blueskyPlugin } from "./bluesky";
 import { linkedInPlugin } from "./linkedin";
 import { threadsPlugin } from "./threads";
+import { notionPlugin } from "./notion";
+import type { FetchedPage, PluginWith, SavedArticleContent } from "./types";
 import { logger } from "@/lib/logger";
 
 // Register all available plugins at module load time
@@ -25,6 +27,7 @@ pluginRegistry.register(youtubePlugin);
 pluginRegistry.register(blueskyPlugin);
 pluginRegistry.register(linkedInPlugin);
 pluginRegistry.register(threadsPlugin);
+pluginRegistry.register(notionPlugin);
 
 logger.info("Plugins registered", {
   plugins: [
@@ -36,8 +39,36 @@ logger.info("Plugins registered", {
     blueskyPlugin.name,
     linkedInPlugin.name,
     threadsPlugin.name,
+    notionPlugin.name,
   ],
 });
+
+/**
+ * Offer a page the generic fetch already retrieved to the plugins that can
+ * recognize their source from the page itself (`fetchContentFromPage`), for
+ * URLs no hostname lookup claimed. Returns the first plugin's content, or null
+ * when none claims it. A plugin failure is logged and counts as "not claimed":
+ * the caller keeps the page it already has.
+ */
+export async function claimFetchedPage(
+  page: FetchedPage
+): Promise<{ plugin: PluginWith<"savedArticle">; content: SavedArticleContent } | null> {
+  for (const plugin of pluginRegistry.fetchedPageHandlers) {
+    const fetchContentFromPage = plugin.capabilities.savedArticle.fetchContentFromPage;
+    if (!fetchContentFromPage) continue;
+    try {
+      const content = await fetchContentFromPage(page);
+      if (content) return { plugin, content };
+    } catch (error) {
+      logger.warn("Plugin failed on a fetched page, keeping the page as fetched", {
+        plugin: plugin.name,
+        url: page.url.href,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return null;
+}
 
 /**
  * Resolve the feed-capable plugin for a feed or page URL string.

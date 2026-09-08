@@ -49,6 +49,11 @@ export interface PluginCapabilities {
   savedArticle?: SavedArticleCapability;
 }
 
+/** A plugin known to declare capability `K`. */
+export type PluginWith<K extends keyof PluginCapabilities> = UrlPlugin & {
+  capabilities: Required<Pick<PluginCapabilities, K>>;
+};
+
 // ============ Feed Capability ============
 
 export interface FeedCapability {
@@ -116,6 +121,17 @@ export interface SavedArticleCapability {
   fetchContent(url: URL): Promise<SavedArticleContent | null>;
 
   /**
+   * Fetch content for a page the generic path has already fetched, for a
+   * source that can't be recognized from its URL alone — e.g. a Notion page
+   * served from a customer's own domain. Runs after the generic HTML fetch and
+   * before Readability, only when no hostname-matched plugin handled the URL.
+   * It runs on every such fetch, so it must decline cheaply, and it must claim
+   * a page only from markers the page itself declares (see "Plugin System" in
+   * docs/DESIGN.md). Return null to keep the page as fetched.
+   */
+  fetchContentFromPage?(page: FetchedPage): Promise<SavedArticleContent | null>;
+
+  /**
    * Whether to skip Readability processing.
    * True if content is already clean (e.g., Google Docs API).
    * Default: false
@@ -126,6 +142,13 @@ export interface SavedArticleCapability {
    * Site name to use for this saved article.
    */
   siteName?: string;
+}
+
+/** A page the generic fetch retrieved, offered to `fetchContentFromPage`. */
+export interface FetchedPage {
+  html: string;
+  /** The URL the fetch ended at, after redirects. */
+  url: URL;
 }
 
 export interface SavedArticleContent {
