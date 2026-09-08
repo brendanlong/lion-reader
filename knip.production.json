@@ -8,6 +8,7 @@
         "scripts/worker.ts!",
         "scripts/discord-bot.ts!",
         "scripts/migrate.ts!",
+        "worker/index.ts!",
         "src/server/mcp/bin.ts!"
       ],
       "project": ["src/**/*.{ts,tsx}!"],
