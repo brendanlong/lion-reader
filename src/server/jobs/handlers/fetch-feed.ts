@@ -10,6 +10,7 @@
 
 import { createHash } from "crypto";
 import { eq, and, isNull, inArray, count } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { db } from "../../db";
 import { feeds, subscriptions, entries, userEntries, type Feed } from "../../db/schema";
 import { fetchFullContent, persistFullContentResult } from "../../services/full-content";
@@ -1164,43 +1165,45 @@ export async function migrateSubscriptionsToExistingFeed(
     }
   }
 
-  // Surviving subscription per user, for re-stamping user_entries.subscription_id
-  const survivorByUser = new Map<string, string>();
-
-  // For users with existing subscriptions: reactivate if needed
-  for (const user of usersWithExisting) {
-    survivorByUser.set(user.userId, user.existingSubId);
-    if (user.wasUnsubscribed) {
-      await db
-        .update(subscriptions)
-        .set({
-          unsubscribedAt: null,
-          subscribedAt: now,
-          updatedAt: now,
-        })
-        .where(eq(subscriptions.id, user.existingSubId));
-    }
+  // Batch update: reactivate every previously-unsubscribed subscription to the
+  // new feed. The SET is the same for all of them, so one statement does it.
+  const subIdsToReactivate = usersWithExisting
+    .filter((u) => u.wasUnsubscribed)
+    .map((u) => u.existingSubId);
+  if (subIdsToReactivate.length > 0) {
+    await db
+      .update(subscriptions)
+      .set({
+        unsubscribedAt: null,
+        subscribedAt: now,
+        updatedAt: now,
+      })
+      .where(inArray(subscriptions.id, subIdsToReactivate));
   }
 
   // Batch insert: For users without existing subscriptions, create new ones
   if (usersWithoutExisting.length > 0) {
-    const newSubscriptions = usersWithoutExisting.map((userId) => ({
-      id: generateUuidv7(),
-      userId,
-      feedId: newFeed.id,
-      subscribedAt: now,
-      createdAt: now,
-      updatedAt: now,
-    }));
-    for (const sub of newSubscriptions) {
-      survivorByUser.set(sub.userId, sub.id);
-    }
-
-    await db.insert(subscriptions).values(newSubscriptions);
-
-    // Ensure a job exists for the new feed (will be claimed via data-driven eligibility)
-    await ensureFeedJob(newFeed.id);
+    await db.insert(subscriptions).values(
+      usersWithoutExisting.map((userId) => ({
+        id: generateUuidv7(),
+        userId,
+        feedId: newFeed.id,
+        subscribedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      }))
+    );
   }
+
+  // Ensure a job exists for the new feed (will be claimed via data-driven
+  // eligibility). Unconditional, not just for brand-new subscriptions:
+  // retention deletes the `fetch_feed` job of any feed with no active
+  // subscriber, so a user resubscribing via a redirect merge onto a feed they
+  // had previously left can be the one that brings the feed back to life --
+  // with no job, it would never be fetched again. `ensureFeedJob` is an
+  // idempotent upsert that keeps an existing `next_run_at`, so running it for
+  // an already-scheduled feed is a no-op (issue #952).
+  await ensureFeedJob(newFeed.id);
 
   // Re-stamp user_entries attribution from each old subscription to its survivor.
   // user_entries.subscription_id is stamped at insert (issue #1117) and is what
@@ -1208,14 +1211,21 @@ export async function migrateSubscriptionsToExistingFeed(
   // entries would vanish with the about-to-be-unsubscribed subscription.
   // Deliberately leaves updated_at alone: nothing user-visible changes, and
   // bumping it would flood every affected user's delta sync.
-  for (const oldSub of activeSubscriptions) {
-    const survivorId = survivorByUser.get(oldSub.userId);
-    if (!survivorId) continue;
-    await db
-      .update(userEntries)
-      .set({ subscriptionId: survivorId })
-      .where(eq(userEntries.subscriptionId, oldSub.id));
-  }
+  // The survivor is looked up by joining the user's subscription to the new
+  // feed (unique per user/feed via uq_subscriptions_user_feed), which is what
+  // the reactivate/insert above just guaranteed exists for every affected user.
+  const survivorSub = alias(subscriptions, "survivor_sub");
+  await db
+    .update(userEntries)
+    .set({ subscriptionId: survivorSub.id })
+    .from(survivorSub)
+    .where(
+      and(
+        inArray(userEntries.subscriptionId, oldSubIds),
+        eq(survivorSub.userId, userEntries.userId),
+        eq(survivorSub.feedId, newFeed.id)
+      )
+    );
 
   // Batch update: Unsubscribe all old subscriptions at once
   await db
