@@ -10,16 +10,16 @@ const article: DemoArticle = {
   title: "Smart Content Sources",
   author: null,
   summary:
-    "Lion Reader goes beyond plain RSS to pull in complete, readable content from sources that don't normally cooperate — arXiv papers, GitHub, Google Docs, LessWrong, YouTube, and Bluesky — so you can subscribe and save from them like anything else.",
+    "Lion Reader goes beyond plain RSS to pull in complete, readable content from sources that don't normally cooperate — arXiv papers, GitHub, Google Docs, LessWrong, Notion, YouTube, and Bluesky — so you can subscribe and save from them like anything else.",
   publishedAt: new Date("2026-01-20T12:00:00Z"),
   starred: false,
   heroImage,
   ogImage,
   heroImageAlt:
     "The Lion Reader lion with colorful modular puzzle pieces for different content sources snapping into place.",
-  summaryHtml: `<p>Lion Reader enhances RSS by pulling in <strong>complete content</strong> from sources like LessWrong, YouTube, arXiv, GitHub, Google Docs, and Bluesky &mdash; restoring embedded media, full text, and proper math rendering that standard feeds strip out. Paste any link and Lion Reader handles the rest automatically.</p>`,
+  summaryHtml: `<p>Lion Reader extracts complete, readable content from sources plain RSS handles poorly: LessWrong posts and comments with rendered math, YouTube videos with descriptions, arXiv papers, GitHub READMEs, Google Docs, published Notion pages, and Bluesky embeds. It also converts MathJax markup to native MathML, working across web, AI assistant, and Discord.</p>`,
   summaryModelId: "claude-sonnet-5",
-  summaryGeneratedAt: new Date("2026-07-14"),
+  summaryGeneratedAt: new Date("2026-09-08"),
   contentHtml: `
     <h2>Content from anywhere, made readable</h2>
 
@@ -44,6 +44,10 @@ const article: DemoArticle = {
     <h3>Google Docs</h3>
 
     <p>Save a Google Doc straight to Lion Reader with its formatting preserved. Once you grant the optional Google permission, it reads the document directly, so you get the real content instead of a login wall.</p>
+
+    <h3>Notion</h3>
+
+    <p>Save a link to a published Notion page &mdash; on <code>notion.site</code>, on Notion itself, or on a company handbook&rsquo;s own domain &mdash; and you get the document: its real title, headings, lists and checklists, quotes and callouts, code blocks, captioned images, and toggles you can still expand as you read. A normal save can&rsquo;t: a published Notion page arrives as an empty shell that only fills in once the browser runs it, so other readers store a blank article called &ldquo;Notion&rdquo;. Lion Reader only ever reads pages Notion already publishes to the world &mdash; it never asks for access to your Notion account.</p>
 
     <h3>Bluesky</h3>
 
