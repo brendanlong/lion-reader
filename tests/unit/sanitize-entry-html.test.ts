@@ -1,6 +1,7 @@
-import { describe, it, expect } from "vitest";
+import { createHash } from "node:crypto";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { htmlToNarrationInput, htmlToPlainText } from "@/lib/narration/html-to-narration-input";
-import { sanitizeEntryHtml } from "@/server/html/sanitize";
+import { sanitizeEntryHtml, sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
 
 /** What the narration would say, in order. */
 function narrated(result: ReturnType<typeof htmlToNarrationInput>): string[] {
@@ -546,5 +547,89 @@ describe("sanitizeEntryHtml", () => {
         sanitizeEntryHtml('<iframe src="https://codepen.io/team/embed/abcDEF"></iframe>') ?? "";
       expect(out).toContain('src="https://codepen.io/team/embed/abcDEF"');
     });
+  });
+});
+
+/**
+ * Fatal sanitizer failures must degrade to "no content", not to an exception.
+ *
+ * lol_html refuses to rewrite a text-content start tag (`<style>`, `<title>`,
+ * `<xmp>`, `<iframe>`, `<noembed>`) that appears while a `<select>` is open —
+ * a streaming rewriter genuinely cannot tell whether a tree builder would keep
+ * or ignore it, and guessing is the `<select><xmp><script>` mXSS gadget. It
+ * therefore errors, and the native module surfaces that as a thrown JS error.
+ * Nothing on the read path catches it, so before this handling a single such
+ * entry was a permanent 500 for `entries.get` and for the whole Google Reader
+ * `stream-contents` batch it appeared in.
+ *
+ * The guard is deliberately left in place; the wrapper is what has to cope.
+ */
+describe("sanitizer failure handling", () => {
+  /** Markup that makes the native sanitizer throw, one per text-content tag. */
+  const AMBIGUOUS = [
+    ["<style> after an open <select>", "<div><select><option>a</div><style>x</style>"],
+    ["<xmp> after an open <select>", "<select><xmp>x"],
+    ["<title> after an open <select>", "<select><title>t</title>"],
+    ["<iframe> after an open <select>", "<select><iframe>x"],
+  ] as const;
+
+  /**
+   * `logger.error` writes through `console.error`, so spying on the global is
+   * enough to assert the failure was reported — no internal module is mocked.
+   */
+  function captureErrorLogs(): { calls: () => string[] } {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    return { calls: () => spy.mock.calls.map((args) => args.join(" ")) };
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  describe.each(AMBIGUOUS)("%s", (_name, html) => {
+    it("returns null instead of throwing (sync)", () => {
+      const logs = captureErrorLogs();
+      expect(sanitizeEntryHtml(html)).toBeNull();
+      expect(logs.calls().join("\n")).toContain("Sanitizer failed");
+    });
+
+    it("returns null instead of throwing (async, inline path)", async () => {
+      const logs = captureErrorLogs();
+      await expect(sanitizeEntryHtmlAsync(html)).resolves.toBeNull();
+      expect(logs.calls().join("\n")).toContain("Sanitizer failed");
+    });
+
+    it("returns null instead of throwing (async, thread-pool path)", async () => {
+      // Above the ~10 KB inline threshold, so this exercises the native async
+      // task rather than falling back to the synchronous wrapper.
+      const large = `${html}<p>${"padding ".repeat(2000)}</p>`;
+      expect(large.length).toBeGreaterThan(10 * 1024);
+      const logs = captureErrorLogs();
+      await expect(sanitizeEntryHtmlAsync(large)).resolves.toBeNull();
+      expect(logs.calls().join("\n")).toContain("Sanitizer failed");
+    });
+  });
+
+  it("logs the input's length and hash so the offending entry can be found", () => {
+    const logs = captureErrorLogs();
+    const html = "<p>private-article-text</p><select><xmp>x";
+    expect(sanitizeEntryHtml(html)).toBeNull();
+    const line = logs.calls().join("\n");
+    expect(line).toContain(`"htmlLength":${html.length}`);
+    // sha256 of the raw content, which is what the DB stores.
+    expect(line).toContain(
+      `"htmlSha256":"${createHash("sha256").update(html, "utf8").digest("hex")}"`
+    );
+    // Never the untrusted body itself — saved articles can be private.
+    expect(line).not.toContain("private-article-text");
+  });
+
+  it("leaves ordinary content alone and logs nothing", () => {
+    const logs = captureErrorLogs();
+    expect(sanitizeEntryHtml("<p>Hello <b>world</b></p>")).toBe("<p>Hello <b>world</b></p>");
+    // A <select> on its own, and a <style> on its own, are both fine.
+    expect(sanitizeEntryHtml("<select><option>a</option></select><p>x</p>")).toBe("<p>x</p>");
+    expect(sanitizeEntryHtml("<style>p{color:red}</style><p>x</p>")).toBe("<p>x</p>");
+    expect(logs.calls()).toEqual([]);
   });
 });
