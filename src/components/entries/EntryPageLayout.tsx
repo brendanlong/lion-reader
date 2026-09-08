@@ -11,11 +11,11 @@
 "use client";
 
 import { useRef, useState, type ReactNode } from "react";
-import { usePathname } from "next/navigation";
 import { useHotkeys } from "react-hotkeys-hook";
 import { type MarkAllReadOptions, useEntryMutations } from "@/lib/hooks/useEntryMutations";
 import { useUrlViewPreferences } from "@/lib/hooks/useUrlViewPreferences";
 import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
+import { useAppPathname } from "@/lib/hooks/useAppLocation";
 import { useKeyboardShortcutsContext } from "@/components/keyboard/KeyboardShortcutsProvider";
 import { SearchIcon } from "@/components/ui/icons";
 import { StateToggleButton } from "@/components/ui/state-toggle-button";
@@ -78,7 +78,7 @@ export function EntryPageLayout({
   const { markAllRead, isMarkAllReadPending } = useEntryMutations();
   const { openEntryId } = useEntryUrlState();
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
-  const pathname = usePathname();
+  const pathname = useAppPathname();
 
   // The search bar stays out of the way until asked for: it renders only while
   // explicitly opened (toggle button / `/` shortcut) or a search is active in

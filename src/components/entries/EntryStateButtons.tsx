@@ -2,9 +2,9 @@
  * EntryStateButtons
  *
  * The Star and Read/Unread toggle buttons shown in the reader action bar.
- * Extracted so the real reader (EntryContentBody), its cold-load fallback
- * (EntryContentFallback), and the demo reader (DemoRouter) render byte-identical
- * buttons instead of three hand-maintained copies that can drift apart.
+ * Extracted so the reader (EntryContentBody) and its cold-load fallback
+ * (EntryContentFallback) render byte-identical buttons instead of two
+ * hand-maintained copies that can drift apart.
  *
  * Color language (see also EntryListItem / StickyEntryControls): amber is
  * reserved for the star — the starred state shows an amber `text-star` icon in

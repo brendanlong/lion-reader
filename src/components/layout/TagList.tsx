@@ -8,7 +8,7 @@
 "use client";
 
 import { Suspense } from "react";
-import { usePathname } from "next/navigation";
+import { useAppPathname } from "@/lib/hooks/useAppLocation";
 import { trpc } from "@/lib/trpc/client";
 import { useExpandedTags } from "@/lib/hooks/useExpandedTags";
 import { NavLinkWithIcon } from "@/components/ui/nav-link";
@@ -43,7 +43,7 @@ function TagListContent({
   unreadOnly,
   onPrefetch,
 }: TagListProps) {
-  const pathname = usePathname();
+  const pathname = useAppPathname();
   const [tagsData] = trpc.tags.list.useSuspenseQuery();
   const { isExpanded, toggleExpanded } = useExpandedTags();
 

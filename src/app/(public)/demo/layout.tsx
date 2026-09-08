@@ -3,11 +3,21 @@
  *
  * Server component that provides SEO metadata for the demo route hierarchy.
  * No auth check — demo is accessible to everyone.
+ *
+ * `force-static` (rather than plain static prerendering) so `useSearchParams()`
+ * inside the reader tree returns empty params during the prerender instead of
+ * bailing the whole page out to client rendering (Next throws that bailout
+ * whenever the hook is *called* during static generation). The real location
+ * is supplied by each page via `AppLocationProvider`: the `?entry=` article
+ * URLs are served from the `/demo/entry/[id]` route by the next.config.ts
+ * rewrite, so at prerender time neither the pathname nor the query Next sees
+ * is the one the browser will show (see DemoApp).
  */
 
 import { type ReactNode } from "react";
 import { type Metadata } from "next";
-import { DemoLayoutContent } from "./DemoLayoutContent";
+
+export const dynamic = "force-static";
 
 export const metadata: Metadata = {
   title: "Lion Reader",
@@ -16,5 +26,5 @@ export const metadata: Metadata = {
 };
 
 export default function DemoLayout({ children }: { children: ReactNode }) {
-  return <DemoLayoutContent>{children}</DemoLayoutContent>;
+  return children;
 }

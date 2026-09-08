@@ -30,7 +30,7 @@ import { useKeyboardShortcutsContext } from "@/components/keyboard/KeyboardShort
 import { useKeyboardShortcuts } from "@/lib/hooks/useKeyboardShortcuts";
 import { useUrlViewPreferences } from "@/lib/hooks/useUrlViewPreferences";
 import { useEntriesListInput } from "@/lib/hooks/useEntriesListInput";
-import { useIsHydrated } from "@/lib/hooks/useIsHydrated";
+import { useCanRenderFromCache } from "@/lib/hooks/useIsHydrated";
 import { useScrollContainer } from "@/components/layout/ScrollContainerContext";
 import { EntryList, type ExternalQueryState } from "./EntryList";
 import { EntryListFallback } from "./EntryListFallback";
@@ -41,7 +41,7 @@ interface EntryListContainerProps {
 }
 
 export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
-  const { openEntryId, setOpenEntryId } = useEntryUrlState();
+  const { openEntryId, setOpenEntryId, entryHref } = useEntryUrlState();
   const { showUnreadOnly, sortOrder, toggleShowUnreadOnly } = useUrlViewPreferences();
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
   const utils = trpc.useUtils();
@@ -51,7 +51,7 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
   // False during SSR + first client render. The smart (cache-reading) fallback
   // below would mismatch hydration (empty server cache vs. hydrated client
   // cache), so until hydration we render a deterministic skeleton.
-  const isHydrated = useIsHydrated();
+  const canRenderFromCache = useCanRenderFromCache();
 
   // Get query input from URL - shared with parent's non-suspending query
   const queryInput = useEntriesListInput();
@@ -233,7 +233,7 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
   // Deterministic skeleton on the server + first client render so hydration
   // matches (EntryListFallback reads the cache, which differs between server
   // and client at that point).
-  if (!isHydrated) {
+  if (!canRenderFromCache) {
     return <EntryListSkeleton count={5} />;
   }
 
@@ -268,6 +268,7 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
     <EntryList
       onEntryClick={handleEntryClick}
       onEntryMouseDown={handleEntryMouseDown}
+      getEntryHref={entryHref}
       onEntryFocus={handleEntryFocus}
       selectedEntryId={selectedEntryId}
       onToggleRead={toggleRead}
