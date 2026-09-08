@@ -13,7 +13,6 @@ This guide covers deploying Lion Reader to [Fly.io](https://fly.io), including p
 7. [First Deployment](#first-deployment)
 8. [Verification](#verification)
 9. [Ongoing Operations](#ongoing-operations)
-10. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -277,7 +276,7 @@ The deployment workflow is already configured in `.github/workflows/deploy.yml`.
 - **Concurrency**: `group: deploy` with `cancel-in-progress: false`, so deploys **queue** instead of cancelling each other — cancelling an in-flight `flyctl deploy` could kill a mid-flight canary rollout and leave a partial deployment.
 - **Checkout**: `ref: ${{ github.event.workflow_run.head_sha || github.sha }}` — deploys the exact commit CI validated, since `workflow_run` runs against the branch tip, which may have moved on.
 - **Deploy**: `flyctl deploy --remote-only` with `FLY_API_TOKEN` from GitHub secrets.
-- **CDN**: the deploy workflow has no CDN steps. A single Bunny pull zone (`https://cdn.lionreader.com`, a custom hostname on the zone) has the app as origin and wraps the **whole site**, but honors origin `Cache-Control`, so what it caches is decided by our headers — configured by the `ASSET_PREFIX` build arg set in `[build.args]` in `fly.toml` (the `Dockerfile` leaves it unset, so non-Fly/local builds stay origin-served). It serves the hashed `/_next/static` assets via Next's `assetPrefix`, content-hashed + `immutable`, so no purging or upload ordering is needed. The demo hero/OG images fall under this too: they're `import`ed by the article files (from `src/app/(public)/demo/articles/images/`), so Next hashes them into `/_next/static/media` and serves them immutable from the CDN automatically — no manifest, `?v=` buster, or Bunny query-string config. HTML/RSC is never CDN-cached: dynamic pages keep Next's default `private, no-store`, and the statically-prerendered public pages' `s-maxage` is overridden to `private, no-cache` in `src/proxy.ts` (see below). The pull zone must send CORS headers (Bunny's "CORS headers" option) so cross-origin font loads work.
+- **CDN**: the deploy workflow has no CDN steps — a single Bunny pull zone (`https://cdn.lionreader.com`) fronts the whole site but honors origin `Cache-Control`, so our headers decide what it caches; see "Why HTML and RSC are not CDN-cached" below and the CDN section of `src/server/http/CLAUDE.md` for the per-path rules. It is wired up by the `ASSET_PREFIX` build arg in `fly.toml`, which the `Dockerfile` leaves unset so non-Fly/local builds stay origin-served. The pull zone must send CORS headers (Bunny's "CORS headers" option) so cross-origin font loads work.
 
 ### Why HTML and RSC are not CDN-cached
 
@@ -348,47 +347,12 @@ failing component reports `status: "unhealthy"` with an `error` message.
 
 ## Verification
 
-After deployment, verify the application works end-to-end:
-
-### 1. Health Check
+After deployment, confirm the health endpoint reports `healthy` (see the contract
+above):
 
 ```bash
 curl https://your-app.com/api/health
 ```
-
-### 2. Create a Test Account
-
-1. Open `https://your-app.com`
-2. Click "Register" or navigate to `/register`
-3. Create an account with a test email and password
-4. Verify you're redirected to the main app
-
-### 3. Subscribe to a Feed
-
-1. Click the "+ Subscribe" button
-2. Enter a test feed URL, for example:
-   - `https://feeds.bbci.co.uk/news/rss.xml` (BBC News)
-   - `https://xkcd.com/atom.xml` (XKCD)
-   - `https://blog.cloudflare.com/rss/` (Cloudflare Blog)
-3. Preview the feed and confirm subscription
-4. Verify entries appear after a few moments
-
-### 4. Verify Core Features
-
-- [ ] Entries load in the feed list
-- [ ] Clicking an entry shows full content
-- [ ] Mark read/unread works
-- [ ] Starring entries works
-- [ ] Sidebar shows unread counts
-- [ ] Real-time updates work (new entries appear without refresh)
-
-### 5. Check Logs for Errors
-
-```bash
-flyctl logs --app lion-reader
-```
-
-Look for any errors or warnings.
 
 ---
 
@@ -396,21 +360,28 @@ Look for any errors or warnings.
 
 ### Scaling
 
-**Increase VM resources:**
+Both scale commands take `--process-group`; **without it they apply to every
+process group**. The app runs three (`app`, `worker`, `discord` — see the
+Architecture Overview), sized in `fly.toml` (`app`: 2 CPU / 512MB, `worker`: 1 CPU
+/ 512MB, `discord`: 1 CPU / 256MB).
+
+**Increase VM resources** — pass a size at least as large as that group's current one:
 
 ```bash
-flyctl scale vm shared-cpu-2x --memory 1024
+flyctl scale vm shared-cpu-2x --memory 1024 --process-group app
 ```
 
-**Add more instances:**
-
-The app runs three process groups (`app`, `worker`, `discord` — see the Architecture
-Overview). Scale a specific group with `--process-group`; keep `app` at 2 or more for
-zero-downtime deploys:
+**Add more instances** — keep `app` at 2 or more for zero-downtime deploys:
 
 ```bash
 flyctl scale count 3 --process-group app
 ```
+
+### Slow Cold Starts
+
+The app uses `auto_stop_machines = "stop"`, which stops idle app machines. The first request after an idle period can be slow while a machine wakes.
+
+`fly.toml` already sets `min_machines_running = 2`. **Keep it at 2 or more** — the canary rolling-deploy strategy needs at least two app machines for zero-downtime deploys, so this also keeps a warm machine ready. Do **not** lower it to 1 (that reintroduces cold starts and breaks zero-downtime rollout). If you need more warm capacity, raise the app machine count (see Scaling above).
 
 ### Database Maintenance
 
@@ -463,159 +434,6 @@ flyctl machine update <machine-id> --vm-size shared-cpu-8x --vm-memory 2048 --ap
 Pick the tier by the migration's bottleneck, not by "bigger is better" — see the
 scaling guidance in `../migrations/CLAUDE.md`. Note the web dashboard's scale button
 is disabled for Postgres apps; the CLI is the supported path.
-
-### Viewing Logs
-
-```bash
-# Live logs
-flyctl logs
-
-# Recent logs
-flyctl logs --no-tail
-
-# Filter by type
-flyctl logs --instance <instance-id>
-```
-
-### SSH into Running Machine
-
-```bash
-flyctl ssh console
-```
-
-### Restarting the App
-
-```bash
-flyctl apps restart lion-reader
-```
-
-### Custom Domains
-
-1. Add your domain:
-
-```bash
-flyctl certs create yourdomain.com
-```
-
-2. Follow the DNS instructions provided
-3. Verify certificate:
-
-```bash
-flyctl certs show yourdomain.com
-```
-
----
-
-## Troubleshooting
-
-### Deployment Fails
-
-**"Release command failed"**
-
-This usually means database migrations failed.
-
-```bash
-# Check logs for migration errors
-flyctl logs | grep -i migration
-
-# Connect to database and check state
-flyctl postgres connect -a lion-reader-pg
-```
-
-**"Health check failed"**
-
-The app isn't responding on `/api/health`.
-
-```bash
-# Check app logs
-flyctl logs
-
-# SSH and check process
-flyctl ssh console
-ps aux | grep node
-```
-
-### Database Connection Issues
-
-**"Connection refused"**
-
-Ensure the database is attached:
-
-```bash
-flyctl secrets list
-# Should show DATABASE_URL
-
-# Re-attach if needed
-flyctl postgres attach lion-reader-pg
-```
-
-**"Authentication failed"**
-
-The database user credentials may be wrong. Detach and reattach:
-
-```bash
-flyctl postgres detach lion-reader-pg
-flyctl postgres attach lion-reader-pg
-```
-
-### Redis Connection Issues
-
-**"Connection timeout"**
-
-Check if Redis is accessible:
-
-```bash
-# Verify secret is set
-flyctl secrets list | grep REDIS
-
-# Check if using correct protocol (redis:// vs rediss://)
-```
-
-For Upstash, ensure you're using TLS (`rediss://`).
-
-### Application Errors
-
-**"500 Internal Server Error"**
-
-Check logs for the actual error:
-
-```bash
-flyctl logs --no-tail | tail -100
-```
-
-Common causes:
-
-- Missing environment variables
-- Database connection issues
-- Redis connection issues
-
-### Memory Issues
-
-**"Out of memory"**
-
-Scale up the VM:
-
-```bash
-flyctl scale vm shared-cpu-1x --memory 1024
-```
-
-### Slow Cold Starts
-
-The app uses `auto_stop_machines = "stop"`, which stops idle app machines. The first request after an idle period can be slow while a machine wakes.
-
-`fly.toml` already sets `min_machines_running = 2`. **Keep it at 2 or more** — the canary rolling-deploy strategy needs at least two app machines for zero-downtime deploys, so this also keeps a warm machine ready. Do **not** lower it to 1 (that reintroduces cold starts and breaks zero-downtime rollout):
-
-```toml
-[http_service]
-  # Need at least 2 machines for zero-downtime rolling deploys
-  min_machines_running = 2
-```
-
-If you need more warm capacity, raise the app machine count (`processes = ["app"]`):
-
-```bash
-flyctl scale count 3 --process-group app
-```
 
 ---
 

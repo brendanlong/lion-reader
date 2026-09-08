@@ -170,20 +170,13 @@ When a feed advertises a hub, we subscribe via WebSub and drop the feed to a 24h
 
 ### SSRF Protection
 
-All server-side fetches of user-influenced URLs go through `fetchWithSsrfProtection` (`src/server/http/ssrf.ts`), which blocks private/reserved addresses, pins DNS resolution to a vetted address (closing DNS-rebinding TOCTOU), and validates every redirect hop. Mechanics: `src/server/http/CLAUDE.md`.
+Every server-side fetch of a user-influenced URL goes through `fetchWithSsrfProtection`, never bare `fetch`. Why it is security-critical: `SECURITY.md` §2. Mechanics: `src/server/http/CLAUDE.md`.
 
 ---
 
 ## Real-time Updates
 
-### Architecture
-
-1. Feed worker fetches feed, finds new entry
-2. Worker publishes to per-feed Redis channel: `PUBLISH feed:{feedId}:events {type, entryId, ...}`
-3. SSE connections subscribe only to channels for feeds their user cares about
-4. App server receives message, forwards to client
-5. Client receives event, patches the React Query cache (see `src/FRONTEND_STATE.md`)
-6. UI updates automatically
+The end-to-end flow (worker → Redis channel → SSE → React Query cache) is drawn in [sse-cache-updates.d2](diagrams/sse-cache-updates.d2) and specified in `src/FRONTEND_STATE.md`.
 
 ### Channel Design
 
@@ -234,10 +227,6 @@ Token bucket via Redis, per-user, applied only to expensive/abusable operations.
 
 Errors use tRPC's standard error envelope, extended by the `errorFormatter` in `src/server/trpc/trpc.ts`: `data` carries the tRPC error code and HTTP status, an optional app-specific `appErrorCode` (set via `createError` in `errors.ts`, e.g. `SIGNUP_CONFIRMATION_REQUIRED`, `INVITE_REQUIRED`, `CONTENT_TOO_LARGE`), and flattened Zod issues in `zodError` when input validation failed.
 
-### Services Layer
-
-Business logic is extracted into reusable service functions in `src/server/services/`: pure functions accepting `db` and parameters, returning plain data objects, shared across tRPC routers, the MCP server, compat APIs, and background jobs. Entry content is sanitized in the services layer so every consumer gets the same guarantee. Module list and conventions: `src/server/CLAUDE.md`.
-
 ---
 
 ## Frontend Architecture
@@ -257,27 +246,11 @@ components to use, `useParams()` not updating on `pushState`) are in `src/CLAUDE
 
 ### Route Structure
 
-```
-app/
-  (auth)/                     # Login, register, forgot password
-  (app)/                      # Main app (requires auth)
-    all/                      # All entries timeline
-    starred/                  # Starred entries
-    saved/                    # Saved articles
-    recently-read/            # Recently-read timeline (sortBy: readChanged)
-    uncategorized/            # Entries from untagged subscriptions
-    subscription/[id]/        # Single subscription entries (uses subscription ID)
-    tag/[tagId]/              # Entries filtered by tag
-    settings/                 # User settings (rendered by UnifiedSettingsContent)
-    subscribe/                # Add subscription flow
-  save/                       # Bookmarklet landing page (top-level, no auth layout)
-  extension/save/             # Browser extension save page
-  demo/                       # Interactive demo (no auth required)
-```
+Routes are split across two root layouts, `src/app/(public)/` and `src/app/(spa)/` — see "Two root layouts" in `src/CLAUDE.md` for what belongs in each and the constraints that follow. The `src/app/` directory listing is the source of truth for the routes themselves.
 
 ### Component Architecture
 
-Components live in `src/components/` grouped by domain (`layout/`, `entries/`, `feeds/`, `narration/`, `saved/`, `settings/`, `subscribe/`, `summarization/`, `keyboard/`, `auth/`, `app/`, and generic primitives in `ui/`). Component guidelines, the UI-primitive/icon/color-token reference, and the narration media-controls design are in `src/components/CLAUDE.md`.
+Components live in `src/components/`, grouped by domain, with generic primitives in `ui/`. Component guidelines, the UI-primitive/icon/color-token reference, and the narration media-controls design are in `src/components/CLAUDE.md`.
 
 ---
 
@@ -288,7 +261,7 @@ Lion Reader exposes functionality to AI assistants via the [Model Context Protoc
 - **Streamable HTTP** at `POST /api/mcp` — for remote clients such as claude.ai. Authenticated with OAuth 2.1 access tokens (with the `mcp` scope) or legacy API tokens. Runs statelessly inside the Next.js route handler via `WebStandardStreamableHTTPServerTransport`, creating a fresh server+transport pair per request.
 - **stdio** (`pnpm mcp:serve`) — for local clients such as Claude Desktop.
 
-Both transports register the same tools (defined once in `src/server/mcp/tools.ts`) and call the same services layer, exactly mirroring the `mcp`-scoped tRPC endpoints: entries list/get/mark-read/star/count, saved-article save/delete/upload, subscriptions list/get, and tag CRUD. See `src/server/mcp/README.md`.
+Both transports register the same tools and call the same services layer, mirroring the `mcp`-scoped tRPC endpoints. `src/server/mcp/tools.ts` defines the tools once and is the source of truth for the list; see `src/server/mcp/README.md`.
 
 The OAuth 2.1 authorization surface backing remote MCP auth (discovery documents, audience binding) is specified in `src/server/oauth/CLAUDE.md`.
 
@@ -317,14 +290,7 @@ Some sources have no usable public read API and are scraped instead, from the st
 
 ### Fly.io Deployment
 
-- Single region (sjc) with canary deployment strategy
-- Three process types:
-  - `app` - Next.js web server (min 2 machines for zero-downtime deploys)
-  - `worker` - Background job processor (feed fetching)
-  - `discord` - Discord bot (lightweight, single Gateway connection)
-- Postgres managed database
-- Redis for caching and pub/sub
-- Release command runs migrations automatically before deploy
+`fly.toml` is the source of truth for regions, process groups, machine sizes, and the release command; the provisioning and operations runbook is `docs/DEPLOYMENT.md`. Postgres is **unmanaged** Fly Postgres Flex (single node), so we own its upgrades, backups, and monitoring — `docs/fly-postgres-ops.md` is the runbook for that. Redis (Upstash) backs caching and pub/sub.
 
 ### Migration Compatibility (Expand/Contract)
 
