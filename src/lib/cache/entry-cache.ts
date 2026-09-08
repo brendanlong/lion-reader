@@ -361,26 +361,27 @@ export function getCachedEntryState(
 }
 
 /**
- * Writes an entry's read and starred state to entries.get and every entry
- * list in one pass (the reconciled result of a mutation, which carries both
- * fields). Like updateEntriesReadStatus, an entry becoming unread is restored
- * into the unreadOnly caches that lack it.
+ * Writes an entry's read and/or starred state to entries.get and every entry
+ * list in one pass (the reconciled result of a mutation carries both fields;
+ * a rollback carries only the fields the failed mutations wrote). Like
+ * updateEntriesReadStatus, an entry becoming unread is restored into the
+ * unreadOnly caches that lack it.
  */
 export function updateEntryState(
   utils: TRPCClientUtils,
   queryClient: QueryClient,
   entryId: string,
-  state: { read: boolean; starred: boolean }
+  state: Partial<{ read: boolean; starred: boolean }>
 ): void {
   utils.entries.get.setData({ id: entryId }, (oldData) => {
     if (!oldData) return oldData;
     return {
       ...oldData,
-      entry: { ...oldData.entry, read: state.read, starred: state.starred },
+      entry: { ...oldData.entry, ...state },
     };
   });
   updateEntriesInListCache(queryClient, [entryId], state);
-  if (!state.read) {
+  if (state.read === false) {
     restoreUnreadEntriesToListCaches(queryClient, [entryId]);
   }
 }

@@ -16,7 +16,7 @@ const t2 = new Date("2026-07-05T00:00:02.000Z");
 describe("EntryMutationTracker", () => {
   it("settles a single successful mutation with its own state", () => {
     const tracker = new EntryMutationTracker();
-    tracker.start("e1", { read: false, starred: false });
+    tracker.start("e1", "read", { read: false, starred: false });
     tracker.recordSuccess("e1", { read: true, starred: false, updatedAt: t1 });
 
     expect(tracker.settle("e1")).toEqual({
@@ -28,8 +28,8 @@ describe("EntryMutationTracker", () => {
 
   it("holds back the result until every in-flight mutation has settled", () => {
     const tracker = new EntryMutationTracker();
-    tracker.start("e1", { read: false, starred: false });
-    tracker.start("e1", { read: true, starred: true }); // ignored: not the first
+    tracker.start("e1", "read", { read: false, starred: false });
+    tracker.start("e1", "read", { read: true, starred: true }); // ignored: not the first
 
     tracker.recordSuccess("e1", { read: true, starred: false, updatedAt: t1 });
     expect(tracker.settle("e1")).toBeNull();
@@ -44,8 +44,8 @@ describe("EntryMutationTracker", () => {
 
   it("picks the newest updatedAt regardless of completion order", () => {
     const tracker = new EntryMutationTracker();
-    tracker.start("e1", { read: false, starred: false });
-    tracker.start("e1", { read: false, starred: false });
+    tracker.start("e1", "read", { read: false, starred: false });
+    tracker.start("e1", "read", { read: false, starred: false });
 
     // The later write's response lands first.
     tracker.recordSuccess("e1", { read: false, starred: false, updatedAt: t2 });
@@ -58,10 +58,10 @@ describe("EntryMutationTracker", () => {
     });
   });
 
-  it("rolls back to the state before the first mutation when every mutation fails", () => {
+  it("rolls back every written field to its value before the first mutation when all fail", () => {
     const tracker = new EntryMutationTracker();
-    tracker.start("e1", { read: true, starred: true });
-    tracker.start("e1", { read: false, starred: true });
+    tracker.start("e1", "read", { read: true, starred: true });
+    tracker.start("e1", "starred", { read: false, starred: true });
 
     expect(tracker.settle("e1")).toBeNull();
     expect(tracker.settle("e1")).toEqual({
@@ -70,10 +70,18 @@ describe("EntryMutationTracker", () => {
     });
   });
 
+  it("rolls back only the fields the failed mutations wrote", () => {
+    // A concurrent SSE change to the other field must survive the rollback.
+    const tracker = new EntryMutationTracker();
+    tracker.start("e1", "starred", { read: false, starred: false });
+
+    expect(tracker.settle("e1")).toEqual({ kind: "rollback", state: { starred: false } });
+  });
+
   it("applies the successful mutation's state when only some mutations fail", () => {
     const tracker = new EntryMutationTracker();
-    tracker.start("e1", { read: false, starred: false });
-    tracker.start("e1", { read: false, starred: false });
+    tracker.start("e1", "read", { read: false, starred: false });
+    tracker.start("e1", "starred", { read: false, starred: false });
 
     tracker.recordSuccess("e1", { read: false, starred: true, updatedAt: t1 });
     tracker.settle("e1");
@@ -86,14 +94,14 @@ describe("EntryMutationTracker", () => {
 
   it("rolls back to undefined when the entry was in no cache", () => {
     const tracker = new EntryMutationTracker();
-    tracker.start("e1", undefined);
+    tracker.start("e1", "read", undefined);
     expect(tracker.settle("e1")).toEqual({ kind: "rollback", state: undefined });
   });
 
   it("tracks entries independently", () => {
     const tracker = new EntryMutationTracker();
-    tracker.start("e1", { read: false, starred: false });
-    tracker.start("e2", { read: false, starred: false });
+    tracker.start("e1", "read", { read: false, starred: false });
+    tracker.start("e2", "read", { read: false, starred: false });
     tracker.recordSuccess("e1", { read: true, starred: false, updatedAt: t1 });
 
     expect(tracker.settle("e1")?.kind).toBe("apply");
@@ -108,7 +116,7 @@ describe("EntryMutationTracker", () => {
     ).toThrow(/e1/);
     expect(() => tracker.settle("e1")).toThrow(/e1/);
 
-    tracker.start("e1", undefined);
+    tracker.start("e1", "read", undefined);
     tracker.settle("e1");
     expect(() => tracker.settle("e1")).toThrow(/e1/);
   });

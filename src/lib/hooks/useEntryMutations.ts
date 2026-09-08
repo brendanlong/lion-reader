@@ -22,7 +22,7 @@ import {
   updateEntryStarredStatus,
   updateEntryState,
 } from "@/lib/cache/entry-cache";
-import { getEntryMutationTracker } from "@/lib/cache/entry-mutation-tracker";
+import { getEntryMutationTracker, type EntryField } from "@/lib/cache/entry-mutation-tracker";
 
 /**
  * Entry type for routing.
@@ -117,8 +117,8 @@ export function useEntryMutations(): UseEntryMutationsResult {
   const queryClient = useQueryClient();
   const tracker = getEntryMutationTracker(queryClient);
 
-  const startTracking = (entryId: string) => {
-    tracker.start(entryId, getCachedEntryState(utils, queryClient, entryId));
+  const startTracking = (entryId: string, field: EntryField) => {
+    tracker.start(entryId, field, getCachedEntryState(utils, queryClient, entryId));
   };
 
   /**
@@ -127,9 +127,19 @@ export function useEntryMutations(): UseEntryMutationsResult {
    * The lists go through the same guard as entries.get: writing them
    * unconditionally from each response lets two rapid conflicting mutations
    * that complete out of order leave the list at the older state.
+   *
+   * Never throws: a throw inside onSettled makes React Query run onError and
+   * onSettled again for a mutation that succeeded, and would leave the other
+   * entries of a markRead batch unsettled in the shared tracker.
    */
   const settleEntry = (entryId: string) => {
-    const settlement = tracker.settle(entryId);
+    let settlement;
+    try {
+      settlement = tracker.settle(entryId);
+    } catch (error) {
+      console.error("entry mutation settle error:", error);
+      return;
+    }
     if (!settlement) return;
 
     if (settlement.kind === "apply") {
@@ -147,7 +157,7 @@ export function useEntryMutations(): UseEntryMutationsResult {
     onMutate: (variables) => {
       const entryIds = variables.entries.map((e) => e.id);
       for (const entryId of entryIds) {
-        startTracking(entryId);
+        startTracking(entryId, "read");
       }
       updateEntriesReadStatus(utils, entryIds, variables.read, queryClient);
     },
@@ -203,7 +213,7 @@ export function useEntryMutations(): UseEntryMutationsResult {
 
   const setStarredMutation = trpc.entries.setStarred.useMutation({
     onMutate: (variables) => {
-      startTracking(variables.id);
+      startTracking(variables.id, "starred");
       updateEntryStarredStatus(utils, variables.id, variables.starred, queryClient);
     },
 

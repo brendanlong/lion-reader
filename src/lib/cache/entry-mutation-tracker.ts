@@ -1,24 +1,16 @@
 /**
  * Entry Mutation Tracker
  *
- * Reconciles concurrent read/starred mutations for the same entry. Entry
- * mutations are optimistic but never cancel in-flight queries (cancelling
- * `entries.get` aborts content fetches), so their responses can complete out
- * of order and race with each other. The tracker holds the newest response
- * (by server `updatedAt`) until every in-flight mutation for the entry has
- * settled, and only then hands back one state to write — the optimistic state
- * stays on screen in the meantime instead of flickering through each
- * intermediate server response.
+ * Pure bookkeeping for the "optimistic write + timestamp reconciliation"
+ * pattern in src/FRONTEND_STATE.md ("Optimistic Updates"): holds the newest
+ * server response (by `updatedAt`) for an entry until every in-flight
+ * mutation for it has settled, then hands back one state to write. No React,
+ * no cache access — the hook owns the cache writes. One tracker is shared per
+ * QueryClient (`getEntryMutationTracker`).
  *
- * Pure bookkeeping: no React, no cache access. The hook owns the cache writes.
- * One tracker is shared per QueryClient (`getEntryMutationTracker`) so
- * mutations issued from different components (the reader's auto-mark-read and
- * the list's keyboard toggle, say) reconcile against each other.
- *
- * Contract: every `start` must be matched by exactly one `settle`, from the
- * mutation's `onSettled` (which React Query runs once per mutation, success or
- * failure). `recordSuccess`/`settle` on an untracked entry is a programming
- * error and throws rather than degrading to unguarded last-write-wins.
+ * Contract: every `start` must be matched by exactly one `settle`.
+ * `recordSuccess`/`settle` on an untracked entry is a programming error and
+ * throws rather than degrading to unguarded last-write-wins.
  */
 
 import type { QueryClient } from "@tanstack/react-query";
@@ -33,35 +25,46 @@ export interface EntryServerState extends EntryState {
   updatedAt: Date;
 }
 
+export type EntryField = keyof EntryState;
+
 export type EntrySettlement =
   /** Every in-flight mutation settled and at least one succeeded. */
   | { kind: "apply"; state: EntryServerState }
   /**
-   * Every in-flight mutation failed; `state` is the cached state before the
-   * first one started (undefined when the entry was in no cache).
+   * Every in-flight mutation failed; `state` holds the pre-mutation value of
+   * each field one of them wrote (undefined when the entry was in no cache).
+   * Fields none of them wrote are left alone, so a concurrent SSE change to
+   * the other field survives the rollback.
    */
-  | { kind: "rollback"; state: EntryState | undefined };
+  | { kind: "rollback"; state: Partial<EntryState> | undefined };
 
 interface Tracking {
   pendingCount: number;
   winner: EntryServerState | null;
   original: EntryState | undefined;
+  written: Set<EntryField>;
 }
 
 export class EntryMutationTracker {
   private readonly entries = new Map<string, Tracking>();
 
   /**
-   * Registers an in-flight mutation for the entry. `original` is only used
-   * when this is the first pending mutation — later ones inherit the snapshot
-   * taken before any of them changed the cache.
+   * Registers an in-flight mutation that optimistically writes `field`.
+   * `original` is only used when this is the first pending mutation — later
+   * ones inherit the snapshot taken before any of them changed the cache.
    */
-  start(entryId: string, original: EntryState | undefined): void {
+  start(entryId: string, field: EntryField, original: EntryState | undefined): void {
     const tracking = this.entries.get(entryId);
     if (tracking) {
       tracking.pendingCount++;
+      tracking.written.add(field);
     } else {
-      this.entries.set(entryId, { pendingCount: 1, winner: null, original });
+      this.entries.set(entryId, {
+        pendingCount: 1,
+        winner: null,
+        original,
+        written: new Set([field]),
+      });
     }
   }
 
@@ -83,9 +86,17 @@ export class EntryMutationTracker {
     if (tracking.pendingCount > 0) return null;
 
     this.entries.delete(entryId);
-    return tracking.winner
-      ? { kind: "apply", state: tracking.winner }
-      : { kind: "rollback", state: tracking.original };
+    if (tracking.winner) {
+      return { kind: "apply", state: tracking.winner };
+    }
+    if (!tracking.original) {
+      return { kind: "rollback", state: undefined };
+    }
+    const state: Partial<EntryState> = {};
+    for (const field of tracking.written) {
+      state[field] = tracking.original[field];
+    }
+    return { kind: "rollback", state };
   }
 
   hasPending(entryId: string): boolean {

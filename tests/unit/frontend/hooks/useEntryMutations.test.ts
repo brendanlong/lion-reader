@@ -21,6 +21,7 @@ import { trpc } from "@/lib/trpc/client";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
 import type { BulkUnreadCounts, UnreadCounts } from "@/lib/cache/operations";
 import { getEntryMutationTracker } from "@/lib/cache/entry-mutation-tracker";
+import { updateEntriesInListCache } from "@/lib/cache/entry-cache";
 import {
   renderHookWithTrpc,
   type RenderWithTrpcOptions,
@@ -440,21 +441,25 @@ describe("useEntryMutations concurrent mutations", () => {
     });
     await waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(2));
 
+    // The newest response also reports starred: true (starred elsewhere), so
+    // the final state differs from the optimistic one and proves it was
+    // written — not merely that nothing overwrote the optimistic write.
     await act(async () => {
-      markRead.calls[1].resolve(markReadResponse("e1", { read: false, starred: false }, t2));
+      markRead.calls[1].resolve(markReadResponse("e1", { read: false, starred: true }, t2));
     });
     await act(async () => {
       markRead.calls[0].resolve(markReadResponse("e1", { read: true, starred: false }, t1));
     });
 
-    await waitFor(() => expect(listItem()?.read).toBe(false));
+    await waitFor(() => expect(listItem()).toMatchObject({ read: false, starred: true }));
   });
 
-  it("rolls back to the pre-mutation list state when every mutation fails", async () => {
-    const { result, queryClient, listItem } = renderTwoInstances({
-      "entries.markRead": () => {
-        throw new Error("boom");
-      },
+  it("rolls back every written field when concurrent mutations from both instances fail", async () => {
+    const markRead = deferredHandler<never>();
+    const setStarred = deferredHandler<never>();
+    const { result, queryClient, listItem, callsFor } = renderTwoInstances({
+      "entries.markRead": markRead.handler,
+      "entries.setStarred": setStarred.handler,
     });
     queryClient.setQueryData(listKey, {
       pages: [
@@ -468,10 +473,56 @@ describe("useEntryMutations concurrent mutations", () => {
 
     act(() => {
       result.current.list.toggleRead("e1", true);
+      result.current.reader.unstar("e1");
+    });
+    await waitFor(() => expect(callsFor("entries.setStarred")).toHaveLength(1));
+    expect(listItem()).toMatchObject({ read: false, starred: false });
+
+    await act(async () => {
+      markRead.calls[0].reject(new Error("boom"));
+    });
+    // The first failure alone must not roll anything back.
+    expect(listItem()).toMatchObject({ read: false, starred: false });
+
+    await act(async () => {
+      setStarred.calls[0].reject(new Error("boom"));
+    });
+    await waitFor(() => expect(listItem()).toMatchObject({ read: true, starred: true }));
+    expect(getEntryMutationTracker(queryClient).hasPending("e1")).toBe(false);
+  });
+
+  it("rolls back only the field the failed mutation wrote, keeping a mid-flight SSE change", async () => {
+    const setStarred = deferredHandler<never>();
+    const { result, queryClient, listItem, callsFor } = renderTwoInstances({
+      "entries.setStarred": setStarred.handler,
+    });
+    const utils = result.current.utils;
+    utils.entries.get.setData({ id: "e1" }, {
+      entry: { id: "e1", read: false, starred: false, updatedAt: fixedDate },
+    } as never);
+
+    act(() => {
+      result.current.reader.star("e1");
+    });
+    await waitFor(() => expect(callsFor("entries.setStarred")).toHaveLength(1));
+
+    // Another device marks the entry read while the star is in flight: the
+    // entry_state_changed handler writes read: true to entries.get and lists.
+    act(() => {
+      utils.entries.get.setData({ id: "e1" }, {
+        entry: { id: "e1", read: true, starred: false, updatedAt: fixedDate },
+      } as never);
+      updateEntriesInListCache(queryClient, ["e1"], { read: true, starred: false });
+    });
+    await act(async () => {
+      setStarred.calls[0].reject(new Error("boom"));
     });
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalled());
-    await waitFor(() => expect(listItem()).toMatchObject({ read: true, starred: true }));
+    await waitFor(() => expect(listItem()).toMatchObject({ read: true, starred: false }));
+    expect(utils.entries.get.getData({ id: "e1" })?.entry).toMatchObject({
+      read: true,
+      starred: false,
+    });
   });
 
   it("keeps the successful mutation's state when a concurrent one fails", async () => {

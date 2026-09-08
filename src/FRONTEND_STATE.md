@@ -157,14 +157,15 @@ writes a response straight to the cache:
 2. `onSuccess` records the server's state; the newest `updatedAt`
    (`GREATEST(entry.updated_at, user_entry.updated_at)`) wins. `onError` only
    toasts.
-3. `onSettled` settles the entry. React Query runs it exactly once per
-   mutation, so every registered mutation is settled and an entry can't be
-   stranded with a phantom pending count. Once nothing is in flight for the
-   entry, the winning state is written to `entries.get` and the lists in one
-   pass (`updateEntryState`) unless the cached `entries.get` is already newer
-   (a fetch completed mid-flight); if every mutation failed, the pre-mutation
-   state is restored. Settling an entry that was never registered throws — it
-   is a programming error, not a case to degrade into last-write-wins.
+3. `onSettled` settles the entry (it runs after both success and failure).
+   Once nothing is in flight for the entry, the winning state is written to
+   `entries.get` and the lists in one pass (`updateEntryState`) unless the
+   cached `entries.get` is already newer (a fetch completed mid-flight); if
+   every mutation failed, only the fields those mutations wrote are restored
+   to their pre-mutation values, so a change to the other field that arrived
+   mid-flight (an SSE event) survives. Settling an entry that was never
+   registered throws — it is a programming error, not a case to degrade into
+   last-write-wins.
 
 Counts are applied separately from the response (absolute values, see
 "Mutation Response Shapes") and are not subject to the timestamp guard.
@@ -172,10 +173,9 @@ Counts are applied separately from the response (absolute values, see
 ### Optimistic remove + invalidate-to-truth
 
 A removal has nothing to reconcile — there is no second concurrent delete and
-no server timestamp to compare — so `useUnsubscribeMutation` removes the row in
-`onMutate`, applies absolute counts and invalidates `entries.list` in
-`onSuccess`, and on error invalidates the subscription/tag/count caches rather
-than hand-restoring the row. Reserve it for removals.
+no server timestamp to compare — so on error the caches are invalidated rather
+than the row hand-restored. `useUnsubscribeMutation` is the one implementation;
+reserve the pattern for removals.
 
 ### No optimistic phase
 
