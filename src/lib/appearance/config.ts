@@ -36,7 +36,7 @@ export const FONT_FAMILIES = [
  * - "compact": a single divided list with tighter padding and no excerpt, for
  *   scanning/triaging many items at once.
  */
-export const LIST_DENSITIES = ["comfortable", "compact"] as const;
+const LIST_DENSITIES = ["comfortable", "compact"] as const;
 
 export type TextSize = (typeof TEXT_SIZES)[number];
 export type TextJustification = (typeof TEXT_JUSTIFICATIONS)[number];
