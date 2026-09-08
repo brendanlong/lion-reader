@@ -429,14 +429,15 @@ fn convert_element(el: ElementRef, ctx: &mut ConvertContext, out: &mut Vec<MNode
         return;
     }
 
-    // Unknown <mjx-*> wrapper: unwrap so its inner tokens still render, and
-    // record it — this is the canary for MathJax layout drift.
-    if tag.starts_with("mjx-") {
-        ctx.unknown_tags.insert(tag.to_string());
-        convert_children(el, ctx, out);
+    // A stray non-MathJax element inside the math tree: drop it.
+    if !tag.starts_with("mjx-") {
+        return;
     }
 
-    // A stray non-MathJax element inside the math tree: drop it.
+    // Unknown <mjx-*> wrapper: unwrap so its inner tokens still render, and
+    // record it — this is the canary for MathJax layout drift.
+    ctx.unknown_tags.insert(tag.to_string());
+    convert_children(el, ctx, out);
 }
 
 /// The `<math>` inside a container's `<mjx-assistive-mml>`, if present.

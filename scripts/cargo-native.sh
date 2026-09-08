@@ -13,17 +13,25 @@ fi
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-if ! command -v cargo >/dev/null 2>&1 && [ -x "$HOME/.cargo/bin/cargo" ]; then
-  PATH="$HOME/.cargo/bin:$PATH"
-  export PATH
+if ! command -v cargo >/dev/null 2>&1; then
+  if [ -x "${HOME:-}/.cargo/bin/cargo" ]; then
+    export PATH="$HOME/.cargo/bin:$PATH"
+  else
+    echo "cargo not found on PATH or in ~/.cargo/bin; install the Rust toolchain" >&2
+    exit 69
+  fi
 fi
 
-status=0
+failed=()
 for manifest in "$root"/native/*/Cargo.toml; do
   crate="$(basename "$(dirname "$manifest")")"
   echo "==> native/$crate: cargo $*"
   # Keep going after a failure so one run reports every crate's problems.
-  (cd "$(dirname "$manifest")" && cargo "$@") || status=1
+  (cd "$(dirname "$manifest")" && cargo "$@") || failed+=("$crate")
 done
 
-exit $status
+if [ ${#failed[@]} -gt 0 ]; then
+  # A crate that failed early is otherwise easy to miss at the tail of a long log.
+  echo "FAILED in: ${failed[*]}" >&2
+  exit 1
+fi

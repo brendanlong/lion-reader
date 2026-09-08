@@ -32,7 +32,7 @@ Element/attribute byte preservation: lol_html does **not** re-serialize untouche
 
 **Scanner** (`core/src/scanner.rs`): the byte-range locator used by the MathJax/SVG passes (comment/rawtext/quote-aware, depth-tracked; unclosed `mjx-container`s recover absorbed article content at the last explicit `</mjx-math>` close, unclosed `<svg>`s extend to EOF). Its guard: a located range must actually parse to the target element or it's spliced through verbatim, and everything flows through the sanitize pass afterwards, so a mislocation can mangle content but never emit unsanitized HTML.
 
-Rust unit tests live in the crate (`cargo test -p lion-reader-sanitizer-core` from `native/sanitizer/`); TS-side pipeline tests in `tests/unit/sanitize-entry-html.test.ts`, `mathjax-chtml.test.ts` (real mathjax-full 3.2.2 fixtures), `sanitize-svg.test.ts`, `embed-providers.test.ts`.
+Rust unit tests live in the crate (`pnpm test:native`, or `cargo test -p lion-reader-sanitizer-core` from `native/sanitizer/`); TS-side pipeline tests in `tests/unit/sanitize-entry-html.test.ts`, `mathjax-chtml.test.ts` (real mathjax-full 3.2.2 fixtures), `sanitize-svg.test.ts`, `embed-providers.test.ts`.
 
 ## Per-read sanitization (no persisted columns)
 
