@@ -12,7 +12,13 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { createHmac } from "crypto";
 import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { feeds, entries, websubSubscriptions, websubHubStats } from "../../src/server/db/schema";
+import {
+  feeds,
+  entries,
+  jobs,
+  websubSubscriptions,
+  websubHubStats,
+} from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import {
   generateCallbackSecret,
@@ -29,6 +35,9 @@ import {
   recordHubAnnouncedEntries,
   recordBackupPollNewEntries,
 } from "../../src/server/feed/websub-hub-stats";
+import { ingestWebsubNotification } from "../../src/server/feed/websub-notification";
+import { WEBSUB_BACKUP_POLL_INTERVAL_SECONDS } from "../../src/server/feed/scheduling";
+import { ensureFeedJob } from "../../src/server/jobs/queue";
 import { createTestFeed as insertTestFeed } from "./helpers";
 
 // Sample RSS feed content for testing content notifications
@@ -47,6 +56,24 @@ const SAMPLE_RSS_FEED = `<?xml version="1.0" encoding="UTF-8"?>
     </item>
   </channel>
 </rss>`;
+
+/** A feed body with one distinct article, so each push carries new content. */
+function rssWithArticle(guid: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Test Feed</title>
+    <link>https://example.com</link>
+    <description>A test feed for WebSub</description>
+    <item>
+      <title>Article ${guid}</title>
+      <link>https://example.com/${guid}</link>
+      <guid>${guid}</guid>
+      <description>Pushed via WebSub</description>
+    </item>
+  </channel>
+</rss>`;
+}
 
 // Wraps the shared factory because these call sites want the feed row
 // (feed.url, feed.selfUrl), not just its id.
@@ -88,6 +115,7 @@ describe("WebSub Integration", () => {
     await db.delete(entries);
     await db.delete(websubSubscriptions);
     await db.delete(websubHubStats);
+    await db.delete(jobs);
     await db.delete(feeds);
   });
 
@@ -96,6 +124,7 @@ describe("WebSub Integration", () => {
     await db.delete(entries);
     await db.delete(websubSubscriptions);
     await db.delete(websubHubStats);
+    await db.delete(jobs);
     await db.delete(feeds);
   });
 
@@ -832,6 +861,72 @@ describe("WebSub Integration", () => {
       }
     });
 
+    it("sweep that missed the grace window renews first and only reverts on a later sweep", async () => {
+      // The sweep itself was down longer than the grace window (stuck singleton,
+      // deploy incident, DB outage): every lapsed subscription is now past the
+      // stale cutoff without us ever having retried. Reverting on sight would
+      // tear down working subscriptions we never POSTed about, so the first
+      // sweep back must attempt the renewal; only a sweep that finds an attempt
+      // recorded after expiry (updated_at > expires_at) gives up.
+      const prevAppUrl = process.env.NEXT_PUBLIC_APP_URL;
+      process.env.NEXT_PUBLIC_APP_URL = "https://reader.example.com";
+      try {
+        const feed = await createTestFeed({
+          websubActive: true,
+          hubUrl: "https://hub.invalid.example/",
+          selfUrl: "https://example.com/feed-sweep-downtime.xml",
+        });
+        // Expired well past the grace window, with the last write to the row
+        // predating the expiry - i.e. no renewal was ever attempted for it.
+        const expiresAt = new Date(Date.now() - RENEWAL_STALL_GRACE_MS - 2 * 60 * 60 * 1000);
+        const { subscription } = await createTestSubscription(feed.id, {
+          hubUrl: "https://hub.invalid.example/",
+          topicUrl: "https://example.com/feed-sweep-downtime.xml",
+          state: "active",
+          expiresAt,
+          updatedAt: new Date(expiresAt.getTime() - 60 * 60 * 1000),
+        });
+
+        await renewExpiringSubscriptions(24);
+
+        const [afterFirstSweep] = await db
+          .select()
+          .from(websubSubscriptions)
+          .where(eq(websubSubscriptions.id, subscription.id));
+        // Still active: this sweep owed it a renewal attempt, not a teardown.
+        expect(afterFirstSweep.state).toBe("active");
+        // ...and it made one (the hub POST failed - the host is unresolvable -
+        // but subscribeToHub stamped the attempt).
+        expect(afterFirstSweep.updatedAt.getTime()).toBeGreaterThan(expiresAt.getTime());
+
+        const [feedAfterFirstSweep] = await db
+          .select()
+          .from(feeds)
+          .where(eq(feeds.id, feed.id))
+          .limit(1);
+        expect(feedAfterFirstSweep.websubActive).toBe(true);
+
+        // The attempt is now on record, so the next sweep is entitled to give up.
+        const second = await renewExpiringSubscriptions(24);
+        expect(second.failed).toBeGreaterThanOrEqual(1);
+
+        const [afterSecondSweep] = await db
+          .select()
+          .from(websubSubscriptions)
+          .where(eq(websubSubscriptions.id, subscription.id));
+        expect(afterSecondSweep.state).toBe("unsubscribed");
+
+        const [feedAfterSecondSweep] = await db
+          .select()
+          .from(feeds)
+          .where(eq(feeds.id, feed.id))
+          .limit(1);
+        expect(feedAfterSecondSweep.websubActive).toBe(false);
+      } finally {
+        process.env.NEXT_PUBLIC_APP_URL = prevAppUrl;
+      }
+    });
+
     it("sweep does NOT revert a subscription that is expired but still within grace", async () => {
       // Expired (so it's in the sweep) but not yet past the grace window: the hub
       // POST fails (unreachable), yet the subscription must stay active to retry.
@@ -909,6 +1004,94 @@ describe("WebSub Integration", () => {
       } finally {
         process.env.NEXT_PUBLIC_APP_URL = prevAppUrl;
       }
+    });
+  });
+
+  // Content push ingest (`ingestWebsubNotification`): what a hub POST does to the
+  // feed row and to the feed's backup-poll schedule.
+  describe("content push ingest", () => {
+    /** next_run_at of the feed's single fetch_feed job. */
+    async function feedJobNextRun(feedId: string): Promise<Date> {
+      const existing = await ensureFeedJob(feedId);
+      expect(existing.nextRunAt).not.toBeNull();
+      return existing.nextRunAt as Date;
+    }
+
+    it("never defers the backup poll past 24h after the last real poll, however often the hub pushes", async () => {
+      // A push doesn't advance last_fetched_at, so deferring to "now + 24h" on
+      // every push would let a feed pushed more often than daily re-defer its
+      // backup poll forever - and that poll is the only thing that reconciles
+      // removed entries, refreshes last_fetched_at, and can spot a push miss.
+      const lastFetchedAt = new Date(Date.now() - 20 * 60 * 60 * 1000);
+      const feed = await createTestFeed({
+        websubActive: true,
+        lastFetchedAt,
+        lastEntriesUpdatedAt: lastFetchedAt,
+        bodyHash: "hash-of-the-last-poll",
+      });
+      await ensureFeedJob(feed.id, new Date(Date.now() + 60 * 1000));
+
+      const deadline = lastFetchedAt.getTime() + WEBSUB_BACKUP_POLL_INTERVAL_SECONDS * 1000;
+
+      // Five pushes, each re-reading the feed exactly as the callback route does.
+      for (let i = 0; i < 5; i++) {
+        const [current] = await db.select().from(feeds).where(eq(feeds.id, feed.id)).limit(1);
+        expect(await ingestWebsubNotification(current, rssWithArticle(`push-${i}`))).toBe(
+          "processed"
+        );
+        expect((await feedJobNextRun(feed.id)).getTime()).toBeLessThanOrEqual(deadline);
+      }
+
+      const [after] = await db.select().from(feeds).where(eq(feeds.id, feed.id)).limit(1);
+      // The premise the bound rests on: a push is not a poll.
+      expect(after.lastFetchedAt?.getTime()).toBe(lastFetchedAt.getTime());
+      // ...and it still clears the body hash so the next poll can't short-circuit.
+      expect(after.bodyHash).toBeNull();
+      expect(await db.select().from(entries).where(eq(entries.feedId, feed.id))).toHaveLength(5);
+    });
+
+    it("leaves an already-overdue backup poll due", async () => {
+      // Last real poll is older than the backup interval: the poll is owed now,
+      // and a push must not buy the feed another day.
+      const lastFetchedAt = new Date(
+        Date.now() - (WEBSUB_BACKUP_POLL_INTERVAL_SECONDS + 6 * 60 * 60) * 1000
+      );
+      const feed = await createTestFeed({ websubActive: true, lastFetchedAt });
+      await ensureFeedJob(feed.id, new Date(Date.now() + 12 * 60 * 60 * 1000));
+
+      expect(await ingestWebsubNotification(feed, rssWithArticle("overdue"))).toBe("processed");
+
+      expect((await feedJobNextRun(feed.id)).getTime()).toBeLessThanOrEqual(Date.now());
+    });
+
+    it("leaves a never-polled feed's first poll where it was scheduled", async () => {
+      // No last_fetched_at to bound the deferral, and the first poll is what
+      // establishes one - so don't push it out.
+      const feed = await createTestFeed({ websubActive: true, lastFetchedAt: null });
+      const scheduled = new Date(Date.now() + 60 * 1000);
+      await ensureFeedJob(feed.id, scheduled);
+
+      expect(await ingestWebsubNotification(feed, rssWithArticle("first"))).toBe("processed");
+
+      expect((await feedJobNextRun(feed.id)).getTime()).toBe(scheduled.getTime());
+    });
+
+    it("acknowledges an unparseable body without touching the schedule", async () => {
+      // Redelivering the same bytes can't help, so this is final: 200 for the hub.
+      const lastFetchedAt = new Date(Date.now() - 60 * 60 * 1000);
+      const feed = await createTestFeed({
+        websubActive: true,
+        lastFetchedAt,
+        bodyHash: "hash-of-the-last-poll",
+      });
+      const scheduled = new Date(Date.now() + 60 * 1000);
+      await ensureFeedJob(feed.id, scheduled);
+
+      expect(await ingestWebsubNotification(feed, "this is not a feed")).toBe("unparseable");
+
+      expect((await feedJobNextRun(feed.id)).getTime()).toBe(scheduled.getTime());
+      const [after] = await db.select().from(feeds).where(eq(feeds.id, feed.id)).limit(1);
+      expect(after.bodyHash).toBe("hash-of-the-last-poll");
     });
   });
 
