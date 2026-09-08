@@ -98,9 +98,6 @@ export function syndicationToSeconds(hints: SyndicationHints | undefined): numbe
   }
 
   const periodSeconds = PERIOD_SECONDS[hints.updatePeriod];
-  if (periodSeconds === undefined) {
-    return undefined;
-  }
 
   // Default frequency is 1 if not specified
   const frequency = hints.updateFrequency ?? 1;
