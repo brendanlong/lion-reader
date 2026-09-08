@@ -264,6 +264,58 @@ export const feedHealthConfig = {
 };
 
 /**
+ * Postgres base-backup health monitoring configuration.
+ *
+ * The monitor_backup_health job reads the barman backup catalog straight out of
+ * object storage and alerts when no base backup has completed recently. See
+ * src/server/backup/health.ts for why WAL-archive health can't stand in for it.
+ *
+ * Credentials should be a **read-only** key scoped to the backup bucket: this
+ * is a monitor, and nothing here ever writes.
+ */
+export const backupHealthConfig = {
+  /** Bucket holding the barman catalog (Fly sets BUCKET_NAME on the PG app). */
+  bucket: process.env.BACKUP_BUCKET,
+
+  /** Read-only access key for the backup bucket. */
+  accessKeyId: process.env.BACKUP_ACCESS_KEY_ID,
+
+  /** Read-only secret key for the backup bucket. */
+  secretAccessKey: process.env.BACKUP_SECRET_ACCESS_KEY,
+
+  /**
+   * barman server name — the top-level directory inside the bucket, which is
+   * the Postgres app name (e.g. `lion-reader-pg`), not the `flexctl` "Server
+   * Name" field (always `cloud`).
+   */
+  serverName: process.env.BACKUP_SERVER_NAME,
+
+  /** S3-compatible endpoint. Defaults to Tigris, which is what Fly provisions. */
+  endpoint: process.env.BACKUP_ENDPOINT_URL || "https://fly.storage.tigris.dev",
+
+  /** Region for SigV4 signing. Tigris accepts (and expects) `auto`. */
+  region: process.env.BACKUP_REGION || "auto",
+
+  /**
+   * Maximum age (hours) of the newest successful base backup before the cluster
+   * is considered unhealthy (default: 36). Backups run daily, so this allows a
+   * full missed cycle plus slack before alerting.
+   */
+  // Trailing `|| 36` guards a non-numeric env value: parseInt would yield NaN,
+  // and `ageMs > NaN` is always false — silently healthy forever, which is the
+  // exact failure this check exists to catch.
+  maxAgeHours: parseInt(process.env.BACKUP_HEALTH_MAX_AGE_HOURS || "36", 10) || 36,
+
+  /**
+   * Optional dead-man's-switch heartbeat URL (e.g. a healthchecks.io check).
+   * Pinged every run: success when a recent backup exists, `{url}/fail` with an
+   * explanatory body when not. Missing pings also alert, which covers the
+   * worker being dead or the bucket being unreachable.
+   */
+  heartbeatUrl: process.env.BACKUP_HEALTH_HEARTBEAT_URL,
+};
+
+/**
  * Defaults for the Markdown budgets. Exported because the renderer falls back
  * to them when the env var is unusable (see `renderLimits` in
  * `src/server/markdown/index.ts`), so they need one home.

@@ -745,6 +745,59 @@ export function updateFeedHealthMetrics(
 }
 
 // ============================================================================
+// Base Backup Health Metrics
+// ============================================================================
+
+/**
+ * Gauge for when the most recent successful Postgres base backup completed,
+ * as a Unix timestamp in seconds.
+ *
+ * A timestamp rather than an age: an age gauge can only be refreshed while a
+ * successful backup is still findable, so once the last good one ages out of
+ * the scan window the gauge freezes at a stale-but-plausible value — the exact
+ * direction of lie this check exists to prevent. Dashboards and alerts should
+ * use `time() - backup_last_success_timestamp_seconds`, which keeps growing on
+ * its own. Updated by the monitor_backup_health job; backups run daily, so
+ * alert past ~36h.
+ */
+const backupLastSuccessTimestampSeconds = getOrCreateGauge({
+  name: "backup_last_success_timestamp_seconds",
+  help: "Unix timestamp of the most recent successful Postgres base backup",
+});
+
+/**
+ * Gauge for the number of failed base backups newer than the last successful
+ * one, excluding any backup still in progress. Updated by the
+ * monitor_backup_health job. Non-zero means the cluster is retrying and
+ * failing. Bounded by the job's scan window, so treat it as "at least N".
+ */
+const backupsFailing = getOrCreateGauge({
+  name: "backups_failing",
+  help: "Failed base backups newer than the most recent successful one",
+});
+
+/**
+ * Updates base-backup health gauges from a monitor_backup_health run.
+ * This function has zero overhead when metrics are disabled.
+ *
+ * @param lastSuccessAtSeconds - Completion time of the newest successful backup
+ *   as a Unix timestamp, or null if none was found or the catalog was unreadable
+ * @param failedCount - Failed backups newer than that, or null if unreadable
+ */
+export function updateBackupHealthMetrics(
+  lastSuccessAtSeconds: number | null,
+  failedCount: number | null
+): void {
+  if (!metricsEnabled) return;
+  if (lastSuccessAtSeconds !== null) {
+    backupLastSuccessTimestampSeconds?.set(lastSuccessAtSeconds);
+  }
+  if (failedCount !== null) {
+    backupsFailing?.set(failedCount);
+  }
+}
+
+// ============================================================================
 // Narration Metrics
 // ============================================================================
 

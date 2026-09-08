@@ -28,6 +28,7 @@ import { handleFetchFeed } from "./handlers/fetch-feed";
 import { handleRenewWebsub } from "./handlers/renew-websub";
 import { handleProcessOpmlImport } from "./handlers/process-opml-import";
 import { handleMonitorFeedHealth } from "./handlers/monitor-feed-health";
+import { handleMonitorBackupHealth } from "./handlers/monitor-backup-health";
 import { handleCleanup } from "./handlers/cleanup";
 import { handleReconcileCounters } from "./handlers/reconcile-counters";
 import { handleBackfillGettingStarted } from "./handlers/backfill-getting-started";
@@ -476,6 +477,11 @@ function createWorker(config: WorkerConfig = {}): Worker {
         case "monitor_feed_health": {
           const payload = getJobPayload<"monitor_feed_health">(job);
           result = await handleMonitorFeedHealth(payload);
+          break;
+        }
+        case "monitor_backup_health": {
+          const payload = getJobPayload<"monitor_backup_health">(job);
+          result = await handleMonitorBackupHealth(payload);
           break;
         }
         case "cleanup": {

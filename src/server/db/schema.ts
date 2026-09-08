@@ -951,7 +951,7 @@ export const jobs = pgTable(
     uniqueIndex("jobs_singleton_type_unique")
       .on(table.type)
       .where(
-        sql`type IN ('renew_websub', 'monitor_feed_health', 'cleanup', 'reconcile_counters', 'backfill_getting_started')`
+        sql`type IN ('renew_websub', 'monitor_feed_health', 'monitor_backup_health', 'cleanup', 'reconcile_counters', 'backfill_getting_started')`
       ),
   ]
 );
