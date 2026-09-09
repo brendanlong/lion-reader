@@ -53,6 +53,7 @@ function handleUnauthorizedError() {
     currentPath !== "/" && !currentPath.startsWith("/login")
       ? `?redirect=${encodeURIComponent(currentPath)}`
       : "";
+  // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- deliberate hard nav across an auth boundary (see src/CLAUDE.md)
   window.location.href = `/login${redirectParam}`;
 }
 
@@ -66,6 +67,7 @@ function handleSignupConfirmationRequired() {
   if (window.location.pathname === "/complete-signup") return;
 
   isRedirectingToCompleteSignup = true;
+  // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- deliberate hard nav across an auth boundary (see src/CLAUDE.md)
   window.location.href = "/complete-signup";
 }
 
