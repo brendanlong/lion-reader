@@ -46,6 +46,7 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
       // signing in on the same tab must never be served the previous user's
       // article bodies, lists, counts, or subscription titles — and avoids an
       // RSC soft-nav into a CDN-cacheable page (a version-skew source).
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- deliberate hard nav across an auth boundary (see src/CLAUDE.md)
       window.location.href = "/login";
     },
     onError: () => {

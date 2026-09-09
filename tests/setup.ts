@@ -34,6 +34,24 @@ if (typeof window !== "undefined") {
       IntersectionObserverStub as unknown as typeof IntersectionObserver;
   }
 
+  // Bundlers that emit CommonJS from ESM source replace `import.meta.url` with a
+  // shim that picks its branch by sniffing `typeof document`. jsdom breaks that
+  // assumption: `document` exists, but the module is still a real CJS file that
+  // Node loaded off disk. @sentry/nextjs >= 10.72.0 vendors such a shim (in
+  // @apm-js-collab/code-transformer's webpack plugin, reached at module scope via
+  // withSentryConfig), so it derives an `http://localhost/...` URL from
+  // `document.baseURI` and throws "The URL must be of scheme file" out of
+  // `fileURLToPath` — taking down every jsdom test that reaches @sentry/nextjs
+  // through src/lib/logger.ts. Pointing `currentScript` at a file: URL keeps that
+  // branch on a file path. jsdom leaves `currentScript` null for all of our tests
+  // and nothing we own reads it, so the only thing this feeds is that plugin's
+  // webpack-loader path constant, which no test ever uses.
+  if (document.currentScript === null) {
+    const shimScript = document.createElement("script");
+    shimScript.src = import.meta.url;
+    Object.defineProperty(document, "currentScript", { value: shimScript, configurable: true });
+  }
+
   // Import cleanup and set it up
   const { cleanup } = await import("@testing-library/react");
   // Cleanup after each test to prevent memory leaks and test pollution

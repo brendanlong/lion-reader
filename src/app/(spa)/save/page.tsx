@@ -85,6 +85,7 @@ function SaveContent() {
     if (pendingUrl && !urlToSave) {
       // Clear the pending URL and redirect back to save with the original URL
       sessionStorage.removeItem("pendingSaveUrl");
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- deliberate hard nav: re-enters /save from scratch after the sign-in round-trip (see src/CLAUDE.md)
       window.location.href = `/save?url=${encodeURIComponent(pendingUrl)}`;
     }
   }, [urlToSave]);
@@ -227,6 +228,7 @@ function SaveContent() {
       sessionStorage.setItem("pendingSaveUrl", urlToSave);
     }
     // Redirect to login, which will redirect back to /save after auth
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- deliberate hard nav across an auth boundary (see src/CLAUDE.md)
     window.location.href = `/login?redirect=${encodeURIComponent("/save")}`;
   };
 

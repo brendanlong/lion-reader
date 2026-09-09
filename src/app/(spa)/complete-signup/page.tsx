@@ -44,6 +44,7 @@ export default function CompleteSignupPage() {
   const deleteMutation = trpc.users["me.deleteAccount"].useMutation({
     onSuccess: () => {
       // The server cleared the httpOnly session cookie on the delete response.
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- deliberate hard nav across an auth boundary (see src/CLAUDE.md)
       window.location.href = "/login";
     },
     onError: (err) => {
