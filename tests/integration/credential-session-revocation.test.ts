@@ -190,8 +190,8 @@ describe("credential changes revoke other sessions", () => {
   });
 
   it("a refused auth.unlinkProvider leaves other sessions alone", async () => {
-    // The "don't remove your only auth method" guard throws inside the unlink's
-    // transaction, so the revoke it wraps rolls back with it.
+    // The "don't remove your only auth method" guard throws before anything is
+    // deleted, so no credential changed and nothing is revoked.
     const userId = await createUser({ passwordHash: null });
     await createTestOAuthLink(userId, "google");
     const current = await createSession(db, { userId });

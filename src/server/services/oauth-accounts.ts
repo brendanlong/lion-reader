@@ -8,9 +8,15 @@
  *
  * Both functions add or remove a way to sign in, so both revoke the user's other
  * sessions (SECURITY.md §4). The revoke lives here rather than in the per-provider
- * tRPC procedures so a fourth provider can't forget it, and it runs in the same
- * transaction as the write it accompanies. It fires only when a credential really
- * changed — see each function for what doesn't count.
+ * tRPC procedures so a fourth provider can't forget it, and it fires only when a
+ * credential really changed — see each function for what doesn't count.
+ *
+ * It runs **after** the change is durable, and a revoke that fails does not undo
+ * it: removing (or adding) the credential is what the user asked for, and an
+ * unlink rolled back because of a failed revoke would leave a provider account
+ * the user believes is compromised still able to sign in. The failure surfaces as
+ * `sessionRevokeFailed`, which points at Settings → Sessions — the user can
+ * finish the job by hand from there.
  */
 
 import { and, eq, sql } from "drizzle-orm";
@@ -28,6 +34,23 @@ const PROVIDER_LABELS: Record<OAuthProviderName, string> = {
   apple: "Apple",
   discord: "Discord",
 };
+
+/**
+ * @param change - what already happened, for the error message the user reads
+ * @throws `sessionRevokeFailed` — the caller's credential change stands
+ */
+async function revokeOtherSessionsOrReport(
+  userId: string,
+  currentSessionId: string,
+  change: string
+): Promise<void> {
+  try {
+    await revokeOtherUserSessions(userId, currentSessionId);
+  } catch (err) {
+    console.error("Failed to revoke other sessions after a credential change:", err);
+    throw errors.sessionRevokeFailed(change);
+  }
+}
 
 export interface LinkOAuthAccountParams {
   /** The signed-in user the provider account is being attached to. */
@@ -120,30 +143,28 @@ export async function linkOAuthAccount(
     return "updated";
   }
 
-  await db.transaction(async (tx) => {
-    // Insert, letting the (provider, provider_account_id) unique constraint decide
-    // whether this provider account is already spoken for. Checking with a SELECT
-    // first would leave a window where two concurrent links both see it free; the
-    // conflict must *not* update, or one user could take over another's link.
-    const inserted = await tx
-      .insert(oauthAccounts)
-      .values({
-        id: generateUuidv7(),
-        userId,
-        provider,
-        providerAccountId,
-        ...tokenColumns,
-        createdAt: new Date(),
-      })
-      .onConflictDoNothing({ target: [oauthAccounts.provider, oauthAccounts.providerAccountId] })
-      .returning({ id: oauthAccounts.id });
+  // Insert, letting the (provider, provider_account_id) unique constraint decide
+  // whether this provider account is already spoken for. Checking with a SELECT
+  // first would leave a window where two concurrent links both see it free; the
+  // conflict must *not* update, or one user could take over another's link.
+  const inserted = await db
+    .insert(oauthAccounts)
+    .values({
+      id: generateUuidv7(),
+      userId,
+      provider,
+      providerAccountId,
+      ...tokenColumns,
+      createdAt: new Date(),
+    })
+    .onConflictDoNothing({ target: [oauthAccounts.provider, oauthAccounts.providerAccountId] })
+    .returning({ id: oauthAccounts.id });
 
-    if (inserted.length === 0) {
-      throw errors.oauthCallbackFailed(`This ${label} account is already linked to another user`);
-    }
+  if (inserted.length === 0) {
+    throw errors.oauthCallbackFailed(`This ${label} account is already linked to another user`);
+  }
 
-    await revokeOtherUserSessions(userId, currentSessionId, tx);
-  });
+  await revokeOtherSessionsOrReport(userId, currentSessionId, `${label} linked`);
 
   return "linked";
 }
@@ -168,7 +189,7 @@ export async function unlinkOAuthAccount(
   db: Database,
   { userId, provider, currentSessionId }: UnlinkOAuthAccountParams
 ): Promise<void> {
-  await db.transaction(async (tx) => {
+  const unlinked = await db.transaction(async (tx) => {
     // Serialize concurrent unlinks for this user by taking a row lock on the
     // user. Without it, two requests unlinking *different* providers (e.g.
     // Google in one tab, Apple in another) target different oauth_accounts
@@ -187,7 +208,7 @@ export async function unlinkOAuthAccount(
       .limit(1);
 
     if (account.length === 0) {
-      return;
+      return false;
     }
 
     // Safety check: refuse to remove the user's only remaining auth method. The
@@ -207,6 +228,14 @@ export async function unlinkOAuthAccount(
     }
 
     await tx.delete(oauthAccounts).where(eq(oauthAccounts.id, account[0].id));
-    await revokeOtherUserSessions(userId, currentSessionId, tx);
+    return true;
   });
+
+  if (unlinked) {
+    await revokeOtherSessionsOrReport(
+      userId,
+      currentSessionId,
+      `${PROVIDER_LABELS[provider]} unlinked`
+    );
+  }
 }

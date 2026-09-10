@@ -84,6 +84,9 @@ export function LinkedAccounts() {
       showError(err.message || "Failed to unlink account");
       setUnlinkingProvider(null);
       toast.error("Failed to unlink account");
+      // The unlink itself may have landed and only the session revoke failed
+      // (`sessionRevokeFailed`), so refetch rather than assume nothing changed.
+      utils.users["me.linkedAccounts"].invalidate();
     },
   });
 
