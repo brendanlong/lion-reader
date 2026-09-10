@@ -50,7 +50,7 @@ Because the row stays `active` with its `expires_at` unadvanced, the hourly rene
 
 ## Entry identity
 
-Entries are keyed on `(feed_id, guid)` (`deriveGuid`: guid → link → title), but on the feed-ingest path guids are compared **http/https-insensitively** and the stored guid is never rewritten — `src/server/feed/guid-identity.ts` owns the rule and says why. Any comparison of feed-entry guids across rows must go through its helpers; a raw `guid = guid` reintroduces the duplicates of issue #1535.
+Entries are keyed on `(feed_id, guid)` (`deriveGuid`: guid → link → title), but on the feed-ingest path guids are compared **http/https-insensitively** and the stored guid is never rewritten — `src/server/feed/guid-identity.ts` owns the rule and says why. Any comparison of feed-entry guids across rows must go through its helpers; a raw `guid = guid` reintroduces the duplicates of issue #1535. The partial unique index `uq_entries_feed_guid_canonical` enforces the same rule for web entries at the database, so a poll and a push racing on one feed can't mint twins either — the loser's insert fails and the next fetch matches the existing row.
 
 ## Sanitization on the fetch path
 

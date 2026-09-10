@@ -637,19 +637,10 @@ export async function processEntries(
           .where(and(eq(entries.feedId, feedId), inArray(entries.guid, [...guidsToCheck])))
       : [];
 
-  // Rows duplicated before scheme-insensitive matching existed can share a key;
-  // resolve to the oldest (UUIDv7 ids sort by creation time) so every fetch
-  // updates the same row. The other twin is simply never touched again: it
-  // drops out of the generation new subscribers see, but existing subscribers
-  // keep their row for it.
-  const existingEntriesMap = new Map<string, CachedEntryInfo>();
-  for (const existing of existingEntries) {
-    const key = canonicalGuid(existing.guid);
-    const current = existingEntriesMap.get(key);
-    if (!current || existing.id < current.id) {
-      existingEntriesMap.set(key, existing);
-    }
-  }
+  // At most one row per key: uq_entries_feed_guid_canonical enforces it.
+  const existingEntriesMap = new Map<string, CachedEntryInfo>(
+    existingEntries.map((e) => [canonicalGuid(e.guid), e])
+  );
 
   const results: ProcessedEntry[] = [];
   let newCount = 0;

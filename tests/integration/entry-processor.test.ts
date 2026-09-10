@@ -988,40 +988,6 @@ describe("Entry Processor", () => {
         expect(result.newCount).toBe(5);
       });
 
-      it("resolves pre-existing scheme twins to the oldest row on every fetch", async () => {
-        // Rows duplicated before this matching existed: both spellings are
-        // stored. Every later fetch must update the same (oldest) row, whichever
-        // spelling arrives, so the newer twin quietly ages out.
-        const feed = await createTestFeed();
-        const makeParsed = (guid: string): ParsedEntry => ({ guid, title: "Post", content: "A" });
-        const older = await createEntry(
-          feed.id,
-          "web",
-          makeParsed("http://example.com/?p=1"),
-          generateContentHash(makeParsed("http://example.com/?p=1")),
-          new Date()
-        );
-        // UUIDv7 ids only order across milliseconds; real twins are minutes apart.
-        await new Promise((resolve) => setTimeout(resolve, 5));
-        const newer = await createEntry(
-          feed.id,
-          "web",
-          makeParsed("https://example.com/?p=1"),
-          generateContentHash(makeParsed("https://example.com/?p=1")),
-          new Date()
-        );
-        expect(older.id < newer.id).toBe(true);
-
-        for (const guid of ["https://example.com/?p=1", "http://example.com/?p=1"]) {
-          const result = await processEntries(feed.id, feed.type, {
-            title: "T",
-            items: [{ guid, title: "Post", content: "edited" }],
-          });
-          expect(result.newCount).toBe(0);
-          expect(result.entries[0].id).toBe(older.id);
-        }
-      });
-
       it("skips the fanout for an entry a previous feed already delivered under the other scheme", async () => {
         // Redirect dedupe: after a feed merge, entries attributed to this
         // subscription under the old feed_id suppress re-delivery of the same
