@@ -1,60 +1,84 @@
+"use client";
+
+import { useSyncExternalStore } from "react";
+
 /**
  * useKeyboardShortcutsEnabled Hook
  *
- * Manages the keyboard shortcuts enabled state, persisted in localStorage.
- * Provides a way to enable/disable keyboard shortcuts globally.
+ * Manages whether keyboard shortcuts are enabled globally.
+ * State is persisted to localStorage.
+ *
+ * Uses useSyncExternalStore to avoid hydration mismatches - the server and the
+ * hydration render both see enabled=true (default), and the client switches to
+ * the stored value after hydration.
  */
-
-"use client";
-
-import { useState, useCallback } from "react";
 
 const STORAGE_KEY = "lion-reader:keyboard-shortcuts-enabled";
 
-/**
- * Read the stored enabled state from localStorage.
- * Returns true (default) if not found or localStorage is not available.
- */
-function getStoredEnabled(): boolean {
-  if (typeof window === "undefined") {
-    return true; // SSR default
+// In-memory cache to avoid re-reading localStorage on every subscription
+let cachedValue: boolean | null = null;
+let listeners: Array<() => void> = [];
+
+function getValue(): boolean {
+  if (cachedValue !== null) {
+    return cachedValue;
   }
+
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored !== null) {
-      return stored === "true";
+      cachedValue = stored === "true";
+      return cachedValue;
     }
-  } catch {
-    // localStorage not available (private browsing)
+  } catch (error) {
+    console.error("Failed to read keyboard shortcuts enabled from localStorage:", error);
   }
-  return true; // default to enabled
+
+  // Default: shortcuts enabled
+  cachedValue = true;
+  return cachedValue;
 }
 
-/**
- * Hook to manage keyboard shortcuts enabled state.
- *
- * @returns Object with:
- *   - enabled: boolean - whether keyboard shortcuts are enabled
- *   - setEnabled: function to update the enabled state
- *   - isLoading: boolean - always false (kept for API compatibility)
- */
-export function useKeyboardShortcutsEnabled() {
-  // Use lazy initialization to read from localStorage
-  const [enabled, setEnabledState] = useState(getStoredEnabled);
+function setValue(newValue: boolean): void {
+  cachedValue = newValue;
 
-  // Update both state and localStorage
-  const setEnabled = useCallback((value: boolean) => {
-    setEnabledState(value);
-    try {
-      localStorage.setItem(STORAGE_KEY, String(value));
-    } catch {
-      // localStorage not available
-    }
-  }, []);
+  try {
+    localStorage.setItem(STORAGE_KEY, String(newValue));
+  } catch (error) {
+    console.error("Failed to save keyboard shortcuts enabled to localStorage:", error);
+  }
+
+  listeners.forEach((listener) => listener());
+}
+
+function subscribe(listener: () => void): () => void {
+  listeners.push(listener);
+  return () => {
+    listeners = listeners.filter((l) => l !== listener);
+  };
+}
+
+function getSnapshot(): boolean {
+  return getValue();
+}
+
+// Server always returns true (default: shortcuts enabled)
+function getServerSnapshot(): boolean {
+  return true;
+}
+
+export interface UseKeyboardShortcutsEnabledResult {
+  /** Whether keyboard shortcuts are enabled */
+  enabled: boolean;
+  /** Enable or disable keyboard shortcuts */
+  setEnabled: (value: boolean) => void;
+}
+
+export function useKeyboardShortcutsEnabled(): UseKeyboardShortcutsEnabledResult {
+  const enabled = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
   return {
     enabled,
-    setEnabled,
-    isLoading: false,
+    setEnabled: setValue,
   };
 }
