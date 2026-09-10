@@ -13,7 +13,7 @@ import {
   processFileContent,
   buildGistHtml,
   shouldRetryUnauthenticated,
-  readmeFromContents,
+  fetchReadme,
 } from "../../src/server/plugins/github";
 import type { GistFile, GistResponse } from "../../src/server/plugins/github";
 
@@ -870,46 +870,90 @@ describe("buildGistHtml", () => {
   });
 });
 
-describe("readmeFromContents (#1575)", () => {
-  const contents = (name: string, text: string) => ({
-    name,
-    path: name,
+describe("fetchReadme (#1575)", () => {
+  /** A Contents API response for a README at `path`, as GitHub sends it. */
+  const contents = (path: string, text = "# Title") => ({
+    name: path.split("/").pop() ?? path,
+    path,
     content: Buffer.from(text, "utf-8").toString("base64"),
     encoding: "base64",
-    download_url: `https://raw.githubusercontent.com/o/r/HEAD/${name}`,
+    download_url: `https://raw.githubusercontent.com/o/r/HEAD/${path}`,
   });
 
-  // Probing a hardcoded list of names missed these, and a repo whose README we
-  // can't find degrades into a scrape of GitHub's page chrome (#1460).
+  /** Records the URLs fetched, answering each from `byUrl` (404 = null). */
+  const recorder = (byUrl: Record<string, ReturnType<typeof contents>>) => {
+    const urls: string[] = [];
+    return {
+      urls,
+      fetch: (url: string) => {
+        urls.push(url);
+        return Promise.resolve(byUrl[url] ?? null);
+      },
+    };
+  };
+
+  const readmeUrl = "https://api.github.com/repos/o/r/readme";
+
+  // GitHub resolves which file the README is, so probing candidate filenames is
+  // both wrong (it missed .rst/.adoc/.markdown/.MD) and six times the cost on the
+  // 60/hr unauthenticated budget.
+  it("asks GitHub for the repo's README once, instead of probing filenames", async () => {
+    const { urls, fetch } = recorder({ [readmeUrl]: contents("README.rst") });
+    await fetchReadme("o", "r", fetch);
+    expect(urls).toEqual([readmeUrl]);
+  });
+
+  it("makes no further request when the repo has no README", async () => {
+    const { urls, fetch } = recorder({});
+    expect(await fetchReadme("o", "r", fetch)).toBeNull();
+    expect(urls).toEqual([readmeUrl]);
+  });
+
   it.each(["README.md", "README.rst", "README.markdown", "README.MD", "README.adoc", "readme"])(
-    "takes the README GitHub resolved, named %s",
-    (name) => {
-      expect(readmeFromContents(contents(name, "# Title"))).toEqual({
-        content: "# Title",
-        filename: name,
-      });
+    "returns the README GitHub resolved, named %s",
+    async (name) => {
+      const { fetch } = recorder({ [readmeUrl]: contents(name) });
+      expect(await fetchReadme("o", "r", fetch)).toEqual({ content: "# Title", path: name });
     }
   );
 
-  it("decodes the base64 body as UTF-8", () => {
-    expect(readmeFromContents(contents("README.md", "Grüße — 🦁"))?.content).toBe("Grüße — 🦁");
+  // GitHub prefers a README in .github/ over the root over docs/, so `name` alone
+  // would point every relative reference in it one directory too high.
+  it("returns the path of a README that isn't at the repo root", async () => {
+    const { fetch } = recorder({ [readmeUrl]: contents(".github/README.md") });
+    expect(await fetchReadme("o", "r", fetch)).toEqual({
+      content: "# Title",
+      path: ".github/README.md",
+    });
   });
 
-  it("has no README when the repo has none", () => {
-    expect(readmeFromContents(null)).toBeNull();
+  it("resolves a nested README's relative references against its own directory", async () => {
+    const { fetch } = recorder({
+      [readmeUrl]: contents(".github/README.md", "![arch](diagrams/arch.png)"),
+    });
+    const readme = await fetchReadme("o", "r", fetch);
+    const { html } = await processFileContent(readme!.content, readme!.path, null, {
+      kind: "repo",
+      owner: "o",
+      repo: "r",
+      path: readme!.path,
+    });
+    expect(html).toContain(
+      'src="https://raw.githubusercontent.com/o/r/HEAD/.github/diagrams/arch.png"'
+    );
+  });
+
+  it("decodes the base64 body as UTF-8", async () => {
+    const { fetch } = recorder({ [readmeUrl]: contents("README.md", "Grüße — 🦁") });
+    expect((await fetchReadme("o", "r", fetch))?.content).toBe("Grüße — 🦁");
   });
 
   // GitHub stops inlining bytes past 1MB, answering `encoding: "none"`.
-  it("has no README when GitHub didn't inline the bytes", () => {
-    expect(
-      readmeFromContents({
-        name: "README.md",
-        path: "README.md",
-        content: "",
-        encoding: "none",
-        download_url: "https://raw.githubusercontent.com/o/r/HEAD/README.md",
-      })
-    ).toBeNull();
+  it("has no README when GitHub didn't inline the bytes", async () => {
+    const { fetch } = recorder({
+      [readmeUrl]: { ...contents("README.md"), content: "", encoding: "none" },
+    });
+    expect(await fetchReadme("o", "r", fetch)).toBeNull();
   });
 });
 

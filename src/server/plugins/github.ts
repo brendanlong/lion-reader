@@ -349,38 +349,45 @@ function decodeContents(contents: ContentsResponse | null): string | null {
   return Buffer.from(contents.content, "base64").toString("utf-8");
 }
 
+/** How a Contents API URL is fetched, taken as a parameter — see `fetchReadme`. */
+type ContentsFetch = (
+  url: string,
+  context: Record<string, string | undefined>
+) => Promise<ContentsResponse | null>;
+
 /**
- * The README a Contents API `/readme` response carries, under whatever name the
- * repo gave it. Taking `name` from the response rather than assuming one is the
- * point: probing a hardcoded list of filenames missed `README.rst` (most Python
- * projects), `README.markdown`, `README.MD` and `README.adoc`, and a repo whose
- * README we can't find degrades into a scrape of GitHub's page chrome (#1460).
+ * Fetch a repo's README, as the repo path it lives at.
+ *
+ * GitHub resolves which file that is, so this is **one** request whatever the
+ * README is called — worth caring about on the 60/hr unauthenticated per-IP
+ * budget, and the reason we don't probe a list of filenames: such a list missed
+ * `README.rst` (most Python projects), `README.markdown`, `README.MD` and
+ * `README.adoc`, and a repo whose README we can't find degrades into a scrape of
+ * GitHub's page chrome (#1460).
+ *
+ * The **`path`**, not the `name`: GitHub prefers a README in `.github/` over the
+ * root over `docs/`, so `name` is `README.md` while the file is at
+ * `.github/README.md`. The path is the base its relative references resolve
+ * against (`absolutizeGitHubUrls`), so taking `name` points every image and link
+ * in such a README one directory too high.
+ *
+ * `fetchContents` is a parameter so tests can observe the request this makes
+ * against an in-memory implementation, the way `followRedirects` takes its fetch.
  */
-export function readmeFromContents(
-  contents: ContentsResponse | null
-): { content: string; filename: string } | null {
+export async function fetchReadme(
+  owner: string,
+  repo: string,
+  fetchContents: ContentsFetch
+): Promise<{ content: string; path: string } | null> {
+  const contents = await fetchContents(`https://api.github.com/repos/${owner}/${repo}/readme`, {
+    owner,
+    repo,
+  });
   if (!contents) {
     return null;
   }
   const content = decodeContents(contents);
-  return content === null ? null : { content, filename: contents.name };
-}
-
-/**
- * Fetch a repo's README.
- *
- * GitHub resolves which file that is, so this is one request whatever the README
- * is called — worth caring about on the 60/hr unauthenticated per-IP budget.
- */
-async function fetchReadme(
-  owner: string,
-  repo: string
-): Promise<{ content: string; filename: string } | null> {
-  const contents = await fetchContentsApi(`https://api.github.com/repos/${owner}/${repo}/readme`, {
-    owner,
-    repo,
-  });
-  return readmeFromContents(contents);
+  return content === null ? null : { content, path: contents.path };
 }
 
 // ============================================================================
@@ -745,17 +752,17 @@ async function fetchGitHubContent(url: URL): Promise<SavedArticleContent | null>
     }
 
     case "repo-root": {
-      const readme = await fetchReadme(parsed.owner, parsed.repo);
+      const readme = await fetchReadme(parsed.owner, parsed.repo, fetchContentsApi);
       if (!readme) {
         logger.debug("No README found for repo", { owner: parsed.owner, repo: parsed.repo });
         return null;
       }
 
-      const file = await processFileContent(readme.content, readme.filename, null, {
+      const file = await processFileContent(readme.content, readme.path, null, {
         kind: "repo",
         owner: parsed.owner,
         repo: parsed.repo,
-        path: readme.filename,
+        path: readme.path,
       });
       // Use extracted title from README, fall back to repo name
       const title = file.title || `${parsed.owner}/${parsed.repo}`;
