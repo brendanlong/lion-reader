@@ -56,7 +56,11 @@ mod tests {
     use super::*;
 
     fn depth_html(levels: usize) -> String {
-        format!("<svg>{}x{}</svg>", "<g>".repeat(levels), "</g>".repeat(levels))
+        format!(
+            "<svg>{}x{}</svg>",
+            "<g>".repeat(levels),
+            "</g>".repeat(levels)
+        )
     }
 
     #[test]
@@ -79,13 +83,17 @@ mod tests {
 
     #[test]
     fn deep_markup_is_over_the_limit() {
-        assert!(exceeds_max_depth(&Html::parse_fragment(&depth_html(MAX_DOM_DEPTH + 50))));
+        assert!(exceeds_max_depth(&Html::parse_fragment(&depth_html(
+            MAX_DOM_DEPTH + 50
+        ))));
     }
 
     #[test]
     fn pathological_depth_does_not_overflow_the_stack() {
         // The whole point: the depth check runs on input deep enough to
         // overflow a recursive walk (this is the crashing repro's depth).
-        assert!(exceeds_max_depth(&Html::parse_fragment(&depth_html(20_000))));
+        assert!(exceeds_max_depth(&Html::parse_fragment(&depth_html(
+            20_000
+        ))));
     }
 }

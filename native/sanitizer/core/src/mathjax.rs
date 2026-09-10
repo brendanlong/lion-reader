@@ -45,8 +45,20 @@ fn token_tag(tag: &str) -> Option<&'static str> {
 /// Layout-only wrappers whose children are unwrapped in place without being
 /// reported as unknown.
 const KNOWN_LAYOUT_TAGS: &[&str] = &[
-    "mjx-texatom", "mjx-mrow", "mjx-mstyle", "mjx-mpadded", "mjx-box", "mjx-row", "mjx-block",
-    "mjx-spacer", "mjx-strut", "mjx-nstrut", "mjx-dstrut", "mjx-tstrut", "mjx-line", "mjx-mark",
+    "mjx-texatom",
+    "mjx-mrow",
+    "mjx-mstyle",
+    "mjx-mpadded",
+    "mjx-box",
+    "mjx-row",
+    "mjx-block",
+    "mjx-spacer",
+    "mjx-strut",
+    "mjx-nstrut",
+    "mjx-dstrut",
+    "mjx-tstrut",
+    "mjx-line",
+    "mjx-mark",
 ];
 
 struct ConvertContext {
@@ -56,7 +68,8 @@ struct ConvertContext {
 static CODEPOINT_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\bmjx-c([0-9A-Fa-f]{2,6})\b").unwrap());
 
-static MSPACE_WIDTH_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"width:\s*([^;]+)").unwrap());
+static MSPACE_WIDTH_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"width:\s*([^;]+)").unwrap());
 
 /// The Unicode character a glyph element represents, from its `mjx-c<HEX>`
 /// class. Surrogate codepoints are rejected (`char::from_u32` refuses them
@@ -69,7 +82,9 @@ fn codepoint_char(el: ElementRef) -> String {
     let Ok(codepoint) = u32::from_str_radix(&captures[1], 16) else {
         return String::new();
     };
-    char::from_u32(codepoint).map(String::from).unwrap_or_default()
+    char::from_u32(codepoint)
+        .map(String::from)
+        .unwrap_or_default()
 }
 
 /// Concatenated text of all descendant text nodes.
@@ -174,7 +189,13 @@ fn find_fraction_parts(frac: ElementRef) -> (Option<ElementRef>, Option<ElementR
 fn find_script_parts(
     el: ElementRef,
 ) -> (Option<ElementRef>, Option<ElementRef>, Option<ElementRef>) {
-    const LAYOUT: &[&str] = &["mjx-row", "mjx-box", "mjx-munder", "mjx-mover", "mjx-munderover"];
+    const LAYOUT: &[&str] = &[
+        "mjx-row",
+        "mjx-box",
+        "mjx-munder",
+        "mjx-mover",
+        "mjx-munderover",
+    ];
     fn visit<'a>(
         node: ElementRef<'a>,
         base: &mut Option<ElementRef<'a>>,
@@ -295,7 +316,9 @@ fn convert_element(el: ElementRef, ctx: &mut ConvertContext, out: &mut Vec<MNode
             .attr("style")
             .and_then(|style| MSPACE_WIDTH_RE.captures(style))
             .map(|captures| captures[1].trim().to_string());
-        let attrs = width.map(|w| vec![("width".to_string(), w)]).unwrap_or_default();
+        let attrs = width
+            .map(|w| vec![("width".to_string(), w)])
+            .unwrap_or_default();
         out.push(MNode::elem_with_attrs("mspace", attrs, Vec::new()));
         return;
     }
@@ -304,7 +327,9 @@ fn convert_element(el: ElementRef, ctx: &mut ConvertContext, out: &mut Vec<MNode
     // script stacks sup then sub, separated by <mjx-spacer>.
     if tag == "mjx-msup" || tag == "mjx-msub" || tag == "mjx-msubsup" {
         let (base_nodes, script) = partition_script(el, ctx);
-        let groups = script.map(|s| split_script_groups(s, ctx)).unwrap_or_default();
+        let groups = script
+            .map(|s| split_script_groups(s, ctx))
+            .unwrap_or_default();
         if tag == "mjx-msubsup" && groups.len() >= 2 {
             let mut groups = groups.into_iter();
             let sup = groups.next().unwrap(); // stacked above
@@ -333,14 +358,20 @@ fn convert_element(el: ElementRef, ctx: &mut ConvertContext, out: &mut Vec<MNode
         let (base, over, under) = find_script_parts(el);
         if base.is_none() && over.is_none() && under.is_none() {
             let (base_nodes, script) = partition_script(el, ctx);
-            let groups = script.map(|s| split_script_groups(s, ctx)).unwrap_or_default();
+            let groups = script
+                .map(|s| split_script_groups(s, ctx))
+                .unwrap_or_default();
             if tag == "mjx-munderover" && groups.len() >= 2 {
                 let mut groups = groups.into_iter();
                 let over_g = groups.next().unwrap(); // stacked above
                 let under_g = groups.next().unwrap(); // stacked below
                 out.push(MNode::elem(
                     "munderover",
-                    vec![group_nodes(base_nodes), group_nodes(under_g), group_nodes(over_g)],
+                    vec![
+                        group_nodes(base_nodes),
+                        group_nodes(under_g),
+                        group_nodes(over_g),
+                    ],
                 ));
                 return;
             }
@@ -390,7 +421,10 @@ fn convert_element(el: ElementRef, ctx: &mut ConvertContext, out: &mut Vec<MNode
     // Square roots: radicand in <mjx-box>, radical glyph in <mjx-surd>.
     if tag == "mjx-msqrt" || tag == "mjx-sqrt" {
         if let Some(radicand) = first_descendant(el, "mjx-box") {
-            out.push(MNode::elem("msqrt", vec![convert_group(Some(radicand), ctx)]));
+            out.push(MNode::elem(
+                "msqrt",
+                vec![convert_group(Some(radicand), ctx)],
+            ));
             return;
         }
         convert_children(el, ctx, out);
@@ -404,7 +438,10 @@ fn convert_element(el: ElementRef, ctx: &mut ConvertContext, out: &mut Vec<MNode
         if let (Some(index), Some(radicand)) = (index, radicand) {
             out.push(MNode::elem(
                 "mroot",
-                vec![convert_group(Some(radicand), ctx), convert_group(Some(index), ctx)],
+                vec![
+                    convert_group(Some(radicand), ctx),
+                    convert_group(Some(index), ctx),
+                ],
             ));
             return;
         }
@@ -505,7 +542,9 @@ pub fn convert_mathjax_chtml(html: &str, warnings: &mut Vec<String>) -> Option<S
         return None;
     }
 
-    let mut ctx = ConvertContext { unknown_tags: BTreeSet::new() };
+    let mut ctx = ConvertContext {
+        unknown_tags: BTreeSet::new(),
+    };
     let mut result = String::with_capacity(html.len());
     let mut cursor = 0usize;
     let mut converted = false;
@@ -658,7 +697,10 @@ mod tests {
         let html = r#"<mjx-container><mjx-math><mjx-future><mjx-mi><mjx-c class="mjx-c31"></mjx-c></mjx-mi></mjx-future></mjx-math></mjx-container>"#;
         let mut warnings = Vec::new();
         let out = convert_mathjax_chtml(html, &mut warnings).unwrap();
-        assert_eq!(out, format!(r#"<math xmlns="{MATHML_NS}"><mi>1</mi></math>"#));
+        assert_eq!(
+            out,
+            format!(r#"<math xmlns="{MATHML_NS}"><mi>1</mi></math>"#)
+        );
         assert_eq!(warnings.len(), 1);
         assert!(warnings[0].contains("mjx-future"));
     }
@@ -713,8 +755,15 @@ mod tests {
         let mut warnings = Vec::new();
         let out = convert_mathjax_chtml(&html, &mut warnings).expect("second container converts");
         let expected = format!(r#"<math xmlns="{MATHML_NS}"><mn>1</mn></math>"#);
-        assert!(out.ends_with(&expected), "tail: {}", &out[out.len() - expected.len().min(out.len())..]);
-        assert!(out.starts_with("<mjx-container>"), "deep container must survive verbatim");
+        assert!(
+            out.ends_with(&expected),
+            "tail: {}",
+            &out[out.len() - expected.len().min(out.len())..]
+        );
+        assert!(
+            out.starts_with("<mjx-container>"),
+            "deep container must survive verbatim"
+        );
         assert_eq!(warnings.len(), 1, "{warnings:?}");
     }
 

@@ -103,9 +103,14 @@ pub(crate) fn skip_raw_text(bytes: &[u8], from: usize, name: &str) -> usize {
         if name_end <= bytes.len()
             && bytes[name_start..name_end].eq_ignore_ascii_case(name_bytes)
             && (name_end == bytes.len()
-                || matches!(bytes[name_end], b'>' | b'/' | b' ' | b'\t' | b'\n' | b'\r' | b'\x0c'))
+                || matches!(
+                    bytes[name_end],
+                    b'>' | b'/' | b' ' | b'\t' | b'\n' | b'\r' | b'\x0c'
+                ))
         {
-            return find_byte(bytes, name_end, b'>').map(|p| p + 1).unwrap_or(bytes.len());
+            return find_byte(bytes, name_end, b'>')
+                .map(|p| p + 1)
+                .unwrap_or(bytes.len());
         }
         i = lt + 2;
     }
@@ -239,22 +244,30 @@ pub fn find_top_level_ranges(
             continue;
         }
         if bytes[i..].starts_with(b"<!--") {
-            i = find_bytes(bytes, i + 4, b"-->").map(|p| p + 3).unwrap_or(bytes.len());
+            i = find_bytes(bytes, i + 4, b"-->")
+                .map(|p| p + 3)
+                .unwrap_or(bytes.len());
             continue;
         }
         if i + 1 < bytes.len() && (bytes[i + 1] == b'!' || bytes[i + 1] == b'?') {
             // Bogus comment / doctype: ends at the first `>`.
-            i = find_byte(bytes, i + 1, b'>').map(|p| p + 1).unwrap_or(bytes.len());
+            i = find_byte(bytes, i + 1, b'>')
+                .map(|p| p + 1)
+                .unwrap_or(bytes.len());
             continue;
         }
         if i + 1 < bytes.len() && bytes[i + 1] == b'/' {
             if !(i + 2 < bytes.len() && bytes[i + 2].is_ascii_alphabetic()) {
                 // `</>` or `</ …`: bogus comment per spec, ends at first `>`.
-                i = find_byte(bytes, i + 2, b'>').map(|p| p + 1).unwrap_or(bytes.len());
+                i = find_byte(bytes, i + 2, b'>')
+                    .map(|p| p + 1)
+                    .unwrap_or(bytes.len());
                 continue;
             }
             let (name, after) = read_tag_name(bytes, i + 2);
-            let close_end = find_byte(bytes, after, b'>').map(|p| p + 1).unwrap_or(bytes.len());
+            let close_end = find_byte(bytes, after, b'>')
+                .map(|p| p + 1)
+                .unwrap_or(bytes.len());
             if depth > 0 {
                 if name == target {
                     depth -= 1;
@@ -339,10 +352,16 @@ mod tests {
     use super::*;
 
     fn ranges(html: &str, target: &str) -> Vec<(usize, usize, bool)> {
-        find_top_level_ranges(html, target, &["mjx-math"], true, Recovery::AtLastInnerClose)
-            .into_iter()
-            .map(|r| (r.start, r.end, r.explicit_close))
-            .collect()
+        find_top_level_ranges(
+            html,
+            target,
+            &["mjx-math"],
+            true,
+            Recovery::AtLastInnerClose,
+        )
+        .into_iter()
+        .map(|r| (r.start, r.end, r.explicit_close))
+        .collect()
     }
 
     #[test]
@@ -356,7 +375,10 @@ mod tests {
         let html = "<mjx-container><mjx-container>x</mjx-container></mjx-container>tail";
         let r = ranges(html, "mjx-container");
         assert_eq!(r.len(), 1);
-        assert_eq!(&html[r[0].0..r[0].1], "<mjx-container><mjx-container>x</mjx-container></mjx-container>");
+        assert_eq!(
+            &html[r[0].0..r[0].1],
+            "<mjx-container><mjx-container>x</mjx-container></mjx-container>"
+        );
     }
 
     #[test]
@@ -418,7 +440,10 @@ mod tests {
         let html = "a<svg><circle>";
         let r = find_top_level_ranges(html, "svg", &[], false, Recovery::ToEof);
         assert_eq!(r.len(), 1);
-        assert_eq!((r[0].start, r[0].end, r[0].explicit_close), (1, html.len(), false));
+        assert_eq!(
+            (r[0].start, r[0].end, r[0].explicit_close),
+            (1, html.len(), false)
+        );
     }
 
     #[test]

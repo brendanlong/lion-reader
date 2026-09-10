@@ -270,7 +270,11 @@ fn math_to_mathml(tex: &str, display: bool) -> String {
     };
 
     let mut mathml = String::new();
-    match push_mathml(&mut mathml, events.into_iter().map(Ok::<_, Infallible>), config) {
+    match push_mathml(
+        &mut mathml,
+        events.into_iter().map(Ok::<_, Infallible>),
+        config,
+    ) {
         Ok(()) => mathml,
         Err(_) => escaped_tex(tex),
     }
@@ -366,7 +370,10 @@ mod tests {
         let out = html("| a | b |\n|---|---|\n| 1 | 2 |\n\n- [x] done\n- [ ] todo\n");
         assert!(out.contains("<table>"), "{out}");
         assert!(out.contains("<th>a</th>"), "{out}");
-        assert!(out.contains(r#"<input type="checkbox" checked="" disabled="" />"#), "{out}");
+        assert!(
+            out.contains(r#"<input type="checkbox" checked="" disabled="" />"#),
+            "{out}"
+        );
         // The reader CSS styles the checkbox via `li > input:first-child` (it has
         // to replace the bullet), so the checkbox being a *direct, leading* child
         // of the `<li>` is a contract, not an incidental detail of comrak's
@@ -378,7 +385,10 @@ mod tests {
         );
         // Alignment rows land on the cells, which the sanitizer allow-lists.
         let aligned = html("| a | b |\n| :-: | --: |\n| 1 | 2 |\n");
-        assert!(aligned.contains(r#"<th align="center">a</th>"#), "{aligned}");
+        assert!(
+            aligned.contains(r#"<th align="center">a</th>"#),
+            "{aligned}"
+        );
         assert!(aligned.contains(r#"<th align="right">b</th>"#), "{aligned}");
     }
 
@@ -543,7 +553,10 @@ mod tests {
             max_input_bytes: 8,
             max_output_bytes: UNLIMITED.max_output_bytes,
         };
-        assert_eq!(render("more than eight bytes", limits), Err(RenderError::InputTooLarge));
+        assert_eq!(
+            render("more than eight bytes", limits),
+            Err(RenderError::InputTooLarge)
+        );
         assert!(render("tiny", limits).is_ok());
     }
 

@@ -196,7 +196,10 @@ mod tests {
     #[test]
     fn rewrites_func_iri_references() {
         assert_eq!(prefix_func_iris("url(#grad)"), "url(#uc-grad)");
-        assert_eq!(prefix_func_iris(r##"url("#grad")"##), r##"url("#uc-grad")"##);
+        assert_eq!(
+            prefix_func_iris(r##"url("#grad")"##),
+            r##"url("#uc-grad")"##
+        );
         assert_eq!(prefix_func_iris("url('#grad')"), "url('#uc-grad')");
         // Paint fallback after the reference survives.
         assert_eq!(prefix_func_iris("url(#grad) red"), "url(#uc-grad) red");

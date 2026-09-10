@@ -248,9 +248,7 @@ pub fn decode_xml_entities(input: &str) -> std::borrow::Cow<'_, str> {
             let name = &after[..semi];
             if !name.is_empty()
                 && name.len() <= 32
-                && name
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || c == '#')
+                && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '#')
             {
                 out.push_str(&resolve_entity_ref(name));
                 rest = &after[semi + 1..];
@@ -281,13 +279,14 @@ fn is_js_whitespace(c: char) -> bool {
             | '\u{0020}'
             | '\u{00A0}'
             | '\u{1680}'
-            | '\u{2000}'..='\u{200A}'
-            | '\u{2028}'
-            | '\u{2029}'
-            | '\u{202F}'
-            | '\u{205F}'
-            | '\u{3000}'
-            | '\u{FEFF}'
+            | '\u{2000}'
+            ..='\u{200A}'
+                | '\u{2028}'
+                | '\u{2029}'
+                | '\u{202F}'
+                | '\u{205F}'
+                | '\u{3000}'
+                | '\u{FEFF}'
     )
 }
 

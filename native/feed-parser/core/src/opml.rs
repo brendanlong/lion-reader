@@ -139,7 +139,10 @@ mod tests {
         );
         assert_eq!(result.feeds[2].category, None);
         assert_eq!(result.feeds[2].xml_url, "https://solo.com/feed");
-        assert_eq!(result.feeds[2].html_url.as_deref(), Some("https://solo.com"));
+        assert_eq!(
+            result.feeds[2].html_url.as_deref(),
+            Some("https://solo.com")
+        );
     }
 
     #[test]

@@ -132,7 +132,11 @@ mod tests {
         // dies. Sanitization is per-read, so one such stored entry would
         // crash the server on every read of it.
         for html in [
-            format!("<svg>{}x{}</svg>", "<g>".repeat(20_000), "</g>".repeat(20_000)),
+            format!(
+                "<svg>{}x{}</svg>",
+                "<g>".repeat(20_000),
+                "</g>".repeat(20_000)
+            ),
             format!(
                 "<mjx-container><mjx-math>{}x{}</mjx-math></mjx-container>",
                 "<mjx-mrow>".repeat(20_000),
@@ -143,7 +147,11 @@ mod tests {
             let out = sanitize_entry_html(&html, &mut warnings).expect("must not fail");
             // Degraded, not crashed: the markup is gone, the text survives,
             // and the degradation is reported.
-            assert!(!out.contains('<'), "no markup should survive: {}", &out[..out.len().min(80)]);
+            assert!(
+                !out.contains('<'),
+                "no markup should survive: {}",
+                &out[..out.len().min(80)]
+            );
             assert!(out.contains('x'), "text content should survive");
             assert_eq!(warnings.len(), 1, "{warnings:?}");
             assert!(warnings[0].contains("nested deeper"), "{warnings:?}");
@@ -155,9 +163,8 @@ mod tests {
         // The HTML and SVG passes prefix independently (SVG is extracted, run
         // through its own allow-list, then spliced back), so an HTML link to an
         // id defined *inside* an SVG only resolves if both agree.
-        let out = run(
-            "<a href=\"#chart\">see chart</a><svg><title id=\"chart\">Chart</title></svg>",
-        );
+        let out =
+            run("<a href=\"#chart\">see chart</a><svg><title id=\"chart\">Chart</title></svg>");
         assert!(out.contains("href=\"#uc-chart\""), "{out}");
         assert!(out.contains("id=\"uc-chart\""), "{out}");
     }

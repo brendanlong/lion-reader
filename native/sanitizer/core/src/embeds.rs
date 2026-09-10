@@ -93,8 +93,16 @@ static YOUTUBE_PATH_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^/embed/([A-Za-z0-9_-]{1,64})$").unwrap());
 
 const YOUTUBE_PARAMS: &[&str] = &[
-    "start", "end", "list", "listType", "loop", "playlist", "rel", "cc_load_policy",
-    "cc_lang_pref", "hl",
+    "start",
+    "end",
+    "list",
+    "listType",
+    "loop",
+    "playlist",
+    "rel",
+    "cc_load_policy",
+    "cc_lang_pref",
+    "hl",
 ];
 
 pub fn normalize_youtube_embed_url(src: &str) -> Option<String> {
@@ -135,8 +143,10 @@ fn normalize_vimeo_embed_url(src: &str) -> Option<String> {
 // --- Spotify ----------------------------------------------------------------
 
 static SPOTIFY_PATH_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^/embed(?:-podcast)?/(track|album|playlist|episode|show|artist)/([A-Za-z0-9]{1,64})$")
-        .unwrap()
+    Regex::new(
+        r"^/embed(?:-podcast)?/(track|album|playlist|episode|show|artist)/([A-Za-z0-9]{1,64})$",
+    )
+    .unwrap()
 });
 
 const SPOTIFY_PARAMS: &[&str] = &["theme", "t"];
@@ -159,8 +169,15 @@ fn normalize_spotify_embed_url(src: &str) -> Option<String> {
 static SOUNDCLOUD_PATH_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^/player/?$").unwrap());
 
 const SOUNDCLOUD_PARAMS: &[&str] = &[
-    "color", "hide_related", "show_comments", "show_user", "show_reposts", "show_teaser",
-    "visual", "start_track", "single_active",
+    "color",
+    "hide_related",
+    "show_comments",
+    "show_user",
+    "show_reposts",
+    "show_teaser",
+    "visual",
+    "start_track",
+    "single_active",
 ];
 
 fn is_soundcloud_resource_url(value: &str) -> bool {
@@ -280,9 +297,14 @@ mod tests {
 
     #[test]
     fn youtube_normalizes_to_nocookie() {
-        let embed = normalize_embed("https://www.youtube.com/embed/dQw4w9WgXcQ?start=10&autoplay=1").unwrap();
+        let embed =
+            normalize_embed("https://www.youtube.com/embed/dQw4w9WgXcQ?start=10&autoplay=1")
+                .unwrap();
         assert_eq!(embed.provider, "YouTube");
-        assert_eq!(embed.src, "https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?start=10");
+        assert_eq!(
+            embed.src,
+            "https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?start=10"
+        );
     }
 
     #[test]
@@ -300,7 +322,9 @@ mod tests {
 
     #[test]
     fn soundcloud_requires_soundcloud_resource() {
-        assert!(normalize_embed("https://w.soundcloud.com/player/?url=https://evil.com/x").is_none());
+        assert!(
+            normalize_embed("https://w.soundcloud.com/player/?url=https://evil.com/x").is_none()
+        );
         let ok = normalize_embed(
             "https://w.soundcloud.com/player/?url=https://api.soundcloud.com/tracks/123&visual=true",
         )
@@ -312,16 +336,31 @@ mod tests {
     #[test]
     fn every_canonical_host_is_listed() {
         let outputs = [
-            normalize_embed("https://www.youtube.com/embed/abc").unwrap().src,
-            normalize_embed("https://player.vimeo.com/video/1").unwrap().src,
-            normalize_embed("https://open.spotify.com/embed/track/abc123").unwrap().src,
-            normalize_embed("https://w.soundcloud.com/player/?url=https://soundcloud.com/x").unwrap().src,
-            normalize_embed("https://bandcamp.com/EmbeddedPlayer/album=123/size=large/").unwrap().src,
-            normalize_embed("https://codepen.io/user/embed/abcDEF").unwrap().src,
+            normalize_embed("https://www.youtube.com/embed/abc")
+                .unwrap()
+                .src,
+            normalize_embed("https://player.vimeo.com/video/1")
+                .unwrap()
+                .src,
+            normalize_embed("https://open.spotify.com/embed/track/abc123")
+                .unwrap()
+                .src,
+            normalize_embed("https://w.soundcloud.com/player/?url=https://soundcloud.com/x")
+                .unwrap()
+                .src,
+            normalize_embed("https://bandcamp.com/EmbeddedPlayer/album=123/size=large/")
+                .unwrap()
+                .src,
+            normalize_embed("https://codepen.io/user/embed/abcDEF")
+                .unwrap()
+                .src,
         ];
         for src in outputs {
             let url = Url::parse(&src).unwrap();
-            assert!(EMBED_CANONICAL_HOSTNAMES.contains(&url.host_str().unwrap()), "{src}");
+            assert!(
+                EMBED_CANONICAL_HOSTNAMES.contains(&url.host_str().unwrap()),
+                "{src}"
+            );
         }
     }
 }

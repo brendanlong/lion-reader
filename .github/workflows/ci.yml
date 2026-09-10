@@ -146,9 +146,20 @@ jobs:
             native/readability
             native/sanitizer
 
+      # First because it compiles nothing: a misformatted PR fails in seconds
+      # rather than after the test and clippy builds. The husky pre-commit hook
+      # also formats Rust, but it is bypassable (`--no-verify`, or edits from
+      # tools that skip hooks), so gate it here.
+      - name: Check formatting
+        run: ./scripts/cargo-native.sh fmt --all --check
+
+      # These run even when an earlier check fails, so one push surfaces every
+      # problem instead of one per round-trip.
+      #
       # Invoked directly rather than through `pnpm test:native` / `pnpm
       # lint:native` so the job needs no Node toolchain; keep them in sync.
       - name: Run Rust tests
+        if: ${{ !cancelled() }}
         run: ./scripts/cargo-native.sh test --workspace
 
       - name: Run clippy

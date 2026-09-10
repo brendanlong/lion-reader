@@ -149,9 +149,7 @@ impl SaxHandler for RssHandler {
             match tag {
                 "title" => self.state = State::InChannelTitle,
                 // `!attribs.rel` — absent OR empty (falsy) rel counts.
-                "link" if attrs.get_nonempty("rel").is_none() => {
-                    self.state = State::InChannelLink
-                }
+                "link" if attrs.get_nonempty("rel").is_none() => self.state = State::InChannelLink,
                 "description" => self.state = State::InChannelDescription,
                 "ttl" => self.state = State::InChannelTtl,
                 "sy:updateperiod" => self.state = State::InChannelSyUpdatePeriod,
@@ -431,9 +429,8 @@ mod tests {
     fn end_tag_dispatch_matches_htmlparser2_stack_semantics() {
         // An end tag closes down to its nearest open match (</item> closes
         // the unclosed <title> first)...
-        let feed =
-            parse_rss("<rss><channel><item><title>Post</item><item><guid>g2</guid></item>")
-                .unwrap();
+        let feed = parse_rss("<rss><channel><item><title>Post</item><item><guid>g2</guid></item>")
+            .unwrap();
         assert_eq!(feed.entries.len(), 2);
         assert_eq!(feed.entries[0].title.as_deref(), Some("Post"));
         assert_eq!(feed.entries[1].guid.as_deref(), Some("g2"));
