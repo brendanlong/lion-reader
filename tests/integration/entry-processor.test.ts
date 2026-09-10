@@ -832,6 +832,178 @@ describe("Entry Processor", () => {
       expect(result.entries[0].id).toBe(result.entries[1].id);
     });
 
+    describe("scheme-insensitive guid matching (#1535)", () => {
+      // WordPress.com serves `http://site/?p=N` guids in the polled feed while
+      // its WebSub hub pushes the `https://` spelling, so the same post arrives
+      // under two guids. They must resolve to one entry.
+      it("updates an existing entry in place when only the guid scheme changed", async () => {
+        const feed = await createTestFeed();
+
+        const first = await processEntries(feed.id, feed.type, {
+          title: "T",
+          items: [{ guid: "http://example.com/?p=1", title: "Post", content: "v1" }],
+        });
+        expect(first.newCount).toBe(1);
+
+        const second = await processEntries(feed.id, feed.type, {
+          title: "T",
+          items: [{ guid: "https://example.com/?p=1", title: "Post", content: "v2 (edited)" }],
+        });
+        expect(second.newCount).toBe(0);
+        expect(second.updatedCount).toBe(1);
+        expect(second.entries[0].id).toBe(first.entries[0].id);
+
+        // The stored guid keeps its original spelling.
+        const rows = await db.select().from(entries).where(eq(entries.feedId, feed.id));
+        expect(rows).toHaveLength(1);
+        expect(rows[0].guid).toBe("http://example.com/?p=1");
+        expect(rows[0].contentOriginal).toContain("v2 (edited)");
+      });
+
+      it("collapses two items in one document whose guids differ only by scheme", async () => {
+        const feed = await createTestFeed();
+
+        const link = "https://example.com/2024/06/post/";
+        const result = await processEntries(feed.id, feed.type, {
+          title: "T",
+          items: [
+            { guid: "http://example.com/?p=1", link, title: "Post", content: "A" },
+            { guid: "https://example.com/?p=1", link, title: "Post", content: "A" },
+          ],
+        });
+        expect(result.newCount).toBe(1);
+        expect(result.unchangedCount).toBe(1);
+        expect(result.entries[0].id).toBe(result.entries[1].id);
+      });
+
+      it("does not report a scheme flip as a disappeared entry or a change", async () => {
+        // The permalink stays put (as on WordPress, where only the guid flips);
+        // without a link the guid doubles as the entry URL and a flip is a
+        // genuine URL change.
+        const feed = await createTestFeed();
+        const link = "https://example.com/2024/06/post/";
+        const pollTime = new Date("2024-06-15T10:00:00Z");
+        await processEntries(
+          feed.id,
+          feed.type,
+          {
+            title: "T",
+            items: [{ guid: "http://example.com/?p=1", link, title: "P", content: "A" }],
+          },
+          { fetchedAt: pollTime }
+        );
+
+        const result = await processEntries(
+          feed.id,
+          feed.type,
+          {
+            title: "T",
+            items: [{ guid: "https://example.com/?p=1", link, title: "P", content: "A" }],
+          },
+          { fetchedAt: new Date("2024-06-15T11:00:00Z"), previousLastEntriesUpdatedAt: pollTime }
+        );
+        expect(result.disappearedCount).toBe(0);
+        expect(result.hasChanges).toBe(false);
+      });
+
+      it("keeps guids that differ beyond the scheme distinct", async () => {
+        const feed = await createTestFeed();
+
+        const result = await processEntries(feed.id, feed.type, {
+          title: "T",
+          items: [
+            { guid: "http://example.com/?p=1", title: "A", content: "A" },
+            { guid: "example.com/?p=1", title: "B", content: "B" },
+            { guid: "http://other.example.com/?p=1", title: "C", content: "C" },
+            { guid: "http://example.com/?p=1/", title: "D", content: "D" },
+          ],
+        });
+        expect(result.newCount).toBe(4);
+      });
+
+      it("resolves pre-existing scheme twins to the oldest row on every fetch", async () => {
+        // Rows duplicated before this matching existed: both spellings are
+        // stored. Every later fetch must update the same (oldest) row, whichever
+        // spelling arrives, so the newer twin quietly ages out.
+        const feed = await createTestFeed();
+        const makeParsed = (guid: string): ParsedEntry => ({ guid, title: "Post", content: "A" });
+        const older = await createEntry(
+          feed.id,
+          "web",
+          makeParsed("http://example.com/?p=1"),
+          generateContentHash(makeParsed("http://example.com/?p=1")),
+          new Date()
+        );
+        // UUIDv7 ids only order across milliseconds; real twins are minutes apart.
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        const newer = await createEntry(
+          feed.id,
+          "web",
+          makeParsed("https://example.com/?p=1"),
+          generateContentHash(makeParsed("https://example.com/?p=1")),
+          new Date()
+        );
+        expect(older.id < newer.id).toBe(true);
+
+        for (const guid of ["https://example.com/?p=1", "http://example.com/?p=1"]) {
+          const result = await processEntries(feed.id, feed.type, {
+            title: "T",
+            items: [{ guid, title: "Post", content: "edited" }],
+          });
+          expect(result.newCount).toBe(0);
+          expect(result.entries[0].id).toBe(older.id);
+        }
+      });
+
+      it("skips the fanout for an entry a previous feed already delivered under the other scheme", async () => {
+        // Redirect dedupe: after a feed merge, entries attributed to this
+        // subscription under the old feed_id suppress re-delivery of the same
+        // guid from the new feed. A move to https usually re-spells the guids
+        // too, so the comparison has to be scheme-insensitive.
+        const oldFeed = await createTestFeed();
+        const newFeed = await createTestFeed();
+        const userId = await createTestUser({ emailPrefix: "redirect" });
+        const subscriptionId = await createTestSubscription(userId, newFeed.id);
+
+        const oldParsed: ParsedEntry = {
+          guid: "http://example.com/?p=1",
+          title: "P",
+          content: "A",
+        };
+        const oldEntry = await createEntry(
+          oldFeed.id,
+          "web",
+          oldParsed,
+          generateContentHash(oldParsed),
+          new Date()
+        );
+        await db.insert(userEntries).values({
+          userId,
+          entryId: oldEntry.id,
+          subscriptionId,
+          read: true,
+        });
+
+        const result = await processEntries(newFeed.id, newFeed.type, {
+          title: "T",
+          items: [
+            { guid: "https://example.com/?p=1", title: "P", content: "A" },
+            { guid: "https://example.com/?p=2", title: "Q", content: "B" },
+          ],
+        });
+        expect(result.newCount).toBe(2);
+
+        const rows = await db
+          .select({ entryId: userEntries.entryId })
+          .from(userEntries)
+          .where(eq(userEntries.userId, userId));
+        const ids = rows.map((r) => r.entryId);
+        expect(ids).toContain(oldEntry.id);
+        expect(ids).toContain(result.entries[1].id);
+        expect(ids).not.toContain(result.entries[0].id);
+      });
+    });
+
     it("publishes new_entry only after the user_entries fanout", async () => {
       // Regression test: the SSE endpoint computes each subscriber's absolute
       // unread counts from visible_entries the moment a new_entry event

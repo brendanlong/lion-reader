@@ -15,6 +15,7 @@ import { publishNewEntry, publishEntryUpdatedFromEntry } from "../redis/pubsub";
 import { toNewEntryListData, type NewEntryListDataSource } from "@/lib/events/schemas";
 import { deriveEntryUrl, type ParsedEntry, type ParsedFeed } from "./types";
 import { cleanEntryContent } from "./content-utils";
+import { canonicalGuid, canonicalGuidSql, guidMatchCandidates } from "./guid-identity";
 import { logger } from "@/lib/logger";
 
 /**
@@ -346,7 +347,7 @@ interface CachedEntryInfo {
  * @param feedType - The feed type
  * @param parsedEntry - The parsed entry from the feed
  * @param fetchedAt - Timestamp when the entry was fetched
- * @param existingEntriesMap - Map of GUID to existing entry info
+ * @param existingEntriesMap - Map of canonical GUID (`canonicalGuid`) to existing entry info
  * @param feedUrl - The URL of the feed (for feed-specific cleaning)
  * @returns Processing result for this entry
  */
@@ -360,10 +361,13 @@ async function processEntryWithCache(
   previousLastFetchedAt?: Date | null
 ): Promise<ProcessedEntry> {
   const guid = deriveGuid(parsedEntry);
+  const guidKey = canonicalGuid(guid);
   const contentHash = generateContentHash(parsedEntry);
 
-  // Use cached lookup instead of database query
-  const existing = existingEntriesMap.get(guid);
+  // Use cached lookup instead of database query. Keyed on the canonical guid so
+  // an http/https re-spelling of a known guid resolves to the existing row
+  // (#1535); the row keeps whatever spelling it was created with.
+  const existing = existingEntriesMap.get(guidKey);
 
   if (!existing) {
     // New entry - create it.
@@ -381,7 +385,7 @@ async function processEntryWithCache(
     );
 
     // Add to cache so duplicate GUIDs in same feed don't create duplicates
-    existingEntriesMap.set(guid, { id: entry.id, guid, contentHash });
+    existingEntriesMap.set(guidKey, { id: entry.id, guid, contentHash });
 
     return {
       id: entry.id,
@@ -400,7 +404,7 @@ async function processEntryWithCache(
     const entry = await updateEntryContent(existing.id, parsedEntry, contentHash, feedUrl);
 
     // Update cache with new hash
-    existingEntriesMap.set(guid, { ...existing, contentHash });
+    existingEntriesMap.set(guidKey, { ...existing, contentHash });
 
     // Publish entry_updated event for real-time updates (safe to publish here:
     // subscribers' user_entries rows already exist for a previously-seen entry).
@@ -520,7 +524,9 @@ export async function createUserEntriesForFeed(feedId: string, entryIds: string[
   //    with the same GUID from one of their previous feeds (redirect
   //    deduplication). "Previous feeds" = entries already attributed to this
   //    subscription (user_entries.subscription_id) under a different feed_id
-  //    — merge-history attribution stamped by the feed-merge job.
+  //    — merge-history attribution stamped by the feed-merge job. GUIDs are
+  //    compared scheme-insensitively (see guid-identity.ts): a feed that moved
+  //    to https often re-spells its guids at the same time.
   // 3. Uses ON CONFLICT DO NOTHING for idempotency
   // We use db.execute() with raw SQL because Drizzle's INSERT...SELECT always
   // generates column lists for all table columns. Since we only want to insert
@@ -542,7 +548,7 @@ export async function createUserEntriesForFeed(feedId: string, entryIds: string[
           WHERE ue_existing.user_id = s.user_id
             AND ue_existing.subscription_id = s.id
             AND e_prev.feed_id != s.feed_id
-            AND e_prev.guid = e.guid
+            AND ${sql.raw(canonicalGuidSql("e_prev.guid"))} = ${sql.raw(canonicalGuidSql("e.guid"))}
         )
       ON CONFLICT DO NOTHING
     `);
@@ -591,16 +597,21 @@ export async function processEntries(
     alwaysUpdateVisibility = false,
   } = options;
 
-  // Derive GUIDs from all items first, so we only query for entries we need
+  // Derive GUIDs from all items first, so we only query for entries we need.
+  // Matching is http/https-insensitive (#1535), so look up every spelling a
+  // stored row might carry — exact values, so the (feed_id, guid) unique index
+  // serves the query — and key the cache on the canonical form.
   const guidsToCheck: string[] = [];
+  const currentGuidKeys = new Set<string>();
   for (const item of feed.items) {
     try {
-      guidsToCheck.push(deriveGuid(item));
+      const guid = deriveGuid(item);
+      guidsToCheck.push(...guidMatchCandidates(guid));
+      currentGuidKeys.add(canonicalGuid(guid));
     } catch {
       // Invalid entry without GUID - will be skipped during processing
     }
   }
-  const currentGuidsSet = new Set(guidsToCheck);
 
   // Batch load only the entries we're looking for (by GUID) to avoid N+1 queries
   // This is much more efficient than querying per-entry, and doesn't load
@@ -617,7 +628,17 @@ export async function processEntries(
           .where(and(eq(entries.feedId, feedId), inArray(entries.guid, guidsToCheck)))
       : [];
 
-  const existingEntriesMap = new Map(existingEntries.map((e) => [e.guid, e]));
+  // Rows duplicated before scheme-insensitive matching existed can share a key;
+  // resolve to the oldest (UUIDv7 ids sort by creation time) so every fetch
+  // updates the same row and the newer twin ages out of the feed's generation.
+  const existingEntriesMap = new Map<string, CachedEntryInfo>();
+  for (const existing of existingEntries) {
+    const key = canonicalGuid(existing.guid);
+    const current = existingEntriesMap.get(key);
+    if (!current || existing.id < current.id) {
+      existingEntriesMap.set(key, existing);
+    }
+  }
 
   const results: ProcessedEntry[] = [];
   let newCount = 0;
@@ -660,7 +681,8 @@ export async function processEntries(
 
   // Detect entries that disappeared from the feed (web feeds only): entries that
   // were visible (last_seen_at >= previousLastEntriesUpdatedAt) but whose guid is
-  // no longer in the current feed.
+  // no longer in the current feed (compared scheme-insensitively, so a feed that
+  // flips http/https between polls doesn't report its whole contents gone).
   let disappearedCount = 0;
   const isFetchedType = feedType === "web";
 
@@ -681,7 +703,7 @@ export async function processEntries(
       );
 
     for (const entry of previouslyCurrentEntries) {
-      if (!currentGuidsSet.has(entry.guid)) {
+      if (!currentGuidKeys.has(canonicalGuid(entry.guid))) {
         disappearedCount++;
       }
     }
