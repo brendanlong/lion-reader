@@ -50,7 +50,7 @@ Because the row stays `active` with its `expires_at` unadvanced, the hourly rene
 
 ## Entry identity
 
-Entries are keyed on `(feed_id, guid)` (`deriveGuid`: guid → link → title), but matching is **http/https-insensitive** — `src/server/feed/guid-identity.ts` owns the rule and says why (WordPress.com polls and hub pushes spell the same `?p=N` guid with different schemes, issue #1535). Every place that compares guids across rows — the `processEntries` lookup and cache, disappeared-entry detection, and the redirect-dedupe join in `createUserEntriesForFeed` — must go through that module's helpers; a raw `guid = guid` comparison reintroduces the duplicates. The stored guid is never rewritten to a canonical form. Nothing beyond the scheme is normalized: host, path, query and trailing-slash differences are real differences (planet feeds carry `http://a/?p=1` and `http://b/?p=1` as distinct items), and a URL-based fallback for feeds that genuinely rotate guids is deliberately not attempted — see the survey on #1535 for the ways it collapses link blogs, digest feeds and single-link podcast feeds.
+Entries are keyed on `(feed_id, guid)` (`deriveGuid`: guid → link → title), but on the feed-ingest path guids are compared **http/https-insensitively** and the stored guid is never rewritten — `src/server/feed/guid-identity.ts` owns the rule and says why. Any comparison of feed-entry guids across rows must go through its helpers; a raw `guid = guid` reintroduces the duplicates of issue #1535.
 
 ## Sanitization on the fetch path
 

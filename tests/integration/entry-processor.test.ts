@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { entries, feeds, subscriptions, userEntries, users } from "../../src/server/db/schema";
 import { createPubSubSubscription, getFeedEventsChannel } from "../../src/server/redis/pubsub";
@@ -20,6 +20,7 @@ import {
   processEntries,
   isBackfilledEntry,
 } from "../../src/server/feed/entry-processor";
+import { canonicalGuid, canonicalGuidSql } from "../../src/server/feed/guid-identity";
 import type { ParsedEntry, ParsedFeed } from "../../src/server/feed/types";
 import {
   createTestSubscription,
@@ -906,6 +907,71 @@ describe("Entry Processor", () => {
         expect(result.hasChanges).toBe(false);
       });
 
+      it("computes the same key in SQL as in TypeScript", async () => {
+        const guids = [
+          "http://example.com/?p=1",
+          "https://example.com/?p=1",
+          "HTTP://example.com/?p=1",
+          "example.com/?p=1",
+          "tag:x,2026:http://example.com/a",
+          "http://example.com/a\nhttp://example.com/b",
+        ];
+        const values = sql.join(
+          guids.map((g) => sql`(${g})`),
+          sql`, `
+        );
+        const rows = await db.execute<{ guid: string; key: string }>(sql`
+          SELECT g AS guid, ${sql.raw(canonicalGuidSql("g"))} AS key
+          FROM (VALUES ${values}) AS t(g)
+        `);
+        expect(rows.rows).toHaveLength(guids.length);
+        for (const row of rows.rows) {
+          expect(row.key).toBe(canonicalGuid(row.guid));
+        }
+      });
+
+      it("treats a scheme flip of both guid and link as unchanged", async () => {
+        // WordPress.com is documented to flip the scheme of <link> as well as
+        // <guid> between fetches; that must not register as an update on every
+        // poll. Same for an entry whose URL is its guid (no <link>).
+        const feed = await createTestFeed();
+        await processEntries(feed.id, feed.type, {
+          title: "T",
+          items: [
+            {
+              guid: "http://example.com/?p=1",
+              link: "http://example.com/2024/06/post/",
+              title: "P",
+              content: "A",
+            },
+            { guid: "http://example.com/?p=2", title: "Q", content: "B" },
+          ],
+        });
+
+        const result = await processEntries(feed.id, feed.type, {
+          title: "T",
+          items: [
+            {
+              guid: "https://example.com/?p=1",
+              link: "https://example.com/2024/06/post/",
+              title: "P",
+              content: "A",
+            },
+            { guid: "https://example.com/?p=2", title: "Q", content: "B" },
+          ],
+        });
+        expect(result.newCount).toBe(0);
+        expect(result.updatedCount).toBe(0);
+        expect(result.unchangedCount).toBe(2);
+        expect(result.hasChanges).toBe(false);
+
+        const rows = await db.select().from(entries).where(eq(entries.feedId, feed.id));
+        expect(rows.map((r) => r.url).sort()).toEqual([
+          "http://example.com/2024/06/post/",
+          "http://example.com/?p=2",
+        ]);
+      });
+
       it("keeps guids that differ beyond the scheme distinct", async () => {
         const feed = await createTestFeed();
 
@@ -916,9 +982,10 @@ describe("Entry Processor", () => {
             { guid: "example.com/?p=1", title: "B", content: "B" },
             { guid: "http://other.example.com/?p=1", title: "C", content: "C" },
             { guid: "http://example.com/?p=1/", title: "D", content: "D" },
+            { guid: "HTTP://example.com/?p=1", title: "E", content: "E" },
           ],
         });
-        expect(result.newCount).toBe(4);
+        expect(result.newCount).toBe(5);
       });
 
       it("resolves pre-existing scheme twins to the oldest row on every fetch", async () => {

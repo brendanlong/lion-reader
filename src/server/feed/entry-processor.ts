@@ -111,6 +111,13 @@ export interface ProcessEntriesOptions {
  * without touching its text was silently ignored (see `processEntryWithCache`,
  * which only updates on a hash change).
  *
+ * The URL is hashed with its http/https scheme canonicalized (`canonicalGuid`):
+ * a feed that flips the scheme of its links between polls and hub pushes
+ * (issue #1535) would otherwise register an update — and re-stamp the whole
+ * feed, bump `updated_at` and re-ship `entry_updated` — on every fetch. A pure
+ * scheme flip therefore leaves the stored URL as first seen; any other URL
+ * change still propagates.
+ *
  * `pubDate` is deliberately NOT hashed: `updateEntryContent` never rewrites
  * `published_at` because it is denormalized into `user_entries.published_or_fetched_at`
  * (the frozen timeline sort key, see src/server/CLAUDE.md), so propagating a date change on
@@ -131,7 +138,7 @@ export function generateContentHash(entry: ParsedEntry): string {
   // description edit would never propagate to the stored entry.
   const content = entry.content ?? entry.summary ?? entry.mediaDescription ?? "";
   const author = entry.author ?? "";
-  const url = deriveEntryUrl(entry) ?? "";
+  const url = canonicalGuid(deriveEntryUrl(entry) ?? "");
 
   const hashInput = [title, content, author, url].join("\n");
 
@@ -601,12 +608,14 @@ export async function processEntries(
   // Matching is http/https-insensitive (#1535), so look up every spelling a
   // stored row might carry — exact values, so the (feed_id, guid) unique index
   // serves the query — and key the cache on the canonical form.
-  const guidsToCheck: string[] = [];
+  const guidsToCheck = new Set<string>();
   const currentGuidKeys = new Set<string>();
   for (const item of feed.items) {
     try {
       const guid = deriveGuid(item);
-      guidsToCheck.push(...guidMatchCandidates(guid));
+      for (const candidate of guidMatchCandidates(guid)) {
+        guidsToCheck.add(candidate);
+      }
       currentGuidKeys.add(canonicalGuid(guid));
     } catch {
       // Invalid entry without GUID - will be skipped during processing
@@ -617,7 +626,7 @@ export async function processEntries(
   // This is much more efficient than querying per-entry, and doesn't load
   // thousands of historical entries we don't need
   const existingEntries =
-    guidsToCheck.length > 0
+    guidsToCheck.size > 0
       ? await db
           .select({
             id: entries.id,
@@ -625,12 +634,14 @@ export async function processEntries(
             contentHash: entries.contentHash,
           })
           .from(entries)
-          .where(and(eq(entries.feedId, feedId), inArray(entries.guid, guidsToCheck)))
+          .where(and(eq(entries.feedId, feedId), inArray(entries.guid, [...guidsToCheck])))
       : [];
 
   // Rows duplicated before scheme-insensitive matching existed can share a key;
   // resolve to the oldest (UUIDv7 ids sort by creation time) so every fetch
-  // updates the same row and the newer twin ages out of the feed's generation.
+  // updates the same row. The other twin is simply never touched again: it
+  // drops out of the generation new subscribers see, but existing subscribers
+  // keep their row for it.
   const existingEntriesMap = new Map<string, CachedEntryInfo>();
   for (const existing of existingEntries) {
     const key = canonicalGuid(existing.guid);
