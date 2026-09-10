@@ -157,7 +157,7 @@ export interface UseKeyboardShortcutsResult {
  * @example
  * ```tsx
  * function EntryListPage() {
- *   const [openEntryId, setOpenEntryId] = useState<string | null>(null);
+ *   const { openEntryId, setOpenEntryId, closeEntry } = useEntryUrlState();
  *
  *   const {
  *     selectedEntryId,
@@ -165,7 +165,7 @@ export interface UseKeyboardShortcutsResult {
  *   } = useKeyboardShortcuts({
  *     entries,
  *     onOpenEntry: setOpenEntryId,
- *     onClose: () => setOpenEntryId(null),
+ *     onClose: closeEntry,
  *     isEntryOpen: !!openEntryId,
  *     onToggleRead: (id, read) => markReadMutation.mutate({ ids: [id], read: !read }),
  *     onToggleStar: (id, starred) => starred ? unstarMutation.mutate({ id }) : starMutation.mutate({ id }),

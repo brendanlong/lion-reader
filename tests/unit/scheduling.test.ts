@@ -25,11 +25,6 @@ import type { CacheControl } from "../../src/server/feed/cache-headers";
 function createCacheControl(overrides: Partial<CacheControl> = {}): CacheControl {
   return {
     noStore: false,
-    noCache: false,
-    private: false,
-    public: false,
-    mustRevalidate: false,
-    immutable: false,
     ...overrides,
   };
 }
@@ -370,7 +365,7 @@ describe("calculateNextFetch", () => {
 
     it("uses default interval when cacheControl has no max-age", () => {
       const result = calculateNextFetch({
-        cacheControl: createCacheControl({ public: true }), // no max-age
+        cacheControl: createCacheControl(), // no max-age
         now: fixedNow,
         randomSource: noJitter,
       });
@@ -769,7 +764,7 @@ describe("real-world scenarios", () => {
 
   it("typical blog with 2 hour cache", () => {
     const result = calculateNextFetch({
-      cacheControl: createCacheControl({ maxAge: 7200, public: true }),
+      cacheControl: createCacheControl({ maxAge: 7200 }),
       now: fixedNow,
       randomSource: noJitter,
     });
@@ -780,7 +775,7 @@ describe("real-world scenarios", () => {
 
   it("high-frequency news feed with 5 minute cache gets clamped to 10 min", () => {
     const result = calculateNextFetch({
-      cacheControl: createCacheControl({ maxAge: 300, public: true }),
+      cacheControl: createCacheControl({ maxAge: 300 }),
       now: fixedNow,
       randomSource: noJitter,
     });
@@ -791,7 +786,7 @@ describe("real-world scenarios", () => {
 
   it("cache headers allow 15-minute polling when server specifies it", () => {
     const result = calculateNextFetch({
-      cacheControl: createCacheControl({ maxAge: 900, public: true }), // 15 minutes
+      cacheControl: createCacheControl({ maxAge: 900 }), // 15 minutes
       now: fixedNow,
       randomSource: noJitter,
     });
@@ -813,7 +808,7 @@ describe("real-world scenarios", () => {
 
   it("infrequently updated feed with 1 day cache", () => {
     const result = calculateNextFetch({
-      cacheControl: createCacheControl({ maxAge: 86400, public: true }),
+      cacheControl: createCacheControl({ maxAge: 86400 }),
       now: fixedNow,
       randomSource: noJitter,
     });
