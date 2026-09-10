@@ -5,18 +5,12 @@
  * This route handles the browser redirect from Google after authentication.
  *
  * This route handles three modes (stored in Redis with PKCE data):
- * - "login": Normal OAuth login/signup flow
- * - "link": Linking Google to existing account (from settings)
- * - "save": Incremental authorization for Google Docs (from save page)
- *
- * For login mode:
- * 1. Creates or links user account
- * 2. Creates a session and sets the session cookie
- * 3. Redirects to /all
- *
- * For link/save modes:
- * 1. Updates the existing OAuth account with new tokens/scopes
- * 2. Redirects to appropriate page (no new session needed - user already logged in)
+ * - "login": Normal OAuth login/signup flow — creates or links the user account,
+ *   creates a session and sets the session cookie. This is also where the
+ *   settings page's "Link" button lands (its auth URL is mode "login").
+ * - "save" / "extension-save": incremental authorization for Google Docs. The
+ *   user is already logged in, so these only refresh the existing OAuth account's
+ *   tokens and scopes — no new session.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -91,8 +85,8 @@ export async function GET(request: NextRequest) {
       return createErrorRedirect(appUrl, "invalid_state");
     }
 
-    // Handle save/link/extension-save modes - user is already logged in, just update OAuth account
-    if (mode === "save" || mode === "link" || mode === "extension-save") {
+    // Incremental authorization - user is already logged in, just update OAuth account
+    if (mode === "save" || mode === "extension-save") {
       // Find existing OAuth account for this Google user
       const existingOAuthAccount = await db
         .select({ id: oauthAccounts.id, userId: oauthAccounts.userId })
@@ -106,19 +100,16 @@ export async function GET(request: NextRequest) {
         .limit(1);
 
       if (existingOAuthAccount.length === 0) {
-        // This shouldn't happen for save/extension-save mode (user must have Google linked)
-        // For link mode, this is also unexpected since we check before starting the flow
-        console.error("OAuth account not found for save/link/extension-save mode");
+        // Shouldn't happen: both modes require the user to have Google linked.
+        console.error("OAuth account not found for save/extension-save mode");
         let errorRedirect: string;
         if (mode === "extension-save" && returnUrl) {
           // Add error to the return URL
           const url = new URL(returnUrl, appUrl);
           url.searchParams.set("error", "callback_failed");
           errorRedirect = url.pathname + url.search;
-        } else if (mode === "save") {
-          errorRedirect = "/save?error=callback_failed";
         } else {
-          errorRedirect = "/settings?link_error=callback_failed";
+          errorRedirect = "/save?error=callback_failed";
         }
         const response = NextResponse.redirect(`${appUrl}${errorRedirect}`);
         clearOAuthStateCookie(response);
@@ -137,15 +128,11 @@ export async function GET(request: NextRequest) {
         .where(eq(oauthAccounts.id, existingOAuthAccount[0].id));
 
       // Redirect based on mode (no session cookie needed - user already logged in)
-      let response: NextResponse;
-      if (mode === "extension-save" && returnUrl) {
-        // Redirect back to the extension save page with the original URL
-        response = NextResponse.redirect(`${appUrl}${returnUrl}`);
-      } else if (mode === "save") {
-        response = NextResponse.redirect(`${appUrl}/save`);
-      } else {
-        response = NextResponse.redirect(`${appUrl}/settings?linked=google`);
-      }
+      const response =
+        mode === "extension-save" && returnUrl
+          ? // Redirect back to the extension save page with the original URL
+            NextResponse.redirect(`${appUrl}${returnUrl}`)
+          : NextResponse.redirect(`${appUrl}/save`);
       // Clear the one-time state binding cookie (issue #1263).
       clearOAuthStateCookie(response);
       return response;

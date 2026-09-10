@@ -66,7 +66,6 @@ export function OAuthSignInButton({
       }
 
       if (result.data) {
-        localStorage.setItem("oauth_state", result.data.state);
         window.location.href = result.data.url;
       }
     } catch (error) {
