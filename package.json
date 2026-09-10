@@ -24,6 +24,7 @@
     "lint": "eslint . --max-warnings 0",
     "lint:fix": "eslint . --fix",
     "lint:native": "bash scripts/cargo-native.sh clippy --workspace --all-targets -- -D warnings",
+    "format:native": "bash scripts/cargo-native.sh fmt --all",
     "check:colors": "node scripts/check-raw-colors.mjs",
     "knip": "knip --include files,dependencies,devDependencies,exports",
     "knip:production": "knip -c knip.production.json --production --workspace . --tags=-testonly --include files,exports,types",
@@ -59,6 +60,9 @@
     ],
     "*.{json,md,css,scss,yaml,yml,html}": [
       "prettier --write"
+    ],
+    "*.rs": [
+      "bash scripts/rustfmt-staged.sh"
     ]
   },
   "dependencies": {
