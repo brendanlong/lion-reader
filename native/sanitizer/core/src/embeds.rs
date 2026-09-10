@@ -8,10 +8,9 @@
 //! allow-list of query params. The sanitizer then forces a per-provider
 //! `sandbox`/`allow` regardless of what the feed supplied.
 //!
-//! This is the only copy of the rules. TS callers that synthesize embeds
-//! (`src/server/html/youtube-embed.ts`) build their iframes from
-//! `normalize_embed`'s output via the `normalizeEmbed` N-API export rather
-//! than restating the hosts, paths and attributes here.
+//! This is the only copy of those rules: TS callers that synthesize an embed
+//! read them back out of the `normalizeEmbed` N-API export instead of keeping
+//! their own copy (see `src/server/html/youtube-embed.ts`).
 
 use regex::Regex;
 use std::sync::LazyLock;

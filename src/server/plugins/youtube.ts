@@ -4,7 +4,11 @@ import { Parser } from "htmlparser2";
 import { plainTextToHtml } from "@/server/http/html";
 import { fetchHtmlPage } from "@/server/http/fetch";
 import { logger } from "@/lib/logger";
-import { buildYouTubeEmbedIframe, extractYouTubeVideoId } from "@/server/html/youtube-embed";
+import {
+  buildYouTubeEmbedIframe,
+  extractYouTubeVideoId,
+  YOUTUBE_PLUGIN_HOSTS,
+} from "@/server/html/youtube-embed";
 
 /**
  * Minimum polling interval for YouTube feeds: 1 hour.
@@ -97,13 +101,13 @@ function extractYouTubeVideoMetadata(html: string): YouTubeVideoMetadata {
 export function synthesizeYouTubeSavedArticle(
   videoId: string,
   watchPageHtml: string | null
-): SavedArticleContent | null {
+): SavedArticleContent {
   const metadata = watchPageHtml
     ? extractYouTubeVideoMetadata(watchPageHtml)
     : { title: null, author: null, description: null };
-  const iframe = buildYouTubeEmbedIframe(videoId, metadata.title);
-  // No embed means no reason to prefer our synthesis over a generic fetch.
-  if (!iframe) return null;
+  // A rejected embed still beats the generic path here, which would run
+  // Readability over the watch page and store a footer scrape.
+  const iframe = buildYouTubeEmbedIframe(videoId, metadata.title) ?? "";
   const description = metadata.description ? plainTextToHtml(metadata.description) : "";
   return {
     html: iframe + description,
@@ -145,7 +149,7 @@ export function synthesizeYouTubeSavedArticle(
  */
 export const youtubePlugin: UrlPlugin = {
   name: "youtube",
-  hosts: ["www.youtube.com", "youtube.com", "m.youtube.com", "youtu.be"],
+  hosts: YOUTUBE_PLUGIN_HOSTS,
 
   matchUrl(url: URL): boolean {
     // Feed URLs (handled by the `feed` capability).
@@ -181,10 +185,11 @@ export const youtubePlugin: UrlPlugin = {
             : null);
         if (!videoId) return null;
 
-        const iframe = buildYouTubeEmbedIframe(videoId, entry.title);
-        if (!iframe) return null;
+        const iframe = buildYouTubeEmbedIframe(videoId, entry.title) ?? "";
         const description = entry.mediaDescription ? plainTextToHtml(entry.mediaDescription) : "";
-        return iframe + description;
+        // These feeds carry no body of their own, so an empty synthesis has to
+        // read as "nothing to show", not as an empty entry body.
+        return iframe + description || null;
       },
     },
 
