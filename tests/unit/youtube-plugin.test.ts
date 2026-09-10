@@ -21,17 +21,6 @@ import type { ParsedEntry } from "@/server/feed/types";
 /** What the sanitizer forces on a YouTube embed — the single source of truth. */
 const YOUTUBE_EMBED = normalizeEmbed("https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ")!;
 
-/**
- * The synthesis only returns null when the sanitizer rejects the embed, which
- * the round-trip tests below cover directly; unwrap it here so the metadata
- * assertions stay readable.
- */
-function synthesizeSavedArticle(videoId: string, watchPageHtml: string | null) {
-  const result = synthesizeYouTubeSavedArticle(videoId, watchPageHtml);
-  expect(result).not.toBeNull();
-  return result!;
-}
-
 describe("youtubePlugin.matchUrl", () => {
   it("matches channel, playlist, and legacy user feed URLs", () => {
     expect(
@@ -196,7 +185,7 @@ describe("synthesizeYouTubeSavedArticle", () => {
   };
 
   it("synthesizes an embed plus title, author, and full description", () => {
-    const result = synthesizeSavedArticle(
+    const result = synthesizeYouTubeSavedArticle(
       "dQw4w9WgXcQ",
       watchPageHtml({
         title: "Rick Astley - Never Gonna Give You Up",
@@ -218,7 +207,7 @@ describe("synthesizeYouTubeSavedArticle", () => {
   });
 
   it("falls back to og:description when no player JSON is present", () => {
-    const result = synthesizeSavedArticle(
+    const result = synthesizeYouTubeSavedArticle(
       "dQw4w9WgXcQ",
       watchPageHtml({ title: "Title", ogDescription: "A short description." })
     );
@@ -226,7 +215,7 @@ describe("synthesizeYouTubeSavedArticle", () => {
   });
 
   it("escapes an XSS attempt in the title attribute", () => {
-    const result = synthesizeSavedArticle(
+    const result = synthesizeYouTubeSavedArticle(
       "dQw4w9WgXcQ",
       watchPageHtml({ title: '"><script>alert(1)</script>' })
     );
@@ -234,7 +223,7 @@ describe("synthesizeYouTubeSavedArticle", () => {
   });
 
   it("produces a working embed with no description when metadata is missing", () => {
-    const result = synthesizeSavedArticle("dQw4w9WgXcQ", "<html></html>");
+    const result = synthesizeYouTubeSavedArticle("dQw4w9WgXcQ", "<html></html>");
     expect(result.html).toContain("/embed/dQw4w9WgXcQ");
     expect(result.html).not.toContain("<p>");
     expect(result.title).toBeNull();
@@ -242,7 +231,7 @@ describe("synthesizeYouTubeSavedArticle", () => {
   });
 
   it("produces a titleless embed when the watch page couldn't be fetched", () => {
-    const result = synthesizeSavedArticle("dQw4w9WgXcQ", null);
+    const result = synthesizeYouTubeSavedArticle("dQw4w9WgXcQ", null);
     expect(result.html).toBe(
       `<iframe src="${YOUTUBE_EMBED.src}"` +
         ' width="560" height="315"' +
@@ -254,19 +243,18 @@ describe("synthesizeYouTubeSavedArticle", () => {
 });
 
 /**
- * The plugin stores raw HTML, and every read re-runs the sanitizer over it, so
- * an embed the sanitizer would reject or rewrite is an embed users never see.
- * This is the guard the two allow-lists (this synthesis and
- * native/sanitizer/core/src/embeds.rs) can't drift past.
+ * The plugin stores raw HTML and every read re-runs the sanitizer over it, so
+ * an embed the sanitizer drops is an embed users never see. These are the
+ * guard `src/server/html/CLAUDE.md` promises: a tightening of the Rust
+ * allow-list that would blank YouTube entries fails here instead.
  */
 describe("synthesized embeds survive the sanitizer", () => {
   it("keeps the src, sandbox, allow, and player attributes intact", () => {
-    const raw = synthesizeSavedArticle("dQw4w9WgXcQ", null).html;
+    const raw = synthesizeYouTubeSavedArticle("dQw4w9WgXcQ", null).html;
     const { html } = sanitizeEntryHtml(raw);
 
-    // The sanitizer rewrites the src and forces sandbox/allow, so the
-    // synthesized attributes have to already be the ones it would impose —
-    // otherwise the stored HTML and what readers see silently disagree.
+    // Redundant while the builder derives these from `normalizeEmbed` — which
+    // is the point: they fail the moment someone hand-writes them back in.
     expect(raw).toContain(`src="${YOUTUBE_EMBED.src}"`);
     expect(raw).toContain(`sandbox="${YOUTUBE_EMBED.sandbox}"`);
     expect(raw).toContain(`allow="${YOUTUBE_EMBED.allow}"`);
