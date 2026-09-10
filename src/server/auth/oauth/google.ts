@@ -9,7 +9,7 @@
  */
 
 import * as client from "openid-client";
-import { getGoogleConfig, getRedirectUri, isProviderEnabled } from "./config";
+import { getGoogleConfig, getRedirectUri, isProviderEnabled, type OAuthMode } from "./config";
 import { accessTokenExpiresAt, exchangeAuthorizationCode } from "./token-exchange";
 import { redis } from "@/server/redis";
 
@@ -90,7 +90,7 @@ export interface GoogleAuthResult {
   /** OAuth scopes that were granted */
   scopes: string[];
   /** OAuth flow mode */
-  mode: OAuthMode;
+  mode: GoogleOAuthMode;
   /** Optional return URL for extension-save mode */
   returnUrl?: string;
   /** Optional invite token for new user registration */
@@ -109,9 +109,11 @@ function getPkceKey(state: string): string {
 }
 
 /**
- * OAuth flow mode - determines redirect behavior after callback
+ * Google adds two incremental-authorization modes to the shared ones: both
+ * re-authorize an already-linked account for the Docs scopes and only refresh
+ * its stored tokens, so neither signs anyone in.
  */
-export type OAuthMode = "login" | "save" | "extension-save";
+export type GoogleOAuthMode = OAuthMode | "save" | "extension-save";
 
 /**
  * Data stored in Redis for PKCE verification
@@ -119,7 +121,7 @@ export type OAuthMode = "login" | "save" | "extension-save";
 interface PkceData {
   verifier: string;
   scopes: string[];
-  mode: OAuthMode;
+  mode: GoogleOAuthMode;
   /** Optional return URL for modes that need to redirect back to a specific page */
   returnUrl?: string;
   /** Optional invite token for new user registration */
@@ -129,24 +131,9 @@ interface PkceData {
 /**
  * Stores a PKCE code verifier, scopes, and mode in Redis
  * The verifier is associated with the state parameter
- *
- * @param state - The OAuth state parameter
- * @param codeVerifier - The PKCE code verifier
- * @param scopes - The OAuth scopes being requested
- * @param mode - The OAuth flow mode (login, save, or extension-save)
- * @param returnUrl - Optional return URL for extension-save mode
- * @param inviteToken - Optional invite token for new user registration
  */
-async function storePkceVerifier(
-  state: string,
-  codeVerifier: string,
-  scopes: string[],
-  mode: OAuthMode,
-  returnUrl?: string,
-  inviteToken?: string
-): Promise<void> {
+async function storePkceVerifier(state: string, data: PkceData): Promise<void> {
   const key = getPkceKey(state);
-  const data: PkceData = { verifier: codeVerifier, scopes, mode, returnUrl, inviteToken };
   await redis.setex(key, PKCE_VERIFIER_TTL_SECONDS, JSON.stringify(data));
 }
 
@@ -179,6 +166,17 @@ async function consumePkceVerifier(state: string): Promise<PkceData | null> {
 // Google OAuth Functions
 // ============================================================================
 
+export interface CreateGoogleAuthUrlOptions {
+  /** Extra scopes to request on top of the sign-in ones (incremental auth) */
+  additionalScopes?: string[];
+  /** What the callback should do with the result (defaults to "login") */
+  mode?: GoogleOAuthMode;
+  /** Where extension-save mode returns the user afterwards */
+  returnUrl?: string;
+  /** Invite token for new user registration */
+  inviteToken?: string;
+}
+
 /**
  * Generates a Google OAuth authorization URL with PKCE
  *
@@ -187,19 +185,13 @@ async function consumePkceVerifier(state: string): Promise<PkceData | null> {
  * 2. A PKCE code verifier (stored in Redis)
  * 3. The authorization URL with all parameters
  *
- * @param additionalScopes - Optional additional scopes to request (for incremental auth)
- * @param mode - The OAuth flow mode (defaults to "login")
- * @param returnUrl - Optional return URL for extension-save mode
- * @param inviteToken - Optional invite token for new user registration
  * @returns The authorization URL and state
  * @throws Error if Google OAuth is not configured
  */
 export async function createGoogleAuthUrl(
-  additionalScopes?: string[],
-  mode: OAuthMode = "login",
-  returnUrl?: string,
-  inviteToken?: string
+  options: CreateGoogleAuthUrlOptions = {}
 ): Promise<GoogleAuthUrlResult> {
+  const { additionalScopes, mode = "login", returnUrl, inviteToken } = options;
   const config = getGoogleConfig();
 
   if (!config) {
@@ -216,7 +208,7 @@ export async function createGoogleAuthUrl(
     : GOOGLE_SCOPES;
 
   // Store the code verifier, scopes, mode, return URL, and invite token for later use
-  await storePkceVerifier(state, codeVerifier, scopes, mode, returnUrl, inviteToken);
+  await storePkceVerifier(state, { verifier: codeVerifier, scopes, mode, returnUrl, inviteToken });
 
   // Create the authorization URL
   const url = client.buildAuthorizationUrl(config, {

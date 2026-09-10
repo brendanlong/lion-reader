@@ -9,7 +9,7 @@
  */
 
 import * as client from "openid-client";
-import { getDiscordConfig, getRedirectUri, isProviderEnabled } from "./config";
+import { getDiscordConfig, getRedirectUri, isProviderEnabled, type OAuthMode } from "./config";
 import { accessTokenExpiresAt, exchangeAuthorizationCode } from "./token-exchange";
 import { redis } from "@/server/redis";
 
@@ -81,6 +81,8 @@ export interface DiscordAuthResult {
   };
   /** Optional invite token for new user registration */
   inviteToken?: string;
+  /** What the callback should do with this identity */
+  mode: OAuthMode;
 }
 
 // ============================================================================
@@ -100,17 +102,15 @@ function getStateKey(state: string): string {
 interface StateData {
   /** Optional invite token for new user registration */
   inviteToken?: string;
+  /** Absent on a flow started by the previous release, which only had "login" */
+  mode?: OAuthMode;
 }
 
 /**
  * Stores state data in Redis
- *
- * @param state - The OAuth state parameter
- * @param inviteToken - Optional invite token for new user registration
  */
-async function storeState(state: string, inviteToken?: string): Promise<void> {
+async function storeState(state: string, data: StateData): Promise<void> {
   const key = getStateKey(state);
-  const data: StateData = { inviteToken };
   await redis.setex(key, STATE_TTL_SECONDS, JSON.stringify(data));
 }
 
@@ -143,6 +143,13 @@ async function consumeState(state: string): Promise<StateData | null> {
 // Discord OAuth Functions
 // ============================================================================
 
+export interface CreateDiscordAuthUrlOptions {
+  /** Invite token for new user registration */
+  inviteToken?: string;
+  /** What the callback should do with the result (defaults to "login") */
+  mode?: OAuthMode;
+}
+
 /**
  * Generates a Discord OAuth authorization URL
  *
@@ -150,11 +157,12 @@ async function consumeState(state: string): Promise<StateData | null> {
  * 1. A random state parameter for CSRF protection
  * 2. The authorization URL with all parameters
  *
- * @param inviteToken - Optional invite token for new user registration
  * @returns The authorization URL and state
  * @throws Error if Discord OAuth is not configured
  */
-export async function createDiscordAuthUrl(inviteToken?: string): Promise<DiscordAuthUrlResult> {
+export async function createDiscordAuthUrl(
+  options: CreateDiscordAuthUrlOptions = {}
+): Promise<DiscordAuthUrlResult> {
   const config = getDiscordConfig();
 
   if (!config) {
@@ -164,8 +172,8 @@ export async function createDiscordAuthUrl(inviteToken?: string): Promise<Discor
   // Generate state parameter
   const state = client.randomState();
 
-  // Store state and invite token for later use
-  await storeState(state, inviteToken);
+  // Store state, mode and invite token for later use
+  await storeState(state, { inviteToken: options.inviteToken, mode: options.mode ?? "login" });
 
   // Create the authorization URL (Discord doesn't require PKCE)
   const url = client.buildAuthorizationUrl(config, {
@@ -227,6 +235,7 @@ export async function validateDiscordCallback(
       expiresAt: accessTokenExpiresAt(tokens),
     },
     inviteToken: stateData.inviteToken,
+    mode: stateData.mode ?? "login",
   };
 }
 

@@ -27,7 +27,11 @@ import { createSession, revokeSessionByToken } from "@/server/auth/session";
 import { setSessionCookie, clearSessionCookie } from "@/server/auth/session-cookie";
 import { setOAuthStateCookie } from "@/server/auth/oauth/state-cookie";
 import { extractClientInfo } from "@/server/http/client-ip";
-import { getEnabledProviders } from "@/server/auth/oauth/config";
+import {
+  getEnabledProviders,
+  isProviderEnabled,
+  PROVIDER_LABELS,
+} from "@/server/auth/oauth/config";
 import {
   createGoogleAuthUrl,
   validateGoogleCallback,
@@ -422,12 +426,7 @@ export const authRouter = createTRPCRouter({
         throw errors.oauthProviderNotConfigured("Google");
       }
 
-      const result = await createGoogleAuthUrl(
-        undefined, // additionalScopes
-        "login", // mode
-        undefined, // returnUrl
-        input?.inviteToken // inviteToken
-      );
+      const result = await createGoogleAuthUrl({ inviteToken: input?.inviteToken });
 
       // Bind the state to this browser so the callback can't be replayed against
       // another user (login CSRF, issue #1263).
@@ -551,7 +550,7 @@ export const authRouter = createTRPCRouter({
         throw errors.oauthProviderNotConfigured("Apple");
       }
 
-      const result = await createAppleAuthUrl(input?.inviteToken);
+      const result = await createAppleAuthUrl({ inviteToken: input?.inviteToken });
 
       // Bind the state to this browser (login CSRF, issue #1263). Apple's callback is a
       // cross-site POST (form_post), so the cookie must be SameSite=None to be sent.
@@ -703,7 +702,7 @@ export const authRouter = createTRPCRouter({
         throw errors.oauthProviderNotConfigured("Discord");
       }
 
-      const result = await createDiscordAuthUrl(input?.inviteToken);
+      const result = await createDiscordAuthUrl({ inviteToken: input?.inviteToken });
 
       // Bind the state to this browser so the callback can't be replayed against
       // another user (login CSRF, issue #1263).
@@ -990,6 +989,40 @@ export const authRouter = createTRPCRouter({
     }),
 
   /**
+   * Start linking a social provider to the signed-in account.
+   *
+   * The URL carries mode "link", so the callback route attaches the provider
+   * account to *this* session's user instead of picking an account by the
+   * provider's email — the two addresses need not match (#1603).
+   *
+   * A mutation rather than a query because it has effects: it stores per-flow
+   * state in Redis and sets the one-time state binding cookie.
+   */
+  linkAuthUrl: protectedProcedure
+    .input(z.object({ provider: z.enum(["google", "apple", "discord"]) }))
+    .output(z.object({ url: z.string(), state: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const { provider } = input;
+
+      if (!isProviderEnabled(provider)) {
+        throw errors.oauthProviderNotConfigured(PROVIDER_LABELS[provider]);
+      }
+
+      const result =
+        provider === "google"
+          ? await createGoogleAuthUrl({ mode: "link" })
+          : provider === "apple"
+            ? await createAppleAuthUrl({ mode: "link" })
+            : await createDiscordAuthUrl({ mode: "link" });
+
+      // Bind the state to this browser (login CSRF, issue #1263). Apple's callback
+      // is a cross-site POST (form_post), so its cookie must be SameSite=None.
+      setOAuthStateCookie(ctx.resHeaders, result.state, provider === "apple" ? "none" : "lax");
+
+      return result;
+    }),
+
+  /**
    * Link Google OAuth to existing account.
    *
    * Similar to googleCallback but requires the user to be authenticated
@@ -1257,10 +1290,10 @@ export const authRouter = createTRPCRouter({
       // - documents.readonly for native Google Docs via Docs API
       // - drive.readonly for uploaded .docx files via Drive API
       // Pass mode: "save" so the callback knows to redirect back to /save
-      const result = await createGoogleAuthUrl(
-        [GOOGLE_DOCS_READONLY_SCOPE, GOOGLE_DRIVE_SCOPE],
-        "save"
-      );
+      const result = await createGoogleAuthUrl({
+        additionalScopes: [GOOGLE_DOCS_READONLY_SCOPE, GOOGLE_DRIVE_SCOPE],
+        mode: "save",
+      });
 
       // Bind the state to this browser so the callback can't be replayed against
       // another user (login CSRF, issue #1263).

@@ -27,6 +27,23 @@ import * as client from "openid-client";
  */
 export type OAuthProviderName = "google" | "apple" | "discord";
 
+/** Human-readable provider names, for messages the user reads. */
+export const PROVIDER_LABELS: Record<OAuthProviderName, string> = {
+  google: "Google",
+  apple: "Apple",
+  discord: "Discord",
+};
+
+/**
+ * What the callback route does with the provider identity it just verified.
+ *
+ * `login` picks the account from the provider's **email** (sign in, or sign up);
+ * `link` attaches the provider account to whoever the **session cookie** says is
+ * signed in, so the two addresses need not match (#1603). The mode travels in the
+ * per-flow Redis blob, since the redirect URI is one per provider.
+ */
+export type OAuthMode = "login" | "link";
+
 /**
  * Configuration for a single OAuth provider
  */

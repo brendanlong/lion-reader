@@ -10,18 +10,84 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useMemo, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
+import { clientReplace } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
 import { CheckIcon } from "@/components/ui/icons";
 import { LinkedAccounts } from "@/components/settings/LinkedAccounts";
+import { type OAuthProvider, providerNames } from "@/components/auth/oauth-helpers";
 import { KeyboardShortcutsSettings } from "@/components/settings/KeyboardShortcutsSettings";
 import { AboutSection } from "@/components/settings/AboutSection";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { TextLink } from "@/components/ui/text-link";
+
+function isOAuthProvider(provider: string): provider is OAuthProvider {
+  return provider in providerNames;
+}
+
+/**
+ * Handles OAuth link success/error messages from query params.
+ * Wrapped in Suspense because useSearchParams requires it.
+ */
+function OAuthMessages() {
+  const searchParams = useSearchParams();
+
+  // Handle link success/error query params
+  const linkedProvider = searchParams.get("linked");
+  const linkError = searchParams.get("link_error");
+
+  // Map error codes to user-friendly messages
+  const linkErrorMessage = useMemo(() => {
+    if (!linkError) return null;
+
+    const errorMessages: Record<string, string> = {
+      invalid_state: "Account linking failed. Please try again.",
+      callback_failed: "Failed to complete account linking. Please try again.",
+      provider_not_configured: "This provider is not available.",
+      already_linked: "This account is already linked to another user.",
+      provider_already_linked:
+        "A different account from this provider is already linked. Unlink it first.",
+      session_revoke_failed:
+        "Signing out your other devices failed. Review them under Settings → Sessions.",
+    };
+
+    return errorMessages[linkError] || "An error occurred while linking your account.";
+  }, [linkError]);
+
+  const linkSuccessMessage = useMemo(() => {
+    if (!linkedProvider) return null;
+    const providerName = isOAuthProvider(linkedProvider)
+      ? providerNames[linkedProvider]
+      : linkedProvider;
+    return `${providerName} account linked successfully!`;
+  }, [linkedProvider]);
+
+  // Clear query params after showing message
+  useEffect(() => {
+    if (linkedProvider || linkError) {
+      const timeoutId = setTimeout(() => {
+        clientReplace("/settings");
+      }, 5000);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [linkedProvider, linkError]);
+
+  if (!linkSuccessMessage && !linkErrorMessage) {
+    return null;
+  }
+
+  return (
+    <>
+      {linkSuccessMessage && <Alert variant="success">{linkSuccessMessage}</Alert>}
+      {linkErrorMessage && <Alert variant="error">{linkErrorMessage}</Alert>}
+    </>
+  );
+}
 
 function AccountInfoSection() {
   const userQuery = trpc.auth.me.useQuery();
@@ -253,6 +319,11 @@ function PasswordForm({ mode, onSuccess }: { mode: "set" | "change"; onSuccess: 
 export default function AccountSettingsContent() {
   return (
     <div className="space-y-8">
+      {/* OAuth link success/error messages (needs Suspense for useSearchParams) */}
+      <Suspense fallback={null}>
+        <OAuthMessages />
+      </Suspense>
+
       {/* Account Information Section - shows title immediately, content loads inline */}
       <AccountInfoSection />
 

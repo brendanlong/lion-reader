@@ -4,10 +4,11 @@
  * Google OAuth uses standard redirect with query parameters.
  * This route handles the browser redirect from Google after authentication.
  *
- * This route handles three modes (stored in Redis with PKCE data):
+ * This route handles the modes stored in Redis with the PKCE data:
  * - "login": Normal OAuth login/signup flow — creates or links the user account,
- *   creates a session and sets the session cookie. This is also where the
- *   settings page's "Link" button lands (its auth URL is mode "login").
+ *   creates a session and sets the session cookie.
+ * - "link": the settings page's "Link" button — attaches this Google account to
+ *   whoever the session cookie says is signed in.
  * - "save" / "extension-save": incremental authorization for Google Docs. The
  *   user is already logged in, so these only refresh the existing OAuth account's
  *   tokens and scopes — no new session.
@@ -22,6 +23,7 @@ import { oauthAccounts } from "@/server/db/schema";
 import {
   createSessionResponse,
   createErrorRedirect,
+  createLinkResponse,
   handleSignupError,
 } from "@/server/auth/oauth/callback-helpers";
 import {
@@ -83,6 +85,19 @@ export async function GET(request: NextRequest) {
       !oauthStateCookieMatches(readOAuthStateCookie(request), state)
     ) {
       return createErrorRedirect(appUrl, "invalid_state");
+    }
+
+    // Settings "Link" — the account comes from the session, not from this
+    // Google account's email (#1603)
+    if (mode === "link") {
+      return createLinkResponse(request, appUrl, {
+        provider: "google",
+        providerAccountId: userInfo.sub,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresAt: tokens.expiresAt,
+        scopes,
+      });
     }
 
     // Incremental authorization - user is already logged in, just update OAuth account

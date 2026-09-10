@@ -20,6 +20,7 @@ import { processOAuthCallback } from "@/server/auth/oauth/callback";
 import {
   createSessionResponse,
   createErrorRedirect,
+  createLinkResponse,
   handleSignupError,
 } from "@/server/auth/oauth/callback-helpers";
 import { readOAuthStateCookie, oauthStateCookieMatches } from "@/server/auth/oauth/state-cookie";
@@ -85,7 +86,24 @@ export async function POST(request: NextRequest) {
       return createErrorRedirect(appUrl, "callback_failed", REDIRECT_STATUS);
     }
 
-    const { userInfo, tokens } = appleResult;
+    const { userInfo, tokens, mode } = appleResult;
+
+    // Settings "Link" — the account comes from the session, not from this Apple
+    // account's email (#1603)
+    if (mode === "link") {
+      return createLinkResponse(
+        request,
+        appUrl,
+        {
+          provider: "apple",
+          providerAccountId: userInfo.sub,
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          expiresAt: tokens.expiresAt,
+        },
+        { redirectStatus: REDIRECT_STATUS }
+      );
+    }
 
     // The email used for account linking/creation must come ONLY from the
     // signature-verified id_token (userInfo), never from `firstAuthData.email`

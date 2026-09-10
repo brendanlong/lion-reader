@@ -5,7 +5,8 @@
  * This route handles the browser redirect from Discord after authentication.
  *
  * Flow:
- * 1. Creates or links user account
+ * 1. Links this Discord account to the signed-in user (mode "link"), or creates
+ *    or signs in a user account (mode "login")
  * 2. Creates a session and sets the session cookie
  * 3. Redirects to /all
  */
@@ -16,6 +17,7 @@ import { processOAuthCallback } from "@/server/auth/oauth/callback";
 import {
   createSessionResponse,
   createErrorRedirect,
+  createLinkResponse,
   handleSignupError,
 } from "@/server/auth/oauth/callback-helpers";
 import { readOAuthStateCookie, oauthStateCookieMatches } from "@/server/auth/oauth/state-cookie";
@@ -64,7 +66,19 @@ export async function GET(request: NextRequest) {
       return createErrorRedirect(appUrl);
     }
 
-    const { userInfo, tokens, inviteToken } = discordResult;
+    const { userInfo, tokens, inviteToken, mode } = discordResult;
+
+    // Settings "Link" — the account comes from the session, not from this
+    // Discord account's email (#1603)
+    if (mode === "link") {
+      return createLinkResponse(request, appUrl, {
+        provider: "discord",
+        providerAccountId: userInfo.id,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresAt: tokens.expiresAt,
+      });
+    }
 
     // Process OAuth callback - handles existing accounts, linking, and new user creation
     const oauthResult = await processOAuthCallback({

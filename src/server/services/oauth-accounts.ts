@@ -20,14 +20,7 @@ import { oauthAccounts, users } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { revokeOtherUserSessionsOrReport } from "@/server/auth/session";
 import { errors } from "@/server/trpc/errors";
-import type { OAuthProviderName } from "@/server/auth/oauth/config";
-
-/** Human-readable provider name, for error messages. */
-const PROVIDER_LABELS: Record<OAuthProviderName, string> = {
-  google: "Google",
-  apple: "Apple",
-  discord: "Discord",
-};
+import { PROVIDER_LABELS, type OAuthProviderName } from "@/server/auth/oauth/config";
 
 export interface LinkOAuthAccountParams {
   /** The signed-in user the provider account is being attached to. */

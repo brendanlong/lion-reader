@@ -83,7 +83,11 @@ export default async function ExtensionSavePage({ searchParams }: PageProps) {
       // Need to request Google Docs scopes
       // Generate OAuth URL and redirect to Google with return to this page
       const returnUrl = `/extension/save?url=${encodeURIComponent(url)}${title ? `&title=${encodeURIComponent(title)}` : ""}`;
-      const authResult = await createGoogleAuthUrl(GOOGLE_DOCS_SCOPES, "extension-save", returnUrl);
+      const authResult = await createGoogleAuthUrl({
+        additionalScopes: GOOGLE_DOCS_SCOPES,
+        mode: "extension-save",
+        returnUrl,
+      });
       redirect(authResult.url);
     }
   }
@@ -130,7 +134,11 @@ export default async function ExtensionSavePage({ searchParams }: PageProps) {
   // Handle Google reauth redirect outside try/catch (redirect throws)
   if (needsGoogleReauth) {
     const returnUrl = `/extension/save?url=${encodeURIComponent(url)}${title ? `&title=${encodeURIComponent(title)}` : ""}`;
-    const authResult = await createGoogleAuthUrl(GOOGLE_DOCS_SCOPES, "extension-save", returnUrl);
+    const authResult = await createGoogleAuthUrl({
+      additionalScopes: GOOGLE_DOCS_SCOPES,
+      mode: "extension-save",
+      returnUrl,
+    });
     redirect(authResult.url);
   }
 

@@ -100,16 +100,16 @@ describe("Discord OAuth", () => {
 
       const storedState = await redis.get(`oauth:discord:${result.state}`);
       expect(storedState).not.toBeNull();
-      expect(JSON.parse(storedState!)).toEqual({});
+      expect(JSON.parse(storedState!)).toEqual({ mode: "login" });
     });
 
     it("stores the invite token alongside the state", async () => {
       const { createDiscordAuthUrl } = await import("../../src/server/auth/oauth/discord");
 
-      const result = await createDiscordAuthUrl("invite-abc");
+      const result = await createDiscordAuthUrl({ inviteToken: "invite-abc" });
 
       const storedState = await redis.get(`oauth:discord:${result.state}`);
-      expect(JSON.parse(storedState!)).toEqual({ inviteToken: "invite-abc" });
+      expect(JSON.parse(storedState!)).toEqual({ inviteToken: "invite-abc", mode: "login" });
     });
   });
 
@@ -118,7 +118,7 @@ describe("Discord OAuth", () => {
       const { createDiscordAuthUrl, validateDiscordCallback } =
         await import("../../src/server/auth/oauth/discord");
 
-      const { state } = await createDiscordAuthUrl("invite-abc");
+      const { state } = await createDiscordAuthUrl({ inviteToken: "invite-abc" });
 
       const result = await validateDiscordCallback("mock-auth-code", state);
 
