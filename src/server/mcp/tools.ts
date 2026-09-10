@@ -345,8 +345,11 @@ function buildTools(): Tool[] {
 
     {
       name: "star_entries",
-      description:
-        "Star or unstar entries (bulk operation). Starred entries remain visible after unsubscribing.",
+      // Single-entry, unlike mark_entries_read: the schema takes one `entryId`
+      // (and `toInputSchema` emits `additionalProperties: false`, so an `entryIds`
+      // array is an InvalidParams error, not a bulk call). The tool name is part
+      // of the published MCP surface, so it stays as-is.
+      description: "Star or unstar an entry. Starred entries remain visible after unsubscribing.",
       inputSchema: toInputSchema(starEntriesArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(starEntriesArgs, args);

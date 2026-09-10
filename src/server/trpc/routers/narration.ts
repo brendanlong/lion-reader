@@ -10,6 +10,7 @@ import { eq } from "drizzle-orm";
 import { createHash } from "node:crypto";
 
 import { createTRPCRouter, confirmedProtectedProcedure as protectedProcedure } from "../trpc";
+import { errors } from "../errors";
 import { uuidSchema } from "../validation";
 import { narrationContent } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
@@ -168,30 +169,39 @@ export const narrationRouter = createTRPCRouter({
         };
       }
 
-      // Look up existing narration by content hash
-      let narration = await ctx.db
-        .select()
-        .from(narrationContent)
-        .where(eq(narrationContent.contentHash, contentHash))
-        .limit(1);
-
-      // Create placeholder record if not found
-      if (narration.length === 0) {
-        const newId = generateUuidv7();
-        await ctx.db.insert(narrationContent).values({
-          id: newId,
-          contentHash,
-          createdAt: new Date(),
-        });
-
-        narration = await ctx.db
+      const selectByContentHash = () =>
+        ctx.db
           .select()
           .from(narrationContent)
-          .where(eq(narrationContent.id, newId))
+          .where(eq(narrationContent.contentHash, contentHash))
           .limit(1);
+
+      // Look up existing narration by content hash
+      let narrationRecord = (await selectByContentHash())[0];
+
+      // Create the placeholder row if there isn't one yet. `content_hash` is
+      // *globally* unique (the cache is deduplicated across users), so two
+      // users narrating the same article at once both miss the SELECT above and
+      // race here; let the constraint arbitrate and re-read the winner's row
+      // rather than surfacing a raw unique-violation 500.
+      if (!narrationRecord) {
+        const inserted = await ctx.db
+          .insert(narrationContent)
+          .values({
+            id: generateUuidv7(),
+            contentHash,
+            createdAt: new Date(),
+          })
+          .onConflictDoNothing({ target: narrationContent.contentHash })
+          .returning();
+        narrationRecord = inserted[0] ?? (await selectByContentHash())[0];
       }
 
-      const narrationRecord = narration[0];
+      if (!narrationRecord) {
+        // Only reachable if the conflicting row was deleted between the insert
+        // and the re-read; nothing useful to narrate against, so surface it.
+        throw errors.internal("Failed to create narration record");
+      }
 
       // Return cached narration if available — with the map persisted at
       // generation time, which is the only one guaranteed to align with this

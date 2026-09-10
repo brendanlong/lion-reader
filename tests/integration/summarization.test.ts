@@ -296,3 +296,49 @@ describe("summarization.generate regenerate bypasses the cache", () => {
     );
   });
 });
+
+/**
+ * `entry_summaries` is unique on `(user_id, content_hash)`, so two requests for
+ * the same entry from one user at the same time (a double-click, or the web
+ * client and an MCP client together) both miss the cache lookup and both try to
+ * insert the placeholder row. The loser must get the winner's row, not a
+ * unique-violation 500.
+ *
+ * The user is pointed at a Groq model while only the Anthropic server key is
+ * set, so both requests fail deterministically at "Groq API key not configured"
+ * — past the placeholder insert, with no network call.
+ *
+ * Nothing here forces the two requests to interleave *inside* the insert
+ * window, so this asserts that concurrent requests converge on one row; the
+ * narration test of the same shape is the one that reliably reproduces the
+ * constraint violation (its cache key is global, so two users collide).
+ */
+describe("summarization.generate concurrent placeholder creation", () => {
+  it("survives two concurrent requests for the same entry", async () => {
+    const userId = await createTestUser({
+      emailPrefix: "summ",
+      summarizationModel: "groq:llama-3.3-70b-versatile",
+    });
+    createdUserIds.push(userId);
+    const contentHash = `hash-${generateUuidv7()}`;
+    const entryId = await createVisibleEntry(userId, contentHash);
+    const callers = await Promise.all([
+      createAuthContext(userId).then(createCaller),
+      createAuthContext(userId).then(createCaller),
+    ]);
+
+    const results = await Promise.allSettled(
+      callers.map((caller) => caller.summarization.generate({ entryId }))
+    );
+
+    // Both got as far as the (unconfigured) LLM call rather than a duplicate-key error.
+    for (const result of results) {
+      expect(result.status).toBe("rejected");
+      expect(String((result as PromiseRejectedResult).reason)).toContain(
+        "Groq API key not configured"
+      );
+    }
+    const rows = await db.select().from(entrySummaries).where(eq(entrySummaries.userId, userId));
+    expect(rows).toHaveLength(1);
+  });
+});

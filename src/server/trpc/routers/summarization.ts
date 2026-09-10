@@ -254,36 +254,45 @@ export const summarizationRouter = createTRPCRouter({
         throw errors.validation("Entry has no content to summarize");
       }
 
-      // Look up existing summary by user + content hash
-      let summary =
-        cachedFeedSummary ??
-        (await ctx.db
+      const selectByUserAndContentHash = () =>
+        ctx.db
           .select()
           .from(entrySummaries)
           .where(
             and(eq(entrySummaries.userId, userId), eq(entrySummaries.contentHash, contentHash))
           )
-          .limit(1));
-
-      // Create placeholder record if not found
-      if (summary.length === 0) {
-        const newId = generateUuidv7();
-        await ctx.db.insert(entrySummaries).values({
-          id: newId,
-          userId,
-          contentHash,
-          promptVersion: CURRENT_PROMPT_VERSION,
-          createdAt: new Date(),
-        });
-
-        summary = await ctx.db
-          .select()
-          .from(entrySummaries)
-          .where(eq(entrySummaries.id, newId))
           .limit(1);
+
+      // Look up existing summary by user + content hash
+      let summaryRecord = (cachedFeedSummary ?? (await selectByUserAndContentHash()))[0];
+
+      // Create the placeholder row if there isn't one yet. Two requests for the
+      // same (user, content) at once — a double-click, or the web client and
+      // MCP together — both miss the SELECT above and race here, so let the
+      // `(user_id, content_hash)` unique constraint arbitrate and re-read the
+      // winner's row rather than surfacing a raw unique-violation 500.
+      if (!summaryRecord) {
+        const inserted = await ctx.db
+          .insert(entrySummaries)
+          .values({
+            id: generateUuidv7(),
+            userId,
+            contentHash,
+            promptVersion: CURRENT_PROMPT_VERSION,
+            createdAt: new Date(),
+          })
+          .onConflictDoNothing({
+            target: [entrySummaries.userId, entrySummaries.contentHash],
+          })
+          .returning();
+        summaryRecord = inserted[0] ?? (await selectByUserAndContentHash())[0];
       }
 
-      const summaryRecord = summary[0];
+      if (!summaryRecord) {
+        // Only reachable if the conflicting row was deleted between the insert
+        // and the re-read; there is nothing to record the generation against.
+        throw errors.internal("Failed to create summary record");
+      }
 
       // Check if settings have changed since this summary was generated.
       // promptVersionChanged also gates cache reuse below (a built-in prompt

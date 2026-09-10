@@ -320,3 +320,47 @@ describe("narration.generate entry visibility", () => {
     await expect(caller.narration.generate({ id: entryId })).rejects.toThrow("Entry not found");
   });
 });
+
+/**
+ * The narration cache is deduplicated across users — `narration_content.content_hash`
+ * is *globally* unique — so two users narrating the same article at the same
+ * time both miss the cache lookup and both try to insert the placeholder row.
+ * The loser must get the winner's row, not a unique-violation 500.
+ */
+describe("narration.generate concurrent placeholder creation", () => {
+  it("lets two users narrate the same content at once", async () => {
+    // Unique per run so a leftover row from a previous run can't turn this into
+    // a cache hit that never reaches the insert.
+    const contentCleaned = `<p>Shared article body ${generateUuidv7()}.</p>`;
+    const contentHash = narrationHash(contentCleaned);
+    createdNarrationHashes.push(contentHash);
+
+    const userIds = await Promise.all([
+      createTestUser({ emailPrefix: "narr" }),
+      createTestUser({ emailPrefix: "narr" }),
+    ]);
+    createdUserIds.push(...userIds);
+
+    const callers = await Promise.all(
+      userIds.map(async (userId) => {
+        const entryId = await createVisibleEntry(userId, { contentCleaned });
+        const caller = createCaller(await createAuthContext(userId));
+        return { caller, entryId };
+      })
+    );
+
+    const results = await Promise.all(
+      callers.map(({ caller, entryId }) => caller.narration.generate({ id: entryId }))
+    );
+
+    for (const result of results) {
+      expect(result.narration).toContain("Shared article body");
+    }
+    // Both requests ended up on the one shared row.
+    const rows = await db
+      .select()
+      .from(narrationContent)
+      .where(eq(narrationContent.contentHash, contentHash));
+    expect(rows).toHaveLength(1);
+  });
+});
