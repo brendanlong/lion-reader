@@ -275,8 +275,6 @@ export const syncRouter = createTRPCRouter({
       const entriesCursor = input.cursors?.entries ?? null;
       const subscriptionsCursor = input.cursors?.subscriptions ?? null;
       const tagsCursor = input.cursors?.tags ?? null;
-      // Date versions for JavaScript comparisons (categorization, sorting)
-      const tagsCursorDate = tagsCursor ? new Date(tagsCursor) : null;
 
       // If no cursors provided, return empty events (initial cursor establishment
       // is handled by sync.cursors endpoint)
@@ -687,6 +685,9 @@ export const syncRouter = createTRPCRouter({
       // Tag changes
       // ========================================================================
       if (tagsCursor) {
+        // Date version for the JavaScript created-vs-updated comparison below;
+        // the query itself keeps the string cursor for µs precision (#680).
+        const tagsCursorDate = new Date(tagsCursor);
         const tagResults = await ctx.db
           .select({
             id: tags.id,
@@ -710,7 +711,7 @@ export const syncRouter = createTRPCRouter({
               updatedAt: updatedAtIso,
               _sortTime: row.updatedAtInstant,
             });
-          } else if (tagsCursorDate && row.createdAt > tagsCursorDate) {
+          } else if (row.createdAt > tagsCursorDate) {
             allEvents.push({
               type: "tag_created" as const,
               tag: {

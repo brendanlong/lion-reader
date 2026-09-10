@@ -54,7 +54,9 @@ export function computeSavedArticleExcerpt(params: {
   }
   if (preCleanedContent?.summary) {
     // Use the summary from the source metadata (frontmatter / docx description).
-    return preCleanedContent.summary;
+    // It's plain text and copied verbatim from the source, so it's just clipped
+    // — an uploaded file's `description:` is arbitrarily long.
+    return truncateText(preCleanedContent.summary, MAX_EXCERPT_LENGTH) || null;
   }
   if (cleaned) {
     return summarizeCleanedContent(cleaned) || null;

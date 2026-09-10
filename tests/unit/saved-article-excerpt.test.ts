@@ -77,6 +77,23 @@ describe("computeSavedArticleExcerpt", () => {
     expect(excerpt).toBe("Frontmatter wins");
   });
 
+  it("clips a long pre-cleaned source summary to the summary length", () => {
+    // `processMarkdown` copies frontmatter `description:` verbatim, so an
+    // uploaded file can carry a multi-kilobyte one; it must not become a
+    // multi-kilobyte entries.summary.
+    const longDescription = "Frontmatter description ".repeat(40).trim(); // > 300 chars
+    const excerpt = computeSavedArticleExcerpt({
+      preCleanedContent: { summary: longDescription },
+      cleaned: null,
+      pluginContent: null,
+      html: "<p>Raw</p>",
+    });
+    expect(excerpt).not.toBeNull();
+    expect(excerpt!.length).toBeLessThanOrEqual(303); // 300 + "..."
+    expect(excerpt!.endsWith("...")).toBe(true);
+    expect(excerpt!.startsWith("Frontmatter description")).toBe(true);
+  });
+
   it("uses Readability output when it ran, even for plugin content (arXiv ToC bug #1398)", () => {
     // Raw arXiv HTML opens with a table-of-contents nav; Readability strips it and
     // extracts the article body. Because Readability ran (cleaned is non-null), the
