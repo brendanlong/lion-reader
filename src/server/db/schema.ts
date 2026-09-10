@@ -572,6 +572,13 @@ export const entries = pgTable(
     // real saved article keeps returning instantly (#1256). Cleared by any
     // successful real save.
     isPlaceholder: boolean("is_placeholder").notNull().default(false),
+
+    // True when this entry arrived as an archive re-announcement rather than as
+    // news — see `isBackfilledEntry` in src/server/feed/entry-processor.ts and
+    // "Backfill Guard" in src/server/feed/CLAUDE.md. Every path that grants
+    // visibility reads it to insert the `user_entries` row already read, so a
+    // publisher replaying its archive never reaches an unread badge.
+    isBackfill: boolean("is_backfill").notNull().default(false),
   },
   (table) => [
     // Unique constraint on feed + guid

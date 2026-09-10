@@ -30,6 +30,11 @@ export interface ProcessedEntry {
   /** Whether the entry content was updated */
   isUpdated: boolean;
   /**
+   * Whether this entry is a backfill: a first sighting of an article published
+   * long before our previous fetch of the feed. See `isBackfilledEntry`.
+   */
+  isBackfill: boolean;
+  /**
    * The entry's database updated_at, used for event cursor tracking.
    * Present when isNew or isUpdated (unchanged entries aren't re-read).
    */
@@ -48,6 +53,8 @@ export interface ProcessEntriesResult {
   updatedCount: number;
   /** Number of entries unchanged (content hash matched) */
   unchangedCount: number;
+  /** Number of new entries classified as backfill (created, but not marked unread) */
+  backfillCount: number;
   /** Number of entries that disappeared from the feed */
   disappearedCount: number;
   /** Whether any entries changed (new, updated, or disappeared) */
@@ -64,6 +71,12 @@ export interface ProcessEntriesOptions {
   fetchedAt?: Date;
   /** Previous lastEntriesUpdatedAt value, used to detect entries that disappeared from the feed */
   previousLastEntriesUpdatedAt?: Date | null;
+  /**
+   * `feeds.last_fetched_at` from *before* this fetch — the last time we pulled
+   * the whole feed. Null/omitted on a feed's first fetch, which disables the
+   * backfill guard (see `isBackfilledEntry`).
+   */
+  previousLastFetchedAt?: Date | null;
   /** The URL of the feed (for feed-specific content cleaning) */
   feedUrl?: string;
   /** The feed's title (feeds.title), carried on new_entry events for list display */
@@ -144,6 +157,33 @@ export function clampPublishedAt(pubDate: Date | undefined, fetchedAt: Date): Da
   return pubDate.getTime() > fetchedAt.getTime() ? fetchedAt : pubDate;
 }
 
+/** See {@link isBackfilledEntry}. */
+const BACKFILL_MIN_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Decides whether an article we are seeing for the first time is a **backfill**:
+ * something the publisher re-announced out of its archive rather than news.
+ * Rationale, threshold and the cases this is deliberately inert in: "Backfill
+ * Guard" in `src/server/feed/CLAUDE.md` (issue #1500).
+ *
+ * The verdict is persisted as `entries.is_backfill` at insert time, because the
+ * paths that grant visibility later — the fetch fanout's #952 self-heal, the
+ * subscribe-time populate — no longer have the context to re-derive it.
+ *
+ * @param publishedAt - The entry's (clamped) publication date, or null
+ * @param previousLastFetchedAt - `feeds.last_fetched_at` from before this fetch;
+ *   null disables the guard
+ */
+export function isBackfilledEntry(
+  publishedAt: Date | null,
+  previousLastFetchedAt: Date | null | undefined
+): boolean {
+  if (!publishedAt || !previousLastFetchedAt) {
+    return false;
+  }
+  return publishedAt.getTime() < previousLastFetchedAt.getTime() - BACKFILL_MIN_AGE_MS;
+}
+
 /**
  * Derives a GUID for an entry using a fallback chain.
  * Priority: guid -> link -> title
@@ -180,6 +220,8 @@ export function deriveGuid(entry: ParsedEntry): string {
  * @param contentHash - Pre-computed content hash
  * @param fetchedAt - Timestamp when the entry was fetched
  * @param feedUrl - The URL of the feed (for feed-specific cleaning)
+ * @param previousLastFetchedAt - `feeds.last_fetched_at` from before this fetch,
+ *   used to stamp `is_backfill` (see `isBackfilledEntry`)
  * @returns The created entry
  */
 export async function createEntry(
@@ -188,7 +230,8 @@ export async function createEntry(
   parsedEntry: ParsedEntry,
   contentHash: string,
   fetchedAt: Date,
-  feedUrl?: string
+  feedUrl?: string,
+  previousLastFetchedAt?: Date | null
 ): Promise<Entry> {
   const guid = deriveGuid(parsedEntry);
   const entryUrl = deriveEntryUrl(parsedEntry);
@@ -202,6 +245,8 @@ export async function createEntry(
   // Only web entries track lastSeenAt (for visibility on subscription)
   const isFetchedType = feedType === "web";
 
+  const publishedAt = clampPublishedAt(parsedEntry.pubDate, fetchedAt);
+
   // Store only the raw columns; the read path sanitizes per read (issue #1282).
   const newEntry: NewEntry = {
     id: generateUuidv7(),
@@ -214,10 +259,11 @@ export async function createEntry(
     contentOriginal: cleaningResult.contentOriginal,
     contentCleaned: cleaningResult.contentCleaned,
     summary: cleaningResult.summary,
-    publishedAt: clampPublishedAt(parsedEntry.pubDate, fetchedAt),
+    publishedAt,
     fetchedAt,
     lastSeenAt: isFetchedType ? fetchedAt : null,
     contentHash,
+    isBackfill: isBackfilledEntry(publishedAt, previousLastFetchedAt),
   };
 
   const [entry] = await db.insert(entries).values(newEntry).returning();
@@ -310,7 +356,8 @@ async function processEntryWithCache(
   parsedEntry: ParsedEntry,
   fetchedAt: Date,
   existingEntriesMap: Map<string, CachedEntryInfo>,
-  feedUrl?: string
+  feedUrl?: string,
+  previousLastFetchedAt?: Date | null
 ): Promise<ProcessedEntry> {
   const guid = deriveGuid(parsedEntry);
   const contentHash = generateContentHash(parsedEntry);
@@ -323,7 +370,15 @@ async function processEntryWithCache(
     // Note: the new_entry event is NOT published here — processEntries
     // publishes it after createUserEntriesForFeed so the SSE endpoint's
     // per-user count computation sees the entry in visible_entries.
-    const entry = await createEntry(feedId, feedType, parsedEntry, contentHash, fetchedAt, feedUrl);
+    const entry = await createEntry(
+      feedId,
+      feedType,
+      parsedEntry,
+      contentHash,
+      fetchedAt,
+      feedUrl,
+      previousLastFetchedAt
+    );
 
     // Add to cache so duplicate GUIDs in same feed don't create duplicates
     existingEntriesMap.set(guid, { id: entry.id, guid, contentHash });
@@ -333,6 +388,7 @@ async function processEntryWithCache(
       guid,
       isNew: true,
       isUpdated: false,
+      isBackfill: entry.isBackfill,
       updatedAt: entry.updatedAt,
       newEntryData: toNewEntryData(entry),
     };
@@ -362,6 +418,7 @@ async function processEntryWithCache(
       guid,
       isNew: false,
       isUpdated: true,
+      isBackfill: false,
       updatedAt: entry.updatedAt,
     };
   }
@@ -372,6 +429,7 @@ async function processEntryWithCache(
     guid,
     isNew: false,
     isUpdated: false,
+    isBackfill: false,
   };
 }
 
@@ -437,6 +495,13 @@ async function updateEntriesLastSeenAt(entryIds: string[], lastSeenAt: Date): Pr
  * an entry is "new"), callers can safely pass *every* entry in the current fetch
  * to self-heal entries orphaned by an earlier crash — see `processEntries`.
  *
+ * The row's initial read state is copied from `entries.is_backfill`, so an
+ * archive re-announcement (see `isBackfilledEntry`) never reaches an unread
+ * badge — including when this call is the #952 self-heal running fetches later,
+ * which no longer has the classification context. `read_changed_at` stays NULL:
+ * the user hasn't touched the entry, so any later explicit change of theirs wins
+ * the last-writer-wins comparison.
+ *
  * @param feedId - The feed's UUID
  * @param entryIds - Array of entry IDs to make visible
  */
@@ -463,8 +528,8 @@ export async function createUserEntriesForFeed(feedId: string, entryIds: string[
   // raw SQL to specify just those columns.
   // https://github.com/drizzle-team/drizzle-orm/issues/3608
   const result = await db.execute(sql`
-      INSERT INTO user_entries (user_id, entry_id, published_or_fetched_at, subscription_id, is_spam)
-      SELECT s.user_id, e.id, COALESCE(e.published_at, e.fetched_at), s.id, e.is_spam
+      INSERT INTO user_entries (user_id, entry_id, published_or_fetched_at, subscription_id, is_spam, read)
+      SELECT s.user_id, e.id, COALESCE(e.published_at, e.fetched_at), s.id, e.is_spam, e.is_backfill
       FROM subscriptions s
       INNER JOIN entries e ON e.feed_id = s.feed_id
       WHERE s.feed_id = ${feedId}::uuid
@@ -498,6 +563,9 @@ export async function createUserEntriesForFeed(feedId: string, entryIds: string[
  * Detects entries that disappeared from the feed (entries that had
  * lastSeenAt = previousLastEntriesUpdatedAt but aren't in the current feed).
  *
+ * New entries that are really an archive re-announcement rather than news are
+ * fanned out already-read — see `isBackfilledEntry` and `previousLastFetchedAt`.
+ *
  * @param feedId - The feed's UUID
  * @param feedType - The feed type (web, email, saved)
  * @param feed - The parsed feed containing entries
@@ -517,6 +585,7 @@ export async function processEntries(
   const {
     fetchedAt = new Date(),
     previousLastEntriesUpdatedAt,
+    previousLastFetchedAt,
     feedUrl,
     feedTitle,
     alwaysUpdateVisibility = false,
@@ -554,6 +623,7 @@ export async function processEntries(
   let newCount = 0;
   let updatedCount = 0;
   let unchangedCount = 0;
+  let backfillCount = 0;
 
   for (const item of feed.items) {
     try {
@@ -563,10 +633,14 @@ export async function processEntries(
         item,
         fetchedAt,
         existingEntriesMap,
-        feedUrl
+        feedUrl,
+        previousLastFetchedAt
       );
       results.push(result);
 
+      if (result.isBackfill) {
+        backfillCount++;
+      }
       if (result.isNew) {
         newCount++;
       } else if (result.isUpdated) {
@@ -614,7 +688,6 @@ export async function processEntries(
   }
 
   const allEntryIds = results.map((r) => r.id);
-  const newEntryIds = results.filter((r) => r.isNew).map((r) => r.id);
   const hasChanges = newCount > 0 || updatedCount > 0 || disappearedCount > 0;
 
   // The visibility bookkeeping (re-stamp last_seen_at + fan out user_entries)
@@ -645,19 +718,26 @@ export async function processEntries(
   // steady-state feeds pay nothing; a feed with any activity heals its orphans.
   // Existing subscribers already have rows for existing entries; new subscribers
   // get rows at subscription time.
-  if (shouldUpdateVisibility && allEntryIds.length > 0) {
+  //
+  // A backfilled entry (an archive re-announcement, see `isBackfilledEntry`)
+  // needs no special handling here: the fanout copies its read state from
+  // `entries.is_backfill`, so it arrives already read on this fetch and on every
+  // later one that re-covers it.
+  if (shouldUpdateVisibility) {
     await createUserEntriesForFeed(feedId, allEntryIds);
   }
 
-  if (newEntryIds.length > 0) {
+  if (newCount > backfillCount) {
     // Publish new_entry events AFTER the user_entries fanout: the SSE endpoint
     // computes each connected subscriber's absolute unread counts from
     // visible_entries when the event arrives, so the rows must exist first or
     // the counts would exclude these entries (leaving badges stale until the
     // next count-bearing event). Fire and forget — publishing failures must
     // not affect entry processing.
+    // Backfilled entries are excluded: they were fanned out as read, so there is
+    // no new unread item for a connected client to insert or count.
     for (const result of results) {
-      if (result.isNew && result.updatedAt && result.newEntryData) {
+      if (result.isNew && !result.isBackfill && result.updatedAt && result.newEntryData) {
         publishNewEntry(
           feedId,
           result.id,
@@ -679,6 +759,7 @@ export async function processEntries(
     newCount,
     updatedCount,
     unchangedCount,
+    backfillCount,
     disappearedCount,
     hasChanges,
     entries: results,

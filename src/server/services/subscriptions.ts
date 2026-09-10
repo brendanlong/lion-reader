@@ -559,6 +559,12 @@ export async function createSubscription(
     //    unchanged. Disappeared entries (not re-stamped by a later poll) fall
     //    below last_entries_updated_at and stay excluded.
     //
+    //    An entry stamped `is_backfill` is granted already read, matching the
+    //    fetch-time fanout: a WebSub push leaves `last_entries_updated_at` where
+    //    it was, so an archive replay sits inside the current generation until
+    //    the next backup poll and would otherwise reach a subscriber who joins in
+    //    that window as hundreds of unread articles (issue #1500).
+    //
     //    Skipped for a stale feed (skipInitialPopulate): the caller is scheduling
     //    an immediate forced refresh whose fanout will populate this subscriber
     //    from ground truth, so populating here from possibly-stale cached entries
@@ -566,8 +572,8 @@ export async function createSubscription(
     //    unnecessary and a potential over-share.
     if (!skipInitialPopulate) {
       await tx.execute(sql`
-        INSERT INTO user_entries (user_id, entry_id, published_or_fetched_at, subscription_id, is_spam)
-        SELECT ${userId}, e.id, COALESCE(e.published_at, e.fetched_at), ${subscriptionId}, e.is_spam
+        INSERT INTO user_entries (user_id, entry_id, published_or_fetched_at, subscription_id, is_spam, read)
+        SELECT ${userId}, e.id, COALESCE(e.published_at, e.fetched_at), ${subscriptionId}, e.is_spam, e.is_backfill
         FROM entries e
         JOIN feeds f ON f.id = e.feed_id
         WHERE e.feed_id = ${feedId}

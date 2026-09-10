@@ -408,6 +408,14 @@ async function processSuccessfulFetch(
   const processResult = await processEntries(feed.id, feed.type, parsedFeed, {
     fetchedAt: now,
     previousLastEntriesUpdatedAt: feed.lastEntriesUpdatedAt,
+    // Null on the feed's very first fetch, which is what disables the backfill
+    // guard there: nothing this feed lists can be an archive re-announcement
+    // when we've never seen the feed before. A forced subscribe-time refresh
+    // disables it the same way — it exists to hand a brand-new subscriber the
+    // current feed as ground truth, and that subscriber has no history to judge
+    // "already old when we last looked" against, so the fresh-feed and
+    // stale-feed subscribe paths must agree on what they deliver unread.
+    previousLastFetchedAt: forceReprocess ? null : feed.lastFetchedAt,
     feedUrl: feed.url ?? undefined,
     feedTitle: resolvedFeedTitle,
     // A forced (subscribe-time) refresh re-stamps all current entries' visibility
@@ -418,7 +426,10 @@ async function processSuccessfulFetch(
 
   // Fetch full content for new entries if any subscriber has fetchFullContent
   // enabled. This is done after processEntries so entries exist in the database.
-  const newEntries = processResult.entries.filter((e) => e.isNew);
+  // Archive re-announcements (see `isBackfilledEntry`) are excluded throughout:
+  // they aren't news the hub failed to push, and they must not spend the
+  // per-fetch full-content budget that the genuinely new articles need.
+  const newEntries = processResult.entries.filter((e) => e.isNew && !e.isBackfill);
   const newEntryIds = newEntries.map((e) => e.id);
   const fullContentResult = await fetchFullContentForNewEntries(feed.id, newEntryIds);
 
@@ -565,6 +576,7 @@ async function processSuccessfulFetch(
       newEntries: processResult.newCount,
       updatedEntries: processResult.updatedCount,
       unchangedEntries: processResult.unchangedCount,
+      backfilledEntries: processResult.backfillCount,
       disappearedEntries: processResult.disappearedCount,
       nextFetchReason: nextFetch.reason,
       ...websubMetadata,
