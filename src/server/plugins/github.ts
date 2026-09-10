@@ -260,6 +260,28 @@ async function fetchGist(gistId: string): Promise<GistResponse | null> {
 }
 
 /**
+ * GET a Contents API URL, which is any endpoint answering with a file's metadata
+ * plus its bytes.
+ */
+async function fetchContentsApi(
+  url: string,
+  context: Record<string, string | undefined>
+): Promise<ContentsResponse | null> {
+  const response = await fetchGitHubApi(url);
+
+  if (!response.ok) {
+    if (response.status === 404) {
+      logger.debug("Repo content not found", context);
+      return null;
+    }
+    logApiFailure(response.status, context);
+    return null;
+  }
+
+  return (await response.json()) as ContentsResponse;
+}
+
+/**
  * Fetch file contents from a repo via the Contents API.
  */
 async function fetchRepoContents(
@@ -273,18 +295,7 @@ async function fetchRepoContents(
     url += `?ref=${encodeURIComponent(ref)}`;
   }
 
-  const response = await fetchGitHubApi(url);
-
-  if (!response.ok) {
-    if (response.status === 404) {
-      logger.debug("Repo content not found", { owner, repo, path, ref });
-      return null;
-    }
-    logApiFailure(response.status, { owner, repo, path });
-    return null;
-  }
-
-  return (await response.json()) as ContentsResponse;
+  return fetchContentsApi(url, { owner, repo, path, ref });
 }
 
 /**
@@ -327,24 +338,56 @@ async function fetchRawContent(rawUrl: string): Promise<string | null> {
 }
 
 /**
- * Try to fetch README from a repo root.
- * Tries common README variants in order.
+ * The text of a Contents API response, or null when GitHub didn't inline the
+ * bytes — `encoding` is `"none"` with an empty `content` for a file over 1MB,
+ * which is the blob path's cue to fall back to the raw host.
  */
-async function fetchReadme(
-  owner: string,
-  repo: string
-): Promise<{ content: string; filename: string } | null> {
-  const readmeVariants = ["README.md", "readme.md", "Readme.md", "README", "readme", "README.txt"];
-
-  for (const variant of readmeVariants) {
-    const contents = await fetchRepoContents(owner, repo, variant);
-    if (contents?.content && contents.encoding === "base64") {
-      const content = Buffer.from(contents.content, "base64").toString("utf-8");
-      return { content, filename: variant };
-    }
+function decodeContents(contents: ContentsResponse | null): string | null {
+  if (!contents?.content || contents.encoding !== "base64") {
+    return null;
   }
+  return Buffer.from(contents.content, "base64").toString("utf-8");
+}
 
-  return null;
+/** How a Contents API URL is fetched, taken as a parameter — see `fetchReadme`. */
+type ContentsFetch = (
+  url: string,
+  context: Record<string, string | undefined>
+) => Promise<ContentsResponse | null>;
+
+/**
+ * Fetch a repo's README, as the repo path it lives at.
+ *
+ * GitHub resolves which file that is, so this is **one** request whatever the
+ * README is called — worth caring about on the 60/hr unauthenticated per-IP
+ * budget, and the reason we don't probe a list of filenames: such a list missed
+ * `README.rst` (most Python projects), `README.markdown`, `README.MD` and
+ * `README.adoc`, and a repo whose README we can't find degrades into a scrape of
+ * GitHub's page chrome (#1460).
+ *
+ * The **`path`**, not the `name`: GitHub prefers a README in `.github/` over the
+ * root over `docs/`, so `name` is `README.md` while the file is at
+ * `.github/README.md`. The path is the base its relative references resolve
+ * against (`absolutizeGitHubUrls`), so taking `name` points every image and link
+ * in such a README one directory too high.
+ *
+ * `fetchContents` is a parameter so tests can observe the request this makes
+ * against an in-memory implementation, the way `followRedirects` takes its fetch.
+ */
+export async function fetchReadme(
+  owner: string,
+  repo: string,
+  fetchContents: ContentsFetch
+): Promise<{ content: string; path: string } | null> {
+  const contents = await fetchContents(`https://api.github.com/repos/${owner}/${repo}/readme`, {
+    owner,
+    repo,
+  });
+  if (!contents) {
+    return null;
+  }
+  const content = decodeContents(contents);
+  return content === null ? null : { content, path: contents.path };
 }
 
 // ============================================================================
@@ -608,18 +651,26 @@ export async function buildGistHtml(
    * resolves them exactly as a sibling reference inside a file would be.
    */
   const renderFile = async (file: GistFile): Promise<ProcessedRepoFile> => {
+    /**
+     * The reference is a URL path segment, so the filename is percent-encoded
+     * before it's escaped: `#` and `?` are legal in a filename and survive
+     * HTML escaping, and `new URL()` would then read `C# notes.pdf` as the
+     * *directory* plus a fragment. (Spaces are the exception — `new URL`
+     * encodes those itself.) Visible text and `alt` keep the plain filename.
+     */
+    const reference = escapeHtml(encodeURIComponent(file.filename));
     const name = escapeHtml(file.filename);
     const empty = { title: null, author: null, excerpt: null };
 
     if (file.type.startsWith("image/")) {
       return {
-        html: absolutizeGistUrls(`<img src="${name}" alt="${name}">`, locate(file)),
+        html: absolutizeGistUrls(`<img src="${reference}" alt="${name}">`, locate(file)),
         ...empty,
       };
     }
     if (isBinaryMediaType(file.type)) {
       return {
-        html: absolutizeGistUrls(`<p><a href="${name}">${name}</a></p>`, locate(file)),
+        html: absolutizeGistUrls(`<p><a href="${reference}">${name}</a></p>`, locate(file)),
         ...empty,
       };
     }
@@ -701,17 +752,17 @@ async function fetchGitHubContent(url: URL): Promise<SavedArticleContent | null>
     }
 
     case "repo-root": {
-      const readme = await fetchReadme(parsed.owner, parsed.repo);
+      const readme = await fetchReadme(parsed.owner, parsed.repo, fetchContentsApi);
       if (!readme) {
         logger.debug("No README found for repo", { owner: parsed.owner, repo: parsed.repo });
         return null;
       }
 
-      const file = await processFileContent(readme.content, readme.filename, null, {
+      const file = await processFileContent(readme.content, readme.path, null, {
         kind: "repo",
         owner: parsed.owner,
         repo: parsed.repo,
-        path: readme.filename,
+        path: readme.path,
       });
       // Use extracted title from README, fall back to repo name
       const title = file.title || `${parsed.owner}/${parsed.repo}`;
@@ -726,71 +777,41 @@ async function fetchGitHubContent(url: URL): Promise<SavedArticleContent | null>
       };
     }
 
-    case "blob": {
-      const contents = await fetchRepoContents(parsed.owner, parsed.repo, parsed.path, parsed.ref);
-      const filename = parsed.path.split("/").pop() ?? parsed.path;
-
-      if (!contents?.content || contents.encoding !== "base64") {
-        // Try raw URL as fallback
-        const rawUrl = `https://raw.githubusercontent.com/${parsed.owner}/${parsed.repo}/${parsed.ref}/${parsed.path}`;
-        const rawContent = await fetchRawContent(rawUrl);
-        if (!rawContent) {
-          return null;
-        }
-
-        const file = await processFileContent(rawContent, parsed.path, null, {
-          kind: "repo",
-          ...parsed,
-        });
-        const title = file.title || filename;
-        return {
-          html: file.html,
-          title,
-          excerpt: file.excerpt,
-          author: file.author ?? parsed.owner,
-          publishedAt: null,
-          canonicalUrl: `https://github.com/${parsed.owner}/${parsed.repo}/blob/${parsed.ref}/${parsed.path}`,
-        };
-      }
-
-      const content = Buffer.from(contents.content, "base64").toString("utf-8");
-      const file = await processFileContent(content, parsed.path, null, {
-        kind: "repo",
-        ...parsed,
-      });
-      const title = file.title || filename;
-
-      return {
-        html: file.html,
-        title,
-        excerpt: file.excerpt,
-        author: file.author ?? parsed.owner,
-        publishedAt: null,
-        canonicalUrl: `https://github.com/${parsed.owner}/${parsed.repo}/blob/${parsed.ref}/${parsed.path}`,
-      };
-    }
-
+    // Both name one file at one ref, and render identically; they differ only in
+    // where the bytes come from. A blob reads the Contents API, falling back to
+    // the raw host when the API didn't inline the content (over 1MB, or a rate
+    // limit); a raw URL is that host already.
+    case "blob":
     case "raw": {
-      const rawUrl = `https://raw.githubusercontent.com/${parsed.owner}/${parsed.repo}/${parsed.ref}/${parsed.path}`;
-      const content = await fetchRawContent(rawUrl);
+      const { owner, repo, ref, path } = parsed;
+      const inlined =
+        parsed.type === "blob"
+          ? decodeContents(await fetchRepoContents(owner, repo, path, ref))
+          : null;
+      const content =
+        inlined ??
+        (await fetchRawContent(
+          `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${path}`
+        ));
       if (!content) {
         return null;
       }
 
-      const filename = parsed.path.split("/").pop() ?? parsed.path;
-      const file = await processFileContent(content, parsed.path, null, {
+      const file = await processFileContent(content, path, null, {
         kind: "repo",
-        ...parsed,
+        owner,
+        repo,
+        ref,
+        path,
       });
-      const title = file.title || filename;
 
       return {
         html: file.html,
-        title,
+        title: file.title || (path.split("/").pop() ?? path),
         excerpt: file.excerpt,
-        author: file.author ?? parsed.owner,
+        author: file.author ?? owner,
         publishedAt: null,
-        canonicalUrl: `https://github.com/${parsed.owner}/${parsed.repo}/blob/${parsed.ref}/${parsed.path}`,
+        canonicalUrl: `https://github.com/${owner}/${repo}/blob/${ref}/${path}`,
       };
     }
   }
