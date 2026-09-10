@@ -46,7 +46,7 @@ interface KeyboardShortcutsProviderProps {
 }
 
 export function KeyboardShortcutsProvider({ children }: KeyboardShortcutsProviderProps) {
-  const { enabled, setEnabled, isLoading } = useKeyboardShortcutsEnabled();
+  const { enabled, setEnabled } = useKeyboardShortcutsEnabled();
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   const openShortcutsModal = useCallback(() => {
@@ -66,10 +66,10 @@ export function KeyboardShortcutsProvider({ children }: KeyboardShortcutsProvide
       openShortcutsModal();
     },
     {
-      enabled: enabled && !isLoading && !isModalOpen,
+      enabled: enabled && !isModalOpen,
       enableOnFormTags: false,
     },
-    [enabled, isLoading, isModalOpen, openShortcutsModal]
+    [enabled, isModalOpen, openShortcutsModal]
   );
 
   const contextValue = useMemo<KeyboardShortcutsContextValue>(
