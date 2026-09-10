@@ -18,12 +18,7 @@ import { trpc } from "@/lib/trpc/client";
 import { useFormMessages } from "@/lib/hooks/useFormMessages";
 import { Button } from "@/components/ui/button";
 import { NoteBox } from "@/components/ui/note-box";
-import {
-  type OAuthProvider,
-  providerNames,
-  ProviderIcon,
-  useAuthUrlQuery,
-} from "@/components/auth/oauth-helpers";
+import { type OAuthProvider, providerNames, ProviderIcon } from "@/components/auth/oauth-helpers";
 import { SettingsSection } from "./SettingsSection";
 
 // ============================================================================
@@ -33,18 +28,6 @@ import { SettingsSection } from "./SettingsSection";
 interface LinkedAccount {
   provider: OAuthProvider;
   linkedAt: Date;
-}
-
-// ============================================================================
-// Hook to get auth URL queries for all providers (for linking flow)
-// ============================================================================
-
-function useAllAuthUrlQueries() {
-  const google = useAuthUrlQuery("google");
-  const apple = useAuthUrlQuery("apple");
-  const discord = useAuthUrlQuery("discord");
-
-  return { google, apple, discord };
 }
 
 // ============================================================================
@@ -69,8 +52,9 @@ export function LinkedAccounts() {
     error: queryError,
   } = trpc.users["me.linkedAccounts"].useQuery();
 
-  // Auth URL queries for all providers (for linking flow)
-  const authUrlQueries = useAllAuthUrlQueries();
+  // Starts a link flow: the callback attaches the provider account to the user
+  // who started it, whatever email the provider reports (#1603).
+  const linkAuthUrlMutation = trpc.auth.linkAuthUrl.useMutation();
 
   // Unlink mutation
   const unlinkMutation = trpc.auth.unlinkProvider.useMutation({
@@ -108,19 +92,9 @@ export function LinkedAccounts() {
       clearMessages();
 
       try {
-        const query = authUrlQueries[provider];
-        const result = await query.refetch();
-
-        if (result.error) {
-          showError(result.error.message || `Failed to start ${provider} linking`);
-          setLinkingProvider(null);
-          return;
-        }
-
-        if (result.data) {
-          // Redirect to OAuth provider
-          window.location.href = result.data.url;
-        }
+        const { url } = await linkAuthUrlMutation.mutateAsync({ provider });
+        // Leaving the app for the provider: a full navigation, not a soft one.
+        window.location.href = url;
       } catch (err) {
         const errorMessage =
           err instanceof Error ? err.message : `Failed to start ${provider} linking`;
@@ -128,7 +102,7 @@ export function LinkedAccounts() {
         setLinkingProvider(null);
       }
     },
-    [authUrlQueries, clearMessages, showError]
+    [linkAuthUrlMutation, clearMessages, showError]
   );
 
   const handleUnlinkProvider = useCallback(
@@ -271,6 +245,7 @@ function LinkableProviderItem({ provider, isLinking, onLink }: LinkableProviderI
         onClick={onLink}
         loading={isLinking}
         disabled={isLinking}
+        title={`Link ${name}`}
       >
         Link
       </Button>

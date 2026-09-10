@@ -544,6 +544,29 @@ export async function getUserApiKeys(userId: string): Promise<UserApiKeys> {
   };
 }
 
+/**
+ * Whether a session is still usable — the same "not revoked, not expired" rule
+ * `validateSession` applies, for a caller that captured the session **id** and
+ * has no token to re-validate (the OAuth link callback, `oauth/config.ts`
+ * `OAuthLinkTarget`). Scoped sessions can't reach it: only browser sessions
+ * start a link flow.
+ */
+export async function isSessionActive(sessionId: string): Promise<boolean> {
+  const rows = await db
+    .select({ id: sessions.id })
+    .from(sessions)
+    .where(
+      and(
+        eq(sessions.id, sessionId),
+        isNull(sessions.revokedAt),
+        gt(sessions.expiresAt, new Date())
+      )
+    )
+    .limit(1);
+
+  return rows.length > 0;
+}
+
 // ============================================================================
 // Session Revocation
 // ============================================================================

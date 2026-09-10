@@ -2,12 +2,11 @@
  * Discord OAuth Callback Route
  *
  * Discord OAuth uses standard redirect with query parameters.
- * This route handles the browser redirect from Discord after authentication.
- *
- * Flow:
- * 1. Creates or links user account
- * 2. Creates a session and sets the session cookie
- * 3. Redirects to /all
+ * This route handles the browser redirect from Discord after authentication. A
+ * link flow attaches this Discord account to the account that started it (see
+ * `OAuthLinkTarget`) and returns to settings; otherwise it creates or signs in
+ * the account matching the Discord email, sets the session cookie and redirects
+ * to /all.
  */
 
 import { NextRequest } from "next/server";
@@ -16,6 +15,7 @@ import { processOAuthCallback } from "@/server/auth/oauth/callback";
 import {
   createSessionResponse,
   createErrorRedirect,
+  createLinkResponse,
   handleSignupError,
 } from "@/server/auth/oauth/callback-helpers";
 import { readOAuthStateCookie, oauthStateCookieMatches } from "@/server/auth/oauth/state-cookie";
@@ -64,7 +64,19 @@ export async function GET(request: NextRequest) {
       return createErrorRedirect(appUrl);
     }
 
-    const { userInfo, tokens, inviteToken } = discordResult;
+    const { userInfo, tokens, inviteToken, link } = discordResult;
+
+    // Settings "Link" — the account comes from the flow, not from this Discord
+    // account's email (#1603)
+    if (link) {
+      return createLinkResponse(appUrl, link, {
+        provider: "discord",
+        providerAccountId: userInfo.id,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresAt: tokens.expiresAt,
+      });
+    }
 
     // Process OAuth callback - handles existing accounts, linking, and new user creation
     const oauthResult = await processOAuthCallback({

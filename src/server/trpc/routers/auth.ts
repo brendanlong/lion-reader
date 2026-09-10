@@ -27,7 +27,12 @@ import { createSession, revokeSessionByToken } from "@/server/auth/session";
 import { setSessionCookie, clearSessionCookie } from "@/server/auth/session-cookie";
 import { setOAuthStateCookie } from "@/server/auth/oauth/state-cookie";
 import { extractClientInfo } from "@/server/http/client-ip";
-import { getEnabledProviders } from "@/server/auth/oauth/config";
+import {
+  getEnabledProviders,
+  isProviderEnabled,
+  PROVIDER_LABELS,
+  type OAuthLinkTarget,
+} from "@/server/auth/oauth/config";
 import {
   createGoogleAuthUrl,
   validateGoogleCallback,
@@ -107,11 +112,25 @@ const loginInputSchema = z.object({
 /**
  * Wrap an OAuth validation function with shared error handling.
  * Catches errors and rethrows as appropriate tRPC errors.
+ *
+ * A state minted for a **link** is rejected here: these procedures either sign a
+ * user in or link by their own rules, and only the browser callback routes know
+ * how to honour a link target (`OAuthLinkTarget`). Redeeming one here would pick
+ * the account by the provider's email — the bug in #1603.
  */
-async function validateOAuthCallback<T>(validateFn: () => Promise<T>): Promise<T> {
+async function validateOAuthCallback<T extends { link?: OAuthLinkTarget }>(
+  validateFn: () => Promise<T>
+): Promise<T> {
   try {
-    return await validateFn();
+    const result = await validateFn();
+    if (result.link) {
+      throw errors.oauthCallbackFailed("This authorization was started to link an account");
+    }
+    return result;
   } catch (error) {
+    if (error instanceof TRPCError) {
+      throw error;
+    }
     if (error instanceof Error) {
       if (error.message.includes("Invalid or expired OAuth state")) {
         throw errors.oauthStateInvalid();
@@ -422,12 +441,7 @@ export const authRouter = createTRPCRouter({
         throw errors.oauthProviderNotConfigured("Google");
       }
 
-      const result = await createGoogleAuthUrl(
-        undefined, // additionalScopes
-        "login", // mode
-        undefined, // returnUrl
-        input?.inviteToken // inviteToken
-      );
+      const result = await createGoogleAuthUrl({ inviteToken: input?.inviteToken });
 
       // Bind the state to this browser so the callback can't be replayed against
       // another user (login CSRF, issue #1263).
@@ -551,7 +565,7 @@ export const authRouter = createTRPCRouter({
         throw errors.oauthProviderNotConfigured("Apple");
       }
 
-      const result = await createAppleAuthUrl(input?.inviteToken);
+      const result = await createAppleAuthUrl({ inviteToken: input?.inviteToken });
 
       // Bind the state to this browser (login CSRF, issue #1263). Apple's callback is a
       // cross-site POST (form_post), so the cookie must be SameSite=None to be sent.
@@ -703,7 +717,7 @@ export const authRouter = createTRPCRouter({
         throw errors.oauthProviderNotConfigured("Discord");
       }
 
-      const result = await createDiscordAuthUrl(input?.inviteToken);
+      const result = await createDiscordAuthUrl({ inviteToken: input?.inviteToken });
 
       // Bind the state to this browser so the callback can't be replayed against
       // another user (login CSRF, issue #1263).
@@ -990,6 +1004,43 @@ export const authRouter = createTRPCRouter({
     }),
 
   /**
+   * Start linking a social provider to the signed-in account.
+   *
+   * The flow records *this* user and session as its link target (see
+   * `OAuthLinkTarget`), so the callback attaches the provider account to them
+   * instead of picking an account by the provider's email — the two addresses
+   * need not match (#1603).
+   *
+   * A mutation rather than a query because it has effects: it stores per-flow
+   * state in Redis and sets the one-time state binding cookie.
+   */
+  linkAuthUrl: protectedProcedure
+    .input(z.object({ provider: z.enum(["google", "apple", "discord"]) }))
+    .output(z.object({ url: z.string(), state: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const { provider } = input;
+
+      if (!isProviderEnabled(provider)) {
+        throw errors.oauthProviderNotConfigured(PROVIDER_LABELS[provider]);
+      }
+
+      const link = { userId: ctx.session.user.id, sessionId: ctx.session.session.id };
+
+      const result =
+        provider === "google"
+          ? await createGoogleAuthUrl({ link })
+          : provider === "apple"
+            ? await createAppleAuthUrl({ link })
+            : await createDiscordAuthUrl({ link });
+
+      // Bind the state to this browser (login CSRF, issue #1263). Apple's callback
+      // is a cross-site POST (form_post), so its cookie must be SameSite=None.
+      setOAuthStateCookie(ctx.resHeaders, result.state, provider === "apple" ? "none" : "lax");
+
+      return result;
+    }),
+
+  /**
    * Link Google OAuth to existing account.
    *
    * Similar to googleCallback but requires the user to be authenticated
@@ -1257,10 +1308,10 @@ export const authRouter = createTRPCRouter({
       // - documents.readonly for native Google Docs via Docs API
       // - drive.readonly for uploaded .docx files via Drive API
       // Pass mode: "save" so the callback knows to redirect back to /save
-      const result = await createGoogleAuthUrl(
-        [GOOGLE_DOCS_READONLY_SCOPE, GOOGLE_DRIVE_SCOPE],
-        "save"
-      );
+      const result = await createGoogleAuthUrl({
+        additionalScopes: [GOOGLE_DOCS_READONLY_SCOPE, GOOGLE_DRIVE_SCOPE],
+        mode: "save",
+      });
 
       // Bind the state to this browser so the callback can't be replayed against
       // another user (login CSRF, issue #1263).

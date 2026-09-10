@@ -6,13 +6,16 @@
  * - Extracting client info from requests
  * - Handling invite-related errors
  * - Creating sessions and setting cookies
+ * - Linking a provider to the account its flow was started from
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { createSession } from "@/server/auth/session";
+import { createSession, isSessionActive } from "@/server/auth/session";
 import { db } from "@/server/db";
 import { extractClientInfo } from "@/server/http/client-ip";
 import { clearOAuthStateCookie } from "@/server/auth/oauth/state-cookie";
+import { linkOAuthAccount } from "@/server/services/oauth-accounts";
+import type { OAuthLinkTarget, OAuthProviderName } from "@/server/auth/oauth/config";
 
 // ============================================================================
 // Types
@@ -154,4 +157,88 @@ export function createErrorRedirect(
   // Clear any state binding cookie so a failed attempt leaves nothing behind (#1263).
   clearOAuthStateCookie(response);
   return response;
+}
+
+// ============================================================================
+// Linking a provider to the signed-in account
+// ============================================================================
+
+/**
+ * The provider identity a link callback just verified.
+ */
+export interface OAuthLinkParams {
+  provider: OAuthProviderName;
+  /** The provider's stable id for the account (`sub` / Discord user id). */
+  providerAccountId: string;
+  accessToken: string;
+  refreshToken?: string;
+  expiresAt?: Date;
+  /** Granted scopes, where the provider reports them (Google). */
+  scopes?: string[];
+}
+
+/**
+ * Which `?link_error=` the settings page should show. `linkOAuthAccount` is the
+ * only thing that raises these, so each code has exactly one meaning here.
+ */
+function linkErrorParam(error: unknown): string {
+  switch (getErrorCode(error)) {
+    case "OAUTH_ALREADY_LINKED":
+      return "provider_already_linked";
+    case "OAUTH_CALLBACK_FAILED":
+      return "already_linked";
+    case "SESSION_REVOKE_FAILED":
+      return "session_revoke_failed";
+    default:
+      return "callback_failed";
+  }
+}
+
+/**
+ * Attach the provider account to the `target` its authorization URL was minted
+ * for, and redirect back to settings (`OAuthLinkTarget` says why the account
+ * comes from there rather than from the request).
+ *
+ * The target's session must still be live: adding a way to sign in is a
+ * credential change, so a flow whose session was logged out or revoked in the
+ * meantime is refused rather than applied.
+ */
+export async function createLinkResponse(
+  appUrl: string,
+  target: OAuthLinkTarget,
+  params: OAuthLinkParams,
+  options?: { redirectStatus?: number }
+): Promise<NextResponse> {
+  const { provider, ...link } = params;
+
+  const redirect = (path: string) => {
+    const response = NextResponse.redirect(`${appUrl}${path}`, options?.redirectStatus);
+    clearOAuthStateCookie(response);
+    return response;
+  };
+
+  if (!(await isSessionActive(target.sessionId))) {
+    return redirect("/login?error=link_requires_login");
+  }
+
+  try {
+    await linkOAuthAccount(db, {
+      userId: target.userId,
+      currentSessionId: target.sessionId,
+      provider,
+      ...link,
+    });
+  } catch (error) {
+    const errorParam = linkErrorParam(error);
+    if (errorParam === "callback_failed") {
+      console.error(`Failed to link ${provider} account:`, error);
+    }
+    if (errorParam === "session_revoke_failed") {
+      // The link itself landed; only signing the other devices out failed.
+      return redirect(`/settings?linked=${provider}&link_error=${errorParam}`);
+    }
+    return redirect(`/settings?link_error=${errorParam}`);
+  }
+
+  return redirect(`/settings?linked=${provider}`);
 }

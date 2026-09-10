@@ -24,6 +24,7 @@ import {
   getAppleClientId,
   getRedirectUri,
   isProviderEnabled,
+  type OAuthLinkTarget,
 } from "./config";
 import { accessTokenExpiresAt, exchangeAuthorizationCode } from "./token-exchange";
 import { redis } from "@/server/redis";
@@ -130,6 +131,8 @@ export interface AppleAuthResult {
   };
   /** Optional invite token for new user registration */
   inviteToken?: string;
+  /** Set when this flow is a link: the account it attaches to */
+  link?: OAuthLinkTarget;
 }
 
 /**
@@ -165,18 +168,16 @@ function getStateKey(state: string): string {
 interface AppleStateData {
   /** Optional invite token for new user registration */
   inviteToken?: string;
+  /** Present when this flow is a link (see `OAuthLinkTarget`) */
+  link?: OAuthLinkTarget;
 }
 
 /**
  * Stores the OAuth state in Redis
  * The state is used for CSRF protection
- *
- * @param state - The OAuth state parameter
- * @param inviteToken - Optional invite token for new user registration
  */
-async function storeState(state: string, inviteToken?: string): Promise<void> {
+async function storeState(state: string, data: AppleStateData): Promise<void> {
   const key = getStateKey(state);
-  const data: AppleStateData = { inviteToken };
   await redis.setex(key, STATE_TTL_SECONDS, JSON.stringify(data));
 }
 
@@ -281,6 +282,13 @@ async function extractUserInfoFromToken(idToken: string): Promise<AppleUserInfo>
 // Apple OAuth Functions
 // ============================================================================
 
+export interface CreateAppleAuthUrlOptions {
+  /** Invite token for new user registration */
+  inviteToken?: string;
+  /** Link this Apple account to the given account instead of signing in */
+  link?: OAuthLinkTarget;
+}
+
 /**
  * Generates an Apple OAuth authorization URL
  *
@@ -290,11 +298,12 @@ async function extractUserInfoFromToken(idToken: string): Promise<AppleUserInfo>
  *
  * Note: Apple doesn't use PKCE like Google does
  *
- * @param inviteToken - Optional invite token for new user registration
  * @returns The authorization URL and state
  * @throws Error if Apple OAuth is not configured
  */
-export async function createAppleAuthUrl(inviteToken?: string): Promise<AppleAuthUrlResult> {
+export async function createAppleAuthUrl(
+  options: CreateAppleAuthUrlOptions = {}
+): Promise<AppleAuthUrlResult> {
   const config = getAppleAuthorizationConfig();
 
   if (!config) {
@@ -304,8 +313,8 @@ export async function createAppleAuthUrl(inviteToken?: string): Promise<AppleAut
   // Generate state parameter for CSRF protection
   const state = client.randomState();
 
-  // Store the state and invite token for later verification
-  await storeState(state, inviteToken);
+  // Store the link target and invite token for later verification
+  await storeState(state, { inviteToken: options.inviteToken, link: options.link });
 
   // Create the authorization URL
   // Apple requires response_mode=form_post when requesting name or email scopes
@@ -393,6 +402,7 @@ export async function validateAppleCallback(
       expiresAt: accessTokenExpiresAt(tokens),
     },
     inviteToken: stateData.inviteToken,
+    link: stateData.link,
   };
 }
 

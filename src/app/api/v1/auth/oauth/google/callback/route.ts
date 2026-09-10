@@ -4,13 +4,14 @@
  * Google OAuth uses standard redirect with query parameters.
  * This route handles the browser redirect from Google after authentication.
  *
- * This route handles three modes (stored in Redis with PKCE data):
- * - "login": Normal OAuth login/signup flow — creates or links the user account,
- *   creates a session and sets the session cookie. This is also where the
- *   settings page's "Link" button lands (its auth URL is mode "login").
- * - "save" / "extension-save": incremental authorization for Google Docs. The
+ * What it does with the Google account is decided by the Redis state blob:
+ * - a link flow (`link`, from the settings page) attaches it to the account that
+ *   started the flow — see `OAuthLinkTarget`;
+ * - "save" / "extension-save" are incremental authorization for Google Docs. The
  *   user is already logged in, so these only refresh the existing OAuth account's
- *   tokens and scopes — no new session.
+ *   tokens and scopes — no new session;
+ * - "login" creates or signs in the account matching its email, and sets the
+ *   session cookie.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -22,6 +23,7 @@ import { oauthAccounts } from "@/server/db/schema";
 import {
   createSessionResponse,
   createErrorRedirect,
+  createLinkResponse,
   handleSignupError,
 } from "@/server/auth/oauth/callback-helpers";
 import {
@@ -68,7 +70,7 @@ export async function GET(request: NextRequest) {
       return createErrorRedirect(appUrl);
     }
 
-    const { userInfo, tokens, scopes, mode, returnUrl } = googleResult;
+    const { userInfo, tokens, scopes, mode, link, returnUrl } = googleResult;
 
     // Bind the callback to the browser that started the flow (login CSRF, issue #1263):
     // the state cookie set when the auth URL was generated must match the returned state.
@@ -83,6 +85,19 @@ export async function GET(request: NextRequest) {
       !oauthStateCookieMatches(readOAuthStateCookie(request), state)
     ) {
       return createErrorRedirect(appUrl, "invalid_state");
+    }
+
+    // Settings "Link" — the account comes from the flow, not from this Google
+    // account's email (#1603)
+    if (link) {
+      return createLinkResponse(appUrl, link, {
+        provider: "google",
+        providerAccountId: userInfo.sub,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresAt: tokens.expiresAt,
+        scopes,
+      });
     }
 
     // Incremental authorization - user is already logged in, just update OAuth account
