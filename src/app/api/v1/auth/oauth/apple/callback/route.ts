@@ -86,14 +86,14 @@ export async function POST(request: NextRequest) {
       return createErrorRedirect(appUrl, "callback_failed", REDIRECT_STATUS);
     }
 
-    const { userInfo, tokens, mode } = appleResult;
+    const { userInfo, tokens, link } = appleResult;
 
-    // Settings "Link" — the account comes from the session, not from this Apple
+    // Settings "Link" — the account comes from the flow, not from this Apple
     // account's email (#1603)
-    if (mode === "link") {
+    if (link) {
       return createLinkResponse(
-        request,
         appUrl,
+        link,
         {
           provider: "apple",
           providerAccountId: userInfo.sub,

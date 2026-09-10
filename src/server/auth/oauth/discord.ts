@@ -9,7 +9,12 @@
  */
 
 import * as client from "openid-client";
-import { getDiscordConfig, getRedirectUri, isProviderEnabled, type OAuthMode } from "./config";
+import {
+  getDiscordConfig,
+  getRedirectUri,
+  isProviderEnabled,
+  type OAuthLinkTarget,
+} from "./config";
 import { accessTokenExpiresAt, exchangeAuthorizationCode } from "./token-exchange";
 import { redis } from "@/server/redis";
 
@@ -81,8 +86,8 @@ export interface DiscordAuthResult {
   };
   /** Optional invite token for new user registration */
   inviteToken?: string;
-  /** What the callback should do with this identity */
-  mode: OAuthMode;
+  /** Set when this flow is a link: the account it attaches to */
+  link?: OAuthLinkTarget;
 }
 
 // ============================================================================
@@ -102,8 +107,8 @@ function getStateKey(state: string): string {
 interface StateData {
   /** Optional invite token for new user registration */
   inviteToken?: string;
-  /** Absent on a flow started by the previous release, which only had "login" */
-  mode?: OAuthMode;
+  /** Present when this flow is a link (see `OAuthLinkTarget`) */
+  link?: OAuthLinkTarget;
 }
 
 /**
@@ -146,8 +151,8 @@ async function consumeState(state: string): Promise<StateData | null> {
 export interface CreateDiscordAuthUrlOptions {
   /** Invite token for new user registration */
   inviteToken?: string;
-  /** What the callback should do with the result (defaults to "login") */
-  mode?: OAuthMode;
+  /** Link this Discord account to the given account instead of signing in */
+  link?: OAuthLinkTarget;
 }
 
 /**
@@ -172,8 +177,8 @@ export async function createDiscordAuthUrl(
   // Generate state parameter
   const state = client.randomState();
 
-  // Store state, mode and invite token for later use
-  await storeState(state, { inviteToken: options.inviteToken, mode: options.mode ?? "login" });
+  // Store the link target and invite token for later use
+  await storeState(state, { inviteToken: options.inviteToken, link: options.link });
 
   // Create the authorization URL (Discord doesn't require PKCE)
   const url = client.buildAuthorizationUrl(config, {
@@ -235,7 +240,7 @@ export async function validateDiscordCallback(
       expiresAt: accessTokenExpiresAt(tokens),
     },
     inviteToken: stateData.inviteToken,
-    mode: stateData.mode ?? "login",
+    link: stateData.link,
   };
 }
 

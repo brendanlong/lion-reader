@@ -60,7 +60,7 @@ function LoginAlerts() {
       invite_expired: "The invite link has expired. Please request a new invite.",
       invite_already_used: "This invite has already been used. Please request a new invite.",
       link_requires_login:
-        "Your session expired before the account could be linked. Sign in and try again from Settings.",
+        "You need to be signed in to link an account. Sign in and try again from Settings.",
     };
 
     return errorMessages[oauthError] || "An error occurred during sign-in. Please try again.";

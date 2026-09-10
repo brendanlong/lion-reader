@@ -59,12 +59,10 @@ function OAuthMessages() {
     return errorMessages[linkError] || "An error occurred while linking your account.";
   }, [linkError]);
 
+  // Never echo the raw param back: only a provider we know about gets a message.
   const linkSuccessMessage = useMemo(() => {
-    if (!linkedProvider) return null;
-    const providerName = isOAuthProvider(linkedProvider)
-      ? providerNames[linkedProvider]
-      : linkedProvider;
-    return `${providerName} account linked successfully!`;
+    if (!linkedProvider || !isOAuthProvider(linkedProvider)) return null;
+    return `${providerNames[linkedProvider]} account linked successfully!`;
   }, [linkedProvider]);
 
   // Clear query params after showing message

@@ -52,8 +52,8 @@ export function LinkedAccounts() {
     error: queryError,
   } = trpc.users["me.linkedAccounts"].useQuery();
 
-  // Starts a link flow: the callback attaches the provider account to this
-  // session's user, whatever email the provider reports (#1603).
+  // Starts a link flow: the callback attaches the provider account to the user
+  // who started it, whatever email the provider reports (#1603).
   const linkAuthUrlMutation = trpc.auth.linkAuthUrl.useMutation();
 
   // Unlink mutation

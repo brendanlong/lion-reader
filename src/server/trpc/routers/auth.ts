@@ -31,6 +31,7 @@ import {
   getEnabledProviders,
   isProviderEnabled,
   PROVIDER_LABELS,
+  type OAuthLinkTarget,
 } from "@/server/auth/oauth/config";
 import {
   createGoogleAuthUrl,
@@ -111,11 +112,25 @@ const loginInputSchema = z.object({
 /**
  * Wrap an OAuth validation function with shared error handling.
  * Catches errors and rethrows as appropriate tRPC errors.
+ *
+ * A state minted for a **link** is rejected here: these procedures either sign a
+ * user in or link by their own rules, and only the browser callback routes know
+ * how to honour a link target (`OAuthLinkTarget`). Redeeming one here would pick
+ * the account by the provider's email — the bug in #1603.
  */
-async function validateOAuthCallback<T>(validateFn: () => Promise<T>): Promise<T> {
+async function validateOAuthCallback<T extends { link?: OAuthLinkTarget }>(
+  validateFn: () => Promise<T>
+): Promise<T> {
   try {
-    return await validateFn();
+    const result = await validateFn();
+    if (result.link) {
+      throw errors.oauthCallbackFailed("This authorization was started to link an account");
+    }
+    return result;
   } catch (error) {
+    if (error instanceof TRPCError) {
+      throw error;
+    }
     if (error instanceof Error) {
       if (error.message.includes("Invalid or expired OAuth state")) {
         throw errors.oauthStateInvalid();
@@ -991,9 +1006,10 @@ export const authRouter = createTRPCRouter({
   /**
    * Start linking a social provider to the signed-in account.
    *
-   * The URL carries mode "link", so the callback route attaches the provider
-   * account to *this* session's user instead of picking an account by the
-   * provider's email — the two addresses need not match (#1603).
+   * The flow records *this* user and session as its link target (see
+   * `OAuthLinkTarget`), so the callback attaches the provider account to them
+   * instead of picking an account by the provider's email — the two addresses
+   * need not match (#1603).
    *
    * A mutation rather than a query because it has effects: it stores per-flow
    * state in Redis and sets the one-time state binding cookie.
@@ -1008,12 +1024,14 @@ export const authRouter = createTRPCRouter({
         throw errors.oauthProviderNotConfigured(PROVIDER_LABELS[provider]);
       }
 
+      const link = { userId: ctx.session.user.id, sessionId: ctx.session.session.id };
+
       const result =
         provider === "google"
-          ? await createGoogleAuthUrl({ mode: "link" })
+          ? await createGoogleAuthUrl({ link })
           : provider === "apple"
-            ? await createAppleAuthUrl({ mode: "link" })
-            : await createDiscordAuthUrl({ mode: "link" });
+            ? await createAppleAuthUrl({ link })
+            : await createDiscordAuthUrl({ link });
 
       // Bind the state to this browser (login CSRF, issue #1263). Apple's callback
       // is a cross-site POST (form_post), so its cookie must be SameSite=None.

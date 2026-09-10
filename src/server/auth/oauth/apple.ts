@@ -24,7 +24,7 @@ import {
   getAppleClientId,
   getRedirectUri,
   isProviderEnabled,
-  type OAuthMode,
+  type OAuthLinkTarget,
 } from "./config";
 import { accessTokenExpiresAt, exchangeAuthorizationCode } from "./token-exchange";
 import { redis } from "@/server/redis";
@@ -131,8 +131,8 @@ export interface AppleAuthResult {
   };
   /** Optional invite token for new user registration */
   inviteToken?: string;
-  /** What the callback should do with this identity */
-  mode: OAuthMode;
+  /** Set when this flow is a link: the account it attaches to */
+  link?: OAuthLinkTarget;
 }
 
 /**
@@ -168,8 +168,8 @@ function getStateKey(state: string): string {
 interface AppleStateData {
   /** Optional invite token for new user registration */
   inviteToken?: string;
-  /** Absent on a flow started by the previous release, which only had "login" */
-  mode?: OAuthMode;
+  /** Present when this flow is a link (see `OAuthLinkTarget`) */
+  link?: OAuthLinkTarget;
 }
 
 /**
@@ -285,8 +285,8 @@ async function extractUserInfoFromToken(idToken: string): Promise<AppleUserInfo>
 export interface CreateAppleAuthUrlOptions {
   /** Invite token for new user registration */
   inviteToken?: string;
-  /** What the callback should do with the result (defaults to "login") */
-  mode?: OAuthMode;
+  /** Link this Apple account to the given account instead of signing in */
+  link?: OAuthLinkTarget;
 }
 
 /**
@@ -313,8 +313,8 @@ export async function createAppleAuthUrl(
   // Generate state parameter for CSRF protection
   const state = client.randomState();
 
-  // Store the state, mode and invite token for later verification
-  await storeState(state, { inviteToken: options.inviteToken, mode: options.mode ?? "login" });
+  // Store the link target and invite token for later verification
+  await storeState(state, { inviteToken: options.inviteToken, link: options.link });
 
   // Create the authorization URL
   // Apple requires response_mode=form_post when requesting name or email scopes
@@ -402,7 +402,7 @@ export async function validateAppleCallback(
       expiresAt: accessTokenExpiresAt(tokens),
     },
     inviteToken: stateData.inviteToken,
-    mode: stateData.mode ?? "login",
+    link: stateData.link,
   };
 }
 

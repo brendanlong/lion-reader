@@ -100,7 +100,7 @@ describe("Discord OAuth", () => {
 
       const storedState = await redis.get(`oauth:discord:${result.state}`);
       expect(storedState).not.toBeNull();
-      expect(JSON.parse(storedState!)).toEqual({ mode: "login" });
+      expect(JSON.parse(storedState!)).toEqual({});
     });
 
     it("stores the invite token alongside the state", async () => {
@@ -109,7 +109,7 @@ describe("Discord OAuth", () => {
       const result = await createDiscordAuthUrl({ inviteToken: "invite-abc" });
 
       const storedState = await redis.get(`oauth:discord:${result.state}`);
-      expect(JSON.parse(storedState!)).toEqual({ inviteToken: "invite-abc", mode: "login" });
+      expect(JSON.parse(storedState!)).toEqual({ inviteToken: "invite-abc" });
     });
   });
 

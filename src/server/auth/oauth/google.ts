@@ -9,7 +9,7 @@
  */
 
 import * as client from "openid-client";
-import { getGoogleConfig, getRedirectUri, isProviderEnabled, type OAuthMode } from "./config";
+import { getGoogleConfig, getRedirectUri, isProviderEnabled, type OAuthLinkTarget } from "./config";
 import { accessTokenExpiresAt, exchangeAuthorizationCode } from "./token-exchange";
 import { redis } from "@/server/redis";
 
@@ -90,7 +90,9 @@ export interface GoogleAuthResult {
   /** OAuth scopes that were granted */
   scopes: string[];
   /** OAuth flow mode */
-  mode: GoogleOAuthMode;
+  mode: OAuthMode;
+  /** Set when this flow is a link: the account it attaches to */
+  link?: OAuthLinkTarget;
   /** Optional return URL for extension-save mode */
   returnUrl?: string;
   /** Optional invite token for new user registration */
@@ -109,11 +111,12 @@ function getPkceKey(state: string): string {
 }
 
 /**
- * Google adds two incremental-authorization modes to the shared ones: both
- * re-authorize an already-linked account for the Docs scopes and only refresh
- * its stored tokens, so neither signs anyone in.
+ * OAuth flow mode - determines redirect behavior after callback. `save` and
+ * `extension-save` re-authorize an already-linked account for the Docs scopes,
+ * so neither signs anyone in. A link flow is marked by its `link` target
+ * instead, not by a mode.
  */
-export type GoogleOAuthMode = OAuthMode | "save" | "extension-save";
+export type OAuthMode = "login" | "save" | "extension-save";
 
 /**
  * Data stored in Redis for PKCE verification
@@ -121,7 +124,9 @@ export type GoogleOAuthMode = OAuthMode | "save" | "extension-save";
 interface PkceData {
   verifier: string;
   scopes: string[];
-  mode: GoogleOAuthMode;
+  mode: OAuthMode;
+  /** Present when this flow is a link (see `OAuthLinkTarget`) */
+  link?: OAuthLinkTarget;
   /** Optional return URL for modes that need to redirect back to a specific page */
   returnUrl?: string;
   /** Optional invite token for new user registration */
@@ -170,7 +175,9 @@ export interface CreateGoogleAuthUrlOptions {
   /** Extra scopes to request on top of the sign-in ones (incremental auth) */
   additionalScopes?: string[];
   /** What the callback should do with the result (defaults to "login") */
-  mode?: GoogleOAuthMode;
+  mode?: OAuthMode;
+  /** Link this Google account to the given account instead of signing in */
+  link?: OAuthLinkTarget;
   /** Where extension-save mode returns the user afterwards */
   returnUrl?: string;
   /** Invite token for new user registration */
@@ -191,7 +198,7 @@ export interface CreateGoogleAuthUrlOptions {
 export async function createGoogleAuthUrl(
   options: CreateGoogleAuthUrlOptions = {}
 ): Promise<GoogleAuthUrlResult> {
-  const { additionalScopes, mode = "login", returnUrl, inviteToken } = options;
+  const { additionalScopes, mode = "login", returnUrl, inviteToken, link } = options;
   const config = getGoogleConfig();
 
   if (!config) {
@@ -208,7 +215,14 @@ export async function createGoogleAuthUrl(
     : GOOGLE_SCOPES;
 
   // Store the code verifier, scopes, mode, return URL, and invite token for later use
-  await storePkceVerifier(state, { verifier: codeVerifier, scopes, mode, returnUrl, inviteToken });
+  await storePkceVerifier(state, {
+    verifier: codeVerifier,
+    scopes,
+    mode,
+    returnUrl,
+    inviteToken,
+    link,
+  });
 
   // Create the authorization URL
   const url = client.buildAuthorizationUrl(config, {
@@ -276,6 +290,7 @@ export async function validateGoogleCallback(
     },
     scopes: pkceData.scopes,
     mode: pkceData.mode,
+    link: pkceData.link,
     returnUrl: pkceData.returnUrl,
     inviteToken: pkceData.inviteToken,
   };

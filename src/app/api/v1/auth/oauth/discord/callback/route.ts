@@ -2,13 +2,11 @@
  * Discord OAuth Callback Route
  *
  * Discord OAuth uses standard redirect with query parameters.
- * This route handles the browser redirect from Discord after authentication.
- *
- * Flow:
- * 1. Links this Discord account to the signed-in user (mode "link"), or creates
- *    or signs in a user account (mode "login")
- * 2. Creates a session and sets the session cookie
- * 3. Redirects to /all
+ * This route handles the browser redirect from Discord after authentication. A
+ * link flow attaches this Discord account to the account that started it (see
+ * `OAuthLinkTarget`) and returns to settings; otherwise it creates or signs in
+ * the account matching the Discord email, sets the session cookie and redirects
+ * to /all.
  */
 
 import { NextRequest } from "next/server";
@@ -66,12 +64,12 @@ export async function GET(request: NextRequest) {
       return createErrorRedirect(appUrl);
     }
 
-    const { userInfo, tokens, inviteToken, mode } = discordResult;
+    const { userInfo, tokens, inviteToken, link } = discordResult;
 
-    // Settings "Link" — the account comes from the session, not from this
-    // Discord account's email (#1603)
-    if (mode === "link") {
-      return createLinkResponse(request, appUrl, {
+    // Settings "Link" — the account comes from the flow, not from this Discord
+    // account's email (#1603)
+    if (link) {
+      return createLinkResponse(appUrl, link, {
         provider: "discord",
         providerAccountId: userInfo.id,
         accessToken: tokens.accessToken,

@@ -35,14 +35,22 @@ export const PROVIDER_LABELS: Record<OAuthProviderName, string> = {
 };
 
 /**
- * What the callback route does with the provider identity it just verified.
+ * Who a link flow attaches the provider account to, captured when its
+ * authorization URL was generated and carried in the per-flow Redis state blob.
+ * A blob that has one is a link; every other flow is a sign-in, which picks the
+ * account from the provider's email instead (#1603).
  *
- * `login` picks the account from the provider's **email** (sign in, or sign up);
- * `link` attaches the provider account to whoever the **session cookie** says is
- * signed in, so the two addresses need not match (#1603). The mode travels in the
- * per-flow Redis blob, since the redirect URI is one per provider.
+ * The target is captured up front rather than read from the callback request's
+ * session cookie for two reasons: Apple's callback is a cross-site POST, which
+ * never carries our `SameSite=Lax` session cookie, and a session change during
+ * the flow (a shared browser, a second account in another tab) would otherwise
+ * silently redirect the link to whichever account is signed in when it lands.
  */
-export type OAuthMode = "login" | "link";
+export interface OAuthLinkTarget {
+  userId: string;
+  /** The session that started the link, kept alive when the new link revokes the rest. */
+  sessionId: string;
+}
 
 /**
  * Configuration for a single OAuth provider

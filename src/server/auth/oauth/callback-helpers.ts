@@ -6,16 +6,16 @@
  * - Extracting client info from requests
  * - Handling invite-related errors
  * - Creating sessions and setting cookies
- * - Linking a provider to the signed-in account (`mode: "link"`)
+ * - Linking a provider to the account its flow was started from
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { createSession, validateSession } from "@/server/auth/session";
+import { createSession, isSessionActive } from "@/server/auth/session";
 import { db } from "@/server/db";
 import { extractClientInfo } from "@/server/http/client-ip";
 import { clearOAuthStateCookie } from "@/server/auth/oauth/state-cookie";
 import { linkOAuthAccount } from "@/server/services/oauth-accounts";
-import type { OAuthProviderName } from "@/server/auth/oauth/config";
+import type { OAuthLinkTarget, OAuthProviderName } from "@/server/auth/oauth/config";
 
 // ============================================================================
 // Types
@@ -164,7 +164,7 @@ export function createErrorRedirect(
 // ============================================================================
 
 /**
- * The provider identity a `mode: "link"` callback just verified.
+ * The provider identity a link callback just verified.
  */
 export interface OAuthLinkParams {
   provider: OAuthProviderName;
@@ -195,40 +195,36 @@ function linkErrorParam(error: unknown): string {
 }
 
 /**
- * Attach the provider account to the user the **session cookie** identifies, and
- * redirect back to settings.
+ * Attach the provider account to the `target` its authorization URL was minted
+ * for, and redirect back to settings (`OAuthLinkTarget` says why the account
+ * comes from there rather than from the request).
  *
- * Identifying the account by session rather than by the provider's email is the
- * whole point of `mode: "link"` (#1603): the two addresses need not match, and a
- * mismatch must never be resolved by signing the visitor into some other account.
- * That also makes an unauthenticated visitor an error rather than a sign-in.
+ * The target's session must still be live: adding a way to sign in is a
+ * credential change, so a flow whose session was logged out or revoked in the
+ * meantime is refused rather than applied.
  */
 export async function createLinkResponse(
-  request: NextRequest,
   appUrl: string,
+  target: OAuthLinkTarget,
   params: OAuthLinkParams,
   options?: { redirectStatus?: number }
 ): Promise<NextResponse> {
   const { provider, ...link } = params;
-  const redirectStatus = options?.redirectStatus;
 
   const redirect = (path: string) => {
-    const response = NextResponse.redirect(`${appUrl}${path}`, redirectStatus);
+    const response = NextResponse.redirect(`${appUrl}${path}`, options?.redirectStatus);
     clearOAuthStateCookie(response);
     return response;
   };
 
-  const sessionToken = request.cookies.get("session")?.value;
-  const session = sessionToken ? await validateSession(sessionToken) : null;
-
-  if (!session) {
+  if (!(await isSessionActive(target.sessionId))) {
     return redirect("/login?error=link_requires_login");
   }
 
   try {
     await linkOAuthAccount(db, {
-      userId: session.user.id,
-      currentSessionId: session.session.id,
+      userId: target.userId,
+      currentSessionId: target.sessionId,
       provider,
       ...link,
     });

@@ -176,12 +176,11 @@ OF/2NxApJCzGCEDdfSp6VQO30hyhRANCAAQRWz+jn65BtOMvdyHKcvjBeBSDZH2r
       expect(url.searchParams.get("scope")).toBe("name email");
       expect(result.state).not.toBe("");
 
-      // Verify state is stored in Redis (stored as JSON with the mode and an
-      // optional inviteToken)
+      // Verify state is stored in Redis (stored as JSON with optional inviteToken)
       const storedState = await redis.get(`oauth:apple:state:${result.state}`);
       expect(storedState).not.toBeNull();
       const stateData = JSON.parse(storedState!);
-      expect(stateData).toEqual({ mode: "login" });
+      expect(stateData).toEqual({});
     });
   });
 
