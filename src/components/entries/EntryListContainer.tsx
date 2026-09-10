@@ -41,7 +41,7 @@ interface EntryListContainerProps {
 }
 
 export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
-  const { openEntryId, setOpenEntryId, entryHref } = useEntryUrlState();
+  const { openEntryId, setOpenEntryId, closeEntry, entryHref } = useEntryUrlState();
   const { showUnreadOnly, sortOrder, toggleShowUnreadOnly } = useUrlViewPreferences();
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
   const utils = trpc.useUtils();
@@ -192,7 +192,10 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
   const { selectedEntryId, setSelectedEntryId } = useKeyboardShortcuts({
     entries,
     onOpenEntry: setOpenEntryId,
-    onClose: () => setOpenEntryId(null),
+    // Escape must close the same way the reader's back affordance does — via
+    // `closeEntry`, which pops the history entry opening pushed instead of
+    // replacing it and stranding it (#1571).
+    onClose: closeEntry,
     isEntryOpen: !!openEntryId,
     openEntryId,
     enabled: keyboardShortcutsEnabled,

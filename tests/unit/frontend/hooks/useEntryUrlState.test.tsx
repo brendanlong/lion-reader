@@ -13,7 +13,18 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { renderHook, act } from "@testing-library/react";
+import { renderHook, act, fireEvent, screen } from "@testing-library/react";
+import { UnifiedEntriesContent } from "@/components/entries/UnifiedEntriesContent";
+import { EntryContentOptionsProvider } from "@/components/entries/EntryContentOptions";
+import { KeyboardShortcutsProvider } from "@/components/keyboard/KeyboardShortcutsProvider";
+import { AppearanceProvider } from "@/lib/appearance/AppearanceProvider";
+import { AppLocationProvider } from "@/lib/hooks/useAppLocation";
+import { createDemoStore } from "@/app/(public)/demo/store";
+import { renderWithTrpc, stubMemoryLocalStorage } from "../../../utils/component-test-helpers";
+
+vi.mock("sonner", () => ({
+  toast: { error: vi.fn(), success: vi.fn() },
+}));
 
 let mockPathname = "/all";
 let mockSearch = "";
@@ -142,5 +153,56 @@ describe("useEntryUrlState", () => {
     navigate("unread=false&entry=entry-1", rerender);
     expect(result.current.openEntryId).toBe("entry-1");
     expect(result.current.entryHref("entry-2")).toBe("/all?unread=false&entry=entry-2");
+  });
+});
+
+/**
+ * Escape-to-close must go through the same `closeEntry` the reader's back
+ * affordance uses, or it replaces the pushed history entry instead of popping
+ * it and the user's next Back press looks like a no-op again (#1571). The
+ * wiring lives in `EntryListContainer`, so this drives the real reader tree
+ * (as the demo does) and presses the key.
+ */
+describe("Escape closes the entry through closeEntry", () => {
+  beforeEach(() => {
+    stubMemoryLocalStorage();
+    mockPathname = "/demo/all";
+  });
+
+  function renderReader() {
+    const store = createDemoStore();
+    return renderWithTrpc(<UnifiedEntriesContent />, {
+      handlers: store.handlers,
+      wrapper: (children) => (
+        <AppLocationProvider basePath="/demo">
+          <EntryContentOptionsProvider value={{ hideNarration: true }}>
+            <AppearanceProvider>
+              <KeyboardShortcutsProvider>{children}</KeyboardShortcutsProvider>
+            </AppearanceProvider>
+          </EntryContentOptionsProvider>
+        </AppLocationProvider>
+      ),
+    });
+  }
+
+  it("pops the history entry that opening pushed", async () => {
+    window.history.replaceState(null, "", "/demo/all");
+    const { rerender } = renderReader();
+
+    // Open the article the way a click does, then let the mocked location catch up.
+    fireEvent.click(await screen.findByRole("link", { name: "Welcome to Lion Reader" }));
+    expect(window.history.state).toMatchObject({ entryOpened: true });
+    mockSearch = "entry=welcome";
+    rerender(<UnifiedEntriesContent />);
+    expect(
+      await screen.findByRole("heading", { name: "Welcome to Lion Reader", level: 1 })
+    ).toBeVisible();
+
+    const back = vi.spyOn(window.history, "back").mockImplementation(() => {});
+    const replaceState = vi.spyOn(window.history, "replaceState");
+    fireEvent.keyDown(document, { key: "Escape", code: "Escape" });
+
+    expect(back).toHaveBeenCalledTimes(1);
+    expect(replaceState).not.toHaveBeenCalled();
   });
 });
