@@ -7,16 +7,10 @@
  * `src/server/auth/oauth/callback.ts` instead.
  *
  * Both functions add or remove a way to sign in, so both revoke the user's other
- * sessions (SECURITY.md §4). The revoke lives here rather than in the per-provider
- * tRPC procedures so a fourth provider can't forget it, and it fires only when a
- * credential really changed — see each function for what doesn't count.
- *
- * It runs **after** the change is durable, and a revoke that fails does not undo
- * it: removing (or adding) the credential is what the user asked for, and an
- * unlink rolled back because of a failed revoke would leave a provider account
- * the user believes is compromised still able to sign in. The failure surfaces as
- * `sessionRevokeFailed`, which points at Settings → Sessions — the user can
- * finish the job by hand from there.
+ * sessions (SECURITY.md §4) via `revokeOtherUserSessionsOrReport`, which owns what
+ * happens when that revoke fails. The revoke lives here rather than in the
+ * per-provider tRPC procedures so a fourth provider can't forget it, and it fires
+ * only when a credential really changed — see each function for what doesn't count.
  */
 
 import { and, eq, sql } from "drizzle-orm";
@@ -24,7 +18,7 @@ import { and, eq, sql } from "drizzle-orm";
 import type { Database } from "@/server/db";
 import { oauthAccounts, users } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
-import { revokeOtherUserSessions } from "@/server/auth/session";
+import { revokeOtherUserSessionsOrReport } from "@/server/auth/session";
 import { errors } from "@/server/trpc/errors";
 import type { OAuthProviderName } from "@/server/auth/oauth/config";
 
@@ -34,23 +28,6 @@ const PROVIDER_LABELS: Record<OAuthProviderName, string> = {
   apple: "Apple",
   discord: "Discord",
 };
-
-/**
- * @param change - what already happened, for the error message the user reads
- * @throws `sessionRevokeFailed` — the caller's credential change stands
- */
-async function revokeOtherSessionsOrReport(
-  userId: string,
-  currentSessionId: string,
-  change: string
-): Promise<void> {
-  try {
-    await revokeOtherUserSessions(userId, currentSessionId);
-  } catch (err) {
-    console.error("Failed to revoke other sessions after a credential change:", err);
-    throw errors.sessionRevokeFailed(change);
-  }
-}
 
 export interface LinkOAuthAccountParams {
   /** The signed-in user the provider account is being attached to. */
@@ -164,7 +141,7 @@ export async function linkOAuthAccount(
     throw errors.oauthCallbackFailed(`This ${label} account is already linked to another user`);
   }
 
-  await revokeOtherSessionsOrReport(userId, currentSessionId, `${label} linked`);
+  await revokeOtherUserSessionsOrReport(userId, currentSessionId, `${label} linked`);
 
   return "linked";
 }
@@ -232,7 +209,7 @@ export async function unlinkOAuthAccount(
   });
 
   if (unlinked) {
-    await revokeOtherSessionsOrReport(
+    await revokeOtherUserSessionsOrReport(
       userId,
       currentSessionId,
       `${PROVIDER_LABELS[provider]} unlinked`

@@ -81,11 +81,13 @@ export function LinkedAccounts() {
       utils.users["me.linkedAccounts"].invalidate();
     },
     onError: (err) => {
+      // `SESSION_REVOKE_FAILED` means the unlink landed and only signing the
+      // user's other devices out failed, so don't claim it failed — the error
+      // message says what to do next. Either way the list may have changed.
+      const unlinked = err.data?.appErrorCode === "SESSION_REVOKE_FAILED";
       showError(err.message || "Failed to unlink account");
       setUnlinkingProvider(null);
-      toast.error("Failed to unlink account");
-      // The unlink itself may have landed and only the session revoke failed
-      // (`sessionRevokeFailed`), so refetch rather than assume nothing changed.
+      toast.error(unlinked ? err.message : "Failed to unlink account");
       utils.users["me.linkedAccounts"].invalidate();
     },
   });
