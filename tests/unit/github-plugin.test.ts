@@ -13,6 +13,7 @@ import {
   processFileContent,
   buildGistHtml,
   shouldRetryUnauthenticated,
+  readmeFromContents,
 } from "../../src/server/plugins/github";
 import type { GistFile, GistResponse } from "../../src/server/plugins/github";
 
@@ -837,6 +838,25 @@ describe("buildGistHtml", () => {
       expect(html).not.toContain('<b>.png"');
       expect(html).toContain("&quot;");
     });
+
+    // HTML escaping leaves URL syntax alone, so an unencoded `#` used to end the
+    // reference and resolve the link to the gist's raw directory (#1575).
+    it("percent-encodes URL syntax in a linked binary's filename", async () => {
+      const { html } = await buildGistHtml(
+        gist([gistFile("C# notes.pdf", base64Png, "application/pdf")])
+      );
+      expect(html).toContain(`href="${rawBase}/C%23%20notes.pdf"`);
+      // The reader still sees the filename GitHub shows.
+      expect(html).toContain(">C# notes.pdf</a>");
+    });
+
+    it("percent-encodes URL syntax in an image's filename", async () => {
+      const { html } = await buildGistHtml(
+        gist([gistFile("chart #1?.png", base64Png, "image/png")])
+      );
+      expect(html).toContain(`src="${rawBase}/chart%20%231%3F.png"`);
+      expect(html).toContain('alt="chart #1?.png"');
+    });
   });
 
   it("pins to the newest revision in the gist's history", async () => {
@@ -847,6 +867,49 @@ describe("buildGistHtml", () => {
       )
     );
     expect(html).toContain(`src="${rawBase}/${"a".repeat(40)}/chart.png"`);
+  });
+});
+
+describe("readmeFromContents (#1575)", () => {
+  const contents = (name: string, text: string) => ({
+    name,
+    path: name,
+    content: Buffer.from(text, "utf-8").toString("base64"),
+    encoding: "base64",
+    download_url: `https://raw.githubusercontent.com/o/r/HEAD/${name}`,
+  });
+
+  // Probing a hardcoded list of names missed these, and a repo whose README we
+  // can't find degrades into a scrape of GitHub's page chrome (#1460).
+  it.each(["README.md", "README.rst", "README.markdown", "README.MD", "README.adoc", "readme"])(
+    "takes the README GitHub resolved, named %s",
+    (name) => {
+      expect(readmeFromContents(contents(name, "# Title"))).toEqual({
+        content: "# Title",
+        filename: name,
+      });
+    }
+  );
+
+  it("decodes the base64 body as UTF-8", () => {
+    expect(readmeFromContents(contents("README.md", "Grüße — 🦁"))?.content).toBe("Grüße — 🦁");
+  });
+
+  it("has no README when the repo has none", () => {
+    expect(readmeFromContents(null)).toBeNull();
+  });
+
+  // GitHub stops inlining bytes past 1MB, answering `encoding: "none"`.
+  it("has no README when GitHub didn't inline the bytes", () => {
+    expect(
+      readmeFromContents({
+        name: "README.md",
+        path: "README.md",
+        content: "",
+        encoding: "none",
+        download_url: "https://raw.githubusercontent.com/o/r/HEAD/README.md",
+      })
+    ).toBeNull();
   });
 });
 
