@@ -13,44 +13,26 @@ export interface CacheControl {
   sMaxAge?: number;
   /** Whether the response must not be cached (no-store) */
   noStore: boolean;
-  /** Whether the response must be revalidated (no-cache) */
-  noCache: boolean;
-  /** Whether the response is private (private) */
-  private: boolean;
-  /** Whether the response is public (public) */
-  public: boolean;
-  /** Whether revalidation is required when stale (must-revalidate) */
-  mustRevalidate: boolean;
-  /** Whether the response is immutable (immutable) */
-  immutable: boolean;
-  /** Stale-while-revalidate window in seconds */
-  staleWhileRevalidate?: number;
-  /** Stale-if-error window in seconds */
-  staleIfError?: number;
 }
 
 /**
- * Parses a Cache-Control header value into structured directives.
+ * Parses a Cache-Control header value into structured directives. Only the
+ * directives feed scheduling acts on are kept; every other directive is ignored.
  *
  * @param header - The Cache-Control header value (e.g., "max-age=3600, public")
  * @returns Parsed cache control directives
  *
  * @example
  * parseCacheControl("max-age=3600, public")
- * // => { maxAge: 3600, public: true, ... }
+ * // => { maxAge: 3600, noStore: false }
  *
  * @example
- * parseCacheControl("no-store, no-cache, private")
- * // => { noStore: true, noCache: true, private: true, ... }
+ * parseCacheControl("no-store, no-cache")
+ * // => { noStore: true }
  */
 export function parseCacheControl(header: string | null | undefined): CacheControl {
   const result: CacheControl = {
     noStore: false,
-    noCache: false,
-    private: false,
-    public: false,
-    mustRevalidate: false,
-    immutable: false,
   };
 
   if (!header) {
@@ -88,39 +70,10 @@ export function parseCacheControl(header: string | null | undefined): CacheContr
             result.sMaxAge = numValue;
           }
           break;
-        case "stale-while-revalidate":
-          if (!isNaN(numValue) && numValue >= 0) {
-            result.staleWhileRevalidate = numValue;
-          }
-          break;
-        case "stale-if-error":
-          if (!isNaN(numValue) && numValue >= 0) {
-            result.staleIfError = numValue;
-          }
-          break;
       }
-    } else {
-      // Boolean directives (no value)
-      switch (directive) {
-        case "no-store":
-          result.noStore = true;
-          break;
-        case "no-cache":
-          result.noCache = true;
-          break;
-        case "private":
-          result.private = true;
-          break;
-        case "public":
-          result.public = true;
-          break;
-        case "must-revalidate":
-          result.mustRevalidate = true;
-          break;
-        case "immutable":
-          result.immutable = true;
-          break;
-      }
+    } else if (directive === "no-store") {
+      // Boolean directive (no value)
+      result.noStore = true;
     }
   }
 

@@ -29,48 +29,6 @@ describe("parseCacheControl", () => {
 
       expect(result.noStore).toBe(true);
     });
-
-    it("parses no-cache directive", () => {
-      const result = parseCacheControl("no-cache");
-
-      expect(result.noCache).toBe(true);
-    });
-
-    it("parses private directive", () => {
-      const result = parseCacheControl("private");
-
-      expect(result.private).toBe(true);
-    });
-
-    it("parses public directive", () => {
-      const result = parseCacheControl("public");
-
-      expect(result.public).toBe(true);
-    });
-
-    it("parses must-revalidate directive", () => {
-      const result = parseCacheControl("must-revalidate");
-
-      expect(result.mustRevalidate).toBe(true);
-    });
-
-    it("parses immutable directive", () => {
-      const result = parseCacheControl("immutable");
-
-      expect(result.immutable).toBe(true);
-    });
-
-    it("parses stale-while-revalidate directive", () => {
-      const result = parseCacheControl("stale-while-revalidate=86400");
-
-      expect(result.staleWhileRevalidate).toBe(86400);
-    });
-
-    it("parses stale-if-error directive", () => {
-      const result = parseCacheControl("stale-if-error=172800");
-
-      expect(result.staleIfError).toBe(172800);
-    });
   });
 
   describe("multiple directives", () => {
@@ -78,72 +36,60 @@ describe("parseCacheControl", () => {
       const result = parseCacheControl("max-age=3600, public, must-revalidate");
 
       expect(result.maxAge).toBe(3600);
-      expect(result.public).toBe(true);
-      expect(result.mustRevalidate).toBe(true);
+      expect(result.noStore).toBe(false);
     });
 
     it("parses common CDN header", () => {
       const result = parseCacheControl("public, max-age=31536000, s-maxage=31536000, immutable");
 
-      expect(result.public).toBe(true);
       expect(result.maxAge).toBe(31536000);
       expect(result.sMaxAge).toBe(31536000);
-      expect(result.immutable).toBe(true);
-    });
-
-    it("parses no-cache response with revalidation", () => {
-      const result = parseCacheControl("no-cache, must-revalidate");
-
-      expect(result.noCache).toBe(true);
-      expect(result.mustRevalidate).toBe(true);
     });
 
     it("parses private cache response", () => {
       const result = parseCacheControl("private, max-age=0, no-cache");
 
-      expect(result.private).toBe(true);
       expect(result.maxAge).toBe(0);
-      expect(result.noCache).toBe(true);
+      expect(result.noStore).toBe(false);
     });
   });
 
   describe("whitespace handling", () => {
     it("handles extra spaces around values", () => {
-      const result = parseCacheControl("  max-age = 3600  ,  public  ");
+      const result = parseCacheControl("  max-age = 3600  ,  no-store  ");
 
       expect(result.maxAge).toBe(3600);
-      expect(result.public).toBe(true);
+      expect(result.noStore).toBe(true);
     });
 
     it("handles no spaces between directives", () => {
-      const result = parseCacheControl("max-age=3600,public,no-cache");
+      const result = parseCacheControl("max-age=3600,public,no-store");
 
       expect(result.maxAge).toBe(3600);
-      expect(result.public).toBe(true);
-      expect(result.noCache).toBe(true);
+      expect(result.noStore).toBe(true);
     });
 
     it("handles multiple spaces", () => {
-      const result = parseCacheControl("max-age=3600   ,   public");
+      const result = parseCacheControl("max-age=3600   ,   no-store");
 
       expect(result.maxAge).toBe(3600);
-      expect(result.public).toBe(true);
+      expect(result.noStore).toBe(true);
     });
   });
 
   describe("case insensitivity", () => {
     it("handles uppercase directives", () => {
-      const result = parseCacheControl("MAX-AGE=3600, PUBLIC");
+      const result = parseCacheControl("MAX-AGE=3600, NO-STORE");
 
       expect(result.maxAge).toBe(3600);
-      expect(result.public).toBe(true);
+      expect(result.noStore).toBe(true);
     });
 
     it("handles mixed case directives", () => {
-      const result = parseCacheControl("Max-Age=3600, No-Cache");
+      const result = parseCacheControl("Max-Age=3600, No-Store");
 
       expect(result.maxAge).toBe(3600);
-      expect(result.noCache).toBe(true);
+      expect(result.noStore).toBe(true);
     });
   });
 
@@ -162,11 +108,6 @@ describe("parseCacheControl", () => {
       expect(result.maxAge).toBeUndefined();
       expect(result.sMaxAge).toBeUndefined();
       expect(result.noStore).toBe(false);
-      expect(result.noCache).toBe(false);
-      expect(result.private).toBe(false);
-      expect(result.public).toBe(false);
-      expect(result.mustRevalidate).toBe(false);
-      expect(result.immutable).toBe(false);
     });
 
     it("returns defaults for undefined input", () => {
@@ -201,11 +142,12 @@ describe("parseCacheControl", () => {
       expect(result.maxAge).toBe(0);
     });
 
-    it("ignores unknown directives", () => {
-      const result = parseCacheControl("max-age=3600, unknown-directive, public");
+    it("ignores directives we don't act on", () => {
+      const result = parseCacheControl(
+        "max-age=3600, unknown-directive, public, private, no-cache, must-revalidate, immutable, stale-while-revalidate=86400, stale-if-error=172800"
+      );
 
-      expect(result.maxAge).toBe(3600);
-      expect(result.public).toBe(true);
+      expect(result).toEqual({ maxAge: 3600, noStore: false });
     });
 
     it("handles empty directive (trailing comma)", () => {
@@ -226,7 +168,6 @@ describe("parseCacheControl", () => {
     it("parses typical blog feed header", () => {
       const result = parseCacheControl("public, max-age=900");
 
-      expect(result.public).toBe(true);
       expect(result.maxAge).toBe(900); // 15 minutes
     });
 
@@ -235,19 +176,14 @@ describe("parseCacheControl", () => {
         "public, max-age=14400, s-maxage=14400, stale-while-revalidate=86400"
       );
 
-      expect(result.public).toBe(true);
       expect(result.maxAge).toBe(14400);
       expect(result.sMaxAge).toBe(14400);
-      expect(result.staleWhileRevalidate).toBe(86400);
     });
 
     it("parses no-cache API response", () => {
       const result = parseCacheControl("private, no-cache, no-store, must-revalidate");
 
-      expect(result.private).toBe(true);
-      expect(result.noCache).toBe(true);
       expect(result.noStore).toBe(true);
-      expect(result.mustRevalidate).toBe(true);
     });
 
     it("parses GitHub raw content header", () => {
@@ -271,7 +207,7 @@ describe("parseCacheHeaders", () => {
     expect(result.etag).toBe('"abc123"');
     expect(result.lastModified).toBe("Wed, 21 Oct 2015 07:28:00 GMT");
     expect(result.cacheControl.maxAge).toBe(3600);
-    expect(result.cacheControl.public).toBe(true);
+    expect(result.cacheControl.noStore).toBe(false);
   });
 
   it("handles missing ETag", () => {
@@ -335,25 +271,19 @@ describe("getEffectiveMaxAge", () => {
   it("returns undefined for no-store", () => {
     const cacheControl: CacheControl = {
       noStore: true,
-      noCache: false,
-      private: false,
-      public: false,
-      mustRevalidate: false,
-      immutable: false,
       maxAge: 3600,
     };
 
     expect(getEffectiveMaxAge(cacheControl)).toBeUndefined();
   });
 
+  it("keeps max-age for no-cache, which only asks us to revalidate", () => {
+    expect(getEffectiveMaxAge(parseCacheControl("no-cache, max-age=600"))).toBe(600);
+  });
+
   it("returns s-maxage over max-age when both present", () => {
     const cacheControl: CacheControl = {
       noStore: false,
-      noCache: false,
-      private: false,
-      public: true,
-      mustRevalidate: false,
-      immutable: false,
       maxAge: 3600,
       sMaxAge: 7200,
     };
@@ -364,11 +294,6 @@ describe("getEffectiveMaxAge", () => {
   it("returns max-age when s-maxage is not present", () => {
     const cacheControl: CacheControl = {
       noStore: false,
-      noCache: false,
-      private: false,
-      public: true,
-      mustRevalidate: false,
-      immutable: false,
       maxAge: 3600,
     };
 
@@ -378,11 +303,6 @@ describe("getEffectiveMaxAge", () => {
   it("returns undefined when neither max-age nor s-maxage present", () => {
     const cacheControl: CacheControl = {
       noStore: false,
-      noCache: false,
-      private: false,
-      public: true,
-      mustRevalidate: false,
-      immutable: false,
     };
 
     expect(getEffectiveMaxAge(cacheControl)).toBeUndefined();
@@ -391,11 +311,6 @@ describe("getEffectiveMaxAge", () => {
   it("returns 0 for max-age=0", () => {
     const cacheControl: CacheControl = {
       noStore: false,
-      noCache: false,
-      private: false,
-      public: false,
-      mustRevalidate: false,
-      immutable: false,
       maxAge: 0,
     };
 
@@ -405,11 +320,6 @@ describe("getEffectiveMaxAge", () => {
   it("returns s-maxage=0 when set", () => {
     const cacheControl: CacheControl = {
       noStore: false,
-      noCache: false,
-      private: false,
-      public: true,
-      mustRevalidate: false,
-      immutable: false,
       maxAge: 3600,
       sMaxAge: 0,
     };
