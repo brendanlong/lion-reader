@@ -133,7 +133,7 @@ interface PkceData {
  * @param state - The OAuth state parameter
  * @param codeVerifier - The PKCE code verifier
  * @param scopes - The OAuth scopes being requested
- * @param mode - The OAuth flow mode (login, link, save, or extension-save)
+ * @param mode - The OAuth flow mode (login, save, or extension-save)
  * @param returnUrl - Optional return URL for extension-save mode
  * @param inviteToken - Optional invite token for new user registration
  */

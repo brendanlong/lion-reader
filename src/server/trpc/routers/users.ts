@@ -18,7 +18,7 @@ import { errors } from "../errors";
 import { sessions, users, oauthAccounts } from "@/server/db/schema";
 import {
   revokeSession,
-  revokeOtherUserSessions,
+  revokeOtherUserSessionsOrReport,
   invalidateUserSessionCaches,
 } from "@/server/auth/session";
 import { clearSessionCookie } from "@/server/auth/session-cookie";
@@ -199,7 +199,7 @@ export const usersRouter = createTRPCRouter({
       // Adding a credential is a credential change: an OAuth-only user securing a
       // possibly-compromised account expects it to take effect everywhere, so
       // revoke every other session just as a password change does.
-      await revokeOtherUserSessions(userId, currentSessionId);
+      await revokeOtherUserSessionsOrReport(userId, currentSessionId, "Password set");
 
       return { success: true };
     }),
@@ -264,7 +264,7 @@ export const usersRouter = createTRPCRouter({
 
       // Revoke every other session so a stolen/lingering credential can't survive
       // a password change (common reason for changing it). Keep the current one.
-      await revokeOtherUserSessions(userId, currentSessionId);
+      await revokeOtherUserSessionsOrReport(userId, currentSessionId, "Password changed");
 
       return { success: true };
     }),

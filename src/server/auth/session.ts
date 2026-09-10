@@ -17,6 +17,7 @@ import { generateUuidv7 } from "@/lib/uuidv7";
 import { getRedisClient } from "@/server/redis";
 import { decryptApiKey } from "@/lib/encryption";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
+import { errors } from "@/server/trpc/errors";
 
 /**
  * Scopes a session may be restricted to. A scoped session is a fail-closed
@@ -621,6 +622,9 @@ export async function revokeSessionByToken(token: string): Promise<boolean> {
  * device can't outlive the credential it was created under — the current session
  * (the one performing the change) is kept alive.
  *
+ * Deliberately not exported: `revokeOtherUserSessionsOrReport` below is the only
+ * caller, so every credential change gets that failure handling.
+ *
  * @param userId - The user whose other sessions to revoke
  * @param exceptSessionId - The `sessions` row to keep active. Under token auth
  *   `ctx.session.session.id` is an `api_tokens` id, which matches no session and
@@ -628,10 +632,7 @@ export async function revokeSessionByToken(token: string): Promise<boolean> {
  *   be session-only.
  * @returns The number of sessions revoked
  */
-export async function revokeOtherUserSessions(
-  userId: string,
-  exceptSessionId: string
-): Promise<number> {
+async function revokeOtherUserSessions(userId: string, exceptSessionId: string): Promise<number> {
   const revokeFilter = and(
     eq(sessions.userId, userId),
     isNull(sessions.revokedAt),
@@ -665,6 +666,35 @@ export async function revokeOtherUserSessions(
   }
 
   return toRevoke.length;
+}
+
+/**
+ * `revokeOtherUserSessions` for a credential change that has already been
+ * written: reports a failed revoke instead of letting it look like the change
+ * itself failed.
+ *
+ * The change deliberately stands. Removing (or adding) the credential is what
+ * the user asked for and is the urgent half — an unlink rolled back because the
+ * revoke failed would leave a provider account the user believes is compromised
+ * still able to sign in. The cost is that retrying the action won't retry the
+ * revoke: callers gate it on a credential having actually changed, so the second
+ * attempt is a no-op. That's why the error names Settings → Sessions, where the
+ * user can revoke the survivors by hand.
+ *
+ * @param change - what already happened, for the error message the user reads
+ * @throws `sessionRevokeFailed`
+ */
+export async function revokeOtherUserSessionsOrReport(
+  userId: string,
+  exceptSessionId: string,
+  change: string
+): Promise<void> {
+  try {
+    await revokeOtherUserSessions(userId, exceptSessionId);
+  } catch (err) {
+    console.error("Failed to revoke other sessions after a credential change:", err);
+    throw errors.sessionRevokeFailed(change);
+  }
 }
 
 /**

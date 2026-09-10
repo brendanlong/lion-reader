@@ -42,10 +42,17 @@ export interface RecordedCall {
  * A client-side error carrying `data.code`, shaped like the one the real client
  * surfaces for a server `TRPCError` — so callers that branch on the code (e.g.
  * `error.data?.code === "NOT_FOUND"`) behave the same against a handler.
+ *
+ * `appErrorCode` is the narrower code our `errorFormatter` adds (see
+ * `src/server/trpc/trpc.ts`); pass it for callers that branch on that instead.
  */
-export function procedureError(code: string, message: string): TRPCClientError<AppRouter> {
+export function procedureError(
+  code: string,
+  message: string,
+  appErrorCode?: string
+): TRPCClientError<AppRouter> {
   return new TRPCClientError(message, {
-    result: { error: { data: { code } } },
+    result: { error: { data: { code, appErrorCode } } },
   } as never);
 }
 

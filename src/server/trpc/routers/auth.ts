@@ -382,15 +382,18 @@ export const authRouter = createTRPCRouter({
   /**
    * Generate Google OAuth authorization URL.
    *
-   * Returns a URL to redirect the user to for Google OAuth login.
-   * The state parameter should be stored by the client to verify the callback.
+   * Returns a URL to redirect the user to for Google OAuth login, for the
+   * REST/OpenAPI surface — browsers are redirected to the route handler in
+   * `src/app/api/v1/auth/oauth/google/callback` instead.
    *
    * Flow:
    * 1. Client calls this endpoint
-   * 2. Client stores the returned state (e.g., in localStorage)
-   * 3. Client redirects user to the URL
-   * 4. After Google auth, user is redirected to callback URL
-   * 5. Client sends code and state to googleCallback endpoint
+   * 2. Client redirects user to the URL
+   * 3. After Google auth, user is redirected to callback URL
+   * 4. Client sends code and state to googleCallback endpoint
+   *
+   * The returned `state` needs no client-side storage: the browser is bound to
+   * it by the httpOnly cookie set below (#1263).
    */
   googleAuthUrl: publicProcedure
     .meta({
@@ -506,15 +509,18 @@ export const authRouter = createTRPCRouter({
   /**
    * Generate Apple OAuth authorization URL.
    *
-   * Returns a URL to redirect the user to for Apple OAuth login.
-   * The state parameter should be stored by the client to verify the callback.
+   * Returns a URL to redirect the user to for Apple OAuth login, for the
+   * REST/OpenAPI surface — browsers are redirected to the route handler in
+   * `src/app/api/v1/auth/oauth/apple/callback` instead.
    *
    * Flow:
    * 1. Client calls this endpoint
-   * 2. Client stores the returned state (e.g., in localStorage)
-   * 3. Client redirects user to the URL
-   * 4. After Apple auth, user is redirected to callback URL
-   * 5. Client sends code, state, and user data to appleCallback endpoint
+   * 2. Client redirects user to the URL
+   * 3. After Apple auth, user is redirected to callback URL
+   * 4. Client sends code, state, and user data to appleCallback endpoint
+   *
+   * The returned `state` needs no client-side storage: the browser is bound to
+   * it by the httpOnly cookie set below (#1263).
    *
    * Note: Apple uses form_post response mode, so the callback comes as a POST
    */
@@ -657,15 +663,18 @@ export const authRouter = createTRPCRouter({
   /**
    * Generate Discord OAuth authorization URL.
    *
-   * Returns a URL to redirect the user to for Discord OAuth login.
-   * The state parameter should be stored by the client to verify the callback.
+   * Returns a URL to redirect the user to for Discord OAuth login, for the
+   * REST/OpenAPI surface — browsers are redirected to the route handler in
+   * `src/app/api/v1/auth/oauth/discord/callback` instead.
    *
    * Flow:
    * 1. Client calls this endpoint
-   * 2. Client stores the returned state (e.g., in localStorage)
-   * 3. Client redirects user to the URL
-   * 4. After Discord auth, user is redirected to callback URL
-   * 5. Client sends code and state to discordCallback endpoint
+   * 2. Client redirects user to the URL
+   * 3. After Discord auth, user is redirected to callback URL
+   * 4. Client sends code and state to discordCallback endpoint
+   *
+   * The returned `state` needs no client-side storage: the browser is bound to
+   * it by the httpOnly cookie set below (#1263).
    */
   discordAuthUrl: publicProcedure
     .meta({
@@ -1257,8 +1266,6 @@ export const authRouter = createTRPCRouter({
       // another user (login CSRF, issue #1263).
       setOAuthStateCookie(ctx.resHeaders, result.state);
 
-      // Return the URL with a note that this is for incremental auth
-      // The state should be stored by the client to verify the callback
       return {
         url: result.url,
         state: result.state,
