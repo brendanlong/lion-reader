@@ -598,10 +598,9 @@ export const entries = pgTable(
     // Unique global Google Reader item id; backs the greader_item_id -> UUID
     // reverse lookup (greaderItemIdsToUuids) with an index seek.
     uniqueIndex("idx_entries_greader_item_id").on(table.greaderItemId),
-    // Scheme-insensitive identity (Drizzle can't express this, created via raw SQL):
+    // Expression indexes (Drizzle can't express these, created via raw SQL):
     // - uq_entries_feed_guid_canonical: UNIQUE (feed_id, regexp_replace(guid, '^https?://', 'https://'))
     //   WHERE type = 'web'. Enforces src/server/feed/guid-identity.ts at the DB (#1535). Migration 0109.
-    // Expression indexes for entry list sorting (Drizzle can't express these, created via raw SQL):
     // - idx_entries_published_coalesce: (COALESCE(published_at, fetched_at) DESC, id DESC)
     //   Enables limit pushdown for "all entries" queries. Migration 0060.
     // - idx_entries_feed_published_coalesce: (feed_id, COALESCE(published_at, fetched_at) DESC, id DESC)
