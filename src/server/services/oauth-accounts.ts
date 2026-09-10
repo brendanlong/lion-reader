@@ -5,6 +5,12 @@
  * signed-in account. The login/signup side of OAuth — where the provider
  * identity decides which account you get — lives in
  * `src/server/auth/oauth/callback.ts` instead.
+ *
+ * Both functions add or remove a way to sign in, so both revoke the user's other
+ * sessions (SECURITY.md §4). The revoke lives here rather than in the per-provider
+ * tRPC procedures so a fourth provider can't forget it, and it runs in the same
+ * transaction as the write it accompanies. It fires only when a credential really
+ * changed — see each function for what doesn't count.
  */
 
 import { and, eq, sql } from "drizzle-orm";
@@ -12,6 +18,7 @@ import { and, eq, sql } from "drizzle-orm";
 import type { Database } from "@/server/db";
 import { oauthAccounts, users } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
+import { revokeOtherUserSessions } from "@/server/auth/session";
 import { errors } from "@/server/trpc/errors";
 import type { OAuthProviderName } from "@/server/auth/oauth/config";
 
@@ -25,6 +32,8 @@ const PROVIDER_LABELS: Record<OAuthProviderName, string> = {
 export interface LinkOAuthAccountParams {
   /** The signed-in user the provider account is being attached to. */
   userId: string;
+  /** The caller's session, kept alive when the credential change revokes the rest. */
+  currentSessionId: string;
   provider: OAuthProviderName;
   /** The provider's stable id for the account (`sub` / Discord user id). */
   providerAccountId: string;
@@ -52,6 +61,9 @@ export interface LinkOAuthAccountParams {
  * and don't reuse this from a path where the session doesn't establish who the
  * user is.
  *
+ * Only a new link revokes other sessions. Re-linking the account the user already
+ * has grants no new way in, so it leaves them alone.
+ *
  * @returns `"updated"` when an existing link was refreshed, `"linked"` for a new one
  * @throws `oauthAlreadyLinked` when a different account of this provider is linked
  * @throws `oauthCallbackFailed` when this provider account belongs to another user
@@ -60,8 +72,16 @@ export async function linkOAuthAccount(
   db: Database,
   params: LinkOAuthAccountParams
 ): Promise<"linked" | "updated"> {
-  const { userId, provider, providerAccountId, accessToken, refreshToken, expiresAt, scopes } =
-    params;
+  const {
+    userId,
+    currentSessionId,
+    provider,
+    providerAccountId,
+    accessToken,
+    refreshToken,
+    expiresAt,
+    scopes,
+  } = params;
   const label = PROVIDER_LABELS[provider];
 
   // What the provider omits is not the same as what it cleared. A re-consent
@@ -100,40 +120,53 @@ export async function linkOAuthAccount(
     return "updated";
   }
 
-  // Insert, letting the (provider, provider_account_id) unique constraint decide
-  // whether this provider account is already spoken for. Checking with a SELECT
-  // first would leave a window where two concurrent links both see it free; the
-  // conflict must *not* update, or one user could take over another's link.
-  const inserted = await db
-    .insert(oauthAccounts)
-    .values({
-      id: generateUuidv7(),
-      userId,
-      provider,
-      providerAccountId,
-      ...tokenColumns,
-      createdAt: new Date(),
-    })
-    .onConflictDoNothing({ target: [oauthAccounts.provider, oauthAccounts.providerAccountId] })
-    .returning({ id: oauthAccounts.id });
+  await db.transaction(async (tx) => {
+    // Insert, letting the (provider, provider_account_id) unique constraint decide
+    // whether this provider account is already spoken for. Checking with a SELECT
+    // first would leave a window where two concurrent links both see it free; the
+    // conflict must *not* update, or one user could take over another's link.
+    const inserted = await tx
+      .insert(oauthAccounts)
+      .values({
+        id: generateUuidv7(),
+        userId,
+        provider,
+        providerAccountId,
+        ...tokenColumns,
+        createdAt: new Date(),
+      })
+      .onConflictDoNothing({ target: [oauthAccounts.provider, oauthAccounts.providerAccountId] })
+      .returning({ id: oauthAccounts.id });
 
-  if (inserted.length === 0) {
-    throw errors.oauthCallbackFailed(`This ${label} account is already linked to another user`);
-  }
+    if (inserted.length === 0) {
+      throw errors.oauthCallbackFailed(`This ${label} account is already linked to another user`);
+    }
+
+    await revokeOtherUserSessions(userId, currentSessionId, tx);
+  });
 
   return "linked";
+}
+
+export interface UnlinkOAuthAccountParams {
+  userId: string;
+  provider: OAuthProviderName;
+  /** The caller's session, kept alive when the credential change revokes the rest. */
+  currentSessionId: string;
 }
 
 /**
  * Unlink a provider from a user. Idempotent: unlinking a provider that isn't
  * linked succeeds instead of 404-ing.
  *
+ * Only an unlink that removed a link revokes other sessions; a no-op one changes
+ * no credential.
+ *
  * @throws `cannotUnlinkOnlyAuth` when this is the user's last way to sign in
  */
 export async function unlinkOAuthAccount(
   db: Database,
-  userId: string,
-  provider: OAuthProviderName
+  { userId, provider, currentSessionId }: UnlinkOAuthAccountParams
 ): Promise<void> {
   await db.transaction(async (tx) => {
     // Serialize concurrent unlinks for this user by taking a row lock on the
@@ -174,5 +207,6 @@ export async function unlinkOAuthAccount(
     }
 
     await tx.delete(oauthAccounts).where(eq(oauthAccounts.id, account[0].id));
+    await revokeOtherUserSessions(userId, currentSessionId, tx);
   });
 }

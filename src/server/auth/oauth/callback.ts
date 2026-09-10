@@ -169,7 +169,15 @@ export async function processOAuthCallback(
   const existingUser = await db.select().from(users).where(eq(users.email, email)).limit(1);
 
   if (existingUser.length > 0) {
-    // Link OAuth to existing user account
+    // Link OAuth to existing user account.
+    //
+    // This adds a way to sign in, which SECURITY.md §4 would otherwise have
+    // revoke the user's other sessions — `oauth-accounts.ts` does exactly that
+    // for a link from the settings page. It deliberately doesn't here: this
+    // branch *is* an ordinary first social sign-in (the settings "Link" button
+    // also lands here, since the auth URLs are all mode `login`), so revoking
+    // would log every device out of an account whose owner just proved control
+    // of its verified email address and is signing in on this one.
     const userId = existingUser[0].id;
 
     // Create OAuth account link

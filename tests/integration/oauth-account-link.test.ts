@@ -10,7 +10,11 @@ import { describe, it, expect, afterAll } from "vitest";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { users, oauthAccounts } from "../../src/server/db/schema";
-import { linkOAuthAccount } from "../../src/server/services/oauth-accounts";
+import {
+  linkOAuthAccount,
+  type LinkOAuthAccountParams,
+} from "../../src/server/services/oauth-accounts";
+import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createTestUser } from "./helpers";
 
 const createdUserIds: string[] = [];
@@ -19,6 +23,15 @@ async function createUser(): Promise<string> {
   const userId = await createTestUser({ emailPrefix: "link" });
   createdUserIds.push(userId);
   return userId;
+}
+
+/**
+ * These cases are about the link row, so they pass a session id that matches no
+ * session; the revoke a new link performs is covered in
+ * `credential-session-revocation.test.ts`.
+ */
+function link(params: Omit<LinkOAuthAccountParams, "currentSessionId">) {
+  return linkOAuthAccount(db, { ...params, currentSessionId: generateUuidv7() });
 }
 
 async function readLink(userId: string, provider: string) {
@@ -40,7 +53,7 @@ describe("linkOAuthAccount", () => {
     const userId = await createUser();
     const expiresAt = new Date(Date.now() + 3600_000);
 
-    const result = await linkOAuthAccount(db, {
+    const result = await link({
       userId,
       provider: "google",
       providerAccountId: `sub-${userId}`,
@@ -62,7 +75,7 @@ describe("linkOAuthAccount", () => {
 
   it("refreshes tokens and scopes when the same account re-links (incremental auth)", async () => {
     const userId = await createUser();
-    await linkOAuthAccount(db, {
+    await link({
       userId,
       provider: "google",
       providerAccountId: `sub-${userId}`,
@@ -71,7 +84,7 @@ describe("linkOAuthAccount", () => {
       scopes: ["openid", "email"],
     });
 
-    const result = await linkOAuthAccount(db, {
+    const result = await link({
       userId,
       provider: "google",
       providerAccountId: `sub-${userId}`,
@@ -91,7 +104,7 @@ describe("linkOAuthAccount", () => {
 
   it("clears a stale expiry when the new response has none", async () => {
     const userId = await createUser();
-    await linkOAuthAccount(db, {
+    await link({
       userId,
       provider: "google",
       providerAccountId: `sub-${userId}`,
@@ -99,7 +112,7 @@ describe("linkOAuthAccount", () => {
       expiresAt: new Date(Date.now() - 3600_000),
     });
 
-    await linkOAuthAccount(db, {
+    await link({
       userId,
       provider: "google",
       providerAccountId: `sub-${userId}`,
@@ -116,14 +129,14 @@ describe("linkOAuthAccount", () => {
     "re-linking the same %s account refreshes tokens instead of erroring (#1467)",
     async (provider) => {
       const userId = await createUser();
-      await linkOAuthAccount(db, {
+      await link({
         userId,
         provider,
         providerAccountId: `sub-${userId}`,
         accessToken: "access-1",
       });
 
-      const result = await linkOAuthAccount(db, {
+      const result = await link({
         userId,
         provider,
         providerAccountId: `sub-${userId}`,
@@ -139,7 +152,7 @@ describe("linkOAuthAccount", () => {
 
   it("leaves stored scopes alone for providers that don't report them", async () => {
     const userId = await createUser();
-    await linkOAuthAccount(db, {
+    await link({
       userId,
       provider: "google",
       providerAccountId: `sub-${userId}`,
@@ -147,7 +160,7 @@ describe("linkOAuthAccount", () => {
       scopes: ["openid", "email"],
     });
 
-    await linkOAuthAccount(db, {
+    await link({
       userId,
       provider: "google",
       providerAccountId: `sub-${userId}`,
@@ -160,7 +173,7 @@ describe("linkOAuthAccount", () => {
 
   it("refuses a second account for a provider the user already linked", async () => {
     const userId = await createUser();
-    await linkOAuthAccount(db, {
+    await link({
       userId,
       provider: "apple",
       providerAccountId: `sub-a-${userId}`,
@@ -170,7 +183,7 @@ describe("linkOAuthAccount", () => {
     // CONFLICT, specifically: the BAD_REQUEST "linked to another user" error is
     // the wrong one here — this account is free, the *user* is the blocker.
     await expect(
-      linkOAuthAccount(db, {
+      link({
         userId,
         provider: "apple",
         providerAccountId: `sub-b-${userId}`,
@@ -187,7 +200,7 @@ describe("linkOAuthAccount", () => {
     const ownerId = await createUser();
     const otherId = await createUser();
     const providerAccountId = `sub-${ownerId}`;
-    await linkOAuthAccount(db, {
+    await link({
       userId: ownerId,
       provider: "discord",
       providerAccountId,
@@ -195,7 +208,7 @@ describe("linkOAuthAccount", () => {
     });
 
     await expect(
-      linkOAuthAccount(db, {
+      link({
         userId: otherId,
         provider: "discord",
         providerAccountId,
@@ -223,13 +236,13 @@ describe("linkOAuthAccount", () => {
     // constraint on (provider, provider_account_id) rather than a preceding
     // SELECT, and that the conflict does nothing instead of updating.
     const results = await Promise.allSettled([
-      linkOAuthAccount(db, {
+      link({
         userId: first,
         provider: "discord",
         providerAccountId,
         accessToken: "access-first",
       }),
-      linkOAuthAccount(db, {
+      link({
         userId: second,
         provider: "discord",
         providerAccountId,

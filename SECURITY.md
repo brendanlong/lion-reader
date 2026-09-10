@@ -116,7 +116,11 @@ Entry bodies, saved articles, and AI summaries are rendered with
 - Session cookie is `HttpOnly`, `Secure` (prod), `SameSite=Lax`; tokens are 32
   random bytes, SHA-256 hashed at rest, never stored raw. **Keep these flags.**
 - Password change (and any credential change) must revoke other sessions
-  (`revokeOtherUserSessions`).
+  (`revokeOtherUserSessions`) in the same transaction as the change. Linking and
+  unlinking a social provider counts — each adds or removes a way to sign in
+  (`src/server/services/oauth-accounts.ts`). The one deliberate exception is the
+  email-match link inside `processOAuthCallback`, which is an ordinary sign-in;
+  it says why at the branch.
 - Password-accepting endpoints are rate-limited per-IP **and** per-account (the
   account bucket degrades to in-memory, not fully open, during a Redis outage).
 - Password-accepting endpoints (tRPC `auth.login`, Google Reader `ClientLogin`,

@@ -1024,6 +1024,7 @@ export const authRouter = createTRPCRouter({
       // which is how incremental authorization (adding the Docs scope) lands.
       await linkOAuthAccount(ctx.db, {
         userId,
+        currentSessionId: ctx.session.session.id,
         provider: "google",
         providerAccountId: userInfo.sub,
         accessToken: tokens.accessToken,
@@ -1093,6 +1094,7 @@ export const authRouter = createTRPCRouter({
 
       await linkOAuthAccount(ctx.db, {
         userId,
+        currentSessionId: ctx.session.session.id,
         provider: "apple",
         providerAccountId: userInfo.sub,
         accessToken: tokens.accessToken,
@@ -1144,6 +1146,7 @@ export const authRouter = createTRPCRouter({
 
       await linkOAuthAccount(ctx.db, {
         userId,
+        currentSessionId: ctx.session.session.id,
         provider: "discord",
         providerAccountId: userInfo.id,
         accessToken: tokens.accessToken,
@@ -1163,7 +1166,7 @@ export const authRouter = createTRPCRouter({
    * @param provider - The provider to unlink ('google', 'apple', or 'discord')
    * @returns Success status
    */
-  unlinkProvider: protectedProcedure
+  unlinkProvider: expensiveProtectedProcedure
     .meta({
       openapi: {
         method: "DELETE",
@@ -1179,7 +1182,11 @@ export const authRouter = createTRPCRouter({
     )
     .output(z.object({ success: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
-      await unlinkOAuthAccount(ctx.db, ctx.session.user.id, input.provider);
+      await unlinkOAuthAccount(ctx.db, {
+        userId: ctx.session.user.id,
+        provider: input.provider,
+        currentSessionId: ctx.session.session.id,
+      });
 
       return { success: true };
     }),
