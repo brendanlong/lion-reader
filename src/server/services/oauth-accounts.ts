@@ -12,6 +12,7 @@ import { and, eq, sql } from "drizzle-orm";
 import type { Database } from "@/server/db";
 import { oauthAccounts, users } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
+import { revokeOtherUserSessions } from "@/server/auth/session";
 import { errors } from "@/server/trpc/errors";
 import type { OAuthProviderName } from "@/server/auth/oauth/config";
 
@@ -25,6 +26,8 @@ const PROVIDER_LABELS: Record<OAuthProviderName, string> = {
 export interface LinkOAuthAccountParams {
   /** The signed-in user the provider account is being attached to. */
   userId: string;
+  /** The caller's session, kept alive when the credential change revokes the rest. */
+  currentSessionId: string;
   provider: OAuthProviderName;
   /** The provider's stable id for the account (`sub` / Discord user id). */
   providerAccountId: string;
@@ -52,6 +55,13 @@ export interface LinkOAuthAccountParams {
  * and don't reuse this from a path where the session doesn't establish who the
  * user is.
  *
+ * A **new** link adds a way to sign in, so it revokes the user's other sessions
+ * like any other credential change (SECURITY.md §4) — the revoke lives here, not
+ * in the three per-provider procedures, so a fourth provider can't forget it. An
+ * `"updated"` re-link does not: it grants no new way in, and incremental
+ * authorization (the Google Docs scope) would otherwise log every other device
+ * out for granting a permission.
+ *
  * @returns `"updated"` when an existing link was refreshed, `"linked"` for a new one
  * @throws `oauthAlreadyLinked` when a different account of this provider is linked
  * @throws `oauthCallbackFailed` when this provider account belongs to another user
@@ -60,8 +70,16 @@ export async function linkOAuthAccount(
   db: Database,
   params: LinkOAuthAccountParams
 ): Promise<"linked" | "updated"> {
-  const { userId, provider, providerAccountId, accessToken, refreshToken, expiresAt, scopes } =
-    params;
+  const {
+    userId,
+    currentSessionId,
+    provider,
+    providerAccountId,
+    accessToken,
+    refreshToken,
+    expiresAt,
+    scopes,
+  } = params;
   const label = PROVIDER_LABELS[provider];
 
   // What the provider omits is not the same as what it cleared. A re-consent
@@ -121,21 +139,35 @@ export async function linkOAuthAccount(
     throw errors.oauthCallbackFailed(`This ${label} account is already linked to another user`);
   }
 
+  await revokeOtherUserSessions(userId, currentSessionId);
+
   return "linked";
+}
+
+export interface UnlinkOAuthAccountParams {
+  userId: string;
+  provider: OAuthProviderName;
+  /** The caller's session, kept alive when the credential change revokes the rest. */
+  currentSessionId: string;
 }
 
 /**
  * Unlink a provider from a user. Idempotent: unlinking a provider that isn't
  * linked succeeds instead of 404-ing.
  *
+ * Removing a way to sign in is a credential change, and the sharp case is a user
+ * unlinking a provider account they believe is compromised, so an unlink that
+ * actually removed a link revokes the user's other sessions (SECURITY.md §4) —
+ * otherwise an attacker's session outlives the action taken to stop it. A no-op
+ * unlink changes no credential and leaves sessions alone.
+ *
  * @throws `cannotUnlinkOnlyAuth` when this is the user's last way to sign in
  */
 export async function unlinkOAuthAccount(
   db: Database,
-  userId: string,
-  provider: OAuthProviderName
+  { userId, provider, currentSessionId }: UnlinkOAuthAccountParams
 ): Promise<void> {
-  await db.transaction(async (tx) => {
+  const unlinked = await db.transaction(async (tx) => {
     // Serialize concurrent unlinks for this user by taking a row lock on the
     // user. Without it, two requests unlinking *different* providers (e.g.
     // Google in one tab, Apple in another) target different oauth_accounts
@@ -154,7 +186,7 @@ export async function unlinkOAuthAccount(
       .limit(1);
 
     if (account.length === 0) {
-      return;
+      return false;
     }
 
     // Safety check: refuse to remove the user's only remaining auth method. The
@@ -174,5 +206,12 @@ export async function unlinkOAuthAccount(
     }
 
     await tx.delete(oauthAccounts).where(eq(oauthAccounts.id, account[0].id));
+    return true;
   });
+
+  // After the transaction commits: the revoke runs on the pooled connection, not
+  // the one holding the user's FOR UPDATE lock.
+  if (unlinked) {
+    await revokeOtherUserSessions(userId, currentSessionId);
+  }
 }

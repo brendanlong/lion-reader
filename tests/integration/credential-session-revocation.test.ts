@@ -2,10 +2,10 @@
  * Integration tests for session revocation on credential changes.
  *
  * SECURITY.md §4: "Password change (and any credential change) must revoke other
- * sessions." Both `users."me.setPassword"` (an OAuth-only account adding a
- * password) and `users."me.changePassword"` are credential changes, so both must
- * leave only the calling session alive — otherwise an attacker holding a leaked
- * session token survives the very action the user took to secure the account.
+ * sessions." Setting a password, changing it, linking a new provider and
+ * unlinking one all add or remove a way to sign in, so each must leave only the
+ * calling session alive — otherwise an attacker holding a leaked session token
+ * survives the very action the user took to secure the account.
  *
  * The sessions here are real rows validated through `validateSession`, so the
  * test covers the Redis cache eviction too: a cached session still validates
@@ -16,8 +16,10 @@ import { describe, it, expect, afterAll } from "vitest";
 import { eq, inArray } from "drizzle-orm";
 import * as argon2 from "argon2";
 import { db } from "../../src/server/db";
-import { sessions, users } from "../../src/server/db/schema";
+import { oauthAccounts, sessions, users } from "../../src/server/db/schema";
 import { createSession, validateSession } from "../../src/server/auth/session";
+import { linkOAuthAccount } from "../../src/server/services/oauth-accounts";
+import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
 import { createAuthContext, createTestUser } from "./helpers";
@@ -26,9 +28,18 @@ const createdUserIds: string[] = [];
 
 /** Creates a user and remembers it for cleanup. */
 async function createUser(overrides: Partial<typeof users.$inferInsert> = {}): Promise<string> {
-  const userId = await createTestUser({ emailPrefix: "pw-revoke", ...overrides });
+  const userId = await createTestUser({ emailPrefix: "cred-revoke", ...overrides });
   createdUserIds.push(userId);
   return userId;
+}
+
+async function insertLink(userId: string, provider: string): Promise<void> {
+  await db.insert(oauthAccounts).values({
+    id: generateUuidv7(),
+    userId,
+    provider,
+    providerAccountId: `${provider}-${userId}`,
+  });
 }
 
 /**
@@ -95,6 +106,98 @@ describe("credential changes revoke other sessions", () => {
     ).resolves.toEqual({ success: true });
 
     expect(await validateSession(other.token)).toBeNull();
+    expect(await validateSession(current.token)).not.toBeNull();
+  });
+
+  it("linking a new provider revokes other sessions and keeps the caller's", async () => {
+    // The three link procedures differ only in which provider callback produced
+    // the tokens, so the revoke is asserted once against the service they share
+    // (mirroring `oauth-account-link.test.ts`).
+    const userId = await createUser({ passwordHash: await argon2.hash("password") });
+    const current = await createSession(db, { userId });
+    const other = await createSession(db, { userId });
+
+    expect(await validateSession(current.token)).not.toBeNull();
+    expect(await validateSession(other.token)).not.toBeNull();
+
+    await expect(
+      linkOAuthAccount(db, {
+        userId,
+        currentSessionId: current.sessionId,
+        provider: "google",
+        providerAccountId: `sub-${userId}`,
+        accessToken: "access-1",
+      })
+    ).resolves.toBe("linked");
+
+    expect(await validateSession(other.token)).toBeNull();
+    expect(await validateSession(current.token)).not.toBeNull();
+  });
+
+  it("re-linking the same provider account leaves other sessions alone", async () => {
+    // Incremental authorization (granting the Google Docs scope) re-links the
+    // account the user already has. That adds no way to sign in, so logging
+    // their other devices out for granting a permission would be gratuitous.
+    const userId = await createUser({ passwordHash: await argon2.hash("password") });
+    const first = await createSession(db, { userId });
+    await linkOAuthAccount(db, {
+      userId,
+      currentSessionId: first.sessionId,
+      provider: "google",
+      providerAccountId: `sub-${userId}`,
+      accessToken: "access-1",
+    });
+
+    const current = await createSession(db, { userId });
+    const other = await createSession(db, { userId });
+
+    await expect(
+      linkOAuthAccount(db, {
+        userId,
+        currentSessionId: current.sessionId,
+        provider: "google",
+        providerAccountId: `sub-${userId}`,
+        accessToken: "access-2",
+        scopes: ["openid", "email", "https://www.googleapis.com/auth/documents.readonly"],
+      })
+    ).resolves.toBe("updated");
+
+    expect(await validateSession(other.token)).not.toBeNull();
+    expect(await validateSession(current.token)).not.toBeNull();
+  });
+
+  it("auth.unlinkProvider revokes other sessions and keeps the caller's", async () => {
+    // The sharp case: the user is unlinking a provider account they think is
+    // compromised, so the attacker's session must not outlive the unlink.
+    const userId = await createUser({ passwordHash: await argon2.hash("password") });
+    await insertLink(userId, "google");
+    const current = await createSession(db, { userId });
+    const other = await createSession(db, { userId });
+
+    expect(await validateSession(current.token)).not.toBeNull();
+    expect(await validateSession(other.token)).not.toBeNull();
+
+    const caller = createCaller(await createSessionContext(userId, current.sessionId));
+    await expect(caller.auth.unlinkProvider({ provider: "google" })).resolves.toEqual({
+      success: true,
+    });
+
+    expect(await validateSession(other.token)).toBeNull();
+    expect(await validateSession(current.token)).not.toBeNull();
+  });
+
+  it("a no-op auth.unlinkProvider leaves other sessions alone", async () => {
+    // Nothing was linked, so no credential changed.
+    const userId = await createUser({ passwordHash: await argon2.hash("password") });
+    const current = await createSession(db, { userId });
+    const other = await createSession(db, { userId });
+
+    const caller = createCaller(await createSessionContext(userId, current.sessionId));
+    await expect(caller.auth.unlinkProvider({ provider: "apple" })).resolves.toEqual({
+      success: true,
+    });
+
+    expect(await validateSession(other.token)).not.toBeNull();
     expect(await validateSession(current.token)).not.toBeNull();
   });
 
