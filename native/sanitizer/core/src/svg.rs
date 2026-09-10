@@ -27,54 +27,269 @@ use crate::serialize::{attr_display_name, escape_attr, escape_text};
 use crate::urls::{is_data_image, url_scheme};
 
 const ALLOWED_SVG_TAGS: &[&str] = &[
-    "svg", "a", "altglyph", "altglyphdef", "altglyphitem", "circle", "clippath", "defs", "desc",
-    "ellipse", "filter", "font", "g", "glyph", "glyphref", "hkern", "image", "line",
-    "lineargradient", "marker", "mask", "metadata", "path", "pattern", "polygon", "polyline",
-    "radialgradient", "rect", "stop", "switch", "symbol", "text", "textpath", "title", "tref",
-    "tspan", "view", "vkern",
+    "svg",
+    "a",
+    "altglyph",
+    "altglyphdef",
+    "altglyphitem",
+    "circle",
+    "clippath",
+    "defs",
+    "desc",
+    "ellipse",
+    "filter",
+    "font",
+    "g",
+    "glyph",
+    "glyphref",
+    "hkern",
+    "image",
+    "line",
+    "lineargradient",
+    "marker",
+    "mask",
+    "metadata",
+    "path",
+    "pattern",
+    "polygon",
+    "polyline",
+    "radialgradient",
+    "rect",
+    "stop",
+    "switch",
+    "symbol",
+    "text",
+    "textpath",
+    "title",
+    "tref",
+    "tspan",
+    "view",
+    "vkern",
     // Filter primitives (safe; static rendering only).
-    "feblend", "fecolormatrix", "fecomponenttransfer", "fecomposite", "feconvolvematrix",
-    "fediffuselighting", "fedisplacementmap", "fedistantlight", "fedropshadow", "feflood",
-    "fefunca", "fefuncb", "fefuncg", "fefuncr", "fegaussianblur", "feimage", "femerge",
-    "femergenode", "femorphology", "feoffset", "fepointlight", "fespecularlighting",
-    "fespotlight", "fetile", "feturbulence",
+    "feblend",
+    "fecolormatrix",
+    "fecomponenttransfer",
+    "fecomposite",
+    "feconvolvematrix",
+    "fediffuselighting",
+    "fedisplacementmap",
+    "fedistantlight",
+    "fedropshadow",
+    "feflood",
+    "fefunca",
+    "fefuncb",
+    "fefuncg",
+    "fefuncr",
+    "fegaussianblur",
+    "feimage",
+    "femerge",
+    "femergenode",
+    "femorphology",
+    "feoffset",
+    "fepointlight",
+    "fespecularlighting",
+    "fespotlight",
+    "fetile",
+    "feturbulence",
 ];
 
 const ALLOWED_SVG_ATTRS: &[&str] = &[
-    "accent-height", "accumulate", "additive", "alignment-baseline", "amplitude", "ascent",
-    "attributename", "attributetype", "azimuth", "basefrequency", "baseline-shift", "begin",
-    "bias", "by", "class", "clip", "clippathunits", "clip-path", "clip-rule", "color",
-    "color-interpolation", "color-interpolation-filters", "color-profile", "color-rendering",
-    "cx", "cy", "d", "dx", "dy", "diffuseconstant", "direction", "display", "divisor", "dur",
-    "edgemode", "elevation", "end", "exponent", "fill", "fill-opacity", "fill-rule", "filter",
-    "filterunits", "flood-color", "flood-opacity", "font-family", "font-size",
-    "font-size-adjust", "font-stretch", "font-style", "font-variant", "font-weight", "fx",
-    "fy", "g1", "g2", "glyph-name", "glyphref", "gradientunits", "gradienttransform",
-    "height", "href", "id", "image-rendering", "in", "in2", "intercept", "k", "k1", "k2",
-    "k3", "k4", "kerning", "keypoints", "keysplines", "keytimes", "lang", "lengthadjust",
-    "letter-spacing", "kernelmatrix", "kernelunitlength", "lighting-color", "local",
-    "marker-end", "marker-mid", "marker-start", "markerheight", "markerunits", "markerwidth",
-    "maskcontentunits", "maskunits", "max", "mask", "mask-type", "media", "method", "mode",
-    "min", "name", "numoctaves", "offset", "operator", "opacity", "order", "orient",
-    "orientation", "origin", "overflow", "paint-order", "path", "pathlength",
-    "patterncontentunits", "patterntransform", "patternunits", "points", "preservealpha",
-    "preserveaspectratio", "primitiveunits", "r", "rx", "ry", "radius", "refx", "refy",
-    "repeatcount", "repeatdur", "restart", "result", "rotate", "scale", "seed",
-    "shape-rendering", "slope", "specularconstant", "specularexponent", "spreadmethod",
-    "startoffset", "stddeviation", "stitchtiles", "stop-color", "stop-opacity",
-    "stroke-dasharray", "stroke-dashoffset", "stroke-linecap", "stroke-linejoin",
-    "stroke-miterlimit", "stroke-opacity", "stroke", "stroke-width", "surfacescale",
-    "systemlanguage", "tabindex", "tablevalues", "targetx", "targety", "transform",
-    "transform-origin", "text-anchor", "text-decoration", "text-rendering", "textlength",
-    "type", "u1", "u2", "unicode", "values", "viewbox", "visibility", "version",
-    "vert-adv-y", "vert-origin-x", "vert-origin-y", "width", "word-spacing", "wrap",
-    "writing-mode", "xchannelselector", "ychannelselector", "x", "x1", "x2", "xmlns", "y",
-    "y1", "y2", "z", "zoomandpan",
+    "accent-height",
+    "accumulate",
+    "additive",
+    "alignment-baseline",
+    "amplitude",
+    "ascent",
+    "attributename",
+    "attributetype",
+    "azimuth",
+    "basefrequency",
+    "baseline-shift",
+    "begin",
+    "bias",
+    "by",
+    "class",
+    "clip",
+    "clippathunits",
+    "clip-path",
+    "clip-rule",
+    "color",
+    "color-interpolation",
+    "color-interpolation-filters",
+    "color-profile",
+    "color-rendering",
+    "cx",
+    "cy",
+    "d",
+    "dx",
+    "dy",
+    "diffuseconstant",
+    "direction",
+    "display",
+    "divisor",
+    "dur",
+    "edgemode",
+    "elevation",
+    "end",
+    "exponent",
+    "fill",
+    "fill-opacity",
+    "fill-rule",
+    "filter",
+    "filterunits",
+    "flood-color",
+    "flood-opacity",
+    "font-family",
+    "font-size",
+    "font-size-adjust",
+    "font-stretch",
+    "font-style",
+    "font-variant",
+    "font-weight",
+    "fx",
+    "fy",
+    "g1",
+    "g2",
+    "glyph-name",
+    "glyphref",
+    "gradientunits",
+    "gradienttransform",
+    "height",
+    "href",
+    "id",
+    "image-rendering",
+    "in",
+    "in2",
+    "intercept",
+    "k",
+    "k1",
+    "k2",
+    "k3",
+    "k4",
+    "kerning",
+    "keypoints",
+    "keysplines",
+    "keytimes",
+    "lang",
+    "lengthadjust",
+    "letter-spacing",
+    "kernelmatrix",
+    "kernelunitlength",
+    "lighting-color",
+    "local",
+    "marker-end",
+    "marker-mid",
+    "marker-start",
+    "markerheight",
+    "markerunits",
+    "markerwidth",
+    "maskcontentunits",
+    "maskunits",
+    "max",
+    "mask",
+    "mask-type",
+    "media",
+    "method",
+    "mode",
+    "min",
+    "name",
+    "numoctaves",
+    "offset",
+    "operator",
+    "opacity",
+    "order",
+    "orient",
+    "orientation",
+    "origin",
+    "overflow",
+    "paint-order",
+    "path",
+    "pathlength",
+    "patterncontentunits",
+    "patterntransform",
+    "patternunits",
+    "points",
+    "preservealpha",
+    "preserveaspectratio",
+    "primitiveunits",
+    "r",
+    "rx",
+    "ry",
+    "radius",
+    "refx",
+    "refy",
+    "repeatcount",
+    "repeatdur",
+    "restart",
+    "result",
+    "rotate",
+    "scale",
+    "seed",
+    "shape-rendering",
+    "slope",
+    "specularconstant",
+    "specularexponent",
+    "spreadmethod",
+    "startoffset",
+    "stddeviation",
+    "stitchtiles",
+    "stop-color",
+    "stop-opacity",
+    "stroke-dasharray",
+    "stroke-dashoffset",
+    "stroke-linecap",
+    "stroke-linejoin",
+    "stroke-miterlimit",
+    "stroke-opacity",
+    "stroke",
+    "stroke-width",
+    "surfacescale",
+    "systemlanguage",
+    "tabindex",
+    "tablevalues",
+    "targetx",
+    "targety",
+    "transform",
+    "transform-origin",
+    "text-anchor",
+    "text-decoration",
+    "text-rendering",
+    "textlength",
+    "type",
+    "u1",
+    "u2",
+    "unicode",
+    "values",
+    "viewbox",
+    "visibility",
+    "version",
+    "vert-adv-y",
+    "vert-origin-x",
+    "vert-origin-y",
+    "width",
+    "word-spacing",
+    "wrap",
+    "writing-mode",
+    "xchannelselector",
+    "ychannelselector",
+    "x",
+    "x1",
+    "x2",
+    "xmlns",
+    "y",
+    "y1",
+    "y2",
+    "z",
+    "zoomandpan",
     // Namespaced attributes preserved for well-formed SVG.
-    "xlink:href", "xml:space", "xml:lang", "xmlns:xlink",
+    "xlink:href",
+    "xml:space",
+    "xml:lang",
+    "xmlns:xlink",
     // Link attributes on SVG <a> (SVG2); rel/target are forced to safe
     // values for external links.
-    "target", "rel",
+    "target",
+    "rel",
 ];
 
 const HREF_HTTP_SCHEMES: &[&str] = &["http", "https", "mailto", "tel"];
@@ -138,9 +353,7 @@ fn emit_svg_element(el: ElementRef, out: &mut String) {
         if !ALLOWED_SVG_ATTRS.contains(&attr_lower.as_str()) {
             continue;
         }
-        if (attr_lower == "href" || attr_lower == "xlink:href")
-            && !is_href_allowed(&lower, value)
-        {
+        if (attr_lower == "href" || attr_lower == "xlink:href") && !is_href_allowed(&lower, value) {
             continue;
         }
         // Namespace ids and the references that reach them, so an SVG's
@@ -272,7 +485,11 @@ fn contains_svg(html: &str) -> bool {
 /// collects non-fatal diagnostics for the caller to log.
 pub fn extract_inline_svg(html: &str, warnings: &mut Vec<String>) -> SvgExtraction {
     if !contains_svg(html) {
-        return SvgExtraction { html: html.to_string(), svgs: Vec::new(), nonce: String::new() };
+        return SvgExtraction {
+            html: html.to_string(),
+            svgs: Vec::new(),
+            nonce: String::new(),
+        };
     }
     let nonce = random_nonce();
     // Inside <svg>, foreign-content parsing keeps <style>/<script> as
@@ -280,7 +497,11 @@ pub fn extract_inline_svg(html: &str, warnings: &mut Vec<String>) -> SvgExtracti
     // matching the old htmlparser2 implied-close behavior.
     let ranges = find_top_level_ranges(html, "svg", &[], false, Recovery::ToEof);
     if ranges.is_empty() {
-        return SvgExtraction { html: html.to_string(), svgs: Vec::new(), nonce };
+        return SvgExtraction {
+            html: html.to_string(),
+            svgs: Vec::new(),
+            nonce,
+        };
     }
 
     let mut svgs: Vec<String> = Vec::new();
@@ -308,10 +529,18 @@ pub fn extract_inline_svg(html: &str, warnings: &mut Vec<String>) -> SvgExtracti
         ));
     }
     if svgs.is_empty() {
-        return SvgExtraction { html: html.to_string(), svgs, nonce };
+        return SvgExtraction {
+            html: html.to_string(),
+            svgs,
+            nonce,
+        };
     }
     result.push_str(&html[cursor..]);
-    SvgExtraction { html: result, svgs, nonce }
+    SvgExtraction {
+        html: result,
+        svgs,
+        nonce,
+    }
 }
 
 /// Substitute the sanitized SVG markup back in for the placeholder tokens,
@@ -363,7 +592,9 @@ mod tests {
 
     #[test]
     fn drops_script_and_event_handlers() {
-        let out = roundtrip(r#"<svg onload="alert(1)"><script>alert(1)</script><circle onclick="x" r="1"/></svg>"#);
+        let out = roundtrip(
+            r#"<svg onload="alert(1)"><script>alert(1)</script><circle onclick="x" r="1"/></svg>"#,
+        );
         assert!(!out.contains("script"), "{out}");
         assert!(!out.contains("onload"), "{out}");
         assert!(!out.contains("onclick"), "{out}");
@@ -372,7 +603,9 @@ mod tests {
 
     #[test]
     fn drops_foreign_object_subtree() {
-        let out = roundtrip(r#"<svg><foreignObject><img src="x" onerror="alert(1)"></foreignObject><rect width="5"/></svg>"#);
+        let out = roundtrip(
+            r#"<svg><foreignObject><img src="x" onerror="alert(1)"></foreignObject><rect width="5"/></svg>"#,
+        );
         assert!(!out.to_lowercase().contains("foreignobject"), "{out}");
         assert!(!out.contains("img"), "{out}");
         assert!(out.contains("<rect width=\"5\"/>"), "{out}");
@@ -415,7 +648,10 @@ mod tests {
         );
         let mut warnings = Vec::new();
         let extraction = extract_inline_svg(&deep, &mut warnings);
-        assert!(extraction.svgs.is_empty(), "over-deep SVG must be dropped, not emitted");
+        assert!(
+            extraction.svgs.is_empty(),
+            "over-deep SVG must be dropped, not emitted"
+        );
         assert_eq!(warnings.len(), 1, "{warnings:?}");
         assert!(warnings[0].contains("nested deeper"), "{warnings:?}");
     }
@@ -428,7 +664,11 @@ mod tests {
         let mut warnings = Vec::new();
         let extraction = extract_inline_svg(&html, &mut warnings);
         assert_eq!(extraction.svgs.len(), 1, "{:?}", extraction.svgs);
-        assert!(extraction.svgs[0].contains("id=\"uc-ok\""), "{:?}", extraction.svgs);
+        assert!(
+            extraction.svgs[0].contains("id=\"uc-ok\""),
+            "{:?}",
+            extraction.svgs
+        );
         assert_eq!(warnings.len(), 1, "{warnings:?}");
     }
 
@@ -445,7 +685,12 @@ mod tests {
             "</g>".repeat(levels)
         );
         let out = roundtrip(&deep);
-        assert_eq!(out.matches("<g").count(), levels, "{}", &out[..out.len().min(200)]);
+        assert_eq!(
+            out.matches("<g").count(),
+            levels,
+            "{}",
+            &out[..out.len().min(200)]
+        );
         assert!(out.contains("<circle r=\"1\"/>"), "{out}");
     }
 
@@ -534,7 +779,9 @@ mod tests {
 
     #[test]
     fn leaves_non_reference_paint_values_alone() {
-        let out = roundtrip("<svg><rect fill=\"#ff0000\" stroke=\"none\" clip-path=\"circle(50%)\"/></svg>");
+        let out = roundtrip(
+            "<svg><rect fill=\"#ff0000\" stroke=\"none\" clip-path=\"circle(50%)\"/></svg>",
+        );
         assert!(out.contains("fill=\"#ff0000\""), "{out}");
         assert!(out.contains("stroke=\"none\""), "{out}");
         assert!(out.contains("clip-path=\"circle(50%)\""), "{out}");

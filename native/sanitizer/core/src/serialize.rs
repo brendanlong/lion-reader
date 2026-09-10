@@ -42,7 +42,11 @@ pub enum MNode {
 
 impl MNode {
     pub fn elem(name: &'static str, children: Vec<MNode>) -> MNode {
-        MNode::Elem { name, attrs: Vec::new(), children }
+        MNode::Elem {
+            name,
+            attrs: Vec::new(),
+            children,
+        }
     }
 
     pub fn elem_with_attrs(
@@ -50,7 +54,11 @@ impl MNode {
         attrs: Vec<(String, String)>,
         children: Vec<MNode>,
     ) -> MNode {
-        MNode::Elem { name, attrs, children }
+        MNode::Elem {
+            name,
+            attrs,
+            children,
+        }
     }
 }
 
@@ -60,7 +68,11 @@ pub fn serialize_mnodes(nodes: &[MNode], out: &mut String) {
     for node in nodes {
         match node {
             MNode::Text(t) => escape_text(t, out),
-            MNode::Elem { name, attrs, children } => {
+            MNode::Elem {
+                name,
+                attrs,
+                children,
+            } => {
                 out.push('<');
                 out.push_str(name);
                 for (k, v) in attrs {

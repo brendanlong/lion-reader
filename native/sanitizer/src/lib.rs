@@ -21,7 +21,10 @@ pub struct SanitizeOutput {
 fn run_pipeline(html: &str) -> Result<SanitizeOutput> {
     let mut warnings = Vec::new();
     match core::sanitize_entry_html(html, &mut warnings) {
-        Ok(sanitized) => Ok(SanitizeOutput { html: sanitized, warnings }),
+        Ok(sanitized) => Ok(SanitizeOutput {
+            html: sanitized,
+            warnings,
+        }),
         Err(message) => Err(Error::new(
             Status::GenericFailure,
             format!("sanitizer failed: {message}"),

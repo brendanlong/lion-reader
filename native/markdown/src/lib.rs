@@ -47,7 +47,8 @@ fn run(markdown: &str, limits: &MarkdownLimits) -> RenderedMarkdown {
     // process, so it stops here. Rendering has no partial result worth
     // salvaging, so an unexpected panic is reported as the over-budget case —
     // the caller already handles it, and it can't be mistaken for success.
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| render(markdown, limits)));
+    let result =
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| render(markdown, limits)));
 
     match result {
         Ok(Ok(html)) => RenderedMarkdown {

@@ -45,19 +45,86 @@ use crate::urls::{decode_attr, is_image_url_allowed};
 /// Tags allowed in entry content (sanitize.ts ALLOWED_TAGS + MATHML_TAGS).
 const ALLOWED_TAGS: &[&str] = &[
     // Sections & blocks
-    "p", "div", "span", "section", "article", "header", "footer", "main", "aside", "nav",
-    "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "pre", "hr", "br", "figure",
-    "figcaption", "details", "summary", "address",
+    "p",
+    "div",
+    "span",
+    "section",
+    "article",
+    "header",
+    "footer",
+    "main",
+    "aside",
+    "nav",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "blockquote",
+    "pre",
+    "hr",
+    "br",
+    "figure",
+    "figcaption",
+    "details",
+    "summary",
+    "address",
     // Inline text semantics
-    "a", "b", "strong", "i", "em", "u", "s", "strike", "del", "ins", "mark", "small", "sub",
-    "sup", "abbr", "cite", "q", "code", "kbd", "samp", "var", "time", "wbr", "bdi", "bdo",
-    "ruby", "rt", "rp", "dfn",
+    "a",
+    "b",
+    "strong",
+    "i",
+    "em",
+    "u",
+    "s",
+    "strike",
+    "del",
+    "ins",
+    "mark",
+    "small",
+    "sub",
+    "sup",
+    "abbr",
+    "cite",
+    "q",
+    "code",
+    "kbd",
+    "samp",
+    "var",
+    "time",
+    "wbr",
+    "bdi",
+    "bdo",
+    "ruby",
+    "rt",
+    "rp",
+    "dfn",
     // Lists
-    "ul", "ol", "li", "dl", "dt", "dd",
+    "ul",
+    "ol",
+    "li",
+    "dl",
+    "dt",
+    "dd",
     // Tables
-    "table", "thead", "tbody", "tfoot", "tr", "th", "td", "caption", "colgroup", "col",
+    "table",
+    "thead",
+    "tbody",
+    "tfoot",
+    "tr",
+    "th",
+    "td",
+    "caption",
+    "colgroup",
+    "col",
     // Media
-    "img", "picture", "source", "audio", "video", "track",
+    "img",
+    "picture",
+    "source",
+    "audio",
+    "video",
+    "track",
     // `input` is allowed ONLY as an inert GFM task-list checkbox (issue #1439):
     // handle_input drops every attribute, keeps `checked`, and forces
     // `type="checkbox" disabled`, so it can carry no name/value/form binding and
@@ -72,10 +139,35 @@ const ALLOWED_TAGS: &[&str] = &[
     // allow-list (and no `href`): `semantics` is unwrapped so its presentation
     // child renders; `annotation`/`annotation-xml` are dropped with content
     // (see DROP_WITH_CONTENT — raw-TeX-source leak + mXSS vector).
-    "math", "mrow", "mi", "mo", "mn", "ms", "mtext", "mspace", "msup", "msub", "msubsup",
-    "mfrac", "msqrt", "mroot", "mover", "munder", "munderover", "mmultiscripts",
-    "mprescripts", "mtable", "mtr", "mtd", "mlabeledtr", "mpadded", "mphantom", "menclose",
-    "mstyle", "merror", "maction",
+    "math",
+    "mrow",
+    "mi",
+    "mo",
+    "mn",
+    "ms",
+    "mtext",
+    "mspace",
+    "msup",
+    "msub",
+    "msubsup",
+    "mfrac",
+    "msqrt",
+    "mroot",
+    "mover",
+    "munder",
+    "munderover",
+    "mmultiscripts",
+    "mprescripts",
+    "mtable",
+    "mtr",
+    "mtd",
+    "mlabeledtr",
+    "mpadded",
+    "mphantom",
+    "menclose",
+    "mstyle",
+    "merror",
+    "maction",
 ];
 
 /// Disallowed tags whose content is dropped along with them, rather than
@@ -96,7 +188,15 @@ const ALLOWED_TAGS: &[&str] = &[
 /// allow-listed and handled separately in `handle_iframe`, so it never
 /// reaches here.)
 const DROP_WITH_CONTENT: &[&str] = &[
-    "script", "style", "textarea", "option", "title", "xmp", "noembed", "noframes", "noscript",
+    "script",
+    "style",
+    "textarea",
+    "option",
+    "title",
+    "xmp",
+    "noembed",
+    "noframes",
+    "noscript",
     "plaintext",
     // MathML annotations. `<semantics>` is unwrapped (its presentation-MathML
     // child renders natively), but its annotations must be dropped WITH content,
@@ -107,7 +207,8 @@ const DROP_WITH_CONTENT: &[&str] = &[
     // subtree is strictly safer than unwrapping (keeping children). Neither is
     // used for visual rendering or screen-reader a11y — those use the
     // presentation MathML we keep.
-    "annotation", "annotation-xml",
+    "annotation",
+    "annotation-xml",
 ];
 
 /// Global attributes allowed on any element (`data-*` and `aria-*` handled
@@ -121,11 +222,40 @@ const GLOBAL_ATTRS: &[&str] = &["class", "id", "title", "dir", "lang", "role"];
 /// MathML presentation attributes — allowed on every element, matching
 /// sanitize.ts's `allowedAttributes["*"]` (no `href`, no event handlers).
 const MATHML_ATTRS: &[&str] = &[
-    "displaystyle", "scriptlevel", "mathvariant", "mathcolor", "mathbackground", "dir",
-    "display", "linethickness", "fence", "separator", "stretchy", "symmetric", "largeop",
-    "movablelimits", "accent", "accentunder", "lspace", "rspace", "width", "height", "depth",
-    "voffset", "open", "close", "separators", "notation", "columnalign", "rowalign",
-    "columnspan", "rowspan", "columnlines", "rowlines", "subscriptshift", "superscriptshift",
+    "displaystyle",
+    "scriptlevel",
+    "mathvariant",
+    "mathcolor",
+    "mathbackground",
+    "dir",
+    "display",
+    "linethickness",
+    "fence",
+    "separator",
+    "stretchy",
+    "symmetric",
+    "largeop",
+    "movablelimits",
+    "accent",
+    "accentunder",
+    "lspace",
+    "rspace",
+    "width",
+    "height",
+    "depth",
+    "voffset",
+    "open",
+    "close",
+    "separators",
+    "notation",
+    "columnalign",
+    "rowalign",
+    "columnspan",
+    "rowspan",
+    "columnlines",
+    "rowlines",
+    "subscriptshift",
+    "superscriptshift",
 ];
 
 const SAFE_SCHEMES: &[&str] = &["http", "https", "mailto", "tel"];
@@ -272,7 +402,8 @@ fn srcset_urls(value: &str) -> Vec<String> {
             return false;
         }
         let (num, suffix) = desc.split_at(desc.len() - 1);
-        matches!(suffix, "w" | "x") && num.chars().all(|c| c.is_ascii_digit() || c == '.')
+        matches!(suffix, "w" | "x")
+            && num.chars().all(|c| c.is_ascii_digit() || c == '.')
             && num.chars().any(|c| c.is_ascii_digit())
     }
     fn looks_like_new_entry(s: &str) -> bool {
@@ -312,7 +443,9 @@ fn srcset_urls(value: &str) -> Vec<String> {
 /// sandbox/allow/loading. Anything unrecognized is removed with its content.
 fn handle_iframe(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let src = el.get_attribute("src");
-    let embed = src.as_deref().and_then(|s| normalize_embed(&decode_attr(s)));
+    let embed = src
+        .as_deref()
+        .and_then(|s| normalize_embed(&decode_attr(s)));
     let Some(embed) = embed else {
         el.remove();
         return Ok(());
@@ -657,14 +790,20 @@ fn rewrite_dropping_disallowed_end_tags(html: &str) -> String {
     while let Some(lt) = find_byte(bytes, i, b'<') {
         i = lt + 1;
         if bytes[lt..].starts_with(b"<!--") {
-            i = find_bytes(bytes, lt + 4, b"-->").map(|p| p + 3).unwrap_or(bytes.len());
+            i = find_bytes(bytes, lt + 4, b"-->")
+                .map(|p| p + 3)
+                .unwrap_or(bytes.len());
         } else if i < bytes.len() && matches!(bytes[i], b'!' | b'?') {
             // Bogus comment / doctype: ends at the first `>`.
-            i = find_byte(bytes, i, b'>').map(|p| p + 1).unwrap_or(bytes.len());
+            i = find_byte(bytes, i, b'>')
+                .map(|p| p + 1)
+                .unwrap_or(bytes.len());
         } else if i < bytes.len() && bytes[i] == b'/' {
             if !(i + 1 < bytes.len() && bytes[i + 1].is_ascii_alphabetic()) {
                 // `</>` or `</ …`: a bogus comment per spec, not an end tag.
-                i = find_byte(bytes, i + 1, b'>').map(|p| p + 1).unwrap_or(bytes.len());
+                i = find_byte(bytes, i + 1, b'>')
+                    .map(|p| p + 1)
+                    .unwrap_or(bytes.len());
                 continue;
             }
             let after_name = tag_name_end(bytes, lt + 2);
@@ -674,10 +813,7 @@ fn rewrite_dropping_disallowed_end_tags(html: &str) -> String {
             i = bare_end.unwrap_or_else(|| scan_to_tag_end(bytes, after_name).0);
             let name = &bytes[lt + 2..after_name];
             if let Some(end) = bare_end {
-                if foreign_depth == 0
-                    && !tag_allowed_bytes(name)
-                    && !cut_would_splice(bytes, lt)
-                {
+                if foreign_depth == 0 && !tag_allowed_bytes(name) && !cut_would_splice(bytes, lt) {
                     out.get_or_insert_with(|| String::with_capacity(html.len()))
                         .push_str(&html[kept_to..lt]);
                     kept_to = end;
@@ -872,7 +1008,10 @@ mod tests {
         let out = sanitize(
             r#"<iframe width="560" src="https://www.youtube.com/embed/abc123?autoplay=1"></iframe>"#,
         );
-        assert!(out.contains(r#"src="https://www.youtube-nocookie.com/embed/abc123""#), "{out}");
+        assert!(
+            out.contains(r#"src="https://www.youtube-nocookie.com/embed/abc123""#),
+            "{out}"
+        );
         assert!(out.contains(r#"width="560""#));
         assert!(out.contains("sandbox="));
         assert!(!out.contains("autoplay"));
@@ -943,7 +1082,15 @@ mod tests {
         // so unwrapping would re-emit it verbatim and the browser would
         // re-parse it as a live element (mXSS). All such non-allow-listed
         // elements must drop their whole subtree.
-        for tag in ["title", "xmp", "noembed", "noframes", "noscript", "plaintext", "textarea"] {
+        for tag in [
+            "title",
+            "xmp",
+            "noembed",
+            "noframes",
+            "noscript",
+            "plaintext",
+            "textarea",
+        ] {
             let input = format!("<p>ok</p><{tag}><img src=x onerror=alert(1)></{tag}>");
             let out = sanitize(&input);
             assert!(
@@ -958,7 +1105,10 @@ mod tests {
     fn img_src_rejects_mailto_tel_but_keeps_data() {
         // img/source src is http/https/data only (parity with the old
         // allowedSchemesByTag) — mailto/tel are not image sources.
-        assert_eq!(sanitize(r#"<img src="mailto:x@y.com">"#), r#"<img loading="lazy">"#);
+        assert_eq!(
+            sanitize(r#"<img src="mailto:x@y.com">"#),
+            r#"<img loading="lazy">"#
+        );
         assert_eq!(
             sanitize(r#"<img src="data:image/png;base64,AAA=">"#),
             r#"<img src="data:image/png;base64,AAA=" loading="lazy">"#
@@ -1075,14 +1225,23 @@ mod tests {
         // The end-tag pass reads the allow-list through a bucketed index, so a
         // tag that lands in no bucket would silently lose its end tags.
         for tag in ALLOWED_TAGS {
-            assert!(tag_allowed_bytes(tag.as_bytes()), "{tag} missing from the index");
+            assert!(
+                tag_allowed_bytes(tag.as_bytes()),
+                "{tag} missing from the index"
+            );
             assert!(
                 tag_allowed_bytes(tag.to_ascii_uppercase().as_bytes()),
                 "{tag} not matched case-insensitively"
             );
         }
-        for tag in DROP_WITH_CONTENT.iter().chain(&["body", "html", "head", ""]) {
-            assert!(!tag_allowed_bytes(tag.as_bytes()), "{tag} wrongly allow-listed");
+        for tag in DROP_WITH_CONTENT
+            .iter()
+            .chain(&["body", "html", "head", ""])
+        {
+            assert!(
+                !tag_allowed_bytes(tag.as_bytes()),
+                "{tag} wrongly allow-listed"
+            );
         }
     }
 
@@ -1204,21 +1363,53 @@ mod tests {
         // specially, quotes where an attribute name goes, raw text and foreign
         // content, half a character reference, a payload to notice going live.
         const PIECES: &[&str] = &[
-            "<", ">", "/", "=", "\"", "'", "&", " ", "a", "x=y", "</body>", "</html>", "</o",
-            "<p>", "</p>", "<img src=q onerror=alert(1)>", "<script>alert(1)</script>", "&am",
-            "p;", "&#3", "9;", "-->", "]]>", "😀", "<div title=", "</iframe>", "<math>",
-            "<mtext>", "<svg>", "</svg>", "</ ", "</>",
+            "<",
+            ">",
+            "/",
+            "=",
+            "\"",
+            "'",
+            "&",
+            " ",
+            "a",
+            "x=y",
+            "</body>",
+            "</html>",
+            "</o",
+            "<p>",
+            "</p>",
+            "<img src=q onerror=alert(1)>",
+            "<script>alert(1)</script>",
+            "&am",
+            "p;",
+            "&#3",
+            "9;",
+            "-->",
+            "]]>",
+            "😀",
+            "<div title=",
+            "</iframe>",
+            "<math>",
+            "<mtext>",
+            "<svg>",
+            "</svg>",
+            "</ ",
+            "</>",
             r#"<iframe src="https://www.youtube.com/embed/abc123">"#,
         ];
         // A deterministic LCG, so a failure reproduces from its seed alone.
         let mut seed = 0x2545_F491_4F6C_DD1Du64;
         let mut next = move || {
-            seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1_442_695_040_888_963);
+            seed = seed
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963);
             (seed >> 33) as usize
         };
         let mut cut_something = 0usize;
         for _ in 0..50_000 {
-            let input: String = (0..2 + next() % 8).map(|_| PIECES[next() % PIECES.len()]).collect();
+            let input: String = (0..2 + next() % 8)
+                .map(|_| PIECES[next() % PIECES.len()])
+                .collect();
             let Some(out) = drop_disallowed_end_tags(&input) else {
                 continue;
             };
@@ -1240,7 +1431,10 @@ mod tests {
         }
         // Guard against the generator drifting into shapes that never cut, which
         // would leave the property above vacuously true.
-        assert!(cut_something > 1_000, "only {cut_something} inputs were cut");
+        assert!(
+            cut_something > 1_000,
+            "only {cut_something} inputs were cut"
+        );
     }
 
     #[test]

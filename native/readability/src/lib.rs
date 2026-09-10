@@ -84,16 +84,22 @@ fn run_extract(html: &str, options: Option<&ExtractOptions>) -> Result<Option<Ex
     // partial_cmp().unwrap() sites on f32 scores) would otherwise unwind
     // across the N-API boundary and abort the whole Node process; treat it
     // as an ordinary extraction failure instead.
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| extract_inner(html, options)))
-        .unwrap_or(Ok(None))
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        extract_inner(html, options)
+    }))
+    .unwrap_or(Ok(None))
 }
 
 fn extract_inner(html: &str, options: Option<&ExtractOptions>) -> Result<Option<ExtractedArticle>> {
     // No document URL: relative-URL resolution (including <base href>) is done
     // by the caller's absolutizeUrls post-pass, exactly as with the old
     // linkedom pipeline, so URL policy stays in one place.
-    let mut reader = Readability::new(html, None, Some(build_config(options)))
-        .map_err(|e| Error::new(Status::GenericFailure, format!("readability init failed: {e}")))?;
+    let mut reader = Readability::new(html, None, Some(build_config(options))).map_err(|e| {
+        Error::new(
+            Status::GenericFailure,
+            format!("readability init failed: {e}"),
+        )
+    })?;
     if exceeds_max_depth(&reader) {
         return Ok(None);
     }

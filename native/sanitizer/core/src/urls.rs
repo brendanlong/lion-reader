@@ -92,10 +92,22 @@ mod tests {
 
     #[test]
     fn detects_schemes_through_obfuscation() {
-        assert_eq!(url_scheme("javascript:alert(1)").as_deref(), Some("javascript"));
-        assert_eq!(url_scheme("JAVASCRIPT:alert(1)").as_deref(), Some("javascript"));
-        assert_eq!(url_scheme("java\tscript:alert(1)").as_deref(), Some("javascript"));
-        assert_eq!(url_scheme("  javascript:alert(1)").as_deref(), Some("javascript"));
+        assert_eq!(
+            url_scheme("javascript:alert(1)").as_deref(),
+            Some("javascript")
+        );
+        assert_eq!(
+            url_scheme("JAVASCRIPT:alert(1)").as_deref(),
+            Some("javascript")
+        );
+        assert_eq!(
+            url_scheme("java\tscript:alert(1)").as_deref(),
+            Some("javascript")
+        );
+        assert_eq!(
+            url_scheme("  javascript:alert(1)").as_deref(),
+            Some("javascript")
+        );
         assert_eq!(
             url_scheme(&decode_attr("java&#115;cript:alert(1)")).as_deref(),
             Some("javascript")
@@ -116,7 +128,10 @@ mod tests {
         assert!(is_url_allowed("/relative", &["http", "https"]));
         assert!(!is_url_allowed("javascript:x", &["http", "https"]));
         assert!(!is_url_allowed("data:text/html,x", &["http", "https"]));
-        assert!(is_url_allowed("data:image/png;base64,x", &["http", "https", "data"]));
+        assert!(is_url_allowed(
+            "data:image/png;base64,x",
+            &["http", "https", "data"]
+        ));
     }
 
     #[test]
