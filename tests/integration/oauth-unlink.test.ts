@@ -14,9 +14,8 @@ import { describe, it, expect, afterAll } from "vitest";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { users, oauthAccounts } from "../../src/server/db/schema";
-import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
-import { createAuthContext, createTestUser } from "./helpers";
+import { createAuthContext, createTestOAuthLink, createTestUser } from "./helpers";
 
 const createdUserIds: string[] = [];
 
@@ -29,15 +28,6 @@ async function createUser(hasPassword: boolean): Promise<string> {
   return userId;
 }
 
-async function linkProvider(userId: string, provider: string): Promise<void> {
-  await db.insert(oauthAccounts).values({
-    id: generateUuidv7(),
-    userId,
-    provider,
-    providerAccountId: `${provider}-${userId}`,
-  });
-}
-
 afterAll(async () => {
   if (createdUserIds.length > 0) {
     await db.delete(users).where(inArray(users.id, createdUserIds));
@@ -47,8 +37,8 @@ afterAll(async () => {
 describe("auth.unlinkProvider", () => {
   it("unlinks one provider when the user has others", async () => {
     const userId = await createUser(false);
-    await linkProvider(userId, "google");
-    await linkProvider(userId, "apple");
+    await createTestOAuthLink(userId, "google");
+    await createTestOAuthLink(userId, "apple");
     const caller = createCaller(await createAuthContext(userId));
 
     await caller.auth.unlinkProvider({ provider: "google" });
@@ -62,7 +52,7 @@ describe("auth.unlinkProvider", () => {
 
   it("refuses to unlink the only auth method (no password, one provider)", async () => {
     const userId = await createUser(false);
-    await linkProvider(userId, "google");
+    await createTestOAuthLink(userId, "google");
     const caller = createCaller(await createAuthContext(userId));
 
     await expect(caller.auth.unlinkProvider({ provider: "google" })).rejects.toThrow();
@@ -73,7 +63,7 @@ describe("auth.unlinkProvider", () => {
 
   it("allows unlinking the last provider when the user has a password", async () => {
     const userId = await createUser(true);
-    await linkProvider(userId, "google");
+    await createTestOAuthLink(userId, "google");
     const caller = createCaller(await createAuthContext(userId));
 
     await caller.auth.unlinkProvider({ provider: "google" });
@@ -84,7 +74,7 @@ describe("auth.unlinkProvider", () => {
 
   it("is idempotent when the provider is already unlinked", async () => {
     const userId = await createUser(true);
-    await linkProvider(userId, "google");
+    await createTestOAuthLink(userId, "google");
     const caller = createCaller(await createAuthContext(userId));
 
     const result = await caller.auth.unlinkProvider({ provider: "apple" });
@@ -96,8 +86,8 @@ describe("auth.unlinkProvider", () => {
 
   it("keeps at least one auth method when two providers are unlinked concurrently (#825)", async () => {
     const userId = await createUser(false);
-    await linkProvider(userId, "google");
-    await linkProvider(userId, "apple");
+    await createTestOAuthLink(userId, "google");
+    await createTestOAuthLink(userId, "apple");
 
     // Two concurrent unlinks of *different* providers, as if from two tabs.
     // The FOR UPDATE lock serializes them: the first to acquire the lock

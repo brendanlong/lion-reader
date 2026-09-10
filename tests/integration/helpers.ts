@@ -25,9 +25,11 @@ import {
   entries,
   subscriptions,
   userEntries,
+  oauthAccounts,
   oauthClients,
 } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
+import type { OAuthProviderName } from "../../src/server/auth/oauth/config";
 import type { Context } from "../../src/server/trpc/context";
 
 // ============================================================================
@@ -201,6 +203,25 @@ export async function createTestOAuthClient(
     ...overrides,
   });
   return clientId;
+}
+
+/**
+ * Links a social provider to `userId` directly, for tests that need an account
+ * already linked rather than to exercise the linking path itself (which is
+ * `linkOAuthAccount`, and revokes sessions).
+ */
+export async function createTestOAuthLink(
+  userId: string,
+  provider: OAuthProviderName,
+  overrides: Partial<typeof oauthAccounts.$inferInsert> = {}
+): Promise<void> {
+  await db.insert(oauthAccounts).values({
+    id: generateUuidv7(),
+    userId,
+    provider,
+    providerAccountId: `${provider}-${userId}`,
+    ...overrides,
+  });
 }
 
 // ============================================================================

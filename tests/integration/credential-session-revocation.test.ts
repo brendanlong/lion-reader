@@ -1,11 +1,9 @@
 /**
  * Integration tests for session revocation on credential changes.
  *
- * SECURITY.md §4: "Password change (and any credential change) must revoke other
- * sessions." Setting a password, changing it, linking a new provider and
- * unlinking one all add or remove a way to sign in, so each must leave only the
- * calling session alive — otherwise an attacker holding a leaked session token
- * survives the very action the user took to secure the account.
+ * Every credential change SECURITY.md §4 covers — setting a password, changing
+ * it, linking a provider, unlinking one — must leave only the calling session
+ * alive, and the changes that only look like one must leave every session alone.
  *
  * The sessions here are real rows validated through `validateSession`, so the
  * test covers the Redis cache eviction too: a cached session still validates
@@ -16,13 +14,12 @@ import { describe, it, expect, afterAll } from "vitest";
 import { eq, inArray } from "drizzle-orm";
 import * as argon2 from "argon2";
 import { db } from "../../src/server/db";
-import { oauthAccounts, sessions, users } from "../../src/server/db/schema";
+import { sessions, users } from "../../src/server/db/schema";
 import { createSession, validateSession } from "../../src/server/auth/session";
 import { linkOAuthAccount } from "../../src/server/services/oauth-accounts";
-import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
-import { createAuthContext, createTestUser } from "./helpers";
+import { createAuthContext, createTestOAuthLink, createTestUser } from "./helpers";
 
 const createdUserIds: string[] = [];
 
@@ -31,15 +28,6 @@ async function createUser(overrides: Partial<typeof users.$inferInsert> = {}): P
   const userId = await createTestUser({ emailPrefix: "cred-revoke", ...overrides });
   createdUserIds.push(userId);
   return userId;
-}
-
-async function insertLink(userId: string, provider: string): Promise<void> {
-  await db.insert(oauthAccounts).values({
-    id: generateUuidv7(),
-    userId,
-    provider,
-    providerAccountId: `${provider}-${userId}`,
-  });
 }
 
 /**
@@ -170,7 +158,7 @@ describe("credential changes revoke other sessions", () => {
     // The sharp case: the user is unlinking a provider account they think is
     // compromised, so the attacker's session must not outlive the unlink.
     const userId = await createUser({ passwordHash: await argon2.hash("password") });
-    await insertLink(userId, "google");
+    await createTestOAuthLink(userId, "google");
     const current = await createSession(db, { userId });
     const other = await createSession(db, { userId });
 
@@ -196,6 +184,21 @@ describe("credential changes revoke other sessions", () => {
     await expect(caller.auth.unlinkProvider({ provider: "apple" })).resolves.toEqual({
       success: true,
     });
+
+    expect(await validateSession(other.token)).not.toBeNull();
+    expect(await validateSession(current.token)).not.toBeNull();
+  });
+
+  it("a refused auth.unlinkProvider leaves other sessions alone", async () => {
+    // The "don't remove your only auth method" guard throws inside the unlink's
+    // transaction, so the revoke it wraps rolls back with it.
+    const userId = await createUser({ passwordHash: null });
+    await createTestOAuthLink(userId, "google");
+    const current = await createSession(db, { userId });
+    const other = await createSession(db, { userId });
+
+    const caller = createCaller(await createSessionContext(userId, current.sessionId));
+    await expect(caller.auth.unlinkProvider({ provider: "google" })).rejects.toThrow();
 
     expect(await validateSession(other.token)).not.toBeNull();
     expect(await validateSession(current.token)).not.toBeNull();
