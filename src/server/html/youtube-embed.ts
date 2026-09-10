@@ -1,33 +1,30 @@
 /**
- * YouTube embed pieces used by the YouTube plugin, which synthesizes embed
- * iframes for YouTube's own feeds.
+ * YouTube URL helpers for the YouTube plugin, which synthesizes embed iframes
+ * for YouTube's own feeds and saved video pages.
  *
- * Validating/normalizing embed srcs found in *feed* content is the sanitizer's
- * job and lives in Rust (`normalize_youtube_embed_url` in
- * `native/sanitizer/core/src/embeds.rs`) — don't add a second TypeScript copy
- * of that rule here.
+ * The embed rules themselves (hosts, path shape, canonical host, sandbox,
+ * allow) live only in the sanitizer's Rust allow-list
+ * (`native/sanitizer/core/src/embeds.rs`): `buildYouTubeEmbedIframe` asks
+ * `normalizeEmbed` for them rather than restating them, so a synthesized
+ * iframe can't drift out of what the sanitizer accepts on the read path.
  */
 
-// Hosts that serve the YouTube embed player.
-const YOUTUBE_EMBED_HOSTS = new Set([
+import { normalizeEmbed } from "@lion-reader/sanitizer";
+import { escapeHtml } from "@/server/http/html";
+
+/**
+ * Hosts that serve YouTube *video pages*. A separate rule from the sanitizer's
+ * embed-src allow-list, not a copy of it: this one recognizes watch/shorts/live
+ * pages to pull a video id out of, and nothing it accepts becomes an iframe
+ * src — `buildYouTubeEmbedIframe` gets that from the sanitizer.
+ */
+const YOUTUBE_VIDEO_PAGE_HOSTS = new Set([
   "youtube.com",
   "www.youtube.com",
   "m.youtube.com",
   "youtube-nocookie.com",
   "www.youtube-nocookie.com",
 ]);
-
-/**
- * Sandbox for YouTube embed iframes. The player needs scripts and its own
- * origin's storage; popups (with sandbox escape) let "Watch on YouTube" open
- * a normal tab. `allow-same-origin` is safe here because the framed content
- * is always cross-origin (youtube-nocookie.com), never our own origin.
- */
-export const YOUTUBE_IFRAME_SANDBOX =
-  "allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-presentation";
-
-/** Permissions-policy grants for the embed (no autoplay). */
-export const YOUTUBE_IFRAME_ALLOW = "fullscreen; encrypted-media; picture-in-picture";
 
 /**
  * Extracts a YouTube video id from a video page URL (watch, youtu.be, shorts,
@@ -52,7 +49,7 @@ export function extractYouTubeVideoId(urlString: string | null | undefined): str
     return isVideoId(id) ? id : null;
   }
 
-  if (!YOUTUBE_EMBED_HOSTS.has(hostname)) return null;
+  if (!YOUTUBE_VIDEO_PAGE_HOSTS.has(hostname)) return null;
 
   if (url.pathname === "/watch") {
     const id = url.searchParams.get("v");
@@ -65,4 +62,23 @@ export function extractYouTubeVideoId(urlString: string | null | undefined): str
   }
 
   return null;
+}
+
+/**
+ * Builds the privacy-enhanced YouTube embed iframe for a video id, with the
+ * src/sandbox/allow the sanitizer would force on the read path. Returns null
+ * if the sanitizer wouldn't accept the embed, so a caller emits no iframe
+ * rather than one that will be dropped when the entry is read.
+ */
+export function buildYouTubeEmbedIframe(videoId: string, title?: string | null): string | null {
+  const embed = normalizeEmbed(`https://www.youtube-nocookie.com/embed/${videoId}`);
+  if (!embed) return null;
+
+  const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
+  return (
+    `<iframe src="${escapeHtml(embed.src)}"` +
+    ` width="560" height="315"${titleAttr}` +
+    ` sandbox="${escapeHtml(embed.sandbox)}" allow="${escapeHtml(embed.allow)}"` +
+    ` allowfullscreen loading="lazy"></iframe>`
+  );
 }

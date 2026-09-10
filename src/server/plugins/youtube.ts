@@ -1,14 +1,10 @@
 import type { UrlPlugin, SavedArticleContent } from "./types";
 import type { ParsedEntry } from "@/server/feed/types";
 import { Parser } from "htmlparser2";
-import { escapeHtml, plainTextToHtml } from "@/server/http/html";
+import { plainTextToHtml } from "@/server/http/html";
 import { fetchHtmlPage } from "@/server/http/fetch";
 import { logger } from "@/lib/logger";
-import {
-  extractYouTubeVideoId,
-  YOUTUBE_IFRAME_ALLOW,
-  YOUTUBE_IFRAME_SANDBOX,
-} from "@/server/html/youtube-embed";
+import { buildYouTubeEmbedIframe, extractYouTubeVideoId } from "@/server/html/youtube-embed";
 
 /**
  * Minimum polling interval for YouTube feeds: 1 hour.
@@ -22,25 +18,6 @@ import {
  * videos — while multiplying the per-IP request volume that triggers blocks.
  */
 export const YOUTUBE_MIN_FETCH_INTERVAL_SECONDS = 60 * 60;
-
-/**
- * Builds the privacy-enhanced YouTube embed iframe for a video id. Shared by
- * the feed capability (synthesizing content from Media RSS metadata) and the
- * savedArticle capability (synthesizing content from a watch-page save).
- *
- * The sanitizer re-validates the src and re-forces sandbox/allow on the read
- * path (see transformTags.iframe in sanitize.ts); setting them here just keeps
- * the stored raw content self-contained.
- */
-function buildYouTubeEmbedIframe(videoId: string, title?: string | null): string {
-  const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
-  return (
-    `<iframe src="https://www.youtube-nocookie.com/embed/${videoId}"` +
-    ` width="560" height="315"${titleAttr}` +
-    ` sandbox="${YOUTUBE_IFRAME_SANDBOX}" allow="${YOUTUBE_IFRAME_ALLOW}"` +
-    ` allowfullscreen loading="lazy"></iframe>`
-  );
-}
 
 /**
  * Pulls a JSON string field's value out of a page's inline scripts by regex
@@ -120,11 +97,13 @@ function extractYouTubeVideoMetadata(html: string): YouTubeVideoMetadata {
 export function synthesizeYouTubeSavedArticle(
   videoId: string,
   watchPageHtml: string | null
-): SavedArticleContent {
+): SavedArticleContent | null {
   const metadata = watchPageHtml
     ? extractYouTubeVideoMetadata(watchPageHtml)
     : { title: null, author: null, description: null };
   const iframe = buildYouTubeEmbedIframe(videoId, metadata.title);
+  // No embed means no reason to prefer our synthesis over a generic fetch.
+  if (!iframe) return null;
   const description = metadata.description ? plainTextToHtml(metadata.description) : "";
   return {
     html: iframe + description,
@@ -203,6 +182,7 @@ export const youtubePlugin: UrlPlugin = {
         if (!videoId) return null;
 
         const iframe = buildYouTubeEmbedIframe(videoId, entry.title);
+        if (!iframe) return null;
         const description = entry.mediaDescription ? plainTextToHtml(entry.mediaDescription) : "";
         return iframe + description;
       },

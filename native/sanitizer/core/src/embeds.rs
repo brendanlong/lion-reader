@@ -1,5 +1,4 @@
-//! Allow-listed iframe embed providers — direct port of
-//! `src/server/html/embed-providers.ts` + `youtube-embed.ts` (issue #922).
+//! Allow-listed iframe embed providers (issue #922).
 //!
 //! Iframes are the sanitizer's only cross-origin escape hatch, so the policy
 //! is block-by-default, opt-in per provider: parse the src as http(s)
@@ -8,6 +7,11 @@
 //! URL from scratch on the provider's canonical host copying only an
 //! allow-list of query params. The sanitizer then forces a per-provider
 //! `sandbox`/`allow` regardless of what the feed supplied.
+//!
+//! This is the only copy of the rules. TS callers that synthesize embeds
+//! (`src/server/html/youtube-embed.ts`) build their iframes from
+//! `normalize_embed`'s output via the `normalizeEmbed` N-API export rather
+//! than restating the hosts, paths and attributes here.
 
 use regex::Regex;
 use std::sync::LazyLock;
@@ -21,9 +25,11 @@ pub struct NormalizedEmbed {
     pub allow: &'static str,
 }
 
-/// Sandbox shared by the media-player embeds (see embed-providers.ts for the
-/// rationale; `allow-same-origin` is safe because the framed content is
-/// always cross-origin — a canonical provider host, never our own origin).
+/// Sandbox shared by the media-player embeds. A player needs scripts and its
+/// own origin's storage, and popups (with sandbox escape) so its "watch on
+/// the provider's site" link opens a normal tab. `allow-same-origin` is safe
+/// here because the framed content is always cross-origin — a canonical
+/// provider host, never our own origin.
 pub const STANDARD_EMBED_SANDBOX: &str =
     "allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-presentation";
 
