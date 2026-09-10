@@ -54,6 +54,7 @@ const ErrorCodes = {
   // Conflict errors (409)
   OAUTH_ALREADY_LINKED: "OAUTH_ALREADY_LINKED",
   CANNOT_UNLINK_ONLY_AUTH: "CANNOT_UNLINK_ONLY_AUTH",
+  SESSION_REVOKE_FAILED: "SESSION_REVOKE_FAILED",
 
   // Rate limiting (429)
   RATE_LIMITED: "RATE_LIMITED",
@@ -125,6 +126,7 @@ const errorCodeToTRPCCode: Record<
   SIGNUP_PROVIDER_NOT_ALLOWED: "FORBIDDEN",
   OAUTH_ALREADY_LINKED: "CONFLICT",
   CANNOT_UNLINK_ONLY_AUTH: "BAD_REQUEST",
+  SESSION_REVOKE_FAILED: "INTERNAL_SERVER_ERROR",
   RATE_LIMITED: "TOO_MANY_REQUESTS",
   INTERNAL_ERROR: "INTERNAL_SERVER_ERROR",
   TOKEN_CREATION_FAILED: "INTERNAL_SERVER_ERROR",
@@ -254,6 +256,12 @@ export const errors = {
     createError(
       ErrorCodes.CANNOT_UNLINK_ONLY_AUTH,
       "Cannot unlink this account because it is your only authentication method. Add a password first."
+    ),
+
+  sessionRevokeFailed: (change: string) =>
+    createError(
+      ErrorCodes.SESSION_REVOKE_FAILED,
+      `${change}, but signing out your other devices failed. Review them under Settings → Sessions.`
     ),
 
   rateLimited: (retryAfter?: number) =>

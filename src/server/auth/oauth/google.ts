@@ -111,7 +111,7 @@ function getPkceKey(state: string): string {
 /**
  * OAuth flow mode - determines redirect behavior after callback
  */
-export type OAuthMode = "login" | "link" | "save" | "extension-save";
+export type OAuthMode = "login" | "save" | "extension-save";
 
 /**
  * Data stored in Redis for PKCE verification

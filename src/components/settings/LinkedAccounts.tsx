@@ -84,6 +84,9 @@ export function LinkedAccounts() {
       showError(err.message || "Failed to unlink account");
       setUnlinkingProvider(null);
       toast.error("Failed to unlink account");
+      // The unlink itself may have landed and only the session revoke failed
+      // (`sessionRevokeFailed`), so refetch rather than assume nothing changed.
+      utils.users["me.linkedAccounts"].invalidate();
     },
   });
 
@@ -113,12 +116,6 @@ export function LinkedAccounts() {
         }
 
         if (result.data) {
-          // Store state for verification on callback
-          localStorage.setItem("oauth_state", result.data.state);
-          // Mark this as a link operation (not login)
-          localStorage.setItem("oauth_link_mode", "true");
-          localStorage.setItem("oauth_link_provider", provider);
-
           // Redirect to OAuth provider
           window.location.href = result.data.url;
         }

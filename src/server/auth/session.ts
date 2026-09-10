@@ -621,11 +621,6 @@ export async function revokeSessionByToken(token: string): Promise<boolean> {
  * device can't outlive the credential it was created under — the current session
  * (the one performing the change) is kept alive.
  *
- * Pass the transaction that wrote the credential where there is one, so the
- * revoke commits with it: a revoke that failed on its own would leave the
- * credential changed, and retrying the action would find nothing left to change
- * and skip the revoke for good.
- *
  * @param userId - The user whose other sessions to revoke
  * @param exceptSessionId - The `sessions` row to keep active. Under token auth
  *   `ctx.session.session.id` is an `api_tokens` id, which matches no session and
@@ -635,8 +630,7 @@ export async function revokeSessionByToken(token: string): Promise<boolean> {
  */
 export async function revokeOtherUserSessions(
   userId: string,
-  exceptSessionId: string,
-  dbOrTx: DbOrTx = db
+  exceptSessionId: string
 ): Promise<number> {
   const revokeFilter = and(
     eq(sessions.userId, userId),
@@ -646,7 +640,7 @@ export async function revokeOtherUserSessions(
 
   // Capture the token hashes first so we can evict their cache entries after
   // the DB revoke (the cached copy still validates until its key is deleted).
-  const toRevoke = await dbOrTx
+  const toRevoke = await db
     .select({ tokenHash: sessions.tokenHash })
     .from(sessions)
     .where(revokeFilter);
@@ -655,7 +649,7 @@ export async function revokeOtherUserSessions(
     return 0;
   }
 
-  await dbOrTx.update(sessions).set({ revokedAt: new Date() }).where(revokeFilter);
+  await db.update(sessions).set({ revokedAt: new Date() }).where(revokeFilter);
 
   const redis = getRedisClient();
   if (redis) {
