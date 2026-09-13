@@ -126,7 +126,7 @@
     "@types/node": "^26.4.1",
     "@types/pg": "^8.23.1",
     "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.5",
+    "@types/react-dom": "^19.2.7",
     "@vitest/eslint-plugin": "^1.6.27",
     "dotenv-cli": "^11.0.0",
     "esbuild": "^0.28.2",
