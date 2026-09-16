@@ -439,10 +439,12 @@ is disabled for Postgres apps; the CLI is the supported path.
 
 ## DNS
 
-`lionreader.com` is served by Route53 and managed by hand (no Terraform). Mail is
-split across a subdomain pair: SPF/DKIM/DMARC on `app.lionreader.com`, inbound `MX`
-on `in.app.lionreader.com` (`INGEST_EMAIL_DOMAIN`). A move to Cloudflare DNS is
-spec'd in issue #1610.
+The whole `lionreader.com` zone and the Bunny pull zone are managed in
+[`terraform/`](../terraform/README.md) — including the Mailgun records, since
+Mailgun is part of the app rather than a mailbox administered on the side. Change
+DNS there, not in a dashboard. Mail is split across a subdomain pair: SPF/DKIM/DMARC
+on `app.lionreader.com`, inbound `MX` on `in.app.lionreader.com`
+(`INGEST_EMAIL_DOMAIN`).
 
 Certificates: Fly accepts **any one of** an `AAAA` record pointing at the app, an
 `_acme-challenge` CNAME, or a `_fly-ownership` TXT as proof of ownership. The apex

@@ -103,7 +103,7 @@ terraform apply
 terraform output cloudflare_nameservers
 ```
 
-Then delete `imports.tf` and commit — state holds everything from here.
+State holds everything from here; the one-time `imports.tf` scaffolding is gone.
 
 At this point Cloudflare is fully configured but **not yet authoritative**.
 Nothing has changed for visitors.
