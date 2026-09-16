@@ -11,9 +11,14 @@
 # it is a property of the provider, so re-check it before assuming a newly
 # added attribute behaves the same way.
 #
-# The exceptions are `default_rules` and `default_key`, which are Optional
-# without Computed. Both only take effect at project *creation*, so they cannot
-# drive an update, and neither is declared.
+# The exceptions are `default_rules` and `default_key`, Optional without
+# Computed — but both only take effect at project *creation*, so neither can
+# drive an update and neither is declared.
+#
+# The Required attributes are the ones to get right, `teams` above all: it is a
+# Required set that is NOT RequiresReplace, so a wrong value here is a real team
+# add/remove rather than a harmless default. Terraform errors on the others if
+# they are missing, so they cannot go wrong silently.
 # ---------------------------------------------------------------------------
 
 resource "sentry_project" "web" {

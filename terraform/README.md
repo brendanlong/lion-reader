@@ -35,8 +35,10 @@ must read:
 Plan: 5 to import, 0 to add, 0 to change, 0 to destroy.
 ```
 
-**Any "to change" — and above all any "must be replaced" — is a bug, not
-progress.** Whether that is even possible depends on the provider, and the
+**Any "must be replaced" is a bug, not progress**, and so is any "to change"
+except on the registrar — its unreadable flags are reconciled below rather than
+pre-verified, so a diff there is information, not a defect. Whether either is
+even possible depends on the provider, and the
 difference is worth knowing before writing a resource: an attribute that is
 Optional+Computed adopts its live value when omitted, while one that is Optional
 with a static default _asserts_ that default and changes live on apply. Sentry
@@ -92,112 +94,53 @@ a live ingest address and confirm the entry appears.
 
 Nothing to reconcile — see the header of `sentry.tf` for why the short block is
 safe here. The DSN comes back as an output, which is what makes a key rotation
-reproducible:
+reproducible for the **server**:
 
 ```sh
-flyctl secrets set -a lion-reader \
-  SENTRY_DSN="$(terraform output -raw sentry_dsn)" \
-  NEXT_PUBLIC_SENTRY_DSN="$(terraform output -raw sentry_dsn)"
+flyctl secrets set -a lion-reader SENTRY_DSN="$(terraform output -raw sentry_dsn)"
 ```
 
-`NEXT_PUBLIC_SENTRY_DSN` is inlined into the client bundle at build time, so it
-also needs a rebuild to take effect — see the `[build.args]` comment in
-`../fly.toml`.
+The client half is not a secret and cannot be set as one:
+`NEXT_PUBLIC_SENTRY_DSN` is inlined into the browser bundle at build time, so it
+has to go in `[build.args]` in `../fly.toml` and ship on the next deploy. A Fly
+secret by that name has no effect at all.
 
-## Migration runbook (Route53 → Cloudflare)
+Importing `sentry_key` also puts the key's _secret_ DSN in the state file, since
+the provider returns `dsn` as one map. That is why the output is marked
+sensitive even though the public DSN is not — the marking is forced, not a
+judgement about the public value.
 
-**Steps 1–4 are done.** The `.com` parent has delegated to Cloudflare since
-2026-09-16; `dig +norecurse NS lionreader.com @a.gtld-servers.net` is the check
-that says so. Only step 5's cleanup is outstanding. The steps are kept because
-the Route53 zone still exists as the rollback reference — re-running step 4
-would undo the migration.
+## Route53 → Cloudflare: what is left
 
-The DNS cutover was the only risky part; the Bunny adoption is import-only and
-touches no traffic.
-
-**There is no DNSSEC preflight.** `lionreader.com` is unsigned and always has
-been — the parent publishes no `DS` and the zone no `DNSKEY`. This removes what
-was the single most dangerous step in the brendanlong.com migration (a 24–48h
-wait for the parent DS TTL). Re-verify before starting, since it is cheap:
+The `.com` parent has delegated to Cloudflare since 2026-09-16 — ask the parent,
+not a resolver, since a resolver serves the old answer until its TTL expires:
 
 ```sh
-dig +norecurse DS lionreader.com @a.gtld-servers.net +noall +answer   # must be empty
-dig DNSKEY lionreader.com +short                                      # must be empty
+dig +norecurse NS lionreader.com @a.gtld-servers.net +noall +authority
 ```
 
-### 1. Adopt Bunny (safe — no traffic impact)
+Outstanding:
 
-Independent of DNS, so do it first.
+- After a full certificate renewal cycle, delete the Route53 hosted zone
+  (`/hostedzone/Z10027742EOOBZLO22ICY`). Until then it is the rollback
+  reference, and it is why nothing may repoint the delegation at Route53 by
+  accident — see the `name_server` comment in `registrar.tf`.
+- `flyctl certs list -a lion-reader` — `lionreader.com` still `Issued` and still
+  renewing (recheck ~30 days after the cutover). It is the only certificate.
 
-```sh
-terraform init
-terraform plan
-```
+**There is no fast rollback from a delegation change.** The TTL at the `.com`
+parent is 172800s (48h) and is not ours to lower, so repointing the registrar
+splits traffic across both providers for up to two days. Record TTLs do not
+affect this — it is a different TTL. The recovery lever is fixing forward in
+Cloudflare.
 
-The plan must read exactly:
+## Verifying the zone
 
-```
-Plan: 3 to import, 14 to add, 0 to change, 0 to destroy.
-```
-
-**Any "to change" on the pull zone is a bug, not progress.** It means an attribute
-is undeclared and the provider's default differs from the live value, so applying
-would silently reconfigure the CDN. The first run of this plan surfaced three, all
-of which are now declared: `cache_vary`, `block_no_referer` and
-`websockets_enabled`. `prevent_destroy` turns a replace-forcing mismatch into a
-hard plan error instead of a silent destroy, but it does **not** catch in-place
-changes — reading the diff is the only guard there.
-
-`bunny.tf` declares the attributes whose live values are known and whose defaults
-would change behaviour if asserted — origin, routing, cache overrides, CORS, and
-the query-string vary set. A pull zone has ~90 optional attributes, so rather than
-hand-mapping the rest from API names, generate the authoritative config from live
-state in a scratch directory (this touches nothing):
-
-```sh
-mkdir -p /tmp/bunny-gen && cd /tmp/bunny-gen
-cat > main.tf <<'HCL'
-terraform {
-  required_providers {
-    bunnynet = { source = "BunnyWay/bunnynet", version = "~> 0.15" }
-  }
-}
-provider "bunnynet" {}
-import {
-  to = bunnynet_pullzone.lionreader
-  id = "6171160"
-}
-HCL
-terraform init && terraform plan -generate-config-out=generated.tf
-cat generated.tf
-```
-
-Then reconcile `generated.tf` into `bunny.tf`, keeping the comments — the
-generated output records _what_ the values are, and the comments record _why_.
-
-### 2. Apply the zone + records
-
-The Cloudflare zone already exists and is **empty**, so Terraform creates every
-record rather than importing them — there is no dashboard import step and no
-grey-cloud checkbox to get wrong. `proxied = false` is declared explicitly on
-every proxyable record.
-
-```sh
-terraform apply
-terraform output cloudflare_nameservers
-```
-
-State holds everything from here.
-
-At this point Cloudflare is fully configured but **not yet authoritative**.
-Nothing has changed for visitors.
-
-### 3. Pre-cutover verification (before touching the registrar)
-
-Cloudflare answers authoritatively for the zone as soon as it exists, even while
-the delegation still points at Route53. So the entire post-cutover outcome can be
-checked in advance, with zero risk. Anything missing here will be missing after
-the cutover too — but fixing it now costs nothing.
+Cloudflare answers authoritatively for the zone whoever the parent delegates to,
+so this works as a pre-change check as well as an after-the-fact one. It is also
+what catches **TXT quoting drift**: providers differ on whether TXT values carry
+surrounding quotes, and SPF/DKIM/DMARC breakage is otherwise silent. Compare the
+answers, not the config.
 
 ```sh
 NS=dante.ns.cloudflare.com
@@ -211,43 +154,8 @@ for q in "A lionreader.com" "AAAA lionreader.com" "CNAME cdn.lionreader.com" \
 done
 ```
 
-Diff that against the same loop without `@$NS` (i.e. against Route53). They must
-match, with one deliberate exception: the dropped `_acme-challenge` record (see
-the header of `cloudflare.tf`).
-
-This is also what catches **TXT quoting drift** — Cloudflare and Route53 differ
-on whether TXT values carry surrounding quotes, and SPF/DKIM/DMARC breakage is
-otherwise silent. Compare the answers, not the config.
-
 `cdn.lionreader.com` must answer with a **CNAME**, not an A. An A record there
 means it got proxied or flattened.
-
-### 4. Cutover
-
-Done in the Amazon Registrar console, before `registrar.tf` existed. The
-delegation now lives in Terraform, derived from
-`cloudflare_zone.lionreader.name_servers`, so a future change to it is a plan
-to read rather than a form to fill in.
-
-Wait for `terraform output cloudflare_zone_status` to read `active`.
-
-**There is no fast rollback.** The delegation TTL is set at the `.com` parent at
-172800s (48h) and is not ours to lower, so reverting the registrar leaves traffic
-split across both providers for up to two days. Lowering record TTLs beforehand
-does not affect this — it is a different TTL. The real recovery lever is fixing
-forward in Cloudflare. Don't cut over immediately before time away.
-
-### 5. Verify and clean up
-
-- `flyctl certs list -a lion-reader` — `lionreader.com` still `Issued`, and still
-  renewing (recheck in ~30 days). It is the only certificate.
-- Send a newsletter to an ingest address; confirm it lands. Mail breakage is
-  silent — nothing alerts on an `MX` that stops resolving.
-- Load the app; confirm assets come from `cdn.lionreader.com`.
-- `https://announcements.lionreader.com/feed.xml` returns 200.
-- After a full certificate renewal cycle, delete the Route53 hosted zone
-  (`/hostedzone/Z10027742EOOBZLO22ICY`). Leave it intact until then — it is the
-  rollback reference.
 
 ## Day-to-day
 

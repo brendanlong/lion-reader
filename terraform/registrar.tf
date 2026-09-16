@@ -31,6 +31,12 @@ resource "aws_route53domains_registered_domain" "lionreader" {
   # with the parent for hours — long enough to write down a stale set with
   # confidence. Ask the parent:
   # `dig +norecurse NS lionreader.com @a.gtld-servers.net`.
+  #
+  # This fixes the membership but not the order: `name_server` is an ordered
+  # list the AWS provider neither sorts nor diff-suppresses, so if Cloudflare
+  # lists the pair differently from the registrar the plan shows a reorder that
+  # changes nothing and still issues UpdateDomainNameservers. Harmless, but it
+  # breaks the no-op contract — reorder the zone's own output if it happens.
   dynamic "name_server" {
     for_each = cloudflare_zone.lionreader.name_servers
     content {
@@ -47,8 +53,9 @@ resource "aws_route53domains_registered_domain" "lionreader" {
   # plan says so, rather than as a side effect of adopting the resource.
   transfer_lock = false
 
-  # WHOIS privacy. All of admin/registrant/tech must agree — the API rejects a
-  # mixed set — and billing follows them here for consistency.
+  # WHOIS privacy. The provider sends all four independently, so nothing here
+  # enforces agreement between them; they are set together because a domain
+  # with privacy on for one role and off for another leaks the same PII anyway.
   admin_privacy      = true
   registrant_privacy = true
   tech_privacy       = true

@@ -1,5 +1,6 @@
 # ---------------------------------------------------------------------------
-# One-time adoption of the existing Mailgun objects and the domain registration.
+# One-time adoption of the existing Mailgun objects, the domain registration and
+# the Sentry project.
 #
 # Delete this file once `terraform apply` has moved them into state — it is
 # scaffolding, not configuration.
