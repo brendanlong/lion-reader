@@ -1,22 +1,22 @@
 /**
  * Unit tests for the Next.js proxy (middleware).
  *
- * The proxy handles session redirects, CSP tiering, and optional OAuth/MCP
- * request logging. Route authentication is deliberately NOT handled here — it
- * lives in the server-side layout guards (see issue #984). These tests pin
- * down that nothing is redirected/rewritten beyond the session redirects.
+ * The proxy handles session redirects and CSP tiering. Route authentication is
+ * deliberately NOT handled here — it lives in the server-side layout guards
+ * (see issue #984). These tests pin down that nothing is redirected/rewritten
+ * beyond the session redirects.
  */
 
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { NextRequest } from "next/server";
 import { proxy } from "../../src/proxy";
 
-function makeRequest(path: string, method = "GET", headers?: Record<string, string>): NextRequest {
+function makeRequest(path: string, method = "GET"): NextRequest {
   // Real requests always carry a Host header; NextRequest doesn't derive one from
   // the URL, so set it explicitly to match the origin.
   return new NextRequest(new URL(`https://reader.example.com${path}`), {
     method,
-    headers: { host: "reader.example.com", ...headers },
+    headers: { host: "reader.example.com" },
   });
 }
 
@@ -38,84 +38,6 @@ describe("proxy", () => {
   );
 });
 
-describe("proxy request logging (LOG_MCP_REQUESTS)", () => {
-  afterEach(() => {
-    delete process.env.LOG_MCP_REQUESTS;
-    vi.restoreAllMocks();
-  });
-
-  it("logs nothing when LOG_MCP_REQUESTS is unset", async () => {
-    delete process.env.LOG_MCP_REQUESTS;
-    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
-    await proxy(makeRequest("/mcp", "POST"));
-    expect(spy).not.toHaveBeenCalled();
-  });
-
-  it("logs a structured line with host/method/path and hasAuthorization boolean", async () => {
-    process.env.LOG_MCP_REQUESTS = "true";
-    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
-    await proxy(makeRequest("/mcp", "POST", { authorization: "Bearer super-secret-token" }));
-    expect(spy).toHaveBeenCalledOnce();
-    const entry = JSON.parse(spy.mock.calls[0][0] as string);
-    expect(entry).toMatchObject({
-      message: "MCP debug request",
-      host: "reader.example.com",
-      method: "POST",
-      path: "/mcp",
-      hasAuthorization: true,
-    });
-    // The token value must never appear anywhere in the log line.
-    expect(spy.mock.calls[0][0]).not.toContain("super-secret-token");
-  });
-
-  it("reports hasAuthorization=false when no Authorization header is present", async () => {
-    process.env.LOG_MCP_REQUESTS = "true";
-    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
-    await proxy(makeRequest("/mcp", "POST"));
-    const entry = JSON.parse(spy.mock.calls[0][0] as string);
-    expect(entry.hasAuthorization).toBe(false);
-  });
-
-  it("does NOT log ordinary (non-surface) traffic even when enabled", async () => {
-    process.env.LOG_MCP_REQUESTS = "true";
-    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
-    await proxy(makeRequest("/all"));
-    await proxy(makeRequest("/api/trpc/entries.list"));
-    expect(spy).not.toHaveBeenCalled();
-  });
-
-  it("logs probes to the unserved root OAuth paths (misbehaving-connector diagnostics)", async () => {
-    // /register, /authorize, /token, /mcp are 404s now, but misbehaving
-    // connectors (claude.ai) probe them instead of the advertised endpoints —
-    // the logged 404 is the evidence that identifies that failure mode.
-    process.env.LOG_MCP_REQUESTS = "true";
-    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
-    await proxy(makeRequest("/authorize", "GET"));
-    expect(spy).toHaveBeenCalledOnce();
-  });
-
-  it("logs POST /register (a misplaced DCR attempt) but not GET (the signup page)", async () => {
-    process.env.LOG_MCP_REQUESTS = "true";
-    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
-    await proxy(makeRequest("/register", "GET"));
-    expect(spy).not.toHaveBeenCalled();
-    await proxy(makeRequest("/register", "POST"));
-    expect(spy).toHaveBeenCalledOnce();
-  });
-
-  it("redacts sensitive query params (auth code) but keeps public ones", async () => {
-    process.env.LOG_MCP_REQUESTS = "true";
-    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
-    await proxy(makeRequest("/oauth/authorize?client_id=abc&code=SECRET_CODE&state=xyz", "GET"));
-    const entry = JSON.parse(spy.mock.calls[0][0] as string);
-    const query = new URLSearchParams(entry.query);
-    expect(query.get("client_id")).toBe("abc");
-    expect(query.get("state")).toBe("xyz");
-    expect(query.get("code")).toBe("[redacted]");
-    expect(spy.mock.calls[0][0]).not.toContain("SECRET_CODE");
-  });
-});
-
 describe("proxy CSP tiering (issue #1359)", () => {
   const PUBLIC_PATHS = [
     "/demo",
@@ -125,7 +47,17 @@ describe("proxy CSP tiering (issue #1359)", () => {
     "/terms",
     "/privacy",
   ];
-  const DYNAMIC_PATHS = ["/all", "/auth/oauth/complete", "/settings", "/api/trpc/entries.list"];
+  const DYNAMIC_PATHS = [
+    "/all",
+    "/auth/oauth/complete",
+    "/settings",
+    "/api/trpc/entries.list",
+    // The OAuth/MCP surface: nothing here may be rewritten or redirected, or
+    // discovery breaks for every remote MCP client.
+    "/api/mcp",
+    "/oauth/authorize",
+    "/.well-known/oauth-protected-resource/api/mcp",
+  ];
 
   it.each(PUBLIC_PATHS)("%s gets the relaxed static CSP with no nonce", async (path) => {
     const res = await proxy(makeRequest(path));
@@ -140,8 +72,10 @@ describe("proxy CSP tiering (issue #1359)", () => {
     expect(res.headers.get("x-middleware-override-headers")).toBeNull();
   });
 
-  it.each(DYNAMIC_PATHS)("%s gets the strict nonce'd CSP", async (path) => {
+  it.each(DYNAMIC_PATHS)("%s gets the strict nonce'd CSP, unrewritten", async (path) => {
     const res = await proxy(makeRequest(path));
+    expect(res.headers.get("x-middleware-rewrite"), path).toBeNull();
+    expect(res.headers.get("location"), path).toBeNull();
     const csp = res.headers.get("Content-Security-Policy")!;
     expect(csp).toMatch(/script-src[^;]*'nonce-[A-Za-z0-9+/=_-]+'/);
     expect(csp).toContain("'strict-dynamic'");
