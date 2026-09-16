@@ -1,10 +1,5 @@
-# ---------------------------------------------------------------------------
-# One-time adoption of the existing Mailgun objects, the domain registration,
-# the Sentry project and the healthchecks.io checks.
-#
-# Delete this file once `terraform apply` has moved them into state — it is
-# scaffolding, not configuration.
-# ---------------------------------------------------------------------------
+# Adopting existing infrastructure. Delete this file once `terraform apply` has
+# moved these into state — it is scaffolding, not configuration.
 
 import {
   to = mailgun_domain.app
@@ -31,8 +26,6 @@ import {
   id = "${var.sentry_organization}/lion-reader-web/602df716c7a5d9dfe207b9139d6a34d6"
 }
 
-# The import id is the check's bare uuid — the provider derives its resource id
-# from the last segment of the API's update_url.
 import {
   to = healthchecksio_check.this["worker"]
   id = "67ad9f99-5528-4896-b296-72fcd87403ad"

@@ -1,25 +1,12 @@
-# ---------------------------------------------------------------------------
-# Cloudflare — the whole lionreader.com zone
-#
-# Every record lives here. Mailgun is part of the application, not a separate
-# mailbox someone administers on the side, so its SPF / DKIM / DMARC / MX belong
-# in the same place as the rest of the app's infrastructure.
+# Cloudflare — the whole lionreader.com zone. Every record lives here, including
+# Mailgun's: Mailgun is part of the application, not a mailbox administered on
+# the side.
 #
 # `proxied = false` on every proxyable record (A / AAAA / CNAME) is an invariant,
 # not a default — see ../docs/DEPLOYMENT.md. TXT and MX cannot be proxied, so
-# they carry no such field.
-#
-# There is no apex redirect and no ruleset: unlike brendanlong.com, this zone
-# serves the app directly at the apex, so nothing is proxied at all.
-#
-# The record set was derived from the live Route53 export and verified complete
-# against it. Two records in that export are deliberately absent:
-#   SOA / NS   Cloudflare manages these for the zone.
-#   _acme-challenge.lionreader.com.lionreader.com. — a doubled name from an FQDN
-#              pasted into a field that already appends the zone. The correctly
-#              named record never existed and nothing queries this one; Fly
-#              proves ownership via the apex AAAA instead. Dropped, not migrated.
-# ---------------------------------------------------------------------------
+# they carry no such field. Nothing in this zone is proxied at all: unlike
+# brendanlong.com it serves the app directly at the apex, so there is no apex
+# redirect and no ruleset.
 
 resource "cloudflare_zone" "lionreader" {
   account = {
@@ -108,9 +95,8 @@ resource "cloudflare_dns_record" "ingest_aaaa" {
 }
 
 # --- Mailgun tracking host --------------------------------------------------
-# Inert: Mailgun creates this record as part of domain setup, but click and open
-# tracking are both off (mailgun.tf) and we send no mail for it to rewrite. Kept
-# so the Mailgun domain stays fully verified rather than partially configured.
+# Inert — tracking is off (mailgun.tf) and we send no mail for it to rewrite.
+# Kept so the Mailgun domain stays fully verified rather than partly configured.
 resource "cloudflare_dns_record" "mailgun_tracking" {
   zone_id = cloudflare_zone.lionreader.id
   name    = "email.app"
@@ -121,15 +107,9 @@ resource "cloudflare_dns_record" "mailgun_tracking" {
   comment = "Mailgun tracking host (unused). Never proxy"
 }
 
-# ---------------------------------------------------------------------------
-# Mail (Mailgun) and domain verification — TXT and MX
-#
-# Not proxyable, so there is no grey-cloud decision here. The Mailgun side these
-# records point at — the domain and the inbound route — is in mailgun.tf.
-#
-# The MX host below is NOT a registered Mailgun domain. It works because the
-# Mailgun domain has `wildcard = true`; see mailgun.tf before changing either.
-# ---------------------------------------------------------------------------
+# --- Mail (Mailgun) and domain verification — TXT and MX --------------------
+# The Mailgun side these point at is in mailgun.tf. The MX host is NOT itself a
+# registered Mailgun domain — it works because that domain has `wildcard` set.
 
 resource "cloudflare_dns_record" "spf" {
   zone_id = cloudflare_zone.lionreader.id

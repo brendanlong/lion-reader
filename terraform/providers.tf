@@ -1,24 +1,10 @@
-# Every provider reads credentials from the environment, so no secrets live in
-# this repo or in the state config:
+# Every provider reads its credential from the environment, so no secrets live in
+# this repo or in the state config. README.md lists the variables and scopes.
 #
-#   export CLOUDFLARE_API_TOKEN=...   # Zone:Edit + DNS:Edit
-#                                     # (no Dynamic Redirect scope needed — unlike
-#                                     # brendanlong.com, this zone has no rulesets)
-#   export BUNNYNET_API_KEY=...       # Bunny account API key. Note the name: the
-#                                     # provider reads BUNNYNET_API_KEY, NOT
-#                                     # BUNNY_API_KEY (which the REST API uses).
-#                                     # Unset, it sends an empty key and every call
-#                                     # fails with a bare 401.
-#   export MAILGUN_API_KEY=...        # Mailgun account API key (Sending API keys
-#                                     # can't read routes, which are account-level).
-#   export SENTRY_AUTH_TOKEN=...      # org:read + project:write
-#   export HEALTHCHECKSIO_API_KEY=... # note HEALTHCHECKSIO_, not HEALTHCHECKS_.
-#                                     # Must be read-WRITE: a read-only key omits
-#                                     # the check uuid (so import can't address
-#                                     # it) and `channels` (see healthchecks.tf).
-#
-# AWS creds come from the usual AWS chain, and cover both the S3 state backend
-# and the registrar (registrar.tf) — the latter needs route53domains:* .
+# Two names are easy to get wrong because they aren't what the vendor's own docs
+# use: Bunny reads BUNNYNET_API_KEY (not BUNNY_API_KEY, which its REST API uses)
+# and healthchecks.io reads HEALTHCHECKSIO_API_KEY. Unset, Bunny sends an empty
+# key and every call fails with a bare 401 naming no cause.
 
 provider "cloudflare" {}
 
@@ -26,12 +12,12 @@ provider "bunnynet" {}
 
 provider "mailgun" {}
 
+provider "sentry" {}
+
+provider "healthchecksio" {}
+
 # Route 53 Domains is a us-east-1-only API regardless of where anything else
 # lives (registrar.tf).
 provider "aws" {
   region = "us-east-1"
 }
-
-provider "sentry" {}
-
-provider "healthchecksio" {}
