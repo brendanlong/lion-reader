@@ -12,8 +12,8 @@ data "healthchecksio_channel" "email" {
 locals {
   # timeout: how long a check may go unpinged before it is late.
   # grace:   how much longer before it goes down and notifies.
-  # A rename does not restyle `slug`, which is deliberate — ping URLs use the
-  # uuid, and a stable slug keeps any slug-based URL working too.
+  # `slug` is left undeclared, so renaming a check does not move it. Deliberate:
+  # ping URLs use the uuid, and a stable slug keeps slug-based URLs working.
   healthchecks = {
     worker = {
       name    = "Lion Reader Worker Liveness"
@@ -49,12 +49,13 @@ resource "healthchecksio_check" "this" {
   channels = [data.healthchecksio_channel.email.id]
 
   lifecycle {
-    # A channel lookup miss yields a null id, which reaches the API as "detach
-    # everything" rather than as an error. Must be `!= null`: SDKv2 surfaces a
-    # data source with no match as all-null attributes, never as "".
+    # A channel lookup miss yields a null id, not an error. SDKv2 does refuse
+    # the null one layer down ("Null value found in list"), so this is for the
+    # message rather than the outcome. Compare against null, not "": a data
+    # source with no match comes back as all-null attributes.
     precondition {
       condition     = data.healthchecksio_channel.email.id != null
-      error_message = "No healthchecks.io channel of kind \"email\" found. Applying would detach every notification from these checks."
+      error_message = "No healthchecks.io channel of kind \"email\" found. Fix the lookup before applying — these checks must not be left with no notification channel."
     }
   }
 }
