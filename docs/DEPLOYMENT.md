@@ -447,6 +447,9 @@ subdomain pair: SPF/DKIM/DMARC on `app.lionreader.com`, inbound `MX` on
 `in.app.lionreader.com` (`INGEST_EMAIL_DOMAIN`). Only the former is registered
 with Mailgun; the latter is accepted because that domain has `wildcard` set.
 
+The registration itself (Amazon Registrar) is managed there too, so the
+nameserver delegation is a reviewable diff rather than a console form.
+
 Certificates: Fly accepts **any one of** an `AAAA` record pointing at the app, an
 `_acme-challenge` CNAME, or a `_fly-ownership` TXT as proof of ownership. The apex
 is dual-stack and carries no challenge records, so its `AAAA` is what keeps the

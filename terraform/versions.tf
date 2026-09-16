@@ -15,6 +15,12 @@ terraform {
       source  = "wgebis/mailgun"
       version = "~> 0.10"
     }
+    # Only for the registrar (registrar.tf). The S3 state backend has its own
+    # credential chain and does not go through this provider.
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 6.0"
+    }
   }
 
   # Shares the bucket with brendanlong.com, under a different key.

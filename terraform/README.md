@@ -1,8 +1,9 @@
 # Infrastructure (Terraform)
 
-Manages `lionreader.com` DNS (Cloudflare), the Bunny CDN pull zone, and the
-Mailgun domain and inbound route. Modeled on the equivalent module in
-`brendanlong.com`, which made the same Route53 → Cloudflare move.
+Manages `lionreader.com` DNS (Cloudflare), the Bunny CDN pull zone, the Mailgun
+domain and inbound route, and the domain registration at Amazon Registrar.
+Modeled on the equivalent module in `brendanlong.com`, which made the same
+Route53 → Cloudflare move.
 
 Terraform owns the **entire** zone — every record, including the Mailgun SPF /
 DKIM / DMARC / MX. Mailgun is part of the application, not a separate mailbox
@@ -20,8 +21,66 @@ top of `cloudflare.tf`.
 export CLOUDFLARE_API_TOKEN=...   # Zone:Edit + DNS:Edit
 export BUNNYNET_API_KEY=...       # NOT BUNNY_API_KEY — see providers.tf
 export MAILGUN_API_KEY=...        # account key; a Sending key can't read routes
-# AWS creds for the S3 state backend via the normal AWS chain
+# AWS creds via the normal chain — for the S3 state backend and route53domains
 ```
+
+## Adopting the registrar and Mailgun
+
+Both are import-only and independent of the DNS cutover. Their `import` blocks
+share `imports.tf`; delete that file once the apply lands, as was done for the
+Bunny pull zone. The plan that adopts them must read:
+
+```
+Plan: 3 to import, 0 to add, 0 to change, 0 to destroy.
+```
+
+**Any "to change" — and above all any "must be replaced" — is a bug, not
+progress.** Both have attributes whose provider default differs from live, and
+an undeclared one asserts the default instead of adopting it.
+
+### Registrar
+
+The point of adopting it is to have the current delegation in state _before_
+changing it.
+
+The contact blocks are Optional+Computed, so they adopt silently and stay out of
+the repo. `auto_renew`, `transfer_lock` and the privacy flags are not: they
+default to `true`. Read the live values first and reconcile `registrar.tf` to
+them rather than discovering the difference in a plan diff:
+
+```sh
+aws route53domains get-domain-detail --region us-east-1 \
+  --domain-name lionreader.com \
+  --query '{AutoRenew:AutoRenew,Nameservers:Nameservers[].Name,StatusList:StatusList,
+            AdminPrivacy:AdminPrivacy,RegistrantPrivacy:RegistrantPrivacy,
+            TechPrivacy:TechPrivacy,BillingPrivacy:BillingPrivacy}'
+```
+
+`transfer_lock` is not a field — it is derived from `StatusList` containing
+`clientTransferProhibited`. Take the nameserver **order** from here too; the
+attribute is an ordered list and a `dig NS` answer is rotated.
+
+### Mailgun
+
+`mailgun_domain` has the same import hazard as the pull zone, only sharper:
+`wildcard` is _RequiresReplace_ and defaults to `false` while the live
+domain is `true`, so an undeclared value plans a replace that would delete the
+domain and regenerate its DKIM keypair. `prevent_destroy` turns that into a plan
+error rather than an outage. The header of `mailgun.tf` records which attributes
+are pinned and why, including the four that the provider never reads back from
+the API and so must **not** be declared.
+
+Verify after applying — a broken route is silent until someone's newsletter goes
+missing:
+
+```sh
+curl -s --user "api:$MAILGUN_API_KEY" https://api.mailgun.net/v3/routes \
+  | python3 -m json.tool
+```
+
+The route's `expression` must still match `INGEST_EMAIL_DOMAIN` in `../fly.toml`,
+and its `forward()` target must still be a real endpoint. Then send a message to
+a live ingest address and confirm the entry appears.
 
 ## Migration runbook (Route53 → Cloudflare)
 
@@ -137,14 +196,27 @@ means it got proxied or flattened.
 
 ### 4. Cutover
 
-The registrar is **Amazon Registrar** — so this is Route53 **Domains** (a
-different console from the hosted zone): the domain → _Actions → Edit name
-servers_. Replace the four `awsdns` nameservers with Cloudflare's two:
+The registrar is **Amazon Registrar**, adopted in `registrar.tf`, so this is a
+Terraform change rather than a console form — replace the four `name_server`
+blocks with the zone's own assigned nameservers:
 
+```hcl
+dynamic "name_server" {
+  for_each = cloudflare_zone.lionreader.name_servers
+  content {
+    name = name_server.value
+  }
+}
 ```
-dante.ns.cloudflare.com
-elma.ns.cloudflare.com
-```
+
+Referencing the zone rather than pasting two hostnames means the delegation
+cannot drift from what Cloudflare actually serves, and a reassignment on their
+side shows up as a plan instead of an outage.
+
+**Read this plan before applying it.** It should touch `name_server` and
+nothing else; a proposed change to `auto_renew`, `transfer_lock` or a privacy
+flag means live differs from `registrar.tf` and you are about to change the
+registration as a side effect of a DNS cutover.
 
 Then wait for `terraform output cloudflare_zone_status` to read `active`.
 
@@ -165,36 +237,6 @@ forward in Cloudflare. Don't cut over immediately before time away.
 - After a full certificate renewal cycle, delete the Route53 hosted zone
   (`/hostedzone/Z10027742EOOBZLO22ICY`). Leave it intact until then — it is the
   rollback reference.
-
-## Adopting Mailgun
-
-Import-only, like the Bunny adoption, and independent of the DNS cutover. The
-`import` blocks are in `imports.tf`; delete that file once the apply lands.
-
-```sh
-terraform plan     # must read: Plan: 2 to import, 0 to add, 0 to change, 0 to destroy.
-```
-
-**Any "to change" — and above all any "must be replaced" — is a bug, not
-progress.** `mailgun_domain` has the same import hazard as the pull zone, only
-sharper: `wildcard` is _RequiresReplace_ and defaults to `false` while the live
-domain is `true`, so an undeclared value plans a replace that would delete the
-domain and regenerate its DKIM keypair. `prevent_destroy` turns that into a plan
-error rather than an outage. The header of `mailgun.tf` records which attributes
-are pinned and why, including the four that the provider never reads back from
-the API and so must **not** be declared.
-
-Verify after applying — a broken route is silent until someone's newsletter goes
-missing:
-
-```sh
-curl -s --user "api:$MAILGUN_API_KEY" https://api.mailgun.net/v3/routes \
-  | python3 -m json.tool
-```
-
-The route's `expression` must still match `INGEST_EMAIL_DOMAIN` in `../fly.toml`,
-and its `forward()` target must still be a real endpoint. Then send a message to
-a live ingest address and confirm the entry appears.
 
 ## Day-to-day
 
