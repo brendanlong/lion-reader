@@ -342,17 +342,3 @@ export const storageConfig = {
    */
   publicUrlBase: process.env.STORAGE_PUBLIC_URL_BASE,
 };
-
-export const mcpConfig = {
-  /**
-   * When "true", the proxy logs one structured line per request to the OAuth/MCP
-   * surface: host, method, path, redacted query, user-agent, and whether an
-   * `Authorization` header was present (a boolean — never the token, per the
-   * redaction rules in the connector-debugging notes). This is the diagnostic
-   * that distinguishes claude.ai's failure modes (e.g. token issued then an
-   * `initialize` with no auth header). Off by default.
-   */
-  get logRequests(): boolean {
-    return process.env.LOG_MCP_REQUESTS === "true";
-  },
-};
