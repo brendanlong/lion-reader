@@ -32,20 +32,34 @@ resource "bunnynet_pullzone" "lionreader" {
     url  = "https://lion-reader.fly.dev"
   }
 
-  # Live: Type 0 = Standard. Only the US geo zone is enabled — EnableGeoZoneEU,
-  # ASIA, SA and AF are all false on the live zone. Declaring the other four
-  # would ENABLE them (a coverage and billing change), so this stays US-only
-  # until that is a deliberate decision. See the README note.
+  # US-only on purpose: serving from EU POPs would pull us into EU data-protection
+  # obligations we don't want, and essentially all users are in the US anyway.
+  # Adding a zone here is a legal decision before it is a performance one.
+  # Live: Type 0 = Standard, RoutingFilters ["all"], only EnableGeoZoneUS true.
   routing {
-    tier  = "Standard"
-    zones = ["US"]
+    tier    = "Standard"
+    zones   = ["US"]
+    filters = ["all"]
   }
 
-  # Live: CacheControlMaxAgeOverride -1. See the warning above before touching.
-  cache_expiration_time = -1
+  # Live: CacheControlMaxAgeOverride -1 and CacheControlPublicMaxAgeOverride -1.
+  # See the warning above before touching either.
+  cache_expiration_time         = -1
+  cache_expiration_time_browser = -1
 
-  # Live: AccessControlOriginHeaderExtensions. These are the CORS-enabled
-  # extensions that make cross-origin font loads work (docs/DEPLOYMENT.md).
+  # Live: QueryStringVaryParameters. These are load-bearing — `_rsc` and `dpl`
+  # are what keep RSC payloads and post-deploy assets from colliding in the edge
+  # cache (../docs/DEPLOYMENT.md, "Why HTML and RSC are not CDN-cached"). An
+  # empty default here would silently merge them into one cache entry.
+  cache_vary_querystring = ["entry", "_rsc", "v", "dpl"]
+  sort_querystring       = true
+
+  # Live: DisableCookies true.
+  strip_cookies = true
+
+  # Live: EnableAccessControlOriginHeader true + AccessControlOriginHeaderExtensions.
+  # This is what makes cross-origin font loads work (../docs/DEPLOYMENT.md).
+  cors_enabled = true
   cors_extensions = [
     "css", "eot", "gif", "jpeg", "jpg", "js", "mp3", "mp4", "mpeg",
     "png", "svg", "ttf", "webm", "webp", "woff", "woff2",

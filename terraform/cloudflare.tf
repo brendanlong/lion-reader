@@ -1,18 +1,24 @@
 # ---------------------------------------------------------------------------
-# Cloudflare — zone and the proxyable DNS records
+# Cloudflare — the whole lionreader.com zone
 #
-# Terraform owns every A / AAAA / CNAME record, because those are the types
-# Cloudflare can proxy, and `proxied = false` on each of them is an invariant
-# worth enforcing in code rather than in a dashboard (see docs/DEPLOYMENT.md).
+# Every record lives here. Mailgun is part of the application, not a separate
+# mailbox someone administers on the side, so its SPF / DKIM / DMARC / MX belong
+# in the same place as the rest of the app's infrastructure.
 #
-# TXT and MX records are intentionally NOT here — Cloudflare cannot proxy them,
-# so there is no grey-cloud decision to get wrong, and they are mail config that
-# changes on Mailgun's schedule rather than ours. They are imported once from
-# cloudflare-import.zone and managed in the dashboard. The provider only touches
-# records it declares, so partial-zone management is safe.
+# `proxied = false` on every proxyable record (A / AAAA / CNAME) is an invariant,
+# not a default — see ../docs/DEPLOYMENT.md. TXT and MX cannot be proxied, so
+# they carry no such field.
 #
-# There is no apex redirect and no ruleset here: unlike brendanlong.com, this
-# zone serves the app directly at the apex, so nothing is proxied at all.
+# There is no apex redirect and no ruleset: unlike brendanlong.com, this zone
+# serves the app directly at the apex, so nothing is proxied at all.
+#
+# The record set was derived from the live Route53 export and verified complete
+# against it. Two records in that export are deliberately absent:
+#   SOA / NS   Cloudflare manages these for the zone.
+#   _acme-challenge.lionreader.com.lionreader.com. — a doubled name from an FQDN
+#              pasted into a field that already appends the zone. The correctly
+#              named record never existed and nothing queries this one; Fly
+#              proves ownership via the apex AAAA instead. Dropped, not migrated.
 # ---------------------------------------------------------------------------
 
 resource "cloudflare_zone" "lionreader" {
@@ -110,4 +116,77 @@ resource "cloudflare_dns_record" "mailgun_tracking" {
   proxied = false
   ttl     = 86400
   comment = "Mailgun tracking. Never proxy: breaks click/open tracking"
+}
+
+# ---------------------------------------------------------------------------
+# Mail (Mailgun) and domain verification — TXT and MX
+#
+# Not proxyable, so there is no grey-cloud decision here. Long term the Mailgun
+# side of this (domains, routes, webhooks) is worth managing with the Mailgun
+# provider too, so the DNS and the service it points at stay in step.
+# ---------------------------------------------------------------------------
+
+resource "cloudflare_dns_record" "spf" {
+  zone_id = cloudflare_zone.lionreader.id
+  name    = "app"
+  type    = "TXT"
+  content = "v=spf1 include:mailgun.org ~all"
+  ttl     = 300
+  comment = "Mailgun SPF"
+}
+
+resource "cloudflare_dns_record" "dkim" {
+  zone_id = cloudflare_zone.lionreader.id
+  name    = "krs._domainkey.app"
+  type    = "TXT"
+  content = "k=rsa; p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDwjmL/6JMMVYdLu30HDMoAe/tt75hwN20W5bS6eRBUoEMwBIPPilwA+G8PzWDeMHUkAjzBhuDk0S2g8NVC/PqaU5oFRbPVmU0REq75ZyraAyUfPVDT6j/asvnA4LyJzqBWaAt183AK4VtOpS3KNr8VyI5jzyFbVDO6IAzMj8zF2wIDAQAB"
+  ttl     = 300
+  comment = "Mailgun DKIM (selector krs)"
+}
+
+resource "cloudflare_dns_record" "dmarc" {
+  zone_id = cloudflare_zone.lionreader.id
+  name    = "_dmarc.app"
+  type    = "TXT"
+  content = "v=DMARC1; p=none; pct=100; fo=1; ri=3600; rua=mailto:c7650f54@dmarc.mailgun.org,mailto:eb182582@inbox.ondmarc.com; ruf=mailto:c7650f54@dmarc.mailgun.org,mailto:eb182582@inbox.ondmarc.com;"
+  ttl     = 300
+  comment = "DMARC, reporting to Mailgun + OnDMARC"
+}
+
+resource "cloudflare_dns_record" "ingest_mx_a" {
+  zone_id  = cloudflare_zone.lionreader.id
+  name     = "in.app"
+  type     = "MX"
+  content  = "mxa.mailgun.org"
+  priority = 10
+  ttl      = 86400
+  comment  = "Newsletter ingest (INGEST_EMAIL_DOMAIN)"
+}
+
+resource "cloudflare_dns_record" "ingest_mx_b" {
+  zone_id  = cloudflare_zone.lionreader.id
+  name     = "in.app"
+  type     = "MX"
+  content  = "mxb.mailgun.org"
+  priority = 10
+  ttl      = 86400
+  comment  = "Newsletter ingest (INGEST_EMAIL_DOMAIN)"
+}
+
+resource "cloudflare_dns_record" "google_verification" {
+  zone_id = cloudflare_zone.lionreader.id
+  name    = "@"
+  type    = "TXT"
+  content = "google-site-verification=VaZJWXsqI7zVXMOAPZnWO1gqc7vbMTwUEyaqjhd-Js8"
+  ttl     = 300
+  comment = "Google Search Console"
+}
+
+resource "cloudflare_dns_record" "discord_verification" {
+  zone_id = cloudflare_zone.lionreader.id
+  name    = "_discord"
+  type    = "TXT"
+  content = "dh=a1c8abb6b4d9e85506d748e1ef7331dcbb5232ac"
+  ttl     = 3600
+  comment = "Discord domain verification"
 }

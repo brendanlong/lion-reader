@@ -4,19 +4,19 @@ Manages `lionreader.com` DNS (Cloudflare) and the Bunny CDN pull zone. Modeled
 on the equivalent module in `brendanlong.com`, which made the same Route53 →
 Cloudflare move.
 
-Scope is deliberately partial. Terraform owns:
+Terraform owns the **entire** zone — every record, including the Mailgun SPF /
+DKIM / DMARC / MX. Mailgun is part of the application, not a separate mailbox
+administered on the side, so its DNS belongs with the rest of the app's
+infrastructure. It also owns the Bunny pull zone and its `cdn.lionreader.com`
+hostname.
 
-- the Cloudflare zone
-- every **A / AAAA / CNAME** record — the proxyable types, where `proxied = false`
-  is an invariant worth enforcing in code (see `../docs/DEPLOYMENT.md`)
-- the Bunny pull zone and its `cdn.lionreader.com` hostname
+The record set was derived from the live Route53 export and verified complete
+against it: all 14 non-`SOA`/`NS` records are declared, with nothing missing and
+nothing invented. The one export record deliberately dropped is documented at the
+top of `cloudflare.tf`.
 
-Terraform does **not** own the **TXT / MX** records (SPF, DKIM, DMARC, Discord
-and Google verification, Mailgun MX). Cloudflare cannot proxy those, so there is
-no grey-cloud decision to get wrong, and they change on Mailgun's schedule rather
-than ours. They are imported once from `cloudflare-import.zone` and managed in
-the dashboard. The provider only touches records it declares, so this is safe and
-shows no drift.
+Next step for this module is the **Mailgun** provider — managing the domain,
+routes and webhooks alongside the DNS that points at them, so the two can't drift.
 
 ## Credentials
 
@@ -55,17 +55,39 @@ attribute change, a value in `bunny.tf` does not match the live zone — reconci
 it rather than applying. `prevent_destroy` turns a replace-forcing mismatch into
 a hard plan error instead of a silent destroy.
 
-### 2. Import the TXT/MX records
+`bunny.tf` declares the attributes whose live values are known and whose defaults
+would change behaviour if asserted — origin, routing, cache overrides, CORS, and
+the query-string vary set. A pull zone has ~90 optional attributes, so rather than
+hand-mapping the rest from API names, generate the authoritative config from live
+state in a scratch directory (this touches nothing):
 
-In the Cloudflare dashboard, DNS → Records → Import, upload
-`cloudflare-import.zone`. It was generated from the live Route53 export and
-round-trip verified against it.
+```sh
+mkdir -p /tmp/bunny-gen && cd /tmp/bunny-gen
+cat > main.tf <<'HCL'
+terraform {
+  required_providers {
+    bunnynet = { source = "BunnyWay/bunnynet", version = "~> 0.15" }
+  }
+}
+provider "bunnynet" {}
+import {
+  to = bunnynet_pullzone.lionreader
+  id = "6171160"
+}
+HCL
+terraform init && terraform plan -generate-config-out=generated.tf
+cat generated.tf
+```
 
-Then **confirm every imported record is DNS-only (grey cloud)**. Cloudflare's
-importer can default records to proxied; the BIND import screen has a "Proxy
-imported DNS records" checkbox that avoids the toggling if you uncheck it.
+Then reconcile `generated.tf` into `bunny.tf`, keeping the comments — the
+generated output records _what_ the values are, and the comments record _why_.
 
-### 3. Apply the zone + records
+### 2. Apply the zone + records
+
+The Cloudflare zone already exists and is **empty**, so Terraform creates every
+record rather than importing them — there is no dashboard import step and no
+grey-cloud checkbox to get wrong. `proxied = false` is declared explicitly on
+every proxyable record.
 
 ```sh
 terraform apply
@@ -77,7 +99,7 @@ Then delete `imports.tf` and commit — state holds everything from here.
 At this point Cloudflare is fully configured but **not yet authoritative**.
 Nothing has changed for visitors.
 
-### 4. Pre-cutover verification (before touching the registrar)
+### 3. Pre-cutover verification (before touching the registrar)
 
 Cloudflare answers authoritatively for the zone as soon as it exists, even while
 the delegation still points at Route53. So the entire post-cutover outcome can be
@@ -98,12 +120,16 @@ done
 
 Diff that against the same loop without `@$NS` (i.e. against Route53). They must
 match, with one deliberate exception: the dropped `_acme-challenge` record (see
-`cloudflare-import.zone` header).
+the header of `cloudflare.tf`).
+
+This is also what catches **TXT quoting drift** — Cloudflare and Route53 differ
+on whether TXT values carry surrounding quotes, and SPF/DKIM/DMARC breakage is
+otherwise silent. Compare the answers, not the config.
 
 `cdn.lionreader.com` must answer with a **CNAME**, not an A. An A record there
 means it got proxied or flattened.
 
-### 5. Cutover
+### 4. Cutover
 
 Replace the four `awsdns` nameservers at the registrar with Cloudflare's two.
 Then wait for `terraform output cloudflare_zone_status` to read `active`.
@@ -114,7 +140,7 @@ split across both providers for up to two days. Lowering record TTLs beforehand
 does not affect this — it is a different TTL. The real recovery lever is fixing
 forward in Cloudflare. Don't cut over immediately before time away.
 
-### 6. Verify and clean up
+### 5. Verify and clean up
 
 - `flyctl certs list -a lion-reader` — `lionreader.com` still `Issued`, and still
   renewing (recheck in ~30 days). It is the only certificate.
@@ -137,10 +163,9 @@ Runs from any machine — state and locking live in S3. This module does **not**
 run in CI; infra changes are rare and we don't want CI holding cloud-admin
 credentials. Keep applies manual and local.
 
-## Note: the CDN is US-only
+## Note: the CDN is US-only on purpose
 
-The live pull zone has only the `US` geo zone enabled (`EnableGeoZoneEU`, `ASIA`,
-`SA`, `AF` are all false), so non-US visitors are served from US POPs. That is
-captured as-is in `bunny.tf` rather than "fixed", since enabling zones is a
-coverage and billing change. Worth revisiting deliberately — it caps what Bunny's
-GeoDNS steering can actually do.
+Only the `US` geo zone is enabled. Serving from EU POPs would pull us into EU
+data-protection obligations we don't want to take on, and essentially all users
+are in the US anyway. Adding a zone in `bunny.tf` is a legal decision before it is
+a performance one — don't enable one to shave latency without that conversation.
