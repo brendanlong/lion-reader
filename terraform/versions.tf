@@ -31,7 +31,8 @@ terraform {
     }
   }
 
-  # Shares the bucket with brendanlong.com, under a different key.
+  # The bucket holds state for more than this project, so the key is what
+  # namespaces us — don't treat the bucket as ours to manage or empty.
   backend "s3" {
     bucket       = "brendanlong-terraform-state"
     key          = "lionreader.com/terraform.tfstate"

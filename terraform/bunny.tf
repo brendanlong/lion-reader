@@ -1,9 +1,8 @@
 # Bunny CDN — the pull zone fronting the Fly app.
 #
-# Unlike brendanlong.com (a static site on a StorageZone origin), this zone has
-# the running app as its origin and wraps the WHOLE site, honoring origin
-# Cache-Control. That is what makes the cache settings below load-bearing rather
-# than tuning.
+# The origin is the running app, not a bucket of static files, and the zone
+# wraps the WHOLE site while honoring origin Cache-Control. That is what makes
+# the cache settings below load-bearing rather than tuning.
 
 resource "bunnynet_pullzone" "lionreader" {
   name = "lionreader"

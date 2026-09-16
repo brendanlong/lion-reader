@@ -4,9 +4,8 @@
 #
 # `proxied = false` on every proxyable record (A / AAAA / CNAME) is an invariant,
 # not a default — see ../docs/DEPLOYMENT.md. TXT and MX cannot be proxied, so
-# they carry no such field. Nothing in this zone is proxied at all: unlike
-# brendanlong.com it serves the app directly at the apex, so there is no apex
-# redirect and no ruleset.
+# they carry no such field. Nothing in this zone is proxied at all — it serves
+# the app directly at the apex — so there is no apex redirect and no ruleset.
 
 resource "cloudflare_zone" "lionreader" {
   account = {

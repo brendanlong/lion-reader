@@ -5,9 +5,6 @@ here. This module owns `lionreader.com` DNS (Cloudflare), the Bunny CDN pull
 zone, Mailgun, Sentry, the healthchecks.io monitors, and the domain registration
 at Amazon Registrar. Change them here, not in a dashboard.
 
-Modeled on the equivalent module in `brendanlong.com`, which made the same
-Route53 → Cloudflare move.
-
 ## Credentials
 
 ```sh
