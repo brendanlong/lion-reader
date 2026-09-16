@@ -19,3 +19,13 @@ import {
   to = aws_route53domains_registered_domain.lionreader
   id = var.domain
 }
+
+import {
+  to = sentry_project.web
+  id = "${var.sentry_organization}/lion-reader-web"
+}
+
+import {
+  to = sentry_key.default
+  id = "${var.sentry_organization}/lion-reader-web/602df716c7a5d9dfe207b9139d6a34d6"
+}

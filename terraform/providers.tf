@@ -11,6 +11,7 @@
 #                                     # fails with a bare 401.
 #   export MAILGUN_API_KEY=...        # Mailgun account API key (Sending API keys
 #                                     # can't read routes, which are account-level).
+#   export SENTRY_AUTH_TOKEN=...      # org:read + project:write
 #
 # AWS creds come from the usual AWS chain, and cover both the S3 state backend
 # and the registrar (registrar.tf) — the latter needs route53domains:* .
@@ -26,3 +27,5 @@ provider "mailgun" {}
 provider "aws" {
   region = "us-east-1"
 }
+
+provider "sentry" {}

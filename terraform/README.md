@@ -1,9 +1,9 @@
 # Infrastructure (Terraform)
 
 Manages `lionreader.com` DNS (Cloudflare), the Bunny CDN pull zone, the Mailgun
-domain and inbound route, and the domain registration at Amazon Registrar.
-Modeled on the equivalent module in `brendanlong.com`, which made the same
-Route53 → Cloudflare move.
+domain and inbound route, the domain registration at Amazon Registrar, and the
+Sentry project. Modeled on the equivalent module in `brendanlong.com`, which
+made the same Route53 → Cloudflare move.
 
 Terraform owns the **entire** zone — every record, including the Mailgun SPF /
 DKIM / DMARC / MX. Mailgun is part of the application, not a separate mailbox
@@ -21,22 +21,26 @@ top of `cloudflare.tf`.
 export CLOUDFLARE_API_TOKEN=...   # Zone:Edit + DNS:Edit
 export BUNNYNET_API_KEY=...       # NOT BUNNY_API_KEY — see providers.tf
 export MAILGUN_API_KEY=...        # account key; a Sending key can't read routes
+export SENTRY_AUTH_TOKEN=...      # org:read + project:write
 # AWS creds via the normal chain — for the S3 state backend and route53domains
 ```
 
-## Adopting the registrar and Mailgun
+## Adopting the registrar, Mailgun and Sentry
 
-Both are import-only and independent of the DNS cutover. Their `import` blocks
-share `imports.tf`; delete that file once the apply lands, as was done for the
-Bunny pull zone. The plan that adopts them must read:
+All three are import-only and touch no traffic. Their `import` blocks share
+`imports.tf`; delete that file once the apply lands. The plan that adopts them
+must read:
 
 ```
-Plan: 3 to import, 0 to add, 0 to change, 0 to destroy.
+Plan: 5 to import, 0 to add, 0 to change, 0 to destroy.
 ```
 
 **Any "to change" — and above all any "must be replaced" — is a bug, not
-progress.** Both have attributes whose provider default differs from live, and
-an undeclared one asserts the default instead of adopting it.
+progress.** Whether that is even possible depends on the provider, and the
+difference is worth knowing before writing a resource: an attribute that is
+Optional+Computed adopts its live value when omitted, while one that is Optional
+with a static default _asserts_ that default and changes live on apply. Sentry
+is almost entirely the former, Mailgun and the registrar are not.
 
 ### Registrar
 
@@ -83,6 +87,22 @@ curl -s --user "api:$MAILGUN_API_KEY" https://api.mailgun.net/v3/routes \
 The route's `expression` must still match `INGEST_EMAIL_DOMAIN` in `../fly.toml`,
 and its `forward()` target must still be a real endpoint. Then send a message to
 a live ingest address and confirm the entry appears.
+
+### Sentry
+
+Nothing to reconcile — see the header of `sentry.tf` for why the short block is
+safe here. The DSN comes back as an output, which is what makes a key rotation
+reproducible:
+
+```sh
+flyctl secrets set -a lion-reader \
+  SENTRY_DSN="$(terraform output -raw sentry_dsn)" \
+  NEXT_PUBLIC_SENTRY_DSN="$(terraform output -raw sentry_dsn)"
+```
+
+`NEXT_PUBLIC_SENTRY_DSN` is inlined into the client bundle at build time, so it
+also needs a rebuild to take effect — see the `[build.args]` comment in
+`../fly.toml`.
 
 ## Migration runbook (Route53 → Cloudflare)
 

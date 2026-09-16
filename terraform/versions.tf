@@ -21,6 +21,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 6.0"
     }
+    sentry = {
+      source  = "jianyuan/sentry"
+      version = "~> 0.15"
+    }
   }
 
   # Shares the bucket with brendanlong.com, under a different key.

@@ -39,3 +39,9 @@ variable "ingest_email_domain" {
   type        = string
   default     = "in.app.lionreader.com"
 }
+
+variable "sentry_organization" {
+  description = "Sentry organization slug that owns the project."
+  type        = string
+  default     = "brendan-long"
+}
