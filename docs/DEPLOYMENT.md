@@ -458,6 +458,11 @@ Two rules apply whatever the zone is hosted on:
   client IP from rate limiting and abuse handling. On Cloudflare that means every
   record stays DNS-only ("grey cloud"); `announcements.lionreader.com` is a GitHub
   Pages CNAME with the same constraint, for the same reason.
+- **Ignore Cloudflare's dashboard nudges.** It permanently shows "Proxying is
+  required for most security and performance features" and recommends adding a
+  `www` record. Acting on the first breaks certificate renewal and double-CDNs the
+  site, for the reasons above. We have never had a `www` record and nothing links
+  to one, so the second is a suggestion, not a defect.
 - **Never flatten (or proxy) the `cdn.lionreader.com` CNAME.** Bunny steers to a
   nearby POP via GeoDNS — its nameservers honor EDNS Client Subnet and answer with
   a 35s TTL. Resolving that CNAME centrally and caching the result collapses the
