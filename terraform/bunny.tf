@@ -51,6 +51,11 @@ resource "bunnynet_pullzone" "lionreader" {
   # are what keep RSC payloads and post-deploy assets from colliding in the edge
   # cache (../docs/DEPLOYMENT.md, "Why HTML and RSC are not CDN-cached"). An
   # empty default here would silently merge them into one cache entry.
+  # cache_vary is the master switch; cache_vary_querystring is only the parameter
+  # list it applies. Declaring the list without "querystring" here would leave the
+  # list in place but stop it being used — the cache key would lose _rsc and dpl
+  # entirely, which is the collision this setting exists to prevent.
+  cache_vary             = ["querystring"]
   cache_vary_querystring = ["entry", "_rsc", "v", "dpl"]
   sort_querystring       = true
 
@@ -64,6 +69,11 @@ resource "bunnynet_pullzone" "lionreader" {
     "css", "eot", "gif", "jpeg", "jpg", "js", "mp3", "mp4", "mpeg",
     "png", "svg", "ttf", "webm", "webp", "woff", "woff2",
   ]
+
+  # Live values that differ from the provider's defaults. Undeclared, each would
+  # be silently changed on the first apply — see the warning at the top.
+  block_no_referer   = false # default true: would start rejecting refererless requests
+  websockets_enabled = false # default true: nothing here serves websockets
 
   lifecycle {
     prevent_destroy = true

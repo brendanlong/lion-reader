@@ -50,10 +50,19 @@ terraform init
 terraform plan
 ```
 
-The plan **must** show the imports and **no changes**. If it proposes any
-attribute change, a value in `bunny.tf` does not match the live zone — reconcile
-it rather than applying. `prevent_destroy` turns a replace-forcing mismatch into
-a hard plan error instead of a silent destroy.
+The plan must read exactly:
+
+```
+Plan: 3 to import, 14 to add, 0 to change, 0 to destroy.
+```
+
+**Any "to change" on the pull zone is a bug, not progress.** It means an attribute
+is undeclared and the provider's default differs from the live value, so applying
+would silently reconfigure the CDN. The first run of this plan surfaced three, all
+of which are now declared: `cache_vary`, `block_no_referer` and
+`websockets_enabled`. `prevent_destroy` turns a replace-forcing mismatch into a
+hard plan error instead of a silent destroy, but it does **not** catch in-place
+changes — reading the diff is the only guard there.
 
 `bunny.tf` declares the attributes whose live values are known and whose defaults
 would change behaviour if asserted — origin, routing, cache overrides, CORS, and
@@ -107,7 +116,7 @@ checked in advance, with zero risk. Anything missing here will be missing after
 the cutover too — but fixing it now costs nothing.
 
 ```sh
-NS=<one of the nameservers from step 3>
+NS=dante.ns.cloudflare.com
 for q in "A lionreader.com" "AAAA lionreader.com" "CNAME cdn.lionreader.com" \
          "CNAME announcements.lionreader.com" "CNAME email.app.lionreader.com" \
          "A in.app.lionreader.com" "AAAA in.app.lionreader.com" \
@@ -131,7 +140,15 @@ means it got proxied or flattened.
 
 ### 4. Cutover
 
-Replace the four `awsdns` nameservers at the registrar with Cloudflare's two.
+The registrar is **Amazon Registrar** — so this is Route53 **Domains** (a
+different console from the hosted zone): the domain → _Actions → Edit name
+servers_. Replace the four `awsdns` nameservers with Cloudflare's two:
+
+```
+dante.ns.cloudflare.com
+elma.ns.cloudflare.com
+```
+
 Then wait for `terraform output cloudflare_zone_status` to read `active`.
 
 **There is no fast rollback.** The delegation TTL is set at the `.com` parent at
