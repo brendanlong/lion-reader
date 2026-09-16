@@ -14,6 +14,7 @@
 
 import * as Sentry from "@sentry/nextjs";
 import type { ErrorEvent } from "@sentry/nextjs";
+import { SENTRY_DATA_COLLECTION } from "@/lib/sentry-data-collection";
 
 // Query params whose values are credentials/PII and must never reach Sentry.
 // Some clients pass these in the URL even on a POST — notably FeedMe sends the
@@ -65,6 +66,8 @@ export function initSentry(): void {
 
   Sentry.init({
     dsn: process.env.SENTRY_DSN,
+
+    dataCollection: SENTRY_DATA_COLLECTION,
 
     // Adjust this value in production, or use tracesSampler for greater control
     tracesSampleRate: process.env.NODE_ENV === "production" ? 0.1 : 1.0,

@@ -18,6 +18,8 @@ resource "sentry_key" "default" {
 }
 
 # Not covered here: `data_scrubber` and `scrub_ip_addresses` are absent from the
-# provider's schema at every level, so whether Sentry stores request IPs and
-# strips sensitive fields stays a dashboard setting. Terraform owning the
-# project does not mean it owns the project's privacy posture.
+# provider's schema at every level, so they are set in the Sentry UI and nothing
+# here will notice if they change. Both must stay ON — "Prevent Storing of IP
+# Addresses" is what stops Sentry inferring a client IP from the connection,
+# which the SDK cannot do for us. The SDK-side half of that is
+# `dataCollection.userInfo` in src/server/sentry.ts.

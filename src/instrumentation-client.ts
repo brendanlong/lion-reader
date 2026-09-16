@@ -11,12 +11,16 @@
 
 import * as Sentry from "@sentry/nextjs";
 
+import { SENTRY_DATA_COLLECTION } from "@/lib/sentry-data-collection";
+
 // Only initialize Sentry if DSN is provided.
 // NEXT_PUBLIC_* vars are inlined at build time, so the DSN must be available
 // to `next build` (not just at runtime) for client Sentry to work.
 if (process.env.NEXT_PUBLIC_SENTRY_DSN) {
   Sentry.init({
     dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
+
+    dataCollection: SENTRY_DATA_COLLECTION,
 
     // Adjust this value in production, or use tracesSampler for greater control
     tracesSampleRate: process.env.NODE_ENV === "production" ? 0.1 : 1.0,

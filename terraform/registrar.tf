@@ -20,10 +20,10 @@ resource "aws_route53domains_registered_domain" "lionreader" {
 
   auto_renew = true
 
-  # The live value: the registry status list is ["active"], with no
-  # clientTransferProhibited. Turning the lock on is worth doing — it is what
-  # blocks an unauthorized transfer-out — as its own change.
-  transfer_lock = false
+  # Blocks an unauthorized transfer-out. Shows up at the registry as
+  # clientTransferProhibited in the domain's status list, which is also where
+  # the provider reads it back from.
+  transfer_lock = true
 
   admin_privacy      = true
   registrant_privacy = true

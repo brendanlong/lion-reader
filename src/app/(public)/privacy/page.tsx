@@ -24,7 +24,7 @@ export const metadata: Metadata = {
 
 export default function PrivacyPolicyPage() {
   return (
-    <LegalPage title="Privacy Policy" lastUpdated="July 31, 2026">
+    <LegalPage title="Privacy Policy" lastUpdated="September 16, 2026">
       <LegalSection title="Overview">
         <LegalParagraph>
           Lion Reader is committed to protecting your privacy. We collect only the data necessary to
@@ -236,7 +236,8 @@ export default function PrivacyPolicyPage() {
             <LegalParagraph tight>
               We use Sentry to track application errors and performance issues. Sentry may receive
               error messages, stack traces, and limited context about the operation that failed
-              (e.g., which page you were on). We do not send article content or feed data to Sentry.
+              (e.g., which page you were on). We do not send article content or feed data to Sentry,
+              and we configure it not to collect your IP address or other identifying details.
             </LegalParagraph>
           </LegalSubsection>
 
