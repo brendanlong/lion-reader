@@ -437,6 +437,33 @@ is disabled for Postgres apps; the CLI is the supported path.
 
 ---
 
+## DNS
+
+`lionreader.com` is served by Route53 and managed by hand (no Terraform). Mail is
+split across a subdomain pair: SPF/DKIM/DMARC on `app.lionreader.com`, inbound `MX`
+on `in.app.lionreader.com` (`INGEST_EMAIL_DOMAIN`). A move to Cloudflare DNS is
+spec'd in issue #1610.
+
+Certificates: Fly accepts **any one of** an `AAAA` record pointing at the app, an
+`_acme-challenge` CNAME, or a `_fly-ownership` TXT as proof of ownership. The apex
+is dual-stack and carries no challenge records, so its `AAAA` is what keeps the
+certificate renewing.
+
+Two rules apply whatever the zone is hosted on:
+
+- **Never put a proxy or CDN in front of a Fly hostname.** It replaces the `AAAA`
+  record Fly uses as ownership proof, breaking certificate renewal, and hides the
+  client IP from rate limiting and abuse handling. On Cloudflare that means every
+  record stays DNS-only ("grey cloud"); `announcements.lionreader.com` is a GitHub
+  Pages CNAME with the same constraint, for the same reason.
+- **Never flatten (or proxy) the `cdn.lionreader.com` CNAME.** Bunny steers to a
+  nearby POP via GeoDNS — its nameservers honor EDNS Client Subnet and answer with
+  a 35s TTL. Resolving that CNAME centrally and caching the result collapses the
+  steering to a single edge chosen from the resolver's vantage point, and the hop
+  it saves is usually a cache hit anyway.
+
+---
+
 ## Architecture Overview
 
 Fly.io runs three independent **process groups** (`[processes]` in `fly.toml`),
