@@ -1,7 +1,7 @@
 /**
  * Next.js Proxy (middleware)
  *
- * Three jobs:
+ * Two jobs:
  *
  * 0. Session-aware redirects for `/` and the static auth pages
  *    (`maybeSessionRedirect`, issue #1359): anonymous visitors to `/` 307
@@ -21,21 +21,6 @@
  *    Exception: the statically-prerendered public routes (`isPublicStaticPath`)
  *    get a static, relaxed CSP with no nonce (issue #1359) — their prerendered
  *    HTML can't carry a per-request nonce, and they render no untrusted HTML.
- * 2. Optional request logging for debugging remote MCP connectors: when
- *    `LOG_MCP_REQUESTS=true`, one structured line per request — host, method,
- *    path, redacted query, user-agent, whether an Authorization header was
- *    present. This is how we see exactly what a connector sends — most
- *    importantly whether the authenticated `initialize` POST carries a Bearer
- *    token (issue #986 / the connector header-drop bug), AND whether it hits
- *    any path we don't expect (the "wrong URL" / origin-root-fallback failure
- *    modes — claude.ai has been observed synthesizing OAuth endpoints at the
- *    origin root instead of using the advertised metadata).
- *
- * The matcher runs on all requests (minus static assets) so job 2 can see
- * unexpected paths, but logging is gated: nothing is logged unless
- * `LOG_MCP_REQUESTS=true`, and even then only for the OAuth/MCP surface paths,
- * so ordinary traffic (tRPC, SSE, pages) stays out of the logs. When the flag
- * is off the proxy skips logging entirely.
  *
  * Route authentication is intentionally NOT handled here. It lives in one place:
  * the server-side layout guards — `src/app/(spa)/(app)/layout.tsx` (via
@@ -50,53 +35,12 @@
  */
 
 import { NextResponse, type NextRequest } from "next/server";
-import { mcpConfig } from "@/server/config/env";
+import { DEMO_LANDING_PATH } from "@/lib/routes";
 import {
   buildContentSecurityPolicy,
   buildPublicContentSecurityPolicy,
   generateCspNonce,
 } from "@/server/http/csp";
-
-/**
- * Query params that are safe to log (client_id, PKCE code_challenge, state,
- * resource, scope are public/one-time — see the redaction note in the
- * connector-debugging guide). Anything else, notably an authorization `code`, is
- * redacted so it never lands in logs.
- */
-const SAFE_QUERY_PARAMS = new Set([
-  "client_id",
-  "code_challenge",
-  "code_challenge_method",
-  "response_type",
-  "redirect_uri",
-  "resource",
-  "scope",
-  "state",
-  "error",
-]);
-
-/**
- * OAuth/MCP surface paths worth logging. The root-path entries (`/register`,
- * `/mcp`, `/authorize`, `/token`, `/revoke`) are NOT served endpoints — they
- * stay in this list purely as diagnostics, because misbehaving connectors
- * (claude.ai) have been observed probing them instead of the advertised
- * endpoints, and a logged 404 there is exactly the evidence that identifies
- * that failure mode. `/register` is method-gated: GET is the human signup
- * page (ordinary traffic), while a non-GET there is a connector's misplaced
- * DCR attempt.
- */
-function isOAuthMcpSurfacePath(pathname: string, method: string): boolean {
-  return (
-    (pathname === "/register" && method !== "GET" && method !== "HEAD") ||
-    pathname === "/mcp" ||
-    pathname === "/api/mcp" ||
-    pathname === "/authorize" ||
-    pathname === "/token" ||
-    pathname === "/revoke" ||
-    pathname.startsWith("/oauth/") ||
-    pathname.startsWith("/.well-known/")
-  );
-}
 
 /**
  * The statically-prerendered public routes (issue #1359): the `(public)` route
@@ -119,47 +63,6 @@ function isPublicStaticPath(pathname: string): boolean {
     pathname === "/privacy"
   );
 }
-
-function shouldLog(request: NextRequest): boolean {
-  if (!mcpConfig.logRequests) return false;
-  // Only the OAuth/MCP surface, so ordinary user traffic isn't logged.
-  return isOAuthMcpSurfacePath(request.nextUrl.pathname, request.method);
-}
-
-function redactedQuery(url: URL): string | undefined {
-  if (url.searchParams.size === 0) return undefined;
-  const out = new URLSearchParams();
-  for (const [key, value] of url.searchParams) {
-    out.set(key, SAFE_QUERY_PARAMS.has(key) ? value : "[redacted]");
-  }
-  return out.toString();
-}
-
-/**
- * Emit one structured line for a request. Uses console.log directly (not the
- * shared logger) to keep the middleware bundle from pulling in Sentry; the JSON
- * shape matches the logger's so it collates in production log search.
- */
-function logRequest(request: NextRequest): void {
-  console.log(
-    JSON.stringify({
-      timestamp: new Date().toISOString(),
-      level: "info",
-      message: "MCP debug request",
-      service: "lion-reader",
-      host: request.headers.get("host"),
-      method: request.method,
-      path: request.nextUrl.pathname,
-      query: redactedQuery(request.nextUrl),
-      userAgent: request.headers.get("user-agent"),
-      // Boolean only — never log the token itself.
-      hasAuthorization: request.headers.has("authorization"),
-      contentType: request.headers.get("content-type"),
-    })
-  );
-}
-
-import { DEMO_LANDING_PATH } from "@/lib/routes";
 
 /**
  * Session-aware redirects for `/` and the static auth pages (issue #1359).
@@ -228,10 +131,6 @@ async function maybeSessionRedirect(request: NextRequest): Promise<NextResponse 
 }
 
 export async function proxy(request: NextRequest) {
-  if (shouldLog(request)) {
-    logRequest(request);
-  }
-
   // The service worker script deliberately gets NO CSP. A service worker's
   // fetches are governed by the CSP served on the worker script itself, and
   // the runtime-caching config in next.config.ts fetches cross-origin entry
@@ -288,12 +187,11 @@ export async function proxy(request: NextRequest) {
 
 /**
  * Run the proxy on all requests except Next's build assets. The broad matcher
- * is what lets `LOG_MCP_REQUESTS` capture requests to unexpected paths (the
- * "wrong URL" failure mode), and it also puts the nonce'd CSP on every
- * response — including API/JSON responses, where a CSP is inert but hardens
- * any content-type-confusion angle. `_next/static`/`_next/image` are excluded
- * so middleware doesn't run per-asset (a CSP on those subresources is
- * meaningless); `/sw.js` is matched but bypassed inside `proxy()` (see there).
+ * puts the nonce'd CSP on every response — including API/JSON responses, where
+ * a CSP is inert but hardens any content-type-confusion angle.
+ * `_next/static`/`_next/image` are excluded so middleware doesn't run per-asset
+ * (a CSP on those subresources is meaningless); `/sw.js` is matched but
+ * bypassed inside `proxy()` (see there).
  */
 export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],

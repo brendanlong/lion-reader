@@ -65,12 +65,6 @@ kill_timeout = 30
   NODE_ENV = "production"
   PORT = "3000"
 
-  # Log every request to the OAuth/MCP surface to debug remote MCP connectors.
-  # Deliberately kept on while the claude.ai connector remains broken upstream
-  # (#986 / anthropics/claude-ai-mcp#546) — it's the only way to see how far a
-  # connect attempt gets. Turn off once that's resolved.
-  LOG_MCP_REQUESTS = "true"
-
   FETCHER_CONTACT_EMAIL = "self@brendanlong.com"
 
   WORKER_CONCURRENCY = "1"
