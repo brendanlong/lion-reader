@@ -13,7 +13,7 @@
  */
 
 import * as Sentry from "@sentry/nextjs";
-import type { ErrorEvent } from "@sentry/nextjs";
+import type { ErrorEvent, Event } from "@sentry/nextjs";
 
 // Query params whose values are credentials/PII and must never reach Sentry.
 // Some clients pass these in the URL even on a POST — notably FeedMe sends the
@@ -51,6 +51,36 @@ export function redactSensitiveRequestParams(event: ErrorEvent): void {
   }
   if (typeof request.query_string === "string") {
     request.query_string = redact(request.query_string);
+  }
+}
+
+// Span attributes carrying a caller IP. Sentry's HTTP server instrumentation
+// sets `http.client_ip` from `x-forwarded-for` and `net.peer.ip` from the socket
+// unconditionally — unlike the sibling header attributes, neither is gated by
+// `dataCollection`, and the project's "Prevent Storing of IP Addresses" setting
+// only covers `user.ip_address`. So a sampled transaction would carry the
+// client IP with nothing else to stop it.
+//
+// `net.host.ip` is deliberately kept: that is our own machine's address, not a
+// user's, and it is useful for telling instances apart.
+const IP_SPAN_ATTRIBUTES = ["http.client_ip", "net.peer.ip"];
+
+/**
+ * Removes caller-IP attributes from a transaction's root span and every child
+ * span, in place.
+ */
+export function stripIpSpanAttributes(event: Event): void {
+  const traceData = event.contexts?.trace?.data;
+  if (traceData) {
+    for (const key of IP_SPAN_ATTRIBUTES) {
+      delete traceData[key];
+    }
+  }
+
+  for (const span of event.spans ?? []) {
+    for (const key of IP_SPAN_ATTRIBUTES) {
+      delete span.data[key];
+    }
   }
 }
 
@@ -99,6 +129,11 @@ export function initSentry(): void {
       // Reader `Passwd`) so plaintext passwords never reach Sentry.
       redactSensitiveRequestParams(event);
 
+      return event;
+    },
+
+    beforeSendTransaction(event) {
+      stripIpSpanAttributes(event);
       return event;
     },
 
