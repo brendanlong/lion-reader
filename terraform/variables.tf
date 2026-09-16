@@ -27,3 +27,21 @@ variable "bunny_cdn_hostname" {
   type        = string
   default     = "lionreader.b-cdn.net"
 }
+
+variable "mail_domain" {
+  description = "Mailgun domain. Carries SPF/DKIM and, via wildcard, the ingest subdomain."
+  type        = string
+  default     = "app.lionreader.com"
+}
+
+variable "ingest_email_domain" {
+  description = "Newsletter ingest domain. Must match INGEST_EMAIL_DOMAIN in ../fly.toml."
+  type        = string
+  default     = "in.app.lionreader.com"
+}
+
+variable "sentry_organization" {
+  description = "Sentry organization slug that owns the project."
+  type        = string
+  default     = "brendan-long"
+}

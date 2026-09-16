@@ -11,9 +11,28 @@ terraform {
       source  = "BunnyWay/bunnynet"
       version = "~> 0.15"
     }
+    mailgun = {
+      source  = "wgebis/mailgun"
+      version = "~> 0.10"
+    }
+    # Only for the registrar (registrar.tf). The S3 state backend has its own
+    # credential chain and does not go through this provider.
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 6.0"
+    }
+    sentry = {
+      source  = "jianyuan/sentry"
+      version = "~> 0.15"
+    }
+    healthchecksio = {
+      source  = "kristofferahl/healthchecksio"
+      version = "~> 2.3"
+    }
   }
 
-  # Shares the bucket with brendanlong.com, under a different key.
+  # The bucket holds state for more than this project, so the key is what
+  # namespaces us — don't treat the bucket as ours to manage or empty.
   backend "s3" {
     bucket       = "brendanlong-terraform-state"
     key          = "lionreader.com/terraform.tfstate"
