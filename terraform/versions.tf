@@ -25,6 +25,10 @@ terraform {
       source  = "jianyuan/sentry"
       version = "~> 0.15"
     }
+    healthchecksio = {
+      source  = "kristofferahl/healthchecksio"
+      version = "~> 2.3"
+    }
   }
 
   # Shares the bucket with brendanlong.com, under a different key.

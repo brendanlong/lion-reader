@@ -12,6 +12,10 @@
 #   export MAILGUN_API_KEY=...        # Mailgun account API key (Sending API keys
 #                                     # can't read routes, which are account-level).
 #   export SENTRY_AUTH_TOKEN=...      # org:read + project:write
+#   export HEALTHCHECKSIO_API_KEY=... # note HEALTHCHECKSIO_, not HEALTHCHECKS_.
+#                                     # Must be read-WRITE: a read-only key omits
+#                                     # the check uuid (so import can't address
+#                                     # it) and `channels` (see healthchecks.tf).
 #
 # AWS creds come from the usual AWS chain, and cover both the S3 state backend
 # and the registrar (registrar.tf) — the latter needs route53domains:* .
@@ -29,3 +33,5 @@ provider "aws" {
 }
 
 provider "sentry" {}
+
+provider "healthchecksio" {}

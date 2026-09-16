@@ -17,3 +17,16 @@ output "sentry_dsn" {
   value       = sentry_key.default.dsn["public"]
   sensitive   = true
 }
+
+# Keyed to the env var each one is set as (see "Alerting" in ../docs/DESIGN.md).
+# A ping URL is a write-only capability, not a read secret, but it is still the
+# thing that lets anyone forge an "I'm alive" — hence sensitive.
+output "healthcheck_ping_urls" {
+  description = "healthchecks.io ping URLs, by the env var that carries them."
+  value = {
+    WORKER_HEARTBEAT_URL      = healthchecksio_check.this["worker"].ping_url
+    FEED_HEALTH_HEARTBEAT_URL = healthchecksio_check.this["feed_health"].ping_url
+    DISCORD_BOT_HEARTBEAT_URL = healthchecksio_check.this["discord_bot"].ping_url
+  }
+  sensitive = true
+}

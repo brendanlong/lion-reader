@@ -1,9 +1,9 @@
 # Infrastructure (Terraform)
 
 Manages `lionreader.com` DNS (Cloudflare), the Bunny CDN pull zone, the Mailgun
-domain and inbound route, the domain registration at Amazon Registrar, and the
-Sentry project. Modeled on the equivalent module in `brendanlong.com`, which
-made the same Route53 → Cloudflare move.
+domain and inbound route, the domain registration at Amazon Registrar, the
+Sentry project, and the healthchecks.io monitors. Modeled on the equivalent
+module in `brendanlong.com`, which made the same Route53 → Cloudflare move.
 
 Terraform owns the **entire** zone — every record, including the Mailgun SPF /
 DKIM / DMARC / MX. Mailgun is part of the application, not a separate mailbox
@@ -22,17 +22,18 @@ export CLOUDFLARE_API_TOKEN=...   # Zone:Edit + DNS:Edit
 export BUNNYNET_API_KEY=...       # NOT BUNNY_API_KEY — see providers.tf
 export MAILGUN_API_KEY=...        # account key; a Sending key can't read routes
 export SENTRY_AUTH_TOKEN=...      # org:read + project:write
+export HEALTHCHECKSIO_API_KEY=... # HEALTHCHECKSIO_, and must be read-write
 # AWS creds via the normal chain — for the S3 state backend and route53domains
 ```
 
-## Adopting the registrar, Mailgun and Sentry
+## Adopting the registrar, Mailgun, Sentry and healthchecks.io
 
-All three are import-only and touch no traffic. Their `import` blocks share
+All are import-only and touch no traffic. Their `import` blocks share
 `imports.tf`; delete that file once the apply lands. The plan that adopts them
 must read:
 
 ```
-Plan: 5 to import, 0 to add, 0 to change, 0 to destroy.
+Plan: 8 to import, 0 to add, 0 to change, 0 to destroy.
 ```
 
 **Any "must be replaced" is a bug, not progress**, and so is any "to change"
@@ -109,6 +110,24 @@ Importing `sentry_key` also puts the key's _secret_ DSN in the state file, since
 the provider returns `dsn` as one map. That is why the output is marked
 sensitive even though the public DSN is not — the marking is forced, not a
 judgement about the public value.
+
+### healthchecks.io
+
+The provider needs a **read-write** key. A read-only one is not merely limited:
+it omits `uuid` from the API response, so there is nothing to import with, and
+omits `channels`, so you cannot see what you would be about to detach.
+
+That is the hazard here — `channels` is Optional but not Computed, so an
+undeclared value applies as "detach every notification". See the header of
+`healthchecks.tf`. The plan is the only guard, so read it.
+
+Ping URLs come back as an output, keyed by the env var each is set as:
+
+```sh
+terraform output -json healthcheck_ping_urls \
+  | python3 -c 'import json,sys;[print(f"{k}={v}") for k,v in json.load(sys.stdin).items()]' \
+  | flyctl secrets import -a lion-reader
+```
 
 ## Route53 → Cloudflare: what is left
 

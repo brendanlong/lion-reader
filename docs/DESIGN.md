@@ -350,7 +350,7 @@ On each run the job **pings a healthchecks.io check** (`FEED_HEALTH_HEARTBEAT_UR
 
 #### Monitoring layout: three independent checks
 
-Alerting uses [healthchecks.io](https://healthchecks.io) (or any compatible dead-man's-switch) via the shared `pingHealthcheck`/`startHeartbeat` helpers in `src/server/notifications/healthchecks.ts`. Each ping URL is a **separate** check, so the long-running processes get distinct ones — that way concurrent failures are individually visible and a dead worker is distinguishable from a fetch regression:
+Alerting uses [healthchecks.io](https://healthchecks.io) (or any compatible dead-man's-switch) via the shared `pingHealthcheck`/`startHeartbeat` helpers in `src/server/notifications/healthchecks.ts`. The hosted instance's checks are declared in [`terraform/`](../terraform/README.md), which also emits their ping URLs. Each ping URL is a **separate** check, so the long-running processes get distinct ones — that way concurrent failures are individually visible and a dead worker is distinguishable from a fetch regression:
 
 | Check                    | Env var                     | Pinged by                            | Signals                                                                                                              |
 | ------------------------ | --------------------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
