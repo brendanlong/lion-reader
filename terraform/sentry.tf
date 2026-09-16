@@ -19,7 +19,9 @@ resource "sentry_key" "default" {
 
 # Not covered here: `data_scrubber` and `scrub_ip_addresses` are absent from the
 # provider's schema at every level, so they are set in the Sentry UI and nothing
-# here will notice if they change. Both must stay ON — "Prevent Storing of IP
-# Addresses" is what stops Sentry inferring a client IP from the connection,
-# which the SDK cannot do for us. The SDK-side half of that is
-# `dataCollection.userInfo` in src/server/sentry.ts.
+# here will notice if they change. The provider's own feature request for these
+# settings was closed as not-planned, so that is unlikely to improve.
+#
+# "Prevent Storing of IP Addresses" is on at the org level and must stay on. It
+# covers `user.ip_address`; it does NOT cover the IP that HTTP instrumentation
+# puts on transaction spans, which src/server/sentry.ts strips instead.

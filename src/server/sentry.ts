@@ -13,8 +13,7 @@
  */
 
 import * as Sentry from "@sentry/nextjs";
-import type { ErrorEvent } from "@sentry/nextjs";
-import { SENTRY_DATA_COLLECTION } from "@/lib/sentry-data-collection";
+import type { ErrorEvent, Event } from "@sentry/nextjs";
 
 // Query params whose values are credentials/PII and must never reach Sentry.
 // Some clients pass these in the URL even on a POST — notably FeedMe sends the
@@ -55,6 +54,36 @@ export function redactSensitiveRequestParams(event: ErrorEvent): void {
   }
 }
 
+// Span attributes carrying a caller IP. Sentry's HTTP server instrumentation
+// sets `http.client_ip` from `x-forwarded-for` and `net.peer.ip` from the socket
+// unconditionally — unlike the sibling header attributes, neither is gated by
+// `dataCollection`, and the project's "Prevent Storing of IP Addresses" setting
+// only covers `user.ip_address`. So a sampled transaction would carry the
+// client IP with nothing else to stop it.
+//
+// `net.host.ip` is deliberately kept: that is our own machine's address, not a
+// user's, and it is useful for telling instances apart.
+const IP_SPAN_ATTRIBUTES = ["http.client_ip", "net.peer.ip"];
+
+/**
+ * Removes caller-IP attributes from a transaction's root span and every child
+ * span, in place.
+ */
+export function stripIpSpanAttributes(event: Event): void {
+  const traceData = event.contexts?.trace?.data;
+  if (traceData) {
+    for (const key of IP_SPAN_ATTRIBUTES) {
+      delete traceData[key];
+    }
+  }
+
+  for (const span of event.spans ?? []) {
+    for (const key of IP_SPAN_ATTRIBUTES) {
+      delete span.data[key];
+    }
+  }
+}
+
 /**
  * Initializes Sentry if SENTRY_DSN is set. Safe to call more than once
  * (subsequent calls re-init the same client) and a no-op without a DSN.
@@ -66,8 +95,6 @@ export function initSentry(): void {
 
   Sentry.init({
     dsn: process.env.SENTRY_DSN,
-
-    dataCollection: SENTRY_DATA_COLLECTION,
 
     // Adjust this value in production, or use tracesSampler for greater control
     tracesSampleRate: process.env.NODE_ENV === "production" ? 0.1 : 1.0,
@@ -102,6 +129,11 @@ export function initSentry(): void {
       // Reader `Passwd`) so plaintext passwords never reach Sentry.
       redactSensitiveRequestParams(event);
 
+      return event;
+    },
+
+    beforeSendTransaction(event) {
+      stripIpSpanAttributes(event);
       return event;
     },
 

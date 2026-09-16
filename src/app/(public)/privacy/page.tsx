@@ -237,7 +237,7 @@ export default function PrivacyPolicyPage() {
               We use Sentry to track application errors and performance issues. Sentry may receive
               error messages, stack traces, and limited context about the operation that failed
               (e.g., which page you were on). We do not send article content or feed data to Sentry,
-              and we configure it not to collect your IP address or other identifying details.
+              and we configure both Sentry and our own code not to store your IP address.
             </LegalParagraph>
           </LegalSubsection>
 
