@@ -439,12 +439,13 @@ is disabled for Postgres apps; the CLI is the supported path.
 
 ## DNS
 
-The whole `lionreader.com` zone and the Bunny pull zone are managed in
-[`terraform/`](../terraform/README.md) — including the Mailgun records, since
-Mailgun is part of the app rather than a mailbox administered on the side. Change
-DNS there, not in a dashboard. Mail is split across a subdomain pair: SPF/DKIM/DMARC
-on `app.lionreader.com`, inbound `MX` on `in.app.lionreader.com`
-(`INGEST_EMAIL_DOMAIN`).
+The whole `lionreader.com` zone, the Bunny pull zone and the Mailgun domain and
+route are managed in [`terraform/`](../terraform/README.md) — Mailgun is part of
+the app rather than a mailbox administered on the side, so it sits with the DNS
+that points at it. Change either there, not in a dashboard. Mail is split across a
+subdomain pair: SPF/DKIM/DMARC on `app.lionreader.com`, inbound `MX` on
+`in.app.lionreader.com` (`INGEST_EMAIL_DOMAIN`). Only the former is registered
+with Mailgun; the latter is accepted because that domain has `wildcard` set.
 
 Certificates: Fly accepts **any one of** an `AAAA` record pointing at the app, an
 `_acme-challenge` CNAME, or a `_fly-ownership` TXT as proof of ownership. The apex

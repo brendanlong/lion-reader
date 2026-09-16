@@ -1,28 +1,25 @@
 # Infrastructure (Terraform)
 
-Manages `lionreader.com` DNS (Cloudflare) and the Bunny CDN pull zone. Modeled
-on the equivalent module in `brendanlong.com`, which made the same Route53 →
-Cloudflare move.
+Manages `lionreader.com` DNS (Cloudflare), the Bunny CDN pull zone, and the
+Mailgun domain and inbound route. Modeled on the equivalent module in
+`brendanlong.com`, which made the same Route53 → Cloudflare move.
 
 Terraform owns the **entire** zone — every record, including the Mailgun SPF /
 DKIM / DMARC / MX. Mailgun is part of the application, not a separate mailbox
-administered on the side, so its DNS belongs with the rest of the app's
-infrastructure. It also owns the Bunny pull zone and its `cdn.lionreader.com`
-hostname.
+administered on the side, so both its DNS and the Mailgun objects that DNS points
+at belong with the rest of the app's infrastructure, in step with each other.
 
 The record set was derived from the live Route53 export and verified complete
 against it: all 14 non-`SOA`/`NS` records are declared, with nothing missing and
 nothing invented. The one export record deliberately dropped is documented at the
 top of `cloudflare.tf`.
 
-Next step for this module is the **Mailgun** provider — managing the domain,
-routes and webhooks alongside the DNS that points at them, so the two can't drift.
-
 ## Credentials
 
 ```sh
 export CLOUDFLARE_API_TOKEN=...   # Zone:Edit + DNS:Edit
 export BUNNYNET_API_KEY=...       # NOT BUNNY_API_KEY — see providers.tf
+export MAILGUN_API_KEY=...        # account key; a Sending key can't read routes
 # AWS creds for the S3 state backend via the normal AWS chain
 ```
 
@@ -168,6 +165,36 @@ forward in Cloudflare. Don't cut over immediately before time away.
 - After a full certificate renewal cycle, delete the Route53 hosted zone
   (`/hostedzone/Z10027742EOOBZLO22ICY`). Leave it intact until then — it is the
   rollback reference.
+
+## Adopting Mailgun
+
+Import-only, like the Bunny adoption, and independent of the DNS cutover. The
+`import` blocks are in `imports.tf`; delete that file once the apply lands.
+
+```sh
+terraform plan     # must read: Plan: 2 to import, 0 to add, 0 to change, 0 to destroy.
+```
+
+**Any "to change" — and above all any "must be replaced" — is a bug, not
+progress.** `mailgun_domain` has the same import hazard as the pull zone, only
+sharper: `wildcard` is _RequiresReplace_ and defaults to `false` while the live
+domain is `true`, so an undeclared value plans a replace that would delete the
+domain and regenerate its DKIM keypair. `prevent_destroy` turns that into a plan
+error rather than an outage. The header of `mailgun.tf` records which attributes
+are pinned and why, including the four that the provider never reads back from
+the API and so must **not** be declared.
+
+Verify after applying — a broken route is silent until someone's newsletter goes
+missing:
+
+```sh
+curl -s --user "api:$MAILGUN_API_KEY" https://api.mailgun.net/v3/routes \
+  | python3 -m json.tool
+```
+
+The route's `expression` must still match `INGEST_EMAIL_DOMAIN` in `../fly.toml`,
+and its `forward()` target must still be a real endpoint. Then send a message to
+a live ingest address and confirm the entry appears.
 
 ## Day-to-day
 

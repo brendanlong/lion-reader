@@ -85,8 +85,8 @@ resource "cloudflare_dns_record" "announcements" {
 }
 
 # --- Newsletter ingest host -------------------------------------------------
-# Same Fly app. The MX records for this name live in the dashboard (imported
-# from cloudflare-import.zone) — only the proxyable types are managed here.
+# Same Fly app. This name also carries the inbound MX records, declared with the
+# rest of the mail records below.
 resource "cloudflare_dns_record" "ingest_a" {
   zone_id = cloudflare_zone.lionreader.id
   name    = "in.app"
@@ -107,7 +107,10 @@ resource "cloudflare_dns_record" "ingest_aaaa" {
   comment = "Fly app (INGEST_EMAIL_DOMAIN). Never proxy"
 }
 
-# --- Mailgun click/open tracking --------------------------------------------
+# --- Mailgun tracking host --------------------------------------------------
+# Inert: Mailgun creates this record as part of domain setup, but click and open
+# tracking are both off (mailgun.tf) and we send no mail for it to rewrite. Kept
+# so the Mailgun domain stays fully verified rather than partially configured.
 resource "cloudflare_dns_record" "mailgun_tracking" {
   zone_id = cloudflare_zone.lionreader.id
   name    = "email.app"
@@ -115,15 +118,17 @@ resource "cloudflare_dns_record" "mailgun_tracking" {
   content = "mailgun.org"
   proxied = false
   ttl     = 86400
-  comment = "Mailgun tracking. Never proxy: breaks click/open tracking"
+  comment = "Mailgun tracking host (unused). Never proxy"
 }
 
 # ---------------------------------------------------------------------------
 # Mail (Mailgun) and domain verification — TXT and MX
 #
-# Not proxyable, so there is no grey-cloud decision here. Long term the Mailgun
-# side of this (domains, routes, webhooks) is worth managing with the Mailgun
-# provider too, so the DNS and the service it points at stay in step.
+# Not proxyable, so there is no grey-cloud decision here. The Mailgun side these
+# records point at — the domain and the inbound route — is in mailgun.tf.
+#
+# The MX host below is NOT a registered Mailgun domain. It works because the
+# Mailgun domain has `wildcard = true`; see mailgun.tf before changing either.
 # ---------------------------------------------------------------------------
 
 resource "cloudflare_dns_record" "spf" {

@@ -11,6 +11,10 @@ terraform {
       source  = "BunnyWay/bunnynet"
       version = "~> 0.15"
     }
+    mailgun = {
+      source  = "wgebis/mailgun"
+      version = "~> 0.10"
+    }
   }
 
   # Shares the bucket with brendanlong.com, under a different key.

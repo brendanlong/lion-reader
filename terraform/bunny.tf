@@ -1,8 +1,8 @@
 # ---------------------------------------------------------------------------
 # Bunny CDN — the pull zone fronting the Fly app
 #
-# This describes the EXISTING setup and is adopted via the `import` blocks in
-# imports.tf. Nothing here creates infrastructure.
+# This describes the EXISTING setup, adopted by import. Nothing here creates
+# infrastructure.
 #
 # Unlike brendanlong.com (a static site on a StorageZone origin), this pull zone
 # has the running app as its origin and wraps the WHOLE site, honoring origin

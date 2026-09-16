@@ -1,4 +1,4 @@
-# Both providers read credentials from the environment, so no secrets live in
+# Every provider reads credentials from the environment, so no secrets live in
 # this repo or in the state config:
 #
 #   export CLOUDFLARE_API_TOKEN=...   # Zone:Edit + DNS:Edit
@@ -9,9 +9,13 @@
 #                                     # BUNNY_API_KEY (which the REST API uses).
 #                                     # Unset, it sends an empty key and every call
 #                                     # fails with a bare 401.
+#   export MAILGUN_API_KEY=...        # Mailgun account API key (Sending API keys
+#                                     # can't read routes, which are account-level).
 #
 # AWS creds for the S3 state backend come from the usual AWS chain.
 
 provider "cloudflare" {}
 
 provider "bunnynet" {}
+
+provider "mailgun" {}
