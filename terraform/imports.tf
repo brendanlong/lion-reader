@@ -2,12 +2,12 @@
 # One-time adoption of the existing Mailgun objects and the domain registration.
 #
 # Delete this file once `terraform apply` has moved them into state — it is
-# scaffolding, not configuration. The same was done for the Bunny pull zone.
+# scaffolding, not configuration.
 # ---------------------------------------------------------------------------
 
 import {
   to = mailgun_domain.app
-  id = "us:app.lionreader.com"
+  id = "us:${var.mail_domain}"
 }
 
 import {
@@ -17,5 +17,5 @@ import {
 
 import {
   to = aws_route53domains_registered_domain.lionreader
-  id = "lionreader.com"
+  id = var.domain
 }

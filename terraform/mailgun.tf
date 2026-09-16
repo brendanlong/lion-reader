@@ -20,7 +20,7 @@
 # ---------------------------------------------------------------------------
 
 # The account's auto-created sandbox domain is deliberately not managed here:
-# it is Mailgun's, we never send through it, and it cannot be recreated.
+# it is Mailgun's and we never send through it.
 
 resource "mailgun_domain" "app" {
   name   = var.mail_domain
@@ -47,12 +47,14 @@ resource "mailgun_domain" "app" {
   # where the rest of the zone lives.
   use_automatic_sender_security = false
 
-  # dkim_selector, dkim_key_size, force_dkim_authority and smtp_password are
-  # deliberately absent. The provider never refreshes them from the API (they
-  # are write-only inputs — see applyDomainResponse in the provider), so after
-  # an import they are null in state. Declaring the live values (selector `krs`,
-  # 1024-bit) would therefore read as a null → value diff, and all three are
-  # RequiresReplace: it would destroy the domain rather than record a fact.
+  # dkim_selector, dkim_key_size and force_dkim_authority are deliberately
+  # absent. The provider never refreshes them from the API (they are write-only
+  # inputs — see applyDomainResponse in the provider), so after an import they
+  # are null in state. All three are RequiresReplace, so declaring the live
+  # values — selector `krs`, 1024-bit — would read as a null → value diff and
+  # destroy the domain rather than record a fact. smtp_password is absent for a
+  # milder reason: also never refreshed, but Optional+Computed, so omitting it
+  # simply leaves it alone.
 
   lifecycle {
     prevent_destroy = true

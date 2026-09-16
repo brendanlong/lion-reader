@@ -20,3 +20,9 @@ provider "cloudflare" {}
 provider "bunnynet" {}
 
 provider "mailgun" {}
+
+# Route 53 Domains is a us-east-1-only API regardless of where anything else
+# lives (registrar.tf).
+provider "aws" {
+  region = "us-east-1"
+}

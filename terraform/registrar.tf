@@ -3,54 +3,49 @@
 #
 # This describes the EXISTING registration, adopted by import. Nothing here
 # registers or renews a domain, and `terraform destroy` does not delete it —
-# it only drops the resource from state.
+# the resource's delete is a no-op that only drops it from state.
 #
-# The point of adopting it is step 4 of the migration runbook: the nameserver
-# switch is the one irreversible move in this module (the `.com` parent caches
-# the delegation for 48h and that TTL is not ours to lower), and until now it
-# was a form in a console. Here it is a reviewable diff against a known-good
-# current value.
+# The point of adopting it is the delegation: pointing the `.com` parent at a
+# different set of nameservers is the one irreversible operation in this module,
+# since the parent caches it for 48h and that TTL is not ours to lower. That is
+# a poor fit for a console form and a good fit for a reviewed diff.
 #
-# ⚠️  Unlike the contact blocks, `auto_renew`, `transfer_lock` and the four
-#     privacy flags are Optional-with-default-true rather than Optional+Computed:
-#     leaving one out does not adopt the live value, it asserts `true`. They are
-#     declared below so the adoption plan is a no-op. If the plan proposes a
-#     change to any of them, live differs from what is written here — that is a
-#     decision to make deliberately, not a formality to apply past.
+# ⚠️  Read the live registration before the first apply, with the
+#     `get-domain-detail` command in README.md. Unlike the contact blocks,
+#     `auto_renew` and the four privacy flags are Optional-with-a-static-default
+#     rather than Optional+Computed: leaving one out does not adopt the live
+#     value, it asserts the default. Only the nameservers and `transfer_lock`
+#     below have been checked against live (via the `.com` registry) — the rest
+#     are the provider's defaults.
 # ---------------------------------------------------------------------------
-
-# Route 53 Domains is a us-east-1-only API regardless of where anything else
-# lives, so this provider is pinned rather than inherited.
-provider "aws" {
-  region = "us-east-1"
-}
 
 resource "aws_route53domains_registered_domain" "lionreader" {
   domain_name = var.domain
 
-  # The delegation. Still Amazon's: Cloudflare serves the zone authoritatively
-  # already (cloudflare.tf), but the parent has not been pointed at it. See
-  # "Cutover" in README.md for the switch and what it costs to get wrong.
+  # The delegation, taken from the zone itself rather than pasted: Cloudflare
+  # assigns the pair, so this cannot drift from what they actually serve, and a
+  # reassignment on their side surfaces as a plan instead of an outage.
   #
-  # This is an ordered list and a `dig NS` answer is rotated, so the order below
-  # (taken from a resolver) may not be the registrar's. Confirm it against
-  # `get-domain-detail` — see README.md — or the plan shows a reorder that
-  # changes nothing.
-  name_server {
-    name = "ns-160.awsdns-20.com"
-  }
-  name_server {
-    name = "ns-722.awsdns-26.net"
-  }
-  name_server {
-    name = "ns-1390.awsdns-45.org"
-  }
-  name_server {
-    name = "ns-1717.awsdns-22.co.uk"
+  # `dig NS` is NOT a safe source for this. A resolver keeps serving the
+  # pre-change answer until the old record's TTL expires, so it can disagree
+  # with the parent for hours — long enough to write down a stale set with
+  # confidence. Ask the parent:
+  # `dig +norecurse NS lionreader.com @a.gtld-servers.net`.
+  dynamic "name_server" {
+    for_each = cloudflare_zone.lionreader.name_servers
+    content {
+      name = name_server.value
+    }
   }
 
-  auto_renew    = true
-  transfer_lock = true
+  auto_renew = true
+
+  # False is the live value, not a preference: the registry status list is
+  # ["active"], with no clientTransferProhibited. Declaring it is what keeps the
+  # adoption a no-op. Turning the lock on is worth doing — it is the control
+  # that blocks an unauthorized transfer-out — but as its own change, where the
+  # plan says so, rather than as a side effect of adopting the resource.
+  transfer_lock = false
 
   # WHOIS privacy. All of admin/registrant/tech must agree — the API rejects a
   # mixed set — and billing follows them here for consistency.
@@ -59,9 +54,13 @@ resource "aws_route53domains_registered_domain" "lionreader" {
   tech_privacy       = true
   billing_privacy    = true
 
-  # admin_contact / billing_contact / registrant_contact / tech_contact are
-  # deliberately not declared. They are Optional+Computed, so omitting them
-  # adopts the live values instead of overwriting them, and that keeps
-  # registrant PII out of the repo. Changing WHOIS contacts is a registrar
-  # console job, not a Terraform one.
+  # admin_contact / billing_contact / registrant_contact / tech_contact are not
+  # declared. They are Optional+Computed, so omitting them adopts the live
+  # values instead of overwriting them, which keeps registrant PII out of the
+  # repo and out of plan output.
+  #
+  # `tags` is neither: Optional with no default, on a transparently-tagged
+  # resource, so an undeclared value plans as empty and applies UntagResource.
+  # Left undeclared on the basis that the domain carries no tags — confirm with
+  # `list-tags-for-domain` (README.md) before applying.
 }

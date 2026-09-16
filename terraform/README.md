@@ -57,18 +57,20 @@ aws route53domains get-domain-detail --region us-east-1 \
 ```
 
 `transfer_lock` is not a field — it is derived from `StatusList` containing
-`clientTransferProhibited`. Take the nameserver **order** from here too; the
-attribute is an ordered list and a `dig NS` answer is rotated.
+`clientTransferProhibited`. Check the tag set too, since an undeclared `tags`
+plans as empty and applies `UntagResource`:
+
+```sh
+aws route53domains list-tags-for-domain --region us-east-1 \
+  --domain-name lionreader.com
+```
 
 ### Mailgun
 
-`mailgun_domain` has the same import hazard as the pull zone, only sharper:
-`wildcard` is _RequiresReplace_ and defaults to `false` while the live
-domain is `true`, so an undeclared value plans a replace that would delete the
-domain and regenerate its DKIM keypair. `prevent_destroy` turns that into a plan
-error rather than an outage. The header of `mailgun.tf` records which attributes
-are pinned and why, including the four that the provider never reads back from
-the API and so must **not** be declared.
+`mailgun_domain` has the pull zone's hazard in both directions: one attribute
+that must be declared or the plan destroys the domain, and four that must not be
+or the plan destroys the domain. The header of `mailgun.tf` says which and why;
+read it before editing that file.
 
 Verify after applying — a broken route is silent until someone's newsletter goes
 missing:
@@ -84,7 +86,13 @@ a live ingest address and confirm the entry appears.
 
 ## Migration runbook (Route53 → Cloudflare)
 
-The DNS cutover is the only risky part; the Bunny adoption is import-only and
+**Steps 1–4 are done.** The `.com` parent has delegated to Cloudflare since
+2026-09-16; `dig +norecurse NS lionreader.com @a.gtld-servers.net` is the check
+that says so. Only step 5's cleanup is outstanding. The steps are kept because
+the Route53 zone still exists as the rollback reference — re-running step 4
+would undo the migration.
+
+The DNS cutover was the only risky part; the Bunny adoption is import-only and
 touches no traffic.
 
 **There is no DNSSEC preflight.** `lionreader.com` is unsigned and always has
@@ -159,7 +167,7 @@ terraform apply
 terraform output cloudflare_nameservers
 ```
 
-State holds everything from here; the one-time `imports.tf` scaffolding is gone.
+State holds everything from here.
 
 At this point Cloudflare is fully configured but **not yet authoritative**.
 Nothing has changed for visitors.
@@ -196,29 +204,12 @@ means it got proxied or flattened.
 
 ### 4. Cutover
 
-The registrar is **Amazon Registrar**, adopted in `registrar.tf`, so this is a
-Terraform change rather than a console form — replace the four `name_server`
-blocks with the zone's own assigned nameservers:
+Done in the Amazon Registrar console, before `registrar.tf` existed. The
+delegation now lives in Terraform, derived from
+`cloudflare_zone.lionreader.name_servers`, so a future change to it is a plan
+to read rather than a form to fill in.
 
-```hcl
-dynamic "name_server" {
-  for_each = cloudflare_zone.lionreader.name_servers
-  content {
-    name = name_server.value
-  }
-}
-```
-
-Referencing the zone rather than pasting two hostnames means the delegation
-cannot drift from what Cloudflare actually serves, and a reassignment on their
-side shows up as a plan instead of an outage.
-
-**Read this plan before applying it.** It should touch `name_server` and
-nothing else; a proposed change to `auto_renew`, `transfer_lock` or a privacy
-flag means live differs from `registrar.tf` and you are about to change the
-registration as a side effect of a DNS cutover.
-
-Then wait for `terraform output cloudflare_zone_status` to read `active`.
+Wait for `terraform output cloudflare_zone_status` to read `active`.
 
 **There is no fast rollback.** The delegation TTL is set at the `.com` parent at
 172800s (48h) and is not ours to lower, so reverting the registrar leaves traffic
@@ -230,8 +221,8 @@ forward in Cloudflare. Don't cut over immediately before time away.
 
 - `flyctl certs list -a lion-reader` — `lionreader.com` still `Issued`, and still
   renewing (recheck in ~30 days). It is the only certificate.
-- Send a newsletter to an ingest address; confirm it lands and a tracked link
-  resolves. DKIM/SPF/tracking breakage is silent.
+- Send a newsletter to an ingest address; confirm it lands. Mail breakage is
+  silent — nothing alerts on an `MX` that stops resolving.
 - Load the app; confirm assets come from `cdn.lionreader.com`.
 - `https://announcements.lionreader.com/feed.xml` returns 200.
 - After a full certificate renewal cycle, delete the Route53 hosted zone
