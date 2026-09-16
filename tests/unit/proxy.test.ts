@@ -11,12 +11,12 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { NextRequest } from "next/server";
 import { proxy } from "../../src/proxy";
 
-function makeRequest(path: string, method = "GET", headers?: Record<string, string>): NextRequest {
+function makeRequest(path: string, method = "GET"): NextRequest {
   // Real requests always carry a Host header; NextRequest doesn't derive one from
   // the URL, so set it explicitly to match the origin.
   return new NextRequest(new URL(`https://reader.example.com${path}`), {
     method,
-    headers: { host: "reader.example.com", ...headers },
+    headers: { host: "reader.example.com" },
   });
 }
 
@@ -47,7 +47,17 @@ describe("proxy CSP tiering (issue #1359)", () => {
     "/terms",
     "/privacy",
   ];
-  const DYNAMIC_PATHS = ["/all", "/auth/oauth/complete", "/settings", "/api/trpc/entries.list"];
+  const DYNAMIC_PATHS = [
+    "/all",
+    "/auth/oauth/complete",
+    "/settings",
+    "/api/trpc/entries.list",
+    // The OAuth/MCP surface: nothing here may be rewritten or redirected, or
+    // discovery breaks for every remote MCP client.
+    "/api/mcp",
+    "/oauth/authorize",
+    "/.well-known/oauth-protected-resource/api/mcp",
+  ];
 
   it.each(PUBLIC_PATHS)("%s gets the relaxed static CSP with no nonce", async (path) => {
     const res = await proxy(makeRequest(path));
@@ -62,8 +72,10 @@ describe("proxy CSP tiering (issue #1359)", () => {
     expect(res.headers.get("x-middleware-override-headers")).toBeNull();
   });
 
-  it.each(DYNAMIC_PATHS)("%s gets the strict nonce'd CSP", async (path) => {
+  it.each(DYNAMIC_PATHS)("%s gets the strict nonce'd CSP, unrewritten", async (path) => {
     const res = await proxy(makeRequest(path));
+    expect(res.headers.get("x-middleware-rewrite"), path).toBeNull();
+    expect(res.headers.get("location"), path).toBeNull();
     const csp = res.headers.get("Content-Security-Policy")!;
     expect(csp).toMatch(/script-src[^;]*'nonce-[A-Za-z0-9+/=_-]+'/);
     expect(csp).toContain("'strict-dynamic'");

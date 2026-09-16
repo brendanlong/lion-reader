@@ -99,7 +99,10 @@ export function getAuthorizationServerMetadata() {
     // whenever it was advertised, then aborted client-side before ever calling
     // /oauth/authorize ("Couldn't register with the sign-in service", #986). If
     // that signature reappears — discovery completes, no register/authorize
-    // follows — set this back to false to force DCR.
+    // follows — set this back to false to force DCR. Every endpoint in that
+    // chain logs its own outcome (the .well-known routes, /oauth/register,
+    // /oauth/authorize), so the signature is readable straight from production
+    // logs; it needs no request-logging flag on the proxy.
     client_id_metadata_document_supported: true,
   };
 }

@@ -3,13 +3,13 @@
  *
  * Two jobs:
  *
- * 0. Session-aware redirects for `/` and the static auth pages
+ * 1. Session-aware redirects for `/` and the static auth pages
  *    (`maybeSessionRedirect`, issue #1359): anonymous visitors to `/` 307
  *    straight to the demo with no Next render; visitors with a *validated*
  *    session are bounced from `/`, `/login`, `/register` into the app. A UX
  *    redirect only — see the function comment for why this is not the #984
  *    auth gate.
- * 1. The per-request Content-Security-Policy nonce (issue #1275): a locked-down
+ * 2. The per-request Content-Security-Policy nonce (issue #1275): a locked-down
  *    `script-src` needs a fresh nonce on every response, which the static
  *    `headers()` config in `next.config.ts` can't produce. This is Next's
  *    documented CSP pattern: generate the nonce here and put the policy on the
