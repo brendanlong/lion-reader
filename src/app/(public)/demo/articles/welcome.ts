@@ -1,6 +1,4 @@
 import { type DemoArticle } from "./types";
-import heroImage from "./images/welcome.png";
-import ogImage from "./images/welcome-og.png";
 import { resolveWelcomePublishedAt } from "./welcome-published-at";
 
 const article: DemoArticle = {
@@ -17,10 +15,6 @@ const article: DemoArticle = {
   // resolveWelcomePublishedAt for the full rationale.
   publishedAt: resolveWelcomePublishedAt(process.env.NEXT_PUBLIC_BUILD_TIME),
   starred: true,
-  heroImage,
-  ogImage,
-  heroImageAlt:
-    "The Lion Reader lion waving hello, surrounded by feature motifs: a newspaper, a book with a bookmark, an email envelope, and a friendly robot.",
   summaryHtml: `<p><strong>Lion Reader</strong> is an AI-native, self-hostable reader that unifies RSS/Atom/JSON feeds, email newsletters, and saved articles in one fast interface. It connects to AI assistants over <strong>MCP</strong>, generates on-demand <strong>summaries</strong> via Claude, and narrates articles with synchronized highlighting &mdash; all with real-time, jank-free updates. Free and open source.</p>`,
   summaryModelId: "claude-sonnet-5",
   summaryGeneratedAt: new Date("2026-07-03"),

@@ -11,8 +11,8 @@ import { withSentryConfig } from "@sentry/nextjs";
 // so a precached JS/asset shell is unreachable offline. Precaching every
 // _next/static chunk and public asset therefore bought us only downsides: it
 // duplicates the browser's own HTTP cache, forces a service-worker round-trip for
-// assets the browser could serve from memory (the source of the image-paint
-// flash, since public/demo images were precached), and — with skipWaiting +
+// assets the browser could serve from memory (precached images were the source
+// of an image-paint flash), and — with skipWaiting +
 // clientsClaim — lets a freshly-activated worker serve newer precached chunks to
 // a tab still running older HTML. Letting everything fall through to the browser's
 // native HTTP cache is simpler and faster; our static assets are already immutable
@@ -33,7 +33,7 @@ const withPWAConfig = withPWA({
   // webpack-asset `exclude` filter below.
   cacheStartUrl: false,
   dynamicStartUrl: false,
-  // Precache nothing from the public/ folder (icons, demo images, manifest, ...).
+  // Precache nothing from the public/ folder (icons, emoji, manifest, ...).
   // globby builds the public precache list as ["**/*", ...publicExcludes]; a
   // "!**/*" negation empties it. See workboxOptions.exclude for _next/static.
   publicExcludes: ["!**/*"],
@@ -166,11 +166,10 @@ const nextConfig: NextConfig = {
       },
       {
         // Everything under /_next/static is content-hashed (JS/CSS chunks,
-        // next/font files, and imported images like the demo heroes), so it can
-        // be cached forever. Next sets this itself, but the public/ rule above
-        // would otherwise downgrade fonts and imported images (png/woff2) to the
-        // 1-day TTL — this reinstates `immutable`. Cache-key safety comes from
-        // the filename hash, so the CDN needs no `?v=` query-string config.
+        // next/font files), so it can be cached forever. Next sets this itself,
+        // but the public/ rule above would otherwise downgrade fonts (woff2) to
+        // the 1-day TTL — this reinstates `immutable`. Cache-key safety comes
+        // from the filename hash, so the CDN needs no `?v=` query-string config.
         source: "/_next/static/:path*",
         headers: [
           {

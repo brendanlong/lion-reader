@@ -39,12 +39,6 @@ export interface DemoEntry extends EntryListData {
   summaryModelId: string;
   /** When `summaryHtml` was generated (shown in the summary card footer). */
   summaryGeneratedAt: Date;
-  /** Optional hero illustration. See DemoArticle. */
-  heroImage?: string;
-  /** Resolved opaque social/OG image (the `-og.png` sibling of heroImage). See DemoArticle. */
-  ogImage?: string;
-  /** Alt text for heroImage; falls back to "<title> illustration". */
-  heroImageAlt?: string;
 }
 
 // ============================================================================
@@ -134,11 +128,6 @@ function articleToEntry(article: DemoArticle): DemoEntry {
   const config = SUBSCRIPTION_CONFIG[article.subscriptionId];
   return {
     ...article,
-    // Resolve the imported images to their built `/_next/static` URLs (CDN +
-    // content-hashed + immutable via Next's assetPrefix). `.src` is identical on
-    // the server prerender and the client re-render, so no hydration mismatch.
-    heroImage: article.heroImage?.src,
-    ogImage: article.ogImage?.src,
     feedId: article.subscriptionId,
     fetchedAt: article.publishedAt,
     read: false,
@@ -175,21 +164,4 @@ export function getDemoEntry(entryId: string): DemoEntry | undefined {
 
 export function getDemoSubscription(subscriptionId: string): DemoSubscription | undefined {
   return subscriptionsById.get(subscriptionId);
-}
-
-/**
- * Build the hero <figure> for an article, or "" when it has no heroImage.
- * The reader (reader-prose) styles the <img> automatically (rounded corners).
- *
- * heroImage/heroImageAlt are trusted, hard-coded values from the article files
- * (same trust level as the surrounding contentHtml, which is also emitted raw),
- * so they're interpolated without escaping — keep alt text quote-free.
- */
-export function heroFigureHtml(entry: DemoEntry): string {
-  if (!entry.heroImage) return "";
-  const alt = entry.heroImageAlt ?? `${entry.title ?? "Article"} illustration`;
-  // All demo hero images are 1200x630; the intrinsic width/height lets the
-  // browser reserve the aspect-ratio box up front (prose caps them at
-  // max-width:100%; height:auto) so they don't flash/reflow on load.
-  return `<figure><img src="${entry.heroImage}" alt="${alt}" width="1200" height="630" /></figure>\n`;
 }

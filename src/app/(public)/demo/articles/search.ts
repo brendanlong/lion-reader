@@ -1,6 +1,4 @@
 import { type DemoArticle } from "./types";
-import heroImage from "./images/search.png";
-import ogImage from "./images/search-og.png";
 
 const article: DemoArticle = {
   id: "search",
@@ -13,10 +11,6 @@ const article: DemoArticle = {
     "Find any article in your archive by searching its title or text, with the closest matches shown first and search that works alongside your usual filters.",
   publishedAt: new Date("2025-12-28T10:00:00Z"),
   starred: false,
-  heroImage,
-  ogImage,
-  heroImageAlt:
-    "The Lion Reader lion peering through a large magnifying glass at a floating article card.",
   summaryHtml: `<p>Lion Reader&rsquo;s <strong>full-text search</strong> finds any article across your whole archive by its title or its text, with the most relevant matches shown first. Search works alongside your existing filters &mdash; a subscription, a tag, starred, or unread &mdash; and understands word variations, so &ldquo;running&rdquo; also finds &ldquo;run.&rdquo;</p>`,
   summaryModelId: "claude-sonnet-4-6",
   summaryGeneratedAt: new Date("2026-07-18"),

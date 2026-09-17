@@ -1,6 +1,4 @@
 import { type DemoArticle } from "./types";
-import heroImage from "./images/plugins.png";
-import ogImage from "./images/plugins-og.png";
 
 const article: DemoArticle = {
   id: "plugins",
@@ -13,10 +11,6 @@ const article: DemoArticle = {
     "Lion Reader goes beyond plain RSS to pull in complete, readable content from sources that don't normally cooperate — arXiv papers, GitHub, Google Docs, LessWrong, Notion, YouTube, and Bluesky — so you can subscribe and save from them like anything else.",
   publishedAt: new Date("2026-01-20T12:00:00Z"),
   starred: false,
-  heroImage,
-  ogImage,
-  heroImageAlt:
-    "The Lion Reader lion with colorful modular puzzle pieces for different content sources snapping into place.",
   summaryHtml: `<p>Lion Reader extracts complete, readable content from sources plain RSS handles poorly: LessWrong posts and comments with rendered math, YouTube videos with descriptions, arXiv papers, GitHub READMEs, Google Docs, published Notion pages, and Bluesky embeds. It also converts MathJax markup to native MathML, working across web, AI assistant, and Discord.</p>`,
   summaryModelId: "claude-sonnet-5",
   summaryGeneratedAt: new Date("2026-09-08"),

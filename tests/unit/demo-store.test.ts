@@ -8,12 +8,7 @@
 
 import { describe, expect, it } from "vitest";
 import { createDemoStore } from "@/app/(public)/demo/store";
-import {
-  DEMO_ENTRIES,
-  DEMO_SUBSCRIPTIONS,
-  DEMO_TAGS,
-  heroFigureHtml,
-} from "@/app/(public)/demo/data";
+import { DEMO_ENTRIES, DEMO_SUBSCRIPTIONS, DEMO_TAGS } from "@/app/(public)/demo/data";
 
 const TOTAL = DEMO_ENTRIES.length;
 const STARRED = DEMO_ENTRIES.filter((e) => e.starred).length;
@@ -272,18 +267,11 @@ describe("createDemoStore", () => {
   });
 
   describe("entries.get and summaries", () => {
-    it("returns the full article with its hero figure and canned summary", () => {
+    it("returns the full article and its canned summary", () => {
       const { procedures } = createDemoStore();
       const welcome = DEMO_ENTRIES.find((e) => e.id === "welcome")!;
       const { entry } = procedures["entries.get"]({ id: "welcome" });
-      // Next resolves the imported hero to a URL; under vitest the import is
-      // opaque, so check the figure builder on a resolved entry separately.
-      expect(entry.contentCleaned).toBe(heroFigureHtml(welcome) + welcome.contentHtml);
-      expect(
-        heroFigureHtml({ ...welcome, heroImage: "/hero.png", heroImageAlt: "The lion waving" })
-      ).toBe(
-        '<figure><img src="/hero.png" alt="The lion waving" width="1200" height="630" /></figure>\n'
-      );
+      expect(entry.contentCleaned).toBe(welcome.contentHtml);
       expect(entry.contentCleaned).toContain("This interactive demo is the real Lion Reader UI");
       expect(entry.fetchFullContent).toBe(false);
       expect(entry.fullContentFetchedAt).toBeNull();

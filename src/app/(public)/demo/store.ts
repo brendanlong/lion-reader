@@ -17,13 +17,7 @@
 import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "@/server/trpc/root";
 import { procedureError, type ProcedureHandlers } from "@/lib/trpc/handler-link";
-import {
-  DEMO_ENTRIES,
-  DEMO_SUBSCRIPTIONS,
-  DEMO_TAGS,
-  heroFigureHtml,
-  type DemoEntry,
-} from "./data";
+import { DEMO_ENTRIES, DEMO_SUBSCRIPTIONS, DEMO_TAGS, type DemoEntry } from "./data";
 
 type Inputs = inferRouterInputs<AppRouter>;
 type Outputs = inferRouterOutputs<AppRouter>;
@@ -254,7 +248,7 @@ export function createDemoStore(): DemoStore {
   }
 
   function toFullEntry(state: EntryState): FullEntry {
-    const contentCleaned = heroFigureHtml(state.entry) + state.entry.contentHtml;
+    const contentCleaned = state.entry.contentHtml;
     return {
       ...toListItem(state),
       contentOriginal: null,
