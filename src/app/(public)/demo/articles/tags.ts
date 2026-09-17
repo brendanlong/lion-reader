@@ -1,6 +1,4 @@
 import { type DemoArticle } from "./types";
-import heroImage from "./images/tags.png";
-import ogImage from "./images/tags-og.png";
 
 const article: DemoArticle = {
   id: "tags",
@@ -12,10 +10,6 @@ const article: DemoArticle = {
   summary: "Organize subscriptions with color-coded tags and browse entries by category.",
   publishedAt: new Date("2025-12-27T10:00:00Z"),
   starred: false,
-  heroImage,
-  ogImage,
-  heroImageAlt:
-    "The Lion Reader lion holding up a fan of colorful tag labels in teal, green, and gold.",
   summaryHtml: `<p>Lion Reader lets you organize subscriptions with <strong>custom tags</strong> (many-to-many relationships) featuring personalized names and colors. Browse entries by tag with real-time unread counts, rename any subscription, and enjoy soft deletion that preserves your read/starred history across all feed types.</p>`,
   summaryModelId: "claude-sonnet-4-6",
   summaryGeneratedAt: new Date("2026-02-07"),

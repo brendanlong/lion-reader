@@ -166,11 +166,10 @@ const nextConfig: NextConfig = {
       },
       {
         // Everything under /_next/static is content-hashed (JS/CSS chunks,
-        // next/font files, and imported images like the demo heroes), so it can
-        // be cached forever. Next sets this itself, but the public/ rule above
-        // would otherwise downgrade fonts and imported images (png/woff2) to the
-        // 1-day TTL — this reinstates `immutable`. Cache-key safety comes from
-        // the filename hash, so the CDN needs no `?v=` query-string config.
+        // next/font files), so it can be cached forever. Next sets this itself,
+        // but the public/ rule above would otherwise downgrade fonts (woff2) to
+        // the 1-day TTL — this reinstates `immutable`. Cache-key safety comes
+        // from the filename hash, so the CDN needs no `?v=` query-string config.
         source: "/_next/static/:path*",
         headers: [
           {

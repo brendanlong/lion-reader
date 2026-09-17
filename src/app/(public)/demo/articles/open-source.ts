@@ -1,6 +1,4 @@
 import { type DemoArticle } from "./types";
-import heroImage from "./images/open-source.png";
-import ogImage from "./images/open-source-og.png";
 
 const article: DemoArticle = {
   id: "open-source",
@@ -13,10 +11,6 @@ const article: DemoArticle = {
     "Lion Reader is fully open source. Self-host it, explore the code, or contribute on GitHub.",
   publishedAt: new Date("2025-12-26T10:00:00Z"),
   starred: true,
-  heroImage,
-  ogImage,
-  heroImageAlt:
-    "The Lion Reader lion holding up a git branch symbol with a code tag and a small heart nearby, representing open-source software.",
   summaryHtml: `<p>Lion Reader is a fully <strong>open source, self-hostable RSS reader</strong> built with modern technologies including Next.js 16, tRPC, PostgreSQL, and Redis. Features include stateless architecture, efficient feed deduplication, AI-powered summaries and narration, and deployment via Fly.io or Docker Compose.</p>`,
   summaryModelId: "claude-sonnet-4-6",
   summaryGeneratedAt: new Date("2026-02-07"),

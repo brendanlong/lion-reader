@@ -45,7 +45,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title,
     description,
-    openGraph: pageOpenGraph(title, description, entry?.ogImage),
+    openGraph: pageOpenGraph(title, description),
     // The public URL for an article is the query form; this internal path is
     // only ever reached through the rewrite (or by guessing), so point
     // crawlers at the canonical query URL.
