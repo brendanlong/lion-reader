@@ -1,7 +1,7 @@
 /**
  * Sentinel + footer for a paginated list: fetches the next page when the
  * sentinel scrolls into view, shows a spinner while loading, and `endLabel`
- * once every page is loaded.
+ * once every page is loaded. Render it only after a non-empty list.
  */
 
 "use client";

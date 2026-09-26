@@ -9,7 +9,7 @@ interface AdminQueryFallbackProps {
   noun: string;
 }
 
-/** Loading spinner, or an error message with a Retry button once the query has failed. */
+/** For a query that `isLoading || isError`: a spinner, or the error with a Retry button. */
 export function AdminQueryFallback({ query, noun }: AdminQueryFallbackProps) {
   if (!query.isError) {
     return (

@@ -46,7 +46,7 @@ export default async function ExtensionSavePage({ searchParams }: PageProps) {
   }
 
   const returnUrl = `/extension/save?url=${encodeURIComponent(url)}${title ? `&title=${encodeURIComponent(title)}` : ""}`;
-  const redirectToGoogleDocsAuth = async () => {
+  const redirectToGoogleDocsAuth = async (): Promise<never> => {
     const authResult = await createGoogleAuthUrl({
       additionalScopes: GOOGLE_DOCS_SCOPES,
       mode: "extension-save",
