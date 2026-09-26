@@ -12,7 +12,6 @@ import {
 import { pingHealthcheck } from "../../notifications/healthchecks";
 import { feedHealthConfig } from "../../config/env";
 import { updateFeedHealthMetrics } from "../../metrics/metrics";
-import type { JobPayloads } from "../queue";
 import { logger } from "@/lib/logger";
 import type { JobHandlerResult } from "./types";
 
@@ -34,10 +33,7 @@ const FEED_HEALTH_CHECK_INTERVAL_MS = 15 * 60 * 1000;
  * No alert state is kept here: healthchecks.io de-duplicates notifications and
  * sends its own recovery ("up") email, so the job just reports status each run.
  */
-export async function handleMonitorFeedHealth(
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _payload: JobPayloads["monitor_feed_health"]
-): Promise<JobHandlerResult> {
+export async function handleMonitorFeedHealth(): Promise<JobHandlerResult> {
   const now = new Date();
   const snapshot = await getFeedFetchHealthSnapshot();
   const evaluation = evaluateFeedFetchHealth(

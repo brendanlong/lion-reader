@@ -337,25 +337,8 @@ async function processSuccessfulFetch(
   }
 
   // Check for permanent redirects now that we know the destination has a valid feed
-  const permanentRedirectUrl = feed.url ? findPermanentRedirectUrl(redirects, feed.url) : null;
-
-  if (permanentRedirectUrl) {
-    // Handle the permanent redirect (track or apply based on wait period)
-    const redirectResult = await handlePermanentRedirect(feed, permanentRedirectUrl, now);
-
-    if (redirectResult.applied) {
-      // Redirect was applied - return early with the redirect result
-      return {
-        success: true,
-        nextRunAt: redirectResult.nextRunAt ?? now,
-        metadata: redirectResult.metadata,
-      };
-    }
-    // Redirect is being tracked but not yet applied - continue with normal processing
-  } else if (feed.redirectUrl) {
-    // No permanent redirect in this fetch - clear tracking (redirect was temporary or reverted)
-    await clearRedirectTracking(feed.id, now);
-  }
+  const redirectApplied = await checkPermanentRedirect(feed, redirects, now);
+  if (redirectApplied) return redirectApplied;
 
   // Extract metadata we need before processing entries
   // This allows parsedFeed.items (the large part) to be GC'd after processEntries
@@ -594,6 +577,56 @@ function generateBodyHash(body: Buffer): string {
 }
 
 /**
+ * Handles a fetch whose content is known unchanged: a 304, or a 200 whose body
+ * hashes the same as last time. Skips parsing and entry processing, but still
+ * checks for permanent redirects (we know the content was valid before). An
+ * unchanged 200 refreshes the stored cache validators; a 304 leaves them alone.
+ */
+async function processUnchangedFetch(
+  feed: Feed,
+  result: Extract<FetchFeedResult, { status: "success" | "not_modified" }>,
+  now: Date
+): Promise<JobHandlerResult> {
+  const flag = result.status === "success" ? "bodyUnchanged" : "notModified";
+
+  const redirectApplied = await checkPermanentRedirect(feed, result.redirects, now, {
+    [flag]: true,
+  });
+  if (redirectApplied) return redirectApplied;
+
+  const nextFetch = calculateNextFetch({
+    cacheControl: result.cacheHeaders.cacheControl,
+    consecutiveFailures: 0,
+    minIntervalSeconds: getFeedPlugin(feed.url)?.capabilities.feed.minFetchIntervalSeconds,
+    websubActive: feed.websubActive ?? false,
+    now,
+  });
+
+  await db
+    .update(feeds)
+    .set({
+      lastFetchedAt: now,
+      nextFetchAt: nextFetch.nextFetchAt,
+      consecutiveFailures: 0,
+      lastError: null,
+      ...(result.status === "success"
+        ? {
+            etag: result.cacheHeaders.etag ?? feed.etag,
+            lastModifiedHeader: result.cacheHeaders.lastModified ?? feed.lastModifiedHeader,
+          }
+        : {}),
+      updatedAt: now,
+    })
+    .where(eq(feeds.id, feed.id));
+
+  return {
+    success: true,
+    nextRunAt: nextFetch.nextFetchAt,
+    metadata: { [flag]: true, nextFetchReason: nextFetch.reason },
+  };
+}
+
+/**
  * Processes the fetch result and updates the feed accordingly.
  *
  * @param feed - The feed record from the database
@@ -617,56 +650,7 @@ async function processFetchResult(
       // to the last poll yet a WebSub push may have desynced last_seen_at, or an
       // entry may need to be dropped from the current generation).
       if (!forceReprocess && feed.bodyHash === bodyHash) {
-        // Feed body unchanged - skip parsing and entry processing
-        // But still check for permanent redirects (we know the content was valid before)
-        const permanentRedirectUrl = feed.url
-          ? findPermanentRedirectUrl(result.redirects, feed.url)
-          : null;
-
-        if (permanentRedirectUrl) {
-          const redirectResult = await handlePermanentRedirect(feed, permanentRedirectUrl, now);
-          if (redirectResult.applied) {
-            return {
-              success: true,
-              nextRunAt: redirectResult.nextRunAt ?? now,
-              metadata: { ...redirectResult.metadata, bodyUnchanged: true },
-            };
-          }
-        } else if (feed.redirectUrl) {
-          // No permanent redirect - clear tracking
-          await clearRedirectTracking(feed.id, now);
-        }
-
-        const nextFetch = calculateNextFetch({
-          cacheControl: result.cacheHeaders.cacheControl,
-          consecutiveFailures: 0,
-          minIntervalSeconds: getFeedPlugin(feed.url)?.capabilities.feed.minFetchIntervalSeconds,
-          websubActive: feed.websubActive ?? false,
-          now,
-        });
-
-        await db
-          .update(feeds)
-          .set({
-            lastFetchedAt: now,
-            nextFetchAt: nextFetch.nextFetchAt,
-            consecutiveFailures: 0,
-            lastError: null,
-            // Update cache headers even when body unchanged
-            etag: result.cacheHeaders.etag ?? feed.etag,
-            lastModifiedHeader: result.cacheHeaders.lastModified ?? feed.lastModifiedHeader,
-            updatedAt: now,
-          })
-          .where(eq(feeds.id, feed.id));
-
-        return {
-          success: true,
-          nextRunAt: nextFetch.nextFetchAt,
-          metadata: {
-            bodyUnchanged: true,
-            nextFetchReason: nextFetch.reason,
-          },
-        };
+        return processUnchangedFetch(feed, result, now);
       }
 
       // Process in a separate scope so large objects can be GC'd earlier
@@ -682,55 +666,8 @@ async function processFetchResult(
       );
     }
 
-    case "not_modified": {
-      // Feed hasn't changed - just update timestamps
-      // But still check for permanent redirects (we know the content was valid before)
-      const permanentRedirectUrl = feed.url
-        ? findPermanentRedirectUrl(result.redirects, feed.url)
-        : null;
-
-      if (permanentRedirectUrl) {
-        const redirectResult = await handlePermanentRedirect(feed, permanentRedirectUrl, now);
-        if (redirectResult.applied) {
-          return {
-            success: true,
-            nextRunAt: redirectResult.nextRunAt ?? now,
-            metadata: { ...redirectResult.metadata, notModified: true },
-          };
-        }
-      } else if (feed.redirectUrl) {
-        // No permanent redirect - clear tracking
-        await clearRedirectTracking(feed.id, now);
-      }
-
-      const nextFetch = calculateNextFetch({
-        cacheControl: result.cacheHeaders.cacheControl,
-        consecutiveFailures: 0,
-        minIntervalSeconds: getFeedPlugin(feed.url)?.capabilities.feed.minFetchIntervalSeconds,
-        websubActive: feed.websubActive ?? false,
-        now,
-      });
-
-      await db
-        .update(feeds)
-        .set({
-          lastFetchedAt: now,
-          nextFetchAt: nextFetch.nextFetchAt,
-          consecutiveFailures: 0,
-          lastError: null,
-          updatedAt: now,
-        })
-        .where(eq(feeds.id, feed.id));
-
-      return {
-        success: true,
-        nextRunAt: nextFetch.nextFetchAt,
-        metadata: {
-          notModified: true,
-          nextFetchReason: nextFetch.reason,
-        },
-      };
-    }
+    case "not_modified":
+      return processUnchangedFetch(feed, result, now);
 
     // Note: The fetcher follows all redirects itself and returns success/not_modified
     // with the redirect chain included; permanent redirects are detected from that chain
@@ -911,6 +848,34 @@ async function clearRedirectTracking(feedId: string, now: Date): Promise<void> {
 }
 
 /**
+ * Tracks or applies a permanent redirect in the fetch's redirect chain, or clears
+ * stale tracking when there is none (the redirect was temporary or reverted).
+ * Returns the handler result to short-circuit with when the redirect was applied
+ * (the feed URL changed), else null to continue processing this fetch.
+ */
+async function checkPermanentRedirect(
+  feed: Feed,
+  redirects: RedirectInfo[],
+  now: Date,
+  extraMetadata: Record<string, unknown> = {}
+): Promise<JobHandlerResult | null> {
+  const permanentRedirectUrl = feed.url ? findPermanentRedirectUrl(redirects, feed.url) : null;
+  if (permanentRedirectUrl) {
+    const redirectResult = await handlePermanentRedirect(feed, permanentRedirectUrl, now);
+    if (redirectResult.applied) {
+      return {
+        success: true,
+        nextRunAt: redirectResult.nextRunAt ?? now,
+        metadata: { ...redirectResult.metadata, ...extraMetadata },
+      };
+    }
+  } else if (feed.redirectUrl) {
+    await clearRedirectTracking(feed.id, now);
+  }
+  return null;
+}
+
+/**
  * Handles a permanent redirect by either:
  * - Applying it immediately (HTTP->HTTPS upgrade or wait period exceeded)
  * - Starting/updating tracking (new redirect or within wait period)
@@ -939,30 +904,6 @@ async function handlePermanentRedirect(
     });
 
     return applyRedirectMigration(feed, redirectUrl, now);
-  }
-
-  // Check if we're tracking a different redirect URL
-  if (feed.redirectUrl && feed.redirectUrl !== redirectUrl) {
-    // Redirect destination changed - start tracking the new one
-    logger.info("Redirect URL changed, resetting tracking", {
-      feedId: feed.id,
-      previousRedirectUrl: feed.redirectUrl,
-      newRedirectUrl: redirectUrl,
-    });
-
-    await db
-      .update(feeds)
-      .set({
-        redirectUrl: redirectUrl,
-        redirectFirstSeenAt: now,
-        updatedAt: now,
-      })
-      .where(eq(feeds.id, feed.id));
-
-    return {
-      applied: false,
-      metadata: { redirectTracking: "reset", redirectUrl },
-    };
   }
 
   // Check if we're already tracking this redirect
@@ -998,25 +939,29 @@ async function handlePermanentRedirect(
     };
   }
 
-  // Start tracking new redirect
-  logger.info("Starting redirect tracking", {
-    feedId: feed.id,
-    feedUrl: feed.url,
-    redirectUrl,
-  });
+  // New redirect, or the destination changed from the one we were tracking:
+  // (re)start tracking it
+  const tracking = feed.redirectUrl && feed.redirectUrl !== redirectUrl ? "reset" : "started";
+  logger.info(
+    tracking === "reset"
+      ? "Redirect URL changed, resetting tracking"
+      : "Starting redirect tracking",
+    {
+      feedId: feed.id,
+      feedUrl: feed.url,
+      previousRedirectUrl: feed.redirectUrl,
+      redirectUrl,
+    }
+  );
 
   await db
     .update(feeds)
-    .set({
-      redirectUrl: redirectUrl,
-      redirectFirstSeenAt: now,
-      updatedAt: now,
-    })
+    .set({ redirectUrl, redirectFirstSeenAt: now, updatedAt: now })
     .where(eq(feeds.id, feed.id));
 
   return {
     applied: false,
-    metadata: { redirectTracking: "started", redirectUrl },
+    metadata: { redirectTracking: tracking, redirectUrl },
   };
 }
 

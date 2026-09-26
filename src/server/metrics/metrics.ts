@@ -1,5 +1,4 @@
 import { Registry, collectDefaultMetrics, Counter, Histogram, Gauge } from "prom-client";
-import type { CounterConfiguration, HistogramConfiguration, GaugeConfiguration } from "prom-client";
 
 /**
  * Prometheus Metrics Registry
@@ -69,29 +68,17 @@ export const registry = getSharedRegistry();
  * duplicate registration, and only the object actually wired into the shared
  * registry shows up in the scrape. `getSingleMetric` returns the existing object
  * so every graph's `startHttpTimer` / `track*` call mutates the scraped metric.
- * Returns null when metrics are disabled (callers already null-check).
+ * Returns null when metrics are disabled, so every metric op below is `?.`.
  */
-function getOrCreateCounter<T extends string>(config: CounterConfiguration<T>): Counter<T> | null {
+function getOrCreate<C extends { name: string }, M>(
+  Metric: new (config: C & { registers: Registry[] }) => M,
+  config: C
+): M | null {
   if (!metricsEnabled) return null;
-  const existing = registry.getSingleMetric(config.name);
-  if (existing) return existing as Counter<T>;
-  return new Counter<T>({ ...config, registers: [registry] });
-}
-
-function getOrCreateHistogram<T extends string>(
-  config: HistogramConfiguration<T>
-): Histogram<T> | null {
-  if (!metricsEnabled) return null;
-  const existing = registry.getSingleMetric(config.name);
-  if (existing) return existing as Histogram<T>;
-  return new Histogram<T>({ ...config, registers: [registry] });
-}
-
-function getOrCreateGauge<T extends string>(config: GaugeConfiguration<T>): Gauge<T> | null {
-  if (!metricsEnabled) return null;
-  const existing = registry.getSingleMetric(config.name);
-  if (existing) return existing as Gauge<T>;
-  return new Gauge<T>({ ...config, registers: [registry] });
+  return (
+    (registry.getSingleMetric(config.name) as M | undefined) ??
+    new Metric({ ...config, registers: [registry] })
+  );
 }
 
 // ============================================================================
@@ -102,7 +89,7 @@ function getOrCreateGauge<T extends string>(config: GaugeConfiguration<T>): Gaug
  * Counter for total HTTP requests.
  * Labels: method (GET, POST, etc.), path (normalized route), status (HTTP status code)
  */
-const httpRequestsTotal = getOrCreateCounter({
+const httpRequestsTotal = getOrCreate(Counter, {
   name: "http_requests_total",
   help: "Total HTTP requests",
   labelNames: ["method", "path", "status"] as const,
@@ -117,41 +104,12 @@ const httpRequestsTotal = getOrCreateCounter({
  * - 50ms, 100ms, 250ms: typical responses
  * - 500ms, 1s, 2.5s, 5s, 10s: slow responses
  */
-const httpRequestDurationSeconds = getOrCreateHistogram({
+const httpRequestDurationSeconds = getOrCreate(Histogram, {
   name: "http_request_duration_seconds",
   help: "HTTP request duration in seconds",
   labelNames: ["method", "path"] as const,
   buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
 });
-
-/**
- * Track an HTTP request.
- * This function has zero overhead when metrics are disabled.
- *
- * @param method - HTTP method (GET, POST, etc.)
- * @param path - Normalized route path (e.g., /api/trpc/entries.list)
- * @param status - HTTP status code
- * @param durationMs - Request duration in milliseconds
- */
-function trackHttpRequest(method: string, path: string, status: number, durationMs: number): void {
-  if (!metricsEnabled) return;
-
-  const durationSeconds = durationMs / 1000;
-
-  httpRequestsTotal?.inc({
-    method,
-    path,
-    status: String(status),
-  });
-
-  httpRequestDurationSeconds?.observe(
-    {
-      method,
-      path,
-    },
-    durationSeconds
-  );
-}
 
 /**
  * Creates a timer for tracking HTTP request duration.
@@ -164,15 +122,15 @@ function trackHttpRequest(method: string, path: string, status: number, duration
  */
 export function startHttpTimer(method: string, path: string): (status: number) => void {
   if (!metricsEnabled) {
-    // Return a no-op function when metrics are disabled
     return () => {};
   }
 
   const startTime = performance.now();
 
   return (status: number) => {
-    const durationMs = performance.now() - startTime;
-    trackHttpRequest(method, path, status, durationMs);
+    const durationSeconds = (performance.now() - startTime) / 1000;
+    httpRequestsTotal?.inc({ method, path, status: String(status) });
+    httpRequestDurationSeconds?.observe({ method, path }, durationSeconds);
   };
 }
 
@@ -199,7 +157,7 @@ export type TrpcProcedureType = "query" | "mutation" | "subscription";
  * - ok: "true" if the procedure resolved, "false" if it errored (so error
  *   latency can be separated from success latency).
  */
-const trpcProcedureDurationSeconds = getOrCreateHistogram({
+const trpcProcedureDurationSeconds = getOrCreate(Histogram, {
   name: "trpc_procedure_duration_seconds",
   help: "tRPC procedure execution duration in seconds, labeled by procedure",
   labelNames: ["procedure", "type", "ok"] as const,
@@ -208,7 +166,6 @@ const trpcProcedureDurationSeconds = getOrCreateHistogram({
 
 /**
  * Tracks a single tRPC procedure execution.
- * This function has zero overhead when metrics are disabled.
  *
  * @param procedure - The tRPC procedure path (e.g. "entries.list")
  * @param type - The procedure type (query, mutation, subscription)
@@ -221,7 +178,6 @@ export function trackTrpcProcedure(
   ok: boolean,
   durationMs: number
 ): void {
-  if (!metricsEnabled) return;
   trpcProcedureDurationSeconds?.observe({ procedure, type, ok: String(ok) }, durationMs / 1000);
 }
 
@@ -241,7 +197,7 @@ export type FeedFetchStatus = "success" | "not_modified" | "error";
  * Counter for total feed fetches.
  * Labels: status (success, not_modified, error)
  */
-const feedFetchTotal = getOrCreateCounter({
+const feedFetchTotal = getOrCreate(Counter, {
   name: "feed_fetch_total",
   help: "Total feed fetch attempts",
   labelNames: ["status"] as const,
@@ -253,25 +209,11 @@ const feedFetchTotal = getOrCreateCounter({
  *
  * Buckets cover typical fetch times from 50ms to 30s.
  */
-const feedFetchDurationSeconds = getOrCreateHistogram({
+const feedFetchDurationSeconds = getOrCreate(Histogram, {
   name: "feed_fetch_duration_seconds",
   help: "Feed fetch duration in seconds",
   buckets: [0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30],
 });
-
-/**
- * Tracks a feed fetch result.
- * This function has zero overhead when metrics are disabled.
- *
- * @param status - The fetch result status
- * @param durationMs - Fetch duration in milliseconds
- */
-function trackFeedFetch(status: FeedFetchStatus, durationMs: number): void {
-  if (!metricsEnabled) return;
-
-  feedFetchTotal?.inc({ status });
-  feedFetchDurationSeconds?.observe(durationMs / 1000);
-}
 
 /**
  * Creates a timer for tracking feed fetch duration.
@@ -288,8 +230,8 @@ export function startFeedFetchTimer(): (status: FeedFetchStatus) => void {
   const startTime = performance.now();
 
   return (status: FeedFetchStatus) => {
-    const durationMs = performance.now() - startTime;
-    trackFeedFetch(status, durationMs);
+    feedFetchTotal?.inc({ status });
+    feedFetchDurationSeconds?.observe((performance.now() - startTime) / 1000);
   };
 }
 
@@ -312,7 +254,7 @@ const CONTENT_PROCESSING_BUCKETS = [
  * Histogram for feed parsing (RSS/Atom/JSON) duration in seconds.
  * Measures only the parse step, not the surrounding fetch or processing.
  */
-const feedParseDurationSeconds = getOrCreateHistogram({
+const feedParseDurationSeconds = getOrCreate(Histogram, {
   name: "feed_parse_duration_seconds",
   help: "Feed parsing (RSS/Atom/JSON) duration in seconds",
   buckets: CONTENT_PROCESSING_BUCKETS,
@@ -322,7 +264,7 @@ const feedParseDurationSeconds = getOrCreateHistogram({
  * Histogram for readability (article extraction) duration in seconds.
  * Measures only the native extraction step.
  */
-const readabilityDurationSeconds = getOrCreateHistogram({
+const readabilityDurationSeconds = getOrCreate(Histogram, {
   name: "readability_duration_seconds",
   help: "Readability article extraction duration in seconds",
   buckets: CONTENT_PROCESSING_BUCKETS,
@@ -332,7 +274,7 @@ const readabilityDurationSeconds = getOrCreateHistogram({
  * Histogram for Markdown rendering duration in seconds.
  * Measures only the native render (comrak + MathML), not frontmatter parsing.
  */
-const markdownRenderDurationSeconds = getOrCreateHistogram({
+const markdownRenderDurationSeconds = getOrCreate(Histogram, {
   name: "markdown_render_duration_seconds",
   help: "Markdown to HTML rendering duration in seconds",
   buckets: CONTENT_PROCESSING_BUCKETS,
@@ -342,7 +284,7 @@ const markdownRenderDurationSeconds = getOrCreateHistogram({
  * Histogram for HTML sanitization duration in seconds.
  * Measures only the native sanitizer pass.
  */
-const sanitizeDurationSeconds = getOrCreateHistogram({
+const sanitizeDurationSeconds = getOrCreate(Histogram, {
   name: "sanitize_duration_seconds",
   help: "HTML sanitization duration in seconds",
   buckets: CONTENT_PROCESSING_BUCKETS,
@@ -415,7 +357,7 @@ export type JobStatus = "success" | "failure";
  * Counter for total jobs processed.
  * Labels: type (fetch_feed, cleanup, etc.), status (success, failure)
  */
-const jobProcessedTotal = getOrCreateCounter({
+const jobProcessedTotal = getOrCreate(Counter, {
   name: "job_processed_total",
   help: "Total jobs processed",
   labelNames: ["type", "status"] as const,
@@ -427,7 +369,7 @@ const jobProcessedTotal = getOrCreateCounter({
  *
  * Buckets cover typical job durations from 10ms to 5 minutes.
  */
-const jobDurationSeconds = getOrCreateHistogram({
+const jobDurationSeconds = getOrCreate(Histogram, {
   name: "job_duration_seconds",
   help: "Job processing duration in seconds",
   labelNames: ["type"] as const,
@@ -438,7 +380,7 @@ const jobDurationSeconds = getOrCreateHistogram({
  * Gauge for current job queue size.
  * Labels: type (fetch_feed, cleanup, etc.), status (pending, running)
  */
-const jobQueueSize = getOrCreateGauge({
+const jobQueueSize = getOrCreate(Gauge, {
   name: "job_queue_size",
   help: "Current job queue size by type and status",
   labelNames: ["type", "status"] as const,
@@ -446,15 +388,12 @@ const jobQueueSize = getOrCreateGauge({
 
 /**
  * Tracks a job processing result.
- * This function has zero overhead when metrics are disabled.
  *
  * @param type - Job type (fetch_feed, cleanup, etc.)
  * @param status - Processing result status
  * @param durationMs - Processing duration in milliseconds
  */
 export function trackJobProcessed(type: string, status: JobStatus, durationMs: number): void {
-  if (!metricsEnabled) return;
-
   jobProcessedTotal?.inc({ type, status });
   jobDurationSeconds?.observe({ type }, durationMs / 1000);
 }
@@ -467,7 +406,7 @@ export function trackJobProcessed(type: string, status: JobStatus, durationMs: n
  * Gauge for active SSE connections.
  * Incremented when a client connects, decremented on disconnect.
  */
-const sseConnectionsActive = getOrCreateGauge({
+const sseConnectionsActive = getOrCreate(Gauge, {
   name: "sse_connections_active",
   help: "Number of active SSE connections",
 });
@@ -476,7 +415,7 @@ const sseConnectionsActive = getOrCreateGauge({
  * Counter for total SSE events sent.
  * Labels: type (new_entry, entry_updated, heartbeat)
  */
-const sseEventsSentTotal = getOrCreateCounter({
+const sseEventsSentTotal = getOrCreate(Counter, {
   name: "sse_events_sent_total",
   help: "Total SSE events sent to clients",
   labelNames: ["type"] as const,
@@ -484,30 +423,24 @@ const sseEventsSentTotal = getOrCreateCounter({
 
 /**
  * Increments the active SSE connections gauge.
- * This function has zero overhead when metrics are disabled.
  */
 export function incrementSSEConnections(): void {
-  if (!metricsEnabled) return;
   sseConnectionsActive?.inc();
 }
 
 /**
  * Decrements the active SSE connections gauge.
- * This function has zero overhead when metrics are disabled.
  */
 export function decrementSSEConnections(): void {
-  if (!metricsEnabled) return;
   sseConnectionsActive?.dec();
 }
 
 /**
  * Tracks an SSE event being sent.
- * This function has zero overhead when metrics are disabled.
  *
  * @param eventType - The type of event sent
  */
 export function trackSSEEventSent(eventType: string): void {
-  if (!metricsEnabled) return;
   sseEventsSentTotal?.inc({ type: eventType });
 }
 
@@ -518,7 +451,7 @@ export function trackSSEEventSent(eventType: string): void {
 /**
  * Gauge for database connection pool total connections.
  */
-const dbPoolTotalConnections = getOrCreateGauge({
+const dbPoolTotalConnections = getOrCreate(Gauge, {
   name: "db_pool_total_connections",
   help: "Total connections in the database pool",
 });
@@ -526,7 +459,7 @@ const dbPoolTotalConnections = getOrCreateGauge({
 /**
  * Gauge for database connection pool idle connections.
  */
-const dbPoolIdleConnections = getOrCreateGauge({
+const dbPoolIdleConnections = getOrCreate(Gauge, {
   name: "db_pool_idle_connections",
   help: "Idle connections in the database pool",
 });
@@ -534,22 +467,19 @@ const dbPoolIdleConnections = getOrCreateGauge({
 /**
  * Gauge for database connection pool waiting requests.
  */
-const dbPoolWaitingRequests = getOrCreateGauge({
+const dbPoolWaitingRequests = getOrCreate(Gauge, {
   name: "db_pool_waiting_requests",
   help: "Requests waiting for a database connection",
 });
 
 /**
  * Updates database pool metrics from pg Pool stats.
- * This function has zero overhead when metrics are disabled.
  */
 export function updateDbPoolMetrics(stats: {
   totalCount: number;
   idleCount: number;
   waitingCount: number;
 }): void {
-  if (!metricsEnabled) return;
-
   dbPoolTotalConnections?.set(stats.totalCount);
   dbPoolIdleConnections?.set(stats.idleCount);
   dbPoolWaitingRequests?.set(stats.waitingCount);
@@ -561,7 +491,7 @@ export function updateDbPoolMetrics(stats: {
  * wrong (`unexpected`). Disconnects are not reported to Sentry — they are routine
  * and arrive in bursts — so this counter is how they stay visible.
  */
-const dbPoolClientErrorsTotal = getOrCreateCounter({
+const dbPoolClientErrorsTotal = getOrCreate(Counter, {
   name: "db_pool_client_errors_total",
   help: "Errors on idle database pool connections",
   labelNames: ["reason"] as const,
@@ -569,10 +499,8 @@ const dbPoolClientErrorsTotal = getOrCreateCounter({
 
 /**
  * Tracks an error raised on an idle database pool connection.
- * This function has zero overhead when metrics are disabled.
  */
 export function trackDbPoolClientError(reason: "disconnect" | "unexpected"): void {
-  if (!metricsEnabled) return;
   dbPoolClientErrorsTotal?.inc({ reason });
 }
 
@@ -583,7 +511,7 @@ export function trackDbPoolClientError(reason: "disconnect" | "unexpected"): voi
 /**
  * Gauge for total registered users.
  */
-const usersTotal = getOrCreateGauge({
+const usersTotal = getOrCreate(Gauge, {
   name: "users_total",
   help: "Total number of registered users",
 });
@@ -591,7 +519,7 @@ const usersTotal = getOrCreateGauge({
 /**
  * Gauge for total active subscriptions.
  */
-const subscriptionsTotal = getOrCreateGauge({
+const subscriptionsTotal = getOrCreate(Gauge, {
   name: "subscriptions_total",
   help: "Total number of active subscriptions",
 });
@@ -599,7 +527,7 @@ const subscriptionsTotal = getOrCreateGauge({
 /**
  * Gauge for total entries in the database.
  */
-const entriesTotal = getOrCreateGauge({
+const entriesTotal = getOrCreate(Gauge, {
   name: "entries_total",
   help: "Total number of entries",
 });
@@ -607,50 +535,36 @@ const entriesTotal = getOrCreateGauge({
 /**
  * Gauge for total feeds in the database.
  */
-const feedsTotal = getOrCreateGauge({
+const feedsTotal = getOrCreate(Gauge, {
   name: "feeds_total",
   help: "Total number of feeds",
 });
 
 /**
  * Updates all business metrics.
- * This function has zero overhead when metrics are disabled.
  *
  * @param counts - Object containing counts for each metric
  */
 export function updateBusinessMetrics(counts: {
-  users?: number;
-  subscriptions?: number;
-  entries?: number;
-  feeds?: number;
+  users: number;
+  subscriptions: number;
+  entries: number;
+  feeds: number;
 }): void {
-  if (!metricsEnabled) return;
-
-  if (counts.users !== undefined) {
-    usersTotal?.set(counts.users);
-  }
-  if (counts.subscriptions !== undefined) {
-    subscriptionsTotal?.set(counts.subscriptions);
-  }
-  if (counts.entries !== undefined) {
-    entriesTotal?.set(counts.entries);
-  }
-  if (counts.feeds !== undefined) {
-    feedsTotal?.set(counts.feeds);
-  }
+  usersTotal?.set(counts.users);
+  subscriptionsTotal?.set(counts.subscriptions);
+  entriesTotal?.set(counts.entries);
+  feedsTotal?.set(counts.feeds);
 }
 
 /**
  * Updates job queue size metrics from database counts.
- * This function has zero overhead when metrics are disabled.
  *
  * @param counts - Job counts by type and status
  */
 export function updateJobQueueMetrics(
   counts: Array<{ type: string; status: string; count: number }>
 ): void {
-  if (!metricsEnabled) return;
-
   for (const { type, status, count } of counts) {
     jobQueueSize?.set({ type, status }, count);
   }
@@ -664,7 +578,7 @@ export function updateJobQueueMetrics(
  * Counter for WebSub notifications received.
  * Tracks content push notifications from hubs.
  */
-const websubNotificationsReceivedTotal = getOrCreateCounter({
+const websubNotificationsReceivedTotal = getOrCreate(Counter, {
   name: "websub_notifications_received_total",
   help: "Total WebSub content notifications received",
 });
@@ -673,7 +587,7 @@ const websubNotificationsReceivedTotal = getOrCreateCounter({
  * Counter for WebSub renewal attempts.
  * Labels: status (success, failure)
  */
-const websubRenewalsTotal = getOrCreateCounter({
+const websubRenewalsTotal = getOrCreate(Counter, {
   name: "websub_renewals_total",
   help: "Total WebSub subscription renewal attempts",
   labelNames: ["status"] as const,
@@ -681,21 +595,17 @@ const websubRenewalsTotal = getOrCreateCounter({
 
 /**
  * Tracks a WebSub notification received.
- * This function has zero overhead when metrics are disabled.
  */
 export function trackWebsubNotificationReceived(): void {
-  if (!metricsEnabled) return;
   websubNotificationsReceivedTotal?.inc();
 }
 
 /**
  * Tracks a WebSub renewal attempt.
- * This function has zero overhead when metrics are disabled.
  *
  * @param success - Whether the renewal was successful
  */
 export function trackWebsubRenewal(success: boolean): void {
-  if (!metricsEnabled) return;
   websubRenewalsTotal?.inc({ status: success ? "success" : "failure" });
 }
 
@@ -708,7 +618,7 @@ export function trackWebsubRenewal(success: boolean): void {
  * Updated by the monitor_feed_health job. Alert if this grows beyond the
  * expected fetch cadence (feeds are polled at least hourly in steady state).
  */
-const feedLastSuccessfulFetchAgeSeconds = getOrCreateGauge({
+const feedLastSuccessfulFetchAgeSeconds = getOrCreate(Gauge, {
   name: "feed_last_successful_fetch_age_seconds",
   help: "Seconds since the most recent successful feed fetch across all pollable feeds",
 });
@@ -717,14 +627,13 @@ const feedLastSuccessfulFetchAgeSeconds = getOrCreateGauge({
  * Gauge for the number of pollable feeds currently failing (consecutive_failures > 0).
  * Updated by the monitor_feed_health job.
  */
-const feedsFailing = getOrCreateGauge({
+const feedsFailing = getOrCreate(Gauge, {
   name: "feeds_failing",
   help: "Number of pollable feeds with consecutive fetch failures",
 });
 
 /**
  * Updates feed fetch health gauges from a monitor_feed_health run.
- * This function has zero overhead when metrics are disabled.
  *
  * @param lastSuccessAgeSeconds - Age of the newest successful fetch, or null if none exists
  * @param failingFeedCount - Number of pollable feeds currently failing
@@ -733,7 +642,6 @@ export function updateFeedHealthMetrics(
   lastSuccessAgeSeconds: number | null,
   failingFeedCount: number
 ): void {
-  if (!metricsEnabled) return;
   // null = no feed has ever fetched successfully, so there is no age to report.
   // The gauge is left untouched (rather than set to 0, which would look healthy);
   // Prometheus alerts for that state should key on `feeds_failing`, which is
@@ -769,7 +677,7 @@ export type NarrationErrorType = "api_error" | "empty_response" | "unknown";
  * - cached: "true" if served from cache, "false" if newly generated
  * - source: "llm" for LLM-generated, "fallback" for plain text conversion
  */
-const narrationGeneratedTotal = getOrCreateCounter({
+const narrationGeneratedTotal = getOrCreate(Counter, {
   name: "narration_generated_total",
   help: "Total narration generations",
   labelNames: ["cached", "source"] as const,
@@ -781,7 +689,7 @@ const narrationGeneratedTotal = getOrCreateCounter({
  *
  * Buckets cover typical LLM latencies from 100ms to 30s.
  */
-const narrationGenerationDurationSeconds = getOrCreateHistogram({
+const narrationGenerationDurationSeconds = getOrCreate(Histogram, {
   name: "narration_generation_duration_seconds",
   help: "Narration generation duration in seconds",
   buckets: [0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 30],
@@ -791,7 +699,7 @@ const narrationGenerationDurationSeconds = getOrCreateHistogram({
  * Counter for narration generation errors.
  * Labels: error_type (api_error, empty_response, unknown)
  */
-const narrationGenerationErrorsTotal = getOrCreateCounter({
+const narrationGenerationErrorsTotal = getOrCreate(Counter, {
   name: "narration_generation_errors_total",
   help: "Total narration generation errors",
   labelNames: ["error_type"] as const,
@@ -799,35 +707,20 @@ const narrationGenerationErrorsTotal = getOrCreateCounter({
 
 /**
  * Tracks a narration generation result.
- * This function has zero overhead when metrics are disabled.
  *
  * @param cached - Whether narration was served from cache
  * @param source - The narration source (llm or fallback)
  */
 export function trackNarrationGenerated(cached: boolean, source: NarrationSource): void {
-  if (!metricsEnabled) return;
   narrationGeneratedTotal?.inc({ cached: String(cached), source });
 }
 
 /**
- * Tracks narration generation duration.
- * This function has zero overhead when metrics are disabled.
- *
- * @param durationMs - Generation duration in milliseconds
- */
-function trackNarrationGenerationDuration(durationMs: number): void {
-  if (!metricsEnabled) return;
-  narrationGenerationDurationSeconds?.observe(durationMs / 1000);
-}
-
-/**
  * Tracks a narration generation error.
- * This function has zero overhead when metrics are disabled.
  *
  * @param errorType - The type of error that occurred
  */
 export function trackNarrationGenerationError(errorType: NarrationErrorType): void {
-  if (!metricsEnabled) return;
   narrationGenerationErrorsTotal?.inc({ error_type: errorType });
 }
 
@@ -839,16 +732,7 @@ export function trackNarrationGenerationError(errorType: NarrationErrorType): vo
  * @returns Function to call when generation completes
  */
 export function startNarrationGenerationTimer(): () => void {
-  if (!metricsEnabled) {
-    return () => {};
-  }
-
-  const startTime = performance.now();
-
-  return () => {
-    const durationMs = performance.now() - startTime;
-    trackNarrationGenerationDuration(durationMs);
-  };
+  return startContentProcessingTimer(narrationGenerationDurationSeconds);
 }
 
 // ============================================================================
@@ -859,7 +743,7 @@ export function startNarrationGenerationTimer(): () => void {
  * Counter for enhanced voice selections.
  * Labels: voice_id (the selected voice identifier)
  */
-const enhancedVoiceSelectedTotal = getOrCreateCounter({
+const enhancedVoiceSelectedTotal = getOrCreate(Counter, {
   name: "enhanced_voice_selected_total",
   help: "Total enhanced voice selections",
   labelNames: ["voice_id"] as const,
@@ -869,7 +753,7 @@ const enhancedVoiceSelectedTotal = getOrCreateCounter({
  * Counter for enhanced voice download completions.
  * Labels: voice_id (the downloaded voice identifier)
  */
-const enhancedVoiceDownloadCompletedTotal = getOrCreateCounter({
+const enhancedVoiceDownloadCompletedTotal = getOrCreate(Counter, {
   name: "enhanced_voice_download_completed_total",
   help: "Total enhanced voice downloads completed",
   labelNames: ["voice_id"] as const,
@@ -881,7 +765,7 @@ const enhancedVoiceDownloadCompletedTotal = getOrCreateCounter({
  * - voice_id: The voice that failed to download
  * - error_type: Type of error (network, storage, unknown)
  */
-const enhancedVoiceDownloadFailedTotal = getOrCreateCounter({
+const enhancedVoiceDownloadFailedTotal = getOrCreate(Counter, {
   name: "enhanced_voice_download_failed_total",
   help: "Total enhanced voice download failures",
   labelNames: ["voice_id", "error_type"] as const,
@@ -891,7 +775,7 @@ const enhancedVoiceDownloadFailedTotal = getOrCreateCounter({
  * Counter for narration playback starts.
  * Labels: provider (browser or piper)
  */
-const narrationPlaybackStartedTotal = getOrCreateCounter({
+const narrationPlaybackStartedTotal = getOrCreate(Counter, {
   name: "narration_playback_started_total",
   help: "Total narration playbacks started",
   labelNames: ["provider"] as const,
@@ -907,29 +791,24 @@ export type EnhancedVoiceDownloadErrorType = "network" | "storage" | "unknown";
 
 /**
  * Tracks an enhanced voice selection.
- * This function has zero overhead when metrics are disabled.
  *
  * @param voiceId - The ID of the selected voice
  */
 export function trackEnhancedVoiceSelected(voiceId: string): void {
-  if (!metricsEnabled) return;
   enhancedVoiceSelectedTotal?.inc({ voice_id: voiceId });
 }
 
 /**
  * Tracks a successful enhanced voice download.
- * This function has zero overhead when metrics are disabled.
  *
  * @param voiceId - The ID of the downloaded voice
  */
 export function trackEnhancedVoiceDownloadCompleted(voiceId: string): void {
-  if (!metricsEnabled) return;
   enhancedVoiceDownloadCompletedTotal?.inc({ voice_id: voiceId });
 }
 
 /**
  * Tracks a failed enhanced voice download.
- * This function has zero overhead when metrics are disabled.
  *
  * @param voiceId - The ID of the voice that failed to download
  * @param errorType - The type of error that occurred
@@ -938,18 +817,15 @@ export function trackEnhancedVoiceDownloadFailed(
   voiceId: string,
   errorType: EnhancedVoiceDownloadErrorType
 ): void {
-  if (!metricsEnabled) return;
   enhancedVoiceDownloadFailedTotal?.inc({ voice_id: voiceId, error_type: errorType });
 }
 
 /**
  * Tracks a narration playback start.
- * This function has zero overhead when metrics are disabled.
  *
  * @param provider - The TTS provider used (browser or piper)
  */
 export function trackNarrationPlaybackStarted(provider: "browser" | "piper"): void {
-  if (!metricsEnabled) return;
   narrationPlaybackStartedTotal?.inc({ provider });
 }
 
@@ -961,7 +837,7 @@ export function trackNarrationPlaybackStarted(provider: "browser" | "piper"): vo
  * Counter for times highlighting was active during narration.
  * Incremented when highlighting first becomes active in a session.
  */
-const narrationHighlightActiveTotal = getOrCreateCounter({
+const narrationHighlightActiveTotal = getOrCreate(Counter, {
   name: "narration_highlight_active_total",
   help: "Total times narration highlighting was active",
 });
@@ -970,7 +846,7 @@ const narrationHighlightActiveTotal = getOrCreateCounter({
  * Counter for times fallback mapping was used for highlighting.
  * Incremented when positional mapping is used instead of LLM markers.
  */
-const narrationHighlightFallbackTotal = getOrCreateCounter({
+const narrationHighlightFallbackTotal = getOrCreate(Counter, {
   name: "narration_highlight_fallback_total",
   help: "Total times fallback positional mapping was used for highlighting",
 });
@@ -979,34 +855,28 @@ const narrationHighlightFallbackTotal = getOrCreateCounter({
  * Counter for times auto-scroll was triggered during highlighting.
  * Incremented when the view scrolls to a highlighted paragraph.
  */
-const narrationHighlightScrollTotal = getOrCreateCounter({
+const narrationHighlightScrollTotal = getOrCreate(Counter, {
   name: "narration_highlight_scroll_total",
   help: "Total times auto-scroll was triggered during highlighting",
 });
 
 /**
  * Tracks when narration highlighting becomes active.
- * This function has zero overhead when metrics are disabled.
  */
 export function trackNarrationHighlightActive(): void {
-  if (!metricsEnabled) return;
   narrationHighlightActiveTotal?.inc();
 }
 
 /**
  * Tracks when fallback positional mapping is used for highlighting.
- * This function has zero overhead when metrics are disabled.
  */
 export function trackNarrationHighlightFallback(): void {
-  if (!metricsEnabled) return;
   narrationHighlightFallbackTotal?.inc();
 }
 
 /**
  * Tracks when auto-scroll is triggered during highlighting.
- * This function has zero overhead when metrics are disabled.
  */
 export function trackNarrationHighlightScroll(): void {
-  if (!metricsEnabled) return;
   narrationHighlightScrollTotal?.inc();
 }

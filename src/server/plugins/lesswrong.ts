@@ -10,7 +10,7 @@ import {
   isLessWrongShortformPage,
   isLessWrongUserUrl,
   isLessWrongUrl,
-  isLessWrongUserFeedUrl,
+  extractUserIdFromFeedUrl,
   extractUserSlug,
   extractPostId,
   LESSWRONG_FRONTPAGE_FEED_URL,
@@ -113,7 +113,7 @@ export const lessWrongPlugin: UrlPlugin = {
         // Only user-profile feeds (feed.xml?userId=...) get the author appended.
         // Use the first author from the already-parsed feed entries to avoid an
         // extra GraphQL round-trip during feed processing.
-        if (!isLessWrongUserFeedUrl(feedUrl.href)) return title;
+        if (extractUserIdFromFeedUrl(feedUrl.href) === null) return title;
 
         const { firstAuthor } = context;
         if (firstAuthor && !title.includes(firstAuthor)) {

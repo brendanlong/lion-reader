@@ -5,7 +5,7 @@
  * in MULTIPLE separate module graphs (custom-server bundle, instrumentation
  * hook, and route-handler chunks). The registry is anchored on `globalThis` so
  * all graphs converge on one object, and every metric is created via an
- * idempotent `getOrCreate*` helper so a second module-graph evaluation REUSES
+ * idempotent `getOrCreate` helper so a second module-graph evaluation REUSES
  * the existing metric instead of re-registering it.
  *
  * If a metric is instead created with a raw `new Counter/Histogram/Gauge({
@@ -78,28 +78,25 @@ describe("metrics registry survives repeated module evaluation", () => {
 });
 
 describe("metrics module constructs metrics only through the idempotent helpers", () => {
-  it("has no raw new Counter/Histogram/Gauge outside getOrCreate*", () => {
+  it("has no raw new Counter/Histogram/Gauge", () => {
     const source = readFileSync(
       fileURLToPath(new URL("../../src/server/metrics/metrics.ts", import.meta.url)),
       "utf8"
     );
 
-    // The only legitimate constructions are inside the three getOrCreate*
-    // helpers, written as `new Counter<T>(...)` / `new Histogram<T>(...)` /
-    // `new Gauge<T>(...)`. Any `new Counter/Histogram/Gauge` NOT immediately
-    // followed by `<T>` is a raw registration that reintroduces the crash — use
-    // getOrCreateCounter / getOrCreateHistogram / getOrCreateGauge instead.
-    // The `<\s*T\s*>` tolerance keeps this robust to generic-argument spacing.
+    // The only legitimate construction is the generic `new Metric(...)` inside
+    // getOrCreate. Any `new Counter/Histogram/Gauge` is a raw registration that
+    // reintroduces the crash — use getOrCreate(Counter, {...}) instead.
     // Scope note: this guard is intentionally file-local — every metric lives in
     // metrics.ts. A raw registration in another file that imports `registry`
     // would also crash and is not covered here.
-    const rawConstructions = [
-      ...source.matchAll(/new\s+(Counter|Histogram|Gauge)\b(?!<\s*T\s*>)/g),
-    ].map((match) => match[0]);
+    const rawConstructions = [...source.matchAll(/new\s+(Counter|Histogram|Gauge)\b/g)].map(
+      (match) => match[0]
+    );
 
     expect(
       rawConstructions,
-      "Register metrics via getOrCreate<Counter|Histogram|Gauge>, not a raw prom-client constructor — " +
+      "Register metrics via getOrCreate(Counter|Histogram|Gauge, ...), not a raw prom-client constructor — " +
         "a raw `new X({ registers: [registry] })` crashes the app on the second module-graph evaluation"
     ).toEqual([]);
   });

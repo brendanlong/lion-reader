@@ -5,7 +5,8 @@
  * These are called on-demand when the /api/metrics endpoint is hit.
  */
 
-import { sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
+import type { PgTable } from "drizzle-orm/pg-core";
 import { db, pool } from "../db";
 import { users, subscriptions, entries, feeds, jobs } from "../db/schema";
 import {
@@ -15,32 +16,23 @@ import {
   updateDbPoolMetrics,
 } from "./metrics";
 
+function countRows(table: PgTable, where?: SQL): Promise<number> {
+  return db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(table)
+    .where(where)
+    .then((rows) => rows[0]?.count ?? 0);
+}
+
 /**
  * Collects and updates all business metrics from the database.
- * This function has zero overhead when metrics are disabled.
  */
 async function collectBusinessMetrics(): Promise<void> {
-  if (!metricsEnabled) return;
-
-  // Collect all counts in parallel for efficiency
   const [userCount, subscriptionCount, entryCount, feedCount] = await Promise.all([
-    db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(users)
-      .then((rows) => rows[0]?.count ?? 0),
-    db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(subscriptions)
-      .where(sql`${subscriptions.unsubscribedAt} IS NULL`)
-      .then((rows) => rows[0]?.count ?? 0),
-    db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(entries)
-      .then((rows) => rows[0]?.count ?? 0),
-    db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(feeds)
-      .then((rows) => rows[0]?.count ?? 0),
+    countRows(users),
+    countRows(subscriptions, sql`${subscriptions.unsubscribedAt} IS NULL`),
+    countRows(entries),
+    countRows(feeds),
   ]);
 
   updateBusinessMetrics({
@@ -53,46 +45,16 @@ async function collectBusinessMetrics(): Promise<void> {
 
 /**
  * Collects and updates job queue size metrics from the database.
- * This function has zero overhead when metrics are disabled.
+ * Pending: jobs not currently running; running: `running_since IS NOT NULL`.
  */
 async function collectJobQueueMetrics(): Promise<void> {
-  if (!metricsEnabled) return;
-
-  // Count jobs by type and status
-  // Pending: jobs that are not currently running
-  // Running: jobs with running_since IS NOT NULL
-  const pendingCounts = await db
-    .select({
-      type: jobs.type,
-      count: sql<number>`count(*)::int`,
-    })
+  const status = sql<string>`CASE WHEN ${jobs.runningSince} IS NULL THEN 'pending' ELSE 'running' END`;
+  const counts = await db
+    .select({ type: jobs.type, status, count: sql<number>`count(*)::int` })
     .from(jobs)
-    .where(sql`${jobs.runningSince} IS NULL`)
-    .groupBy(jobs.type);
+    .groupBy(jobs.type, status);
 
-  const runningCounts = await db
-    .select({
-      type: jobs.type,
-      count: sql<number>`count(*)::int`,
-    })
-    .from(jobs)
-    .where(sql`${jobs.runningSince} IS NOT NULL`)
-    .groupBy(jobs.type);
-
-  const jobCounts = [
-    ...pendingCounts.map((row) => ({
-      type: row.type,
-      status: "pending" as const,
-      count: row.count,
-    })),
-    ...runningCounts.map((row) => ({
-      type: row.type,
-      status: "running" as const,
-      count: row.count,
-    })),
-  ];
-
-  updateJobQueueMetrics(jobCounts);
+  updateJobQueueMetrics(counts);
 }
 
 /**
@@ -100,8 +62,6 @@ async function collectJobQueueMetrics(): Promise<void> {
  * These are synchronous reads from the pg Pool object.
  */
 function collectPoolMetrics(): void {
-  if (!metricsEnabled) return;
-
   updateDbPoolMetrics({
     totalCount: pool.totalCount,
     idleCount: pool.idleCount,

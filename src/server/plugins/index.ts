@@ -19,29 +19,19 @@ import type { FetchedPage, PluginWith, SavedArticleContent } from "./types";
 import { logger } from "@/lib/logger";
 
 // Register all available plugins at module load time
-pluginRegistry.register(lessWrongPlugin);
-pluginRegistry.register(googleDocsPlugin);
-pluginRegistry.register(arxivPlugin);
-pluginRegistry.register(githubPlugin);
-pluginRegistry.register(youtubePlugin);
-pluginRegistry.register(blueskyPlugin);
-pluginRegistry.register(linkedInPlugin);
-pluginRegistry.register(threadsPlugin);
-pluginRegistry.register(notionPlugin);
-
-logger.info("Plugins registered", {
-  plugins: [
-    lessWrongPlugin.name,
-    googleDocsPlugin.name,
-    arxivPlugin.name,
-    githubPlugin.name,
-    youtubePlugin.name,
-    blueskyPlugin.name,
-    linkedInPlugin.name,
-    threadsPlugin.name,
-    notionPlugin.name,
-  ],
-});
+const plugins = [
+  lessWrongPlugin,
+  googleDocsPlugin,
+  arxivPlugin,
+  githubPlugin,
+  youtubePlugin,
+  blueskyPlugin,
+  linkedInPlugin,
+  threadsPlugin,
+  notionPlugin,
+];
+for (const plugin of plugins) pluginRegistry.register(plugin);
+logger.info("Plugins registered", { plugins: plugins.map((plugin) => plugin.name) });
 
 /**
  * Offer a page the generic fetch already retrieved to the plugins that can
@@ -70,6 +60,16 @@ export async function claimFetchedPage(
   return null;
 }
 
+/** Parses a feed/page URL, or returns null if it's missing or invalid. */
+function toUrl(url: string | URL | null | undefined): URL | null {
+  if (!url) return null;
+  try {
+    return url instanceof URL ? url : new URL(url);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Resolve the feed-capable plugin for a feed or page URL string.
  *
@@ -78,16 +78,8 @@ export async function claimFetchedPage(
  * feed-source customization lives in plugins rather than hardcoded branches.
  */
 export function getFeedPlugin(url: string | URL | null | undefined) {
-  if (!url) return null;
-
-  let parsed: URL;
-  try {
-    parsed = url instanceof URL ? url : new URL(url);
-  } catch {
-    return null;
-  }
-
-  return pluginRegistry.findWithCapability(parsed, "feed");
+  const parsed = toUrl(url);
+  return parsed ? pluginRegistry.findWithCapability(parsed, "feed") : null;
 }
 
 /**
@@ -96,16 +88,8 @@ export function getFeedPlugin(url: string | URL | null | undefined) {
  * embedded content, e.g. Bluesky). Returns false for an invalid/unhandled URL.
  */
 export function feedDefaultsToFullContent(url: string | URL | null | undefined): boolean {
-  if (!url) return false;
-
-  let parsed: URL;
-  try {
-    parsed = url instanceof URL ? url : new URL(url);
-  } catch {
-    return false;
-  }
-
-  return pluginRegistry.feedDefaultsToFullContent(parsed);
+  const parsed = toUrl(url);
+  return parsed ? pluginRegistry.feedDefaultsToFullContent(parsed) : false;
 }
 
 // Export registry and types

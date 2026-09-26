@@ -55,6 +55,10 @@ function rowToJob(row: RawJobRow): Job {
   };
 }
 
+function firstJob(result: { rows: RawJobRow[] }): Job | null {
+  return result.rows.length === 0 ? null : rowToJob(result.rows[0]);
+}
+
 /**
  * Job payload types for different job types.
  */
@@ -274,11 +278,7 @@ export async function claimJob(options: ClaimJobOptions = {}): Promise<Job | nul
     RETURNING *
   `);
 
-  if (result.rows.length === 0) {
-    return null;
-  }
-
-  return rowToJob(result.rows[0]);
+  return firstJob(result);
 }
 
 /**
@@ -339,33 +339,22 @@ export async function finishJob(jobId: string, options: FinishJobOptions): Promi
         }
       : {};
 
-  const [job] = success
-    ? await db
-        .update(jobs)
-        .set({
-          runningSince: null,
-          lastRunAt: now,
-          nextRunAt: nextRunAtExpr,
-          lastError: null,
-          consecutiveFailures: 0,
-          updatedAt: now,
-          ...payloadUpdate,
-        })
-        .where(whereClause)
-        .returning()
-    : await db
-        .update(jobs)
-        .set({
-          runningSince: null,
-          lastRunAt: now,
-          nextRunAt,
-          lastError: error ?? "Unknown error",
-          // For failure, increment consecutive_failures
-          consecutiveFailures: sql`${jobs.consecutiveFailures} + 1`,
-          updatedAt: now,
-        })
-        .where(whereClause)
-        .returning();
+  const [job] = await db
+    .update(jobs)
+    .set({
+      runningSince: null,
+      lastRunAt: now,
+      updatedAt: now,
+      ...(success
+        ? { nextRunAt: nextRunAtExpr, lastError: null, consecutiveFailures: 0, ...payloadUpdate }
+        : {
+            nextRunAt,
+            lastError: error ?? "Unknown error",
+            consecutiveFailures: sql`${jobs.consecutiveFailures} + 1`,
+          }),
+    })
+    .where(whereClause)
+    .returning();
 
   if (!job) {
     // A fenced write that matches no row means the lease was lost to another
@@ -488,11 +477,7 @@ export async function updateFeedJobNextRun(feedId: string, nextRunAt: Date): Pro
     RETURNING *
   `);
 
-  if (result.rows.length === 0) {
-    return null;
-  }
-
-  return rowToJob(result.rows[0]);
+  return firstJob(result);
 }
 
 /**
@@ -588,10 +573,9 @@ export async function claimSingletonJob(type: JobType): Promise<Job | null> {
     `);
 
   // First, try to claim an existing job
-  const claimResult = await tryClaim();
-
-  if (claimResult.rows.length > 0) {
-    return rowToJob(claimResult.rows[0]);
+  const claimed = firstJob(await tryClaim());
+  if (claimed) {
+    return claimed;
   }
 
   // No claimable job - check if a job exists at all
@@ -632,14 +616,8 @@ export async function claimSingletonJob(type: JobType): Promise<Job | null> {
     // Another worker created the job first - try to claim it. The shared
     // predicate keeps the next_run_at <= now check: if the winner already ran
     // and rescheduled the job, we must not immediately re-run it.
-    const retryResult = await tryClaim();
-
-    if (retryResult.rows.length > 0) {
-      return rowToJob(retryResult.rows[0]);
-    }
-
-    // Job exists and is running or already rescheduled - that's fine
-    return null;
+    // Null if the job is running or already rescheduled - that's fine
+    return firstJob(await tryClaim());
   }
 }
 
@@ -683,9 +661,5 @@ export async function claimFeedJob(): Promise<Job | null> {
     RETURNING *
   `);
 
-  if (result.rows.length === 0) {
-    return null;
-  }
-
-  return rowToJob(result.rows[0]);
+  return firstJob(result);
 }

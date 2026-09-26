@@ -6,7 +6,6 @@
 
 import { db } from "../../db";
 import { runRetentionCleanup } from "../../services/retention";
-import type { JobPayloads } from "../queue";
 import { logger } from "@/lib/logger";
 import type { JobHandlerResult } from "./types";
 
@@ -23,10 +22,7 @@ const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
  * jobs, and subscriber-less fetch_feed jobs (issue #1085). See
  * src/server/services/retention.ts.
  */
-export async function handleCleanup(
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _payload: JobPayloads["cleanup"]
-): Promise<JobHandlerResult> {
+export async function handleCleanup(): Promise<JobHandlerResult> {
   const now = new Date();
   const deleted = await runRetentionCleanup(db);
 
