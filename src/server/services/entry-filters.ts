@@ -5,7 +5,7 @@
  * countEntries, and markAllRead.
  */
 
-import { eq, and, isNull, notInArray, type SQL, type SQLWrapper } from "drizzle-orm";
+import { eq, and, inArray, isNull, notInArray, sql, type SQL } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import { subscriptionTags, subscriptions, tags, visibleEntries } from "@/server/db/schema";
 
@@ -26,35 +26,10 @@ export interface EntryConditionParams {
   unstarredOnly?: boolean;
   type?: "web" | "email" | "saved";
   excludeTypes?: Array<"web" | "email" | "saved">;
+  publishedAfter?: Date;
+  publishedBefore?: Date;
+  updatedAfter?: Date;
   showSpam: boolean;
-}
-
-/**
- * Type for subscription IDs condition that can be used with inArray.
- * This is either a string array (for the single-subscription filter) or a
- * Drizzle subquery (for tag or uncategorized filters) — subqueries implement
- * SQLWrapper, which is what inArray accepts.
- */
-type SubscriptionIdsCondition = string[] | SQLWrapper;
-
-/**
- * Result of building entry subscription filters.
- *
- * Entries are attributed to exactly one subscription via
- * `user_entries.subscription_id` (surfaced as `visible_entries.subscription_id`),
- * which survives feed redirects/merges via the merge-job re-stamp — so
- * subscription-ID filtering always agrees with what the visibility view
- * attributes.
- *
- * @property subscriptionIdsCondition - Either an array of subscription IDs, a
- *                                      subquery that returns subscription IDs,
- *                                      or null if no subscription filter is needed
- * @property isEmpty - True if the filter conditions result in no possible matches
- *                    (e.g., invalid subscription ID, non-existent tag)
- */
-export interface EntryFilterResult {
-  subscriptionIdsCondition: SubscriptionIdsCondition | null;
-  isEmpty: boolean;
 }
 
 // ============================================================================
@@ -135,47 +110,51 @@ export function buildUncategorizedSubscriptionIdsSubquery(db: typeof dbType, use
 // ============================================================================
 
 /**
- * Builds subscription filter conditions for entry queries.
+ * Builds the subscription filter condition for entry queries.
  *
  * This function handles the three main subscription-based filters:
  * 1. subscriptionId - Filter to entries attributed to a specific subscription
  * 2. tagId - Filter to entries attributed to tagged subscriptions
  * 3. uncategorized - Filter to entries attributed to untagged subscriptions
  *
- * @param db - Database instance
- * @param params - Filter parameters
- * @param userId - User ID for ownership validation
- * @returns Filter result with subscriptionIdsCondition and isEmpty flag
+ * Entries are attributed to exactly one subscription via
+ * `user_entries.subscription_id` (surfaced as `visible_entries.subscription_id`),
+ * which survives feed redirects/merges via the merge-job re-stamp — so
+ * subscription-ID filtering always agrees with what the visibility view
+ * attributes.
+ *
+ * @returns The condition to AND into the query, `undefined` when no subscription
+ *          filter applies, or `null` when nothing can match (e.g. a subscription
+ *          the user doesn't own)
  */
 export async function buildEntrySubscriptionFilter(
   db: typeof dbType,
   params: EntryFilterParams,
   userId: string
-): Promise<EntryFilterResult> {
+): Promise<SQL | undefined | null> {
   // Filter by subscriptionId - validates ownership, early-exits when invalid
   if (params.subscriptionId) {
     const owned = await verifySubscriptionOwnership(db, params.subscriptionId, userId);
-    if (!owned) {
-      return { subscriptionIdsCondition: null, isEmpty: true };
-    }
-    return { subscriptionIdsCondition: [params.subscriptionId], isEmpty: false };
+    return owned ? inArray(visibleEntries.subscriptionId, [params.subscriptionId]) : null;
   }
 
   // Filter by tagId - uses join to validate tag ownership, returns subquery
   // The subquery will return no rows if the tag doesn't exist or belongs to another user
   if (params.tagId) {
-    const taggedSubscriptionIds = buildTaggedSubscriptionIdsSubquery(db, params.tagId, userId);
-    return { subscriptionIdsCondition: taggedSubscriptionIds, isEmpty: false };
+    return inArray(
+      visibleEntries.subscriptionId,
+      buildTaggedSubscriptionIdsSubquery(db, params.tagId, userId)
+    );
   }
 
-  // Filter by uncategorized - returns subquery
   if (params.uncategorized) {
-    const uncategorizedSubscriptionIds = buildUncategorizedSubscriptionIdsSubquery(db, userId);
-    return { subscriptionIdsCondition: uncategorizedSubscriptionIds, isEmpty: false };
+    return inArray(
+      visibleEntries.subscriptionId,
+      buildUncategorizedSubscriptionIdsSubquery(db, userId)
+    );
   }
 
-  // No subscription filter needed
-  return { subscriptionIdsCondition: null, isEmpty: false };
+  return undefined;
 }
 
 // ============================================================================
@@ -184,8 +163,9 @@ export async function buildEntrySubscriptionFilter(
 
 /**
  * Builds shared filter conditions for entry queries (unreadOnly, starredOnly,
- * type, excludeTypes, showSpam). Used by listEntries, searchEntries, and
- * countEntries to avoid duplicating the same filter logic.
+ * type, excludeTypes, showSpam, timestamp bounds). Used by listEntries,
+ * searchEntries, countEntries, and countTotalEntries to avoid duplicating the
+ * same filter logic.
  */
 export function buildEntryFilterConditions(params: EntryConditionParams): SQL[] {
   const conditions: SQL[] = [];
@@ -212,6 +192,30 @@ export function buildEntryFilterConditions(params: EntryConditionParams): SQL[] 
 
   if (!params.showSpam) {
     conditions.push(eq(visibleEntries.isSpam, false));
+  }
+
+  // Timestamp filters (used by Google Reader API ot/nt parameters).
+  // publishedOrFetchedAt is the denormalized COALESCE(publishedAt, fetchedAt).
+  if (params.publishedAfter) {
+    conditions.push(sql`${visibleEntries.publishedOrFetchedAt} >= ${params.publishedAfter}`);
+  }
+  if (params.publishedBefore) {
+    conditions.push(sql`${visibleEntries.publishedOrFetchedAt} <= ${params.publishedBefore}`);
+  }
+  // "Modified since" filter (Wallabag `since` delta sync). visibleEntries.updatedAt is
+  // GREATEST(entry.updated_at, user_entries.updated_at), so this captures new saves,
+  // content refetches, AND read/star state changes — the same value we return as the
+  // entry's updated_at, so the filter and the reported timestamp can't disagree.
+  //
+  // The GREATEST spans two tables so no single index covers it — but here it is only
+  // a RESIDUAL filter, not the sort key: listEntries still sorts by
+  // publishedOrFetchedAt (idx_user_entries_published_or_fetched) with LIMIT
+  // pushdown. The Wallabag caller also scopes to type='saved', so the scan is
+  // bounded to the user's read-it-later library, not the whole timeline. That keeps
+  // the #1105 problem (a mandatory full sort of the user's entire history) from
+  // applying, so this deliberately stays a simple residual filter.
+  if (params.updatedAfter) {
+    conditions.push(sql`${visibleEntries.updatedAt} >= ${params.updatedAfter}`);
   }
 
   return conditions;

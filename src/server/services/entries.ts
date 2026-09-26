@@ -283,6 +283,30 @@ const searchCursor = createCursorCodec(
 // ============================================================================
 
 /**
+ * Columns shared by the list and search queries (each adds its feed title and
+ * sort key). Callers must join `feeds`.
+ */
+const entryListSelectFields = {
+  id: visibleEntries.id,
+  greaderItemId: visibleEntries.greaderItemId,
+  subscriptionGreaderStreamId: visibleEntries.subscriptionGreaderStreamId,
+  feedGreaderStreamId: feeds.greaderStreamId,
+  feedId: visibleEntries.feedId,
+  type: visibleEntries.type,
+  url: visibleEntries.url,
+  title: visibleEntries.title,
+  author: visibleEntries.author,
+  summary: visibleEntries.summary,
+  publishedAt: visibleEntries.publishedAt,
+  fetchedAt: visibleEntries.fetchedAt,
+  read: visibleEntries.read,
+  starred: visibleEntries.starred,
+  updatedAt: visibleEntries.updatedAt,
+  subscriptionId: visibleEntries.subscriptionId,
+  siteName: visibleEntries.siteName,
+};
+
+/**
  * Base select fields shared by every full-entry read (getEntry/getEntries and
  * selectFullEntry). Selects the **raw** content columns; the read path
  * sanitizes them per read (see `toEntryFull`/`toFullEntry`) so raw untrusted
@@ -515,53 +539,16 @@ export async function listEntries(
   const conditions = [eq(visibleEntries.userId, params.userId)];
 
   // Apply subscription filters (subscriptionId, tagId, uncategorized)
-  const subscriptionFilter = await buildEntrySubscriptionFilter(
-    db,
-    {
-      subscriptionId: params.subscriptionId,
-      tagId: params.tagId,
-      uncategorized: params.uncategorized,
-    },
-    params.userId
-  );
-
-  if (subscriptionFilter.isEmpty) {
+  const subscriptionFilter = await buildEntrySubscriptionFilter(db, params, params.userId);
+  if (subscriptionFilter === null) {
     return { items: [], nextCursor: undefined };
   }
-
-  if (subscriptionFilter.subscriptionIdsCondition !== null) {
-    conditions.push(
-      inArray(visibleEntries.subscriptionId, subscriptionFilter.subscriptionIdsCondition)
-    );
+  if (subscriptionFilter) {
+    conditions.push(subscriptionFilter);
   }
 
-  // Apply entry filter conditions (unreadOnly, starredOnly, type, excludeTypes, showSpam)
+  // Apply entry filter conditions (read/starred/type/spam/timestamp filters)
   conditions.push(...buildEntryFilterConditions(params));
-
-  // Timestamp filters (used by Google Reader API ot/nt parameters).
-  // publishedOrFetchedAt is the denormalized COALESCE(publishedAt, fetchedAt).
-  if (params.publishedAfter) {
-    conditions.push(sql`${visibleEntries.publishedOrFetchedAt} >= ${params.publishedAfter}`);
-  }
-  if (params.publishedBefore) {
-    conditions.push(sql`${visibleEntries.publishedOrFetchedAt} <= ${params.publishedBefore}`);
-  }
-  // "Modified since" filter (Wallabag `since` delta sync). visibleEntries.updatedAt is
-  // GREATEST(entry.updated_at, user_entries.updated_at), so this captures new saves,
-  // content refetches, AND read/star state changes — the same value we return as the
-  // entry's updated_at, so the filter and the reported timestamp can't disagree.
-  //
-  // The GREATEST spans two tables so no single index covers it — but here (unlike
-  // the old sync.events, which #1105 rewrote into an index-driven UNION) it is only
-  // a RESIDUAL filter, not the sort key: the query still sorts by
-  // publishedOrFetchedAt (idx_user_entries_published_or_fetched) with LIMIT
-  // pushdown. The Wallabag caller also scopes to type='saved', so the scan is
-  // bounded to the user's read-it-later library, not the whole timeline. That keeps
-  // the acute #1105 problem (a mandatory full sort of the user's entire history)
-  // from applying, so this path deliberately keeps the simple residual filter.
-  if (params.updatedAfter) {
-    conditions.push(sql`${visibleEntries.updatedAt} >= ${params.updatedAfter}`);
-  }
 
   // Recently Read: exclude entries that were never explicitly read-state-changed.
   // This exclusion is specific to that view (sortBy=readChanged); the Wallabag
@@ -622,23 +609,7 @@ export async function listEntries(
   // resumes cleanly over unique rows.
   const queryResults = await db
     .select({
-      id: visibleEntries.id,
-      greaderItemId: visibleEntries.greaderItemId,
-      subscriptionGreaderStreamId: visibleEntries.subscriptionGreaderStreamId,
-      feedGreaderStreamId: feeds.greaderStreamId,
-      feedId: visibleEntries.feedId,
-      type: visibleEntries.type,
-      url: visibleEntries.url,
-      title: visibleEntries.title,
-      author: visibleEntries.author,
-      summary: visibleEntries.summary,
-      publishedAt: visibleEntries.publishedAt,
-      fetchedAt: visibleEntries.fetchedAt,
-      read: visibleEntries.read,
-      starred: visibleEntries.starred,
-      updatedAt: visibleEntries.updatedAt,
-      subscriptionId: visibleEntries.subscriptionId,
-      siteName: visibleEntries.siteName,
+      ...entryListSelectFields,
       feedTitle: feeds.title,
       readChangedAt: visibleEntries.readChangedAt,
       sortTs: sortTsInstant,
@@ -694,39 +665,16 @@ async function searchEntries(
   const rankColumn = sql<number>`ts_rank(${visibleEntries.searchVector}, ${searchQuery})`;
 
   // Apply subscription filters (subscriptionId, tagId, uncategorized)
-  const subscriptionFilter = await buildEntrySubscriptionFilter(
-    db,
-    {
-      subscriptionId: params.subscriptionId,
-      tagId: params.tagId,
-      uncategorized: params.uncategorized,
-    },
-    params.userId
-  );
-
-  if (subscriptionFilter.isEmpty) {
+  const subscriptionFilter = await buildEntrySubscriptionFilter(db, params, params.userId);
+  if (subscriptionFilter === null) {
     return { items: [], nextCursor: undefined };
   }
-
-  if (subscriptionFilter.subscriptionIdsCondition !== null) {
-    conditions.push(
-      inArray(visibleEntries.subscriptionId, subscriptionFilter.subscriptionIdsCondition)
-    );
+  if (subscriptionFilter) {
+    conditions.push(subscriptionFilter);
   }
 
-  // Apply entry filter conditions (unreadOnly, starredOnly, type, excludeTypes, showSpam)
+  // Apply entry filter conditions (read/starred/type/spam/timestamp filters)
   conditions.push(...buildEntryFilterConditions(params));
-
-  // Timestamp filters
-  if (params.publishedAfter) {
-    conditions.push(sql`${visibleEntries.publishedOrFetchedAt} >= ${params.publishedAfter}`);
-  }
-  if (params.publishedBefore) {
-    conditions.push(sql`${visibleEntries.publishedOrFetchedAt} <= ${params.publishedBefore}`);
-  }
-  if (params.updatedAfter) {
-    conditions.push(sql`${visibleEntries.updatedAt} >= ${params.updatedAfter}`);
-  }
 
   // Cursor for search results (based on rank)
   if (params.cursor) {
@@ -745,23 +693,7 @@ async function searchEntries(
   // DISTINCT ON dedup is needed and the (rank, id) cursor resumes cleanly.
   const rankedSubquery = db
     .select({
-      id: visibleEntries.id,
-      greaderItemId: visibleEntries.greaderItemId,
-      subscriptionGreaderStreamId: visibleEntries.subscriptionGreaderStreamId,
-      feedGreaderStreamId: feeds.greaderStreamId,
-      feedId: visibleEntries.feedId,
-      type: visibleEntries.type,
-      url: visibleEntries.url,
-      title: visibleEntries.title,
-      author: visibleEntries.author,
-      summary: visibleEntries.summary,
-      publishedAt: visibleEntries.publishedAt,
-      fetchedAt: visibleEntries.fetchedAt,
-      read: visibleEntries.read,
-      starred: visibleEntries.starred,
-      updatedAt: visibleEntries.updatedAt,
-      subscriptionId: visibleEntries.subscriptionId,
-      siteName: visibleEntries.siteName,
+      ...entryListSelectFields,
       // Alias to avoid colliding with visibleEntries.title (both are "title")
       // inside the subquery, which would make the outer reference ambiguous.
       feedTitle: sql<string | null>`${feeds.title}`.as("feed_title"),
@@ -774,27 +706,7 @@ async function searchEntries(
     .as("ranked");
 
   const queryResults = await db
-    .select({
-      id: rankedSubquery.id,
-      greaderItemId: rankedSubquery.greaderItemId,
-      subscriptionGreaderStreamId: rankedSubquery.subscriptionGreaderStreamId,
-      feedGreaderStreamId: rankedSubquery.feedGreaderStreamId,
-      feedId: rankedSubquery.feedId,
-      type: rankedSubquery.type,
-      url: rankedSubquery.url,
-      title: rankedSubquery.title,
-      author: rankedSubquery.author,
-      summary: rankedSubquery.summary,
-      publishedAt: rankedSubquery.publishedAt,
-      fetchedAt: rankedSubquery.fetchedAt,
-      read: rankedSubquery.read,
-      starred: rankedSubquery.starred,
-      updatedAt: rankedSubquery.updatedAt,
-      subscriptionId: rankedSubquery.subscriptionId,
-      siteName: rankedSubquery.siteName,
-      feedTitle: rankedSubquery.feedTitle,
-      rank: rankedSubquery.rank,
-    })
+    .select()
     .from(rankedSubquery)
     .orderBy(desc(rankedSubquery.rank), desc(rankedSubquery.id))
     .limit(limit + 1)
@@ -1537,24 +1449,12 @@ export async function countEntries(
   const conditions = [eq(visibleEntries.userId, userId)];
 
   // Apply subscription filters (subscriptionId, tagId, uncategorized)
-  const subscriptionFilter = await buildEntrySubscriptionFilter(
-    db,
-    {
-      subscriptionId: params.subscriptionId,
-      tagId: params.tagId,
-      uncategorized: params.uncategorized,
-    },
-    userId
-  );
-
-  if (subscriptionFilter.isEmpty) {
+  const subscriptionFilter = await buildEntrySubscriptionFilter(db, params, userId);
+  if (subscriptionFilter === null) {
     return { unread: 0 };
   }
-
-  if (subscriptionFilter.subscriptionIdsCondition !== null) {
-    conditions.push(
-      inArray(visibleEntries.subscriptionId, subscriptionFilter.subscriptionIdsCondition)
-    );
+  if (subscriptionFilter) {
+    conditions.push(subscriptionFilter);
   }
 
   // Apply entry filter conditions. showSpam is hard-coded false: unread counts
@@ -1607,31 +1507,15 @@ export async function countTotalEntries(
 ): Promise<number> {
   const conditions = [eq(visibleEntries.userId, userId)];
 
-  const subscriptionFilter = await buildEntrySubscriptionFilter(
-    db,
-    {
-      subscriptionId: params.subscriptionId,
-      tagId: params.tagId,
-      uncategorized: params.uncategorized,
-    },
-    userId
-  );
-
-  if (subscriptionFilter.isEmpty) {
+  const subscriptionFilter = await buildEntrySubscriptionFilter(db, params, userId);
+  if (subscriptionFilter === null) {
     return 0;
   }
-
-  if (subscriptionFilter.subscriptionIdsCondition !== null) {
-    conditions.push(
-      inArray(visibleEntries.subscriptionId, subscriptionFilter.subscriptionIdsCondition)
-    );
+  if (subscriptionFilter) {
+    conditions.push(subscriptionFilter);
   }
 
   conditions.push(...buildEntryFilterConditions(params));
-
-  if (params.updatedAfter) {
-    conditions.push(sql`${visibleEntries.updatedAt} >= ${params.updatedAfter}`);
-  }
 
   // One row per (user, entry), so count(*) is exact (see countEntries).
   const result = await db
