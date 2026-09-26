@@ -494,6 +494,9 @@ export async function createSubscription(
       // Subscription was already active — idempotent return (unread computed
       // below). The ON CONFLICT row lock keeps it active for this transaction.
       const [sub] = await selectActiveSubscription();
+      if (!sub) {
+        throw new Error(`Active subscription vanished after upsert conflict: ${feedId}`);
+      }
       return { kind: "alreadyActive", ...sub };
     }
 
