@@ -3,7 +3,7 @@
 
 /**
  * Loader for the native Markdown renderer. The .node artifact is produced by
- * `pnpm build:native` (see build.mjs); it is intentionally NOT committed.
+ * `pnpm build:native` (see ../build.mjs); it is intentionally NOT committed.
  *
  * Same resolution strategy as @lion-reader/sanitizer's loader (see the comment
  * there for why static relative resolution breaks under bundlers): __dirname
@@ -37,20 +37,11 @@ if (!binaryPath) {
 const requireNative = createRequire(binaryPath);
 const nativeBinding = requireNative(binaryPath);
 
-// Static, lexable re-exports. Node's ESM loader discovers a CommonJS module's
-// named exports via cjs-module-lexer, which only sees literal `exports.<name> =`
-// assignments — not the dynamic binding object above. Without these,
-// `import { renderMarkdown } from "@lion-reader/markdown"` fails to resolve
-// under the native ESM loader (e.g. the Playwright e2e harness).
+// Static re-exports: see the sanitizer loader for why they're listed by name.
 exports.renderMarkdown = nativeBinding.renderMarkdown;
 exports.renderMarkdownAsync = nativeBinding.renderMarkdownAsync;
 
-// Drift guard: every name re-exported above must resolve to a real symbol in
-// the binary. A re-export that comes out `undefined` means markdown.node has no
-// such export — a `#[napi]` export was renamed/removed, or the list has a typo.
-// Left unchecked, cjs-module-lexer still sees the name (so the import
-// "succeeds") and it surfaces as a silent `undefined` that crashes only when
-// the missing function is called. Fail loud at load instead. Runs on every import.
+// Drift guard: see the sanitizer loader.
 for (const key of Object.keys(exports)) {
   if (exports[key] === undefined) {
     throw new Error(

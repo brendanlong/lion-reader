@@ -377,7 +377,6 @@ dependencies = [
 name = "lion-reader-sanitizer-core"
 version = "1.0.0"
 dependencies = [
- "ego-tree",
  "getrandom",
  "html-escape",
  "html5ever",

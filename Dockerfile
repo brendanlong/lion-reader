@@ -70,9 +70,9 @@ RUN pinned="$(sed -n 's/^channel *= *"\([^"]*\)".*/\1/p' rust-toolchain.toml)" &
 # A separate stage keyed only on native/ sources: pure-TS deploys hit the layer
 # cache and skip the Rust toolchain install and cargo build entirely, and when
 # Rust does change, BuildKit runs this stage in parallel with the JS build.
-# The build.mjs scripts are plain `node` + `cargo` — no pnpm/node_modules needed.
+# native/build.mjs is plain `node` + `cargo` — no pnpm/node_modules needed.
 # Cache mounts keep crate downloads and incremental build artifacts across
-# builds (each build.mjs copies its artifact out of target/ to <name>.node).
+# builds (build.mjs copies each artifact out of target/ to <crate>.node).
 FROM rust-base AS native-builder
 
 # .dockerignore excludes native/*/target/ and native/*/*.node so local build
@@ -84,10 +84,9 @@ RUN --mount=type=cache,id=cargo-registry,target=/root/.cargo/registry \
     --mount=type=cache,id=cargo-target-readability,target=/app/native/readability/target \
     --mount=type=cache,id=cargo-target-feed-parser,target=/app/native/feed-parser/target \
     --mount=type=cache,id=cargo-target-markdown,target=/app/native/markdown/target \
-    node native/sanitizer/build.mjs && \
-    node native/readability/build.mjs && \
-    node native/feed-parser/build.mjs && \
-    node native/markdown/build.mjs
+    for crate in sanitizer readability feed-parser markdown; do \
+      node native/build.mjs "$crate" || exit 1; \
+    done
 
 # =============================================================================
 # Stage 4: Build the application

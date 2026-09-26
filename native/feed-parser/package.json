@@ -7,7 +7,7 @@
   "type": "commonjs",
   "types": "index.d.ts",
   "scripts": {
-    "build": "node build.mjs",
-    "build:debug": "node build.mjs --debug"
+    "build": "node ../build.mjs feed-parser",
+    "build:debug": "node ../build.mjs feed-parser --debug"
   }
 }

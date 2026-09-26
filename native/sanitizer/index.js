@@ -3,7 +3,7 @@
 
 /**
  * Loader for the native sanitizer. The .node artifact is produced by
- * `pnpm build:native` (see build.mjs); it is intentionally NOT committed.
+ * `pnpm build:native` (see ../build.mjs); it is intentionally NOT committed.
  *
  * The binary is resolved at runtime through `createRequire` with an
  * existence-checked candidate list rather than a static
