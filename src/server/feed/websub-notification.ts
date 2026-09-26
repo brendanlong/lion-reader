@@ -1,7 +1,6 @@
 /**
  * Shared processing for WebSub content notifications (the POST body a hub pushes
- * when a feed updates). Used by both the per-subscription callback route and the
- * legacy per-feed callback route so the ingest path stays in one place.
+ * when a feed updates).
  */
 
 import { eq } from "drizzle-orm";

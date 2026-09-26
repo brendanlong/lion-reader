@@ -9,8 +9,7 @@
  *
  * Including the subscription ID makes each callback resolve to exactly one
  * subscription row, so a feed with multiple subscription rows (e.g. after
- * switching hubs) is never ambiguous. The legacy per-feed route ([feedId]) still
- * serves subscriptions registered before this URL shape existed.
+ * switching hubs) is never ambiguous.
  */
 
 import { eq } from "drizzle-orm";
