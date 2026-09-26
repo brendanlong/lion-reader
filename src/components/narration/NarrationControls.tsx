@@ -22,7 +22,7 @@
 
 "use client";
 
-import type { UseNarrationReturn } from "./useNarrationTypes";
+import { getNarrationPhase, type UseNarrationReturn } from "./useNarrationTypes";
 import { useNarrationKeyboardShortcuts } from "@/lib/hooks/useNarrationKeyboardShortcuts";
 import { Button } from "@/components/ui/button";
 import {
@@ -72,32 +72,17 @@ export function NarrationControlsImpl({ narration }: NarrationControlsProps) {
     return null;
   }
 
-  // `currentNarrationParagraph`, not `currentParagraph`: the skip bounds and the
-  // readout below are all relative to `totalParagraphs`, which counts narration
-  // paragraphs, while `currentParagraph` is a DOM element index (see
-  // `UseNarrationState`).
-  const { status, currentNarrationParagraph, totalParagraphs } = state;
-  const isPlaying = status === "playing";
-  const isPaused = status === "paused";
-  // "loading" once we already have paragraphs means we're generating the next
-  // chunk mid-playback. The controls stay live here so the user can pause or
-  // skip while a chunk generates. Before any paragraphs exist we're still doing
-  // the initial narration generation, where there's nothing yet to control.
-  const isBufferingMidPlayback = status === "loading" && totalParagraphs > 0;
-  const isInitialLoading = (isLoading || status === "loading") && !isBufferingMidPlayback;
-  const isActive = isPlaying || isPaused || isBufferingMidPlayback;
-
-  /**
-   * Handle play/pause button click. Pausing works while a chunk is generating
-   * (buffering) as well as during normal playback.
-   */
-  const handlePlayPause = () => {
-    if (isPlaying || isBufferingMidPlayback) {
-      pause();
-    } else {
-      play();
-    }
-  };
+  const { currentNarrationParagraph, totalParagraphs } = state;
+  const {
+    isPlaying,
+    isPaused,
+    isBufferingMidPlayback,
+    isInitialLoading,
+    isActive,
+    shouldPause,
+    canSkipBackward,
+    canSkipForward,
+  } = getNarrationPhase(state, isLoading);
 
   // Determine the main button label and icon
   let mainButtonLabel: string;
@@ -130,7 +115,7 @@ export function NarrationControlsImpl({ narration }: NarrationControlsProps) {
           variant="ghost"
           size="sm"
           onClick={skipBackward}
-          disabled={currentNarrationParagraph === 0}
+          disabled={!canSkipBackward}
           aria-label="Previous paragraph"
           className="min-w-[36px] px-2"
         >
@@ -142,7 +127,7 @@ export function NarrationControlsImpl({ narration }: NarrationControlsProps) {
       <Button
         variant="secondary"
         size="sm"
-        onClick={handlePlayPause}
+        onClick={shouldPause ? pause : play}
         disabled={isInitialLoading}
         aria-label={mainButtonLabel}
       >
@@ -156,7 +141,7 @@ export function NarrationControlsImpl({ narration }: NarrationControlsProps) {
           variant="ghost"
           size="sm"
           onClick={skipForward}
-          disabled={currentNarrationParagraph >= totalParagraphs - 1}
+          disabled={!canSkipForward}
           aria-label="Next paragraph"
           className="min-w-[36px] px-2"
         >
@@ -166,7 +151,10 @@ export function NarrationControlsImpl({ narration }: NarrationControlsProps) {
 
       {/* Paragraph indicator - only show when active */}
       {isActive && totalParagraphs > 0 && (
-        <span className="ui-text-xs text-muted tabular-nums">
+        <span
+          className="ui-text-xs text-muted tabular-nums"
+          title="Click a paragraph to narrate from there"
+        >
           {currentNarrationParagraph + 1} of {totalParagraphs}
         </span>
       )}

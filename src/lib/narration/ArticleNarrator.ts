@@ -267,6 +267,14 @@ export class ArticleNarrator {
    * If at the first paragraph, restarts it.
    */
   skipBackward(): void {
+    this.skipTo(this.currentIndex - 1);
+  }
+
+  /**
+   * Starts speaking from the given paragraph (clamped to the article's bounds),
+   * whether currently playing or paused.
+   */
+  skipTo(paragraphIndex: number): void {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) {
       return;
     }
@@ -281,8 +289,7 @@ export class ArticleNarrator {
     speechSynthesis.cancel();
     this.utterance = null;
 
-    // Move to previous paragraph
-    this.currentIndex = Math.max(this.currentIndex - 1, 0);
+    this.currentIndex = clamp(paragraphIndex, 0, this.paragraphs.length - 1);
     this.speakCurrentParagraph();
 
     // Clear skip flag after a small delay to handle async onend events

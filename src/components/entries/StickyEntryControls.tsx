@@ -1,14 +1,15 @@
 /**
  * StickyEntryControls Component
  *
- * A sticky bottom bar that shows star and read/unread controls
- * when the main action buttons have scrolled out of view.
+ * A sticky bottom bar that shows star and read/unread controls (plus any
+ * host-supplied extras, e.g. active narration) when the main action buttons
+ * have scrolled out of view.
  * Uses IntersectionObserver to detect when the main buttons are hidden.
  */
 
 "use client";
 
-import { useState, useEffect, type RefObject } from "react";
+import { useState, useEffect, type ReactNode, type RefObject } from "react";
 import { StarIcon, StarFilledIcon, CircleIcon, CircleFilledIcon } from "@/components/ui/icons";
 import { useScrollContainer } from "@/components/layout/ScrollContainerContext";
 
@@ -23,6 +24,8 @@ interface StickyEntryControlsProps {
   onToggleStar: () => void;
   /** Callback to toggle read status */
   onToggleRead: () => void;
+  /** Rendered after the read/unread button; supplies its own divider */
+  extraControls?: ReactNode;
 }
 
 export function StickyEntryControls({
@@ -31,6 +34,7 @@ export function StickyEntryControls({
   read,
   onToggleStar,
   onToggleRead,
+  extraControls,
 }: StickyEntryControlsProps) {
   const [isVisible, setIsVisible] = useState(false);
   const scrollContainerRef = useScrollContainer();
@@ -84,6 +88,8 @@ export function StickyEntryControls({
         >
           {read ? <CircleIcon className="h-5 w-5" /> : <CircleFilledIcon className="h-5 w-5" />}
         </button>
+
+        {extraControls}
       </div>
     </div>
   );

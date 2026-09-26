@@ -14,6 +14,7 @@
 
 import { splitIntoSentences } from "./sentence-splitter";
 import { DEFAULT_SENTENCE_GAP_SECONDS, createSilence } from "./audio-buffer-utils";
+import { clamp } from "./constants";
 import type { SpeakOptions } from "./types";
 
 /**
@@ -319,6 +320,24 @@ export class StreamingAudioPlayer {
       }
       this.notifyPositionChange();
     }
+  }
+
+  /**
+   * Start playing from the beginning of the given paragraph (clamped to the
+   * loaded paragraphs), whether currently playing, buffering, or paused.
+   */
+  async skipTo(paragraphIndex: number): Promise<void> {
+    if (!this.config || this.paragraphs.length === 0) return;
+
+    this.cancelBuffering();
+    this.stopPlayback();
+    this.isPaused = false;
+    this.resumeByRestart = false;
+
+    await this.startPlaybackFrom({
+      paragraph: clamp(paragraphIndex, 0, this.paragraphs.length - 1),
+      sentence: 0,
+    });
   }
 
   /**

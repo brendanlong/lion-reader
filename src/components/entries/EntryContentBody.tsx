@@ -7,15 +7,17 @@
 
 "use client";
 
-import { useEffect, useRef, useMemo, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useMemo, type ReactNode } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Button } from "@/components/ui/button";
 import { SpinnerIcon, SparklesIcon, AlertIcon, ArrowLeftIcon } from "@/components/ui/icons";
 import { StarButton, ReadToggleButton } from "@/components/entries/EntryStateButtons";
 import { SummaryCard } from "@/components/summarization/SummaryCard";
 import { NarrationControls } from "@/components/narration";
+import { FloatingNarrationControls } from "@/components/narration/FloatingNarrationControls";
 import { NarrationHighlightStyles } from "@/components/narration/NarrationHighlightStyles";
 import { useNarration } from "@/components/narration/useNarration";
+import { getNarrationPhase } from "@/components/narration/useNarrationTypes";
 import { useNarrationHighlight } from "@/components/narration/useNarrationHighlight";
 import { processHtmlForHighlighting } from "@/lib/narration/client-paragraph-ids";
 import { selectDisplayedContent } from "@/lib/narration/select-content";
@@ -24,6 +26,9 @@ import { useEntryTextStyles } from "@/lib/appearance/AppearanceProvider";
 import { useSwipeGesture } from "@/lib/hooks/useSwipeGesture";
 import { EntryArticle } from "./EntryArticle";
 import { StickyEntryControls } from "./StickyEntryControls";
+
+/** Content whose clicks already do something, so they never seek narration */
+const NON_SEEK_TARGETS = "a, button, input, select, textarea, summary, label, video, audio, iframe";
 
 /**
  * Props for the EntryContentBody component.
@@ -223,6 +228,27 @@ export function EntryContentBody({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [narrationSettings.enabled]);
 
+  const showNarration = !hideNarration && narrationSettings.enabled;
+  const isNarrationActive = getNarrationPhase(narration.state, narration.isLoading).isActive;
+
+  // While narration is active, clicking a paragraph narrates from there. Clicks
+  // that mean something else — following a link, finishing a text selection —
+  // are left alone.
+  const { playFromElement } = narration;
+  const handleContentClick = useCallback(
+    (event: React.MouseEvent) => {
+      if (!showNarration || !isNarrationActive) return;
+      if (!(event.target instanceof Element)) return;
+      if (event.target.closest(NON_SEEK_TARGETS)) return;
+      if (window.getSelection()?.isCollapsed === false) return;
+
+      const paraId = event.target.closest("[data-para-id]")?.getAttribute("data-para-id");
+      const elementIndex = paraId ? Number(paraId.replace("para-", "")) : NaN;
+      if (Number.isInteger(elementIndex)) playFromElement(elementIndex);
+    },
+    [showNarration, isNarrationActive, playFromElement]
+  );
+
   // Get text appearance settings
   const { className: textSizeClass, style: textStyle } = useEntryTextStyles();
 
@@ -344,6 +370,7 @@ export function EntryContentBody({
       unsubscribeUrl={unsubscribeUrl}
       isContentLoading={isContentLoading}
       contentRef={contentRef}
+      onContentClick={handleContentClick}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
       onTouchCancel={handleTouchCancel}
@@ -412,9 +439,7 @@ export function EntryContentBody({
           )}
 
           {/* Narration controls - pass narration state for controlled mode */}
-          {!hideNarration && narrationSettings.enabled && (
-            <NarrationControls narration={narration} />
-          )}
+          {showNarration && <NarrationControls narration={narration} />}
 
           {/* Summarize button */}
           {isSummarizationAvailable && onSummarize && (
@@ -463,10 +488,11 @@ export function EntryContentBody({
           )}
 
           {/* Dynamic highlight styles - CSS-based approach instead of DOM manipulation */}
-          {!hideNarration && narrationSettings.enabled && shouldProcessForHighlighting && (
+          {showNarration && shouldProcessForHighlighting && (
             <NarrationHighlightStyles
               highlightedParagraphIds={highlightedParagraphIds}
               enabled={narrationSettings.highlightEnabled}
+              seekable={isNarrationActive}
             />
           )}
 
@@ -481,6 +507,9 @@ export function EntryContentBody({
           read={read}
           onToggleStar={onToggleStar}
           onToggleRead={onToggleRead}
+          extraControls={
+            showNarration ? <FloatingNarrationControls narration={narration} /> : undefined
+          }
         />
       }
     />

@@ -30,6 +30,8 @@ interface NarrationHighlightStylesProps {
   highlightedParagraphIds: Set<number>;
   /** Whether highlighting is enabled in settings */
   enabled: boolean;
+  /** Whether clicking a paragraph narrates from it, so paragraphs should look clickable */
+  seekable?: boolean;
 }
 
 /**
@@ -106,6 +108,8 @@ ${scoped(".epaper", imageSelectors)} {
 `;
 }
 
+const SEEKABLE_CSS = `[data-para-id] { cursor: pointer; }`;
+
 /**
  * Component that injects dynamic CSS for narration highlighting.
  *
@@ -116,13 +120,12 @@ ${scoped(".epaper", imageSelectors)} {
 export function NarrationHighlightStyles({
   highlightedParagraphIds,
   enabled,
+  seekable = false,
 }: NarrationHighlightStylesProps) {
   const css = useMemo(() => {
-    if (!enabled || highlightedParagraphIds.size === 0) {
-      return "";
-    }
-    return generateHighlightCSS(highlightedParagraphIds);
-  }, [highlightedParagraphIds, enabled]);
+    const highlight = enabled ? generateHighlightCSS(highlightedParagraphIds) : "";
+    return seekable ? `${highlight}\n${SEEKABLE_CSS}` : highlight;
+  }, [highlightedParagraphIds, enabled, seekable]);
 
   // Don't render anything if there's no CSS to inject
   if (!css) {

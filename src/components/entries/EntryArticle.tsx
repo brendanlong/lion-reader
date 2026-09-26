@@ -60,6 +60,8 @@ export interface EntryArticleProps {
   beforeContent?: ReactNode;
   /** Content inserted after the article content (e.g., CTA buttons in demo) */
   afterContent?: ReactNode;
+  /** Click handler for the rendered content (e.g. narrating from a paragraph) */
+  onContentClick?: React.MouseEventHandler;
   /** Sticky controls that appear when the main action buttons scroll out of view */
   stickyControls?: ReactNode;
   /** Touch event handlers for swipe gestures */
@@ -89,6 +91,7 @@ export function EntryArticle({
   beforeContent,
   afterContent,
   stickyControls,
+  onContentClick,
   onTouchStart,
   onTouchEnd,
   onTouchCancel,
@@ -168,6 +171,7 @@ export function EntryArticle({
           sanitizedContent={contentHtml}
           fallbackContent={fallbackContent}
           contentRef={contentRef}
+          onClick={onContentClick}
           textSizeClass={textSizeClass}
           textStyle={textStyle ?? {}}
         />

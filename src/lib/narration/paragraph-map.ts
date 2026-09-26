@@ -96,3 +96,17 @@ export function buildAlignedNarration(elements: NarrationElement[]): {
     paragraphMap,
   };
 }
+
+/**
+ * The first narration paragraph at or after DOM element `elementIndex`, so
+ * choosing an element that narrates as nothing (an empty or decorative block)
+ * starts at the next one that does. Null when nothing after it is narrated.
+ *
+ * Relies on `buildAlignedNarration` emitting entries in element order.
+ */
+export function narrationParagraphForElement(
+  paragraphMap: ParagraphMapEntry[],
+  elementIndex: number
+): number | null {
+  return paragraphMap.find((entry) => entry.o >= elementIndex)?.n ?? null;
+}

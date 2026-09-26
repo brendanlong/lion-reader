@@ -12,6 +12,7 @@
 import { describe, it, expect } from "vitest";
 import {
   buildAlignedNarration,
+  narrationParagraphForElement,
   splitNarrationParagraphs,
   type NarrationElement,
 } from "../../src/lib/narration/paragraph-map";
@@ -118,5 +119,26 @@ describe("buildAlignedNarration", () => {
     // Every segment traces back to the element it came from.
     expect(paragraphMap.map((e) => e.o)).toEqual([0, 0, 2, 3, 3, 3, 5]);
     expect(segments).toEqual(["a", "b", "c", "d", "e", "f", "g"]);
+  });
+});
+
+describe("narrationParagraphForElement", () => {
+  // Elements 1 and 4 narrate as nothing; 0 and 3 narrate as several paragraphs.
+  const paragraphMap = [0, 0, 2, 3, 3, 3, 5].map((o, n) => ({ n, o }));
+
+  it("returns the first narration paragraph of an element", () => {
+    expect(narrationParagraphForElement(paragraphMap, 0)).toBe(0);
+    expect(narrationParagraphForElement(paragraphMap, 2)).toBe(2);
+    expect(narrationParagraphForElement(paragraphMap, 3)).toBe(3);
+    expect(narrationParagraphForElement(paragraphMap, 5)).toBe(6);
+  });
+
+  it("starts at the next narrated element for a silent one", () => {
+    expect(narrationParagraphForElement(paragraphMap, 1)).toBe(2);
+    expect(narrationParagraphForElement(paragraphMap, 4)).toBe(6);
+  });
+
+  it("returns null past the last narrated element", () => {
+    expect(narrationParagraphForElement(paragraphMap, 6)).toBeNull();
   });
 });
