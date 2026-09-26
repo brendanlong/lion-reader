@@ -19,30 +19,18 @@ import {
 } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
-import type { Context } from "../../src/server/trpc/context";
 import {
   createAuthContext,
   createTestEntry,
   createTestFeed,
   createTestSubscription,
   createTestUser,
+  createUnauthContext,
 } from "./helpers";
 
 // ============================================================================
 // Test Helpers
 // ============================================================================
-
-function createUnauthContext(): Context {
-  return {
-    db,
-    session: null,
-    apiToken: null,
-    authType: null,
-    scopes: [],
-    sessionToken: null,
-    headers: new Headers(),
-  };
-}
 
 /**
  * Links a tag to a subscription.

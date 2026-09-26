@@ -272,3 +272,19 @@ export async function createAuthContext(userId: string): Promise<Context> {
     headers: new Headers(),
   };
 }
+
+/**
+ * Builds a tRPC context with no session or API token. `headers` lets a test
+ * present credentials that aren't a session, e.g. the admin Bearer secret.
+ */
+export function createUnauthContext(headers: Headers = new Headers()): Context {
+  return {
+    db,
+    session: null,
+    apiToken: null,
+    authType: null,
+    scopes: [],
+    sessionToken: null,
+    headers,
+  };
+}

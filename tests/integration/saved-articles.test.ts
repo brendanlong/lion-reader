@@ -20,30 +20,17 @@ import { db } from "../../src/server/db";
 import { users, entries, userEntries, feeds } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
-import type { Context } from "../../src/server/trpc/context";
 import {
   saveArticle,
   savePlaceholderArticle,
   savedArticleExistsByUrl,
 } from "../../src/server/services/saved";
 import { markEntriesRead } from "../../src/server/services/entries";
-import { createAuthContext, createTestUser } from "./helpers";
+import { createAuthContext, createTestUser, createUnauthContext } from "./helpers";
 
 // ============================================================================
 // Test Helpers
 // ============================================================================
-
-function createUnauthContext(): Context {
-  return {
-    db,
-    session: null,
-    apiToken: null,
-    authType: null,
-    scopes: [],
-    sessionToken: null,
-    headers: new Headers(),
-  };
-}
 
 /**
  * Creates a test saved article directly in the database.
