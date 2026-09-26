@@ -260,9 +260,9 @@ function getWebsubCallbackBaseUrl(): string | null {
  * Generates a WebSub callback URL for a specific feed.
  *
  * The subscription ID is part of the path so a hub's verification/notification
- * callbacks map to exactly one subscription row. Without it (the old per-feed
- * URL), a feed that switched hubs — leaving an old and a new subscription row —
- * produced callbacks that were ambiguous by feed alone.
+ * callbacks map to exactly one subscription row. Without it, a feed that
+ * switches hubs — leaving an old and a new subscription row — would produce
+ * callbacks that are ambiguous by feed alone.
  *
  * @param feedId - The feed ID
  * @param subscriptionId - The WebSub subscription ID
@@ -663,8 +663,8 @@ export async function handleVerificationChallenge(
  *
  * Per W3C WebSub spec Section 5.3, we only confirm unsubscribes that we
  * requested (tracked via unsubscribe_requested_at). Unsubscribe verifications
- * we never requested are rejected: the callback URL (feedId) and topic URL are
- * both discoverable, so confirming unrequested unsubscribes would let anyone
+ * we never requested are rejected: the callback URL and topic URL are both
+ * discoverable, so confirming unrequested unsubscribes would let anyone
  * silently downgrade a feed from push to backup polling. A hub that genuinely
  * drops us doesn't send a verification — it just stops delivering, and the
  * lease-renewal/polling machinery recovers from that.
