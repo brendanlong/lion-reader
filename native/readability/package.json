@@ -7,7 +7,7 @@
   "type": "commonjs",
   "types": "index.d.ts",
   "scripts": {
-    "build": "node build.mjs",
-    "build:debug": "node build.mjs --debug"
+    "build": "node ../build.mjs readability",
+    "build:debug": "node ../build.mjs readability --debug"
   }
 }
