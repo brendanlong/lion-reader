@@ -306,12 +306,10 @@ describe("Tags API", () => {
       const userId1 = await createTestUser();
       const userId2 = await createTestUser({ emailPrefix: "other" });
 
-      const ctx1 = await createAuthContext(userId1);
-      const caller1 = createCaller(ctx1);
+      const caller1 = createCaller(await createAuthContext(userId1));
       await caller1.tags.create({ name: "Tech" });
 
-      const ctx2 = await createAuthContext(userId2);
-      const caller2 = createCaller(ctx2);
+      const caller2 = createCaller(await createAuthContext(userId2));
       const result = await caller2.tags.create({ name: "Tech" });
 
       expect(result.tag.name).toBe("Tech");

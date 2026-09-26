@@ -1014,8 +1014,7 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       await createTestSubscription(user2Id, feed2Id);
 
       // User 1 searches for "Topic"
-      const ctx1 = await createAuthContext(user1Id);
-      const caller1 = createCaller(ctx1);
+      const caller1 = createCaller(await createAuthContext(user1Id));
       const result1 = await caller1.subscriptions.list({ query: "Topic" });
 
       // Should only see their own subscription

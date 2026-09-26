@@ -144,8 +144,7 @@ describe("Saved Articles API", () => {
       await createTestSavedArticle(userId1, { title: "User 1 Article 2" });
       await createTestSavedArticle(userId2, { title: "User 2 Article" });
 
-      const ctx1 = await createAuthContext(userId1);
-      const caller1 = createCaller(ctx1);
+      const caller1 = createCaller(await createAuthContext(userId1));
       const result1 = await caller1.entries.list({ type: "saved" });
 
       expect(result1.items).toHaveLength(2);
@@ -154,8 +153,7 @@ describe("Saved Articles API", () => {
         "User 1 Article 2",
       ]);
 
-      const ctx2 = await createAuthContext(userId2);
-      const caller2 = createCaller(ctx2);
+      const caller2 = createCaller(await createAuthContext(userId2));
       const result2 = await caller2.entries.list({ type: "saved" });
 
       expect(result2.items).toHaveLength(1);

@@ -277,14 +277,12 @@ describe("OPML Import", () => {
       const userId2 = await createTestUser({ emailPrefix: "other" });
 
       // User 1 creates an import
-      const ctx1 = await createAuthContext(userId1);
-      const caller1 = createCaller(ctx1);
+      const caller1 = createCaller(await createAuthContext(userId1));
       const opml = generateOpml(3);
       const importResult = await caller1.subscriptions.import({ opml });
 
       // User 2 tries to access it
-      const ctx2 = await createAuthContext(userId2);
-      const caller2 = createCaller(ctx2);
+      const caller2 = createCaller(await createAuthContext(userId2));
 
       await expect(caller2.imports.get({ id: importResult.importId })).rejects.toThrow(
         "Import not found"

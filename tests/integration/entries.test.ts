@@ -459,8 +459,7 @@ describe("Entries", () => {
       await createUserEntry(user1Id, entryId);
 
       // User 2 tries to access User 1's entry
-      const ctx2 = await createAuthContext(user2Id);
-      const caller2 = createCaller(ctx2);
+      const caller2 = createCaller(await createAuthContext(user2Id));
 
       await expect(caller2.entries.get({ id: entryId })).rejects.toThrow();
     });
@@ -779,8 +778,7 @@ describe("Entries", () => {
       await createUserEntry(user1Id, entryId);
 
       // User 2 tries to star User 1's entry
-      const ctx2 = await createAuthContext(user2Id);
-      const caller2 = createCaller(ctx2);
+      const caller2 = createCaller(await createAuthContext(user2Id));
 
       await expect(caller2.entries.setStarred({ id: entryId, starred: true })).rejects.toThrow();
     });
