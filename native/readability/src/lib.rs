@@ -14,7 +14,6 @@ use napi::bindgen_prelude::AsyncTask;
 use napi::{Env, Error, Result, Status, Task};
 
 #[napi(object)]
-#[derive(Clone)]
 pub struct ExtractOptions {
     /// Keep all classes on extracted elements (Mozilla `keepClasses`).
     pub keep_classes: Option<bool>,

@@ -10,7 +10,7 @@
 #[macro_use]
 extern crate napi_derive;
 
-use napi::bindgen_prelude::AsyncTask;
+use napi::bindgen_prelude::{AsyncTask, ToNapiValue, TypeName};
 use napi::{Env, Error, Result, Status, Task};
 
 use lion_reader_feed_parser_core as core;
@@ -184,25 +184,18 @@ pub fn parse_opml(content: String) -> Result<RawOpmlResult> {
     run_parse_opml(&content)
 }
 
-pub enum FeedFormat {
-    Rss,
-    Atom,
-}
-
-pub struct ParseFeedJob {
+/// Runs one of the `run_parse_*` functions on the libuv thread pool.
+pub struct ParseJob<T> {
     content: String,
-    format: FeedFormat,
+    parse: fn(&str) -> Result<T>,
 }
 
-impl Task for ParseFeedJob {
-    type Output = RawParsedFeed;
-    type JsValue = RawParsedFeed;
+impl<T: ToNapiValue + TypeName + Send + 'static> Task for ParseJob<T> {
+    type Output = T;
+    type JsValue = T;
 
     fn compute(&mut self) -> Result<Self::Output> {
-        match self.format {
-            FeedFormat::Rss => run_parse_rss(&self.content),
-            FeedFormat::Atom => run_parse_atom(&self.content),
-        }
+        (self.parse)(&self.content)
     }
 
     fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
@@ -213,43 +206,29 @@ impl Task for ParseFeedJob {
 /// Async form of `parseRss`: runs on the libuv thread pool so large feeds
 /// never block the event loop.
 #[napi(ts_return_type = "Promise<RawParsedFeed>")]
-pub fn parse_rss_async(content: String) -> AsyncTask<ParseFeedJob> {
-    AsyncTask::new(ParseFeedJob {
+pub fn parse_rss_async(content: String) -> AsyncTask<ParseJob<RawParsedFeed>> {
+    AsyncTask::new(ParseJob {
         content,
-        format: FeedFormat::Rss,
+        parse: run_parse_rss,
     })
 }
 
 /// Async form of `parseAtom`: runs on the libuv thread pool so large feeds
 /// never block the event loop.
 #[napi(ts_return_type = "Promise<RawParsedFeed>")]
-pub fn parse_atom_async(content: String) -> AsyncTask<ParseFeedJob> {
-    AsyncTask::new(ParseFeedJob {
+pub fn parse_atom_async(content: String) -> AsyncTask<ParseJob<RawParsedFeed>> {
+    AsyncTask::new(ParseJob {
         content,
-        format: FeedFormat::Atom,
+        parse: run_parse_atom,
     })
-}
-
-pub struct ParseOpmlJob {
-    content: String,
-}
-
-impl Task for ParseOpmlJob {
-    type Output = RawOpmlResult;
-    type JsValue = RawOpmlResult;
-
-    fn compute(&mut self) -> Result<Self::Output> {
-        run_parse_opml(&self.content)
-    }
-
-    fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
-        Ok(output)
-    }
 }
 
 /// Async form of `parseOpml`: runs on the libuv thread pool so large OPML
 /// files never block the event loop.
 #[napi(ts_return_type = "Promise<RawOpmlResult>")]
-pub fn parse_opml_async(content: String) -> AsyncTask<ParseOpmlJob> {
-    AsyncTask::new(ParseOpmlJob { content })
+pub fn parse_opml_async(content: String) -> AsyncTask<ParseJob<RawOpmlResult>> {
+    AsyncTask::new(ParseJob {
+        content,
+        parse: run_parse_opml,
+    })
 }
