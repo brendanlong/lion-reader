@@ -20,9 +20,10 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import type { Mock } from "vitest";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { KeyboardShortcutsProvider } from "@/components/keyboard/KeyboardShortcutsProvider";
 import { NarrationControlsImpl } from "@/components/narration/NarrationControls";
+import { FloatingNarrationControls } from "@/components/narration/FloatingNarrationControls";
 import { useNarration } from "@/components/narration/useNarration";
 import { htmlToClientNarration } from "@/lib/narration/client-paragraph-ids";
 import { renderWithTrpc, stubMemoryLocalStorage } from "../../../utils/component-test-helpers";
@@ -236,5 +237,104 @@ describe("NarrationControls content variant switching", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Listen" })).toBeInTheDocument());
     expect(speech.cancel.mock.calls.length).toBeGreaterThan(cancelsBefore);
     expect(speech.speak).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("playFromElement", () => {
+  function SeekHarness({ content, elementIndex }: { content: string; elementIndex: number }) {
+    const narration = useNarration({
+      id: "entry-1",
+      title: "Test article",
+      feedTitle: "Test feed",
+      content,
+    });
+    return (
+      <>
+        <NarrationControlsImpl narration={narration} />
+        <button onClick={() => narration.playFromElement(elementIndex)}>Seek</button>
+      </>
+    );
+  }
+
+  function renderSeekHarness(elementIndex: number) {
+    return renderWithTrpc(<SeekHarness content={SKEWED_HTML} elementIndex={elementIndex} />, {
+      wrapper: (children) => <KeyboardShortcutsProvider>{children}</KeyboardShortcutsProvider>,
+    });
+  }
+
+  const lastSpoken = () => (speech.speak.mock.lastCall?.[0] as { text: string }).text;
+
+  it("speaks from the first narration paragraph of the chosen element", async () => {
+    renderSeekHarness(3);
+    await startNarration();
+
+    fireEvent.click(screen.getByRole("button", { name: "Seek" }));
+
+    await waitFor(() => expect(screen.getByText("4 of 7")).toBeInTheDocument());
+    expect(lastSpoken()).toBe("Delta");
+  });
+
+  it("skips ahead to the next narrated element when the chosen one is silent", async () => {
+    renderSeekHarness(1);
+    await startNarration();
+
+    fireEvent.click(screen.getByRole("button", { name: "Seek" }));
+
+    await waitFor(() => expect(screen.getByText("3 of 7")).toBeInTheDocument());
+    expect(lastSpoken()).toBe("Gamma");
+  });
+
+  it("resumes playback when seeking while paused", async () => {
+    renderSeekHarness(5);
+    await startNarration();
+    fireEvent.click(screen.getByRole("button", { name: "Pause" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Resume" })).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "Seek" }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument());
+    expect(screen.getByText("7 of 7")).toBeInTheDocument();
+    expect(lastSpoken()).toBe("Eta");
+    // The engine was paused; a new utterance would queue silently behind it.
+    expect(speech.resume).toHaveBeenCalled();
+  });
+});
+
+describe("FloatingNarrationControls", () => {
+  function FloatingHarness() {
+    const narration = useNarration({
+      id: "entry-1",
+      title: "Test article",
+      feedTitle: "Test feed",
+      content: SKEWED_HTML,
+    });
+    return (
+      <>
+        <NarrationControlsImpl narration={narration} />
+        <div data-testid="floating">
+          <FloatingNarrationControls narration={narration} />
+        </div>
+      </>
+    );
+  }
+
+  it("appears only once narration is active and drives the same engine", async () => {
+    renderWithTrpc(<FloatingHarness />, {
+      wrapper: (children) => <KeyboardShortcutsProvider>{children}</KeyboardShortcutsProvider>,
+    });
+    const floating = screen.getByTestId("floating");
+    expect(floating).toBeEmptyDOMElement();
+
+    fireEvent.click(screen.getByRole("button", { name: "Listen" }));
+    await waitFor(() => expect(within(floating).getByText("1/7")).toBeInTheDocument());
+
+    fireEvent.click(within(floating).getByRole("button", { name: "Next paragraph" }));
+    await waitFor(() => expect(within(floating).getByText("2/7")).toBeInTheDocument());
+    expect(screen.getByText("2 of 7")).toBeInTheDocument();
+
+    fireEvent.click(within(floating).getByRole("button", { name: "Pause" }));
+    await waitFor(() =>
+      expect(within(floating).getByRole("button", { name: "Resume" })).toBeInTheDocument()
+    );
   });
 });

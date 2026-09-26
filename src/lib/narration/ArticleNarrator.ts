@@ -84,6 +84,7 @@ export class ArticleNarrator {
    * after we've already set status back to "playing".
    */
   private isSkipping = false;
+  private skipGuardTimer: ReturnType<typeof setTimeout> | null = null;
 
   /**
    * Cached Firefox detection result.
@@ -241,11 +242,7 @@ export class ArticleNarrator {
       return;
     }
 
-    // Set skip flag to prevent handleUtteranceEnd from auto-advancing
-    // This is needed because cancel() may fire onend asynchronously
-    this.isSkipping = true;
-    speechSynthesis.cancel();
-    this.utterance = null;
+    this.cancelForSkip();
 
     // Move to next paragraph, but don't exceed bounds
     if (this.currentIndex < this.paragraphs.length - 1) {
@@ -255,11 +252,6 @@ export class ArticleNarrator {
       // At the last paragraph, stop
       this.setStatus("idle");
     }
-
-    // Clear skip flag after a small delay to handle async onend events
-    setTimeout(() => {
-      this.isSkipping = false;
-    }, 50);
   }
 
   /**
@@ -267,6 +259,14 @@ export class ArticleNarrator {
    * If at the first paragraph, restarts it.
    */
   skipBackward(): void {
+    this.skipTo(this.currentIndex - 1);
+  }
+
+  /**
+   * Starts speaking from the given paragraph (clamped to the article's bounds),
+   * whether currently playing or paused.
+   */
+  skipTo(paragraphIndex: number): void {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) {
       return;
     }
@@ -275,20 +275,10 @@ export class ArticleNarrator {
       return;
     }
 
-    // Set skip flag to prevent handleUtteranceEnd from auto-advancing
-    // This is needed because cancel() may fire onend asynchronously
-    this.isSkipping = true;
-    speechSynthesis.cancel();
-    this.utterance = null;
+    this.cancelForSkip();
 
-    // Move to previous paragraph
-    this.currentIndex = Math.max(this.currentIndex - 1, 0);
+    this.currentIndex = clamp(paragraphIndex, 0, this.paragraphs.length - 1);
     this.speakCurrentParagraph();
-
-    // Clear skip flag after a small delay to handle async onend events
-    setTimeout(() => {
-      this.isSkipping = false;
-    }, 50);
   }
 
   /**
@@ -346,6 +336,29 @@ export class ArticleNarrator {
    */
   setPitch(pitch: number): void {
     this.pitch = clamp(pitch, MIN_PITCH, MAX_PITCH);
+  }
+
+  /**
+   * Cancels the current utterance so a skip can speak another paragraph.
+   */
+  private cancelForSkip(): void {
+    // Hold off handleUtteranceEnd's auto-advance: cancel() may fire onend
+    // asynchronously. Restart the window on every skip, or an earlier skip's
+    // timer can clear it while a later skip's stale onend is still pending.
+    this.isSkipping = true;
+    if (this.skipGuardTimer) clearTimeout(this.skipGuardTimer);
+    this.skipGuardTimer = setTimeout(() => {
+      this.isSkipping = false;
+      this.skipGuardTimer = null;
+    }, 50);
+
+    // Engines can stay paused across cancel(), silently queueing the next
+    // utterance (Firefox never paused the engine; see pause()).
+    if (this.status === "paused" && !this.isFirefoxBrowser) {
+      speechSynthesis.resume();
+    }
+    speechSynthesis.cancel();
+    this.utterance = null;
   }
 
   /**

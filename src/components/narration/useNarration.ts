@@ -34,6 +34,7 @@ import {
   htmlToClientNarration,
   type ParagraphMapEntry,
 } from "@/lib/narration/client-paragraph-ids";
+import { narrationParagraphForElement } from "@/lib/narration/paragraph-map";
 import {
   StreamingAudioPlayer,
   type PlaybackPosition,
@@ -485,6 +486,28 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     narratorRef.current.skipBackward();
   }, [isSupported, usePiper]);
 
+  const playFromElement = useCallback(
+    async (elementIndex: number) => {
+      if (!isSupported) return;
+
+      // No map means indices were never translated (see the state callbacks
+      // above), so the element index already is the narration index.
+      const paragraphIndex =
+        paragraphMapRef.current.length === 0
+          ? elementIndex
+          : narrationParagraphForElement(paragraphMapRef.current, elementIndex);
+      if (paragraphIndex === null) return;
+
+      if (usePiper) {
+        await streamingPlayerRef.current?.skipTo(paragraphIndex);
+        return;
+      }
+
+      narratorRef.current?.skipTo(paragraphIndex);
+    },
+    [isSupported, usePiper]
+  );
+
   /**
    * Stop playback and reset to beginning.
    */
@@ -574,6 +597,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     pause,
     skipForward,
     skipBackward,
+    playFromElement,
     stop,
     isSupported,
     processedHtml,

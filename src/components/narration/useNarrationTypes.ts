@@ -76,6 +76,11 @@ export interface UseNarrationReturn {
   skipForward: () => void;
   /** Skip to the previous paragraph */
   skipBackward: () => void;
+  /**
+   * Play from the narration paragraph for DOM element `para-{elementIndex}`
+   * (or the next narrated one after it)
+   */
+  playFromElement: (elementIndex: number) => void;
   /** Stop playback and reset to beginning */
   stop: () => void;
   /** Whether narration is supported in this browser */
@@ -112,6 +117,37 @@ export const DEFAULT_NARRATION_STATE: UseNarrationState = {
  */
 export function splitIntoParagraphs(text: string): string[] {
   return splitNarrationParagraphs(text);
+}
+
+/**
+ * Which controls the narration UI should offer for the current state.
+ *
+ * Positions compare `currentNarrationParagraph`, not `currentParagraph`: skip
+ * bounds and the "X of Y" readout are relative to `totalParagraphs`, which
+ * counts narration paragraphs (see `UseNarrationState`).
+ */
+export function getNarrationPhase(state: UseNarrationState, isLoading: boolean) {
+  const { status, currentNarrationParagraph, totalParagraphs } = state;
+  const isPlaying = status === "playing";
+  const isPaused = status === "paused";
+  // "loading" once we already have paragraphs means we're generating the next
+  // chunk mid-playback. The controls stay live here so the user can pause or
+  // skip while a chunk generates. Before any paragraphs exist we're still doing
+  // the initial narration generation, where there's nothing yet to control.
+  const isBufferingMidPlayback = status === "loading" && totalParagraphs > 0;
+  const isInitialLoading = (isLoading || status === "loading") && !isBufferingMidPlayback;
+  const isActive = isPlaying || isPaused || isBufferingMidPlayback;
+  return {
+    isPlaying,
+    isPaused,
+    isBufferingMidPlayback,
+    isInitialLoading,
+    isActive,
+    /** Whether the play/pause toggle should pause (it pauses while buffering too) */
+    shouldPause: isPlaying || isBufferingMidPlayback,
+    canSkipBackward: currentNarrationParagraph > 0,
+    canSkipForward: currentNarrationParagraph < totalParagraphs - 1,
+  };
 }
 
 /**

@@ -18,6 +18,7 @@ interface EntryContentRendererProps {
   fallbackContent: string | null;
   /** Optional ref to the content container (for narration highlighting) */
   contentRef?: React.RefObject<HTMLDivElement | null>;
+  onClick?: React.MouseEventHandler;
   /** CSS class for text size */
   textSizeClass: string;
   /** Inline style for text appearance */
@@ -36,6 +37,7 @@ export const EntryContentRenderer = React.memo(function EntryContentRenderer({
   sanitizedContent,
   fallbackContent,
   contentRef,
+  onClick,
   textSizeClass,
   textStyle,
 }: EntryContentRendererProps) {
@@ -58,6 +60,7 @@ export const EntryContentRenderer = React.memo(function EntryContentRenderer({
         ref={setContentRef}
         className={`${textSizeClass} reader-prose prose-headings:font-semibold prose-headings:text-zinc-900 dark:prose-headings:text-zinc-100 prose-a:text-accent prose-a:underline-offset-2 prose-img:rounded-lg prose-pre:overflow-x-auto prose-pre:whitespace-pre-wrap prose-pre:break-words prose-pre:bg-zinc-100 dark:prose-pre:bg-zinc-800 prose-code:text-zinc-800 dark:prose-code:text-zinc-200 prose-code:before:content-none prose-code:after:content-none prose-blockquote:border-l-zinc-300 dark:prose-blockquote:border-l-zinc-600 prose-blockquote:text-zinc-600 dark:prose-blockquote:text-zinc-400 max-w-none`}
         style={textStyle}
+        onClick={onClick}
         dangerouslySetInnerHTML={{ __html: sanitizedContent }}
       />
     );
