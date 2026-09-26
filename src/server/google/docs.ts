@@ -22,7 +22,6 @@
  */
 
 import { z } from "zod";
-import { GoogleAuth } from "google-auth-library";
 import { logger } from "@/lib/logger";
 import { googleConfig } from "@/server/config/env";
 import { fetchAndUploadImage, isStorageAvailable } from "@/server/storage/s3";
@@ -31,8 +30,9 @@ import { fetchWithSsrfProtection } from "@/server/http/ssrf";
 import { escapeHtml } from "@/server/http/html";
 import { stripTitleHeader } from "@/server/html/strip-title-header";
 import {
+  fetchDocxFileWithToken,
   fetchPublicDocxFile,
-  fetchPrivateDocxFile,
+  getServiceAccountAccessToken,
   GOOGLE_DRIVE_SCOPE,
   type GoogleDriveContent,
 } from "./drive";
@@ -58,80 +58,6 @@ const API_TIMEOUT_MS = 15000;
  * OAuth2 scope required for reading Google Docs.
  */
 const GOOGLE_DOCS_SCOPE = "https://www.googleapis.com/auth/documents.readonly";
-
-// ============================================================================
-// Service Account Authentication
-// ============================================================================
-
-/**
- * Cached GoogleAuth client instance.
- * Initialized lazily on first use.
- */
-let googleAuthClient: GoogleAuth | null = null;
-
-/**
- * Parses the base64-encoded service account JSON from environment.
- */
-function parseServiceAccountCredentials(): Record<string, unknown> | null {
-  if (!googleConfig.serviceAccountJson) {
-    return null;
-  }
-
-  try {
-    const decoded = Buffer.from(googleConfig.serviceAccountJson, "base64").toString("utf-8");
-    return JSON.parse(decoded) as Record<string, unknown>;
-  } catch (error) {
-    logger.error(
-      "Failed to parse GOOGLE_SERVICE_ACCOUNT_JSON - ensure it is valid base64-encoded JSON",
-      {
-        error: error instanceof Error ? error.message : String(error),
-      }
-    );
-    return null;
-  }
-}
-
-/**
- * Gets or creates the GoogleAuth client for service account authentication.
- */
-function getGoogleAuthClient(): GoogleAuth | null {
-  if (googleAuthClient) {
-    return googleAuthClient;
-  }
-
-  const credentials = parseServiceAccountCredentials();
-  if (!credentials) {
-    return null;
-  }
-
-  googleAuthClient = new GoogleAuth({
-    credentials,
-    scopes: [GOOGLE_DOCS_SCOPE],
-  });
-
-  return googleAuthClient;
-}
-
-/**
- * Gets an access token for the Google Docs API using service account credentials.
- */
-async function getServiceAccountAccessToken(): Promise<string | null> {
-  const auth = getGoogleAuthClient();
-  if (!auth) {
-    return null;
-  }
-
-  try {
-    const client = await auth.getClient();
-    const tokenResponse = await client.getAccessToken();
-    return tokenResponse.token ?? null;
-  } catch (error) {
-    logger.error("Failed to get Google service account access token", {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return null;
-  }
-}
 
 // ============================================================================
 // URL Parsing
@@ -1283,126 +1209,13 @@ async function fetchPublicGoogleDoc(
   }
 
   // Get access token from service account
-  const accessToken = await getServiceAccountAccessToken();
+  const accessToken = await getServiceAccountAccessToken(GOOGLE_DOCS_SCOPE);
   if (!accessToken) {
     logger.warn("Failed to get service account access token, skipping API fetch", { docId });
     return null;
   }
 
-  // Track if we should try Drive API fallback
-  let shouldTryDriveFallback = false;
-
-  try {
-    // Request with includeTabsContent=true to get full tab data
-    const url = `${GOOGLE_DOCS_API_ENDPOINT}/${docId}?includeTabsContent=true`;
-
-    logger.debug("Fetching public Google Doc via Docs API", { docId, tabId });
-
-    const response = await fetchWithSsrfProtection(url, {
-      method: "GET",
-      headers: {
-        Accept: "application/json",
-        Authorization: `Bearer ${accessToken}`,
-        "User-Agent": USER_AGENT,
-      },
-      signal: AbortSignal.timeout(API_TIMEOUT_MS),
-    });
-
-    if (!response.ok) {
-      // Try to get error details from response body
-      let errorDetails: string | undefined;
-      try {
-        const errorJson = await response.json();
-        errorDetails = errorJson?.error?.message;
-      } catch {
-        // Ignore JSON parse errors
-      }
-
-      if (response.status === 401) {
-        // 401 means token issue - don't retry with Drive API
-        logger.warn(
-          "Google Docs API authentication failed - service account token may be invalid",
-          {
-            docId,
-            status: response.status,
-            errorDetails,
-          }
-        );
-        return null;
-      } else if (response.status === 403) {
-        // 403 could be private doc or .docx file - try Drive API
-        logger.debug("Google Doc not accessible via Docs API, trying Drive API fallback", {
-          docId,
-          status: response.status,
-          errorDetails,
-        });
-        shouldTryDriveFallback = true;
-      } else if (response.status === 404) {
-        // 404 could be .docx file which Docs API doesn't recognize - try Drive API
-        logger.debug("Google Doc not found via Docs API, trying Drive API fallback", { docId });
-        shouldTryDriveFallback = true;
-      } else {
-        // Other errors - try Drive API as fallback
-        logger.debug("Google Docs API request failed, trying Drive API fallback", {
-          docId,
-          status: response.status,
-          statusText: response.statusText,
-          errorDetails,
-        });
-        shouldTryDriveFallback = true;
-      }
-    } else {
-      // Docs API succeeded
-      const json = await response.json();
-      const parsed = googleDocsApiResponseSchema.safeParse(json);
-
-      if (!parsed.success) {
-        logger.warn("Google Docs API response validation failed, trying Drive API fallback", {
-          docId,
-          error: parsed.error.message,
-        });
-        shouldTryDriveFallback = true;
-      } else {
-        const doc = parsed.data;
-
-        // Convert structured document to HTML (includes image upload if storage is configured)
-        const html = await convertDocsApiToHtml(doc, accessToken, tabId);
-
-        return {
-          docId: doc.documentId,
-          title: doc.title,
-          html,
-          author: null, // Not available via service account
-          createdAt: null, // Not available via service account
-          modifiedAt: null, // Not available via service account
-        };
-      }
-    }
-  } catch (error) {
-    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
-      logger.warn("Google Docs API request timed out, trying Drive API fallback", { docId });
-      shouldTryDriveFallback = true;
-    } else {
-      logger.warn("Google Docs API request error, trying Drive API fallback", {
-        docId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      shouldTryDriveFallback = true;
-    }
-  }
-
-  // Try Drive API fallback for .docx files
-  if (shouldTryDriveFallback) {
-    logger.debug("Attempting Drive API fallback for potential .docx file", { docId });
-    const driveContent = await fetchPublicDocxFile(docId);
-    if (driveContent) {
-      logger.debug("Successfully fetched content via Drive API", { docId });
-      return driveContentToDocsContent(driveContent);
-    }
-    logger.debug("Drive API fallback also failed", { docId });
-  }
-
-  return null;
+  return fetchGoogleDocWithToken(docId, accessToken, tabId, false);
 }
 
 /**
@@ -1427,15 +1240,33 @@ export async function fetchPrivateGoogleDoc(
   accessToken: string,
   tabId: string | null = null
 ): Promise<GoogleDocsContent | null> {
-  // Track if we should try Drive API fallback and why
-  let shouldTryDriveFallback = false;
+  return fetchGoogleDocWithToken(docId, accessToken, tabId, true);
+}
+
+/**
+ * Fetches a Google Doc via the Docs API, falling back to the Drive API (for uploaded
+ * .docx files) on any failure other than a 401.
+ *
+ * With the service account's token (`isPrivate` false) a 401 returns null. With a
+ * user's token a 401 throws GOOGLE_TOKEN_INVALID, and a 403 whose Drive fallback also
+ * fails throws GOOGLE_PERMISSION_DENIED.
+ */
+async function fetchGoogleDocWithToken(
+  docId: string,
+  accessToken: string,
+  tabId: string | null,
+  isPrivate: boolean
+): Promise<GoogleDocsContent | null> {
   let docsApiError: Error | null = null;
 
   try {
     // Request with includeTabsContent=true to get full tab data
     const url = `${GOOGLE_DOCS_API_ENDPOINT}/${docId}?includeTabsContent=true`;
 
-    logger.debug("Fetching private Google Doc via Docs API", { docId, tabId });
+    logger.debug(`Fetching ${isPrivate ? "private" : "public"} Google Doc via Docs API`, {
+      docId,
+      tabId,
+    });
 
     const response = await fetchWithSsrfProtection(url, {
       method: "GET",
@@ -1458,6 +1289,14 @@ export async function fetchPrivateGoogleDoc(
       }
 
       if (response.status === 401) {
+        // 401 means token issue - don't retry with Drive API
+        if (!isPrivate) {
+          logger.warn(
+            "Google Docs API authentication failed - service account token may be invalid",
+            { docId, status: response.status, errorDetails }
+          );
+          return null;
+        }
         logger.warn("Google Docs API authentication failed - token may be invalid or expired", {
           docId,
           status: response.status,
@@ -1465,18 +1304,19 @@ export async function fetchPrivateGoogleDoc(
         });
         throw new Error("GOOGLE_TOKEN_INVALID");
       } else if (response.status === 403) {
-        // 403 could be permission denied OR a .docx file - try Drive API first
-        logger.debug("Docs API returned 403, trying Drive API fallback", {
-          docId,
-          status: response.status,
-          errorDetails,
-        });
-        shouldTryDriveFallback = true;
-        docsApiError = new Error("GOOGLE_PERMISSION_DENIED");
+        // 403 could be a private doc / permission denied OR a .docx file - try Drive API
+        logger.debug(
+          isPrivate
+            ? "Docs API returned 403, trying Drive API fallback"
+            : "Google Doc not accessible via Docs API, trying Drive API fallback",
+          { docId, status: response.status, errorDetails }
+        );
+        if (isPrivate) {
+          docsApiError = new Error("GOOGLE_PERMISSION_DENIED");
+        }
       } else if (response.status === 404) {
         // 404 could be .docx file which Docs API doesn't recognize - try Drive API
         logger.debug("Google Doc not found via Docs API, trying Drive API fallback", { docId });
-        shouldTryDriveFallback = true;
       } else {
         // Other errors - try Drive API as fallback
         logger.debug("Google Docs API request failed, trying Drive API fallback", {
@@ -1485,7 +1325,6 @@ export async function fetchPrivateGoogleDoc(
           statusText: response.statusText,
           errorDetails,
         });
-        shouldTryDriveFallback = true;
       }
     } else {
       // Docs API succeeded
@@ -1497,7 +1336,6 @@ export async function fetchPrivateGoogleDoc(
           docId,
           error: parsed.error.message,
         });
-        shouldTryDriveFallback = true;
       } else {
         const doc = parsed.data;
 
@@ -1508,17 +1346,16 @@ export async function fetchPrivateGoogleDoc(
           docId: doc.documentId,
           title: doc.title,
           html,
-          author: null, // Could potentially get this from Drive API metadata
-          createdAt: null, // Could potentially get this from Drive API metadata
-          modifiedAt: null, // Could potentially get this from Drive API metadata
+          author: null,
+          createdAt: null,
+          modifiedAt: null,
         };
       }
     }
   } catch (error) {
     if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
       logger.warn("Google Docs API request timed out, trying Drive API fallback", { docId });
-      shouldTryDriveFallback = true;
-    } else if (error instanceof Error && error.message === "GOOGLE_TOKEN_INVALID") {
+    } else if (isPrivate && error instanceof Error && error.message === "GOOGLE_TOKEN_INVALID") {
       // Don't retry auth errors
       throw error;
     } else {
@@ -1526,25 +1363,24 @@ export async function fetchPrivateGoogleDoc(
         docId,
         error: error instanceof Error ? error.message : String(error),
       });
-      shouldTryDriveFallback = true;
     }
   }
 
   // Try Drive API fallback for .docx files
-  if (shouldTryDriveFallback) {
-    logger.debug("Attempting Drive API fallback for potential .docx file", { docId });
-    const driveContent = await fetchPrivateDocxFile(docId, accessToken);
-    if (driveContent) {
-      logger.debug("Successfully fetched content via Drive API", { docId });
-      return driveContentToDocsContent(driveContent);
-    }
-    logger.debug("Drive API fallback also failed", { docId });
+  logger.debug("Attempting Drive API fallback for potential .docx file", { docId });
+  const driveContent = isPrivate
+    ? await fetchDocxFileWithToken(docId, accessToken)
+    : await fetchPublicDocxFile(docId);
+  if (driveContent) {
+    logger.debug("Successfully fetched content via Drive API", { docId });
+    return driveContentToDocsContent(driveContent);
+  }
+  logger.debug("Drive API fallback also failed", { docId });
 
-    // If we had a specific error from the Docs API (like permission denied),
-    // and Drive API also failed, throw the original error
-    if (docsApiError) {
-      throw docsApiError;
-    }
+  // If we had a specific error from the Docs API (like permission denied),
+  // and Drive API also failed, throw the original error
+  if (docsApiError) {
+    throw docsApiError;
   }
 
   return null;

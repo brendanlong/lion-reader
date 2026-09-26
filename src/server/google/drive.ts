@@ -47,10 +47,10 @@ const MIME_TYPE_DOCX = "application/vnd.openxmlformats-officedocument.wordproces
 // ============================================================================
 
 /**
- * Cached GoogleAuth client instance.
- * Initialized lazily on first use.
+ * GoogleAuth clients, one per scope (a token must never carry more scopes than its
+ * caller asked for). Created lazily on first use.
  */
-let googleAuthClient: GoogleAuth | null = null;
+const googleAuthClients = new Map<string, GoogleAuth>();
 
 /**
  * Parses the base64-encoded service account JSON from environment.
@@ -77,9 +77,10 @@ function parseServiceAccountCredentials(): Record<string, unknown> | null {
 /**
  * Gets or creates the GoogleAuth client for service account authentication.
  */
-function getGoogleAuthClient(): GoogleAuth | null {
-  if (googleAuthClient) {
-    return googleAuthClient;
+function getGoogleAuthClient(scope: string): GoogleAuth | null {
+  const cached = googleAuthClients.get(scope);
+  if (cached) {
+    return cached;
   }
 
   const credentials = parseServiceAccountCredentials();
@@ -87,19 +88,16 @@ function getGoogleAuthClient(): GoogleAuth | null {
     return null;
   }
 
-  googleAuthClient = new GoogleAuth({
-    credentials,
-    scopes: [GOOGLE_DRIVE_SCOPE],
-  });
-
-  return googleAuthClient;
+  const client = new GoogleAuth({ credentials, scopes: [scope] });
+  googleAuthClients.set(scope, client);
+  return client;
 }
 
 /**
- * Gets an access token for the Google Drive API using service account credentials.
+ * Gets a service-account access token for one Google API scope.
  */
-async function getServiceAccountAccessToken(): Promise<string | null> {
-  const auth = getGoogleAuthClient();
+export async function getServiceAccountAccessToken(scope: string): Promise<string | null> {
+  const auth = getGoogleAuthClient(scope);
   if (!auth) {
     return null;
   }
@@ -292,7 +290,7 @@ export async function fetchPublicDocxFile(fileId: string): Promise<GoogleDriveCo
     return null;
   }
 
-  const accessToken = await getServiceAccountAccessToken();
+  const accessToken = await getServiceAccountAccessToken(GOOGLE_DRIVE_SCOPE);
   if (!accessToken) {
     logger.warn("Failed to get service account access token", { fileId });
     return null;
@@ -302,27 +300,11 @@ export async function fetchPublicDocxFile(fileId: string): Promise<GoogleDriveCo
 }
 
 /**
- * Fetches a private .docx file from Google Drive using a user's OAuth access token.
- *
- * Only handles uploaded .docx files. Native Google Docs should be fetched
- * using the Docs API in docs.ts for better formatting.
- *
- * @param fileId - The Google Drive file ID
- * @param accessToken - User's OAuth access token with drive.readonly scope
- * @returns File content including HTML, or null if fetch fails or not a .docx
- */
-export async function fetchPrivateDocxFile(
-  fileId: string,
-  accessToken: string
-): Promise<GoogleDriveContent | null> {
-  return fetchDocxFileWithToken(fileId, accessToken);
-}
-
-/**
- * Internal function to fetch a .docx file with an access token.
+ * Fetches a .docx file from Google Drive with an access token (a user's OAuth token
+ * needs the drive.readonly scope).
  * Returns null for native Google Docs (use Docs API instead).
  */
-async function fetchDocxFileWithToken(
+export async function fetchDocxFileWithToken(
   fileId: string,
   accessToken: string
 ): Promise<GoogleDriveContent | null> {
