@@ -224,15 +224,7 @@ const inviteEndpoints = {
             status = "pending";
           }
 
-          return {
-            id: inv.id,
-            token: inv.token,
-            expiresAt: inv.expiresAt,
-            createdAt: inv.createdAt,
-            status,
-            usedAt: inv.usedAt,
-            usedByEmail: inv.usedByEmail,
-          };
+          return { ...inv, status };
         }),
         nextCursor,
       };
@@ -452,19 +444,8 @@ const feedHealthEndpoints = {
 
       return {
         items: items.map((row) => ({
-          feedId: row.feedId,
-          title: row.title,
-          url: row.url,
-          siteUrl: row.siteUrl,
-          consecutiveFailures: row.consecutiveFailures,
-          lastError: row.lastError,
-          lastFetchedAt: row.lastFetchedAt,
-          lastEntriesUpdatedAt: row.lastEntriesUpdatedAt,
-          nextFetchAt: row.nextFetchAt,
-          websubActive: row.websubActive,
+          ...row,
           subscriberCount: Number(row.subscriberCount),
-          lastFetchEntryCount: row.lastFetchEntryCount,
-          lastFetchSizeBytes: row.lastFetchSizeBytes,
           totalEntryCount: Number(row.totalEntryCount),
           entriesPerWeek: row.entriesPerWeek != null ? Number(row.entriesPerWeek) : null,
         })),
