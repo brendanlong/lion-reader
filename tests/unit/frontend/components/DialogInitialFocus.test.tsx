@@ -18,7 +18,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { UnsubscribeDialog } from "@/components/feeds/UnsubscribeDialog";
-import { MarkAllReadDialog } from "@/components/feeds/MarkAllReadDialog";
+import { MarkAllReadButton } from "@/components/entries/MarkAllReadButton";
 import DeleteAccountSettingsContent from "@/components/settings/pages/DeleteAccountSettingsContent";
 import { renderWithTrpc } from "../../../utils/component-test-helpers";
 
@@ -48,14 +48,9 @@ describe("confirmation dialog initial focus", () => {
 
   it("focuses Cancel when the mark-all-read dialog opens", () => {
     render(
-      <MarkAllReadDialog
-        isOpen={true}
-        contextDescription="all feeds"
-        isLoading={false}
-        onConfirm={vi.fn()}
-        onCancel={vi.fn()}
-      />
+      <MarkAllReadButton contextDescription="all feeds" isLoading={false} onConfirm={vi.fn()} />
     );
+    fireEvent.click(screen.getByRole("button", { name: "Mark all as read" }));
 
     expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
   });

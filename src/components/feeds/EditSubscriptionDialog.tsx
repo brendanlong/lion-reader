@@ -23,8 +23,7 @@ import { ClientLink } from "@/components/ui/client-link";
 // Types
 // ============================================================================
 
-interface EditSubscriptionDialogProps {
-  isOpen: boolean;
+interface EditSubscriptionFormProps {
   subscriptionId: string;
   currentTitle: string;
   currentCustomTitle: string | null;
@@ -32,12 +31,8 @@ interface EditSubscriptionDialogProps {
   onClose: () => void;
 }
 
-interface EditSubscriptionFormProps {
-  subscriptionId: string;
-  currentTitle: string;
-  currentCustomTitle: string | null;
-  currentTagIds: string[];
-  onClose: () => void;
+interface EditSubscriptionDialogProps extends EditSubscriptionFormProps {
+  isOpen: boolean;
 }
 
 // ============================================================================
@@ -48,31 +43,17 @@ interface EditSubscriptionFormProps {
  * Wrapper component that conditionally renders the form.
  * This ensures the form is remounted when the dialog opens with new data.
  */
-export function EditSubscriptionDialog({
-  isOpen,
-  subscriptionId,
-  currentTitle,
-  currentCustomTitle,
-  currentTagIds,
-  onClose,
-}: EditSubscriptionDialogProps) {
+export function EditSubscriptionDialog({ isOpen, ...formProps }: EditSubscriptionDialogProps) {
   if (!isOpen) return null;
 
   return (
     <Dialog
       isOpen={isOpen}
-      onClose={onClose}
+      onClose={formProps.onClose}
       title="Edit Subscription"
       titleId="edit-subscription-title"
     >
-      <EditSubscriptionForm
-        key={subscriptionId}
-        subscriptionId={subscriptionId}
-        currentTitle={currentTitle}
-        currentCustomTitle={currentCustomTitle}
-        currentTagIds={currentTagIds}
-        onClose={onClose}
-      />
+      <EditSubscriptionForm key={formProps.subscriptionId} {...formProps} />
     </Dialog>
   );
 }

@@ -40,6 +40,13 @@ interface DiscoveredFeed {
 
 type Step = "input" | "discovery" | "preview";
 
+const FEED_TYPE_LABELS: Record<DiscoveredFeed["type"], string> = {
+  rss: "RSS",
+  atom: "Atom",
+  json: "JSON Feed",
+  unknown: "Feed",
+};
+
 // ============================================================================
 // Component
 // ============================================================================
@@ -227,26 +234,8 @@ export function SubscribeContent() {
     }
   };
 
-  const formatDate = (date: Date | null) => {
-    if (!date) return "Unknown";
-    return new Intl.DateTimeFormat("en-US", {
-      dateStyle: "medium",
-      timeStyle: "short",
-    }).format(date);
-  };
-
-  const getFeedTypeLabel = (type: "rss" | "atom" | "json" | "unknown"): string => {
-    switch (type) {
-      case "rss":
-        return "RSS";
-      case "atom":
-        return "Atom";
-      case "json":
-        return "JSON Feed";
-      default:
-        return "Feed";
-    }
-  };
+  const formatDate = (date: Date) =>
+    new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(date);
 
   const isLoading = previewQuery.isFetching || discoverQuery.isFetching || isPreviewingSelection;
 
@@ -366,7 +355,7 @@ export function SubscribeContent() {
                       <div className="flex items-center gap-2">
                         <p className="text-body font-medium">{feed.title || "Untitled Feed"}</p>
                         <span className="control-outline ui-text-xs text-body bg-fill-muted inline-flex items-center rounded-full px-2 py-0.5 font-medium">
-                          {getFeedTypeLabel(feed.type)}
+                          {FEED_TYPE_LABELS[feed.type]}
                         </span>
                       </div>
                       <p className="ui-text-xs text-muted mt-1 truncate font-mono">{feed.url}</p>
