@@ -70,69 +70,9 @@ and it is the one query the layout **`await`s**, so it sits directly on SSR TTFB
 Total DB time for the whole SSR pass is ~130 ms, of which ~125 ms is this single
 query; everything else combined is under 8 ms.
 
-> **Status:** fixed in `src/server/trpc/routers/sync.ts` (`sync.cursors`) — the
-> entries argmax now uses the index-driven arms described below. Equivalence to
-> the old query was verified across baseline / content-update-wins / tie /
-> saved / starred-orphan cases; integration coverage added in
-> `tests/integration/sync-events.test.ts` ("sync.cursors entries argmax").
-
-## The problem: `sync.cursors` entries argmax
-
-```sql
-SELECT GREATEST(e.updated_at, ue.updated_at) AS max, e.id
-FROM user_entries ue JOIN entries e ON e.id = ue.entry_id
-WHERE ue.user_id = $userId
-ORDER BY GREATEST(e.updated_at, ue.updated_at) DESC, e.id DESC
-LIMIT 1;
-```
-
-`GREATEST(entries.updated_at, user_entries.updated_at)` spans two tables, so **no
-index can serve the sort** — the planner must materialize the value for _every one
-of the user's 48,973 entries_ (nested-loop PK lookup into `entries` for each) and
-top-N sort the lot. The `LIMIT 1` gives no help. Cost grows with the user's entire
-history, on every SSR and every SSE (re)connect.
-
-This is the **same class of problem #1105 already fixed for the sibling
-`sync.events` query** (see the long comment at `src/server/trpc/routers/sync.ts:271`):
-that delta filter on the same `GREATEST(...)` was rewritten into an index-driven
-UNION of arms (`user_entries.updated_at` via `idx_user_entries_updated_at`;
-`entries.updated_at` per subscribed feed via `idx_entries_feed_updated_at`).
-`sync.cursors` (the argmax) was left on the old shape.
-
-### Fix (validated here)
-
-The **maximum** of `GREATEST(a,b)` over a set is `GREATEST(max a, max b)` — a true
-identity — so the value is derivable from two index-served maxes. The block below
-shows just the **value** to make the identity clear; the shipped query
-(`sync.cursors`) wraps the same arms in a `UNION ALL … ORDER BY ts DESC, id DESC
-LIMIT 1` so it also returns the `entriesAfterId` tiebreak (see next paragraph):
-
-```sql
-SELECT GREATEST(
-  (SELECT max(ue.updated_at) FROM user_entries ue WHERE ue.user_id = $userId),
-  (SELECT max(m.ts) FROM subscriptions s
-     CROSS JOIN LATERAL (
-       SELECT max(e.updated_at) AS ts FROM entries e WHERE e.feed_id = s.feed_id
-     ) m
-   WHERE s.user_id = $userId)
-);
-```
-
-Measured: **1.3 ms, 1,117 buffers** — vs 125 ms / 196,780 buffers. All index-only
-scans (`idx_user_entries_updated_at`, `idx_entries_feed_updated_at` per feed). A
-**~100× buffer reduction.** (Add the saved-feed arm for parity with `sync.events`.)
-
-The only extra work is `entriesAfterId` (the id tiebreaker for catch-up paging):
-
-- Common case — the user's own activity is newest → the `user_entries` arm wins
-  and the id falls out of that same index scan for free.
-- Rare case — a content refetch bumped `entries.updated_at` past all user activity
-  → resolve the id with one extra index seek (max id among the user's feed entries
-  at that timestamp).
-
-Recommend filing this and applying the #1105 pattern. It's the single highest-value
-change on the SSR path (and it also speeds up the SSE-down polling fallback, which
-re-establishes cursors on every reconnect).
+**Fixed:** `sync.cursors` (`src/server/trpc/routers/sync.ts`, whose comment
+explains the index-driven arms) now measures **1.3 ms / 1,117 buffers** vs 125 ms /
+196,780 — a ~100× buffer reduction.
 
 ## Does anything belong in Redis?
 
@@ -149,18 +89,7 @@ the things that _should_ be in Redis already are:
   timelines in Redis would add invalidation complexity (every read/star/mark/new
   entry) for no latency benefit.
 
-The **one** legitimate Redis candidate is `sync.cursors` — but prefer the query fix
-first (lower risk; the value is cheaply index-derivable as shown). If `sync.cursors`
-later becomes hot, a per-user "latest cursor" key maintained by the pubsub
+The **one** legitimate Redis candidate is `sync.cursors`. If it becomes hot
+despite the query fix, a per-user "latest cursor" key maintained by the pubsub
 publishers (which already run on every read/star/mark-all/new-entry/content-update)
-would make it O(1). That's an optimization to reach for only after the query fix,
-since a cache-consistency bug here would corrupt delta sync.
-
-## Note on this benchmark's seed
-
-`entries.updated_at` is seeded uniformly (`now()`), which does **not** affect the
-125 ms finding (that query's cost is the per-row `GREATEST` + heap fetch, not the
-tiebreaker sort). It does make an id-carrying variant of the fix look slower than
-it is in production (where `updated_at` varies per entry), which is why the
-validated fix above measures the **value** — the id resolution is cheap/rare as
-described.
+would make it O(1) — at the risk that a cache-consistency bug corrupts delta sync.

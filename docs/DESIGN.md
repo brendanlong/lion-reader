@@ -2,21 +2,6 @@
 
 High-level architecture and design decisions. Mechanics, edge cases, and invariants live in per-directory `CLAUDE.md` files, pointed to from each section — read the relevant one before working on a subsystem.
 
-## Table of Contents
-
-1. [System Architecture](#system-architecture)
-2. [Database Design](#database-design)
-3. [Authentication](#authentication)
-4. [Feed Processing](#feed-processing)
-5. [Real-time Updates](#real-time-updates)
-6. [API Design](#api-design)
-7. [Frontend Architecture](#frontend-architecture)
-8. [MCP Server](#mcp-server)
-9. [Plugin System](#plugin-system)
-10. [Infrastructure](#infrastructure)
-11. [Observability](#observability)
-12. [Testing Strategy](#testing-strategy)
-
 ### Architecture Diagrams (D2)
 
 Visual architecture diagrams are available in `docs/diagrams/`:
@@ -98,7 +83,7 @@ not embedded in the app servers.
 
 1. **Stateless app servers**: All state in Postgres/Redis, enabling horizontal scaling
 2. **Efficient data sharing**: Feed/entry data deduplicated across users
-3. **Privacy by default**: Users only see entries fetched after they subscribed
+3. **Privacy by default**: entry visibility is gated per user at insert time (see Entry Visibility below)
 4. **Graceful degradation**: Handle misbehaving feeds, rate limits, and failures
 5. **Observable**: Comprehensive logging, metrics, and error tracking
 
@@ -121,7 +106,7 @@ The schema is the source of truth for tables and views: `migrations/schema.sql` 
 Each of these is specified in full in `src/server/CLAUDE.md`; the summaries here state the decision and its rationale.
 
 - **Entry Visibility**: an entry is visible to a user iff a `user_entries` row exists and the entry is from an active subscription, starred, or a saved article. Rows are created at subscribe time (current feed contents only) and at fetch time (state-driven, self-healing fanout to active subscribers). This insert-time gating — not the view — is what prevents leaking pre-subscription private content.
-- **Subscription attribution**: each `user_entries` row carries a denormalized `subscription_id`, the sole entry→subscription link (replaced a junction table, issue #1117).
+- **Subscription attribution**: each `user_entries` row carries a denormalized `subscription_id`, the sole entry→subscription link.
 - **Unread counts**: denormalized onto trigger-maintained counter columns so badges are O(subscriptions) arithmetic, never entry scans; a daily reconcile job repairs (and loudly reports) drift.
 - **Soft deletes**: subscriptions use `unsubscribed_at`, so resubscribing restores read state.
 - **Content change detection**: entries store a `content_hash`; changed content overwrites the previous version.
@@ -307,7 +292,7 @@ Practically, this means using the expand/contract pattern:
 
 ### Maintenance Mode
 
-For a heavier migration that can't be made backward-compatible (a data backfill, a non-expand/contract change), an admin can flip **maintenance mode** from `/admin` → Status: a **Redis** flag (not Postgres — the DB may be the thing being migrated) that makes every process group stop touching the DB and the app serve a 503 maintenance page, then resume with no redeploy when turned off. A Redis-backed **announcement banner** covers known-issue notices. Details: "Site Status" in `src/server/CLAUDE.md`.
+For a migration that can't be made backward-compatible, an admin can flip **maintenance mode** from `/admin` → Status, which stops every process group from touching the DB until it's turned off. Details: "Site Status" in `src/server/CLAUDE.md`.
 
 ### Local Development
 
@@ -315,15 +300,7 @@ Docker Compose provides Postgres and Redis for local development. See README for
 
 ### Object Storage (S3/Tigris)
 
-An **optional** S3-compatible object store re-hosts external images that would otherwise expire or leak referrers — currently only Google Docs images, which carry short-lived `contentUri` links. `src/server/storage/s3.ts` (`isStorageAvailable`, `fetchAndUploadImage`) signs requests with `aws4fetch` and works against AWS S3 or Fly.io Tigris; `src/server/google/docs.ts` calls it to fetch each image (SSRF-protected, size-limited) and rewrite the document to the re-hosted URL.
-
-Configured via `STORAGE_BUCKET`, `STORAGE_ENDPOINT`, `STORAGE_REGION`, `STORAGE_PUBLIC_URL_BASE` (see `[env]` in `fly.toml`) plus the `STORAGE_ACCESS_KEY_ID` / `STORAGE_SECRET_ACCESS_KEY` secrets. The feature **no-ops when unconfigured**: `isStorageAvailable()` returns false and image re-hosting is skipped, so the rest of the app runs unaffected.
-
-### CI/CD
-
-- GitHub Actions for CI (typecheck, lint, unit/integration/e2e tests)
-- Deploy to Fly.io runs only after the CI workflow succeeds on master (`workflow_run` gate in `deploy.yml`); deploys queue rather than cancel each other so a mid-flight canary rollout is never killed
-- In CI, e2e tests run against the production build (`next build` + `node dist/server.js`), not the dev server
+An **optional** S3-compatible object store re-hosts external images that would otherwise expire or leak referrers — currently only Google Docs images, which carry short-lived `contentUri` links. `src/server/storage/s3.ts` (`isStorageAvailable`, `fetchAndUploadImage`) signs requests with `aws4fetch` and works against AWS S3 or Fly.io Tigris; `src/server/google/docs.ts` calls it to fetch each image (SSRF-protected, size-limited) and rewrite the document to the re-hosted URL. The feature **no-ops when unconfigured** (`STORAGE_*` env vars/secrets), so the rest of the app runs unaffected.
 
 ---
 
@@ -334,13 +311,6 @@ Configured via `STORAGE_BUCKET`, `STORAGE_ENDPOINT`, `STORAGE_REGION`, `STORAGE_
 - **Errors**: Sentry
 - **Metrics**: Prometheus via `prom-client` (each process exposes `/metrics` on its own port)
 - **Logging**: Structured JSON logs
-
-### Key Metrics
-
-- Feed fetch success/failure rates
-- API request latency and error rates
-- Background job queue depth and processing time
-- Active SSE connections
 
 ### Feed Fetch Health Alerting
 

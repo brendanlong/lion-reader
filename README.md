@@ -21,7 +21,7 @@ Read more: [Claude Wrote Me a 400-Commit RSS Reader App](https://www.brendanlong
 - **Smart polling** - Respects cache headers, with exponential backoff for failed feeds
 - **Entry management** - Read/unread tracking, starring, tags, full-text search
 - **Full content fetching** - Optionally fetch complete article content from the source page
-- **Multi-user with privacy by default** - Entries are only visible if fetched after you subscribed
+- **Multi-user with privacy by default** - Subscribers see a feed's current entries, never older private content
 - **Authentication** - Email/password and OAuth (Google, Apple, Discord)
 - **OPML import/export** - Migrate from other readers
 - **Keyboard shortcuts** - Vim-style navigation
@@ -154,13 +154,6 @@ The webhook verifies Mailgun's HMAC-SHA256 signature; requests with invalid sign
 ## Production Deployment
 
 Lion Reader is configured for deployment to [Fly.io](https://fly.io) with three process groups (`app`, `worker`, `discord`), canary deploys, and migrations run automatically in the release command. See the [Deployment Guide](docs/DEPLOYMENT.md) for full provisioning instructions.
-
-## APIs
-
-- **REST API**: `/api/v1/*`, generated from the tRPC procedures. The OpenAPI 3.0 spec is served at `/api/openapi` (usable with Swagger UI, Postman, etc.). Real-time updates via SSE at `/api/v1/events`.
-- **Google Reader compatibility**: `/api/greader.php/*` for Google Reader-protocol clients.
-- **Wallabag compatibility**: `/api/wallabag/*` for Wallabag read-it-later clients.
-- **MCP server**: `/api/mcp` (Streamable HTTP with OAuth 2.1 or scoped API tokens) and a local stdio transport via `pnpm mcp:serve`. See the [Design Document](docs/DESIGN.md#mcp-server) for the tool list and setup.
 
 ## License
 
