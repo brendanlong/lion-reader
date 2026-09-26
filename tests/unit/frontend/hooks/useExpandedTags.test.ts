@@ -9,30 +9,11 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { stubMemoryLocalStorage } from "../../../utils/component-test-helpers";
 import { renderHook, act, cleanup } from "@testing-library/react";
 
-// Mock localStorage before importing the hook
-const localStorageMock = (() => {
-  let store: Record<string, string> = {};
-  return {
-    getItem: vi.fn((key: string) => store[key] || null),
-    setItem: vi.fn((key: string, value: string) => {
-      store[key] = value;
-    }),
-    removeItem: vi.fn((key: string) => {
-      delete store[key];
-    }),
-    clear: vi.fn(() => {
-      store = {};
-    }),
-    get length() {
-      return Object.keys(store).length;
-    },
-    key: vi.fn((index: number) => Object.keys(store)[index] || null),
-  };
-})();
-
-vi.stubGlobal("localStorage", localStorageMock);
+const localStorageMock = stubMemoryLocalStorage();
+vi.spyOn(localStorageMock, "setItem");
 
 // Reset module state before importing
 // This ensures the internal cache is cleared for each test file
@@ -92,7 +73,9 @@ describe("useExpandedTags", () => {
       );
 
       const savedValue = JSON.parse(
-        localStorageMock.setItem.mock.calls[localStorageMock.setItem.mock.calls.length - 1][1]
+        vi.mocked(localStorageMock.setItem).mock.calls[
+          vi.mocked(localStorageMock.setItem).mock.calls.length - 1
+        ][1]
       );
       expect(savedValue).toContain("tag-3");
     });

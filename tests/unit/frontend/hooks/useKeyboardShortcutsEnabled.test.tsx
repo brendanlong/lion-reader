@@ -11,33 +11,14 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { stubMemoryLocalStorage } from "../../../utils/component-test-helpers";
 import { renderHook, act, cleanup } from "@testing-library/react";
 import { renderToString } from "react-dom/server";
 import { hydrateRoot } from "react-dom/client";
 import { act as reactAct } from "react";
 
-// Mock localStorage before importing the hook
-const localStorageMock = (() => {
-  let store: Record<string, string> = {};
-  return {
-    getItem: vi.fn((key: string) => store[key] ?? null),
-    setItem: vi.fn((key: string, value: string) => {
-      store[key] = value;
-    }),
-    removeItem: vi.fn((key: string) => {
-      delete store[key];
-    }),
-    clear: vi.fn(() => {
-      store = {};
-    }),
-    get length() {
-      return Object.keys(store).length;
-    },
-    key: vi.fn((index: number) => Object.keys(store)[index] ?? null),
-  };
-})();
-
-vi.stubGlobal("localStorage", localStorageMock);
+const localStorageMock = stubMemoryLocalStorage();
+vi.spyOn(localStorageMock, "setItem");
 
 const STORAGE_KEY = "lion-reader:keyboard-shortcuts-enabled";
 

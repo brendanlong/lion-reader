@@ -5,27 +5,12 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { stubMemoryLocalStorage } from "../utils/component-test-helpers";
 
-// Mock localStorage before importing the settings module
-const localStorageMock = (() => {
-  let store: Record<string, string> = {};
-  return {
-    getItem: vi.fn((key: string) => store[key] || null),
-    setItem: vi.fn((key: string, value: string) => {
-      store[key] = value;
-    }),
-    removeItem: vi.fn((key: string) => {
-      delete store[key];
-    }),
-    clear: vi.fn(() => {
-      store = {};
-    }),
-  };
-})();
-
-// Mock window and localStorage
+const localStorageMock = stubMemoryLocalStorage();
+vi.spyOn(localStorageMock, "setItem");
+// Mock window (settings.ts bails out when it is undefined)
 vi.stubGlobal("window", { localStorage: localStorageMock });
-vi.stubGlobal("localStorage", localStorageMock);
 
 // Now import the module under test
 import {
