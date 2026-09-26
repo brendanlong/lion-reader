@@ -241,6 +241,14 @@ export async function lessWrongGraphql<T extends z.ZodType>(
 }
 
 /**
+ * Schema for a single-document query's data: `{ [key]: { result: {...} | null } | null }`.
+ */
+function selectorResult<K extends string, S extends z.ZodRawShape>(key: K, shape: S) {
+  const wrapper = z.object({ result: z.object(shape).nullable() }).nullable();
+  return z.object({ [key]: wrapper } as Record<K, typeof wrapper>);
+}
+
+/**
  * The `user` shape LessWrong returns on posts and comments.
  */
 const authorSchema = z.object({
@@ -259,23 +267,15 @@ function authorName(user: z.output<typeof authorSchema> | null | undefined): str
 // Post Content
 // ============================================================================
 
-const postDataSchema = z.object({
-  post: z
-    .object({
-      result: z
-        .object({
-          _id: z.string(),
-          title: z.string().nullable(),
-          slug: z.string().nullable(),
-          pageUrl: z.string().nullable(),
-          postedAt: z.string().nullable(),
-          user: authorSchema.nullable(),
-          coauthors: z.array(authorSchema).nullable(),
-          contents: z.object({ html: z.string().nullable() }).nullable(),
-        })
-        .nullable(),
-    })
-    .nullable(),
+const postDataSchema = selectorResult("post", {
+  _id: z.string(),
+  title: z.string().nullable(),
+  slug: z.string().nullable(),
+  pageUrl: z.string().nullable(),
+  postedAt: z.string().nullable(),
+  user: authorSchema.nullable(),
+  coauthors: z.array(authorSchema).nullable(),
+  contents: z.object({ html: z.string().nullable() }).nullable(),
 });
 
 /**
@@ -370,22 +370,14 @@ async function fetchLessWrongPost(postId: string): Promise<LessWrongPostContent 
 // Comment Content
 // ============================================================================
 
-const commentDataSchema = z.object({
-  comment: z
-    .object({
-      result: z
-        .object({
-          _id: z.string(),
-          postId: z.string().nullable(),
-          pageUrl: z.string().nullable(),
-          postedAt: z.string().nullable(),
-          user: authorSchema.nullable(),
-          post: z.object({ title: z.string().nullable() }).nullable(),
-          contents: z.object({ html: z.string().nullable() }).nullable(),
-        })
-        .nullable(),
-    })
-    .nullable(),
+const commentDataSchema = selectorResult("comment", {
+  _id: z.string(),
+  postId: z.string().nullable(),
+  pageUrl: z.string().nullable(),
+  postedAt: z.string().nullable(),
+  user: authorSchema.nullable(),
+  post: z.object({ title: z.string().nullable() }).nullable(),
+  contents: z.object({ html: z.string().nullable() }).nullable(),
 });
 
 /**
@@ -520,18 +512,10 @@ export async function fetchLessWrongContentFromUrl(url: string): Promise<LessWro
 // User Lookup
 // ============================================================================
 
-const userDataSchema = z.object({
-  user: z
-    .object({
-      result: z
-        .object({
-          _id: z.string(),
-          displayName: z.string().nullable(),
-          slug: z.string().nullable(),
-        })
-        .nullable(),
-    })
-    .nullable(),
+const userDataSchema = selectorResult("user", {
+  _id: z.string(),
+  displayName: z.string().nullable(),
+  slug: z.string().nullable(),
 });
 
 /**
@@ -664,22 +648,6 @@ export function buildLessWrongUserShortformFeedUrl(userId: string): string {
 }
 
 /**
- * Checks if a URL is a LessWrong user feed URL (feed.xml with userId param).
- */
-export function isLessWrongUserFeedUrl(url: string): boolean {
-  try {
-    const urlObj = new URL(url);
-    return (
-      /^(?:www\.)?lesswrong\.com$/i.test(urlObj.hostname) &&
-      urlObj.pathname === "/feed.xml" &&
-      urlObj.searchParams.has("userId")
-    );
-  } catch {
-    return false;
-  }
-}
-
-/**
  * Extracts the userId from a LessWrong user feed URL.
  * Returns null if the URL is not a valid LessWrong user feed URL.
  */
@@ -699,18 +667,10 @@ export function extractUserIdFromFeedUrl(url: string): string | null {
 // Post Metadata Lookup (for shortform detection)
 // ============================================================================
 
-const postMetadataDataSchema = z.object({
-  post: z
-    .object({
-      result: z
-        .object({
-          _id: z.string(),
-          shortform: z.boolean().nullable(),
-          userId: z.string().nullable(),
-        })
-        .nullable(),
-    })
-    .nullable(),
+const postMetadataDataSchema = selectorResult("post", {
+  _id: z.string(),
+  shortform: z.boolean().nullable(),
+  userId: z.string().nullable(),
 });
 
 /**

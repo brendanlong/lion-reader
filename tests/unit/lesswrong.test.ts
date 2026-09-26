@@ -12,7 +12,6 @@ import {
   extractCommentId,
   isLessWrongUserUrl,
   extractUserSlug,
-  isLessWrongUserFeedUrl,
   extractUserIdFromFeedUrl,
   buildLessWrongUserFeedUrl,
   isLessWrongFrontpage,
@@ -240,38 +239,6 @@ describe("LessWrong URL detection", () => {
     it("returns null for invalid URLs", () => {
       expect(extractUserSlug("not a url")).toBe(null);
       expect(extractUserSlug("")).toBe(null);
-    });
-  });
-
-  describe("isLessWrongUserFeedUrl", () => {
-    it("returns true for LessWrong user feed URLs", () => {
-      expect(
-        isLessWrongUserFeedUrl("https://www.lesswrong.com/feed.xml?userId=piR3ZKGHEp6vqTo87")
-      ).toBe(true);
-      expect(
-        isLessWrongUserFeedUrl("https://lesswrong.com/feed.xml?userId=piR3ZKGHEp6vqTo87")
-      ).toBe(true);
-    });
-
-    it("returns true for feed URLs with additional query params", () => {
-      expect(
-        isLessWrongUserFeedUrl(
-          "https://www.lesswrong.com/feed.xml?userId=piR3ZKGHEp6vqTo87&format=rss"
-        )
-      ).toBe(true);
-    });
-
-    it("returns false for LessWrong feed URLs without userId", () => {
-      expect(isLessWrongUserFeedUrl("https://www.lesswrong.com/feed.xml")).toBe(false);
-    });
-
-    it("returns false for non-LessWrong URLs", () => {
-      expect(isLessWrongUserFeedUrl("https://example.com/feed.xml?userId=abc")).toBe(false);
-    });
-
-    it("returns false for invalid URLs", () => {
-      expect(isLessWrongUserFeedUrl("not a url")).toBe(false);
-      expect(isLessWrongUserFeedUrl("")).toBe(false);
     });
   });
 
