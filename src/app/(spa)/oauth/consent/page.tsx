@@ -8,6 +8,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { WarningTriangleIcon } from "@/components/ui/icons";
+import { AuthLayoutContent } from "@/components/auth/AuthLayoutContent";
 import { validateSession } from "@/server/auth/session";
 import { resolveClient } from "@/server/oauth/service";
 import { cimdClientHost } from "@/server/oauth/cimd";
@@ -50,14 +51,10 @@ export default async function ConsentPage({ searchParams }: ConsentPageProps) {
   const cookieStore = await cookies();
   const sessionToken = cookieStore.get("session")?.value;
 
-  if (!sessionToken) {
-    // Redirect to login with return URL
-    const returnUrl = `/oauth/consent?${new URLSearchParams(params as Record<string, string>).toString()}`;
-    redirect(`/login?redirect=${encodeURIComponent(returnUrl)}`);
-  }
+  const session = sessionToken ? await validateSession(sessionToken) : null;
 
-  const session = await validateSession(sessionToken);
   if (!session) {
+    // Redirect to login with return URL
     const returnUrl = `/oauth/consent?${new URLSearchParams(params as Record<string, string>).toString()}`;
     redirect(`/login?redirect=${encodeURIComponent(returnUrl)}`);
   }
@@ -123,17 +120,7 @@ export default async function ConsentPage({ searchParams }: ConsentPageProps) {
 }
 
 function ConsentLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="bg-canvas flex min-h-screen flex-col items-center justify-center px-4 py-12">
-      <div className="w-full max-w-md">
-        <div className="mb-8 text-center">
-          <h1 className="ui-text-2xl text-body font-bold">Lion Reader</h1>
-          <p className="ui-text-sm text-muted mt-2">Authorization Request</p>
-        </div>
-        <div className="border-edge bg-surface rounded-lg border p-6 shadow-sm">{children}</div>
-      </div>
-    </div>
-  );
+  return <AuthLayoutContent subtitle="Authorization Request">{children}</AuthLayoutContent>;
 }
 
 function ErrorMessage({ title, message }: { title: string; message: string }) {
