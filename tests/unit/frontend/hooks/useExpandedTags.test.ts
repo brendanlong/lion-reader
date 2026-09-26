@@ -72,11 +72,7 @@ describe("useExpandedTags", () => {
         expect.any(String)
       );
 
-      const savedValue = JSON.parse(
-        vi.mocked(localStorageMock.setItem).mock.calls[
-          vi.mocked(localStorageMock.setItem).mock.calls.length - 1
-        ][1]
-      );
+      const savedValue = JSON.parse(vi.mocked(localStorageMock.setItem).mock.lastCall![1]);
       expect(savedValue).toContain("tag-3");
     });
   });
