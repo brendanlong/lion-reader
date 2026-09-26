@@ -10,18 +10,17 @@
 
 import * as client from "openid-client";
 import { getGoogleConfig, getRedirectUri, isProviderEnabled, type OAuthLinkTarget } from "./config";
-import { accessTokenExpiresAt, exchangeAuthorizationCode } from "./token-exchange";
-import { redis } from "@/server/redis";
+import {
+  accessTokenExpiresAt,
+  consumeOAuthState,
+  exchangeAuthorizationCode,
+  fetchUserInfo,
+  storeOAuthState,
+} from "./token-exchange";
 
 // ============================================================================
 // Constants
 // ============================================================================
-
-/**
- * PKCE verifier storage TTL (10 minutes)
- * Users should complete the OAuth flow within this time
- */
-const PKCE_VERIFIER_TTL_SECONDS = 600;
 
 /**
  * Redis key prefix for PKCE verifiers
@@ -104,13 +103,6 @@ export interface GoogleAuthResult {
 // ============================================================================
 
 /**
- * Gets the Redis key for a PKCE verifier by state
- */
-function getPkceKey(state: string): string {
-  return `${PKCE_VERIFIER_PREFIX}${state}`;
-}
-
-/**
  * OAuth flow mode - determines redirect behavior after callback. `save` and
  * `extension-save` re-authorize an already-linked account for the Docs scopes,
  * so neither signs anyone in. A link flow is marked by its `link` target
@@ -131,40 +123,6 @@ interface PkceData {
   returnUrl?: string;
   /** Optional invite token for new user registration */
   inviteToken?: string;
-}
-
-/**
- * Stores a PKCE code verifier, scopes, and mode in Redis
- * The verifier is associated with the state parameter
- */
-async function storePkceVerifier(state: string, data: PkceData): Promise<void> {
-  const key = getPkceKey(state);
-  await redis.setex(key, PKCE_VERIFIER_TTL_SECONDS, JSON.stringify(data));
-}
-
-/**
- * Retrieves and deletes PKCE data from Redis
- * This ensures one-time use of the verifier
- *
- * @param state - The OAuth state parameter
- * @returns The PKCE data (verifier + scopes), or null if not found/expired
- */
-async function consumePkceVerifier(state: string): Promise<PkceData | null> {
-  const key = getPkceKey(state);
-
-  // Get and delete in a single transaction to ensure one-time use
-  const dataStr = await redis.get(key);
-
-  if (dataStr) {
-    await redis.del(key);
-    try {
-      return JSON.parse(dataStr) as PkceData;
-    } catch {
-      return null;
-    }
-  }
-
-  return null;
 }
 
 // ============================================================================
@@ -215,7 +173,7 @@ export async function createGoogleAuthUrl(
     : GOOGLE_SCOPES;
 
   // Store the code verifier, scopes, mode, return URL, and invite token for later use
-  await storePkceVerifier(state, {
+  await storeOAuthState(PKCE_VERIFIER_PREFIX + state, {
     verifier: codeVerifier,
     scopes,
     mode,
@@ -263,7 +221,7 @@ export async function validateGoogleCallback(
   }
 
   // Retrieve and consume the PKCE data (verifier + scopes)
-  const pkceData = await consumePkceVerifier(state);
+  const pkceData = await consumeOAuthState<PkceData>(PKCE_VERIFIER_PREFIX + state);
 
   // An empty verifier must fail closed: the client treats a falsy `pkceCodeVerifier` as
   // "this flow used no PKCE" and would silently drop the proof from the token request.
@@ -304,18 +262,11 @@ export async function validateGoogleCallback(
  * @throws Error if the request fails
  */
 async function fetchGoogleUserInfo(accessToken: string): Promise<GoogleUserInfo> {
-  const response = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Failed to fetch Google user info: ${error}`);
-  }
-
-  const userInfo = (await response.json()) as GoogleUserInfo;
+  const userInfo = await fetchUserInfo<GoogleUserInfo>(
+    "https://www.googleapis.com/oauth2/v3/userinfo",
+    accessToken,
+    "Google"
+  );
 
   // Validate required fields
   if (!userInfo.sub || !userInfo.email) {

@@ -26,8 +26,12 @@ import {
   isProviderEnabled,
   type OAuthLinkTarget,
 } from "./config";
-import { accessTokenExpiresAt, exchangeAuthorizationCode } from "./token-exchange";
-import { redis } from "@/server/redis";
+import {
+  accessTokenExpiresAt,
+  consumeOAuthState,
+  exchangeAuthorizationCode,
+  storeOAuthState,
+} from "./token-exchange";
 
 /**
  * Clock-skew allowance (seconds) when checking the id_token `exp` claim. Matches the
@@ -52,12 +56,6 @@ function getAppleJwks(): ReturnType<typeof createRemoteJWKSet> {
 // ============================================================================
 // Constants
 // ============================================================================
-
-/**
- * State storage TTL (10 minutes)
- * Users should complete the OAuth flow within this time
- */
-const STATE_TTL_SECONDS = 600;
 
 /**
  * Redis key prefix for OAuth state
@@ -156,13 +154,6 @@ interface AppleJWTPayload {
 // ============================================================================
 
 /**
- * Gets the Redis key for an OAuth state
- */
-function getStateKey(state: string): string {
-  return `${STATE_PREFIX}${state}`;
-}
-
-/**
  * Data stored in Redis for state verification
  */
 interface AppleStateData {
@@ -170,41 +161,6 @@ interface AppleStateData {
   inviteToken?: string;
   /** Present when this flow is a link (see `OAuthLinkTarget`) */
   link?: OAuthLinkTarget;
-}
-
-/**
- * Stores the OAuth state in Redis
- * The state is used for CSRF protection
- */
-async function storeState(state: string, data: AppleStateData): Promise<void> {
-  const key = getStateKey(state);
-  await redis.setex(key, STATE_TTL_SECONDS, JSON.stringify(data));
-}
-
-/**
- * Validates and consumes an OAuth state from Redis
- * This ensures one-time use of the state
- *
- * @param state - The OAuth state parameter
- * @returns The state data if valid, null otherwise
- */
-async function consumeState(state: string): Promise<AppleStateData | null> {
-  const key = getStateKey(state);
-
-  // Get and delete in a single check
-  const value = await redis.get(key);
-
-  if (value) {
-    await redis.del(key);
-    try {
-      return JSON.parse(value) as AppleStateData;
-    } catch {
-      // Legacy format was just "valid" string - treat as valid but no invite token
-      return {};
-    }
-  }
-
-  return null;
 }
 
 // ============================================================================
@@ -314,7 +270,10 @@ export async function createAppleAuthUrl(
   const state = client.randomState();
 
   // Store the link target and invite token for later verification
-  await storeState(state, { inviteToken: options.inviteToken, link: options.link });
+  await storeOAuthState(STATE_PREFIX + state, {
+    inviteToken: options.inviteToken,
+    link: options.link,
+  });
 
   // Create the authorization URL
   // Apple requires response_mode=form_post when requesting name or email scopes
@@ -358,7 +317,8 @@ export async function validateAppleCallback(
   }
 
   // Validate the state and retrieve stored data
-  const stateData = await consumeState(state);
+  // A legacy blob was the bare string "valid": a valid state with no data
+  const stateData = await consumeOAuthState<AppleStateData>(STATE_PREFIX + state, {});
 
   if (!stateData) {
     throw new Error("Invalid or expired OAuth state");
