@@ -59,7 +59,6 @@ export default function BlockedSendersSettingsContent() {
         isLoading={blockedQuery.isLoading}
         error={blockedQuery.error}
         errorMessage="Failed to load blocked senders. Please try again."
-        skeletonCount={3}
         skeletonHeight="h-16"
         emptyState={<EmptyState />}
         renderItem={(sender) => <BlockedSenderRow key={sender.id} sender={sender} />}

@@ -7,7 +7,8 @@
 
 "use client";
 
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useAppBaseUrl } from "@/lib/hooks/useAppBaseUrl";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { CardSection } from "@/components/ui/card";
 import { NoteBox } from "@/components/ui/note-box";
@@ -18,21 +19,9 @@ export function BookmarkletSettings() {
   const [showCode, setShowCode] = useState(false);
   const bookmarkletRef = useRef<HTMLAnchorElement>(null);
 
-  // Generate the bookmarklet URL using the app's base URL
-  // Check env var first (available on both server and client), then fall back to window.location.origin
-  const { bookmarkletHref, appUrl } = useMemo(() => {
-    const baseUrl =
-      process.env.NEXT_PUBLIC_APP_URL ||
-      (typeof window !== "undefined" ? window.location.origin : "");
-
-    // The bookmarklet JavaScript - opens the save page in a popup window
-    const bookmarkletCode = `javascript:(function(){window.open('${baseUrl}/save?url='+encodeURIComponent(location.href),'save','width=400,height=300')})();`;
-
-    return {
-      bookmarkletHref: bookmarkletCode,
-      appUrl: baseUrl,
-    };
-  }, []);
+  const appUrl = useAppBaseUrl();
+  // The bookmarklet JavaScript - opens the save page in a popup window
+  const bookmarkletHref = `javascript:(function(){window.open('${appUrl}/save?url='+encodeURIComponent(location.href),'save','width=400,height=300')})();`;
 
   // Set the href directly on the DOM element to bypass React's javascript: URL blocking
   useEffect(() => {

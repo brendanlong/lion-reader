@@ -9,6 +9,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { useAppBaseUrl } from "@/lib/hooks/useAppBaseUrl";
 import { QRCodeSVG } from "qrcode.react";
 import { trpc } from "@/lib/trpc/client";
 import { SettingsSection } from "@/components/settings/SettingsSection";
@@ -23,12 +24,7 @@ export function WallabagApiSettings() {
   const userQuery = trpc.auth.me.useQuery();
   const email = userQuery.data?.user.email;
 
-  const baseUrl = useMemo(() => {
-    return (
-      process.env.NEXT_PUBLIC_APP_URL ||
-      (typeof window !== "undefined" ? window.location.origin : "")
-    );
-  }, []);
+  const baseUrl = useAppBaseUrl();
 
   const serverUrl = `${baseUrl}/api/wallabag`;
 
