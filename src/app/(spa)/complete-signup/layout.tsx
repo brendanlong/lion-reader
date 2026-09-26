@@ -11,6 +11,7 @@ import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { TRPCProvider } from "@/lib/trpc/provider";
 import { AuthErrorHandler } from "@/components/app/AuthErrorHandler";
+import { AuthLayoutContent } from "@/components/auth/AuthLayoutContent";
 import { validateSession } from "@/server/auth/session";
 import { isSignupConfirmed } from "@/server/auth/confirmation";
 
@@ -21,12 +22,8 @@ interface CompleteSignupLayoutProps {
 export default async function CompleteSignupLayout({ children }: CompleteSignupLayoutProps) {
   const cookieStore = await cookies();
   const sessionToken = cookieStore.get("session")?.value;
+  const session = sessionToken ? await validateSession(sessionToken) : null;
 
-  if (!sessionToken) {
-    redirect("/login");
-  }
-
-  const session = await validateSession(sessionToken);
   if (!session) {
     redirect("/login");
   }
@@ -41,16 +38,7 @@ export default async function CompleteSignupLayout({ children }: CompleteSignupL
       {/* Authenticated surface: a dead session mid-page should redirect to /login,
           like the SPA. The signup-confirmation branch self-guards this path. */}
       <AuthErrorHandler />
-      <div className="bg-canvas flex min-h-screen flex-col items-center justify-center px-4 py-12">
-        <div className="w-full max-w-md">
-          <div className="mb-8 text-center">
-            <h1 className="ui-text-2xl text-body font-bold">Lion Reader</h1>
-            <p className="ui-text-sm text-muted mt-2">Complete your account setup</p>
-          </div>
-
-          <div className="border-edge bg-surface rounded-lg border p-6 shadow-sm">{children}</div>
-        </div>
-      </div>
+      <AuthLayoutContent subtitle="Complete your account setup">{children}</AuthLayoutContent>
     </TRPCProvider>
   );
 }

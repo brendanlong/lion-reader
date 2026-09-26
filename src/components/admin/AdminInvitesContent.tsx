@@ -7,14 +7,17 @@
 
 "use client";
 
-import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, StatusCard } from "@/components/ui/card";
 import { ClientLink } from "@/components/ui/client-link";
-import { CopyIcon, SpinnerIcon } from "@/components/ui/icons";
+import { CopyIcon } from "@/components/ui/icons";
+import { InfiniteScrollFooter } from "@/components/ui/infinite-scroll-footer";
+import { AdminQueryFallback } from "@/components/admin/AdminQueryFallback";
+import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
 
 // ============================================================================
 // Constants
@@ -201,20 +204,11 @@ function EmptyState({ hasSearch }: { hasSearch: boolean }) {
 
 export default function AdminInvitesContent() {
   const [searchInput, setSearchInput] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(searchInput, DEBOUNCE_MS);
   const [createdInviteUrl, setCreatedInviteUrl] = useState<string | null>(null);
   const [revokingId, setRevokingId] = useState<string | null>(null);
-  const loadMoreRef = useRef<HTMLDivElement>(null);
 
   const utils = trpc.useUtils();
-
-  // Debounce search input
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(searchInput);
-    }, DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [searchInput]);
 
   // Query: list invites with infinite scroll
   const invitesQuery = trpc.admin.listInvites.useInfiniteQuery(
@@ -266,36 +260,6 @@ export default function AdminInvitesContent() {
     [revokeInviteMutation]
   );
 
-  // Intersection Observer for infinite scroll
-  const { hasNextPage, isFetchingNextPage, fetchNextPage } = invitesQuery;
-  const handleObserver = useCallback(
-    (entries: IntersectionObserverEntry[]) => {
-      const target = entries[0];
-      if (target.isIntersecting && hasNextPage && !isFetchingNextPage) {
-        fetchNextPage();
-      }
-    },
-    [fetchNextPage, hasNextPage, isFetchingNextPage]
-  );
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(handleObserver, {
-      rootMargin: "100px",
-      threshold: 0,
-    });
-
-    const currentRef = loadMoreRef.current;
-    if (currentRef) {
-      observer.observe(currentRef);
-    }
-
-    return () => {
-      if (currentRef) {
-        observer.unobserve(currentRef);
-      }
-    };
-  }, [handleObserver]);
-
   return (
     <div>
       {/* Header */}
@@ -328,22 +292,8 @@ export default function AdminInvitesContent() {
       </div>
 
       {/* Invites List */}
-      {invitesQuery.isLoading ? (
-        <div className="flex items-center justify-center p-8">
-          <SpinnerIcon className="text-faint h-6 w-6" />
-        </div>
-      ) : invitesQuery.isError ? (
-        <div className="p-8 text-center">
-          <p className="ui-text-sm text-danger">Failed to load invites. Please try again.</p>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => invitesQuery.refetch()}
-            className="mt-2"
-          >
-            Retry
-          </Button>
-        </div>
+      {invitesQuery.isLoading || invitesQuery.isError ? (
+        <AdminQueryFallback query={invitesQuery} noun="invites" />
       ) : invites.length === 0 ? (
         <EmptyState hasSearch={debouncedSearch.length > 0} />
       ) : (
@@ -357,21 +307,12 @@ export default function AdminInvitesContent() {
             />
           ))}
 
-          {/* Load more trigger element */}
-          <div ref={loadMoreRef} className="h-1" />
-
-          {/* Loading indicator */}
-          {invitesQuery.isFetchingNextPage && (
-            <div className="flex items-center justify-center p-4">
-              <SpinnerIcon className="text-faint mr-2 h-4 w-4" />
-              <span className="ui-text-sm text-muted">Loading more...</span>
-            </div>
-          )}
-
-          {/* End of list */}
-          {!invitesQuery.hasNextPage && invites.length > 0 && (
-            <p className="ui-text-xs text-faint p-3 text-center">No more invites</p>
-          )}
+          <InfiniteScrollFooter
+            hasNextPage={invitesQuery.hasNextPage}
+            isFetchingNextPage={invitesQuery.isFetchingNextPage}
+            fetchNextPage={invitesQuery.fetchNextPage}
+            endLabel="No more invites"
+          />
         </Card>
       )}
     </div>

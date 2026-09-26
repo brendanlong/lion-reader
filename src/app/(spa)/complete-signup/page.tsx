@@ -10,7 +10,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
@@ -82,58 +82,18 @@ export default function CompleteSignupPage() {
       {error && <Alert variant="error">{error}</Alert>}
 
       <div className="space-y-4">
-        <label className="flex cursor-pointer items-start gap-3">
-          <input
-            type="checkbox"
-            checked={acceptedTos}
-            onChange={(e) => setAcceptedTos(e.target.checked)}
-            className="text-body border-edge-input mt-0.5 h-5 w-5 shrink-0 rounded dark:bg-zinc-800"
-          />
-          <span className="ui-text-sm text-body">
-            I have read and agree to the{" "}
-            <PageLink
-              href="/terms"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-body hover:text-body underline"
-            >
-              Terms of Service
-            </PageLink>
-          </span>
-        </label>
+        <ConsentCheckbox checked={acceptedTos} onChange={setAcceptedTos}>
+          I have read and agree to the <PolicyLink href="/terms">Terms of Service</PolicyLink>
+        </ConsentCheckbox>
 
-        <label className="flex cursor-pointer items-start gap-3">
-          <input
-            type="checkbox"
-            checked={acceptedPrivacy}
-            onChange={(e) => setAcceptedPrivacy(e.target.checked)}
-            className="text-body border-edge-input mt-0.5 h-5 w-5 shrink-0 rounded dark:bg-zinc-800"
-          />
-          <span className="ui-text-sm text-body">
-            I have read and agree to the{" "}
-            <PageLink
-              href="/privacy"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-body hover:text-body underline"
-            >
-              Privacy Policy
-            </PageLink>
-          </span>
-        </label>
+        <ConsentCheckbox checked={acceptedPrivacy} onChange={setAcceptedPrivacy}>
+          I have read and agree to the <PolicyLink href="/privacy">Privacy Policy</PolicyLink>
+        </ConsentCheckbox>
 
         {euRestricted && (
-          <label className="flex cursor-pointer items-start gap-3">
-            <input
-              type="checkbox"
-              checked={confirmedNotInEu}
-              onChange={(e) => setConfirmedNotInEu(e.target.checked)}
-              className="text-body border-edge-input mt-0.5 h-5 w-5 shrink-0 rounded dark:bg-zinc-800"
-            />
-            <span className="ui-text-sm text-body">
-              I confirm that I am not located in the European Union
-            </span>
-          </label>
+          <ConsentCheckbox checked={confirmedNotInEu} onChange={setConfirmedNotInEu}>
+            I confirm that I am not located in the European Union
+          </ConsentCheckbox>
         )}
 
         {euRestricted && (
@@ -201,5 +161,40 @@ export default function CompleteSignupPage() {
         )}
       </div>
     </div>
+  );
+}
+
+function ConsentCheckbox({
+  checked,
+  onChange,
+  children,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  children: ReactNode;
+}) {
+  return (
+    <label className="flex cursor-pointer items-start gap-3">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="text-body border-edge-input mt-0.5 h-5 w-5 shrink-0 rounded dark:bg-zinc-800"
+      />
+      <span className="ui-text-sm text-body">{children}</span>
+    </label>
+  );
+}
+
+function PolicyLink({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <PageLink
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-body hover:text-body underline"
+    >
+      {children}
+    </PageLink>
   );
 }

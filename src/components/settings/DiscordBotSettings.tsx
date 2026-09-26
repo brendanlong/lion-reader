@@ -16,22 +16,15 @@ import { InlineCode } from "@/components/ui/inline-code";
 import { DiscordIcon, ExternalLinkIcon } from "@/components/ui/icons";
 
 /**
- * Check if a string is a custom Discord emoji name (word) vs a unicode emoji.
- * Custom emojis are alphanumeric with underscores, like "savetolionreader".
+ * Display a configured reaction emoji. Custom Discord emoji names (alphanumeric
+ * with underscores, like "savetolionreader") get wrapped in colons.
  */
-function isCustomEmoji(emoji: string): boolean {
-  return /^[a-zA-Z0-9_]+$/.test(emoji);
-}
-
-/**
- * Format an emoji for display. Custom emojis get wrapped in colons.
- */
-function formatEmoji(emoji: string): { text: string; isCustom: boolean } {
-  const isCustom = isCustomEmoji(emoji);
-  return {
-    text: isCustom ? `:${emoji}:` : emoji,
-    isCustom,
-  };
+function EmojiText({ emoji }: { emoji: string }) {
+  return /^[a-zA-Z0-9_]+$/.test(emoji) ? (
+    <InlineCode>{`:${emoji}:`}</InlineCode>
+  ) : (
+    <span className="text-base">{emoji}</span>
+  );
 }
 
 export function DiscordBotSettings() {
@@ -56,9 +49,7 @@ export function DiscordBotSettings() {
     return null;
   }
 
-  const emoji = botConfig.saveEmoji ? formatEmoji(botConfig.saveEmoji) : null;
-  const successEmoji = botConfig.successEmoji ? formatEmoji(botConfig.successEmoji) : null;
-  const errorEmoji = botConfig.errorEmoji ? formatEmoji(botConfig.errorEmoji) : null;
+  const { saveEmoji, successEmoji, errorEmoji } = botConfig;
 
   return (
     <SettingsSection
@@ -102,15 +93,9 @@ export function DiscordBotSettings() {
           </li>
           <li>
             <strong className="text-body">React to messages</strong> -{" "}
-            {emoji ? (
+            {saveEmoji ? (
               <>
-                React with{" "}
-                {emoji.isCustom ? (
-                  <InlineCode>{emoji.text}</InlineCode>
-                ) : (
-                  <span className="text-base">{emoji.text}</span>
-                )}{" "}
-                to any message containing a URL
+                React with <EmojiText emoji={saveEmoji} /> to any message containing a URL
               </>
             ) : (
               "Add the configured emoji reaction to any message containing a URL"
@@ -121,23 +106,11 @@ export function DiscordBotSettings() {
             <strong className="text-body">Look for the reaction</strong> -{" "}
             {successEmoji ? (
               <>
-                The bot will react with{" "}
-                {successEmoji.isCustom ? (
-                  <InlineCode>{successEmoji.text}</InlineCode>
-                ) : (
-                  <span className="text-base">{successEmoji.text}</span>
-                )}{" "}
-                on success
+                The bot will react with <EmojiText emoji={successEmoji} /> on success
                 {errorEmoji && (
                   <>
                     {" "}
-                    or{" "}
-                    {errorEmoji.isCustom ? (
-                      <InlineCode>{errorEmoji.text}</InlineCode>
-                    ) : (
-                      <span className="text-base">{errorEmoji.text}</span>
-                    )}{" "}
-                    on failure
+                    or <EmojiText emoji={errorEmoji} /> on failure
                   </>
                 )}
               </>

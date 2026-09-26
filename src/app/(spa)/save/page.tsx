@@ -12,7 +12,7 @@
 
 "use client";
 
-import { Suspense, useEffect, useState, useRef } from "react";
+import { Suspense, useEffect, useState, useRef, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,66 @@ export default function SavePage() {
     <Suspense>
       <SaveContent />
     </Suspense>
+  );
+}
+
+interface SharedFile {
+  content: string;
+  filename: string;
+  title?: string;
+}
+
+/**
+ * Read the file the share-target service worker stashed in IndexedDB,
+ * optionally deleting it once read.
+ */
+function readSharedFile(onFile: (file: SharedFile) => void, deleteAfterRead: boolean) {
+  const dbRequest = indexedDB.open("lion-reader-share", 1);
+
+  dbRequest.onsuccess = () => {
+    const db = dbRequest.result;
+    const transaction = db.transaction("files", "readonly");
+    const store = transaction.objectStore("files");
+    const getRequest = store.get("pending");
+
+    getRequest.onsuccess = () => {
+      const fileData = getRequest.result;
+      if (fileData) {
+        onFile({ content: fileData.content, filename: fileData.filename, title: fileData.title });
+
+        if (deleteAfterRead) {
+          const deleteTransaction = db.transaction("files", "readwrite");
+          deleteTransaction.objectStore("files").delete("pending");
+        }
+      } else {
+        console.error("No file found in IndexedDB");
+      }
+    };
+
+    getRequest.onerror = () => {
+      console.error("Failed to read file from IndexedDB:", getRequest.error);
+    };
+
+    transaction.oncomplete = () => {
+      db.close();
+    };
+  };
+
+  dbRequest.onerror = () => {
+    console.error("Failed to open IndexedDB:", dbRequest.error);
+  };
+}
+
+function SaveCard({ children }: { children: ReactNode }) {
+  return (
+    <div className="bg-canvas flex min-h-screen flex-col items-center justify-center p-4">
+      <div className="border-edge bg-surface w-full max-w-sm rounded-lg border p-6 shadow-sm">
+        <div className="text-center">
+          <h1 className="ui-text-lg text-body font-semibold">Save to Lion Reader</h1>
+          {children}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -95,47 +155,8 @@ function SaveContent() {
     if (shareType === "file" && !saveInitiatedRef.current) {
       saveInitiatedRef.current = true;
 
-      // Open IndexedDB to retrieve the shared file
-      const dbRequest = indexedDB.open("lion-reader-share", 1);
-
-      dbRequest.onsuccess = () => {
-        const db = dbRequest.result;
-        const transaction = db.transaction("files", "readonly");
-        const store = transaction.objectStore("files");
-        const getRequest = store.get("pending");
-
-        getRequest.onsuccess = () => {
-          const fileData = getRequest.result;
-          if (fileData) {
-            // Upload the file using the uploadFile mutation
-            uploadFileMutation.mutate({
-              content: fileData.content,
-              filename: fileData.filename,
-              title: fileData.title,
-            });
-
-            // Clean up - delete the file from IndexedDB after reading
-            const deleteTransaction = db.transaction("files", "readwrite");
-            const deleteStore = deleteTransaction.objectStore("files");
-            deleteStore.delete("pending");
-          } else {
-            // No file found in IndexedDB
-            console.error("No file found in IndexedDB");
-          }
-        };
-
-        getRequest.onerror = () => {
-          console.error("Failed to read file from IndexedDB:", getRequest.error);
-        };
-
-        transaction.oncomplete = () => {
-          db.close();
-        };
-      };
-
-      dbRequest.onerror = () => {
-        console.error("Failed to open IndexedDB:", dbRequest.error);
-      };
+      // Upload the shared file, then delete it from IndexedDB
+      readSharedFile((file) => uploadFileMutation.mutate(file), true);
     }
   }, [shareType, uploadFileMutation]);
 
@@ -178,26 +199,7 @@ function SaveContent() {
     } else if (shareType === "file") {
       // Retry file upload - re-read from IndexedDB
       saveInitiatedRef.current = false;
-      const dbRequest = indexedDB.open("lion-reader-share", 1);
-      dbRequest.onsuccess = () => {
-        const db = dbRequest.result;
-        const transaction = db.transaction("files", "readonly");
-        const store = transaction.objectStore("files");
-        const getRequest = store.get("pending");
-        getRequest.onsuccess = () => {
-          const fileData = getRequest.result;
-          if (fileData) {
-            uploadFileMutation.mutate({
-              content: fileData.content,
-              filename: fileData.filename,
-              title: fileData.title,
-            });
-          }
-        };
-        transaction.oncomplete = () => {
-          db.close();
-        };
-      };
+      readSharedFile((file) => uploadFileMutation.mutate(file), false);
     }
   };
 
@@ -241,151 +243,139 @@ function SaveContent() {
     };
 
     return (
-      <div className="bg-canvas flex min-h-screen flex-col items-center justify-center p-4">
-        <div className="border-edge bg-surface w-full max-w-sm rounded-lg border p-6 shadow-sm">
-          <div className="text-center">
-            <h1 className="ui-text-lg text-body font-semibold">Save to Lion Reader</h1>
-            <Alert variant="error" className="mt-4">
-              {shareError
-                ? errorMessages[shareError] || "An error occurred."
-                : "No URL or file provided. Use the bookmarklet or share from another app."}
-            </Alert>
-            <Button variant="secondary" className="mt-4 w-full" onClick={handleClose}>
-              Close
-            </Button>
-          </div>
-        </div>
-      </div>
+      <SaveCard>
+        <Alert variant="error" className="mt-4">
+          {shareError
+            ? errorMessages[shareError] || "An error occurred."
+            : "No URL or file provided. Use the bookmarklet or share from another app."}
+        </Alert>
+        <Button variant="secondary" className="mt-4 w-full" onClick={handleClose}>
+          Close
+        </Button>
+      </SaveCard>
     );
   }
 
   return (
-    <div className="bg-canvas flex min-h-screen flex-col items-center justify-center p-4">
-      <div className="border-edge bg-surface w-full max-w-sm rounded-lg border p-6 shadow-sm">
-        <div className="text-center">
-          <h1 className="ui-text-lg text-body font-semibold">Save to Lion Reader</h1>
+    <SaveCard>
+      {/* Saving State (includes idle, pending, and the feed→subscribe redirect) */}
+      {(activeMutation.isIdle || activeMutation.isPending || isFeedRedirect) && (
+        <div className="mt-6">
+          <div className="flex justify-center">
+            <SpinnerIcon className="text-muted h-8 w-8" />
+          </div>
+          <p className="ui-text-sm text-muted mt-3">
+            {isFeedRedirect
+              ? "This is a feed — opening Subscribe..."
+              : shareType === "file"
+                ? "Uploading file..."
+                : "Saving article..."}
+          </p>
+          {urlToSave && <p className="ui-text-xs text-muted mt-2 truncate">{urlToSave}</p>}
+        </div>
+      )}
 
-          {/* Saving State (includes idle, pending, and the feed→subscribe redirect) */}
-          {(activeMutation.isIdle || activeMutation.isPending || isFeedRedirect) && (
-            <div className="mt-6">
-              <div className="flex justify-center">
-                <SpinnerIcon className="text-muted h-8 w-8" />
-              </div>
-              <p className="ui-text-sm text-muted mt-3">
-                {isFeedRedirect
-                  ? "This is a feed — opening Subscribe..."
-                  : shareType === "file"
-                    ? "Uploading file..."
-                    : "Saving article..."}
-              </p>
-              {urlToSave && <p className="ui-text-xs text-muted mt-2 truncate">{urlToSave}</p>}
-            </div>
+      {/* Success State */}
+      {activeMutation.isSuccess && (
+        <div className="mt-6">
+          <div className="flex justify-center">
+            <CheckIcon className="text-success h-8 w-8" />
+          </div>
+          <p className="ui-text-sm text-success mt-3 font-medium">Saved successfully!</p>
+          {articleTitle && (
+            <p className="ui-text-sm text-muted mt-2 line-clamp-2">{articleTitle}</p>
           )}
+          <p className="ui-text-xs text-muted mt-4">Closing in {countdown}...</p>
+          <Button variant="secondary" className="mt-3 w-full" onClick={handleClose}>
+            Close Now
+          </Button>
+        </div>
+      )}
 
-          {/* Success State */}
-          {activeMutation.isSuccess && (
-            <div className="mt-6">
+      {/* Error State */}
+      {activeMutation.isError && !isFeedRedirect && (
+        <div className="mt-6">
+          {/* Authentication Required */}
+          {isAuthError ? (
+            <>
               <div className="flex justify-center">
-                <CheckIcon className="text-success h-8 w-8" />
+                <LockIcon className="text-warning h-8 w-8" />
               </div>
-              <p className="ui-text-sm text-success mt-3 font-medium">Saved successfully!</p>
-              {articleTitle && (
-                <p className="ui-text-sm text-muted mt-2 line-clamp-2">{articleTitle}</p>
-              )}
-              <p className="ui-text-xs text-muted mt-4">Closing in {countdown}...</p>
-              <Button variant="secondary" className="mt-3 w-full" onClick={handleClose}>
-                Close Now
-              </Button>
-            </div>
-          )}
-
-          {/* Error State */}
-          {activeMutation.isError && !isFeedRedirect && (
-            <div className="mt-6">
-              {/* Authentication Required */}
-              {isAuthError ? (
-                <>
-                  <div className="flex justify-center">
-                    <LockIcon className="text-warning h-8 w-8" />
-                  </div>
-                  <Alert variant="warning" className="mt-4 text-left">
-                    Your session has expired. Please sign in again to save this article.
-                  </Alert>
-                  <p className="ui-text-xs text-muted mt-2 truncate">{urlToSave}</p>
-                  <div className="mt-4 flex gap-2">
-                    <Button variant="secondary" className="flex-1" onClick={handleClose}>
-                      Close
-                    </Button>
-                    <Button variant="primary" className="flex-1" onClick={handleSignIn}>
-                      Sign In
-                    </Button>
-                  </div>
-                </>
-              ) : /* Google Docs Permission Required */
-              needsDocsPermission || needsGoogleSignin || needsGoogleReauth ? (
-                <>
-                  <div className="flex justify-center">
-                    <LockIcon className="text-info h-8 w-8" />
-                  </div>
-                  <Alert variant="error" className="mt-4 text-left">
-                    {needsDocsPermission
-                      ? "This is a private Google Doc. You need to grant permission to access your Google Docs."
+              <Alert variant="warning" className="mt-4 text-left">
+                Your session has expired. Please sign in again to save this article.
+              </Alert>
+              <p className="ui-text-xs text-muted mt-2 truncate">{urlToSave}</p>
+              <div className="mt-4 flex gap-2">
+                <Button variant="secondary" className="flex-1" onClick={handleClose}>
+                  Close
+                </Button>
+                <Button variant="primary" className="flex-1" onClick={handleSignIn}>
+                  Sign In
+                </Button>
+              </div>
+            </>
+          ) : /* Google Docs Permission Required */
+          needsDocsPermission || needsGoogleSignin || needsGoogleReauth ? (
+            <>
+              <div className="flex justify-center">
+                <LockIcon className="text-info h-8 w-8" />
+              </div>
+              <Alert variant="error" className="mt-4 text-left">
+                {needsDocsPermission
+                  ? "This is a private Google Doc. You need to grant permission to access your Google Docs."
+                  : needsGoogleReauth
+                    ? "Your Google account session has expired. Please reconnect to access private Google Docs."
+                    : "This is a private Google Doc. You need to sign in with Google to save it."}
+              </Alert>
+              <p className="ui-text-xs text-muted mt-2 truncate">{urlToSave}</p>
+              <div className="mt-4 flex gap-2">
+                <Button variant="secondary" className="flex-1" onClick={handleClose}>
+                  Close
+                </Button>
+                <Button
+                  variant="primary"
+                  className="flex-1"
+                  onClick={handleRequestPermission}
+                  disabled={isRequestingPermission || requestGoogleDocsAccessMutation.isPending}
+                >
+                  {isRequestingPermission || requestGoogleDocsAccessMutation.isPending
+                    ? "Redirecting..."
+                    : needsDocsPermission
+                      ? "Grant Permission"
                       : needsGoogleReauth
-                        ? "Your Google account session has expired. Please reconnect to access private Google Docs."
-                        : "This is a private Google Doc. You need to sign in with Google to save it."}
-                  </Alert>
-                  <p className="ui-text-xs text-muted mt-2 truncate">{urlToSave}</p>
-                  <div className="mt-4 flex gap-2">
-                    <Button variant="secondary" className="flex-1" onClick={handleClose}>
-                      Close
-                    </Button>
-                    <Button
-                      variant="primary"
-                      className="flex-1"
-                      onClick={handleRequestPermission}
-                      disabled={isRequestingPermission || requestGoogleDocsAccessMutation.isPending}
-                    >
-                      {isRequestingPermission || requestGoogleDocsAccessMutation.isPending
-                        ? "Redirecting..."
-                        : needsDocsPermission
-                          ? "Grant Permission"
-                          : needsGoogleReauth
-                            ? "Reconnect Google"
-                            : "Sign in with Google"}
-                    </Button>
-                  </div>
-                  {requestGoogleDocsAccessMutation.isError && (
-                    <Alert variant="error" className="ui-text-sm mt-2 text-left">
-                      {requestGoogleDocsAccessMutation.error?.message ||
-                        "Failed to request permission"}
-                    </Alert>
-                  )}
-                </>
-              ) : (
-                <>
-                  {/* General Error */}
-                  <div className="flex justify-center">
-                    <CloseIcon className="text-danger h-8 w-8" />
-                  </div>
-                  <Alert variant="error" className="mt-4 text-left">
-                    {activeMutation.error?.message ||
-                      (shareType === "file" ? "Failed to upload file" : "Failed to save article")}
-                  </Alert>
-                  {urlToSave && <p className="ui-text-xs text-muted mt-2 truncate">{urlToSave}</p>}
-                  <div className="mt-4 flex gap-2">
-                    <Button variant="secondary" className="flex-1" onClick={handleClose}>
-                      Close
-                    </Button>
-                    <Button variant="primary" className="flex-1" onClick={handleRetry}>
-                      Retry
-                    </Button>
-                  </div>
-                </>
+                        ? "Reconnect Google"
+                        : "Sign in with Google"}
+                </Button>
+              </div>
+              {requestGoogleDocsAccessMutation.isError && (
+                <Alert variant="error" className="ui-text-sm mt-2 text-left">
+                  {requestGoogleDocsAccessMutation.error?.message || "Failed to request permission"}
+                </Alert>
               )}
-            </div>
+            </>
+          ) : (
+            <>
+              {/* General Error */}
+              <div className="flex justify-center">
+                <CloseIcon className="text-danger h-8 w-8" />
+              </div>
+              <Alert variant="error" className="mt-4 text-left">
+                {activeMutation.error?.message ||
+                  (shareType === "file" ? "Failed to upload file" : "Failed to save article")}
+              </Alert>
+              {urlToSave && <p className="ui-text-xs text-muted mt-2 truncate">{urlToSave}</p>}
+              <div className="mt-4 flex gap-2">
+                <Button variant="secondary" className="flex-1" onClick={handleClose}>
+                  Close
+                </Button>
+                <Button variant="primary" className="flex-1" onClick={handleRetry}>
+                  Retry
+                </Button>
+              </div>
+            </>
           )}
         </div>
-      </div>
-    </div>
+      )}
+    </SaveCard>
   );
 }

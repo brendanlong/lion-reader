@@ -8,6 +8,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useAppBaseUrl } from "@/lib/hooks/useAppBaseUrl";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { SettingsSection } from "@/components/settings/SettingsSection";
@@ -19,13 +20,7 @@ import { InlineCode } from "@/components/ui/inline-code";
 import { TextLink } from "@/components/ui/text-link";
 
 export function IntegrationsSettings() {
-  // Check env var first (available on both server and client), then fall back to window.location.origin
-  const baseUrl = useMemo(() => {
-    return (
-      process.env.NEXT_PUBLIC_APP_URL ||
-      (typeof window !== "undefined" ? window.location.origin : "")
-    );
-  }, []);
+  const baseUrl = useAppBaseUrl();
 
   const mcpUrl = `${baseUrl}/api/mcp`;
 

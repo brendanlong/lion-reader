@@ -9,14 +9,16 @@
 
 "use client";
 
-import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { useState, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ClientLink } from "@/components/ui/client-link";
-import { SpinnerIcon, GoogleIcon, AppleIcon, DiscordIcon } from "@/components/ui/icons";
+import { GoogleIcon, AppleIcon, DiscordIcon } from "@/components/ui/icons";
+import { InfiniteScrollFooter } from "@/components/ui/infinite-scroll-footer";
+import { AdminQueryFallback } from "@/components/admin/AdminQueryFallback";
+import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
 
 // ============================================================================
 // Constants
@@ -173,17 +175,8 @@ export default function AdminUsersContent() {
   const initialSearch = searchParams.get("search") ?? "";
 
   const [searchInput, setSearchInput] = useState(initialSearch);
-  const [debouncedSearch, setDebouncedSearch] = useState(initialSearch);
+  const debouncedSearch = useDebouncedValue(searchInput, DEBOUNCE_MS);
   const [sort, setSort] = useState<UserSort>("activity");
-  const loadMoreRef = useRef<HTMLDivElement>(null);
-
-  // Debounce search input
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(searchInput);
-    }, DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [searchInput]);
 
   // Query: list users with infinite scroll
   const usersQuery = trpc.admin.listUsers.useInfiniteQuery(
@@ -202,36 +195,6 @@ export default function AdminUsersContent() {
     () => usersQuery.data?.pages.flatMap((page) => page.items) ?? [],
     [usersQuery.data?.pages]
   );
-
-  // Intersection Observer for infinite scroll
-  const { hasNextPage, isFetchingNextPage, fetchNextPage } = usersQuery;
-  const handleObserver = useCallback(
-    (entries: IntersectionObserverEntry[]) => {
-      const target = entries[0];
-      if (target.isIntersecting && hasNextPage && !isFetchingNextPage) {
-        fetchNextPage();
-      }
-    },
-    [fetchNextPage, hasNextPage, isFetchingNextPage]
-  );
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(handleObserver, {
-      rootMargin: "100px",
-      threshold: 0,
-    });
-
-    const currentRef = loadMoreRef.current;
-    if (currentRef) {
-      observer.observe(currentRef);
-    }
-
-    return () => {
-      if (currentRef) {
-        observer.unobserve(currentRef);
-      }
-    };
-  }, [handleObserver]);
 
   return (
     <div>
@@ -270,22 +233,8 @@ export default function AdminUsersContent() {
       </div>
 
       {/* Users List */}
-      {usersQuery.isLoading ? (
-        <div className="flex items-center justify-center p-8">
-          <SpinnerIcon className="text-faint h-6 w-6" />
-        </div>
-      ) : usersQuery.isError ? (
-        <div className="p-8 text-center">
-          <p className="ui-text-sm text-danger">Failed to load users. Please try again.</p>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => usersQuery.refetch()}
-            className="mt-2"
-          >
-            Retry
-          </Button>
-        </div>
+      {usersQuery.isLoading || usersQuery.isError ? (
+        <AdminQueryFallback query={usersQuery} noun="users" />
       ) : users.length === 0 ? (
         <EmptyState hasSearch={debouncedSearch.length > 0} />
       ) : (
@@ -294,21 +243,12 @@ export default function AdminUsersContent() {
             <UserRow key={user.id} user={user} />
           ))}
 
-          {/* Load more trigger element */}
-          <div ref={loadMoreRef} className="h-1" />
-
-          {/* Loading indicator */}
-          {usersQuery.isFetchingNextPage && (
-            <div className="flex items-center justify-center p-4">
-              <SpinnerIcon className="text-faint mr-2 h-4 w-4" />
-              <span className="ui-text-sm text-muted">Loading more...</span>
-            </div>
-          )}
-
-          {/* End of list */}
-          {!usersQuery.hasNextPage && users.length > 0 && (
-            <p className="ui-text-xs text-faint p-3 text-center">No more users</p>
-          )}
+          <InfiniteScrollFooter
+            hasNextPage={usersQuery.hasNextPage}
+            isFetchingNextPage={usersQuery.isFetchingNextPage}
+            fetchNextPage={usersQuery.fetchNextPage}
+            endLabel="No more users"
+          />
         </Card>
       )}
     </div>

@@ -5,7 +5,7 @@
  * If no token exists, opens the web auth flow to get one.
  */
 
-import { DEFAULT_SERVER_URL } from "./constants.js";
+import { getApiToken, getServerUrl, getWebAuthUrl } from "./constants.js";
 
 // DOM Elements
 const loadingEl = document.getElementById("loading");
@@ -19,31 +19,11 @@ const errorAlertEl = document.getElementById("error-alert");
 const errorUrlEl = document.getElementById("error-url");
 const errorCloseBtn = document.getElementById("error-close-btn");
 const retryBtn = document.getElementById("retry-btn");
-const notConfiguredEl = document.getElementById("not-configured");
-const openOptionsBtn = document.getElementById("open-options-btn");
-const notSignedInEl = document.getElementById("not-signed-in");
-const openLionReaderBtn = document.getElementById("open-lionreader-btn");
 
 // State
 let currentUrl = null;
 let currentTitle = null;
 let countdownInterval = null;
-
-/**
- * Get the configured server URL from storage.
- */
-async function getServerUrl() {
-  const result = await chrome.storage.sync.get(["serverUrl"]);
-  return result.serverUrl || DEFAULT_SERVER_URL;
-}
-
-/**
- * Get the stored API token.
- */
-async function getApiToken() {
-  const result = await chrome.storage.sync.get(["apiToken"]);
-  return result.apiToken || null;
-}
 
 /**
  * Show a specific state, hiding all others.
@@ -52,8 +32,6 @@ function showState(state) {
   loadingEl.classList.add("hidden");
   successEl.classList.add("hidden");
   errorEl.classList.add("hidden");
-  notConfiguredEl.classList.add("hidden");
-  notSignedInEl.classList.add("hidden");
 
   const el = document.getElementById(state);
   if (el) {
@@ -128,14 +106,8 @@ async function saveWithToken(url, title, token) {
  * The background script will detect the callback and store the token.
  */
 async function startWebAuthFlow(url, title) {
-  const serverUrl = await getServerUrl();
-  let authUrl = `${serverUrl}/extension/save?url=${encodeURIComponent(url)}`;
-  if (title) {
-    authUrl += `&title=${encodeURIComponent(title)}`;
-  }
-
   // Open the auth page in a new tab
-  await chrome.tabs.create({ url: authUrl });
+  await chrome.tabs.create({ url: await getWebAuthUrl(url, title) });
 
   // Close the popup - the background script will handle the callback
   window.close();
@@ -223,16 +195,6 @@ retryBtn.addEventListener("click", () => {
     clearInterval(countdownInterval);
   }
   save();
-});
-
-openOptionsBtn.addEventListener("click", () => {
-  chrome.runtime.openOptionsPage();
-});
-
-openLionReaderBtn.addEventListener("click", async () => {
-  const serverUrl = await getServerUrl();
-  chrome.tabs.create({ url: serverUrl });
-  window.close();
 });
 
 // Start saving when popup opens

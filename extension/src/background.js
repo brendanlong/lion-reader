@@ -9,23 +9,7 @@
  * - Badge updates
  */
 
-import { DEFAULT_SERVER_URL } from "./constants.js";
-
-/**
- * Get the configured server URL from storage.
- */
-async function getServerUrl() {
-  const result = await chrome.storage.sync.get(["serverUrl"]);
-  return result.serverUrl || DEFAULT_SERVER_URL;
-}
-
-/**
- * Get the stored API token.
- */
-async function getApiToken() {
-  const result = await chrome.storage.sync.get(["apiToken"]);
-  return result.apiToken || null;
-}
+import { getApiToken, getServerUrl, getWebAuthUrl } from "./constants.js";
 
 /**
  * Store the API token.
@@ -72,18 +56,54 @@ async function saveArticle(url, title, token) {
  * Open the web auth flow to save an article and get a token.
  */
 async function openWebAuthFlow(url, title) {
-  const serverUrl = await getServerUrl();
-  let authUrl = `${serverUrl}/extension/save?url=${encodeURIComponent(url)}`;
-  if (title) {
-    authUrl += `&title=${encodeURIComponent(title)}`;
-  }
-
-  await chrome.tabs.create({ url: authUrl });
+  await chrome.tabs.create({ url: await getWebAuthUrl(url, title) });
 }
 
 /**
- * Save the current tab's page using the stored token.
- * Falls back to web auth flow if no token.
+ * Set the tab's badge, clearing it after `clearAfterMs` if given.
+ */
+async function setBadge(tabId, text, color, clearAfterMs) {
+  await chrome.action.setBadgeText({ text, tabId });
+  await chrome.action.setBadgeBackgroundColor({ color, tabId });
+  if (clearAfterMs) {
+    setTimeout(async () => {
+      await chrome.action.setBadgeText({ text: "", tabId });
+    }, clearAfterMs);
+  }
+}
+
+/**
+ * Save `url` using the stored token, reporting progress on the tab's badge.
+ * Falls back to web auth flow if there is no token or it has expired.
+ */
+async function saveWithBadge(tabId, url, title, failureLog) {
+  const token = await getApiToken();
+
+  if (!token) {
+    await openWebAuthFlow(url, title);
+    return;
+  }
+
+  await setBadge(tabId, "...", "#71717a");
+
+  try {
+    await saveArticle(url, title, token);
+    await setBadge(tabId, "\u2713", "#16a34a", 2000);
+  } catch (err) {
+    console.error(failureLog, err);
+
+    if (err.message === "TOKEN_EXPIRED") {
+      await openWebAuthFlow(url, title);
+      await chrome.action.setBadgeText({ text: "", tabId });
+      return;
+    }
+
+    await setBadge(tabId, "!", "#dc2626", 3000);
+  }
+}
+
+/**
+ * Save the current tab's page.
  */
 async function saveCurrentTab(tab) {
   if (!tab || !tab.url) {
@@ -91,48 +111,7 @@ async function saveCurrentTab(tab) {
     return;
   }
 
-  const token = await getApiToken();
-
-  if (!token) {
-    // No token - open web auth flow
-    await openWebAuthFlow(tab.url, tab.title);
-    return;
-  }
-
-  // Show saving badge
-  await chrome.action.setBadgeText({ text: "...", tabId: tab.id });
-  await chrome.action.setBadgeBackgroundColor({ color: "#71717a", tabId: tab.id });
-
-  try {
-    await saveArticle(tab.url, tab.title, token);
-
-    // Show success badge
-    await chrome.action.setBadgeText({ text: "\u2713", tabId: tab.id });
-    await chrome.action.setBadgeBackgroundColor({ color: "#16a34a", tabId: tab.id });
-
-    // Clear badge after 2 seconds
-    setTimeout(async () => {
-      await chrome.action.setBadgeText({ text: "", tabId: tab.id });
-    }, 2000);
-  } catch (err) {
-    console.error("Save failed:", err);
-
-    if (err.message === "TOKEN_EXPIRED") {
-      // Token expired - open web auth flow
-      await openWebAuthFlow(tab.url, tab.title);
-      await chrome.action.setBadgeText({ text: "", tabId: tab.id });
-      return;
-    }
-
-    // Show error badge
-    await chrome.action.setBadgeText({ text: "!", tabId: tab.id });
-    await chrome.action.setBadgeBackgroundColor({ color: "#dc2626", tabId: tab.id });
-
-    // Clear badge after 3 seconds
-    setTimeout(async () => {
-      await chrome.action.setBadgeText({ text: "", tabId: tab.id });
-    }, 3000);
-  }
+  await saveWithBadge(tab.id, tab.url, tab.title, "Save failed:");
 }
 
 // Create context menu on install
@@ -147,40 +126,8 @@ chrome.runtime.onInstalled.addListener(() => {
 // Handle context menu clicks
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === "save-to-lion-reader") {
-    const token = await getApiToken();
-
     if (info.linkUrl) {
-      // Saving a link
-      if (!token) {
-        await openWebAuthFlow(info.linkUrl, null);
-        return;
-      }
-
-      await chrome.action.setBadgeText({ text: "...", tabId: tab.id });
-      await chrome.action.setBadgeBackgroundColor({ color: "#71717a", tabId: tab.id });
-
-      try {
-        await saveArticle(info.linkUrl, null, token);
-        await chrome.action.setBadgeText({ text: "\u2713", tabId: tab.id });
-        await chrome.action.setBadgeBackgroundColor({ color: "#16a34a", tabId: tab.id });
-        setTimeout(async () => {
-          await chrome.action.setBadgeText({ text: "", tabId: tab.id });
-        }, 2000);
-      } catch (err) {
-        console.error("Save link failed:", err);
-
-        if (err.message === "TOKEN_EXPIRED") {
-          await openWebAuthFlow(info.linkUrl, null);
-          await chrome.action.setBadgeText({ text: "", tabId: tab.id });
-          return;
-        }
-
-        await chrome.action.setBadgeText({ text: "!", tabId: tab.id });
-        await chrome.action.setBadgeBackgroundColor({ color: "#dc2626", tabId: tab.id });
-        setTimeout(async () => {
-          await chrome.action.setBadgeText({ text: "", tabId: tab.id });
-        }, 3000);
-      }
+      await saveWithBadge(tab.id, info.linkUrl, null, "Save link failed:");
     } else {
       // Saving current page
       await saveCurrentTab(tab);

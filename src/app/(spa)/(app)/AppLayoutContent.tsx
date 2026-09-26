@@ -3,16 +3,15 @@
  *
  * Client component with the main application layout UI.
  * Includes sidebar navigation and header.
- * Uses LayoutShell for the structural layout, passing interactive elements as slots.
+ * Uses LayoutShell for the structural layout.
  */
 
 "use client";
 
 import { useState } from "react";
 import { ClientLink } from "@/components/ui/client-link";
-import { CloseIcon, MenuIcon, PlusIcon, UserIcon, ChevronDownIcon } from "@/components/ui/icons";
+import { PlusIcon, UserIcon, ChevronDownIcon } from "@/components/ui/icons";
 import { Toaster, toast } from "sonner";
-import { Sidebar } from "@/components/layout/Sidebar";
 import { FileUploadButton } from "@/components/saved/FileUploadButton";
 import { UserEmail } from "@/components/layout/UserEmail";
 import { RealtimeProvider } from "@/components/layout/RealtimeProvider";
@@ -33,7 +32,6 @@ interface AppLayoutContentProps {
 }
 
 export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   const logoutMutation = trpc.auth.logout.useMutation({
@@ -65,33 +63,6 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
           <ScrollContainerProvider>
             <Toaster position="bottom-right" richColors closeButton />
             <LayoutShell
-              sidebarOpen={sidebarOpen}
-              sidebarTitleHref="/all"
-              sidebarContent={<Sidebar onClose={() => setSidebarOpen(false)} />}
-              sidebarOverlay={
-                <div
-                  className="fixed inset-0 z-40 bg-black/50 lg:hidden"
-                  onClick={() => setSidebarOpen(false)}
-                />
-              }
-              sidebarCloseButton={
-                <button
-                  onClick={() => setSidebarOpen(false)}
-                  className="control-outline text-muted hover:bg-surface-muted flex h-10 w-10 items-center justify-center rounded-md active:bg-zinc-200 lg:hidden dark:active:bg-zinc-700"
-                  aria-label="Close navigation menu"
-                >
-                  <CloseIcon className="h-5 w-5" />
-                </button>
-              }
-              mobileMenuButton={
-                <button
-                  onClick={() => setSidebarOpen(true)}
-                  className="control-outline text-muted hover:bg-surface-muted flex h-10 w-10 items-center justify-center rounded-md active:bg-zinc-200 lg:hidden dark:active:bg-zinc-700"
-                  aria-label="Open navigation menu"
-                >
-                  <MenuIcon className="h-5 w-5" />
-                </button>
-              }
               headerRight={
                 <div className="flex items-center gap-2">
                   {/* Upload button (save an article for later) */}

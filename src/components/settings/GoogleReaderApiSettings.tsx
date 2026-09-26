@@ -7,7 +7,7 @@
 
 "use client";
 
-import { useMemo } from "react";
+import { useAppBaseUrl } from "@/lib/hooks/useAppBaseUrl";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { CardSection } from "@/components/ui/card";
 import { CopyButton } from "@/components/ui/copy-button";
@@ -16,12 +16,7 @@ import { NoteBox } from "@/components/ui/note-box";
 import { TextLink } from "@/components/ui/text-link";
 
 export function GoogleReaderApiSettings() {
-  const baseUrl = useMemo(() => {
-    return (
-      process.env.NEXT_PUBLIC_APP_URL ||
-      (typeof window !== "undefined" ? window.location.origin : "")
-    );
-  }, []);
+  const baseUrl = useAppBaseUrl();
 
   const apiBase = `${baseUrl}/api/greader.php/reader/api/0`;
 

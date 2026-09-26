@@ -21,7 +21,7 @@
  */
 
 import { type Metadata } from "next";
-import { pageOpenGraph } from "@/lib/metadata";
+import { pageMetadata } from "@/lib/metadata";
 import { DEMO_ENTRIES, getDemoEntry } from "../../data";
 import { DemoApp } from "../../DemoApp";
 
@@ -43,9 +43,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     entry?.summary ??
     "Explore all of Lion Reader's features: feed support, reading experience, organization, and integrations.";
   return {
-    title,
-    description,
-    openGraph: pageOpenGraph(title, description),
+    ...pageMetadata(title, description),
     // The public URL for an article is the query form; this internal path is
     // only ever reached through the rewrite (or by guessing), so point
     // crawlers at the canonical query URL.

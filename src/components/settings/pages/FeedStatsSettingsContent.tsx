@@ -8,7 +8,7 @@
 
 "use client";
 
-import { useCallback, useEffect, useRef, useMemo } from "react";
+import { useMemo } from "react";
 import { trpc } from "@/lib/trpc/client";
 import {
   getFeedDisplayName,
@@ -20,14 +20,8 @@ import { Alert } from "@/components/ui/alert";
 import { Card } from "@/components/ui/card";
 import { FeedSiteLink } from "@/components/feeds/FeedSiteLink";
 import { SettingsListSkeleton } from "@/components/settings/SettingsListSkeleton";
-import {
-  RssIcon,
-  ClockIcon,
-  CalendarIcon,
-  RefreshIcon,
-  DocumentIcon,
-  SpinnerIcon,
-} from "@/components/ui/icons";
+import { RssIcon, ClockIcon, CalendarIcon, RefreshIcon, DocumentIcon } from "@/components/ui/icons";
+import { InfiniteScrollFooter } from "@/components/ui/infinite-scroll-footer";
 
 // ============================================================================
 // Constants
@@ -90,8 +84,6 @@ function getStatusBadge(feed: FeedStats): { text: string; className: string } {
 // ============================================================================
 
 export default function FeedStatsSettingsContent() {
-  const loadMoreRef = useRef<HTMLDivElement>(null);
-
   const statsQuery = trpc.feedStats.list.useInfiniteQuery(
     { limit: PAGE_SIZE },
     {
@@ -110,37 +102,6 @@ export default function FeedStatsSettingsContent() {
   const healthyFeeds = feeds.filter((f) => f.consecutiveFailures === 0).length;
   const brokenFeeds = feeds.filter((f) => f.consecutiveFailures > 0).length;
   const websubFeeds = feeds.filter((f) => f.websubActive).length;
-
-  // Intersection Observer for infinite scroll
-  // Destructure before using in useCallback to satisfy React Compiler lint rule
-  const { hasNextPage, isFetchingNextPage, fetchNextPage } = statsQuery;
-  const handleObserver = useCallback(
-    (entries: IntersectionObserverEntry[]) => {
-      const target = entries[0];
-      if (target.isIntersecting && hasNextPage && !isFetchingNextPage) {
-        fetchNextPage();
-      }
-    },
-    [fetchNextPage, hasNextPage, isFetchingNextPage]
-  );
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(handleObserver, {
-      rootMargin: "100px",
-      threshold: 0,
-    });
-
-    const currentRef = loadMoreRef.current;
-    if (currentRef) {
-      observer.observe(currentRef);
-    }
-
-    return () => {
-      if (currentRef) {
-        observer.unobserve(currentRef);
-      }
-    };
-  }, [handleObserver]);
 
   return (
     <div>
@@ -178,21 +139,12 @@ export default function FeedStatsSettingsContent() {
               <FeedStatsRow key={feed.subscriptionId} feed={feed} />
             ))}
 
-            {/* Load more trigger element */}
-            <div ref={loadMoreRef} className="h-1" />
-
-            {/* Loading indicator */}
-            {statsQuery.isFetchingNextPage && (
-              <div className="flex items-center justify-center p-4">
-                <SpinnerIcon className="text-faint mr-2 h-4 w-4" />
-                <span className="ui-text-sm text-muted">Loading more...</span>
-              </div>
-            )}
-
-            {/* End of list */}
-            {!statsQuery.hasNextPage && feeds.length > 0 && (
-              <p className="ui-text-xs text-faint p-3 text-center">All feeds loaded</p>
-            )}
+            <InfiniteScrollFooter
+              hasNextPage={statsQuery.hasNextPage}
+              isFetchingNextPage={statsQuery.isFetchingNextPage}
+              fetchNextPage={statsQuery.fetchNextPage}
+              endLabel="All feeds loaded"
+            />
           </div>
         )}
       </Card>

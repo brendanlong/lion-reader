@@ -12,10 +12,7 @@ export const defaultOpenGraph: Metadata["openGraph"] = {
   images: [{ url: "/social-preview.png", width: OG_IMAGE_WIDTH, height: OG_IMAGE_HEIGHT }],
 };
 
-/** Build openGraph metadata for a page, keeping the default social image. */
-export function pageOpenGraph(
-  title: string,
-  description: string | undefined
-): Metadata["openGraph"] {
-  return { ...defaultOpenGraph, title, description };
+/** Title, description, and matching openGraph (with the default social image) for a page. */
+export function pageMetadata(title: string, description: string | undefined): Metadata {
+  return { title, description, openGraph: { ...defaultOpenGraph, title, description } };
 }

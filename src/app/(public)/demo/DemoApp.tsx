@@ -30,11 +30,9 @@
 import { useEffect, useState } from "react";
 import { HydrationBoundary } from "@tanstack/react-query";
 import { Toaster } from "sonner";
-import { CloseIcon, MenuIcon } from "@/components/ui/icons";
 import { PageLink } from "@/components/ui/page-link";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { LayoutShell } from "@/components/layout/LayoutShell";
-import { Sidebar } from "@/components/layout/Sidebar";
 import {
   ScrollContainerProvider,
   MainScrollContainer,
@@ -68,9 +66,6 @@ const ENTRY_CONTENT_OPTIONS: EntryContentOptions = {
   renderSlots: demoEntrySlots,
 };
 
-const CONTROL_BUTTON_CLASS =
-  "control-outline text-muted hover:bg-surface-muted flex h-10 w-10 items-center justify-center rounded-md active:bg-zinc-200 lg:hidden dark:active:bg-zinc-700";
-
 interface DemoAppProps {
   /**
    * The app-relative location this page is prerendered for. The `?entry=`
@@ -81,41 +76,12 @@ interface DemoAppProps {
 }
 
 function DemoShell() {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-
   // Always-mounted shell hooks (see AppRouter for why they must live here).
   useEntryListRefreshOnNavigate();
   useEntryListScrollResetOnNavigate();
 
   return (
     <LayoutShell
-      sidebarOpen={sidebarOpen}
-      sidebarTitleHref="/all"
-      sidebarContent={<Sidebar onClose={() => setSidebarOpen(false)} />}
-      sidebarOverlay={
-        <div
-          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      }
-      sidebarCloseButton={
-        <button
-          onClick={() => setSidebarOpen(false)}
-          className={CONTROL_BUTTON_CLASS}
-          aria-label="Close navigation menu"
-        >
-          <CloseIcon className="h-5 w-5" />
-        </button>
-      }
-      mobileMenuButton={
-        <button
-          onClick={() => setSidebarOpen(true)}
-          className={CONTROL_BUTTON_CLASS}
-          aria-label="Open navigation menu"
-        >
-          <MenuIcon className="h-5 w-5" />
-        </button>
-      }
       headerRight={
         <div className="flex items-center gap-2">
           <PageLink

@@ -8,7 +8,7 @@
 
 "use client";
 
-import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
@@ -21,13 +21,10 @@ import {
   formatBytes,
   getFeedDisplayName,
 } from "@/lib/format";
-import {
-  SpinnerIcon,
-  ExternalLinkIcon,
-  ChevronDownIcon,
-  ChevronUpIcon,
-  RssIcon,
-} from "@/components/ui/icons";
+import { ExternalLinkIcon, ChevronDownIcon, ChevronUpIcon, RssIcon } from "@/components/ui/icons";
+import { InfiniteScrollFooter } from "@/components/ui/infinite-scroll-footer";
+import { AdminQueryFallback } from "@/components/admin/AdminQueryFallback";
+import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
 
 // ============================================================================
 // Constants
@@ -256,28 +253,11 @@ export default function AdminFeedsContent() {
   const [emailInput, setEmailInput] = useState(initialEmail);
   const [brokenOnly, setBrokenOnly] = useState(false);
   const [hasSubscribers, setHasSubscribers] = useState(true);
-  const [debouncedUrl, setDebouncedUrl] = useState("");
-  const [debouncedEmail, setDebouncedEmail] = useState(initialEmail);
+  const debouncedUrl = useDebouncedValue(urlInput, DEBOUNCE_MS);
+  const debouncedEmail = useDebouncedValue(emailInput, DEBOUNCE_MS);
   const [retryingId, setRetryingId] = useState<string | null>(null);
-  const loadMoreRef = useRef<HTMLDivElement>(null);
 
   const utils = trpc.useUtils();
-
-  // Debounce URL filter
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedUrl(urlInput);
-    }, DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [urlInput]);
-
-  // Debounce email filter
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedEmail(emailInput);
-    }, DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [emailInput]);
 
   // Query: list feeds with infinite scroll
   const feedsQuery = trpc.admin.listFeeds.useInfiniteQuery(
@@ -319,36 +299,6 @@ export default function AdminFeedsContent() {
     },
     [retryMutation]
   );
-
-  // Intersection Observer for infinite scroll
-  const { hasNextPage, isFetchingNextPage, fetchNextPage } = feedsQuery;
-  const handleObserver = useCallback(
-    (entries: IntersectionObserverEntry[]) => {
-      const target = entries[0];
-      if (target.isIntersecting && hasNextPage && !isFetchingNextPage) {
-        fetchNextPage();
-      }
-    },
-    [fetchNextPage, hasNextPage, isFetchingNextPage]
-  );
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(handleObserver, {
-      rootMargin: "100px",
-      threshold: 0,
-    });
-
-    const currentRef = loadMoreRef.current;
-    if (currentRef) {
-      observer.observe(currentRef);
-    }
-
-    return () => {
-      if (currentRef) {
-        observer.unobserve(currentRef);
-      }
-    };
-  }, [handleObserver]);
 
   const hasFilters =
     debouncedUrl.length > 0 || debouncedEmail.length > 0 || brokenOnly || hasSubscribers;
@@ -399,22 +349,8 @@ export default function AdminFeedsContent() {
       </div>
 
       {/* Feeds List */}
-      {feedsQuery.isLoading ? (
-        <div className="flex items-center justify-center p-8">
-          <SpinnerIcon className="text-faint h-6 w-6" />
-        </div>
-      ) : feedsQuery.isError ? (
-        <div className="p-8 text-center">
-          <p className="ui-text-sm text-danger">Failed to load feeds. Please try again.</p>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => feedsQuery.refetch()}
-            className="mt-2"
-          >
-            Retry
-          </Button>
-        </div>
+      {feedsQuery.isLoading || feedsQuery.isError ? (
+        <AdminQueryFallback query={feedsQuery} noun="feeds" />
       ) : feeds.length === 0 ? (
         <EmptyState hasFilters={hasFilters} />
       ) : (
@@ -428,21 +364,12 @@ export default function AdminFeedsContent() {
             />
           ))}
 
-          {/* Load more trigger element */}
-          <div ref={loadMoreRef} className="h-1" />
-
-          {/* Loading indicator */}
-          {feedsQuery.isFetchingNextPage && (
-            <div className="flex items-center justify-center p-4">
-              <SpinnerIcon className="text-faint mr-2 h-4 w-4" />
-              <span className="ui-text-sm text-muted">Loading more...</span>
-            </div>
-          )}
-
-          {/* End of list */}
-          {!feedsQuery.hasNextPage && feeds.length > 0 && (
-            <p className="ui-text-xs text-faint p-3 text-center">No more feeds</p>
-          )}
+          <InfiniteScrollFooter
+            hasNextPage={feedsQuery.hasNextPage}
+            isFetchingNextPage={feedsQuery.isFetchingNextPage}
+            fetchNextPage={feedsQuery.fetchNextPage}
+            endLabel="No more feeds"
+          />
         </Card>
       )}
     </div>
