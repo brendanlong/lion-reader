@@ -36,22 +36,20 @@ beforeAll(() => {
   subscriber = new Redis(redisUrl);
 });
 
+async function cleanup(): Promise<void> {
+  await db.delete(userEntries);
+  await db.delete(entries);
+  await db.delete(subscriptions);
+  await db.delete(feeds);
+  await db.delete(users);
+}
+
 afterAll(async () => {
   await subscriber.quit();
-  await db.delete(userEntries);
-  await db.delete(entries);
-  await db.delete(subscriptions);
-  await db.delete(feeds);
-  await db.delete(users);
+  await cleanup();
 });
 
-beforeEach(async () => {
-  await db.delete(userEntries);
-  await db.delete(entries);
-  await db.delete(subscriptions);
-  await db.delete(feeds);
-  await db.delete(users);
-});
+beforeEach(cleanup);
 
 async function seedUnreadEntries(userId: string, count: number): Promise<string[]> {
   const now = new Date();

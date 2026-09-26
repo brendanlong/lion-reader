@@ -16,6 +16,7 @@ import { createCaller } from "../../src/server/trpc/root";
 import * as entriesService from "../../src/server/services/entries";
 import {
   createAuthContext,
+  createTestEntry,
   createTestFeed,
   createTestSubscription,
   createTestUser,
@@ -33,49 +34,25 @@ async function seedSubscribedUser(): Promise<{ userId: string; feedId: string }>
   return { userId, feedId };
 }
 
-async function makeEntryVisible(userId: string, entryId: string): Promise<void> {
-  const now = new Date();
-  await db
-    .insert(userEntries)
-    .values({ userId, entryId, read: false, starred: false, updatedAt: now });
-}
-
 describe("entries.get sanitized content", () => {
-  beforeEach(async () => {
+  async function cleanup(): Promise<void> {
     await db.delete(userEntries);
     await db.delete(entries);
     await db.delete(subscriptions);
     await db.delete(feeds);
     await db.delete(users);
-  });
+  }
 
-  afterAll(async () => {
-    await db.delete(userEntries);
-    await db.delete(entries);
-    await db.delete(subscriptions);
-    await db.delete(feeds);
-    await db.delete(users);
-  });
+  beforeEach(cleanup);
+  afterAll(cleanup);
 
   it("sanitizes the raw content on read, never returning raw HTML", async () => {
     const { userId, feedId } = await seedSubscribedUser();
-    const entryId = generateUuidv7();
-    const now = new Date();
-    await db.insert(entries).values({
-      id: entryId,
-      feedId,
-      type: "web",
-      guid: `guid-${entryId}`,
+    const entryId = await createTestEntry(feedId, {
       title: "Unsafe",
       contentCleaned: '<p onclick="evil()">hello<script>alert(1)</script></p>',
-      contentHash: `hash-${entryId}`,
-      fetchedAt: now,
-      publishedAt: now,
-      lastSeenAt: now,
-      createdAt: now,
-      updatedAt: now,
+      userIds: [userId],
     });
-    await makeEntryVisible(userId, entryId);
 
     const caller = createCaller(await createAuthContext(userId));
     const { entry } = await caller.entries.get({ id: entryId });
@@ -87,25 +64,13 @@ describe("entries.get sanitized content", () => {
 
   it("returns null full-content fields when the entry has no full content", async () => {
     const { userId, feedId } = await seedSubscribedUser();
-    const entryId = generateUuidv7();
-    const now = new Date();
-    await db.insert(entries).values({
-      id: entryId,
-      feedId,
-      type: "web",
-      guid: `guid-${entryId}`,
+    const entryId = await createTestEntry(feedId, {
       title: "No full content",
       contentCleaned: "<p>hello</p>",
       fullContentOriginal: null,
       fullContentCleaned: null,
-      contentHash: `hash-${entryId}`,
-      fetchedAt: now,
-      publishedAt: now,
-      lastSeenAt: now,
-      createdAt: now,
-      updatedAt: now,
+      userIds: [userId],
     });
-    await makeEntryVisible(userId, entryId);
 
     const caller = createCaller(await createAuthContext(userId));
     const { entry } = await caller.entries.get({ id: entryId });
@@ -116,30 +81,18 @@ describe("entries.get sanitized content", () => {
 
   it("serves full-content cleaned (sanitized) and omits original when cleaned exists", async () => {
     const { userId, feedId } = await seedSubscribedUser();
-    const entryId = generateUuidv7();
-    const now = new Date();
     // The full-content serving rule is `cleaned ?? original`, so when cleaned
     // exists the (whole raw page) original is never displayed — the read path
     // skips sanitizing it and returns null.
-    await db.insert(entries).values({
-      id: entryId,
-      feedId,
-      type: "web",
-      guid: `guid-${entryId}`,
+    const entryId = await createTestEntry(feedId, {
       title: "Full content",
       contentCleaned: "<p>feed body</p>",
       fullContentOriginal: "<article>whole raw page<script>alert(1)</script></article>",
       fullContentCleaned: '<p onclick="evil()">full cleaned<script>alert(2)</script></p>',
-      fullContentHash: `fullhash-${entryId}`,
-      fullContentFetchedAt: now,
-      contentHash: `hash-${entryId}`,
-      fetchedAt: now,
-      publishedAt: now,
-      lastSeenAt: now,
-      createdAt: now,
-      updatedAt: now,
+      fullContentHash: "fullhash",
+      fullContentFetchedAt: new Date(),
+      userIds: [userId],
     });
-    await makeEntryVisible(userId, entryId);
 
     const caller = createCaller(await createAuthContext(userId));
     const { entry } = await caller.entries.get({ id: entryId });
@@ -152,27 +105,15 @@ describe("entries.get sanitized content", () => {
 
   it("sanitizes the full-content original when cleaned is absent", async () => {
     const { userId, feedId } = await seedSubscribedUser();
-    const entryId = generateUuidv7();
-    const now = new Date();
-    await db.insert(entries).values({
-      id: entryId,
-      feedId,
-      type: "web",
-      guid: `guid-${entryId}`,
+    const entryId = await createTestEntry(feedId, {
       title: "Full content original only",
       contentCleaned: "<p>feed body</p>",
       fullContentOriginal: '<article onclick="evil()">raw page<script>alert(1)</script></article>',
       fullContentCleaned: null,
-      fullContentHash: `fullhash-${entryId}`,
-      fullContentFetchedAt: now,
-      contentHash: `hash-${entryId}`,
-      fetchedAt: now,
-      publishedAt: now,
-      lastSeenAt: now,
-      createdAt: now,
-      updatedAt: now,
+      fullContentHash: "fullhash",
+      fullContentFetchedAt: new Date(),
+      userIds: [userId],
     });
-    await makeEntryVisible(userId, entryId);
 
     const caller = createCaller(await createAuthContext(userId));
     const { entry } = await caller.entries.get({ id: entryId });
@@ -188,23 +129,11 @@ describe("entries.get sanitized content", () => {
   describe("services getEntry/getEntries", () => {
     it("getEntry sanitizes the raw content, never returning raw HTML", async () => {
       const { userId, feedId } = await seedSubscribedUser();
-      const entryId = generateUuidv7();
-      const now = new Date();
-      await db.insert(entries).values({
-        id: entryId,
-        feedId,
-        type: "web",
-        guid: `guid-${entryId}`,
+      const entryId = await createTestEntry(feedId, {
         title: "Unsafe",
         contentCleaned: '<p onclick="evil()">hello<script>alert(1)</script></p>',
-        contentHash: `hash-${entryId}`,
-        fetchedAt: now,
-        publishedAt: now,
-        lastSeenAt: now,
-        createdAt: now,
-        updatedAt: now,
+        userIds: [userId],
       });
-      await makeEntryVisible(userId, entryId);
 
       const entry = await entriesService.getEntry(db, userId, entryId);
       expect(entry.contentCleaned).toContain("hello");
@@ -214,24 +143,14 @@ describe("entries.get sanitized content", () => {
 
     it("getEntries sanitizes every returned entry", async () => {
       const { userId, feedId } = await seedSubscribedUser();
-      const now = new Date();
       const entryIds = [generateUuidv7(), generateUuidv7()];
       for (const entryId of entryIds) {
-        await db.insert(entries).values({
+        await createTestEntry(feedId, {
           id: entryId,
-          feedId,
-          type: "web",
-          guid: `guid-${entryId}`,
           title: "Bulk",
           contentCleaned: `<p>body-${entryId}<script>alert(1)</script></p>`,
-          contentHash: `hash-${entryId}`,
-          fetchedAt: now,
-          publishedAt: now,
-          lastSeenAt: now,
-          createdAt: now,
-          updatedAt: now,
+          userIds: [userId],
         });
-        await makeEntryVisible(userId, entryId);
       }
 
       const results = await entriesService.getEntries(db, userId, entryIds);

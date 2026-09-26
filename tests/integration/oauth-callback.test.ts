@@ -22,17 +22,14 @@ async function countOAuthAccounts(userId: string): Promise<number> {
 }
 
 describe("processOAuthCallback email verification", () => {
-  beforeEach(async () => {
+  async function cleanup(): Promise<void> {
     await db.delete(sessions);
     await db.delete(oauthAccounts);
     await db.delete(users);
-  });
+  }
 
-  afterAll(async () => {
-    await db.delete(sessions);
-    await db.delete(oauthAccounts);
-    await db.delete(users);
-  });
+  beforeEach(cleanup);
+  afterAll(cleanup);
 
   it("refuses to link an unverified provider email to an existing account", async () => {
     const victimId = await createTestUser({ email: VICTIM_EMAIL });

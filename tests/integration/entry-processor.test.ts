@@ -47,23 +47,16 @@ async function createTestFeed(overrides: Partial<typeof feeds.$inferInsert> = {}
 }
 
 describe("Entry Processor", () => {
-  // Clean up tables before each test
-  beforeEach(async () => {
+  async function cleanup(): Promise<void> {
     await db.delete(userEntries);
     await db.delete(entries);
     await db.delete(subscriptions);
     await db.delete(feeds);
     await db.delete(users);
-  });
+  }
 
-  // Clean up after all tests
-  afterAll(async () => {
-    await db.delete(userEntries);
-    await db.delete(entries);
-    await db.delete(subscriptions);
-    await db.delete(feeds);
-    await db.delete(users);
-  });
+  beforeEach(cleanup);
+  afterAll(cleanup);
 
   describe("generateContentHash", () => {
     it("generates consistent hash for same content", () => {

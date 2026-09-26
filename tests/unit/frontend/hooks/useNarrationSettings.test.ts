@@ -9,31 +9,12 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { stubMemoryLocalStorage } from "../../../utils/component-test-helpers";
 import { renderHook, act, cleanup } from "@testing-library/react";
 
-// Mock localStorage before importing the hook
-const localStorageMock = (() => {
-  let store: Record<string, string> = {};
-  return {
-    getItem: vi.fn((key: string) => store[key] || null),
-    setItem: vi.fn((key: string, value: string) => {
-      store[key] = value;
-    }),
-    removeItem: vi.fn((key: string) => {
-      delete store[key];
-    }),
-    clear: vi.fn(() => {
-      store = {};
-    }),
-    get length() {
-      return Object.keys(store).length;
-    },
-    key: vi.fn((index: number) => Object.keys(store)[index] || null),
-  };
-})();
-
+const localStorageMock = stubMemoryLocalStorage();
+vi.spyOn(localStorageMock, "setItem");
 vi.stubGlobal("window", { localStorage: localStorageMock });
-vi.stubGlobal("localStorage", localStorageMock);
 
 // Import after mocking
 import {
@@ -121,9 +102,9 @@ describe("useNarrationSettings", () => {
         result.current[1]((prev) => ({ ...prev, rate: 1.75 }));
       });
 
-      const savedCall = localStorageMock.setItem.mock.calls.find(
-        (call) => call[0] === "lion-reader-narration-settings"
-      );
+      const savedCall = vi
+        .mocked(localStorageMock.setItem)
+        .mock.calls.find((call) => call[0] === "lion-reader-narration-settings");
       expect(savedCall).toBeDefined();
 
       const savedSettings = JSON.parse(savedCall![1]);

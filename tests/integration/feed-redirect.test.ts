@@ -161,25 +161,17 @@ async function getFeed(feedId: string): Promise<Feed> {
 // ============================================================================
 
 describe("Feed Redirect Handling", () => {
-  // Clean up tables before each test
-  beforeEach(async () => {
+  async function cleanup(): Promise<void> {
     await db.delete(userEntries);
     await db.delete(entries);
     await db.delete(subscriptions);
     await db.delete(jobs);
     await db.delete(feeds);
     await db.delete(users);
-  });
+  }
 
-  // Clean up after all tests
-  afterAll(async () => {
-    await db.delete(userEntries);
-    await db.delete(entries);
-    await db.delete(subscriptions);
-    await db.delete(jobs);
-    await db.delete(feeds);
-    await db.delete(users);
-  });
+  beforeEach(cleanup);
+  afterAll(cleanup);
 
   describe("Redirect to new URL (no existing feed)", () => {
     it("updates feed URL when redirect target has no existing feed", async () => {
@@ -592,8 +584,7 @@ describe("Feed Redirect Handling", () => {
       await createUserEntriesForFeed(newFeedId, [sharedEntryNew, newOnlyEntry]);
 
       // Query entries via the API
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
       const result = await caller.entries.list({});
       const entryIds = result.items.map((item) => item.id);
 
@@ -735,8 +726,7 @@ describe("Feed Redirect Handling", () => {
       expect(unreadEntryState?.read).toBe(false);
 
       // Verify entries are still visible via API
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
       const result = await caller.entries.list({});
 
       const entryIds = result.items.map((item) => item.id);
@@ -797,8 +787,7 @@ describe("Feed Redirect Handling", () => {
       expect(unstarredEntryState?.starred).toBe(false);
 
       // Verify starred entries are visible even when filtering
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
       const result = await caller.entries.list({ starredOnly: true });
 
       const entryIds = result.items.map((item) => item.id);

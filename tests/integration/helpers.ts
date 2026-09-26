@@ -24,6 +24,8 @@ import {
   feeds,
   entries,
   subscriptions,
+  subscriptionTags,
+  tags,
   userEntries,
   oauthAccounts,
   oauthClients,
@@ -179,6 +181,31 @@ export async function createTestEntry(
 }
 
 // ============================================================================
+// Tags
+// ============================================================================
+
+export interface CreateTestTagOptions extends Partial<typeof tags.$inferInsert> {
+  /** Subscriptions to put under the tag, via `subscription_tags` rows. */
+  subscriptionIds?: string[];
+}
+
+/** Inserts a tag owned by `userId`. Returns its id. */
+export async function createTestTag(
+  userId: string,
+  options: CreateTestTagOptions = {}
+): Promise<string> {
+  const { subscriptionIds, ...overrides } = options;
+  const tagId = overrides.id ?? generateUuidv7();
+  await db.insert(tags).values({ id: tagId, userId, name: `Tag ${tagId}`, ...overrides });
+  if (subscriptionIds?.length) {
+    await db
+      .insert(subscriptionTags)
+      .values(subscriptionIds.map((subscriptionId) => ({ tagId, subscriptionId })));
+  }
+  return tagId;
+}
+
+// ============================================================================
 // OAuth clients
 // ============================================================================
 
@@ -270,5 +297,21 @@ export async function createAuthContext(userId: string): Promise<Context> {
     scopes: [],
     sessionToken: "test-token",
     headers: new Headers(),
+  };
+}
+
+/**
+ * Builds a tRPC context with no session or API token. `headers` lets a test
+ * present credentials that aren't a session, e.g. the admin Bearer secret.
+ */
+export function createUnauthContext(headers: Headers = new Headers()): Context {
+  return {
+    db,
+    session: null,
+    apiToken: null,
+    authType: null,
+    scopes: [],
+    sessionToken: null,
+    headers,
   };
 }

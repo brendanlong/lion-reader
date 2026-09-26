@@ -615,8 +615,7 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Entries Performance Profiling", ()
 
   describe("tRPC endpoint profiling", () => {
     it("profiles entries.setStarred end-to-end", async () => {
-      const ctx = await createAuthContext(testUserId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(testUserId));
 
       // Pick an unstarred entry
       const entryId = testEntryIds[100]; // somewhere in the middle
@@ -656,8 +655,7 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Entries Performance Profiling", ()
     }, 600000);
 
     it("profiles entries.markRead with 1 entry", async () => {
-      const ctx = await createAuthContext(testUserId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(testUserId));
       const timings: Timing[] = [];
 
       for (let i = 0; i < 5; i++) {
@@ -681,8 +679,7 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Entries Performance Profiling", ()
     }, 600000);
 
     it("profiles entries.markRead with 10 entries", async () => {
-      const ctx = await createAuthContext(testUserId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(testUserId));
       const timings: Timing[] = [];
 
       for (let i = 0; i < 3; i++) {
@@ -701,8 +698,7 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Entries Performance Profiling", ()
     }, 600000);
 
     it("profiles entries.markRead with 50 entries", async () => {
-      const ctx = await createAuthContext(testUserId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(testUserId));
 
       const entryIds = testEntryIds.slice(500, 550);
       const { timing } = await timeAsync("markRead(50) TOTAL", () =>

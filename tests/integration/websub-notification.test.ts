@@ -70,23 +70,17 @@ async function getHubStats() {
 }
 
 describe("ingestWebsubNotification", () => {
-  beforeEach(async () => {
+  async function cleanup(): Promise<void> {
     await db.delete(userEntries);
     await db.delete(entries);
     await db.delete(subscriptions);
     await db.delete(websubHubStats);
     await db.delete(feeds);
     await db.delete(users);
-  });
+  }
 
-  afterAll(async () => {
-    await db.delete(userEntries);
-    await db.delete(entries);
-    await db.delete(subscriptions);
-    await db.delete(websubHubStats);
-    await db.delete(feeds);
-    await db.delete(users);
-  });
+  beforeEach(cleanup);
+  afterAll(cleanup);
 
   it("delivers a genuinely new pushed article unread and credits the hub", async () => {
     const now = Date.now();

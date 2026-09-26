@@ -22,25 +22,17 @@ import { ensureFeedJob, getJobPayload, claimFeedJob } from "../../src/server/job
 import { createTestEntry, createTestFeed, createTestSubscription, createTestUser } from "./helpers";
 
 describe("Redirect Tracking", () => {
-  // Clean up before each test
-  beforeEach(async () => {
+  async function cleanup(): Promise<void> {
     await db.delete(jobs);
     await db.delete(userEntries);
     await db.delete(entries);
     await db.delete(subscriptions);
     await db.delete(feeds);
     await db.delete(users);
-  });
+  }
 
-  // Clean up after all tests
-  afterAll(async () => {
-    await db.delete(jobs);
-    await db.delete(userEntries);
-    await db.delete(entries);
-    await db.delete(subscriptions);
-    await db.delete(feeds);
-    await db.delete(users);
-  });
+  beforeEach(cleanup);
+  afterAll(cleanup);
 
   /**
    * Helper to get a feed by ID

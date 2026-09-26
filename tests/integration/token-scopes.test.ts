@@ -18,7 +18,7 @@ import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
 import type { ApiTokenScope } from "../../src/server/auth/api-token";
 import { TRPCError } from "@trpc/server";
-import { createAuthContext, createTestUser } from "./helpers";
+import { createAuthContext, createTestUser, createUnauthContext } from "./helpers";
 
 const createdUserIds: string[] = [];
 
@@ -26,18 +26,6 @@ async function createUser(): Promise<string> {
   const userId = await createTestUser({ emailPrefix: "scope" });
   createdUserIds.push(userId);
   return userId;
-}
-
-function createAnonymousContext(): Context {
-  return {
-    db,
-    session: null,
-    apiToken: null,
-    authType: null,
-    scopes: [],
-    sessionToken: null,
-    headers: new Headers(),
-  };
 }
 
 /**
@@ -154,7 +142,7 @@ describe("API token scope enforcement", () => {
     // issue #951): anonymous or token access would be a scanning/amplification
     // primitive. Both rejections happen at the auth gate, before any fetch.
     it("rejects unauthenticated callers", async () => {
-      const caller = createCaller(createAnonymousContext());
+      const caller = createCaller(createUnauthContext());
 
       await expect(
         caller.feeds.preview({ url: "https://example.com/feed.xml" })

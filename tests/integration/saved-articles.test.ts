@@ -20,30 +20,17 @@ import { db } from "../../src/server/db";
 import { users, entries, userEntries, feeds } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
-import type { Context } from "../../src/server/trpc/context";
 import {
   saveArticle,
   savePlaceholderArticle,
   savedArticleExistsByUrl,
 } from "../../src/server/services/saved";
 import { markEntriesRead } from "../../src/server/services/entries";
-import { createAuthContext, createTestUser } from "./helpers";
+import { createAuthContext, createTestUser, createUnauthContext } from "./helpers";
 
 // ============================================================================
 // Test Helpers
 // ============================================================================
-
-function createUnauthContext(): Context {
-  return {
-    db,
-    session: null,
-    apiToken: null,
-    authType: null,
-    scopes: [],
-    sessionToken: null,
-    headers: new Headers(),
-  };
-}
 
 /**
  * Creates a test saved article directly in the database.
@@ -127,27 +114,20 @@ async function createTestSavedArticle(
 // ============================================================================
 
 describe("Saved Articles API", () => {
-  // Clean up tables before each test
-  beforeEach(async () => {
+  async function cleanup(): Promise<void> {
     await db.delete(userEntries);
     await db.delete(entries);
     await db.delete(feeds);
     await db.delete(users);
-  });
+  }
 
-  // Clean up after all tests
-  afterAll(async () => {
-    await db.delete(userEntries);
-    await db.delete(entries);
-    await db.delete(feeds);
-    await db.delete(users);
-  });
+  beforeEach(cleanup);
+  afterAll(cleanup);
 
   describe("entries.list with type='saved'", () => {
     it("returns empty list for user with no saved articles", async () => {
       const userId = await createTestUser();
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.entries.list({ type: "saved" });
 
@@ -164,8 +144,7 @@ describe("Saved Articles API", () => {
       await createTestSavedArticle(userId1, { title: "User 1 Article 2" });
       await createTestSavedArticle(userId2, { title: "User 2 Article" });
 
-      const ctx1 = await createAuthContext(userId1);
-      const caller1 = createCaller(ctx1);
+      const caller1 = createCaller(await createAuthContext(userId1));
       const result1 = await caller1.entries.list({ type: "saved" });
 
       expect(result1.items).toHaveLength(2);
@@ -174,8 +153,7 @@ describe("Saved Articles API", () => {
         "User 1 Article 2",
       ]);
 
-      const ctx2 = await createAuthContext(userId2);
-      const caller2 = createCaller(ctx2);
+      const caller2 = createCaller(await createAuthContext(userId2));
       const result2 = await caller2.entries.list({ type: "saved" });
 
       expect(result2.items).toHaveLength(1);
@@ -192,8 +170,7 @@ describe("Saved Articles API", () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
       const id3 = await createTestSavedArticle(userId, { title: "Third" });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
       const result = await caller.entries.list({ type: "saved" });
 
       expect(result.items).toHaveLength(3);
@@ -208,8 +185,7 @@ describe("Saved Articles API", () => {
       await createTestSavedArticle(userId, { title: "Read Article", read: true });
       await createTestSavedArticle(userId, { title: "Unread Article", read: false });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
       const result = await caller.entries.list({ type: "saved", unreadOnly: true });
 
       expect(result.items).toHaveLength(1);
@@ -222,8 +198,7 @@ describe("Saved Articles API", () => {
       await createTestSavedArticle(userId, { title: "Starred Article", starred: true });
       await createTestSavedArticle(userId, { title: "Unstarred Article", starred: false });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
       const result = await caller.entries.list({ type: "saved", starredOnly: true });
 
       expect(result.items).toHaveLength(1);
@@ -249,8 +224,7 @@ describe("Saved Articles API", () => {
         starred: false,
       });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
       const result = await caller.entries.list({
         type: "saved",
         unreadOnly: true,
@@ -270,8 +244,7 @@ describe("Saved Articles API", () => {
         await new Promise((resolve) => setTimeout(resolve, 10));
       }
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // Get first page (2 items)
       const page1 = await caller.entries.list({ type: "saved", limit: 2 });
@@ -308,8 +281,7 @@ describe("Saved Articles API", () => {
         await createTestSavedArticle(userId, { title: `Article ${i}` });
       }
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
       const result = await caller.entries.list({ type: "saved", limit: 3 });
 
       expect(result.items).toHaveLength(3);
@@ -322,8 +294,7 @@ describe("Saved Articles API", () => {
       const userId = await createTestUser();
       const articleId = await createTestSavedArticle(userId, { title: "Test Article" });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
       const result = await caller.entries.get({ id: articleId });
 
       expect(result.entry.id).toBe(articleId);
@@ -338,8 +309,7 @@ describe("Saved Articles API", () => {
 
     it("throws error for non-existent article", async () => {
       const userId = await createTestUser();
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       await expect(caller.entries.get({ id: generateUuidv7() })).rejects.toThrow("Entry not found");
     });
@@ -350,8 +320,7 @@ describe("Saved Articles API", () => {
 
       const articleId = await createTestSavedArticle(userId1, { title: "User 1's Article" });
 
-      const ctx = await createAuthContext(userId2);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId2));
 
       await expect(caller.entries.get({ id: articleId })).rejects.toThrow("Entry not found");
     });
@@ -362,8 +331,7 @@ describe("Saved Articles API", () => {
       const userId = await createTestUser();
       const articleId = await createTestSavedArticle(userId, { title: "To Delete" });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.saved.delete({ id: articleId });
       expect(result).toEqual({});
@@ -375,8 +343,7 @@ describe("Saved Articles API", () => {
 
     it("throws error for non-existent article", async () => {
       const userId = await createTestUser();
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       await expect(caller.saved.delete({ id: generateUuidv7() })).rejects.toThrow(
         "Saved article not found"
@@ -389,8 +356,7 @@ describe("Saved Articles API", () => {
 
       const articleId = await createTestSavedArticle(userId1, { title: "User 1's Article" });
 
-      const ctx = await createAuthContext(userId2);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId2));
 
       await expect(caller.saved.delete({ id: articleId })).rejects.toThrow(
         "Saved article not found"
@@ -408,8 +374,7 @@ describe("Saved Articles API", () => {
       const id1 = await createTestSavedArticle(userId, { read: false });
       const id2 = await createTestSavedArticle(userId, { read: false });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.entries.markRead({
         entries: [{ id: id1 }, { id: id2 }],
@@ -431,8 +396,7 @@ describe("Saved Articles API", () => {
       const id1 = await createTestSavedArticle(userId, { read: true });
       const id2 = await createTestSavedArticle(userId, { read: true });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.entries.markRead({
         entries: [{ id: id1 }, { id: id2 }],
@@ -453,8 +417,7 @@ describe("Saved Articles API", () => {
       const userId = await createTestUser();
       const validId = await createTestSavedArticle(userId, { read: false });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // Should not throw, just ignore invalid ID
       const result = await caller.entries.markRead({
@@ -481,8 +444,7 @@ describe("Saved Articles API", () => {
       const myArticle = await createTestSavedArticle(userId1, { read: false });
       const otherArticle = await createTestSavedArticle(userId2, { read: false });
 
-      const ctx = await createAuthContext(userId1);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId1));
 
       await caller.entries.markRead({
         entries: [{ id: myArticle }, { id: otherArticle }],
@@ -508,8 +470,7 @@ describe("Saved Articles API", () => {
 
     it("returns empty articles array when no valid IDs provided", async () => {
       const userId = await createTestUser();
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.entries.markRead({
         entries: [{ id: generateUuidv7() }],
@@ -525,8 +486,7 @@ describe("Saved Articles API", () => {
       const userId = await createTestUser();
       const articleId = await createTestSavedArticle(userId, { starred: false });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.entries.setStarred({ id: articleId, starred: true });
       expect(result.entry.id).toBe(articleId);
@@ -544,8 +504,7 @@ describe("Saved Articles API", () => {
 
     it("throws error for non-existent article", async () => {
       const userId = await createTestUser();
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       await expect(
         caller.entries.setStarred({ id: generateUuidv7(), starred: true })
@@ -558,8 +517,7 @@ describe("Saved Articles API", () => {
 
       const articleId = await createTestSavedArticle(userId1, { starred: false });
 
-      const ctx = await createAuthContext(userId2);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId2));
 
       await expect(caller.entries.setStarred({ id: articleId, starred: true })).rejects.toThrow(
         "Entry not found"
@@ -580,8 +538,7 @@ describe("Saved Articles API", () => {
       const userId = await createTestUser();
       const articleId = await createTestSavedArticle(userId, { starred: true });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.entries.setStarred({ id: articleId, starred: false });
       expect(result.entry.id).toBe(articleId);
@@ -599,8 +556,7 @@ describe("Saved Articles API", () => {
 
     it("throws error for non-existent article", async () => {
       const userId = await createTestUser();
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       await expect(
         caller.entries.setStarred({ id: generateUuidv7(), starred: false })
@@ -613,8 +569,7 @@ describe("Saved Articles API", () => {
 
       const articleId = await createTestSavedArticle(userId1, { starred: true });
 
-      const ctx = await createAuthContext(userId2);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId2));
 
       await expect(caller.entries.setStarred({ id: articleId, starred: false })).rejects.toThrow(
         "Entry not found"
@@ -632,15 +587,13 @@ describe("Saved Articles API", () => {
 
   describe("authentication", () => {
     it("requires authentication for list", async () => {
-      const ctx = createUnauthContext();
-      const caller = createCaller(ctx);
+      const caller = createCaller(createUnauthContext());
 
       await expect(caller.entries.list({ type: "saved" })).rejects.toThrow("You must be logged in");
     });
 
     it("requires authentication for get", async () => {
-      const ctx = createUnauthContext();
-      const caller = createCaller(ctx);
+      const caller = createCaller(createUnauthContext());
 
       await expect(caller.entries.get({ id: generateUuidv7() })).rejects.toThrow(
         "You must be logged in"
@@ -648,8 +601,7 @@ describe("Saved Articles API", () => {
     });
 
     it("requires authentication for delete", async () => {
-      const ctx = createUnauthContext();
-      const caller = createCaller(ctx);
+      const caller = createCaller(createUnauthContext());
 
       await expect(caller.saved.delete({ id: generateUuidv7() })).rejects.toThrow(
         "You must be logged in"
@@ -657,8 +609,7 @@ describe("Saved Articles API", () => {
     });
 
     it("requires authentication for markRead", async () => {
-      const ctx = createUnauthContext();
-      const caller = createCaller(ctx);
+      const caller = createCaller(createUnauthContext());
 
       await expect(
         caller.entries.markRead({ entries: [{ id: generateUuidv7() }], read: true })
@@ -666,8 +617,7 @@ describe("Saved Articles API", () => {
     });
 
     it("requires authentication for setStarred", async () => {
-      const ctx = createUnauthContext();
-      const caller = createCaller(ctx);
+      const caller = createCaller(createUnauthContext());
 
       await expect(
         caller.entries.setStarred({ id: generateUuidv7(), starred: true })
@@ -675,8 +625,7 @@ describe("Saved Articles API", () => {
     });
 
     it("requires authentication for save", async () => {
-      const ctx = createUnauthContext();
-      const caller = createCaller(ctx);
+      const caller = createCaller(createUnauthContext());
 
       await expect(caller.saved.save({ url: "https://example.com" })).rejects.toThrow(
         "You must be logged in"
@@ -693,8 +642,7 @@ describe("Saved Articles API", () => {
         title: "Already Saved Article",
       });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // With refetch=false, returns existing without attempting to fetch
       const result = await caller.saved.save({ url: existingUrl, refetch: false });
@@ -733,8 +681,7 @@ describe("Saved Articles API", () => {
         title: "Original Title",
       });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // Refetch with new HTML
       const newHtml = `
@@ -778,8 +725,7 @@ describe("Saved Articles API", () => {
         starred: true,
       });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const newHtml = `
         <!DOCTYPE html>
@@ -825,8 +771,7 @@ describe("Saved Articles API", () => {
         .from(userEntries)
         .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, articleId)));
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const newHtml = `
         <!DOCTYPE html>
@@ -891,8 +836,7 @@ describe("Saved Articles API", () => {
         })
         .where(eq(entries.id, articleId));
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // Try to refetch with very short content (simulating error page)
       const shortHtml = `
@@ -931,8 +875,7 @@ describe("Saved Articles API", () => {
         })
         .where(eq(entries.id, articleId));
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // Force refetch with short content
       const shortHtml = `
@@ -972,8 +915,7 @@ describe("Saved Articles API", () => {
         })
         .where(eq(entries.id, articleId));
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // Refetch with content that's 60% of original but >500 chars
       // This should be allowed since absolute length is still reasonable
@@ -1002,8 +944,7 @@ describe("Saved Articles API", () => {
   describe("saved.save with provided HTML", () => {
     it("rejects provided HTML larger than the saved article size limit", async () => {
       const userId = await createTestUser();
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const { usageLimitsConfig } = await import("../../src/server/config/env");
       const hugeHtml = "x".repeat(usageLimitsConfig.maxSavedArticleSizeBytes + 1);
@@ -1022,8 +963,7 @@ describe("Saved Articles API", () => {
 
     it("uses provided HTML instead of fetching the URL", async () => {
       const userId = await createTestUser();
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const testHtml = `
         <!DOCTYPE html>
@@ -1063,8 +1003,7 @@ describe("Saved Articles API", () => {
 
     it("uses provided title parameter over extracted metadata", async () => {
       const userId = await createTestUser();
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const testHtml = `
         <!DOCTYPE html>
@@ -1091,8 +1030,7 @@ describe("Saved Articles API", () => {
 
     it("uses provided author and excerpt parameters over extracted metadata", async () => {
       const userId = await createTestUser();
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const testHtml = `
         <!DOCTYPE html>
@@ -1125,8 +1063,7 @@ describe("Saved Articles API", () => {
 
     it("falls back to og:title when title parameter is not provided", async () => {
       const userId = await createTestUser();
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const testHtml = `
         <!DOCTYPE html>
@@ -1149,8 +1086,7 @@ describe("Saved Articles API", () => {
 
     it("handles HTML without metadata gracefully", async () => {
       const userId = await createTestUser();
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const testHtml = `
         <!DOCTYPE html>
@@ -1179,8 +1115,7 @@ describe("Saved Articles API", () => {
 
     it("omits article body from the response; body is sanitized on read (#927)", async () => {
       const userId = await createTestUser();
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // Body carries XSS vectors. The mutation response must not echo content
       // back at all (callers only use metadata, and rendering it directly would
@@ -1249,8 +1184,7 @@ describe("Saved Articles API", () => {
   describe("saved.uploadFile size limit (#1082)", () => {
     it("rejects a decoded upload larger than the saved article size limit before processing", async () => {
       const userId = await createTestUser();
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const { usageLimitsConfig } = await import("../../src/server/config/env");
       // A buffer just over the limit; its base64 stays under the schema cap
@@ -1415,8 +1349,7 @@ describe("Saved Articles API", () => {
       expect(await isPlaceholderFlag(healed.id)).toBe(false);
 
       // The served body is now the real content, not the placeholder text.
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
       const fetched = await caller.entries.get({ id: healed.id });
       expect(fetched.entry.contentCleaned).toContain("real article content");
       expect(fetched.entry.contentCleaned).not.toContain("couldn't save");

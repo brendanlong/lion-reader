@@ -44,7 +44,7 @@ export type { ProcedureHandler, ProcedureHandlers, RecordedCall } from "@/lib/tr
  * (it's absent under Node 26 in CI), and components under test read it directly
  * (show-original preference, expanded tags, sidebar unread-only). Call this in
  * `beforeEach` so every test gets a clean, always-defined store regardless of
- * environment. Mirrors the mock in `useShowOriginalPreference.test.ts`.
+ * environment.
  */
 export function stubMemoryLocalStorage(): Storage {
   const store = new Map<string, string>();

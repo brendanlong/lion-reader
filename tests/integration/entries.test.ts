@@ -7,15 +7,7 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { eq, and, inArray } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import {
-  users,
-  feeds,
-  entries,
-  subscriptions,
-  subscriptionTags,
-  tags,
-  userEntries,
-} from "../../src/server/db/schema";
+import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import {
@@ -26,6 +18,7 @@ import {
 import {
   createAuthContext,
   createTestSubscription,
+  createTestTag,
   createTestUser,
   createTestEntry as createSharedTestEntry,
   createTestFeed as createSharedTestFeed,
@@ -118,21 +111,16 @@ async function createUserEntry(
 // ============================================================================
 
 describe("Entries", () => {
-  beforeEach(async () => {
+  async function cleanup(): Promise<void> {
     await db.delete(userEntries);
     await db.delete(entries);
     await db.delete(subscriptions);
     await db.delete(feeds);
     await db.delete(users);
-  });
+  }
 
-  afterAll(async () => {
-    await db.delete(userEntries);
-    await db.delete(entries);
-    await db.delete(subscriptions);
-    await db.delete(feeds);
-    await db.delete(users);
-  });
+  beforeEach(cleanup);
+  afterAll(cleanup);
 
   describe("list", () => {
     it("lists entries for a user's subscription", async () => {
@@ -146,8 +134,7 @@ describe("Entries", () => {
       await createUserEntry(userId, entry1Id);
       await createUserEntry(userId, entry2Id);
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.entries.list({});
 
@@ -168,8 +155,7 @@ describe("Entries", () => {
       await createUserEntry(userId, orphanedId);
       await createUserEntry(userId, orphanedStarredId, { starred: true });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.entries.list({});
 
@@ -187,8 +173,7 @@ describe("Entries", () => {
       await createUserEntry(userId, unreadId, { read: false });
       await createUserEntry(userId, readId, { read: true });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.entries.list({ unreadOnly: true });
 
@@ -208,8 +193,7 @@ describe("Entries", () => {
       await createUserEntry(userId, starredId, { starred: true });
       await createUserEntry(userId, unstarredId, { starred: false });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.entries.list({ starredOnly: true });
 
@@ -448,8 +432,7 @@ describe("Entries", () => {
       });
       await createUserEntry(userId, entryId);
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.entries.get({ id: entryId });
 
@@ -460,8 +443,7 @@ describe("Entries", () => {
 
     it("throws error for entry that doesn't exist", async () => {
       const userId = await createTestUser();
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const nonExistentId = generateUuidv7();
       await expect(caller.entries.get({ id: nonExistentId })).rejects.toThrow();
@@ -477,8 +459,7 @@ describe("Entries", () => {
       await createUserEntry(user1Id, entryId);
 
       // User 2 tries to access User 1's entry
-      const ctx2 = await createAuthContext(user2Id);
-      const caller2 = createCaller(ctx2);
+      const caller2 = createCaller(await createAuthContext(user2Id));
 
       await expect(caller2.entries.get({ id: entryId })).rejects.toThrow();
     });
@@ -508,8 +489,7 @@ describe("Entries", () => {
       await createUserEntry(userId, entry2Id);
       await createUserEntry(userId, entry3Id);
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.entries.list({ query: "PostgreSQL" });
 
@@ -535,8 +515,7 @@ describe("Entries", () => {
       await createUserEntry(userId, entry1Id);
       await createUserEntry(userId, entry2Id);
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.entries.list({
         query: "artificial intelligence",
@@ -568,8 +547,7 @@ describe("Entries", () => {
       await createUserEntry(userId, matchId);
       await createUserEntry(userId, otherId);
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.entries.list({ query: "photosynthesis" });
 
@@ -599,8 +577,7 @@ describe("Entries", () => {
       await createUserEntry(userId, entry2Id);
       await createUserEntry(userId, entry3Id);
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // Should match both entry1 (title) and entry2 (content)
       const result = await caller.entries.list({ query: "TypeScript" });
@@ -627,8 +604,7 @@ describe("Entries", () => {
       await createUserEntry(userId, unreadMatch, { read: false });
       await createUserEntry(userId, readMatch, { read: true });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.entries.list({ query: "React", unreadOnly: true });
 
@@ -645,8 +621,7 @@ describe("Entries", () => {
       await createTestEntry(feedId, { title: "JavaScript Basics" });
       await createUserEntry(userId, await createTestEntry(feedId, { title: "Python Tutorial" }));
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.entries.list({ query: "nonexistentquery12345" });
 
@@ -666,8 +641,7 @@ describe("Entries", () => {
       await createUserEntry(userId, entry1Id, { read: false });
       await createUserEntry(userId, entry2Id, { read: false });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.entries.markRead({
         entries: [{ id: entry1Id }, { id: entry2Id }],
@@ -691,8 +665,7 @@ describe("Entries", () => {
       const entryId = await createTestEntry(feedId, { title: "Read Entry" });
       await createUserEntry(userId, entryId, { read: true });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.entries.markRead({ entries: [{ id: entryId }], read: false });
 
@@ -722,8 +695,7 @@ describe("Entries", () => {
       await createUserEntry(userId, entry2Id, { read: false });
       await createUserEntry(userId, entry3Id, { read: false });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // Mark 2 as read
       const result = await caller.entries.markRead({
@@ -754,8 +726,7 @@ describe("Entries", () => {
       const entryId = await createTestEntry(feedId, { title: "Entry to star" });
       await createUserEntry(userId, entryId, { starred: false });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.entries.setStarred({ id: entryId, starred: true });
 
@@ -780,8 +751,7 @@ describe("Entries", () => {
       const entryId = await createTestEntry(feedId, { title: "Starred entry" });
       await createUserEntry(userId, entryId, { starred: true });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.entries.setStarred({ id: entryId, starred: false });
 
@@ -808,8 +778,7 @@ describe("Entries", () => {
       await createUserEntry(user1Id, entryId);
 
       // User 2 tries to star User 1's entry
-      const ctx2 = await createAuthContext(user2Id);
-      const caller2 = createCaller(ctx2);
+      const caller2 = createCaller(await createAuthContext(user2Id));
 
       await expect(caller2.entries.setStarred({ id: entryId, starred: true })).rejects.toThrow();
     });
@@ -829,8 +798,7 @@ describe("Entries", () => {
       await createUserEntry(userId, entry2Id, { read: false });
       await createUserEntry(userId, entry3Id, { read: true });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.entries.count({});
 
@@ -850,8 +818,7 @@ describe("Entries", () => {
       await createUserEntry(userId, unread2Id, { read: false });
       await createUserEntry(userId, readId, { read: true });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.entries.count({ unreadOnly: true });
 
@@ -895,9 +862,10 @@ describe("Entries", () => {
       await createUserEntry(victimId, entryId, { read: false });
 
       // The victim's tag on the victim's subscription
-      const tagId = generateUuidv7();
-      await db.insert(tags).values({ id: tagId, userId: victimId, name: "Victim tag" });
-      await db.insert(subscriptionTags).values({ tagId, subscriptionId });
+      const tagId = await createTestTag(victimId, {
+        name: "Victim tag",
+        subscriptionIds: [subscriptionId],
+      });
 
       // The attacker subscribes to the same shared feed with their own unread
       // entry, then passes the victim's tagId. Another user's tag must not
@@ -960,8 +928,7 @@ describe("Entries", () => {
       const entryId = await createTestEntry(feedId, { title: "Entry" });
       await createUserEntry(userId, entryId, { read: false, readChangedAt: oldTimestamp });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // Update with newer timestamp should succeed
       const result = await caller.entries.markRead({
@@ -993,8 +960,7 @@ describe("Entries", () => {
       const entryId = await createTestEntry(feedId, { title: "Entry" });
       await createUserEntry(userId, entryId, { read: true, readChangedAt: newerTimestamp });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // Update with older timestamp should be rejected (no-op)
       await caller.entries.markRead({
@@ -1023,8 +989,7 @@ describe("Entries", () => {
       const entryId = await createTestEntry(feedId, { title: "Entry" });
       await createUserEntry(userId, entryId, { read: true, readChangedAt: timestamp });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // Same timestamp, different value - should succeed with >= comparison
       await caller.entries.markRead({
@@ -1058,8 +1023,7 @@ describe("Entries", () => {
         starredChangedAt: initialTimestamp,
       });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // Update read state
       await caller.entries.markRead({
@@ -1097,8 +1061,7 @@ describe("Entries", () => {
       // Entry 2 has newer timestamp - should NOT be updated
       await createUserEntry(userId, entry2Id, { read: true, readChangedAt: newerTimestamp });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.entries.markRead({
         entries: [
@@ -1136,8 +1099,7 @@ describe("Entries", () => {
       const entryId = await createTestEntry(feedId, { title: "Entry" });
       await createUserEntry(userId, entryId, { starred: false, starredChangedAt: oldTimestamp });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // Star with newer timestamp should succeed
       const result = await caller.entries.setStarred({
@@ -1178,8 +1140,7 @@ describe("Entries", () => {
       const entryId = await createTestEntry(feedId, { title: "Entry" });
       await createUserEntry(userId, entryId, { read: false, readChangedAt: time0 });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // Step 1: Mark read at time 1
       await caller.entries.markRead({
@@ -1234,8 +1195,7 @@ describe("Entries", () => {
       const entryId = await createTestEntry(feedId, { title: "Entry" });
       await createUserEntry(userId, entryId, { starred: false, starredChangedAt: time0 });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // Step 1: Star at time 1
       await caller.entries.setStarred({
@@ -1290,8 +1250,7 @@ describe("Entries", () => {
       const entryId = await createTestEntry(feedId, { title: "Entry" });
       await createUserEntry(userId, entryId, { starred: true, starredChangedAt: newerTimestamp });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // Unstar with older timestamp should be rejected
       const result = await caller.entries.setStarred({

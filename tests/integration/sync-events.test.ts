@@ -27,6 +27,7 @@ import {
   createTestEntry,
   createTestFeed,
   createTestSubscription,
+  createTestTag,
   createTestUser,
 } from "./helpers";
 
@@ -45,46 +46,6 @@ async function createFetchedFeed(
   return createTestFeed({ lastFetchedAt: now, lastEntriesUpdatedAt: now, ...overrides });
 }
 
-async function createSavedFeed(userId: string): Promise<string> {
-  const feedId = generateUuidv7();
-  const now = new Date();
-  await db.insert(feeds).values({
-    id: feedId,
-    type: "saved",
-    userId,
-    url: null,
-    title: "Saved Articles",
-    // Saved feeds are never polled: last_entries_updated_at stays NULL.
-    lastEntriesUpdatedAt: null,
-    createdAt: now,
-    updatedAt: now,
-  });
-  return feedId;
-}
-
-async function createSavedEntry(
-  savedFeedId: string,
-  options: { title?: string; createdAt?: Date; updatedAt?: Date } = {}
-): Promise<string> {
-  const entryId = generateUuidv7();
-  const now = new Date();
-  await db.insert(entries).values({
-    id: entryId,
-    feedId: savedFeedId,
-    type: "saved",
-    guid: `guid-${entryId}`,
-    title: options.title ?? `Saved ${entryId}`,
-    contentHash: `hash-${entryId}`,
-    fetchedAt: now,
-    publishedAt: options.createdAt ?? now,
-    // Saved entries must have last_seen_at NULL (entries_last_seen_only_fetched).
-    lastSeenAt: null,
-    createdAt: options.createdAt ?? now,
-    updatedAt: options.updatedAt ?? now,
-  });
-  return entryId;
-}
-
 async function createUserEntry(
   userId: string,
   entryId: string,
@@ -99,33 +60,6 @@ async function createUserEntry(
     readChangedAt: now,
     starredChangedAt: now,
     updatedAt: options.updatedAt ?? now,
-  });
-}
-
-async function createTestTag(
-  userId: string,
-  name: string,
-  options: { color?: string; createdAt?: Date; updatedAt?: Date; deletedAt?: Date | null } = {}
-): Promise<string> {
-  const tagId = generateUuidv7();
-  const now = new Date();
-  await db.insert(tags).values({
-    id: tagId,
-    userId,
-    name,
-    color: options.color ?? null,
-    createdAt: options.createdAt ?? now,
-    updatedAt: options.updatedAt ?? now,
-    deletedAt: options.deletedAt ?? null,
-  });
-  return tagId;
-}
-
-async function linkTagToSubscription(tagId: string, subscriptionId: string): Promise<void> {
-  await db.insert(subscriptionTags).values({
-    tagId,
-    subscriptionId,
-    createdAt: new Date(),
   });
 }
 
@@ -162,7 +96,7 @@ async function drainEntrySync(userId: string, start: SyncCursors): Promise<SyncE
 // ============================================================================
 
 describe("sync.events", () => {
-  beforeEach(async () => {
+  async function cleanup(): Promise<void> {
     await db.delete(userEntries);
     await db.delete(subscriptionTags);
     await db.delete(entries);
@@ -170,17 +104,10 @@ describe("sync.events", () => {
     await db.delete(tags);
     await db.delete(feeds);
     await db.delete(users);
-  });
+  }
 
-  afterAll(async () => {
-    await db.delete(userEntries);
-    await db.delete(subscriptionTags);
-    await db.delete(entries);
-    await db.delete(subscriptions);
-    await db.delete(tags);
-    await db.delete(feeds);
-    await db.delete(users);
-  });
+  beforeEach(cleanup);
+  afterAll(cleanup);
 
   // ==========================================================================
   // No cursors / empty state
@@ -188,8 +115,7 @@ describe("sync.events", () => {
 
   it("returns empty events when no cursors provided", async () => {
     const userId = await createTestUser();
-    const ctx = await createAuthContext(userId);
-    const caller = createCaller(ctx);
+    const caller = createCaller(await createAuthContext(userId));
 
     const result = await caller.sync.events({ cursors: {} });
 
@@ -242,8 +168,7 @@ describe("sync.events", () => {
       const userId = await createTestUser();
       const feedId = await createFetchedFeed({ url: "https://example.com/tagged-sync-feed.xml" });
       const subId = await createTestSubscription(userId, feedId);
-      const tagId = await createTestTag(userId, "News");
-      await linkTagToSubscription(tagId, subId);
+      const tagId = await createTestTag(userId, { name: "News", subscriptionIds: [subId] });
 
       const cursorResult = await createCaller(await createAuthContext(userId)).sync.cursors();
       const baseCursor = cursorResult.entries ?? new Date("2020-01-01").toISOString();
@@ -482,8 +407,11 @@ describe("sync.events", () => {
       const feedId = await createFetchedFeed({ url: "https://example.com/sub-tags.xml" });
       const subId = await createTestSubscription(userId, feedId);
 
-      const tagId = await createTestTag(userId, "My Tag", { color: "#aabbcc" });
-      await linkTagToSubscription(tagId, subId);
+      const tagId = await createTestTag(userId, {
+        name: "My Tag",
+        color: "#aabbcc",
+        subscriptionIds: [subId],
+      });
 
       const result = await createCaller(await createAuthContext(userId)).sync.events({
         cursors: { subscriptions: baseCursor },
@@ -572,7 +500,7 @@ describe("sync.events", () => {
       const userId = await createTestUser();
       const baseCursor = new Date("2020-01-01").toISOString();
 
-      const tagId = await createTestTag(userId, "New Tag", { color: "#123456" });
+      const tagId = await createTestTag(userId, { name: "New Tag", color: "#123456" });
 
       const result = await createCaller(await createAuthContext(userId)).sync.events({
         cursors: { tags: baseCursor },
@@ -589,7 +517,8 @@ describe("sync.events", () => {
     it("returns tag_updated for property changes", async () => {
       const userId = await createTestUser();
       const earlyDate = new Date("2024-01-01");
-      const tagId = await createTestTag(userId, "Old Name", {
+      const tagId = await createTestTag(userId, {
+        name: "Old Name",
         color: "#000000",
         createdAt: earlyDate,
         updatedAt: earlyDate,
@@ -617,7 +546,8 @@ describe("sync.events", () => {
     it("returns tag_deleted for soft-deleted tag", async () => {
       const userId = await createTestUser();
       const earlyDate = new Date("2024-01-01");
-      const tagId = await createTestTag(userId, "To Delete", {
+      const tagId = await createTestTag(userId, {
+        name: "To Delete",
         createdAt: earlyDate,
         updatedAt: earlyDate,
       });
@@ -652,15 +582,18 @@ describe("sync.events", () => {
       const baseCursor = new Date("2020-01-01").toISOString();
 
       // Create tags at different times
-      const tag1Id = await createTestTag(userId, "First", {
+      const tag1Id = await createTestTag(userId, {
+        name: "First",
         createdAt: new Date("2024-06-01"),
         updatedAt: new Date("2024-06-01"),
       });
-      const tag2Id = await createTestTag(userId, "Second", {
+      const tag2Id = await createTestTag(userId, {
+        name: "Second",
         createdAt: new Date("2024-06-02"),
         updatedAt: new Date("2024-06-02"),
       });
-      const tag3Id = await createTestTag(userId, "Third", {
+      const tag3Id = await createTestTag(userId, {
+        name: "Third",
         createdAt: new Date("2024-06-03"),
         updatedAt: new Date("2024-06-03"),
       });
@@ -810,12 +743,14 @@ describe("sync.events", () => {
 
     it("includes saved-article content updates (the saved-feed arm)", async () => {
       const userId = await createTestUser();
-      const savedFeedId = await createSavedFeed(userId);
+      const savedFeedId = await createTestFeed({ type: "saved", userId, url: null });
 
       const stateTime = new Date("2024-06-01T00:00:00.000Z");
       const contentTime = new Date("2024-06-03T00:00:00.000Z");
-      const savedEntryId = await createSavedEntry(savedFeedId, {
+      const savedEntryId = await createTestEntry(savedFeedId, {
+        type: "saved",
         createdAt: stateTime,
+        publishedAt: stateTime,
         updatedAt: contentTime,
       });
       await createUserEntry(userId, savedEntryId, { updatedAt: stateTime });
@@ -1255,10 +1190,12 @@ describe("sync.events", () => {
 
     it("delivers a saved-article content update via the saved arm (no subscription row)", async () => {
       const userId = await createTestUser();
-      const savedFeedId = await createSavedFeed(userId);
-      const entryId = await createSavedEntry(savedFeedId, {
+      const savedFeedId = await createTestFeed({ type: "saved", userId, url: null });
+      const entryId = await createTestEntry(savedFeedId, {
+        type: "saved",
         title: "Saved Original",
         createdAt: OLD,
+        publishedAt: OLD,
         updatedAt: OLD,
       });
       // Saved articles have no subscription; the user_entries row alone grants
@@ -1338,14 +1275,14 @@ describe("sync.events", () => {
       const userId = await createTestUser();
       const feedId = await createFetchedFeed({ url: "https://example.com/explain.xml" });
       await createTestSubscription(userId, feedId);
-      const savedFeedId = await createSavedFeed(userId);
+      const savedFeedId = await createTestFeed({ type: "saved", userId, url: null });
       // Give both feeds volume with everything before the cursor, so the
       // (feed_id, updated_at) index — which seeks straight past the stale rows —
       // is strictly cheaper than the (feed_id, id) index that must scan + filter.
       for (let i = 0; i < 40; i++) {
         const e = await createTestEntry(feedId, { updatedAt: OLD });
         await createUserEntry(userId, e, { updatedAt: OLD });
-        const s = await createSavedEntry(savedFeedId, { updatedAt: OLD });
+        const s = await createTestEntry(savedFeedId, { type: "saved", updatedAt: OLD });
         await createUserEntry(userId, s, { updatedAt: OLD });
       }
       await db.execute(sql`ANALYZE user_entries`);

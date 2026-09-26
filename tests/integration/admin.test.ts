@@ -24,7 +24,7 @@ import {
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
-import { createTestFeed, createTestUser } from "./helpers";
+import { createTestFeed, createTestUser, createUnauthContext } from "./helpers";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -32,54 +32,11 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // Test Helpers
 // ============================================================================
 
-/**
- * Creates an admin context with the correct Bearer token in the Authorization header.
- */
-function createAdminContext(): Context {
-  return {
-    db,
-    session: null,
-    apiToken: null,
-    authType: null,
-    scopes: [],
-    sessionToken: null,
-    headers: new Headers({
-      authorization: "Bearer test-admin-secret",
-    }),
-  };
-}
+const createAdminContext = (): Context =>
+  createUnauthContext(new Headers({ authorization: "Bearer test-admin-secret" }));
 
-/**
- * Creates a context with no authorization header (unauthenticated).
- */
-function createUnauthContext(): Context {
-  return {
-    db,
-    session: null,
-    apiToken: null,
-    authType: null,
-    scopes: [],
-    sessionToken: null,
-    headers: new Headers(),
-  };
-}
-
-/**
- * Creates a context with a wrong Bearer token.
- */
-function createWrongTokenContext(): Context {
-  return {
-    db,
-    session: null,
-    apiToken: null,
-    authType: null,
-    scopes: [],
-    sessionToken: null,
-    headers: new Headers({
-      authorization: "Bearer wrong-secret",
-    }),
-  };
-}
+const createWrongTokenContext = (): Context =>
+  createUnauthContext(new Headers({ authorization: "Bearer wrong-secret" }));
 
 /**
  * Creates a test invite directly in the database.
@@ -113,8 +70,7 @@ async function createTestInvite(
 // ============================================================================
 
 describe("Admin API", () => {
-  // Clean up tables before each test
-  beforeEach(async () => {
+  async function cleanup(): Promise<void> {
     // Clear in dependency order
     await db.delete(jobs);
     await db.delete(subscriptions);
@@ -123,17 +79,10 @@ describe("Admin API", () => {
     await db.delete(invites);
     await db.delete(feeds);
     await db.delete(users);
-  });
+  }
 
-  // Clean up after all tests
-  afterAll(async () => {
-    await db.delete(jobs);
-    await db.delete(subscriptions);
-    await db.execute(sql`UPDATE users SET invite_id = NULL`);
-    await db.delete(invites);
-    await db.delete(feeds);
-    await db.delete(users);
-  });
+  beforeEach(cleanup);
+  afterAll(cleanup);
 
   // ==========================================================================
   // Security Tests
@@ -141,15 +90,13 @@ describe("Admin API", () => {
 
   describe("security", () => {
     it("fails without auth header", async () => {
-      const ctx = createUnauthContext();
-      const caller = createCaller(ctx);
+      const caller = createCaller(createUnauthContext());
 
       await expect(caller.admin.listUsers()).rejects.toThrow("Invalid admin secret");
     });
 
     it("fails with wrong token", async () => {
-      const ctx = createWrongTokenContext();
-      const caller = createCaller(ctx);
+      const caller = createCaller(createWrongTokenContext());
 
       await expect(caller.admin.listUsers()).rejects.toThrow("Invalid admin secret");
     });
@@ -161,8 +108,7 @@ describe("Admin API", () => {
 
   describe("admin.createInvite", () => {
     it("creates an invite and returns URL", async () => {
-      const ctx = createAdminContext();
-      const caller = createCaller(ctx);
+      const caller = createCaller(createAdminContext());
 
       const result = await caller.admin.createInvite();
 
@@ -182,8 +128,7 @@ describe("Admin API", () => {
 
   describe("admin.listInvites", () => {
     it("lists invites with pagination", async () => {
-      const ctx = createAdminContext();
-      const caller = createCaller(ctx);
+      const caller = createCaller(createAdminContext());
 
       // Create several invites
       await createTestInvite();
@@ -206,8 +151,7 @@ describe("Admin API", () => {
     });
 
     it("searches invites by used-by user email", async () => {
-      const ctx = createAdminContext();
-      const caller = createCaller(ctx);
+      const caller = createCaller(createAdminContext());
 
       // Create a user and an invite used by that user
       const userId = await createTestUser({ emailPrefix: "searchable" });
@@ -231,8 +175,7 @@ describe("Admin API", () => {
 
   describe("admin.revokeInvite", () => {
     it("revokes an unused invite", async () => {
-      const ctx = createAdminContext();
-      const caller = createCaller(ctx);
+      const caller = createCaller(createAdminContext());
 
       const invite = await createTestInvite();
 
@@ -252,8 +195,7 @@ describe("Admin API", () => {
 
   describe("admin.listFeeds", () => {
     it("lists all web feeds", async () => {
-      const ctx = createAdminContext();
-      const caller = createCaller(ctx);
+      const caller = createCaller(createAdminContext());
 
       const feedId1 = await createTestFeed({ url: "https://example.com/feed1.xml" });
       const feedId2 = await createTestFeed({ url: "https://example.com/feed2.xml" });
@@ -268,8 +210,7 @@ describe("Admin API", () => {
     });
 
     it("filters by URL substring", async () => {
-      const ctx = createAdminContext();
-      const caller = createCaller(ctx);
+      const caller = createCaller(createAdminContext());
 
       await createTestFeed({ url: "https://example.com/unique-feed-abc.xml" });
       await createTestFeed({ url: "https://other.com/different.xml" });
@@ -281,8 +222,7 @@ describe("Admin API", () => {
     });
 
     it("filters by broken only", async () => {
-      const ctx = createAdminContext();
-      const caller = createCaller(ctx);
+      const caller = createCaller(createAdminContext());
 
       await createTestFeed({
         url: "https://example.com/healthy.xml",
@@ -313,8 +253,7 @@ describe("Admin API", () => {
     // becomes unreachable past the first page. Untitled feeds are exactly the
     // never-successfully-fetched ones this admin page exists to surface.
     it("reaches an untitled feed while paging", async () => {
-      const ctx = createAdminContext();
-      const caller = createCaller(ctx);
+      const caller = createCaller(createAdminContext());
 
       const untitledId = await createTestFeed({
         url: "https://example.com/untitled.xml",
@@ -349,8 +288,7 @@ describe("Admin API", () => {
 
   describe("admin.getOverview", () => {
     it("counts active users in the 7- and 30-day windows", async () => {
-      const ctx = createAdminContext();
-      const caller = createCaller(ctx);
+      const caller = createCaller(createAdminContext());
 
       const now = Date.now();
       await createTestUser({ emailPrefix: "recent", lastActiveAt: new Date(now - 3 * DAY_MS) });
@@ -369,8 +307,7 @@ describe("Admin API", () => {
 
   describe("admin.retryFeedFetch", () => {
     it("resets feed failure count and schedules immediate fetch", async () => {
-      const ctx = createAdminContext();
-      const caller = createCaller(ctx);
+      const caller = createCaller(createAdminContext());
 
       const feedId = await createTestFeed({
         url: "https://example.com/retry-test.xml",
@@ -397,8 +334,7 @@ describe("Admin API", () => {
 
   describe("admin.listUsers", () => {
     it("lists all users", async () => {
-      const ctx = createAdminContext();
-      const caller = createCaller(ctx);
+      const caller = createCaller(createAdminContext());
 
       const userId1 = await createTestUser({ emailPrefix: "user-a" });
       const userId2 = await createTestUser({ emailPrefix: "user-b" });
@@ -422,8 +358,7 @@ describe("Admin API", () => {
     });
 
     it("searches by email", async () => {
-      const ctx = createAdminContext();
-      const caller = createCaller(ctx);
+      const caller = createCaller(createAdminContext());
 
       await createTestUser({ emailPrefix: "findme-unique" });
       await createTestUser({ emailPrefix: "other-user" });
@@ -435,8 +370,7 @@ describe("Admin API", () => {
     });
 
     it("returns lastActiveAt from the denormalized user column", async () => {
-      const ctx = createAdminContext();
-      const caller = createCaller(ctx);
+      const caller = createCaller(createAdminContext());
 
       const userId = await createTestUser({ emailPrefix: "active-user" });
 
@@ -454,8 +388,7 @@ describe("Admin API", () => {
       // Regression: activity used to be derived from MAX(sessions.last_active_at),
       // so retention cleanup deleting expired sessions blanked it out. It now
       // lives on the user row and must survive with no sessions at all.
-      const ctx = createAdminContext();
-      const caller = createCaller(ctx);
+      const caller = createCaller(createAdminContext());
 
       const userId = await createTestUser({ emailPrefix: "retained-user" });
       const activeTime = new Date("2026-02-01T09:00:00Z");
@@ -480,8 +413,7 @@ describe("Admin API", () => {
     });
 
     it("reports most recent token use separately from session activity", async () => {
-      const ctx = createAdminContext();
-      const caller = createCaller(ctx);
+      const caller = createCaller(createAdminContext());
 
       const userId = await createTestUser({ emailPrefix: "token-user" });
 
@@ -511,8 +443,7 @@ describe("Admin API", () => {
       // session (scopes IS NOT NULL). That polling bumps only
       // sessions.last_active_at, never users.last_active_at, so it must surface
       // as lastTokenUsedAt ("last API usage") and leave lastActiveAt untouched.
-      const ctx = createAdminContext();
-      const caller = createCaller(ctx);
+      const caller = createCaller(createAdminContext());
 
       const userId = await createTestUser({ emailPrefix: "greader-user" });
 
@@ -538,8 +469,7 @@ describe("Admin API", () => {
     it("ignores full-access session rows when computing token use", async () => {
       // A normal browser session (scopes NULL) must NOT count toward
       // lastTokenUsedAt — only scoped sessions do.
-      const ctx = createAdminContext();
-      const caller = createCaller(ctx);
+      const caller = createCaller(createAdminContext());
 
       const userId = await createTestUser({ emailPrefix: "browser-only-user" });
       await db.insert(sessions).values({
@@ -558,8 +488,7 @@ describe("Admin API", () => {
     });
 
     it("returns null token use for users who never used a token", async () => {
-      const ctx = createAdminContext();
-      const caller = createCaller(ctx);
+      const caller = createCaller(createAdminContext());
 
       await createTestUser({ emailPrefix: "no-token-user" });
 
@@ -570,8 +499,7 @@ describe("Admin API", () => {
     });
 
     it("sorts by most recent activity by default, nulls last", async () => {
-      const ctx = createAdminContext();
-      const caller = createCaller(ctx);
+      const caller = createCaller(createAdminContext());
 
       const idNever = await createTestUser({ emailPrefix: "sort-never" });
       const idOld = await createTestUser({ emailPrefix: "sort-old" });
@@ -594,8 +522,7 @@ describe("Admin API", () => {
     });
 
     it("sorts by email A→Z", async () => {
-      const ctx = createAdminContext();
-      const caller = createCaller(ctx);
+      const caller = createCaller(createAdminContext());
 
       // Emails are prefixed with the UUIDv7 id, so create then rewrite them to
       // control alphabetical order independently of creation order.
@@ -610,8 +537,7 @@ describe("Admin API", () => {
     });
 
     it("paginates a sorted list without overlap", async () => {
-      const ctx = createAdminContext();
-      const caller = createCaller(ctx);
+      const caller = createCaller(createAdminContext());
 
       const ids: string[] = [];
       for (let i = 0; i < 3; i++) {
@@ -644,8 +570,7 @@ describe("Admin API", () => {
     });
 
     it("pagination works", async () => {
-      const ctx = createAdminContext();
-      const caller = createCaller(ctx);
+      const caller = createCaller(createAdminContext());
 
       // Create enough users to paginate
       await createTestUser({ emailPrefix: "page-a" });

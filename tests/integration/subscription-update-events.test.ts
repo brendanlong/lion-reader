@@ -26,7 +26,6 @@ import {
   entries,
   userEntries,
 } from "../../src/server/db/schema";
-import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import { getUserEventsChannel } from "../../src/server/redis/pubsub";
 import { expectNoMessage, subscribeAndDrain, waitForMessage } from "../utils/pubsub";
@@ -34,6 +33,7 @@ import {
   createAuthContext,
   createTestFeed,
   createTestSubscription,
+  createTestTag,
   createTestUser,
 } from "./helpers";
 
@@ -83,18 +83,6 @@ async function createSubscribedFeed(
     customTitle: options.customTitle ?? null,
     fetchFullContent: options.fetchFullContent ?? false,
   });
-}
-
-async function createTestTag(userId: string, name: string): Promise<string> {
-  const tagId = generateUuidv7();
-  await db.insert(tags).values({
-    id: tagId,
-    userId,
-    name,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-  return tagId;
 }
 
 async function getSubscriptionUpdatedAt(subscriptionId: string): Promise<Date> {
@@ -228,7 +216,7 @@ describe("subscriptions.setTags meaningful-change gating (issue #1160)", () => {
   it("publishes and advances updated_at when the tag set actually changes", async () => {
     const userId = await createTestUser();
     const subscriptionId = await createSubscribedFeed(userId);
-    const tagId = await createTestTag(userId, "Tech");
+    const tagId = await createTestTag(userId, { name: "Tech" });
     const caller = createCaller(await createAuthContext(userId));
     const before = await getSubscriptionUpdatedAt(subscriptionId);
 
@@ -249,8 +237,8 @@ describe("subscriptions.setTags meaningful-change gating (issue #1160)", () => {
   it("does not publish or advance updated_at when re-applying the identical tag set", async () => {
     const userId = await createTestUser();
     const subscriptionId = await createSubscribedFeed(userId);
-    const tagA = await createTestTag(userId, "Tech");
-    const tagB = await createTestTag(userId, "News");
+    const tagA = await createTestTag(userId, { name: "Tech" });
+    const tagB = await createTestTag(userId, { name: "News" });
     const caller = createCaller(await createAuthContext(userId));
 
     // Setup mutates through the API, which publishes fire-and-forget — so
@@ -280,8 +268,8 @@ describe("subscriptions.setTags meaningful-change gating (issue #1160)", () => {
   it("publishes when the tag set partially overlaps the previous one", async () => {
     const userId = await createTestUser();
     const subscriptionId = await createSubscribedFeed(userId);
-    const tagA = await createTestTag(userId, "Tech");
-    const tagB = await createTestTag(userId, "News");
+    const tagA = await createTestTag(userId, { name: "Tech" });
+    const tagB = await createTestTag(userId, { name: "News" });
     const caller = createCaller(await createAuthContext(userId));
 
     const channel = getUserEventsChannel(userId);
@@ -303,7 +291,7 @@ describe("subscriptions.setTags meaningful-change gating (issue #1160)", () => {
   it("publishes with empty tags when clearing a tagged subscription", async () => {
     const userId = await createTestUser();
     const subscriptionId = await createSubscribedFeed(userId);
-    const tagId = await createTestTag(userId, "Tech");
+    const tagId = await createTestTag(userId, { name: "Tech" });
     const caller = createCaller(await createAuthContext(userId));
 
     const channel = getUserEventsChannel(userId);

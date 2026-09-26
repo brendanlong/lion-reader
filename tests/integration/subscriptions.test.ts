@@ -14,8 +14,6 @@ import {
   feeds,
   entries,
   subscriptions,
-  subscriptionTags,
-  tags,
   userEntries,
   jobs,
 } from "../../src/server/db/schema";
@@ -26,6 +24,7 @@ import {
   createAuthContext,
   createTestEntry,
   createTestSubscription,
+  createTestTag,
   createTestUser,
   createTestFeed as createSharedTestFeed,
 } from "./helpers";
@@ -72,23 +71,16 @@ async function getUserEntries(userId: string): Promise<Array<{ entryId: string }
 // ============================================================================
 
 describe("Subscriptions - Subscribe to Existing Feed", () => {
-  // Clean up tables before each test
-  beforeEach(async () => {
+  async function cleanup(): Promise<void> {
     await db.delete(userEntries);
     await db.delete(entries);
     await db.delete(subscriptions);
     await db.delete(feeds);
     await db.delete(users);
-  });
+  }
 
-  // Clean up after all tests
-  afterAll(async () => {
-    await db.delete(userEntries);
-    await db.delete(entries);
-    await db.delete(subscriptions);
-    await db.delete(feeds);
-    await db.delete(users);
-  });
+  beforeEach(cleanup);
+  afterAll(cleanup);
 
   describe("Entry visibility based on lastSeenAt", () => {
     it("shows only current entries when subscribing to existing feed", async () => {
@@ -245,8 +237,7 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
         lastSeenAt: fetchTime,
       });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.subscriptions.create({ url: feedUrl });
 
@@ -335,8 +326,7 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       });
 
       // User subscribes after all 3 fetches
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.subscriptions.create({ url: feedUrl });
 
@@ -419,8 +409,7 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
         title: "Entry 1",
       });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.subscriptions.create({ url: feedUrl });
 
@@ -443,8 +432,7 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
 
       // No entries created
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.subscriptions.create({ url: feedUrl });
 
@@ -481,8 +469,7 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
         lastSeenAt: fetchTime,
       });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // First subscription
       const result1 = await caller.subscriptions.create({ url: feedUrl });
@@ -619,8 +606,7 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       // Second fetch had no entries (all disappeared)
       // lastEntriesUpdatedAt is fetch2Time but no entries have that lastSeenAt
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.subscriptions.create({ url: feedUrl });
 
@@ -657,8 +643,7 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
         lastSeenAt: fetchTime,
       });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // First subscribe
       const result1 = await caller.subscriptions.create({ url: feedUrl });
@@ -696,8 +681,7 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
         lastSeenAt: fetchTime,
       });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // Subscribe
       const result1 = await caller.subscriptions.create({ url: feedUrl });
@@ -933,8 +917,7 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       await createTestSubscription(userId, feed2Id);
       await createTestSubscription(userId, feed3Id);
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // Search for "Tech"
       const result = await caller.subscriptions.list({ query: "Tech" });
@@ -958,8 +941,7 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
         .set({ customTitle: "My Custom Feed Name" })
         .where(eq(subscriptions.id, subscriptionId));
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // Query should match custom title
       const result = await caller.subscriptions.list({ query: "Custom" });
@@ -988,8 +970,7 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       await createTestSubscription(userId, feed2Id);
       await createTestSubscription(userId, feed3Id);
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.subscriptions.list({ query: "JavaScript" });
 
@@ -1007,8 +988,7 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       });
       await createTestSubscription(userId, feedId);
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.subscriptions.list({ query: "nonexistentquery12345" });
 
@@ -1034,8 +1014,7 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       await createTestSubscription(user2Id, feed2Id);
 
       // User 1 searches for "Topic"
-      const ctx1 = await createAuthContext(user1Id);
-      const caller1 = createCaller(ctx1);
+      const caller1 = createCaller(await createAuthContext(user1Id));
       const result1 = await caller1.subscriptions.list({ query: "Topic" });
 
       // Should only see their own subscription
@@ -1052,8 +1031,7 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       });
       await createTestSubscription(userId, feedId);
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // Search with lowercase - should match
       const result = await caller.subscriptions.list({ query: "arxiv" });
@@ -1071,8 +1049,7 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       });
       await createTestSubscription(userId, feedId);
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // Search with uppercase - should match
       const result = await caller.subscriptions.list({ query: "ARXIV" });
@@ -1090,8 +1067,7 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       });
       await createTestSubscription(userId, feedId);
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // Search with different casing
       const result1 = await caller.subscriptions.list({ query: "javascript" });
@@ -1123,8 +1099,7 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       await createTestSubscription(userId, feed1Id);
       await createTestSubscription(userId, feed2Id);
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // Search for partial substring with different casing
       const result = await caller.subscriptions.list({ query: "PROG" });
@@ -1202,8 +1177,7 @@ describe("subscriptions.export", () => {
 
   it("exports active subscriptions with resolved titles and tag folders (#1516)", async () => {
     const userId = await createTestUser();
-    const ctx = await createAuthContext(userId);
-    const caller = createCaller(ctx);
+    const caller = createCaller(await createAuthContext(userId));
 
     const feedA = await createTestFeed({
       url: `https://example.com/export-${userId}/a.xml`,
@@ -1219,17 +1193,8 @@ describe("subscriptions.export", () => {
     const subB = await createTestSubscription(userId, feedB, { customTitle: "My B" });
     await createTestSubscription(userId, feedGone, { unsubscribedAt: new Date() });
 
-    const techTagId = generateUuidv7();
-    const newsTagId = generateUuidv7();
-    await db.insert(tags).values([
-      { id: techTagId, userId, name: "Tech", createdAt: new Date() },
-      { id: newsTagId, userId, name: "News", createdAt: new Date() },
-    ]);
-    await db.insert(subscriptionTags).values([
-      { tagId: techTagId, subscriptionId: subA, createdAt: new Date() },
-      { tagId: newsTagId, subscriptionId: subA, createdAt: new Date() },
-      { tagId: techTagId, subscriptionId: subB, createdAt: new Date() },
-    ]);
+    await createTestTag(userId, { name: "Tech", subscriptionIds: [subA, subB] });
+    await createTestTag(userId, { name: "News", subscriptionIds: [subA] });
 
     const result = await caller.subscriptions.export();
 
