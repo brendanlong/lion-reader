@@ -2,60 +2,9 @@
 
 This guide covers deploying Lion Reader to [Fly.io](https://fly.io), including provisioning all required infrastructure.
 
-## Table of Contents
-
-1. [Prerequisites](#prerequisites)
-2. [Initial Setup](#initial-setup)
-3. [Database Provisioning (Postgres)](#database-provisioning-postgres)
-4. [Redis Provisioning (Upstash)](#redis-provisioning-upstash)
-5. [Configuring Secrets](#configuring-secrets)
-6. [GitHub Actions Setup](#github-actions-setup)
-7. [First Deployment](#first-deployment)
-8. [Verification](#verification)
-9. [Ongoing Operations](#ongoing-operations)
-
----
-
 ## Prerequisites
 
-Before you begin, ensure you have:
-
-### 1. Fly.io Account
-
-Create a free account at [fly.io/app/sign-up](https://fly.io/app/sign-up).
-
-### 2. Fly.io CLI (flyctl)
-
-Install the Fly.io CLI:
-
-```bash
-# macOS
-brew install flyctl
-
-# Linux
-curl -L https://fly.io/install.sh | sh
-
-# Windows (PowerShell)
-pwsh -Command "iwr https://fly.io/install.ps1 -useb | iex"
-```
-
-Verify installation:
-
-```bash
-flyctl version
-```
-
-### 3. Authenticate with Fly.io
-
-```bash
-flyctl auth login
-```
-
-This will open a browser window for authentication.
-
-### 4. GitHub Repository
-
-Ensure your code is pushed to a GitHub repository for CI/CD.
+A [Fly.io account](https://fly.io/app/sign-up), [`flyctl`](https://fly.io/docs/flyctl/install/) authenticated with `flyctl auth login`, and the code in a GitHub repository for CI/CD.
 
 ---
 
@@ -77,14 +26,6 @@ When prompted:
 - **Redis**: Select "No" (we'll use Upstash)
 
 This creates the app on Fly.io and updates your `fly.toml` with the app name.
-
-### 2. Verify App Creation
-
-```bash
-flyctl apps list
-```
-
-You should see your new app listed.
 
 ---
 
@@ -143,25 +84,6 @@ This automatically:
 - Creates a database user for your app
 - Sets the `DATABASE_URL` secret on your app
 - Configures network access between your app and database
-
-### 3. Verify Database Connection
-
-```bash
-# Connect to the database
-flyctl postgres connect -a lion-reader-pg
-
-# Run a quick test
-\conninfo
-\q
-```
-
-### 4. (Optional) View Database URL
-
-```bash
-flyctl secrets list --app lion-reader
-```
-
-You should see `DATABASE_URL` listed (value is hidden).
 
 ---
 
@@ -225,18 +147,6 @@ flyctl secrets set NEXT_PUBLIC_APP_URL="https://lionreader.com"
 
 Replace with your custom domain if you have one.
 
-### 2. Verify All Secrets
-
-```bash
-flyctl secrets list
-```
-
-You should see:
-
-- `DATABASE_URL` (set automatically by postgres attach)
-- `REDIS_URL`
-- `NEXT_PUBLIC_APP_URL` (optional)
-
 ### Complete Secrets Reference
 
 | Secret                | Required | Description                     | How to Get                                 |
@@ -282,7 +192,7 @@ The deployment workflow is already configured in `.github/workflows/deploy.yml`.
 
 HTML documents and RSC (`?_rsc=`) payloads reference build-specific artifacts — the `/_next/static/chunks/<hash>.js` bundles from the build that produced them — which are gone from the origin after the next deploy (Fly runs one build per release; it does not retain prior builds). A client holding a cached document or payload from an old build would 404 on its chunks, or version-skew against the newer origin, so we keep them off the edge. Note `?_rsc=<hash>` is a **router-state** cache-buster, not a build/deploy id, so it does **not** make an RSC payload safe to shared-cache across deploys — the same route+state hashes identically on both builds.
 
-**Enforcement.** Next stamps `Cache-Control: s-maxage=31536000` on the statically-prerendered `(public)` pages **and their RSC payloads** — a year-long _shared_-cache lifetime for exactly the build-coupled content described above. Because our pull zone wraps the whole site and honors that header (and already keys on `_rsc`/`entry`), `src/proxy.ts` overrides it to `private, no-cache` on the `isPublicStaticPath` responses (alongside the static CSP it already sets there). This works at the source rather than needing a custom-server rewrite: `sendRenderResult` only stamps Next's default when the response has no Cache-Control yet (`!res.getHeader('Cache-Control')` in `next/dist/server/send-payload`), so the middleware header wins — verified on a production build for HTML, RSC, and the `?entry=` prerender. It also closes the maintenance-gate bypass (#1318): an edge-cached `/login`/`/register` would serve a 200 while the gate is trying to 503 everything DB-touching. `no-cache` (not `no-store`) still lets the browser hold a copy, but it must revalidate against the origin before use — so a deploy can't leave a browser booting a stale document (Next does not self-heal missing bootstrap chunks on an initial load), and a revalidation during maintenance hits the 503 gate.
+**Enforcement** (`src/proxy.ts` overriding Next's `s-maxage` on the prerendered public pages) is described in the CDN section of `src/server/http/CLAUDE.md`. It also keeps the maintenance gate (#1318) from being bypassed by an edge-cached page.
 
 If we ever want to cache HTML/RSC, treat it as a fresh design effort: at minimum it needs Next's [`deploymentId`](https://nextjs.org/docs/app/api-reference/config/next-config-js/deploymentId) set, and — for anything cached on the CDN — old builds' assets kept available for as long as a cached response can reference them.
 
@@ -345,24 +255,13 @@ failing component reports `status: "unhealthy"` with an `error` message.
 
 ---
 
-## Verification
-
-After deployment, confirm the health endpoint reports `healthy` (see the contract
-above):
-
-```bash
-curl https://your-app.com/api/health
-```
-
----
-
 ## Ongoing Operations
 
 ### Scaling
 
 Both scale commands take `--process-group`; **without it they apply to every
-process group**. The app runs three (`app`, `worker`, `discord` — see the
-Architecture Overview), sized in `fly.toml` (`app`: 2 CPU / 512MB, `worker`: 1 CPU
+process group**. The app runs three (`app`, `worker`, `discord` — see
+[DESIGN.md](DESIGN.md#system-architecture)), sized in `fly.toml` (`app`: 2 CPU / 512MB, `worker`: 1 CPU
 / 512MB, `discord`: 1 CPU / 256MB).
 
 **Increase VM resources** — pass a size at least as large as that group's current one:
@@ -417,23 +316,7 @@ Fly does not manage this cluster, so these are ours:
   restore into a scratch cluster to prove it works. Full procedure in
   [Fly Postgres operations](fly-postgres-ops.md#backups--point-in-time-recovery-pitr).
 
-**Temporarily scaling for expensive migrations.** A `machine update` resize is only
-a few-second restart, so for a CPU- or memory-heavy migration you can bump to a
-dedicated tier, run it, then scale back — this is a viable, low-friction pattern:
-
-```bash
-# Up (dedicated CPU removes the shared-CPU throttle). Size by bottleneck, not
-# by "bigger" — a single-threaded table rewrite only needs performance-2x; an
-# index build can use a few cores (see ../migrations/CLAUDE.md).
-flyctl machine update <machine-id> --vm-size performance-4x --app lion-reader-pg
-# ...run the migration...
-# Back down (restore the original RAM explicitly; presets won't)
-flyctl machine update <machine-id> --vm-size shared-cpu-8x --vm-memory 2048 --app lion-reader-pg
-```
-
-Pick the tier by the migration's bottleneck, not by "bigger is better" — see the
-scaling guidance in `../migrations/CLAUDE.md`. Note the web dashboard's scale button
-is disabled for Postgres apps; the CLI is the supported path.
+**Temporarily scaling for expensive migrations:** see "Expensive migrations on production Postgres" in `../migrations/CLAUDE.md`.
 
 ---
 
@@ -469,42 +352,6 @@ Two rules apply whatever the zone is hosted on:
 
 ---
 
-## Architecture Overview
-
-Fly.io runs three independent **process groups** (`[processes]` in `fly.toml`),
-each on its own VM(s): `app` (Next.js web + SSE, min 2 machines for zero-downtime
-deploys), `worker` (background feed fetching / jobs), and `discord` (Discord save
-bot). Only `app` is behind the HTTP load balancer; all three share Postgres and Redis.
-
-```
-                    Internet
-                        |
-                   Fly.io Edge (LB)
-                        |
-            +-----------+-----------+
-            |                       |
-     +------+------+         +------+------+
-     | App Server  |         | App Server  |     process group: app
-     |  (Next.js)  |         |  (replica)  |     (min 2 machines)
-     +------+------+         +------+------+
-            |                       |
-            +-----------+-----------+
-                        |
-    +-------------------+-------------------+
-    |                   |                   |
-    |            +------+------+     +------+------+
-    |            |   Worker    |     |   Discord   |   process groups:
-    |            | (feed jobs) |     |  save bot   |   worker, discord
-    |            +------+------+     +------+------+
-    |                   |                   |
-    +---------+---------+---------+---------+
-              |                   |
-       +------+------+     +------+------+
-       |   Postgres  |     |    Redis    |
-       | (Fly.io PG) |     |  (Upstash)  |
-       +-------------+     +-------------+
-```
-
 ## Cost Estimate (current production shape, July 2026)
 
 | Resource        | Size                    | Estimated Cost    |
@@ -519,20 +366,3 @@ bot). Only `app` is behind the HTTP load balancer; all three share Postgres and 
 | **Total**       |                         | **~$31-37/month** |
 
 Costs vary by usage. Check [fly.io/docs/about/pricing](https://fly.io/docs/about/pricing/) for current rates.
-
----
-
-## Next Steps
-
-After successful deployment:
-
-1. **Set up monitoring** - Configure Sentry for error tracking
-2. **Add custom domain** - Use `flyctl certs create` for SSL
-3. **Enable backups** - Turn on continuous WAL archiving / PITR and run a restore
-   drill (see "Backups & Point-in-Time Recovery (PITR)")
-4. **Monitor usage** - Use Fly.io dashboard to track resource usage
-
-For questions or issues, check:
-
-- [Fly.io Documentation](https://fly.io/docs/)
-- [Fly.io Community Forum](https://community.fly.io/)
