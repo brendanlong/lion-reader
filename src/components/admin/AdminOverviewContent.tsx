@@ -8,8 +8,7 @@
 "use client";
 
 import { trpc } from "@/lib/trpc/client";
-import { Button } from "@/components/ui/button";
-import { SpinnerIcon } from "@/components/ui/icons";
+import { AdminQueryFallback } from "@/components/admin/AdminQueryFallback";
 
 // ============================================================================
 // Stat Card
@@ -42,28 +41,8 @@ function StatCard({
 export default function AdminOverviewContent() {
   const overviewQuery = trpc.admin.getOverview.useQuery();
 
-  if (overviewQuery.isLoading) {
-    return (
-      <div className="flex items-center justify-center p-8">
-        <SpinnerIcon className="text-faint h-6 w-6" />
-      </div>
-    );
-  }
-
-  if (overviewQuery.isError) {
-    return (
-      <div className="p-8 text-center">
-        <p className="ui-text-sm text-danger">Failed to load overview. Please try again.</p>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => overviewQuery.refetch()}
-          className="mt-2"
-        >
-          Retry
-        </Button>
-      </div>
-    );
+  if (overviewQuery.isLoading || overviewQuery.isError) {
+    return <AdminQueryFallback query={overviewQuery} noun="overview" />;
   }
 
   const data = overviewQuery.data!;
