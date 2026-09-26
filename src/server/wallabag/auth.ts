@@ -21,7 +21,7 @@ import { validateAccessToken, createTokens, rotateRefreshToken } from "@/server/
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
 import { isSignupConfirmed } from "@/server/auth/confirmation";
 import { logger } from "@/lib/logger";
-import type { User } from "@/server/db/schema";
+import { errorResponse } from "./parse";
 
 /**
  * Wallabag OAuth token response
@@ -122,31 +122,6 @@ export async function refreshTokenGrant(
 }
 
 /**
- * Validates a Wallabag API request using Bearer token.
- * Returns user data if authenticated.
- */
-async function authenticateRequest(
-  request: Request
-): Promise<{ userId: string; email: string; scopes: string[]; user: User } | null> {
-  const token = extractBearerToken(request.headers.get("authorization"));
-  if (!token) {
-    return null;
-  }
-
-  const tokenData = await validateAccessToken(token);
-  if (!tokenData) {
-    return null;
-  }
-
-  return {
-    userId: tokenData.userId,
-    email: tokenData.user.email,
-    scopes: tokenData.scopes,
-    user: tokenData.user,
-  };
-}
-
-/**
  * Validates a Wallabag API request and returns the user data.
  *
  * Every Wallabag endpoint exposes the full reader surface (list/read/mutate/
@@ -164,24 +139,18 @@ async function authenticateRequest(
 export async function requireAuth(
   request: Request
 ): Promise<{ userId: string; email: string } | Response> {
-  const auth = await authenticateRequest(request);
+  const token = extractBearerToken(request.headers.get("authorization"));
+  const auth = token ? await validateAccessToken(token) : null;
   if (!auth) {
     // Distinguish a client that sent no Bearer at all (misconfigured) from one
     // that sent a token we rejected (expired — normal churn as clients lazily
     // refresh — or revoked, e.g. by reuse detection). Logged at info because an
     // expired-token 401 is expected traffic, not an error.
-    const hasBearer = extractBearerToken(request.headers.get("authorization")) !== null;
     logger.info("Wallabag request unauthenticated", {
       component: "wallabag",
-      reason: hasBearer ? "invalid_token" : "missing_bearer",
+      reason: token ? "invalid_token" : "missing_bearer",
     });
-    return new Response(
-      JSON.stringify({ error: "invalid_grant", error_description: "Unauthorized" }),
-      {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      }
-    );
+    return errorResponse("invalid_grant", "Unauthorized", 401);
   }
   if (!auth.scopes.includes(OAUTH_SCOPES.READER_FULL_ACCESS)) {
     logger.warn("Wallabag request rejected: insufficient scope", {
@@ -189,15 +158,10 @@ export async function requireAuth(
       userId: auth.userId,
       scopes: auth.scopes,
     });
-    return new Response(
-      JSON.stringify({
-        error: "insufficient_scope",
-        error_description: `This endpoint requires the ${OAUTH_SCOPES.READER_FULL_ACCESS} scope`,
-      }),
-      {
-        status: 403,
-        headers: { "Content-Type": "application/json" },
-      }
+    return errorResponse(
+      "insufficient_scope",
+      `This endpoint requires the ${OAUTH_SCOPES.READER_FULL_ACCESS} scope`,
+      403
     );
   }
   // Mirror confirmedProtectedProcedure / the MCP endpoint: a user who hasn't
@@ -207,16 +171,7 @@ export async function requireAuth(
       component: "wallabag",
       userId: auth.userId,
     });
-    return new Response(
-      JSON.stringify({
-        error: "access_denied",
-        error_description: "Signup confirmation required",
-      }),
-      {
-        status: 403,
-        headers: { "Content-Type": "application/json" },
-      }
-    );
+    return errorResponse("access_denied", "Signup confirmation required", 403);
   }
-  return { userId: auth.userId, email: auth.email };
+  return { userId: auth.userId, email: auth.user.email };
 }
