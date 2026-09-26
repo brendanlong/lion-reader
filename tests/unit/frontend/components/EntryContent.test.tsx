@@ -13,8 +13,8 @@
  *   - a query error surfaces via the ErrorBoundary.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { EntryContent } from "@/components/entries/EntryContent";
 import { AppearanceProvider } from "@/lib/appearance/AppearanceProvider";
 import { KeyboardShortcutsProvider } from "@/components/keyboard/KeyboardShortcutsProvider";
@@ -163,5 +163,87 @@ describe("EntryContent", () => {
     );
 
     expect(await screen.findByText("Failed to load entry")).toBeInTheDocument();
+  });
+});
+
+describe("EntryContent click-to-seek narration", () => {
+  let speak: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    stubMemoryLocalStorage();
+    speak = vi.fn();
+    vi.stubGlobal("speechSynthesis", {
+      speak,
+      cancel: vi.fn(),
+      pause: vi.fn(),
+      resume: vi.fn(),
+      getVoices: vi.fn(() => [{ voiceURI: "v", name: "V", lang: "en-US", default: true }]),
+      onvoiceschanged: null,
+    });
+    vi.stubGlobal(
+      "SpeechSynthesisUtterance",
+      class {
+        text: string;
+        constructor(text: string) {
+          this.text = text;
+        }
+      }
+    );
+    Element.prototype.scrollIntoView = vi.fn();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    window.getSelection()?.removeAllRanges();
+  });
+
+  const lastSpoken = () => (speak.mock.lastCall?.[0] as { text: string }).text;
+
+  async function renderAndStartNarration() {
+    const handlers = baseHandlers({
+      "entries.get": () => ({
+        entry: createEntry({
+          contentCleaned: '<p>First</p><p>Second has <a href="#x">a link</a></p><p>Third</p>',
+        }),
+      }),
+    });
+    renderEntryContent(<EntryContent entryId="entry-1" />, handlers);
+    fireEvent.click(await screen.findByRole("button", { name: "Listen" }));
+    await waitFor(() => expect(lastSpoken()).toBe("First"));
+    return within(document.querySelector(".reader-prose") as HTMLElement);
+  }
+
+  it("narrates from the clicked paragraph", async () => {
+    const content = await renderAndStartNarration();
+
+    fireEvent.click(content.getByText("Third"));
+
+    await waitFor(() => expect(lastSpoken()).toBe("Third"));
+  });
+
+  it("does not seek when following a link", async () => {
+    const content = await renderAndStartNarration();
+    const calls = speak.mock.calls.length;
+
+    fireEvent.click(content.getByText("a link"));
+
+    expect(speak.mock.calls.length).toBe(calls);
+  });
+
+  it("does not seek on a multi-click or when dismissing a selection", async () => {
+    const content = await renderAndStartNarration();
+    const calls = speak.mock.calls.length;
+    const third = content.getByText("Third");
+
+    fireEvent.click(third, { detail: 2 });
+
+    window.getSelection()?.selectAllChildren(content.getByText("First"));
+    fireEvent.pointerDown(third);
+    // The browser collapses the selection between pointerdown and click.
+    window.getSelection()?.removeAllRanges();
+    fireEvent.click(third);
+
+    expect(speak.mock.calls.length).toBe(calls);
   });
 });

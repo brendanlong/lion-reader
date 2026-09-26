@@ -295,6 +295,8 @@ describe("playFromElement", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument());
     expect(screen.getByText("7 of 7")).toBeInTheDocument();
     expect(lastSpoken()).toBe("Eta");
+    // The engine was paused; a new utterance would queue silently behind it.
+    expect(speech.resume).toHaveBeenCalled();
   });
 });
 

@@ -235,11 +235,25 @@ export function EntryContentBody({
   // that mean something else — following a link, finishing a text selection —
   // are left alone.
   const { playFromElement } = narration;
+  // The press that dismisses a selection collapses it before `click` fires, so
+  // whether one existed has to be captured on the way down.
+  const hadSelectionAtPointerDownRef = useRef(false);
+  useEffect(() => {
+    if (!showNarration || !isNarrationActive) return;
+    const recordSelection = () => {
+      hadSelectionAtPointerDownRef.current = window.getSelection()?.isCollapsed === false;
+    };
+    document.addEventListener("pointerdown", recordSelection, true);
+    return () => document.removeEventListener("pointerdown", recordSelection, true);
+  }, [showNarration, isNarrationActive]);
+
   const handleContentClick = useCallback(
     (event: React.MouseEvent) => {
       if (!showNarration || !isNarrationActive) return;
       if (!(event.target instanceof Element)) return;
       if (event.target.closest(NON_SEEK_TARGETS)) return;
+      // Selecting (multi-click, drag) or dismissing a selection isn't a seek.
+      if (event.detail > 1 || hadSelectionAtPointerDownRef.current) return;
       if (window.getSelection()?.isCollapsed === false) return;
 
       const paraId = event.target.closest("[data-para-id]")?.getAttribute("data-para-id");
