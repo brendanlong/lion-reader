@@ -105,6 +105,44 @@ const loginInputSchema = z.object({
   password: passwordSchema,
 });
 
+const sessionOutputSchema = z.object({
+  user: z.object({
+    id: z.string(),
+    email: z.string(),
+    createdAt: z.date(),
+  }),
+  sessionToken: z.string(),
+});
+
+const oauthSessionOutputSchema = sessionOutputSchema.extend({ isNewUser: z.boolean() });
+
+const authUrlInputSchema = z.object({ inviteToken: z.string().optional() }).optional();
+
+const authUrlOutputSchema = z.object({ url: z.string(), state: z.string() });
+
+const oauthCodeInputSchema = z.object({
+  code: z.string().min(1, "Authorization code is required"),
+  state: z.string().min(1, "State parameter is required"),
+});
+
+const appleCallbackInputSchema = oauthCodeInputSchema.extend({
+  // Apple sends user data only on first authorization - can be JSON string or object
+  user: z
+    .union([
+      z.string(),
+      z.object({
+        name: z
+          .object({
+            firstName: z.string().optional(),
+            lastName: z.string().optional(),
+          })
+          .optional(),
+        email: z.string().optional(),
+      }),
+    ])
+    .optional(),
+});
+
 // ============================================================================
 // Helpers
 // ============================================================================
@@ -203,16 +241,7 @@ export const authRouter = createTRPCRouter({
       },
     })
     .input(registerInputSchema)
-    .output(
-      z.object({
-        user: z.object({
-          id: z.string(),
-          email: z.string(),
-          createdAt: z.date(),
-        }),
-        sessionToken: z.string(),
-      })
-    )
+    .output(sessionOutputSchema)
     .mutation(async ({ ctx, input }) => {
       const { email, password, inviteToken } = input;
 
@@ -291,16 +320,7 @@ export const authRouter = createTRPCRouter({
       },
     })
     .input(loginInputSchema)
-    .output(
-      z.object({
-        user: z.object({
-          id: z.string(),
-          email: z.string(),
-          createdAt: z.date(),
-        }),
-        sessionToken: z.string(),
-      })
-    )
+    .output(sessionOutputSchema)
     .mutation(async ({ ctx, input }) => {
       const { email, password } = input;
 
@@ -423,19 +443,8 @@ export const authRouter = createTRPCRouter({
         summary: "Get Google OAuth authorization URL",
       },
     })
-    .input(
-      z
-        .object({
-          inviteToken: z.string().optional(),
-        })
-        .optional()
-    )
-    .output(
-      z.object({
-        url: z.string(),
-        state: z.string(),
-      })
-    )
+    .input(authUrlInputSchema)
+    .output(authUrlOutputSchema)
     .query(async ({ ctx, input }) => {
       if (!isGoogleOAuthEnabled()) {
         throw errors.oauthProviderNotConfigured("Google");
@@ -447,10 +456,7 @@ export const authRouter = createTRPCRouter({
       // another user (login CSRF, issue #1263).
       setOAuthStateCookie(ctx.resHeaders, result.state);
 
-      return {
-        url: result.url,
-        state: result.state,
-      };
+      return result;
     }),
 
   /**
@@ -477,23 +483,8 @@ export const authRouter = createTRPCRouter({
         summary: "Handle Google OAuth callback",
       },
     })
-    .input(
-      z.object({
-        code: z.string().min(1, "Authorization code is required"),
-        state: z.string().min(1, "State parameter is required"),
-      })
-    )
-    .output(
-      z.object({
-        user: z.object({
-          id: z.string(),
-          email: z.string(),
-          createdAt: z.date(),
-        }),
-        sessionToken: z.string(),
-        isNewUser: z.boolean(),
-      })
-    )
+    .input(oauthCodeInputSchema)
+    .output(oauthSessionOutputSchema)
     .mutation(async ({ ctx, input }) => {
       const { code, state } = input;
 
@@ -547,19 +538,8 @@ export const authRouter = createTRPCRouter({
         summary: "Get Apple OAuth authorization URL",
       },
     })
-    .input(
-      z
-        .object({
-          inviteToken: z.string().optional(),
-        })
-        .optional()
-    )
-    .output(
-      z.object({
-        url: z.string(),
-        state: z.string(),
-      })
-    )
+    .input(authUrlInputSchema)
+    .output(authUrlOutputSchema)
     .query(async ({ ctx, input }) => {
       if (!isAppleOAuthEnabled()) {
         throw errors.oauthProviderNotConfigured("Apple");
@@ -571,10 +551,7 @@ export const authRouter = createTRPCRouter({
       // cross-site POST (form_post), so the cookie must be SameSite=None to be sent.
       setOAuthStateCookie(ctx.resHeaders, result.state, "none");
 
-      return {
-        url: result.url,
-        state: result.state,
-      };
+      return result;
     }),
 
   /**
@@ -608,38 +585,8 @@ export const authRouter = createTRPCRouter({
         summary: "Handle Apple OAuth callback",
       },
     })
-    .input(
-      z.object({
-        code: z.string().min(1, "Authorization code is required"),
-        state: z.string().min(1, "State parameter is required"),
-        // Apple sends user data only on first authorization - can be JSON string or object
-        user: z
-          .union([
-            z.string(),
-            z.object({
-              name: z
-                .object({
-                  firstName: z.string().optional(),
-                  lastName: z.string().optional(),
-                })
-                .optional(),
-              email: z.string().optional(),
-            }),
-          ])
-          .optional(),
-      })
-    )
-    .output(
-      z.object({
-        user: z.object({
-          id: z.string(),
-          email: z.string(),
-          createdAt: z.date(),
-        }),
-        sessionToken: z.string(),
-        isNewUser: z.boolean(),
-      })
-    )
+    .input(appleCallbackInputSchema)
+    .output(oauthSessionOutputSchema)
     .mutation(async ({ ctx, input }) => {
       const { code, state, user: userDataInput } = input;
 
@@ -699,19 +646,8 @@ export const authRouter = createTRPCRouter({
         summary: "Get Discord OAuth authorization URL",
       },
     })
-    .input(
-      z
-        .object({
-          inviteToken: z.string().optional(),
-        })
-        .optional()
-    )
-    .output(
-      z.object({
-        url: z.string(),
-        state: z.string(),
-      })
-    )
+    .input(authUrlInputSchema)
+    .output(authUrlOutputSchema)
     .query(async ({ ctx, input }) => {
       if (!isDiscordOAuthEnabled()) {
         throw errors.oauthProviderNotConfigured("Discord");
@@ -723,10 +659,7 @@ export const authRouter = createTRPCRouter({
       // another user (login CSRF, issue #1263).
       setOAuthStateCookie(ctx.resHeaders, result.state);
 
-      return {
-        url: result.url,
-        state: result.state,
-      };
+      return result;
     }),
 
   /**
@@ -753,23 +686,8 @@ export const authRouter = createTRPCRouter({
         summary: "Handle Discord OAuth callback",
       },
     })
-    .input(
-      z.object({
-        code: z.string().min(1, "Authorization code is required"),
-        state: z.string().min(1, "State parameter is required"),
-      })
-    )
-    .output(
-      z.object({
-        user: z.object({
-          id: z.string(),
-          email: z.string(),
-          createdAt: z.date(),
-        }),
-        sessionToken: z.string(),
-        isNewUser: z.boolean(),
-      })
-    )
+    .input(oauthCodeInputSchema)
+    .output(oauthSessionOutputSchema)
     .mutation(async ({ ctx, input }) => {
       const { code, state } = input;
 
@@ -1016,7 +934,7 @@ export const authRouter = createTRPCRouter({
    */
   linkAuthUrl: protectedProcedure
     .input(z.object({ provider: z.enum(["google", "apple", "discord"]) }))
-    .output(z.object({ url: z.string(), state: z.string() }))
+    .output(authUrlOutputSchema)
     .mutation(async ({ ctx, input }) => {
       const { provider } = input;
 
@@ -1060,12 +978,7 @@ export const authRouter = createTRPCRouter({
         summary: "Link Google OAuth to existing account",
       },
     })
-    .input(
-      z.object({
-        code: z.string().min(1, "Authorization code is required"),
-        state: z.string().min(1, "State parameter is required"),
-      })
-    )
+    .input(oauthCodeInputSchema)
     .output(z.object({ success: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
       const { code, state } = input;
@@ -1117,26 +1030,7 @@ export const authRouter = createTRPCRouter({
         summary: "Link Apple OAuth to existing account",
       },
     })
-    .input(
-      z.object({
-        code: z.string().min(1, "Authorization code is required"),
-        state: z.string().min(1, "State parameter is required"),
-        user: z
-          .union([
-            z.string(),
-            z.object({
-              name: z
-                .object({
-                  firstName: z.string().optional(),
-                  lastName: z.string().optional(),
-                })
-                .optional(),
-              email: z.string().optional(),
-            }),
-          ])
-          .optional(),
-      })
-    )
+    .input(appleCallbackInputSchema)
     .output(z.object({ success: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
       const { code, state, user: userDataInput } = input;
@@ -1185,12 +1079,7 @@ export const authRouter = createTRPCRouter({
         summary: "Link Discord OAuth to existing account",
       },
     })
-    .input(
-      z.object({
-        code: z.string().min(1, "Authorization code is required"),
-        state: z.string().min(1, "State parameter is required"),
-      })
-    )
+    .input(oauthCodeInputSchema)
     .output(z.object({ success: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
       const { code, state } = input;
@@ -1280,12 +1169,7 @@ export const authRouter = createTRPCRouter({
       },
     })
     .input(z.object({}).optional())
-    .output(
-      z.object({
-        url: z.string(),
-        state: z.string(),
-      })
-    )
+    .output(authUrlOutputSchema)
     .mutation(async ({ ctx }) => {
       if (!isGoogleOAuthEnabled()) {
         throw errors.oauthProviderNotConfigured("Google");
@@ -1317,9 +1201,6 @@ export const authRouter = createTRPCRouter({
       // another user (login CSRF, issue #1263).
       setOAuthStateCookie(ctx.resHeaders, result.state);
 
-      return {
-        url: result.url,
-        state: result.state,
-      };
+      return result;
     }),
 });
