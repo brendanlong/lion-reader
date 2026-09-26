@@ -14,8 +14,6 @@ import {
   feeds,
   entries,
   subscriptions,
-  subscriptionTags,
-  tags,
   userEntries,
   jobs,
 } from "../../src/server/db/schema";
@@ -26,6 +24,7 @@ import {
   createAuthContext,
   createTestEntry,
   createTestSubscription,
+  createTestTag,
   createTestUser,
   createTestFeed as createSharedTestFeed,
 } from "./helpers";
@@ -1202,17 +1201,8 @@ describe("subscriptions.export", () => {
     const subB = await createTestSubscription(userId, feedB, { customTitle: "My B" });
     await createTestSubscription(userId, feedGone, { unsubscribedAt: new Date() });
 
-    const techTagId = generateUuidv7();
-    const newsTagId = generateUuidv7();
-    await db.insert(tags).values([
-      { id: techTagId, userId, name: "Tech", createdAt: new Date() },
-      { id: newsTagId, userId, name: "News", createdAt: new Date() },
-    ]);
-    await db.insert(subscriptionTags).values([
-      { tagId: techTagId, subscriptionId: subA, createdAt: new Date() },
-      { tagId: newsTagId, subscriptionId: subA, createdAt: new Date() },
-      { tagId: techTagId, subscriptionId: subB, createdAt: new Date() },
-    ]);
+    await createTestTag(userId, { name: "Tech", subscriptionIds: [subA, subB] });
+    await createTestTag(userId, { name: "News", subscriptionIds: [subA] });
 
     const result = await caller.subscriptions.export();
 

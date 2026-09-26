@@ -21,7 +21,13 @@ import {
 } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { getEntryRelatedCounts, getBulkEntryRelatedCounts } from "../../src/server/services/counts";
-import { createTestEntry, createTestFeed, createTestSubscription, createTestUser } from "./helpers";
+import {
+  createTestEntry,
+  createTestFeed,
+  createTestSubscription,
+  createTestTag,
+  createTestUser,
+} from "./helpers";
 
 // ============================================================================
 // Test Helpers
@@ -50,19 +56,6 @@ async function markEntryRead(userId: string, entryId: string): Promise<void> {
     .update(userEntries)
     .set({ read: true })
     .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, entryId)));
-}
-
-async function linkTag(userId: string, name: string, subscriptionIds: string[]): Promise<string> {
-  const tagId = generateUuidv7();
-  await db.insert(tags).values({ id: tagId, userId, name, createdAt: new Date() });
-  await db.insert(subscriptionTags).values(
-    subscriptionIds.map((subscriptionId) => ({
-      tagId,
-      subscriptionId,
-      createdAt: new Date(),
-    }))
-  );
-  return tagId;
 }
 
 // ============================================================================
@@ -94,7 +87,10 @@ describe("Entry counts service", () => {
     it("deduplicates tag counts for entries reachable through multiple subscriptions", async () => {
       const userId = await createTestUser();
       const { subId1, subId2, entryIdB } = await createOverlappingSubscriptions(userId);
-      const tagId = await linkTag(userId, "Tech", [subId1, subId2]);
+      const tagId = await createTestTag(userId, {
+        name: "Tech",
+        subscriptionIds: [subId1, subId2],
+      });
 
       const counts = await getEntryRelatedCounts(db, userId, entryIdB);
 
@@ -120,7 +116,7 @@ describe("Entry counts service", () => {
       const userId = await createTestUser();
       const feedId = await createTestFeed({ url: "https://events.com/rss" });
       const subId = await createTestSubscription(userId, feedId);
-      const tagId = await linkTag(userId, "Events", [subId]);
+      const tagId = await createTestTag(userId, { name: "Events", subscriptionIds: [subId] });
       const entryId = await createTestEntry(feedId, { userIds: [userId] });
       await markEntryRead(userId, entryId);
 
@@ -224,7 +220,7 @@ describe("Entry counts service", () => {
       const feedId = await createTestFeed({ url: "https://shared.com/rss" });
       const subId = await createTestSubscription(userId, feedId);
       await createTestSubscription(otherUserId, feedId);
-      const tagId = await linkTag(userId, "Mine", [subId]);
+      const tagId = await createTestTag(userId, { name: "Mine", subscriptionIds: [subId] });
 
       const entryId = await createTestEntry(feedId, { userIds: [userId, otherUserId] });
       await createTestEntry(feedId, { userIds: [otherUserId] });
@@ -239,7 +235,10 @@ describe("Entry counts service", () => {
     it("deduplicates tag counts for entries reachable through multiple subscriptions", async () => {
       const userId = await createTestUser();
       const { subId1, subId2 } = await createOverlappingSubscriptions(userId);
-      const tagId = await linkTag(userId, "Tech", [subId1, subId2]);
+      const tagId = await createTestTag(userId, {
+        name: "Tech",
+        subscriptionIds: [subId1, subId2],
+      });
 
       const counts = await getBulkEntryRelatedCounts(db, userId, [
         { subscriptionId: subId1, type: "web" },
@@ -269,7 +268,7 @@ describe("Entry counts service", () => {
       const userId = await createTestUser();
       const feedId = await createTestFeed({ url: "https://events.com/rss" });
       const subId = await createTestSubscription(userId, feedId);
-      const tagId = await linkTag(userId, "Events", [subId]);
+      const tagId = await createTestTag(userId, { name: "Events", subscriptionIds: [subId] });
       const entryId = await createTestEntry(feedId, { userIds: [userId] });
       await markEntryRead(userId, entryId);
 
@@ -290,7 +289,10 @@ describe("Entry counts service", () => {
       const feedIdB = await createTestFeed({ url: "https://active.com/rss" });
       const subIdA = await createTestSubscription(userId, feedIdA);
       const subIdB = await createTestSubscription(userId, feedIdB);
-      const tagId = await linkTag(userId, "Mixed", [subIdA, subIdB]);
+      const tagId = await createTestTag(userId, {
+        name: "Mixed",
+        subscriptionIds: [subIdA, subIdB],
+      });
       const entryIdA = await createTestEntry(feedIdA, { userIds: [userId] });
       await createTestEntry(feedIdB, { userIds: [userId] });
       await markEntryRead(userId, entryIdA);

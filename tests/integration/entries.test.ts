@@ -7,15 +7,7 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { eq, and, inArray } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import {
-  users,
-  feeds,
-  entries,
-  subscriptions,
-  subscriptionTags,
-  tags,
-  userEntries,
-} from "../../src/server/db/schema";
+import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import {
@@ -26,6 +18,7 @@ import {
 import {
   createAuthContext,
   createTestSubscription,
+  createTestTag,
   createTestUser,
   createTestEntry as createSharedTestEntry,
   createTestFeed as createSharedTestFeed,
@@ -876,9 +869,10 @@ describe("Entries", () => {
       await createUserEntry(victimId, entryId, { read: false });
 
       // The victim's tag on the victim's subscription
-      const tagId = generateUuidv7();
-      await db.insert(tags).values({ id: tagId, userId: victimId, name: "Victim tag" });
-      await db.insert(subscriptionTags).values({ tagId, subscriptionId });
+      const tagId = await createTestTag(victimId, {
+        name: "Victim tag",
+        subscriptionIds: [subscriptionId],
+      });
 
       // The attacker subscribes to the same shared feed with their own unread
       // entry, then passes the victim's tagId. Another user's tag must not
