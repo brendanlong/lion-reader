@@ -8,11 +8,11 @@
  * Storage: SHA-256 hash in database (never store raw tokens)
  */
 
-import crypto from "crypto";
 import { eq, and, isNull, or, gt } from "drizzle-orm";
 import { db } from "@/server/db";
 import { apiTokens, users, type User, type ApiToken } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
+import { generateToken, hashToken } from "@/server/oauth/utils";
 
 // ============================================================================
 // Constants
@@ -54,32 +54,6 @@ export interface ApiTokenData {
 }
 
 // ============================================================================
-// Token Generation
-// ============================================================================
-
-/**
- * Generates a secure API token.
- * Returns both the raw token (for client) and its hash (for storage).
- */
-function generateApiToken(): { token: string; tokenHash: string } {
-  // Generate 32 random bytes, encode as base64url
-  const token = crypto.randomBytes(32).toString("base64url");
-
-  // Hash the token for storage (we never store raw tokens)
-  const tokenHash = hashApiToken(token);
-
-  return { token, tokenHash };
-}
-
-/**
- * Hashes an API token using SHA-256.
- * Used for both storage and lookup.
- */
-function hashApiToken(token: string): string {
-  return crypto.createHash("sha256").update(token).digest("hex");
-}
-
-// ============================================================================
 // Token Creation
 // ============================================================================
 
@@ -98,7 +72,8 @@ export async function createApiToken(
   name?: string,
   expiresAt?: Date
 ): Promise<{ token: string; id: string }> {
-  const { token, tokenHash } = generateApiToken();
+  const token = generateToken();
+  const tokenHash = hashToken(token);
   const id = generateUuidv7();
 
   await db.insert(apiTokens).values({
@@ -122,7 +97,7 @@ export async function createApiToken(
  * Returns null if the token is invalid, expired, or revoked.
  */
 export async function validateApiToken(token: string): Promise<ApiTokenData | null> {
-  const tokenHash = hashApiToken(token);
+  const tokenHash = hashToken(token);
 
   const result = await db
     .select({
