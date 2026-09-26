@@ -220,6 +220,26 @@ export function deriveGuid(entry: ParsedEntry): string {
 }
 
 /**
+ * The content columns derived from a parsed entry, shared by insert and update.
+ * Stores only the raw columns; the read path sanitizes per read (issue #1282).
+ *
+ * @param feedUrl - The URL of the feed (for feed-specific cleaning)
+ */
+function entryContentColumns(parsedEntry: ParsedEntry, contentHash: string, feedUrl?: string) {
+  const entryUrl = deriveEntryUrl(parsedEntry);
+  const cleaningResult = cleanEntryContent(parsedEntry, { entryUrl, feedUrl });
+  return {
+    url: entryUrl ?? null,
+    title: parsedEntry.title ?? null,
+    author: parsedEntry.author ?? null,
+    contentOriginal: cleaningResult.contentOriginal,
+    contentCleaned: cleaningResult.contentCleaned,
+    summary: cleaningResult.summary,
+    contentHash,
+  };
+}
+
+/**
  * Creates a new entry in the database.
  *
  * @param feedId - The feed's UUID
@@ -242,35 +262,18 @@ export async function createEntry(
   previousLastFetchedAt?: Date | null
 ): Promise<Entry> {
   const guid = deriveGuid(parsedEntry);
-  const entryUrl = deriveEntryUrl(parsedEntry);
-
-  // Clean the content
-  const cleaningResult = cleanEntryContent(parsedEntry, {
-    entryUrl,
-    feedUrl,
-  });
-
-  // Only web entries track lastSeenAt (for visibility on subscription)
-  const isFetchedType = feedType === "web";
-
   const publishedAt = clampPublishedAt(parsedEntry.pubDate, fetchedAt);
 
-  // Store only the raw columns; the read path sanitizes per read (issue #1282).
   const newEntry: NewEntry = {
     id: generateUuidv7(),
     feedId,
     type: feedType,
     guid,
-    url: entryUrl ?? null,
-    title: parsedEntry.title ?? null,
-    author: parsedEntry.author ?? null,
-    contentOriginal: cleaningResult.contentOriginal,
-    contentCleaned: cleaningResult.contentCleaned,
-    summary: cleaningResult.summary,
+    ...entryContentColumns(parsedEntry, contentHash, feedUrl),
     publishedAt,
     fetchedAt,
-    lastSeenAt: isFetchedType ? fetchedAt : null,
-    contentHash,
+    // Only web entries track lastSeenAt (for visibility on subscription)
+    lastSeenAt: feedType === "web" ? fetchedAt : null,
     isBackfill: isBackfilledEntry(publishedAt, previousLastFetchedAt),
   };
 
@@ -294,28 +297,9 @@ export async function updateEntryContent(
   contentHash: string,
   feedUrl?: string
 ): Promise<Entry> {
-  const entryUrl = deriveEntryUrl(parsedEntry);
-
-  // Clean the content
-  const cleaningResult = cleanEntryContent(parsedEntry, {
-    entryUrl,
-    feedUrl,
-  });
-
-  // Store only the raw columns; the read path sanitizes per read (issue #1282).
-  const updateValues = {
-    url: entryUrl ?? null,
-    title: parsedEntry.title ?? null,
-    author: parsedEntry.author ?? null,
-    contentOriginal: cleaningResult.contentOriginal,
-    contentCleaned: cleaningResult.contentCleaned,
-    summary: cleaningResult.summary,
-    contentHash,
-    updatedAt: new Date(),
-  };
   const [entry] = await db
     .update(entries)
-    .set(updateValues)
+    .set({ ...entryContentColumns(parsedEntry, contentHash, feedUrl), updatedAt: new Date() })
     .where(eq(entries.id, entryId))
     .returning();
 
