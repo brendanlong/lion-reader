@@ -128,8 +128,7 @@ describe("OPML Import", () => {
   describe("subscriptions.import", () => {
     it("imports a simple OPML with few feeds", async () => {
       const userId = await createTestUser();
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const opml = generateOpml(3);
 
@@ -152,8 +151,7 @@ describe("OPML Import", () => {
 
     it("imports OPML with many feeds (stress test)", async () => {
       const userId = await createTestUser();
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // Generate OPML with 500+ feeds to simulate real-world usage
       const opml = generateOpml(550);
@@ -178,8 +176,7 @@ describe("OPML Import", () => {
 
     it("handles empty OPML", async () => {
       const userId = await createTestUser();
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const opml = `<?xml version="1.0" encoding="UTF-8"?>
 <opml version="2.0">
@@ -195,8 +192,7 @@ describe("OPML Import", () => {
 
     it("rejects invalid OPML", async () => {
       const userId = await createTestUser();
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const invalidOpml = "not valid xml at all";
 
@@ -207,8 +203,7 @@ describe("OPML Import", () => {
 
     it("handles OPML with special characters in feed titles", async () => {
       const userId = await createTestUser();
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const opml = `<?xml version="1.0" encoding="UTF-8"?>
 <opml version="2.0">
@@ -229,8 +224,7 @@ describe("OPML Import", () => {
   describe("imports.preview", () => {
     it("parses OPML server-side and returns the feed list without importing", async () => {
       const userId = await createTestUser();
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.imports.preview({ opml: generateOpml(3) });
 
@@ -250,8 +244,7 @@ describe("OPML Import", () => {
 
     it("rejects invalid OPML with a validation error", async () => {
       const userId = await createTestUser();
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       await expect(
         caller.imports.preview({ opml: "<rss><channel></channel></rss>" })
@@ -262,8 +255,7 @@ describe("OPML Import", () => {
   describe("imports.get", () => {
     it("retrieves import status", async () => {
       const userId = await createTestUser();
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // First create an import
       const opml = generateOpml(5);
@@ -303,8 +295,7 @@ describe("OPML Import", () => {
   describe("imports.list", () => {
     it("lists user imports", async () => {
       const userId = await createTestUser();
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // Create multiple imports
       await caller.subscriptions.import({ opml: generateOpml(3) });
@@ -320,8 +311,7 @@ describe("OPML Import", () => {
 
     it("returns empty list for user with no imports", async () => {
       const userId = await createTestUser();
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.imports.list();
 

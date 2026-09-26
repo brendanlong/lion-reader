@@ -85,8 +85,7 @@ describe("Tags API", () => {
   describe("tags.list", () => {
     it("returns empty list for user with no tags", async () => {
       const userId = await createTestUser();
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.tags.list();
 
@@ -148,8 +147,7 @@ describe("Tags API", () => {
       await linkTagToSubscription(tagId, subId1);
       await linkTagToSubscription(tagId, subId2);
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
       const result = await caller.tags.list();
 
       expect(result.items).toHaveLength(1);
@@ -183,8 +181,7 @@ describe("Tags API", () => {
         .set({ read: true })
         .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, readEntryId)));
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
       const result = await caller.tags.list();
 
       const tech = result.items.find((t) => t.name === "Tech");
@@ -213,8 +210,7 @@ describe("Tags API", () => {
       await createTestEntry(feedIdA, { userIds: [userId] });
       await createTestEntry(feedIdB, { userIds: [userId] });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
       const result = await caller.tags.list();
 
       expect(result.items[0].unreadCount).toBe(2);
@@ -242,8 +238,7 @@ describe("Tags API", () => {
       await createTestEntry(feedId, { userIds: [userId, otherUserId] });
       await createTestEntry(feedId, { userIds: [otherUserId] });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
       const result = await caller.tags.list();
 
       expect(result.items).toHaveLength(1);
@@ -267,8 +262,7 @@ describe("Tags API", () => {
         .set({ unsubscribedAt: new Date() })
         .where(eq(subscriptions.id, subId));
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
       const result = await caller.tags.list();
 
       expect(result.items[0].unreadCount).toBe(0);
@@ -296,8 +290,7 @@ describe("Tags API", () => {
         .set({ unsubscribedAt: new Date() })
         .where(eq(subscriptions.id, subId));
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
       const result = await caller.tags.list();
 
       expect(result.items[0].unreadCount).toBe(0);
@@ -318,8 +311,7 @@ describe("Tags API", () => {
         .set({ read: true })
         .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, entryId)));
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
       const result = await caller.tags.list();
 
       expect(result.items[0].feedCount).toBe(1);
@@ -336,8 +328,7 @@ describe("Tags API", () => {
         { id: generateUuidv7(), userId, name: "Middle", createdAt: new Date() },
       ]);
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
       const result = await caller.tags.list();
 
       expect(result.items.map((t) => t.name)).toEqual(["Apple", "Middle", "Zebra"]);
@@ -347,8 +338,7 @@ describe("Tags API", () => {
   describe("tags.create", () => {
     it("creates a tag with name only", async () => {
       const userId = await createTestUser();
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.tags.create({ name: "Tech" });
 
@@ -367,8 +357,7 @@ describe("Tags API", () => {
 
     it("creates a tag with name and color", async () => {
       const userId = await createTestUser();
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.tags.create({ name: "News", color: "#4ecdc4" });
 
@@ -378,8 +367,7 @@ describe("Tags API", () => {
 
     it("trims whitespace from tag name", async () => {
       const userId = await createTestUser();
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.tags.create({ name: "  Tech  " });
 
@@ -388,8 +376,7 @@ describe("Tags API", () => {
 
     it("rejects duplicate tag names for the same user", async () => {
       const userId = await createTestUser();
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       await caller.tags.create({ name: "Tech" });
 
@@ -415,8 +402,7 @@ describe("Tags API", () => {
 
     it("allows recreating a tag whose name was soft-deleted (#952)", async () => {
       const userId = await createTestUser();
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const first = await caller.tags.create({ name: "News" });
       await caller.tags.delete({ id: first.tag.id });
@@ -438,8 +424,7 @@ describe("Tags API", () => {
 
     it("allows renaming a tag onto a soft-deleted name (#952)", async () => {
       const userId = await createTestUser();
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const deleted = await caller.tags.create({ name: "Archive" });
       await caller.tags.delete({ id: deleted.tag.id });
@@ -452,16 +437,14 @@ describe("Tags API", () => {
 
     it("rejects empty tag name", async () => {
       const userId = await createTestUser();
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       await expect(caller.tags.create({ name: "" })).rejects.toThrow();
     });
 
     it("rejects tag name that is too long", async () => {
       const userId = await createTestUser();
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const longName = "a".repeat(51);
       await expect(caller.tags.create({ name: longName })).rejects.toThrow();
@@ -469,8 +452,7 @@ describe("Tags API", () => {
 
     it("rejects invalid color format", async () => {
       const userId = await createTestUser();
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       await expect(caller.tags.create({ name: "Tech", color: "red" })).rejects.toThrow();
       await expect(caller.tags.create({ name: "Tech", color: "#fff" })).rejects.toThrow();
@@ -489,8 +471,7 @@ describe("Tags API", () => {
         createdAt: new Date(),
       });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.tags.update({ id: tagId, name: "Technology" });
 
@@ -508,8 +489,7 @@ describe("Tags API", () => {
         createdAt: new Date(),
       });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.tags.update({ id: tagId, color: "#4ecdc4" });
 
@@ -527,8 +507,7 @@ describe("Tags API", () => {
         createdAt: new Date(),
       });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.tags.update({ id: tagId, color: null });
 
@@ -546,8 +525,7 @@ describe("Tags API", () => {
         createdAt: new Date(),
       });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.tags.update({
         id: tagId,
@@ -574,8 +552,7 @@ describe("Tags API", () => {
       const subId = await createTestSubscription(userId, feedId);
       await linkTagToSubscription(tagId, subId);
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.tags.update({ id: tagId, name: "Technology" });
 
@@ -602,8 +579,7 @@ describe("Tags API", () => {
       await createTestEntry(feedIdA, { userIds: [userId] });
       await createTestEntry(feedIdB, { userIds: [userId, otherUserId] });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const updateResult = await caller.tags.update({ id: tagId, name: "Technology" });
       const listResult = await caller.tags.list();
@@ -614,8 +590,7 @@ describe("Tags API", () => {
 
     it("throws error when tag not found", async () => {
       const userId = await createTestUser();
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const nonExistentId = generateUuidv7();
       await expect(caller.tags.update({ id: nonExistentId, name: "New Name" })).rejects.toThrow(
@@ -636,8 +611,7 @@ describe("Tags API", () => {
       });
 
       // User 2 tries to update User 1's tag
-      const ctx = await createAuthContext(userId2);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId2));
 
       await expect(caller.tags.update({ id: tagId, name: "Hacked" })).rejects.toThrow(
         "Tag not found"
@@ -658,8 +632,7 @@ describe("Tags API", () => {
         .where(and(eq(tags.userId, userId), eq(tags.name, "Tech")))
         .limit(1);
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       await expect(caller.tags.update({ id: techTag[0].id, name: "News" })).rejects.toThrow(
         "A tag with this name already exists"
@@ -676,8 +649,7 @@ describe("Tags API", () => {
         createdAt: new Date(),
       });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // This should not throw even though the name "Tech" exists
       const result = await caller.tags.update({ id: tagId, color: "#ff6b6b" });
@@ -698,8 +670,7 @@ describe("Tags API", () => {
         createdAt: new Date(),
       });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.tags.delete({ id: tagId });
 
@@ -733,8 +704,7 @@ describe("Tags API", () => {
         .where(eq(subscriptionTags.tagId, tagId));
       expect(linksBefore).toHaveLength(1);
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
       await caller.tags.delete({ id: tagId });
 
       // Verify link is deleted
@@ -751,8 +721,7 @@ describe("Tags API", () => {
 
     it("throws error when tag not found", async () => {
       const userId = await createTestUser();
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const nonExistentId = generateUuidv7();
       await expect(caller.tags.delete({ id: nonExistentId })).rejects.toThrow("Tag not found");
@@ -771,8 +740,7 @@ describe("Tags API", () => {
       });
 
       // User 2 tries to delete User 1's tag
-      const ctx = await createAuthContext(userId2);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId2));
 
       await expect(caller.tags.delete({ id: tagId })).rejects.toThrow("Tag not found");
 
@@ -784,22 +752,19 @@ describe("Tags API", () => {
 
   describe("authentication", () => {
     it("requires authentication for list", async () => {
-      const ctx = createUnauthContext();
-      const caller = createCaller(ctx);
+      const caller = createCaller(createUnauthContext());
 
       await expect(caller.tags.list()).rejects.toThrow("You must be logged in");
     });
 
     it("requires authentication for create", async () => {
-      const ctx = createUnauthContext();
-      const caller = createCaller(ctx);
+      const caller = createCaller(createUnauthContext());
 
       await expect(caller.tags.create({ name: "Tech" })).rejects.toThrow("You must be logged in");
     });
 
     it("requires authentication for update", async () => {
-      const ctx = createUnauthContext();
-      const caller = createCaller(ctx);
+      const caller = createCaller(createUnauthContext());
 
       await expect(caller.tags.update({ id: generateUuidv7(), name: "Tech" })).rejects.toThrow(
         "You must be logged in"
@@ -807,8 +772,7 @@ describe("Tags API", () => {
     });
 
     it("requires authentication for delete", async () => {
-      const ctx = createUnauthContext();
-      const caller = createCaller(ctx);
+      const caller = createCaller(createUnauthContext());
 
       await expect(caller.tags.delete({ id: generateUuidv7() })).rejects.toThrow(
         "You must be logged in"
@@ -830,8 +794,7 @@ describe("Tags API", () => {
         { id: tag2Id, userId, name: "News", color: "#4ecdc4", createdAt: new Date() },
       ]);
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.subscriptions.setTags({ id: subId, tagIds: [tag1Id, tag2Id] });
 
@@ -865,8 +828,7 @@ describe("Tags API", () => {
       await linkTagToSubscription(tag1Id, subId);
       await linkTagToSubscription(tag2Id, subId);
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // Replace with new tag
       await caller.subscriptions.setTags({ id: subId, tagIds: [tag3Id] });
@@ -890,8 +852,7 @@ describe("Tags API", () => {
       await db.insert(tags).values({ id: tagId, userId, name: "Tech", createdAt: new Date() });
       await linkTagToSubscription(tagId, subId);
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       await caller.subscriptions.setTags({ id: subId, tagIds: [] });
 
@@ -908,8 +869,7 @@ describe("Tags API", () => {
       const tagId = generateUuidv7();
       await db.insert(tags).values({ id: tagId, userId, name: "Tech", createdAt: new Date() });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       await expect(
         caller.subscriptions.setTags({ id: generateUuidv7(), tagIds: [tagId] })
@@ -929,8 +889,7 @@ describe("Tags API", () => {
         .values({ id: tagId, userId: userId2, name: "Tech", createdAt: new Date() });
 
       // User 2 tries to set tags on User 1's subscription
-      const ctx = await createAuthContext(userId2);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId2));
 
       await expect(caller.subscriptions.setTags({ id: subId, tagIds: [tagId] })).rejects.toThrow(
         "Subscription not found"
@@ -942,8 +901,7 @@ describe("Tags API", () => {
       const feedId = await createTestFeed({ url: "https://feed1.com/rss" });
       const subId = await createTestSubscription(userId, feedId);
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // Try to set a non-existent tag
       await expect(
@@ -965,8 +923,7 @@ describe("Tags API", () => {
         .values({ id: tagId, userId: userId2, name: "Tech", createdAt: new Date() });
 
       // User 1 tries to use User 2's tag
-      const ctx = await createAuthContext(userId1);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId1));
 
       await expect(caller.subscriptions.setTags({ id: subId, tagIds: [tagId] })).rejects.toThrow(
         "One or more tag IDs are invalid or do not belong to you"
@@ -990,8 +947,7 @@ describe("Tags API", () => {
       await linkTagToSubscription(tag1Id, subId);
       await linkTagToSubscription(tag2Id, subId);
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.subscriptions.list();
 
@@ -1005,8 +961,7 @@ describe("Tags API", () => {
       const feedId = await createTestFeed({ url: "https://feed1.com/rss" });
       await createTestSubscription(userId, feedId);
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       const result = await caller.subscriptions.list();
 
@@ -1040,8 +995,7 @@ describe("Tags API", () => {
         .set({ subscriptionId: subId })
         .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, mergedEntry)));
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
       const result = await caller.subscriptions.list();
 
       expect(result.items).toHaveLength(1);
@@ -1063,8 +1017,7 @@ describe("Tags API", () => {
       await createTestEntry(feedId, { userIds: [userId] });
       await createTestEntry(feedId, { userIds: [otherUserId] });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
       const result = await caller.subscriptions.list();
 
       expect(result.items).toHaveLength(1);
@@ -1090,8 +1043,7 @@ describe("Tags API", () => {
       await createTestEntry(untaggedFeed, { userIds: [userId] }); // uncategorized
       await createTestEntry(untaggedFeed, { userIds: [userId] }); // uncategorized
 
-      const ctx = await createAuthContext(userId);
-      const result = await createCaller(ctx).tags.list();
+      const result = await createCaller(await createAuthContext(userId)).tags.list();
 
       expect(result.uncategorized.feedCount).toBe(1);
       expect(result.uncategorized.unreadCount).toBe(2);
@@ -1112,8 +1064,7 @@ describe("Tags API", () => {
         .set({ subscriptionId: subId })
         .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, mergedEntry)));
 
-      const ctx = await createAuthContext(userId);
-      const result = await createCaller(ctx).tags.list();
+      const result = await createCaller(await createAuthContext(userId)).tags.list();
 
       expect(result.uncategorized.unreadCount).toBe(2);
     });
@@ -1140,8 +1091,7 @@ describe("Tags API", () => {
         .set({ starred: true })
         .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, starredEntry)));
 
-      const ctx = await createAuthContext(userId);
-      const result = await createCaller(ctx).tags.list();
+      const result = await createCaller(await createAuthContext(userId)).tags.list();
 
       // Only the active subscription's unread entry — not the starred orphan.
       expect(result.uncategorized.feedCount).toBe(1);
@@ -1171,8 +1121,7 @@ describe("Tags API", () => {
       });
       await createTestEntry(feedId2, { title: "Entry from Feed 2", userIds: [userId] });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // Filter by tag - should only return entries from feed 1
       const result = await caller.entries.list({ tagId });
@@ -1196,8 +1145,7 @@ describe("Tags API", () => {
       // Create an entry
       await createTestEntry(feedId, { title: "Test Entry" });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // Filter by empty tag - should return empty
       const result = await caller.entries.list({ tagId });
@@ -1212,8 +1160,7 @@ describe("Tags API", () => {
       await createTestSubscription(userId, feedId);
       await createTestEntry(feedId);
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // Filter by non-existent tag
       const result = await caller.entries.list({ tagId: generateUuidv7() });
@@ -1237,8 +1184,7 @@ describe("Tags API", () => {
         .values({ id: tagId, userId: userId2, name: "Tech", createdAt: new Date() });
 
       // User 1 tries to filter by user 2's tag
-      const ctx = await createAuthContext(userId1);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId1));
 
       const result = await caller.entries.list({ tagId });
 
@@ -1267,8 +1213,7 @@ describe("Tags API", () => {
       });
       await createTestEntry(feedId2, { title: "Entry from Feed 2", userIds: [userId] });
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // Filter by tag AND subscriptionId - should only return entries from subscription 1
       const result = await caller.entries.list({ tagId, subscriptionId: subId1 });
@@ -1295,8 +1240,7 @@ describe("Tags API", () => {
       await createTestEntry(feedId1);
       await createTestEntry(feedId2);
 
-      const ctx = await createAuthContext(userId);
-      const caller = createCaller(ctx);
+      const caller = createCaller(await createAuthContext(userId));
 
       // Filter by tag AND subscriptionId (where subscription for feed2 is not in tag)
       const result = await caller.entries.list({ tagId, subscriptionId: subId2 });

@@ -141,8 +141,7 @@ describe("Admin API", () => {
 
   describe("security", () => {
     it("fails without auth header", async () => {
-      const ctx = createUnauthContext();
-      const caller = createCaller(ctx);
+      const caller = createCaller(createUnauthContext());
 
       await expect(caller.admin.listUsers()).rejects.toThrow("Invalid admin secret");
     });

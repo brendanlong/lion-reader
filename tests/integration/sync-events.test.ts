@@ -188,8 +188,7 @@ describe("sync.events", () => {
 
   it("returns empty events when no cursors provided", async () => {
     const userId = await createTestUser();
-    const ctx = await createAuthContext(userId);
-    const caller = createCaller(ctx);
+    const caller = createCaller(await createAuthContext(userId));
 
     const result = await caller.sync.events({ cursors: {} });
 
