@@ -80,14 +80,6 @@ export function generateToken(): string {
 }
 
 /**
- * Generates a secure authorization code.
- * Uses 32 bytes of randomness, base64url encoded.
- */
-export function generateAuthorizationCode(): string {
-  return crypto.randomBytes(32).toString("base64url");
-}
-
-/**
  * Hashes a token using SHA-256.
  * Used for storage - we never store raw tokens.
  */

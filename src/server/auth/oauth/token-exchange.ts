@@ -1,11 +1,54 @@
 /**
  * Shared token-endpoint plumbing for the social-login providers.
  *
- * `google.ts`, `apple.ts` and `discord.ts` each own their state/PKCE storage and their
- * user-info shape, but the code-for-tokens step is identical across them and lives here.
+ * `google.ts`, `apple.ts` and `discord.ts` each own their state blob's shape and Redis
+ * key prefix and their user-info shape; the one-time state storage, the code-for-tokens
+ * step and the user-info fetch are identical across them and live here.
  */
 
 import * as client from "openid-client";
+import { redis } from "@/server/redis";
+
+/** How long a user has to finish an OAuth flow before its stored state expires. */
+const OAUTH_STATE_TTL_SECONDS = 600;
+
+/** Stores a flow's state blob under `key` (the provider's prefix + the `state` value). */
+export async function storeOAuthState(key: string, data: object): Promise<void> {
+  await redis.setex(key, OAUTH_STATE_TTL_SECONDS, JSON.stringify(data));
+}
+
+/**
+ * Reads and deletes a state blob, so each state is usable once. Null when absent or
+ * expired; `invalidJsonFallback` when the stored value isn't JSON.
+ */
+export async function consumeOAuthState<T>(
+  key: string,
+  invalidJsonFallback: T | null = null
+): Promise<T | null> {
+  const value = await redis.get(key);
+  if (!value) {
+    return null;
+  }
+  await redis.del(key);
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return invalidJsonFallback;
+  }
+}
+
+/** GETs a provider's user-info endpoint with the access token as a bearer credential. */
+export async function fetchUserInfo<T>(
+  url: string,
+  accessToken: string,
+  provider: string
+): Promise<T> {
+  const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+  if (!response.ok) {
+    throw new Error(`Failed to fetch ${provider} user info: ${await response.text()}`);
+  }
+  return (await response.json()) as T;
+}
 
 /**
  * Exchange an authorization code for tokens.

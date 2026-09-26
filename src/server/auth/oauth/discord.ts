@@ -15,18 +15,17 @@ import {
   isProviderEnabled,
   type OAuthLinkTarget,
 } from "./config";
-import { accessTokenExpiresAt, exchangeAuthorizationCode } from "./token-exchange";
-import { redis } from "@/server/redis";
+import {
+  accessTokenExpiresAt,
+  consumeOAuthState,
+  exchangeAuthorizationCode,
+  fetchUserInfo,
+  storeOAuthState,
+} from "./token-exchange";
 
 // ============================================================================
 // Constants
 // ============================================================================
-
-/**
- * State storage TTL (10 minutes)
- * Users should complete the OAuth flow within this time
- */
-const STATE_TTL_SECONDS = 600;
 
 /**
  * Redis key prefix for OAuth state
@@ -95,13 +94,6 @@ export interface DiscordAuthResult {
 // ============================================================================
 
 /**
- * Gets the Redis key for state by value
- */
-function getStateKey(state: string): string {
-  return `${STATE_PREFIX}${state}`;
-}
-
-/**
  * Data stored in Redis for state verification
  */
 interface StateData {
@@ -109,39 +101,6 @@ interface StateData {
   inviteToken?: string;
   /** Present when this flow is a link (see `OAuthLinkTarget`) */
   link?: OAuthLinkTarget;
-}
-
-/**
- * Stores state data in Redis
- */
-async function storeState(state: string, data: StateData): Promise<void> {
-  const key = getStateKey(state);
-  await redis.setex(key, STATE_TTL_SECONDS, JSON.stringify(data));
-}
-
-/**
- * Retrieves and deletes state data from Redis
- * This ensures one-time use of the state
- *
- * @param state - The OAuth state parameter
- * @returns The state data, or null if not found/expired
- */
-async function consumeState(state: string): Promise<StateData | null> {
-  const key = getStateKey(state);
-
-  // Get and delete in a single transaction to ensure one-time use
-  const dataStr = await redis.get(key);
-
-  if (dataStr) {
-    await redis.del(key);
-    try {
-      return JSON.parse(dataStr) as StateData;
-    } catch {
-      return null;
-    }
-  }
-
-  return null;
 }
 
 // ============================================================================
@@ -178,7 +137,10 @@ export async function createDiscordAuthUrl(
   const state = client.randomState();
 
   // Store the link target and invite token for later use
-  await storeState(state, { inviteToken: options.inviteToken, link: options.link });
+  await storeOAuthState(STATE_PREFIX + state, {
+    inviteToken: options.inviteToken,
+    link: options.link,
+  });
 
   // Create the authorization URL (Discord doesn't require PKCE)
   const url = client.buildAuthorizationUrl(config, {
@@ -217,7 +179,7 @@ export async function validateDiscordCallback(
   }
 
   // Retrieve and consume the state data
-  const stateData = await consumeState(state);
+  const stateData = await consumeOAuthState<StateData>(STATE_PREFIX + state);
 
   if (!stateData) {
     throw new Error("Invalid or expired OAuth state");
@@ -252,18 +214,11 @@ export async function validateDiscordCallback(
  * @throws Error if the request fails
  */
 async function fetchDiscordUserInfo(accessToken: string): Promise<DiscordUserInfo> {
-  const response = await fetch("https://discord.com/api/users/@me", {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Failed to fetch Discord user info: ${error}`);
-  }
-
-  const userInfo = (await response.json()) as DiscordUserInfo;
+  const userInfo = await fetchUserInfo<DiscordUserInfo>(
+    "https://discord.com/api/users/@me",
+    accessToken,
+    "Discord"
+  );
 
   // Validate required fields
   if (!userInfo.id || !userInfo.email) {

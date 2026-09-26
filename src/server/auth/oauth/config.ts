@@ -208,21 +208,28 @@ export function getRedirectUri(provider: OAuthProviderName): string {
  * `-`/`.`/`_` that Google and Discord credentials are full of before base64-ing them.
  */
 
+function staticSecretConfig(
+  server: client.ServerMetadata,
+  config: OAuthProviderConfig
+): client.Configuration | null {
+  if (!config.enabled || !config.clientId || !config.clientSecret) {
+    return null;
+  }
+
+  return new client.Configuration(
+    server,
+    config.clientId,
+    undefined,
+    client.ClientSecretPost(config.clientSecret)
+  );
+}
+
 /**
  * Get the OAuth client configuration for Google
  * Returns null if Google OAuth is not configured
  */
 export function getGoogleConfig(): client.Configuration | null {
-  if (!googleConfig.enabled || !googleConfig.clientId || !googleConfig.clientSecret) {
-    return null;
-  }
-
-  return new client.Configuration(
-    GOOGLE_SERVER,
-    googleConfig.clientId,
-    undefined,
-    client.ClientSecretPost(googleConfig.clientSecret)
-  );
+  return staticSecretConfig(GOOGLE_SERVER, googleConfig);
 }
 
 /**
@@ -316,16 +323,7 @@ export function getAppleClientId(): string | undefined {
  * Returns null if Discord OAuth is not configured
  */
 export function getDiscordConfig(): client.Configuration | null {
-  if (!discordConfig.enabled || !discordConfig.clientId || !discordConfig.clientSecret) {
-    return null;
-  }
-
-  return new client.Configuration(
-    DISCORD_SERVER,
-    discordConfig.clientId,
-    undefined,
-    client.ClientSecretPost(discordConfig.clientSecret)
-  );
+  return staticSecretConfig(DISCORD_SERVER, discordConfig);
 }
 
 // ============================================================================

@@ -19,7 +19,6 @@ import {
 import { generateUuidv7 } from "@/lib/uuidv7";
 import {
   generateToken,
-  generateAuthorizationCode,
   hashToken,
   validatePkceS256,
   getAccessTokenExpiry,
@@ -279,7 +278,7 @@ interface CreateAuthCodeParams {
  * Returns the raw code (to be sent to client).
  */
 export async function createAuthorizationCode(params: CreateAuthCodeParams): Promise<string> {
-  const code = generateAuthorizationCode();
+  const code = generateToken();
   const codeHash = hashToken(code);
 
   await db.insert(oauthAuthorizationCodes).values({

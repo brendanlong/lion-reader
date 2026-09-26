@@ -14,16 +14,14 @@
  * require pre-registration — any valid user credentials work.
  */
 
-import { eq } from "drizzle-orm";
 import { db } from "@/server/db";
-import { users } from "@/server/db/schema";
-import { verifyPassword } from "@/server/auth/password";
+import { verifyEmailPassword } from "@/server/auth/password";
 import { extractBearerToken } from "@/server/auth/bearer";
 import { validateAccessToken, createTokens, rotateRefreshToken } from "@/server/oauth/service";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
 import { isSignupConfirmed } from "@/server/auth/confirmation";
 import { logger } from "@/lib/logger";
-import type { User } from "@/server/db/schema";
+import { errorResponse } from "./parse";
 
 /**
  * Wallabag OAuth token response
@@ -46,51 +44,19 @@ export async function passwordGrant(
   password: string,
   clientId: string
 ): Promise<WallabagTokenResponse | null> {
-  // Find user by email
-  const user = await db.select().from(users).where(eq(users.email, username)).limit(1);
-
-  if (user.length === 0) {
-    // Equalize timing: run argon2 against a decoy so a non-existent account
-    // isn't measurably faster than a real password check (no enumeration
-    // oracle, #1267).
-    await verifyPassword(null, password);
+  const login = await verifyEmailPassword(db, username, password);
+  if (!login.valid) {
+    const { user } = login;
     logger.warn("Wallabag password grant failed", {
       component: "wallabag",
       grantType: "password",
       clientId,
-      reason: "user_not_found",
+      userId: user?.id,
+      reason: !user ? "user_not_found" : !user.passwordHash ? "no_password" : "invalid_password",
     });
     return null;
   }
-
-  const foundUser = user[0];
-
-  // Check if user has a password
-  if (!foundUser.passwordHash) {
-    // Equalize timing for OAuth-only (passwordless) accounts too (#1267).
-    await verifyPassword(null, password);
-    logger.warn("Wallabag password grant failed", {
-      component: "wallabag",
-      grantType: "password",
-      clientId,
-      userId: foundUser.id,
-      reason: "no_password",
-    });
-    return null;
-  }
-
-  // Verify password
-  const isValid = await verifyPassword(foundUser.passwordHash, password);
-  if (!isValid) {
-    logger.warn("Wallabag password grant failed", {
-      component: "wallabag",
-      grantType: "password",
-      clientId,
-      userId: foundUser.id,
-      reason: "invalid_password",
-    });
-    return null;
-  }
+  const foundUser = login.user;
 
   // Create OAuth tokens using existing infrastructure. The Wallabag surface
   // covers the full reader API (list/read/mutate/delete entries + tags), so it
@@ -156,31 +122,6 @@ export async function refreshTokenGrant(
 }
 
 /**
- * Validates a Wallabag API request using Bearer token.
- * Returns user data if authenticated.
- */
-async function authenticateRequest(
-  request: Request
-): Promise<{ userId: string; email: string; scopes: string[]; user: User } | null> {
-  const token = extractBearerToken(request.headers.get("authorization"));
-  if (!token) {
-    return null;
-  }
-
-  const tokenData = await validateAccessToken(token);
-  if (!tokenData) {
-    return null;
-  }
-
-  return {
-    userId: tokenData.userId,
-    email: tokenData.user.email,
-    scopes: tokenData.scopes,
-    user: tokenData.user,
-  };
-}
-
-/**
  * Validates a Wallabag API request and returns the user data.
  *
  * Every Wallabag endpoint exposes the full reader surface (list/read/mutate/
@@ -198,24 +139,18 @@ async function authenticateRequest(
 export async function requireAuth(
   request: Request
 ): Promise<{ userId: string; email: string } | Response> {
-  const auth = await authenticateRequest(request);
+  const token = extractBearerToken(request.headers.get("authorization"));
+  const auth = token ? await validateAccessToken(token) : null;
   if (!auth) {
     // Distinguish a client that sent no Bearer at all (misconfigured) from one
     // that sent a token we rejected (expired — normal churn as clients lazily
     // refresh — or revoked, e.g. by reuse detection). Logged at info because an
     // expired-token 401 is expected traffic, not an error.
-    const hasBearer = extractBearerToken(request.headers.get("authorization")) !== null;
     logger.info("Wallabag request unauthenticated", {
       component: "wallabag",
-      reason: hasBearer ? "invalid_token" : "missing_bearer",
+      reason: token ? "invalid_token" : "missing_bearer",
     });
-    return new Response(
-      JSON.stringify({ error: "invalid_grant", error_description: "Unauthorized" }),
-      {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      }
-    );
+    return errorResponse("invalid_grant", "Unauthorized", 401);
   }
   if (!auth.scopes.includes(OAUTH_SCOPES.READER_FULL_ACCESS)) {
     logger.warn("Wallabag request rejected: insufficient scope", {
@@ -223,15 +158,10 @@ export async function requireAuth(
       userId: auth.userId,
       scopes: auth.scopes,
     });
-    return new Response(
-      JSON.stringify({
-        error: "insufficient_scope",
-        error_description: `This endpoint requires the ${OAUTH_SCOPES.READER_FULL_ACCESS} scope`,
-      }),
-      {
-        status: 403,
-        headers: { "Content-Type": "application/json" },
-      }
+    return errorResponse(
+      "insufficient_scope",
+      `This endpoint requires the ${OAUTH_SCOPES.READER_FULL_ACCESS} scope`,
+      403
     );
   }
   // Mirror confirmedProtectedProcedure / the MCP endpoint: a user who hasn't
@@ -241,16 +171,7 @@ export async function requireAuth(
       component: "wallabag",
       userId: auth.userId,
     });
-    return new Response(
-      JSON.stringify({
-        error: "access_denied",
-        error_description: "Signup confirmation required",
-      }),
-      {
-        status: 403,
-        headers: { "Content-Type": "application/json" },
-      }
-    );
+    return errorResponse("access_denied", "Signup confirmation required", 403);
   }
-  return { userId: auth.userId, email: auth.email };
+  return { userId: auth.userId, email: auth.user.email };
 }

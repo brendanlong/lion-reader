@@ -10,10 +10,8 @@
  * is just a regular session token with a different transport mechanism.
  */
 
-import { eq } from "drizzle-orm";
 import { db } from "@/server/db";
-import { users } from "@/server/db/schema";
-import { verifyPassword } from "@/server/auth/password";
+import { verifyEmailPassword } from "@/server/auth/password";
 import { createSession, validateSession, type SessionData } from "@/server/auth/session";
 import { extractBearerToken } from "@/server/auth/bearer";
 import { isSignupConfirmed } from "@/server/auth/confirmation";
@@ -36,29 +34,8 @@ export async function clientLogin(
   userAgent?: string,
   ipAddress?: string
 ): Promise<{ auth: string } | null> {
-  // Find user by email
-  const user = await db.select().from(users).where(eq(users.email, email)).limit(1);
-
-  if (user.length === 0) {
-    // Equalize timing: run argon2 against a decoy so a non-existent account
-    // isn't measurably faster than a real password check (no enumeration
-    // oracle, #1267).
-    await verifyPassword(null, password);
-    return null;
-  }
-
-  const foundUser = user[0];
-
-  // Check if user has a password
-  if (!foundUser.passwordHash) {
-    // Equalize timing for OAuth-only (passwordless) accounts too (#1267).
-    await verifyPassword(null, password);
-    return null;
-  }
-
-  // Verify password
-  const isValid = await verifyPassword(foundUser.passwordHash, password);
-  if (!isValid) {
+  const login = await verifyEmailPassword(db, email, password);
+  if (!login.valid) {
     return null;
   }
 
@@ -67,7 +44,7 @@ export async function clientLogin(
   // be replayable as a full-access session cookie (account settings, password,
   // deletion) — the scope confines it to what the Google Reader API exposes.
   const { token } = await createSession(db, {
-    userId: foundUser.id,
+    userId: login.user.id,
     userAgent,
     ipAddress,
     scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
