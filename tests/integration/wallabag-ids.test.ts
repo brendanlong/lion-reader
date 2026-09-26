@@ -8,12 +8,12 @@
  */
 
 import { describe, it, expect, afterAll } from "vitest";
-import { inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { users, entries, userEntries, feeds } from "../../src/server/db/schema";
+import { users, entries } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { resolveWallabagEntry, entryIdToWallabagId } from "../../src/server/wallabag/id";
-import { createTestUser } from "./helpers";
+import { createTestEntry, createTestFeed, createTestUser } from "./helpers";
 
 const createdUserIds: string[] = [];
 
@@ -27,39 +27,13 @@ async function createUser(): Promise<string> {
 async function createTestSavedArticle(
   userId: string
 ): Promise<{ entryId: string; serial: bigint }> {
-  const now = new Date();
-  const savedFeedId = generateUuidv7();
-  await db.insert(feeds).values({
-    id: savedFeedId,
-    type: "saved",
-    userId,
-    title: "Saved Articles",
-    createdAt: now,
-    updatedAt: now,
-  });
-
-  const entryId = generateUuidv7();
-  const url = `https://example.com/article-${entryId}`;
-  const [inserted] = await db
-    .insert(entries)
-    .values({
-      id: entryId,
-      feedId: savedFeedId,
-      type: "saved",
-      guid: url,
-      url,
-      title: "Test Article",
-      contentCleaned: "<article>Content</article>",
-      contentHash: "test-hash",
-      fetchedAt: now,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .returning({ greaderItemId: entries.greaderItemId });
-
-  await db.insert(userEntries).values({ userId, entryId });
-
-  return { entryId, serial: inserted.greaderItemId };
+  const savedFeedId = await createTestFeed({ type: "saved", userId, url: null });
+  const entryId = await createTestEntry(savedFeedId, { type: "saved", userIds: [userId] });
+  const [entry] = await db
+    .select({ greaderItemId: entries.greaderItemId })
+    .from(entries)
+    .where(eq(entries.id, entryId));
+  return { entryId, serial: entry.greaderItemId };
 }
 
 afterAll(async () => {
