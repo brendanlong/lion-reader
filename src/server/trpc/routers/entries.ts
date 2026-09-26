@@ -263,24 +263,10 @@ export const entriesRouter = createTRPCRouter({
     )
     .output(entriesListOutputSchema)
     .query(async ({ ctx, input }) => {
-      const userId = ctx.session.user.id;
-      const showSpam = ctx.session.user.showSpam;
-
       return entriesService.listEntries(ctx.db, {
-        userId,
-        query: input.query,
-        subscriptionId: input.subscriptionId,
-        tagId: input.tagId,
-        uncategorized: input.uncategorized,
-        type: input.type,
-        excludeTypes: input.excludeTypes,
-        unreadOnly: input.unreadOnly,
-        starredOnly: input.starredOnly,
-        sortOrder: input.sortOrder,
-        sortBy: input.sortBy,
-        cursor: input.cursor,
-        limit: input.limit,
-        showSpam,
+        ...input,
+        userId: ctx.session.user.id,
+        showSpam: ctx.session.user.showSpam,
       });
     }),
 
@@ -459,14 +445,8 @@ export const entriesRouter = createTRPCRouter({
       // markAllEntriesRead publishes the mark_all_read SSE signal itself (so the
       // Google Reader mark-all-as-read route notifies other tabs too).
       const entryIds = await entriesService.markAllEntriesRead(ctx.db, {
+        ...input,
         userId,
-        subscriptionId: input.subscriptionId,
-        tagId: input.tagId,
-        uncategorized: input.uncategorized,
-        starredOnly: input.starredOnly,
-        type: input.type,
-        before: input.before,
-        changedAt: input.changedAt,
         showSpam: ctx.session.user.showSpam,
       });
 
@@ -558,16 +538,7 @@ export const entriesRouter = createTRPCRouter({
       })
     )
     .query(async ({ ctx, input }) => {
-      // Use the shared countEntries service function
-      return entriesService.countEntries(ctx.db, ctx.session.user.id, {
-        subscriptionId: input?.subscriptionId,
-        tagId: input?.tagId,
-        uncategorized: input?.uncategorized,
-        type: input?.type,
-        excludeTypes: input?.excludeTypes,
-        unreadOnly: input?.unreadOnly,
-        starredOnly: input?.starredOnly,
-      });
+      return entriesService.countEntries(ctx.db, ctx.session.user.id, { ...input });
     }),
 
   /**
