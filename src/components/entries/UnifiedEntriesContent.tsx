@@ -53,6 +53,48 @@ interface RouteInfo {
   markAllReadDescription: string;
 }
 
+const ALL_ROUTE: RouteInfo = {
+  viewId: "all",
+  title: "All Items",
+  emptyMessageUnread: "No unread entries. Toggle to show all items.",
+  emptyMessageAll: "No entries yet. Subscribe to some feeds to see entries here.",
+  markAllReadDescription: "all feeds",
+};
+
+const UNCATEGORIZED_ROUTE: RouteInfo = {
+  viewId: "uncategorized",
+  title: "Uncategorized",
+  emptyMessageUnread: "No unread entries from uncategorized feeds. Toggle to show all items.",
+  emptyMessageAll: "No entries from uncategorized feeds yet.",
+  markAllReadDescription: "uncategorized feeds",
+};
+
+const STATIC_ROUTES: Record<string, RouteInfo> = {
+  "/all": ALL_ROUTE,
+  "/starred": {
+    viewId: "starred",
+    title: "Starred",
+    emptyMessageUnread: "No unread starred entries. Toggle to show all starred items.",
+    emptyMessageAll: "No starred entries yet. Star entries to save them for later.",
+    markAllReadDescription: "starred entries",
+  },
+  "/saved": {
+    viewId: "saved",
+    title: "Saved",
+    emptyMessageUnread: "No unread saved articles. Toggle to show all items.",
+    emptyMessageAll: "No saved articles yet. Save articles to read them later.",
+    markAllReadDescription: "saved articles",
+  },
+  "/uncategorized": UNCATEGORIZED_ROUTE,
+  "/recently-read": {
+    viewId: "recently-read",
+    title: "Recently Read",
+    emptyMessageUnread: "No unread entries. Toggle to show all items.",
+    emptyMessageAll: "No recently read entries yet. Read some entries and they will appear here.",
+    markAllReadDescription: "all feeds",
+  },
+};
+
 /**
  * Parse the current pathname to derive route info (titles and empty/mark-all-read
  * copy). The query filters for a route come from `getFiltersFromPathname`, which
@@ -62,46 +104,12 @@ function useRouteInfo(): RouteInfo {
   const pathname = useAppPathname();
 
   return useMemo(() => {
-    const params = extractParamsFromPathname(pathname);
+    if (Object.hasOwn(STATIC_ROUTES, pathname)) return STATIC_ROUTES[pathname];
 
-    // /all - All entries
-    if (pathname === "/all") {
+    const { subscriptionId, tagId } = extractParamsFromPathname(pathname);
+    if (subscriptionId) {
       return {
-        viewId: "all" as const,
-        title: "All Items",
-        emptyMessageUnread: "No unread entries. Toggle to show all items.",
-        emptyMessageAll: "No entries yet. Subscribe to some feeds to see entries here.",
-        markAllReadDescription: "all feeds",
-      };
-    }
-
-    // /starred - Starred entries
-    if (pathname === "/starred") {
-      return {
-        viewId: "starred" as const,
-        title: "Starred",
-        emptyMessageUnread: "No unread starred entries. Toggle to show all starred items.",
-        emptyMessageAll: "No starred entries yet. Star entries to save them for later.",
-        markAllReadDescription: "starred entries",
-      };
-    }
-
-    // /saved - Saved articles
-    if (pathname === "/saved") {
-      return {
-        viewId: "saved" as const,
-        title: "Saved",
-        emptyMessageUnread: "No unread saved articles. Toggle to show all items.",
-        emptyMessageAll: "No saved articles yet. Save articles to read them later.",
-        markAllReadDescription: "saved articles",
-      };
-    }
-
-    // /subscription/:id - Single subscription entries
-    if (params.subscriptionId) {
-      const subscriptionId = params.subscriptionId;
-      return {
-        viewId: "subscription" as const,
+        viewId: "subscription",
         title: null, // Fetched from API
         subscriptionId,
         emptyMessageUnread: "No unread entries in this subscription. Toggle to show all items.",
@@ -111,35 +119,11 @@ function useRouteInfo(): RouteInfo {
       };
     }
 
-    // /uncategorized - Uncategorized entries
-    if (pathname === "/uncategorized") {
+    // The "uncategorized" pseudo-tag
+    if (tagId === "uncategorized") return UNCATEGORIZED_ROUTE;
+    if (tagId) {
       return {
-        viewId: "uncategorized" as const,
-        title: "Uncategorized",
-        emptyMessageUnread: "No unread entries from uncategorized feeds. Toggle to show all items.",
-        emptyMessageAll: "No entries from uncategorized feeds yet.",
-        markAllReadDescription: "uncategorized feeds",
-      };
-    }
-
-    // /tag/:tagId - Tag entries (including uncategorized pseudo-tag)
-    if (params.tagId) {
-      const tagId = params.tagId;
-
-      // Handle "uncategorized" pseudo-tag
-      if (tagId === "uncategorized") {
-        return {
-          viewId: "uncategorized" as const,
-          title: "Uncategorized",
-          emptyMessageUnread:
-            "No unread entries from uncategorized feeds. Toggle to show all items.",
-          emptyMessageAll: "No entries from uncategorized feeds yet.",
-          markAllReadDescription: "uncategorized feeds",
-        };
-      }
-
-      return {
-        viewId: "tag" as const,
+        viewId: "tag",
         title: null, // Fetched from API
         tagId,
         emptyMessageUnread: "No unread entries from this tag. Toggle to show all items.",
@@ -148,26 +132,7 @@ function useRouteInfo(): RouteInfo {
       };
     }
 
-    // /recently-read - Recently read entries
-    if (pathname === "/recently-read") {
-      return {
-        viewId: "recently-read" as const,
-        title: "Recently Read",
-        emptyMessageUnread: "No unread entries. Toggle to show all items.",
-        emptyMessageAll:
-          "No recently read entries yet. Read some entries and they will appear here.",
-        markAllReadDescription: "all feeds",
-      };
-    }
-
-    // Default fallback to /all
-    return {
-      viewId: "all" as const,
-      title: "All Items",
-      emptyMessageUnread: "No unread entries. Toggle to show all items.",
-      emptyMessageAll: "No entries yet. Subscribe to some feeds to see entries here.",
-      markAllReadDescription: "all feeds",
-    };
+    return ALL_ROUTE;
   }, [pathname]);
 }
 
@@ -224,20 +189,14 @@ function TagTitle({ tagId }: { tagId: string }) {
  * state (deterministic skeleton until hydrated, then cached title).
  */
 function EntryListTitle({ routeInfo }: { routeInfo: RouteInfo }) {
-  // Static title - render immediately
-  if (routeInfo.title !== null) {
-    return <TitleText>{routeInfo.title}</TitleText>;
-  }
-
   if (routeInfo.subscriptionId) {
     return <SubscriptionTitle subscriptionId={routeInfo.subscriptionId} />;
   }
-
   if (routeInfo.tagId) {
     return <TagTitle tagId={routeInfo.tagId} />;
   }
-
-  return <TitleText>All Items</TitleText>;
+  // Static title - render immediately
+  return <TitleText>{routeInfo.title}</TitleText>;
 }
 
 /**

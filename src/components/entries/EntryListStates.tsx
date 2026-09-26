@@ -9,26 +9,15 @@
 
 "use client";
 
-import { type ReactNode } from "react";
 import { SpinnerIcon, DefaultEmptyIcon } from "@/components/ui/icons";
-
-/**
- * Props for the EntryListEmpty component.
- */
-export interface EntryListEmptyProps {
-  /** Message to display */
-  message: string;
-  /** Optional custom icon */
-  icon?: ReactNode;
-}
 
 /**
  * Empty state component for entry lists.
  */
-export function EntryListEmpty({ message, icon }: EntryListEmptyProps) {
+export function EntryListEmpty({ message }: { message: string }) {
   return (
     <div className="flex flex-col items-center justify-center py-12 text-center">
-      {icon ?? <DefaultEmptyIcon className="text-faint mb-4 h-12 w-12" />}
+      <DefaultEmptyIcon className="text-faint mb-4 h-12 w-12" />
       <p className="ui-text-sm text-muted">{message}</p>
     </div>
   );
@@ -37,7 +26,7 @@ export function EntryListEmpty({ message, icon }: EntryListEmptyProps) {
 /**
  * Loading more indicator shown at bottom during pagination.
  */
-export function EntryListLoadingMore({ label = "Loading more..." }: { label?: string }) {
+export function EntryListLoadingMore({ label }: { label: string }) {
   return (
     <div className="flex items-center justify-center py-4" role="status" aria-label={label}>
       <SpinnerIcon className="text-faint h-5 w-5" />
@@ -49,6 +38,6 @@ export function EntryListLoadingMore({ label = "Loading more..." }: { label?: st
 /**
  * End of list indicator.
  */
-export function EntryListEnd({ message = "No more entries" }: { message?: string }) {
-  return <p className="ui-text-sm text-faint py-4 text-center">{message}</p>;
+export function EntryListEnd() {
+  return <p className="ui-text-sm text-faint py-4 text-center">No more entries</p>;
 }

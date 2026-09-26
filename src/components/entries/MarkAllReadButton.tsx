@@ -9,7 +9,7 @@
 
 import { useState } from "react";
 import { CheckCircleIcon } from "@/components/ui/icons";
-import { MarkAllReadDialog } from "@/components/feeds/MarkAllReadDialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 interface MarkAllReadButtonProps {
   /** Description of what will be marked as read (e.g., "this feed", "all items") */
@@ -44,16 +44,19 @@ export function MarkAllReadButton({
         <span className="ui-text-sm ml-1.5 hidden sm:inline">Mark All Read</span>
       </button>
 
-      <MarkAllReadDialog
+      <ConfirmDialog
         isOpen={showDialog}
-        contextDescription={contextDescription}
+        title="Mark all as read?"
+        confirmLabel="Mark All Read"
         isLoading={isLoading}
         onConfirm={() => {
           onConfirm?.();
           setShowDialog(false);
         }}
         onCancel={() => setShowDialog(false)}
-      />
+      >
+        This will mark all unread entries in {contextDescription} as read.
+      </ConfirmDialog>
     </>
   );
 }

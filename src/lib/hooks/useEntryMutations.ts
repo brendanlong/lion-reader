@@ -19,7 +19,6 @@ import { setCounts, setBulkCounts } from "@/lib/cache/operations";
 import {
   getCachedEntryState,
   updateEntriesReadStatus,
-  updateEntryStarredStatus,
   updateEntryState,
 } from "@/lib/cache/entry-cache";
 import { getEntryMutationTracker, type EntryField } from "@/lib/cache/entry-mutation-tracker";
@@ -199,7 +198,7 @@ export function useEntryMutations(): UseEntryMutationsResult {
   const setStarredMutation = trpc.entries.setStarred.useMutation({
     onMutate: (variables) => {
       startTracking(variables.id, "starred");
-      updateEntryStarredStatus(utils, variables.id, variables.starred, queryClient);
+      updateEntryState(utils, queryClient, variables.id, { starred: variables.starred });
     },
 
     onSuccess: (data) => {

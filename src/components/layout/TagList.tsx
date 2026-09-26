@@ -7,7 +7,7 @@
 
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, type ReactNode } from "react";
 import { useAppPathname } from "@/lib/hooks/useAppLocation";
 import { trpc } from "@/lib/trpc/client";
 import { useExpandedTags } from "@/lib/hooks/useExpandedTags";
@@ -31,6 +31,63 @@ interface TagListProps {
   unreadOnly: boolean;
   /** Called on mousedown with the link href (e.g., to prefetch data) */
   onPrefetch?: (href: string) => void;
+}
+
+interface TagSectionProps {
+  href: string;
+  isActive: boolean;
+  color: string | null;
+  label: string;
+  count: number;
+  expanded: boolean;
+  onToggleExpanded: () => void;
+  onNavigate: (href: string) => void;
+  onPrefetch?: (href: string) => void;
+  /** The section's nested subscription list, shown when expanded */
+  children: ReactNode;
+}
+
+/**
+ * A collapsible sidebar section: chevron + link row, with its feeds nested below.
+ */
+function TagSection({
+  href,
+  isActive,
+  color,
+  label,
+  count,
+  expanded,
+  onToggleExpanded,
+  onNavigate,
+  onPrefetch,
+  children,
+}: TagSectionProps) {
+  return (
+    <li>
+      <div className="flex min-h-[44px] items-center">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleExpanded();
+          }}
+          className="text-muted hover:text-body flex h-6 w-6 shrink-0 items-center justify-center"
+          aria-label={expanded ? "Collapse" : "Expand"}
+        >
+          {expanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
+        </button>
+        <NavLinkWithIcon
+          href={href}
+          isActive={isActive}
+          icon={<ColorDot color={color} size="sm" />}
+          label={label}
+          count={count}
+          onClick={onNavigate}
+          onPrefetch={onPrefetch}
+        />
+      </div>
+      {expanded && children}
+    </li>
+  );
 }
 
 /**
@@ -69,114 +126,52 @@ function TagListContent({
     !unreadOnly || (uncategorized?.unreadCount ?? 0) > 0 || isUncategorizedActive;
   const hasTags = sortedTags.length > 0 || hasUncategorized;
 
-  const isActiveLink = (href: string) => {
-    if (href === "/uncategorized") {
-      return pathname === "/uncategorized";
-    }
-    if (href.startsWith("/tag/")) {
-      return pathname === href;
-    }
-    return pathname.startsWith(href);
-  };
-
   if (!hasTags) {
     return <p className="ui-text-sm text-muted px-3">No unread feeds</p>;
   }
 
+  const listProps = {
+    pathname,
+    onClose: onNavigate,
+    onEdit,
+    onUnsubscribe,
+    unreadOnly,
+    onPrefetch,
+  };
+
   return (
     <ul className="space-y-1">
-      {/* Tags with nested feeds */}
-      {sortedTags.map((tag) => {
-        const tagHref = `/tag/${tag.id}`;
-        const isActive = isActiveLink(tagHref);
-        const expanded = isExpanded(tag.id);
+      {sortedTags.map((tag) => (
+        <TagSection
+          key={tag.id}
+          href={`/tag/${tag.id}`}
+          isActive={pathname === `/tag/${tag.id}`}
+          color={tag.color}
+          label={tag.name}
+          count={tag.unreadCount}
+          expanded={isExpanded(tag.id)}
+          onToggleExpanded={() => toggleExpanded(tag.id)}
+          onNavigate={onNavigate}
+          onPrefetch={onPrefetch}
+        >
+          <TagSubscriptionList tagId={tag.id} {...listProps} />
+        </TagSection>
+      ))}
 
-        return (
-          <li key={tag.id}>
-            {/* Tag row */}
-            <div className="flex min-h-[44px] items-center">
-              {/* Chevron button */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleExpanded(tag.id);
-                }}
-                className="text-muted hover:text-body flex h-6 w-6 shrink-0 items-center justify-center"
-                aria-label={expanded ? "Collapse" : "Expand"}
-              >
-                {expanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
-              </button>
-
-              {/* Tag link */}
-              <NavLinkWithIcon
-                href={tagHref}
-                isActive={isActive}
-                icon={<ColorDot color={tag.color} size="sm" />}
-                label={tag.name}
-                count={tag.unreadCount}
-                onClick={onNavigate}
-                onPrefetch={onPrefetch}
-              />
-            </div>
-
-            {/* Nested feeds (when expanded) - loaded per-tag */}
-            {expanded && (
-              <TagSubscriptionList
-                tagId={tag.id}
-                pathname={pathname}
-                onClose={onNavigate}
-                onEdit={onEdit}
-                onUnsubscribe={onUnsubscribe}
-                unreadOnly={unreadOnly}
-                onPrefetch={onPrefetch}
-              />
-            )}
-          </li>
-        );
-      })}
-
-      {/* Uncategorized section (only if there are uncategorized feeds) */}
       {hasUncategorized && (
-        <li>
-          {/* Uncategorized row */}
-          <div className="flex min-h-[44px] items-center">
-            {/* Chevron button */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleExpanded("uncategorized");
-              }}
-              className="text-muted hover:text-body flex h-6 w-6 shrink-0 items-center justify-center"
-              aria-label={isExpanded("uncategorized") ? "Collapse" : "Expand"}
-            >
-              {isExpanded("uncategorized") ? <ChevronDownIcon /> : <ChevronRightIcon />}
-            </button>
-
-            {/* Uncategorized link */}
-            <NavLinkWithIcon
-              href="/uncategorized"
-              isActive={isActiveLink("/uncategorized")}
-              icon={<ColorDot color={null} size="sm" />}
-              label="Uncategorized"
-              count={uncategorized?.unreadCount ?? 0}
-              onClick={onNavigate}
-              onPrefetch={onPrefetch}
-            />
-          </div>
-
-          {/* Nested uncategorized feeds (when expanded) */}
-          {isExpanded("uncategorized") && (
-            <TagSubscriptionList
-              uncategorized
-              pathname={pathname}
-              onClose={onNavigate}
-              onEdit={onEdit}
-              onUnsubscribe={onUnsubscribe}
-              unreadOnly={unreadOnly}
-              onPrefetch={onPrefetch}
-            />
-          )}
-        </li>
+        <TagSection
+          href="/uncategorized"
+          isActive={isUncategorizedActive}
+          color={null}
+          label="Uncategorized"
+          count={uncategorized?.unreadCount ?? 0}
+          expanded={isExpanded("uncategorized")}
+          onToggleExpanded={() => toggleExpanded("uncategorized")}
+          onNavigate={onNavigate}
+          onPrefetch={onPrefetch}
+        >
+          <TagSubscriptionList uncategorized {...listProps} />
+        </TagSection>
       )}
     </ul>
   );

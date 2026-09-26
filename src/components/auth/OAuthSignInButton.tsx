@@ -19,8 +19,8 @@ import { type OAuthProvider, providerNames, ProviderIcon, useAuthUrlQuery } from
 
 interface OAuthSignInButtonProps {
   provider: OAuthProvider;
-  label?: string;
-  onError?: (error: string) => void;
+  label: string;
+  onError: (error: string) => void;
   inviteToken?: string;
 }
 
@@ -48,7 +48,13 @@ export function OAuthSignInButton({
 
   const isEnabled = providersData?.providers.includes(provider) ?? false;
 
-  const resolvedLabel = label ?? `Sign in with ${providerNames[provider]}`;
+  const fail = (error: unknown) => {
+    onError(
+      (error instanceof Error && error.message) ||
+        `Failed to start ${providerNames[provider]} sign-in`
+    );
+    setIsLoading(false);
+  };
 
   const handleClick = async () => {
     if (isLoading) return;
@@ -56,25 +62,13 @@ export function OAuthSignInButton({
     setIsLoading(true);
     try {
       const result = await authUrlQuery.refetch();
-
       if (result.error) {
-        const errorMessage =
-          result.error.message || `Failed to start ${providerNames[provider]} sign-in`;
-        onError?.(errorMessage);
-        setIsLoading(false);
-        return;
-      }
-
-      if (result.data) {
+        fail(result.error);
+      } else if (result.data) {
         window.location.href = result.data.url;
       }
     } catch (error) {
-      const errorMessage =
-        error instanceof Error
-          ? error.message
-          : `Failed to start ${providerNames[provider]} sign-in`;
-      onError?.(errorMessage);
-      setIsLoading(false);
+      fail(error);
     }
   };
 
@@ -94,7 +88,7 @@ export function OAuthSignInButton({
       ) : (
         <ProviderIcon provider={provider} className="h-5 w-5" />
       )}
-      {resolvedLabel}
+      {label}
     </button>
   );
 }

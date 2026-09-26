@@ -111,39 +111,40 @@ interface SubscriptionInfiniteData {
 }
 
 /**
- * Removes a subscription from all infinite query caches.
- * Used when unsubscribing to immediately remove from sidebar lists.
- *
- * @param queryClient - React Query client
- * @param subscriptionId - ID of the subscription to remove
+ * Rewrites the items of every cached subscriptions.list infinite query that
+ * contains the given subscription, leaving the other caches untouched.
  */
-function removeSubscriptionFromInfiniteQueries(
+function mapSubscriptionListsContaining(
   queryClient: QueryClient,
-  subscriptionId: string
+  subscriptionId: string,
+  mapItems: (items: CachedSubscriptionPage["items"]) => CachedSubscriptionPage["items"]
 ): void {
   const infiniteQueries = queryClient.getQueriesData<SubscriptionInfiniteData>({
     queryKey: [["subscriptions", "list"]],
   });
 
   for (const [queryKey, data] of infiniteQueries) {
-    // Only update infinite queries (they have pages array)
-    if (!data?.pages) continue;
+    // Only update infinite queries (they have pages array) containing the subscription
+    if (!data?.pages?.some((page) => page.items.some((s) => s.id === subscriptionId))) continue;
 
-    // Check if any page contains this subscription
-    const hasSubscription = data.pages.some((page) =>
-      page.items.some((s) => s.id === subscriptionId)
-    );
-
-    if (hasSubscription) {
-      queryClient.setQueryData<SubscriptionInfiniteData>(queryKey, {
-        ...data,
-        pages: data.pages.map((page) => ({
-          ...page,
-          items: page.items.filter((s) => s.id !== subscriptionId),
-        })),
-      });
-    }
+    queryClient.setQueryData<SubscriptionInfiniteData>(queryKey, {
+      ...data,
+      pages: data.pages.map((page) => ({ ...page, items: mapItems(page.items) })),
+    });
   }
+}
+
+/**
+ * Removes a subscription from all infinite query caches.
+ * Used when unsubscribing to immediately remove from sidebar lists.
+ */
+function removeSubscriptionFromInfiniteQueries(
+  queryClient: QueryClient,
+  subscriptionId: string
+): void {
+  mapSubscriptionListsContaining(queryClient, subscriptionId, (items) =>
+    items.filter((s) => s.id !== subscriptionId)
+  );
 }
 
 /**
@@ -526,32 +527,9 @@ function setSubscriptionUnreadCount(
   // since we don't have the affected tag IDs. This is acceptable because
   // single-entry mutations (star/unstar) are less frequent than markRead.
   if (queryClient) {
-    const infiniteQueries = queryClient.getQueriesData<{
-      pages: Array<{ items: Array<{ id: string; unreadCount: number; [key: string]: unknown }> }>;
-      pageParams: unknown[];
-    }>({
-      queryKey: [["subscriptions", "list"]],
-    });
-
-    for (const [queryKey, data] of infiniteQueries) {
-      if (!data?.pages) continue;
-
-      const hasSubscription = data.pages.some((page) =>
-        page.items.some((s) => s.id === subscriptionId)
-      );
-
-      if (hasSubscription) {
-        queryClient.setQueryData(queryKey, {
-          ...data,
-          pages: data.pages.map((page) => ({
-            ...page,
-            items: page.items.map((s) =>
-              s.id === subscriptionId ? { ...s, unreadCount: unread } : s
-            ),
-          })),
-        });
-      }
-    }
+    mapSubscriptionListsContaining(queryClient, subscriptionId, (items) =>
+      items.map((s) => (s.id === subscriptionId ? { ...s, unreadCount: unread } : s))
+    );
   }
 }
 

@@ -2,13 +2,11 @@
  * UnsubscribeDialog Component
  *
  * Confirmation dialog for unsubscribing from a feed.
- * Uses the reusable Dialog component.
  */
 
 "use client";
 
-import { Dialog, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 interface UnsubscribeDialogProps {
   isOpen: boolean;
@@ -18,36 +16,16 @@ interface UnsubscribeDialogProps {
   onCancel: () => void;
 }
 
-export function UnsubscribeDialog({
-  isOpen,
-  feedTitle,
-  isLoading,
-  onConfirm,
-  onCancel,
-}: UnsubscribeDialogProps) {
+export function UnsubscribeDialog({ feedTitle, ...props }: UnsubscribeDialogProps) {
   return (
-    <Dialog
-      isOpen={isOpen}
-      onClose={onCancel}
-      title="Unsubscribe from feed"
-      titleId="unsubscribe-title"
+    <ConfirmDialog
+      title="Unsubscribe from feed?"
+      confirmLabel="Unsubscribe"
+      confirmVariant="danger"
+      {...props}
     >
-      <DialogTitle id="unsubscribe-title">Unsubscribe from feed?</DialogTitle>
-
-      <DialogDescription>
-        Are you sure you want to unsubscribe from{" "}
-        <span className="text-body font-medium">{feedTitle}</span>? You can always resubscribe
-        later.
-      </DialogDescription>
-
-      <DialogFooter>
-        <Button variant="secondary" onClick={onCancel} disabled={isLoading}>
-          Cancel
-        </Button>
-        <Button variant="danger" onClick={onConfirm} loading={isLoading}>
-          Unsubscribe
-        </Button>
-      </DialogFooter>
-    </Dialog>
+      Are you sure you want to unsubscribe from{" "}
+      <span className="text-body font-medium">{feedTitle}</span>? You can always resubscribe later.
+    </ConfirmDialog>
   );
 }

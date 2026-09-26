@@ -23,8 +23,6 @@ export interface NavLinkProps {
   onClick?: (href: string) => void;
   /** Called on mousedown with the link href (e.g., to prefetch data) */
   onPrefetch?: (href: string) => void;
-  /** Additional class name */
-  className?: string;
 }
 
 /**
@@ -52,7 +50,6 @@ export function NavLink({
   countElement,
   onClick,
   onPrefetch,
-  className = "",
 }: NavLinkProps) {
   return (
     <ClientLink
@@ -63,7 +60,7 @@ export function NavLink({
         isActive
           ? "control-outline bg-surface-muted text-body"
           : "control-outline-none text-body hover:bg-surface-muted"
-      } ${className}`}
+      }`}
     >
       <span className="truncate">{children}</span>
       {countElement}
@@ -76,11 +73,11 @@ export function NavLink({
  */
 export interface NavLinkWithIconProps extends Omit<NavLinkProps, "children" | "countElement"> {
   /** Icon or indicator element to show before the label */
-  icon?: ReactNode;
+  icon: ReactNode;
   /** Text label */
   label: string;
-  /** Optional count to display (only shown if > 0) */
-  count?: number;
+  /** Count to display (only shown if > 0) */
+  count: number;
 }
 
 /**
@@ -106,7 +103,6 @@ export function NavLinkWithIcon({
   count,
   onClick,
   onPrefetch,
-  className = "",
 }: NavLinkWithIconProps) {
   return (
     <ClientLink
@@ -117,11 +113,11 @@ export function NavLinkWithIcon({
         isActive
           ? "control-outline bg-surface-muted text-body"
           : "control-outline-none text-body hover:bg-surface-muted"
-      } ${className}`}
+      }`}
     >
-      {icon && <span className="shrink-0">{icon}</span>}
+      <span className="shrink-0">{icon}</span>
       <span className="truncate">{label}</span>
-      {count !== undefined && count > 0 && (
+      {count > 0 && (
         <span className="ui-text-xs text-muted ml-auto shrink-0 tabular-nums">({count})</span>
       )}
     </ClientLink>

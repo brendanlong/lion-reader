@@ -233,7 +233,7 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
   // matches (EntryListFallback reads the cache, which differs between server
   // and client at that point).
   if (!canRenderFromCache) {
-    return <EntryListSkeleton count={5} />;
+    return <EntryListSkeleton />;
   }
 
   // Loading state (post-hydration, client-only): show the smart fallback
@@ -243,7 +243,7 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
   // Search results can't be approximated from cached lists (membership depends
   // on the query), so a pending search shows a plain skeleton instead.
   if (isLoading && entries.length === 0 && queryInput.query) {
-    return <EntryListSkeleton count={5} />;
+    return <EntryListSkeleton />;
   }
   if (isLoading && entries.length === 0) {
     return (
@@ -257,7 +257,6 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
           unreadOnly: showUnreadOnly,
           sortOrder,
         }}
-        skeletonCount={5}
         onEntryClick={handleEntryClick}
       />
     );

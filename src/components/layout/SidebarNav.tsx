@@ -28,22 +28,14 @@ function CountBadge({ count }: { count: number }) {
   return <span className="ui-text-xs text-muted ml-2 shrink-0 tabular-nums">({count})</span>;
 }
 
+type CountInput = { starredOnly?: true; type?: "saved" };
+
 /**
- * Suspending component that fetches and displays a single count.
+ * Suspending component that fetches and displays a single unread count.
  * Returns null when count is 0 (no badge shown).
  */
-function AllItemsCount() {
-  const [data] = trpc.entries.count.useSuspenseQuery({});
-  return <CountBadge count={data.unread} />;
-}
-
-function StarredCount() {
-  const [data] = trpc.entries.count.useSuspenseQuery({ starredOnly: true });
-  return <CountBadge count={data.unread} />;
-}
-
-function SavedCount() {
-  const [data] = trpc.entries.count.useSuspenseQuery({ type: "saved" });
+function UnreadCount({ input }: { input: CountInput }) {
+  const [data] = trpc.entries.count.useSuspenseQuery(input);
   return <CountBadge count={data.unread} />;
 }
 
@@ -59,66 +51,39 @@ function SuspenseCount({ children }: { children: React.ReactNode }) {
   );
 }
 
+const NAV_LINKS: Array<{ href: string; label: string; countInput?: CountInput }> = [
+  { href: "/all", label: "All Items", countInput: {} },
+  { href: "/starred", label: "Starred", countInput: { starredOnly: true } },
+  { href: "/saved", label: "Saved", countInput: { type: "saved" } },
+  { href: "/recently-read", label: "Recently Read" },
+];
+
 /**
  * Main navigation links with independently streaming unread counts.
  */
 export function SidebarNav({ onNavigate, onPrefetch }: SidebarNavProps) {
   const pathname = useAppPathname();
 
-  const isActiveLink = (href: string) => pathname === href;
-
   return (
     <div className="space-y-1 p-3">
-      <NavLink
-        href="/all"
-        isActive={isActiveLink("/all")}
-        countElement={
-          <SuspenseCount>
-            <AllItemsCount />
-          </SuspenseCount>
-        }
-        onClick={onNavigate}
-        onPrefetch={onPrefetch}
-      >
-        All Items
-      </NavLink>
-
-      <NavLink
-        href="/starred"
-        isActive={isActiveLink("/starred")}
-        countElement={
-          <SuspenseCount>
-            <StarredCount />
-          </SuspenseCount>
-        }
-        onClick={onNavigate}
-        onPrefetch={onPrefetch}
-      >
-        Starred
-      </NavLink>
-
-      <NavLink
-        href="/saved"
-        isActive={isActiveLink("/saved")}
-        countElement={
-          <SuspenseCount>
-            <SavedCount />
-          </SuspenseCount>
-        }
-        onClick={onNavigate}
-        onPrefetch={onPrefetch}
-      >
-        Saved
-      </NavLink>
-
-      <NavLink
-        href="/recently-read"
-        isActive={isActiveLink("/recently-read")}
-        onClick={onNavigate}
-        onPrefetch={onPrefetch}
-      >
-        Recently Read
-      </NavLink>
+      {NAV_LINKS.map(({ href, label, countInput }) => (
+        <NavLink
+          key={href}
+          href={href}
+          isActive={pathname === href}
+          countElement={
+            countInput && (
+              <SuspenseCount>
+                <UnreadCount input={countInput} />
+              </SuspenseCount>
+            )
+          }
+          onClick={onNavigate}
+          onPrefetch={onPrefetch}
+        >
+          {label}
+        </NavLink>
+      ))}
     </div>
   );
 }

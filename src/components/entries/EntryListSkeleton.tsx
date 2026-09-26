@@ -15,21 +15,21 @@ interface EntryListItemSkeletonProps {
    * Whether to show a longer summary line.
    * Varies to create more natural looking skeletons.
    */
-  hasLongSummary?: boolean;
+  hasLongSummary: boolean;
 
   /**
    * List density (matches EntryListItem so the skeleton doesn't reflow when the
    * real list renders).
    */
-  density?: ListDensity;
+  density: ListDensity;
 }
 
 /**
  * Single skeleton item that matches EntryListItem layout.
  */
 const EntryListItemSkeleton = memo(function EntryListItemSkeleton({
-  hasLongSummary = true,
-  density = "comfortable",
+  hasLongSummary,
+  density,
 }: EntryListItemSkeletonProps) {
   const compact = density === "compact";
   // Compact rows are borderless (the list supplies `divide-edge` separators);
@@ -77,12 +77,6 @@ const EntryListItemSkeleton = memo(function EntryListItemSkeleton({
 
 interface EntryListSkeletonProps {
   /**
-   * Number of skeleton items to render.
-   * @default 5
-   */
-  count?: number;
-
-  /**
    * List density (matches the entry list so the skeleton doesn't reflow when the
    * real list renders).
    * @default "comfortable"
@@ -95,14 +89,13 @@ interface EntryListSkeletonProps {
  * Renders multiple skeleton items for loading state.
  */
 export const EntryListSkeleton = memo(function EntryListSkeleton({
-  count = 5,
   density = "comfortable",
 }: EntryListSkeletonProps) {
   const listClassName = density === "compact" ? "divide-edge divide-y" : "space-y-3";
 
   return (
     <div className={listClassName} role="status" aria-label="Loading entries">
-      {Array.from({ length: count }, (_, i) => (
+      {Array.from({ length: 5 }, (_, i) => (
         <EntryListItemSkeleton key={i} hasLongSummary={i % 2 === 0} density={density} />
       ))}
       <span className="sr-only">Loading entries...</span>

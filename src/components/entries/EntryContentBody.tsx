@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useRef, useMemo, type ReactNode } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Button } from "@/components/ui/button";
-import { SpinnerIcon, SparklesIcon, AlertIcon, ArrowLeftIcon } from "@/components/ui/icons";
+import { SpinnerIcon, SparklesIcon, AlertIcon } from "@/components/ui/icons";
 import { StarButton, ReadToggleButton } from "@/components/entries/EntryStateButtons";
 import { SummaryCard } from "@/components/summarization/SummaryCard";
 import { NarrationControls } from "@/components/narration";
@@ -388,17 +388,7 @@ export function EntryContentBody({
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
       onTouchCancel={handleTouchCancel}
-      backButton={
-        onBack ? (
-          <button
-            onClick={onBack}
-            className="control-outline ui-text-sm text-muted hover:bg-surface-muted hover:text-body mb-4 -ml-2 inline-flex min-h-[44px] items-center gap-2 rounded-md px-2 transition-colors active:bg-zinc-200 sm:mb-6 dark:active:bg-zinc-700"
-          >
-            <ArrowLeftIcon className="h-4 w-4" />
-            <span>Back to list</span>
-          </button>
-        ) : undefined
-      }
+      onBack={onBack}
       actionButtons={
         <div ref={actionButtonsRef} className="flex flex-wrap items-center gap-2 sm:gap-3">
           {/* Star + Read/Unread toggles (shared with the fallback and demo readers) */}

@@ -229,42 +229,9 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     // generation fails; on success the media-session effects keep it going.
     primeMediaSessionAudio();
 
-    // Handle Piper provider with StreamingAudioPlayer
-    if (usePiper && settings.voiceId) {
-      const player = getOrCreateStreamingPlayer();
-
-      // Update config in case settings changed
-      player.setConfig({
-        voiceId: settings.voiceId,
-        rate: settings.rate,
-        sentenceGapSeconds: settings.sentenceGapSeconds,
-      });
-
-      // If paused or already has paragraphs loaded, just play
-      const playerStatus = player.getStatus();
-      if (playerStatus === "paused" || playerStatus === "playing") {
-        if (playerStatus === "paused") {
-          await player.play();
-        }
-        return;
-      }
-
-      // If we already have narration text loaded, just play
-      if (narrationText) {
-        const paragraphs = splitIntoParagraphs(narrationText);
-        player.load(paragraphs);
-
-        // Track playback start (only once per session)
-        if (!hasTrackedPlaybackRef.current) {
-          trackNarrationPlaybackStarted(settings.provider);
-          hasTrackedPlaybackRef.current = true;
-        }
-
-        await player.play();
-        return;
-      }
-
-      // Need to generate narration text first
+    // Generates narration text (client-side, or on the server for LLM
+    // normalization), stores it with its paragraph map, then hands it to `start`.
+    const loadNarration = async (start: (narration: string) => Promise<void>) => {
       setIsLoading(true);
       setState((prev) => ({ ...prev, status: "loading" }));
 
@@ -272,15 +239,12 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
         let narration: string;
         let processedHtmlResult: string | null = null;
 
-        // If LLM normalization is disabled and we have content, process client-side
         if (!settings.useLlmNormalization && content) {
           const clientResult = htmlToClientNarration(content);
           narration = clientResult.narrationText;
           processedHtmlResult = clientResult.processedHtml;
-          // Store the paragraph map for index translation during highlighting
           paragraphMapRef.current = clientResult.paragraphMap;
         } else {
-          // Call server for LLM processing
           const result = await generateMutation.mutateAsync({
             id,
             useLlmNormalization: settings.useLlmNormalization,
@@ -288,26 +252,13 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
             showOriginal: showOriginal ?? false,
           });
           narration = result.narration;
-          // Store the paragraph map from server for index translation during highlighting
           paragraphMapRef.current = result.paragraphMap;
         }
 
         if (narration) {
           setNarrationText(narration);
           setProcessedHtml(processedHtmlResult);
-          const paragraphs = splitIntoParagraphs(narration);
-
-          // Load paragraphs into streaming player
-          player.load(paragraphs);
-
-          // Track playback start
-          if (!hasTrackedPlaybackRef.current) {
-            trackNarrationPlaybackStarted(settings.provider);
-            hasTrackedPlaybackRef.current = true;
-          }
-
-          // Start playback
-          await player.play();
+          await start(narration);
         } else {
           // Nothing to narrate — release the primed media-session audio.
           stopMediaSessionAudio();
@@ -320,98 +271,59 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
       } finally {
         setIsLoading(false);
       }
+    };
+
+    if (usePiper && settings.voiceId) {
+      const player = getOrCreateStreamingPlayer();
+
+      // Update config in case settings changed
+      player.setConfig({
+        voiceId: settings.voiceId,
+        rate: settings.rate,
+        sentenceGapSeconds: settings.sentenceGapSeconds,
+      });
+
+      const playerStatus = player.getStatus();
+      if (playerStatus === "paused") await player.play();
+      if (playerStatus === "paused" || playerStatus === "playing") return;
+
+      const startPiper = async (narration: string) => {
+        player.load(splitIntoParagraphs(narration));
+        // Track playback start (only once per session)
+        if (!hasTrackedPlaybackRef.current) {
+          trackNarrationPlaybackStarted(settings.provider);
+          hasTrackedPlaybackRef.current = true;
+        }
+        await player.play();
+      };
+      if (narrationText) await startPiper(narrationText);
+      else await loadNarration(startPiper);
       return;
     }
 
-    // Handle browser voices (existing logic)
-    if (!narratorRef.current) return;
-
     const narrator = narratorRef.current;
+    if (!narrator) return;
 
-    // If paused, just resume
     if (state.status === "paused") {
       narrator.resume();
       return;
     }
-
-    // If already playing, do nothing
     if (state.status === "playing") return;
 
-    // If we already have narration text loaded, just play
-    if (narrationText && state.totalParagraphs > 0) {
-      // Get the voice if we have a preference
-      let voice: SpeechSynthesisVoice | undefined;
-      if (settings.voiceId) {
-        const foundVoice = findVoiceByUri(settings.voiceId);
-        if (foundVoice) {
-          voice = foundVoice;
-        }
-      }
-      narrator.play(voice, settings.rate, settings.pitch);
-      // Track playback start with the current provider
+    const startBrowser = () => {
+      const voice = settings.voiceId ? findVoiceByUri(settings.voiceId) : null;
+      narrator.play(voice ?? undefined, settings.rate, settings.pitch);
       trackNarrationPlaybackStarted(settings.provider);
+    };
+    if (narrationText && state.totalParagraphs > 0) {
+      startBrowser();
       return;
     }
-
-    // Need to generate narration
-    setIsLoading(true);
-    setState((prev) => ({ ...prev, status: "loading" }));
-
-    try {
-      let narration: string;
-      let processedHtmlResult: string | null = null;
-
-      // If LLM normalization is disabled and we have content, process client-side
-      if (!settings.useLlmNormalization && content) {
-        const clientResult = htmlToClientNarration(content);
-        narration = clientResult.narrationText;
-        processedHtmlResult = clientResult.processedHtml;
-        // Store the paragraph map for index translation during highlighting
-        paragraphMapRef.current = clientResult.paragraphMap;
-      } else {
-        // Call server for LLM processing
-        const result = await generateMutation.mutateAsync({
-          id,
-          useLlmNormalization: settings.useLlmNormalization,
-          showFullContent: showFullContent ?? false,
-          showOriginal: showOriginal ?? false,
-        });
-        narration = result.narration;
-        // Store the paragraph map from server for index translation during highlighting
-        paragraphMapRef.current = result.paragraphMap;
-      }
-
-      if (narration) {
-        setNarrationText(narration);
-        setProcessedHtml(processedHtmlResult);
-        narrator.loadArticle(narration);
-
-        // Wait for voices and get preferred voice
-        await waitForVoices();
-        let voice: SpeechSynthesisVoice | undefined;
-        if (settings.voiceId) {
-          const foundVoice = findVoiceByUri(settings.voiceId);
-          if (foundVoice) {
-            voice = foundVoice;
-          }
-        }
-
-        // Start playback
-        narrator.play(voice, settings.rate, settings.pitch);
-        // Track playback start with the current provider
-        trackNarrationPlaybackStarted(settings.provider);
-      } else {
-        // Nothing to narrate — release the primed media-session audio.
-        stopMediaSessionAudio();
-      }
-    } catch (error) {
-      console.error("Failed to generate narration:", error);
-      setState((prev) => ({ ...prev, status: "idle" }));
-      // Release the media-session audio primed within the play() gesture.
-      stopMediaSessionAudio();
-    } finally {
-      setIsLoading(false);
-    }
+    await loadNarration(async (narration) => {
+      narrator.loadArticle(narration);
+      await waitForVoices();
+      startBrowser();
+    });
   }, [
     isSupported,
     usePiper,
@@ -432,58 +344,22 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     getOrCreateStreamingPlayer,
   ]);
 
-  /**
-   * Pause playback.
-   */
   const pause = useCallback(() => {
     if (!isSupported) return;
-
-    if (usePiper) {
-      const player = streamingPlayerRef.current;
-      if (player) {
-        player.pause();
-      }
-      return;
-    }
-
-    if (!narratorRef.current) return;
-    narratorRef.current.pause();
+    if (usePiper) streamingPlayerRef.current?.pause();
+    else narratorRef.current?.pause();
   }, [isSupported, usePiper]);
 
-  /**
-   * Skip to the next paragraph.
-   */
   const skipForward = useCallback(async () => {
     if (!isSupported) return;
-
-    if (usePiper) {
-      const player = streamingPlayerRef.current;
-      if (player) {
-        await player.skipForward();
-      }
-      return;
-    }
-
-    if (!narratorRef.current) return;
-    narratorRef.current.skipForward();
+    if (usePiper) await streamingPlayerRef.current?.skipForward();
+    else narratorRef.current?.skipForward();
   }, [isSupported, usePiper]);
 
-  /**
-   * Skip to the previous paragraph.
-   */
   const skipBackward = useCallback(async () => {
     if (!isSupported) return;
-
-    if (usePiper) {
-      const player = streamingPlayerRef.current;
-      if (player) {
-        await player.skipBackward();
-      }
-      return;
-    }
-
-    if (!narratorRef.current) return;
-    narratorRef.current.skipBackward();
+    if (usePiper) await streamingPlayerRef.current?.skipBackward();
+    else narratorRef.current?.skipBackward();
   }, [isSupported, usePiper]);
 
   const playFromElement = useCallback(
@@ -513,17 +389,8 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
    */
   const stop = useCallback(() => {
     if (!isSupported) return;
-
-    if (usePiper) {
-      const player = streamingPlayerRef.current;
-      if (player) {
-        player.stop();
-      }
-      return;
-    }
-
-    if (!narratorRef.current) return;
-    narratorRef.current.stop();
+    if (usePiper) streamingPlayerRef.current?.stop();
+    else narratorRef.current?.stop();
   }, [isSupported, usePiper]);
 
   // Reset narration state when the article, voice, or displayed content variant
@@ -540,36 +407,22 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     setNarrationText(null);
   }
 
-  // Clear audio cache and refs when the article, voice, or displayed content
-  // variant changes
+  // Reset per-article refs, and stop/clear playback when the article, voice, or
+  // displayed content variant changes (or on unmount).
   useEffect(() => {
-    // Stop the Web Speech utterance too, not just the streaming player: toggling
-    // the content variant does not remount this hook (EntryContent is keyed only
-    // by the entry id), so without this the browser voice keeps reading the old
-    // variant while the paragraph map below is cleared out from under it.
-    narratorRef.current?.stop();
-    // Stop and clear the streaming player
-    if (streamingPlayerRef.current) {
-      streamingPlayerRef.current.stop();
-      streamingPlayerRef.current.clearCache();
-    }
-    // Reset playback tracking
     hasTrackedPlaybackRef.current = false;
-    // Clear paragraph map (it's specific to the previous article/variant)
+    // The paragraph map is specific to the previous article/variant
     paragraphMapRef.current = [];
-  }, [id, settings.voiceId, showFullContent, showOriginal]);
-
-  // Clean up on unmount
-  useEffect(() => {
     return () => {
+      // Stop the Web Speech utterance too, not just the streaming player: toggling
+      // the content variant does not remount this hook (EntryContent is keyed only
+      // by the entry id), so without this the browser voice keeps reading the old
+      // variant while the paragraph map is cleared out from under it.
       narratorRef.current?.stop();
-      // Stop streaming player if it's playing
-      if (streamingPlayerRef.current) {
-        streamingPlayerRef.current.stop();
-        streamingPlayerRef.current.clearCache();
-      }
+      streamingPlayerRef.current?.stop();
+      streamingPlayerRef.current?.clearCache();
     };
-  }, []);
+  }, [id, settings.voiceId, showFullContent, showOriginal]);
 
   // Expose OS-level media controls (lock screen, notification, Bluetooth/media
   // keys) while narration is active. Works for both browser voices and Piper by

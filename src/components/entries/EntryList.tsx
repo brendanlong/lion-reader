@@ -182,7 +182,7 @@ export function EntryList({
       {isFetchingNextPage && <EntryListLoadingMore label="Loading more entries..." />}
 
       {/* End of list indicator */}
-      {!hasNextPage && <EntryListEnd message="No more entries" />}
+      {!hasNextPage && <EntryListEnd />}
     </div>
   );
 }

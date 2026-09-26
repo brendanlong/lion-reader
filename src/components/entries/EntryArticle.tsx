@@ -8,7 +8,7 @@
  */
 
 import { type ReactNode, type CSSProperties, type RefObject } from "react";
-import { ExternalLinkIcon } from "@/components/ui/icons";
+import { ArrowLeftIcon, ExternalLinkIcon } from "@/components/ui/icons";
 import { LocalTime } from "@/components/ui/local-time";
 import { getDomain } from "@/lib/format";
 import { formatDate } from "./EntryContentHelpers";
@@ -51,9 +51,9 @@ export interface EntryArticleProps {
   isContentLoading?: boolean;
   /** Ref for the content container (for highlighting, image prefetch) */
   contentRef?: RefObject<HTMLDivElement | null>;
+  /** Shows a "Back to list" button calling this */
+  onBack?: () => void;
   // Slots for interactive client components
-  /** Back button slot (has onClick) */
-  backButton?: ReactNode;
   /** Action buttons slot (star, read, narration, summarize buttons) */
   actionButtons?: ReactNode;
   /** Content inserted before the main article content (e.g., summary card, narration highlight styles) */
@@ -86,7 +86,7 @@ export function EntryArticle({
   unsubscribeUrl,
   isContentLoading,
   contentRef,
-  backButton,
+  onBack,
   actionButtons,
   beforeContent,
   afterContent,
@@ -105,8 +105,15 @@ export function EntryArticle({
       onTouchEnd={onTouchEnd}
       onTouchCancel={onTouchCancel}
     >
-      {/* Back button slot */}
-      {backButton}
+      {onBack && (
+        <button
+          onClick={onBack}
+          className="control-outline ui-text-sm text-muted hover:bg-surface-muted hover:text-body mb-4 -ml-2 inline-flex min-h-[44px] items-center gap-2 rounded-md px-2 transition-colors active:bg-zinc-200 sm:mb-6 dark:active:bg-zinc-700"
+        >
+          <ArrowLeftIcon className="h-4 w-4" />
+          <span>Back to list</span>
+        </button>
+      )}
 
       {/* Header */}
       <header className="mb-6 sm:mb-8">

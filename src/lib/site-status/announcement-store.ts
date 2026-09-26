@@ -6,7 +6,7 @@
  * `announcement_changed` events lives deeper inside the same app. This
  * module-level store bridges the two — the SSE handler writes here, the banner
  * subscribes via useSyncExternalStore — with no shared React context needed
- * (same pattern as `useSidebarUnreadOnly`).
+ * (same pattern as `createStoredBoolean`).
  *
  * The snapshot is tri-state:
  * - `undefined` — no live update has arrived; the banner uses its SSR prop.

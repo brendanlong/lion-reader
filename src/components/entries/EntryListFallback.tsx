@@ -31,8 +31,6 @@ interface EntryListFilters {
 interface EntryListFallbackProps {
   /** Filters for finding matching cached data */
   filters: EntryListFilters;
-  /** Number of skeleton items if no placeholder data */
-  skeletonCount?: number;
   /** Callback when entry is clicked (disabled during fallback) */
   onEntryClick?: (entryId: string) => void;
 }
@@ -46,11 +44,7 @@ interface EntryListFallbackProps {
  *
  * If no cached data matches, renders a skeleton.
  */
-export function EntryListFallback({
-  filters,
-  skeletonCount = 5,
-  onEntryClick,
-}: EntryListFallbackProps) {
+export function EntryListFallback({ filters, onEntryClick }: EntryListFallbackProps) {
   const queryClient = useQueryClient();
   const {
     settings: { listDensity },
@@ -62,7 +56,7 @@ export function EntryListFallback({
 
   // No cached data - show skeleton
   if (!placeholderData || placeholderData.pages[0]?.items.length === 0) {
-    return <EntryListSkeleton count={skeletonCount} density={listDensity} />;
+    return <EntryListSkeleton density={listDensity} />;
   }
 
   // Show cached entries with a subtle loading indicator
