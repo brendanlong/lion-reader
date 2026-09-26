@@ -215,27 +215,10 @@ export type FeedEvent = z.infer<typeof feedEventSchema>;
 /** Union type for all user events. */
 export type UserEvent = z.infer<typeof userEventSchema>;
 
-// Individual feed event types (used by publish functions)
-type NewEntryEvent = Extract<FeedEvent, { type: "new_entry" }>;
-type EntryUpdatedEvent = Extract<FeedEvent, { type: "entry_updated" }>;
-
 // Sub-types derived from shared schemas
 export type EntryUpdatedMetadata = z.infer<typeof entryMetadataSchema>;
 export type SubscriptionCreatedEventSubscription = z.infer<typeof subscriptionCreatedDataSchema>;
 export type SubscriptionCreatedEventFeed = z.infer<typeof feedCreatedDataSchema>;
-
-// Individual user event types (used by publish functions)
-type SubscriptionCreatedEvent = Extract<UserEvent, { type: "subscription_created" }>;
-type SubscriptionUpdatedEvent = Extract<UserEvent, { type: "subscription_updated" }>;
-type SubscriptionDeletedEvent = Extract<UserEvent, { type: "subscription_deleted" }>;
-type ImportProgressEvent = Extract<UserEvent, { type: "import_progress" }>;
-type ImportCompletedEvent = Extract<UserEvent, { type: "import_completed" }>;
-type EntryStateChangedEvent = Extract<UserEvent, { type: "entry_state_changed" }>;
-type MarkAllReadEvent = Extract<UserEvent, { type: "mark_all_read" }>;
-type TagCreatedEvent = Extract<UserEvent, { type: "tag_created" }>;
-type TagUpdatedEvent = Extract<UserEvent, { type: "tag_updated" }>;
-type TagDeletedEvent = Extract<UserEvent, { type: "tag_deleted" }>;
-type SavedFeedCreatedEvent = Extract<UserEvent, { type: "saved_feed_created" }>;
 
 /**
  * Returns the channel name for feed-specific events.
@@ -378,7 +361,7 @@ export async function publishNewEntry(
   feedType: "web" | "email" | "saved",
   entry: NewEntryListData | undefined
 ): Promise<number> {
-  const event: NewEntryEvent = {
+  return publishFeedEvent({
     type: "new_entry",
     feedId,
     entryId,
@@ -386,8 +369,7 @@ export async function publishNewEntry(
     updatedAt: updatedAt.toISOString(),
     feedType,
     ...(entry ? { entry } : {}),
-  };
-  return publishFeedEvent(event);
+  });
 }
 
 /**
@@ -405,15 +387,14 @@ async function publishEntryUpdated(
   updatedAt: Date,
   metadata: EntryUpdatedMetadata
 ): Promise<number> {
-  const event: EntryUpdatedEvent = {
+  return publishFeedEvent({
     type: "entry_updated",
     feedId,
     entryId,
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
     metadata,
-  };
-  return publishFeedEvent(event);
+  });
 }
 
 /**
@@ -474,7 +455,7 @@ export async function publishSubscriptionCreated(
   feed: SubscriptionCreatedEventFeed,
   counts?: z.infer<typeof unreadCountsSchema>
 ): Promise<number> {
-  const event: SubscriptionCreatedEvent = {
+  return publishUserEvent({
     type: "subscription_created",
     userId,
     feedId,
@@ -484,8 +465,7 @@ export async function publishSubscriptionCreated(
     subscription,
     feed,
     counts,
-  };
-  return publishUserEvent(event);
+  });
 }
 
 /**
@@ -507,7 +487,7 @@ export async function publishSubscriptionDeleted(
   updatedAt: Date,
   counts?: z.infer<typeof unreadCountsSchema>
 ): Promise<number> {
-  const event: SubscriptionDeletedEvent = {
+  return publishUserEvent({
     type: "subscription_deleted",
     userId,
     feedId,
@@ -515,8 +495,7 @@ export async function publishSubscriptionDeleted(
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
     counts,
-  };
-  return publishUserEvent(event);
+  });
 }
 
 /**
@@ -537,7 +516,7 @@ export async function publishSubscriptionUpdated(
   tags: Array<{ id: string; name: string; color: string | null }>,
   customTitle: string | null
 ): Promise<number> {
-  const event: SubscriptionUpdatedEvent = {
+  return publishUserEvent({
     type: "subscription_updated",
     userId,
     subscriptionId,
@@ -545,8 +524,7 @@ export async function publishSubscriptionUpdated(
     customTitle,
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
-  };
-  return publishUserEvent(event);
+  });
 }
 
 /**
@@ -562,7 +540,7 @@ export async function publishImportProgress(
   feedStatus: "imported" | "skipped" | "failed",
   counts: { imported: number; skipped: number; failed: number; total: number }
 ): Promise<number> {
-  const event: ImportProgressEvent = {
+  return publishUserEvent({
     type: "import_progress",
     userId,
     importId,
@@ -573,8 +551,7 @@ export async function publishImportProgress(
     failed: counts.failed,
     total: counts.total,
     timestamp: new Date().toISOString(),
-  };
-  return publishUserEvent(event);
+  });
 }
 
 /**
@@ -588,7 +565,7 @@ export async function publishImportCompleted(
   importId: string,
   counts: { imported: number; skipped: number; failed: number; total: number }
 ): Promise<number> {
-  const event: ImportCompletedEvent = {
+  return publishUserEvent({
     type: "import_completed",
     userId,
     importId,
@@ -597,8 +574,7 @@ export async function publishImportCompleted(
     failed: counts.failed,
     total: counts.total,
     timestamp: new Date().toISOString(),
-  };
-  return publishUserEvent(event);
+  });
 }
 
 /**
@@ -635,7 +611,7 @@ export async function publishEntryStateChanged(
   counts: z.infer<typeof unreadCountsSchema>,
   listData?: EntryStateListData
 ): Promise<number> {
-  const event: EntryStateChangedEvent = {
+  return publishUserEvent({
     type: "entry_state_changed",
     userId,
     entryId,
@@ -645,8 +621,7 @@ export async function publishEntryStateChanged(
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
     ...(listData ?? {}),
-  };
-  return publishUserEvent(event);
+  });
 }
 
 /**
@@ -673,14 +648,13 @@ export async function publishMarkAllRead(
   updatedAt: Date,
   maxEntryId: string
 ): Promise<number> {
-  const event: MarkAllReadEvent = {
+  return publishUserEvent({
     type: "mark_all_read",
     userId,
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
     entryId: maxEntryId,
-  };
-  return publishUserEvent(event);
+  });
 }
 
 /**
@@ -696,14 +670,13 @@ export async function publishTagCreated(
   tag: { id: string; name: string; color: string | null },
   updatedAt: Date
 ): Promise<number> {
-  const event: TagCreatedEvent = {
+  return publishUserEvent({
     type: "tag_created",
     userId,
     tag,
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
-  };
-  return publishUserEvent(event);
+  });
 }
 
 /**
@@ -719,14 +692,13 @@ export async function publishTagUpdated(
   tag: { id: string; name: string; color: string | null },
   updatedAt: Date
 ): Promise<number> {
-  const event: TagUpdatedEvent = {
+  return publishUserEvent({
     type: "tag_updated",
     userId,
     tag,
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
-  };
-  return publishUserEvent(event);
+  });
 }
 
 /**
@@ -742,14 +714,13 @@ export async function publishTagDeleted(
   tagId: string,
   updatedAt: Date
 ): Promise<number> {
-  const event: TagDeletedEvent = {
+  return publishUserEvent({
     type: "tag_deleted",
     userId,
     tagId,
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
-  };
-  return publishUserEvent(event);
+  });
 }
 
 /**
@@ -763,13 +734,12 @@ export async function publishTagDeleted(
  * @returns The number of subscribers that received the message (0 if Redis unavailable)
  */
 export async function publishSavedFeedCreated(userId: string, feedId: string): Promise<number> {
-  const event: SavedFeedCreatedEvent = {
+  return publishUserEvent({
     type: "saved_feed_created",
     userId,
     feedId,
     timestamp: new Date().toISOString(),
-  };
-  return publishUserEvent(event);
+  });
 }
 
 /**
@@ -782,12 +752,11 @@ export async function publishSavedFeedCreated(userId: string, feedId: string): P
 export async function publishAnnouncementChanged(
   announcement: Announcement | null
 ): Promise<number> {
-  const event: SiteStatusEvent = {
+  return publishSiteStatusEvent({
     type: "announcement_changed",
     announcement,
     timestamp: new Date().toISOString(),
-  };
-  return publishSiteStatusEvent(event);
+  });
 }
 
 // ============================================================================
@@ -981,50 +950,21 @@ export function createPubSubSubscription(
   };
 }
 
-/**
- * Parses a JSON message from the feed events channel.
- *
- * @param message - The JSON string message from Redis
- * @returns The parsed FeedEvent or null if parsing fails
- */
-export function parseFeedEvent(message: string): FeedEvent | null {
-  try {
-    const result = feedEventSchema.safeParse(JSON.parse(message));
-    return result.success ? result.data : null;
-  } catch {
-    return null;
-  }
+/** Builds a parser for one channel's JSON messages; returns null for anything malformed. */
+function eventParser<T>(schema: z.ZodType<T>): (message: string) => T | null {
+  return (message) => {
+    try {
+      const result = schema.safeParse(JSON.parse(message));
+      return result.success ? result.data : null;
+    } catch {
+      return null;
+    }
+  };
 }
 
-/**
- * Parses a JSON message from a user events channel.
- *
- * @param message - The JSON string message from Redis
- * @returns The parsed UserEvent or null if parsing fails
- */
-export function parseUserEvent(message: string): UserEvent | null {
-  try {
-    const result = userEventSchema.safeParse(JSON.parse(message));
-    return result.success ? result.data : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Parses a JSON message from the global site-status channel.
- *
- * @param message - The JSON string message from Redis
- * @returns The parsed SiteStatusEvent or null if parsing fails
- */
-export function parseSiteStatusEvent(message: string): SiteStatusEvent | null {
-  try {
-    const result = siteStatusEventSchema.safeParse(JSON.parse(message));
-    return result.success ? result.data : null;
-  } catch {
-    return null;
-  }
-}
+export const parseFeedEvent = eventParser(feedEventSchema);
+export const parseUserEvent = eventParser(userEventSchema);
+export const parseSiteStatusEvent = eventParser(siteStatusEventSchema);
 
 /**
  * Checks if Redis is available and responding.
