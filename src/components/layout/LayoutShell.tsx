@@ -1,47 +1,40 @@
 /**
- * LayoutShell Component (SSR-safe)
+ * LayoutShell Component
  *
- * Pure structural layout component extracted from AppLayoutContent.
- * No "use client" directive - SSR-compatible.
- * Interactive elements (overlay clicks, menu buttons) are passed as slots.
+ * The reader's structural layout shared by the app and the public demo: the
+ * sidebar (with its mobile open/close state) and the header. Callers supply
+ * the header's right side and the main content.
  */
 
-import { type ReactNode } from "react";
-import { ClientLink } from "@/components/ui/client-link";
+"use client";
 
-export interface LayoutShellProps {
-  /** Whether the mobile sidebar is open */
-  sidebarOpen: boolean;
-  /** The href for the sidebar title link (e.g., "/all" or "/?view=all") */
-  sidebarTitleHref?: string;
-  /** The sidebar content (navigation, feed list, etc.) */
-  sidebarContent: ReactNode;
-  /** Mobile sidebar overlay (backdrop with onClick to close) */
-  sidebarOverlay?: ReactNode;
-  /** Close button inside sidebar header (has onClick) */
-  sidebarCloseButton?: ReactNode;
-  /** Hamburger menu button for mobile (has onClick) */
-  mobileMenuButton?: ReactNode;
+import { useState, type ReactNode } from "react";
+import { ClientLink } from "@/components/ui/client-link";
+import { CloseIcon, MenuIcon } from "@/components/ui/icons";
+import { Sidebar } from "@/components/layout/Sidebar";
+
+const CONTROL_BUTTON_CLASS =
+  "control-outline text-muted hover:bg-surface-muted flex h-10 w-10 items-center justify-center rounded-md active:bg-zinc-200 lg:hidden dark:active:bg-zinc-700";
+
+interface LayoutShellProps {
   /** Right side of the header (subscribe + user menu, or sign up/sign in) */
   headerRight: ReactNode;
   /** Main content area */
   children: ReactNode;
 }
 
-export function LayoutShell({
-  sidebarOpen,
-  sidebarTitleHref = "/all",
-  sidebarContent,
-  sidebarOverlay,
-  sidebarCloseButton,
-  mobileMenuButton,
-  headerRight,
-  children,
-}: LayoutShellProps) {
+export function LayoutShell({ headerRight, children }: LayoutShellProps) {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
   return (
     <div className="bg-canvas flex h-screen">
       {/* Mobile sidebar overlay */}
-      {sidebarOpen && sidebarOverlay}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
 
       {/* Sidebar */}
       <aside
@@ -51,22 +44,35 @@ export function LayoutShell({
       >
         {/* Sidebar header */}
         <div className="border-edge flex h-14 items-center justify-between border-b px-4">
-          <ClientLink href={sidebarTitleHref} className="ui-text-lg text-body font-semibold">
+          <ClientLink href="/all" className="ui-text-lg text-body font-semibold">
             Lion Reader
           </ClientLink>
-          {sidebarCloseButton}
+          <button
+            onClick={() => setSidebarOpen(false)}
+            className={CONTROL_BUTTON_CLASS}
+            aria-label="Close navigation menu"
+          >
+            <CloseIcon className="h-5 w-5" />
+          </button>
         </div>
 
         {/* Sidebar content */}
-        <div className="h-[calc(100%-3.5rem)]">{sidebarContent}</div>
+        <div className="h-[calc(100%-3.5rem)]">
+          <Sidebar onClose={() => setSidebarOpen(false)} />
+        </div>
       </aside>
 
       {/* Main content area */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Header */}
         <header className="border-edge bg-surface flex h-14 items-center justify-between border-b px-4">
-          {/* Mobile menu button */}
-          {mobileMenuButton}
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className={CONTROL_BUTTON_CLASS}
+            aria-label="Open navigation menu"
+          >
+            <MenuIcon className="h-5 w-5" />
+          </button>
 
           {/* Spacer for desktop */}
           <div className="hidden lg:block" />

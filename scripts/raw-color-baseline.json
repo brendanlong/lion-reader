@@ -1,6 +1,5 @@
 [
   "src/app/(public)/demo/DemoApp.tsx\tactive:bg-zinc-100",
-  "src/app/(public)/demo/DemoApp.tsx\tactive:bg-zinc-200",
   "src/app/(public)/demo/DemoApp.tsx\tdark:active:bg-zinc-700",
   "src/app/(spa)/(app)/AppLayoutContent.tsx\tactive:bg-zinc-100",
   "src/app/(spa)/(app)/AppLayoutContent.tsx\tactive:bg-zinc-200",
@@ -44,6 +43,8 @@
   "src/components/feeds/EditSubscriptionDialog.tsx\thover:bg-zinc-50",
   "src/components/feeds/EditSubscriptionDialog.tsx\thover:border-zinc-400",
   "src/components/feeds/FileFeedIssueDialog.tsx\tdark:bg-zinc-800",
+  "src/components/layout/LayoutShell.tsx\tactive:bg-zinc-200",
+  "src/components/layout/LayoutShell.tsx\tdark:active:bg-zinc-700",
   "src/components/narration/EnhancedVoiceList.tsx\tbg-zinc-50",
   "src/components/narration/EnhancedVoiceList.tsx\tborder-zinc-400",
   "src/components/narration/EnhancedVoiceList.tsx\tdark:bg-zinc-800",
