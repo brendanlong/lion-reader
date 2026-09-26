@@ -47,15 +47,12 @@ interface InfiniteData {
  *
  * @param queryClient - React Query client for cache access
  * @param entryIds - Entry IDs to update
- * @param updates - Fields to update (read, starred)
+ * @param updates - Fields to update
  */
 export function updateEntriesInListCache(
   queryClient: QueryClient,
   entryIds: string[],
-  updates: Partial<{
-    read: boolean;
-    starred: boolean;
-  }>
+  updates: Partial<EntryListItem>
 ): void {
   const entryIdSet = new Set(entryIds);
 
@@ -236,6 +233,19 @@ function shouldUpdateEntryListCache(
 }
 
 /**
+ * Patches the cached entries.get data for one entry (no-op when uncached).
+ */
+export function patchEntryGet(
+  utils: TRPCClientUtils,
+  entryId: string,
+  patch: Partial<EntryListItem>
+): void {
+  utils.entries.get.setData({ id: entryId }, (oldData) =>
+    oldData ? { ...oldData, entry: { ...oldData.entry, ...patch } } : oldData
+  );
+}
+
+/**
  * Updates read status for entries in caches.
  * Updates both entries.get (single entry) and entries.list (all lists) caches.
  * Does NOT invalidate/refetch - entries stay visible until navigation.
@@ -246,37 +256,26 @@ function shouldUpdateEntryListCache(
  * @param utils - tRPC utils for cache access
  * @param entryIds - Entry IDs to update
  * @param read - New read status
- * @param queryClient - React Query client (optional, needed for list cache updates)
+ * @param queryClient - React Query client for list cache updates
  */
 export function updateEntriesReadStatus(
   utils: TRPCClientUtils,
   entryIds: string[],
   read: boolean,
-  queryClient?: QueryClient
+  queryClient: QueryClient
 ): void {
-  // Update individual entries.get caches - these are keyed by entry ID
   for (const entryId of entryIds) {
-    utils.entries.get.setData({ id: entryId }, (oldData) => {
-      if (!oldData) return oldData;
-      return {
-        ...oldData,
-        entry: { ...oldData.entry, read },
-      };
-    });
+    patchEntryGet(utils, entryId, { read });
   }
+  updateEntriesInListCache(queryClient, entryIds, { read });
 
-  // Update entries in all cached list queries (if queryClient provided)
-  if (queryClient) {
-    updateEntriesInListCache(queryClient, entryIds, { read });
-
-    // An entry that just became unread belongs in unreadOnly caches that were
-    // fetched while it was read and so don't contain it (e.g. mark-unread in
-    // "Show All", then toggle back to "Unread only" — the toggle switches
-    // query keys without a refetch). The in-place update above can't add
-    // rows, so insert from another cache's copy of the entry.
-    if (!read) {
-      restoreUnreadEntriesToListCaches(queryClient, entryIds);
-    }
+  // An entry that just became unread belongs in unreadOnly caches that were
+  // fetched while it was read and so don't contain it (e.g. mark-unread in
+  // "Show All", then toggle back to "Unread only" — the toggle switches
+  // query keys without a refetch). The in-place update above can't add
+  // rows, so insert from another cache's copy of the entry.
+  if (!read) {
+    restoreUnreadEntriesToListCaches(queryClient, entryIds);
   }
 }
 
@@ -303,37 +302,6 @@ export function restoreUnreadEntriesToListCaches(
     if (item) {
       insertEntryIntoListCaches(queryClient, { ...item, read: false });
     }
-  }
-}
-
-/**
- * Updates starred status for an entry in caches.
- * Updates both entries.get (single entry) and entries.list (all lists) caches.
- * Does NOT invalidate/refetch - entries stay visible until navigation.
- *
- * @param utils - tRPC utils for cache access
- * @param entryId - Entry ID to update
- * @param starred - New starred status
- * @param queryClient - React Query client (optional, needed for list cache updates)
- */
-export function updateEntryStarredStatus(
-  utils: TRPCClientUtils,
-  entryId: string,
-  starred: boolean,
-  queryClient?: QueryClient
-): void {
-  // Update entries.get cache
-  utils.entries.get.setData({ id: entryId }, (oldData) => {
-    if (!oldData) return oldData;
-    return {
-      ...oldData,
-      entry: { ...oldData.entry, starred },
-    };
-  });
-
-  // Update entries in all cached list queries (if queryClient provided)
-  if (queryClient) {
-    updateEntriesInListCache(queryClient, [entryId], { starred });
   }
 }
 
@@ -373,13 +341,7 @@ export function updateEntryState(
   entryId: string,
   state: Partial<{ read: boolean; starred: boolean }>
 ): void {
-  utils.entries.get.setData({ id: entryId }, (oldData) => {
-    if (!oldData) return oldData;
-    return {
-      ...oldData,
-      entry: { ...oldData.entry, ...state },
-    };
-  });
+  patchEntryGet(utils, entryId, state);
   updateEntriesInListCache(queryClient, [entryId], state);
   if (state.read === false) {
     restoreUnreadEntriesToListCaches(queryClient, [entryId]);
@@ -387,76 +349,18 @@ export function updateEntryState(
 }
 
 /**
- * Entry metadata that can be updated from SSE events.
- */
-export interface EntryMetadataUpdate {
-  title?: string | null;
-  author?: string | null;
-  summary?: string | null;
-  url?: string | null;
-  publishedAt?: Date | null;
-}
-
-/**
- * Updates entry metadata in caches.
- * Updates both entries.get (single entry) and entries.list (all lists) caches.
- * Used when entry content changes (e.g., feed refetch, saved article refresh).
- *
- * @param utils - tRPC utils for cache access
- * @param entryId - Entry ID to update
- * @param metadata - New metadata values
- * @param queryClient - React Query client (optional, needed for list cache updates)
+ * Updates entry metadata (title, author, summary, url, publishedAt) in
+ * entries.get and every entry list. Used when entry content changes (e.g.,
+ * feed refetch, saved article refresh).
  */
 export function updateEntryMetadataInCache(
   utils: TRPCClientUtils,
+  queryClient: QueryClient,
   entryId: string,
-  metadata: EntryMetadataUpdate,
-  queryClient?: QueryClient
+  metadata: Pick<EntryListItem, "title" | "author" | "summary" | "url" | "publishedAt">
 ): void {
-  // Update entries.get cache
-  utils.entries.get.setData({ id: entryId }, (oldData) => {
-    if (!oldData) return oldData;
-    return {
-      ...oldData,
-      entry: {
-        ...oldData.entry,
-        ...(metadata.title !== undefined && { title: metadata.title }),
-        ...(metadata.author !== undefined && { author: metadata.author }),
-        ...(metadata.summary !== undefined && { summary: metadata.summary }),
-        ...(metadata.url !== undefined && { url: metadata.url }),
-        ...(metadata.publishedAt !== undefined && { publishedAt: metadata.publishedAt }),
-      },
-    };
-  });
-
-  // Update entries in all cached list queries (if queryClient provided)
-  if (queryClient) {
-    const updates: Partial<CachedListEntry> = {};
-    if (metadata.title !== undefined) updates.title = metadata.title;
-    if (metadata.author !== undefined) updates.author = metadata.author;
-    if (metadata.summary !== undefined) updates.summary = metadata.summary;
-    if (metadata.url !== undefined) updates.url = metadata.url;
-    if (metadata.publishedAt !== undefined) updates.publishedAt = metadata.publishedAt;
-
-    if (Object.keys(updates).length > 0) {
-      queryClient.setQueriesData<InfiniteData>({ queryKey: [["entries", "list"]] }, (oldData) => {
-        if (!oldData?.pages) return oldData;
-
-        return {
-          ...oldData,
-          pages: oldData.pages.map((page) => ({
-            ...page,
-            items: page.items.map((entry) => {
-              if (entry.id === entryId) {
-                return { ...entry, ...updates };
-              }
-              return entry;
-            }),
-          })),
-        };
-      });
-    }
-  }
+  patchEntryGet(utils, entryId, metadata);
+  updateEntriesInListCache(queryClient, [entryId], metadata);
 }
 
 /**

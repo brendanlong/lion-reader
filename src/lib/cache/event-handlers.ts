@@ -15,9 +15,11 @@ import {
 } from "./operations";
 import {
   insertEntryIntoListCaches,
+  patchEntryGet,
   restoreUnreadEntriesToListCaches,
   updateEntriesInListCache,
   updateEntryMetadataInCache,
+  type EntryListItem,
 } from "./entry-cache";
 import {
   applySyncTagChanges,
@@ -28,8 +30,35 @@ import {
 import { setLiveAnnouncement } from "@/lib/site-status/announcement-store";
 
 // Re-export SyncEvent type from the shared schema (single source of truth)
-import type { SyncEvent } from "@/lib/events/schemas";
+import type { NewEntryListData, SyncEvent } from "@/lib/events/schemas";
 export type { SyncEvent } from "@/lib/events/schemas";
+
+/** Builds the entries.list item for an event's list-item payload. */
+function toListItem(
+  event: { entryId: string; subscriptionId?: string | null; updatedAt: string },
+  feedId: string,
+  type: EntryListItem["type"],
+  entry: NewEntryListData,
+  state: { read: boolean; starred: boolean }
+): EntryListItem {
+  return {
+    id: event.entryId,
+    subscriptionId: event.subscriptionId ?? null,
+    feedId,
+    type,
+    url: entry.url,
+    title: entry.title,
+    author: entry.author,
+    summary: entry.summary,
+    publishedAt: entry.publishedAt ? new Date(entry.publishedAt) : null,
+    fetchedAt: new Date(entry.fetchedAt),
+    updatedAt: new Date(event.updatedAt),
+    read: state.read,
+    starred: state.starred,
+    feedTitle: entry.feedTitle,
+    siteName: entry.siteName,
+  };
+}
 
 // ============================================================================
 // Event Handler
@@ -68,55 +97,29 @@ export function handleSyncEvent(
       // another device while this client was offline); the live path omits
       // them because a brand-new entry is always unread/unstarred.
       if (event.entry && event.feedId) {
-        insertEntryIntoListCaches(queryClient, {
-          id: event.entryId,
-          subscriptionId: event.subscriptionId,
-          feedId: event.feedId,
-          type: event.feedType,
-          url: event.entry.url,
-          title: event.entry.title,
-          author: event.entry.author,
-          summary: event.entry.summary,
-          publishedAt: event.entry.publishedAt ? new Date(event.entry.publishedAt) : null,
-          fetchedAt: new Date(event.entry.fetchedAt),
-          updatedAt: new Date(event.updatedAt),
-          read: event.entry.read ?? false,
-          starred: event.entry.starred ?? false,
-          feedTitle: event.entry.feedTitle,
-          siteName: event.entry.siteName,
-        });
+        insertEntryIntoListCaches(
+          queryClient,
+          toListItem(event, event.feedId, event.feedType, event.entry, {
+            read: event.entry.read ?? false,
+            starred: event.entry.starred ?? false,
+          })
+        );
       }
       break;
 
     case "entry_updated":
       // Update entry metadata directly in caches
-      updateEntryMetadataInCache(
-        utils,
-        event.entryId,
-        {
-          title: event.metadata.title,
-          author: event.metadata.author,
-          summary: event.metadata.summary,
-          url: event.metadata.url,
-          publishedAt: event.metadata.publishedAt ? new Date(event.metadata.publishedAt) : null,
-        },
-        queryClient
-      );
+      updateEntryMetadataInCache(utils, queryClient, event.entryId, {
+        ...event.metadata,
+        publishedAt: event.metadata.publishedAt ? new Date(event.metadata.publishedAt) : null,
+      });
       break;
 
     case "entry_state_changed": {
       // Update entries.get and entries.list caches with new read/starred state
-      utils.entries.get.setData({ id: event.entryId }, (oldData) => {
-        if (!oldData) return oldData;
-        return {
-          ...oldData,
-          entry: { ...oldData.entry, read: event.read, starred: event.starred },
-        };
-      });
-      updateEntriesInListCache(queryClient, [event.entryId], {
-        read: event.read,
-        starred: event.starred,
-      });
+      const state = { read: event.read, starred: event.starred };
+      patchEntryGet(utils, event.entryId, state);
+      updateEntriesInListCache(queryClient, [event.entryId], state);
 
       // An entry that became unread (here or on another device) belongs in
       // unreadOnly caches that don't contain it (fetched while it was read);
@@ -128,23 +131,10 @@ export function handleSyncEvent(
       // a failed payload lookup) fall back to another cached list's copy.
       if (!event.read) {
         if (event.entry && event.feedId && event.feedType) {
-          insertEntryIntoListCaches(queryClient, {
-            id: event.entryId,
-            subscriptionId: event.subscriptionId ?? null,
-            feedId: event.feedId,
-            type: event.feedType,
-            url: event.entry.url,
-            title: event.entry.title,
-            author: event.entry.author,
-            summary: event.entry.summary,
-            publishedAt: event.entry.publishedAt ? new Date(event.entry.publishedAt) : null,
-            fetchedAt: new Date(event.entry.fetchedAt),
-            updatedAt: new Date(event.updatedAt),
-            read: event.read,
-            starred: event.starred,
-            feedTitle: event.entry.feedTitle,
-            siteName: event.entry.siteName,
-          });
+          insertEntryIntoListCaches(
+            queryClient,
+            toListItem(event, event.feedId, event.feedType, event.entry, state)
+          );
         } else {
           restoreUnreadEntriesToListCaches(queryClient, [event.entryId]);
         }

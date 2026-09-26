@@ -385,23 +385,9 @@ export function useKeyboardShortcuts(
     [selectPrevious, options.onNavigatePrevious, isEntryOpen, enabled]
   );
 
-  // o - open selected entry (only when entry is not open)
+  // o / Enter - open selected entry (only when entry is not open)
   useHotkeys(
-    "o",
-    (e) => {
-      e.preventDefault();
-      openSelected();
-    },
-    {
-      enabled: enabled && !isEntryOpen && !!effectiveSelectedEntryId,
-      enableOnFormTags: false,
-    },
-    [openSelected, isEntryOpen, effectiveSelectedEntryId, enabled]
-  );
-
-  // Enter - open selected entry (only when entry is not open)
-  useHotkeys(
-    "enter",
+    "o, enter",
     (e) => {
       e.preventDefault();
       openSelected();
