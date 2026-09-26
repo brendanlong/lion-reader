@@ -38,7 +38,7 @@ import { sanitizeEntryContentFamily } from "@/server/html/sanitize-entry";
 import { logger } from "@/lib/logger";
 import { publishNewEntry, publishEntryUpdatedFromEntry } from "@/server/redis/pubsub";
 import { toNewEntryListData } from "@/lib/events/schemas";
-import { errors } from "@/server/trpc/errors";
+import { errors, getAppErrorCode } from "@/server/trpc/errors";
 import { markEntriesRead } from "@/server/services/entries";
 import { publishMarkReadStateChanges } from "@/server/services/entry-events";
 import { pluginRegistry, claimFetchedPage } from "@/server/plugins";
@@ -577,16 +577,7 @@ const UPLOAD_SITE_NAMES: Record<SupportedFileType, string> = {
 };
 
 /** The derived fields an uploaded (null-URL) article is stored with. */
-interface UploadedArticleFields {
-  title: string | null;
-  author: string | null;
-  siteName: string | null;
-  contentOriginal: string;
-  contentCleaned: string | null;
-  summary: string | null;
-  imageUrl: string | null;
-  contentHash: string;
-}
+type UploadedArticleFields = Omit<BuiltArticleFields, "newTextContent">;
 
 /**
  * Insert a null-URL (uploaded) saved article from already-derived fields.
@@ -612,16 +603,9 @@ async function insertUploadedArticle(
   const guid = `uploaded:${generateUuidv7()}`;
 
   const saved = await insertSavedEntry(db, userId, savedFeedId, {
+    ...fields,
     guid,
     url: null,
-    title: fields.title,
-    author: fields.author,
-    contentOriginal: fields.contentOriginal,
-    contentCleaned: fields.contentCleaned,
-    summary: fields.summary,
-    siteName: fields.siteName,
-    imageUrl: fields.imageUrl,
-    contentHash: fields.contentHash,
   });
 
   if (!saved) {
@@ -818,45 +802,11 @@ async function urlIsDirectFeed(url: string, contentType: string): Promise<boolea
   }
 }
 
-/** True for errors created by errors.contentTooLarge. */
-function isContentTooLargeError(error: unknown): boolean {
-  return (
-    error instanceof TRPCError &&
-    typeof error.cause === "object" &&
-    error.cause !== null &&
-    (error.cause as { code?: unknown }).code === "CONTENT_TOO_LARGE"
-  );
-}
-
-interface AcquiredArticleContent {
-  /** Raw page/document HTML (stored as content_original). */
-  html: string;
-  /**
-   * The URL the content was actually fetched from (after redirects).
-   * Used for resolving relative URLs in the content.
-   */
-  contentUrl: string;
-  /** Content supplied by a plugin (incl. Google Docs); skips normal metadata sources. */
-  pluginContent: {
-    html: string;
-    title?: string | null;
-    author?: string | null;
-    /** Plugin-supplied excerpt (e.g. arXiv abstract page); preferred over Readability's. */
-    excerpt?: string | null;
-    siteName?: string;
-    skipReadability?: boolean;
-  } | null;
-  /**
-   * Pre-cleaned content whose Readability is skipped (Markdown frontmatter here);
-   * null for a normal HTML fetch. See {@link ArticleContentBundle.preCleanedContent}.
-   */
-  preCleanedContent: {
-    html: string;
-    title: string | null;
-    summary: string | null;
-    author: string | null;
-  } | null;
-}
+/**
+ * A fetched {@link ArticleContentBundle}: `contentUrl` is the URL the content was
+ * actually fetched from (after redirects), used for resolving relative URLs.
+ */
+type AcquiredArticleContent = Omit<ArticleContentBundle, "contentUrl"> & { contentUrl: string };
 
 /**
  * Acquire the article HTML for a save. Precedence: provided HTML > plugin
@@ -922,7 +872,7 @@ async function acquireArticleContent(
     } catch (error) {
       // A size-limit violation is a hard failure — surfacing it beats
       // silently degrading to a plain scrape of the same oversized page.
-      if (isContentTooLargeError(error)) {
+      if (getAppErrorCode(error) === "CONTENT_TOO_LARGE") {
         throw error;
       }
       // Rate limit errors should not fall back to a normal fetch — the same
@@ -1153,23 +1103,13 @@ export async function savedArticleExistsByUrl(
   return existing[0]?.id ?? null;
 }
 
-/**
- * Re-select an already-saved article for this (user, normalized URL) and shape
- * it into a {@link SaveArticleResult} with outcome `"existing"`, version-healing
- * the sanitized body off the event loop (raw content must not leave the service
- * layer). Returns null if no such row exists.
- *
- * Shared by {@link saveArticle}'s post-conflict idempotent return and
- * {@link savePlaceholderArticle}'s conflict fallback — both of which need the
- * existing row **without** triggering a refetch (savePlaceholderArticle must
- * not, since a placeholder now always refetches on the normal saveArticle path).
- */
-async function selectExistingSavedArticle(
+/** The saved (entry, user state) row for this (user, normalized URL), if any. */
+async function selectExistingSavedRow(
   db: typeof dbType,
   userId: string,
   savedFeedId: string,
   normalizedUrl: string
-): Promise<SaveArticleResult | null> {
+) {
   const [row] = await db
     .select({ entry: entries, userState: userEntries })
     .from(entries)
@@ -1182,12 +1122,18 @@ async function selectExistingSavedArticle(
       )
     )
     .limit(1);
-  if (!row) {
-    return null;
-  }
-  const { entry, userState } = row;
-  // Sanitize the stored raw body per read, offloading large bodies to the
-  // worker pool (matches the no-refetch path).
+  return row;
+}
+
+/**
+ * Shape an already-saved row into a {@link SaveArticleResult} with outcome
+ * `"existing"`, sanitizing the stored raw body per read off the event loop (raw
+ * content must not leave the service layer).
+ */
+async function toExistingSavedArticle({
+  entry,
+  userState,
+}: NonNullable<Awaited<ReturnType<typeof selectExistingSavedRow>>>): Promise<SaveArticleResult> {
   const { cleaned } = await sanitizeEntryContentFamily("content", {
     original: entry.contentOriginal,
     cleaned: entry.contentCleaned,
@@ -1208,6 +1154,23 @@ async function selectExistingSavedArticle(
   };
 }
 
+/**
+ * Re-select an already-saved article **without** triggering a refetch, for
+ * {@link saveArticle}'s post-conflict idempotent return and
+ * {@link savePlaceholderArticle}'s conflict fallback (which must not refetch,
+ * since a placeholder always refetches on the normal saveArticle path).
+ * Returns null if no such row exists.
+ */
+async function selectExistingSavedArticle(
+  db: typeof dbType,
+  userId: string,
+  savedFeedId: string,
+  normalizedUrl: string
+): Promise<SaveArticleResult | null> {
+  const row = await selectExistingSavedRow(db, userId, savedFeedId, normalizedUrl);
+  return row ? toExistingSavedArticle(row) : null;
+}
+
 export async function saveArticle(
   db: typeof dbType,
   userId: string,
@@ -1218,59 +1181,15 @@ export async function saveArticle(
   // Get or create the user's saved feed
   const savedFeedId = await getOrCreateSavedFeed(db, userId);
 
-  // Check if URL is already saved (guid = normalized URL for saved articles)
-  const existing = await db
-    .select({
-      entry: entries,
-      userState: userEntries,
-    })
-    .from(entries)
-    .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
-    .where(
-      and(
-        eq(entries.feedId, savedFeedId),
-        eq(entries.guid, normalizedUrl),
-        eq(userEntries.userId, userId)
-      )
-    )
-    .limit(1);
-
-  // Track existing entry for the refetch comparison
-  let existingEntry: (typeof existing)[0] | null = null;
-
-  if (existing.length > 0) {
-    // A placeholder (a failed-save stand-in, see savePlaceholderArticle) always
-    // refetches on re-save so a transiently-failed URL self-heals into the real
-    // article — even for the no-refetch callers (a plain Wallabag re-share, MCP
-    // save_article). A real saved article still returns instantly unless the
-    // caller opted into refetch. See #1256.
-    const isPlaceholder = existing[0].entry.isPlaceholder;
-    if (!params.refetch && !isPlaceholder) {
-      const { entry, userState } = existing[0];
-      // Sanitize the stored raw body per read, offloading large bodies to the
-      // worker pool so it doesn't block the event loop (raw content must not
-      // leave the service layer) — matching entries.get.
-      const { cleaned } = await sanitizeEntryContentFamily("content", {
-        original: entry.contentOriginal,
-        cleaned: entry.contentCleaned,
-      });
-      return {
-        id: entry.id,
-        url: entry.url!,
-        title: entry.title,
-        siteName: entry.siteName,
-        author: entry.author,
-        imageUrl: entry.imageUrl,
-        contentCleaned: cleaned,
-        excerpt: entry.summary,
-        read: userState.read,
-        starred: userState.starred,
-        savedAt: entry.fetchedAt,
-        outcome: "existing",
-      };
-    }
-    // refetch=true (or a placeholder): continue to fetch new content and compare
-    existingEntry = existing[0];
+  // Check if URL is already saved (guid = normalized URL for saved articles).
+  // A placeholder (a failed-save stand-in, see savePlaceholderArticle) always
+  // refetches on re-save so a transiently-failed URL self-heals into the real
+  // article — even for the no-refetch callers (a plain Wallabag re-share, MCP
+  // save_article). A real saved article still returns instantly unless the
+  // caller opted into refetch. See #1256.
+  const existingEntry = await selectExistingSavedRow(db, userId, savedFeedId, normalizedUrl);
+  if (existingEntry && !params.refetch && !existingEntry.entry.isPlaceholder) {
+    return toExistingSavedArticle(existingEntry);
   }
 
   const bundle = await acquireArticleContent(userId, params, normalizedUrl);

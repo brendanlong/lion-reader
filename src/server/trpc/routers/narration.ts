@@ -16,6 +16,7 @@ import { narrationContent } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { getOwnedEntryRawContent } from "@/server/services/entries";
 import {
+  buildFallbackNarration,
   generateNarration,
   htmlToNarrationInput,
   isNarrationLlmAvailable,
@@ -24,7 +25,6 @@ import {
 import { listAllModels } from "@/server/services/ai-providers";
 import { AI_PROVIDERS, formatModelRef } from "@/lib/ai/model-ref";
 import { NARRATION_FORMAT_VERSION, NARRATION_PROVIDERS } from "@/lib/narration/constants";
-import { buildAlignedNarration } from "@/lib/narration/paragraph-map";
 import { selectDisplayedContent } from "@/lib/narration/select-content";
 import { getUserApiKeys } from "@/server/auth/session";
 import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
@@ -217,6 +217,19 @@ export const narrationRouter = createTRPCRouter({
         };
       }
 
+      // Plain-text narration with a paragraph map aligned to the player's split.
+      const fallbackResponse = (
+        result = buildFallbackNarration(htmlToNarrationInput(sourceContent).paragraphs)
+      ) => {
+        trackNarrationGenerated(false, "fallback");
+        return {
+          narration: result.text,
+          cached: false,
+          source: "fallback" as const,
+          paragraphMap: result.paragraphMap,
+        };
+      };
+
       // Check if we should retry after a previous error
       const canRetryLLM =
         !narrationRecord.errorAt || Date.now() - narrationRecord.errorAt.getTime() > RETRY_AFTER_MS;
@@ -227,18 +240,7 @@ export const narrationRouter = createTRPCRouter({
         !isNarrationLlmAvailable(keys, userNarrationModel) ||
         !canRetryLLM
       ) {
-        // Generate a fallback (plain-text) narration with a paragraph map aligned
-        // to the player's paragraph split.
-        const { narrationText: fallbackText, paragraphMap } = buildAlignedNarration(
-          htmlToNarrationInput(sourceContent).paragraphs.map((p) => ({ o: p.o, text: p.text }))
-        );
-        trackNarrationGenerated(false, "fallback");
-        return {
-          narration: fallbackText,
-          cached: false,
-          source: "fallback" as const,
-          paragraphMap,
-        };
+        return fallbackResponse();
       }
 
       // Start timer for LLM generation duration
@@ -256,14 +258,8 @@ export const narrationRouter = createTRPCRouter({
 
         // If LLM returned fallback (e.g., empty response), don't cache it
         if (result.source === "fallback") {
-          trackNarrationGenerated(false, "fallback");
           trackNarrationGenerationError("empty_response");
-          return {
-            narration: result.text,
-            cached: false,
-            source: "fallback" as const,
-            paragraphMap: result.paragraphMap,
-          };
+          return fallbackResponse(result);
         }
 
         // Cache in narration_content table, clear any previous error.
@@ -309,17 +305,7 @@ export const narrationRouter = createTRPCRouter({
           })
           .where(eq(narrationContent.id, narrationRecord.id));
 
-        // Fall back to plain text with a paragraph map aligned to the split
-        const { narrationText: fallbackText, paragraphMap } = buildAlignedNarration(
-          htmlToNarrationInput(sourceContent).paragraphs.map((p) => ({ o: p.o, text: p.text }))
-        );
-        trackNarrationGenerated(false, "fallback");
-        return {
-          narration: fallbackText,
-          cached: false,
-          source: "fallback" as const,
-          paragraphMap,
-        };
+        return fallbackResponse();
       }
     }),
 

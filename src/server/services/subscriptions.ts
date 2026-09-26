@@ -111,19 +111,9 @@ export type SubscriptionQueryRow = Awaited<ReturnType<typeof buildSubscriptionBa
  * Transforms a subscription query row into the output format.
  */
 function formatSubscriptionRow(row: SubscriptionQueryRow): Subscription {
-  return {
-    id: row.id,
-    type: row.type,
-    url: row.url,
-    title: row.title,
-    originalTitle: row.originalTitle,
-    description: row.description,
-    siteUrl: row.siteUrl,
-    subscribedAt: row.subscribedAt,
-    unreadCount: row.unreadCount,
-    tags: row.tags,
-    fetchFullContent: row.fetchFullContent,
-  };
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { feedId, ...subscription } = row;
+  return subscription;
 }
 
 // ============================================================================
@@ -431,37 +421,22 @@ export async function createSubscription(
   //       automatically at commit/rollback (issue #952).
   const maxSubs = usageLimitsConfig.maxSubscriptionsPerUser;
 
-  type TxResult =
-    | {
-        kind: "alreadyActive";
-        subscriptionId: string;
-        subscribedAt: Date;
-        customTitle: string | null;
-        fetchFullContent: boolean;
-      }
-    | {
-        kind: "created";
-        subscriptionId: string;
-        subscribedAt: Date;
-        customTitle: string | null;
-        fetchFullContent: boolean;
-      };
+  interface TxResult {
+    kind: "alreadyActive" | "created";
+    subscriptionId: string;
+    subscribedAt: Date;
+    customTitle: string | null;
+    fetchFullContent: boolean;
+  }
 
   const txResult: TxResult = await db.transaction(async (tx) => {
     // Serialize concurrent subscribes for this user (fixes the cap race).
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${userId}))`);
 
-    // 3. Check subscription cap; if at cap, return existing or throw
-    const [{ activeCount }] = await tx
-      .select({ activeCount: sql<number>`count(*)::int` })
-      .from(subscriptions)
-      .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
-
-    if (activeCount >= maxSubs) {
-      // Over cap — check if we're already subscribed to this specific feed
-      const [existingSub] = await tx
+    const selectActiveSubscription = () =>
+      tx
         .select({
-          id: subscriptions.id,
+          subscriptionId: subscriptions.id,
           subscribedAt: subscriptions.subscribedAt,
           customTitle: subscriptions.customTitle,
           fetchFullContent: subscriptions.fetchFullContent,
@@ -476,14 +451,17 @@ export async function createSubscription(
         )
         .limit(1);
 
+    // 3. Check subscription cap; if at cap, return existing or throw
+    const [{ activeCount }] = await tx
+      .select({ activeCount: sql<number>`count(*)::int` })
+      .from(subscriptions)
+      .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
+
+    if (activeCount >= maxSubs) {
+      // Over cap — check if we're already subscribed to this specific feed
+      const [existingSub] = await selectActiveSubscription();
       if (existingSub) {
-        return {
-          kind: "alreadyActive",
-          subscriptionId: existingSub.id,
-          subscribedAt: existingSub.subscribedAt,
-          customTitle: existingSub.customTitle,
-          fetchFullContent: existingSub.fetchFullContent,
-        };
+        return { kind: "alreadyActive", ...existingSub };
       }
 
       throw errors.maxSubscriptionsReached(maxSubs);
@@ -513,25 +491,13 @@ export async function createSubscription(
     `);
 
     if (upsertResult.rows.length === 0) {
-      // Subscription was already active — idempotent return (unread computed below)
-      const [sub] = await tx
-        .select({
-          id: subscriptions.id,
-          subscribedAt: subscriptions.subscribedAt,
-          customTitle: subscriptions.customTitle,
-          fetchFullContent: subscriptions.fetchFullContent,
-        })
-        .from(subscriptions)
-        .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, feedId)))
-        .limit(1);
-
-      return {
-        kind: "alreadyActive",
-        subscriptionId: sub.id,
-        subscribedAt: sub.subscribedAt,
-        customTitle: sub.customTitle,
-        fetchFullContent: sub.fetchFullContent,
-      };
+      // Subscription was already active — idempotent return (unread computed
+      // below). The ON CONFLICT row lock keeps it active for this transaction.
+      const [sub] = await selectActiveSubscription();
+      if (!sub) {
+        throw new Error(`Active subscription vanished after upsert conflict: ${feedId}`);
+      }
+      return { kind: "alreadyActive", ...sub };
     }
 
     const upsertedRow = upsertResult.rows[0];

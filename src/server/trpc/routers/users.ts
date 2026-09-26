@@ -42,6 +42,22 @@ const sessionOutputSchema = z.object({
   isCurrent: z.boolean(),
 });
 
+/**
+ * User preferences output schema. Never exposes raw API keys — only whether
+ * they are set.
+ */
+const preferencesOutputSchema = z.object({
+  showSpam: z.boolean(),
+  canConfigureApiKeys: z.boolean(),
+  hasGroqApiKey: z.boolean(),
+  hasAnthropicApiKey: z.boolean(),
+  hasCerebrasApiKey: z.boolean(),
+  summarizationModel: z.string().nullable(),
+  summarizationMaxWords: z.number().nullable(),
+  summarizationPrompt: z.string().nullable(),
+  narrationModel: z.string().nullable(),
+});
+
 // ============================================================================
 // Router
 // ============================================================================
@@ -341,19 +357,7 @@ export const usersRouter = createTRPCRouter({
       },
     })
     .input(z.object({}).optional())
-    .output(
-      z.object({
-        showSpam: z.boolean(),
-        canConfigureApiKeys: z.boolean(),
-        hasGroqApiKey: z.boolean(),
-        hasAnthropicApiKey: z.boolean(),
-        hasCerebrasApiKey: z.boolean(),
-        summarizationModel: z.string().nullable(),
-        summarizationMaxWords: z.number().nullable(),
-        summarizationPrompt: z.string().nullable(),
-        narrationModel: z.string().nullable(),
-      })
-    )
+    .output(preferencesOutputSchema)
     .query(async ({ ctx }) => {
       // Return preferences from session (cached from database)
       // Never expose raw API keys — only whether they are set
@@ -398,19 +402,7 @@ export const usersRouter = createTRPCRouter({
         summarizationPrompt: z.string().max(10000).nullable().optional(),
       })
     )
-    .output(
-      z.object({
-        showSpam: z.boolean(),
-        canConfigureApiKeys: z.boolean(),
-        hasGroqApiKey: z.boolean(),
-        hasAnthropicApiKey: z.boolean(),
-        hasCerebrasApiKey: z.boolean(),
-        summarizationModel: z.string().nullable(),
-        summarizationMaxWords: z.number().nullable(),
-        summarizationPrompt: z.string().nullable(),
-        narrationModel: z.string().nullable(),
-      })
-    )
+    .output(preferencesOutputSchema)
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 

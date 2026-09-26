@@ -147,6 +147,32 @@ export const summarizationRouter = createTRPCRouter({
         return promptVersionChanged || modelChanged || maxWordsChanged || promptChanged;
       };
 
+      const selectSummary = async (hash: string) =>
+        (
+          await ctx.db
+            .select()
+            .from(entrySummaries)
+            .where(and(eq(entrySummaries.userId, userId), eq(entrySummaries.contentHash, hash)))
+            .limit(1)
+        )[0];
+
+      const toCachedResult = (
+        record: typeof entrySummaries.$inferSelect,
+        settingsChanged: boolean
+      ) => ({
+        // Sanitize on read with the *current* rules. Cached summaries are
+        // stored already-sanitized, but re-sanitizing here means a rules
+        // change (e.g. one that closes a sanitizer hole) reaches every
+        // stored summary on the next read, with no version column or
+        // migration — unlike large entry bodies, summaries are small enough
+        // that re-sanitizing on each read is cheaper than tracking staleness.
+        summary: sanitizeEntryHtml(record.summaryText) ?? "",
+        cached: true,
+        modelId: record.modelId || "unknown",
+        generatedAt: record.generatedAt,
+        settingsChanged,
+      });
+
       // Check if summarization is available (user key or server key, any provider)
       if (!isSummarizationAvailable(keys)) {
         throw errors.internal(
@@ -168,7 +194,7 @@ export const summarizationRouter = createTRPCRouter({
        * up, carried forward so the generation path below doesn't re-run the
        * byte-identical query.
        */
-      let cachedFeedSummary: (typeof entrySummaries.$inferSelect)[] | undefined;
+      let cachedFeedSummary: { record: typeof entrySummaries.$inferSelect | undefined } | undefined;
 
       if (input.useFullContent === true) {
         // Explicit full content request
@@ -191,62 +217,22 @@ export const summarizationRouter = createTRPCRouter({
         // fall through to generating from feed content.
         // Check full content summary first (if available)
         if (!input.regenerate && entry.fullContentHash) {
-          const fullSummary = await ctx.db
-            .select()
-            .from(entrySummaries)
-            .where(
-              and(
-                eq(entrySummaries.userId, userId),
-                eq(entrySummaries.contentHash, entry.fullContentHash)
-              )
-            )
-            .limit(1);
-
-          const fullRecord = fullSummary[0];
+          const fullRecord = await selectSummary(entry.fullContentHash);
           if (fullRecord?.summaryText) {
-            return {
-              // Sanitize on read with the *current* rules. Cached summaries are
-              // stored already-sanitized, but re-sanitizing here means a rules
-              // change (e.g. one that closes a sanitizer hole) reaches every
-              // stored summary on the next read, with no version column or
-              // migration — unlike large entry bodies, summaries are small enough
-              // that re-sanitizing on each read is cheaper than tracking staleness.
-              summary: sanitizeEntryHtml(fullRecord.summaryText) ?? "",
-              cached: true,
-              modelId: fullRecord.modelId || "unknown",
-              generatedAt: fullRecord.generatedAt,
-              settingsChanged: isSettingsChanged(fullRecord),
-            };
+            return toCachedResult(fullRecord, isSettingsChanged(fullRecord));
           }
         }
 
         // Check feed content summary
-        const feedSummary = await ctx.db
-          .select()
-          .from(entrySummaries)
-          .where(
-            and(
-              eq(entrySummaries.userId, userId),
-              eq(entrySummaries.contentHash, entry.contentHash)
-            )
-          )
-          .limit(1);
-
-        const feedRecord = feedSummary[0];
+        const feedRecord = await selectSummary(entry.contentHash);
         if (!input.regenerate && feedRecord?.summaryText) {
-          return {
-            summary: sanitizeEntryHtml(feedRecord.summaryText) ?? "",
-            cached: true,
-            modelId: feedRecord.modelId || "unknown",
-            generatedAt: feedRecord.generatedAt,
-            settingsChanged: isSettingsChanged(feedRecord),
-          };
+          return toCachedResult(feedRecord, isSettingsChanged(feedRecord));
         }
 
         // No usable cached summary — generate from feed content
         sourceContent = entry.contentCleaned || entry.contentOriginal || "";
         contentHash = entry.contentHash;
-        cachedFeedSummary = feedSummary;
+        cachedFeedSummary = { record: feedRecord };
       }
 
       // Handle empty content
@@ -254,17 +240,10 @@ export const summarizationRouter = createTRPCRouter({
         throw errors.validation("Entry has no content to summarize");
       }
 
-      const selectByUserAndContentHash = () =>
-        ctx.db
-          .select()
-          .from(entrySummaries)
-          .where(
-            and(eq(entrySummaries.userId, userId), eq(entrySummaries.contentHash, contentHash))
-          )
-          .limit(1);
-
       // Look up existing summary by user + content hash
-      let summaryRecord = (cachedFeedSummary ?? (await selectByUserAndContentHash()))[0];
+      let summaryRecord = cachedFeedSummary
+        ? cachedFeedSummary.record
+        : await selectSummary(contentHash);
 
       // Create the placeholder row if there isn't one yet. Two requests for the
       // same (user, content) at once — a double-click, or the web client and
@@ -285,7 +264,7 @@ export const summarizationRouter = createTRPCRouter({
             target: [entrySummaries.userId, entrySummaries.contentHash],
           })
           .returning();
-        summaryRecord = inserted[0] ?? (await selectByUserAndContentHash())[0];
+        summaryRecord = inserted[0] ?? (await selectSummary(contentHash));
       }
 
       if (!summaryRecord) {
@@ -303,13 +282,7 @@ export const summarizationRouter = createTRPCRouter({
       // Return cached summary if available and not stale (prompt version unchanged),
       // unless the user explicitly requested regeneration
       if (summaryRecord.summaryText && !promptVersionChanged && !input.regenerate) {
-        return {
-          summary: sanitizeEntryHtml(summaryRecord.summaryText) ?? "",
-          cached: true,
-          modelId: summaryRecord.modelId || "unknown",
-          generatedAt: summaryRecord.generatedAt,
-          settingsChanged,
-        };
+        return toCachedResult(summaryRecord, settingsChanged);
       }
 
       // Check if we should retry after a previous error. The backoff guards

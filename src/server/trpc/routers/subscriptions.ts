@@ -482,12 +482,6 @@ export const subscriptionsRouter = createTRPCRouter({
         throw errors.subscriptionNotFound();
       }
 
-      const subscriptionTagsList = tagsResult.map((t) => ({
-        id: t.id,
-        name: t.name,
-        color: t.color,
-      }));
-
       // Publish SSE event for other tabs/devices — only when something
       // actually changed. A no-op re-save (identical customTitle /
       // fetchFullContent) must not notify other tabs (issue #1160).
@@ -496,7 +490,7 @@ export const subscriptionsRouter = createTRPCRouter({
           userId,
           subscription.id,
           now,
-          subscriptionTagsList,
+          tagsResult,
           subscription.customTitle
         ).catch((err) => {
           logger.error("Failed to publish subscription_updated event", {
@@ -518,7 +512,7 @@ export const subscriptionsRouter = createTRPCRouter({
         siteUrl: result.siteUrl,
         subscribedAt: subscription.subscribedAt,
         unreadCount: subscription.unreadCount,
-        tags: subscriptionTagsList,
+        tags: tagsResult,
         fetchFullContent: subscription.fetchFullContent,
       };
     }),
@@ -814,61 +808,19 @@ export const subscriptionsRouter = createTRPCRouter({
 
       const now = new Date();
 
-      if (input.tagIds.length === 0) {
-        // Clear tags atomically: the delete + updated_at bump must land together
-        // so a crash can't leave the associations half-removed (issue #952).
-        // The delete's RETURNING is the race-free record of the prior tag set:
-        // when there was nothing to clear, the tag set didn't meaningfully
-        // change, so updated_at stays put (no delta-sync cursor churn) and no
-        // subscription_updated is published (issue #1160).
-        const changed = await ctx.db.transaction(async (tx) => {
-          const deleted = await tx
-            .delete(subscriptionTags)
-            .where(eq(subscriptionTags.subscriptionId, input.id))
-            .returning({ tagId: subscriptionTags.tagId });
-
-          if (deleted.length === 0) {
-            return false;
-          }
-
-          // Update subscription's updated_at for sync cursor tracking
-          await tx
-            .update(subscriptions)
-            .set({ updatedAt: now })
-            .where(eq(subscriptions.id, input.id));
-          return true;
-        });
-
-        // Publish SSE event with empty tags
-        if (changed) {
-          publishSubscriptionUpdated(
-            userId,
-            input.id,
-            now,
-            [],
-            existingSubscription[0].customTitle
-          ).catch((err) => {
-            logger.error("Failed to publish subscription_updated event", {
-              err,
-              userId,
-              subscriptionId: input.id,
-            });
-          });
-        }
-
-        return {};
-      }
-
       // Verify all tag IDs belong to the current user, are not soft-deleted, and
       // get tag details. Excluding tombstoned tags prevents assigning a tag that
       // is invisible in listTags (which would silently drop the subscription
       // from "Uncategorized").
-      const userTags = await ctx.db
-        .select({ id: tags.id, name: tags.name, color: tags.color })
-        .from(tags)
-        .where(
-          and(eq(tags.userId, userId), inArray(tags.id, input.tagIds), isNull(tags.deletedAt))
-        );
+      const userTags =
+        input.tagIds.length === 0
+          ? []
+          : await ctx.db
+              .select({ id: tags.id, name: tags.name, color: tags.color })
+              .from(tags)
+              .where(
+                and(eq(tags.userId, userId), inArray(tags.id, input.tagIds), isNull(tags.deletedAt))
+              );
 
       const validTagIds = new Set(userTags.map((t) => t.id));
       const invalidTagIds = input.tagIds.filter((id) => !validTagIds.has(id));
@@ -877,8 +829,8 @@ export const subscriptionsRouter = createTRPCRouter({
         throw errors.validation("One or more tag IDs are invalid or do not belong to you");
       }
 
-      // Replace tags atomically: delete-then-insert (+updated_at bump) must be
-      // one unit, or a crash/concurrent call between them could leave the
+      // Replace (or clear) tags atomically: delete-then-insert (+updated_at bump)
+      // must be one unit, or a crash/concurrent call between them could leave the
       // subscription untagged or with a partial tag set (issue #952).
       const changed = await ctx.db.transaction(async (tx) => {
         // Delete all existing tags for the subscription. The RETURNING captures
@@ -889,18 +841,19 @@ export const subscriptionsRouter = createTRPCRouter({
           .where(eq(subscriptionTags.subscriptionId, input.id))
           .returning({ tagId: subscriptionTags.tagId });
 
-        // Insert new subscription_tags entries
-        await tx.insert(subscriptionTags).values(
-          input.tagIds.map((tagId) => ({
-            subscriptionId: input.id,
-            tagId,
-            createdAt: now,
-          }))
-        );
+        if (input.tagIds.length > 0) {
+          await tx.insert(subscriptionTags).values(
+            input.tagIds.map((tagId) => ({
+              subscriptionId: input.id,
+              tagId,
+              createdAt: now,
+            }))
+          );
+        }
 
-        // Re-applying the identical tag set is not a meaningful change: skip
-        // the updated_at bump so the delta-sync cursor doesn't move (and skip
-        // the publish below).
+        // Re-applying the identical tag set (including clearing an already-empty
+        // one) is not a meaningful change: skip the updated_at bump so the
+        // delta-sync cursor doesn't move (and skip the publish below).
         const previousTagIds = new Set(deleted.map((d) => d.tagId));
         if (
           previousTagIds.size === validTagIds.size &&
@@ -919,17 +872,11 @@ export const subscriptionsRouter = createTRPCRouter({
 
       // Publish SSE event with new tags
       if (changed) {
-        const tagsList = userTags.map((t) => ({
-          id: t.id,
-          name: t.name,
-          color: t.color,
-        }));
-
         publishSubscriptionUpdated(
           userId,
           input.id,
           now,
-          tagsList,
+          userTags,
           existingSubscription[0].customTitle
         ).catch((err) => {
           logger.error("Failed to publish subscription_updated event", {
