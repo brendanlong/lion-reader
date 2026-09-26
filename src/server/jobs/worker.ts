@@ -467,31 +467,21 @@ function createWorker(config: WorkerConfig = {}): Worker {
           result = await handleFetchFeed(payload, { forceReprocess: claimedAt !== null });
           break;
         }
-        case "renew_websub": {
-          const payload = getJobPayload<"renew_websub">(job);
-          result = await handleRenewWebsub(payload);
+        case "renew_websub":
+          result = await handleRenewWebsub();
           break;
-        }
-        case "monitor_feed_health": {
-          const payload = getJobPayload<"monitor_feed_health">(job);
-          result = await handleMonitorFeedHealth(payload);
+        case "monitor_feed_health":
+          result = await handleMonitorFeedHealth();
           break;
-        }
-        case "cleanup": {
-          const payload = getJobPayload<"cleanup">(job);
-          result = await handleCleanup(payload);
+        case "cleanup":
+          result = await handleCleanup();
           break;
-        }
-        case "reconcile_counters": {
-          const payload = getJobPayload<"reconcile_counters">(job);
-          result = await handleReconcileCounters(payload);
+        case "reconcile_counters":
+          result = await handleReconcileCounters();
           break;
-        }
-        case "backfill_getting_started": {
-          const payload = getJobPayload<"backfill_getting_started">(job);
-          result = await handleBackfillGettingStarted(payload);
+        case "backfill_getting_started":
+          result = await handleBackfillGettingStarted();
           break;
-        }
         case "process_opml_import": {
           const payload = getJobPayload<"process_opml_import">(job);
           result = await handleProcessOpmlImport(payload);

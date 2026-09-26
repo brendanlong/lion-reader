@@ -101,7 +101,7 @@ describe("handleMonitorFeedHealth", () => {
     const userId = await createTestUser({ emailPrefix: "feed-health" });
     await createSubscribedFeed(userId, { lastFetchedAt: minutesAgo(5) });
 
-    const result = await handleMonitorFeedHealth({});
+    const result = await handleMonitorFeedHealth();
 
     expect(result.success).toBe(true);
     expect(result.nextRunAt.getTime()).toBeGreaterThan(Date.now() + 14 * 60 * 1000);
@@ -117,7 +117,7 @@ describe("handleMonitorFeedHealth", () => {
       consecutiveFailures: 5,
     });
 
-    const result = await handleMonitorFeedHealth({});
+    const result = await handleMonitorFeedHealth();
 
     expect(result.success).toBe(true);
     expect(result.metadata?.status).toBe("unhealthy");
@@ -125,7 +125,7 @@ describe("handleMonitorFeedHealth", () => {
   });
 
   it("treats an instance with no pollable feeds as healthy", async () => {
-    const result = await handleMonitorFeedHealth({});
+    const result = await handleMonitorFeedHealth();
     expect(result.metadata?.status).toBe("healthy");
   });
 });

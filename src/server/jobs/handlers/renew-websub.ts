@@ -6,7 +6,6 @@
 
 import { renewExpiringSubscriptions } from "../../feed/websub";
 import { trackWebsubRenewal } from "../../metrics/metrics";
-import type { JobPayloads } from "../queue";
 import { logger } from "@/lib/logger";
 import type { JobHandlerResult } from "./types";
 
@@ -38,13 +37,9 @@ const WEBSUB_RENEWAL_THRESHOLD_HOURS = 2;
  * threshold keeps short leases alive without re-subscribing long leases every
  * run.
  *
- * @param _payload - The job payload (empty for this job type)
  * @returns Job handler result with next run time
  */
-export async function handleRenewWebsub(
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _payload: JobPayloads["renew_websub"]
-): Promise<JobHandlerResult> {
+export async function handleRenewWebsub(): Promise<JobHandlerResult> {
   logger.info("Starting WebSub subscription renewal check");
 
   const result = await renewExpiringSubscriptions(WEBSUB_RENEWAL_THRESHOLD_HOURS);
