@@ -14,10 +14,8 @@
  * require pre-registration — any valid user credentials work.
  */
 
-import { eq } from "drizzle-orm";
 import { db } from "@/server/db";
-import { users } from "@/server/db/schema";
-import { verifyPassword } from "@/server/auth/password";
+import { verifyEmailPassword } from "@/server/auth/password";
 import { extractBearerToken } from "@/server/auth/bearer";
 import { validateAccessToken, createTokens, rotateRefreshToken } from "@/server/oauth/service";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
@@ -46,51 +44,19 @@ export async function passwordGrant(
   password: string,
   clientId: string
 ): Promise<WallabagTokenResponse | null> {
-  // Find user by email
-  const user = await db.select().from(users).where(eq(users.email, username)).limit(1);
-
-  if (user.length === 0) {
-    // Equalize timing: run argon2 against a decoy so a non-existent account
-    // isn't measurably faster than a real password check (no enumeration
-    // oracle, #1267).
-    await verifyPassword(null, password);
+  const login = await verifyEmailPassword(db, username, password);
+  if (!login.valid) {
+    const { user } = login;
     logger.warn("Wallabag password grant failed", {
       component: "wallabag",
       grantType: "password",
       clientId,
-      reason: "user_not_found",
+      userId: user?.id,
+      reason: !user ? "user_not_found" : !user.passwordHash ? "no_password" : "invalid_password",
     });
     return null;
   }
-
-  const foundUser = user[0];
-
-  // Check if user has a password
-  if (!foundUser.passwordHash) {
-    // Equalize timing for OAuth-only (passwordless) accounts too (#1267).
-    await verifyPassword(null, password);
-    logger.warn("Wallabag password grant failed", {
-      component: "wallabag",
-      grantType: "password",
-      clientId,
-      userId: foundUser.id,
-      reason: "no_password",
-    });
-    return null;
-  }
-
-  // Verify password
-  const isValid = await verifyPassword(foundUser.passwordHash, password);
-  if (!isValid) {
-    logger.warn("Wallabag password grant failed", {
-      component: "wallabag",
-      grantType: "password",
-      clientId,
-      userId: foundUser.id,
-      reason: "invalid_password",
-    });
-    return null;
-  }
+  const foundUser = login.user;
 
   // Create OAuth tokens using existing infrastructure. The Wallabag surface
   // covers the full reader API (list/read/mutate/delete entries + tags), so it

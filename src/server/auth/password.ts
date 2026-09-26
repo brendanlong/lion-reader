@@ -15,6 +15,9 @@
  */
 
 import * as argon2 from "argon2";
+import { eq } from "drizzle-orm";
+import type { Database } from "@/server/db";
+import { users, type User } from "@/server/db/schema";
 
 /**
  * A constant, valid argon2id hash generated with the library's default
@@ -48,4 +51,21 @@ export async function verifyPassword(
   }
 
   return argon2.verify(storedHash, password);
+}
+
+/**
+ * Looks up a user by email and verifies their password — the lookup every
+ * password-accepting surface shares. Runs exactly one argon2 verify whether the
+ * user is missing, passwordless, or real. On failure `user` is whatever the
+ * lookup found, for callers that log why; the caller's response must not vary
+ * with it.
+ */
+export async function verifyEmailPassword(
+  db: Database,
+  email: string,
+  password: string
+): Promise<{ valid: true; user: User } | { valid: false; user: User | undefined }> {
+  const [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+  const valid = await verifyPassword(user?.passwordHash, password);
+  return valid && user ? { valid: true, user } : { valid: false, user };
 }

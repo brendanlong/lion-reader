@@ -11,7 +11,7 @@ import * as argon2 from "argon2";
 import { eq, and } from "drizzle-orm";
 
 import { checkAccountRateLimit } from "@/server/rate-limit";
-import { verifyPassword } from "@/server/auth/password";
+import { verifyEmailPassword } from "@/server/auth/password";
 
 import {
   createTRPCRouter,
@@ -317,33 +317,13 @@ export const authRouter = createTRPCRouter({
         });
       }
 
-      // Find user by email
-      const user = await ctx.db.select().from(users).where(eq(users.email, email)).limit(1);
-
-      if (user.length === 0) {
-        // User not found - use same error as wrong password to prevent
-        // enumeration. Run argon2 against a decoy so the response isn't
-        // measurably faster than a real password check either (no timing
-        // enumeration oracle, #1267).
-        await verifyPassword(null, password);
+      // Same error for a missing user, a passwordless one and a wrong password,
+      // and the same argon2 cost for each (no enumeration oracle, #1267).
+      const login = await verifyEmailPassword(ctx.db, email, password);
+      if (!login.valid) {
         throw errors.invalidCredentials();
       }
-
-      const foundUser = user[0];
-
-      // Check if user has a password (they might be OAuth-only in the future).
-      // Equalize timing for passwordless accounts too (#1267).
-      if (!foundUser.passwordHash) {
-        await verifyPassword(null, password);
-        throw errors.invalidCredentials();
-      }
-
-      // Verify password
-      const isValidPassword = await verifyPassword(foundUser.passwordHash, password);
-
-      if (!isValidPassword) {
-        throw errors.invalidCredentials();
-      }
+      const foundUser = login.user;
 
       const { userAgent, ipAddress } = extractClientInfo(ctx.headers);
 
