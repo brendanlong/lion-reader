@@ -88,7 +88,7 @@ async function listedUnreadCount(userId: string, subscriptionId: string): Promis
 // ============================================================================
 
 describe("unread counts exclude spam on every surface", () => {
-  beforeEach(async () => {
+  async function cleanup(): Promise<void> {
     await db.delete(userEntries);
     await db.delete(subscriptionTags);
     await db.delete(entries);
@@ -96,17 +96,10 @@ describe("unread counts exclude spam on every surface", () => {
     await db.delete(tags);
     await db.delete(feeds);
     await db.delete(users);
-  });
+  }
 
-  afterAll(async () => {
-    await db.delete(userEntries);
-    await db.delete(subscriptionTags);
-    await db.delete(entries);
-    await db.delete(subscriptions);
-    await db.delete(tags);
-    await db.delete(feeds);
-    await db.delete(users);
-  });
+  beforeEach(cleanup);
+  afterAll(cleanup);
 
   it("subscriptions.list reports only the non-spam unread entry", async () => {
     const { userId, subscriptionId } = await seedSpammySubscription();

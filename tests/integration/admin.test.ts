@@ -70,8 +70,7 @@ async function createTestInvite(
 // ============================================================================
 
 describe("Admin API", () => {
-  // Clean up tables before each test
-  beforeEach(async () => {
+  async function cleanup(): Promise<void> {
     // Clear in dependency order
     await db.delete(jobs);
     await db.delete(subscriptions);
@@ -80,17 +79,10 @@ describe("Admin API", () => {
     await db.delete(invites);
     await db.delete(feeds);
     await db.delete(users);
-  });
+  }
 
-  // Clean up after all tests
-  afterAll(async () => {
-    await db.delete(jobs);
-    await db.delete(subscriptions);
-    await db.execute(sql`UPDATE users SET invite_id = NULL`);
-    await db.delete(invites);
-    await db.delete(feeds);
-    await db.delete(users);
-  });
+  beforeEach(cleanup);
+  afterAll(cleanup);
 
   // ==========================================================================
   // Security Tests

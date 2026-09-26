@@ -49,21 +49,15 @@ async function listJobs(options: { type?: JobType; limit?: number } = {}) {
 }
 
 describe("Job Queue", () => {
-  // Clean up jobs table before each test
-  beforeEach(async () => {
+  async function cleanup(): Promise<void> {
     await db.delete(jobs);
     await db.delete(subscriptions);
     await db.delete(feeds);
     await db.delete(users);
-  });
+  }
 
-  // Clean up after all tests
-  afterAll(async () => {
-    await db.delete(jobs);
-    await db.delete(subscriptions);
-    await db.delete(feeds);
-    await db.delete(users);
-  });
+  beforeEach(cleanup);
+  afterAll(cleanup);
 
   describe("createJob", () => {
     it("creates a job with default values", async () => {

@@ -161,25 +161,17 @@ async function getFeed(feedId: string): Promise<Feed> {
 // ============================================================================
 
 describe("Feed Redirect Handling", () => {
-  // Clean up tables before each test
-  beforeEach(async () => {
+  async function cleanup(): Promise<void> {
     await db.delete(userEntries);
     await db.delete(entries);
     await db.delete(subscriptions);
     await db.delete(jobs);
     await db.delete(feeds);
     await db.delete(users);
-  });
+  }
 
-  // Clean up after all tests
-  afterAll(async () => {
-    await db.delete(userEntries);
-    await db.delete(entries);
-    await db.delete(subscriptions);
-    await db.delete(jobs);
-    await db.delete(feeds);
-    await db.delete(users);
-  });
+  beforeEach(cleanup);
+  afterAll(cleanup);
 
   describe("Redirect to new URL (no existing feed)", () => {
     it("updates feed URL when redirect target has no existing feed", async () => {

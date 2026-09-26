@@ -63,7 +63,7 @@ async function markEntryRead(userId: string, entryId: string): Promise<void> {
 // ============================================================================
 
 describe("Entry counts service", () => {
-  beforeEach(async () => {
+  async function cleanup(): Promise<void> {
     await db.delete(userEntries);
     await db.delete(entries);
     await db.delete(subscriptionTags);
@@ -71,17 +71,10 @@ describe("Entry counts service", () => {
     await db.delete(subscriptions);
     await db.delete(feeds);
     await db.delete(users);
-  });
+  }
 
-  afterAll(async () => {
-    await db.delete(userEntries);
-    await db.delete(entries);
-    await db.delete(subscriptionTags);
-    await db.delete(tags);
-    await db.delete(subscriptions);
-    await db.delete(feeds);
-    await db.delete(users);
-  });
+  beforeEach(cleanup);
+  afterAll(cleanup);
 
   describe("getEntryRelatedCounts", () => {
     it("deduplicates tag counts for entries reachable through multiple subscriptions", async () => {

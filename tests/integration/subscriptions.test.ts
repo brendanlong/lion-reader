@@ -71,23 +71,16 @@ async function getUserEntries(userId: string): Promise<Array<{ entryId: string }
 // ============================================================================
 
 describe("Subscriptions - Subscribe to Existing Feed", () => {
-  // Clean up tables before each test
-  beforeEach(async () => {
+  async function cleanup(): Promise<void> {
     await db.delete(userEntries);
     await db.delete(entries);
     await db.delete(subscriptions);
     await db.delete(feeds);
     await db.delete(users);
-  });
+  }
 
-  // Clean up after all tests
-  afterAll(async () => {
-    await db.delete(userEntries);
-    await db.delete(entries);
-    await db.delete(subscriptions);
-    await db.delete(feeds);
-    await db.delete(users);
-  });
+  beforeEach(cleanup);
+  afterAll(cleanup);
 
   describe("Entry visibility based on lastSeenAt", () => {
     it("shows only current entries when subscribing to existing feed", async () => {

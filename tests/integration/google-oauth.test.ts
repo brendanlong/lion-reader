@@ -107,13 +107,16 @@ describe("Google OAuth", () => {
     delete process.env.GOOGLE_CLIENT_SECRET;
   });
 
-  // Clean up tables before each test
-  beforeEach(async () => {
-    // Default to a valid id_token; negative tests overwrite it.
-    mockTokenResponse.id_token = await signGoogleIdToken();
+  async function cleanup(): Promise<void> {
     await db.delete(sessions);
     await db.delete(oauthAccounts);
     await db.delete(users);
+  }
+
+  beforeEach(async () => {
+    // Default to a valid id_token; negative tests overwrite it.
+    mockTokenResponse.id_token = await signGoogleIdToken();
+    await cleanup();
     // Clear Redis PKCE data
     const keys = await redis.keys("oauth:pkce:*");
     if (keys.length > 0) {
@@ -122,11 +125,7 @@ describe("Google OAuth", () => {
   });
 
   // Clean up after all tests
-  afterAll(async () => {
-    await db.delete(sessions);
-    await db.delete(oauthAccounts);
-    await db.delete(users);
-  });
+  afterAll(cleanup);
 
   afterEach(() => {
     vi.clearAllMocks();

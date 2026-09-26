@@ -137,13 +137,16 @@ OF/2NxApJCzGCEDdfSp6VQO30hyhRANCAAQRWz+jn65BtOMvdyHKcvjBeBSDZH2r
     vi.unstubAllGlobals();
   });
 
-  // Clean up tables before each test
-  beforeEach(async () => {
-    // Default to a valid, correctly-signed id_token; negative tests overwrite it.
-    appleMock.idToken = await signAppleIdToken();
+  async function cleanup(): Promise<void> {
     await db.delete(sessions);
     await db.delete(oauthAccounts);
     await db.delete(users);
+  }
+
+  beforeEach(async () => {
+    // Default to a valid, correctly-signed id_token; negative tests overwrite it.
+    appleMock.idToken = await signAppleIdToken();
+    await cleanup();
     // Clear Redis Apple OAuth state
     const keys = await redis.keys("oauth:apple:state:*");
     if (keys.length > 0) {
@@ -152,11 +155,7 @@ OF/2NxApJCzGCEDdfSp6VQO30hyhRANCAAQRWz+jn65BtOMvdyHKcvjBeBSDZH2r
   });
 
   // Clean up after all tests
-  afterAll(async () => {
-    await db.delete(sessions);
-    await db.delete(oauthAccounts);
-    await db.delete(users);
-  });
+  afterAll(cleanup);
 
   afterEach(() => {
     vi.clearAllMocks();

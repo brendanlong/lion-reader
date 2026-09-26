@@ -26,21 +26,16 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // ============================================================================
 
 describe("Feed Stats API", () => {
-  beforeEach(async () => {
+  async function cleanup(): Promise<void> {
     await db.delete(userEntries);
     await db.delete(entries);
     await db.delete(subscriptions);
     await db.delete(feeds);
     await db.delete(users);
-  });
+  }
 
-  afterAll(async () => {
-    await db.delete(userEntries);
-    await db.delete(entries);
-    await db.delete(subscriptions);
-    await db.delete(feeds);
-    await db.delete(users);
-  });
+  beforeEach(cleanup);
+  afterAll(cleanup);
 
   it("reports totalEntryCount and entriesPerWeek for a feed with history", async () => {
     const userId = await createTestUser({ emailPrefix: "feedstats" });

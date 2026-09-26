@@ -96,7 +96,7 @@ async function drainEntrySync(userId: string, start: SyncCursors): Promise<SyncE
 // ============================================================================
 
 describe("sync.events", () => {
-  beforeEach(async () => {
+  async function cleanup(): Promise<void> {
     await db.delete(userEntries);
     await db.delete(subscriptionTags);
     await db.delete(entries);
@@ -104,17 +104,10 @@ describe("sync.events", () => {
     await db.delete(tags);
     await db.delete(feeds);
     await db.delete(users);
-  });
+  }
 
-  afterAll(async () => {
-    await db.delete(userEntries);
-    await db.delete(subscriptionTags);
-    await db.delete(entries);
-    await db.delete(subscriptions);
-    await db.delete(tags);
-    await db.delete(feeds);
-    await db.delete(users);
-  });
+  beforeEach(cleanup);
+  afterAll(cleanup);
 
   // ==========================================================================
   // No cursors / empty state

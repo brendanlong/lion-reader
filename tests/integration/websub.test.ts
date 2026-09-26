@@ -110,23 +110,16 @@ async function createTestSubscription(
 }
 
 describe("WebSub Integration", () => {
-  // Clean up tables before each test
-  beforeEach(async () => {
+  async function cleanup(): Promise<void> {
     await db.delete(entries);
     await db.delete(websubSubscriptions);
     await db.delete(websubHubStats);
     await db.delete(jobs);
     await db.delete(feeds);
-  });
+  }
 
-  // Clean up after all tests
-  afterAll(async () => {
-    await db.delete(entries);
-    await db.delete(websubSubscriptions);
-    await db.delete(websubHubStats);
-    await db.delete(jobs);
-    await db.delete(feeds);
-  });
+  beforeEach(cleanup);
+  afterAll(cleanup);
 
   describe("generateCallbackSecret", () => {
     it("generates a 64-character hex string", () => {

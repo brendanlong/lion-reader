@@ -102,7 +102,7 @@ async function getSubscriptionByUserAndFeed(userId: string, feedId: string) {
 // ============================================================================
 
 describe("Email Feed Resubscription", () => {
-  beforeEach(async () => {
+  async function cleanup(): Promise<void> {
     await db.delete(userEntries);
     await db.delete(entries);
     await db.delete(subscriptions);
@@ -110,17 +110,10 @@ describe("Email Feed Resubscription", () => {
     await db.delete(feeds);
     await db.delete(ingestAddresses);
     await db.delete(users);
-  });
+  }
 
-  afterAll(async () => {
-    await db.delete(userEntries);
-    await db.delete(entries);
-    await db.delete(subscriptions);
-    await db.delete(blockedSenders);
-    await db.delete(feeds);
-    await db.delete(ingestAddresses);
-    await db.delete(users);
-  });
+  beforeEach(cleanup);
+  afterAll(cleanup);
 
   describe("Resubscribing unsubscribed feeds", () => {
     it("reactivates subscription when unblocked sender sends new email", async () => {
