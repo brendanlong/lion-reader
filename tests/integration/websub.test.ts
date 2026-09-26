@@ -23,9 +23,7 @@ import { generateUuidv7 } from "../../src/lib/uuidv7";
 import {
   generateCallbackSecret,
   handleVerificationChallenge,
-  handleVerificationChallengeByFeed,
   verifyHmacSignature,
-  verifyHmacSignatureByFeed,
   renewExpiringSubscriptions,
   subscribeToHub,
   MAX_LEASE_SECONDS,
@@ -141,15 +139,12 @@ describe("WebSub Integration", () => {
     });
   });
 
-  // Core verification behavior, exercised through the legacy per-feed entry point
-  // (handleVerificationChallengeByFeed). The per-subscription entry point shares
-  // the same core and is covered separately below.
-  describe("handleVerificationChallengeByFeed (legacy per-feed)", () => {
+  describe("handleVerificationChallenge", () => {
     it("returns error when required parameters are missing", async () => {
       const feed = await createTestFeed();
-      await createTestSubscription(feed.id, { topicUrl: feed.url ?? "" });
+      const { subscription } = await createTestSubscription(feed.id, { topicUrl: feed.url ?? "" });
 
-      const result = await handleVerificationChallengeByFeed(feed.id, {
+      const result = await handleVerificationChallenge(feed.id, subscription.id, {
         mode: null,
         topic: null,
         challenge: null,
@@ -162,9 +157,9 @@ describe("WebSub Integration", () => {
 
     it("returns error for unsupported mode", async () => {
       const feed = await createTestFeed();
-      await createTestSubscription(feed.id, { topicUrl: feed.url ?? "" });
+      const { subscription } = await createTestSubscription(feed.id, { topicUrl: feed.url ?? "" });
 
-      const result = await handleVerificationChallengeByFeed(feed.id, {
+      const result = await handleVerificationChallenge(feed.id, subscription.id, {
         mode: "invalid",
         topic: feed.url ?? "",
         challenge: "test-challenge-123",
@@ -175,25 +170,13 @@ describe("WebSub Integration", () => {
       expect(result.error).toBe("Unsupported mode: invalid");
     });
 
-    it("returns error when subscription not found", async () => {
-      const nonExistentId = generateUuidv7();
-
-      const result = await handleVerificationChallengeByFeed(nonExistentId, {
-        mode: "subscribe",
-        topic: "https://example.com/feed.xml",
-        challenge: "test-challenge-123",
-        leaseSeconds: null,
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.error).toBe("Subscription not found");
-    });
-
     it("returns error when topic does not match", async () => {
       const feed = await createTestFeed();
-      await createTestSubscription(feed.id, { topicUrl: "https://example.com/correct-feed.xml" });
+      const { subscription } = await createTestSubscription(feed.id, {
+        topicUrl: "https://example.com/correct-feed.xml",
+      });
 
-      const result = await handleVerificationChallengeByFeed(feed.id, {
+      const result = await handleVerificationChallenge(feed.id, subscription.id, {
         mode: "subscribe",
         topic: "https://example.com/wrong-feed.xml",
         challenge: "test-challenge-123",
@@ -207,10 +190,10 @@ describe("WebSub Integration", () => {
     it("successfully verifies subscription and returns challenge", async () => {
       const feed = await createTestFeed();
       const topicUrl = "https://example.com/my-feed.xml";
-      await createTestSubscription(feed.id, { topicUrl });
+      const { subscription: created } = await createTestSubscription(feed.id, { topicUrl });
 
       const challenge = "random-challenge-string-456";
-      const result = await handleVerificationChallengeByFeed(feed.id, {
+      const result = await handleVerificationChallenge(feed.id, created.id, {
         mode: "subscribe",
         topic: topicUrl,
         challenge,
@@ -235,11 +218,11 @@ describe("WebSub Integration", () => {
       // and stays "active" in our DB forever even after the hub drops it.
       const feed = await createTestFeed();
       const topicUrl = "https://example.com/feed-no-lease.xml";
-      await createTestSubscription(feed.id, { topicUrl });
+      const { subscription: created } = await createTestSubscription(feed.id, { topicUrl });
 
       const challenge = "test-challenge-no-lease";
       const before = Date.now();
-      const result = await handleVerificationChallengeByFeed(feed.id, {
+      const result = await handleVerificationChallenge(feed.id, created.id, {
         mode: "subscribe",
         topic: topicUrl,
         challenge,
@@ -266,11 +249,11 @@ describe("WebSub Integration", () => {
       // still delivering at least every MAX_LEASE_SECONDS.
       const feed = await createTestFeed();
       const topicUrl = "https://example.com/feed-long-lease.xml";
-      await createTestSubscription(feed.id, { topicUrl });
+      const { subscription: created } = await createTestSubscription(feed.id, { topicUrl });
 
       const before = Date.now();
       const oneYear = 365 * 24 * 60 * 60;
-      const result = await handleVerificationChallengeByFeed(feed.id, {
+      const result = await handleVerificationChallenge(feed.id, created.id, {
         mode: "subscribe",
         topic: topicUrl,
         challenge: "long-lease-challenge",
@@ -300,7 +283,7 @@ describe("WebSub Integration", () => {
       await db.update(feeds).set({ websubActive: true }).where(eq(feeds.id, feed.id));
 
       const challenge = "unsubscribe-challenge-123";
-      const result = await handleVerificationChallengeByFeed(feed.id, {
+      const result = await handleVerificationChallenge(feed.id, createdSub.id, {
         mode: "unsubscribe",
         topic: topicUrl,
         challenge,
@@ -340,7 +323,7 @@ describe("WebSub Integration", () => {
       await db.update(feeds).set({ websubActive: true }).where(eq(feeds.id, feed.id));
 
       const challenge = "hub-unsubscribe-challenge";
-      const result = await handleVerificationChallengeByFeed(feed.id, {
+      const result = await handleVerificationChallenge(feed.id, createdSub.id, {
         mode: "unsubscribe",
         topic: topicUrl,
         challenge,
@@ -364,13 +347,13 @@ describe("WebSub Integration", () => {
 
     it("rejects unsubscribe with topic mismatch", async () => {
       const feed = await createTestFeed();
-      await createTestSubscription(feed.id, {
+      const { subscription } = await createTestSubscription(feed.id, {
         topicUrl: "https://example.com/correct-feed.xml",
         state: "active",
         unsubscribeRequestedAt: new Date(),
       });
 
-      const result = await handleVerificationChallengeByFeed(feed.id, {
+      const result = await handleVerificationChallenge(feed.id, subscription.id, {
         mode: "unsubscribe",
         topic: "https://example.com/wrong-feed.xml",
         challenge: "challenge",
@@ -382,44 +365,37 @@ describe("WebSub Integration", () => {
     });
   });
 
-  // Core HMAC behavior, exercised through the legacy per-feed entry point.
-  describe("verifyHmacSignatureByFeed (legacy per-feed)", () => {
+  describe("verifyHmacSignature", () => {
     it("returns false when signature is missing", async () => {
       const feed = await createTestFeed();
-      await createTestSubscription(feed.id, { state: "active" });
+      const { subscription } = await createTestSubscription(feed.id, { state: "active" });
 
-      const isValid = await verifyHmacSignatureByFeed(feed.id, null, "test body");
+      const isValid = await verifyHmacSignature(feed.id, subscription.id, null, "test body");
 
       expect(isValid).toBe(false);
     });
 
     it("returns false when subscription is not active", async () => {
       const feed = await createTestFeed();
-      const { secret } = await createTestSubscription(feed.id, { state: "pending" });
+      const { subscription, secret } = await createTestSubscription(feed.id, { state: "pending" });
 
       const body = "test body content";
       const hmac = createHmac("sha256", secret);
       hmac.update(body);
       const signature = `sha256=${hmac.digest("hex")}`;
 
-      const isValid = await verifyHmacSignatureByFeed(feed.id, signature, body);
-
-      expect(isValid).toBe(false);
-    });
-
-    it("returns false when subscription does not exist", async () => {
-      const nonExistentId = generateUuidv7();
-      const isValid = await verifyHmacSignatureByFeed(nonExistentId, "sha256=abc123", "test body");
+      const isValid = await verifyHmacSignature(feed.id, subscription.id, signature, body);
 
       expect(isValid).toBe(false);
     });
 
     it("returns false for malformed signature", async () => {
       const feed = await createTestFeed();
-      await createTestSubscription(feed.id, { state: "active" });
+      const { subscription } = await createTestSubscription(feed.id, { state: "active" });
 
-      const isValid = await verifyHmacSignatureByFeed(
+      const isValid = await verifyHmacSignature(
         feed.id,
+        subscription.id,
         "invalid-signature-format",
         "test body"
       );
@@ -429,62 +405,67 @@ describe("WebSub Integration", () => {
 
     it("returns false for invalid signature", async () => {
       const feed = await createTestFeed();
-      await createTestSubscription(feed.id, { state: "active" });
+      const { subscription } = await createTestSubscription(feed.id, { state: "active" });
 
       // Create a signature with a different body
       const wrongSignature =
         "sha256=0000000000000000000000000000000000000000000000000000000000000000";
 
-      const isValid = await verifyHmacSignatureByFeed(feed.id, wrongSignature, "test body");
+      const isValid = await verifyHmacSignature(
+        feed.id,
+        subscription.id,
+        wrongSignature,
+        "test body"
+      );
 
       expect(isValid).toBe(false);
     });
 
     it("returns true for valid SHA256 signature", async () => {
       const feed = await createTestFeed();
-      const { secret } = await createTestSubscription(feed.id, { state: "active" });
+      const { subscription, secret } = await createTestSubscription(feed.id, { state: "active" });
 
       const body = SAMPLE_RSS_FEED;
       const hmac = createHmac("sha256", secret);
       hmac.update(body);
       const signature = `sha256=${hmac.digest("hex")}`;
 
-      const isValid = await verifyHmacSignatureByFeed(feed.id, signature, body);
+      const isValid = await verifyHmacSignature(feed.id, subscription.id, signature, body);
 
       expect(isValid).toBe(true);
     });
 
     it("returns true for valid SHA1 signature", async () => {
       const feed = await createTestFeed();
-      const { secret } = await createTestSubscription(feed.id, { state: "active" });
+      const { subscription, secret } = await createTestSubscription(feed.id, { state: "active" });
 
       const body = "simple test body";
       const hmac = createHmac("sha1", secret);
       hmac.update(body);
       const signature = `sha1=${hmac.digest("hex")}`;
 
-      const isValid = await verifyHmacSignatureByFeed(feed.id, signature, body);
+      const isValid = await verifyHmacSignature(feed.id, subscription.id, signature, body);
 
       expect(isValid).toBe(true);
     });
 
     it("returns true for valid signature with Buffer body", async () => {
       const feed = await createTestFeed();
-      const { secret } = await createTestSubscription(feed.id, { state: "active" });
+      const { subscription, secret } = await createTestSubscription(feed.id, { state: "active" });
 
       const body = Buffer.from("buffer body content", "utf-8");
       const hmac = createHmac("sha256", secret);
       hmac.update(body);
       const signature = `sha256=${hmac.digest("hex")}`;
 
-      const isValid = await verifyHmacSignatureByFeed(feed.id, signature, body);
+      const isValid = await verifyHmacSignature(feed.id, subscription.id, signature, body);
 
       expect(isValid).toBe(true);
     });
 
     it("rejects a disallowed algorithm even with a correct digest", async () => {
       const feed = await createTestFeed();
-      const { secret } = await createTestSubscription(feed.id, { state: "active" });
+      const { subscription, secret } = await createTestSubscription(feed.id, { state: "active" });
 
       // A correctly-computed md5 HMAC must still be rejected: the WebSub spec
       // only permits sha1/sha256/sha384/sha512, and honoring an attacker-named
@@ -494,7 +475,7 @@ describe("WebSub Integration", () => {
       hmac.update(body);
       const signature = `md5=${hmac.digest("hex")}`;
 
-      const isValid = await verifyHmacSignatureByFeed(feed.id, signature, body);
+      const isValid = await verifyHmacSignature(feed.id, subscription.id, signature, body);
 
       expect(isValid).toBe(false);
     });
@@ -504,7 +485,7 @@ describe("WebSub Integration", () => {
     it("complete subscription flow: create pending -> verify -> active", async () => {
       const feed = await createTestFeed();
       const topicUrl = feed.url ?? "https://example.com/feed.xml";
-      const { secret } = await createTestSubscription(feed.id, {
+      const { subscription, secret } = await createTestSubscription(feed.id, {
         topicUrl,
         state: "pending",
       });
@@ -515,7 +496,7 @@ describe("WebSub Integration", () => {
 
       // 2. Hub sends verification challenge
       const challenge = "verification-challenge-xyz";
-      const result = await handleVerificationChallengeByFeed(feed.id, {
+      const result = await handleVerificationChallenge(feed.id, subscription.id, {
         mode: "subscribe",
         topic: topicUrl,
         challenge,
@@ -541,7 +522,7 @@ describe("WebSub Integration", () => {
       hmac.update(body);
       const signature = `sha256=${hmac.digest("hex")}`;
 
-      const isValid = await verifyHmacSignatureByFeed(feed.id, signature, body);
+      const isValid = await verifyHmacSignature(feed.id, subscription.id, signature, body);
       expect(isValid).toBe(true);
     });
 
@@ -550,13 +531,13 @@ describe("WebSub Integration", () => {
       const topicUrl = feed.url ?? "https://example.com/feed.xml";
 
       // Create first subscription
-      await createTestSubscription(feed.id, {
+      const { subscription } = await createTestSubscription(feed.id, {
         topicUrl,
         state: "pending",
       });
 
       // Verify first subscription
-      await handleVerificationChallengeByFeed(feed.id, {
+      await handleVerificationChallenge(feed.id, subscription.id, {
         mode: "subscribe",
         topic: topicUrl,
         challenge: "challenge-1",
@@ -574,7 +555,7 @@ describe("WebSub Integration", () => {
         .set({ state: "pending", leaseSeconds: null, expiresAt: null });
 
       // Verify again with different lease
-      await handleVerificationChallengeByFeed(feed.id, {
+      await handleVerificationChallenge(feed.id, subscription.id, {
         mode: "subscribe",
         topic: topicUrl,
         challenge: "challenge-2",
@@ -585,74 +566,10 @@ describe("WebSub Integration", () => {
       expect(second.state).toBe("active");
       expect(second.leaseSeconds).toBe(7200);
     });
-
-    it("legacy hub switch: verification activates the new hub row, not the stale one", async () => {
-      // Legacy per-feed callback path: a publisher switched hubs, so the feed has
-      // an old (unsubscribed) row and a new (pending) row sharing feed + topic.
-      // The per-feed callback is ambiguous, so the newest row must win. (The
-      // per-subscription callback below resolves this exactly, without ordering.)
-      const feed = await createTestFeed();
-      const topicUrl = feed.url ?? "https://example.com/feed.xml";
-
-      // Old subscription to hub A, torn down during the switch.
-      const { subscription: oldSub } = await createTestSubscription(feed.id, {
-        hubUrl: "https://hub-a.example.com/",
-        topicUrl,
-        state: "unsubscribed",
-        unsubscribeRequestedAt: new Date(),
-        createdAt: new Date("2026-01-01T00:00:00Z"),
-      });
-
-      // New pending subscription to hub B, created after the switch.
-      const { secret: newSecret, subscription: newSub } = await createTestSubscription(feed.id, {
-        hubUrl: "https://hub-b.example.com/",
-        topicUrl,
-        state: "pending",
-        createdAt: new Date("2026-01-02T00:00:00Z"),
-      });
-
-      const challenge = "hub-b-challenge";
-      const result = await handleVerificationChallengeByFeed(feed.id, {
-        mode: "subscribe",
-        topic: topicUrl,
-        challenge,
-        leaseSeconds: "3600",
-      });
-
-      expect(result.success).toBe(true);
-      expect(result.challenge).toBe(challenge);
-
-      // The new (hub B) row is now active; the old (hub A) row stays unsubscribed.
-      const [activatedNew] = await db
-        .select()
-        .from(websubSubscriptions)
-        .where(eq(websubSubscriptions.id, newSub.id));
-      expect(activatedNew.state).toBe("active");
-
-      const [staleOld] = await db
-        .select()
-        .from(websubSubscriptions)
-        .where(eq(websubSubscriptions.id, oldSub.id));
-      expect(staleOld.state).toBe("unsubscribed");
-
-      // Feed is active, and only the new hub's secret verifies notifications.
-      const [updatedFeed] = await db.select().from(feeds).where(eq(feeds.id, feed.id)).limit(1);
-      expect(updatedFeed.websubActive).toBe(true);
-
-      const body = "content from hub b";
-      const hmac = createHmac("sha256", newSecret);
-      hmac.update(body);
-      const isValid = await verifyHmacSignatureByFeed(
-        feed.id,
-        `sha256=${hmac.digest("hex")}`,
-        body
-      );
-      expect(isValid).toBe(true);
-    });
   });
 
-  // Primary path: callbacks carry both feed and subscription IDs, so they resolve
-  // to exactly one row - no feed-scoped ordering needed even with multiple rows.
+  // Callbacks carry both feed and subscription IDs, so they resolve to exactly
+  // one row even when a feed has several.
   describe("per-subscription callbacks", () => {
     it("verification activates the exact subscription named in the callback", async () => {
       const feed = await createTestFeed();
