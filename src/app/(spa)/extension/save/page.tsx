@@ -42,28 +42,27 @@ export default async function ExtensionSavePage({ searchParams }: PageProps) {
 
   // Validate required parameters
   if (!url) {
-    return <ExtensionSaveClient status="error" error="No URL provided" />;
+    return <ExtensionSaveClient error="No URL provided" />;
   }
+
+  const returnUrl = `/extension/save?url=${encodeURIComponent(url)}${title ? `&title=${encodeURIComponent(title)}` : ""}`;
+  const redirectToGoogleDocsAuth = async () => {
+    const authResult = await createGoogleAuthUrl({
+      additionalScopes: GOOGLE_DOCS_SCOPES,
+      mode: "extension-save",
+      returnUrl,
+    });
+    redirect(authResult.url);
+  };
 
   // Check authentication
   const cookieStore = await cookies();
   const sessionToken = cookieStore.get("session")?.value;
+  const session = sessionToken ? await validateSession(sessionToken) : null;
 
-  if (!sessionToken) {
-    // Not logged in - redirect to login with return URL
-    const returnUrl = encodeURIComponent(
-      `/extension/save?url=${encodeURIComponent(url)}${title ? `&title=${encodeURIComponent(title)}` : ""}`
-    );
-    redirect(`/login?redirect=${returnUrl}`);
-  }
-
-  const session = await validateSession(sessionToken);
-  if (!session) {
-    // Invalid session - redirect to login
-    const returnUrl = encodeURIComponent(
-      `/extension/save?url=${encodeURIComponent(url)}${title ? `&title=${encodeURIComponent(title)}` : ""}`
-    );
-    redirect(`/login?redirect=${returnUrl}`);
+  if (!sessionToken || !session) {
+    // Not logged in or invalid session - redirect to login with return URL
+    redirect(`/login?redirect=${encodeURIComponent(returnUrl)}`);
   }
 
   // Check if this is a Google Doc and we need OAuth
@@ -80,28 +79,14 @@ export default async function ExtensionSavePage({ searchParams }: PageProps) {
     const hasAllScopes = GOOGLE_DOCS_SCOPES.every((scope) => userScopes.includes(scope));
 
     if (!hasAllScopes) {
-      // Need to request Google Docs scopes
-      // Generate OAuth URL and redirect to Google with return to this page
-      const returnUrl = `/extension/save?url=${encodeURIComponent(url)}${title ? `&title=${encodeURIComponent(title)}` : ""}`;
-      const authResult = await createGoogleAuthUrl({
-        additionalScopes: GOOGLE_DOCS_SCOPES,
-        mode: "extension-save",
-        returnUrl,
-      });
-      redirect(authResult.url);
+      // Need to request Google Docs scopes; redirect to Google with return to this page
+      await redirectToGoogleDocsAuth();
     }
   }
 
   // If there's an error from a previous attempt, show it
   if (error) {
-    return (
-      <ExtensionSaveClient
-        status="error"
-        error={decodeURIComponent(error)}
-        url={url}
-        canRetry={true}
-      />
-    );
+    return <ExtensionSaveClient error={decodeURIComponent(error)} url={url} />;
   }
 
   // All auth is complete - save the article
@@ -127,19 +112,13 @@ export default async function ExtensionSavePage({ searchParams }: PageProps) {
     if (errorMessage === "NEEDS_GOOGLE_REAUTH") {
       needsGoogleReauth = true;
     } else {
-      return <ExtensionSaveClient status="error" error={errorMessage} url={url} canRetry={true} />;
+      return <ExtensionSaveClient error={errorMessage} url={url} />;
     }
   }
 
   // Handle Google reauth redirect outside try/catch (redirect throws)
   if (needsGoogleReauth) {
-    const returnUrl = `/extension/save?url=${encodeURIComponent(url)}${title ? `&title=${encodeURIComponent(title)}` : ""}`;
-    const authResult = await createGoogleAuthUrl({
-      additionalScopes: GOOGLE_DOCS_SCOPES,
-      mode: "extension-save",
-      returnUrl,
-    });
-    redirect(authResult.url);
+    await redirectToGoogleDocsAuth();
   }
 
   // Create an API token for the extension

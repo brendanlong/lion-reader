@@ -7,8 +7,6 @@
   "src/app/(spa)/(app)/AppLayoutContent.tsx\tdark:active:bg-zinc-700",
   "src/app/(spa)/admin/layout.tsx\tdark:bg-zinc-950",
   "src/app/(spa)/complete-signup/page.tsx\tdark:bg-zinc-800",
-  "src/app/(spa)/extension/save/client.tsx\tborder-zinc-900",
-  "src/app/(spa)/extension/save/client.tsx\tdark:border-zinc-100",
   "src/app/(spa)/oauth/consent/ConsentForm.tsx\tdark:bg-zinc-800",
   "src/app/(spa)/oauth/consent/ConsentForm.tsx\tdark:hover:bg-zinc-700",
   "src/app/(spa)/oauth/consent/ConsentForm.tsx\thover:bg-zinc-50",
