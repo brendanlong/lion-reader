@@ -127,10 +127,10 @@ export function getNarrationModelRef(userModel?: string | null, keys?: AiProvide
 
 /**
  * Builds a fallback narration result (plain input text, no LLM) with a paragraph
- * map aligned to how the player splits paragraphs. Shared by every fallback arm
- * (no Groq key, empty/invalid LLM response).
+ * map aligned to how the player splits paragraphs. Shared by every fallback arm,
+ * here and in the narration router (LLM off/unavailable, empty/invalid output, errors).
  */
-function buildFallbackNarration(
+export function buildFallbackNarration(
   inputParagraphs: NarrationInputParagraph[]
 ): GenerateNarrationResult {
   const { narrationText, paragraphMap } = buildAlignedNarration(
