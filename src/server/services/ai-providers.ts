@@ -24,7 +24,7 @@ import {
 import {
   listOpenRouterModels,
   openRouterChatCompletion,
-  pricePerMillionTokens,
+  pricePerMillionUnits,
   type OpenRouterModel,
 } from "@/server/services/openrouter";
 
@@ -59,7 +59,8 @@ function userKeyFor(provider: AiProvider, keys?: AiProviderKeys): string | null 
   }
 }
 
-function apiKeyFor(provider: AiProvider, keys?: AiProviderKeys): string | null {
+/** The user's key for the provider, else the server's, else null. */
+export function getProviderApiKey(provider: AiProvider, keys?: AiProviderKeys): string | null {
   return userKeyFor(provider, keys) ?? process.env[AI_PROVIDER_ENV_KEYS[provider]] ?? null;
 }
 
@@ -247,7 +248,7 @@ export async function generateChatCompletion(
       return choice && "message" in choice ? (choice.message.content ?? "") : "";
     }
     case "openrouter": {
-      const apiKey = apiKeyFor("openrouter", keys);
+      const apiKey = getProviderApiKey("openrouter", keys);
       if (!apiKey) {
         throw new Error("OpenRouter API key not configured");
       }
@@ -377,7 +378,7 @@ export function isUsableOpenRouterModel(
   if (outputs.length !== 1 || outputs[0] !== "text") return false;
   if (model.id.endsWith(":batch")) return false;
   if ((model.context_length ?? 0) < MIN_CONTEXT_WINDOW) return false;
-  if (pricePerMillionTokens(model.pricing?.prompt) === undefined) return false;
+  if (pricePerMillionUnits(model.pricing?.prompt) === undefined) return false;
   if (requirements.jsonObject && !model.supported_parameters?.includes("response_format")) {
     return false;
   }
@@ -470,8 +471,8 @@ async function listProviderModels(
           displayName: model.name,
           provider: "openrouter" as const,
           contextLength: model.context_length ?? undefined,
-          inputPricePerMillion: pricePerMillionTokens(model.pricing?.prompt),
-          outputPricePerMillion: pricePerMillionTokens(model.pricing?.completion),
+          inputPricePerMillion: pricePerMillionUnits(model.pricing?.prompt),
+          outputPricePerMillion: pricePerMillionUnits(model.pricing?.completion),
         }))
         .sort((a, b) => a.displayName.localeCompare(b.displayName));
     }

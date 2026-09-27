@@ -58,3 +58,23 @@ describe("OpenRouter API key", () => {
     expect((await getUserApiKeys(userId)).openrouterApiKey).toBeNull();
   });
 });
+
+describe("cloud voices", () => {
+  const previousServerKey = process.env.OPENROUTER_API_KEY;
+  beforeAll(() => {
+    delete process.env.OPENROUTER_API_KEY;
+  });
+  afterAll(() => {
+    if (previousServerKey !== undefined) process.env.OPENROUTER_API_KEY = previousServerKey;
+  });
+
+  it("are unavailable without an OpenRouter key", async () => {
+    const userId = await createTestUser();
+    const caller = createCaller(await createAuthContext(userId));
+
+    expect((await caller.narration.listVoiceModels()).models).toEqual([]);
+    await expect(
+      caller.narration.synthesize({ model: null, voice: null, text: "Hello." })
+    ).rejects.toThrow("Cloud voices require an OpenRouter API key");
+  });
+});

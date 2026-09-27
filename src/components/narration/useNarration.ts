@@ -1,9 +1,9 @@
 /**
  * useNarration Hook
  *
- * Manages article narration state using either the Web Speech API (browser voices)
- * or Piper TTS (enhanced voices). Handles narration generation, playback controls,
- * and Media Session integration.
+ * Manages article narration state using the Web Speech API (browser voices),
+ * Piper TTS (enhanced voices), or server-synthesized cloud voices. Handles
+ * narration generation, playback controls, and Media Session integration.
  *
  * The owning component holds the hook (it also needs `state.currentParagraph`
  * for highlighting) and hands the whole thing to the controls:
@@ -19,7 +19,7 @@
 
 "use client";
 
-import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, useSyncExternalStore } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { ArticleNarrator } from "@/lib/narration/ArticleNarrator";
 import { useNarrationSettings } from "@/lib/narration/settings";
@@ -29,6 +29,8 @@ import { primeMediaSessionAudio, stopMediaSessionAudio } from "@/lib/narration/m
 import { useMediaSession } from "./useMediaSession";
 import { trackNarrationPlaybackStarted } from "@/lib/telemetry";
 import { getPiperTTSProvider } from "@/lib/narration/piper-tts-provider";
+import { base64ToBlob, CloudAudioPlayer } from "@/lib/narration/cloud-audio-player";
+import { MAX_CLOUD_SPEECH_CHARS } from "@/lib/narration/constants";
 import { isEnhancedVoice } from "@/lib/narration/enhanced-voices";
 import {
   htmlToClientNarration,
@@ -39,6 +41,7 @@ import {
   StreamingAudioPlayer,
   type PlaybackPosition,
   type PlaybackStatus,
+  type StreamingPlayerCallbacks,
 } from "@/lib/narration/streaming-audio-player";
 import {
   type UseNarrationConfig,
@@ -86,6 +89,8 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
 
   // Streaming audio player for Piper TTS (sentence-level buffering)
   const streamingPlayerRef = useRef<StreamingAudioPlayer | null>(null);
+  // Media-element player for cloud voices
+  const cloudPlayerRef = useRef<CloudAudioPlayer | null>(null);
   // Track if we've already set up playback tracking for this session
   const hasTrackedPlaybackRef = useRef(false);
   // Paragraph mapping for translating narration indices to DOM element indices
@@ -97,9 +102,19 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   // Determine if we should use Piper provider
   const usePiper =
     settings.provider === "piper" && settings.voiceId && isEnhancedVoice(settings.voiceId);
+  const useCloud = settings.provider === "cloud";
+  // Piper and cloud voices drive their own player; browser voices use ArticleNarrator.
+  const usesBufferedPlayer = usePiper || useCloud;
 
   // tRPC mutation for generating narration
   const generateMutation = trpc.narration.generate.useMutation();
+  const trpcUtils = trpc.useUtils();
+
+  // The cloud player outlives renders, so it reads the current model/voice here.
+  const cloudVoiceRef = useRef({ model: settings.cloudModelId, voice: settings.voiceId });
+  useEffect(() => {
+    cloudVoiceRef.current = { model: settings.cloudModelId, voice: settings.voiceId };
+  }, [settings.cloudModelId, settings.voiceId]);
 
   // Initialize narrator instance (for browser voices)
   useEffect(() => {
@@ -107,10 +122,9 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
 
     narratorRef.current = new ArticleNarrator();
 
-    // Subscribe to state changes (only used when not using Piper)
+    // Subscribe to state changes (only used for browser voices)
     const unsubscribe = narratorRef.current.onStateChange((newState) => {
-      // Only update state from ArticleNarrator if we're using browser voices
-      if (!usePiper) {
+      if (!usesBufferedPlayer) {
         // Translate narration paragraph index to DOM element index using the mapping
         const mapping = paragraphMapRef.current[newState.currentParagraph];
         const domElementIndex = mapping ? mapping.o : newState.currentParagraph;
@@ -128,19 +142,20 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
       narratorRef.current?.stop();
       narratorRef.current = null;
     };
-  }, [isSupported, usePiper]);
+  }, [isSupported, usesBufferedPlayer]);
 
-  // Apply user settings when they change (browser voices only)
+  // Apply user settings when they change
   useEffect(() => {
-    if (!narratorRef.current || usePiper) return;
+    cloudPlayerRef.current?.setRate(settings.rate);
+    if (!narratorRef.current || usesBufferedPlayer) return;
 
     narratorRef.current.setRate(settings.rate);
     narratorRef.current.setPitch(settings.pitch);
-  }, [settings.rate, settings.pitch, usePiper]);
+  }, [settings.rate, settings.pitch, usesBufferedPlayer]);
 
   // Get the voice from settings when it changes (browser voices only)
   useEffect(() => {
-    if (!isSupported || !narratorRef.current || usePiper) return;
+    if (!isSupported || !narratorRef.current || usesBufferedPlayer) return;
 
     async function updateVoice() {
       if (settings.voiceId) {
@@ -154,7 +169,44 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     }
 
     updateVoice();
-  }, [isSupported, settings.voiceId, usePiper]);
+  }, [isSupported, settings.voiceId, usesBufferedPlayer]);
+
+  // State updates from the Piper and cloud players (same callback shape).
+  const bufferedPlayerCallbacks = useMemo(
+    (): StreamingPlayerCallbacks => ({
+      onStatusChange: (status: PlaybackStatus) => {
+        setState((prev) => ({
+          ...prev,
+          status: mapPlaybackStatus(status),
+        }));
+      },
+      onPositionChange: (position: PlaybackPosition, totalParagraphs: number) => {
+        // Translate narration paragraph index to DOM element index using the mapping
+        const mapping = paragraphMapRef.current[position.paragraph];
+        const domElementIndex = mapping ? mapping.o : position.paragraph;
+
+        setState((prev) => ({
+          ...prev,
+          currentParagraph: domElementIndex,
+          currentNarrationParagraph: position.paragraph,
+          totalParagraphs,
+        }));
+      },
+      onError: (error: Error) => {
+        console.error("Streaming playback error:", error);
+        setState((prev) => ({ ...prev, status: "idle" }));
+      },
+      onEnd: () => {
+        setState((prev) => ({
+          ...prev,
+          status: "idle",
+          currentParagraph: 0,
+          currentNarrationParagraph: 0,
+        }));
+      },
+    }),
+    []
+  );
 
   /**
    * Initialize or get the StreamingAudioPlayer for Piper TTS.
@@ -178,43 +230,25 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
         () => piperProvider.getAudioContext()
       );
 
-      // Set up callbacks to update React state
-      streamingPlayerRef.current.setCallbacks({
-        onStatusChange: (status: PlaybackStatus) => {
-          setState((prev) => ({
-            ...prev,
-            status: mapPlaybackStatus(status),
-          }));
-        },
-        onPositionChange: (position: PlaybackPosition, totalParagraphs: number) => {
-          // Translate narration paragraph index to DOM element index using the mapping
-          const mapping = paragraphMapRef.current[position.paragraph];
-          const domElementIndex = mapping ? mapping.o : position.paragraph;
-
-          setState((prev) => ({
-            ...prev,
-            currentParagraph: domElementIndex,
-            currentNarrationParagraph: position.paragraph,
-            totalParagraphs,
-          }));
-        },
-        onError: (error: Error) => {
-          console.error("Streaming playback error:", error);
-          setState((prev) => ({ ...prev, status: "idle" }));
-        },
-        onEnd: () => {
-          setState((prev) => ({
-            ...prev,
-            status: "idle",
-            currentParagraph: 0,
-            currentNarrationParagraph: 0,
-          }));
-        },
-      });
+      streamingPlayerRef.current.setCallbacks(bufferedPlayerCallbacks);
     }
 
     return streamingPlayerRef.current;
-  }, []);
+  }, [bufferedPlayerCallbacks]);
+
+  const getOrCreateCloudPlayer = useCallback((): CloudAudioPlayer => {
+    if (!cloudPlayerRef.current) {
+      cloudPlayerRef.current = new CloudAudioPlayer(async (text) => {
+        const result = await trpcUtils.client.narration.synthesize.mutate(
+          { ...cloudVoiceRef.current, text },
+          { context: { skipBatch: true } }
+        );
+        return base64ToBlob(result.audio, result.mimeType);
+      }, MAX_CLOUD_SPEECH_CHARS);
+      cloudPlayerRef.current.setCallbacks(bufferedPlayerCallbacks);
+    }
+    return cloudPlayerRef.current;
+  }, [bufferedPlayerCallbacks, trpcUtils]);
 
   /**
    * Start or resume playback.
@@ -227,7 +261,17 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     // any async narration generation, so the browser grants it while the gesture's
     // autoplay activation is still valid (issue #410). It's released below if
     // generation fails; on success the media-session effects keep it going.
-    primeMediaSessionAudio();
+    // Cloud voices prime their own element instead (see CloudAudioPlayer).
+    const cloudPlayer = useCloud ? getOrCreateCloudPlayer() : null;
+    if (cloudPlayer) {
+      if (cloudPlayer.getStatus() === "idle") cloudPlayer.prime();
+    } else {
+      primeMediaSessionAudio();
+    }
+    const releasePrimedAudio = () => {
+      if (cloudPlayer) cloudPlayer.stop();
+      else stopMediaSessionAudio();
+    };
 
     // Generates narration text (client-side, or on the server for LLM
     // normalization), stores it with its paragraph map, then hands it to `start`.
@@ -261,17 +305,36 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
           await start(narration);
         } else {
           // Nothing to narrate — release the primed media-session audio.
-          stopMediaSessionAudio();
+          releasePrimedAudio();
         }
       } catch (error) {
         console.error("Failed to generate narration:", error);
         setState((prev) => ({ ...prev, status: "idle" }));
         // Release the media-session audio primed within the play() gesture.
-        stopMediaSessionAudio();
+        releasePrimedAudio();
       } finally {
         setIsLoading(false);
       }
     };
+
+    if (cloudPlayer) {
+      cloudPlayer.setRate(settings.rate);
+      const playerStatus = cloudPlayer.getStatus();
+      if (playerStatus === "paused") await cloudPlayer.play();
+      if (playerStatus !== "idle") return;
+
+      const startCloud = async (narration: string) => {
+        cloudPlayer.load(splitIntoParagraphs(narration));
+        if (!hasTrackedPlaybackRef.current) {
+          trackNarrationPlaybackStarted(settings.provider);
+          hasTrackedPlaybackRef.current = true;
+        }
+        await cloudPlayer.play();
+      };
+      if (narrationText) await startCloud(narrationText);
+      else await loadNarration(startCloud);
+      return;
+    }
 
     if (usePiper && settings.voiceId) {
       const player = getOrCreateStreamingPlayer();
@@ -327,6 +390,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   }, [
     isSupported,
     usePiper,
+    useCloud,
     state.status,
     state.totalParagraphs,
     narrationText,
@@ -342,25 +406,35 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     showFullContent,
     showOriginal,
     getOrCreateStreamingPlayer,
+    getOrCreateCloudPlayer,
   ]);
+
+  // The active Piper or cloud player, if either is in use.
+  const bufferedPlayer = useCallback(
+    () => (usePiper ? streamingPlayerRef.current : useCloud ? cloudPlayerRef.current : null),
+    [usePiper, useCloud]
+  );
 
   const pause = useCallback(() => {
     if (!isSupported) return;
-    if (usePiper) streamingPlayerRef.current?.pause();
-    else narratorRef.current?.pause();
-  }, [isSupported, usePiper]);
+    const player = bufferedPlayer();
+    if (player) player.pause();
+    else if (!usesBufferedPlayer) narratorRef.current?.pause();
+  }, [isSupported, bufferedPlayer, usesBufferedPlayer]);
 
   const skipForward = useCallback(async () => {
     if (!isSupported) return;
-    if (usePiper) await streamingPlayerRef.current?.skipForward();
-    else narratorRef.current?.skipForward();
-  }, [isSupported, usePiper]);
+    const player = bufferedPlayer();
+    if (player) await player.skipForward();
+    else if (!usesBufferedPlayer) narratorRef.current?.skipForward();
+  }, [isSupported, bufferedPlayer, usesBufferedPlayer]);
 
   const skipBackward = useCallback(async () => {
     if (!isSupported) return;
-    if (usePiper) await streamingPlayerRef.current?.skipBackward();
-    else narratorRef.current?.skipBackward();
-  }, [isSupported, usePiper]);
+    const player = bufferedPlayer();
+    if (player) await player.skipBackward();
+    else if (!usesBufferedPlayer) narratorRef.current?.skipBackward();
+  }, [isSupported, bufferedPlayer, usesBufferedPlayer]);
 
   const playFromElement = useCallback(
     async (elementIndex: number) => {
@@ -374,14 +448,15 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
           : narrationParagraphForElement(paragraphMapRef.current, elementIndex);
       if (paragraphIndex === null) return;
 
-      if (usePiper) {
-        await streamingPlayerRef.current?.skipTo(paragraphIndex);
+      const player = bufferedPlayer();
+      if (player) {
+        await player.skipTo(paragraphIndex);
         return;
       }
 
-      narratorRef.current?.skipTo(paragraphIndex);
+      if (!usesBufferedPlayer) narratorRef.current?.skipTo(paragraphIndex);
     },
-    [isSupported, usePiper]
+    [isSupported, bufferedPlayer, usesBufferedPlayer]
   );
 
   /**
@@ -389,9 +464,10 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
    */
   const stop = useCallback(() => {
     if (!isSupported) return;
-    if (usePiper) streamingPlayerRef.current?.stop();
-    else narratorRef.current?.stop();
-  }, [isSupported, usePiper]);
+    const player = bufferedPlayer();
+    if (player) player.stop();
+    else if (!usesBufferedPlayer) narratorRef.current?.stop();
+  }, [isSupported, bufferedPlayer, usesBufferedPlayer]);
 
   // Reset narration state when the article, voice, or displayed content variant
   // changes (render-time pattern avoids cascading renders from calling setState
@@ -399,7 +475,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   // its paragraph map are variant-specific: replaying a cached "cleaned"
   // narration while the DOM now shows "full"/"original" would highlight the
   // wrong elements. Resetting forces the next play to re-narrate what's on screen.
-  const narrationResetKey = `${id}:${settings.voiceId}:${showFullContent ?? false}:${showOriginal ?? false}`;
+  const narrationResetKey = `${id}:${settings.provider}:${settings.cloudModelId}:${settings.voiceId}:${showFullContent ?? false}:${showOriginal ?? false}`;
   const [prevNarrationResetKey, setPrevNarrationResetKey] = useState(narrationResetKey);
   if (narrationResetKey !== prevNarrationResetKey) {
     setPrevNarrationResetKey(narrationResetKey);
@@ -421,12 +497,21 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
       narratorRef.current?.stop();
       streamingPlayerRef.current?.stop();
       streamingPlayerRef.current?.clearCache();
+      cloudPlayerRef.current?.stop();
+      cloudPlayerRef.current?.clearCache();
     };
-  }, [id, settings.voiceId, showFullContent, showOriginal]);
+  }, [
+    id,
+    settings.provider,
+    settings.cloudModelId,
+    settings.voiceId,
+    showFullContent,
+    showOriginal,
+  ]);
 
   // Expose OS-level media controls (lock screen, notification, Bluetooth/media
-  // keys) while narration is active. Works for both browser voices and Piper by
-  // driving the provider-agnostic play/pause/skip callbacks above. A session
+  // keys) while narration is active. Works for every provider by driving the
+  // provider-agnostic play/pause/skip callbacks above. A session
   // exists once narration text has been generated for this article.
   useMediaSession({
     active: isSupported && narrationText !== null,
@@ -434,6 +519,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     feedTitle,
     artwork,
     status: state.status,
+    ownsMediaElement: useCloud,
     controls: {
       play,
       pause,

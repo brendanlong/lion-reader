@@ -213,9 +213,14 @@ export default function PrivacyPolicyPage() {
               </LegalParagraph>
               <LegalParagraph>
                 When AI processing is disabled, we use simple HTML-to-text conversion that happens
-                entirely on our servers. Either way, the actual audio generation happens entirely on
-                your device using your browser&apos;s built-in text-to-speech. No audio data is sent
-                to external servers.
+                entirely on our servers.
+              </LegalParagraph>
+              <LegalParagraph>
+                With browser or enhanced voices, audio is generated entirely on your device. If you
+                choose <strong>Cloud Voices</strong> (off by default), the text being narrated is
+                sent to OpenRouter, which forwards it to the host of the speech model you picked
+                (for example Kokoro, hosted by DeepInfra or Together) to generate the audio. The
+                generated audio is streamed back to your device and not stored on our servers.
               </LegalParagraph>
               <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
                 <TextLink

@@ -211,6 +211,7 @@ describe("saveNarrationSettings", () => {
     const settings: NarrationSettings = {
       enabled: false,
       provider: "piper",
+      cloudModelId: null,
       voiceId: "test-voice",
       rate: 1.5,
       pitch: 0.8,
@@ -232,6 +233,7 @@ describe("saveNarrationSettings", () => {
     const originalSettings: NarrationSettings = {
       enabled: false,
       provider: "piper",
+      cloudModelId: null,
       voiceId: "en_US-lessac-medium",
       rate: 1.75,
       pitch: 0.9,

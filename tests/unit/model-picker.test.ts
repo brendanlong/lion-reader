@@ -87,6 +87,17 @@ describe("formatModelDetails", () => {
     ).toBe("OpenRouter · 131K context · free");
   });
 
+  it("shows per-character prices for speech models", () => {
+    expect(
+      formatModelDetails({
+        id: "openrouter:hexgrad/kokoro-82m",
+        displayName: "hexgrad: Kokoro 82M",
+        provider: "openrouter",
+        pricePerMillionCharacters: 4,
+      })
+    ).toBe("OpenRouter · $4.00 per 1M characters");
+  });
+
   it("shows only the provider when nothing else is reported", () => {
     expect(formatModelDetails(models[0])).toBe("Anthropic");
   });

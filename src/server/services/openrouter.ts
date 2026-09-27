@@ -31,6 +31,7 @@ const openRouterModelSchema = z.object({
     })
     .nullish(),
   supported_parameters: z.array(z.string()).nullish(),
+  supported_voices: z.array(z.string()).nullish(),
 });
 
 export type OpenRouterModel = z.infer<typeof openRouterModelSchema>;
@@ -140,7 +141,9 @@ const modelCache = new Map<string, { expiresAt: number; models: OpenRouterModel[
  * a refresh fails, the stale list is served and the refresh retried a minute
  * later rather than on every call.
  */
-export async function listOpenRouterModels(outputModality: "text"): Promise<OpenRouterModel[]> {
+export async function listOpenRouterModels(
+  outputModality: "text" | "speech"
+): Promise<OpenRouterModel[]> {
   const cached = modelCache.get(outputModality);
   if (cached && Date.now() < cached.expiresAt) {
     return cached.models;
@@ -172,11 +175,39 @@ async function fetchOpenRouterModels(outputModality: string): Promise<OpenRouter
 }
 
 /**
- * Converts OpenRouter's per-token USD price string to USD per million tokens.
+ * Synthesizes speech as MP3 via the OpenAI-compatible speech endpoint.
+ */
+export async function openRouterSpeech(
+  apiKey: string,
+  model: string,
+  voice: string,
+  input: string
+): Promise<Uint8Array> {
+  const response = await fetch(`${OPENROUTER_API_URL}/audio/speech`, {
+    method: "POST",
+    headers: { ...headers(apiKey), "Content-Type": "application/json" },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    body: JSON.stringify({
+      model,
+      voice,
+      input,
+      response_format: "mp3",
+      provider: { sort: "latency" },
+    }),
+  });
+  if (!response.ok) {
+    throw await errorFromResponse(response);
+  }
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+/**
+ * Converts OpenRouter's per-unit USD price string (per token, or per character
+ * for speech models) to USD per million units.
  * Returns undefined for missing prices and for the negative sentinel used by
  * routers whose price depends on the model they pick.
  */
-export function pricePerMillionTokens(price: string | null | undefined): number | undefined {
+export function pricePerMillionUnits(price: string | null | undefined): number | undefined {
   if (price == null) return undefined;
   const value = Number(price);
   // toPrecision strips float noise like 0.7999999999999999.
