@@ -821,6 +821,16 @@ img.content-img-loading {
   }
 }
 
+/* KaTeX emits each formula twice: `.katex-mathml` (MathML, which browsers
+   render natively) and `.katex-html`, a span tree that only looks right with
+   KaTeX's own stylesheet. We don't load that stylesheet, so hide the span copy
+   when its MathML twin is there. This is CSS rather than a sanitizer rule
+   because removing elements in the streaming sanitizer can desync its view of
+   the document from the browser's (an mXSS vector). */
+.reader-prose .katex-mathml + .katex-html {
+  display: none;
+}
+
 /* =================================
    Reader Prose <details>/<summary>
 
