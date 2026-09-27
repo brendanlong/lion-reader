@@ -7,8 +7,11 @@
 //! `lineargradient` → `linearGradient` — which is strictly more faithful
 //! than the old XML-mode parse), sanitized against a constrained
 //! DOMPurify-derived allow-list, and replaced by an opaque per-call-nonced
-//! placeholder token that the main lol_html pass passes through as inert
-//! text; the sanitized SVG is substituted back in afterwards.
+//! placeholder token. The sanitized SVG is substituted back in after the main
+//! lol_html pass, but only for tokens that pass saw as text: extraction can
+//! glue a token onto a neighbouring `<` (`<<svg>` becomes `<TOKEN`, a tag to
+//! the main pass), and markup reinserted into a tag it passed through would
+//! split it apart, turning what it read as attribute bytes into live markup.
 //!
 //! Security model (unchanged from the TS implementation): tags are
 //! DOMPurify's `svg` + `svgFilters` minus its `svgDisallowed` set, `style`,
@@ -26,7 +29,11 @@ use crate::scanner::{find_top_level_ranges, Recovery};
 use crate::serialize::{attr_display_name, escape_attr, escape_text};
 use crate::urls::{is_data_image, url_scheme};
 
-const ALLOWED_SVG_TAGS: &[&str] = &[
+/// DOMPurify's `svg` + `svgFilters` minus the exclusions in the module doc and
+/// `font`: SVG fonts render nowhere, and `<font>` is the one name here that
+/// breaks out of MathML, so SVG reinserted inside `<math>` (where a browser
+/// parses it as MathML) could otherwise drop the rest of the entry into HTML.
+pub(crate) const ALLOWED_SVG_TAGS: &[&str] = &[
     "svg",
     "a",
     "altglyph",
@@ -38,7 +45,6 @@ const ALLOWED_SVG_TAGS: &[&str] = &[
     "desc",
     "ellipse",
     "filter",
-    "font",
     "g",
     "glyph",
     "glyphref",
@@ -340,6 +346,12 @@ fn is_external_link(value: &str) -> bool {
 /// subtree is dropped). Children: elements recurse, text is escaped,
 /// everything else (comments, PIs) is dropped.
 fn emit_svg_element(el: ElementRef, out: &mut String) {
+    // By namespace as well as name: under `<desc>`/`<title>` (HTML integration
+    // points) an `<a>` or `<image>` is an HTML element, and it would be emitted
+    // as one the SVG allow-list never vetted.
+    if el.value().name.ns != html5ever::ns!(svg) {
+        return;
+    }
     let name = el.value().name();
     let lower = name.to_ascii_lowercase();
     if !ALLOWED_SVG_TAGS.contains(&lower.as_str()) {
@@ -543,12 +555,40 @@ pub fn extract_inline_svg(html: &str, warnings: &mut Vec<String>) -> SvgExtracti
     }
 }
 
-/// Substitute the sanitized SVG markup back in for the placeholder tokens,
-/// after the main pass has run on the placeholder'd HTML.
-pub fn reinsert_inline_svg(html: &str, extraction: &SvgExtraction) -> String {
+impl SvgExtraction {
+    /// Set `seen[i]` for each placeholder token that occurs whole in `text`.
+    /// Each token occurs once in [`SvgExtraction::html`], so this pins down
+    /// where the one occurrence is.
+    pub fn mark_placeholders_in(&self, text: &str, seen: &mut [bool]) {
+        let nonce = self.nonce.as_str();
+        let mut rest = text;
+        while let Some(at) = rest.find(nonce) {
+            let after = &rest[at + nonce.len()..];
+            let digits = after.bytes().take_while(u8::is_ascii_digit).count();
+            let index = after[..digits].parse::<usize>().ok();
+            match index {
+                Some(i) if after[digits..].starts_with(nonce) && i < seen.len() => {
+                    seen[i] = true;
+                    rest = &after[digits + nonce.len()..];
+                }
+                // Not a whole token here (e.g. the closing half of one split
+                // across chunks): step past this nonce and keep looking.
+                _ => rest = after,
+            }
+        }
+    }
+}
+
+/// Substitute the sanitized SVG markup back in for the placeholder tokens the
+/// main pass saw as text (`seen`, from [`SvgExtraction::mark_placeholders_in`]).
+/// Any other token is left where it is: removing it could change how the
+/// bytes around it tokenize, and it is inert text of the pass's own choosing.
+pub fn reinsert_inline_svg(html: &str, extraction: &SvgExtraction, seen: &[bool]) -> String {
     let mut result = html.to_string();
     for (i, svg) in extraction.svgs.iter().enumerate() {
-        result = result.replace(&svg_placeholder(&extraction.nonce, i), svg);
+        if seen.get(i) == Some(&true) {
+            result = result.replace(&svg_placeholder(&extraction.nonce, i), svg);
+        }
     }
     result
 }
@@ -564,7 +604,11 @@ mod tests {
     fn roundtrip(html: &str) -> String {
         let extraction = extract(html);
         // Simulate the main pass being a no-op on the placeholder text.
-        reinsert_inline_svg(&extraction.html, &extraction)
+        reinsert_inline_svg(
+            &extraction.html,
+            &extraction,
+            &vec![true; extraction.svgs.len()],
+        )
     }
 
     #[test]
@@ -625,11 +669,39 @@ mod tests {
     }
 
     #[test]
+    fn placeholders_are_found_only_whole() {
+        let extraction = extract("<svg/>a<svg/>b<svg/>");
+        let token = |i| svg_placeholder(&extraction.nonce, i);
+        let mut seen = [false; 3];
+        let (first, second) = (token(0), token(2));
+        extraction.mark_placeholders_in(&format!("x{first}y{second}"), &mut seen);
+        assert_eq!(seen, [true, false, true]);
+        // Half a token (text split mid-token) is not a token.
+        let mut seen = [false; 3];
+        let one = token(1);
+        extraction.mark_placeholders_in(&one[..one.len() - 1], &mut seen);
+        extraction.mark_placeholders_in(&one[1..], &mut seen);
+        assert_eq!(seen, [false; 3]);
+    }
+
+    #[test]
+    fn only_svg_namespace_elements_are_emitted() {
+        // Under `<desc>` these are HTML elements (`<image>` becomes `<img>`).
+        let out = roundtrip(
+            r#"<svg><desc><font color="red">t</font><image name="getElementById"/><a href="https://x.com">l</a></desc><rect width="1"/></svg>"#,
+        );
+        assert!(!out.contains("font"), "{out}");
+        assert!(!out.contains("getElementById"), "{out}");
+        assert!(!out.contains("<a"), "{out}");
+        assert!(out.contains(r#"<rect width="1"/>"#), "{out}");
+    }
+
+    #[test]
     fn multiple_svgs_reinsert_in_order() {
         let html = r#"<p>a</p><svg id="one"/><p>b</p><svg id="two"/>"#;
         let extraction = extract(html);
         assert_eq!(extraction.svgs.len(), 2);
-        let out = reinsert_inline_svg(&extraction.html, &extraction);
+        let out = reinsert_inline_svg(&extraction.html, &extraction, &[true, true]);
         // ids are namespaced (see idrefs.rs), hence the `uc-` prefix here.
         let one = out.find("id=\"uc-one\"").unwrap_or_else(|| panic!("{out}"));
         let two = out.find("id=\"uc-two\"").unwrap_or_else(|| panic!("{out}"));

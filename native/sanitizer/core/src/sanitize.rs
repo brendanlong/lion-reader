@@ -31,8 +31,8 @@
 
 use std::sync::LazyLock;
 
-use lol_html::html_content::Element;
-use lol_html::{doc_comments, doctype, element, HtmlRewriter, Settings};
+use lol_html::html_content::{ContentType, Element, TextChunk, TextType};
+use lol_html::{doc_comments, doc_text, doctype, element, HtmlRewriter, Settings};
 
 use crate::embeds::normalize_embed;
 use crate::idrefs::{prefix_fragment_href, prefix_id, prefix_id_list, ARIA_IDREF_ATTRS};
@@ -464,6 +464,58 @@ fn handle_iframe(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Sen
     el.set_attribute("allow", embed.allow)?;
     el.set_attribute("allowfullscreen", "")?;
     el.set_attribute("loading", "lazy")?;
+    // Load-bearing, see [`handle_text`]: an iframe's content is raw text in
+    // HTML and markup in MathML/SVG. Browsers never render it either way.
+    el.set_inner_content("", ContentType::Text);
+    Ok(())
+}
+
+/// Whether [`handle_text`] could change anything. A text handler makes
+/// lol_html materialize every text chunk, which measured ~45% slower on
+/// article-shaped content (`scripts/bench-sanitize.mts`), and almost no body
+/// needs one:
+///
+/// * A `<` can only be spliced if a deletion directly follows it. Every deleted
+///   token starts with `<`, so the input has `<<`; the two deletions that
+///   aren't whole tokens (iframe and CDATA content) follow a `>` or a `[`.
+/// * CDATA only opens at `<![CDATA[`.
+fn text_needs_handling(html: &str) -> bool {
+    let bytes = html.as_bytes();
+    memchr::memmem::find(bytes, b"<<").is_some() || memchr::memmem::find(bytes, b"<![").is_some()
+}
+
+/// Keeps the output tokenizing the same way no matter what the pass deleted
+/// around it. Every deletion removes whole tokens from a stream lol_html
+/// tokenized once, but the browser tokenizes what's *left*, and two things can
+/// make that differ. Each was a working `<img onerror>` injection:
+///
+/// * **Splicing.** A `<` in text is a character only because the next byte
+///   can't start a tag, which is exactly the case when a tag we delete follows
+///   it: `<<foo>img src=x onerror=…>` is text until `<foo>` goes, then a live
+///   `<img>`. Escaping every `<` in text means nothing left can join.
+/// * **Namespace.** CDATA sections and an `<iframe>`'s raw-text content
+///   tokenize differently inside `<math>`/`<svg>` than in HTML, and the pass
+///   can't keep its idea of which one it's in agreed with the browser's. A
+///   deletion can move the browser (dropping a `<center>` that would have
+///   broken out of MathML, or the `</math>` lol_html deletes along with an
+///   unclosed element it pops), and lol_html's own tracking is wrong in places
+///   (`<math><math></p>` leaves both in a browser, one per lol_html). So
+///   neither construct keeps any content: an empty CDATA section and an empty
+///   bogus comment are equally inert, and iframes lose their content in
+///   [`handle_iframe`]. Every other raw-text element is dropped whole
+///   ([`DROP_WITH_CONTENT`]).
+///
+/// `output_parses_to_allow_listed_markup_only` is the property test behind this.
+/// Only attached when [`text_needs_handling`] or text is being observed.
+fn handle_text(text: &mut TextChunk) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    match text.text_type() {
+        TextType::CDataSection => text.remove(),
+        TextType::Data if text.as_str().contains('<') => {
+            let escaped = text.as_str().replace('<', "&lt;");
+            text.replace(&escaped, ContentType::Html);
+        }
+        _ => {}
+    }
     Ok(())
 }
 
@@ -673,7 +725,7 @@ fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Se
 /// before the cut** — mangling content is tolerable, fabricating markup is an XSS
 /// bypass. Deleting a whole end-tag token gets the tokenizer *state* right for
 /// free (an end tag returns to the data state either side of the cut), but that
-/// alone is not enough, and three things carry the rest. Each of them was a
+/// alone is not enough, and four things carry the rest. Each of them was a
 /// working `<img onerror>` injection before it was there, so treat them as
 /// load-bearing:
 ///
@@ -700,7 +752,7 @@ fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Se
 ///   this.
 ///
 /// `end_tag_drop_never_adds_markup` is the property test that stands behind all
-/// three; it is a differential against a real tree builder over generated
+/// four; it is a differential against a real tree builder over generated
 /// fragments, not a list of examples, because examples are what missed them.
 ///
 /// Returns `None` when there was nothing to drop — the overwhelmingly common
@@ -853,25 +905,57 @@ fn rewrite_dropping_disallowed_end_tags(html: &str) -> String {
 /// Run the allow-list pass over `html`. Errors (rewriter failure) must be
 /// treated as fatal by the caller — there is no partial output to serve.
 pub fn sanitize_html_pass(html: &str) -> Result<String, String> {
+    sanitize_html_pass_observing_text(html, None)
+}
+
+/// [`sanitize_html_pass`], also handing `observe_text` every chunk of ordinary
+/// text it reads (not markup, comments, CDATA or raw text). That is the only
+/// place content can be put into the output afterwards without changing how
+/// the rest of it tokenizes — see `svg.rs`.
+pub fn sanitize_html_pass_observing_text(
+    html: &str,
+    mut observe_text: Option<&mut dyn FnMut(&str)>,
+) -> Result<String, String> {
     let mut output = Vec::with_capacity(html.len());
+    let ending = std::cell::Cell::new(false);
+    let needs_text_handler = text_needs_handling(html);
+    let mut document_content_handlers = vec![
+        doc_comments!(|c| {
+            c.remove();
+            Ok(())
+        }),
+        doctype!(|d| {
+            d.remove();
+            Ok(())
+        }),
+    ];
+    if needs_text_handler || observe_text.is_some() {
+        document_content_handlers.push(doc_text!(move |text| {
+            if let (TextType::Data, Some(observe)) = (text.text_type(), observe_text.as_mut()) {
+                observe(text.as_str());
+            }
+            handle_text(text)
+        }));
+    }
     let mut rewriter = HtmlRewriter::new(
         Settings {
             element_content_handlers: vec![element!("*", handle_element)],
-            document_content_handlers: vec![
-                doc_comments!(|c| {
-                    c.remove();
-                    Ok(())
-                }),
-                doctype!(|d| {
-                    d.remove();
-                    Ok(())
-                }),
-            ],
+            document_content_handlers,
             ..Settings::new()
         },
-        |chunk: &[u8]| output.extend_from_slice(chunk),
+        |chunk: &[u8]| {
+            if !ending.get() {
+                output.extend_from_slice(chunk);
+            }
+        },
     );
     rewriter.write(html.as_bytes()).map_err(|e| e.to_string())?;
+    // What lol_html only lets go of at the end is a token the input ended
+    // partway through: a tag (or a lone `<`). It passes that through raw, never
+    // handing it to `handle_element`. A browser drops it too, but output that
+    // ends inside a tag gets finished by whatever is appended to it — and
+    // clients of the feed-reader APIs wrap it in their own templates.
+    ending.set(true);
     rewriter.end().map_err(|e| e.to_string())?;
     let rewritten = String::from_utf8(output).map_err(|e| e.to_string())?;
     Ok(drop_disallowed_end_tags(&rewritten).unwrap_or(rewritten))
@@ -1281,8 +1365,14 @@ mod tests {
             // Nor may it swallow the rest of the document looking for a `>`.
             "<p>a</p></body",
         ] {
-            let out = sanitize(html);
+            let out = drop_disallowed_end_tags(html).unwrap_or_else(|| html.to_string());
             assert_eq!(out, html, "{html}");
+            // The main pass drops a tag the input ends partway through (the
+            // unclosed quote makes `class="x>…` one), so only the others reach
+            // the end-tag pass whole.
+            if !html.ends_with("</body") && !html.contains("class=") {
+                assert_eq!(sanitize(html), html, "{html}");
+            }
         }
     }
 
@@ -1292,16 +1382,17 @@ mod tests {
         // not an end tag at all must survive byte-identically.
         let attr = "<p title=\"</body>\">a</p>";
         assert_eq!(sanitize(attr), attr);
-        // Inside a raw-text element the "tags" are text. `iframe` is the only
-        // raw-text element that survives the allow-list, so it is the only place
-        // this can be observed — including self-closed, since an HTML element
-        // ignores the `/` and opens the raw-text run anyway.
+        // Inside a raw-text element the "tags" are text — including a
+        // self-closed `iframe`, since an HTML element ignores the `/` and opens
+        // the raw-text run anyway. The main pass empties every iframe it keeps,
+        // so only the end-tag pass on its own can observe this.
         for open in [
             r#"<iframe src="https://www.youtube.com/embed/abc123">"#,
             r#"<iframe src="https://www.youtube.com/embed/abc123"/>"#,
         ] {
-            let out = sanitize(&format!("{open}</body><p>fallback</p></iframe>"));
-            assert!(out.contains("</body><p>fallback</p></iframe>"), "{out}");
+            let html = format!("{open}</body><p>fallback</p></iframe>");
+            let out = drop_disallowed_end_tags(&html).unwrap_or_else(|| html.clone());
+            assert_eq!(out, html);
         }
     }
 
@@ -1310,11 +1401,13 @@ mod tests {
         // A lone `<` is emitted as a *character* precisely because our `<`
         // follows it, so deleting our bytes would promote it to a tag-open and
         // fabricate a live element out of inert text.
+        // The main pass escapes every such `<` first (see `handle_text`), so
+        // this is the end-tag pass's own guard, exercised on its own.
         for html in [
             "<p>hi</p><</body>img src=x onerror=alert(1)>",
             "<p>a < b</p><</html>img src=x onerror=alert(1)>",
         ] {
-            let out = sanitize(html);
+            let out = drop_disallowed_end_tags(html).unwrap_or_else(|| html.to_string());
             assert_eq!(out, html, "{html}");
         }
         // An unterminated character reference would join across the cut too.
@@ -1322,6 +1415,54 @@ mod tests {
         assert_eq!(sanitize("<p>&am</body>p;</p>"), "<p>&am</body>p;</p>");
         // The terminated form has nothing to join to, so it is cut as usual.
         assert_eq!(sanitize("<p>&amp;</body>x</p>"), "<p>&amp;x</p>");
+    }
+
+    #[test]
+    fn deletions_cannot_change_how_the_rest_tokenizes() {
+        // One of each shape `output_parses_to_allow_listed_markup_only` stands
+        // behind; see `handle_text`.
+        let iframe = r#"<iframe src="https://www.youtube.com/embed/abc123">"#;
+        let payload = "<img src=x onerror=alert(1)>";
+        for html in [
+            // A lone `<` joining the next tag's name once the tag between goes.
+            "<<foo>img src=x onerror=alert(1)>".to_string(),
+            "<<!--c-->img src=x onerror=alert(1)>".to_string(),
+            // A dropped `</math>` (lol_html deletes the end tag that pops an
+            // unclosed removed element) or a dropped MathML breakout leaving the
+            // browser in MathML, where an iframe's content is markup.
+            format!("<math><annotation>x</math>{iframe}{payload}</iframe>"),
+            format!("<math><blink>x</math>{iframe}{payload}</iframe>"),
+            format!("<math><center>x{iframe}{payload}</iframe>"),
+            // Untouched markup lol_html itself places in the wrong namespace:
+            // `</p>` breaks out of both `<math>`s in a browser, so the CDATA is
+            // a bogus comment ending at its first `>`.
+            format!("<math><math></p><![CDATA[>{payload}]]>"),
+        ] {
+            let out = sanitize(&html);
+            assert!(disallowed_markup(&out, false).is_none(), "{html}\n=> {out}");
+        }
+        // The escape changes nothing a reader sees.
+        assert_eq!(sanitize("<p>a << b</p>"), "<p>a &lt;&lt; b</p>");
+    }
+
+    #[test]
+    #[ignore = "lol_html can't remove an attribute named `=…` (#1637)"]
+    fn attributes_named_with_a_leading_equals_are_removed() {
+        assert_eq!(sanitize("<p =onclick=alert(1)>t</p>"), "<p>t</p>");
+    }
+
+    #[test]
+    fn a_tag_cut_off_by_the_end_of_input_is_dropped() {
+        // Inert alone, but live once anything is appended after it.
+        assert_eq!(
+            sanitize("<p>x</p><img src=x onerror=alert(1)//"),
+            "<p>x</p>"
+        );
+        assert_eq!(
+            sanitize(r#"<p>x</p><a href="javascript:alert(1)" "#),
+            "<p>x</p>"
+        );
+        assert_eq!(sanitize("<p>x</p>trailing text"), "<p>x</p>trailing text");
     }
 
     #[test]
@@ -1435,6 +1576,222 @@ mod tests {
             cut_something > 1_000,
             "only {cut_something} inputs were cut"
         );
+    }
+
+    /// Why `html`, as a browser parses it, is not something the allow-list
+    /// would have let through — or None if it is. The transforms' own
+    /// attributes (iframe embeds, task-list checkboxes) are allowed by
+    /// construction, not by `attr_allowed`. `svg` admits reinserted inline SVG,
+    /// which the pass alone never outputs.
+    fn disallowed_markup(html: &str, svg: bool) -> Option<String> {
+        use html5ever::ns;
+        for node in scraper::Html::parse_fragment(html).tree.nodes() {
+            let Some(el) = node.value().as_element() else {
+                continue;
+            };
+            let tag = el.name();
+            // Inline SVG has its own allow-list (`svg.rs`, tested there). Inside
+            // `<math>` a browser parses it as MathML, under a MathML `<svg>`.
+            let is_svg = el.name.ns == ns!(svg)
+                || (el.name.ns == ns!(mathml)
+                    && node
+                        .ancestors()
+                        .chain(std::iter::once(node))
+                        .filter_map(|n| n.value().as_element())
+                        .any(|e| e.name.ns == ns!(mathml) && e.name() == "svg"));
+            if is_svg {
+                let lower = tag.to_ascii_lowercase();
+                if !svg || !crate::svg::ALLOWED_SVG_TAGS.contains(&lower.as_str()) {
+                    return Some(format!("<svg:{tag}>"));
+                }
+                for (attr, value) in el.attrs() {
+                    let scheme = crate::urls::url_scheme(value);
+                    let bad_url = matches!(attr, "href" | "xlink:href")
+                        && scheme.as_deref().is_some_and(|s| {
+                            !matches!(s, "http" | "https" | "mailto" | "tel")
+                                && !crate::urls::is_data_image(value)
+                        });
+                    if attr.to_ascii_lowercase().starts_with("on") || bad_url {
+                        return Some(format!("<svg:{tag} {attr}={value:?}>"));
+                    }
+                }
+                continue;
+            }
+            // `parse_fragment`'s own wrappers (their attributes are still
+            // checked below).
+            if !tag_allowed(tag) && !matches!(tag, "html" | "body") {
+                return Some(format!("<{tag}>"));
+            }
+            for (attr, value) in el.attrs() {
+                // lol_html can't remove an attribute whose name starts with `=`
+                // (#1637). No such name means anything to a browser.
+                let allowed = attr.starts_with('=')
+                    || attr_allowed(tag, attr)
+                    || (tag == "iframe"
+                        && matches!(
+                            attr,
+                            "src"
+                                | "sandbox"
+                                | "allow"
+                                | "allowfullscreen"
+                                | "loading"
+                                | "width"
+                                | "height"
+                        ))
+                    || (tag == "input" && matches!(attr, "type" | "checked" | "disabled"));
+                if !allowed {
+                    return Some(format!("<{tag} {attr}>"));
+                }
+                if let Some(schemes) = url_schemes_for(tag, attr) {
+                    if !is_image_url_allowed(value, schemes) {
+                        return Some(format!("<{tag} {attr}={value:?}>"));
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// [`disallowed_markup`] of `html` alone and with markup after it. Output
+    /// gets concatenated (feed-reader API clients wrap it in their own
+    /// templates), so it must not end partway through a tag that whatever
+    /// follows would complete: `"'>` closes a tag from any tag state.
+    fn disallowed_markup_even_if_appended_to(html: &str, svg: bool) -> Option<String> {
+        disallowed_markup(html, svg).or_else(|| disallowed_markup(&format!("{html}\"'>"), svg))
+    }
+
+    #[test]
+    fn output_parses_to_allow_listed_markup_only() {
+        // The property the whole pass exists for, checked end to end: a browser
+        // parsing the output must find nothing the allow-list rejects. Every edit
+        // the pass makes deletes bytes from a stream it tokenized once, so each is
+        // a chance for the browser to tokenize what's left differently — a lone
+        // `<` joining the next tag's name, or a dropped `</math>`/`<center>`
+        // leaving an embed's fallback text parsed as MathML instead of raw text.
+        // Like `end_tag_drop_never_adds_markup`, this is a differential against a
+        // real tree builder over generated fragments, not a list of examples.
+        const PIECES: &[&str] = &[
+            "<",
+            ">",
+            "/",
+            "=",
+            "\"",
+            " ",
+            "a",
+            "<p>",
+            "</p>",
+            "<foo>",
+            "</foo>",
+            "<!--c-->",
+            "<!doctype html>",
+            "<center>",
+            "<font color=red>",
+            "<math>",
+            "</math>",
+            "<mi>",
+            "</mi>",
+            "<mtext>",
+            "<annotation>",
+            "</annotation>",
+            r#"<annotation-xml encoding="text/html">"#,
+            "</annotation-xml>",
+            "<![CDATA[",
+            "]]>",
+            "<svg>",
+            "</svg>",
+            "<table>",
+            "<script>alert(1)</script>",
+            "<title>",
+            "</title>",
+            "<img src=q onerror=alert(1)>",
+            "img src=q onerror=alert(1)>",
+            "a href=javascript:alert(1)>",
+            r#"<iframe src="https://www.youtube.com/embed/abc123">"#,
+            "</iframe>",
+        ];
+        // A deterministic LCG, so a failure reproduces from its seed alone.
+        let mut seed = 0x9E37_79B9_7F4A_7C15u64;
+        let mut next = move || {
+            seed = seed
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963);
+            (seed >> 33) as usize
+        };
+        let mut sanitized = 0usize;
+        for _ in 0..50_000 {
+            let input: String = (0..2 + next() % 8)
+                .map(|_| PIECES[next() % PIECES.len()])
+                .collect();
+            // A rewriter error is a refusal, which serves nothing.
+            let Ok(out) = sanitize_html_pass(&input) else {
+                continue;
+            };
+            sanitized += 1;
+            if let Some(bad) = disallowed_markup_even_if_appended_to(&out, false) {
+                panic!("output parses to {bad}\n  in : {input:?}\n  out: {out:?}");
+            }
+        }
+        assert!(sanitized > 45_000, "only {sanitized} inputs were sanitized");
+    }
+
+    #[test]
+    fn pipeline_output_parses_to_allow_listed_markup_only() {
+        // The same property through the whole pipeline, whose MathJax and SVG
+        // stages rewrite the input before this pass and after it. Reinserting
+        // SVG is the one place markup is added after the pass, so it must land
+        // only where the pass read text (see `svg.rs`).
+        const PIECES: &[&str] = &[
+            "<",
+            ">",
+            "\"",
+            " x=\"",
+            "a",
+            "<p>",
+            "<foo>",
+            "<!--c-->",
+            "<math>",
+            "</math>",
+            "<![CDATA[",
+            "]]>",
+            "<svg></svg>",
+            "<svg><text>t</text></svg>",
+            "<svg><title>t</title></svg>",
+            "<svg><desc><img src=q onerror=alert(1)></desc></svg>",
+            "<svg>",
+            "</svg>",
+            r#"<mjx-container class="MathJax"><mjx-math><mjx-mi><mjx-c class="mjx-c1D465"></mjx-c></mjx-mi></mjx-math></mjx-container>"#,
+            "<mjx-container>",
+            "<img src=q onerror=alert(1)>",
+            "img src=q onerror=alert(1)>",
+            r#"<iframe src="https://www.youtube.com/embed/abc123">"#,
+            "</iframe>",
+            "<style>",
+            // SVG reinserted inside `<math>` is parsed as MathML, where a
+            // breakout would drop the rest into HTML.
+            "<font color=red>",
+            r#"<svg><desc><font color=red></font></desc><image name="x" href="https://e.com/a.png"></image></svg>"#,
+        ];
+        let mut seed = 0x0DDB_1A5E_5BAD_5EEDu64;
+        let mut next = move || {
+            seed = seed
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963);
+            (seed >> 33) as usize
+        };
+        let mut sanitized = 0usize;
+        for _ in 0..30_000 {
+            let input: String = (0..2 + next() % 8)
+                .map(|_| PIECES[next() % PIECES.len()])
+                .collect();
+            let Ok(out) = crate::sanitize_entry_html(&input, &mut Vec::new()) else {
+                continue;
+            };
+            sanitized += 1;
+            if let Some(bad) = disallowed_markup_even_if_appended_to(&out, true) {
+                panic!("output parses to {bad}\n  in : {input:?}\n  out: {out:?}");
+            }
+        }
+        assert!(sanitized > 25_000, "only {sanitized} inputs were sanitized");
     }
 
     #[test]
