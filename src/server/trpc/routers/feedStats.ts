@@ -11,6 +11,7 @@ import { eq, and, isNull, sql, count } from "drizzle-orm";
 
 import { createTRPCRouter, confirmedProtectedProcedure as protectedProcedure } from "../trpc";
 import { feeds, subscriptions, entries } from "@/server/db/schema";
+import { createCursorCodec, cursorUuid } from "@/server/services/cursor";
 
 // ============================================================================
 // Constants
@@ -18,6 +19,14 @@ import { feeds, subscriptions, entries } from "@/server/db/schema";
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
+
+/** Keyset cursor matching ORDER BY (resolved title ASC, subscription id DESC). */
+const feedStatsCursor = createCursorCodec(
+  z.object({
+    title: z.string(),
+    id: cursorUuid,
+  })
+);
 
 // ============================================================================
 // Output Schemas
@@ -71,10 +80,7 @@ export const feedStatsRouter = createTRPCRouter({
     .input(
       z
         .object({
-          // Validated as a UUID so a malformed cursor is a 400 rather than a
-          // Postgres `invalid input syntax for type uuid` 500 from the keyset
-          // comparison below.
-          cursor: z.string().uuid().optional(),
+          cursor: z.string().optional(),
           limit: z.number().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT),
         })
         .optional()
@@ -97,28 +103,14 @@ export const feedStatsRouter = createTRPCRouter({
         eq(feeds.type, "web"),
       ];
 
-      // Cursor-based pagination matching ORDER BY (resolved_title ASC, id DESC).
-      // We need composite logic since the primary sort (title) differs from the cursor column (id).
+      const resolvedTitle = sql<string>`COALESCE(${subscriptions.customTitle}, ${feeds.title}, ${feeds.url}, '')`;
+
       if (cursor) {
-        // The boundary-row lookups are scoped to the requesting user: never
-        // resolve a caller-supplied id without a user predicate.
+        const after = feedStatsCursor.decode(cursor);
         conditions.push(
           sql`(
-            COALESCE(${subscriptions.customTitle}, ${feeds.title}, ${feeds.url}) > (
-              SELECT COALESCE(s2.custom_title, f2.title, f2.url)
-              FROM subscriptions s2
-              JOIN feeds f2 ON f2.id = s2.feed_id
-              WHERE s2.id = ${cursor} AND s2.user_id = ${userId}
-            )
-            OR (
-              COALESCE(${subscriptions.customTitle}, ${feeds.title}, ${feeds.url}) = (
-                SELECT COALESCE(s2.custom_title, f2.title, f2.url)
-                FROM subscriptions s2
-                JOIN feeds f2 ON f2.id = s2.feed_id
-                WHERE s2.id = ${cursor} AND s2.user_id = ${userId}
-              )
-              AND ${subscriptions.id} < ${cursor}
-            )
+            ${resolvedTitle} > ${after.title}
+            OR (${resolvedTitle} = ${after.title} AND ${subscriptions.id} < ${after.id})
           )`
         );
       }
@@ -166,22 +158,20 @@ export const feedStatsRouter = createTRPCRouter({
           lastFetchSizeBytes: feeds.lastFetchSizeBytes,
           totalEntryCount: entryStatsSq.totalCount,
           entriesPerWeek: entriesPerWeekExpr.as("entries_per_week"),
+          resolvedTitle: resolvedTitle.as("resolved_title"),
         })
         .from(feeds)
         .innerJoin(subscriptions, eq(subscriptions.feedId, feeds.id))
         .leftJoinLateral(entryStatsSq, sql`true`)
         .where(and(...conditions))
-        .orderBy(
-          sql`COALESCE(${subscriptions.customTitle}, ${feeds.title}, ${feeds.url}) ASC`,
-          sql`${subscriptions.id} DESC`
-        )
+        .orderBy(sql`${resolvedTitle} ASC`, sql`${subscriptions.id} DESC`)
         .limit(limit + 1);
 
-      // Check if there are more results
       let nextCursor: string | undefined;
       if (feedStats.length > limit) {
-        const nextItem = feedStats.pop()!;
-        nextCursor = nextItem.subscriptionId;
+        feedStats.pop();
+        const last = feedStats[feedStats.length - 1];
+        nextCursor = feedStatsCursor.encode({ title: last.resolvedTitle, id: last.subscriptionId });
       }
 
       return {

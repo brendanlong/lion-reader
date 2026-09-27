@@ -10,6 +10,7 @@ import { eq, and, isNull, isNotNull, sql, desc, asc, lt, gt, ilike, count, max }
 import crypto from "crypto";
 
 import { createTRPCRouter, adminProcedure } from "../trpc";
+import { errors } from "../errors";
 import {
   feeds,
   entries,
@@ -24,6 +25,8 @@ import {
   userEntries,
 } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
+import { parseTimestamptzOrNull } from "@/server/db/temporal";
+import { createCursorCodec, cursorUuid } from "@/server/services/cursor";
 import {
   getMaintenanceRaw,
   getAnnouncementRaw,
@@ -62,11 +65,23 @@ function getAppUrl(): string {
   return process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 }
 
-/** Shared pagination input schema */
+/** Shared pagination input schema; `cursor` is an opaque codec-encoded keyset tuple */
 const paginationInput = z.object({
-  cursor: z.string().uuid().optional(),
+  cursor: z.string().optional(),
   limit: z.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT),
 });
+
+/** Keyset cursor matching the invite list's ORDER BY id DESC. */
+const inviteCursor = createCursorCodec(z.object({ id: cursorUuid }));
+
+/** Keyset cursor matching the feed list's ORDER BY failures DESC, COALESCE(title, '') ASC, id ASC. */
+const adminFeedCursor = createCursorCodec(
+  z.object({
+    failures: z.number().int(),
+    title: z.string(),
+    id: cursorUuid,
+  })
+);
 
 /**
  * Sort options for the admin user list. Each sorts by a durable, indexable
@@ -78,6 +93,24 @@ const paginationInput = z.object({
  */
 const USER_SORT = z.enum(["activity", "created", "oldest", "email"]);
 type UserSort = z.infer<typeof USER_SORT>;
+
+/**
+ * Keyset cursor for the admin user list. Tagged with its sort so a cursor from
+ * one ordering can't be replayed against another.
+ */
+const adminUserCursor = createCursorCodec(
+  z.discriminatedUnion("sort", [
+    z.object({ sort: z.literal("created"), id: cursorUuid }),
+    z.object({ sort: z.literal("oldest"), id: cursorUuid }),
+    z.object({ sort: z.literal("email"), email: z.string(), id: cursorUuid }),
+    z.object({
+      sort: z.literal("activity"),
+      // Full-precision ISO instant (see "Timestamp cursors" in src/server/CLAUDE.md).
+      lastActiveAt: z.iso.datetime({ offset: true }).nullable(),
+      id: cursorUuid,
+    }),
+  ])
+);
 
 // ============================================================================
 // INVITE ENDPOINTS
@@ -182,9 +215,8 @@ const inviteEndpoints = {
 
       const conditions = [];
 
-      // Cursor-based pagination: id < cursor (since we order by id DESC)
       if (cursor) {
-        conditions.push(lt(invites.id, cursor));
+        conditions.push(lt(invites.id, inviteCursor.decode(cursor).id));
       }
 
       // Search by used-by user email
@@ -211,7 +243,9 @@ const inviteEndpoints = {
 
       const hasMore = rows.length > limit;
       const items = hasMore ? rows.slice(0, limit) : rows;
-      const nextCursor = hasMore ? items[items.length - 1].id : undefined;
+      const nextCursor = hasMore
+        ? inviteCursor.encode({ id: items[items.length - 1].id })
+        : undefined;
 
       return {
         items: items.map((inv) => {
@@ -356,21 +390,18 @@ const feedHealthEndpoints = {
       // Only web feeds
       conditions.push(eq(feeds.type, "web"));
 
-      // Cursor-based pagination with mixed sort directions:
-      // ORDER BY consecutiveFailures DESC, title ASC, id ASC
-      // Tuple comparison (<) assumes uniform direction, so we use explicit OR logic.
+      // ORDER BY consecutiveFailures DESC, title ASC, id ASC. Tuple comparison
+      // assumes uniform direction, so spell out the mixed-direction keyset.
       if (cursor) {
+        const after = adminFeedCursor.decode(cursor);
         conditions.push(
           sql`(
-            ${feeds.consecutiveFailures} < (SELECT f2.consecutive_failures FROM feeds f2 WHERE f2.id = ${cursor})
+            ${feeds.consecutiveFailures} < ${after.failures}
             OR (
-              ${feeds.consecutiveFailures} = (SELECT f2.consecutive_failures FROM feeds f2 WHERE f2.id = ${cursor})
+              ${feeds.consecutiveFailures} = ${after.failures}
               AND (
-                COALESCE(${feeds.title}, '') > (SELECT COALESCE(f2.title, '') FROM feeds f2 WHERE f2.id = ${cursor})
-                OR (
-                  COALESCE(${feeds.title}, '') = (SELECT COALESCE(f2.title, '') FROM feeds f2 WHERE f2.id = ${cursor})
-                  AND ${feeds.id} > (SELECT f2.id FROM feeds f2 WHERE f2.id = ${cursor})
-                )
+                COALESCE(${feeds.title}, '') > ${after.title}
+                OR (COALESCE(${feeds.title}, '') = ${after.title} AND ${feeds.id} > ${after.id})
               )
             )
           )`
@@ -440,7 +471,14 @@ const feedHealthEndpoints = {
 
       const hasMore = rows.length > limit;
       const items = hasMore ? rows.slice(0, limit) : rows;
-      const nextCursor = hasMore ? items[items.length - 1].feedId : undefined;
+      const lastFeed = items[items.length - 1];
+      const nextCursor = hasMore
+        ? adminFeedCursor.encode({
+            failures: lastFeed.consecutiveFailures,
+            title: lastFeed.title ?? "",
+            id: lastFeed.feedId,
+          })
+        : undefined;
 
       return {
         items: items.map((row) => ({
@@ -617,24 +655,24 @@ const userEndpoints = {
         conditions.push(ilike(users.email, `%${search}%`));
       }
 
-      // Keyset (cursor) pagination. The cursor is a user id; the row it points
-      // at is looked up via subquery so we can compare against the sort column.
-      // Each branch mirrors its ORDER BY below.
+      // Keyset (cursor) pagination; each branch mirrors its ORDER BY below.
       if (cursor) {
-        const cursorActive = sql`(SELECT u2.last_active_at FROM users u2 WHERE u2.id = ${cursor})`;
-        const cursorEmail = sql`(SELECT u2.email FROM users u2 WHERE u2.id = ${cursor})`;
-        switch (sort) {
+        const after = adminUserCursor.decode(cursor);
+        if (after.sort !== sort) {
+          throw errors.validation("Cursor does not match the requested sort");
+        }
+        switch (after.sort) {
           case "created":
-            conditions.push(lt(users.id, cursor));
+            conditions.push(lt(users.id, after.id));
             break;
           case "oldest":
-            conditions.push(gt(users.id, cursor));
+            conditions.push(gt(users.id, after.id));
             break;
           case "email":
             conditions.push(
               sql`(
-                ${users.email} > ${cursorEmail}
-                OR (${users.email} = ${cursorEmail} AND ${users.id} > ${cursor})
+                ${users.email} > ${after.email}
+                OR (${users.email} = ${after.email} AND ${users.id} > ${after.id})
               )`
             );
             break;
@@ -644,21 +682,13 @@ const userEndpoints = {
             // same activity with a lower id. When the cursor is already in the
             // NULL tail, only lower-id NULL rows remain.
             conditions.push(
-              sql`(
-                (
-                  ${cursorActive} IS NOT NULL
-                  AND (
-                    ${users.lastActiveAt} < ${cursorActive}
+              after.lastActiveAt !== null
+                ? sql`(
+                    ${users.lastActiveAt} < ${after.lastActiveAt}::timestamptz
                     OR ${users.lastActiveAt} IS NULL
-                    OR (${users.lastActiveAt} = ${cursorActive} AND ${users.id} < ${cursor})
-                  )
-                )
-                OR (
-                  ${cursorActive} IS NULL
-                  AND ${users.lastActiveAt} IS NULL
-                  AND ${users.id} < ${cursor}
-                )
-              )`
+                    OR (${users.lastActiveAt} = ${after.lastActiveAt}::timestamptz AND ${users.id} < ${after.id})
+                  )`
+                : sql`(${users.lastActiveAt} IS NULL AND ${users.id} < ${after.id})`
             );
             break;
         }
@@ -684,6 +714,9 @@ const userEndpoints = {
           subscriptionCount: sql<number>`(${subscriptionCountSq})`.as("subscription_count"),
           entryCount: sql<number>`(${entryCountSq})`.as("entry_count"),
           lastActiveAt: users.lastActiveAt,
+          // Raw driver string (the app pool's timestamptz parser) so the cursor
+          // keeps microseconds that the Date above truncates.
+          lastActiveAtRaw: sql<string | null>`${users.lastActiveAt}`,
           // GREATEST ignores NULLs, so this is the newest of the three, or NULL.
           lastTokenUsedAt:
             sql<Date | null>`GREATEST((${apiTokenLastUsedSq}), (${oauthTokenLastUsedSq}), (${scopedSessionLastActiveSq}))`.as(
@@ -697,7 +730,7 @@ const userEndpoints = {
 
       const hasMore = rows.length > limit;
       const items = hasMore ? rows.slice(0, limit) : rows;
-      const nextCursor = hasMore ? items[items.length - 1].id : undefined;
+      const nextCursor = hasMore ? encodeUserCursor(sort, items[items.length - 1]) : undefined;
 
       return {
         items: items.map((row) => ({
@@ -714,6 +747,25 @@ const userEndpoints = {
       };
     }),
 } as const;
+
+function encodeUserCursor(
+  sort: UserSort,
+  row: { id: string; email: string; lastActiveAtRaw: string | null }
+): string {
+  switch (sort) {
+    case "created":
+    case "oldest":
+      return adminUserCursor.encode({ sort, id: row.id });
+    case "email":
+      return adminUserCursor.encode({ sort, email: row.email, id: row.id });
+    case "activity":
+      return adminUserCursor.encode({
+        sort,
+        lastActiveAt: parseTimestamptzOrNull(row.lastActiveAtRaw)?.toString() ?? null,
+        id: row.id,
+      });
+  }
+}
 
 // ============================================================================
 // OVERVIEW ENDPOINTS
