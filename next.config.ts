@@ -154,8 +154,9 @@ const nextConfig: NextConfig = {
         // Non-hashed public/ assets (favicon/icons, emojis, svgs,
         // social-preview.png): a moderate TTL so an update propagates without a
         // filename hash. Deliberately NOT immutable for that reason. This glob
-        // also matches image/font extensions under /_next/static/media; the
-        // immutable rule below runs after it and wins there (last match wins).
+        // also matches image/font extensions under /_next/static/media; in
+        // production the immutable rule below runs after it and wins there
+        // (last match wins).
         source: "/:path*.(ico|png|svg|jpg|jpeg|gif|webp|woff|woff2|ttf|otf|eot)",
         headers: [
           {
@@ -164,20 +165,26 @@ const nextConfig: NextConfig = {
           },
         ],
       },
-      {
-        // Everything under /_next/static is content-hashed (JS/CSS chunks,
-        // next/font files), so it can be cached forever. Next sets this itself,
-        // but the public/ rule above would otherwise downgrade fonts (woff2) to
-        // the 1-day TTL — this reinstates `immutable`. Cache-key safety comes
-        // from the filename hash, so the CDN needs no `?v=` query-string config.
-        source: "/_next/static/:path*",
-        headers: [
-          {
-            key: "Cache-Control",
-            value: "public, max-age=31536000, immutable",
-          },
-        ],
-      },
+      // In production everything under /_next/static is content-hashed (JS/CSS
+      // chunks, next/font files), so it can be cached forever. Next sets this
+      // itself, but the public/ rule above would otherwise downgrade fonts
+      // (woff2) to the 1-day TTL — this reinstates `immutable`. Cache-key safety
+      // comes from the filename hash, so the CDN needs no `?v=` query-string
+      // config. Production only: `next dev` serves chunks under stable,
+      // unhashed names, so `immutable` there pins browsers to stale JS (#1636).
+      ...(process.env.NODE_ENV === "production"
+        ? [
+            {
+              source: "/_next/static/:path*",
+              headers: [
+                {
+                  key: "Cache-Control",
+                  value: "public, max-age=31536000, immutable",
+                },
+              ],
+            },
+          ]
+        : []),
       {
         // Service worker must be served with no-cache to ensure updates
         source: "/sw.js",
