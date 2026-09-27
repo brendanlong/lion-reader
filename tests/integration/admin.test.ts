@@ -153,15 +153,19 @@ describe("Admin API", () => {
     it("resumes after the boundary invite is deleted", async () => {
       const caller = createCaller(createAdminContext());
 
-      const oldest = await createTestInvite();
-      await createTestInvite();
-      await createTestInvite();
+      const created = [
+        await createTestInvite(),
+        await createTestInvite(),
+        await createTestInvite(),
+      ];
+      // Same-millisecond UUIDv7s needn't sort in creation order; the list sorts by id.
+      const lowestId = created.map((i) => i.id).sort()[0];
 
       const page1 = await caller.admin.listInvites({ limit: 2 });
       await db.delete(invites).where(eq(invites.id, page1.items[1].id));
 
       const page2 = await caller.admin.listInvites({ limit: 2, cursor: page1.nextCursor });
-      expect(page2.items.map((i) => i.id)).toEqual([oldest.id]);
+      expect(page2.items.map((i) => i.id)).toEqual([lowestId]);
     });
 
     it("rejects a malformed cursor as a validation error", async () => {

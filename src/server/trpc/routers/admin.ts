@@ -106,10 +106,7 @@ const adminUserCursor = createCursorCodec(
     z.object({
       sort: z.literal("activity"),
       // Full-precision ISO instant (see "Timestamp cursors" in src/server/CLAUDE.md).
-      lastActiveAt: z
-        .string()
-        .refine((ts) => !Number.isNaN(Date.parse(ts)))
-        .nullable(),
+      lastActiveAt: z.iso.datetime({ offset: true }).nullable(),
       id: cursorUuid,
     }),
   ])
