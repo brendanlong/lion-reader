@@ -544,7 +544,8 @@ CREATE TABLE public.users (
     greader_user_id bigint DEFAULT nextval('public.greader_id_seq'::regclass) NOT NULL,
     cerebras_api_key text,
     narration_model text,
-    getting_started_at timestamp with time zone
+    getting_started_at timestamp with time zone,
+    openrouter_api_key text
 );
 
 CREATE VIEW public.visible_entries AS

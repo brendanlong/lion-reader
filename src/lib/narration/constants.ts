@@ -20,14 +20,18 @@ export const NARRATION_FORMAT_VERSION = 2;
 
 /**
  * Providers selectable for narration preprocessing. Narration preprocessing
- * only supports the OpenAI-compatible providers (Groq, Cerebras) — it relies
- * on JSON-object response formatting. This is also the preference order for the
- * default model when the user hasn't picked one: Cerebras first (fastest), then
- * Groq.
+ * only supports the OpenAI-compatible providers — it relies on JSON-object
+ * response formatting. This is also the preference order for the default model
+ * when the user hasn't picked one: Cerebras first (fastest), then Groq, then
+ * OpenRouter (an extra hop).
  */
-export const NARRATION_PROVIDERS = ["cerebras", "groq"] as const;
+export const NARRATION_PROVIDERS = ["cerebras", "groq", "openrouter"] as const;
 
 export type NarrationProvider = (typeof NARRATION_PROVIDERS)[number];
+
+export function isNarrationProvider(provider: string): provider is NarrationProvider {
+  return (NARRATION_PROVIDERS as readonly string[]).includes(provider);
+}
 
 /**
  * Default narration preprocessing model per provider, as `provider:model`
@@ -37,7 +41,18 @@ export type NarrationProvider = (typeof NARRATION_PROVIDERS)[number];
 export const DEFAULT_NARRATION_MODELS: Record<NarrationProvider, string> = {
   cerebras: "cerebras:gpt-oss-120b",
   groq: "groq:openai/gpt-oss-120b",
+  openrouter: "openrouter:openai/gpt-oss-120b",
 };
+
+/**
+ * Models listed first in the narration processing picker (when their provider
+ * is configured). Every provider's default is also suggested.
+ */
+export const SUGGESTED_NARRATION_MODELS: string[] = [
+  ...NARRATION_PROVIDERS.map((provider) => DEFAULT_NARRATION_MODELS[provider]),
+  "openrouter:openai/gpt-oss-20b",
+  "openrouter:~google/gemini-flash-latest",
+];
 
 /**
  * Default model for LLM narration preprocessing when no provider is known to be

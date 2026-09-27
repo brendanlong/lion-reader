@@ -1,11 +1,12 @@
 /**
  * Generic AI provider layer.
  *
- * Wraps the Anthropic, Groq, and Cerebras SDKs behind one interface so
- * features (summarization, narration preprocessing) can run on any configured
- * provider. Per-user API keys override the server-wide env keys
- * (`ANTHROPIC_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`); a provider is
- * "available" when either is set.
+ * Wraps the Anthropic, Groq, and Cerebras SDKs and the OpenRouter HTTP API
+ * behind one interface so features (summarization, narration preprocessing)
+ * can run on any configured provider. Per-user API keys override the
+ * server-wide env keys (`ANTHROPIC_API_KEY`, `GROQ_API_KEY`,
+ * `CEREBRAS_API_KEY`, `OPENROUTER_API_KEY`); a provider is "available" when
+ * either is set.
  */
 
 import Anthropic from "@anthropic-ai/sdk";
@@ -13,6 +14,12 @@ import Cerebras from "@cerebras/cerebras_cloud_sdk";
 import Groq from "groq-sdk";
 import { logger } from "@/lib/logger";
 import { AI_PROVIDERS, formatModelRef, type AiProvider, type ModelRef } from "@/lib/ai/model-ref";
+import {
+  listOpenRouterModels,
+  openRouterChatCompletion,
+  pricePerMillionTokens,
+  type OpenRouterModel,
+} from "@/server/services/openrouter";
 
 /**
  * Per-user provider API keys, matching the shape returned by
@@ -22,12 +29,14 @@ export interface AiProviderKeys {
   anthropicApiKey?: string | null;
   groqApiKey?: string | null;
   cerebrasApiKey?: string | null;
+  openrouterApiKey?: string | null;
 }
 
 const ENV_KEYS: Record<AiProvider, string> = {
   anthropic: "ANTHROPIC_API_KEY",
   groq: "GROQ_API_KEY",
   cerebras: "CEREBRAS_API_KEY",
+  openrouter: "OPENROUTER_API_KEY",
 };
 
 function userKeyFor(provider: AiProvider, keys?: AiProviderKeys): string | null {
@@ -38,7 +47,13 @@ function userKeyFor(provider: AiProvider, keys?: AiProviderKeys): string | null 
       return keys?.groqApiKey ?? null;
     case "cerebras":
       return keys?.cerebrasApiKey ?? null;
+    case "openrouter":
+      return keys?.openrouterApiKey ?? null;
   }
+}
+
+function apiKeyFor(provider: AiProvider, keys?: AiProviderKeys): string | null {
+  return userKeyFor(provider, keys) ?? process.env[ENV_KEYS[provider]] ?? null;
 }
 
 /**
@@ -109,7 +124,7 @@ export interface ChatCompletionOptions {
   maxTokens: number;
   /**
    * Request a JSON-object response. Only supported by the OpenAI-compatible
-   * providers (Groq, Cerebras); throws for Anthropic.
+   * providers (Groq, Cerebras, OpenRouter); throws for Anthropic.
    */
   jsonObject?: boolean;
   /** Sampling temperature. Ignored for Anthropic. */
@@ -207,6 +222,13 @@ export async function generateChatCompletion(
       const choice = "choices" in response ? response.choices?.[0] : undefined;
       return choice && "message" in choice ? (choice.message.content ?? "") : "";
     }
+    case "openrouter": {
+      const apiKey = apiKeyFor("openrouter", keys);
+      if (!apiKey) {
+        throw new Error("OpenRouter API key not configured");
+      }
+      return openRouterChatCompletion(apiKey, ref.model, options);
+    }
   }
 }
 
@@ -218,6 +240,20 @@ export interface AiModel {
   id: string;
   displayName: string;
   provider: AiProvider;
+  /** Only reported by some providers. */
+  contextLength?: number;
+  /** USD per million input/output tokens, when the provider reports prices. */
+  inputPricePerMillion?: number;
+  outputPricePerMillion?: number;
+}
+
+/**
+ * Capabilities a feature needs from a model; models lacking them are hidden
+ * from that feature's picker.
+ */
+export interface ModelRequirements {
+  /** The model must support JSON-object responses. */
+  jsonObject?: boolean;
 }
 
 /**
@@ -298,6 +334,26 @@ function isUsableChatModel(model: { id: string }): boolean {
   return contextWindow === undefined || contextWindow >= MIN_CONTEXT_WINDOW;
 }
 
+/**
+ * Whether an OpenRouter model can serve summarization/narration: text-only
+ * output (drops image/audio generators), a long enough context, and
+ * synchronous (`:batch` variants only work through the async batch API).
+ */
+export function isUsableOpenRouterModel(
+  model: OpenRouterModel,
+  requirements: ModelRequirements = {}
+): boolean {
+  const outputs = model.architecture?.output_modalities ?? ["text"];
+  if (outputs.length !== 1 || outputs[0] !== "text") return false;
+  if (model.id.endsWith(":batch")) return false;
+  if ((model.context_length ?? 0) < MIN_CONTEXT_WINDOW) return false;
+  if (pricePerMillionTokens(model.pricing?.prompt) === undefined) return false;
+  if (requirements.jsonObject && !model.supported_parameters?.includes("response_format")) {
+    return false;
+  }
+  return true;
+}
+
 /** Claude model families we surface, one (newest) model per family. */
 const CLAUDE_FAMILIES = ["opus", "sonnet", "haiku", "fable"] as const;
 
@@ -329,7 +385,11 @@ export function filterToLatestClaudeGeneration(
   return result;
 }
 
-async function listProviderModels(provider: AiProvider, keys?: AiProviderKeys): Promise<AiModel[]> {
+async function listProviderModels(
+  provider: AiProvider,
+  keys: AiProviderKeys | undefined,
+  requirements: ModelRequirements
+): Promise<AiModel[]> {
   switch (provider) {
     case "anthropic": {
       const client = getAnthropicClient(keys);
@@ -371,6 +431,20 @@ async function listProviderModels(provider: AiProvider, keys?: AiProviderKeys): 
         }))
         .sort((a, b) => a.displayName.localeCompare(b.displayName));
     }
+    case "openrouter": {
+      const models = await listOpenRouterModels("text");
+      return models
+        .filter((model) => isUsableOpenRouterModel(model, requirements))
+        .map((model) => ({
+          id: formatModelRef("openrouter", model.id),
+          displayName: model.name,
+          provider: "openrouter" as const,
+          contextLength: model.context_length ?? undefined,
+          inputPricePerMillion: pricePerMillionTokens(model.pricing?.prompt),
+          outputPricePerMillion: pricePerMillionTokens(model.pricing?.completion),
+        }))
+        .sort((a, b) => a.displayName.localeCompare(b.displayName));
+    }
   }
 }
 
@@ -381,14 +455,15 @@ async function listProviderModels(provider: AiProvider, keys?: AiProviderKeys): 
  */
 export async function listAllModels(
   keys?: AiProviderKeys,
-  providers: readonly AiProvider[] = AI_PROVIDERS
+  providers: readonly AiProvider[] = AI_PROVIDERS,
+  requirements: ModelRequirements = {}
 ): Promise<AiModel[]> {
   const results = await Promise.all(
     providers
       .filter((provider) => isProviderAvailable(provider, keys))
       .map(async (provider) => {
         try {
-          return await listProviderModels(provider, keys);
+          return await listProviderModels(provider, keys, requirements);
         } catch (error) {
           logger.error("Failed to list AI models", {
             provider,

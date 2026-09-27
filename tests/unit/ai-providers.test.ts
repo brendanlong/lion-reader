@@ -4,6 +4,7 @@ import {
   getAvailableProviders,
   isChatModelId,
   isProviderAvailable,
+  isUsableOpenRouterModel,
   supportsReasoningEffort,
 } from "@/server/services/ai-providers";
 import { getNarrationModelRef } from "@/server/services/narration";
@@ -18,6 +19,7 @@ const ENV_VARS = [
   "ANTHROPIC_API_KEY",
   "GROQ_API_KEY",
   "CEREBRAS_API_KEY",
+  "OPENROUTER_API_KEY",
   "SUMMARIZATION_MODEL",
   "NARRATION_MODEL",
 ] as const;
@@ -91,6 +93,10 @@ describe("getSummarizationModelId", () => {
     expect(getSummarizationModelId(null, { anthropicApiKey: "a", groqApiKey: "g" })).toBe(
       DEFAULT_SUMMARIZATION_MODELS.groq
     );
+    // OpenRouter wins over Anthropic.
+    expect(getSummarizationModelId(null, { anthropicApiKey: "a", openrouterApiKey: "o" })).toBe(
+      DEFAULT_SUMMARIZATION_MODELS.openrouter
+    );
     // Anthropic only when it's the sole option.
     expect(getSummarizationModelId(null, { anthropicApiKey: "a" })).toBe(
       DEFAULT_SUMMARIZATION_MODELS.anthropic
@@ -129,6 +135,22 @@ describe("getNarrationModelRef", () => {
       model: "gpt-oss-120b",
     });
     expect(DEFAULT_NARRATION_MODELS.cerebras).toBe("cerebras:gpt-oss-120b");
+  });
+
+  it("defaults to OpenRouter when it's the only JSON-mode provider configured", () => {
+    clearEnv();
+    expect(getNarrationModelRef(null, { openrouterApiKey: "o", anthropicApiKey: "a" })).toEqual({
+      provider: "openrouter",
+      model: "openai/gpt-oss-120b",
+    });
+  });
+
+  it("accepts OpenRouter model IDs, including ones containing colons", () => {
+    clearEnv();
+    expect(getNarrationModelRef("openrouter:openai/gpt-oss-20b:free")).toEqual({
+      provider: "openrouter",
+      model: "openai/gpt-oss-20b:free",
+    });
   });
 
   it("uses the user model when set", () => {
@@ -217,5 +239,50 @@ describe("filterToLatestClaudeGeneration", () => {
     expect(filterToLatestClaudeGeneration(models).map((m) => m.id)).toEqual([
       "claude-some-new-family-1",
     ]);
+  });
+});
+
+describe("isUsableOpenRouterModel", () => {
+  const base = {
+    id: "openai/gpt-oss-120b",
+    name: "OpenAI: gpt-oss-120b",
+    context_length: 131072,
+    architecture: { output_modalities: ["text"] },
+    pricing: { prompt: "0.00000015", completion: "0.0000006" },
+    supported_parameters: ["response_format", "reasoning", "temperature"],
+  };
+
+  it("keeps long-context, text-only chat models", () => {
+    expect(isUsableOpenRouterModel(base)).toBe(true);
+    expect(isUsableOpenRouterModel(base, { jsonObject: true })).toBe(true);
+  });
+
+  it("drops models that also generate images or audio", () => {
+    expect(
+      isUsableOpenRouterModel({ ...base, architecture: { output_modalities: ["image", "text"] } })
+    ).toBe(false);
+    expect(
+      isUsableOpenRouterModel({ ...base, architecture: { output_modalities: ["text", "audio"] } })
+    ).toBe(false);
+  });
+
+  it("drops short-context models", () => {
+    expect(isUsableOpenRouterModel({ ...base, context_length: 8192 })).toBe(false);
+  });
+
+  it("drops async-only batch variants", () => {
+    expect(isUsableOpenRouterModel({ ...base, id: "openai/gpt-oss-120b:batch" })).toBe(false);
+  });
+
+  it("drops routers with no fixed price", () => {
+    expect(isUsableOpenRouterModel({ ...base, pricing: { prompt: "-1", completion: "-1" } })).toBe(
+      false
+    );
+  });
+
+  it("requires JSON mode support only when asked", () => {
+    const noJson = { ...base, supported_parameters: ["temperature"] };
+    expect(isUsableOpenRouterModel(noJson)).toBe(true);
+    expect(isUsableOpenRouterModel(noJson, { jsonObject: true })).toBe(false);
   });
 });

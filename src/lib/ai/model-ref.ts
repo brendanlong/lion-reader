@@ -3,7 +3,7 @@
  *
  * Models are stored and transmitted as `provider:model` strings (e.g.
  * `anthropic:claude-sonnet-5`, `groq:openai/gpt-oss-20b`,
- * `cerebras:gpt-oss-120b`) so a single setting can select a model from any
+ * `openrouter:hexgrad/kokoro-82m`) so a single setting can select a model from any
  * configured provider. Legacy values without a provider prefix (bare Anthropic
  * model IDs like `claude-sonnet-4-5`, stored before multi-provider support)
  * parse as Anthropic models.
@@ -14,7 +14,7 @@
 /**
  * Supported AI providers.
  */
-export const AI_PROVIDERS = ["anthropic", "groq", "cerebras"] as const;
+export const AI_PROVIDERS = ["anthropic", "groq", "cerebras", "openrouter"] as const;
 
 export type AiProvider = (typeof AI_PROVIDERS)[number];
 
@@ -25,6 +25,7 @@ export const AI_PROVIDER_DISPLAY_NAMES: Record<AiProvider, string> = {
   anthropic: "Anthropic",
   groq: "Groq",
   cerebras: "Cerebras",
+  openrouter: "OpenRouter",
 };
 
 /**
@@ -41,7 +42,8 @@ function isAiProvider(value: string): value is AiProvider {
 }
 
 /**
- * Parses a `provider:model` reference. Bare model IDs (no known provider
+ * Parses a `provider:model` reference, splitting at the first colon (OpenRouter
+ * model IDs can contain colons, e.g. `openrouter:foo/bar:free`). Bare model IDs (no known provider
  * prefix) are treated as Anthropic models for backward compatibility with
  * settings stored before multi-provider support.
  */

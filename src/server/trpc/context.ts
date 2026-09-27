@@ -174,10 +174,12 @@ export async function createContext(opts: FetchCreateContextFnOptions): Promise<
         groqApiKey: null, // Not cached for security; use getUserApiKeys() when needed
         anthropicApiKey: null, // Not cached for security; use getUserApiKeys() when needed
         cerebrasApiKey: null, // Not cached for security; use getUserApiKeys() when needed
+        openrouterApiKey: null, // Not cached for security; use getUserApiKeys() when needed
       },
       hasGroqApiKey: !!apiTokenData.user.groqApiKey,
       hasAnthropicApiKey: !!apiTokenData.user.anthropicApiKey,
       hasCerebrasApiKey: !!apiTokenData.user.cerebrasApiKey,
+      hasOpenrouterApiKey: !!apiTokenData.user.openrouterApiKey,
     };
 
     return {
