@@ -725,7 +725,7 @@ fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Se
 /// before the cut** — mangling content is tolerable, fabricating markup is an XSS
 /// bypass. Deleting a whole end-tag token gets the tokenizer *state* right for
 /// free (an end tag returns to the data state either side of the cut), but that
-/// alone is not enough, and three things carry the rest. Each of them was a
+/// alone is not enough, and four things carry the rest. Each of them was a
 /// working `<img onerror>` injection before it was there, so treat them as
 /// load-bearing:
 ///
@@ -752,7 +752,7 @@ fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Se
 ///   this.
 ///
 /// `end_tag_drop_never_adds_markup` is the property test that stands behind all
-/// three; it is a differential against a real tree builder over generated
+/// four; it is a differential against a real tree builder over generated
 /// fragments, not a list of examples, because examples are what missed them.
 ///
 /// Returns `None` when there was nothing to drop — the overwhelmingly common
@@ -905,7 +905,20 @@ fn rewrite_dropping_disallowed_end_tags(html: &str) -> String {
 /// Run the allow-list pass over `html`. Errors (rewriter failure) must be
 /// treated as fatal by the caller — there is no partial output to serve.
 pub fn sanitize_html_pass(html: &str) -> Result<String, String> {
+    sanitize_html_pass_observing_text(html, None)
+}
+
+/// [`sanitize_html_pass`], also handing `observe_text` every chunk of ordinary
+/// text it reads (not markup, comments, CDATA or raw text). That is the only
+/// place content can be put into the output afterwards without changing how
+/// the rest of it tokenizes — see `svg.rs`.
+pub fn sanitize_html_pass_observing_text(
+    html: &str,
+    mut observe_text: Option<&mut dyn FnMut(&str)>,
+) -> Result<String, String> {
     let mut output = Vec::with_capacity(html.len());
+    let ending = std::cell::Cell::new(false);
+    let escape_lt = text_needs_handling(html);
     let mut document_content_handlers = vec![
         doc_comments!(|c| {
             c.remove();
@@ -916,8 +929,13 @@ pub fn sanitize_html_pass(html: &str) -> Result<String, String> {
             Ok(())
         }),
     ];
-    if text_needs_handling(html) {
-        document_content_handlers.push(doc_text!(handle_text));
+    if escape_lt || observe_text.is_some() {
+        document_content_handlers.push(doc_text!(move |text| {
+            if let (TextType::Data, Some(observe)) = (text.text_type(), observe_text.as_mut()) {
+                observe(text.as_str());
+            }
+            handle_text(text)
+        }));
     }
     let mut rewriter = HtmlRewriter::new(
         Settings {
@@ -925,9 +943,19 @@ pub fn sanitize_html_pass(html: &str) -> Result<String, String> {
             document_content_handlers,
             ..Settings::new()
         },
-        |chunk: &[u8]| output.extend_from_slice(chunk),
+        |chunk: &[u8]| {
+            if !ending.get() {
+                output.extend_from_slice(chunk);
+            }
+        },
     );
     rewriter.write(html.as_bytes()).map_err(|e| e.to_string())?;
+    // What lol_html only lets go of at the end is a token the input ended
+    // partway through: a tag (or a lone `<`). It passes that through raw, never
+    // handing it to `handle_element`. A browser drops it too, but output that
+    // ends inside a tag gets finished by whatever is appended to it — and
+    // clients of the feed-reader APIs wrap it in their own templates.
+    ending.set(true);
     rewriter.end().map_err(|e| e.to_string())?;
     let rewritten = String::from_utf8(output).map_err(|e| e.to_string())?;
     Ok(drop_disallowed_end_tags(&rewritten).unwrap_or(rewritten))
@@ -1337,7 +1365,9 @@ mod tests {
             // Nor may it swallow the rest of the document looking for a `>`.
             "<p>a</p></body",
         ] {
-            let out = sanitize(html);
+            // The pass on its own: the main pass already drops the last two,
+            // which the input ends partway through.
+            let out = drop_disallowed_end_tags(html).unwrap_or_else(|| html.to_string());
             assert_eq!(out, html, "{html}");
         }
     }
@@ -1415,6 +1445,20 @@ mod tests {
     #[ignore = "lol_html can't remove an attribute named `=…` (#1637)"]
     fn attributes_named_with_a_leading_equals_are_removed() {
         assert_eq!(sanitize("<p =onclick=alert(1)>t</p>"), "<p>t</p>");
+    }
+
+    #[test]
+    fn a_tag_cut_off_by_the_end_of_input_is_dropped() {
+        // Inert alone, but live once anything is appended after it.
+        assert_eq!(
+            sanitize("<p>x</p><img src=x onerror=alert(1)//"),
+            "<p>x</p>"
+        );
+        assert_eq!(
+            sanitize(r#"<p>x</p><a href="javascript:alert(1)" "#),
+            "<p>x</p>"
+        );
+        assert_eq!(sanitize("<p>x</p>trailing text"), "<p>x</p>trailing text");
     }
 
     #[test]
@@ -1540,6 +1584,32 @@ mod tests {
                 continue;
             };
             let tag = el.name();
+            // Reinserted inline SVG has its own allow-list (`svg.rs`, tested
+            // there), and a browser can give its elements another namespace —
+            // MathML inside `<math>`, HTML under an integration point like
+            // `<title>` — so inside an `<svg>` of any namespace, only check
+            // what could run script.
+            let in_svg = node
+                .ancestors()
+                .chain(std::iter::once(node))
+                .filter_map(|n| n.value().as_element())
+                .any(|e| e.name().eq_ignore_ascii_case("svg"));
+            if in_svg {
+                let lower = tag.to_ascii_lowercase();
+                if !crate::svg::ALLOWED_SVG_TAGS.contains(&lower.as_str()) && !tag_allowed(tag) {
+                    return Some(format!("<svg:{tag}>"));
+                }
+                for (attr, value) in el.attrs() {
+                    let scheme = value.trim_start().to_ascii_lowercase();
+                    if attr.to_ascii_lowercase().starts_with("on")
+                        || scheme.starts_with("javascript:")
+                        || scheme.starts_with("vbscript:")
+                    {
+                        return Some(format!("<svg:{tag} {attr}={value:?}>"));
+                    }
+                }
+                continue;
+            }
             // `parse_fragment`'s own wrappers (their attributes are still
             // checked below).
             if !tag_allowed(tag) && !matches!(tag, "html" | "body") {
@@ -1573,6 +1643,14 @@ mod tests {
             }
         }
         None
+    }
+
+    /// [`disallowed_markup`] of `html` alone and with markup after it. Output
+    /// gets concatenated (feed-reader API clients wrap it in their own
+    /// templates), so it must not end partway through a tag that whatever
+    /// follows would complete: `"'>` closes a tag from any tag state.
+    fn disallowed_markup_even_if_appended_to(html: &str) -> Option<String> {
+        disallowed_markup(html).or_else(|| disallowed_markup(&format!("{html}\"'>")))
     }
 
     #[test]
@@ -1642,11 +1720,67 @@ mod tests {
                 continue;
             };
             sanitized += 1;
-            if let Some(bad) = disallowed_markup(&out) {
+            if let Some(bad) = disallowed_markup_even_if_appended_to(&out) {
                 panic!("output parses to {bad}\n  in : {input:?}\n  out: {out:?}");
             }
         }
         assert!(sanitized > 45_000, "only {sanitized} inputs were sanitized");
+    }
+
+    #[test]
+    fn pipeline_output_parses_to_allow_listed_markup_only() {
+        // The same property through the whole pipeline, whose MathJax and SVG
+        // stages rewrite the input before this pass and after it. Reinserting
+        // SVG is the one place markup is added after the pass, so it must land
+        // only where the pass read text (see `svg.rs`).
+        const PIECES: &[&str] = &[
+            "<",
+            ">",
+            "\"",
+            " x=\"",
+            "a",
+            "<p>",
+            "<foo>",
+            "<!--c-->",
+            "<math>",
+            "</math>",
+            "<![CDATA[",
+            "]]>",
+            "<svg></svg>",
+            "<svg><text>t</text></svg>",
+            "<svg><title>t</title></svg>",
+            "<svg><desc><img src=q onerror=alert(1)></desc></svg>",
+            "<svg>",
+            "</svg>",
+            r#"<mjx-container class="MathJax"><mjx-math><mjx-mi><mjx-c class="mjx-c1D465"></mjx-c></mjx-mi></mjx-math></mjx-container>"#,
+            "<mjx-container>",
+            "<img src=q onerror=alert(1)>",
+            "img src=q onerror=alert(1)>",
+            r#"<iframe src="https://www.youtube.com/embed/abc123">"#,
+            "</iframe>",
+            "<style>",
+        ];
+        let mut seed = 0x0DDB_1A5E_5BAD_5EEDu64;
+        let mut next = move || {
+            seed = seed
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963);
+            (seed >> 33) as usize
+        };
+        let mut sanitized = 0usize;
+        for _ in 0..30_000 {
+            let input: String = (0..2 + next() % 8)
+                .map(|_| PIECES[next() % PIECES.len()])
+                .collect();
+            let Ok(out) = crate::sanitize_entry_html(&input, &mut Vec::new()) else {
+                continue;
+            };
+            sanitized += 1;
+            if let Some(bad) = disallowed_markup_even_if_appended_to(&out) {
+                panic!("output parses to {bad}\n  in : {input:?}\n  out: {out:?}");
+            }
+        }
+        assert!(sanitized > 25_000, "only {sanitized} inputs were sanitized");
     }
 
     #[test]

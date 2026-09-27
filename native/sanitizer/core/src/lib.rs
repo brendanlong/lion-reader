@@ -76,16 +76,23 @@ pub fn sanitize_entry_html(html: &str, warnings: &mut Vec<String>) -> Result<Str
     // emitting partially-processed output. `catch_unwind` mirrors the
     // math/SVG stages above; a returned Err propagates to the caller as a
     // thrown JS error (never unsanitized HTML).
-    let sanitized = match std::panic::catch_unwind(|| sanitize::sanitize_html_pass(body)) {
+    let extraction = extraction.filter(|e| !e.svgs.is_empty());
+    let mut seen = vec![false; extraction.map_or(0, |e| e.svgs.len())];
+    let pass = std::panic::AssertUnwindSafe(|| match extraction {
+        Some(extraction) => sanitize::sanitize_html_pass_observing_text(
+            body,
+            Some(&mut |text: &str| extraction.mark_placeholders_in(text, &mut seen)),
+        ),
+        None => sanitize::sanitize_html_pass(body),
+    });
+    let sanitized = match std::panic::catch_unwind(pass) {
         Ok(result) => result?,
         Err(_) => return Err("sanitize pass panicked".to_string()),
     };
 
     Ok(match extraction {
-        Some(extraction) if !extraction.svgs.is_empty() => {
-            svg::reinsert_inline_svg(&sanitized, extraction)
-        }
-        _ => sanitized,
+        Some(extraction) => svg::reinsert_inline_svg(&sanitized, extraction, &seen),
+        None => sanitized,
     })
 }
 
