@@ -8,7 +8,7 @@ This file governs feed fetching, scheduling, entry processing, and WebSub push. 
 2. Check `consecutive_failures` - apply exponential backoff if needed (max 7 days)
 3. Make HTTP request with `If-None-Match` / `If-Modified-Since` headers
 4. Handle response:
-   - 304 Not Modified: update `next_fetch_at`, done
+   - 304 Not Modified (or a 200 whose body hash is unchanged): update `next_fetch_at`, done. The feed's `<ttl>`/syndication hints can't be read without a body, so each full parse stores them on the feed row and these paths schedule from the stored copy (#1547)
    - 200 OK: parse feed, process entries
    - 301 Permanent Redirect: track, update URL after 7-day wait period (HTTP-to-HTTPS applied immediately)
    - 302/307 Temporary Redirect: follow without updating URL

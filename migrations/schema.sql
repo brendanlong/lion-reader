@@ -297,6 +297,9 @@ CREATE TABLE public.feeds (
     last_fetch_entry_count integer,
     last_fetch_size_bytes integer,
     greader_stream_id bigint DEFAULT nextval('public.greader_id_seq'::regclass) NOT NULL,
+    ttl_minutes integer,
+    syndication_update_period text,
+    syndication_update_frequency integer,
     CONSTRAINT feed_type_user_id CHECK (((type = ANY (ARRAY['email'::public.feed_type, 'saved'::public.feed_type])) = (user_id IS NOT NULL)))
 );
 

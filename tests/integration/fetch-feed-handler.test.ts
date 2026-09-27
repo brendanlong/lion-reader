@@ -304,6 +304,67 @@ describe("handleFetchFeed", () => {
       expect(after.consecutiveFailures).toBe(0);
     });
 
+    it("keeps scheduling from the feed's <ttl> on a 304 (#1547)", async () => {
+      // A 304 has no body to read <ttl> from, so it has to come from the last
+      // parse — otherwise a quiet feed falls back to the default the moment it
+      // starts 304-ing, which is its steady state.
+      const feed = await createLoopbackFeed();
+      const weekMinutes = 7 * 24 * 60;
+      nextResponse = {
+        body: rss([]).replace("<channel>", `<channel>\n    <ttl>${weekMinutes}</ttl>`),
+        headers: { ETag: '"v1"' },
+      };
+      const first = await handleFetchFeed({ feedId: feed.id });
+      expect(first.metadata).toMatchObject({ nextFetchReason: "ttl" });
+      expect((await readFeed(feed.id)).ttlMinutes).toBe(weekMinutes);
+
+      nextResponse = { status: 304 };
+      const before = Date.now();
+      const second = await handleFetchFeed({ feedId: feed.id });
+
+      expect(second.metadata).toMatchObject({ notModified: true, nextFetchReason: "ttl" });
+      expect(second.nextRunAt!.getTime()).toBeGreaterThanOrEqual(
+        before + weekMinutes * 60 * 1000 - 1000
+      );
+    });
+
+    it("keeps scheduling from syndication hints on a 304, and forgets removed hints", async () => {
+      const feed = await createLoopbackFeed();
+      nextResponse = {
+        body: rss([])
+          .replace(
+            '<rss version="2.0">',
+            '<rss version="2.0" xmlns:sy="http://purl.org/rss/1.0/modules/syndication/">'
+          )
+          .replace(
+            "<channel>",
+            "<channel>\n    <sy:updatePeriod>daily</sy:updatePeriod>\n    <sy:updateFrequency>2</sy:updateFrequency>"
+          ),
+        headers: { ETag: '"v1"' },
+      };
+      await handleFetchFeed({ feedId: feed.id });
+      expect(await readFeed(feed.id)).toMatchObject({
+        syndicationUpdatePeriod: "daily",
+        syndicationUpdateFrequency: 2,
+      });
+
+      nextResponse = { status: 304 };
+      const notModified = await handleFetchFeed({ feedId: feed.id });
+      expect(notModified.metadata).toMatchObject({ nextFetchReason: "syndication" });
+
+      // The feed drops its hints: the next parse must clear them, not keep them.
+      nextResponse = { body: rss([]), headers: { ETag: '"v2"' } };
+      await handleFetchFeed({ feedId: feed.id });
+      expect(await readFeed(feed.id)).toMatchObject({
+        ttlMinutes: null,
+        syndicationUpdatePeriod: null,
+        syndicationUpdateFrequency: null,
+      });
+      nextResponse = { status: 304 };
+      const afterRemoval = await handleFetchFeed({ feedId: feed.id });
+      expect(afterRemoval.metadata).toMatchObject({ nextFetchReason: "default" });
+    });
+
     it("omits the validators on a forced refresh, so a 304 can't starve it", async () => {
       // A 304 carries no body, and a forced refresh needs the full current feed
       // to re-establish visibility from.

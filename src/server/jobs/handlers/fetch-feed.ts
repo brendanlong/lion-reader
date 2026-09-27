@@ -18,7 +18,7 @@ import { fetchFeed, type FetchFeedResult, type RedirectInfo } from "../../feed/f
 import type { WebSubLinkHeaders } from "../../feed/link-header";
 import { parseFeed } from "../../feed/parser";
 import { processEntries } from "../../feed/entry-processor";
-import { calculateNextFetch } from "../../feed/scheduling";
+import { calculateNextFetch, type FeedHints } from "../../feed/scheduling";
 import {
   canUseWebSub,
   subscribeToHub,
@@ -26,7 +26,7 @@ import {
   resolveWebsubAction,
 } from "../../feed/websub";
 import { recordBackupPollNewEntries } from "../../feed/websub-hub-stats";
-import { getDomainFromUrl } from "../../feed/types";
+import { getDomainFromUrl, isUpdatePeriod } from "../../feed/types";
 import type { ParsedCacheHeaders } from "../../feed/cache-headers";
 import { type JobPayloads, ensureFeedJob } from "../queue";
 import { logger } from "@/lib/logger";
@@ -432,12 +432,13 @@ async function processSuccessfulFetch(
   }
 
   // Calculate next fetch time based on cache headers and feed hints
+  const feedHints: FeedHints = {
+    ttlMinutes: feedMetadata.ttlMinutes,
+    syndication: feedMetadata.syndication,
+  };
   const nextFetch = calculateNextFetch({
     cacheControl: cacheHeaders.cacheControl,
-    feedHints: {
-      ttlMinutes: feedMetadata.ttlMinutes,
-      syndication: feedMetadata.syndication,
-    },
+    feedHints,
     consecutiveFailures: 0, // Reset failures on success
     // Source-specific polling floor (e.g. YouTube's rate-limit-avoiding 1h)
     minIntervalSeconds: feedPlugin?.capabilities.feed.minFetchIntervalSeconds,
@@ -477,6 +478,7 @@ async function processSuccessfulFetch(
       lastFetchedAt: now,
       lastEntriesUpdatedAt,
       nextFetchAt: nextFetch.nextFetchAt,
+      ...feedHintColumns(feedHints),
       consecutiveFailures: 0,
       lastError: null,
       // Store WebSub hub and self URLs from feed content
@@ -568,6 +570,36 @@ async function processSuccessfulFetch(
   };
 }
 
+const MAX_INT32 = 2 ** 31 - 1;
+
+/**
+ * The parser only guarantees these are positive integers, so a hostile feed
+ * could declare one past int4; clamping keeps the feed update from failing, and
+ * any value that large already clamps to the maximum fetch interval.
+ */
+function feedHintColumns(
+  hints: FeedHints
+): Pick<Feed, "ttlMinutes" | "syndicationUpdatePeriod" | "syndicationUpdateFrequency"> {
+  const clamp = (value: number | undefined) =>
+    value === undefined ? null : Math.min(value, MAX_INT32);
+  return {
+    ttlMinutes: clamp(hints.ttlMinutes),
+    syndicationUpdatePeriod: hints.syndication?.updatePeriod ?? null,
+    syndicationUpdateFrequency: clamp(hints.syndication?.updateFrequency),
+  };
+}
+
+function storedFeedHints(feed: Feed): FeedHints {
+  const period = feed.syndicationUpdatePeriod;
+  return {
+    ttlMinutes: feed.ttlMinutes ?? undefined,
+    syndication:
+      period && isUpdatePeriod(period)
+        ? { updatePeriod: period, updateFrequency: feed.syndicationUpdateFrequency ?? undefined }
+        : undefined,
+  };
+}
+
 /**
  * Generates a SHA-256 hash of the feed body for change detection.
  * Accepts raw bytes to avoid text decoding until we know content has changed.
@@ -596,6 +628,7 @@ async function processUnchangedFetch(
 
   const nextFetch = calculateNextFetch({
     cacheControl: result.cacheHeaders.cacheControl,
+    feedHints: storedFeedHints(feed),
     consecutiveFailures: 0,
     minIntervalSeconds: getFeedPlugin(feed.url)?.capabilities.feed.minFetchIntervalSeconds,
     websubActive: feed.websubActive ?? false,

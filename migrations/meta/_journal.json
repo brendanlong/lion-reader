@@ -764,6 +764,13 @@
       "when": 1782954200000,
       "tag": "0109_merge_scheme_twin_entries",
       "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "7",
+      "when": 1782954300000,
+      "tag": "0110_feeds_schedule_hints",
+      "breakpoints": true
     }
   ]
 }
