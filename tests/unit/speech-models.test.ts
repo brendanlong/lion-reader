@@ -16,6 +16,12 @@ const catalog: OpenRouterModel[] = [
     supported_voices: ["English_expressive_narrator"],
   },
   { id: "fish-audio/s1", name: "Fish Audio: S1", supported_voices: null },
+  {
+    id: "google/gemini-3.8-flash-tts",
+    name: "Google: Gemini 3.8 Flash TTS",
+    pricing: { prompt: "0.0000005", completion: "0.000009" },
+    supported_voices: ["Kore"],
+  },
 ];
 
 const originalServerKey = process.env.OPENROUTER_API_KEY;
@@ -28,10 +34,16 @@ describe("toSpeechModels", () => {
   it("lists every model with voices on the user's own key, priced per character", () => {
     const models = toSpeechModels(catalog, { openrouterApiKey: "o" });
     expect(models.map((model) => model.id)).toEqual([
+      "openrouter:google/gemini-3.8-flash-tts",
       "openrouter:hexgrad/kokoro-82m",
       "openrouter:minimax/speech-2.8-hd",
     ]);
-    expect(models[0].pricePerMillionCharacters).toBe(4);
+    expect(models[1].pricePerMillionCharacters).toBe(4);
+  });
+
+  it("omits the per-character price for models that also bill generated audio", () => {
+    const [gemini] = toSpeechModels(catalog, { openrouterApiKey: "o" });
+    expect(gemini.pricePerMillionCharacters).toBeUndefined();
   });
 
   it("limits the server's key to the suggested models", () => {
@@ -44,7 +56,7 @@ describe("toSpeechModels", () => {
 
 describe("defaultVoiceFor", () => {
   it("prefers the curated default voice, else the first listed", () => {
-    const [kokoro, minimax] = toSpeechModels(catalog, { openrouterApiKey: "o" });
+    const [, kokoro, minimax] = toSpeechModels(catalog, { openrouterApiKey: "o" });
     expect(defaultVoiceFor(kokoro)).toBe("af_heart");
     expect(defaultVoiceFor(minimax)).toBe("English_expressive_narrator");
   });

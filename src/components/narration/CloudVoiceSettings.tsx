@@ -11,6 +11,7 @@ import { ModelPicker } from "@/components/settings/ModelPicker";
 import { trpc } from "@/lib/trpc/client";
 import { normalizeModelRef } from "@/lib/ai/model-ref";
 import { base64ToBlob } from "@/lib/narration/cloud-audio-player";
+import { createSilentAudioDataUri } from "@/lib/narration/silent-audio";
 import { PREVIEW_TEXT, SUGGESTED_CLOUD_VOICE_MODELS } from "@/lib/narration/constants";
 import type { NarrationSettings, SetNarrationSettings } from "@/lib/narration/settings";
 
@@ -44,14 +45,14 @@ export function CloudVoiceSettings({
       : model?.defaultVoice;
 
   const synthesize = trpc.narration.synthesize.useMutation();
-  const previewRef = useRef<{ audio: HTMLAudioElement; url: string } | null>(null);
+  const previewRef = useRef<{ audio: HTMLAudioElement; url: string | null } | null>(null);
   const [isPreviewing, setIsPreviewing] = useState(false);
 
   const stopPreview = useCallback(() => {
     const preview = previewRef.current;
     if (preview) {
       preview.audio.pause();
-      URL.revokeObjectURL(preview.url);
+      if (preview.url) URL.revokeObjectURL(preview.url);
       previewRef.current = null;
     }
     setIsPreviewing(false);
@@ -61,19 +62,29 @@ export function CloudVoiceSettings({
 
   const handlePreview = () => {
     stopPreview();
+    // Start the element inside the tap (iOS only lets a gesture start
+    // playback), then swap in the clip when it arrives.
+    const audio = new Audio(createSilentAudioDataUri());
+    audio.loop = true;
+    audio.play().catch(() => {});
+    const preview: { audio: HTMLAudioElement; url: string | null } = { audio, url: null };
+    previewRef.current = preview;
     synthesize.mutate(
       { model: modelId, voice: voice ?? null, text: PREVIEW_TEXT },
       {
         onSuccess: (result) => {
-          const url = URL.createObjectURL(base64ToBlob(result.audio, result.mimeType));
-          const audio = new Audio(url);
+          // Superseded by another preview, a stop, or a voice/model change.
+          if (previewRef.current !== preview) return;
+          preview.url = URL.createObjectURL(base64ToBlob(result.audio, result.mimeType));
+          audio.loop = false;
+          audio.src = preview.url;
           audio.playbackRate = settings.rate;
           audio.onended = stopPreview;
-          previewRef.current = { audio, url };
           setIsPreviewing(true);
           audio.play().catch(stopPreview);
         },
         onError: (error) => {
+          if (previewRef.current === preview) stopPreview();
           toast.error("Voice preview failed", { description: error.message });
         },
       }

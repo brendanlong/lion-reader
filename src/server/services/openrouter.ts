@@ -14,6 +14,8 @@ const OPENROUTER_API_URL = "https://openrouter.ai/api/v1";
 const REQUEST_TIMEOUT_MS = 120_000;
 const MODEL_CACHE_TTL_MS = 60 * 60 * 1000;
 const MODEL_CACHE_RETRY_MS = 60 * 1000;
+/** ~15 minutes of 64 kbps MP3; a 1000-character chunk is about a minute. */
+const MAX_SPEECH_BYTES = 8 * 1024 * 1024;
 
 const openRouterModelSchema = z.object({
   id: z.string(),
@@ -134,6 +136,7 @@ export async function openRouterChatCompletion(
 }
 
 const modelCache = new Map<string, { expiresAt: number; models: OpenRouterModel[] }>();
+const refreshes = new Map<string, Promise<OpenRouterModel[]>>();
 
 /**
  * Lists OpenRouter models producing the given output modality. Entries that
@@ -148,15 +151,25 @@ export async function listOpenRouterModels(
   if (cached && Date.now() < cached.expiresAt) {
     return cached.models;
   }
-  try {
-    const models = await fetchOpenRouterModels(outputModality);
-    modelCache.set(outputModality, { expiresAt: Date.now() + MODEL_CACHE_TTL_MS, models });
-    return models;
-  } catch (error) {
-    if (!cached) throw error;
-    cached.expiresAt = Date.now() + MODEL_CACHE_RETRY_MS;
-    return cached.models;
+  // Concurrent callers (e.g. parallel speech prefetches) share one refresh.
+  let refresh = refreshes.get(outputModality);
+  if (!refresh) {
+    refresh = (async () => {
+      try {
+        const models = await fetchOpenRouterModels(outputModality);
+        modelCache.set(outputModality, { expiresAt: Date.now() + MODEL_CACHE_TTL_MS, models });
+        return models;
+      } catch (error) {
+        if (!cached) throw error;
+        cached.expiresAt = Date.now() + MODEL_CACHE_RETRY_MS;
+        return cached.models;
+      } finally {
+        refreshes.delete(outputModality);
+      }
+    })();
+    refreshes.set(outputModality, refresh);
   }
+  return refresh;
 }
 
 async function fetchOpenRouterModels(outputModality: string): Promise<OpenRouterModel[]> {
@@ -198,7 +211,11 @@ export async function openRouterSpeech(
   if (!response.ok) {
     throw await errorFromResponse(response);
   }
-  return new Uint8Array(await response.arrayBuffer());
+  const audio = new Uint8Array(await response.arrayBuffer());
+  if (audio.byteLength > MAX_SPEECH_BYTES) {
+    throw new Error(`OpenRouter speech response too large (${audio.byteLength} bytes)`);
+  }
+  return audio;
 }
 
 /**

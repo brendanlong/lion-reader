@@ -20,6 +20,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef, useSyncExternalStore } from "react";
+import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { ArticleNarrator } from "@/lib/narration/ArticleNarrator";
 import { useNarrationSettings } from "@/lib/narration/settings";
@@ -51,6 +52,10 @@ import {
   splitIntoParagraphs,
   mapPlaybackStatus,
 } from "./useNarrationTypes";
+
+function cancelPendingPlay(playRequest: { current: number }): void {
+  playRequest.current++;
+}
 
 // Re-export types for consumers
 export type { UseNarrationConfig, UseNarrationReturn };
@@ -91,6 +96,9 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   const streamingPlayerRef = useRef<StreamingAudioPlayer | null>(null);
   // Media-element player for cloud voices
   const cloudPlayerRef = useRef<CloudAudioPlayer | null>(null);
+  // Bumped by pause/stop/article changes, so narration text that finishes
+  // generating afterwards doesn't start (paid) cloud playback.
+  const playRequestRef = useRef(0);
   // Track if we've already set up playback tracking for this session
   const hasTrackedPlaybackRef = useRef(false);
   // Paragraph mapping for translating narration indices to DOM element indices
@@ -194,6 +202,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
       },
       onError: (error: Error) => {
         console.error("Streaming playback error:", error);
+        toast.error("Narration stopped", { description: error.message });
         setState((prev) => ({ ...prev, status: "idle" }));
       },
       onEnd: () => {
@@ -323,7 +332,12 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
       if (playerStatus === "paused") await cloudPlayer.play();
       if (playerStatus !== "idle") return;
 
+      const request = playRequestRef.current;
       const startCloud = async (narration: string) => {
+        if (playRequestRef.current !== request) {
+          cloudPlayer.stop();
+          return;
+        }
         cloudPlayer.load(splitIntoParagraphs(narration));
         if (!hasTrackedPlaybackRef.current) {
           trackNarrationPlaybackStarted(settings.provider);
@@ -417,6 +431,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
 
   const pause = useCallback(() => {
     if (!isSupported) return;
+    cancelPendingPlay(playRequestRef);
     const player = bufferedPlayer();
     if (player) player.pause();
     else if (!usesBufferedPlayer) narratorRef.current?.pause();
@@ -464,6 +479,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
    */
   const stop = useCallback(() => {
     if (!isSupported) return;
+    cancelPendingPlay(playRequestRef);
     const player = bufferedPlayer();
     if (player) player.stop();
     else if (!usesBufferedPlayer) narratorRef.current?.stop();
@@ -497,6 +513,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
       narratorRef.current?.stop();
       streamingPlayerRef.current?.stop();
       streamingPlayerRef.current?.clearCache();
+      cancelPendingPlay(playRequestRef);
       cloudPlayerRef.current?.stop();
       cloudPlayerRef.current?.clearCache();
     };

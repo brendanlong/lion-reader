@@ -25,6 +25,8 @@ import type {
 
 /** Chunks synthesized ahead of the one playing. Cloud latency varies from well under a second to 10+ s. */
 const PREFETCH_CHUNKS = 3;
+/** Finished chunks kept behind the one playing, for instant skip-back. */
+const KEEP_BEHIND_CHUNKS = 5;
 
 export interface SpeechChunk {
   paragraph: number;
@@ -44,7 +46,16 @@ export function splitIntoSpeechChunks(paragraphs: string[], maxChars: number): S
 
     const chunks: SpeechChunk[] = [];
     let current = "";
-    for (const sentence of splitIntoSentences(text)) {
+    // Sentences are word-split at a much smaller size, but a run without
+    // whitespace (a long URL, unspaced CJK text) can still exceed the limit.
+    const pieces = splitIntoSentences(text).flatMap((sentence) => {
+      const slices: string[] = [];
+      for (let start = 0; start < sentence.length; start += maxChars) {
+        slices.push(sentence.slice(start, start + maxChars));
+      }
+      return slices;
+    });
+    for (const sentence of pieces) {
       if (current && current.length + 1 + sentence.length > maxChars) {
         chunks.push({ paragraph: index, text: current });
         current = sentence;
@@ -90,6 +101,19 @@ export class CloudAudioPlayer {
     this.audio.addEventListener("ended", () => {
       if (this.status === "playing") void this.startChunk(this.index + 1);
     });
+    // The OS can pause the element itself (a phone call, Siri, unplugged
+    // headphones). Track it, or a later "play" from the lock screen would be
+    // ignored because we still think we're playing. The event is async and
+    // also fires for our own src swaps and at the end of each clip, so only
+    // act if the element is still paused (a swap has already played again)
+    // and not merely finished. Our own pauses change status first.
+    this.audio.addEventListener("pause", () => {
+      if (!this.audio.paused || this.audio.ended) return;
+      if (this.status === "playing" || this.status === "buffering") {
+        this.generation++;
+        this.setStatus("paused");
+      }
+    });
     this.audio.addEventListener("error", () => {
       if (this.status === "playing" && !this.audio.loop) {
         this.fail(new Error("Failed to play narration audio"));
@@ -134,8 +158,12 @@ export class CloudAudioPlayer {
 
   async play(): Promise<void> {
     if (this.status === "paused" && !this.audio.loop && this.audio.src) {
+      const generation = ++this.generation;
       this.setStatus("playing");
-      await this.audio.play().catch((error: unknown) => this.fail(error));
+      await this.audio.play().catch((error: unknown) => {
+        // A pause right after resuming rejects this play(); that's not a failure.
+        if (generation === this.generation) this.fail(error);
+      });
       return;
     }
     if (this.status === "playing" || this.status === "buffering") return;
@@ -154,7 +182,7 @@ export class CloudAudioPlayer {
     const current = this.chunks[this.index]?.paragraph ?? 0;
     const next = this.chunks.findIndex((chunk) => chunk.paragraph > current);
     if (next === -1) {
-      this.stop();
+      this.finish();
       return;
     }
     await this.moveTo(next);
@@ -210,6 +238,7 @@ export class CloudAudioPlayer {
     }
     this.index = index;
     this.emitPosition();
+    this.evictBefore(index - KEEP_BEHIND_CHUNKS);
     for (let ahead = index; ahead < index + 1 + PREFETCH_CHUNKS; ahead++) {
       if (ahead < this.chunks.length) this.urlFor(ahead).catch(() => {});
     }
@@ -249,11 +278,25 @@ export class CloudAudioPlayer {
         this.ready.set(index, url);
         return url;
       });
-      // Let a failed chunk be retried on the next attempt.
-      promise.catch(() => this.pending.delete(index));
+      // Let a failed chunk be retried on the next attempt (unless the entry
+      // has since been replaced, e.g. after clearCache).
+      const settled = promise;
+      promise.catch(() => {
+        if (this.pending.get(index) === settled) this.pending.delete(index);
+      });
       this.pending.set(index, promise);
     }
     return promise;
+  }
+
+  private evictBefore(index: number): void {
+    for (const [chunk, url] of this.ready) {
+      if (chunk < index) {
+        URL.revokeObjectURL(url);
+        this.ready.delete(chunk);
+        this.pending.delete(chunk);
+      }
+    }
   }
 
   private playSilence(): void {

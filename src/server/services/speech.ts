@@ -8,7 +8,7 @@ import { formatModelRef, normalizeModelRef, parseModelRef } from "@/lib/ai/model
 import {
   DEFAULT_CLOUD_VOICE_MODEL,
   DEFAULT_CLOUD_VOICES,
-  SUGGESTED_CLOUD_VOICE_MODELS,
+  SERVER_KEY_CLOUD_VOICE_MODELS,
 } from "@/lib/narration/constants";
 import {
   getProviderApiKey,
@@ -41,7 +41,7 @@ export async function listSpeechModels(keys?: AiProviderKeys): Promise<SpeechMod
 
 /**
  * Speech models the user can pick: those that list voices, limited to the
- * suggested models when running on the server's key.
+ * server-key allowlist when running on the server's key.
  */
 export function toSpeechModels(
   catalog: OpenRouterModel[],
@@ -51,7 +51,7 @@ export function toSpeechModels(
     .flatMap((model): SpeechModel[] => {
       const voices = model.supported_voices ?? [];
       const id = formatModelRef("openrouter", model.id);
-      if (voices.length === 0 || !isModelAllowed(id, keys, SUGGESTED_CLOUD_VOICE_MODELS)) {
+      if (voices.length === 0 || !isModelAllowed(id, keys, SERVER_KEY_CLOUD_VOICE_MODELS)) {
         return [];
       }
       return [
@@ -60,11 +60,22 @@ export function toSpeechModels(
           displayName: model.name,
           provider: "openrouter",
           voices,
-          pricePerMillionCharacters: pricePerMillionUnits(model.pricing?.prompt),
+          pricePerMillionCharacters: pricePerMillionCharacters(model),
         },
       ];
     })
     .sort((a, b) => a.displayName.localeCompare(b.displayName));
+}
+
+/**
+ * Speech models are billed per input character (`pricing.prompt`), except
+ * those that also bill generated audio (`pricing.completion`, e.g. Gemini TTS
+ * per audio token), whose per-character cost we can't state.
+ */
+function pricePerMillionCharacters(model: OpenRouterModel): number | undefined {
+  const completion = pricePerMillionUnits(model.pricing?.completion);
+  if (completion === undefined || completion > 0) return undefined;
+  return pricePerMillionUnits(model.pricing?.prompt);
 }
 
 export function defaultVoiceFor(model: SpeechModel): string {
@@ -76,8 +87,8 @@ export class SpeechRequestError extends Error {}
 
 /**
  * Synthesizes `text` as MP3. A null model or voice means the default. Rejects
- * models and voices the user can't pick in settings, so this can't be used to
- * run arbitrary (or arbitrarily expensive) models.
+ * models the user can't pick in settings, so this can't be used to run
+ * arbitrary (or arbitrarily expensive) models.
  */
 export async function synthesizeSpeech(
   keys: AiProviderKeys,
@@ -92,9 +103,9 @@ export async function synthesizeSpeech(
   if (!model) {
     throw new SpeechRequestError(`Speech model not available: ${modelId}`);
   }
-  const voice = options.voice ?? defaultVoiceFor(model);
-  if (!model.voices.includes(voice)) {
-    throw new SpeechRequestError(`Voice not available for ${model.displayName}: ${voice}`);
-  }
+  // A stored voice the model no longer lists falls back to the default, the
+  // same voice the settings page shows as selected.
+  const voice =
+    options.voice && model.voices.includes(options.voice) ? options.voice : defaultVoiceFor(model);
   return openRouterSpeech(apiKey, parseModelRef(model.id).model, voice, options.text);
 }

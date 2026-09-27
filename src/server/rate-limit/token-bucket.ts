@@ -68,6 +68,15 @@ export const RATE_LIMIT_CONFIGS = {
     capacity: 60,
     refillRate: 6, // 6 tokens per second
   },
+  /**
+   * Cloud-voice speech synthesis. Playback prefetches several chunks and skips
+   * prefetch again, so the burst is generous; the refill bounds sustained
+   * spend on the server's key (≤1000 chars per call).
+   */
+  speech: {
+    capacity: 30,
+    refillRate: 0.5, // 1 token every 2 seconds
+  },
 } as const satisfies Record<string, RateLimitConfig>;
 
 export type RateLimitType = keyof typeof RATE_LIMIT_CONFIGS;

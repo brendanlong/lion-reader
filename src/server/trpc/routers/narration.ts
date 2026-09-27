@@ -12,7 +12,7 @@ import { createHash } from "node:crypto";
 import {
   createTRPCRouter,
   confirmedProtectedProcedure as protectedProcedure,
-  expensiveConfirmedProtectedProcedure,
+  speechConfirmedProtectedProcedure,
 } from "../trpc";
 import { errors } from "../errors";
 import { aiModelListSchema, uuidSchema } from "../validation";
@@ -427,7 +427,7 @@ export const narrationRouter = createTRPCRouter({
    * MP3; the client splits articles into chunks of at most
    * MAX_CLOUD_SPEECH_CHARS and plays them in order.
    */
-  synthesize: expensiveConfirmedProtectedProcedure
+  synthesize: speechConfirmedProtectedProcedure
     .meta({
       openapi: {
         method: "POST",

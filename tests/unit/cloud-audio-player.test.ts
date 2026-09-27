@@ -19,12 +19,23 @@ describe("splitIntoSpeechChunks", () => {
     ]);
     expect(chunks.every((chunk) => chunk.text.length <= 45)).toBe(true);
   });
+
+  it("hard-splits runs without whitespace that exceed the limit", () => {
+    const url = `https://example.com/${"a".repeat(2500)}`;
+    const chunks = splitIntoSpeechChunks([url], 1000);
+    expect(chunks.length).toBe(3);
+    expect(chunks.every((chunk) => chunk.text.length <= 1000)).toBe(true);
+    expect(chunks.map((chunk) => chunk.text).join("")).toBe(url);
+  });
 });
 
 /** Stand-in for HTMLAudioElement (jsdom doesn't implement media playback). */
 class FakeAudio extends EventTarget {
   loop = false;
   paused = true;
+  ended = false;
+  /** Makes the next play() reject, like a play() interrupted by pause(). */
+  rejectNextPlay: Error | null = null;
   preload = "";
   playbackRate = 1;
   defaultPlaybackRate = 1;
@@ -42,7 +53,14 @@ class FakeAudio extends EventTarget {
   }
   play(): Promise<void> {
     this.paused = false;
-    return Promise.resolve();
+    const error = this.rejectNextPlay;
+    this.rejectNextPlay = null;
+    return error ? Promise.reject(error) : Promise.resolve();
+  }
+  /** The OS pausing the element (phone call, unplugged headphones). */
+  pauseExternally(): void {
+    this.paused = true;
+    this.dispatchEvent(new Event("pause"));
   }
   pause(): void {
     this.paused = true;
@@ -70,9 +88,11 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 function setup(paragraphs: string[], maxChars = 1000) {
   const audio = new FakeAudio();
   const requests = new Map<string, ReturnType<typeof deferred<Blob>>>();
+  const calls: string[] = [];
   const player = new CloudAudioPlayer(
     (text) => {
       const request = deferred<Blob>();
+      calls.push(text);
       requests.set(text, request);
       return request.promise;
     },
@@ -93,7 +113,7 @@ function setup(paragraphs: string[], maxChars = 1000) {
     requests.get(text)!.resolve(new Blob([text], { type: "audio/mpeg" }));
     await flush();
   };
-  return { audio, requests, player, statuses, paragraphsSeen, events, respond };
+  return { audio, requests, calls, player, statuses, paragraphsSeen, events, respond };
 }
 
 describe("CloudAudioPlayer", () => {
@@ -196,5 +216,65 @@ describe("CloudAudioPlayer", () => {
     void player.play();
     await respond("A.");
     expect(player.getStatus()).toBe("playing");
+  });
+
+  it("notices the OS pausing the element, so a later play resumes", async () => {
+    const { audio, player, respond } = setup(["A."]);
+    void player.play();
+    await respond("A.");
+    audio.pauseExternally();
+    expect(player.getStatus()).toBe("paused");
+    await player.play();
+    expect(player.getStatus()).toBe("playing");
+    expect(audio.paused).toBe(false);
+  });
+
+  it("ignores the pause event from its own src swaps", async () => {
+    const { audio, player, respond } = setup(["A.", "B."]);
+    void player.play();
+    await respond("A.");
+    await respond("B.");
+    audio.end();
+    await flush();
+    // A src swap on a playing element fires "pause" asynchronously, after
+    // play() has already resumed it.
+    audio.dispatchEvent(new Event("pause"));
+    expect(player.getStatus()).toBe("playing");
+  });
+
+  it("treats a resume interrupted by a quick pause as a pause, not a failure", async () => {
+    const { audio, player, events, respond } = setup(["A."]);
+    void player.play();
+    await respond("A.");
+    player.pause();
+    audio.rejectNextPlay = new DOMException("interrupted", "AbortError");
+    const resumed = player.play();
+    player.pause();
+    await resumed;
+    expect(player.getStatus()).toBe("paused");
+    expect(events.errors).toEqual([]);
+  });
+
+  it("doesn't let a request from before clearCache drop its replacement", async () => {
+    const { requests, calls, player, respond } = setup(["A."]);
+    void player.play();
+    const stale = requests.get("A.")!;
+    player.stop();
+    player.clearCache();
+    void player.play();
+    stale.resolve(new Blob(["old"]));
+    await flush();
+    await respond("A.");
+    expect(calls).toEqual(["A.", "A."]);
+    expect(player.getStatus()).toBe("playing");
+  });
+
+  it("ends cleanly when skipping past the last paragraph", async () => {
+    const { player, events, respond } = setup(["A."]);
+    void player.play();
+    await respond("A.");
+    await player.skipForward();
+    expect(events.ended).toBe(1);
+    expect(player.getStatus()).toBe("idle");
   });
 });
