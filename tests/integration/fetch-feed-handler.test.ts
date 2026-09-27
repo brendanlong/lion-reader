@@ -407,6 +407,16 @@ describe("handleFetchFeed", () => {
       expect(await readUserEntries(userId)).toHaveLength(1);
     });
 
+    it("keeps scheduling from the feed's <ttl> when the body is unchanged (#1547)", async () => {
+      const feed = await createLoopbackFeed();
+      nextResponse = { body: rss([]).replace("<channel>", "<channel>\n    <ttl>600</ttl>") };
+      await handleFetchFeed({ feedId: feed.id });
+
+      const second = await handleFetchFeed({ feedId: feed.id });
+
+      expect(second.metadata).toMatchObject({ bodyUnchanged: true, nextFetchReason: "ttl" });
+    });
+
     it("re-processes an identical body on a forced refresh", async () => {
       // A byte-identical body can still need reconciling: a WebSub push may have
       // desynced last_seen_at, or an entry may need dropping from the generation.
