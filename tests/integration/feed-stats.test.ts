@@ -8,6 +8,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
+import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
 import { createCaller } from "../../src/server/trpc/root";
@@ -92,38 +93,57 @@ describe("Feed Stats API", () => {
     expect(result.items[0].entriesPerWeek).toBeNull();
   });
 
-  // A cursor reaches the SQL as a `uuid` comparison, so an unparseable value
-  // used to surface as a Postgres "invalid input syntax for type uuid" 500
-  // instead of a validation error.
   it("rejects a malformed cursor as a validation error", async () => {
     const userId = await createTestUser({ emailPrefix: "feedstats" });
     const caller = createCaller(await createAuthContext(userId));
 
-    await expect(caller.feedStats.list({ cursor: "not-a-uuid" })).rejects.toMatchObject({
+    await expect(caller.feedStats.list({ cursor: "not-a-cursor" })).rejects.toMatchObject({
       code: "BAD_REQUEST",
     });
   });
 
-  // The boundary-row subquery resolves a caller-supplied subscription id, so it
-  // must carry a user predicate: a subscription belonging to somebody else is
-  // not a valid pagination boundary and must not decide what this user sees.
-  it("does not resolve a foreign subscription as the pagination boundary", async () => {
+  it("pages through every subscription exactly once", async () => {
     const userId = await createTestUser({ emailPrefix: "feedstats" });
-    const otherUserId = await createTestUser({ emailPrefix: "feedstats-other" });
+    const expected: string[] = [];
+    for (const title of ["AAA Feed", "BBB Feed", "CCC Feed", "DDD Feed", "EEE Feed"]) {
+      expected.push(await createTestSubscription(userId, await createTestFeed({ title })));
+    }
 
+    const caller = createCaller(await createAuthContext(userId));
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    for (let page = 0; page < 10; page++) {
+      const result = await caller.feedStats.list({ limit: 2, cursor });
+      seen.push(...result.items.map((item) => item.subscriptionId));
+      cursor = result.nextCursor;
+      if (!cursor) break;
+    }
+
+    expect(seen).toEqual(expected);
+  });
+
+  // The cursor carries the boundary's sort key, so losing the boundary row
+  // between pages must resume after it rather than end the list.
+  it("resumes after the boundary subscription is deleted", async () => {
+    const userId = await createTestUser({ emailPrefix: "feedstats" });
     await createTestSubscription(userId, await createTestFeed({ title: "AAA Feed" }));
-    await createTestSubscription(userId, await createTestFeed({ title: "ZZZ Feed" }));
-    const foreignSubscriptionId = await createTestSubscription(
-      otherUserId,
-      await createTestFeed({ title: "MMM Feed" })
+    const boundaryId = await createTestSubscription(
+      userId,
+      await createTestFeed({ title: "BBB Feed" })
+    );
+    const lastId = await createTestSubscription(
+      userId,
+      await createTestFeed({ title: "CCC Feed" })
     );
 
     const caller = createCaller(await createAuthContext(userId));
-    const result = await caller.feedStats.list({ cursor: foreignSubscriptionId });
+    const page1 = await caller.feedStats.list({ limit: 2 });
+    expect(page1.items.map((item) => item.subscriptionId)).toContain(boundaryId);
 
-    // Without the user predicate the boundary resolves to "MMM Feed" and this
-    // user gets back everything sorted after it ("ZZZ Feed").
-    expect(result.items).toEqual([]);
+    await db.delete(subscriptions).where(eq(subscriptions.id, boundaryId));
+
+    const page2 = await caller.feedStats.list({ limit: 2, cursor: page1.nextCursor });
+    expect(page2.items.map((item) => item.subscriptionId)).toEqual([lastId]);
   });
 
   it("computes stats independently per feed across multiple subscriptions", async () => {

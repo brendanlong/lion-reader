@@ -150,6 +150,27 @@ describe("Admin API", () => {
       expect(page2.nextCursor).toBeUndefined();
     });
 
+    it("resumes after the boundary invite is deleted", async () => {
+      const caller = createCaller(createAdminContext());
+
+      const oldest = await createTestInvite();
+      await createTestInvite();
+      await createTestInvite();
+
+      const page1 = await caller.admin.listInvites({ limit: 2 });
+      await db.delete(invites).where(eq(invites.id, page1.items[1].id));
+
+      const page2 = await caller.admin.listInvites({ limit: 2, cursor: page1.nextCursor });
+      expect(page2.items.map((i) => i.id)).toEqual([oldest.id]);
+    });
+
+    it("rejects a malformed cursor as a validation error", async () => {
+      const caller = createCaller(createAdminContext());
+      await expect(caller.admin.listInvites({ cursor: "not-a-cursor" })).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+      });
+    });
+
     it("searches invites by used-by user email", async () => {
       const caller = createCaller(createAdminContext());
 
@@ -283,6 +304,28 @@ describe("Admin API", () => {
       // Untitled first (COALESCE(title, '') sorts '' before every title), then
       // alphabetically — and every feed is returned exactly once.
       expect(seen).toEqual([untitledId, alphaId, zetaId]);
+    });
+
+    it("resumes after the boundary feed is deleted", async () => {
+      const caller = createCaller(createAdminContext());
+
+      await createTestFeed({ url: "https://example.com/a.xml", title: "Alpha" });
+      const boundaryId = await createTestFeed({ url: "https://example.com/b.xml", title: "Beta" });
+      const lastId = await createTestFeed({ url: "https://example.com/c.xml", title: "Gamma" });
+
+      const page1 = await caller.admin.listFeeds({ limit: 2 });
+      expect(page1.items[1].feedId).toBe(boundaryId);
+      await db.delete(feeds).where(eq(feeds.id, boundaryId));
+
+      const page2 = await caller.admin.listFeeds({ limit: 2, cursor: page1.nextCursor });
+      expect(page2.items.map((f) => f.feedId)).toEqual([lastId]);
+    });
+
+    it("rejects a malformed cursor as a validation error", async () => {
+      const caller = createCaller(createAdminContext());
+      await expect(caller.admin.listFeeds({ cursor: generateUuidv7() })).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+      });
     });
   });
 
@@ -594,6 +637,75 @@ describe("Admin API", () => {
       for (const user of page2.items) {
         expect(page1Ids.has(user.id)).toBe(false);
       }
+    });
+
+    it.each(["activity", "email", "created", "oldest"] as const)(
+      "resumes after the boundary user is deleted (sort: %s)",
+      async (sort) => {
+        const caller = createCaller(createAdminContext());
+
+        const ids: string[] = [];
+        for (let i = 0; i < 3; i++) {
+          const id = await createTestUser({ emailPrefix: "deleted-boundary" });
+          await db
+            .update(users)
+            .set({ lastActiveAt: new Date(`2026-0${i + 1}-01T00:00:00Z`) })
+            .where(eq(users.id, id));
+          ids.push(id);
+        }
+
+        const page1 = await caller.admin.listUsers({ search: "deleted-boundary", sort, limit: 2 });
+        const boundaryId = page1.items[1].id;
+        await db.delete(users).where(eq(users.id, boundaryId));
+
+        const page2 = await caller.admin.listUsers({
+          search: "deleted-boundary",
+          sort,
+          limit: 2,
+          cursor: page1.nextCursor,
+        });
+        const expectedRemaining = ids.filter(
+          (id) => !page1.items.some((u) => u.id === id) && id !== boundaryId
+        );
+        expect(page2.items.map((u) => u.id)).toEqual(expectedRemaining);
+      }
+    );
+
+    // A Date cursor would truncate to milliseconds and skip a row sharing the
+    // boundary's millisecond but sorting after it on sub-millisecond activity.
+    it("keeps microsecond precision in the activity cursor", async () => {
+      const caller = createCaller(createAdminContext());
+
+      const later = await createTestUser({ emailPrefix: "micro" });
+      const earlier = await createTestUser({ emailPrefix: "micro" });
+      await db.execute(
+        sql`UPDATE users SET last_active_at = '2026-05-01T00:00:00.000900Z' WHERE id = ${later}`
+      );
+      await db.execute(
+        sql`UPDATE users SET last_active_at = '2026-05-01T00:00:00.000100Z' WHERE id = ${earlier}`
+      );
+
+      const page1 = await caller.admin.listUsers({ search: "micro", limit: 1 });
+      expect(page1.items.map((u) => u.id)).toEqual([later]);
+
+      const page2 = await caller.admin.listUsers({
+        search: "micro",
+        limit: 1,
+        cursor: page1.nextCursor,
+      });
+      expect(page2.items.map((u) => u.id)).toEqual([earlier]);
+    });
+
+    it("rejects a cursor from a different sort", async () => {
+      const caller = createCaller(createAdminContext());
+
+      await createTestUser({ emailPrefix: "mismatch" });
+      await createTestUser({ emailPrefix: "mismatch" });
+
+      const page1 = await caller.admin.listUsers({ search: "mismatch", sort: "email", limit: 1 });
+      await expect(
+        caller.admin.listUsers({ search: "mismatch", sort: "activity", cursor: page1.nextCursor })
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
     });
   });
 });
