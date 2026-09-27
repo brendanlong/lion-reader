@@ -112,7 +112,7 @@ export function syndicationToSeconds(hints: SyndicationHints | undefined): numbe
 /**
  * Feed hints for scheduling extracted from the feed itself.
  */
-interface FeedHints {
+export interface FeedHints {
   /** RSS 2.0 <ttl> element value in minutes */
   ttlMinutes?: number;
   /** Syndication namespace hints */

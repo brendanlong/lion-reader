@@ -445,6 +445,11 @@ export const feeds = pgTable(
     // broken feeds, admin). The authoritative value is jobs.next_run_at —
     // job claiming never reads this column, and the two can drift.
     nextFetchAt: timestamp("next_fetch_at", { withTimezone: true }),
+    // Scheduling hints the feed declares (RSS <ttl>, sy:updatePeriod/Frequency),
+    // kept so fetches that skip parsing (304, unchanged body) still honor them.
+    ttlMinutes: integer("ttl_minutes"),
+    syndicationUpdatePeriod: text("syndication_update_period"),
+    syndicationUpdateFrequency: integer("syndication_update_frequency"),
 
     // Error tracking
     consecutiveFailures: integer("consecutive_failures").notNull().default(0),
