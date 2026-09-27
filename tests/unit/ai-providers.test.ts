@@ -82,7 +82,7 @@ describe("getSummarizationModelId", () => {
     expect(getSummarizationModelId(null, {})).toBe("groq:foo");
   });
 
-  it("defaults to the first configured provider by priority (Cerebras > Groq > Anthropic)", () => {
+  it("defaults to the first configured provider by priority (Cerebras > Groq > Anthropic > OpenRouter)", () => {
     clearEnv();
     // Cerebras wins over both others when configured.
     expect(getSummarizationModelId(null, { groqApiKey: "g", cerebrasApiKey: "c" })).toBe(
@@ -95,8 +95,11 @@ describe("getSummarizationModelId", () => {
     expect(getSummarizationModelId(null, { anthropicApiKey: "a", groqApiKey: "g" })).toBe(
       DEFAULT_SUMMARIZATION_MODELS.groq
     );
-    // OpenRouter wins over Anthropic.
+    // A direct Anthropic key wins over the OpenRouter aggregator.
     expect(getSummarizationModelId(null, { anthropicApiKey: "a", openrouterApiKey: "o" })).toBe(
+      DEFAULT_SUMMARIZATION_MODELS.anthropic
+    );
+    expect(getSummarizationModelId(null, { openrouterApiKey: "o" })).toBe(
       DEFAULT_SUMMARIZATION_MODELS.openrouter
     );
     // Anthropic only when it's the sole option.

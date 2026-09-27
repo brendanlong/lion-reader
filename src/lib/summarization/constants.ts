@@ -22,14 +22,15 @@ export const DEFAULT_SUMMARIZATION_MODELS: Record<AiProvider, string> = {
  * Provider preference order for the default summarization model when the user
  * hasn't picked one. Cerebras and Groq run gpt-oss far faster than Anthropic,
  * and most users prefer the fastest possible summaries over minor quality
- * gains, so the hosted OpenAI-compatible providers come first. OpenRouter
- * routes gpt-oss to the fastest host it has, but adds a hop.
+ * gains, so the hosted OpenAI-compatible providers come first. OpenRouter is
+ * last: it can reach the others, so someone holding a direct key meant to use
+ * it, and adding a server OpenRouter key doesn't change anyone's default.
  */
 export const SUMMARIZATION_PROVIDER_PRIORITY: AiProvider[] = [
   "cerebras",
   "groq",
-  "openrouter",
   "anthropic",
+  "openrouter",
 ];
 
 /**

@@ -13,6 +13,7 @@ import type { ChatCompletionOptions } from "@/server/services/ai-providers";
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1";
 const REQUEST_TIMEOUT_MS = 120_000;
 const MODEL_CACHE_TTL_MS = 60 * 60 * 1000;
+const MODEL_CACHE_RETRY_MS = 60 * 1000;
 
 const openRouterModelSchema = z.object({
   id: z.string(),
@@ -35,6 +36,8 @@ const openRouterModelSchema = z.object({
 export type OpenRouterModel = z.infer<typeof openRouterModelSchema>;
 
 const chatCompletionResponseSchema = z.object({
+  // OpenRouter can report an upstream failure in a 200 body.
+  error: z.object({ message: z.string().nullish() }).nullish(),
   choices: z
     .array(
       z.object({
@@ -123,21 +126,37 @@ export async function openRouterChatCompletion(
     throw await errorFromResponse(response);
   }
   const parsed = chatCompletionResponseSchema.parse(await response.json());
+  if (parsed.error) {
+    throw new Error(`OpenRouter request failed: ${parsed.error.message ?? "unknown error"}`);
+  }
   return parsed.choices?.[0]?.message?.content ?? "";
 }
 
-const modelCache = new Map<string, { fetchedAt: number; models: OpenRouterModel[] }>();
+const modelCache = new Map<string, { expiresAt: number; models: OpenRouterModel[] }>();
 
 /**
  * Lists OpenRouter models producing the given output modality. Entries that
- * don't match the expected shape are skipped rather than failing the list.
+ * don't match the expected shape are skipped rather than failing the list. If
+ * a refresh fails, the stale list is served and the refresh retried a minute
+ * later rather than on every call.
  */
 export async function listOpenRouterModels(outputModality: "text"): Promise<OpenRouterModel[]> {
   const cached = modelCache.get(outputModality);
-  if (cached && Date.now() - cached.fetchedAt < MODEL_CACHE_TTL_MS) {
+  if (cached && Date.now() < cached.expiresAt) {
     return cached.models;
   }
+  try {
+    const models = await fetchOpenRouterModels(outputModality);
+    modelCache.set(outputModality, { expiresAt: Date.now() + MODEL_CACHE_TTL_MS, models });
+    return models;
+  } catch (error) {
+    if (!cached) throw error;
+    cached.expiresAt = Date.now() + MODEL_CACHE_RETRY_MS;
+    return cached.models;
+  }
+}
 
+async function fetchOpenRouterModels(outputModality: string): Promise<OpenRouterModel[]> {
   const response = await fetch(
     `${OPENROUTER_API_URL}/models?output_modalities=${encodeURIComponent(outputModality)}`,
     { headers: headers(), signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) }
@@ -146,13 +165,10 @@ export async function listOpenRouterModels(outputModality: "text"): Promise<Open
     throw await errorFromResponse(response);
   }
   const body = z.object({ data: z.array(z.unknown()) }).parse(await response.json());
-  const models = body.data.flatMap((entry) => {
+  return body.data.flatMap((entry) => {
     const result = openRouterModelSchema.safeParse(entry);
     return result.success ? [result.data] : [];
   });
-
-  modelCache.set(outputModality, { fetchedAt: Date.now(), models });
-  return models;
 }
 
 /**
