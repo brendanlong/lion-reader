@@ -9,7 +9,7 @@
 
 import { useState, type ReactNode } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { httpBatchLink, type TRPCLink } from "@trpc/client";
+import { httpBatchLink, httpLink, splitLink, type TRPCLink } from "@trpc/client";
 import superjson from "superjson";
 import type { AppRouter } from "@/server/trpc/root";
 import { trpc } from "./client";
@@ -35,17 +35,25 @@ function getBaseUrl() {
 }
 
 function createHttpLinks(): TRPCLink<AppRouter>[] {
+  const options = {
+    url: `${getBaseUrl()}/api/trpc`,
+    transformer: superjson,
+    // Include credentials for cookie-based auth
+    fetch(url: URL | RequestInfo, init?: RequestInit) {
+      return fetch(url, {
+        ...init,
+        credentials: "include" as const,
+      });
+    },
+  };
   return [
-    httpBatchLink({
-      url: `${getBaseUrl()}/api/trpc`,
-      transformer: superjson,
-      // Include credentials for cookie-based auth
-      fetch(url, options) {
-        return fetch(url, {
-          ...options,
-          credentials: "include",
-        });
-      },
+    // A batch resolves only when its slowest call does, so slow calls that
+    // shouldn't hold up others (e.g. parallel speech synthesis) opt out with
+    // `context: { skipBatch: true }`.
+    splitLink({
+      condition: (op) => op.context.skipBatch === true,
+      true: httpLink(options),
+      false: httpBatchLink(options),
     }),
   ];
 }

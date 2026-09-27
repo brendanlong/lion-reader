@@ -401,6 +401,16 @@ export const expensiveConfirmedProtectedProcedure = t.procedure
   .use(confirmedMiddleware)
   .use(createAuthenticatedRateLimitMiddleware("expensive"));
 
+/**
+ * Confirmed protected procedure on the speech-synthesis rate limit.
+ */
+export const speechConfirmedProtectedProcedure = t.procedure
+  .use(timingMiddleware)
+  .use(authMiddleware)
+  .use(sessionOnlyMiddleware)
+  .use(confirmedMiddleware)
+  .use(createAuthenticatedRateLimitMiddleware("speech"));
+
 // ============================================================================
 // Admin Procedures (protected by ALLOWLIST_SECRET)
 // ============================================================================

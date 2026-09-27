@@ -14,6 +14,8 @@ const OPENROUTER_API_URL = "https://openrouter.ai/api/v1";
 const REQUEST_TIMEOUT_MS = 120_000;
 const MODEL_CACHE_TTL_MS = 60 * 60 * 1000;
 const MODEL_CACHE_RETRY_MS = 60 * 1000;
+/** ~15 minutes of 64 kbps MP3; a 1000-character chunk is about a minute. */
+const MAX_SPEECH_BYTES = 8 * 1024 * 1024;
 
 const openRouterModelSchema = z.object({
   id: z.string(),
@@ -31,6 +33,7 @@ const openRouterModelSchema = z.object({
     })
     .nullish(),
   supported_parameters: z.array(z.string()).nullish(),
+  supported_voices: z.array(z.string()).nullish(),
 });
 
 export type OpenRouterModel = z.infer<typeof openRouterModelSchema>;
@@ -133,6 +136,7 @@ export async function openRouterChatCompletion(
 }
 
 const modelCache = new Map<string, { expiresAt: number; models: OpenRouterModel[] }>();
+const refreshes = new Map<string, Promise<OpenRouterModel[]>>();
 
 /**
  * Lists OpenRouter models producing the given output modality. Entries that
@@ -140,20 +144,32 @@ const modelCache = new Map<string, { expiresAt: number; models: OpenRouterModel[
  * a refresh fails, the stale list is served and the refresh retried a minute
  * later rather than on every call.
  */
-export async function listOpenRouterModels(outputModality: "text"): Promise<OpenRouterModel[]> {
+export async function listOpenRouterModels(
+  outputModality: "text" | "speech"
+): Promise<OpenRouterModel[]> {
   const cached = modelCache.get(outputModality);
   if (cached && Date.now() < cached.expiresAt) {
     return cached.models;
   }
-  try {
-    const models = await fetchOpenRouterModels(outputModality);
-    modelCache.set(outputModality, { expiresAt: Date.now() + MODEL_CACHE_TTL_MS, models });
-    return models;
-  } catch (error) {
-    if (!cached) throw error;
-    cached.expiresAt = Date.now() + MODEL_CACHE_RETRY_MS;
-    return cached.models;
+  // Concurrent callers (e.g. parallel speech prefetches) share one refresh.
+  let refresh = refreshes.get(outputModality);
+  if (!refresh) {
+    refresh = (async () => {
+      try {
+        const models = await fetchOpenRouterModels(outputModality);
+        modelCache.set(outputModality, { expiresAt: Date.now() + MODEL_CACHE_TTL_MS, models });
+        return models;
+      } catch (error) {
+        if (!cached) throw error;
+        cached.expiresAt = Date.now() + MODEL_CACHE_RETRY_MS;
+        return cached.models;
+      } finally {
+        refreshes.delete(outputModality);
+      }
+    })();
+    refreshes.set(outputModality, refresh);
   }
+  return refresh;
 }
 
 async function fetchOpenRouterModels(outputModality: string): Promise<OpenRouterModel[]> {
@@ -172,11 +188,43 @@ async function fetchOpenRouterModels(outputModality: string): Promise<OpenRouter
 }
 
 /**
- * Converts OpenRouter's per-token USD price string to USD per million tokens.
+ * Synthesizes speech as MP3 via the OpenAI-compatible speech endpoint.
+ */
+export async function openRouterSpeech(
+  apiKey: string,
+  model: string,
+  voice: string,
+  input: string
+): Promise<Uint8Array> {
+  const response = await fetch(`${OPENROUTER_API_URL}/audio/speech`, {
+    method: "POST",
+    headers: { ...headers(apiKey), "Content-Type": "application/json" },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    body: JSON.stringify({
+      model,
+      voice,
+      input,
+      response_format: "mp3",
+      provider: { sort: "latency" },
+    }),
+  });
+  if (!response.ok) {
+    throw await errorFromResponse(response);
+  }
+  const audio = new Uint8Array(await response.arrayBuffer());
+  if (audio.byteLength > MAX_SPEECH_BYTES) {
+    throw new Error(`OpenRouter speech response too large (${audio.byteLength} bytes)`);
+  }
+  return audio;
+}
+
+/**
+ * Converts OpenRouter's per-unit USD price string (per token, or per character
+ * for speech models) to USD per million units.
  * Returns undefined for missing prices and for the negative sentinel used by
  * routers whose price depends on the model they pick.
  */
-export function pricePerMillionTokens(price: string | null | undefined): number | undefined {
+export function pricePerMillionUnits(price: string | null | undefined): number | undefined {
   if (price == null) return undefined;
   const value = Number(price);
   // toPrecision strips float noise like 0.7999999999999999.

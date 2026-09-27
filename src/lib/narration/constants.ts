@@ -61,6 +61,43 @@ export const SUGGESTED_NARRATION_MODELS: string[] = [
 export const DEFAULT_NARRATION_MODEL = DEFAULT_NARRATION_MODELS.cerebras;
 
 /**
+ * Cloud voices (server-side TTS through OpenRouter). Kokoro is the default:
+ * good quality at a few cents per long article ($0.62–$4 per million
+ * characters, depending on the host).
+ */
+export const DEFAULT_CLOUD_VOICE_MODEL = "openrouter:hexgrad/kokoro-82m";
+
+/**
+ * Voice used when the user hasn't picked one; models not listed here use the
+ * first voice they report.
+ */
+export const DEFAULT_CLOUD_VOICES: Record<string, string> = {
+  [DEFAULT_CLOUD_VOICE_MODEL]: "af_heart",
+  "openrouter:mistralai/voxtral-mini-tts-2603": "en_paul_neutral",
+  "openrouter:deepgram/aura-2": "aura-2-thalia-en",
+};
+
+/** Speech models listed first in the picker. */
+export const SUGGESTED_CLOUD_VOICE_MODELS: string[] = [
+  DEFAULT_CLOUD_VOICE_MODEL,
+  "openrouter:mistralai/voxtral-mini-tts-2603",
+  "openrouter:deepgram/aura-2",
+];
+
+/**
+ * The only speech model usable on the server's OpenRouter key; the others
+ * cost 4–50x more per character, so they need the user's own key.
+ */
+export const SERVER_KEY_CLOUD_VOICE_MODELS: string[] = [DEFAULT_CLOUD_VOICE_MODEL];
+
+/**
+ * Longest text synthesized per request. Paragraphs are split into chunks of
+ * at most this size so playback can start (and skip) without waiting for a
+ * whole long paragraph.
+ */
+export const MAX_CLOUD_SPEECH_CHARS = 1000;
+
+/**
  * Default speech rate (1.0 = normal speed).
  */
 export const DEFAULT_RATE = 1.0;

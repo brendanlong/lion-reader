@@ -18,8 +18,9 @@ import { useNarrationSettings } from "@/lib/narration/settings";
 import { getNarrationSupportInfo, isFirefox } from "@/lib/narration/feature-detection";
 import { waitForVoices, rankVoices, findVoiceByUri } from "@/lib/narration/voices";
 import type { TTSProviderId } from "@/lib/narration/types";
-import { PREVIEW_TEXT } from "@/lib/narration/constants";
+import { DEFAULT_CLOUD_VOICE_MODEL, PREVIEW_TEXT } from "@/lib/narration/constants";
 import { EnhancedVoicesHelp } from "./EnhancedVoicesHelp";
+import { CloudVoiceSettings } from "./CloudVoiceSettings";
 import { trpc } from "@/lib/trpc/client";
 
 // Dynamic import with ssr: false to prevent piper-tts-web from being bundled for SSR.
@@ -50,6 +51,11 @@ export function NarrationSettings() {
   // Check if AI text processing is available (GROQ_API_KEY configured)
   const { data: aiAvailability } = trpc.narration.isAiTextProcessingAvailable.useQuery();
   const isAiTextProcessingAvailable = aiAvailability?.available ?? false;
+
+  const voiceModelsQuery = trpc.narration.listVoiceModels.useQuery(undefined, {
+    staleTime: 5 * 60 * 1000,
+  });
+  const cloudVoiceModels = voiceModelsQuery.data?.models ?? [];
 
   // Load voices on mount (only if supported)
   useEffect(() => {
@@ -229,79 +235,29 @@ export function NarrationSettings() {
           <div>
             <h3 className="ui-text-sm text-body mb-3 font-medium">Voice Provider</h3>
             <div className="space-y-3">
-              {/* Browser Voices Option */}
-              <label
-                className={`relative flex cursor-pointer rounded-lg border p-4 transition-colors ${
-                  settings.provider === "browser"
-                    ? "border-control-selected epaper:bg-surface bg-zinc-50 dark:bg-zinc-800"
-                    : "border-edge-strong epaper:border-fill-muted hover:bg-surface-muted"
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="voice-provider"
-                  value="browser"
-                  checked={settings.provider === "browser"}
-                  onChange={() => handleProviderChange("browser")}
-                  className="sr-only"
+              <ProviderOption
+                value="browser"
+                selected={settings.provider}
+                onSelect={handleProviderChange}
+                label="Browser Voices"
+                description="Uses your browser's built-in text-to-speech"
+              />
+              <ProviderOption
+                value="piper"
+                selected={settings.provider}
+                onSelect={handleProviderChange}
+                label="Enhanced Voices"
+                description="Higher quality voices (requires download)"
+              />
+              {(cloudVoiceModels.length > 0 || settings.provider === "cloud") && (
+                <ProviderOption
+                  value="cloud"
+                  selected={settings.provider}
+                  onSelect={handleProviderChange}
+                  label="Cloud Voices"
+                  description="Natural-sounding voices generated on OpenRouter; keep playing in the background"
                 />
-                <div className="flex items-start gap-3">
-                  <div
-                    className={`mt-0.5 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border ${
-                      settings.provider === "browser"
-                        ? "border-control-selected"
-                        : "border-zinc-400 dark:border-zinc-500"
-                    }`}
-                  >
-                    {settings.provider === "browser" && (
-                      <div className="bg-control-selected h-2 w-2 rounded-full" />
-                    )}
-                  </div>
-                  <div>
-                    <span className="ui-text-sm text-body block font-medium">Browser Voices</span>
-                    <span className="ui-text-xs text-muted mt-0.5 block">
-                      Uses your browser&apos;s built-in text-to-speech
-                    </span>
-                  </div>
-                </div>
-              </label>
-
-              {/* Enhanced Voices Option */}
-              <label
-                className={`relative flex cursor-pointer rounded-lg border p-4 transition-colors ${
-                  settings.provider === "piper"
-                    ? "border-control-selected epaper:bg-surface bg-zinc-50 dark:bg-zinc-800"
-                    : "border-edge-strong epaper:border-fill-muted hover:bg-surface-muted"
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="voice-provider"
-                  value="piper"
-                  checked={settings.provider === "piper"}
-                  onChange={() => handleProviderChange("piper")}
-                  className="sr-only"
-                />
-                <div className="flex items-start gap-3">
-                  <div
-                    className={`mt-0.5 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border ${
-                      settings.provider === "piper"
-                        ? "border-control-selected"
-                        : "border-zinc-400 dark:border-zinc-500"
-                    }`}
-                  >
-                    {settings.provider === "piper" && (
-                      <div className="bg-control-selected h-2 w-2 rounded-full" />
-                    )}
-                  </div>
-                  <div>
-                    <span className="ui-text-sm text-body block font-medium">Enhanced Voices</span>
-                    <span className="ui-text-xs text-muted mt-0.5 block">
-                      Higher quality voices (requires download)
-                    </span>
-                  </div>
-                </div>
-              </label>
+              )}
             </div>
           </div>
 
@@ -352,6 +308,16 @@ export function NarrationSettings() {
                 quality voices.
               </p>
             </div>
+          )}
+
+          {settings.provider === "cloud" && (
+            <CloudVoiceSettings
+              settings={settings}
+              setSettings={setSettings}
+              models={cloudVoiceModels}
+              defaultModelId={voiceModelsQuery.data?.defaultModelId ?? DEFAULT_CLOUD_VOICE_MODEL}
+              isLoading={voiceModelsQuery.isLoading}
+            />
           )}
 
           {/* Enhanced Voices List (only shown when piper provider selected) */}
@@ -551,5 +517,52 @@ export function NarrationSettings() {
         </CardSection>
       )}
     </SettingsSection>
+  );
+}
+
+function ProviderOption({
+  value,
+  selected,
+  onSelect,
+  label,
+  description,
+}: {
+  value: TTSProviderId;
+  selected: TTSProviderId;
+  onSelect: (provider: TTSProviderId) => void;
+  label: string;
+  description: string;
+}) {
+  const isSelected = value === selected;
+  return (
+    <label
+      className={`relative flex cursor-pointer rounded-lg border p-4 transition-colors ${
+        isSelected
+          ? "border-control-selected epaper:bg-surface bg-zinc-50 dark:bg-zinc-800"
+          : "border-edge-strong epaper:border-fill-muted hover:bg-surface-muted"
+      }`}
+    >
+      <input
+        type="radio"
+        name="voice-provider"
+        value={value}
+        checked={isSelected}
+        onChange={() => onSelect(value)}
+        className="sr-only"
+      />
+      <div className="flex items-start gap-3">
+        <div
+          className={`mt-0.5 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border ${
+            isSelected ? "border-control-selected" : "border-zinc-400 dark:border-zinc-500"
+          }`}
+        >
+          {isSelected && <div className="bg-control-selected h-2 w-2 rounded-full" />}
+        </div>
+        <div>
+          <span className="ui-text-sm text-body block font-medium">{label}</span>
+          <span className="ui-text-xs text-muted mt-0.5 block">{description}</span>
+        </div>
+      </div>
+    </label>
   );
 }

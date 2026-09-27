@@ -1,4 +1,5 @@
 import { Registry, collectDefaultMetrics, Counter, Histogram, Gauge } from "prom-client";
+import type { TTSProviderId } from "@/lib/narration/types";
 
 /**
  * Prometheus Metrics Registry
@@ -825,7 +826,7 @@ export function trackEnhancedVoiceDownloadFailed(
  *
  * @param provider - The TTS provider used (browser or piper)
  */
-export function trackNarrationPlaybackStarted(provider: "browser" | "piper"): void {
+export function trackNarrationPlaybackStarted(provider: TTSProviderId): void {
   narrationPlaybackStartedTotal?.inc({ provider });
 }
 

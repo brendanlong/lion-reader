@@ -61,6 +61,7 @@ describe("useNarrationSettings", () => {
       const storedSettings = {
         enabled: false,
         provider: "piper",
+        cloudModelId: null,
         voiceId: "test-voice",
         rate: 1.5,
         pitch: 0.8,
@@ -304,6 +305,7 @@ describe("useNarrationSettings", () => {
       const customSettings: NarrationSettings = {
         enabled: false,
         provider: "piper",
+        cloudModelId: null,
         voiceId: "custom-voice",
         rate: 1.75,
         pitch: 0.9,

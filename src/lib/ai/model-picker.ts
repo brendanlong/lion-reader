@@ -11,6 +11,8 @@ export interface PickerModel {
   contextLength?: number;
   inputPricePerMillion?: number;
   outputPricePerMillion?: number;
+  /** Speech models are priced per input character instead of per token. */
+  pricePerMillionCharacters?: number;
 }
 
 export interface PickerSection {
@@ -87,6 +89,13 @@ export function formatModelDetails(model: PickerModel): string {
       model.inputPricePerMillion === 0 && model.outputPricePerMillion === 0
         ? "free"
         : `${formatPrice(model.inputPricePerMillion)} in / ${formatPrice(model.outputPricePerMillion)} out per 1M tokens`
+    );
+  }
+  if (model.pricePerMillionCharacters !== undefined) {
+    parts.push(
+      model.pricePerMillionCharacters === 0
+        ? "free"
+        : `${formatPrice(model.pricePerMillionCharacters)} per 1M characters`
     );
   }
   return parts.join(" · ");
