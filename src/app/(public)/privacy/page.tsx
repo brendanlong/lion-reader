@@ -24,7 +24,7 @@ export const metadata: Metadata = {
 
 export default function PrivacyPolicyPage() {
   return (
-    <LegalPage title="Privacy Policy" lastUpdated="September 16, 2026">
+    <LegalPage title="Privacy Policy" lastUpdated="September 27, 2026">
       <LegalSection title="Overview">
         <LegalParagraph>
           Lion Reader is committed to protecting your privacy. We collect only the data necessary to
@@ -158,13 +158,18 @@ export default function PrivacyPolicyPage() {
 
         <div className="mt-4 space-y-6">
           <Card padding="md">
-            <LegalSubsection title="Article Summarization (Anthropic, Cerebras, Groq) — Optional">
+            <LegalSubsection title="Article Summarization (Anthropic, Cerebras, Groq, OpenRouter) — Optional">
               <LegalParagraph>
                 <strong>This feature is optional and off by default.</strong> Summarization only
                 happens when you explicitly request a summary for an article and a summarization
                 model has been configured (either your own API key or a server-provided one). When
                 you generate a summary, the article&apos;s title and text content are sent to your
-                chosen AI provider—Anthropic, Cerebras, or Groq—to produce the summary.
+                chosen AI provider—Anthropic, Cerebras, Groq, or OpenRouter—to produce the summary.
+              </LegalParagraph>
+              <LegalParagraph>
+                OpenRouter is a gateway that forwards each request to a company hosting the model
+                you picked (for example Google, Anthropic, or an open-weights host), so when you
+                choose an OpenRouter model that host also receives the article text.
               </LegalParagraph>
               <LegalParagraph>
                 You choose which provider and model to use in your settings, and you may provide a
@@ -189,29 +194,47 @@ export default function PrivacyPolicyPage() {
                 <TextLink href="https://groq.com/privacy-policy/" external className="ui-text-sm">
                   Groq&apos;s Privacy Policy &rarr;
                 </TextLink>
+                <TextLink href="https://openrouter.ai/privacy" external className="ui-text-sm">
+                  OpenRouter&apos;s Privacy Policy &rarr;
+                </TextLink>
               </p>
             </LegalSubsection>
           </Card>
 
           <Card padding="md">
-            <LegalSubsection title="Audio Narration (Groq) — Optional">
+            <LegalSubsection title="Audio Narration (Cerebras, Groq, OpenRouter) — Optional">
               <LegalParagraph>
                 <strong>This feature is optional and disabled by default.</strong> When you enable
-                AI text processing in narration settings, article content is sent to Groq (running
-                the open-weights GPT-OSS 20B model) to convert it into speakable text. This
+                AI text processing in narration settings, article content is sent to the AI provider
+                you chose—Cerebras, Groq, or OpenRouter—to convert it into speakable text. This
                 preprocessing expands abbreviations, formats numbers for speech, and improves
                 pronunciation. The processed text is cached on our servers to avoid repeated
                 processing.
               </LegalParagraph>
               <LegalParagraph>
                 When AI processing is disabled, we use simple HTML-to-text conversion that happens
-                entirely on our servers. Either way, the actual audio generation happens entirely on
-                your device using your browser&apos;s built-in text-to-speech. No audio data is sent
-                to external servers.
+                entirely on our servers.
               </LegalParagraph>
-              <p className="mt-2">
+              <LegalParagraph>
+                With browser or enhanced voices, audio is generated entirely on your device. If you
+                choose <strong>Cloud Voices</strong> (off by default), the text being narrated is
+                sent to OpenRouter, which forwards it to the host of the speech model you picked
+                (for example Kokoro, hosted by DeepInfra or Together) to generate the audio. The
+                generated audio is streamed back to your device and not stored on our servers.
+              </LegalParagraph>
+              <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+                <TextLink
+                  href="https://www.cerebras.ai/privacy-policy"
+                  external
+                  className="ui-text-sm"
+                >
+                  Cerebras&apos;s Privacy Policy &rarr;
+                </TextLink>
                 <TextLink href="https://groq.com/privacy-policy/" external className="ui-text-sm">
-                  View Groq&apos;s Privacy Policy &rarr;
+                  Groq&apos;s Privacy Policy &rarr;
+                </TextLink>
+                <TextLink href="https://openrouter.ai/privacy" external className="ui-text-sm">
+                  OpenRouter&apos;s Privacy Policy &rarr;
                 </TextLink>
               </p>
             </LegalSubsection>

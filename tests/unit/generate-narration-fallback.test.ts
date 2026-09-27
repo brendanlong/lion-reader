@@ -1,5 +1,5 @@
 /**
- * Unit tests for generateNarration's fallback path (no Groq key configured).
+ * Unit tests for generateNarration's fallback path (no provider key configured).
  *
  * The fallback converts HTML to plain-text narration and must produce a
  * paragraph map aligned with how the player splits paragraphs — including when a
@@ -10,20 +10,24 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { generateNarration } from "../../src/server/services/narration";
 import { splitNarrationParagraphs } from "../../src/lib/narration/paragraph-map";
+import { NARRATION_PROVIDERS } from "../../src/lib/narration/constants";
+import { AI_PROVIDER_ENV_KEYS } from "../../src/server/services/ai-providers";
 
 describe("generateNarration fallback paragraph map", () => {
-  const prevGroqKey = process.env.GROQ_API_KEY;
-  const prevCerebrasKey = process.env.CEREBRAS_API_KEY;
-
   // Force the no-LLM fallback path deterministically by clearing every provider
-  // narration can use (Cerebras and Groq).
+  // narration can use.
+  const narrationKeyVars = NARRATION_PROVIDERS.map((provider) => AI_PROVIDER_ENV_KEYS[provider]);
+  const previousKeys = Object.fromEntries(
+    narrationKeyVars.map((name) => [name, process.env[name]])
+  );
+
   beforeAll(() => {
-    delete process.env.GROQ_API_KEY;
-    delete process.env.CEREBRAS_API_KEY;
+    for (const name of narrationKeyVars) delete process.env[name];
   });
   afterAll(() => {
-    if (prevGroqKey !== undefined) process.env.GROQ_API_KEY = prevGroqKey;
-    if (prevCerebrasKey !== undefined) process.env.CEREBRAS_API_KEY = prevCerebrasKey;
+    for (const [name, value] of Object.entries(previousKeys)) {
+      if (value !== undefined) process.env[name] = value;
+    }
   });
 
   it("aligns the map with the split for clean per-<p> content", async () => {

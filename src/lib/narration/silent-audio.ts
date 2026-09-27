@@ -4,9 +4,10 @@
  * The Media Session API (`navigator.mediaSession`) only surfaces OS-level media
  * controls — the lock-screen / notification widget, and hardware/Bluetooth
  * play-pause buttons — while the browser believes an `HTMLMediaElement` is
- * actively playing. Lion Reader's narration plays through the Web Speech API
- * (`speechSynthesis`) or the Web Audio API (Piper TTS via `AudioBufferSourceNode`),
- * neither of which registers as media playback. Without a real media element,
+ * actively playing. Browser voices play through the Web Speech API
+ * (`speechSynthesis`) and Piper through the Web Audio API
+ * (`AudioBufferSourceNode`), neither of which registers as media playback.
+ * (Cloud voices have their own media element and don't use this.) Without a real media element,
  * setting `mediaSession.metadata` and action handlers has no visible effect: the
  * notification never appears and Bluetooth buttons aren't routed to us.
  *

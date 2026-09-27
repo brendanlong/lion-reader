@@ -2,7 +2,7 @@
  * API Key Settings Components
  *
  * Settings sections for user-configured AI provider API keys (Anthropic,
- * Groq, Cerebras) and the model settings that build on them. User keys
+ * Groq, Cerebras, OpenRouter) and the model settings that build on them. User keys
  * override the server's global API keys when set.
  */
 
@@ -16,22 +16,20 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TextLink } from "@/components/ui/text-link";
 import { InlineCode } from "@/components/ui/inline-code";
-import {
-  AI_PROVIDER_DISPLAY_NAMES,
-  AI_PROVIDERS,
-  normalizeModelRef,
-  type AiProvider,
-} from "@/lib/ai/model-ref";
+import { AI_PROVIDER_DISPLAY_NAMES, normalizeModelRef, type AiProvider } from "@/lib/ai/model-ref";
 import {
   DEFAULT_SUMMARIZATION_MODEL,
   DEFAULT_SUMMARIZATION_MAX_WORDS,
+  SUGGESTED_SUMMARIZATION_MODELS,
 } from "@/lib/summarization/constants";
-import { DEFAULT_NARRATION_MODEL } from "@/lib/narration/constants";
+import { DEFAULT_NARRATION_MODEL, SUGGESTED_NARRATION_MODELS } from "@/lib/narration/constants";
+import type { PickerModel } from "@/lib/ai/model-picker";
+import { ModelPicker } from "./ModelPicker";
 import { SettingsSection } from "./SettingsSection";
 
 interface ProviderKeyConfig {
-  field: "anthropicApiKey" | "groqApiKey" | "cerebrasApiKey";
-  hasKeyField: "hasAnthropicApiKey" | "hasGroqApiKey" | "hasCerebrasApiKey";
+  field: "anthropicApiKey" | "groqApiKey" | "cerebrasApiKey" | "openrouterApiKey";
+  hasKeyField: "hasAnthropicApiKey" | "hasGroqApiKey" | "hasCerebrasApiKey" | "hasOpenrouterApiKey";
   provider: AiProvider;
   placeholder: string;
   keyUrl: string;
@@ -58,6 +56,13 @@ const PROVIDER_KEY_CONFIGS: ProviderKeyConfig[] = [
     provider: "cerebras",
     placeholder: "csk-...",
     keyUrl: "https://cloud.cerebras.ai/",
+  },
+  {
+    field: "openrouterApiKey",
+    hasKeyField: "hasOpenrouterApiKey",
+    provider: "openrouter",
+    placeholder: "sk-or-...",
+    keyUrl: "https://openrouter.ai/settings/keys",
   },
 ];
 
@@ -224,8 +229,10 @@ export function AiProviderKeySettings() {
       description={
         <>
           Add an API key for one or more AI providers to enable AI features: article summaries (any
-          provider) and narration text processing (Groq or Cerebras). Keys are stored encrypted and
-          override the server&apos;s keys when set.
+          provider) and narration text processing (Groq, Cerebras, or OpenRouter). OpenRouter gives
+          access to hundreds of models from many labs with one key; without your own OpenRouter key,
+          only the suggested OpenRouter models are available. Keys are stored encrypted and override
+          the server&apos;s keys when set.
         </>
       }
     >
@@ -238,73 +245,37 @@ export function AiProviderKeySettings() {
   );
 }
 
-interface ModelOption {
-  id: string;
-  displayName: string;
-  provider: AiProvider;
-}
-
 /**
- * A model select grouped by provider, with a "(default)" marker and support
- * for a stored value that's missing from the list.
+ * The feature's model picker; a stored value missing from the list (e.g. a
+ * model the provider has since retired) still shows as selected.
  */
-function ModelSelect({
+function FeatureModelPicker({
   id,
   currentModel,
   defaultModelId,
   models,
+  suggestedModelIds,
   isLoading,
-  disabled,
   onChange,
 }: {
   id: string;
   currentModel: string | null;
   defaultModelId: string;
-  models: ModelOption[];
+  models: PickerModel[];
+  suggestedModelIds: string[];
   isLoading: boolean;
-  disabled: boolean;
   onChange: (value: string) => void;
 }) {
-  const normalizedCurrent = currentModel ? normalizeModelRef(currentModel) : null;
-  const value = normalizedCurrent ?? defaultModelId;
-  const providers = AI_PROVIDERS.filter((provider) =>
-    models.some((model) => model.provider === provider)
-  );
-
   return (
-    <select
+    <ModelPicker
       id={id}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      disabled={disabled || isLoading}
-      className="ui-text-sm bg-surface text-body border-edge-input block w-full rounded-md border px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
-    >
-      {isLoading ? (
-        <option value={value}>Loading models...</option>
-      ) : models.length > 0 ? (
-        providers.map((provider) => (
-          <optgroup key={provider} label={AI_PROVIDER_DISPLAY_NAMES[provider]}>
-            {models
-              .filter((model) => model.provider === provider)
-              .map((model) => (
-                <option key={model.id} value={model.id}>
-                  {model.displayName}
-                  {model.id === defaultModelId ? " (default)" : ""}
-                </option>
-              ))}
-          </optgroup>
-        ))
-      ) : (
-        <option value={defaultModelId}>{defaultModelId}</option>
-      )}
-      {/* Show custom value if it's not in the models list */}
-      {normalizedCurrent &&
-        !isLoading &&
-        models.length > 0 &&
-        !models.some((m) => m.id === normalizedCurrent) && (
-          <option value={normalizedCurrent}>{normalizedCurrent}</option>
-        )}
-    </select>
+      value={currentModel ? normalizeModelRef(currentModel) : defaultModelId}
+      defaultModelId={defaultModelId}
+      models={models}
+      suggestedModelIds={suggestedModelIds}
+      isLoading={isLoading}
+      onChange={onChange}
+    />
   );
 }
 
@@ -421,18 +392,18 @@ export function SummarizationSettings() {
           >
             Model
           </label>
-          <ModelSelect
+          <FeatureModelPicker
             id="summarization-model"
             currentModel={currentModel}
             defaultModelId={defaultModelId}
             models={models}
+            suggestedModelIds={SUGGESTED_SUMMARIZATION_MODELS}
             isLoading={modelsQuery.isLoading}
-            disabled={updatePreferences.isPending}
             onChange={handleModelChange}
           />
           <p className="ui-text-xs text-muted mt-1.5">
-            Choose the model used for generating article summaries. Only providers with a configured
-            API key are listed.
+            Choose the model used for generating article summaries. Type to search every model from
+            providers with a configured API key.
           </p>
         </div>
 
@@ -606,8 +577,8 @@ export function NarrationAiSettings() {
       description={
         <>
           AI-powered text processing for narration. This improves narration quality by expanding
-          abbreviations and formatting content for text-to-speech. Requires a Groq or Cerebras API
-          key (configured above).
+          abbreviations and formatting content for text-to-speech. Requires a Groq, Cerebras, or
+          OpenRouter API key (configured above).
         </>
       }
     >
@@ -615,18 +586,18 @@ export function NarrationAiSettings() {
         <label htmlFor="narration-model" className="ui-text-sm text-body mb-1.5 block font-medium">
           Model
         </label>
-        <ModelSelect
+        <FeatureModelPicker
           id="narration-model"
           currentModel={currentModel}
           defaultModelId={defaultModelId}
           models={models}
+          suggestedModelIds={SUGGESTED_NARRATION_MODELS}
           isLoading={modelsQuery.isLoading}
-          disabled={updatePreferences.isPending}
           onChange={handleModelChange}
         />
         <p className="ui-text-xs text-muted mt-1.5">
-          Choose the model used to prepare article text for narration. Only Groq and Cerebras models
-          are supported.
+          Choose the model used to prepare article text for narration. Only models that support JSON
+          output are listed.
         </p>
       </div>
     </SettingsSection>

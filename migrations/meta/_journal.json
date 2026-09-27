@@ -771,6 +771,13 @@
       "when": 1782954300000,
       "tag": "0110_feeds_schedule_hints",
       "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "7",
+      "when": 1782954400000,
+      "tag": "0111_openrouter_api_key",
+      "breakpoints": true
     }
   ]
 }

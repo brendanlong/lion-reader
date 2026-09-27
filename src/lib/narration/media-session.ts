@@ -6,12 +6,13 @@
  * - Keyboard media keys (play/pause, prev/next)
  * - Headphone / Bluetooth device buttons
  *
- * Narration plays through the Web Speech API (browser voices) or the Web Audio
- * API (Piper enhanced voices). Neither registers as media playback, so the OS
- * won't show media controls just because we set `mediaSession.metadata`. A silent
- * looping audio element (see `./silent-audio`) is played while narration is
- * active to make the browser treat narration as "media", which is what surfaces
- * the controls and routes hardware buttons to our action handlers.
+ * Browser voices (Web Speech API) and Piper enhanced voices (Web Audio API)
+ * don't register as media playback, so the OS won't show media controls just
+ * because we set `mediaSession.metadata`. For those, a silent looping audio
+ * element (see `./silent-audio`) is played while narration is active to make
+ * the browser treat narration as "media", which is what surfaces the controls
+ * and routes hardware buttons to our action handlers. Cloud voices play through
+ * their own media element (see `./cloud-audio-player`) and skip the silent loop.
  *
  * This module is provider-agnostic: callers pass plain control callbacks, so the
  * same integration works for both browser voices and Piper TTS.
@@ -136,15 +137,21 @@ export function setupMediaSession(
  * autoplay policies allow the silent audio to start.
  *
  * @param status - The current narration status
+ * @param useSilentAudio - False when narration plays through its own media
+ *   element, which a second (silent) element would interrupt on iOS
  */
-export function updateMediaSessionPlaybackState(status: NarrationStatus): void {
+export function updateMediaSessionPlaybackState(
+  status: NarrationStatus,
+  useSilentAudio = true
+): void {
   if (!isMediaSessionSupported()) {
     return;
   }
 
   if (ACTIVE_STATUSES.has(status)) {
     // Keep (or start) the silent loop so the OS treats narration as media.
-    startSilentAudio();
+    if (useSilentAudio) startSilentAudio();
+    else stopSilentAudio();
     navigator.mediaSession.playbackState = status === "paused" ? "paused" : "playing";
   } else {
     stopSilentAudio();

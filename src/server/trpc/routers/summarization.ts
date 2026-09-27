@@ -2,7 +2,7 @@
  * Summarization Router
  *
  * Handles AI-powered article summarization.
- * Uses the user's configured AI provider (Anthropic, Groq, or Cerebras).
+ * Uses the user's configured AI provider (Anthropic, Groq, Cerebras, or OpenRouter).
  */
 
 import { z } from "zod";
@@ -14,7 +14,7 @@ import {
   expensiveConfirmedProtectedProcedure,
 } from "../trpc";
 import { errors } from "../errors";
-import { uuidSchema } from "../validation";
+import { aiModelListSchema, uuidSchema } from "../validation";
 import { entrySummaries } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { getOwnedEntryRawContent } from "@/server/services/entries";
@@ -28,8 +28,13 @@ import {
   hashPrompt,
   DEFAULT_SUMMARIZATION_PROMPT,
 } from "@/server/services/summarization";
-import { getAvailableProviders, listAllModels } from "@/server/services/ai-providers";
-import { AI_PROVIDERS, normalizeModelRef } from "@/lib/ai/model-ref";
+import {
+  getAvailableProviders,
+  isModelAllowed,
+  listAllModels,
+} from "@/server/services/ai-providers";
+import { SUGGESTED_SUMMARIZATION_MODELS } from "@/lib/summarization/constants";
+import { normalizeModelRef } from "@/lib/ai/model-ref";
 import { getUserApiKeys } from "@/server/auth/session";
 import { logger } from "@/lib/logger";
 import { sanitizeEntryHtml } from "@/server/html/sanitize";
@@ -176,7 +181,7 @@ export const summarizationRouter = createTRPCRouter({
       // Check if summarization is available (user key or server key, any provider)
       if (!isSummarizationAvailable(keys)) {
         throw errors.internal(
-          "AI summarization is not configured. Add an Anthropic, Groq, or Cerebras API key in Settings to enable it."
+          "AI summarization is not configured. Add an AI provider API key in Settings to enable it."
         );
       }
 
@@ -362,7 +367,7 @@ export const summarizationRouter = createTRPCRouter({
   /**
    * Check if AI summarization is available.
    *
-   * Returns true if any provider (Anthropic, Groq, Cerebras) has a
+   * Returns true if any provider (Anthropic, Groq, Cerebras, OpenRouter) has a
    * user-configured or server-configured API key.
    */
   isAvailable: protectedProcedure
@@ -381,6 +386,7 @@ export const summarizationRouter = createTRPCRouter({
         ctx.session.hasAnthropicApiKey ||
         ctx.session.hasGroqApiKey ||
         ctx.session.hasCerebrasApiKey ||
+        ctx.session.hasOpenrouterApiKey ||
         getAvailableProviders().length > 0;
       return { available };
     }),
@@ -402,22 +408,13 @@ export const summarizationRouter = createTRPCRouter({
       },
     })
     .input(z.void())
-    .output(
-      z.object({
-        models: z.array(
-          z.object({
-            id: z.string(),
-            displayName: z.string(),
-            provider: z.enum(AI_PROVIDERS),
-          })
-        ),
-        defaultModelId: z.string(),
-      })
-    )
+    .output(aiModelListSchema)
     .query(async ({ ctx }) => {
       // Fetch API keys from DB on demand (not cached in session for security)
       const keys = await getUserApiKeys(ctx.session.user.id);
-      const models = await listAllModels(keys);
+      const models = (await listAllModels(keys)).filter((model) =>
+        isModelAllowed(model.id, keys, SUGGESTED_SUMMARIZATION_MODELS)
+      );
       return { models, defaultModelId: getSummarizationModelId(null, keys) };
     }),
 

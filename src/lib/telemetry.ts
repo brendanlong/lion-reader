@@ -11,6 +11,8 @@
  * @module lib/telemetry
  */
 
+import type { TTSProviderId } from "@/lib/narration/types";
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -19,11 +21,6 @@
  * Error types for voice download failures.
  */
 export type VoiceDownloadErrorType = "network" | "storage" | "unknown";
-
-/**
- * TTS provider types.
- */
-export type TTSProvider = "browser" | "piper";
 
 // ============================================================================
 // Internal
@@ -99,7 +96,7 @@ export function trackEnhancedVoiceDownloadFailed(
  *
  * @param provider - The TTS provider being used.
  */
-export function trackNarrationPlaybackStarted(provider: TTSProvider): void {
+export function trackNarrationPlaybackStarted(provider: TTSProviderId): void {
   void sendTelemetryEvent({
     event: "narration_playback_started",
     provider,

@@ -8,7 +8,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import type { TTSProviderId } from "./types";
+import { TTS_PROVIDER_IDS, type TTSProviderId } from "./types";
 
 /**
  * User preferences for narration playback.
@@ -23,14 +23,22 @@ export interface NarrationSettings {
    * Which TTS provider to use.
    * - "browser": Native Web Speech API voices (default)
    * - "piper": Enhanced voices via Piper TTS (requires download)
+   * - "cloud": Cloud voices (server-side speech models)
    */
   provider: TTSProviderId;
+
+  /**
+   * Speech model for cloud voices, as a `provider:model` ref. Null means the
+   * default model.
+   */
+  cloudModelId: string | null;
 
   /**
    * The voice ID to use for narration.
    *
    * For browser provider: this is the voiceURI (SpeechSynthesisVoice.voiceURI).
    * For Piper provider: this is the model ID (e.g., "en_US-lessac-medium").
+   * For cloud voices: a voice name the speech model lists (e.g., "af_heart").
    *
    * Null means use the provider's default voice.
    */
@@ -83,6 +91,7 @@ export interface NarrationSettings {
 export const DEFAULT_NARRATION_SETTINGS: NarrationSettings = {
   enabled: true,
   provider: "browser",
+  cloudModelId: null,
   voiceId: null,
   rate: 1.0,
   pitch: 1.0,
@@ -128,11 +137,10 @@ export function loadNarrationSettings(): NarrationSettings {
     const voiceId = typeof parsed.voiceId === "string" ? parsed.voiceId : null;
 
     // Validate provider value
-    const validProviders = ["browser", "piper"] as const;
     const provider =
       typeof parsed.provider === "string" &&
-      validProviders.includes(parsed.provider as "browser" | "piper")
-        ? (parsed.provider as "browser" | "piper")
+      (TTS_PROVIDER_IDS as readonly string[]).includes(parsed.provider)
+        ? (parsed.provider as TTSProviderId)
         : DEFAULT_NARRATION_SETTINGS.provider;
 
     // Merge with defaults to handle new fields in future versions
@@ -140,6 +148,7 @@ export function loadNarrationSettings(): NarrationSettings {
       enabled:
         typeof parsed.enabled === "boolean" ? parsed.enabled : DEFAULT_NARRATION_SETTINGS.enabled,
       provider,
+      cloudModelId: typeof parsed.cloudModelId === "string" ? parsed.cloudModelId : null,
       voiceId,
       rate:
         typeof parsed.rate === "number" && parsed.rate >= 0.5 && parsed.rate <= 2.0

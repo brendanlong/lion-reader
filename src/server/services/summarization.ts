@@ -1,7 +1,7 @@
 /**
  * Summarization service for AI-powered article summaries.
  *
- * Uses a configurable AI provider (Anthropic, Groq, or Cerebras) to generate
+ * Uses a configurable AI provider (Anthropic, Groq, Cerebras, or OpenRouter) to generate
  * concise summaries of articles. Summaries are cached by content hash for
  * deduplication across entries.
  */
@@ -15,12 +15,14 @@ import { parseModelRef } from "@/lib/ai/model-ref";
 import {
   generateChatCompletion,
   getAvailableProviders,
+  isModelAllowed,
   type AiProviderKeys,
 } from "@/server/services/ai-providers";
 import {
   DEFAULT_SUMMARIZATION_MODELS,
   SUMMARIZATION_PROVIDER_PRIORITY,
   DEFAULT_SUMMARIZATION_MAX_WORDS,
+  SUGGESTED_SUMMARIZATION_MODELS,
 } from "@/lib/summarization/constants";
 
 /**
@@ -176,8 +178,7 @@ export function prepareContentForSummarization(htmlContent: string): string {
 }
 
 /**
- * Generates a summary using the model's provider (Anthropic, Groq, or
- * Cerebras).
+ * Generates a summary using the model's provider.
  *
  * @param content - Plain text content to summarize
  * @returns The generated summary and model ID
@@ -255,11 +256,12 @@ export function isSummarizationAvailable(keys?: AiProviderKeys): boolean {
  * (legacy stored values may be bare Anthropic IDs — parse with
  * `parseModelRef`).
  *
- * Priority: user setting > `SUMMARIZATION_MODEL` env var > the default model
- * of the first configured provider (Cerebras, then Groq, then Anthropic).
+ * Priority: user setting (if allowed — see `isModelAllowed`) >
+ * `SUMMARIZATION_MODEL` env var > the default model
+ * of the first configured provider (see SUMMARIZATION_PROVIDER_PRIORITY).
  */
 export function getSummarizationModelId(userModel?: string | null, keys?: AiProviderKeys): string {
-  if (userModel) {
+  if (userModel && isModelAllowed(userModel, keys, SUGGESTED_SUMMARIZATION_MODELS)) {
     return userModel;
   }
   if (process.env.SUMMARIZATION_MODEL) {

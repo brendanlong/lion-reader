@@ -5,6 +5,7 @@
  */
 
 import { z } from "zod";
+import { AI_PROVIDERS } from "@/lib/ai/model-ref";
 
 // ============================================================================
 // ID Schemas
@@ -51,3 +52,24 @@ export const feedUrlSchema = z
   .refine((url) => url.startsWith("http://") || url.startsWith("https://"), {
     message: "URL must use http or https protocol",
   });
+
+// ============================================================================
+// AI Model Schemas
+// ============================================================================
+
+/**
+ * A model listed for a feature's model picker (summarization, narration).
+ */
+export const aiModelListSchema = z.object({
+  models: z.array(
+    z.object({
+      id: z.string(),
+      displayName: z.string(),
+      provider: z.enum(AI_PROVIDERS),
+      contextLength: z.number().optional(),
+      inputPricePerMillion: z.number().optional(),
+      outputPricePerMillion: z.number().optional(),
+    })
+  ),
+  defaultModelId: z.string(),
+});

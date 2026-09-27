@@ -52,6 +52,7 @@ const preferencesOutputSchema = z.object({
   hasGroqApiKey: z.boolean(),
   hasAnthropicApiKey: z.boolean(),
   hasCerebrasApiKey: z.boolean(),
+  hasOpenrouterApiKey: z.boolean(),
   summarizationModel: z.string().nullable(),
   summarizationMaxWords: z.number().nullable(),
   summarizationPrompt: z.string().nullable(),
@@ -367,6 +368,7 @@ export const usersRouter = createTRPCRouter({
         hasGroqApiKey: ctx.session.hasGroqApiKey,
         hasAnthropicApiKey: ctx.session.hasAnthropicApiKey,
         hasCerebrasApiKey: ctx.session.hasCerebrasApiKey,
+        hasOpenrouterApiKey: ctx.session.hasOpenrouterApiKey,
         summarizationModel: ctx.session.user.summarizationModel,
         summarizationMaxWords: ctx.session.user.summarizationMaxWords,
         summarizationPrompt: ctx.session.user.summarizationPrompt,
@@ -395,6 +397,7 @@ export const usersRouter = createTRPCRouter({
         groqApiKey: z.string().optional(),
         anthropicApiKey: z.string().optional(),
         cerebrasApiKey: z.string().optional(),
+        openrouterApiKey: z.string().optional(),
         summarizationModel: z.string().optional(),
         narrationModel: z.string().optional(),
         // Summarization settings: null clears (reverts to default)
@@ -410,7 +413,8 @@ export const usersRouter = createTRPCRouter({
       const settingApiKey =
         (input.groqApiKey !== undefined && input.groqApiKey !== "") ||
         (input.anthropicApiKey !== undefined && input.anthropicApiKey !== "") ||
-        (input.cerebrasApiKey !== undefined && input.cerebrasApiKey !== "");
+        (input.cerebrasApiKey !== undefined && input.cerebrasApiKey !== "") ||
+        (input.openrouterApiKey !== undefined && input.openrouterApiKey !== "");
       if (settingApiKey && !isEncryptionConfigured()) {
         throw errors.validation(
           "API key encryption is not configured on this server. Contact your administrator."
@@ -423,6 +427,7 @@ export const usersRouter = createTRPCRouter({
         groqApiKey?: string | null;
         anthropicApiKey?: string | null;
         cerebrasApiKey?: string | null;
+        openrouterApiKey?: string | null;
         summarizationModel?: string | null;
         summarizationMaxWords?: number | null;
         summarizationPrompt?: string | null;
@@ -450,6 +455,12 @@ export const usersRouter = createTRPCRouter({
       if (input.cerebrasApiKey !== undefined) {
         updateData.cerebrasApiKey = input.cerebrasApiKey
           ? encryptApiKey(input.cerebrasApiKey)
+          : null;
+      }
+
+      if (input.openrouterApiKey !== undefined) {
+        updateData.openrouterApiKey = input.openrouterApiKey
+          ? encryptApiKey(input.openrouterApiKey)
           : null;
       }
 
@@ -482,6 +493,7 @@ export const usersRouter = createTRPCRouter({
           groqApiKey: users.groqApiKey,
           anthropicApiKey: users.anthropicApiKey,
           cerebrasApiKey: users.cerebrasApiKey,
+          openrouterApiKey: users.openrouterApiKey,
           summarizationModel: users.summarizationModel,
           summarizationMaxWords: users.summarizationMaxWords,
           summarizationPrompt: users.summarizationPrompt,
@@ -497,6 +509,7 @@ export const usersRouter = createTRPCRouter({
         hasGroqApiKey: !!updatedUser[0]?.groqApiKey,
         hasAnthropicApiKey: !!updatedUser[0]?.anthropicApiKey,
         hasCerebrasApiKey: !!updatedUser[0]?.cerebrasApiKey,
+        hasOpenrouterApiKey: !!updatedUser[0]?.openrouterApiKey,
         summarizationModel: updatedUser[0]?.summarizationModel ?? null,
         summarizationMaxWords: updatedUser[0]?.summarizationMaxWords ?? null,
         summarizationPrompt: updatedUser[0]?.summarizationPrompt ?? null,

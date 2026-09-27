@@ -6,7 +6,7 @@
  * hardware/Bluetooth play-pause & track buttons — while narration is active.
  *
  * Provider-agnostic: it takes plain control callbacks and the current status, so
- * the same hook covers both browser voices and Piper enhanced voices.
+ * the same hook covers every voice provider.
  *
  * @module narration/useMediaSession
  */
@@ -42,6 +42,8 @@ export interface UseMediaSessionParams {
   status: NarrationStatus;
   /** Playback controls invoked by OS media buttons. */
   controls: MediaSessionControls;
+  /** Whether narration plays through its own media element (cloud voices). */
+  ownsMediaElement: boolean;
 }
 
 /**
@@ -58,6 +60,7 @@ export function useMediaSession({
   artwork,
   status,
   controls,
+  ownsMediaElement,
 }: UseMediaSessionParams): void {
   // Keep the latest controls in a ref so the action handlers registered with the
   // OS always call current callbacks without needing to re-register. Updated in
@@ -76,6 +79,10 @@ export function useMediaSession({
   useEffect(() => {
     statusRef.current = status;
   }, [status]);
+  const ownsMediaElementRef = useRef(ownsMediaElement);
+  useEffect(() => {
+    ownsMediaElementRef.current = ownsMediaElement;
+  }, [ownsMediaElement]);
 
   // Set up / tear down the session and its metadata.
   useEffect(() => {
@@ -96,7 +103,7 @@ export function useMediaSession({
     // cleanup stopped the silent audio, and the status effect below won't re-run
     // if `status` is unchanged. Without this the OS controls would silently
     // disappear on a title change while narration keeps playing.
-    updateMediaSessionPlaybackState(statusRef.current);
+    updateMediaSessionPlaybackState(statusRef.current, !ownsMediaElementRef.current);
 
     return () => {
       clearMediaSession();
@@ -107,6 +114,6 @@ export function useMediaSession({
   // element that keeps them visible).
   useEffect(() => {
     if (!active) return;
-    updateMediaSessionPlaybackState(status);
-  }, [active, status]);
+    updateMediaSessionPlaybackState(status, !ownsMediaElement);
+  }, [active, status, ownsMediaElement]);
 }

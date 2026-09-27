@@ -15,6 +15,7 @@
  */
 
 import { z } from "zod";
+import { TTS_PROVIDER_IDS } from "@/lib/narration/types";
 import {
   metricsEnabled,
   trackEnhancedVoiceSelected,
@@ -60,7 +61,7 @@ const enhancedVoiceDownloadFailedSchema = z.object({
  */
 const narrationPlaybackStartedSchema = z.object({
   event: z.literal("narration_playback_started"),
-  provider: z.enum(["browser", "piper"]),
+  provider: z.enum(TTS_PROVIDER_IDS),
 });
 
 /**

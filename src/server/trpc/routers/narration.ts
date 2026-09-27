@@ -9,9 +9,13 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { createHash } from "node:crypto";
 
-import { createTRPCRouter, confirmedProtectedProcedure as protectedProcedure } from "../trpc";
+import {
+  createTRPCRouter,
+  confirmedProtectedProcedure as protectedProcedure,
+  speechConfirmedProtectedProcedure,
+} from "../trpc";
 import { errors } from "../errors";
-import { uuidSchema } from "../validation";
+import { aiModelListSchema, uuidSchema } from "../validation";
 import { narrationContent } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { getOwnedEntryRawContent } from "@/server/services/entries";
@@ -22,9 +26,21 @@ import {
   isNarrationLlmAvailable,
   getNarrationModelRef,
 } from "@/server/services/narration";
-import { listAllModels } from "@/server/services/ai-providers";
-import { AI_PROVIDERS, formatModelRef } from "@/lib/ai/model-ref";
-import { NARRATION_FORMAT_VERSION, NARRATION_PROVIDERS } from "@/lib/narration/constants";
+import { isModelAllowed, listAllModels } from "@/server/services/ai-providers";
+import { formatModelRef } from "@/lib/ai/model-ref";
+import {
+  DEFAULT_CLOUD_VOICE_MODEL,
+  MAX_CLOUD_SPEECH_CHARS,
+  NARRATION_FORMAT_VERSION,
+  NARRATION_PROVIDERS,
+  SUGGESTED_NARRATION_MODELS,
+} from "@/lib/narration/constants";
+import {
+  defaultVoiceFor,
+  listSpeechModels,
+  SpeechRequestError,
+  synthesizeSpeech,
+} from "@/server/services/speech";
 import { selectDisplayedContent } from "@/lib/narration/select-content";
 import { getUserApiKeys } from "@/server/auth/session";
 import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
@@ -312,8 +328,8 @@ export const narrationRouter = createTRPCRouter({
   /**
    * Check if AI text processing is available.
    *
-   * Returns true if the configured narration model's provider (Groq or
-   * Cerebras) has a user-configured or server-configured API key.
+   * Returns true if the configured narration model's provider (Groq,
+   * Cerebras, or OpenRouter) has a user-configured or server-configured API key.
    */
   isAiTextProcessingAvailable: protectedProcedure
     .meta({
@@ -332,6 +348,7 @@ export const narrationRouter = createTRPCRouter({
       const sessionKeys = {
         groqApiKey: ctx.session.hasGroqApiKey ? "configured" : null,
         cerebrasApiKey: ctx.session.hasCerebrasApiKey ? "configured" : null,
+        openrouterApiKey: ctx.session.hasOpenrouterApiKey ? "configured" : null,
       };
       return {
         available: isNarrationLlmAvailable(sessionKeys, ctx.session.user.narrationModel),
@@ -342,7 +359,8 @@ export const narrationRouter = createTRPCRouter({
    * List available models for narration preprocessing.
    *
    * Narration requires JSON-object responses, so only the OpenAI-compatible
-   * providers (Groq, Cerebras) are listed. Providers with no key are skipped.
+   * providers are listed, and only models that support JSON mode. Providers
+   * with no key are skipped.
    */
   listModels: protectedProcedure
     .meta({
@@ -354,23 +372,94 @@ export const narrationRouter = createTRPCRouter({
       },
     })
     .input(z.void())
+    .output(aiModelListSchema)
+    .query(async ({ ctx }) => {
+      // Fetch API keys from DB on demand (not cached in session for security)
+      const keys = await getUserApiKeys(ctx.session.user.id);
+      const models = (await listAllModels(keys, NARRATION_PROVIDERS, { jsonObject: true })).filter(
+        (model) => isModelAllowed(model.id, keys, SUGGESTED_NARRATION_MODELS)
+      );
+      const defaultRef = getNarrationModelRef(null, keys);
+      return { models, defaultModelId: formatModelRef(defaultRef.provider, defaultRef.model) };
+    }),
+
+  /**
+   * List speech models for cloud voices. Empty when no OpenRouter key (user or
+   * server) is configured, which is also how the client tells whether cloud
+   * voices are available.
+   */
+  listVoiceModels: protectedProcedure
+    .meta({
+      openapi: {
+        method: "GET",
+        path: "/narration/voice-models",
+        tags: ["Narration"],
+        summary: "List speech models for cloud voices",
+      },
+    })
+    .input(z.void())
     .output(
       z.object({
         models: z.array(
           z.object({
             id: z.string(),
             displayName: z.string(),
-            provider: z.enum(AI_PROVIDERS),
+            provider: z.literal("openrouter"),
+            voices: z.array(z.string()),
+            defaultVoice: z.string(),
+            pricePerMillionCharacters: z.number().optional(),
           })
         ),
         defaultModelId: z.string(),
       })
     )
     .query(async ({ ctx }) => {
-      // Fetch API keys from DB on demand (not cached in session for security)
       const keys = await getUserApiKeys(ctx.session.user.id);
-      const models = await listAllModels(keys, NARRATION_PROVIDERS);
-      const defaultRef = getNarrationModelRef(null, keys);
-      return { models, defaultModelId: formatModelRef(defaultRef.provider, defaultRef.model) };
+      const models = (await listSpeechModels(keys)).map((model) => ({
+        ...model,
+        defaultVoice: defaultVoiceFor(model),
+      }));
+      return { models, defaultModelId: DEFAULT_CLOUD_VOICE_MODEL };
+    }),
+
+  /**
+   * Synthesize one chunk of narration text with a cloud voice. Returns base64
+   * MP3; the client splits articles into chunks of at most
+   * MAX_CLOUD_SPEECH_CHARS and plays them in order.
+   */
+  synthesize: speechConfirmedProtectedProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/narration/synthesize",
+        tags: ["Narration"],
+        summary: "Synthesize narration audio with a cloud voice",
+      },
+    })
+    .input(
+      z.object({
+        /** `provider:model` ref; null means the default model. */
+        model: z.string().max(200).nullable(),
+        /** Null means the model's default voice. */
+        voice: z.string().max(200).nullable(),
+        text: z.string().min(1).max(MAX_CLOUD_SPEECH_CHARS),
+      })
+    )
+    .output(z.object({ audio: z.string(), mimeType: z.literal("audio/mpeg") }))
+    .mutation(async ({ ctx, input }) => {
+      const keys = await getUserApiKeys(ctx.session.user.id);
+      try {
+        const audio = await synthesizeSpeech(keys, input);
+        return { audio: Buffer.from(audio).toString("base64"), mimeType: "audio/mpeg" as const };
+      } catch (error) {
+        if (error instanceof SpeechRequestError) {
+          throw errors.validation(error.message);
+        }
+        logger.error("Speech synthesis failed", {
+          model: input.model,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw errors.internal("Speech synthesis failed");
+      }
     }),
 });

@@ -57,8 +57,8 @@ Everything lands in [All](/all), and each feed and [tag](/settings/subscriptions
 
 Both are opt-in, and neither runs behind your back.
 
-- Add an **Anthropic** or **Cerebras** API key under [Settings → AI & Narration](/settings/ai) to get article summaries on demand. Nothing is ever summarized until you ask for it.
-- **Narration** reads articles aloud with synchronized highlighting. It works without any API key; a **Cerebras** or **Groq** key just lets it tidy the text up first so it reads more naturally. If you don't want it at all, turn narration off on the same page.
+- Add an **Anthropic**, **Cerebras**, **Groq**, or **OpenRouter** API key under [Settings → AI & Narration](/settings/ai) to get article summaries on demand. Nothing is ever summarized until you ask for it.
+- **Narration** reads articles aloud with synchronized highlighting. It works without any API key; a **Cerebras**, **Groq**, or **OpenRouter** key just lets it tidy the text up first so it reads more naturally. If you don't want it at all, turn narration off on the same page.
 
 ## 5. Optional: connect an AI agent over MCP
 
