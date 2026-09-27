@@ -35,7 +35,6 @@ function renderPicker(onChange = vi.fn()) {
       models={models}
       suggestedModelIds={["openrouter:google/gemini-3.8-flash"]}
       isLoading={false}
-      disabled={false}
       onChange={onChange}
     />
   );
@@ -95,10 +94,32 @@ describe("ModelPicker", () => {
     expect(onChange).toHaveBeenCalledWith("openrouter:google/gemini-3.8-flash");
   });
 
+  it("opens on the selected model and supports Home/End", () => {
+    render(
+      <ModelPicker
+        id="model"
+        value="openrouter:openai/gpt-oss-120b"
+        defaultModelId="cerebras:gpt-oss-120b"
+        models={models}
+        suggestedModelIds={[]}
+        isLoading={false}
+        onChange={vi.fn()}
+      />
+    );
+    const input = screen.getByRole("combobox");
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(input).toHaveAttribute("aria-activedescendant", "model-option-1");
+    fireEvent.keyDown(input, { key: "End" });
+    expect(input).toHaveAttribute("aria-activedescendant", "model-option-2");
+    fireEvent.keyDown(input, { key: "Home" });
+    expect(input).toHaveAttribute("aria-activedescendant", "model-option-0");
+  });
+
   it("says so when nothing matches", () => {
     const { input } = renderPicker();
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: "no such model" } });
-    expect(screen.getByText("No matching models")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("No matching models");
+    expect(screen.queryAllByRole("option")).toHaveLength(0);
   });
 });

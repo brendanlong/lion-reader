@@ -11,13 +11,12 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { generateNarration } from "../../src/server/services/narration";
 import { splitNarrationParagraphs } from "../../src/lib/narration/paragraph-map";
 import { NARRATION_PROVIDERS } from "../../src/lib/narration/constants";
+import { AI_PROVIDER_ENV_KEYS } from "../../src/server/services/ai-providers";
 
 describe("generateNarration fallback paragraph map", () => {
   // Force the no-LLM fallback path deterministically by clearing every provider
   // narration can use.
-  const narrationKeyVars = NARRATION_PROVIDERS.map(
-    (provider) => `${provider.toUpperCase()}_API_KEY`
-  );
+  const narrationKeyVars = NARRATION_PROVIDERS.map((provider) => AI_PROVIDER_ENV_KEYS[provider]);
   const previousKeys = Object.fromEntries(
     narrationKeyVars.map((name) => [name, process.env[name]])
   );

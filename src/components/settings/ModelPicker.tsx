@@ -6,7 +6,7 @@
 
 "use client";
 
-import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { CheckIcon, ChevronDownIcon } from "@/components/ui/icons";
 import {
   buildModelPickerSections,
@@ -22,7 +22,6 @@ interface ModelPickerProps {
   models: PickerModel[];
   suggestedModelIds: string[];
   isLoading: boolean;
-  disabled: boolean;
   onChange: (value: string) => void;
 }
 
@@ -33,18 +32,21 @@ export function ModelPicker({
   models,
   suggestedModelIds,
   isLoading,
-  disabled,
   onChange,
 }: ModelPickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
+  // Only keyboard moves scroll the active option into view; scrolling on
+  // hover would move the list under the pointer.
+  const scrollToActiveRef = useRef(false);
 
   const sections = useMemo(
     () => buildModelPickerSections(models, { query, suggestedModelIds, defaultModelId }),
     [models, query, suggestedModelIds, defaultModelId]
   );
   const options = useMemo(() => sections.flatMap((section) => section.models), [sections]);
+  const active = Math.max(0, Math.min(activeIndex, options.length - 1));
 
   const listboxId = `${id}-listbox`;
   const optionId = (index: number) => `${id}-option-${index}`;
@@ -52,14 +54,30 @@ export function ModelPicker({
   const selectedLabel = isLoading ? "Loading models..." : (selected?.displayName ?? value);
 
   useEffect(() => {
-    if (isOpen) {
-      document.getElementById(`${id}-option-${activeIndex}`)?.scrollIntoView({ block: "nearest" });
+    if (isOpen && scrollToActiveRef.current) {
+      scrollToActiveRef.current = false;
+      document.getElementById(`${id}-option-${active}`)?.scrollIntoView({ block: "nearest" });
     }
-  }, [isOpen, activeIndex, id]);
+  }, [isOpen, active, id]);
+
+  const moveTo = (index: number) => {
+    scrollToActiveRef.current = true;
+    setActiveIndex(index);
+  };
 
   const open = () => {
+    const unfiltered = buildModelPickerSections(models, {
+      query: "",
+      suggestedModelIds,
+      defaultModelId,
+    }).flatMap((section) => section.models);
     setQuery("");
-    setActiveIndex(0);
+    moveTo(
+      Math.max(
+        0,
+        unfiltered.findIndex((model) => model.id === value)
+      )
+    );
     setIsOpen(true);
   };
 
@@ -71,32 +89,46 @@ export function ModelPicker({
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (!isOpen) {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        open();
+      }
+      return;
+    }
     switch (event.key) {
       case "ArrowDown":
         event.preventDefault();
-        if (!isOpen) open();
-        else setActiveIndex((index) => Math.min(index + 1, options.length - 1));
+        moveTo(Math.min(active + 1, options.length - 1));
         break;
       case "ArrowUp":
         event.preventDefault();
-        setActiveIndex((index) => Math.max(index - 1, 0));
+        moveTo(Math.max(active - 1, 0));
+        break;
+      case "Home":
+        event.preventDefault();
+        moveTo(0);
+        break;
+      case "End":
+        event.preventDefault();
+        moveTo(options.length - 1);
         break;
       case "Enter":
-        if (isOpen && options[activeIndex]) {
+        if (options[active]) {
           event.preventDefault();
-          select(options[activeIndex]);
+          select(options[active]);
         }
         break;
       case "Escape":
-        if (isOpen) {
-          event.preventDefault();
-          setIsOpen(false);
-        }
+        event.preventDefault();
+        setIsOpen(false);
         break;
     }
   };
 
-  let optionIndex = -1;
+  const sectionOffsets = sections.map((_, sectionIndex) =>
+    sections.slice(0, sectionIndex).reduce((count, section) => count + section.models.length, 0)
+  );
 
   return (
     <div className="relative">
@@ -107,7 +139,7 @@ export function ModelPicker({
         aria-expanded={isOpen}
         aria-controls={listboxId}
         aria-autocomplete="list"
-        aria-activedescendant={isOpen && options.length > 0 ? optionId(activeIndex) : undefined}
+        aria-activedescendant={isOpen && options.length > 0 ? optionId(active) : undefined}
         autoComplete="off"
         spellCheck={false}
         value={isOpen ? query : selectedLabel}
@@ -119,45 +151,51 @@ export function ModelPicker({
         onBlur={() => setIsOpen(false)}
         onChange={(e) => {
           setQuery(e.target.value);
-          setActiveIndex(0);
+          moveTo(0);
           setIsOpen(true);
         }}
         onKeyDown={handleKeyDown}
-        disabled={disabled || isLoading}
+        disabled={isLoading}
         className="ui-text-sm bg-surface text-body placeholder:text-faint border-edge-input block w-full rounded-md border py-2 pr-9 pl-3 disabled:cursor-not-allowed disabled:opacity-50"
       />
       <ChevronDownIcon className="text-faint pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2" />
       {isOpen && (
-        <ul
-          id={listboxId}
-          role="listbox"
+        <div
+          // Keep focus in the input so blur doesn't close the list before a
+          // click (or a scrollbar drag) lands.
+          onMouseDown={(e) => e.preventDefault()}
           className="bg-surface border-edge-input absolute z-20 mt-1 max-h-80 w-full overflow-y-auto rounded-md border shadow-lg"
         >
-          {options.length === 0 ? (
-            <li className="ui-text-sm text-muted px-3 py-2">No matching models</li>
-          ) : (
-            sections.map((section) => (
-              <li key={section.label} role="presentation">
-                <div className="ui-text-xs text-muted bg-surface-subtle px-3 py-1.5 font-medium">
-                  {section.label}
-                </div>
-                <ul role="group" aria-label={section.label}>
-                  {section.models.map((model) => {
-                    optionIndex += 1;
-                    const index = optionIndex;
+          {options.length === 0 && (
+            <p role="status" className="ui-text-sm text-muted px-3 py-2">
+              No matching models
+            </p>
+          )}
+          <div id={listboxId} role="listbox">
+            {sections.map((section, sectionIndex) => {
+              const headingId = `${id}-section-${sectionIndex}`;
+              return (
+                <div key={section.label} role="group" aria-labelledby={headingId}>
+                  <div
+                    id={headingId}
+                    role="presentation"
+                    className="ui-text-xs text-muted bg-surface-subtle px-3 py-1.5 font-medium"
+                  >
+                    {section.label}
+                  </div>
+                  {section.models.map((model, modelIndex) => {
+                    const index = sectionOffsets[sectionIndex] + modelIndex;
                     const isSelected = model.id === value;
                     return (
-                      <li
+                      <div
                         key={model.id}
                         id={optionId(index)}
                         role="option"
                         aria-selected={isSelected}
-                        // Keep focus in the input so blur doesn't close the list before the click lands.
-                        onMouseDown={(e) => e.preventDefault()}
                         onClick={() => select(model)}
                         onMouseMove={() => setActiveIndex(index)}
                         className={`flex cursor-pointer items-start gap-2 px-3 py-2 ${
-                          index === activeIndex
+                          index === active
                             ? "control-outline bg-surface-muted"
                             : "control-outline-none"
                         }`}
@@ -174,14 +212,14 @@ export function ModelPicker({
                             {formatModelDetails(model)}
                           </span>
                         </span>
-                      </li>
+                      </div>
                     );
                   })}
-                </ul>
-              </li>
-            ))
-          )}
-        </ul>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       )}
     </div>
   );

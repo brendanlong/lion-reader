@@ -3,11 +3,13 @@ import {
   filterToLatestClaudeGeneration,
   getAvailableProviders,
   isChatModelId,
+  isModelAllowed,
   isProviderAvailable,
   isUsableOpenRouterModel,
   supportsReasoningEffort,
 } from "@/server/services/ai-providers";
 import { getNarrationModelRef } from "@/server/services/narration";
+import { buildChatCompletionBody } from "@/server/services/openrouter";
 import { getSummarizationModelId } from "@/server/services/summarization";
 import {
   DEFAULT_SUMMARIZATION_MODELS,
@@ -147,7 +149,9 @@ describe("getNarrationModelRef", () => {
 
   it("accepts OpenRouter model IDs, including ones containing colons", () => {
     clearEnv();
-    expect(getNarrationModelRef("openrouter:openai/gpt-oss-20b:free")).toEqual({
+    expect(
+      getNarrationModelRef("openrouter:openai/gpt-oss-20b:free", { openrouterApiKey: "o" })
+    ).toEqual({
       provider: "openrouter",
       model: "openai/gpt-oss-20b:free",
     });
@@ -284,5 +288,89 @@ describe("isUsableOpenRouterModel", () => {
     const noJson = { ...base, supported_parameters: ["temperature"] };
     expect(isUsableOpenRouterModel(noJson)).toBe(true);
     expect(isUsableOpenRouterModel(noJson, { jsonObject: true })).toBe(false);
+  });
+});
+
+describe("isModelAllowed", () => {
+  const allowed = ["openrouter:openai/gpt-oss-120b"];
+
+  it("limits OpenRouter models to the allowed list on the server's key", () => {
+    clearEnv();
+    process.env.OPENROUTER_API_KEY = "sk-or-server";
+    expect(isModelAllowed("openrouter:openai/gpt-oss-120b", {}, allowed)).toBe(true);
+    expect(isModelAllowed("openrouter:openai/o1-pro", {}, allowed)).toBe(false);
+  });
+
+  it("allows any OpenRouter model on the user's own key", () => {
+    clearEnv();
+    expect(isModelAllowed("openrouter:openai/o1-pro", { openrouterApiKey: "o" }, allowed)).toBe(
+      true
+    );
+  });
+
+  it("doesn't restrict other providers", () => {
+    clearEnv();
+    expect(isModelAllowed("anthropic:claude-opus-5", {}, allowed)).toBe(true);
+    expect(isModelAllowed("claude-opus-5", {}, allowed)).toBe(true);
+  });
+
+  it("ignores a disallowed stored model when picking the model to run", () => {
+    clearEnv();
+    process.env.OPENROUTER_API_KEY = "sk-or-server";
+    expect(getSummarizationModelId("openrouter:openai/o1-pro", {})).toBe(
+      DEFAULT_SUMMARIZATION_MODELS.openrouter
+    );
+    expect(getNarrationModelRef("openrouter:openai/o1-pro", {})).toEqual({
+      provider: "openrouter",
+      model: "openai/gpt-oss-120b",
+    });
+    expect(getSummarizationModelId("openrouter:openai/o1-pro", { openrouterApiKey: "o" })).toBe(
+      "openrouter:openai/o1-pro"
+    );
+  });
+});
+
+describe("buildChatCompletionBody (OpenRouter)", () => {
+  const options = {
+    system: "sys",
+    userPrompt: "hi",
+    maxTokens: 100,
+    temperature: 0.1,
+    reasoningEffort: "low" as const,
+    jsonObject: true,
+  };
+
+  it("sends optional parameters only when the model supports them", () => {
+    const body = buildChatCompletionBody("m", options, ["response_format"]);
+    expect(body).not.toHaveProperty("max_tokens");
+    expect(body).not.toHaveProperty("temperature");
+    expect(body).not.toHaveProperty("reasoning");
+    expect(body).toMatchObject({
+      model: "m",
+      messages: [
+        { role: "system", content: "sys" },
+        { role: "user", content: "hi" },
+      ],
+      response_format: { type: "json_object" },
+      provider: { sort: "throughput", require_parameters: true },
+    });
+  });
+
+  it("includes supported parameters", () => {
+    expect(
+      buildChatCompletionBody("m", options, [
+        "max_tokens",
+        "temperature",
+        "reasoning",
+        "response_format",
+      ])
+    ).toMatchObject({ max_tokens: 100, temperature: 0.1, reasoning: { effort: "low" } });
+  });
+
+  it("only requires parameters for JSON mode", () => {
+    const body = buildChatCompletionBody("m", { userPrompt: "hi", maxTokens: 100 }, []);
+    expect(body).toMatchObject({ provider: { sort: "throughput" } });
+    expect(body.provider).not.toHaveProperty("require_parameters");
+    expect(body).not.toHaveProperty("response_format");
   });
 });

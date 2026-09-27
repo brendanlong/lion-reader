@@ -28,7 +28,12 @@ import {
   hashPrompt,
   DEFAULT_SUMMARIZATION_PROMPT,
 } from "@/server/services/summarization";
-import { getAvailableProviders, listAllModels } from "@/server/services/ai-providers";
+import {
+  getAvailableProviders,
+  isModelAllowed,
+  listAllModels,
+} from "@/server/services/ai-providers";
+import { SUGGESTED_SUMMARIZATION_MODELS } from "@/lib/summarization/constants";
 import { normalizeModelRef } from "@/lib/ai/model-ref";
 import { getUserApiKeys } from "@/server/auth/session";
 import { logger } from "@/lib/logger";
@@ -407,7 +412,9 @@ export const summarizationRouter = createTRPCRouter({
     .query(async ({ ctx }) => {
       // Fetch API keys from DB on demand (not cached in session for security)
       const keys = await getUserApiKeys(ctx.session.user.id);
-      const models = await listAllModels(keys);
+      const models = (await listAllModels(keys)).filter((model) =>
+        isModelAllowed(model.id, keys, SUGGESTED_SUMMARIZATION_MODELS)
+      );
       return { models, defaultModelId: getSummarizationModelId(null, keys) };
     }),
 

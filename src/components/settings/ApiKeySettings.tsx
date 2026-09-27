@@ -230,8 +230,9 @@ export function AiProviderKeySettings() {
         <>
           Add an API key for one or more AI providers to enable AI features: article summaries (any
           provider) and narration text processing (Groq, Cerebras, or OpenRouter). OpenRouter gives
-          access to hundreds of models from many labs with one key. Keys are stored encrypted and
-          override the server&apos;s keys when set.
+          access to hundreds of models from many labs with one key; without your own OpenRouter key,
+          only the suggested OpenRouter models are available. Keys are stored encrypted and override
+          the server&apos;s keys when set.
         </>
       }
     >
@@ -255,7 +256,6 @@ function FeatureModelPicker({
   models,
   suggestedModelIds,
   isLoading,
-  disabled,
   onChange,
 }: {
   id: string;
@@ -264,7 +264,6 @@ function FeatureModelPicker({
   models: PickerModel[];
   suggestedModelIds: string[];
   isLoading: boolean;
-  disabled: boolean;
   onChange: (value: string) => void;
 }) {
   return (
@@ -275,7 +274,6 @@ function FeatureModelPicker({
       models={models}
       suggestedModelIds={suggestedModelIds}
       isLoading={isLoading}
-      disabled={disabled}
       onChange={onChange}
     />
   );
@@ -401,7 +399,6 @@ export function SummarizationSettings() {
             models={models}
             suggestedModelIds={SUGGESTED_SUMMARIZATION_MODELS}
             isLoading={modelsQuery.isLoading}
-            disabled={updatePreferences.isPending}
             onChange={handleModelChange}
           />
           <p className="ui-text-xs text-muted mt-1.5">
@@ -596,7 +593,6 @@ export function NarrationAiSettings() {
           models={models}
           suggestedModelIds={SUGGESTED_NARRATION_MODELS}
           isLoading={modelsQuery.isLoading}
-          disabled={updatePreferences.isPending}
           onChange={handleModelChange}
         />
         <p className="ui-text-xs text-muted mt-1.5">

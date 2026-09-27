@@ -14,9 +14,11 @@ import {
   DEFAULT_NARRATION_MODELS,
   isNarrationProvider,
   NARRATION_PROVIDERS,
+  SUGGESTED_NARRATION_MODELS,
 } from "@/lib/narration/constants";
 import {
   generateChatCompletion,
+  isModelAllowed,
   isProviderAvailable,
   type AiProviderKeys,
 } from "@/server/services/ai-providers";
@@ -110,15 +112,18 @@ Return ONLY valid JSON.`;
 
 /**
  * Resolves the narration model as a `provider:model` reference.
- * Priority: user setting > `NARRATION_MODEL` env var > the default model of the
- * first configured provider (Cerebras, then Groq).
+ * Priority: user setting (if allowed — see `isModelAllowed`) > `NARRATION_MODEL`
+ * env var > the default model of the first configured provider, in
+ * `NARRATION_PROVIDERS` order.
  *
  * Narration preprocessing requires JSON-object responses, which only the
  * OpenAI-compatible providers support — a reference that resolves to another
  * provider (e.g. a legacy bare model ID) falls back to the default model.
  */
 export function getNarrationModelRef(userModel?: string | null, keys?: AiProviderKeys): ModelRef {
-  const explicit = userModel || process.env.NARRATION_MODEL;
+  const allowedUserModel =
+    userModel && isModelAllowed(userModel, keys, SUGGESTED_NARRATION_MODELS) ? userModel : null;
+  const explicit = allowedUserModel || process.env.NARRATION_MODEL;
   if (explicit) {
     const ref = parseModelRef(explicit);
     if (isNarrationProvider(ref.provider)) {

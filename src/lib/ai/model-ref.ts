@@ -3,7 +3,7 @@
  *
  * Models are stored and transmitted as `provider:model` strings (e.g.
  * `anthropic:claude-sonnet-5`, `groq:openai/gpt-oss-20b`,
- * `openrouter:hexgrad/kokoro-82m`) so a single setting can select a model from any
+ * `openrouter:openai/gpt-oss-120b`) so a single setting can select a model from any
  * configured provider. Legacy values without a provider prefix (bare Anthropic
  * model IDs like `claude-sonnet-4-5`, stored before multi-provider support)
  * parse as Anthropic models.

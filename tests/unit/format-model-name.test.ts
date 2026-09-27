@@ -32,6 +32,11 @@ describe("formatModelName", () => {
     expect(formatModelName("cerebras:gpt-oss-120b")).toBe("GPT-OSS 120B");
   });
 
+  it("drops OpenRouter variant suffixes and alias markers", () => {
+    expect(formatModelName("openrouter:openai/gpt-oss-20b:free")).toBe("GPT-OSS 20B");
+    expect(formatModelName("openrouter:~google/gemini-flash-latest")).toBe("Gemini Flash Latest");
+  });
+
   it("drops org prefixes in provider-native IDs", () => {
     expect(formatModelName("groq:openai/gpt-oss-20b")).toBe("GPT-OSS 20B");
     expect(formatModelName("groq:meta-llama/llama-4-scout-17b-16e-instruct")).toBe(

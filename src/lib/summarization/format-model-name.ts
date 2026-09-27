@@ -19,6 +19,7 @@
  *   "cerebras:gpt-oss-120b"      -> "GPT-OSS 120B"
  *   "groq:openai/gpt-oss-20b"    -> "GPT-OSS 20B"
  *   "groq:llama-3.3-70b-versatile" -> "Llama 3.3 70B Versatile"
+ *   "openrouter:openai/gpt-oss-20b:free" -> "GPT-OSS 20B"
  *
  * Unknown IDs fall back to title-casing their segments so the output is
  * never worse than the raw ID.
@@ -34,10 +35,11 @@ export function formatModelName(modelId: string): string {
     return modelId;
   }
 
-  // Only display the model — drop the provider prefix ("cerebras:") and any
-  // org prefix in the provider-native ID ("openai/gpt-oss-20b").
+  // Only display the model — drop the provider prefix ("cerebras:"), any
+  // org prefix in the provider-native ID ("openai/gpt-oss-20b"), and an
+  // OpenRouter variant suffix (":free").
   const { model } = parseModelRef(modelId);
-  const withoutOrg = model.slice(model.lastIndexOf("/") + 1);
+  const withoutOrg = model.slice(model.lastIndexOf("/") + 1).replace(/:[^:]*$/, "");
 
   // Drop a trailing 8-digit date suffix (e.g. "claude-sonnet-4-5-20250929").
   const withoutDate = withoutOrg.replace(/-\d{8}$/, "");

@@ -22,9 +22,13 @@ import {
   isNarrationLlmAvailable,
   getNarrationModelRef,
 } from "@/server/services/narration";
-import { listAllModels } from "@/server/services/ai-providers";
+import { isModelAllowed, listAllModels } from "@/server/services/ai-providers";
 import { formatModelRef } from "@/lib/ai/model-ref";
-import { NARRATION_FORMAT_VERSION, NARRATION_PROVIDERS } from "@/lib/narration/constants";
+import {
+  NARRATION_FORMAT_VERSION,
+  NARRATION_PROVIDERS,
+  SUGGESTED_NARRATION_MODELS,
+} from "@/lib/narration/constants";
 import { selectDisplayedContent } from "@/lib/narration/select-content";
 import { getUserApiKeys } from "@/server/auth/session";
 import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
@@ -360,7 +364,9 @@ export const narrationRouter = createTRPCRouter({
     .query(async ({ ctx }) => {
       // Fetch API keys from DB on demand (not cached in session for security)
       const keys = await getUserApiKeys(ctx.session.user.id);
-      const models = await listAllModels(keys, NARRATION_PROVIDERS, { jsonObject: true });
+      const models = (await listAllModels(keys, NARRATION_PROVIDERS, { jsonObject: true })).filter(
+        (model) => isModelAllowed(model.id, keys, SUGGESTED_NARRATION_MODELS)
+      );
       const defaultRef = getNarrationModelRef(null, keys);
       return { models, defaultModelId: formatModelRef(defaultRef.provider, defaultRef.model) };
     }),

@@ -13,7 +13,14 @@ import Anthropic from "@anthropic-ai/sdk";
 import Cerebras from "@cerebras/cerebras_cloud_sdk";
 import Groq from "groq-sdk";
 import { logger } from "@/lib/logger";
-import { AI_PROVIDERS, formatModelRef, type AiProvider, type ModelRef } from "@/lib/ai/model-ref";
+import {
+  AI_PROVIDERS,
+  formatModelRef,
+  normalizeModelRef,
+  parseModelRef,
+  type AiProvider,
+  type ModelRef,
+} from "@/lib/ai/model-ref";
 import {
   listOpenRouterModels,
   openRouterChatCompletion,
@@ -32,7 +39,7 @@ export interface AiProviderKeys {
   openrouterApiKey?: string | null;
 }
 
-const ENV_KEYS: Record<AiProvider, string> = {
+export const AI_PROVIDER_ENV_KEYS: Record<AiProvider, string> = {
   anthropic: "ANTHROPIC_API_KEY",
   groq: "GROQ_API_KEY",
   cerebras: "CEREBRAS_API_KEY",
@@ -53,14 +60,31 @@ function userKeyFor(provider: AiProvider, keys?: AiProviderKeys): string | null 
 }
 
 function apiKeyFor(provider: AiProvider, keys?: AiProviderKeys): string | null {
-  return userKeyFor(provider, keys) ?? process.env[ENV_KEYS[provider]] ?? null;
+  return userKeyFor(provider, keys) ?? process.env[AI_PROVIDER_ENV_KEYS[provider]] ?? null;
 }
 
 /**
  * Checks whether a provider can be used (user key or server env key set).
  */
 export function isProviderAvailable(provider: AiProvider, keys?: AiProviderKeys): boolean {
-  return !!userKeyFor(provider, keys) || !!process.env[ENV_KEYS[provider]];
+  return !!userKeyFor(provider, keys) || !!process.env[AI_PROVIDER_ENV_KEYS[provider]];
+}
+
+/**
+ * OpenRouter's catalog includes models costing 100x our defaults, so when a
+ * request would be billed to the server's key (the user has no OpenRouter key
+ * of their own) only the given models may be listed or used.
+ */
+export function isModelAllowed(
+  modelRef: string,
+  keys: AiProviderKeys | undefined,
+  allowedWithServerKey: readonly string[]
+): boolean {
+  const { provider } = parseModelRef(modelRef);
+  if (provider !== "openrouter" || userKeyFor(provider, keys)) {
+    return true;
+  }
+  return allowedWithServerKey.includes(normalizeModelRef(modelRef));
 }
 
 /**
@@ -227,7 +251,13 @@ export async function generateChatCompletion(
       if (!apiKey) {
         throw new Error("OpenRouter API key not configured");
       }
-      return openRouterChatCompletion(apiKey, ref.model, options);
+      // Match Groq/Cerebras: only gpt-oss gets a reasoning effort. On OpenRouter
+      // it would otherwise switch on (billed) extended thinking for Claude,
+      // Gemini, etc.
+      return openRouterChatCompletion(apiKey, ref.model, {
+        ...options,
+        reasoningEffort: supportsReasoningEffort(ref.model) ? options.reasoningEffort : undefined,
+      });
     }
   }
 }

@@ -49,7 +49,7 @@ function headers(apiKey?: string): Record<string, string> {
     "User-Agent": USER_AGENT,
     // OpenRouter app attribution (shown on their dashboards and rankings).
     "HTTP-Referer": appUrl,
-    "X-Title": "Lion Reader",
+    "X-OpenRouter-Title": "Lion Reader",
     ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
   };
 }
@@ -67,35 +67,57 @@ async function errorFromResponse(response: Response): Promise<Error> {
   return new Error(`OpenRouter request failed with status ${response.status}${detail}`);
 }
 
+/**
+ * Builds the chat completion request body. Optional parameters are only sent
+ * when the model's catalog entry lists them: JSON mode sets
+ * `require_parameters`, which restricts routing to hosts supporting *every*
+ * parameter sent, so an unsupported extra would leave no host at all.
+ */
+export function buildChatCompletionBody(
+  model: string,
+  options: ChatCompletionOptions,
+  supportedParameters: readonly string[]
+): Record<string, unknown> {
+  const supports = (parameter: string) => supportedParameters.includes(parameter);
+  return {
+    model,
+    messages: [
+      ...(options.system ? [{ role: "system", content: options.system }] : []),
+      { role: "user", content: options.userPrompt },
+    ],
+    ...(supports("max_tokens") ? { max_tokens: options.maxTokens } : {}),
+    ...(options.temperature !== undefined && supports("temperature")
+      ? { temperature: options.temperature }
+      : {}),
+    ...(options.reasoningEffort && supports("reasoning")
+      ? { reasoning: { effort: options.reasoningEffort } }
+      : {}),
+    ...(options.jsonObject ? { response_format: { type: "json_object" } } : {}),
+    provider: {
+      // Every caller is interactive, so prefer the fastest host.
+      sort: "throughput",
+      // Only route to hosts that honor JSON mode rather than having the
+      // parameter silently dropped.
+      ...(options.jsonObject ? { require_parameters: true } : {}),
+    },
+  };
+}
+
 export async function openRouterChatCompletion(
   apiKey: string,
   model: string,
   options: ChatCompletionOptions
 ): Promise<string> {
+  // Without the catalog, fall back to sending no optional parameters.
+  const catalog = await listOpenRouterModels("text").catch(() => []);
+  const catalogEntry = catalog.find((entry) => entry.id === model);
   const response = await fetch(`${OPENROUTER_API_URL}/chat/completions`, {
     method: "POST",
     headers: { ...headers(apiKey), "Content-Type": "application/json" },
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    body: JSON.stringify({
-      model,
-      max_tokens: options.maxTokens,
-      messages: [
-        ...(options.system ? [{ role: "system", content: options.system }] : []),
-        { role: "user", content: options.userPrompt },
-      ],
-      // OpenRouter drops parameters a model doesn't support, so these are
-      // safe to send to any model (unlike Groq/Cerebras).
-      ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
-      ...(options.reasoningEffort ? { reasoning: { effort: options.reasoningEffort } } : {}),
-      ...(options.jsonObject ? { response_format: { type: "json_object" } } : {}),
-      provider: {
-        // Every caller is interactive, so prefer the fastest host.
-        sort: "throughput",
-        // Only route to hosts that honor JSON mode when the caller needs it,
-        // rather than having the parameter silently dropped.
-        ...(options.jsonObject ? { require_parameters: true } : {}),
-      },
-    }),
+    body: JSON.stringify(
+      buildChatCompletionBody(model, options, catalogEntry?.supported_parameters ?? [])
+    ),
   });
   if (!response.ok) {
     throw await errorFromResponse(response);
