@@ -29,6 +29,10 @@ use crate::scanner::{find_top_level_ranges, Recovery};
 use crate::serialize::{attr_display_name, escape_attr, escape_text};
 use crate::urls::{is_data_image, url_scheme};
 
+/// DOMPurify's `svg` + `svgFilters` minus the exclusions in the module doc and
+/// `font`: SVG fonts render nowhere, and `<font>` is the one name here that
+/// breaks out of MathML, so SVG reinserted inside `<math>` (where a browser
+/// parses it as MathML) could otherwise drop the rest of the entry into HTML.
 pub(crate) const ALLOWED_SVG_TAGS: &[&str] = &[
     "svg",
     "a",
@@ -41,7 +45,6 @@ pub(crate) const ALLOWED_SVG_TAGS: &[&str] = &[
     "desc",
     "ellipse",
     "filter",
-    "font",
     "g",
     "glyph",
     "glyphref",
@@ -343,6 +346,12 @@ fn is_external_link(value: &str) -> bool {
 /// subtree is dropped). Children: elements recurse, text is escaped,
 /// everything else (comments, PIs) is dropped.
 fn emit_svg_element(el: ElementRef, out: &mut String) {
+    // By namespace as well as name: under `<desc>`/`<title>` (HTML integration
+    // points) an `<a>` or `<image>` is an HTML element, and it would be emitted
+    // as one the SVG allow-list never vetted.
+    if el.value().name.ns != html5ever::ns!(svg) {
+        return;
+    }
     let name = el.value().name();
     let lower = name.to_ascii_lowercase();
     if !ALLOWED_SVG_TAGS.contains(&lower.as_str()) {
@@ -673,6 +682,18 @@ mod tests {
         extraction.mark_placeholders_in(&one[..one.len() - 1], &mut seen);
         extraction.mark_placeholders_in(&one[1..], &mut seen);
         assert_eq!(seen, [false; 3]);
+    }
+
+    #[test]
+    fn only_svg_namespace_elements_are_emitted() {
+        // Under `<desc>` these are HTML elements (`<image>` becomes `<img>`).
+        let out = roundtrip(
+            r#"<svg><desc><font color="red">t</font><image name="getElementById"/><a href="https://x.com">l</a></desc><rect width="1"/></svg>"#,
+        );
+        assert!(!out.contains("font"), "{out}");
+        assert!(!out.contains("getElementById"), "{out}");
+        assert!(!out.contains("<a"), "{out}");
+        assert!(out.contains(r#"<rect width="1"/>"#), "{out}");
     }
 
     #[test]

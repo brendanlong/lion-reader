@@ -506,7 +506,7 @@ fn text_needs_handling(html: &str) -> bool {
 ///   ([`DROP_WITH_CONTENT`]).
 ///
 /// `output_parses_to_allow_listed_markup_only` is the property test behind this.
-/// Only attached when [`text_needs_handling`].
+/// Only attached when [`text_needs_handling`] or text is being observed.
 fn handle_text(text: &mut TextChunk) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     match text.text_type() {
         TextType::CDataSection => text.remove(),
@@ -918,7 +918,7 @@ pub fn sanitize_html_pass_observing_text(
 ) -> Result<String, String> {
     let mut output = Vec::with_capacity(html.len());
     let ending = std::cell::Cell::new(false);
-    let escape_lt = text_needs_handling(html);
+    let needs_text_handler = text_needs_handling(html);
     let mut document_content_handlers = vec![
         doc_comments!(|c| {
             c.remove();
@@ -929,7 +929,7 @@ pub fn sanitize_html_pass_observing_text(
             Ok(())
         }),
     ];
-    if escape_lt || observe_text.is_some() {
+    if needs_text_handler || observe_text.is_some() {
         document_content_handlers.push(doc_text!(move |text| {
             if let (TextType::Data, Some(observe)) = (text.text_type(), observe_text.as_mut()) {
                 observe(text.as_str());
@@ -1365,10 +1365,14 @@ mod tests {
             // Nor may it swallow the rest of the document looking for a `>`.
             "<p>a</p></body",
         ] {
-            // The pass on its own: the main pass already drops the last two,
-            // which the input ends partway through.
             let out = drop_disallowed_end_tags(html).unwrap_or_else(|| html.to_string());
             assert_eq!(out, html, "{html}");
+            // The main pass drops a tag the input ends partway through (the
+            // unclosed quote makes `class="x>…` one), so only the others reach
+            // the end-tag pass whole.
+            if !html.ends_with("</body") && !html.contains("class=") {
+                assert_eq!(sanitize(html), html, "{html}");
+            }
         }
     }
 
@@ -1435,7 +1439,7 @@ mod tests {
             format!("<math><math></p><![CDATA[>{payload}]]>"),
         ] {
             let out = sanitize(&html);
-            assert!(disallowed_markup(&out).is_none(), "{html}\n=> {out}");
+            assert!(disallowed_markup(&out, false).is_none(), "{html}\n=> {out}");
         }
         // The escape changes nothing a reader sees.
         assert_eq!(sanitize("<p>a << b</p>"), "<p>a &lt;&lt; b</p>");
@@ -1577,34 +1581,37 @@ mod tests {
     /// Why `html`, as a browser parses it, is not something the allow-list
     /// would have let through — or None if it is. The transforms' own
     /// attributes (iframe embeds, task-list checkboxes) are allowed by
-    /// construction, not by `attr_allowed`.
-    fn disallowed_markup(html: &str) -> Option<String> {
+    /// construction, not by `attr_allowed`. `svg` admits reinserted inline SVG,
+    /// which the pass alone never outputs.
+    fn disallowed_markup(html: &str, svg: bool) -> Option<String> {
+        use html5ever::ns;
         for node in scraper::Html::parse_fragment(html).tree.nodes() {
             let Some(el) = node.value().as_element() else {
                 continue;
             };
             let tag = el.name();
-            // Reinserted inline SVG has its own allow-list (`svg.rs`, tested
-            // there), and a browser can give its elements another namespace —
-            // MathML inside `<math>`, HTML under an integration point like
-            // `<title>` — so inside an `<svg>` of any namespace, only check
-            // what could run script.
-            let in_svg = node
-                .ancestors()
-                .chain(std::iter::once(node))
-                .filter_map(|n| n.value().as_element())
-                .any(|e| e.name().eq_ignore_ascii_case("svg"));
-            if in_svg {
+            // Inline SVG has its own allow-list (`svg.rs`, tested there). Inside
+            // `<math>` a browser parses it as MathML, under a MathML `<svg>`.
+            let is_svg = el.name.ns == ns!(svg)
+                || (el.name.ns == ns!(mathml)
+                    && node
+                        .ancestors()
+                        .chain(std::iter::once(node))
+                        .filter_map(|n| n.value().as_element())
+                        .any(|e| e.name.ns == ns!(mathml) && e.name() == "svg"));
+            if is_svg {
                 let lower = tag.to_ascii_lowercase();
-                if !crate::svg::ALLOWED_SVG_TAGS.contains(&lower.as_str()) && !tag_allowed(tag) {
+                if !svg || !crate::svg::ALLOWED_SVG_TAGS.contains(&lower.as_str()) {
                     return Some(format!("<svg:{tag}>"));
                 }
                 for (attr, value) in el.attrs() {
-                    let scheme = value.trim_start().to_ascii_lowercase();
-                    if attr.to_ascii_lowercase().starts_with("on")
-                        || scheme.starts_with("javascript:")
-                        || scheme.starts_with("vbscript:")
-                    {
+                    let scheme = crate::urls::url_scheme(value);
+                    let bad_url = matches!(attr, "href" | "xlink:href")
+                        && scheme.as_deref().is_some_and(|s| {
+                            !matches!(s, "http" | "https" | "mailto" | "tel")
+                                && !crate::urls::is_data_image(value)
+                        });
+                    if attr.to_ascii_lowercase().starts_with("on") || bad_url {
                         return Some(format!("<svg:{tag} {attr}={value:?}>"));
                     }
                 }
@@ -1649,8 +1656,8 @@ mod tests {
     /// gets concatenated (feed-reader API clients wrap it in their own
     /// templates), so it must not end partway through a tag that whatever
     /// follows would complete: `"'>` closes a tag from any tag state.
-    fn disallowed_markup_even_if_appended_to(html: &str) -> Option<String> {
-        disallowed_markup(html).or_else(|| disallowed_markup(&format!("{html}\"'>")))
+    fn disallowed_markup_even_if_appended_to(html: &str, svg: bool) -> Option<String> {
+        disallowed_markup(html, svg).or_else(|| disallowed_markup(&format!("{html}\"'>"), svg))
     }
 
     #[test]
@@ -1720,7 +1727,7 @@ mod tests {
                 continue;
             };
             sanitized += 1;
-            if let Some(bad) = disallowed_markup_even_if_appended_to(&out) {
+            if let Some(bad) = disallowed_markup_even_if_appended_to(&out, false) {
                 panic!("output parses to {bad}\n  in : {input:?}\n  out: {out:?}");
             }
         }
@@ -1759,6 +1766,10 @@ mod tests {
             r#"<iframe src="https://www.youtube.com/embed/abc123">"#,
             "</iframe>",
             "<style>",
+            // SVG reinserted inside `<math>` is parsed as MathML, where a
+            // breakout would drop the rest into HTML.
+            "<font color=red>",
+            r#"<svg><desc><font color=red></font></desc><image name="x" href="https://e.com/a.png"></image></svg>"#,
         ];
         let mut seed = 0x0DDB_1A5E_5BAD_5EEDu64;
         let mut next = move || {
@@ -1776,7 +1787,7 @@ mod tests {
                 continue;
             };
             sanitized += 1;
-            if let Some(bad) = disallowed_markup_even_if_appended_to(&out) {
+            if let Some(bad) = disallowed_markup_even_if_appended_to(&out, true) {
                 panic!("output parses to {bad}\n  in : {input:?}\n  out: {out:?}");
             }
         }
