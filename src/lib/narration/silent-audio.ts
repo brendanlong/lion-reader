@@ -16,8 +16,10 @@
  * OS controls appear and the media-key/Bluetooth events flow into our action
  * handlers. This module owns generating that silent clip and the element.
  *
- * The clip is generated at runtime as a tiny silent WAV data URI so we don't ship
- * a binary asset. It loops, so it can be very short.
+ * The clip is generated at runtime as a silent WAV data URI so we don't ship a
+ * binary asset. It loops, but must still be well over 5 seconds long: Chrome on
+ * Android treats shorter media as a transient sound effect rather than playback,
+ * so it doesn't count toward keeping a backgrounded page alive.
  *
  * @module narration/silent-audio
  */
@@ -25,8 +27,7 @@
 /** Sample rate for the generated silent clip. Low rate keeps the clip tiny. */
 const SILENT_SAMPLE_RATE = 8000;
 
-/** Duration of the generated silent clip in seconds. It loops, so this is short. */
-const SILENT_DURATION_SECONDS = 0.5;
+const SILENT_DURATION_SECONDS = 10;
 
 /**
  * Generates the bytes of a mono, 8-bit PCM WAV file containing pure silence.
