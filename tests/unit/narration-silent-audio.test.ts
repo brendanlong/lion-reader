@@ -69,6 +69,13 @@ describe("createSilentWavBytes", () => {
     const bytes = createSilentWavBytes(0, 8000);
     expect(bytes.length).toBe(44 + 1);
   });
+
+  it("defaults to a clip long enough for Chrome to treat as media, not a sound effect", () => {
+    const view = new DataView(createSilentWavBytes().buffer);
+    const byteRate = view.getUint32(28, true);
+    const dataSize = view.getUint32(40, true);
+    expect(dataSize / byteRate).toBeGreaterThan(5);
+  });
 });
 
 describe("createSilentAudioDataUri", () => {
