@@ -1,0 +1,181 @@
+package com.lionreader.app.ui
+
+import android.content.Intent
+import android.text.format.DateUtils
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lionreader.app.AppGraph
+import com.lionreader.app.R
+import com.lionreader.app.reader.AppearanceTokens
+import com.lionreader.app.reader.ReaderColors
+import com.lionreader.app.reader.ReaderWebView
+import com.lionreader.app.reader.readerDocument
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun EntryScreen(graph: AppGraph, entryId: String, onBack: () -> Unit) {
+    val context = LocalContext.current
+    val entry by remember(entryId) { graph.reader.entry(entryId) }.collectAsStateWithLifecycle(null)
+    val settings by graph.currentSettings.collectAsStateWithLifecycle()
+    val tokens = remember { AppearanceTokens.load(context) }
+    var loadFailed by remember(entryId) { mutableStateOf(false) }
+
+    LaunchedEffect(entryId) {
+        graph.reader.markOpened(entryId)
+    }
+    LaunchedEffect(entry?.id) {
+        val current = entry ?: return@LaunchedEffect
+        if (!current.read) graph.reader.setRead(listOf(current.id), true)
+        if (current.content == null) {
+            loadFailed = runCatching { graph.session.sync.ensureContent(current.id) }.isFailure
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {},
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(painterResource(R.drawable.ic_arrow_back), contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    val current = entry ?: return@TopAppBar
+                    IconButton(
+                        onClick = { graph.reader.setRead(listOf(current.id), !current.read) }
+                    ) {
+                        Icon(
+                            painterResource(
+                                if (current.read) R.drawable.ic_circle_outline
+                                else R.drawable.ic_circle
+                            ),
+                            contentDescription = if (current.read) "Mark unread" else "Mark read",
+                        )
+                    }
+                    IconButton(
+                        onClick = { graph.reader.setStarred(current.id, !current.starred) }
+                    ) {
+                        Icon(
+                            painterResource(
+                                if (current.starred) R.drawable.ic_star
+                                else R.drawable.ic_star_border
+                            ),
+                            contentDescription = if (current.starred) "Unstar" else "Star",
+                            tint =
+                                if (current.starred) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    current.url?.let { url ->
+                        IconButton(
+                            onClick = {
+                                context.startActivity(
+                                    Intent.createChooser(
+                                        Intent(Intent.ACTION_SEND)
+                                            .setType("text/plain")
+                                            .putExtra(Intent.EXTRA_TEXT, url)
+                                            .putExtra(Intent.EXTRA_SUBJECT, current.title),
+                                        null,
+                                    )
+                                )
+                            }
+                        ) {
+                            Icon(painterResource(R.drawable.ic_share), contentDescription = "Share")
+                        }
+                        IconButton(
+                            onClick = {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
+                            }
+                        ) {
+                            Icon(
+                                painterResource(R.drawable.ic_open_in_new),
+                                contentDescription = "Open original",
+                            )
+                        }
+                    }
+                },
+            )
+        }
+    ) { padding ->
+        val current = entry
+        Column(
+            modifier = Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState())
+        ) {
+            if (current == null) return@Column
+            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                Text(current.title ?: "Untitled", style = MaterialTheme.typography.headlineSmall)
+                Text(
+                    listOfNotNull(
+                            current.source,
+                            current.author,
+                            DateUtils.formatDateTime(
+                                context,
+                                current.sortAtMillis,
+                                DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_SHOW_YEAR,
+                            ),
+                        )
+                        .joinToString(" · "),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+            when {
+                current.content != null -> {
+                    val colors = MaterialTheme.colorScheme
+                    val document =
+                        readerDocument(
+                            body = current.content.orEmpty(),
+                            settings = settings,
+                            tokens = tokens,
+                            colors =
+                                ReaderColors(
+                                    text = colors.onSurface.css(),
+                                    muted = colors.onSurfaceVariant.css(),
+                                    link = colors.primary.css(),
+                                    background = colors.surface.css(),
+                                    border = colors.outlineVariant.css(),
+                                    codeBackground = colors.surfaceContainer.css(),
+                                ),
+                        )
+                    ReaderWebView(document, modifier = Modifier.fillMaxWidth())
+                }
+                loadFailed ->
+                    Text(
+                        "This article hasn't been downloaded yet. Connect to the internet to read it.",
+                        modifier = Modifier.padding(16.dp),
+                    )
+                else -> CircularProgressIndicator(modifier = Modifier.padding(32.dp))
+            }
+        }
+    }
+}
+
+private fun Color.css(): String = "#%06X".format(toArgb() and 0xFFFFFF)

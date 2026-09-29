@@ -18,9 +18,16 @@ android {
         targetSdk = libs.versions.androidTargetSdk.get().toInt()
         versionCode = 1
         versionName = "0.1.0"
+        // The host whose /oauth/app-callback the app claims as an App Link.
+        // Point a debug build at a dev server with -PappLinkHost=<host>.
+        manifestPlaceholders["appLinkHost"] =
+            (project.findProperty("appLinkHost") as String?) ?: "lionreader.com"
     }
 
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
 
     testOptions {
         unitTests {
@@ -61,6 +68,8 @@ androidComponents {
 
 dependencies {
     implementation(project(":shared"))
+    implementation(libs.ktor.client.okhttp)
+    implementation(libs.sqldelight.android.driver)
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.material3)
@@ -78,6 +87,7 @@ dependencies {
     implementation(libs.androidx.navigation3.runtime)
     implementation(libs.androidx.navigation3.ui)
     implementation(libs.androidx.work.runtime)
+    implementation(libs.androidx.webkit)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
 

@@ -1,0 +1,30 @@
+{
+  "fonts": {
+    "system": {
+      "sizeAdjust": 1,
+      "lineHeight": 1.7
+    },
+    "merriweather": {
+      "sizeAdjust": 0.929,
+      "lineHeight": 1.8
+    },
+    "literata": {
+      "sizeAdjust": 1,
+      "lineHeight": 1.75
+    },
+    "inter": {
+      "sizeAdjust": 0.945,
+      "lineHeight": 1.7
+    },
+    "source-sans": {
+      "sizeAdjust": 1.061,
+      "lineHeight": 1.7
+    }
+  },
+  "textSizes": {
+    "small": 0.875,
+    "medium": 1,
+    "large": 1.125,
+    "x-large": 1.25
+  }
+}
