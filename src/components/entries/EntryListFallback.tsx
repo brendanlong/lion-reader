@@ -38,9 +38,8 @@ interface EntryListFallbackProps {
 /**
  * Suspense fallback that shows cached entries when available.
  *
- * Hierarchy for finding placeholder data:
- * 1. For subscription pages: try the subscription's tag list first
- * 2. Fall back to "All" list (no filters)
+ * Uses the view's own cache if present, otherwise the "All" list filtered
+ * down to the view.
  *
  * If no cached data matches, renders a skeleton.
  */
