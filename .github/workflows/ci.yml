@@ -229,7 +229,7 @@ jobs:
     # schema dump, and env all come from .env.test).
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_DB: lionreader_test
           POSTGRES_USER: lionreader
@@ -270,6 +270,15 @@ jobs:
           name: native-modules
           path: native/
 
+      # The schema dump refuses a server newer than its pg_dump, and the
+      # runner's preinstalled client is older than the service. PATH (not
+      # pg_wrapper, which can resolve to the runner's own 5432 cluster) pins it.
+      - name: Install pg_dump matching the postgres service
+        run: |
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y --no-install-recommends postgresql-client-18
+          echo /usr/lib/postgresql/18/bin >> "$GITHUB_PATH"
+
       - name: Run integration tests
         run: pnpm test:integration
 
@@ -279,7 +288,7 @@ jobs:
     needs: build-native
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_DB: lionreader_test
           POSTGRES_USER: lionreader
