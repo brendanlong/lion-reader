@@ -93,6 +93,21 @@ describe("decodeBody", () => {
     expect(decodeBody(body, "application/json")).toContain("“café”");
   });
 
+  it("reads an unquoted <meta charset>", () => {
+    const body = bytes("<meta charset=windows-1252><p>", CP1252_QUOTED_CAFE);
+    expect(decodeBody(body, "text/html")).toContain("<p>“café”");
+  });
+
+  it.each([
+    ['<meta property="og:title" content="x; charset=windows-1252">'],
+    ['<meta data-charset="windows-1252">'],
+    ['<meta name="description" content="charset=windows-1252">'],
+    ['<!-- <meta charset="windows-1252"> -->'],
+  ])("ignores %s, which isn't a charset declaration", (tag) => {
+    const body = Buffer.from(`${tag}<meta charset="utf-8"><p>“café”`);
+    expect(decodeBody(body, "text/html")).toContain("<p>“café”");
+  });
+
   it("only honors a <meta> within the first 1024 bytes", () => {
     const body = Buffer.from(`${" ".repeat(1024)}<meta charset="windows-1252"><p>“café”`);
     expect(decodeBody(body, "text/html")).toContain("<p>“café”");
