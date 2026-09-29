@@ -25,6 +25,7 @@ import {
 import { SettingsListContainer } from "@/components/settings/SettingsListContainer";
 import { PlusIcon, CheckIcon, CopyIcon, EditIcon } from "@/components/ui/icons";
 import BlockedSendersSettingsContent from "./BlockedSendersSettingsContent";
+import { Switch } from "@/components/ui/switch";
 
 // ============================================================================
 // Types
@@ -426,24 +427,12 @@ function SpamPreferenceSection() {
               Display entries that were flagged as spam by our email provider.
             </p>
           </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={showSpam}
-            aria-labelledby="show-spam-label"
-            onClick={handleToggle}
+          <Switch
+            checked={showSpam}
+            onChange={handleToggle}
+            labelledBy="show-spam-label"
             disabled={preferencesQuery.isLoading || updateMutation.isPending}
-            className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out disabled:cursor-not-allowed disabled:opacity-50 ${
-              showSpam ? "bg-primary-solid" : "bg-fill-muted"
-            }`}
-          >
-            <span
-              aria-hidden="true"
-              className={`bg-surface pointer-events-none inline-block h-5 w-5 transform rounded-full shadow ring-0 transition duration-200 ease-in-out ${
-                showSpam ? "translate-x-5" : "translate-x-0"
-              }`}
-            />
-          </button>
+          />
         </div>
       </Card>
     </section>
