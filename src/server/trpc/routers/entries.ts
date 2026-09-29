@@ -297,6 +297,54 @@ export const entriesRouter = createTRPCRouter({
       });
     }),
 
+  // REST routes match in procedure order, so `GET /entries/count` must come
+  // before `GET /entries/{id}` or the count request is read as an entry id.
+  /**
+   * Get count of entries with optional filters.
+   *
+   * Entries are visible to a user only if they have a corresponding
+   * row in the user_entries table for their user_id.
+   *
+   * @param subscriptionId - Optional filter by subscription ID
+   * @param tagId - Optional filter by tag ID (entries from subscriptions with this tag)
+   * @param uncategorized - Optional filter to show only entries from uncategorized subscriptions
+   * @param type - Optional filter by entry type
+   * @param excludeTypes - Optional types to exclude
+   * @param unreadOnly - Optional filter to count only unread entries
+   * @param starredOnly - Optional filter to count only starred entries
+   * @returns Count of total and unread entries
+   */
+  count: readerProcedure
+    .meta({
+      openapi: {
+        method: "GET",
+        path: "/entries/count",
+        tags: ["Entries"],
+        summary: "Get entries count",
+      },
+    })
+    .input(
+      z
+        .object({
+          subscriptionId: uuidSchema.optional(),
+          tagId: uuidSchema.optional(),
+          uncategorized: booleanQueryParam,
+          type: feedTypeSchema.optional(),
+          excludeTypes: z.array(feedTypeSchema).optional(),
+          unreadOnly: booleanQueryParam,
+          starredOnly: booleanQueryParam,
+        })
+        .optional()
+    )
+    .output(
+      z.object({
+        unread: z.number(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      return entriesService.countEntries(ctx.db, ctx.session.user.id, { ...input });
+    }),
+
   /**
    * Get a single entry by ID with full content.
    *
@@ -564,52 +612,6 @@ export const entriesRouter = createTRPCRouter({
         input.starred
       );
       return { success: true, count: entries.length, entries, counts };
-    }),
-
-  /**
-   * Get count of entries with optional filters.
-   *
-   * Entries are visible to a user only if they have a corresponding
-   * row in the user_entries table for their user_id.
-   *
-   * @param subscriptionId - Optional filter by subscription ID
-   * @param tagId - Optional filter by tag ID (entries from subscriptions with this tag)
-   * @param uncategorized - Optional filter to show only entries from uncategorized subscriptions
-   * @param type - Optional filter by entry type
-   * @param excludeTypes - Optional types to exclude
-   * @param unreadOnly - Optional filter to count only unread entries
-   * @param starredOnly - Optional filter to count only starred entries
-   * @returns Count of total and unread entries
-   */
-  count: readerProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/entries/count",
-        tags: ["Entries"],
-        summary: "Get entries count",
-      },
-    })
-    .input(
-      z
-        .object({
-          subscriptionId: uuidSchema.optional(),
-          tagId: uuidSchema.optional(),
-          uncategorized: booleanQueryParam,
-          type: feedTypeSchema.optional(),
-          excludeTypes: z.array(feedTypeSchema).optional(),
-          unreadOnly: booleanQueryParam,
-          starredOnly: booleanQueryParam,
-        })
-        .optional()
-    )
-    .output(
-      z.object({
-        unread: z.number(),
-      })
-    )
-    .query(async ({ ctx, input }) => {
-      return entriesService.countEntries(ctx.db, ctx.session.user.id, { ...input });
     }),
 
   /**

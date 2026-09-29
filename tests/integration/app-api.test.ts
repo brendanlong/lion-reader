@@ -339,6 +339,16 @@ describe("sync.changes", () => {
   });
 });
 
+describe("GET /entries/count", () => {
+  it("reaches entries.count rather than GET /entries/{id}", async () => {
+    const userId = await createUser();
+    await subscribedEntries(userId, 2);
+    const res = await rest(await appToken(userId), "GET", "/entries/count?unreadOnly=true");
+    expect(res.status).toBe(200);
+    expect((await res.json()).unread).toBe(2);
+  });
+});
+
 describe("entries.getMany", () => {
   it("returns full entries in request order, omitting ids the user can't see", async () => {
     const userId = await createUser();
