@@ -59,7 +59,7 @@ logger.info("Starting standalone worker", {
 });
 
 // Start internal metrics server on port 9092 (separate from Next.js on 9091)
-startMetricsServer(9092);
+startMetricsServer(9092, { includeDatabaseMetrics: true });
 
 startWorkerWithSignalHandling({
   pollIntervalMs,

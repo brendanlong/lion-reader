@@ -44,9 +44,14 @@ export function setHealthChecker(checker: HealthChecker): void {
  * All other requests return 404.
  *
  * @param port - Port to listen on (default: 9091)
+ * @param options.includeDatabaseMetrics - Whether this process reports the
+ *   database-wide gauges (see collectAllMetrics)
  * @returns The server instance, or null if metrics are disabled
  */
-export function startMetricsServer(port = 9091): Server | null {
+export function startMetricsServer(
+  port = 9091,
+  { includeDatabaseMetrics = false }: { includeDatabaseMetrics?: boolean } = {}
+): Server | null {
   if (!metricsEnabled) {
     logger.info("Metrics disabled, skipping internal metrics server");
     return null;
@@ -60,8 +65,7 @@ export function startMetricsServer(port = 9091): Server | null {
   server = createServer(async (req, res) => {
     if (req.method === "GET" && req.url === "/metrics") {
       try {
-        // Collect business metrics from database
-        await collectAllMetrics();
+        await collectAllMetrics(includeDatabaseMetrics);
 
         const metrics = await registry.metrics();
         res.writeHead(200, { "Content-Type": registry.contentType });
