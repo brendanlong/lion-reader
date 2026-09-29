@@ -21,6 +21,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -36,6 +37,7 @@ import com.lionreader.app.reader.AppearanceTokens
 import com.lionreader.app.reader.ReaderColors
 import com.lionreader.app.reader.ReaderWebView
 import com.lionreader.app.reader.readerDocument
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,6 +47,7 @@ fun EntryScreen(graph: AppGraph, entryId: String, onBack: () -> Unit) {
     val settings by graph.currentSettings.collectAsStateWithLifecycle()
     val tokens = remember { AppearanceTokens.load(context) }
     var loadFailed by remember(entryId) { mutableStateOf(false) }
+    val coroutines = rememberCoroutineScope()
 
     LaunchedEffect(entryId) {
         graph.reader.markOpened(entryId)
@@ -69,7 +72,11 @@ fun EntryScreen(graph: AppGraph, entryId: String, onBack: () -> Unit) {
                 actions = {
                     val current = entry ?: return@TopAppBar
                     IconButton(
-                        onClick = { graph.reader.setRead(listOf(current.id), !current.read) }
+                        onClick = {
+                            coroutines.launch {
+                                graph.reader.setRead(listOf(current.id), !current.read)
+                            }
+                        }
                     ) {
                         Icon(
                             painterResource(
@@ -80,7 +87,11 @@ fun EntryScreen(graph: AppGraph, entryId: String, onBack: () -> Unit) {
                         )
                     }
                     IconButton(
-                        onClick = { graph.reader.setStarred(current.id, !current.starred) }
+                        onClick = {
+                            coroutines.launch {
+                                graph.reader.setStarred(current.id, !current.starred)
+                            }
+                        }
                     ) {
                         Icon(
                             painterResource(

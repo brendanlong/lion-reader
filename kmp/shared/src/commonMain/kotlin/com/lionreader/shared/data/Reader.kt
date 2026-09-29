@@ -8,6 +8,7 @@ import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 
 /** Which list the user is looking at. */
 sealed interface ListScope {
@@ -143,18 +144,27 @@ class Reader(
             subs.selectTags().asFlow().mapToList(context),
             subs.selectSubscriptionTags().asFlow().mapToList(context),
             subs.selectListCounts().asFlow().mapToList(context),
-            db.outboxQueries.readAdjustments().asFlow().mapToList(context),
-        ) { subscriptions, tags, links, listCounts, adjustments ->
+            db.outboxQueries.pendingEntryStates().asFlow().mapToList(context),
+        ) { subscriptions, tags, links, listCounts, pending ->
             val tagsBySub = links.groupBy({ it.subscription_id }, { it.tag_id })
             val lists = listCounts.associate { it.list to it.unread.toInt() }.toMutableMap()
             val subDelta = mutableMapOf<String, Int>()
             val tagDelta = mutableMapOf<String, Int>()
-            for (adj in adjustments) {
-                val delta = adj.delta.toInt()
+            // Each unsent change moves an entry's contribution from its
+            // server state (which the server's counts reflect) to its
+            // effective state.
+            for (entry in pending) {
+                val unreadBefore = entry.read == 0L
+                val unreadAfter = entry.effective_read == 0L
+                val delta = unreadAfter.toInt() - unreadBefore.toInt()
+                val starredDelta =
+                    (entry.effective_starred == 1L && unreadAfter).toInt() -
+                        (entry.starred == 1L && unreadBefore).toInt()
+                if (starredDelta != 0) lists.merge("starred", starredDelta, Int::plus)
+                if (delta == 0) continue
                 lists.merge("all", delta, Int::plus)
-                if (adj.type == "saved") lists.merge("saved", delta, Int::plus)
-                if (adj.starred == 1L) lists.merge("starred", delta, Int::plus)
-                adj.subscription_id?.let { sub ->
+                if (entry.type == "saved") lists.merge("saved", delta, Int::plus)
+                entry.subscription_id?.let { sub ->
                     subDelta.merge(sub, delta, Int::plus)
                     tagsBySub[sub].orEmpty().forEach { tagDelta.merge(it, delta, Int::plus) }
                 }
@@ -186,43 +196,58 @@ class Reader(
         }
     }
 
-    fun setRead(ids: Collection<String>, read: Boolean) {
-        val time = now()
-        db.transaction {
-            ids.forEach { db.outboxQueries.putState(it, "read", read.toLong(), time) }
+    suspend fun setRead(ids: Collection<String>, read: Boolean) {
+        withContext(context) {
+            val time = now()
+            db.transaction {
+                ids.forEach { db.outboxQueries.putState(it, "read", read.toLong(), time) }
+            }
         }
         onLocalChange()
     }
 
-    fun setStarred(id: String, starred: Boolean) {
-        db.outboxQueries.putState(id, "starred", starred.toLong(), now())
+    suspend fun setStarred(id: String, starred: Boolean) {
+        withContext(context) { db.outboxQueries.putState(id, "starred", starred.toLong(), now()) }
         onLocalChange()
     }
 
-    fun markOpened(id: String) = db.entryQueries.markOpened(now(), id)
+    suspend fun markOpened(id: String) =
+        withContext(context) { db.entryQueries.markOpened(now(), id) }
 
     /**
      * Marks everything in [scope] read: locally for the entries on the device, and on the server
      * (when sent) for everything up to the newest entry the device had seen, so nothing that
      * arrives later is swept up.
      */
-    fun markAllRead(scope: ListScope) {
-        val time = now()
-        db.transaction {
-            val before =
-                db.entryQueries.newestFetchedAt().executeAsOneOrNull()?.MAX ?: return@transaction
-            val subscriptionId = (scope as? ListScope.Subscription)?.id
-            val tagId = (scope as? ListScope.Tag)?.id
-            val starredOnly = if (scope == ListScope.Starred) 1L else 0L
-            val savedOnly = if (scope == ListScope.Saved) 1L else 0L
-            db.entryQueries
-                .unreadIdsInScope(subscriptionId, tagId, starredOnly, savedOnly, before)
-                .executeAsList()
-                .forEach { db.outboxQueries.putState(it, "read", 1L, time) }
-            db.outboxQueries.addMarkAll(subscriptionId, tagId, starredOnly, savedOnly, before, time)
+    suspend fun markAllRead(scope: ListScope) {
+        withContext(context) {
+            val time = now()
+            db.transaction {
+                val before =
+                    db.entryQueries.newestFetchedAt().executeAsOneOrNull()?.MAX
+                        ?: return@transaction
+                val subscriptionId = (scope as? ListScope.Subscription)?.id
+                val tagId = (scope as? ListScope.Tag)?.id
+                val starredOnly = if (scope == ListScope.Starred) 1L else 0L
+                val savedOnly = if (scope == ListScope.Saved) 1L else 0L
+                db.entryQueries
+                    .unreadIdsInScope(subscriptionId, tagId, starredOnly, savedOnly, before)
+                    .executeAsList()
+                    .forEach { db.outboxQueries.putState(it, "read", 1L, time) }
+                db.outboxQueries.addMarkAll(
+                    subscriptionId,
+                    tagId,
+                    starredOnly,
+                    savedOnly,
+                    before,
+                    time,
+                )
+            }
         }
         onLocalChange()
     }
 }
+
+private fun Boolean.toInt(): Int = if (this) 1 else 0
 
 private fun Int?.nonNegative(): Int = (this ?: 0).coerceAtLeast(0)

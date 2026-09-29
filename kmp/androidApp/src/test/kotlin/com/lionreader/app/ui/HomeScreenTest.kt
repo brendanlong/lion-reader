@@ -12,7 +12,6 @@ import com.lionreader.shared.data.Reader
 import com.lionreader.shared.db.LionReaderDatabase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
-import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -32,7 +31,7 @@ class HomeScreenTest {
                 null,
             )
         )
-    private val reader = Reader(db, { 1_000L }, Dispatchers.Main) {}
+    private val reader = Reader(db, { 1_000L }, Dispatchers.Unconfined) {}
     private val unreadOnly = MutableStateFlow(true)
 
     private fun seed(id: String, title: String, read: Boolean) {
@@ -82,7 +81,7 @@ class HomeScreenTest {
 
         composeRule.onNodeWithContentDescription("Star").performClick()
 
+        composeRule.waitUntil { db.outboxQueries.countStates().executeAsOne() == 1L }
         composeRule.onNodeWithContentDescription("Unstar").assertIsDisplayed()
-        assertEquals(1L, db.outboxQueries.countStates().executeAsOne())
     }
 }

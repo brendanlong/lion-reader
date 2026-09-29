@@ -8,6 +8,7 @@ import com.lionreader.shared.data.ListScope
 import com.lionreader.shared.data.Navigation
 import com.lionreader.shared.data.Reader
 import com.lionreader.shared.data.TimelineItem
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,6 +22,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 private const val PAGE = 200L
+private const val MAX_KEPT = 200
 
 sealed interface SyncStatus {
     data object Idle : SyncStatus
@@ -90,8 +92,11 @@ class HomeViewModel(
         limit.value += PAGE
     }
 
-    fun opened(id: String) {
-        keepIds.value += id
+    fun opened(id: String) = keep(id)
+
+    /** Bounded: the ids are bound into one query (SQLite allows 999 variables). */
+    private fun keep(id: String) {
+        keepIds.value = (keepIds.value - id + id).toList().takeLast(MAX_KEPT).toSet()
     }
 
     fun setUnreadOnly(value: Boolean) {
@@ -100,15 +105,17 @@ class HomeViewModel(
     }
 
     fun toggleRead(item: TimelineItem) {
-        keepIds.value += item.id
-        reader.setRead(listOf(item.id), !item.read)
+        keep(item.id)
+        viewModelScope.launch { reader.setRead(listOf(item.id), !item.read) }
     }
 
-    fun toggleStar(item: TimelineItem) = reader.setStarred(item.id, !item.starred)
+    fun toggleStar(item: TimelineItem) {
+        viewModelScope.launch { reader.setStarred(item.id, !item.starred) }
+    }
 
     fun markAllRead() {
         keepIds.value = emptySet()
-        reader.markAllRead(_scope.value)
+        viewModelScope.launch { reader.markAllRead(_scope.value) }
     }
 
     fun refresh() {
@@ -119,12 +126,18 @@ class HomeViewModel(
                 try {
                     sync()
                     SyncStatus.Idle
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: ApiException) {
                     SyncStatus.Failed(
                         if (e.status == 0) "Signed out" else "Sync failed (${e.status})"
                     )
                 } catch (e: java.io.IOException) {
                     SyncStatus.Failed("Offline — showing saved articles")
+                } catch (e: Exception) {
+                    // Token endpoint 5xx, a captive portal's HTML, a DB error:
+                    // report it, never crash the screen.
+                    SyncStatus.Failed("Sync failed")
                 }
         }
     }

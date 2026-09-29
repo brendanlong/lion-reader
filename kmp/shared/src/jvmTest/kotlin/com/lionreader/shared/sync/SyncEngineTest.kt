@@ -1,6 +1,7 @@
 package com.lionreader.shared.sync
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import com.lionreader.shared.api.EntryMetadata
 import com.lionreader.shared.api.EventEntry
 import com.lionreader.shared.api.FeedType
 import com.lionreader.shared.api.FullEntry
@@ -121,6 +122,84 @@ class SyncEngineTest {
         val nav = reader.navigation().first()
         assertEquals(1, nav.allUnread)
         assertEquals(1, nav.subscriptions.single().unread)
+    }
+
+    @Test
+    fun aChangeMadeWhileItsFlushIsInFlightIsKept() = runTest {
+        serve(entry("a"))
+        engine.sync()
+        reader.setRead(listOf("a"), true)
+        server.duringStateWrite = {
+            server.duringStateWrite = null
+            clock += 1_000
+            reader.setRead(listOf("a"), false)
+        }
+
+        engine.flushOutbox()
+
+        // The newer change survives the older one's successful send.
+        assertEquals(1, db.outboxQueries.countStates().executeAsOne())
+        assertEquals(false, reader.entry("a").first()?.read)
+    }
+
+    @Test
+    fun starredCountFollowsUnsentStarAndReadChanges() = runTest {
+        serve(entry("a"), entry("b", starred = true))
+        engine.sync()
+        db.subscriptionQueries.setListCount("starred", 1)
+
+        reader.setStarred("a", true)
+        assertEquals(2, reader.navigation().first().starredUnread)
+
+        reader.setRead(listOf("b"), true)
+        assertEquals(1, reader.navigation().first().starredUnread)
+    }
+
+    @Test
+    fun flushingPullsSoCountsCatchUpAfterMarkAllRead() = runTest {
+        serve(entry("a"))
+        engine.sync()
+        reader.markAllRead(ListScope.All)
+        val before = server.requests.count { it.url.encodedPath.endsWith("/sync/changes") }
+
+        engine.flushOutbox()
+
+        val after = server.requests.count { it.url.encodedPath.endsWith("/sync/changes") }
+        assertTrue(after > before)
+    }
+
+    @Test
+    fun aFailedFollowUpFetchRetriesTheWholePage() = runTest {
+        engine.sync()
+        server.entries["s"] = entry("s", starred = true)
+        val counts = UnreadCounts(all = UnreadCount(0), starred = UnreadCount(0))
+        server.queueChanges(
+            events =
+                listOf(
+                    SyncEvent.EntryStateChanged("s", read = true, starred = true, counts = counts)
+                ),
+            times = 2,
+        )
+        server.batchFailure = HttpStatusCode.ServiceUnavailable
+
+        assertFailsWith<Exception> { engine.sync(downloadContent = false) }
+        engine.sync(downloadContent = false)
+
+        assertEquals(listOf("s"), timeline(ListScope.Starred))
+    }
+
+    @Test
+    fun anUpdatedEntryIsDownloadedAgain() = runTest {
+        serve(entry("a"))
+        engine.sync()
+        server.entries["a"] = entry("a").copy(contentCleaned = "<p>Revised</p>")
+        server.queueChanges(
+            events = listOf(SyncEvent.EntryUpdated("a", EntryMetadata(title = "Revised")))
+        )
+
+        engine.sync()
+
+        assertEquals("<p>Revised</p>", reader.entry("a").first()?.content)
     }
 
     @Test

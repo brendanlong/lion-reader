@@ -108,23 +108,30 @@ internal class LocalStore(val db: LionReaderDatabase) {
             item.starred,
         )
 
-    fun upsertEntry(entry: FullEntry, now: Long) {
-        upsertEntry(
-            entry.id,
-            entry.subscriptionId,
-            entry.feedId,
-            entry.type,
-            entry.url,
-            entry.title,
-            entry.author,
-            entry.summary,
-            entry.siteName,
-            entry.feedTitle,
-            entry.publishedAt,
-            entry.fetchedAt,
-            entry.read,
-            entry.starred,
-        )
+    /**
+     * Stores a downloaded body. An entry already on the device keeps its read/starred state: that
+     * comes only from sync deltas and flush responses, which are ordered, and a body fetch racing a
+     * flush could otherwise write back a stale state.
+     */
+    fun storeBody(entry: FullEntry, now: Long) {
+        if (!entryExists(entry.id)) {
+            upsertEntry(
+                entry.id,
+                entry.subscriptionId,
+                entry.feedId,
+                entry.type,
+                entry.url,
+                entry.title,
+                entry.author,
+                entry.summary,
+                entry.siteName,
+                entry.feedTitle,
+                entry.publishedAt,
+                entry.fetchedAt,
+                entry.read,
+                entry.starred,
+            )
+        }
         entries.setContent(entry.displayContent ?: "", now, entry.id)
     }
 

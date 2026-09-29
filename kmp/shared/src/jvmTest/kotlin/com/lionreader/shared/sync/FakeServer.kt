@@ -53,6 +53,12 @@ class FakeServer {
     /** Status to answer state writes with instead of applying them. */
     var stateWriteFailure: HttpStatusCode? = null
 
+    /** Status to answer the next batch fetch with, once. */
+    var batchFailure: HttpStatusCode? = null
+
+    /** Runs while a state write is in flight (before the server answers). */
+    var duringStateWrite: (suspend () -> Unit)? = null
+
     val cursors = SyncCursors(entries = "2026-01-01T00:00:00Z", deletions = "2026-01-01T00:00:00Z")
 
     fun api(): LionReaderApi {
@@ -72,24 +78,26 @@ class FakeServer {
 
     fun queueChanges(
         events: List<SyncEvent> = emptyList(),
+        times: Int = 1,
         deletions: List<String> = emptyList(),
         resyncRequired: Boolean = false,
-    ) {
-        changes.addLast(
-            SyncChanges(
-                events =
-                    events.map {
-                        ApiJson.encodeToJsonElement(SyncEvent.serializer(), it).jsonObject
-                    },
-                hasMore = false,
-                cursors = cursors.copy(entries = "2026-02-01T00:00:00Z"),
-                deletions = deletions.map { Deletion(it, "2026-02-01T00:00:00Z") },
-                resyncRequired = resyncRequired,
+    ) =
+        repeat(times) {
+            changes.addLast(
+                SyncChanges(
+                    events =
+                        events.map {
+                            ApiJson.encodeToJsonElement(SyncEvent.serializer(), it).jsonObject
+                        },
+                    hasMore = false,
+                    cursors = cursors.copy(entries = "2026-02-01T00:00:00Z"),
+                    deletions = deletions.map { Deletion(it, "2026-02-01T00:00:00Z") },
+                    resyncRequired = resyncRequired,
+                )
             )
-        )
-    }
+        }
 
-    private fun MockRequestHandleScope.handle(request: HttpRequestData) = run {
+    private suspend fun MockRequestHandleScope.handle(request: HttpRequestData) = run {
         requests += request
         val path = request.url.encodedPath.removePrefix("/api/v1")
         when {
@@ -115,6 +123,11 @@ class FakeServer {
             }
             path == "/entries/count" ->
                 json(UnreadCount.serializer(), UnreadCount(entries.values.count { !it.read }))
+            path == "/entries/batch" && batchFailure != null -> {
+                val status = batchFailure!!
+                batchFailure = null
+                respond("{}", status, jsonHeaders)
+            }
             path == "/entries/batch" -> {
                 val ids = body(request, GetManyRequest.serializer()).ids
                 json(GetManyResponse.serializer(), GetManyResponse(ids.mapNotNull { entries[it] }))
@@ -140,11 +153,15 @@ class FakeServer {
         }
     }
 
-    private fun MockRequestHandleScope.stateWrite(
+    private suspend fun MockRequestHandleScope.stateWrite(
         ids: List<String>,
         change: (FullEntry) -> FullEntry,
     ) =
         stateWriteFailure?.let { respond("{}", it, jsonHeaders) }
+            ?: duringStateWrite?.let {
+                it()
+                null
+            }
             ?: run {
                 ids.forEach { id -> entries[id]?.let { entries[id] = change(it) } }
                 val states =

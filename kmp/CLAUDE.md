@@ -21,27 +21,38 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   `ANDROID_APP_CERT_SHA256` on the server). Never a custom scheme: any app can
   register one and finish a sign-in under our client id. Refresh tokens rotate
   and the server revokes the family on reuse, so refresh is serialized
-  (`AppAuth`'s mutex; one `AppAuth` per process — the UI, WorkManager and the
-  callback share `AppGraph`) and the new pair is committed before use. Only
+  (`AppAuth`'s mutex; the UI, WorkManager and the callback share one
+  `AppGraph` and so one `AppAuth` — a new one is made only when a signed-out
+  user picks another server) and the new pair is committed before use. Only
   400/401 from the token endpoint sign the user out.
+- **The local store belongs to one sign-in.** Completing a sign-in and signing
+  out both clear it, unsent changes included: a new sign-in may be another
+  account or server, and the app has no account id to tell. (An involuntary
+  sign-out — a dead refresh token — leaves the data until the next sign-in.)
 - **Local state vs. unsent changes.** `entry.read`/`starred` hold the last
   server state; the user's changes live in `outbox_state` (one row per entry
   and field, device timestamp) and win on display through `entry_view`. Unread
   counts are the server's absolute counts plus corrections computed from the
-  outbox at query time (`readAdjustments`), so a server response can overwrite
-  counts without double-counting. A flush deletes an outbox row only if it
+  outbox at query time (each pending entry moves its contribution from server
+  to effective state, `pendingEntryStates`), so a server response can
+  overwrite counts without double-counting. A flush deletes an outbox row only if it
   hasn't changed since it was sent. Mark-all-read is its own outbox row whose
   `before` is a server `fetchedAt` the device had seen.
 - **Sync.** Cursors first, then the initial window (entries, starred, saved,
   subscriptions, tags, counts), then `sync.changes` deltas; each page's data
-  and next cursors commit in one transaction. `deletions` drop entries,
-  `resyncRequired` re-bootstraps without touching the outbox, and a
-  resubscribed feed gets a scoped refetch (its old entries predate the
-  cursor). Outbox requests the server rejects (400/404/422) are dropped so one
+  and next cursors commit in one transaction, and anything a page needs
+  fetched (starred entries not on the device, a resubscribed feed's older
+  entries) is fetched before that commit so a failure retries the page.
+  `deletions` drop entries; `resyncRequired` re-bootstraps, keeping the
+  outbox. Read/starred state comes only from deltas and flush responses, never
+  from body downloads (which could race a flush). A flush is followed by a
+  pull, since mark-all-read's response carries no counts. Outbox requests the server rejects (400/404/422) are dropped so one
   bad item can't stall the queue; anything else is retried.
-- **Retention** (`RetentionPolicy`): entries outside the window go, bodies are
-  capped by size (oldest read first); starred, saved and entries with unsent
-  changes are always kept.
+- **Retention** (`RetentionPolicy`): entries outside the window go, at most N
+  read entries stay, bodies are capped by size (oldest read first); starred,
+  saved and entries with unsent changes are always kept.
+- **Database work never runs on the main thread**: `Reader`'s writes are
+  `suspend` and run on its context (IO in the app).
 - **Reader view.** JavaScript off, no file/content access, no JS bridge, every
   link opens outside the app, bundled fonts served by `WebViewAssetLoader`.
   The body is the server's sanitized HTML, inserted verbatim.

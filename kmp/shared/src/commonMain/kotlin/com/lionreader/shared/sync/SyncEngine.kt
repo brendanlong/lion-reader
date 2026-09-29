@@ -49,13 +49,20 @@ class SyncEngine(
         evict()
     }
 
-    /** Sends unsent changes only (quick, after the user acts). */
-    suspend fun flushOutbox() = mutex.withLock { flush() }
+    /**
+     * Sends unsent changes (quick, after the user acts), then pulls: a mark-all-read answers
+     * without counts, so the pull is what brings the unread counts back in step.
+     */
+    suspend fun flushOutbox() = mutex.withLock {
+        flush()
+        pull()
+    }
 
     /** Downloads one entry's body now (opening an entry the sync hasn't reached). */
     suspend fun ensureContent(entryId: String) {
         if (db.entryQueries.selectById(entryId).executeAsOneOrNull()?.content != null) return
-        fetchBodies(listOf(entryId))
+        val fetched = api.getEntries(listOf(entryId))
+        db.transaction { fetched.forEach { store.storeBody(it, now()) } }
     }
 
     /** Forgets all synced data, e.g. on sign-out. */
@@ -211,29 +218,34 @@ class SyncEngine(
                 continue
             }
             val events = changes.events.mapNotNull(::parseSyncEvent)
-            val missingStarred = mutableListOf<String>()
-            val resubscribed = mutableListOf<String>()
+            // Everything a page needs is fetched before its cursor commits, so
+            // a failure here retries the whole page rather than losing it.
+            val missingStarred =
+                events.filterIsInstance<SyncEvent.EntryStateChanged>().filter {
+                    it.starred && it.entry == null && !store.entryExists(it.entryId)
+                }
+            val starredBodies =
+                if (missingStarred.isEmpty()) emptyList()
+                else api.getEntries(missingStarred.map { it.entryId })
+            // A resubscribed feed's old entries predate the cursor, so no
+            // delta will bring them back.
+            val resubscribed =
+                events.filterIsInstance<SyncEvent.SubscriptionCreated>().flatMap {
+                    api.listEntries(ListFilter.ALL, null, it.subscription.id).items
+                }
+            val time = now()
             db.transaction {
-                for (event in events) apply(event, missingStarred, resubscribed)
+                for (event in events) apply(event)
+                starredBodies.forEach { store.storeBody(it, time) }
+                resubscribed.forEach(store::upsertEntry)
                 changes.deletions.forEach { store.deleteEntry(it.entryId) }
                 store.cursors = changes.cursors
-            }
-            if (missingStarred.isNotEmpty()) fetchBodies(missingStarred)
-            for (subscriptionId in resubscribed) {
-                // A resubscribed feed's old entries predate the cursor, so no
-                // delta will bring them back.
-                val page = api.listEntries(ListFilter.ALL, null, subscriptionId)
-                db.transaction { page.items.forEach(store::upsertEntry) }
             }
             if (!changes.hasMore) return
         }
     }
 
-    private fun apply(
-        event: SyncEvent,
-        missingStarred: MutableList<String>,
-        resubscribed: MutableList<String>,
-    ) {
+    private fun apply(event: SyncEvent) {
         when (event) {
             is SyncEvent.NewEntry -> {
                 event.entry?.let {
@@ -268,6 +280,8 @@ class SyncEngine(
                         published,
                         event.entryId,
                     )
+                    // The body may have changed too; download it again.
+                    db.entryQueries.dropContent(event.entryId)
                 }
             is SyncEvent.EntryStateChanged -> {
                 val entry = event.entry
@@ -295,7 +309,6 @@ class SyncEngine(
                             event.read,
                             event.starred,
                         )
-                    event.starred -> missingStarred += event.entryId
                 }
                 store.applyCounts(event.counts)
             }
@@ -314,7 +327,6 @@ class SyncEngine(
                     )
                     counts?.let(store::applyCounts)
                 }
-                resubscribed += event.subscription.id
             }
             is SyncEvent.SubscriptionUpdated -> {
                 db.subscriptionQueries.updateSubscriptionTitle(
@@ -337,29 +349,32 @@ class SyncEngine(
 
     private suspend fun downloadContent() {
         val budget = policy().contentBudgetBytes
-        while (db.entryQueries.contentSize().executeAsOne() < budget) {
+        var size = db.entryQueries.contentSize().executeAsOne()
+        while (size < budget) {
             val ids = db.entryQueries.selectMissingContent(CONTENT_BATCH.toLong()).executeAsList()
             if (ids.isEmpty()) return
-            fetchBodies(ids)
+            size += fetchBodies(ids)
         }
     }
 
-    private suspend fun fetchBodies(ids: List<String>) {
+    /** Returns the characters of body stored. */
+    private suspend fun fetchBodies(ids: List<String>): Long {
         val fetched = api.getEntries(ids)
         val time = now()
         db.transaction {
-            fetched.forEach { store.upsertEntry(it, time) }
+            fetched.forEach { store.storeBody(it, time) }
             // Asked for but not returned: the user can no longer see it.
             val returned = fetched.map { it.id }.toSet()
             ids.filterNot { it in returned }.forEach(store::deleteEntry)
         }
+        return fetched.sumOf { (it.displayContent ?: "").length.toLong() }
     }
 
     private fun evict() {
         val policy = policy()
         db.transaction {
             db.entryQueries.evictOutsideWindow(now() - policy.windowMillis)
-            db.entryQueries.evictBeyondCount(policy.maxEntries.toLong())
+            db.entryQueries.evictBeyondCount(policy.maxReadEntries.toLong())
             var size = db.entryQueries.contentSize().executeAsOne()
             if (size > policy.contentBudgetBytes) {
                 for (candidate in db.entryQueries.contentEvictionCandidates().executeAsList()) {

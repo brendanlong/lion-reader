@@ -15,7 +15,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -75,12 +74,18 @@ class MainActivity : ComponentActivity() {
             signInError =
                 try {
                     graph.session.auth.completeAuthorization(data.toString(), pending)
+                    // The local store belongs to whoever was signed in before
+                    // (possibly another account or server); start clean.
+                    graph.session.sync.reset()
                     SyncScheduler.syncNow(this@MainActivity)
                     null
                 } catch (e: AuthException) {
                     e.message
                 } catch (e: java.io.IOException) {
                     "Couldn't reach the server"
+                } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    "Sign-in failed"
                 }
         }
     }
@@ -103,7 +108,6 @@ class MainActivity : ComponentActivity() {
             return
         }
         val backStack = remember { mutableStateListOf<Any>(HomeKey) }
-        val coroutines = rememberCoroutineScope()
         val home = viewModel { HomeViewModel(graph) }
         NavDisplay(
             backStack = backStack,
@@ -124,14 +128,7 @@ class MainActivity : ComponentActivity() {
                         SettingsScreen(
                             graph,
                             onBack = { backStack.removeLastOrNull() },
-                            onSignOut = {
-                                coroutines.launch {
-                                    SyncScheduler.cancelAll(this@MainActivity)
-                                    graph.session.sync.reset()
-                                    graph.session.auth.signOut()
-                                    SyncScheduler.schedulePeriodic(this@MainActivity)
-                                }
-                            },
+                            onSignOut = graph::signOut,
                         )
                     }
                 },

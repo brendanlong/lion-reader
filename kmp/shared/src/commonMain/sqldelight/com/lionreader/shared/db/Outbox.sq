@@ -51,15 +51,12 @@ DELETE FROM outbox_mark_all WHERE id = ?;
 countMarkAll:
 SELECT count(*) FROM outbox_mark_all;
 
--- Unread-count corrections for unsent read changes, relative to the server's
--- state of each entry.
-readAdjustments:
-SELECT e.subscription_id, e.type, COALESCE(s.value, e.starred) AS starred,
-  CASE WHEN o.value = 1 THEN -1 ELSE 1 END AS delta
-FROM outbox_state o
-JOIN entry e ON e.id = o.entry_id
-LEFT JOIN outbox_state s ON s.entry_id = o.entry_id AND s.field = 'starred'
-WHERE o.field = 'read' AND o.value != e.read;
+-- Server vs. effective state of every entry with an unsent change, from which
+-- the unread-count corrections are computed (see Reader.navigation).
+pendingEntryStates:
+SELECT subscription_id, type, read, starred, effective_read, effective_starred
+FROM entry_view
+WHERE id IN (SELECT entry_id FROM outbox_state);
 
 deleteAllStates:
 DELETE FROM outbox_state;

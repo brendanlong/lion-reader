@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 const val DEFAULT_SERVER_URL = "https://lionreader.com"
 
@@ -73,6 +74,19 @@ class AppGraph(private val context: Context) {
         Reader(database, System::currentTimeMillis, Dispatchers.IO) {
             SyncScheduler.flushSoon(context)
         }
+
+    /**
+     * Revokes and forgets the session, then clears the local store. Runs in the app's scope so
+     * leaving the screen can't cancel the revocation.
+     */
+    fun signOut() {
+        scope.launch {
+            SyncScheduler.cancelAll(context)
+            session.auth.signOut()
+            session.sync.reset()
+            SyncScheduler.schedulePeriodic(context)
+        }
+    }
 
     /** Only while signed out: the server is part of the sign-in identity. */
     fun setServerUrl(url: String) {

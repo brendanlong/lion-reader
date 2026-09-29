@@ -4,8 +4,8 @@ package com.lionreader.shared.sync
 data class RetentionPolicy(
     /** Entries older than this (by publish time) are dropped. */
     val windowDays: Int = 30,
-    /** Beyond this many entries, the oldest read ones are dropped. */
-    val maxEntries: Int = 3000,
+    /** At most this many read entries are kept, newest first. */
+    val maxReadEntries: Int = 2000,
     /** Article bodies beyond this total are dropped, oldest read first. */
     val contentBudgetBytes: Long = 100L * 1024 * 1024,
     /** Caps each list the first download pulls (all, starred, saved). */

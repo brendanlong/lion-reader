@@ -36,19 +36,27 @@ object SyncScheduler {
             .enqueueUniquePeriodicWork(PERIODIC, ExistingPeriodicWorkPolicy.KEEP, request)
     }
 
-    fun flushSoon(context: Context) = enqueue(context, FLUSH, fullSync = false)
+    // A flush already running finishes; one more queues behind it and sends
+    // whatever accumulated meanwhile.
+    fun flushSoon(context: Context) =
+        enqueue(context, FLUSH, fullSync = false, ExistingWorkPolicy.APPEND_OR_REPLACE)
 
-    fun syncNow(context: Context) = enqueue(context, NOW, fullSync = true)
+    fun syncNow(context: Context) =
+        enqueue(context, NOW, fullSync = true, ExistingWorkPolicy.REPLACE)
 
-    private fun enqueue(context: Context, name: String, fullSync: Boolean) {
+    private fun enqueue(
+        context: Context,
+        name: String,
+        fullSync: Boolean,
+        policy: ExistingWorkPolicy,
+    ) {
         val request =
             OneTimeWorkRequestBuilder<SyncWorker>()
                 .setConstraints(online)
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
                 .setInputData(workDataOf(FULL_SYNC to fullSync))
                 .build()
-        WorkManager.getInstance(context)
-            .enqueueUniqueWork(name, ExistingWorkPolicy.REPLACE, request)
+        WorkManager.getInstance(context).enqueueUniqueWork(name, policy, request)
     }
 
     fun cancelAll(context: Context) = WorkManager.getInstance(context).cancelAllWork()
@@ -67,10 +75,13 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 session.sync.flushOutbox()
             }
             Result.success()
-        } catch (e: java.io.IOException) {
-            Result.retry()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: com.lionreader.shared.api.ApiException) {
             if (e.status == 0) Result.failure() else Result.retry()
+        } catch (e: Exception) {
+            // Network, token endpoint, unexpected responses: try again later.
+            Result.retry()
         }
     }
 }
