@@ -33,9 +33,6 @@ pub struct ExtractedArticle {
     pub title: String,
     /// Author byline, when one was found.
     pub byline: Option<String>,
-    /// Result of the fast is-probably-readable heuristic (informational —
-    /// extraction ran regardless, matching the old cleanContent behavior).
-    pub probably_readable: bool,
 }
 
 fn build_config(options: Option<&ExtractOptions>) -> Config {
@@ -102,7 +99,6 @@ fn extract_inner(html: &str, options: Option<&ExtractOptions>) -> Result<Option<
     if exceeds_max_depth(&reader) {
         return Ok(None);
     }
-    let probably_readable = reader.is_probably_readable();
     match reader.parse() {
         Ok(article) => Ok(Some(ExtractedArticle {
             content: article.content.to_string(),
@@ -110,7 +106,6 @@ fn extract_inner(html: &str, options: Option<&ExtractOptions>) -> Result<Option<
             excerpt: article.excerpt,
             title: article.title,
             byline: article.byline,
-            probably_readable,
         })),
         // Extraction failure (no main content found) is an expected outcome,
         // not an error: the caller falls back to the unclean content.

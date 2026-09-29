@@ -21,11 +21,6 @@ export interface ExtractedArticle {
   title: string;
   /** Author byline, when one was found (key absent otherwise). */
   byline?: string;
-  /**
-   * Result of the fast is-probably-readable heuristic (informational —
-   * extraction ran regardless, matching the old cleanContent behavior).
-   */
-  probablyReadable: boolean;
 }
 
 /**

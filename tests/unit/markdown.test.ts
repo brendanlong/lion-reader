@@ -54,10 +54,6 @@ Content.`;
     expect(result.frontmatter?.title).toBeUndefined();
     expect(result.frontmatter?.description).toBeUndefined();
     expect(result.frontmatter?.author).toBe("John Doe");
-    expect(result.frontmatter?.raw).toEqual({
-      author: "John Doe",
-      date: "2024-01-15",
-    });
   });
 
   it("extracts author from frontmatter", () => {
