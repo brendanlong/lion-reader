@@ -237,7 +237,6 @@ ALTER TABLE ONLY public.entries ALTER COLUMN full_content_original SET COMPRESSI
 ALTER TABLE ONLY public.entries ALTER COLUMN full_content_cleaned SET COMPRESSION lz4;
 
 CREATE SEQUENCE public.entries_greader_item_id_seq
-    AS bigint
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -245,14 +244,6 @@ CREATE SEQUENCE public.entries_greader_item_id_seq
     CACHE 1;
 
 ALTER SEQUENCE public.entries_greader_item_id_seq OWNED BY public.entries.greader_item_id;
-
-CREATE SEQUENCE public.greader_id_seq
-    AS bigint
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
 
 CREATE TABLE public.entry_summaries (
     id uuid NOT NULL,
@@ -269,6 +260,13 @@ CREATE TABLE public.entry_summaries (
     prompt_hash text
 );
 ALTER TABLE ONLY public.entry_summaries ALTER COLUMN summary_text SET COMPRESSION lz4;
+
+CREATE SEQUENCE public.greader_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
 
 CREATE TABLE public.feeds (
     id uuid NOT NULL,
@@ -446,13 +444,13 @@ CREATE TABLE public.sessions (
     id uuid NOT NULL,
     user_id uuid NOT NULL,
     token_hash text NOT NULL,
-    scopes text[],
     user_agent text,
     ip_address text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     expires_at timestamp with time zone NOT NULL,
     revoked_at timestamp with time zone,
-    last_active_at timestamp with time zone DEFAULT now() NOT NULL
+    last_active_at timestamp with time zone DEFAULT now() NOT NULL,
+    scopes text[]
 );
 
 CREATE TABLE public.subscription_tags (
@@ -488,10 +486,10 @@ CREATE TABLE public.tags (
 );
 
 CREATE TABLE public.user_entries (
-    user_id uuid NOT NULL,
-    entry_id uuid NOT NULL,
-    read boolean DEFAULT false NOT NULL,
-    starred boolean DEFAULT false NOT NULL,
+    user_id uuid CONSTRAINT user_entry_states_user_id_not_null NOT NULL,
+    entry_id uuid CONSTRAINT user_entry_states_entry_id_not_null NOT NULL,
+    read boolean DEFAULT false CONSTRAINT user_entry_states_read_not_null NOT NULL,
+    starred boolean DEFAULT false CONSTRAINT user_entry_states_starred_not_null NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     read_changed_at timestamp with time zone,
     starred_changed_at timestamp with time zone DEFAULT now() NOT NULL,
