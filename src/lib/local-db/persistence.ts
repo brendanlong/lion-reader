@@ -1,12 +1,7 @@
 /**
- * Local persistence for the entry store: an IndexedDB database per user that
- * mirrors the synced layer of the store's collections, so entries and list
- * membership survive reloads (see "Local Persistence" in src/FRONTEND_STATE.md).
- *
- * Only server data is stored (never optimistic state), and everything loaded
- * from it is revalidated by the fetches that would happen anyway, so it is a
- * startup cache: losing it, or a write that doesn't land, only costs speed.
- * That's why writes are fire-and-forget and failures are logged, not thrown.
+ * The per-user IndexedDB database behind local persistence of the entry store
+ * ("Local Persistence" in src/FRONTEND_STATE.md). Writes are fire-and-forget
+ * and failures are logged, not thrown: the database is a startup cache.
  */
 
 const DATABASE_PREFIX = "lion-reader-local-";
@@ -28,9 +23,11 @@ export interface ListFetch {
 }
 
 export interface LocalPersistence {
+  userId: string;
   loadAll: <T>(store: PersistedStoreName) => Promise<T[]>;
   put: (store: PersistedStoreName, rows: object[]) => void;
   delete: (store: PersistedStoreName, keys: string[]) => void;
+  close: () => void;
 }
 
 function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {
@@ -44,9 +41,13 @@ function databaseName(userId: string): string {
   return `${DATABASE_PREFIX}${userId}`;
 }
 
-/** Whether this browser can persist at all (no IndexedDB in some private modes). */
+/**
+ * Whether this browser can persist. Deleting on sign-out enumerates databases
+ * with `indexedDB.databases()`, so a browser without it (Firefox < 126) must
+ * not persist at all: it couldn't be relied on to delete.
+ */
 export function isLocalPersistenceSupported(): boolean {
-  return typeof indexedDB !== "undefined";
+  return typeof indexedDB !== "undefined" && typeof indexedDB.databases === "function";
 }
 
 /**
@@ -82,6 +83,7 @@ export async function openLocalPersistence(userId: string): Promise<LocalPersist
   };
 
   return {
+    userId,
     loadAll: async <T>(store: PersistedStoreName): Promise<T[]> => {
       const transaction = db.transaction(store, "readonly");
       return (await requestToPromise(transaction.objectStore(store).getAll())) as T[];
@@ -98,13 +100,12 @@ export async function openLocalPersistence(userId: string): Promise<LocalPersist
         for (const key of keys) objectStore.delete(key);
       });
     },
+    close: () => db.close(),
   };
 }
 
 async function deleteDatabases(shouldDelete: (name: string) => boolean): Promise<void> {
-  // `databases()` is missing only in browsers too old to matter here; without
-  // it there is nothing to enumerate.
-  if (!isLocalPersistenceSupported() || typeof indexedDB.databases !== "function") return;
+  if (!isLocalPersistenceSupported()) return;
   const databases = await indexedDB.databases();
   await Promise.all(
     databases

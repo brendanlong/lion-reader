@@ -18,11 +18,13 @@
  * for the module's lifetime, so each flag is exercised by exactly one test.
  */
 
+import "fake-indexeddb/auto";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { waitFor } from "@testing-library/react";
 import { TRPCClientError } from "@trpc/client";
 import { trpc } from "@/lib/trpc/client";
 import { AuthErrorHandler } from "@/components/app/AuthErrorHandler";
+import { openLocalPersistence } from "@/lib/local-db/persistence";
 import { renderWithTrpc } from "../../../utils/component-test-helpers";
 
 /** A TRPCClientError whose `.data` matches what the errorFormatter would produce. */
@@ -55,7 +57,8 @@ afterEach(() => {
 });
 
 describe("AuthErrorHandler", () => {
-  it("redirects to /login on an UNAUTHORIZED response, preserving the return path", async () => {
+  it("redirects to /login on an UNAUTHORIZED response, preserving the return path, after deleting local data", async () => {
+    await openLocalPersistence("user-1");
     renderWithTrpc(
       <>
         <Trigger />
@@ -73,6 +76,7 @@ describe("AuthErrorHandler", () => {
     await waitFor(() => {
       expect(window.location.href).toBe(`/login?redirect=${encodeURIComponent("/all")}`);
     });
+    expect(await indexedDB.databases()).toEqual([]);
   });
 
   it("redirects to /complete-signup on SIGNUP_CONFIRMATION_REQUIRED", async () => {

@@ -34,6 +34,8 @@ export interface LocalDb {
   lists: EntryLists;
   /** Set once local persistence is attached; the store is memory-only until then. */
   persistence: LocalPersistence | null;
+  /** An attach in progress, so a second one isn't started meanwhile. */
+  attaching: Promise<void> | null;
 }
 
 interface EntriesListData {
@@ -56,7 +58,7 @@ function createLocalDb(): LocalDb {
   });
   rows.collection.createIndex((row) => row.listKey, { indexType: BasicIndex });
   rows.collection.createIndex((row) => row.entryId, { indexType: BasicIndex });
-  return { entries, lists: createEntryLists(rows), persistence: null };
+  return { entries, lists: createEntryLists(rows), persistence: null, attaching: null };
 }
 
 function procedureOf(query: Query): string | undefined {
@@ -178,13 +180,7 @@ const PERSISTED_LIST_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
 
 /**
  * Loads what a previous session persisted into the store, then mirrors every
- * later synced write to `persistence`.
- *
- * Data from this session always wins: stored entries go through the
- * `updatedAt` guard, and a list already fetched this session keeps its own
- * membership. Lists not fetched within the retention window are evicted,
- * along with entries no remaining list references (so an entry opened only
- * from the reader lasts one session).
+ * later synced write ("Local Persistence" in src/FRONTEND_STATE.md).
  */
 export async function attachLocalPersistence(
   db: LocalDb,
@@ -205,6 +201,7 @@ export async function attachLocalPersistence(
   const restoredLists = new Set(
     storedFetches
       .filter((fetch) => now - fetch.fetchedAt < PERSISTED_LIST_RETENTION_MS)
+      .filter((fetch) => !isSearchList(fetch.listKey))
       .map((fetch) => fetch.listKey)
       .filter((listKey) => !db.lists.meta.has(listKey))
   );
@@ -232,16 +229,38 @@ export async function attachLocalPersistence(
     put: (rows) => persistence.put("entries", rows),
     delete: (keys) => persistence.delete("entries", keys),
   });
+  const persistedRows = (rows: ListEntryRow[]) => rows.filter((row) => !isSearchList(row.listKey));
   db.lists.rows.setMirror({
-    put: (rows) => persistence.put("listRows", rows),
+    put: (rows) => persistence.put("listRows", persistedRows(rows)),
     delete: (keys) => persistence.delete("listRows", keys),
   });
-  const recordFetched = (listKey: string) =>
+  const recordFetched = (listKey: string) => {
+    if (isSearchList(listKey)) return;
     persistence.put("listFetches", [{ listKey, fetchedAt: Date.now() } satisfies ListFetch]);
+  };
   db.lists.onFetched = recordFetched;
 
   persistence.put("entries", sessionEntries);
-  persistence.put("listRows", sessionRows);
+  persistence.put("listRows", persistedRows(sessionRows));
   for (const listKey of db.lists.meta.keys()) recordFetched(listKey);
   db.persistence = persistence;
+}
+
+/** Stops mirroring to local persistence; the store carries on in memory. */
+export function detachLocalPersistence(db: LocalDb): void {
+  const noop = { put: () => {}, delete: () => {} };
+  db.entries.setMirror(noop);
+  db.lists.rows.setMirror(noop);
+  db.lists.onFetched = undefined;
+  db.persistence?.close();
+  db.persistence = null;
+}
+
+/**
+ * Search results aren't persisted: their list key holds the query text, and
+ * results for a past search are rarely what the next visit wants first.
+ */
+function isSearchList(listKey: string): boolean {
+  const [filters] = JSON.parse(listKey) as [{ query?: string }];
+  return !!filters.query;
 }

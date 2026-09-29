@@ -23,6 +23,7 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { TRPCClientError } from "@trpc/client";
+import { deleteLocalPersistence } from "@/lib/local-db/persistence";
 
 /** Check if an error is a tRPC UNAUTHORIZED error indicating an invalid session. */
 function isUnauthorizedError(error: unknown): boolean {
@@ -53,8 +54,12 @@ function handleUnauthorizedError() {
     currentPath !== "/" && !currentPath.startsWith("/login")
       ? `?redirect=${encodeURIComponent(currentPath)}`
       : "";
-  // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- deliberate hard nav across an auth boundary (see src/CLAUDE.md)
-  window.location.href = `/login${redirectParam}`;
+  // A dead session is a sign-out boundary like any other: the locally
+  // persisted entry store goes (the same user just re-downloads it).
+  void deleteLocalPersistence().finally(() => {
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- deliberate hard nav across an auth boundary (see src/CLAUDE.md)
+    window.location.href = `/login${redirectParam}`;
+  });
 }
 
 /**

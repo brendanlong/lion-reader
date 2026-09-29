@@ -11,7 +11,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc/client";
 import { createStoredBoolean } from "@/lib/stored-boolean";
 import { useIsHydrated } from "@/lib/hooks/useIsHydrated";
-import { attachLocalPersistence, getLocalDb } from "@/lib/local-db/local-db";
+import {
+  attachLocalPersistence,
+  detachLocalPersistence,
+  getLocalDb,
+} from "@/lib/local-db/local-db";
 import {
   deleteLocalPersistence,
   isLocalPersistenceSupported,
@@ -36,29 +40,41 @@ export function LocalPersistenceProvider({
 
 /**
  * Attaches local persistence to this QueryClient's store once the user is
- * known, if the setting is on. With the kill switch on, deletes whatever an
- * earlier session stored instead.
+ * known, if the setting is on. Otherwise (setting off, or the kill switch on)
+ * deletes whatever is stored, so data never outlives the setting — e.g. a
+ * tab that re-created the database while another was turning the setting off.
  */
 function useAttachLocalPersistence(allowed: boolean): void {
   const queryClient = useQueryClient();
   const enabled = setting.useValue();
+  // The setting reads its default (off) until hydration finishes; acting on
+  // that would delete the database on every page load.
+  const isHydrated = useIsHydrated();
   const userId = trpc.auth.me.useQuery(undefined, { retry: false }).data?.user.id;
 
   useEffect(() => {
-    if (!allowed) {
+    if (!isHydrated) return;
+    if (!allowed || !enabled) {
       void deleteLocalPersistence();
       return;
     }
-    if (!enabled || !userId || !isLocalPersistenceSupported()) return;
+    if (!userId || !isLocalPersistenceSupported()) return;
     const db = getLocalDb(queryClient);
-    if (db.persistence) return;
-    openLocalPersistence(userId)
+    // The cookie is shared by every tab, so this tab's user can change under
+    // it (another tab signed in as someone else); stop writing the previous
+    // user's database and stay in memory until the next page load.
+    if (db.persistence && db.persistence.userId !== userId) {
+      detachLocalPersistence(db);
+      return;
+    }
+    if (db.persistence || db.attaching) return;
+    db.attaching = openLocalPersistence(userId)
       .then((persistence) => attachLocalPersistence(db, persistence))
       .catch((error: unknown) => {
         // Best-effort: without persistence the store simply stays in memory.
         console.warn("Failed to attach local persistence", error);
       });
-  }, [allowed, enabled, userId, queryClient]);
+  }, [isHydrated, allowed, enabled, userId, queryClient]);
 }
 
 export interface LocalPersistenceSetting {

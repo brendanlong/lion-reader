@@ -422,9 +422,11 @@ export default function PrivacyPolicyPage() {
           </li>
           <li>
             <strong>IndexedDB:</strong> If you turn on &quot;Keep entries on this device&quot; (off
-            by default), the titles, summaries and read/starred state of entries in lists
-            you&apos;ve viewed, so they show instantly on your next visit. This stays on your device
-            and is deleted when you sign out or turn the setting off.
+            by default), we store the entries in lists you&apos;ve viewed (title, summary, link,
+            author, feed name, and read/starred state) and which of your feeds and tags those lists
+            were for, so they show instantly on your next visit. Search results are not stored. This
+            stays on your device and is deleted when you sign out, when your session expires, when
+            you delete your account, or when you turn the setting off.
           </li>
         </LegalList>
         <LegalParagraph>

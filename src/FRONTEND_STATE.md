@@ -90,10 +90,13 @@ and a lost write only costs speed. With it off, the same code runs memory-only.
 - **Live inserts** go only to lists fetched this session (`meta`); restored
   lists pick up new entries when they refetch. `members` indexes every row,
   restored or not.
-- **Deletion.** Signing out, deleting the account, and turning the setting off
-  delete every local database before navigating; opening one deletes other
-  users' (a session that merely expired never wiped its own). Toggling reloads
-  the page rather than switching modes under a running app.
+- **Deletion.** Signing out, deleting the account, the expired-session redirect
+  and turning the setting off delete every local database before navigating,
+  and every page load with the setting off deletes them again (a tab that was
+  mid-attach could have re-created one). Opening one deletes other users'.
+  Toggling reloads the page rather than switching modes under a running app.
+  The rules are in SECURITY.md (cross-user isolation).
+- **Search results** aren't persisted (their list key holds the query text).
 - **Kill switch.** `LOCAL_PERSISTENCE_DISABLED=true` hides the setting and
   makes every client delete its databases on the next page load.
 - **Tabs** each mirror their own writes into the shared database, so it can

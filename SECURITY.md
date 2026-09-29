@@ -187,6 +187,13 @@ Integer IDs) · **Code:** `src/server/services/`, `migrations/schema.sql` (views
 - Unread counts come from per-user denormalized counters, not scans of shared rows.
 - AI summaries are keyed `(user_id, content_hash)`; narration is a shared cache of
   a deterministic transform of **public** content only.
+- **Client data that outlives the page** (local persistence of the entry store,
+  `src/lib/local-db/persistence.ts`) must be keyed per user and deleted at every
+  auth boundary: databases are named for the user, opening one deletes any other
+  user's, and sign-out, account deletion and the expired-session redirect
+  (`AuthErrorHandler`) delete them all before navigating. A tab whose user changes
+  under it stops writing (`detachLocalPersistence`). Browsers that can't enumerate
+  databases don't persist, since they couldn't be relied on to delete.
 
 ## 8. Companion APIs (Wallabag, Google Reader, MCP, save extensions)
 

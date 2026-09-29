@@ -185,6 +185,39 @@ describe("attachLocalPersistence", () => {
     expect(storedIds).toEqual(["kept"]);
   });
 
+  it("a restored list's refetch drops what the server no longer returns, on disk too", async () => {
+    const a = makeEntry("a", "2024-06-01");
+    const gone = makeEntry("gone", "2024-06-02");
+    await storePreviousSession("user-1", {
+      entries: [a, gone],
+      rows: [listRow(ALL, a), listRow(ALL, gone)],
+      fetches: [{ listKey: entryListKey(ALL), fetchedAt: Date.now() }],
+    });
+
+    const { result, queryClient, attach } = renderLists();
+    const persistence = await openLocalPersistence("user-1");
+    await attach(persistence);
+    await waitFor(() => expect(result.current.all.map((e) => e.id)).toEqual(["gone", "a"]));
+
+    act(() => seedList(queryClient, ALL, [a]));
+
+    await waitFor(() => expect(result.current.all.map((e) => e.id)).toEqual(["a"]));
+    const storedRows = await persistence.loadAll<ListEntryRow>("listRows");
+    expect(storedRows.map((row) => row.entryId)).toEqual(["a"]);
+  });
+
+  it("does not persist search results", async () => {
+    const search = { ...ALL, unreadOnly: false, query: "secret" };
+    const { queryClient, attach } = renderLists();
+    const persistence = await openLocalPersistence("user-1");
+    await attach(persistence);
+
+    act(() => seedList(queryClient, search, [makeEntry("hit", "2024-06-01")]));
+
+    expect(await persistence.loadAll("listRows")).toEqual([]);
+    expect(await persistence.loadAll("listFetches")).toEqual([]);
+  });
+
   it("keeps a restored list's rows when its query is garbage-collected", async () => {
     const { result, queryClient, attach } = renderLists();
     await attach(await openLocalPersistence("user-1"));
