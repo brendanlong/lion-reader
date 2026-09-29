@@ -18,7 +18,7 @@ import { useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { EntryPageLayout, TitleSkeleton, TitleText } from "./EntryPageLayout";
 import { EntryContent } from "./EntryContent";
-import { EntryListContainer } from "./EntryListContainer";
+import { EntryListContainer, findAdjacentEntries } from "./EntryListContainer";
 import { FeedSiteLink } from "@/components/feeds/FeedSiteLink";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { NotFoundCard } from "@/components/ui/not-found-card";
@@ -270,21 +270,10 @@ function UnifiedEntriesContentInner() {
   // near the end of the loaded pages is triggered by EntryListContainer, which
   // owns the same query.
   const pages = entriesQuery.data?.pages;
-  const { nextEntryId, previousEntryId } = useMemo(() => {
-    if (!openEntryId || !pages) {
-      return { nextEntryId: undefined, previousEntryId: undefined };
-    }
-    const allEntries = pages.flatMap((page) => page.items);
-    const currentIndex = allEntries.findIndex((e) => e.id === openEntryId);
-    if (currentIndex === -1) {
-      return { nextEntryId: undefined, previousEntryId: undefined };
-    }
-    return {
-      nextEntryId:
-        currentIndex < allEntries.length - 1 ? allEntries[currentIndex + 1].id : undefined,
-      previousEntryId: currentIndex > 0 ? allEntries[currentIndex - 1].id : undefined,
-    };
-  }, [openEntryId, pages]);
+  const { nextEntryId, previousEntryId } = useMemo(
+    () => findAdjacentEntries(pages?.flatMap((page) => page.items) ?? [], openEntryId),
+    [openEntryId, pages]
+  );
 
   // Navigation callbacks - just update URL, React re-renders
   const handleSwipeNext = useMemo(() => {

@@ -1,8 +1,8 @@
 /**
  * RealtimeProvider Component
  *
- * Manages the SSE connection for real-time updates and optionally displays
- * a connection status indicator.
+ * Manages the SSE connection for real-time updates and displays a connection
+ * status indicator.
  *
  * This component should be used in the app layout to enable real-time updates
  * for authenticated users.
@@ -26,12 +26,6 @@ interface RealtimeProviderProps {
    * Used for SSE reconnection and polling mode to avoid missing events.
    */
   initialCursors: SyncCursors;
-
-  /**
-   * Whether to show the connection status indicator.
-   * @default true
-   */
-  showStatusIndicator?: boolean;
 }
 
 /**
@@ -40,7 +34,7 @@ interface RealtimeProviderProps {
  * Wraps the app content and handles:
  * - SSE connection management
  * - React Query cache invalidation on events
- * - Optional connection status indicator
+ * - Connection status indicator
  *
  * @example
  * ```tsx
@@ -58,17 +52,13 @@ interface RealtimeProviderProps {
  * }
  * ```
  */
-export function RealtimeProvider({
-  children,
-  initialCursors,
-  showStatusIndicator = true,
-}: RealtimeProviderProps) {
+export function RealtimeProvider({ children, initialCursors }: RealtimeProviderProps) {
   const { status, reconnect } = useRealtimeUpdates(initialCursors);
 
   return (
     <>
       {children}
-      {showStatusIndicator && <ConnectionStatusIndicator status={status} onReconnect={reconnect} />}
+      <ConnectionStatusIndicator status={status} onReconnect={reconnect} />
     </>
   );
 }

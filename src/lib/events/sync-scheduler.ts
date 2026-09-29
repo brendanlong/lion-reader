@@ -5,9 +5,9 @@
  * concurrently. Without this, overlapping syncs (a poll tick firing while a
  * slow sync is still awaiting `sync.events`, a visibility-triggered sync over an
  * in-flight poll, or the `hasMore` continuation racing a poll) read the same
- * cursors and process the same events twice. Idempotent handlers shrug that off,
- * but delta-based handlers (`new_entry` incrementing unread counts) double-apply,
- * inflating counts until the next absolute-count event corrects them. See #897.
+ * cursors and fetch and process the same events twice. The handlers are
+ * idempotent (absolute counts, inserts deduped by id), so that is wasted
+ * requests and cache churn rather than wrong state. See #897.
  *
  * A naive "skip if already syncing" lock isn't enough: a request that arrives
  * while a sync is running (e.g. the catch-up sync triggered on SSE `open`) must

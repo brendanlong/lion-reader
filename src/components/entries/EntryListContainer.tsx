@@ -40,6 +40,24 @@ interface EntryListContainerProps {
   emptyMessage: string;
 }
 
+/**
+ * The entries either side of the open entry in the loaded list (shared by j/k
+ * navigation here and swipe navigation in UnifiedEntriesContent, so the two
+ * always agree), plus how many loaded entries remain after it.
+ */
+export function findAdjacentEntries(
+  entries: ReadonlyArray<{ id: string }>,
+  openEntryId: string | null
+): { nextEntryId?: string; previousEntryId?: string; distanceToEnd: number } {
+  const currentIndex = openEntryId ? entries.findIndex((e) => e.id === openEntryId) : -1;
+  if (currentIndex === -1) return { distanceToEnd: Infinity };
+  return {
+    nextEntryId: entries[currentIndex + 1]?.id,
+    previousEntryId: entries[currentIndex - 1]?.id,
+    distanceToEnd: entries.length - 1 - currentIndex,
+  };
+}
+
 export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
   const { openEntryId, setOpenEntryId, closeEntry, entryHref } = useEntryUrlState();
   const { showUnreadOnly, sortOrder, toggleShowUnreadOnly } = useUrlViewPreferences();
@@ -91,22 +109,12 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
   // N rows and defeat the memo). See #1081.
   const entries = useMemo(() => data?.pages.flatMap((page) => page.items) ?? [], [data?.pages]);
 
-  // Compute next/previous entry IDs for keyboard navigation
-  // Also compute how close we are to the pagination boundary
-  const { nextEntryId, previousEntryId, distanceToEnd } = useMemo(() => {
-    if (!openEntryId || entries.length === 0) {
-      return { nextEntryId: undefined, previousEntryId: undefined, distanceToEnd: Infinity };
-    }
-    const currentIndex = entries.findIndex((e) => e.id === openEntryId);
-    if (currentIndex === -1) {
-      return { nextEntryId: undefined, previousEntryId: undefined, distanceToEnd: Infinity };
-    }
-    return {
-      nextEntryId: currentIndex < entries.length - 1 ? entries[currentIndex + 1].id : undefined,
-      previousEntryId: currentIndex > 0 ? entries[currentIndex - 1].id : undefined,
-      distanceToEnd: entries.length - 1 - currentIndex,
-    };
-  }, [openEntryId, entries]);
+  // Next/previous entry IDs for keyboard navigation, and how close we are to
+  // the pagination boundary
+  const { nextEntryId, previousEntryId, distanceToEnd } = useMemo(
+    () => findAdjacentEntries(entries, openEntryId),
+    [openEntryId, entries]
+  );
 
   // Trigger pagination when navigating close to the end of loaded entries
   const prevDistanceToEnd = useRef(distanceToEnd);
