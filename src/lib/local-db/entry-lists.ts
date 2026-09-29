@@ -40,6 +40,12 @@ export interface EntryListMeta {
   /** `order` of the last loaded entry (the pagination window's edge). */
   lastOrder: number;
   entryIds: Set<string>;
+  /**
+   * Entries inserted live since the list's last full fetch started. That
+   * fetch read the server before they existed (or became unread), so when it
+   * lands and replaces the list they are kept rather than dropped.
+   */
+  insertedSinceFetch: Set<string>;
 }
 
 export interface EntryLists {
@@ -84,10 +90,16 @@ export function isNewestFirst(input: EntryListFilters): boolean {
   return input.sortOrder !== "oldest";
 }
 
+/** Call when a full (not next-page) fetch of the list starts. */
+export function markEntryListFetchStarted(lists: EntryLists, input: Record<string, unknown>): void {
+  lists.meta.get(entryListKey(input))?.insertedSinceFetch.clear();
+}
+
 /**
  * Records a fetched list. `replace` (initial load, refetch) drops entries the
- * server no longer returned; `append` (next page) keeps everything already in
- * the list, including entries inserted live while the page was loading.
+ * server no longer returned, except those inserted live after the fetch
+ * started; `append` (next page) keeps everything already in the list,
+ * including entries inserted live while the page was loading.
  */
 export function ingestEntryListPages(
   lists: EntryLists,
@@ -110,6 +122,9 @@ export function ingestEntryListPages(
   if (mode === "append" && previous) {
     for (const id of previous.entryIds) entryIds.add(id);
   } else if (previous) {
+    for (const id of previous.insertedSinceFetch) {
+      if (previous.entryIds.has(id)) entryIds.add(id);
+    }
     lists.rows.remove(
       [...previous.entryIds]
         .filter((id) => !entryIds.has(id))
@@ -123,6 +138,7 @@ export function ingestEntryListPages(
     hasMore: pages.at(-1)?.nextCursor !== undefined,
     lastOrder: rows.at(-1)?.order ?? -Infinity,
     entryIds,
+    insertedSinceFetch: mode === "append" && previous ? previous.insertedSinceFetch : new Set(),
   });
 }
 
@@ -206,6 +222,7 @@ export function insertIntoMatchingLists(
     if (meta.hasMore && order > meta.lastOrder) continue;
 
     meta.entryIds.add(entry.id);
+    meta.insertedSinceFetch.add(entry.id);
     rows.push({ key: listEntryKey(listKey, entry.id), listKey, entryId: entry.id, order });
   }
   lists.rows.upsert(rows);

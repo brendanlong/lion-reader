@@ -16,6 +16,7 @@ import { toEntryRow, upsertServerEntries, type EntryRow, type EntryStore } from 
 import {
   ingestEntryListPages,
   insertIntoMatchingLists,
+  markEntryListFetchStarted,
   removeEntryList,
   type EntryListMeta,
   type EntryLists,
@@ -102,6 +103,13 @@ function connectQueryCache(db: LocalDb, queryClient: QueryClient): void {
     }
     if (event.type === "added") {
       ingestQuery(db, query, "replace");
+    } else if (
+      event.type === "updated" &&
+      event.action.type === "fetch" &&
+      !event.action.meta?.fetchMore &&
+      procedureOf(query) === "entries.list"
+    ) {
+      markEntryListFetchStarted(db.lists, inputOf(query));
     } else if (event.type === "updated" && event.action.type === "success") {
       // A next-page fetch appends; anything else (initial fetch, refetch,
       // setQueryData) is the list's complete current membership. `fetchMeta`

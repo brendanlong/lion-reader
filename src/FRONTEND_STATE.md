@@ -22,7 +22,9 @@ the QueryCache and ingests every `entries.list` and `entries.get` result as it
 lands: SSR-hydrated, prefetched, fetched, and `setQueryData`'d data all take the
 same path. `entries.list` pages are written to the entry store and to the list's
 membership; a next-page fetch (`fetchMeta.fetchMore`, not a manual write)
-appends, anything else replaces the list's membership. Removing the query from
+appends, anything else replaces the list's membership — except entries inserted
+live after that fetch started: its server snapshot predates them, so they are
+kept rather than dropped when it lands. Removing the query from
 the cache (gc) drops the list's membership rows. Never write entry state into
 `entries.list` or `entries.get`, or render state from them: their copies are
 only as fresh as their fetch.
