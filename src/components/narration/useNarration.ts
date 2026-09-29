@@ -60,6 +60,10 @@ function cancelPendingPlay(playRequest: { current: number }): void {
   playRequest.current++;
 }
 
+function abandonPendingLoad(loadRequest: { current: number }): void {
+  loadRequest.current++;
+}
+
 // Re-export types for consumers
 export type { UseNarrationConfig, UseNarrationReturn };
 
@@ -286,15 +290,21 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     // generation fails; on success the media-session effects keep it going.
     // Cloud voices prime their own element instead (see CloudAudioPlayer).
     const cloudPlayer = useCloud ? getOrCreateCloudPlayer() : null;
-    let primeGeneration: number | null = null;
+    // Both primed elements are shared across requests, so each release only
+    // takes effect if no newer play() has primed since.
+    let cloudLease: number | null = null;
+    let mediaSessionGeneration: number | null = null;
     if (cloudPlayer) {
-      if (cloudPlayer.getStatus() === "idle") cloudPlayer.prime();
+      if (cloudPlayer.getStatus() === "idle") cloudLease = cloudPlayer.prime();
     } else {
-      primeGeneration = primeMediaSessionAudio();
+      mediaSessionGeneration = primeMediaSessionAudio();
     }
     const releasePrimedAudio = () => {
-      if (cloudPlayer) cloudPlayer.stop();
-      else if (primeGeneration !== null) releasePrimedMediaSessionAudio(primeGeneration);
+      if (cloudPlayer) {
+        if (cloudLease !== null) cloudPlayer.releasePrime(cloudLease);
+      } else if (mediaSessionGeneration !== null) {
+        releasePrimedMediaSessionAudio(mediaSessionGeneration);
+      }
     };
 
     // Generates narration text (client-side, or on the server for LLM
@@ -523,6 +533,10 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     setPrevNarrationResetKey(narrationResetKey);
     setProcessedHtml(null);
     setNarrationText(null);
+    // A load still in flight is abandoned (the effect cleanup below cancels
+    // it), so end its spinner now rather than when the stale request returns.
+    setIsLoading(false);
+    setState((prev) => (prev.status === "loading" ? { ...prev, status: "idle" } : prev));
   }
 
   // Reset per-article refs, and stop/clear playback when the article, voice, or
@@ -540,6 +554,8 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
       streamingPlayerRef.current?.stop();
       streamingPlayerRef.current?.clearCache();
       cancelPendingPlay(playRequestRef);
+      // The abandoned load no longer owns the loading state (reset above).
+      abandonPendingLoad(loadRequestRef);
       cloudPlayerRef.current?.stop();
       cloudPlayerRef.current?.clearCache();
     };

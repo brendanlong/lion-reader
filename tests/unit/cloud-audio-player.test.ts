@@ -278,3 +278,33 @@ describe("CloudAudioPlayer", () => {
     expect(player.getStatus()).toBe("idle");
   });
 });
+
+describe("CloudAudioPlayer prime leases", () => {
+  it("releases a prime whose playback never started", () => {
+    const { audio, player } = setup(["A."]);
+    const lease = player.prime();
+    expect(audio.paused).toBe(false);
+
+    player.releasePrime(lease);
+
+    expect(audio.paused).toBe(true);
+    expect(player.getStatus()).toBe("idle");
+  });
+
+  it("ignores an abandoned request's release once a newer one has primed and started", async () => {
+    // Request A primes, then is abandoned while its narration generates; B
+    // primes and starts playing. A finishing late must not stop B.
+    const { audio, player, respond } = setup(["B."]);
+    const abandoned = player.prime();
+    player.stop(); // the variant toggle / reset that abandoned A
+    player.prime();
+    void player.play();
+    await respond("B.");
+    expect(player.getStatus()).toBe("playing");
+
+    player.releasePrime(abandoned);
+
+    expect(player.getStatus()).toBe("playing");
+    expect(audio.paused).toBe(false);
+  });
+});
