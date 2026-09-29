@@ -228,7 +228,7 @@ export async function generateNarration(
       // Output must echo back every rewritten paragraph for the whole article,
       // and (unlike the old non-reasoning llama-3.1-8b) gpt-oss spends some of
       // this budget on reasoning tokens even at "low" effort. Keep the cap high
-      // so long articles don't truncate into the (uncached, repeatedly-retried)
+      // so long articles don't truncate into the (uncached, retried after a backoff)
       // fallback path. We only pay for tokens actually generated.
       maxTokens: 16000,
     });

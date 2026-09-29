@@ -16,9 +16,11 @@
  *     player splits the narration text — length(map) === length(split).
  */
 
-import { describe, it, expect, beforeEach, afterAll } from "vitest";
+import { describe, it, expect, beforeEach, beforeAll, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { db } from "../../src/server/db";
 import { users, userEntries, narrationContent } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
@@ -27,6 +29,7 @@ import { splitNarrationParagraphs } from "../../src/lib/narration/paragraph-map"
 import { NARRATION_FORMAT_VERSION } from "../../src/lib/narration/constants";
 import { sanitizeEntryHtml } from "../../src/server/html/sanitize";
 import { getOrCreateSavedFeed } from "../../src/server/feed/saved-feed";
+import { encryptApiKey } from "../../src/lib/encryption";
 import {
   createAuthContext,
   createTestEntry,
@@ -362,5 +365,149 @@ describe("narration.generate concurrent placeholder creation", () => {
       .from(narrationContent)
       .where(eq(narrationContent.contentHash, contentHash));
     expect(rows).toHaveLength(1);
+  });
+});
+
+/**
+ * A generate() cache miss calls the LLM, potentially on the server-wide key, so
+ * the procedure is on the expensive rate limit like summarization.generate.
+ */
+describe("narration.generate rate limit", () => {
+  it("rejects a burst beyond the expensive limit", async () => {
+    const userId = await createTestUser({ emailPrefix: "narr" });
+    createdUserIds.push(userId);
+    const contentCleaned = `<p>Rate limited body ${generateUuidv7()}.</p>`;
+    createdNarrationHashes.push(narrationHash(contentCleaned));
+    const entryId = await createVisibleEntry(userId, { contentCleaned });
+    const caller = createCaller(await createAuthContext(userId));
+
+    // Fired together so the bucket (10 burst, 1/sec refill) can't refill mid-run.
+    const results = await Promise.allSettled(
+      Array.from({ length: 15 }, () =>
+        caller.narration.generate({ id: entryId, useLlmNormalization: false })
+      )
+    );
+    const rejections = results.flatMap((r) => (r.status === "rejected" ? [r.reason] : []));
+    expect(rejections.length).toBeGreaterThan(0);
+    for (const reason of rejections) {
+      expect(String(reason)).toContain("Rate limit exceeded");
+    }
+  });
+});
+
+/**
+ * When the model answers but its output is empty or unparseable, the plain-text
+ * fallback is served and nothing is cached — but the failure must still be
+ * recorded, or every replay of the same article bills another LLM call.
+ */
+describe("narration.generate unusable LLM output", () => {
+  let server: Server;
+  let llmRequests = 0;
+  let llmContent = "";
+  const previousBaseUrl = process.env.GROQ_BASE_URL;
+  const previousEncryptionKey = process.env.API_KEY_ENCRYPTION_KEY;
+
+  beforeAll(async () => {
+    process.env.API_KEY_ENCRYPTION_KEY = randomBytes(32).toString("base64");
+    // A stand-in for Groq's OpenAI-compatible endpoint. The SDK reads
+    // GROQ_BASE_URL whenever a per-user client is constructed.
+    server = createServer((req, res) => {
+      req.resume();
+      req.on("end", () => {
+        llmRequests++;
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            id: "chatcmpl-test",
+            object: "chat.completion",
+            created: 0,
+            model: "openai/gpt-oss-120b",
+            choices: [
+              {
+                index: 0,
+                message: { role: "assistant", content: llmContent },
+                finish_reason: "stop",
+              },
+            ],
+          })
+        );
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    process.env.GROQ_BASE_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    if (previousBaseUrl === undefined) delete process.env.GROQ_BASE_URL;
+    else process.env.GROQ_BASE_URL = previousBaseUrl;
+    if (previousEncryptionKey === undefined) delete process.env.API_KEY_ENCRYPTION_KEY;
+    else process.env.API_KEY_ENCRYPTION_KEY = previousEncryptionKey;
+  });
+
+  beforeEach(() => {
+    llmRequests = 0;
+  });
+
+  async function createGroqUser(): Promise<string> {
+    const userId = await createTestUser({ emailPrefix: "narr" });
+    createdUserIds.push(userId);
+    await db
+      .update(users)
+      .set({
+        groqApiKey: encryptApiKey("gsk-test-key"),
+        narrationModel: "groq:openai/gpt-oss-120b",
+      })
+      .where(eq(users.id, userId));
+    return userId;
+  }
+
+  it.each([
+    ["empty", ""],
+    ["unparseable", "this is not JSON"],
+  ])("records a failure on %s output and doesn't re-call the LLM on replay", async (_, content) => {
+    llmContent = content;
+    const userId = await createGroqUser();
+    const contentCleaned = `<p>LLM failure body ${generateUuidv7()}.</p>`;
+    const contentHash = narrationHash(contentCleaned);
+    createdNarrationHashes.push(contentHash);
+    const entryId = await createVisibleEntry(userId, { contentCleaned });
+    const caller = createCaller(await createAuthContext(userId));
+
+    const first = await caller.narration.generate({ id: entryId });
+    expect(llmRequests).toBe(1);
+    expect(first.source).toBe("fallback");
+    expect(first.narration).toContain("LLM failure body");
+
+    const [row] = await db
+      .select()
+      .from(narrationContent)
+      .where(eq(narrationContent.contentHash, contentHash));
+    expect(row.contentNarration).toBeNull();
+    expect(row.errorAt).not.toBeNull();
+    expect(row.error).toBeTruthy();
+
+    // A replay within the backoff window serves the fallback without billing
+    // another LLM call.
+    const second = await caller.narration.generate({ id: entryId });
+    expect(llmRequests).toBe(1);
+    expect(second.source).toBe("fallback");
+    expect(second.narration).toBe(first.narration);
+  });
+
+  it("caches a usable response (the fake endpoint reaches the LLM path)", async () => {
+    const userId = await createGroqUser();
+    const contentCleaned = `<p>LLM success body ${generateUuidv7()}.</p>`;
+    createdNarrationHashes.push(narrationHash(contentCleaned));
+    llmContent = JSON.stringify({ paragraphs: [{ id: 0, text: "Rewritten by the model." }] });
+    const entryId = await createVisibleEntry(userId, { contentCleaned });
+    const caller = createCaller(await createAuthContext(userId));
+
+    const first = await caller.narration.generate({ id: entryId });
+    expect(first.source).toBe("llm");
+    expect(first.narration).toBe("Rewritten by the model.");
+    const second = await caller.narration.generate({ id: entryId });
+    expect(second.cached).toBe(true);
+    expect(llmRequests).toBe(1);
   });
 });
