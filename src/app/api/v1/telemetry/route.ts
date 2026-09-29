@@ -16,6 +16,7 @@
 
 import { z } from "zod";
 import { TTS_PROVIDER_IDS } from "@/lib/narration/types";
+import { isEnhancedVoice } from "@/lib/narration/enhanced-voices";
 import {
   metricsEnabled,
   trackEnhancedVoiceSelected,
@@ -32,11 +33,18 @@ import {
 // ============================================================================
 
 /**
+ * voiceId becomes a Prometheus label on an unauthenticated endpoint, so only
+ * known voices are accepted — a free-form string would let anyone grow label
+ * cardinality (and server memory) without bound.
+ */
+const voiceIdSchema = z.string().refine(isEnhancedVoice, { message: "Unknown voice" });
+
+/**
  * Schema for enhanced voice selected event.
  */
 const enhancedVoiceSelectedSchema = z.object({
   event: z.literal("enhanced_voice_selected"),
-  voiceId: z.string().min(1),
+  voiceId: voiceIdSchema,
 });
 
 /**
@@ -44,7 +52,7 @@ const enhancedVoiceSelectedSchema = z.object({
  */
 const enhancedVoiceDownloadCompletedSchema = z.object({
   event: z.literal("enhanced_voice_download_completed"),
-  voiceId: z.string().min(1),
+  voiceId: voiceIdSchema,
 });
 
 /**
@@ -52,7 +60,7 @@ const enhancedVoiceDownloadCompletedSchema = z.object({
  */
 const enhancedVoiceDownloadFailedSchema = z.object({
   event: z.literal("enhanced_voice_download_failed"),
-  voiceId: z.string().min(1),
+  voiceId: voiceIdSchema,
   errorType: z.enum(["network", "storage", "unknown"]),
 });
 
@@ -105,14 +113,6 @@ type TelemetryEvent = z.infer<typeof telemetryEventSchema>;
  * No authentication required - events are anonymous.
  */
 export async function POST(req: Request): Promise<Response> {
-  // If metrics are disabled, accept but do nothing
-  if (!metricsEnabled) {
-    return new Response(JSON.stringify({ ok: true }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
   // Parse and validate the request body
   let body: unknown;
   try {
@@ -150,6 +150,14 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   const event: TelemetryEvent = result.data;
+
+  // If metrics are disabled, accept but do nothing
+  if (!metricsEnabled) {
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
 
   // Record the metric based on event type
   switch (event.event) {
