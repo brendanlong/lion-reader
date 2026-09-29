@@ -6,16 +6,16 @@
  * - Keyboard media keys (play/pause, prev/next)
  * - Headphone / Bluetooth device buttons
  *
- * Browser voices (Web Speech API) and Piper enhanced voices (Web Audio API)
- * don't register as media playback, so the OS won't show media controls just
- * because we set `mediaSession.metadata`. For those, a silent looping audio
- * element (see `./silent-audio`) is played while narration is active to make
- * the browser treat narration as "media", which is what surfaces the controls
- * and routes hardware buttons to our action handlers. Cloud voices play through
- * their own media element (see `./media-source-player`) and skip the silent loop.
+ * Browser voices (Web Speech API) don't register as media playback, so the OS
+ * won't show media controls just because we set `mediaSession.metadata`. For
+ * them, a silent looping audio element (see `./silent-audio`) is played while
+ * narration is active to make the browser treat narration as "media", which is
+ * what surfaces the controls and routes hardware buttons to our action
+ * handlers. Piper and cloud voices play through their own media element (see
+ * `./media-source-player`) and skip the silent loop.
  *
  * This module is provider-agnostic: callers pass plain control callbacks, so the
- * same integration works for both browser voices and Piper TTS.
+ * same integration works for every voice.
  *
  * Usage:
  * ```typescript

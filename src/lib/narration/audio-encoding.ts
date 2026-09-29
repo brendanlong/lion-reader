@@ -156,6 +156,12 @@ export async function decodeToPcm(bytes: Uint8Array): Promise<PcmAudio> {
   return { samples, sampleRate: buffer.sampleRate };
 }
 
+export function withTrailingSilence(audio: PcmAudio, seconds: number): PcmAudio {
+  const samples = new Float32Array(audio.samples.length + Math.round(seconds * audio.sampleRate));
+  samples.set(audio.samples);
+  return { samples, sampleRate: audio.sampleRate };
+}
+
 export function base64ToBytes(base64: string): Uint8Array<ArrayBuffer> {
   return Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
 }

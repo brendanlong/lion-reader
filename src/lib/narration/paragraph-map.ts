@@ -41,7 +41,7 @@ export interface ParagraphMapEntry {
  * Splits narration text into paragraphs exactly as the playback engines do.
  *
  * This MUST stay identical to the splitting in `ArticleNarrator.loadArticle`,
- * `StreamingAudioPlayer` (fed via `splitIntoParagraphs`), and
+ * `MediaSourcePlayer` (fed via `splitIntoParagraphs`), and
  * `useNarrationTypes.splitIntoParagraphs` — they all consume the output of this
  * module's `buildAlignedNarration`, so a divergent split would break the
  * paragraph-index ↔ map alignment.

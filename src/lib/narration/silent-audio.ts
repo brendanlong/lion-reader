@@ -5,11 +5,11 @@
  * controls — the lock-screen / notification widget, and hardware/Bluetooth
  * play-pause buttons — while the browser believes an `HTMLMediaElement` is
  * actively playing. Browser voices play through the Web Speech API
- * (`speechSynthesis`) and Piper through the Web Audio API
- * (`AudioBufferSourceNode`), neither of which registers as media playback.
- * (Cloud voices have their own media element and don't use this.) Without a real media element,
- * setting `mediaSession.metadata` and action handlers has no visible effect: the
- * notification never appears and Bluetooth buttons aren't routed to us.
+ * (`speechSynthesis`), which doesn't register as media playback. (Piper and
+ * cloud voices have their own media element and don't use this.) Without a
+ * real media element, setting `mediaSession.metadata` and action handlers has
+ * no visible effect: the notification never appears and Bluetooth buttons
+ * aren't routed to us.
  *
  * The standard workaround is to play a silent, looping audio element alongside
  * the narration. That element is what the browser treats as "the media", so the

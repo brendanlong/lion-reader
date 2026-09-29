@@ -33,8 +33,15 @@ import {
 import { useMediaSession } from "./useMediaSession";
 import { trackNarrationPlaybackStarted } from "@/lib/telemetry";
 import { getPiperTTSProvider } from "@/lib/narration/piper-tts-provider";
-import { MediaSourcePlayer } from "@/lib/narration/media-source-player";
-import { base64ToBytes, decodeToPcm } from "@/lib/narration/audio-encoding";
+import {
+  MediaSourcePlayer,
+  splitIntoSentenceChunks,
+  splitIntoSpeechChunks,
+  type PlaybackPosition,
+  type PlaybackStatus,
+  type PlayerCallbacks,
+} from "@/lib/narration/media-source-player";
+import { base64ToBytes, decodeToPcm, withTrailingSilence } from "@/lib/narration/audio-encoding";
 import { MAX_CLOUD_SPEECH_CHARS } from "@/lib/narration/constants";
 import { isEnhancedVoice } from "@/lib/narration/enhanced-voices";
 import {
@@ -42,12 +49,6 @@ import {
   type ParagraphMapEntry,
 } from "@/lib/narration/client-paragraph-ids";
 import { narrationParagraphForElement } from "@/lib/narration/paragraph-map";
-import {
-  StreamingAudioPlayer,
-  type PlaybackPosition,
-  type PlaybackStatus,
-  type StreamingPlayerCallbacks,
-} from "@/lib/narration/streaming-audio-player";
 import {
   type UseNarrationConfig,
   type UseNarrationReturn,
@@ -96,9 +97,8 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   // Refs
   const narratorRef = useRef<ArticleNarrator | null>(null);
 
-  // Streaming audio player for Piper TTS (sentence-level buffering)
-  const streamingPlayerRef = useRef<StreamingAudioPlayer | null>(null);
-  // Media Source player for cloud voices
+  // Piper and cloud voices each stream through their own Media Source player.
+  const piperPlayerRef = useRef<MediaSourcePlayer | null>(null);
   const cloudPlayerRef = useRef<MediaSourcePlayer | null>(null);
   // Bumped by pause/stop/article changes, so a play() still generating
   // narration when the user moves on doesn't store or start it (see play()).
@@ -124,11 +124,19 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   const generateMutation = trpc.narration.generate.useMutation();
   const trpcUtils = trpc.useUtils();
 
-  // The cloud player outlives renders, so it reads the current model/voice here.
-  const cloudVoiceRef = useRef({ model: settings.cloudModelId, voice: settings.voiceId });
+  // The players outlive renders, so they read the current voice settings here.
+  const voiceRef = useRef({
+    model: settings.cloudModelId,
+    voice: settings.voiceId,
+    sentenceGapSeconds: settings.sentenceGapSeconds,
+  });
   useEffect(() => {
-    cloudVoiceRef.current = { model: settings.cloudModelId, voice: settings.voiceId };
-  }, [settings.cloudModelId, settings.voiceId]);
+    voiceRef.current = {
+      model: settings.cloudModelId,
+      voice: settings.voiceId,
+      sentenceGapSeconds: settings.sentenceGapSeconds,
+    };
+  }, [settings.cloudModelId, settings.voiceId, settings.sentenceGapSeconds]);
 
   // Initialize narrator instance (for browser voices)
   useEffect(() => {
@@ -160,6 +168,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
 
   // Apply user settings when they change
   useEffect(() => {
+    piperPlayerRef.current?.setRate(settings.rate);
     cloudPlayerRef.current?.setRate(settings.rate);
     if (!narratorRef.current || usesBufferedPlayer) return;
 
@@ -187,7 +196,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
 
   // State updates from the Piper and cloud players (same callback shape).
   const bufferedPlayerCallbacks = useMemo(
-    (): StreamingPlayerCallbacks => ({
+    (): PlayerCallbacks => ({
       onStatusChange: (status: PlaybackStatus) => {
         setState((prev) => ({
           ...prev,
@@ -223,45 +232,38 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     []
   );
 
-  /**
-   * Initialize or get the StreamingAudioPlayer for Piper TTS.
-   */
-  const getOrCreateStreamingPlayer = useCallback((): StreamingAudioPlayer => {
-    if (!streamingPlayerRef.current) {
-      const piperProvider = getPiperTTSProvider();
-
-      streamingPlayerRef.current = new StreamingAudioPlayer(
-        // generateAudio
-        (text: string, voiceId: string) => piperProvider.generateAudio(text, voiceId),
-        // playBuffer
-        (buffer: AudioBuffer, options) => piperProvider.playBuffer(buffer, options),
-        // stopPlayback
-        () => piperProvider.stop(),
-        // pausePlayback
-        () => piperProvider.pause(),
-        // resumePlayback
-        () => piperProvider.resume(),
-        // getAudioContext
-        () => piperProvider.getAudioContext()
-      );
-
-      streamingPlayerRef.current.setCallbacks(bufferedPlayerCallbacks);
+  const getOrCreatePiperPlayer = useCallback((): MediaSourcePlayer => {
+    if (!piperPlayerRef.current) {
+      piperPlayerRef.current = new MediaSourcePlayer({
+        synthesize: async (text) => {
+          const { voice, sentenceGapSeconds } = voiceRef.current;
+          if (!voice) throw new Error("No enhanced voice selected");
+          const wav = await getPiperTTSProvider().synthesize(text, voice);
+          const audio = await decodeToPcm(new Uint8Array(await wav.arrayBuffer()));
+          return withTrailingSilence(audio, sentenceGapSeconds);
+        },
+        chunkParagraphs: splitIntoSentenceChunks,
+        // One WASM model on the device's CPU: one sentence at a time.
+        maxConcurrentSyntheses: 1,
+      });
+      piperPlayerRef.current.setCallbacks(bufferedPlayerCallbacks);
     }
-
-    return streamingPlayerRef.current;
+    return piperPlayerRef.current;
   }, [bufferedPlayerCallbacks]);
 
   const getOrCreateCloudPlayer = useCallback((): MediaSourcePlayer => {
     if (!cloudPlayerRef.current) {
       cloudPlayerRef.current = new MediaSourcePlayer({
         synthesize: async (text) => {
+          const { model, voice } = voiceRef.current;
           const result = await trpcUtils.client.narration.synthesize.mutate(
-            { ...cloudVoiceRef.current, text },
+            { model, voice, text },
             { context: { skipBatch: true } }
           );
           return decodeToPcm(base64ToBytes(result.audio));
         },
-        maxChunkChars: MAX_CLOUD_SPEECH_CHARS,
+        chunkParagraphs: (paragraphs) => splitIntoSpeechChunks(paragraphs, MAX_CLOUD_SPEECH_CHARS),
+        maxConcurrentSyntheses: 4,
       });
       cloudPlayerRef.current.setCallbacks(bufferedPlayerCallbacks);
     }
@@ -284,24 +286,24 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     const request = playRequestRef.current;
     const isStale = () => playRequestRef.current !== request;
 
-    // Start the OS media session's silent audio within this user gesture, before
-    // any async narration generation, so the browser grants it while the gesture's
-    // autoplay activation is still valid (issue #410). It's released below if
-    // generation fails; on success the media-session effects keep it going.
-    // Cloud voices prime their own element instead (see MediaSourcePlayer).
-    const cloudPlayer = useCloud ? getOrCreateCloudPlayer() : null;
+    // Start the audio element within this user gesture, before any async
+    // narration generation, so the browser grants it while the gesture's
+    // autoplay activation is still valid (issue #410): Piper and cloud voices
+    // prime their own player's element, browser voices the media session's
+    // silent audio. It's released below if generation fails.
+    const player = usePiper ? getOrCreatePiperPlayer() : useCloud ? getOrCreateCloudPlayer() : null;
     // Both primed elements are shared across requests, so each release only
     // takes effect if no newer play() has primed since.
-    let cloudLease: number | null = null;
+    let playerLease: number | null = null;
     let mediaSessionGeneration: number | null = null;
-    if (cloudPlayer) {
-      if (cloudPlayer.getStatus() === "idle") cloudLease = cloudPlayer.prime();
+    if (player) {
+      if (player.getStatus() === "idle") playerLease = player.prime();
     } else {
       mediaSessionGeneration = primeMediaSessionAudio();
     }
     const releasePrimedAudio = () => {
-      if (cloudPlayer) {
-        if (cloudLease !== null) cloudPlayer.releasePrime(cloudLease);
+      if (player) {
+        if (playerLease !== null) player.releasePrime(playerLease);
       } else if (mediaSessionGeneration !== null) {
         releasePrimedMediaSessionAudio(mediaSessionGeneration);
       }
@@ -363,50 +365,22 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
       }
     };
 
-    if (cloudPlayer) {
-      cloudPlayer.setRate(settings.rate);
-      const playerStatus = cloudPlayer.getStatus();
-      if (playerStatus === "paused") await cloudPlayer.play();
-      if (playerStatus !== "idle") return;
-
-      const startCloud = async (narration: string) => {
-        cloudPlayer.load(splitIntoParagraphs(narration));
-        if (!hasTrackedPlaybackRef.current) {
-          trackNarrationPlaybackStarted(settings.provider);
-          hasTrackedPlaybackRef.current = true;
-        }
-        await cloudPlayer.play();
-      };
-      if (narrationText) await startCloud(narrationText);
-      else await loadNarration(startCloud);
-      return;
-    }
-
-    if (usePiper && settings.voiceId) {
-      const player = getOrCreateStreamingPlayer();
-
-      // Update config in case settings changed
-      player.setConfig({
-        voiceId: settings.voiceId,
-        rate: settings.rate,
-        sentenceGapSeconds: settings.sentenceGapSeconds,
-      });
-
+    if (player) {
+      player.setRate(settings.rate);
       const playerStatus = player.getStatus();
       if (playerStatus === "paused") await player.play();
-      if (playerStatus === "paused" || playerStatus === "playing") return;
+      if (playerStatus !== "idle") return;
 
-      const startPiper = async (narration: string) => {
+      const start = async (narration: string) => {
         player.load(splitIntoParagraphs(narration));
-        // Track playback start (only once per session)
         if (!hasTrackedPlaybackRef.current) {
           trackNarrationPlaybackStarted(settings.provider);
           hasTrackedPlaybackRef.current = true;
         }
         await player.play();
       };
-      if (narrationText) await startPiper(narrationText);
-      else await loadNarration(startPiper);
+      if (narrationText) await start(narrationText);
+      else await loadNarration(start);
       return;
     }
 
@@ -447,7 +421,6 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     settings.voiceId,
     settings.rate,
     settings.pitch,
-    settings.sentenceGapSeconds,
     settings.provider,
     settings.useLlmNormalization,
     generateMutation,
@@ -455,13 +428,13 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     content,
     showFullContent,
     showOriginal,
-    getOrCreateStreamingPlayer,
+    getOrCreatePiperPlayer,
     getOrCreateCloudPlayer,
   ]);
 
   // The active Piper or cloud player, if either is in use.
   const bufferedPlayer = useCallback(
-    () => (usePiper ? streamingPlayerRef.current : useCloud ? cloudPlayerRef.current : null),
+    () => (usePiper ? piperPlayerRef.current : useCloud ? cloudPlayerRef.current : null),
     [usePiper, useCloud]
   );
 
@@ -546,13 +519,13 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     // The paragraph map is specific to the previous article/variant
     paragraphMapRef.current = [];
     return () => {
-      // Stop the Web Speech utterance too, not just the streaming player: toggling
+      // Stop the Web Speech utterance too, not just the media players: toggling
       // the content variant does not remount this hook (EntryContent is keyed only
       // by the entry id), so without this the browser voice keeps reading the old
       // variant while the paragraph map is cleared out from under it.
       narratorRef.current?.stop();
-      streamingPlayerRef.current?.stop();
-      streamingPlayerRef.current?.clearCache();
+      piperPlayerRef.current?.stop();
+      piperPlayerRef.current?.clearCache();
       cancelPendingPlay(playRequestRef);
       cloudPlayerRef.current?.stop();
       cloudPlayerRef.current?.clearCache();
@@ -576,7 +549,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     feedTitle,
     artwork,
     status: state.status,
-    ownsMediaElement: useCloud,
+    ownsMediaElement: usesBufferedPlayer,
     controls: {
       play,
       pause,

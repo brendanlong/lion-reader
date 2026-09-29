@@ -7,9 +7,10 @@
  * hands the browser a fresh, often short, clip each time with a gap our
  * script has to bridge, and Chrome on Android treats clips under ~5 seconds as
  * sound effects rather than playback; narration played that way stopped a
- * while after the screen locked. Here each chunk is encoded as a self-contained fragmented MP4 (see
- * `./audio-encoding`) and appended to a single `SourceBuffer` in `sequence`
- * mode, so the element sees one long, never-ending track. No separate
+ * while after the screen locked. Here each chunk is encoded as a
+ * self-contained fragmented MP4 (see `./audio-encoding`) and appended to a
+ * single `SourceBuffer` in `sequence` mode, so the element sees one long,
+ * never-ending track. No separate
  * silent-audio element is needed — and there must not be one: iOS pauses one
  * media element when another starts.
  *
@@ -28,11 +29,6 @@ import {
   type PcmAudio,
   type SegmentEncoder,
 } from "./audio-encoding";
-import type {
-  PlaybackPosition,
-  PlaybackStatus,
-  StreamingPlayerCallbacks,
-} from "./streaming-audio-player";
 
 /** Chunks synthesized ahead of the one playing. Cloud latency varies from well under a second to 10+ s. */
 const PREFETCH_CHUNKS = 3;
@@ -43,9 +39,31 @@ const TIME_EPSILON = 0.01;
 
 const UNSUPPORTED_MESSAGE = "This browser can't stream narration audio";
 
+export type PlaybackStatus = "idle" | "playing" | "paused" | "buffering";
+
+export interface PlaybackPosition {
+  paragraph: number;
+  /** Chunk index within the paragraph. */
+  sentence: number;
+}
+
+export interface PlayerCallbacks {
+  onStatusChange?: (status: PlaybackStatus) => void;
+  onPositionChange?: (position: PlaybackPosition, totalParagraphs: number) => void;
+  onError?: (error: Error) => void;
+  onEnd?: () => void;
+}
+
 export interface SpeechChunk {
   paragraph: number;
   text: string;
+}
+
+/** One chunk per sentence, for synthesis that's slow enough to want the first audio fast. */
+export function splitIntoSentenceChunks(paragraphs: string[]): SpeechChunk[] {
+  return paragraphs.flatMap((paragraph, index) =>
+    splitIntoSentences(paragraph.trim()).map((text) => ({ paragraph: index, text }))
+  );
 }
 
 /**
@@ -85,13 +103,22 @@ export function splitIntoSpeechChunks(paragraphs: string[], maxChars: number): S
 
 export interface MediaSourcePlayerOptions {
   synthesize: (text: string) => Promise<PcmAudio>;
-  maxChunkChars: number;
+  chunkParagraphs: (paragraphs: string[]) => SpeechChunk[];
+  /** Syntheses allowed to run at once; the nearest chunk still needed always goes first. */
+  maxConcurrentSyntheses: number;
   loadEncoder?: () => Promise<SegmentEncoder | null>;
   createAudio?: () => HTMLAudioElement;
   /** Returns null when the browser has no MSE. */
   createMediaSource?: () => MediaSource | null;
   /** Points the element at the source; returns a function that detaches it. */
   attach?: (audio: HTMLAudioElement, source: MediaSource) => () => void;
+}
+
+/** A queued synthesis dropped because playback moved away from its chunk. */
+class SkippedSynthesis extends Error {
+  constructor() {
+    super("Synthesis skipped");
+  }
 }
 
 /** A chunk's place on the element's timeline. */
@@ -189,7 +216,8 @@ function rangeEndFrom(buffer: SourceBuffer, start: number): number {
 export class MediaSourcePlayer {
   private readonly audio: HTMLAudioElement;
   private readonly synthesize: (text: string) => Promise<PcmAudio>;
-  private readonly maxChunkChars: number;
+  private readonly chunkParagraphs: (paragraphs: string[]) => SpeechChunk[];
+  private readonly maxConcurrentSyntheses: number;
   private readonly loadEncoder: () => Promise<SegmentEncoder | null>;
   private readonly createMediaSource: () => MediaSource | null;
   private readonly attach: (audio: HTMLAudioElement, source: MediaSource) => () => void;
@@ -199,13 +227,15 @@ export class MediaSourcePlayer {
   /** The chunk playing, or the one to start from. */
   private index = 0;
   private status: PlaybackStatus = "idle";
-  private callbacks: StreamingPlayerCallbacks = {};
+  private callbacks: PlayerCallbacks = {};
   private rate = 1;
   private encoder: Promise<SegmentEncoder | null> | null = null;
   /** In-flight or finished encoded segments per chunk index. */
   private segments = new Map<number, Promise<Uint8Array>>();
   /** Bumped by clearCache, so synthesis finishing afterwards isn't cached. */
   private cacheEpoch = 0;
+  private runningSyntheses = 0;
+  private queuedSyntheses: { chunk: number; start: () => void; skip: () => void }[] = [];
   /** Bumped by every prime(); see releasePrime. */
   private primeLease = 0;
   /** Bumped by pause/stop, so a play() they interrupt isn't reported as a failure. */
@@ -226,7 +256,8 @@ export class MediaSourcePlayer {
 
   constructor(options: MediaSourcePlayerOptions) {
     this.synthesize = options.synthesize;
-    this.maxChunkChars = options.maxChunkChars;
+    this.chunkParagraphs = options.chunkParagraphs;
+    this.maxConcurrentSyntheses = options.maxConcurrentSyntheses;
     this.loadEncoder = options.loadEncoder ?? defaultLoadEncoder;
     this.createMediaSource = options.createMediaSource ?? defaultCreateMediaSource;
     this.attach = options.attach ?? defaultAttach;
@@ -259,7 +290,7 @@ export class MediaSourcePlayer {
     });
   }
 
-  setCallbacks(callbacks: StreamingPlayerCallbacks): void {
+  setCallbacks(callbacks: PlayerCallbacks): void {
     this.callbacks = callbacks;
   }
 
@@ -296,7 +327,7 @@ export class MediaSourcePlayer {
   }
 
   load(paragraphs: string[]): void {
-    const chunks = splitIntoSpeechChunks(paragraphs, this.maxChunkChars);
+    const chunks = this.chunkParagraphs(paragraphs);
     const changed =
       chunks.length !== this.chunks.length ||
       chunks.some((chunk, i) => chunk.text !== this.chunks[i].text);
@@ -358,6 +389,7 @@ export class MediaSourcePlayer {
   }
 
   stop(): void {
+    for (const queued of this.queuedSyntheses.splice(0)) queued.skip();
     this.run++;
     this.playRequest++;
     this.audio.pause();
@@ -498,7 +530,8 @@ export class MediaSourcePlayer {
         try {
           bytes = await pending;
         } catch (error) {
-          if (run === this.run) this.fail(error);
+          // A skipped chunk is requested again once playback gets near it.
+          if (run === this.run && !(error instanceof SkippedSynthesis)) this.fail(error);
           return;
         }
 
@@ -560,7 +593,8 @@ export class MediaSourcePlayer {
       const text = this.chunks[chunk].text;
       promise = this.getEncoder().then(async (encoder) => {
         if (!encoder) throw new Error(UNSUPPORTED_MESSAGE);
-        const bytes = await encoder.encode(await this.synthesize(text));
+        const audio = await this.scheduleSynthesis(chunk, () => this.synthesize(text));
+        const bytes = await encoder.encode(audio);
         if (epoch !== this.cacheEpoch) throw new Error("Narration changed during synthesis");
         return bytes;
       });
@@ -573,6 +607,38 @@ export class MediaSourcePlayer {
       this.segments.set(chunk, promise);
     }
     return promise;
+  }
+
+  private scheduleSynthesis(chunk: number, synthesize: () => Promise<PcmAudio>): Promise<PcmAudio> {
+    return new Promise((resolve, reject) => {
+      this.queuedSyntheses.push({
+        chunk,
+        start: () => {
+          this.runningSyntheses++;
+          synthesize()
+            .then(resolve, reject)
+            .finally(() => {
+              this.runningSyntheses--;
+              this.startSyntheses();
+            });
+        },
+        skip: () => reject(new SkippedSynthesis()),
+      });
+      this.startSyntheses();
+    });
+  }
+
+  private startSyntheses(): void {
+    this.queuedSyntheses.sort((a, b) => a.chunk - b.chunk);
+    while (this.runningSyntheses < this.maxConcurrentSyntheses && this.queuedSyntheses.length) {
+      const next = this.queuedSyntheses.shift()!;
+      const wanted =
+        this.status !== "idle" &&
+        next.chunk >= this.index &&
+        next.chunk <= this.index + PREFETCH_CHUNKS;
+      if (wanted) next.start();
+      else next.skip();
+    }
   }
 
   private onTimeUpdate(): void {
