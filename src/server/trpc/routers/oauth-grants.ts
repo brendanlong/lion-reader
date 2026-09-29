@@ -12,13 +12,9 @@
 import { z } from "zod";
 import { createTRPCRouter, confirmedProtectedProcedure as protectedProcedure } from "../trpc";
 import { errors } from "../errors";
-import {
-  listUserConsentGrants,
-  revokeUserClientTokens,
-  revokeUserConsentGrant,
-} from "@/server/oauth/service";
+import { listUserConsentGrants, revokeUserConsentGrant } from "@/server/oauth/service";
 import { SCOPE_DESCRIPTIONS, type OAuthScope } from "@/server/oauth/utils";
-import { WALLABAG_CLIENT_ID } from "@/server/wallabag/auth";
+import { revokeWallabagTokens } from "@/server/wallabag/auth";
 
 const grantOutputSchema = z.object({
   clientId: z.string(),
@@ -69,7 +65,7 @@ export const oauthGrantsRouter = createTRPCRouter({
   revokeWallabag: protectedProcedure
     .output(z.object({ success: z.boolean() }))
     .mutation(async ({ ctx }) => {
-      await revokeUserClientTokens(ctx.session.user.id, WALLABAG_CLIENT_ID);
+      await revokeWallabagTokens(ctx.session.user.id);
       return { success: true };
     }),
 });

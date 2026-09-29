@@ -13,10 +13,18 @@
  * endpoint accepts no other — see SECURITY.md §8 for why.
  */
 
+import { eq } from "drizzle-orm";
 import { db } from "@/server/db";
+import { users } from "@/server/db/schema";
 import { verifyEmailPassword } from "@/server/auth/password";
 import { extractBearerToken } from "@/server/auth/bearer";
-import { validateAccessToken, createTokens, rotateRefreshToken } from "@/server/oauth/service";
+import {
+  validateAccessToken,
+  createTokens,
+  lockUserAgainstCredentialChange,
+  revokeUserClientTokens,
+  rotateRefreshToken,
+} from "@/server/oauth/service";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
 import { isSignupConfirmed } from "@/server/auth/confirmation";
 import { logger } from "@/lib/logger";
@@ -61,11 +69,34 @@ export async function passwordGrant(
   // covers the full reader API (list/read/mutate/delete entries + tags), so it
   // is granted reader:full-access rather than the narrow saved:write scope —
   // and requireAuth enforces that scope on every endpoint (see below).
-  const tokens = await createTokens({
-    clientId: WALLABAG_CLIENT_ID,
-    userId: foundUser.id,
-    scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
+  //
+  // The password was verified outside any lock (argon2 is slow), so re-check
+  // under the user-row lock that it is still the current one: a password
+  // change that landed in between has already swept this user's tokens and
+  // would miss these.
+  const tokens = await db.transaction(async (tx) => {
+    const current = await lockUserAgainstCredentialChange(tx, foundUser.id);
+    if (current?.passwordHash !== foundUser.passwordHash) {
+      return null;
+    }
+    return createTokens(
+      {
+        clientId: WALLABAG_CLIENT_ID,
+        userId: foundUser.id,
+        scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
+      },
+      tx
+    );
   });
+  if (!tokens) {
+    logger.warn("Wallabag password grant failed", {
+      component: "wallabag",
+      grantType: "password",
+      userId: foundUser.id,
+      reason: "password_changed",
+    });
+    return null;
+  }
 
   logger.info("Wallabag password grant succeeded", {
     component: "wallabag",
@@ -80,6 +111,20 @@ export async function passwordGrant(
     scope: null,
     refresh_token: tokens.refreshToken,
   };
+}
+
+/**
+ * Signs out every Wallabag app for a user (Settings → Wallabag).
+ *
+ * Takes the same user-row lock a password change does, so a refresh or
+ * password grant racing it either finishes first and has its tokens swept, or
+ * waits and finds nothing to rotate (see `rotateRefreshToken`).
+ */
+export async function revokeWallabagTokens(userId: string): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for("no key update");
+    await revokeUserClientTokens(userId, WALLABAG_CLIENT_ID, tx);
+  });
 }
 
 /**
