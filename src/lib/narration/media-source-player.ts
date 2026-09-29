@@ -518,9 +518,8 @@ export class MediaSourcePlayer {
 
   /**
    * Synthesizes, encodes and appends the current run's chunks in order, up to
-   * {@link lastWantedChunk}. One loop per run: a
-   * loop still waiting on a slow chunk from an abandoned run must not hold up
-   * the new one.
+   * {@link lastWantedChunk}. One loop per run: a loop still waiting on a slow
+   * chunk from an abandoned run must not hold up the new one.
    */
   private async pump(): Promise<void> {
     const run = this.run;

@@ -267,7 +267,8 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
         chunkParagraphs: (paragraphs) => splitIntoSpeechChunks(paragraphs, MAX_CLOUD_SPEECH_CHARS),
         maxConcurrentSyntheses: 4,
         // Paid per character, so running ahead only wastes what's left
-        // unheard; a thin buffer can stall a backgrounded page for good.
+        // unheard. With the screen locked, nothing recovers playback that
+        // stalls on an empty buffer.
         bufferAheadSeconds: 60,
       });
       cloudPlayerRef.current.setCallbacks(bufferedPlayerCallbacks);
