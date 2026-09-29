@@ -68,7 +68,10 @@ export function CloudVoiceSettings({
           if (previewRef.current !== preview) return;
           const clip = new Blob([base64ToBytes(result.audio)], { type: result.mimeType });
           setIsPreviewing(true);
-          preview.play(clip, settings.rate, stopPreview);
+          preview.play(clip, settings.rate, (error) => {
+            stopPreview();
+            if (error) toast.error("Voice preview failed");
+          });
         },
         onError: (error) => {
           if (previewRef.current === preview) stopPreview();

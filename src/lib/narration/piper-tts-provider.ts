@@ -8,6 +8,7 @@
  */
 
 import { findEnhancedVoice } from "./enhanced-voices";
+import { getMediaSourceClass } from "./audio-encoding";
 
 /**
  * Dynamically imports the piper-tts-web module.
@@ -82,11 +83,15 @@ export class VoiceNotDownloadedError extends Error {
 export class PiperTTSProvider {
   /**
    * Checks if Piper TTS is available in the current environment: it needs the
-   * Origin Private File System (via navigator.storage) for model storage.
+   * Origin Private File System (via navigator.storage) for model storage, and
+   * Media Source Extensions for playback.
    */
   isAvailable(): boolean {
     return (
-      typeof window !== "undefined" && "storage" in navigator && "getDirectory" in navigator.storage
+      typeof window !== "undefined" &&
+      "storage" in navigator &&
+      "getDirectory" in navigator.storage &&
+      getMediaSourceClass() !== null
     );
   }
 

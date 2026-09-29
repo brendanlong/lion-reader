@@ -10,9 +10,8 @@
  * while after the screen locked. Here each chunk is encoded as a
  * self-contained fragmented MP4 (see `./audio-encoding`) and appended to a
  * single `SourceBuffer` in `sequence` mode, so the element sees one long,
- * never-ending track. No separate
- * silent-audio element is needed — and there must not be one: iOS pauses one
- * media element when another starts.
+ * never-ending track. No separate silent-audio element is needed — and there
+ * must not be one: iOS pauses one media element when another starts.
  *
  * The buffer holds one *run*: consecutive chunks laid end to end from where
  * playback started. Skipping to a chunk already in the run seeks; anything
@@ -30,7 +29,11 @@ import {
   type SegmentEncoder,
 } from "./audio-encoding";
 
-/** Chunks synthesized ahead of the one playing. Cloud latency varies from well under a second to 10+ s. */
+/**
+ * Chunks synthesized ahead of the one playing: about 10 s of Piper sentences,
+ * and enough to cover cloud latency, which varies from well under a second to
+ * 10+ s.
+ */
 const PREFETCH_CHUNKS = 3;
 /** Finished chunks kept behind the one playing, for instant skip-back. */
 const KEEP_BEHIND_CHUNKS = 5;
@@ -235,7 +238,12 @@ export class MediaSourcePlayer {
   /** Bumped by clearCache, so synthesis finishing afterwards isn't cached. */
   private cacheEpoch = 0;
   private runningSyntheses = 0;
-  private queuedSyntheses: { chunk: number; start: () => void; skip: () => void }[] = [];
+  private queuedSyntheses: {
+    chunk: number;
+    epoch: number;
+    start: () => void;
+    skip: () => void;
+  }[] = [];
   /** Bumped by every prime(); see releasePrime. */
   private primeLease = 0;
   /** Bumped by pause/stop, so a play() they interrupt isn't reported as a failure. */
@@ -593,7 +601,7 @@ export class MediaSourcePlayer {
       const text = this.chunks[chunk].text;
       promise = this.getEncoder().then(async (encoder) => {
         if (!encoder) throw new Error(UNSUPPORTED_MESSAGE);
-        const audio = await this.scheduleSynthesis(chunk, () => this.synthesize(text));
+        const audio = await this.scheduleSynthesis(chunk, epoch, () => this.synthesize(text));
         const bytes = await encoder.encode(audio);
         if (epoch !== this.cacheEpoch) throw new Error("Narration changed during synthesis");
         return bytes;
@@ -609,10 +617,15 @@ export class MediaSourcePlayer {
     return promise;
   }
 
-  private scheduleSynthesis(chunk: number, synthesize: () => Promise<PcmAudio>): Promise<PcmAudio> {
+  private scheduleSynthesis(
+    chunk: number,
+    epoch: number,
+    synthesize: () => Promise<PcmAudio>
+  ): Promise<PcmAudio> {
     return new Promise((resolve, reject) => {
       this.queuedSyntheses.push({
         chunk,
+        epoch,
         start: () => {
           this.runningSyntheses++;
           synthesize()
@@ -632,7 +645,9 @@ export class MediaSourcePlayer {
     this.queuedSyntheses.sort((a, b) => a.chunk - b.chunk);
     while (this.runningSyntheses < this.maxConcurrentSyntheses && this.queuedSyntheses.length) {
       const next = this.queuedSyntheses.shift()!;
+      // Chunk numbers from before clearCache belong to different text.
       const wanted =
+        next.epoch === this.cacheEpoch &&
         this.status !== "idle" &&
         next.chunk >= this.index &&
         next.chunk <= this.index + PREFETCH_CHUNKS;

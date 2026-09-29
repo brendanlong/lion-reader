@@ -2,7 +2,8 @@
  * Unit tests for PiperTTSProvider.
  *
  * These tests verify the PiperTTSProvider implementation.
- * Piper TTS requires the Origin Private File System, which these tests stub.
+ * Piper TTS requires the Origin Private File System and Media Source
+ * Extensions, which these tests stub.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -38,6 +39,7 @@ describe("PiperTTSProvider", () => {
   beforeEach(() => {
     // Set up browser environment mocks using vi.stubGlobal
     vi.stubGlobal("window", {});
+    vi.stubGlobal("MediaSource", class {});
     vi.stubGlobal("navigator", {
       storage: {
         getDirectory: vi.fn().mockResolvedValue({}),
@@ -57,7 +59,12 @@ describe("PiperTTSProvider", () => {
   });
 
   describe("isAvailable", () => {
-    it("returns true when the storage API is available", () => {
+    it("returns false without Media Source Extensions", () => {
+      vi.stubGlobal("MediaSource", undefined);
+      expect(new PiperTTSProvider().isAvailable()).toBe(false);
+    });
+
+    it("returns true when the storage API and MSE are available", () => {
       expect(provider.isAvailable()).toBe(true);
     });
 

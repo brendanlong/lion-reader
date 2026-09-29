@@ -381,7 +381,10 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
         const clip = await getPiperTTSProvider().synthesize(PREVIEW_TEXT, voiceId);
         // Superseded by another preview, a stop, or unmount.
         if (previewRef.current !== preview) return;
-        preview.play(clip, 1.0, stopPreview);
+        preview.play(clip, 1.0, (error) => {
+          stopPreview();
+          if (error) reportError(error, "Failed to preview voice");
+        });
       } catch (err) {
         if (previewRef.current !== preview) return;
         stopPreview();

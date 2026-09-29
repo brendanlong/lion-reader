@@ -219,11 +219,13 @@ function setup(
     maxChars = 1000,
     maxConcurrentSyntheses = 4,
     encoder = fakeEncoder as SegmentEncoder | null,
+    encoderLoaded = Promise.resolve(),
     supportsMse = true,
   }: {
     maxChars?: number;
     maxConcurrentSyntheses?: number;
     encoder?: SegmentEncoder | null;
+    encoderLoaded?: Promise<void>;
     supportsMse?: boolean;
   } = {}
 ) {
@@ -240,7 +242,10 @@ function setup(
     },
     chunkParagraphs: (paragraphs) => splitIntoSpeechChunks(paragraphs, maxChars),
     maxConcurrentSyntheses,
-    loadEncoder: async () => encoder,
+    loadEncoder: async () => {
+      await encoderLoaded;
+      return encoder;
+    },
     createAudio: () => audio as unknown as HTMLAudioElement,
     createMediaSource: () => {
       if (!supportsMse) return null;
@@ -358,6 +363,43 @@ describe("MediaSourcePlayer", () => {
     await respond("10.");
     expect(player.getStatus()).toBe("playing");
     expect(calls).toEqual(["0.", "1.", "10.", "11."]);
+  });
+
+  it("doesn't synthesize text from before clearCache that was waiting on the encoder", async () => {
+    const encoderLoad = deferred<void>();
+    const { calls, player, respond } = setup(["Old 1.", "Old 2."], {
+      maxConcurrentSyntheses: 1,
+      encoderLoaded: encoderLoad.promise,
+    });
+    void player.play();
+    player.stop();
+    player.clearCache();
+    player.load(["New 1.", "New 2."]);
+    void player.play();
+    encoderLoad.resolve();
+    await respond("New 1.");
+
+    expect(calls).toEqual(["New 1.", "New 2."]);
+    expect(player.getStatus()).toBe("playing");
+  });
+
+  it("requests a dropped chunk again once playback gets near it", async () => {
+    const paragraphs = Array.from({ length: 10 }, (_, i) => `${i}.`);
+    const { audio, calls, player, respond } = setup(paragraphs, { maxConcurrentSyntheses: 1 });
+    void player.play();
+    for (const text of ["0.", "1.", "2.", "3."]) await respond(text);
+    audio.advanceTo(3.5); // chunk 4 synthesizing, 5 and 6 queued
+    await flush();
+
+    await player.skipBackward(); // back to 2, within the buffered run: 5 and 6 drop
+    await player.skipBackward();
+    await player.skipBackward();
+    await respond("4.");
+    expect(calls).toEqual(["0.", "1.", "2.", "3.", "4."]);
+
+    audio.advanceTo(4.5);
+    await flush();
+    expect(calls).toEqual(["0.", "1.", "2.", "3.", "4.", "5."]);
   });
 
   it("buffers audio that arrives while paused and resumes in place", async () => {

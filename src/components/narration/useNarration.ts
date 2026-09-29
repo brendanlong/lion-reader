@@ -280,9 +280,8 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     // pause/stop, and the article/voice/variant reset (including unmount), bump
     // this token. Every path re-checks it after each await, so narration that
     // finishes generating after the user moved on is neither stored (it may be
-    // for a variant no longer on screen) nor played — the browser voice and
-    // Piper play through page-global audio that would outlive this entry's
-    // controls, and cloud playback is paid.
+    // for a variant no longer on screen) nor played — playback would outlive
+    // this entry's controls, and cloud playback is paid.
     const request = playRequestRef.current;
     const isStale = () => playRequestRef.current !== request;
 
