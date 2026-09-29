@@ -308,12 +308,17 @@ describe("oauthGrants.revokeWallabag", () => {
   });
 });
 
-/** Resolves once some backend in this database is blocked waiting on a lock. */
-async function waitForLockWaiter(): Promise<void> {
+/**
+ * Resolves once a token issue is blocked on the user-row share lock
+ * (`lockUserAgainstCredentialChange`), not on some unrelated lock.
+ */
+async function waitForUserLockWaiter(): Promise<void> {
   for (let attempt = 0; attempt < 100; attempt++) {
     const result = await db.execute(sql`
       SELECT count(*)::int AS waiting FROM pg_stat_activity
-      WHERE datname = current_database() AND wait_event_type = 'Lock'
+      WHERE datname = current_database()
+        AND wait_event_type = 'Lock'
+        AND query ILIKE '%from "users"%for share%'
     `);
     if ((result.rows[0] as { waiting: number }).waiting > 0) return;
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -348,6 +353,21 @@ async function heldPasswordChange(
   return { release, done };
 }
 
+/** Access or refresh tokens for the Wallabag client that would still work. */
+async function liveWallabagTokens(userId: string): Promise<number> {
+  const result = await db.execute(sql`
+    SELECT
+      (SELECT count(*) FROM oauth_access_tokens
+        WHERE user_id = ${userId} AND client_id = ${WALLABAG_CLIENT_ID}
+          AND revoked_at IS NULL AND expires_at > now())
+      + (SELECT count(*) FROM oauth_refresh_tokens
+        WHERE user_id = ${userId} AND client_id = ${WALLABAG_CLIENT_ID}
+          AND revoked_at IS NULL AND expires_at > now())
+      AS live
+  `);
+  return Number((result.rows[0] as { live: string | number }).live);
+}
+
 describe("token issue racing a password change", () => {
   it("a refresh during a password change waits for it, then finds its token revoked", async () => {
     const user = await createUser();
@@ -359,11 +379,12 @@ describe("token issue racing a password change", () => {
 
     const change = await heldPasswordChange(user.id, await argon2.hash("new-password"));
     const rotation = rotateRefreshToken(tokens.refreshToken, WALLABAG_CLIENT_ID);
-    await waitForLockWaiter();
+    await waitForUserLockWaiter();
     change.release();
     await change.done;
 
     expect(await rotation).toBeNull();
+    expect(await liveWallabagTokens(user.id)).toBe(0);
   });
 
   it("a password grant racing a password change mints nothing", async () => {
@@ -374,11 +395,12 @@ describe("token issue racing a password change", () => {
     // commits, then must notice the change under the lock.
     const change = await heldPasswordChange(user.id, await argon2.hash("new-password"));
     const grant = passwordGrant(user.email, password);
-    await waitForLockWaiter();
+    await waitForUserLockWaiter();
     change.release();
     await change.done;
 
     expect(await grant).toBeNull();
+    expect(await liveWallabagTokens(user.id)).toBe(0);
   });
 });
 

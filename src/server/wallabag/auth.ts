@@ -116,9 +116,11 @@ export async function passwordGrant(
 /**
  * Signs out every Wallabag app for a user (Settings → Wallabag).
  *
- * Takes the same user-row lock a password change does, so a refresh or
- * password grant racing it either finishes first and has its tokens swept, or
- * waits and finds nothing to rotate (see `rotateRefreshToken`).
+ * Takes the same user-row lock a password change does, so anything racing it
+ * serializes: a refresh either finishes first and has its successor swept, or
+ * waits and finds its token revoked (see `rotateRefreshToken`). A password
+ * grant that waits mints fresh tokens afterwards — correct, since the password
+ * it presented is still valid; signing out isn't a credential change.
  */
 export async function revokeWallabagTokens(userId: string): Promise<void> {
   await db.transaction(async (tx) => {
