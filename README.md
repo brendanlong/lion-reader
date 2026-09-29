@@ -59,7 +59,7 @@ pnpm install
 # Copy environment variables
 cp .env.example .env
 
-# Start Postgres 16 and Redis 7
+# Start Postgres 18 and Redis 7
 docker compose up -d
 
 # Run database migrations

@@ -378,16 +378,6 @@ const jobDurationSeconds = getOrCreate(Histogram, {
 });
 
 /**
- * Gauge for current job queue size.
- * Labels: type (fetch_feed, cleanup, etc.), status (pending, running)
- */
-const jobQueueSize = getOrCreate(Gauge, {
-  name: "job_queue_size",
-  help: "Current job queue size by type and status",
-  labelNames: ["type", "status"] as const,
-});
-
-/**
  * Tracks a job processing result.
  *
  * @param type - Job type (fetch_feed, cleanup, etc.)
@@ -509,37 +499,10 @@ export function trackDbPoolClientError(reason: "disconnect" | "unexpected"): voi
 // Business Metrics
 // ============================================================================
 
-/**
- * Gauge for total registered users.
- */
-const usersTotal = getOrCreate(Gauge, {
-  name: "users_total",
-  help: "Total number of registered users",
-});
-
-/**
- * Gauge for total active subscriptions.
- */
-const subscriptionsTotal = getOrCreate(Gauge, {
-  name: "subscriptions_total",
-  help: "Total number of active subscriptions",
-});
-
-/**
- * Gauge for total entries in the database.
- */
-const entriesTotal = getOrCreate(Gauge, {
-  name: "entries_total",
-  help: "Total number of entries",
-});
-
-/**
- * Gauge for total feeds in the database.
- */
-const feedsTotal = getOrCreate(Gauge, {
-  name: "feeds_total",
-  help: "Total number of feeds",
-});
+// These gauges describe the whole database, so only the process that collects
+// them (see collectAllMetrics) should export them. They're created on first
+// update rather than at load: an unset gauge still scrapes as 0, which would
+// add a bogus zero series from every other process.
 
 /**
  * Updates all business metrics.
@@ -552,10 +515,22 @@ export function updateBusinessMetrics(counts: {
   entries: number;
   feeds: number;
 }): void {
-  usersTotal?.set(counts.users);
-  subscriptionsTotal?.set(counts.subscriptions);
-  entriesTotal?.set(counts.entries);
-  feedsTotal?.set(counts.feeds);
+  getOrCreate(Gauge, {
+    name: "users_total",
+    help: "Total number of registered users",
+  })?.set(counts.users);
+  getOrCreate(Gauge, {
+    name: "subscriptions_total",
+    help: "Total number of active subscriptions",
+  })?.set(counts.subscriptions);
+  getOrCreate(Gauge, {
+    name: "entries_total",
+    help: "Total number of entries (Postgres planner estimate)",
+  })?.set(counts.entries);
+  getOrCreate(Gauge, {
+    name: "feeds_total",
+    help: "Total number of feeds",
+  })?.set(counts.feeds);
 }
 
 /**
@@ -566,6 +541,13 @@ export function updateBusinessMetrics(counts: {
 export function updateJobQueueMetrics(
   counts: Array<{ type: string; status: string; count: number }>
 ): void {
+  const jobQueueSize = getOrCreate(Gauge, {
+    name: "job_queue_size",
+    help: "Current job queue size by type and status",
+    labelNames: ["type", "status"] as const,
+  });
+  // Drop groups that no longer appear (e.g. running=1 after the queue drains).
+  jobQueueSize?.reset();
   for (const { type, status, count } of counts) {
     jobQueueSize?.set({ type, status }, count);
   }

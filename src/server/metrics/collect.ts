@@ -1,11 +1,10 @@
 /**
  * Business Metrics Collection
  *
- * Collects metrics from the database for Prometheus export.
- * These are called on-demand when the /api/metrics endpoint is hit.
+ * Collects metrics from the database for Prometheus export, on each scrape.
  */
 
-import { sql, type SQL } from "drizzle-orm";
+import { getTableName, sql, type SQL } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
 import { db, pool } from "../db";
 import { users, subscriptions, entries, feeds, jobs } from "../db/schema";
@@ -24,6 +23,18 @@ function countRows(table: PgTable, where?: SQL): Promise<number> {
     .then((rows) => rows[0]?.count ?? 0);
 }
 
+// entries grows without bound, so it uses the planner's row estimate instead of
+// a count(*) scan per scrape. reltuples lives in the catalog, so unlike the
+// cumulative stats (n_live_tup) it survives a crash or failover; vacuum and
+// analyze keep it current. It's -1 until the table is first analyzed.
+function estimateRows(table: PgTable): Promise<number> {
+  return db
+    .execute<{ estimate: number }>(
+      sql`SELECT GREATEST(reltuples, 0)::float8 AS estimate FROM pg_class WHERE oid = ${getTableName(table)}::regclass`
+    )
+    .then((result) => result.rows[0]?.estimate ?? 0);
+}
+
 /**
  * Collects and updates all business metrics from the database.
  */
@@ -31,7 +42,7 @@ async function collectBusinessMetrics(): Promise<void> {
   const [userCount, subscriptionCount, entryCount, feedCount] = await Promise.all([
     countRows(users),
     countRows(subscriptions, sql`${subscriptions.unsubscribedAt} IS NULL`),
-    countRows(entries),
+    estimateRows(entries),
     countRows(feeds),
   ]);
 
@@ -70,12 +81,15 @@ function collectPoolMetrics(): void {
 }
 
 /**
- * Collects all metrics before returning them.
- * Called by the /api/metrics endpoint to ensure metrics are up-to-date.
+ * Collects all metrics before a scrape. Database-wide gauges are the same from
+ * every process, so only one process (the worker) queries them; otherwise each
+ * scrape runs the queries once per machine and the series are duplicated.
  */
-export async function collectAllMetrics(): Promise<void> {
+export async function collectAllMetrics(includeDatabaseMetrics: boolean): Promise<void> {
   if (!metricsEnabled) return;
 
   collectPoolMetrics();
-  await Promise.all([collectBusinessMetrics(), collectJobQueueMetrics()]);
+  if (includeDatabaseMetrics) {
+    await Promise.all([collectBusinessMetrics(), collectJobQueueMetrics()]);
+  }
 }
