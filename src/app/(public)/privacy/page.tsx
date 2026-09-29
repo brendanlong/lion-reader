@@ -24,7 +24,7 @@ export const metadata: Metadata = {
 
 export default function PrivacyPolicyPage() {
   return (
-    <LegalPage title="Privacy Policy" lastUpdated="September 28, 2026">
+    <LegalPage title="Privacy Policy" lastUpdated="September 29, 2026">
       <LegalSection title="Overview">
         <LegalParagraph>
           Lion Reader is committed to protecting your privacy. We collect only the data necessary to
@@ -419,6 +419,12 @@ export default function PrivacyPolicyPage() {
             <strong>Origin private file system:</strong> Enhanced narration voices (if you download
             optional high-quality voices using Piper TTS). These voice files are stored locally on
             your device and never sent to our servers.
+          </li>
+          <li>
+            <strong>IndexedDB:</strong> If you turn on &quot;Keep entries on this device&quot; (off
+            by default), the titles, summaries and read/starred state of entries in lists
+            you&apos;ve viewed, so they show instantly on your next visit. This stays on your device
+            and is deleted when you sign out or turn the setting off.
           </li>
         </LegalList>
         <LegalParagraph>

@@ -6,6 +6,10 @@
  * inserts an entry that belongs in it — never when an entry's state changes,
  * so read entries stay visible in unread-only views until the list refreshes
  * on navigation.
+ *
+ * Membership rows can also come from local persistence (a previous session),
+ * so `members` indexes every row; `meta` covers only lists fetched in this
+ * session, the only ones that get live inserts.
  */
 
 import { hashKey } from "@tanstack/react-query";
@@ -39,7 +43,6 @@ export interface EntryListMeta {
   hasMore: boolean;
   /** `order` of the last loaded entry (the pagination window's edge). */
   lastOrder: number;
-  entryIds: Set<string>;
   /**
    * Entries inserted live since the list's last full fetch started. That
    * fetch read the server before they existed (or became unread), so when it
@@ -51,6 +54,35 @@ export interface EntryListMeta {
 export interface EntryLists {
   rows: SyncedCollection<ListEntryRow>;
   meta: Map<string, EntryListMeta>;
+  /** Entry ids per list, for every row in `rows`. */
+  members: Map<string, Set<string>>;
+  /** Called whenever a list is fetched (local persistence records it for eviction). */
+  onFetched?: (listKey: string) => void;
+}
+
+export function createEntryLists(rows: SyncedCollection<ListEntryRow>): EntryLists {
+  return { rows, meta: new Map(), members: new Map() };
+}
+
+/** Writes membership rows, keeping `members` in step. */
+export function writeListRows(lists: EntryLists, rows: ListEntryRow[]): void {
+  for (const row of rows) {
+    let members = lists.members.get(row.listKey);
+    if (!members) lists.members.set(row.listKey, (members = new Set()));
+    members.add(row.entryId);
+  }
+  lists.rows.upsert(rows);
+}
+
+function deleteListRows(lists: EntryLists, listKey: string, entryIds: Iterable<string>): void {
+  const members = lists.members.get(listKey);
+  const keys: string[] = [];
+  for (const id of entryIds) {
+    members?.delete(id);
+    keys.push(listEntryKey(listKey, id));
+  }
+  if (members?.size === 0) lists.members.delete(listKey);
+  lists.rows.remove(keys);
 }
 
 /**
@@ -65,7 +97,7 @@ export function entryListKey(input: object): string {
   return hashKey([filters]);
 }
 
-function listEntryKey(listKey: string, entryId: string): string {
+export function listEntryKey(listKey: string, entryId: string): string {
   return `${listKey}\n${entryId}`;
 }
 
@@ -120,38 +152,38 @@ export function ingestEntryListPages(
 
   const hasMore = pages.at(-1)?.nextCursor !== undefined;
   const lastOrder = rows.at(-1)?.order ?? -Infinity;
-  const entryIds = new Set(rows.map((row) => row.entryId));
-  if (mode === "append" && previous) {
-    for (const id of previous.entryIds) entryIds.add(id);
-  } else if (previous) {
+  if (mode === "replace") {
+    const returned = new Set(rows.map((row) => row.entryId));
     // Kept only within the new pagination window: past it, the entry would
     // render after a gap of unloaded entries (the next page brings it back).
-    for (const id of previous.insertedSinceFetch) {
+    for (const id of previous?.insertedSinceFetch ?? []) {
       const order = lists.rows.getSynced(listEntryKey(listKey, id))?.order;
-      if (order !== undefined && (!hasMore || order <= lastOrder)) entryIds.add(id);
+      if (order !== undefined && (!hasMore || order <= lastOrder)) returned.add(id);
     }
-    lists.rows.remove(
-      [...previous.entryIds]
-        .filter((id) => !entryIds.has(id))
-        .map((id) => listEntryKey(listKey, id))
+    const members = lists.members.get(listKey) ?? new Set<string>();
+    deleteListRows(
+      lists,
+      listKey,
+      [...members].filter((id) => !returned.has(id))
     );
   }
 
-  lists.rows.upsert(rows.filter((row) => lists.rows.getSynced(row.key)?.order !== row.order));
+  writeListRows(
+    lists,
+    rows.filter((row) => lists.rows.getSynced(row.key)?.order !== row.order)
+  );
   lists.meta.set(listKey, {
     input,
     hasMore,
     lastOrder,
-    entryIds,
     insertedSinceFetch: mode === "append" && previous ? previous.insertedSinceFetch : new Set(),
   });
+  lists.onFetched?.(listKey);
 }
 
 export function removeEntryList(lists: EntryLists, input: Record<string, unknown>): void {
   const listKey = entryListKey(input);
-  const meta = lists.meta.get(listKey);
-  if (!meta) return;
-  lists.rows.remove([...meta.entryIds].map((id) => listEntryKey(listKey, id)));
+  deleteListRows(lists, listKey, [...(lists.members.get(listKey) ?? [])]);
   lists.meta.delete(listKey);
 }
 
@@ -217,7 +249,7 @@ export function insertIntoMatchingLists(
   const rows: ListEntryRow[] = [];
   for (const [listKey, meta] of lists.meta) {
     const { input } = meta;
-    if (meta.entryIds.has(entry.id) || isServerOrdered(input)) continue;
+    if (lists.members.get(listKey)?.has(entry.id) || isServerOrdered(input)) continue;
     const hasUnknownFilter = Object.keys(input).some(
       (key) => input[key] !== undefined && !INSERT_SUPPORTED_FILTER_KEYS.has(key)
     );
@@ -226,9 +258,8 @@ export function insertIntoMatchingLists(
     const order = listOrder(input, entry, 0);
     if (meta.hasMore && order > meta.lastOrder) continue;
 
-    meta.entryIds.add(entry.id);
     meta.insertedSinceFetch.add(entry.id);
     rows.push({ key: listEntryKey(listKey, entry.id), listKey, entryId: entry.id, order });
   }
-  lists.rows.upsert(rows);
+  writeListRows(lists, rows);
 }

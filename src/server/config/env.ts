@@ -99,6 +99,21 @@ export const signupConfig = {
   },
 };
 
+/**
+ * Client configuration decided by the operator.
+ */
+export const clientConfig = {
+  /**
+   * Kill switch for local persistence of the entry store (the per-device
+   * "keep entries on this device" setting): when true, clients run memory-only
+   * and delete anything already stored on their next page load. Read lazily so
+   * tests can set it after import.
+   */
+  get localPersistenceDisabled(): boolean {
+    return process.env.LOCAL_PERSISTENCE_DISABLED === "true";
+  },
+};
+
 /** Public-facing app URL. Used for sitemap, robots.txt, metadata, and User-Agent header. */
 export const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://lionreader.com";
 

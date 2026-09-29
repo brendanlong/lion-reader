@@ -26,12 +26,19 @@ import { AppRouter } from "@/components/app/AppRouter";
 import { trpc } from "@/lib/trpc/client";
 import { AppearanceProvider } from "@/lib/appearance/AppearanceProvider";
 import { type SyncCursors } from "@/lib/events/cursors";
+import { LocalPersistenceProvider } from "@/lib/hooks/useLocalPersistence";
+import { deleteLocalPersistence } from "@/lib/local-db/persistence";
 
 interface AppLayoutContentProps {
   initialCursors: SyncCursors;
+  /** False when the operator's kill switch disables local persistence. */
+  localPersistenceAllowed: boolean;
 }
 
-export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
+export function AppLayoutContent({
+  initialCursors,
+  localPersistenceAllowed,
+}: AppLayoutContentProps) {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   const logoutMutation = trpc.auth.logout.useMutation({
@@ -44,8 +51,11 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
       // signing in on the same tab must never be served the previous user's
       // article bodies, lists, counts, or subscription titles — and avoids an
       // RSC soft-nav into a CDN-cacheable page (a version-skew source).
-      // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- deliberate hard nav across an auth boundary (see src/CLAUDE.md)
-      window.location.href = "/login";
+      // The locally persisted entry store goes too.
+      void deleteLocalPersistence().finally(() => {
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- deliberate hard nav across an auth boundary (see src/CLAUDE.md)
+        window.location.href = "/login";
+      });
     },
     onError: () => {
       toast.error("Failed to sign out");
@@ -57,96 +67,98 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
   };
 
   return (
-    <AppearanceProvider>
-      <RealtimeProvider initialCursors={initialCursors}>
-        <KeyboardShortcutsProvider>
-          <ScrollContainerProvider>
-            <Toaster position="bottom-right" richColors closeButton />
-            <LayoutShell
-              headerRight={
-                <div className="flex items-center gap-2">
-                  {/* Upload button (save an article for later) */}
-                  <FileUploadButton />
+    <LocalPersistenceProvider allowed={localPersistenceAllowed}>
+      <AppearanceProvider>
+        <RealtimeProvider initialCursors={initialCursors}>
+          <KeyboardShortcutsProvider>
+            <ScrollContainerProvider>
+              <Toaster position="bottom-right" richColors closeButton />
+              <LayoutShell
+                headerRight={
+                  <div className="flex items-center gap-2">
+                    {/* Upload button (save an article for later) */}
+                    <FileUploadButton />
 
-                  {/* Subscribe button */}
-                  <ClientLink
-                    href="/subscribe"
-                    className="btn-primary ui-text-sm inline-flex min-h-[40px] items-center gap-1.5 rounded-md px-3 font-medium"
-                  >
-                    <PlusIcon className="h-4 w-4" />
-                    <span className="hidden sm:inline">Subscribe</span>
-                  </ClientLink>
-
-                  {/* User menu */}
-                  <div className="relative">
-                    <button
-                      onClick={() => setUserMenuOpen(!userMenuOpen)}
-                      className="ui-text-sm border-edge-strong bg-surface text-body hover:bg-surface-muted flex min-h-[40px] items-center gap-2 rounded-md border px-3 transition-colors active:bg-zinc-100 dark:active:bg-zinc-700"
-                      aria-expanded={userMenuOpen}
-                      aria-haspopup="true"
+                    {/* Subscribe button */}
+                    <ClientLink
+                      href="/subscribe"
+                      className="btn-primary ui-text-sm inline-flex min-h-[40px] items-center gap-1.5 rounded-md px-3 font-medium"
                     >
-                      <span className="hidden max-w-[150px] truncate sm:inline">
-                        <UserEmail />
-                      </span>
-                      <span className="sm:hidden" aria-label="Account menu">
-                        <UserIcon className="h-5 w-5" />
-                      </span>
-                      <ChevronDownIcon
-                        className={`h-4 w-4 transition-transform ${userMenuOpen ? "rotate-180" : ""}`}
-                      />
-                    </button>
+                      <PlusIcon className="h-4 w-4" />
+                      <span className="hidden sm:inline">Subscribe</span>
+                    </ClientLink>
 
-                    {/* Dropdown menu */}
-                    {userMenuOpen && (
-                      <>
-                        <div
-                          className="fixed inset-0 z-10"
-                          onClick={() => setUserMenuOpen(false)}
+                    {/* User menu */}
+                    <div className="relative">
+                      <button
+                        onClick={() => setUserMenuOpen(!userMenuOpen)}
+                        className="ui-text-sm border-edge-strong bg-surface text-body hover:bg-surface-muted flex min-h-[40px] items-center gap-2 rounded-md border px-3 transition-colors active:bg-zinc-100 dark:active:bg-zinc-700"
+                        aria-expanded={userMenuOpen}
+                        aria-haspopup="true"
+                      >
+                        <span className="hidden max-w-[150px] truncate sm:inline">
+                          <UserEmail />
+                        </span>
+                        <span className="sm:hidden" aria-label="Account menu">
+                          <UserIcon className="h-5 w-5" />
+                        </span>
+                        <ChevronDownIcon
+                          className={`h-4 w-4 transition-transform ${userMenuOpen ? "rotate-180" : ""}`}
                         />
-                        <div className="border-edge-strong bg-surface absolute right-0 z-20 mt-1 w-48 rounded-md border py-1 shadow-lg">
-                          <ClientLink
-                            href="/settings"
-                            onNavigate={() => setUserMenuOpen(false)}
-                            className="ui-text-sm text-body hover:bg-surface-muted flex min-h-[44px] items-center px-4 active:bg-zinc-200 dark:active:bg-zinc-700"
-                          >
-                            Settings
-                          </ClientLink>
-                          <ClientLink
-                            href="/settings/sessions"
-                            onNavigate={() => setUserMenuOpen(false)}
-                            className="ui-text-sm text-body hover:bg-surface-muted flex min-h-[44px] items-center px-4 active:bg-zinc-200 dark:active:bg-zinc-700"
-                          >
-                            Sessions
-                          </ClientLink>
-                          <hr className="border-edge-strong my-1" />
-                          <button
-                            onClick={() => {
-                              setUserMenuOpen(false);
-                              handleLogout();
-                            }}
-                            disabled={logoutMutation.isPending}
-                            className="ui-text-sm text-body hover:bg-surface-muted flex min-h-[44px] w-full items-center px-4 text-left active:bg-zinc-200 disabled:opacity-50 dark:active:bg-zinc-700"
-                          >
-                            {logoutMutation.isPending ? "Signing out..." : "Sign out"}
-                          </button>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-              }
-            >
-              {/* Offline banner */}
-              <OfflineBanner />
+                      </button>
 
-              {/* Main content */}
-              <MainScrollContainer className="bg-canvas flex-1 overflow-y-auto">
-                <AppRouter />
-              </MainScrollContainer>
-            </LayoutShell>
-          </ScrollContainerProvider>
-        </KeyboardShortcutsProvider>
-      </RealtimeProvider>
-    </AppearanceProvider>
+                      {/* Dropdown menu */}
+                      {userMenuOpen && (
+                        <>
+                          <div
+                            className="fixed inset-0 z-10"
+                            onClick={() => setUserMenuOpen(false)}
+                          />
+                          <div className="border-edge-strong bg-surface absolute right-0 z-20 mt-1 w-48 rounded-md border py-1 shadow-lg">
+                            <ClientLink
+                              href="/settings"
+                              onNavigate={() => setUserMenuOpen(false)}
+                              className="ui-text-sm text-body hover:bg-surface-muted flex min-h-[44px] items-center px-4 active:bg-zinc-200 dark:active:bg-zinc-700"
+                            >
+                              Settings
+                            </ClientLink>
+                            <ClientLink
+                              href="/settings/sessions"
+                              onNavigate={() => setUserMenuOpen(false)}
+                              className="ui-text-sm text-body hover:bg-surface-muted flex min-h-[44px] items-center px-4 active:bg-zinc-200 dark:active:bg-zinc-700"
+                            >
+                              Sessions
+                            </ClientLink>
+                            <hr className="border-edge-strong my-1" />
+                            <button
+                              onClick={() => {
+                                setUserMenuOpen(false);
+                                handleLogout();
+                              }}
+                              disabled={logoutMutation.isPending}
+                              className="ui-text-sm text-body hover:bg-surface-muted flex min-h-[44px] w-full items-center px-4 text-left active:bg-zinc-200 disabled:opacity-50 dark:active:bg-zinc-700"
+                            >
+                              {logoutMutation.isPending ? "Signing out..." : "Sign out"}
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                }
+              >
+                {/* Offline banner */}
+                <OfflineBanner />
+
+                {/* Main content */}
+                <MainScrollContainer className="bg-canvas flex-1 overflow-y-auto">
+                  <AppRouter />
+                </MainScrollContainer>
+              </LayoutShell>
+            </ScrollContainerProvider>
+          </KeyboardShortcutsProvider>
+        </RealtimeProvider>
+      </AppearanceProvider>
+    </LocalPersistenceProvider>
   );
 }

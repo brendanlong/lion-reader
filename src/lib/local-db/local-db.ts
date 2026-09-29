@@ -14,21 +14,26 @@ import type { Query, QueryClient } from "@tanstack/react-query";
 import { BasicIndex } from "@tanstack/db";
 import { toEntryRow, upsertServerEntries, type EntryRow, type EntryStore } from "./entries";
 import {
+  createEntryLists,
   ingestEntryListPages,
   insertIntoMatchingLists,
   markEntryListFetchStarted,
   removeEntryList,
+  writeListRows,
   type EntryListMeta,
   type EntryLists,
   type EntryTagScope,
   type ListEntryRow,
 } from "./entry-lists";
+import type { ListFetch, LocalPersistence } from "./persistence";
 import { findCachedSubscription } from "@/lib/cache/count-cache";
 import { createSyncedCollection } from "./synced-collection";
 
 export interface LocalDb {
   entries: EntryStore;
   lists: EntryLists;
+  /** Set once local persistence is attached; the store is memory-only until then. */
+  persistence: LocalPersistence | null;
 }
 
 interface EntriesListData {
@@ -51,7 +56,7 @@ function createLocalDb(): LocalDb {
   });
   rows.collection.createIndex((row) => row.listKey, { indexType: BasicIndex });
   rows.collection.createIndex((row) => row.entryId, { indexType: BasicIndex });
-  return { entries, lists: { rows, meta: new Map() } };
+  return { entries, lists: createEntryLists(rows), persistence: null };
 }
 
 function procedureOf(query: Query): string | undefined {
@@ -98,7 +103,11 @@ function connectQueryCache(db: LocalDb, queryClient: QueryClient): void {
   cache.subscribe((event) => {
     const { query } = event;
     if (event.type === "removed") {
-      if (procedureOf(query) === "entries.list") removeEntryList(db.lists, inputOf(query));
+      // A persisted list outlives its query: it is what the next session
+      // shows before refetching it (and is evicted by age instead).
+      if (procedureOf(query) === "entries.list" && !db.persistence) {
+        removeEntryList(db.lists, inputOf(query));
+      }
       return;
     }
     if (event.type === "added") {
@@ -162,4 +171,77 @@ export function addServerEntryToLists(
 ): void {
   upsertServerEntries(db.entries, [entry]);
   insertEntryIntoLists(db, queryClient, db.entries.getSynced(entry.id) ?? entry);
+}
+
+/** Persisted lists not fetched for this long are dropped, with the entries only they reference. */
+const PERSISTED_LIST_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
+
+/**
+ * Loads what a previous session persisted into the store, then mirrors every
+ * later synced write to `persistence`.
+ *
+ * Data from this session always wins: stored entries go through the
+ * `updatedAt` guard, and a list already fetched this session keeps its own
+ * membership. Lists not fetched within the retention window are evicted,
+ * along with entries no remaining list references (so an entry opened only
+ * from the reader lasts one session).
+ */
+export async function attachLocalPersistence(
+  db: LocalDb,
+  persistence: LocalPersistence
+): Promise<void> {
+  const [storedEntries, storedRows, storedFetches] = await Promise.all([
+    persistence.loadAll<EntryRow>("entries"),
+    persistence.loadAll<ListEntryRow>("listRows"),
+    persistence.loadAll<ListFetch>("listFetches"),
+  ]);
+
+  // Everything below is synchronous, so no session write can slip between
+  // loading and mirroring.
+  const sessionEntries = [...db.entries.syncedRows()];
+  const sessionRows = [...db.lists.rows.syncedRows()];
+
+  const now = Date.now();
+  const restoredLists = new Set(
+    storedFetches
+      .filter((fetch) => now - fetch.fetchedAt < PERSISTED_LIST_RETENTION_MS)
+      .map((fetch) => fetch.listKey)
+      .filter((listKey) => !db.lists.meta.has(listKey))
+  );
+  const restoredRows = storedRows.filter((row) => restoredLists.has(row.listKey));
+  const referenced = new Set(restoredRows.map((row) => row.entryId));
+  const restoredEntries = storedEntries.filter((entry) => referenced.has(entry.id));
+
+  upsertServerEntries(db.entries, restoredEntries);
+  writeListRows(db.lists, restoredRows);
+
+  persistence.delete(
+    "listRows",
+    storedRows.filter((row) => !restoredLists.has(row.listKey)).map((row) => row.key)
+  );
+  persistence.delete(
+    "entries",
+    storedEntries.filter((entry) => !referenced.has(entry.id)).map((entry) => entry.id)
+  );
+  persistence.delete(
+    "listFetches",
+    storedFetches.filter((fetch) => !restoredLists.has(fetch.listKey)).map((f) => f.listKey)
+  );
+
+  db.entries.setMirror({
+    put: (rows) => persistence.put("entries", rows),
+    delete: (keys) => persistence.delete("entries", keys),
+  });
+  db.lists.rows.setMirror({
+    put: (rows) => persistence.put("listRows", rows),
+    delete: (keys) => persistence.delete("listRows", keys),
+  });
+  const recordFetched = (listKey: string) =>
+    persistence.put("listFetches", [{ listKey, fetchedAt: Date.now() } satisfies ListFetch]);
+  db.lists.onFetched = recordFetched;
+
+  persistence.put("entries", sessionEntries);
+  persistence.put("listRows", sessionRows);
+  for (const listKey of db.lists.meta.keys()) recordFetched(listKey);
+  db.persistence = persistence;
 }

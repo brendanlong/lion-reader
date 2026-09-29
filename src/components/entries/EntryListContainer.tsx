@@ -211,13 +211,16 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
   );
 
   // Query state for the presentational EntryList
+  // A list restored from local persistence renders while its first page is
+  // still loading; show that as loading more (not the end of the list), which
+  // also keeps infinite scroll from requesting a next page mid-load.
   const externalQueryState: ExternalQueryState = useMemo(
     () => ({
-      isFetchingNextPage,
-      hasNextPage: hasNextPage ?? false,
+      isFetchingNextPage: isFetchingNextPage || isLoading,
+      hasNextPage: (hasNextPage ?? false) || isLoading,
       fetchNextPage: () => void fetchNextPage(),
     }),
-    [isFetchingNextPage, hasNextPage, fetchNextPage]
+    [isFetchingNextPage, hasNextPage, isLoading, fetchNextPage]
   );
 
   // Deterministic skeleton on the server + first client render so hydration

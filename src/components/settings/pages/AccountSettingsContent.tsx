@@ -22,6 +22,7 @@ import { CheckIcon } from "@/components/ui/icons";
 import { LinkedAccounts } from "@/components/settings/LinkedAccounts";
 import { type OAuthProvider, providerNames } from "@/components/auth/oauth-helpers";
 import { KeyboardShortcutsSettings } from "@/components/settings/KeyboardShortcutsSettings";
+import { LocalPersistenceSettings } from "@/components/settings/LocalPersistenceSettings";
 import { AboutSection } from "@/components/settings/AboutSection";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { TextLink } from "@/components/ui/text-link";
@@ -333,6 +334,9 @@ export default function AccountSettingsContent() {
 
       {/* Keyboard Shortcuts Section - fully static */}
       <KeyboardShortcutsSettings />
+
+      {/* Per-device storage of the entry store */}
+      <LocalPersistenceSettings />
 
       {/* Privacy & Legal Section - fully static */}
       <SettingsSection

@@ -61,12 +61,43 @@ older `updatedAt`, so it is skipped for that entry.
 | `synced-collection.ts` | A TanStack DB collection whose synced layer we write from server data (`begin({ immediate: true })`, so writes land under pending optimistic changes) |
 | `entries.ts`           | Entry rows and the `updatedAt`-guarded server writes: `upsertServerEntries`, `setServerEntryState`, `patchServerEntryMetadata`                        |
 | `entry-lists.ts`       | List membership: `ingestEntryListPages`, `insertIntoMatchingLists` (filter targeting, pagination window), `entryListKey`                              |
-| `local-db.ts`          | `getLocalDb` (per-QueryClient store + QueryCache ingestion), `insertEntryIntoLists` / `addServerEntryToLists`                                         |
+| `local-db.ts`          | `getLocalDb` (per-QueryClient store + QueryCache ingestion), `insertEntryIntoLists` / `addServerEntryToLists`, `attachLocalPersistence`               |
+| `persistence.ts`       | The per-user IndexedDB database behind local persistence                                                                                              |
 
 Components read it through `src/lib/hooks/useLocalEntries.ts`:
 `useEntryListEntries(input)` (a list, in order), `useLocalEntry(id)`, and
 `useLocalEntriesMatching(filters)` — the entry-list loading fallback, which shows
 stored entries matching the view's filters while its first page loads.
+
+### Local Persistence
+
+"Keep entries on this device" (Settings → Account; per device, off by default,
+`src/lib/hooks/useLocalPersistence.ts`) mirrors the store's synced layer —
+server data only, never optimistic state — to an IndexedDB database named for
+the user. It is a **startup cache, not a source of truth**: everything restored
+is revalidated by the fetches that happen anyway, so writes are fire-and-forget
+and a lost write only costs speed. With it off, the same code runs memory-only.
+
+- **Attach.** Once `auth.me` resolves, `attachLocalPersistence` loads the
+  database into the store, then mirrors every later write. Data from this
+  session wins: restored entries go through the `updatedAt` guard, and a list
+  already fetched this session keeps its own membership. A restored list
+  renders at once, with its refetch shown as loading more.
+- **Eviction.** Lists not fetched for 14 days are dropped at attach, with every
+  entry no remaining list references. Lists are otherwise never dropped in
+  a persistent session (query gc doesn't remove their rows, unlike
+  memory-only), since they are what the next session shows first.
+- **Live inserts** go only to lists fetched this session (`meta`); restored
+  lists pick up new entries when they refetch. `members` indexes every row,
+  restored or not.
+- **Deletion.** Signing out, deleting the account, and turning the setting off
+  delete every local database before navigating; opening one deletes other
+  users' (a session that merely expired never wiped its own). Toggling reloads
+  the page rather than switching modes under a running app.
+- **Kill switch.** `LOCAL_PERSISTENCE_DISABLED=true` hides the setting and
+  makes every client delete its databases on the next page load.
+- **Tabs** each mirror their own writes into the shared database, so it can
+  briefly hold one tab's older copy of an entry; the next fetch corrects it.
 
 ## Cache Helpers (`src/lib/cache/`)
 

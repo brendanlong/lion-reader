@@ -10,6 +10,7 @@
 import { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
+import { deleteLocalPersistence } from "@/lib/local-db/persistence";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
@@ -29,9 +30,12 @@ export default function DeleteAccountSettingsContent() {
 
   const deleteAccountMutation = trpc.users["me.deleteAccount"].useMutation({
     onSuccess: () => {
-      // Redirect to login page after deletion
-      // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- deliberate hard nav across an auth boundary (see src/CLAUDE.md)
-      window.location.href = "/login";
+      // Redirect to login page after deletion, dropping the locally persisted
+      // entry store first
+      void deleteLocalPersistence().finally(() => {
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- deliberate hard nav across an auth boundary (see src/CLAUDE.md)
+        window.location.href = "/login";
+      });
     },
     onError: (err) => {
       setError(err.message || "Failed to delete account");

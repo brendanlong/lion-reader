@@ -25,6 +25,7 @@ import { AuthErrorHandler } from "@/components/app/AuthErrorHandler";
 import { AnnouncementBanner } from "@/components/layout/AnnouncementBanner";
 import { ANNOUNCEMENT_DISMISSED_COOKIE } from "@/lib/site-status/announcement-cookie";
 import { getAnnouncement } from "@/server/services/site-status";
+import { clientConfig } from "@/server/config/env";
 import { AppLayoutContent } from "./AppLayoutContent";
 
 interface AppLayoutProps {
@@ -96,7 +97,10 @@ export default async function AppLayout({ children }: AppLayoutProps) {
       <AuthErrorHandler />
       <AnnouncementBanner announcement={announcement} initialDismissedId={dismissedId} />
       <HydrateClient>
-        <AppLayoutContent initialCursors={initialCursors} />
+        <AppLayoutContent
+          initialCursors={initialCursors}
+          localPersistenceAllowed={!clientConfig.localPersistenceDisabled}
+        />
         {/* Page files run for prefetching but their output is hidden */}
         <div className="hidden">{children}</div>
       </HydrateClient>
