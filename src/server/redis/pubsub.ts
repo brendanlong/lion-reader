@@ -144,9 +144,8 @@ const userEventSchema = z.discriminatedUnion("type", [
     // or below it (no catch-up re-delivery), while an unrelated entry written
     // in the same millisecond — whose UUIDv7 id sorts above every
     // earlier-created marked entry — stays past the cursor, so a catch-up can
-    // still deliver it (#1102). Optional so events published by a previous
-    // release still parse during a rolling deploy.
-    entryId: z.string().optional(),
+    // still deliver it (#1102).
+    entryId: z.string(),
   }),
   z.object({
     type: z.literal("tag_created"),

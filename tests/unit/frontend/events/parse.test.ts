@@ -31,12 +31,14 @@ describe("parseSyncEvent", () => {
         userId: "user-1",
         timestamp: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:00.000Z",
+        entryId: "entry-1",
       })
     );
     expect(event).toEqual({
       type: "mark_all_read",
       timestamp: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
+      entryId: "entry-1",
     });
   });
 
