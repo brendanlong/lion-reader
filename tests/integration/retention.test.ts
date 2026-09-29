@@ -7,9 +7,11 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
+import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
   apiTokens,
+  entryTombstones,
   feeds,
   jobs,
   oauthAccessTokens,
@@ -24,6 +26,8 @@ import {
 } from "../../src/server/db/schema";
 import { runRetentionCleanup } from "../../src/server/services/retention";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
+import { Temporal } from "temporal-polyfill";
+import { ENTRY_TOMBSTONE_RETENTION_MS } from "../../src/server/services/entry-tombstones";
 import { createTestFeed, createTestSubscription, createTestUser } from "./helpers";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -496,6 +500,30 @@ describe("runRetentionCleanup", () => {
     expect(remaining).not.toContain(withDeadGrants);
   });
 
+  it("prunes entry tombstones past the sync horizon and keeps recent ones", async () => {
+    const userId = await createTestUser({ emailPrefix: "retention" });
+    const old = generateUuidv7();
+    const recent = generateUuidv7();
+    const now = Temporal.Now.instant();
+    await db.insert(entryTombstones).values([
+      {
+        userId,
+        entryId: old,
+        deletedAt: now.subtract({ milliseconds: ENTRY_TOMBSTONE_RETENTION_MS + DAY_MS }),
+      },
+      { userId, entryId: recent, deletedAt: now.subtract({ milliseconds: DAY_MS }) },
+    ]);
+
+    const result = await runRetentionCleanup(db);
+
+    expect(result.entryTombstones).toBe(1);
+    const remaining = await db
+      .select({ entryId: entryTombstones.entryId })
+      .from(entryTombstones)
+      .where(eq(entryTombstones.userId, userId));
+    expect(remaining.map((row) => row.entryId)).toEqual([recent]);
+  });
+
   it("returns zero counts when there is nothing to delete", async () => {
     const result = await runRetentionCleanup(db);
     expect(result).toEqual({
@@ -508,6 +536,7 @@ describe("runRetentionCleanup", () => {
       opmlImports: 0,
       parkedJobs: 0,
       deadFeedJobs: 0,
+      entryTombstones: 0,
     });
   });
 });

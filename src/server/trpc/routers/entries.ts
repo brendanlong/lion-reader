@@ -17,16 +17,20 @@ import {
   confirmedProtectedProcedure as protectedProcedure,
   scopedProtectedProcedure,
 } from "../trpc";
-import { API_TOKEN_SCOPES } from "@/server/auth/api-token";
+import { READER_SCOPES } from "@/server/auth/api-token";
+import { OAUTH_SCOPES } from "@/server/oauth/utils";
 import { errors } from "../errors";
 import { uuidSchema } from "../validation";
 import { tags } from "@/server/db/schema";
 import * as fullContentService from "@/server/services/full-content";
 import * as entriesService from "@/server/services/entries";
 import { verifySubscriptionOwnership } from "@/server/services/entry-filters";
+import { toServerTime } from "@/server/services/client-time";
 
-// Endpoints exposed via the MCP tool surface; accessible to tokens with the `mcp` scope.
-const mcpProcedure = scopedProtectedProcedure(API_TOKEN_SCOPES.MCP);
+// Endpoints exposed via the MCP tool surface, plus the ones the native app needs.
+const readerProcedure = scopedProtectedProcedure(READER_SCOPES);
+// Endpoints only the native app needs.
+const appProcedure = scopedProtectedProcedure(OAUTH_SCOPES.READER_FULL_ACCESS);
 
 // ============================================================================
 // Constants
@@ -45,6 +49,23 @@ const MAX_LIMIT = 100;
  * Cursor validation schema (base64-encoded entry ID).
  */
 const cursorSchema = z.string().optional();
+
+/**
+ * The client's clock when it sent a state write; per-entry `changedAt`s are
+ * shifted by its offset from the server clock (see toServerTime).
+ */
+const clientSentAtSchema = z.coerce.date().optional();
+
+/** Per-entry state writes, each with its own change time (offline replay). */
+const stateChangeEntriesSchema = z
+  .array(
+    z.object({
+      id: uuidSchema,
+      changedAt: z.coerce.date().optional(),
+    })
+  )
+  .min(1, "At least one entry is required")
+  .max(1000, "Maximum 1000 entries per request");
 
 /**
  * Limit validation schema.
@@ -181,6 +202,30 @@ const bulkUnreadCountsSchema = z.object({
  * Output schema for setStarred mutation.
  * Returns the updated entry with new starred state and counts.
  */
+/**
+ * Result of a bulk read/star write: the final state of every requested entry the
+ * user can still see (an id missing here no longer exists for them), for cache
+ * updates and offline-outbox reconciliation.
+ */
+const bulkStateChangeOutputSchema = z.object({
+  success: z.boolean(),
+  count: z.number(),
+  entries: z.array(
+    z.object({
+      id: z.string(),
+      subscriptionId: z.string().nullable(),
+      read: z.boolean(), // Actual read state after update
+      starred: z.boolean(), // For updating starred unread count
+      type: feedTypeSchema, // For updating saved/email counts
+      updatedAt: z.date(), // For cache freshness comparison
+    })
+  ),
+  // Absolute counts for all affected lists. Absent when no value actually
+  // flipped (same-value re-assert) — the client's cached counts are already
+  // correct (issue #1118).
+  counts: bulkUnreadCountsSchema.optional(),
+});
+
 const setStarredOutputSchema = z.object({
   entry: entryMutationResultSchema,
   // Absent when the starred value didn't actually flip (same-value re-assert)
@@ -218,7 +263,7 @@ export const entriesRouter = createTRPCRouter({
    * @param limit - Optional number of entries per page (default: 50, max: 100)
    * @returns Paginated list of entries
    */
-  list: mcpProcedure
+  list: readerProcedure
     .meta({
       openapi: {
         method: "GET",
@@ -264,7 +309,7 @@ export const entriesRouter = createTRPCRouter({
    * @param id - The entry ID
    * @returns The full entry with content and subscription data
    */
-  get: mcpProcedure
+  get: readerProcedure
     .meta({
       openapi: {
         method: "GET",
@@ -291,6 +336,32 @@ export const entriesRouter = createTRPCRouter({
     }),
 
   /**
+   * Get many full entries at once, in `entries.get`'s shape. Ids the user can't
+   * see are omitted. Used by the native app to download entries for offline
+   * reading.
+   */
+  getMany: appProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/entries/batch",
+        tags: ["Entries"],
+        summary: "Get many entries",
+      },
+    })
+    .input(
+      z.object({
+        ids: z.array(uuidSchema).min(1).max(MAX_LIMIT),
+      })
+    )
+    .output(z.object({ entries: z.array(entryFullSchema) }))
+    .query(async ({ ctx, input }) => {
+      return {
+        entries: await entriesService.getFullEntries(ctx.db, ctx.session.user.id, input.ids),
+      };
+    }),
+
+  /**
    * Mark entries as read or unread (bulk operation).
    *
    * Only entries the user has access to (via user_entries) will be updated.
@@ -303,7 +374,7 @@ export const entriesRouter = createTRPCRouter({
    * @param read - Whether to mark as read (true) or unread (false)
    * @returns The updated entries with subscription context for cache updates
    */
-  markRead: mcpProcedure
+  markRead: readerProcedure
     .meta({
       openapi: {
         method: "POST",
@@ -314,49 +385,26 @@ export const entriesRouter = createTRPCRouter({
     })
     .input(
       z.object({
-        entries: z
-          .array(
-            z.object({
-              id: uuidSchema,
-              changedAt: z.coerce.date().optional(),
-            })
-          )
-          .min(1, "At least one entry is required")
-          .max(1000, "Maximum 1000 entries per request"),
+        entries: stateChangeEntriesSchema,
         read: z.boolean(),
+        clientSentAt: clientSentAtSchema,
       })
     )
-    .output(
-      z.object({
-        success: z.boolean(),
-        count: z.number(),
-        // Entries with context for cache updates
-        entries: z.array(
-          z.object({
-            id: z.string(),
-            subscriptionId: z.string().nullable(),
-            read: z.boolean(), // Actual read state after update
-            starred: z.boolean(), // For updating starred unread count
-            type: feedTypeSchema, // For updating saved/email counts
-            updatedAt: z.date(), // For cache freshness comparison
-          })
-        ),
-        // Absolute counts for all affected lists. Absent when no read value
-        // actually flipped (same-value re-assert) — the client's cached counts
-        // are already correct (issue #1118).
-        counts: bulkUnreadCountsSchema.optional(),
-      })
-    )
+    .output(bulkStateChangeOutputSchema)
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
       // markEntriesRead computes the absolute counts and publishes the
       // entry_state_changed SSE events itself (so every caller — tRPC, MCP, and
       // the Google Reader/Wallabag compat routes — notifies other tabs).
+      const now = new Date();
       const { entries: entriesResult, counts } = await entriesService.markEntriesRead(
         ctx.db,
         userId,
-        input.entries,
+        input.entries.map((entry) => ({
+          id: entry.id,
+          changedAt: toServerTime(entry.changedAt, input.clientSentAt, now),
+        })),
         input.read
       );
 
@@ -377,7 +425,7 @@ export const entriesRouter = createTRPCRouter({
    * @param before - Optional filter to mark only entries fetched before this date
    * @returns The count of entries marked as read
    */
-  markAllRead: protectedProcedure
+  markAllRead: appProcedure
     .meta({
       openapi: {
         method: "POST",
@@ -395,6 +443,7 @@ export const entriesRouter = createTRPCRouter({
         type: feedTypeSchema.optional(),
         before: z.coerce.date().optional(),
         changedAt: z.coerce.date().optional(),
+        clientSentAt: clientSentAtSchema,
       })
     )
     .output(z.object({ count: z.number() }))
@@ -426,8 +475,10 @@ export const entriesRouter = createTRPCRouter({
 
       // markAllEntriesRead publishes the mark_all_read SSE signal itself (so the
       // Google Reader mark-all-as-read route notifies other tabs too).
+      const { clientSentAt, ...filters } = input;
       const entryIds = await entriesService.markAllEntriesRead(ctx.db, {
-        ...input,
+        ...filters,
+        changedAt: toServerTime(input.changedAt, clientSentAt),
         userId,
         showSpam: ctx.session.user.showSpam,
       });
@@ -444,7 +495,7 @@ export const entriesRouter = createTRPCRouter({
    * @param starred - Whether to star (true) or unstar (false)
    * @returns The updated entry with current state
    */
-  setStarred: mcpProcedure
+  setStarred: readerProcedure
     .meta({
       openapi: {
         method: "POST",
@@ -458,6 +509,7 @@ export const entriesRouter = createTRPCRouter({
         id: uuidSchema,
         starred: z.boolean(),
         changedAt: z.coerce.date().optional(),
+        clientSentAt: clientSentAtSchema,
       })
     )
     .output(setStarredOutputSchema)
@@ -471,10 +523,45 @@ export const entriesRouter = createTRPCRouter({
         userId,
         input.id,
         input.starred,
-        input.changedAt ?? new Date()
+        toServerTime(input.changedAt, input.clientSentAt)
       );
 
       return { entry, counts };
+    }),
+
+  /**
+   * Star or unstar entries in bulk, each with its own change time, with the
+   * same last-write-wins semantics as markRead.
+   */
+  setStarredMany: appProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/entries/starred",
+        tags: ["Entries"],
+        summary: "Star/unstar entries",
+      },
+    })
+    .input(
+      z.object({
+        entries: stateChangeEntriesSchema,
+        starred: z.boolean(),
+        clientSentAt: clientSentAtSchema,
+      })
+    )
+    .output(bulkStateChangeOutputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const now = new Date();
+      const { entries, counts } = await entriesService.updateEntriesStarred(
+        ctx.db,
+        ctx.session.user.id,
+        input.entries.map((entry) => ({
+          id: entry.id,
+          changedAt: toServerTime(entry.changedAt, input.clientSentAt, now),
+        })),
+        input.starred
+      );
+      return { success: true, count: entries.length, entries, counts };
     }),
 
   /**
@@ -492,7 +579,7 @@ export const entriesRouter = createTRPCRouter({
    * @param starredOnly - Optional filter to count only starred entries
    * @returns Count of total and unread entries
    */
-  count: mcpProcedure
+  count: readerProcedure
     .meta({
       openapi: {
         method: "GET",

@@ -226,6 +226,22 @@ export const githubConfig = {
 };
 
 /**
+ * Native Android app. Its signing-certificate fingerprints (comma-separated
+ * SHA-256, `AA:BB:...`) are published in `/.well-known/assetlinks.json`, which
+ * verifies the app's claim on the OAuth redirect URL (an Android App Link).
+ * Unset, Android won't route the redirect to the app and sign-in can't finish.
+ */
+export const androidAppConfig = {
+  packageName: "com.lionreader.app",
+  get certSha256Fingerprints(): string[] {
+    return (process.env.ANDROID_APP_CERT_SHA256 ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  },
+};
+
+/**
  * Announcement feed configuration.
  * New users are auto-subscribed to this feed on signup.
  * Set to empty string to disable auto-subscription.

@@ -253,22 +253,24 @@ Release tags `android-vX.Y.Z`. When the app lands, move these decisions into
 
 ## Phases
 
-1. **Server groundwork** (TypeScript, testable with existing suites): app OAuth
-   scope + App Link redirect, token access for sync/SSE/narration, sync over
-   `/api/v1` with bootstrap/tombstones/next cursor/resync, `entries.getMany`,
-   batch star with per-entry timestamps, `changedAt` rebase + clamp,
-   structured narration paragraphs + stamped HTML + plain-paragraph cache,
-   binary synthesize, upload idempotency, OpenAPI snapshot + CI check,
-   appearance token/CSS export.
+1. **Server groundwork** (TypeScript, testable with existing suites): the
+   first-party app OAuth client + `/api/v1` audience + App Link redirect, app
+   token access for the reader endpoints and SSE, `sync.changes` over
+   `/api/v1` (next cursors, tombstones, resync), `entries.getMany`,
+   `entries.setStarredMany` with per-entry timestamps, `changedAt` rebase +
+   clamp, OpenAPI snapshot + CI breaking-change check. Each later phase adds the
+   server pieces it needs alongside its client code.
 2. **KMP skeleton + shared core**: Gradle setup, CI, generated or hand-written
    Ktor client, SQLDelight schema, sync, outbox, retention, JVM + real-server
    tests.
 3. **Android MVP**: OAuth login, lists (all, unread, starred, saved,
    recently read, subscriptions, tags), entry view, read/star with swipe, offline
    indicator, background sync, appearance settings.
-4. **Share target** + offline save queue + file uploads.
+4. **Share target** + offline save queue + file uploads (server: app token
+   access to `saved.*`, upload idempotency).
 5. **Narration**: ExoPlayer/MediaSession with system and cloud voices, then
-   Piper via sherpa-onnx.
+   Piper via sherpa-onnx (server: structured narration paragraphs + stamped
+   HTML + plain-paragraph cache, binary synthesize, app token access).
 6. **Release**: Play Console closed testing (new personal developer accounts
    need a closed test with testers for 14 days before production) and signed
    APKs on GitHub Releases.

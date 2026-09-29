@@ -261,6 +261,12 @@ CREATE TABLE public.entry_summaries (
 );
 ALTER TABLE ONLY public.entry_summaries ALTER COLUMN summary_text SET COMPRESSION lz4;
 
+CREATE TABLE public.entry_tombstones (
+    user_id uuid NOT NULL,
+    entry_id uuid NOT NULL,
+    deleted_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
 CREATE SEQUENCE public.greader_id_seq
     START WITH 1
     INCREMENT BY 1
@@ -638,6 +644,9 @@ ALTER TABLE ONLY public.entry_summaries
 ALTER TABLE ONLY public.entry_summaries
     ADD CONSTRAINT entry_summaries_user_content_unique UNIQUE (user_id, content_hash);
 
+ALTER TABLE ONLY public.entry_tombstones
+    ADD CONSTRAINT entry_tombstones_pkey PRIMARY KEY (user_id, entry_id);
+
 ALTER TABLE ONLY public.feeds
     ADD CONSTRAINT feeds_pkey PRIMARY KEY (id);
 
@@ -779,6 +788,10 @@ CREATE INDEX idx_entries_type ON public.entries USING btree (type);
 
 CREATE INDEX idx_entry_summaries_prompt_version ON public.entry_summaries USING btree (prompt_version) WHERE (summary_text IS NOT NULL);
 
+CREATE INDEX idx_entry_tombstones_deleted_at ON public.entry_tombstones USING btree (deleted_at);
+
+CREATE INDEX idx_entry_tombstones_user_deleted_at ON public.entry_tombstones USING btree (user_id, deleted_at);
+
 CREATE UNIQUE INDEX idx_feeds_greader_stream_id ON public.feeds USING btree (greader_stream_id);
 
 CREATE INDEX idx_feeds_next_fetch ON public.feeds USING btree (next_fetch_at);
@@ -891,6 +904,9 @@ ALTER TABLE ONLY public.entries
 
 ALTER TABLE ONLY public.entry_summaries
     ADD CONSTRAINT entry_summaries_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.entry_tombstones
+    ADD CONSTRAINT entry_tombstones_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.feeds
     ADD CONSTRAINT feeds_user_id_users_id_fk FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;

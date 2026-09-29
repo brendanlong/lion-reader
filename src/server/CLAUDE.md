@@ -62,7 +62,7 @@ Unread badge counts are denormalized onto four trigger-maintained columns — `s
 
 ## Read/Star Idempotency
 
-`user_entries` carries per-field change timestamps (`read_changed_at`, `starred_changed_at`), and state mutations accept a `changedAt` and only apply when newer than the stored timestamp. This makes conflicting updates from multiple clients (tabs, MCP, offline sync replaying old actions) resolve to the newest user intent instead of last-write-wins.
+`user_entries` carries per-field change timestamps (`read_changed_at`, `starred_changed_at`), and state mutations accept a `changedAt` and only apply when newer than the stored timestamp. This makes conflicting updates from multiple clients (tabs, MCP, offline sync replaying old actions) resolve to the newest user intent instead of last-write-wins. The tRPC/REST mutations map a client's `changedAt` onto the server clock first (`toServerTime`, `services/client-time.ts`): shifted by the offset the client reports via `clientSentAt`, then capped at now, so a fast device clock can't win every conflict.
 
 ## Row Written vs. Value Flipped
 

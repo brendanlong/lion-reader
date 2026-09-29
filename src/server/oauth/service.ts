@@ -30,6 +30,7 @@ import {
   SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS,
 } from "./utils";
 import { getRegistrationClientUri } from "./config";
+import { APP_CLIENT_ID, getAppClient } from "./app-client";
 import { logger } from "@/lib/logger";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { fetchWithSsrfProtection } from "@/server/http/ssrf";
@@ -77,6 +78,8 @@ export interface TokenPair {
  * OAuth access token data for validation
  */
 export interface OAuthTokenData {
+  tokenId: string;
+  expiresAt: Date;
   userId: string;
   clientId: string;
   scopes: string[];
@@ -89,11 +92,15 @@ export interface OAuthTokenData {
 // ============================================================================
 
 /**
- * Resolves a client by ID.
- * First checks the database, then fetches CIMD if the ID is a URL.
+ * Resolves a client by ID: the built-in app client, then the database, then a
+ * CIMD fetch if the ID is a URL.
  */
 export async function resolveClient(clientId: string): Promise<ResolvedClient | null> {
-  // First, try to find in database
+  if (clientId === APP_CLIENT_ID) {
+    return getAppClient();
+  }
+
+  // Then try the database
   const dbClient = await db
     .select()
     .from(oauthClients)
@@ -477,6 +484,8 @@ export async function validateAccessToken(token: string): Promise<OAuthTokenData
   void updateAccessTokenLastUsed(accessToken.id);
 
   return {
+    tokenId: accessToken.id,
+    expiresAt: accessToken.expiresAt,
     userId: accessToken.userId,
     clientId: accessToken.clientId,
     scopes: accessToken.scopes,

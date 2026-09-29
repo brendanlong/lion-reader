@@ -220,6 +220,32 @@ jobs:
           name: lion-reader-firefox
           path: extension/lion-reader-firefox.zip
 
+  openapi-breaking:
+    # docs/api/openapi.json is the contract installed native apps are built
+    # against; they lag the server by months, so a breaking change strands them.
+    # (Staleness of the snapshot itself is checked by the integration tests.)
+    name: OpenAPI Breaking Changes
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Check for a base snapshot
+        id: base
+        run: |
+          if git cat-file -e "origin/${{ github.base_ref }}:docs/api/openapi.json" 2>/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: oasdiff/oasdiff-action/breaking@v0
+        if: steps.base.outputs.exists == 'true'
+        with:
+          base: "origin/${{ github.base_ref }}:docs/api/openapi.json"
+          revision: "HEAD:docs/api/openapi.json"
+          fail-on: ERR
+
   integration-tests:
     name: Integration Tests
     runs-on: ubuntu-latest

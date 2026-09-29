@@ -31,6 +31,7 @@ import {
   sessions,
 } from "../db/schema";
 import { ONE_TIME_JOB_TYPES } from "../jobs/queue";
+import { pruneEntryTombstones } from "./entry-tombstones";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -99,6 +100,7 @@ export interface RetentionCleanupResult {
   opmlImports: number;
   parkedJobs: number;
   deadFeedJobs: number;
+  entryTombstones: number;
 }
 
 /**
@@ -265,5 +267,6 @@ export async function runRetentionCleanup(db: Database): Promise<RetentionCleanu
     opmlImports: oldOpmlImports.rowCount ?? 0,
     parkedJobs: parkedJobs.rowCount ?? 0,
     deadFeedJobs: deadFeedJobs.rowCount ?? 0,
+    entryTombstones: await pruneEntryTombstones(db, nowDate),
   };
 }

@@ -173,8 +173,12 @@ Entry bodies, saved articles, and AI summaries are rendered with
   bound; `redirect_uri` exact-match allowlist; refresh-token rotation with reuse
   detection; client secrets hashed; RFC 8707 audience binding enforced at use.
 - The consent POST re-validates scopes/redirect/client server-side — **never trust
-  the form's scope field.** OAuth access tokens are accepted **only** at
-  `/api/mcp` (audience-bound), not in the main tRPC/REST context.
+  the form's scope field.** OAuth access tokens are accepted **only** by the
+  resource their audience names: `/api/mcp` for MCP clients, and the main
+  tRPC/REST/SSE surface (`/api/v1` audience) for the first-party native app's
+  client alone (`src/server/oauth/app-client.ts`, `src/server/auth/app-token.ts`).
+  **Only that pinned client may be minted the `/api/v1` audience** — dynamic
+  registration lets any client request any scope, so the audience is the gate.
 
 ## 7. Cross-user data isolation (shared content)
 

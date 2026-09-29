@@ -25,6 +25,8 @@
 import { db } from "@/server/db";
 import { subscriptions } from "@/server/db/schema";
 import { validateSession } from "@/server/auth/session";
+import { validateAppAccessToken } from "@/server/auth/app-token";
+import { isSignupConfirmed } from "@/server/auth/confirmation";
 import { extractBearerToken } from "@/server/auth/bearer";
 import { getSavedFeedId } from "@/server/feed/saved-feed";
 import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
@@ -153,8 +155,13 @@ export async function GET(req: Request): Promise<Response> {
     );
   }
 
+  // Browser sessions, or the first-party app's OAuth token (confirmed users
+  // only, like the scoped tRPC procedures it can reach).
   const sessionData = await validateSession(token);
-  if (!sessionData) {
+  const appToken = sessionData ? null : await validateAppAccessToken(token);
+  const authenticatedUserId =
+    sessionData?.user.id ?? (appToken && isSignupConfirmed(appToken.user) ? appToken.userId : null);
+  if (!authenticatedUserId) {
     return new Response(
       JSON.stringify({
         error: {
@@ -169,7 +176,7 @@ export async function GET(req: Request): Promise<Response> {
     );
   }
 
-  const userId = sessionData.user.id;
+  const userId: string = authenticatedUserId;
 
   // Check Redis health before establishing SSE connection
   const redisHealthy = await checkRedisHealth();

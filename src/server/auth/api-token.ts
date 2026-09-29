@@ -12,7 +12,7 @@ import { eq, and, isNull, or, gt } from "drizzle-orm";
 import { db } from "@/server/db";
 import { apiTokens, users, type User, type ApiToken } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
-import { generateToken, hashToken } from "@/server/oauth/utils";
+import { generateToken, hashToken, OAUTH_SCOPES, type OAuthScope } from "@/server/oauth/utils";
 
 // ============================================================================
 // Constants
@@ -40,6 +40,13 @@ export const SAVE_ARTICLE_SCOPES: ApiTokenScope[] = [
   API_TOKEN_SCOPES.SAVED_WRITE,
   API_TOKEN_SCOPES.MCP,
 ];
+
+/**
+ * Scopes that reach the MCP tool surface's tRPC endpoints: `mcp` tokens, and the
+ * first-party app's `reader:full-access` OAuth token (the only token with that
+ * scope the tRPC context accepts — see src/server/auth/app-token.ts).
+ */
+export const READER_SCOPES: OAuthScope[] = [API_TOKEN_SCOPES.MCP, OAUTH_SCOPES.READER_FULL_ACCESS];
 
 // ============================================================================
 // Types

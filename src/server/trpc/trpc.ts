@@ -10,7 +10,7 @@ import superjson from "superjson";
 import { ZodError, type ZodType } from "zod";
 import type { Context } from "./context";
 import type { OpenApiMeta } from "trpc-to-openapi";
-import type { ApiTokenScope } from "@/server/auth/api-token";
+import type { OAuthScope } from "@/server/oauth/utils";
 import {
   checkRateLimit,
   getClientIdentifier,
@@ -246,7 +246,7 @@ export const confirmedProtectedProcedure = t.procedure
  *
  * Must be chained after authMiddleware to receive narrowed types.
  */
-function createScopeMiddleware(requiredScopes: ApiTokenScope[]) {
+function createScopeMiddleware(requiredScopes: OAuthScope[]) {
   return t.middleware(({ ctx, next }) => {
     // Session and sessionToken are guaranteed non-null after authMiddleware
     const session = ctx.session!;
@@ -283,7 +283,7 @@ function createScopeMiddleware(requiredScopes: ApiTokenScope[]) {
  *
  * @param scopes - The required scope(s) for token access (any-of)
  */
-export function scopedProtectedProcedure(scopes: ApiTokenScope | ApiTokenScope[]) {
+export function scopedProtectedProcedure(scopes: OAuthScope | OAuthScope[]) {
   const requiredScopes = Array.isArray(scopes) ? scopes : [scopes];
   return t.procedure
     .use(timingMiddleware)
