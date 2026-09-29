@@ -52,66 +52,57 @@ export interface UseKeyboardShortcutsOptions {
   /**
    * Callback when an entry should be opened.
    */
-  onOpenEntry?: (entryId: string) => void;
+  onOpenEntry: (entryId: string) => void;
 
   /**
    * Callback when the current view should be closed (e.g., close entry content).
    */
-  onClose?: () => void;
+  onClose: () => void;
 
   /**
-   * Whether an entry is currently open (viewing content).
-   * When true, navigation keys may behave differently.
+   * The currently open entry ID, or null when none is open. While an entry is
+   * open, j/k navigate between entries and the list selection follows it.
    */
-  isEntryOpen?: boolean;
-
-  /**
-   * The currently open entry ID (when viewing content).
-   * Used to sync selectedEntryId with the viewed entry so that when
-   * navigating with j/k or swiping while viewing, the list selection
-   * stays in sync with the currently viewed entry.
-   */
-  openEntryId?: string | null;
+  openEntryId: string | null;
 
   /**
    * Whether keyboard shortcuts are enabled.
-   * @default true
    */
-  enabled?: boolean;
+  enabled: boolean;
 
   /**
    * Callback when read status should be toggled.
    * Receives the entry ID and its current read status.
    */
-  onToggleRead?: (entryId: string, currentlyRead: boolean) => void;
+  onToggleRead: (entryId: string, currentlyRead: boolean) => void;
 
   /**
    * Callback when star status should be toggled.
    * Receives the entry ID and its current starred status.
    */
-  onToggleStar?: (entryId: string, currentlyStarred: boolean) => void;
+  onToggleStar: (entryId: string, currentlyStarred: boolean) => void;
 
   /**
    * Callback to refresh the current view.
    */
-  onRefresh?: () => void;
+  onRefresh: () => void;
 
   /**
    * Callback to toggle unread-only filter.
    */
-  onToggleUnreadOnly?: () => void;
+  onToggleUnreadOnly: () => void;
 
   /**
    * Callback when user presses j to navigate to next entry (while viewing).
    * The parent computes the next entry ID from the entries list.
    */
-  onNavigateNext?: () => void;
+  onNavigateNext: () => void;
 
   /**
    * Callback when user presses k to navigate to previous entry (while viewing).
    * The parent computes the previous entry ID from the entries list.
    */
-  onNavigatePrevious?: () => void;
+  onNavigatePrevious: () => void;
 }
 
 /**
@@ -129,26 +120,6 @@ export interface UseKeyboardShortcutsResult {
    * Useful for syncing with mouse clicks.
    */
   setSelectedEntryId: (id: string | null) => void;
-
-  /**
-   * Move selection to the next entry.
-   */
-  selectNext: () => void;
-
-  /**
-   * Move selection to the previous entry.
-   */
-  selectPrevious: () => void;
-
-  /**
-   * Open the currently selected entry.
-   */
-  openSelected: () => void;
-
-  /**
-   * Clear selection.
-   */
-  clearSelection: () => void;
 }
 
 /**
@@ -166,10 +137,14 @@ export interface UseKeyboardShortcutsResult {
  *     entries,
  *     onOpenEntry: setOpenEntryId,
  *     onClose: closeEntry,
- *     isEntryOpen: !!openEntryId,
+ *     openEntryId,
+ *     enabled: true,
  *     onToggleRead: (id, read) => markReadMutation.mutate({ ids: [id], read: !read }),
  *     onToggleStar: (id, starred) => starred ? unstarMutation.mutate({ id }) : starMutation.mutate({ id }),
- *     onRefresh: () => utils.entries.list.invalidate(),
+ *     onRefresh: () => refreshEntryLists(queryClient),
+ *     onToggleUnreadOnly,
+ *     onNavigateNext,
+ *     onNavigatePrevious,
  *   });
  *
  *   return (
@@ -192,25 +167,24 @@ export function useKeyboardShortcuts(
     entries,
     onOpenEntry,
     onClose,
-    isEntryOpen = false,
     openEntryId,
-    enabled = true,
+    enabled,
     onToggleRead,
     onToggleStar,
     onRefresh,
     onToggleUnreadOnly,
+    onNavigateNext,
+    onNavigatePrevious,
   } = options;
-
-  // When an entry is open, sync selectedEntryId to openEntryId
-  // This ensures the list selection follows j/k navigation and swipes while viewing
-  // We derive this during render rather than using an effect to avoid cascading renders
-  const derivedSelectedEntryId = isEntryOpen && openEntryId ? openEntryId : null;
+  const isEntryOpen = !!openEntryId;
 
   // Internal state for selection when not viewing an entry
   const [internalSelectedEntryId, setInternalSelectedEntryId] = useState<string | null>(null);
 
-  // Use derived value when viewing, internal state otherwise
-  const selectedEntryId = derivedSelectedEntryId ?? internalSelectedEntryId;
+  // While an entry is open the selection follows it (j/k navigation and swipes
+  // while viewing), derived during render rather than synced by an effect to
+  // avoid cascading renders; otherwise it's the internal selection.
+  const selectedEntryId = openEntryId || internalSelectedEntryId;
 
   // Simple setter - updates internal state
   const setSelectedEntryId = useCallback((id: string | null) => {
@@ -320,7 +294,7 @@ export function useKeyboardShortcuts(
 
   // Open the currently selected entry
   const openSelected = useCallback(() => {
-    if (selectedEntryId && onOpenEntry) {
+    if (selectedEntryId) {
       onOpenEntry(selectedEntryId);
     }
   }, [selectedEntryId, onOpenEntry]);
@@ -351,9 +325,7 @@ export function useKeyboardShortcuts(
     (e) => {
       e.preventDefault();
       if (isEntryOpen) {
-        if (options.onNavigateNext) {
-          options.onNavigateNext();
-        }
+        onNavigateNext();
       } else {
         selectNext();
       }
@@ -362,7 +334,7 @@ export function useKeyboardShortcuts(
       enabled: enabled,
       enableOnFormTags: false,
     },
-    [selectNext, options.onNavigateNext, isEntryOpen, enabled]
+    [selectNext, onNavigateNext, isEntryOpen, enabled]
   );
 
   // k - previous entry (select in list, or navigate to previous when viewing)
@@ -371,9 +343,7 @@ export function useKeyboardShortcuts(
     (e) => {
       e.preventDefault();
       if (isEntryOpen) {
-        if (options.onNavigatePrevious) {
-          options.onNavigatePrevious();
-        }
+        onNavigatePrevious();
       } else {
         selectPrevious();
       }
@@ -382,7 +352,7 @@ export function useKeyboardShortcuts(
       enabled: enabled,
       enableOnFormTags: false,
     },
-    [selectPrevious, options.onNavigatePrevious, isEntryOpen, enabled]
+    [selectPrevious, onNavigatePrevious, isEntryOpen, enabled]
   );
 
   // o / Enter - open selected entry (only when entry is not open)
@@ -404,7 +374,7 @@ export function useKeyboardShortcuts(
     "escape",
     (e) => {
       e.preventDefault();
-      if (isEntryOpen && onClose) {
+      if (isEntryOpen) {
         onClose();
       } else if (effectiveSelectedEntryId) {
         clearSelection();
@@ -423,12 +393,12 @@ export function useKeyboardShortcuts(
     (e) => {
       e.preventDefault();
       const entry = getSelectedEntry();
-      if (entry && onToggleRead) {
+      if (entry) {
         onToggleRead(entry.id, entry.read);
       }
     },
     {
-      enabled: enabled && !isEntryOpen && !!effectiveSelectedEntryId && !!onToggleRead,
+      enabled: enabled && !isEntryOpen && !!effectiveSelectedEntryId,
       enableOnFormTags: false,
     },
     [getSelectedEntry, onToggleRead, isEntryOpen, effectiveSelectedEntryId, enabled]
@@ -448,7 +418,7 @@ export function useKeyboardShortcuts(
 
       e.preventDefault();
       const entry = getSelectedEntry();
-      if (entry && onToggleStar) {
+      if (entry) {
         onToggleStar(entry.id, entry.starred);
       }
     },
@@ -490,12 +460,10 @@ export function useKeyboardShortcuts(
     "r",
     (e) => {
       e.preventDefault();
-      if (onRefresh) {
-        onRefresh();
-      }
+      onRefresh();
     },
     {
-      enabled: enabled && !isEntryOpen && !!onRefresh,
+      enabled: enabled && !isEntryOpen,
       enableOnFormTags: false,
     },
     [onRefresh, isEntryOpen, enabled]
@@ -506,12 +474,10 @@ export function useKeyboardShortcuts(
     "u",
     (e) => {
       e.preventDefault();
-      if (onToggleUnreadOnly) {
-        onToggleUnreadOnly();
-      }
+      onToggleUnreadOnly();
     },
     {
-      enabled: enabled && !isEntryOpen && !!onToggleUnreadOnly,
+      enabled: enabled && !isEntryOpen,
       enableOnFormTags: false,
     },
     [onToggleUnreadOnly, isEntryOpen, enabled]
@@ -566,9 +532,5 @@ export function useKeyboardShortcuts(
   return {
     selectedEntryId: effectiveSelectedEntryId,
     setSelectedEntryId,
-    selectNext,
-    selectPrevious,
-    openSelected,
-    clearSelection,
   };
 }

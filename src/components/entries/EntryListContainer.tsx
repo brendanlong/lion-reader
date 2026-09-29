@@ -196,7 +196,6 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
     // `closeEntry`, which pops the history entry opening pushed instead of
     // replacing it and stranding it (#1571).
     onClose: closeEntry,
-    isEntryOpen: !!openEntryId,
     openEntryId,
     enabled: keyboardShortcutsEnabled,
     onToggleRead: toggleRead,
