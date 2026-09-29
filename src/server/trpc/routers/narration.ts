@@ -12,6 +12,7 @@ import { createHash } from "node:crypto";
 import {
   createTRPCRouter,
   confirmedProtectedProcedure as protectedProcedure,
+  expensiveConfirmedProtectedProcedure,
   speechConfirmedProtectedProcedure,
 } from "../trpc";
 import { errors } from "../errors";
@@ -128,7 +129,9 @@ export const narrationRouter = createTRPCRouter({
    * @param id - The entry ID
    * @returns Narration text, whether it was cached, and the source (llm or fallback)
    */
-  generate: protectedProcedure
+  // Rate-limited (10 burst, 1/sec): a cache miss makes an outbound LLM call,
+  // potentially on the server-wide API key.
+  generate: expensiveConfirmedProtectedProcedure
     .meta({
       openapi: {
         method: "POST",
@@ -262,6 +265,15 @@ export const narrationRouter = createTRPCRouter({
       // Start timer for LLM generation duration
       const stopTimer = startNarrationGenerationTimer();
 
+      // Record a failed generation so replays within RETRY_AFTER_MS serve the
+      // plain-text fallback instead of paying for another LLM call.
+      const recordId = narrationRecord.id;
+      const recordFailure = (message: string) =>
+        ctx.db
+          .update(narrationContent)
+          .set({ error: message, errorAt: new Date() })
+          .where(eq(narrationContent.id, recordId));
+
       try {
         // Generate via LLM
         const result = await generateNarration(sourceContent, {
@@ -272,9 +284,12 @@ export const narrationRouter = createTRPCRouter({
         // Stop the timer after generation completes
         stopTimer();
 
-        // If LLM returned fallback (e.g., empty response), don't cache it
+        // The LLM answered but its output was empty or unusable: don't cache the
+        // fallback as narration, but back off like any other failure — the
+        // tokens were billed, and the same input would likely fail again.
         if (result.source === "fallback") {
           trackNarrationGenerationError("empty_response");
+          await recordFailure("LLM returned empty or unparseable output");
           return fallbackResponse(result);
         }
 
@@ -313,13 +328,7 @@ export const narrationRouter = createTRPCRouter({
         trackNarrationGenerationError("api_error");
 
         // Store error in narration_content for retry tracking
-        await ctx.db
-          .update(narrationContent)
-          .set({
-            error: error instanceof Error ? error.message : "Unknown error",
-            errorAt: new Date(),
-          })
-          .where(eq(narrationContent.id, narrationRecord.id));
+        await recordFailure(error instanceof Error ? error.message : "Unknown error");
 
         return fallbackResponse();
       }

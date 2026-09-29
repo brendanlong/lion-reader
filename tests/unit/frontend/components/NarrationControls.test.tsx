@@ -20,7 +20,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import type { Mock } from "vitest";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { KeyboardShortcutsProvider } from "@/components/keyboard/KeyboardShortcutsProvider";
 import { NarrationControlsImpl } from "@/components/narration/NarrationControls";
 import { FloatingNarrationControls } from "@/components/narration/FloatingNarrationControls";
@@ -336,5 +336,97 @@ describe("FloatingNarrationControls", () => {
     await waitFor(() =>
       expect(within(floating).getByRole("button", { name: "Resume" })).toBeInTheDocument()
     );
+  });
+});
+
+/**
+ * With LLM normalization on, narration text comes from a (slow) server call.
+ * If the user closes the entry or switches the displayed variant before it
+ * returns, the result belongs to nobody: speaking it would start the page-global
+ * speech engine with no controls on screen, and storing it would pair the new
+ * variant with the old variant's text and paragraph map.
+ */
+describe("narration that finishes generating after the user moved on", () => {
+  /** A `narration.generate` whose responses wait for `release()`. */
+  function deferredGenerate() {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const handler = async () => {
+      await gate;
+      return {
+        narration: "Server narration.",
+        cached: false,
+        source: "llm" as const,
+        paragraphMap: [{ n: 0, o: 0 }],
+      };
+    };
+    return { handler, release };
+  }
+
+  function renderLlmHarness(handler: () => Promise<unknown>) {
+    return renderWithTrpc(<NarrationHarness content={SKEWED_HTML} />, {
+      handlers: { "narration.generate": handler },
+      wrapper: (children) => <KeyboardShortcutsProvider>{children}</KeyboardShortcutsProvider>,
+    });
+  }
+
+  /** Lets the released request run through to wherever it would start speaking. */
+  async function settle(release: () => void) {
+    await act(async () => {
+      release();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+  }
+
+  beforeEach(() => {
+    localStorage.setItem(
+      "lion-reader-narration-settings",
+      JSON.stringify({ useLlmNormalization: true })
+    );
+  });
+
+  it("speaks the server narration when nothing changed while it generated", async () => {
+    const generate = deferredGenerate();
+    const { callsFor } = renderLlmHarness(generate.handler);
+    fireEvent.click(screen.getByRole("button", { name: "Listen" }));
+    await waitFor(() => expect(callsFor("narration.generate")).toHaveLength(1));
+
+    await settle(generate.release);
+
+    expect(speech.speak).toHaveBeenCalledTimes(1);
+    expect((speech.speak.mock.lastCall?.[0] as { text: string }).text).toBe("Server narration.");
+  });
+
+  it("doesn't start speaking after the entry is closed", async () => {
+    const generate = deferredGenerate();
+    const { callsFor, unmount } = renderLlmHarness(generate.handler);
+    fireEvent.click(screen.getByRole("button", { name: "Listen" }));
+    await waitFor(() => expect(callsFor("narration.generate")).toHaveLength(1));
+
+    unmount();
+    await settle(generate.release);
+
+    expect(speech.speak).not.toHaveBeenCalled();
+  });
+
+  it("drops the old variant's narration when the variant changes mid-generation", async () => {
+    const generate = deferredGenerate();
+    const { callsFor, rerender } = renderLlmHarness(generate.handler);
+    fireEvent.click(screen.getByRole("button", { name: "Listen" }));
+    await waitFor(() => expect(callsFor("narration.generate")).toHaveLength(1));
+
+    rerender(<NarrationHarness content={SKEWED_HTML} showFullContent={true} />);
+    await settle(generate.release);
+
+    expect(speech.speak).not.toHaveBeenCalled();
+    // Back to idle, and the next play narrates the variant now on screen rather
+    // than reusing the stale text.
+    fireEvent.click(await screen.findByRole("button", { name: "Listen" }));
+    await waitFor(() => expect(speech.speak).toHaveBeenCalledTimes(1));
+    const calls = callsFor("narration.generate");
+    expect(calls).toHaveLength(2);
+    expect(calls[1].input).toMatchObject({ showFullContent: true });
   });
 });

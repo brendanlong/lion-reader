@@ -144,7 +144,7 @@ describe("updateMediaSessionPlaybackState", () => {
   });
 });
 
-describe("primeMediaSessionAudio / stopMediaSessionAudio", () => {
+describe("primeMediaSessionAudio / releasePrimedMediaSessionAudio", () => {
   it("starts the silent audio without registering metadata or handlers", async () => {
     const { primeMediaSessionAudio } = await loadModule();
 
@@ -158,12 +158,21 @@ describe("primeMediaSessionAudio / stopMediaSessionAudio", () => {
   });
 
   it("releases a primed session's silent audio", async () => {
-    const { primeMediaSessionAudio, stopMediaSessionAudio } = await loadModule();
+    const { primeMediaSessionAudio, releasePrimedMediaSessionAudio } = await loadModule();
 
-    primeMediaSessionAudio();
-    stopMediaSessionAudio();
+    releasePrimedMediaSessionAudio(primeMediaSessionAudio());
 
     expect(window.HTMLMediaElement.prototype.pause).toHaveBeenCalled();
+  });
+
+  it("leaves the silent audio to a later prime", async () => {
+    const { primeMediaSessionAudio, releasePrimedMediaSessionAudio } = await loadModule();
+
+    const abandoned = primeMediaSessionAudio();
+    primeMediaSessionAudio();
+    releasePrimedMediaSessionAudio(abandoned);
+
+    expect(window.HTMLMediaElement.prototype.pause).not.toHaveBeenCalled();
   });
 });
 

@@ -26,7 +26,10 @@ import { ArticleNarrator } from "@/lib/narration/ArticleNarrator";
 import { useNarrationSettings } from "@/lib/narration/settings";
 import { findVoiceByUri, waitForVoices } from "@/lib/narration/voices";
 import { isNarrationSupported } from "@/lib/narration/feature-detection";
-import { primeMediaSessionAudio, stopMediaSessionAudio } from "@/lib/narration/media-session";
+import {
+  primeMediaSessionAudio,
+  releasePrimedMediaSessionAudio,
+} from "@/lib/narration/media-session";
 import { useMediaSession } from "./useMediaSession";
 import { trackNarrationPlaybackStarted } from "@/lib/telemetry";
 import { getPiperTTSProvider } from "@/lib/narration/piper-tts-provider";
@@ -96,9 +99,11 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   const streamingPlayerRef = useRef<StreamingAudioPlayer | null>(null);
   // Media-element player for cloud voices
   const cloudPlayerRef = useRef<CloudAudioPlayer | null>(null);
-  // Bumped by pause/stop/article changes, so narration text that finishes
-  // generating afterwards doesn't start (paid) cloud playback.
+  // Bumped by pause/stop/article changes, so a play() still generating
+  // narration when the user moves on doesn't store or start it (see play()).
   const playRequestRef = useRef(0);
+  // Counts narration loads, so only the latest one clears the loading state.
+  const loadRequestRef = useRef(0);
   // Track if we've already set up playback tracking for this session
   const hasTrackedPlaybackRef = useRef(false);
   // Paragraph mapping for translating narration indices to DOM element indices
@@ -266,37 +271,52 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   const play = useCallback(async () => {
     if (!isSupported) return;
 
+    // pause/stop, and the article/voice/variant reset (including unmount), bump
+    // this token. Every path re-checks it after each await, so narration that
+    // finishes generating after the user moved on is neither stored (it may be
+    // for a variant no longer on screen) nor played — the browser voice and
+    // Piper play through page-global audio that would outlive this entry's
+    // controls, and cloud playback is paid.
+    const request = playRequestRef.current;
+    const isStale = () => playRequestRef.current !== request;
+
     // Start the OS media session's silent audio within this user gesture, before
     // any async narration generation, so the browser grants it while the gesture's
     // autoplay activation is still valid (issue #410). It's released below if
     // generation fails; on success the media-session effects keep it going.
     // Cloud voices prime their own element instead (see CloudAudioPlayer).
     const cloudPlayer = useCloud ? getOrCreateCloudPlayer() : null;
+    let primeGeneration: number | null = null;
     if (cloudPlayer) {
       if (cloudPlayer.getStatus() === "idle") cloudPlayer.prime();
     } else {
-      primeMediaSessionAudio();
+      primeGeneration = primeMediaSessionAudio();
     }
     const releasePrimedAudio = () => {
       if (cloudPlayer) cloudPlayer.stop();
-      else stopMediaSessionAudio();
+      else if (primeGeneration !== null) releasePrimedMediaSessionAudio(primeGeneration);
     };
 
     // Generates narration text (client-side, or on the server for LLM
     // normalization), stores it with its paragraph map, then hands it to `start`.
     const loadNarration = async (start: (narration: string) => Promise<void>) => {
+      // Only the latest load owns the loading/idle state, so an abandoned one
+      // finishing late can't flip a newer one's spinner off.
+      const load = ++loadRequestRef.current;
+      const isLatestLoad = () => loadRequestRef.current === load;
       setIsLoading(true);
       setState((prev) => ({ ...prev, status: "loading" }));
 
       try {
         let narration: string;
+        let paragraphMap: ParagraphMapEntry[];
         let processedHtmlResult: string | null = null;
 
         if (!settings.useLlmNormalization && content) {
           const clientResult = htmlToClientNarration(content);
           narration = clientResult.narrationText;
           processedHtmlResult = clientResult.processedHtml;
-          paragraphMapRef.current = clientResult.paragraphMap;
+          paragraphMap = clientResult.paragraphMap;
         } else {
           const result = await generateMutation.mutateAsync({
             id,
@@ -305,9 +325,16 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
             showOriginal: showOriginal ?? false,
           });
           narration = result.narration;
-          paragraphMapRef.current = result.paragraphMap;
+          paragraphMap = result.paragraphMap;
         }
 
+        if (isStale()) {
+          releasePrimedAudio();
+          if (isLatestLoad()) setState((prev) => ({ ...prev, status: "idle" }));
+          return;
+        }
+
+        paragraphMapRef.current = paragraphMap;
         if (narration) {
           setNarrationText(narration);
           setProcessedHtml(processedHtmlResult);
@@ -318,11 +345,11 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
         }
       } catch (error) {
         console.error("Failed to generate narration:", error);
-        setState((prev) => ({ ...prev, status: "idle" }));
+        if (isLatestLoad()) setState((prev) => ({ ...prev, status: "idle" }));
         // Release the media-session audio primed within the play() gesture.
         releasePrimedAudio();
       } finally {
-        setIsLoading(false);
+        if (isLatestLoad()) setIsLoading(false);
       }
     };
 
@@ -332,12 +359,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
       if (playerStatus === "paused") await cloudPlayer.play();
       if (playerStatus !== "idle") return;
 
-      const request = playRequestRef.current;
       const startCloud = async (narration: string) => {
-        if (playRequestRef.current !== request) {
-          cloudPlayer.stop();
-          return;
-        }
         cloudPlayer.load(splitIntoParagraphs(narration));
         if (!hasTrackedPlaybackRef.current) {
           trackNarrationPlaybackStarted(settings.provider);
@@ -399,6 +421,10 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     await loadNarration(async (narration) => {
       narrator.loadArticle(narration);
       await waitForVoices();
+      if (isStale()) {
+        releasePrimedAudio();
+        return;
+      }
       startBrowser();
     });
   }, [

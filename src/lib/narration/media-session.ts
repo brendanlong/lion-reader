@@ -160,6 +160,13 @@ export function updateMediaSessionPlaybackState(
 }
 
 /**
+ * Bumped by every prime. The silent element is a page-wide singleton, so a
+ * request that is abandoned while generating (e.g. its entry was closed and the
+ * next one started narrating) must not stop audio a later prime now depends on.
+ */
+let primeGeneration = 0;
+
+/**
  * Starts the silent audio loop immediately.
  *
  * Call this synchronously from within the user gesture that begins narration, so
@@ -168,24 +175,28 @@ export function updateMediaSessionPlaybackState(
  * `startSilentAudio()` from {@link updateMediaSessionPlaybackState} can be
  * rejected by autoplay policy and the OS controls never appear. Safe to call
  * before metadata is set; {@link updateMediaSessionPlaybackState} keeps it going
- * once playback begins. If playback never starts (generation fails), release it
- * with {@link stopMediaSessionAudio} or {@link clearMediaSession}.
+ * once playback begins. If playback never starts (generation fails or the
+ * request is abandoned), release it with {@link releasePrimedMediaSessionAudio}.
+ *
+ * @returns The prime's generation, to hand back to the release.
  */
-export function primeMediaSessionAudio(): void {
-  if (!isMediaSessionSupported()) {
-    return;
+export function primeMediaSessionAudio(): number {
+  primeGeneration++;
+  if (isMediaSessionSupported()) {
+    startSilentAudio();
   }
-  startSilentAudio();
+  return primeGeneration;
 }
 
 /**
- * Stops the silent audio loop without clearing metadata/action handlers.
- *
- * Used to release a session primed by {@link primeMediaSessionAudio} when
- * narration generation fails before playback actually begins.
+ * Stops the silent audio loop started by {@link primeMediaSessionAudio} when
+ * playback never began, without clearing metadata/action handlers — unless a
+ * later prime has taken the element over since.
  */
-export function stopMediaSessionAudio(): void {
-  stopSilentAudio();
+export function releasePrimedMediaSessionAudio(generation: number): void {
+  if (generation === primeGeneration) {
+    stopSilentAudio();
+  }
 }
 
 /**
