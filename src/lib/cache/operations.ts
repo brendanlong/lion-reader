@@ -354,8 +354,8 @@ export type EntryRelatedCounts = Omit<BulkUnreadCounts, "saved"> & {
 /**
  * Applies absolute unread counts from a count-bearing realtime event.
  *
- * Fills in `saved` from the current cache when the event omits it (web/email
- * events don't compute the saved count) so setBulkCounts doesn't clobber the
+ * Fills in `saved` from the current cache when the event omits it (events
+ * from a previous release didn't compute it for web/email entries) so setBulkCounts doesn't clobber the
  * client's existing saved count with a wrong value. Because every value is set
  * absolutely, applying the same event twice — e.g. once from the live SSE
  * stream and once from a reconnect catch-up sync — leaves counts correct.
