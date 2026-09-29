@@ -23,10 +23,10 @@ import { getOwnedEntryRawContent } from "@/server/services/entries";
 import {
   buildFallbackNarration,
   generateNarration,
-  htmlToNarrationInput,
   isNarrationLlmAvailable,
   getNarrationModelRef,
 } from "@/server/services/narration";
+import { htmlToNarrationInput } from "@/lib/narration/html-to-narration-input";
 import { isModelAllowed, listAllModels } from "@/server/services/ai-providers";
 import { formatModelRef } from "@/lib/ai/model-ref";
 import {

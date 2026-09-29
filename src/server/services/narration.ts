@@ -27,10 +27,6 @@ import { buildAlignedNarration, type ParagraphMapEntry } from "@/lib/narration/p
 import type { NarrationInputParagraph } from "@/lib/narration/html-to-narration-input";
 import { trackNarrationHighlightFallback } from "@/server/metrics/metrics";
 
-// Re-export pure functions for backward compatibility
-export { htmlToNarrationInput };
-export type { ParagraphMapEntry };
-
 /**
  * Schema for a single paragraph from the LLM.
  * Forgiving of id as string or number.
