@@ -57,6 +57,8 @@ class FakeSourceBuffer extends EventTarget {
   ranges: [number, number][] = [];
   appended: { at: number; seconds: number }[] = [];
   removals: [number, number][] = [];
+  /** Evicts this range while the next append is still updating. */
+  evictDuringNextAppend: [number, number] | null = null;
 
   get buffered(): FakeTimeRanges {
     return new FakeTimeRanges(this.ranges);
@@ -69,6 +71,11 @@ class FakeSourceBuffer extends EventTarget {
       this.addRange(at, at + seconds);
       this.timestampOffset = at + seconds;
     });
+    if (this.evictDuringNextAppend) {
+      const [start, end] = this.evictDuringNextAppend;
+      this.evictDuringNextAppend = null;
+      this.evict(start, end);
+    }
   }
   remove(start: number, end: number): void {
     this.removals.push([start, end]);
@@ -386,17 +393,23 @@ describe("MediaSourcePlayer", () => {
   });
 
   it("remembers a skip made while paused and starts there on play", async () => {
-    const { calls, player, paragraphsSeen, respond } = setup(["A.", "B.", "C.", "D.", "E."]);
+    const paragraphs = Array.from({ length: 50 }, (_, i) => `${i}.`);
+    const { calls, player, paragraphsSeen, respond } = setup(paragraphs);
     void player.play();
-    await respond("A.");
+    await respond("0.");
     player.pause();
-    await player.skipTo(4);
-    expect(paragraphsSeen.at(-1)).toBe(4);
-    expect(calls).not.toContain("E.");
+    await player.skipTo(40);
+    expect(paragraphsSeen.at(-1)).toBe(40);
+
+    // Prefetches already in flight finishing must not start paid synthesis
+    // around the new spot before playback resumes.
+    await respond("1.");
+    expect(calls).toEqual(["0.", "1.", "2.", "3."]);
 
     void player.play();
-    await respond("E.");
+    await respond("40.");
     expect(player.getStatus()).toBe("playing");
+    expect(calls.slice(4)).toEqual(["40.", "41.", "42.", "43."]);
   });
 
   it("applies the playback rate to the element", async () => {
@@ -507,6 +520,42 @@ describe("MediaSourcePlayer", () => {
       { at: 2, seconds: 1 },
     ]);
     expect(calls).toEqual(["A.", "B.", "C."]);
+  });
+
+  it("recovers audio evicted while one of its own appends was updating", async () => {
+    const { buffer, player, respond } = setup(["A.", "B.", "C."]);
+    void player.play();
+    await respond("A.");
+    await respond("B.");
+    buffer().evictDuringNextAppend = [1, 2];
+    await respond("C.");
+
+    expect(buffer().ranges).toEqual([[0, 3]]);
+  });
+
+  it("reports an element that refuses the stream instead of buffering forever", async () => {
+    const audio = new FakeAudio();
+    const errors: string[] = [];
+    const player = new MediaSourcePlayer({
+      synthesize: async () => ({ samples: new Float32Array(1000), sampleRate: SAMPLE_RATE }),
+      maxChunkChars: 1000,
+      loadEncoder: async () => fakeEncoder,
+      createAudio: () => audio as unknown as HTMLAudioElement,
+      createMediaSource: () => new FakeMediaSource() as unknown as MediaSource,
+      attach: () => {
+        setTimeout(() => audio.dispatchEvent(new Event("error")), 0);
+        return () => {};
+      },
+    });
+    player.setCallbacks({ onError: (error) => errors.push(error.message) });
+    player.load(["A."]);
+    player.prime();
+    await flush();
+    void player.play();
+    await flush();
+
+    expect(errors).toEqual(["Failed to open the narration audio stream"]);
+    expect(player.getStatus()).toBe("idle");
   });
 
   it("reports browsers without Media Source Extensions", async () => {

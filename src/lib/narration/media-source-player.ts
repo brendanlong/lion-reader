@@ -384,9 +384,20 @@ export class MediaSourcePlayer {
     if (this.stream) return true;
     const source = this.createMediaSource();
     if (!source) return false;
-    const opened = new Promise<void>((resolve) => {
-      source.addEventListener("sourceopen", () => resolve(), { once: true });
+    // The element errors instead when it refuses the source.
+    const opened = new Promise<void>((resolve, reject) => {
+      const onError = () => reject(new Error("Failed to open the narration audio stream"));
+      this.audio.addEventListener("error", onError, { once: true });
+      source.addEventListener(
+        "sourceopen",
+        () => {
+          this.audio.removeEventListener("error", onError);
+          resolve();
+        },
+        { once: true }
+      );
     });
+    opened.catch(() => {});
     const detach = this.attach(this.audio, source);
     // Attaching a new source resets playbackRate to the default.
     this.audio.defaultPlaybackRate = this.rate;
@@ -397,7 +408,9 @@ export class MediaSourcePlayer {
 
   private moveTo(index: number): void {
     if (!this.isActive()) {
-      // Stay put; the next play() starts here.
+      // Stay put; the next play() starts a new run here. Retire the current
+      // run so its pump doesn't prefetch (paid) chunks around the new index.
+      this.run++;
       this.index = index;
       this.jumpPending = true;
       this.emitPosition();
@@ -439,12 +452,15 @@ export class MediaSourcePlayer {
     this.nextAppend = index;
     this.enqueue(async (buffer) => {
       if (run !== this.run) return;
-      const start = at ?? this.audio.currentTime;
       const end = bufferedEnd(buffer);
       const removeFrom = at ?? 0;
       if (end > removeFrom) await update(buffer, () => buffer.remove(removeFrom, end));
+      const start = at ?? this.audio.currentTime;
       this.runStart = start;
       buffer.timestampOffset = start;
+      // Seeking flushes audio the decoder already read from the removed
+      // range, which would otherwise play on and swallow the new run's start.
+      if (at === null) this.audio.currentTime = start;
     }).catch((error: unknown) => {
       if (run === this.run) this.fail(error);
     });
@@ -462,7 +478,7 @@ export class MediaSourcePlayer {
     if (this.pumpingRun === run) return;
     this.pumpingRun = run;
     try {
-      while (run === this.run && this.stream && this.status !== "idle") {
+      while (run === this.run && this.stream && this.status !== "idle" && !this.jumpPending) {
         const chunk = this.nextAppend;
         if (chunk >= this.chunks.length) {
           await this.enqueue(() => {
@@ -585,14 +601,16 @@ export class MediaSourcePlayer {
 
   /** Re-appends anything the browser evicted from the part still to play. */
   private recoverEvictions(): void {
-    const buffer = this.stream?.buffer;
-    if (!buffer || buffer.updating) return;
-    const lost = this.placed.findIndex(
-      (placed) => placed.chunk >= this.index && !isBuffered(buffer, placed)
-    );
-    if (lost === -1) return;
-    const from = this.placed[lost];
-    this.restartRun(from.chunk, this.placed.slice(0, lost), from.start);
+    // Queued: eviction usually happens inside one of our own appends, while
+    // the buffer is still updating.
+    this.enqueue((buffer) => {
+      const lost = this.placed.findIndex(
+        (placed) => placed.chunk >= this.index && !isBuffered(buffer, placed)
+      );
+      if (lost === -1) return;
+      const from = this.placed[lost];
+      this.restartRun(from.chunk, this.placed.slice(0, lost), from.start);
+    }).catch(() => {});
   }
 
   private isPlayheadBuffered(): boolean {
