@@ -264,7 +264,7 @@ export const feedHealthConfig = {
 };
 
 /** Default heap cap for the `.docx` conversion worker (see usageLimitsConfig). */
-const DEFAULT_DOCX_WORKER_MAX_HEAP_MB = 128;
+const DEFAULT_DOCX_WORKER_MAX_HEAP_MB = 64;
 
 /**
  * Usage limits configuration.

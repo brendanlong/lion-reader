@@ -44,14 +44,18 @@ const DOCX_MAX_INFLATION_FACTOR = 10;
 const MEDIA_PREFIX = "word/media/";
 
 /**
- * The worker's heap cap (`usageLimitsConfig.docxWorkerMaxHeapMb`, 128MB by
- * default) is the real bound on what converts. Measured at 128MB: plain prose
- * (a few long runs per paragraph) converts up to the text budget; Word-style
- * markup (many short runs with rsids per paragraph) converts to ~3MB of
- * `document.xml`, a few hundred pages; dense tiny elements stop near 1MB. A
- * conversion that hits the cap costs ~150MB of RSS before its worker dies.
+ * The worker's heap cap (`usageLimitsConfig.docxWorkerMaxHeapMb`, 64MB by
+ * default; young generation scales with it) is the real bound on what
+ * converts. Measured at 64MB on the production build: plain prose (a few long
+ * runs per paragraph) converts to ~3.5MB of `document.xml`, ~2.5MB of HTML;
+ * Word-style markup (many short runs with rsids per paragraph) to ~1.25MB,
+ * ~45k words; dense tiny elements not even at 1MB. A worker running out of
+ * memory peaked ~60MB above idle. (The Discord bot runs at 48MB: ~2MB of prose,
+ * ~18k words of Word-style markup.)
  */
-const MAX_YOUNG_GENERATION_MB = 16;
+function youngGenerationMb(maxHeapMb: number): number {
+  return Math.max(2, Math.round(maxHeapMb / 8));
+}
 
 /** Counted from when the conversion is queued, not from when it starts. */
 const CONVERSION_DEADLINE_MS = 20_000;
@@ -65,11 +69,11 @@ const MAX_QUEUED_CONVERSIONS = 4;
 
 /**
  * mammoth reads and base64-encodes an image once per reference, not once per
- * file, so this counts every read. Images are inlined as data URIs, so bytes
- * beyond the saved-article limit could never be saved anyway.
+ * file, so this counts every read. Images are inlined as base64 data URIs, so
+ * past 3/4 of the saved-article limit they could never be saved anyway.
  */
 function imageBudgetBytes(): number {
-  return usageLimitsConfig.maxSavedArticleSizeBytes;
+  return Math.floor((usageLimitsConfig.maxSavedArticleSizeBytes * 3) / 4);
 }
 
 const WORKER_SOURCE = `
@@ -100,7 +104,9 @@ mammoth
       parentPort.postMessage(
         imageBudgetExceeded
           ? { ok: false, imageBudgetExceeded, message: "image budget exceeded" }
-          : { ok: true, html: result.value, messages: result.messages.map((m) => m.message) }
+          : result.value.length > workerData.maxHtmlLength
+            ? { ok: false, htmlTooLarge: true, message: "html too large" }
+            : { ok: true, html: result.value, messages: result.messages.map((m) => m.message) }
       ),
     (error) =>
       parentPort.postMessage({
@@ -115,7 +121,7 @@ const STYLE_MAP = ["p[style-name='Title'] => h1:fresh", "p[style-name='Subtitle'
 
 type WorkerResult =
   | { ok: true; html: string; messages: string[] }
-  | { ok: false; imageBudgetExceeded: boolean; message: string };
+  | { ok: false; imageBudgetExceeded?: boolean; htmlTooLarge?: boolean; message: string };
 
 /**
  * Throws `CONTENT_TOO_LARGE` if the archive's entries inflate past the budgets.
@@ -256,11 +262,13 @@ export function createDocxConverter(options: DocxConverterOptions): DocxConverte
         buffer,
         styleMap: STYLE_MAP,
         imageBudget: imageBudgetBytes(),
+        // Checked in the worker so an unsaveable result is never copied back.
+        maxHtmlLength: usageLimitsConfig.maxSavedArticleSizeBytes,
         resolveFrom: options.resolveFrom,
       },
       resourceLimits: {
         maxOldGenerationSizeMb: options.maxHeapMb,
-        maxYoungGenerationSizeMb: MAX_YOUNG_GENERATION_MB,
+        maxYoungGenerationSizeMb: youngGenerationMb(options.maxHeapMb),
       },
     });
     live++;
@@ -326,6 +334,12 @@ export function createDocxConverter(options: DocxConverterOptions): DocxConverte
     if (!result.ok) {
       if (result.imageBudgetExceeded) {
         throw errors.contentTooLarge("Document images", imageBudgetBytes());
+      }
+      if (result.htmlTooLarge) {
+        throw errors.contentTooLarge(
+          "Converted document",
+          usageLimitsConfig.maxSavedArticleSizeBytes
+        );
       }
       // mammoth rejected the document itself: a malformed or non-Word file.
       throw new Error(result.message);

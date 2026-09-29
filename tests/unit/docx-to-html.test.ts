@@ -165,6 +165,18 @@ describe("docx converter queue and worker lifecycle", () => {
     expect(docx.liveWorkers()).toBe(0);
   }, 30_000);
 
+  it("rejects HTML past the saved-article limit inside the worker", async () => {
+    // ~7.6MB of prose: inside the text budget, and a big heap lets it convert,
+    // but the ~6.9MB of HTML it renders could never be saved.
+    const docx = converter({ maxHeapMb: 1024 });
+    const paragraph = "The quick brown fox jumps over the lazy dog. ".repeat(10);
+    const error = await docx
+      .convert(buildMinimalDocx({ paragraphs: Array(15_000).fill(paragraph) }))
+      .catch((e: unknown) => e);
+    expect(getAppErrorCode(error)).toBe("CONTENT_TOO_LARGE");
+    expect((error as TRPCError).message).toMatch(/Converted document/);
+  }, 30_000);
+
   it("keeps converting after a worker runs out of memory", async () => {
     const docx = converter({ maxHeapMb: 32 });
     const error = await docx.convert(dense).catch((e: unknown) => e);

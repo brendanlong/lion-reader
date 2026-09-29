@@ -43,7 +43,10 @@ kill_timeout = 30
 [processes]
   app = "node dist/server.js"
   worker = "node --max-old-space-size=320 dist/worker.js"
-  discord = "node dist/discord-bot.js"
+  # The bot converts Drive .docx files (Google Docs saves); its VM has ~70MB
+  # of headroom, so its .docx worker gets a smaller heap than the default
+  # (see src/server/file/docx-to-html.ts).
+  discord = "env DOCX_WORKER_MAX_HEAP_MB=48 node dist/discord-bot.js"
 
 [env]
   # GIT_COMMIT_SHA (surfaced in the outgoing User-Agent) and BUILD_TIME are not
