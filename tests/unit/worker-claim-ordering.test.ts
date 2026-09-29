@@ -17,10 +17,12 @@
 import { describe, it, expect } from "vitest";
 import {
   createWorkerClaimJob,
+  FULL_CONTENT_PRIORITY_CYCLE,
   SINGLETON_PRIORITY_INTERVAL,
   type WorkerClaimDeps,
 } from "@/server/jobs/worker";
 import { SINGLETON_JOB_TYPES, type JobType } from "@/server/jobs/queue";
+import { createWorkerCore } from "@/server/jobs/worker-core";
 import type { Job } from "@/server/db/schema";
 
 /** Minimal fake Job — the strategy only passes it through. */
@@ -158,26 +160,83 @@ describe("createWorkerClaimJob", () => {
     expect(perCall.flat().filter((c) => c !== "regular(process_opml_import)")).toEqual([]);
   });
 
-  describe("fetch_full_content", () => {
-    it("is tried after OPML imports and before feeds/singletons on every cycle", async () => {
-      // Safe because claimFullContentJob caps how many run at once.
-      const harness = makeHarness({
-        feedHasJobs: true,
-        fullContentHasJobs: true,
-        dueSingletons: [...SINGLETON_JOB_TYPES],
+  describe("fetch_full_content (third-party driven, so no priority over polls)", () => {
+    it("on a single-slot worker under a backlog everywhere, gets one claim in each interval", async () => {
+      // Production runs one worker slot, so claim order is the only thing that
+      // divides it. Drive the real worker loop at concurrency 1 with every
+      // category permanently backlogged and record what actually ran.
+      const due = SINGLETON_JOB_TYPES[0];
+      const deps: WorkerClaimDeps = {
+        claimRegular: async () => null,
+        claimFeed: async () => fakeJob("fetch_feed"),
+        claimSingleton: async (type) => (type === due ? fakeJob(due) : null),
+        claimFullContent: async () => fakeJob("fetch_full_content"),
+      };
+      const target = SINGLETON_PRIORITY_INTERVAL * 3;
+      const ran: string[] = [];
+      let done!: () => void;
+      const finished = new Promise<void>((resolve) => (done = resolve));
+      let inFlight = 0;
+      let maxInFlight = 0;
+      const worker = createWorkerCore({
+        pollIntervalMs: 1,
+        concurrency: 1,
+        logger: { info: () => {}, warn: () => {}, error: () => {} },
+        claimJob: createWorkerClaimJob(deps),
+        processJob: async (job) => {
+          inFlight++;
+          maxInFlight = Math.max(maxInFlight, inFlight);
+          await Promise.resolve();
+          if (ran.length < target) {
+            ran.push(job.type);
+            if (ran.length === target) done();
+          }
+          inFlight--;
+        },
       });
-      const { results, perCall } = await harness.run(SINGLETON_PRIORITY_INTERVAL);
-      expect(results.every((j) => j?.type === "fetch_full_content")).toBe(true);
-      for (const consulted of perCall) {
-        expect(consulted).toEqual(["regular(process_opml_import)", "fullContent"]);
+      await worker.start();
+      await finished;
+      await worker.stop();
+
+      expect(maxInFlight).toBe(1);
+      for (let i = 0; i < target; i += SINGLETON_PRIORITY_INTERVAL) {
+        const interval = ran.slice(i, i + SINGLETON_PRIORITY_INTERVAL);
+        expect(interval.filter((t) => t === "fetch_full_content")).toHaveLength(1);
+        expect(interval.filter((t) => t === due)).toHaveLength(1);
+        expect(interval.filter((t) => t === "fetch_feed")).toHaveLength(
+          SINGLETON_PRIORITY_INTERVAL - 2
+        );
       }
     });
 
-    it("leaves the feed/singleton rotation unchanged when it has nothing to claim", async () => {
-      const due = SINGLETON_JOB_TYPES[0];
-      const harness = makeHarness({ feedHasJobs: true, dueSingletons: [due] });
-      const { results } = await harness.run(2);
-      expect(results.map((j) => j?.type)).toEqual([due, "fetch_feed"]);
+    it("goes first only on its own cycle", async () => {
+      const harness = makeHarness({ feedHasJobs: true, fullContentHasJobs: true });
+      const cycles = SINGLETON_PRIORITY_INTERVAL * 2;
+      const { results } = await harness.run(cycles);
+      for (let i = 0; i < cycles; i++) {
+        expect(results[i]?.type).toBe(
+          i % SINGLETON_PRIORITY_INTERVAL === FULL_CONTENT_PRIORITY_CYCLE
+            ? "fetch_full_content"
+            : "fetch_feed"
+        );
+      }
+    });
+
+    it("is claimed on any cycle when feeds and singletons have nothing", async () => {
+      const harness = makeHarness({ fullContentHasJobs: true });
+      const { results } = await harness.run(SINGLETON_PRIORITY_INTERVAL);
+      expect(results.every((j) => j?.type === "fetch_full_content")).toBe(true);
+    });
+
+    it("falls through to feeds on its own cycle when it has nothing", async () => {
+      const harness = makeHarness({ feedHasJobs: true });
+      const { results, perCall } = await harness.run(FULL_CONTENT_PRIORITY_CYCLE + 1);
+      expect(results[FULL_CONTENT_PRIORITY_CYCLE]?.type).toBe("fetch_feed");
+      expect(perCall[FULL_CONTENT_PRIORITY_CYCLE]).toEqual([
+        "regular(process_opml_import)",
+        "fullContent",
+        "feed",
+      ]);
     });
   });
 

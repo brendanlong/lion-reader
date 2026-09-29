@@ -369,6 +369,75 @@ describe("ingestWebsubNotification", () => {
     expect(getJobPayload<"fetch_full_content">(remainder[0]).entryIds).toHaveLength(2);
   });
 
+  it("stops absorbing pushes once any release's worker claims the job", async () => {
+    // A previous-release worker claims with the generic claim, which neither
+    // clears `pending` nor knows about it, and finishJob leaves the payload
+    // alone. The job must still leave the pending index, or later pushes would
+    // append to a job that never runs again.
+    const now = Date.now();
+    const { feed } = await seedPushFeed("pusholdclaim", new Date(now - 60 * 60 * 1000), {
+      fetchFullContent: true,
+    });
+    const push = (guid: string) =>
+      ingestWebsubNotification(
+        feed,
+        pushBody(guid, guid, new Date(now - 60 * 1000), `${articleBaseUrl}/post/${guid}`)
+      );
+    const idsOf = (job: typeof jobs.$inferSelect) =>
+      getJobPayload<"fetch_full_content">(job).entryIds;
+
+    await push("old-1");
+    const [first] = await queuedFullContentJobs();
+
+    // Old-style claim: running, marker still set.
+    await db.update(jobs).set({ runningSince: new Date() }).where(eq(jobs.id, first.id));
+    await push("old-2");
+    let all = await queuedFullContentJobs();
+    expect(all).toHaveLength(2);
+    const second = all.find((j) => j.id !== first.id)!;
+    expect(idsOf(second)).toHaveLength(1);
+
+    // Old-style finish: parked with the marker still set.
+    await db
+      .update(jobs)
+      .set({
+        runningSince: null,
+        lastRunAt: new Date(),
+        nextRunAt: new Date(now + 365 * 24 * 60 * 60 * 1000),
+      })
+      .where(eq(jobs.id, first.id));
+    expect(getJobPayload<"fetch_full_content">(first).pending).toBe(true);
+    await push("old-3");
+    all = await queuedFullContentJobs();
+    expect(all).toHaveLength(2);
+    expect(idsOf(all.find((j) => j.id === first.id)!)).toHaveLength(1);
+    expect(idsOf(all.find((j) => j.id === second.id)!)).toHaveLength(2);
+  });
+
+  it("re-queues a job's remainder ahead of entries pushed since", async () => {
+    // The remainder is older, so it's what should survive the pending bound.
+    const now = Date.now();
+    const { feed } = await seedPushFeed("pushorder", new Date(now - 60 * 60 * 1000), {
+      fetchFullContent: true,
+    });
+    await ingestWebsubNotification(feed, multiPushBody("order", 12, new Date(now - 60 * 1000)));
+    const claimed = await claimFullContentJob();
+    const claimedIds = getJobPayload<"fetch_full_content">(claimed!).entryIds;
+
+    await ingestWebsubNotification(
+      feed,
+      pushBody("order-late", "Late", new Date(now - 30 * 1000), `${articleBaseUrl}/post/order-late`)
+    );
+    await handleFetchFullContent(getJobPayload<"fetch_full_content">(claimed!), 0);
+
+    const pending = (await queuedFullContentJobs()).find(
+      (j) => getJobPayload<"fetch_full_content">(j).pending
+    )!;
+    const pendingIds = getJobPayload<"fetch_full_content">(pending).entryIds;
+    expect(pendingIds).toHaveLength(3);
+    expect(pendingIds.slice(0, 2)).toEqual(claimedIds.slice(10));
+  });
+
   describe("attempt cap", () => {
     // An invalid feed id makes the first query throw, standing in for the
     // infrastructure failures that are the only way this job throws.

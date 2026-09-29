@@ -48,11 +48,18 @@ export async function handleFetchFullContent(
     result = await fetchFullContentForNewEntries(db, payload.feedId, batch);
     // After the batch, not before, so a feed's next batch waits its turn behind
     // other feeds instead of running alongside this one against the same origin.
-    await enqueueFullContentFetch(payload.feedId, rest);
+    // `first`: these are older than anything pushed since, so they're the ones
+    // to keep if the pending job hits its size bound.
+    await enqueueFullContentFetch(payload.feedId, rest, { first: true });
   } catch (error) {
     if (consecutiveFailures + 1 < MAX_ATTEMPTS) {
       throw error; // The worker retries with backoff.
     }
+    // Giving up drops the whole job: this batch and the not-yet-re-queued rest
+    // go unfetched in the background. The reader still fetches a missing full
+    // content when such an entry is opened (EntryContent's auto-fetch), so
+    // that's the fallback; retrying longer would only hold a worker slot while
+    // the database is unhealthy.
     return {
       success: false,
       nextRunAt: parkedUntil,

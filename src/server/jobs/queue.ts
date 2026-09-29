@@ -101,10 +101,9 @@ export type JobType = keyof JobPayloads;
 
 /**
  * One-time job types: each row is a single task, parked `ONE_TIME_JOB_PARK_MS`
- * out when done — whatever the outcome, they must
- * not run again. The retention cleanup sweeps parked rows (see
- * src/server/services/retention.ts). How each is claimed differs; see
- * `createWorkerClaimJob` in worker.ts.
+ * out when done — whatever the outcome, it must not run again. The retention
+ * cleanup sweeps parked rows (see src/server/services/retention.ts). How each
+ * type is claimed differs; see `createWorkerClaimJob` in worker.ts.
  */
 export const ONE_TIME_JOB_TYPES = [
   "process_opml_import",
@@ -543,12 +542,11 @@ export async function scheduleFeedRefreshNow(feedId: string): Promise<Job> {
  * Most `fetch_full_content` jobs that may run at once, across all workers.
  *
  * These are created by third-party hub pushes, and each can spend minutes on
- * sequential article fetches against a slow origin, so without a cap a busy
- * push feed could fill every worker slot and starve feed polls and singleton
- * maintenance. That's why the worker can claim them first (see
- * `createWorkerClaimJob`) without them crowding anything out. It's a soft cap —
- * two workers claiming at the same instant can both see room — which is fine
- * for its purpose.
+ * sequential article fetches against a slow origin. With several worker slots,
+ * the cap keeps a push burst from taking all of them. It does nothing on a
+ * single-slot worker; there, the claim rotation in `createWorkerClaimJob` is
+ * what bounds their share. It's a soft cap — two workers claiming at the same
+ * instant can both see room — which is fine for its purpose.
  */
 export const MAX_RUNNING_FULL_CONTENT_JOBS = 2;
 
@@ -561,20 +559,31 @@ export const MAX_PENDING_FULL_CONTENT_ENTRIES = 50;
 
 /**
  * Queues full-content fetching for a feed's entries, coalesced into the feed's
- * single **pending** (not yet claimed) `fetch_full_content` job.
+ * single **pending** (never claimed) `fetch_full_content` job.
  *
  * One pending job per feed is what keeps the queue fair: claims go oldest
  * first, and entries appended to a feed's pending job don't move it forward, so
  * a feed that pushes constantly gets one job's turn at a time instead of a
- * backlog that holds the running cap while other feeds' entries wait. The job
- * processes a batch and re-queues its remainder through this same function,
- * which puts that remainder behind every other feed's pending job.
+ * backlog of jobs while other feeds' entries wait. The job processes a batch
+ * and re-queues its remainder through this same function, which puts that
+ * remainder behind every other feed's pending job.
  *
- * "Pending" is the `pending: true` payload marker the partial unique index
- * `idx_jobs_full_content_pending_feed_id` keys on; `claimFullContentJob` removes
- * it, so a running or finished job never absorbs new entries.
+ * "Pending" is what the partial unique index
+ * `idx_jobs_full_content_pending_feed_id` matches: the `pending: true` payload
+ * marker, on a row no worker has claimed (`running_since`) or run
+ * (`last_run_at`). Keying on the claim columns, not just the marker, means a
+ * row leaves the index when any release's worker claims it, so a running or
+ * finished job never absorbs new entries.
+ *
+ * @param options.first - Put these entries ahead of the ones already pending,
+ *   so they survive the {@link MAX_PENDING_FULL_CONTENT_ENTRIES} bound. For a
+ *   job's re-queued remainder, which is older than anything pushed since.
  */
-export async function enqueueFullContentFetch(feedId: string, entryIds: string[]): Promise<void> {
+export async function enqueueFullContentFetch(
+  feedId: string,
+  entryIds: string[],
+  options: { first?: boolean } = {}
+): Promise<void> {
   if (entryIds.length === 0) {
     return;
   }
@@ -584,22 +593,26 @@ export async function enqueueFullContentFetch(feedId: string, entryIds: string[]
     entryIds: entryIds.slice(0, MAX_PENDING_FULL_CONTENT_ENTRIES),
     pending: true,
   } satisfies JobPayloads["fetch_full_content"];
+  const combined = options.first
+    ? sql`(EXCLUDED.payload->'entryIds') || (jobs.payload->'entryIds')`
+    : sql`(jobs.payload->'entryIds') || (EXCLUDED.payload->'entryIds')`;
 
-  // On conflict, append to the pending job's entries: deduplicated, first
+  // On conflict, merge into the pending job's entries: deduplicated, first
   // occurrence order kept, bounded. next_run_at is left alone (see above).
   await db.execute(sql`
     INSERT INTO ${jobs} (id, type, payload, next_run_at, created_at, updated_at)
     VALUES (${generateUuidv7()}, 'fetch_full_content', ${JSON.stringify(payload)}::jsonb, ${now}, ${now}, ${now})
     ON CONFLICT ((payload->>'feedId'))
-      WHERE type = 'fetch_full_content' AND (payload->>'pending') = 'true'
+      WHERE type = 'fetch_full_content'
+        AND (payload->>'pending') = 'true'
+        AND running_since IS NULL
+        AND last_run_at IS NULL
     DO UPDATE SET
       payload = jobs.payload || jsonb_build_object('entryIds', (
         SELECT COALESCE(jsonb_agg(merged.id ORDER BY merged.first_ord), '[]'::jsonb)
         FROM (
           SELECT t.id, min(t.ord) AS first_ord
-          FROM jsonb_array_elements_text(
-            (jobs.payload->'entryIds') || (EXCLUDED.payload->'entryIds')
-          ) WITH ORDINALITY AS t(id, ord)
+          FROM jsonb_array_elements_text(${combined}) WITH ORDINALITY AS t(id, ord)
           GROUP BY t.id
           ORDER BY first_ord
           LIMIT ${MAX_PENDING_FULL_CONTENT_ENTRIES}
@@ -611,8 +624,10 @@ export async function enqueueFullContentFetch(feedId: string, entryIds: string[]
 
 /**
  * Claims a due `fetch_full_content` job, unless
- * {@link MAX_RUNNING_FULL_CONTENT_JOBS} are already running, and clears its
- * `pending` marker (see {@link enqueueFullContentFetch}).
+ * {@link MAX_RUNNING_FULL_CONTENT_JOBS} are already running. Also clears the
+ * `pending` marker, which the claim itself already takes the row out of the
+ * pending index for (see {@link enqueueFullContentFetch}); it just keeps the
+ * payload honest.
  *
  * @returns The claimed job, or null if none is due or the cap is reached
  */

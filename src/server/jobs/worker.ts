@@ -271,19 +271,34 @@ const REGULAR_JOB_TYPES: JobType[] = ONE_TIME_JOB_TYPES.filter((t) => t !== "fet
 type ClaimOptions = { types?: JobType[] };
 
 /**
+ * The cycle, within each SINGLETON_PRIORITY_INTERVAL, on which
+ * `fetch_full_content` jobs are checked first. Cycle 0 is the singletons'.
+ */
+export const FULL_CONTENT_PRIORITY_CYCLE = 2;
+
+/**
  * Builds the worker's claim function. Priority order:
  *
  * 1. Regular jobs (`process_opml_import`) — user-triggered, always first.
- * 2. `fetch_full_content` jobs — latency-sensitive, and safe to take first
- *    because `claimFullContentJob` caps how many run at once, so they can never
- *    hold more than that many slots.
- * 3. Feed jobs vs. singleton jobs — round-robined: on most cycles feeds go
- *    first (throughput), but every SINGLETON_PRIORITY_INTERVAL-th cycle
- *    singletons are checked first, so an overdue maintenance job is claimed
- *    within a few cycles even under a deep fetch_feed backlog (which would
- *    otherwise starve singletons forever). Whichever category is checked
- *    first, the other is still tried if it has nothing to claim — neither is
- *    ever skipped on a given cycle.
+ * 2. Feed, singleton and `fetch_full_content` jobs — round-robined. On most
+ *    cycles feeds go first (throughput). Every SINGLETON_PRIORITY_INTERVAL-th
+ *    cycle singletons go first, so an overdue maintenance job is claimed within
+ *    a few cycles even under a deep fetch_feed backlog; and one other cycle per
+ *    interval (FULL_CONTENT_PRIORITY_CYCLE) puts full-content jobs first, so
+ *    pushed entries get their turn under a feed backlog too. Whichever category
+ *    goes first, the others are still tried if it has nothing to claim — none
+ *    is ever skipped on a given cycle, and a full-content job still runs
+ *    whenever nothing else is due.
+ *
+ * Full-content jobs are created by third-party hub pushes and can each hold a
+ * slot for minutes, so they deliberately don't get priority over feed polls:
+ * on a single-slot worker (production runs one), that would let a steady push
+ * stream starve polls and maintenance outright. What the rotation guarantees is
+ * a bounded share of *claims* — under a backlog in every category, one in
+ * SINGLETON_PRIORITY_INTERVAL — so a feed poll or an overdue singleton waits at
+ * most a few claims, one of which may be a long full-content job. It doesn't
+ * bound their share of wall-clock time. `claimFullContentJob`'s running cap
+ * adds a slot bound on multi-slot workers.
  *
  * Exported for unit tests (which inject fake claim deps to verify the
  * ordering); production calls it only from `createWorker` below.
@@ -313,12 +328,29 @@ export function createWorkerClaimJob(
     return null;
   }
 
-  // Round-robin counter deciding whether singletons or feeds are checked first.
+  async function tryClaimFullContentJob(options?: ClaimOptions): Promise<Job | null> {
+    return wants(options, "fetch_full_content") ? deps.claimFullContent() : null;
+  }
+
+  async function firstClaimed(
+    claims: Array<(options?: ClaimOptions) => Promise<Job | null>>,
+    options?: ClaimOptions
+  ): Promise<Job | null> {
+    for (const claim of claims) {
+      const job = await claim(options);
+      if (job) {
+        return job;
+      }
+    }
+    return null;
+  }
+
+  // Round-robin counter deciding which category is checked first.
   let claimCounter = 0;
 
   return async function claimJob(options?: ClaimOptions): Promise<Job | null> {
     // First try to claim a regular job (OPML imports). Feed and full-content
-    // jobs have their own claims below.
+    // jobs have their own claims in the rotation below.
     const regularTypes = options?.types?.filter(
       (t) => t !== "fetch_feed" && t !== "fetch_full_content"
     );
@@ -331,19 +363,15 @@ export function createWorkerClaimJob(
       }
     }
 
-    if (wants(options, "fetch_full_content")) {
-      const fullContentJob = await deps.claimFullContent();
-      if (fullContentJob) {
-        return fullContentJob;
-      }
-    }
+    const cycle = claimCounter++ % SINGLETON_PRIORITY_INTERVAL;
 
-    const singletonsFirst = claimCounter++ % SINGLETON_PRIORITY_INTERVAL === 0;
-
-    if (singletonsFirst) {
-      return (await tryClaimSingletonJob(options)) ?? (await tryClaimFeedJob(options));
+    if (cycle === 0) {
+      return firstClaimed([tryClaimSingletonJob, tryClaimFeedJob, tryClaimFullContentJob], options);
     }
-    return (await tryClaimFeedJob(options)) ?? (await tryClaimSingletonJob(options));
+    if (cycle === FULL_CONTENT_PRIORITY_CYCLE) {
+      return firstClaimed([tryClaimFullContentJob, tryClaimFeedJob, tryClaimSingletonJob], options);
+    }
+    return firstClaimed([tryClaimFeedJob, tryClaimSingletonJob, tryClaimFullContentJob], options);
   };
 }
 
@@ -390,10 +418,9 @@ function createWorker(config: WorkerConfig = {}): Worker {
 
   // Default claim function - tries different job types in priority order:
   // 1. Regular jobs (process_opml_import) - user-triggered, highest priority
-  // 2. fetch_full_content jobs - capped, so taking them first is safe
-  // 3. Feed jobs (fetch_feed) and singleton jobs (renew_websub, etc.) - the
-  //    order between these two is round-robined so a fetch_feed backlog can't
-  //    starve singleton maintenance (see SINGLETON_PRIORITY_INTERVAL).
+  // 2. Feed jobs (fetch_feed), singleton jobs (renew_websub, etc.) and
+  //    fetch_full_content jobs - round-robined so none can starve the others
+  //    (see createWorkerClaimJob).
   const baseClaimJob = claimJobOverride ?? defaultClaimJob;
 
   const claimJob = createWorkerClaimJob({

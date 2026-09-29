@@ -795,7 +795,7 @@ CREATE INDEX idx_invites_expires ON public.invites USING btree (expires_at);
 
 CREATE UNIQUE INDEX idx_jobs_feed_id ON public.jobs USING btree (((payload ->> 'feedId'::text))) WHERE (type = 'fetch_feed'::text);
 
-CREATE UNIQUE INDEX idx_jobs_full_content_pending_feed_id ON public.jobs USING btree (((payload ->> 'feedId'::text))) WHERE ((type = 'fetch_full_content'::text) AND ((payload ->> 'pending'::text) = 'true'::text));
+CREATE UNIQUE INDEX idx_jobs_full_content_pending_feed_id ON public.jobs USING btree (((payload ->> 'feedId'::text))) WHERE ((type = 'fetch_full_content'::text) AND ((payload ->> 'pending'::text) = 'true'::text) AND (running_since IS NULL) AND (last_run_at IS NULL));
 
 CREATE INDEX idx_jobs_polling ON public.jobs USING btree (type, next_run_at);
 
