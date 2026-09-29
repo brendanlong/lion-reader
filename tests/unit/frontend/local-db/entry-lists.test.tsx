@@ -248,6 +248,34 @@ describe("list ingestion", () => {
       expect(ids()).toEqual(["live", "a"]);
     });
 
+    it("does not keep a live insert that now sorts past the refetched window", async () => {
+      // The refetch lands with newer entries and more pages, so its window no
+      // longer reaches the live-inserted entry; keeping it would render it
+      // after a gap of unloaded entries.
+      const { queryClient, ids, insert } = renderLists({ all: ALL });
+      act(() =>
+        seedList(queryClient, ALL, [
+          {
+            items: [makeEntry("c", "2024-06-03"), makeEntry("b", "2024-06-02")],
+            nextCursor: "x",
+          },
+        ])
+      );
+      insert(makeEntry("live", "2024-06-02T12:00:00Z"));
+      await waitFor(() => expect(ids("all")).toEqual(["c", "live", "b"]));
+
+      act(() =>
+        seedList(queryClient, ALL, [
+          {
+            items: [makeEntry("e", "2024-06-05"), makeEntry("d", "2024-06-04")],
+            nextCursor: "y",
+          },
+        ])
+      );
+
+      await waitFor(() => expect(ids("all")).toEqual(["e", "d"]));
+    });
+
     it("drops an entry inserted before the refetch started that the server no longer returns", async () => {
       const { insertLive, refetch, ids } = renderRefetchableList();
       await waitFor(() => expect(ids()).toEqual(["a"]));

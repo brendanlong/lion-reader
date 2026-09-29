@@ -118,12 +118,17 @@ export function ingestEntryListPages(
       order: listOrder(input, entry, index),
     }));
 
+  const hasMore = pages.at(-1)?.nextCursor !== undefined;
+  const lastOrder = rows.at(-1)?.order ?? -Infinity;
   const entryIds = new Set(rows.map((row) => row.entryId));
   if (mode === "append" && previous) {
     for (const id of previous.entryIds) entryIds.add(id);
   } else if (previous) {
+    // Kept only within the new pagination window: past it, the entry would
+    // render after a gap of unloaded entries (the next page brings it back).
     for (const id of previous.insertedSinceFetch) {
-      if (previous.entryIds.has(id)) entryIds.add(id);
+      const order = lists.rows.getSynced(listEntryKey(listKey, id))?.order;
+      if (order !== undefined && (!hasMore || order <= lastOrder)) entryIds.add(id);
     }
     lists.rows.remove(
       [...previous.entryIds]
@@ -135,8 +140,8 @@ export function ingestEntryListPages(
   lists.rows.upsert(rows.filter((row) => lists.rows.getSynced(row.key)?.order !== row.order));
   lists.meta.set(listKey, {
     input,
-    hasMore: pages.at(-1)?.nextCursor !== undefined,
-    lastOrder: rows.at(-1)?.order ?? -Infinity,
+    hasMore,
+    lastOrder,
     entryIds,
     insertedSinceFetch: mode === "append" && previous ? previous.insertedSinceFetch : new Set(),
   });
