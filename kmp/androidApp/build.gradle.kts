@@ -24,6 +24,28 @@ android {
             (project.findProperty("appLinkHost") as String?) ?: "lionreader.com"
     }
 
+    // A private dev keystore, so debug builds from every machine share a key
+    // the server can list in ANDROID_DEBUG_APP_CERT_SHA256 (see kmp/CLAUDE.md).
+    // Without it, debug builds use the default debug key and can only sign in
+    // to dev servers.
+    val devKeystore = providers.gradleProperty("lionReaderDevKeystore").orNull
+    val devSigning = devKeystore?.let {
+        signingConfigs.create("dev") {
+            storeFile = file(it)
+            storePassword = providers.gradleProperty("lionReaderDevKeystorePassword").get()
+            keyAlias = providers.gradleProperty("lionReaderDevKeyAlias").get()
+            keyPassword = providers.gradleProperty("lionReaderDevKeyPassword").get()
+        }
+    }
+
+    buildTypes {
+        debug {
+            // Installs alongside the release app.
+            applicationIdSuffix = ".debug"
+            devSigning?.let { signingConfig = it }
+        }
+    }
+
     buildFeatures {
         compose = true
         buildConfig = true

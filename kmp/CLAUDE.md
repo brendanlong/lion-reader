@@ -18,7 +18,8 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
 - **Auth.** OAuth 2.1 + PKCE against the server's built-in `lion-reader-app`
   client, in a Custom Tab; the redirect `https://<server>/oauth/app-callback`
   is claimed as a verified App Link (`assetlinks.json`, fed by
-  `ANDROID_APP_CERT_SHA256` on the server). Never a custom scheme: any app can
+  `ANDROID_APP_CERT_SHA256` and, for the debug app, `ANDROID_DEBUG_APP_CERT_SHA256`
+  on the server). Never a custom scheme: any app can
   register one and finish a sign-in under our client id. Refresh tokens rotate
   and the server revokes the family on reuse, so refresh is serialized
   (`AppAuth`'s mutex; the UI, WorkManager and the callback share one
@@ -105,6 +106,29 @@ Run from `kmp/`:
   (repo root for the fixture; CI's `app-real-server-tests` job does exactly
   this). Without the variable `RealServerTest` skips itself.
 
+## Debug app and signing
+
+Debug builds are a separate app, `com.lionreader.app.debug` ("Lion Reader
+(debug)"), installable next to the release app. For a debug build to sign in to
+production, sign it with a private dev keystore and list that key's fingerprint
+in `ANDROID_DEBUG_APP_CERT_SHA256`. Never list Android's default debug key: its
+password is public, and any key listed can act as the app at sign-in. Create
+the keystore once, keep it outside the repo and off shared hosts:
+
+```bash
+keytool -genkeypair -v -keystore lionreader-dev.jks -alias dev \
+  -keyalg RSA -keysize 4096 -validity 10000
+keytool -list -v -keystore lionreader-dev.jks -alias dev   # SHA256 line
+```
+
+and point Gradle at it with properties (e.g. in `~/.gradle/gradle.properties`
+on your own machine, or `ORG_GRADLE_PROJECT_*` variables): `lionReaderDevKeystore`
+(path), `lionReaderDevKeystorePassword`, `lionReaderDevKeyAlias`,
+`lionReaderDevKeyPassword`. Without them, debug builds use the default debug
+key and can sign in only to dev servers. With both apps installed, Android
+may ask which one opens the sign-in redirect; picking the other one just fails
+that sign-in (PKCE), so retry.
+
 ## Running against a dev server
 
 Start the app with an issuer the phone can reach over USB, e.g.
@@ -115,7 +139,7 @@ can't be an App Link, so the sign-in ends on the server's "opened in your
 browser" page; hand the redirect to the app yourself:
 
 ```bash
-adb shell am start -n com.lionreader.app/.MainActivity -a android.intent.action.VIEW \
+adb shell am start -n com.lionreader.app.debug/com.lionreader.app.MainActivity -a android.intent.action.VIEW \
   -d "'http://localhost:<port>/oauth/app-callback?code=...&state=...'"
 ```
 
