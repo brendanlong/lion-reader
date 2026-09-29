@@ -52,15 +52,8 @@ class PluginRegistry {
   }
 
   /**
-   * Find any plugin matching the URL (regardless of capability).
-   */
-  findAny(url: URL): UrlPlugin | null {
-    return this.pluginsForHostname(url.hostname).find((p) => p.matchUrl(url)) ?? null;
-  }
-
-  /**
    * Find the first plugin registered for a hostname.
-   * Unlike findAny, this only checks hostname, not matchUrl.
+   * Unlike findWithCapability, this only checks hostname, not matchUrl.
    * Useful for site-level metadata like feedBuilderUrl.
    */
   findByHostname(hostname: string): UrlPlugin | null {

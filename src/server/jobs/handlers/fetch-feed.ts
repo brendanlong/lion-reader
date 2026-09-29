@@ -9,7 +9,7 @@
  */
 
 import { createHash } from "crypto";
-import { eq, and, isNull, inArray, count } from "drizzle-orm";
+import { eq, and, isNull, inArray, count, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "../../db";
 import { feeds, subscriptions, userEntries, type Feed } from "../../db/schema";
@@ -735,18 +735,12 @@ async function updateFeedOnError(
   now: Date,
   nextFetchAt: Date
 ): Promise<void> {
-  const [feed] = await db.select().from(feeds).where(eq(feeds.id, feedId)).limit(1);
-
-  if (!feed) return;
-
-  const newFailureCount = (feed.consecutiveFailures ?? 0) + 1;
-
   await db
     .update(feeds)
     .set({
       lastFetchedAt: now,
       nextFetchAt: nextFetchAt,
-      consecutiveFailures: newFailureCount,
+      consecutiveFailures: sql`${feeds.consecutiveFailures} + 1`,
       lastError: errorMessage,
       updatedAt: now,
     })

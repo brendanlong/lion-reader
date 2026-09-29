@@ -20,8 +20,8 @@ import { startFeedParseTimer } from "../metrics/metrics";
  * Entries beyond the limit are silently dropped (we keep the most recent ones,
  * which are typically at the top of the feed).
  */
-function resultToParsedFeed(result: FeedParseResult, maxEntries?: number): ParsedFeed {
-  const limit = maxEntries ?? usageLimitsConfig.maxFeedEntries;
+function resultToParsedFeed(result: FeedParseResult): ParsedFeed {
+  const limit = usageLimitsConfig.maxFeedEntries;
   return {
     title: result.title,
     description: result.description,

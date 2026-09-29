@@ -264,19 +264,6 @@ export interface FetchUrlResult {
   contentType: string;
   /** The final URL after any redirects */
   finalUrl: string;
-  /** Whether the content is Markdown (based on Content-Type header) */
-  isMarkdown?: boolean;
-}
-
-export interface FetchUrlOptions {
-  /** Timeout in milliseconds. Defaults to FEED_FETCH_TIMEOUT_MS. */
-  timeoutMs?: number;
-  /** Accept header value. Defaults to feed content types. */
-  accept?: string;
-  /** Custom User-Agent header. Defaults to USER_AGENT. */
-  userAgent?: string;
-  /** Maximum response size in bytes. Defaults to maxFeedSizeBytes from config. */
-  maxSizeBytes?: number;
 }
 
 // ============================================================================
@@ -308,27 +295,24 @@ const HTML_ACCEPT_HEADER = "text/html,application/xhtml+xml,application/xml;q=0.
 // ============================================================================
 
 /**
- * Fetches content from a URL with proper error handling and timeout.
+ * Fetches a feed (or a page to discover feeds on) from a URL with proper error
+ * handling, the feed timeout, and the feed size limit.
  *
  * @param url - The URL to fetch
- * @param options - Fetch options (timeout, accept header, user agent)
  * @returns The response with text content, content type, and final URL
  * @throws TRPCError on fetch failure
  */
-export async function fetchUrl(url: string, options?: FetchUrlOptions): Promise<FetchUrlResult> {
-  const timeoutMs = options?.timeoutMs ?? FEED_FETCH_TIMEOUT_MS;
-  const accept = options?.accept ?? FEED_ACCEPT_HEADER;
-  const userAgent = options?.userAgent ?? USER_AGENT;
-  const maxSizeBytes = options?.maxSizeBytes ?? usageLimitsConfig.maxFeedSizeBytes;
+export async function fetchUrl(url: string): Promise<FetchUrlResult> {
+  const maxSizeBytes = usageLimitsConfig.maxFeedSizeBytes;
 
   try {
     const response = await fetchWithSsrfProtection(url, {
       headers: {
-        "User-Agent": userAgent,
-        Accept: accept,
+        "User-Agent": USER_AGENT,
+        Accept: FEED_ACCEPT_HEADER,
         "Accept-Encoding": ACCEPT_ENCODING,
       },
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: AbortSignal.timeout(FEED_FETCH_TIMEOUT_MS),
       redirect: "follow",
     });
 
@@ -338,9 +322,8 @@ export async function fetchUrl(url: string, options?: FetchUrlOptions): Promise<
 
     const text = await readResponseWithSizeLimit(response, maxSizeBytes, url);
     const contentType = response.headers.get("content-type") ?? "";
-    const isMarkdown = contentType.includes("text/markdown");
 
-    return { text, contentType, finalUrl: response.url, isMarkdown };
+    return { text, contentType, finalUrl: response.url };
   } catch (error) {
     if (error instanceof ContentTooLargeError) {
       throw errors.contentTooLarge("Feed", maxSizeBytes);
@@ -380,12 +363,7 @@ export interface FetchHtmlPageResult {
  * @returns The content and whether it's Markdown
  * @throws Error on fetch failure
  */
-export async function fetchHtmlPage(
-  url: string,
-  options?: { maxSizeBytes?: number }
-): Promise<FetchHtmlPageResult> {
-  const maxSizeBytes = options?.maxSizeBytes ?? usageLimitsConfig.maxSavedArticleSizeBytes;
-
+export async function fetchHtmlPage(url: string): Promise<FetchHtmlPageResult> {
   const response = await fetchWithSsrfProtection(url, {
     signal: AbortSignal.timeout(PAGE_FETCH_TIMEOUT_MS),
     headers: {
@@ -412,7 +390,11 @@ export async function fetchHtmlPage(
     throw new InvalidContentTypeError(contentType, url);
   }
 
-  const content = await readResponseWithSizeLimit(response, maxSizeBytes, url);
+  const content = await readResponseWithSizeLimit(
+    response,
+    usageLimitsConfig.maxSavedArticleSizeBytes,
+    url
+  );
   return { content, isMarkdown, finalUrl: response.url };
 }
 

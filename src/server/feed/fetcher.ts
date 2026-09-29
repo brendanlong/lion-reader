@@ -22,12 +22,6 @@ export interface FetchFeedOptions {
   etag?: string;
   /** Last-Modified value from previous response for conditional GET */
   lastModified?: string;
-  /** Request timeout in milliseconds (default: 30000) */
-  timeout?: number;
-  /** User-Agent header to send (overrides default) */
-  userAgent?: string;
-  /** Maximum number of redirects to follow (default: 5) */
-  maxRedirects?: number;
   /** Feed ID for debugging (included in User-Agent) */
   feedId?: string;
   /** Number of active subscribers (included in User-Agent for publishers) */
@@ -51,14 +45,8 @@ export interface RedirectInfo {
  */
 interface FetchSuccessResult {
   status: "success";
-  /** HTTP status code (200 or 206) */
-  statusCode: 200 | 206;
   /** Response body as raw bytes - allows hashing before expensive text decoding */
   body: Buffer;
-  /** Content-Type header value */
-  contentType: string;
-  /** Final URL after redirects */
-  finalUrl: string;
   /** Parsed cache headers */
   cacheHeaders: ParsedCacheHeaders;
   /** Redirect chain if any permanent redirects occurred */
@@ -72,8 +60,6 @@ interface FetchSuccessResult {
  */
 interface FetchNotModifiedResult {
   status: "not_modified";
-  /** HTTP status code (304) */
-  statusCode: 304;
   /** Parsed cache headers */
   cacheHeaders: ParsedCacheHeaders;
   /** Redirect chain if any permanent redirects occurred */
@@ -85,8 +71,6 @@ interface FetchNotModifiedResult {
  */
 interface FetchClientErrorResult {
   status: "client_error";
-  /** HTTP status code (4xx) */
-  statusCode: number;
   /** Error message */
   message: string;
   /** Whether the error is permanent (404, 410) */
@@ -98,8 +82,6 @@ interface FetchClientErrorResult {
  */
 interface FetchServerErrorResult {
   status: "server_error";
-  /** HTTP status code (5xx) */
-  statusCode: number;
   /** Error message */
   message: string;
   /** Retry-After header value in seconds, if present */
@@ -111,8 +93,6 @@ interface FetchServerErrorResult {
  */
 interface FetchRateLimitedResult {
   status: "rate_limited";
-  /** HTTP status code (429) */
-  statusCode: 429;
   /** Retry-After header value in seconds, if present */
   retryAfter?: number;
 }
@@ -124,8 +104,6 @@ interface FetchNetworkErrorResult {
   status: "network_error";
   /** Error message */
   message: string;
-  /** Whether this was a timeout */
-  timeout: boolean;
 }
 
 /**
@@ -135,8 +113,6 @@ interface FetchTooManyRedirectsResult {
   status: "too_many_redirects";
   /** The last URL before giving up */
   lastUrl: string;
-  /** Redirect chain */
-  redirects: RedirectInfo[];
 }
 
 /**
@@ -163,11 +139,11 @@ export type FetchFeedResult =
   | FetchTooManyRedirectsResult
   | FetchContentTooLargeResult;
 
-/** Default request timeout in milliseconds */
-const DEFAULT_TIMEOUT_MS = 30000;
+/** Request timeout in milliseconds */
+const TIMEOUT_MS = 30000;
 
-/** Default maximum redirects to follow */
-const DEFAULT_MAX_REDIRECTS = 5;
+/** Maximum redirects to follow */
+const MAX_REDIRECTS = 5;
 
 /**
  * Translates technical Node.js network error messages into user-friendly descriptions.
@@ -318,24 +294,14 @@ export async function fetchFeed(
   url: string,
   options: FetchFeedOptions = {}
 ): Promise<FetchFeedResult> {
-  const {
-    etag,
-    lastModified,
-    timeout = DEFAULT_TIMEOUT_MS,
-    userAgent,
-    maxRedirects = DEFAULT_MAX_REDIRECTS,
-    feedId,
-    subscriberCount,
-  } = options;
+  const { etag, lastModified, feedId, subscriberCount } = options;
 
   // Build request headers
   const headers: Record<string, string> = {
-    "User-Agent":
-      userAgent ??
-      buildUserAgent({
-        context: feedId ? `feed:${feedId}` : undefined,
-        subscriberCount,
-      }),
+    "User-Agent": buildUserAgent({
+      context: feedId ? `feed:${feedId}` : undefined,
+      subscriberCount,
+    }),
     Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
     "Accept-Encoding": ACCEPT_ENCODING,
   };
@@ -352,12 +318,12 @@ export async function fetchFeed(
   const redirects: RedirectInfo[] = [];
   let currentUrl = url;
 
-  for (let redirectCount = 0; redirectCount <= maxRedirects; redirectCount++) {
+  for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount++) {
     try {
       const response = await fetchWithSsrfProtection(currentUrl, {
         method: "GET",
         headers,
-        signal: AbortSignal.timeout(timeout),
+        signal: AbortSignal.timeout(TIMEOUT_MS),
         redirect: "manual", // Handle redirects manually to track permanent ones
       });
 
@@ -368,7 +334,6 @@ export async function fetchFeed(
         if (!location) {
           return {
             status: "client_error",
-            statusCode: response.status,
             message: "Redirect without Location header",
             permanent: false,
           };
@@ -381,12 +346,8 @@ export async function fetchFeed(
         redirects.push({ url: redirectUrl, type: redirectType });
 
         // If we've hit max redirects on the next iteration, we'll return too_many_redirects
-        if (redirectCount === maxRedirects) {
-          return {
-            status: "too_many_redirects",
-            lastUrl: currentUrl,
-            redirects,
-          };
+        if (redirectCount === MAX_REDIRECTS) {
+          return { status: "too_many_redirects", lastUrl: currentUrl };
         }
 
         currentUrl = redirectUrl;
@@ -397,7 +358,6 @@ export async function fetchFeed(
       if (response.status === 304) {
         return {
           status: "not_modified",
-          statusCode: 304,
           cacheHeaders: parseCacheHeaders(response.headers),
           redirects,
         };
@@ -425,18 +385,13 @@ export async function fetchFeed(
           }
           throw error;
         }
-        const contentType = response.headers.get("content-type") ?? "application/xml";
-
         // Parse Link headers for WebSub hub/self discovery (W3C WebSub spec §4)
         const linkHeader = response.headers.get("link");
         const websubLinks = linkHeader ? parseWebSubLinkHeaders(linkHeader) : {};
 
         return {
           status: "success",
-          statusCode: response.status as 200 | 206,
           body,
-          contentType,
-          finalUrl: currentUrl,
           cacheHeaders: parseCacheHeaders(response.headers),
           redirects,
           websubLinks,
@@ -447,7 +402,6 @@ export async function fetchFeed(
       if (response.status === 429) {
         return {
           status: "rate_limited",
-          statusCode: 429,
           retryAfter: parseRetryAfter(response.headers.get("retry-after")),
         };
       }
@@ -459,7 +413,6 @@ export async function fetchFeed(
 
         return {
           status: "client_error",
-          statusCode: response.status,
           message: `HTTP ${response.status}: ${response.statusText || "Client Error"}`,
           permanent,
         };
@@ -469,7 +422,6 @@ export async function fetchFeed(
       if (response.status >= 500) {
         return {
           status: "server_error",
-          statusCode: response.status,
           message: `HTTP ${response.status}: ${response.statusText || "Server Error"}`,
           retryAfter: parseRetryAfter(response.headers.get("retry-after")),
         };
@@ -478,7 +430,6 @@ export async function fetchFeed(
       // Unexpected status code - treat as client error
       return {
         status: "client_error",
-        statusCode: response.status,
         message: `Unexpected HTTP ${response.status}: ${response.statusText || "Unknown"}`,
         permanent: false,
       };
@@ -490,8 +441,7 @@ export async function fetchFeed(
       ) {
         return {
           status: "network_error",
-          message: `Request timed out after ${timeout}ms`,
-          timeout: true,
+          message: `Request timed out after ${TIMEOUT_MS}ms`,
         };
       }
 
@@ -499,18 +449,10 @@ export async function fetchFeed(
       const message =
         error instanceof Error ? formatNetworkErrorMessage(error) : "Unknown network error";
 
-      return {
-        status: "network_error",
-        message,
-        timeout: false,
-      };
+      return { status: "network_error", message };
     }
   }
 
   // This shouldn't be reached, but TypeScript needs it
-  return {
-    status: "too_many_redirects",
-    lastUrl: currentUrl,
-    redirects,
-  };
+  return { status: "too_many_redirects", lastUrl: currentUrl };
 }

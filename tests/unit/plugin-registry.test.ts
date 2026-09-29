@@ -29,7 +29,9 @@ describe("pluginRegistry host matching", () => {
   });
 
   it("still applies matchUrl on a wildcard host", () => {
-    expect(pluginRegistry.findAny(new URL("https://acme.notion.site/"))).toBeNull();
+    expect(
+      pluginRegistry.findWithCapability(new URL("https://acme.notion.site/"), "savedArticle")
+    ).toBeNull();
   });
 
   it("leaves exact-host lookups for other plugins untouched", () => {
