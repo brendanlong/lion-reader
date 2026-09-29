@@ -3,16 +3,19 @@
  *
  * Settings section for the Wallabag-compatible API.
  * Provides setup instructions, a QR code for auto-configuration,
- * and a deep link for configuring Wallabag mobile apps.
+ * a deep link for configuring Wallabag mobile apps, and a way to sign
+ * them all out.
  */
 
 "use client";
 
 import { useMemo } from "react";
+import { toast } from "sonner";
 import { useAppBaseUrl } from "@/lib/hooks/useAppBaseUrl";
 import { QRCodeSVG } from "qrcode.react";
 import { trpc } from "@/lib/trpc/client";
 import { SettingsSection } from "@/components/settings/SettingsSection";
+import { Button } from "@/components/ui/button";
 import { CardSection } from "@/components/ui/card";
 import { CopyButton } from "@/components/ui/copy-button";
 import { MobileIcon } from "@/components/ui/icons";
@@ -25,6 +28,25 @@ export function WallabagApiSettings() {
   const email = userQuery.data?.user.email;
 
   const baseUrl = useAppBaseUrl();
+
+  const revokeMutation = trpc.oauthGrants.revokeWallabag.useMutation({
+    onSuccess: () => {
+      toast.success("Signed out all Wallabag apps");
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to sign out Wallabag apps");
+    },
+  });
+
+  const handleRevoke = () => {
+    if (
+      confirm(
+        "Sign out every Wallabag app connected to your account? Each one will need your password to reconnect."
+      )
+    ) {
+      revokeMutation.mutate();
+    }
+  };
 
   const serverUrl = `${baseUrl}/api/wallabag`;
 
@@ -150,6 +172,23 @@ export function WallabagApiSettings() {
             <strong className="text-body">Password:</strong> Your Lion Reader password
           </li>
         </ul>
+      </CardSection>
+
+      <CardSection>
+        <h3 className="ui-text-sm text-body font-medium">Sign Out Apps</h3>
+        <p className="ui-text-sm text-muted mt-1">
+          Disconnect every Wallabag app signed in to your account. Changing your password does this
+          too.
+        </p>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleRevoke}
+          disabled={revokeMutation.isPending}
+          className="text-danger hover:bg-danger-subtle hover:text-danger-hover mt-3"
+        >
+          Sign out all Wallabag apps
+        </Button>
       </CardSection>
 
       {/* How it works */}

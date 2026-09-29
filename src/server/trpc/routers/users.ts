@@ -24,6 +24,8 @@ import {
 import { clearSessionCookie } from "@/server/auth/session-cookie";
 import { encryptApiKey, isEncryptionConfigured } from "@/lib/encryption";
 import { deleteUser } from "@/server/services/users";
+import { revokeUserClientTokens } from "@/server/oauth/service";
+import { WALLABAG_CLIENT_ID } from "@/server/wallabag/auth";
 
 // ============================================================================
 // Schemas
@@ -200,14 +202,20 @@ export const usersRouter = createTRPCRouter({
       const passwordHash = await argon2.hash(newPassword);
 
       // Attempt to set password only if user doesn't already have one
-      const updated = await ctx.db
-        .update(users)
-        .set({
-          passwordHash,
-          updatedAt: new Date(),
-        })
-        .where(and(eq(users.id, userId), isNull(users.passwordHash)))
-        .returning({ id: users.id });
+      const updated = await ctx.db.transaction(async (tx) => {
+        const rows = await tx
+          .update(users)
+          .set({
+            passwordHash,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(users.id, userId), isNull(users.passwordHash)))
+          .returning({ id: users.id });
+        if (rows.length > 0) {
+          await revokeUserClientTokens(userId, WALLABAG_CLIENT_ID, tx);
+        }
+        return rows;
+      });
 
       if (updated.length === 0) {
         throw errors.validation("Account already has a password. Use change password instead.");
@@ -270,14 +278,18 @@ export const usersRouter = createTRPCRouter({
       // Hash the new password
       const newPasswordHash = await argon2.hash(newPassword);
 
-      // Update the password
-      await ctx.db
-        .update(users)
-        .set({
-          passwordHash: newPasswordHash,
-          updatedAt: new Date(),
-        })
-        .where(eq(users.id, userId));
+      // Wallabag tokens are minted from the password (password grant), so they
+      // must not outlive it.
+      await ctx.db.transaction(async (tx) => {
+        await tx
+          .update(users)
+          .set({
+            passwordHash: newPasswordHash,
+            updatedAt: new Date(),
+          })
+          .where(eq(users.id, userId));
+        await revokeUserClientTokens(userId, WALLABAG_CLIENT_ID, tx);
+      });
 
       // Revoke every other session so a stolen/lingering credential can't survive
       // a password change (common reason for changing it). Keep the current one.

@@ -116,7 +116,8 @@ Entry bodies, saved articles, and AI summaries are rendered with
 - Session cookie is `HttpOnly`, `Secure` (prod), `SameSite=Lax`; tokens are 32
   random bytes, SHA-256 hashed at rest, never stored raw. **Keep these flags.**
 - Password change (and any credential change) must revoke other sessions
-  (`revokeOtherUserSessions`). Linking and unlinking a social provider counts —
+  (`revokeOtherUserSessions`). Setting or changing the password also revokes the
+  user's Wallabag tokens, which the password grant mints from it. Linking and unlinking a social provider counts —
   each adds or removes a way to sign in (`src/server/services/oauth-accounts.ts`,
   which also says why a failed revoke doesn't undo the change). The one
   deliberate exception is the email-match link inside `processOAuthCallback`,
@@ -191,6 +192,10 @@ IDs) · **Code:** `src/app/api/wallabag/`, `src/app/api/greader.php/`,
 
 - These require `reader:full-access` (or MCP scope) + signup confirmation and
   authenticate via hashed-token lookup (no string compare).
+- The Wallabag token endpoint is secretless, so it is **pinned to the
+  `wallabag` client_id** (`WALLABAG_CLIENT_ID`): it shares token tables with the
+  OAuth 2.1 server, and honoring a caller-supplied client_id would let it rotate
+  another client's refresh token or mint tokens in that client's name.
 - Clients address entries/feeds by **integer serials stored in the DB**
   (`greader_item_id`, `greader_stream_id`, …). The serial↔UUID lookups are
   necessary because these protocols mandate integer IDs. **Every serial↔UUID

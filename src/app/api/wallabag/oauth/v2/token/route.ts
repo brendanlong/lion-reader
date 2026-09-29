@@ -19,9 +19,11 @@
  *   client_id=...
  *   client_secret=...
  *   refresh_token=...
+ *
+ * client_id must be "wallabag" (or omitted); see WALLABAG_CLIENT_ID.
  */
 
-import { passwordGrant, refreshTokenGrant } from "@/server/wallabag/auth";
+import { passwordGrant, refreshTokenGrant, WALLABAG_CLIENT_ID } from "@/server/wallabag/auth";
 import { parseBody } from "@/server/wallabag/parse";
 import { jsonResponse, errorResponse } from "@/server/wallabag/parse";
 import { checkRouteRateLimit, checkAccountRouteRateLimit } from "@/server/rate-limit";
@@ -46,7 +48,10 @@ export async function POST(request: Request): Promise<Response> {
   const body = await parseBody(request);
 
   const grantType = body.grant_type;
-  const clientId = body.client_id ?? "wallabag";
+
+  if (body.client_id !== undefined && body.client_id !== WALLABAG_CLIENT_ID) {
+    return errorResponse("invalid_client", `Unknown client_id; use "${WALLABAG_CLIENT_ID}"`, 401);
+  }
 
   if (grantType === "password") {
     const username = body.username;
@@ -68,7 +73,7 @@ export async function POST(request: Request): Promise<Response> {
       return accountRateLimitResponse;
     }
 
-    const result = await passwordGrant(username, password, clientId);
+    const result = await passwordGrant(username, password);
     if (!result) {
       return errorResponse("invalid_grant", "Invalid credentials", 401);
     }
@@ -83,7 +88,7 @@ export async function POST(request: Request): Promise<Response> {
       return errorResponse("invalid_request", "refresh_token is required", 400);
     }
 
-    const result = await refreshTokenGrant(refreshToken, clientId);
+    const result = await refreshTokenGrant(refreshToken);
     if (!result) {
       return errorResponse("invalid_grant", "Invalid or expired refresh token", 401);
     }
