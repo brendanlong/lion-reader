@@ -27,7 +27,8 @@ import { googleConfig, usageLimitsConfig } from "@/server/config/env";
 import { fetchAndUploadImage, isStorageAvailable } from "@/server/storage/s3";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { fetchWithSsrfProtection } from "@/server/http/ssrf";
-import { readResponseWithSizeLimit } from "@/server/http/fetch";
+import { ContentTooLargeError, readResponseWithSizeLimit } from "@/server/http/fetch";
+import { errors, getAppErrorCode } from "@/server/trpc/errors";
 import { escapeHtml } from "@/server/http/html";
 import { stripTitleHeader } from "@/server/html/strip-title-header";
 import {
@@ -62,6 +63,9 @@ const API_TIMEOUT_MS = 15000;
  * the HTML we save from it.
  */
 const DOCS_API_RESPONSE_SIZE_FACTOR = 4;
+
+/** An error response is only read for its message. */
+const DOCS_API_ERROR_BODY_MAX_BYTES = 64 * 1024;
 
 /**
  * OAuth2 scope required for reading Google Docs.
@@ -1282,7 +1286,9 @@ async function fetchGoogleDocWithToken(
       // Try to get error details from response body
       let errorDetails: string | undefined;
       try {
-        const errorJson = await response.json();
+        const errorJson = JSON.parse(
+          await readResponseWithSizeLimit(response, DOCS_API_ERROR_BODY_MAX_BYTES, url)
+        );
         errorDetails = errorJson?.error?.message;
       } catch {
         // Ignore JSON parse errors
@@ -1328,13 +1334,17 @@ async function fetchGoogleDocWithToken(
       }
     } else {
       // Docs API succeeded
-      const json: unknown = JSON.parse(
-        await readResponseWithSizeLimit(
-          response,
-          usageLimitsConfig.maxSavedArticleSizeBytes * DOCS_API_RESPONSE_SIZE_FACTOR,
-          url
-        )
-      );
+      const maxBytes = usageLimitsConfig.maxSavedArticleSizeBytes * DOCS_API_RESPONSE_SIZE_FACTOR;
+      let body: string;
+      try {
+        body = await readResponseWithSizeLimit(response, maxBytes, url);
+      } catch (error) {
+        if (error instanceof ContentTooLargeError) {
+          throw errors.contentTooLarge("Google Doc", maxBytes);
+        }
+        throw error;
+      }
+      const json: unknown = JSON.parse(body);
       const parsed = googleDocsApiResponseSchema.safeParse(json);
 
       if (!parsed.success) {
@@ -1356,6 +1366,9 @@ async function fetchGoogleDocWithToken(
       }
     }
   } catch (error) {
+    if (getAppErrorCode(error) === "CONTENT_TOO_LARGE") {
+      throw error;
+    }
     if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
       logger.warn("Google Docs API request timed out, trying Drive API fallback", { docId });
     } else if (isPrivate && error instanceof Error && error.message === "GOOGLE_TOKEN_INVALID") {

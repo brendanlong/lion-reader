@@ -15,7 +15,12 @@ import { logger } from "@/lib/logger";
 import { googleConfig, usageLimitsConfig } from "@/server/config/env";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { fetchWithSsrfProtection } from "@/server/http/ssrf";
-import { readResponseBufferWithSizeLimit } from "@/server/http/fetch";
+import {
+  ContentTooLargeError,
+  readResponseBufferWithSizeLimit,
+  readResponseWithSizeLimit,
+} from "@/server/http/fetch";
+import { errors, getAppErrorCode } from "@/server/trpc/errors";
 import { convertDocxToHtml } from "@/server/file/docx-to-html";
 
 // ============================================================================
@@ -37,6 +42,9 @@ const API_TIMEOUT_MS = 30000;
  * This is more permissive than documents.readonly but required for the Drive API.
  */
 export const GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly";
+
+/** The metadata request asks for three short fields. */
+const METADATA_MAX_BYTES = 64 * 1024;
 
 /**
  * MIME type for uploaded Word documents.
@@ -180,7 +188,9 @@ async function getFileMetadata(
       return null;
     }
 
-    const data = (await response.json()) as DriveFileMetadata;
+    const data = JSON.parse(
+      await readResponseWithSizeLimit(response, METADATA_MAX_BYTES, url)
+    ) as DriveFileMetadata;
     return data;
   } catch (error) {
     if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
@@ -196,7 +206,26 @@ async function getFileMetadata(
 }
 
 /**
+ * Reads a Drive download, held to the size limit for an uploaded file.
+ *
+ * @throws `CONTENT_TOO_LARGE` if the body exceeds the saved-article size limit
+ */
+export async function readDriveFileBody(response: Response, url: string): Promise<Buffer> {
+  const maxBytes = usageLimitsConfig.maxSavedArticleSizeBytes;
+  try {
+    return await readResponseBufferWithSizeLimit(response, maxBytes, url);
+  } catch (error) {
+    if (error instanceof ContentTooLargeError) {
+      throw errors.contentTooLarge("Google Drive file", maxBytes);
+    }
+    throw error;
+  }
+}
+
+/**
  * Downloads a file from Google Drive as raw bytes.
+ *
+ * @throws `CONTENT_TOO_LARGE` if the file exceeds the saved-article size limit
  */
 async function downloadFile(fileId: string, accessToken: string): Promise<Buffer | null> {
   try {
@@ -219,12 +248,11 @@ async function downloadFile(fileId: string, accessToken: string): Promise<Buffer
       return null;
     }
 
-    return await readResponseBufferWithSizeLimit(
-      response,
-      usageLimitsConfig.maxSavedArticleSizeBytes,
-      url
-    );
+    return await readDriveFileBody(response, url);
   } catch (error) {
+    if (getAppErrorCode(error) === "CONTENT_TOO_LARGE") {
+      throw error;
+    }
     if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
       logger.warn("Download request timed out", { fileId });
     } else {
