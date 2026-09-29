@@ -12,7 +12,7 @@
  * element (see `./silent-audio`) is played while narration is active to make
  * the browser treat narration as "media", which is what surfaces the controls
  * and routes hardware buttons to our action handlers. Cloud voices play through
- * their own media element (see `./cloud-audio-player`) and skip the silent loop.
+ * their own media element (see `./media-source-player`) and skip the silent loop.
  *
  * This module is provider-agnostic: callers pass plain control callbacks, so the
  * same integration works for both browser voices and Piper TTS.

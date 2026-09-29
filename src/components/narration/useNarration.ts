@@ -33,7 +33,8 @@ import {
 import { useMediaSession } from "./useMediaSession";
 import { trackNarrationPlaybackStarted } from "@/lib/telemetry";
 import { getPiperTTSProvider } from "@/lib/narration/piper-tts-provider";
-import { base64ToBlob, CloudAudioPlayer } from "@/lib/narration/cloud-audio-player";
+import { MediaSourcePlayer } from "@/lib/narration/media-source-player";
+import { base64ToBytes, decodeToPcm } from "@/lib/narration/audio-encoding";
 import { MAX_CLOUD_SPEECH_CHARS } from "@/lib/narration/constants";
 import { isEnhancedVoice } from "@/lib/narration/enhanced-voices";
 import {
@@ -97,8 +98,8 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
 
   // Streaming audio player for Piper TTS (sentence-level buffering)
   const streamingPlayerRef = useRef<StreamingAudioPlayer | null>(null);
-  // Media-element player for cloud voices
-  const cloudPlayerRef = useRef<CloudAudioPlayer | null>(null);
+  // Media Source player for cloud voices
+  const cloudPlayerRef = useRef<MediaSourcePlayer | null>(null);
   // Bumped by pause/stop/article changes, so a play() still generating
   // narration when the user moves on doesn't store or start it (see play()).
   const playRequestRef = useRef(0);
@@ -250,15 +251,18 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     return streamingPlayerRef.current;
   }, [bufferedPlayerCallbacks]);
 
-  const getOrCreateCloudPlayer = useCallback((): CloudAudioPlayer => {
+  const getOrCreateCloudPlayer = useCallback((): MediaSourcePlayer => {
     if (!cloudPlayerRef.current) {
-      cloudPlayerRef.current = new CloudAudioPlayer(async (text) => {
-        const result = await trpcUtils.client.narration.synthesize.mutate(
-          { ...cloudVoiceRef.current, text },
-          { context: { skipBatch: true } }
-        );
-        return base64ToBlob(result.audio, result.mimeType);
-      }, MAX_CLOUD_SPEECH_CHARS);
+      cloudPlayerRef.current = new MediaSourcePlayer({
+        synthesize: async (text) => {
+          const result = await trpcUtils.client.narration.synthesize.mutate(
+            { ...cloudVoiceRef.current, text },
+            { context: { skipBatch: true } }
+          );
+          return decodeToPcm(base64ToBytes(result.audio));
+        },
+        maxChunkChars: MAX_CLOUD_SPEECH_CHARS,
+      });
       cloudPlayerRef.current.setCallbacks(bufferedPlayerCallbacks);
     }
     return cloudPlayerRef.current;
@@ -284,7 +288,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     // any async narration generation, so the browser grants it while the gesture's
     // autoplay activation is still valid (issue #410). It's released below if
     // generation fails; on success the media-session effects keep it going.
-    // Cloud voices prime their own element instead (see CloudAudioPlayer).
+    // Cloud voices prime their own element instead (see MediaSourcePlayer).
     const cloudPlayer = useCloud ? getOrCreateCloudPlayer() : null;
     // Both primed elements are shared across requests, so each release only
     // takes effect if no newer play() has primed since.
