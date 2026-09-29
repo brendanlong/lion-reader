@@ -3,6 +3,31 @@ import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
 import vitest from "@vitest/eslint-plugin";
 
+// "One sanctioned next/link wrapper" (see src/CLAUDE.md): PageLink is the
+// only place `next/link` may be imported (it wraps `<Link prefetch={false}>`).
+// Everywhere else uses PageLink for cross-SPA navigation or ClientLink for
+// in-SPA pushState nav — importing `next/link` directly would reintroduce the
+// default prefetching we avoid.
+const NEXT_LINK = {
+  name: "next/link",
+  message:
+    "Import PageLink (@/components/ui/page-link) or ClientLink (@/components/ui/client-link) instead of next/link — PageLink is the only sanctioned next/link wrapper.",
+};
+
+// `src/server/markdown` is the app's only entry point to the native renderer.
+// Calling `@lion-reader/markdown` directly bypasses the size budgets and the
+// frontmatter/title handling, and invites a second set of render options —
+// i.e. a second Markdown dialect to keep in sync (see "Parsing" in CLAUDE.md).
+const NATIVE_MARKDOWN = {
+  name: "@lion-reader/markdown",
+  message:
+    "Import markdownToHtmlAsync or processMarkdown from @/server/markdown instead — that module owns the app's Markdown dialect and its size budgets.",
+};
+
+function restrictImports(...paths) {
+  return { "no-restricted-imports": ["error", { paths }] };
+}
+
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
@@ -16,51 +41,20 @@ const eslintConfig = defineConfig([
       "vitest/no-focused-tests": ["error", { fixable: false }],
     },
   },
-  // Enforce the "one sanctioned next/link wrapper" rule (see src/CLAUDE.md):
-  // PageLink is the only place `next/link` may be imported (it wraps
-  // `<Link prefetch={false}>`). Everywhere else uses PageLink for cross-SPA
-  // navigation or ClientLink for in-SPA pushState nav — importing `next/link`
-  // directly would reintroduce the default prefetching we avoid.
+  // Restricted imports for all of src/. They share one block (plus one
+  // override per exempt file) because a later `no-restricted-imports` block
+  // for the same files replaces an earlier one's paths instead of merging.
   {
     files: ["src/**/*.{ts,tsx}"],
-    ignores: ["src/components/ui/page-link.tsx"],
-    rules: {
-      "no-restricted-imports": [
-        "error",
-        {
-          paths: [
-            {
-              name: "next/link",
-              message:
-                "Import PageLink (@/components/ui/page-link) or ClientLink (@/components/ui/client-link) instead of next/link — PageLink is the only sanctioned next/link wrapper.",
-            },
-          ],
-        },
-      ],
-    },
+    rules: restrictImports(NEXT_LINK, NATIVE_MARKDOWN),
   },
-  // `src/server/markdown` is the app's only entry point to the native
-  // renderer. Calling `@lion-reader/markdown` directly bypasses the size
-  // budgets and the frontmatter/title handling, and invites a second set of
-  // render options — i.e. a second Markdown dialect to keep in sync (see
-  // "Parsing" in CLAUDE.md).
   {
-    files: ["src/**/*.{ts,tsx}"],
-    ignores: ["src/server/markdown/index.ts"],
-    rules: {
-      "no-restricted-imports": [
-        "error",
-        {
-          paths: [
-            {
-              name: "@lion-reader/markdown",
-              message:
-                "Import markdownToHtmlAsync or processMarkdown from @/server/markdown instead — that module owns the app's Markdown dialect and its size budgets.",
-            },
-          ],
-        },
-      ],
-    },
+    files: ["src/components/ui/page-link.tsx"],
+    rules: restrictImports(NATIVE_MARKDOWN),
+  },
+  {
+    files: ["src/server/markdown/index.ts"],
+    rules: restrictImports(NEXT_LINK),
   },
   // Override default ignores of eslint-config-next.
   globalIgnores([
