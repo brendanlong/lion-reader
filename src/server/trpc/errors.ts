@@ -216,6 +216,10 @@ export const errors = {
       { maxBytes }
     ),
 
+  /** For content within the byte limits that still costs too much to process. */
+  contentTooComplex: (resource: string) =>
+    createError("CONTENT_TOO_LARGE", `${resource} is too large or complex to process`),
+
   maxSubscriptionsReached: (limit: number) =>
     createError(
       "MAX_SUBSCRIPTIONS_REACHED",

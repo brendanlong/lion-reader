@@ -15,9 +15,11 @@
  * empty properties (we fall back to the filename / mammoth body) rather than
  * throwing.
  *
- * No decompression cap of its own: the upload path calls this only after
- * `convertDocxToHtml` (`docx-to-html.ts`) has held the whole archive to its
- * decompression budget, which covers `core.xml` too.
+ * Runs in-process with no limits of its own, which is safe only because the
+ * upload path calls it after `convertDocxToHtml` (`docx-to-html.ts`) succeeds:
+ * that has already bounded the archive's XML parts, `core.xml` included, to the
+ * XML inflation budget, and this SAX pass is linear in that. Don't call it on a
+ * `.docx` that hasn't been through that check.
  */
 
 import JSZip from "jszip";

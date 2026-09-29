@@ -18,6 +18,10 @@
  *    into dist/): dist/server.js requires `next/constants`, whose target IS
  *    traced but the shim file itself isn't.
  *
+ * 2b. mammoth, which nothing imports statically: the .docx converter
+ *    (src/server/file/docx-to-html.ts) requires it from inside an eval'd worker
+ *    thread. Copy it with its whole dependency closure, pnpm links included.
+ *
  * 3. The @lion-reader workspace symlinks: the trace resolves them to their
  *    real paths under native/, so no node_modules/@lion-reader entries exist.
  *    Recreate the symlinks; the Dockerfile copies the actual native module
@@ -26,7 +30,17 @@
  * Run after `pnpm build` (needs the full node_modules to copy from).
  */
 
-import { cpSync, mkdirSync, readdirSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  readlinkSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+} from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -65,6 +79,38 @@ for (const file of readdirSync(nextDir)) {
   }
 }
 console.log("Copied next's top-level subpath shims");
+
+// 2b. Copy mammoth and its dependency closure. Under pnpm each package's real
+// directory sits at `.pnpm/<id>/node_modules/<name>`, next to symlinks to its
+// dependencies; recreate those links and recurse through their targets.
+/** Replace `link` in the standalone tree with the same (relative) symlink. */
+function copySymlink(link) {
+  const dest = standalonePath(link);
+  rmSync(dest, { recursive: true, force: true });
+  mkdirSync(dirname(dest), { recursive: true });
+  symlinkSync(readlinkSync(link), dest);
+}
+
+function copyPackageClosure(name, realDir, copied = new Set()) {
+  if (copied.has(realDir)) return;
+  copied.add(realDir);
+  const dest = standalonePath(realDir);
+  rmSync(dest, { recursive: true, force: true });
+  cpSync(realDir, dest, { recursive: true });
+
+  const nodeModulesDir = realDir.slice(0, -name.length);
+  const { dependencies = {} } = JSON.parse(readFileSync(join(realDir, "package.json"), "utf8"));
+  for (const dep of Object.keys(dependencies)) {
+    const link = join(nodeModulesDir, dep);
+    if (!existsSync(link)) continue;
+    copySymlink(link);
+    copyPackageClosure(dep, realpathSync(link), copied);
+  }
+}
+
+copySymlink(join(rootDir, "node_modules", "mammoth"));
+copyPackageClosure("mammoth", packageDir("mammoth"));
+console.log("Copied mammoth and its dependencies");
 
 // 3. Recreate the @lion-reader workspace symlinks.
 const scopeDir = join(standaloneDir, "node_modules", "@lion-reader");
