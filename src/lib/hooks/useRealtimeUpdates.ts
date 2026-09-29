@@ -57,27 +57,11 @@ export interface UseRealtimeUpdatesResult {
   status: ConnectionStatus;
 
   /**
-   * Whether real-time updates are active (either SSE or polling).
-   */
-  isConnected: boolean;
-
-  /**
-   * Whether we're in fallback polling mode.
-   */
-  isPolling: boolean;
-
-  /**
    * Manually trigger a reconnection attempt.
    */
   reconnect: () => void;
 }
 
-/**
- * Named SSE events forwarded to the shared sync-event handler. These are
- * exactly the members of `syncEventSchema`; the connection state itself
- * (open/error) is tracked via the EventSource's own onopen/onerror, not a
- * data event.
- */
 /**
  * Backoff bounds for retrying a failed catch-up sync while the SSE stream is
  * connected (the polling phase already retries every POLL_INTERVAL_MS). Without
@@ -88,6 +72,12 @@ export interface UseRealtimeUpdatesResult {
 const INITIAL_SYNC_RETRY_DELAY_MS = 2_000;
 const MAX_SYNC_RETRY_DELAY_MS = 30_000;
 
+/**
+ * Named SSE events forwarded to the shared sync-event handler. These are
+ * exactly the members of `syncEventSchema`; the connection state itself
+ * (open/error) is tracked via the EventSource's own onopen/onerror, not a
+ * data event.
+ */
 const SSE_EVENT_NAMES = [
   "new_entry",
   "entry_updated",
@@ -114,13 +104,12 @@ const SSE_EVENT_NAMES = [
  * function AppLayout({ children }) {
  *   // Get initial cursors from server or use null for initial sync
  *   const initialCursors: SyncCursors = { entries: null, entriesAfterId: null, subscriptions: null, tags: null };
- *   const { status, isConnected, isPolling } = useRealtimeUpdates(initialCursors);
+ *   const { status, reconnect } = useRealtimeUpdates(initialCursors);
  *
  *   return (
  *     <div>
- *       {isPolling && <PollingModeBanner />}
- *       {!isConnected && <ReconnectingBanner />}
  *       {children}
+ *       <ConnectionStatusIndicator status={status} onReconnect={reconnect} />
  *     </div>
  *   );
  * }
@@ -534,12 +523,8 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
     };
   }, [dispatch]);
 
-  const status = connectionStatusForPhase(state.phase);
-
   return {
-    status,
-    isConnected: status === "connected" || status === "polling",
-    isPolling: state.phase === "polling",
+    status: connectionStatusForPhase(state.phase),
     reconnect,
   };
 }

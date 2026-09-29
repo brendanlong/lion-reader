@@ -226,9 +226,8 @@ const markAllReadEventSchema = z.object({
   // The largest entry id among the marked rows: the entries keyset cursor
   // advances to (updatedAt, entryId), which skips every marked row in a
   // catch-up while still admitting an unrelated entry written in the same
-  // millisecond (#1102). Absent on events from servers predating the field;
-  // the client then falls back to skipping the whole tied-timestamp group.
-  entryId: z.string().optional(),
+  // millisecond (#1102).
+  entryId: z.string(),
 });
 
 const subscriptionCreatedEventSchema = z.object({

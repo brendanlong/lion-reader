@@ -23,7 +23,7 @@ describe("EntryMutationTracker", () => {
       kind: "apply",
       state: { read: true, starred: false, updatedAt: t1 },
     });
-    expect(tracker.hasPending("e1")).toBe(false);
+    expect(() => tracker.settle("e1")).toThrow();
   });
 
   it("holds back the result until every in-flight mutation has settled", () => {
@@ -33,7 +33,6 @@ describe("EntryMutationTracker", () => {
 
     tracker.recordSuccess("e1", { read: true, starred: false, updatedAt: t1 });
     expect(tracker.settle("e1")).toBeNull();
-    expect(tracker.hasPending("e1")).toBe(true);
 
     tracker.recordSuccess("e1", { read: false, starred: false, updatedAt: t2 });
     expect(tracker.settle("e1")).toEqual({
@@ -105,7 +104,6 @@ describe("EntryMutationTracker", () => {
     tracker.recordSuccess("e1", { read: true, starred: false, updatedAt: t1 });
 
     expect(tracker.settle("e1")?.kind).toBe("apply");
-    expect(tracker.hasPending("e2")).toBe(true);
     expect(tracker.settle("e2")?.kind).toBe("rollback");
   });
 

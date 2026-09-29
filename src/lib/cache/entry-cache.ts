@@ -608,29 +608,18 @@ interface SubscriptionInfo {
 }
 
 /**
- * Data format for regular queries.
- */
-interface SubscriptionListData {
-  items: SubscriptionInfo[];
-  nextCursor?: string;
-}
-
-/**
- * Data format for infinite queries.
+ * `subscriptions.list` is only ever an infinite query (the sidebar's).
  */
 interface SubscriptionInfiniteData {
-  pages: SubscriptionListData[];
-  pageParams: unknown[];
+  pages: Array<{ items: SubscriptionInfo[] }>;
 }
 
 /**
- * Looks up subscriptions from the cache for tag/uncategorized filtering.
- * Handles both regular queries and infinite queries (used by sidebar).
- * Returns undefined if not cached.
+ * Looks up subscriptions from the sidebar's `subscriptions.list` caches for
+ * tag/uncategorized filtering. Returns undefined if not cached.
  */
 function getSubscriptionsFromCache(queryClient: QueryClient): SubscriptionInfo[] | undefined {
-  // Look up subscriptions.list cache - handles both query and infinite query formats
-  const queries = queryClient.getQueriesData<SubscriptionListData | SubscriptionInfiniteData>({
+  const queries = queryClient.getQueriesData<SubscriptionInfiniteData>({
     queryKey: [["subscriptions", "list"]],
   });
 
@@ -638,24 +627,8 @@ function getSubscriptionsFromCache(queryClient: QueryClient): SubscriptionInfo[]
   const seenIds = new Set<string>();
 
   for (const [, data] of queries) {
-    if (!data) continue;
-
-    // Check if it's infinite query format (has pages array)
-    if ("pages" in data && Array.isArray(data.pages)) {
-      for (const page of data.pages) {
-        if (page?.items) {
-          for (const sub of page.items) {
-            if (!seenIds.has(sub.id)) {
-              seenIds.add(sub.id);
-              allSubscriptions.push(sub);
-            }
-          }
-        }
-      }
-    }
-    // Regular query format (has items directly)
-    else if ("items" in data && Array.isArray(data.items)) {
-      for (const sub of data.items) {
+    for (const page of data?.pages ?? []) {
+      for (const sub of page.items) {
         if (!seenIds.has(sub.id)) {
           seenIds.add(sub.id);
           allSubscriptions.push(sub);
@@ -896,8 +869,7 @@ function filtersEqual(a: EntryListFilters, b: EntryListFilters): boolean {
  * Walks up the hierarchy looking for cached data:
  *
  * 1. Self-cache: exact same query already cached (e.g., "All" returning to "All")
- * 2. For subscriptions: tag list (if subscription is in a tag) → "All" list
- * 3. For tags/starred/other: "All" list
+ * 2. Otherwise the "All" list, filtered down to the requested view
  *
  * Within each level, prefers exact unreadOnly/starredOnly match, then falls back to compatible.
  *
@@ -939,32 +911,12 @@ export function findParentListPlaceholderData(
     };
   }
 
-  let parentData: InfiniteData | undefined;
-
-  // 2. For subscription pages, try the subscription's tag list
-  if (filters.subscriptionId && subscriptions) {
-    const subscription = subscriptions.find((s) => s.id === filters.subscriptionId);
-    const tagIds = subscription?.tags.map((t) => t.id) ?? [];
-
-    for (const tagId of tagIds) {
-      parentData = findCachedQueryWithPreference(
-        queries,
-        (pf) => pf.tagId === tagId && !pf.subscriptionId,
-        filters
-      );
-      if (parentData) break;
-    }
-  }
-
-  // 3. Fall back to "All" list (no subscription/tag/uncategorized filters)
-  if (!parentData) {
-    parentData = findCachedQueryWithPreference(
-      queries,
-      (pf) => !pf.subscriptionId && !pf.tagId && !pf.uncategorized,
-      filters
-    );
-  }
-
+  // 2. Fall back to "All" list (no subscription/tag/uncategorized filters)
+  const parentData = findCachedQueryWithPreference(
+    queries,
+    (pf) => !pf.subscriptionId && !pf.tagId && !pf.uncategorized,
+    filters
+  );
   if (!parentData) return undefined;
 
   // Filter the parent's entries to match the requested filters

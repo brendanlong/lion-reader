@@ -488,7 +488,8 @@ describe("useEntryMutations concurrent mutations", () => {
       setStarred.calls[0].reject(new Error("boom"));
     });
     await waitFor(() => expect(listItem()).toMatchObject({ read: true, starred: true }));
-    expect(getEntryMutationTracker(queryClient).hasPending("e1")).toBe(false);
+    // Nothing left tracked: settling again is a programming error.
+    expect(() => getEntryMutationTracker(queryClient).settle("e1")).toThrow();
   });
 
   it("rolls back only the field the failed mutation wrote, keeping a mid-flight SSE change", async () => {
@@ -547,7 +548,8 @@ describe("useEntryMutations concurrent mutations", () => {
     });
 
     await waitFor(() => expect(listItem()).toMatchObject({ read: false, starred: true }));
-    expect(getEntryMutationTracker(queryClient).hasPending("e1")).toBe(false);
+    // Nothing left tracked: settling again is a programming error.
+    expect(() => getEntryMutationTracker(queryClient).settle("e1")).toThrow();
   });
 
   it("does not overwrite an entries.get that was refetched newer than the response", async () => {
@@ -607,8 +609,8 @@ describe("useEntryMutations concurrent mutations", () => {
     await waitFor(() => expect(items()?.[1].read).toBe(false));
     expect(items()?.[0].read).toBe(true);
     const tracker = getEntryMutationTracker(queryClient);
-    expect(tracker.hasPending("e1")).toBe(false);
-    expect(tracker.hasPending("e2")).toBe(false);
+    expect(() => tracker.settle("e1")).toThrow();
+    expect(() => tracker.settle("e2")).toThrow();
   });
 
   it("writes the response's starred state to the lists together with read", async () => {

@@ -25,7 +25,7 @@ import {
 import {
   _resetSubscriptionLookupMap,
   addSubscriptionToCache,
-  getSubscriptionLookupMap,
+  findCachedSubscription,
   type CachedSubscription,
 } from "@/lib/cache/count-cache";
 
@@ -66,10 +66,6 @@ function seedSubscription(sub: {
   });
 }
 
-function getSubscriptionFromMap(id: string): { unreadCount: number } | undefined {
-  return getSubscriptionLookupMap().get(id) as { unreadCount: number } | undefined;
-}
-
 // ============================================================================
 // Tests
 // ============================================================================
@@ -105,9 +101,9 @@ describe("handleSubscriptionCreated", () => {
 
   it("adds subscription to lookup map", () => {
     const subscription = createSubscription();
-    handleSubscriptionCreated(utils, subscription);
+    handleSubscriptionCreated(utils, subscription, queryClient);
 
-    expect(getSubscriptionLookupMap().has("sub-1")).toBe(true);
+    expect(findCachedSubscription(queryClient, "sub-1") !== undefined).toBe(true);
   });
 
   it("sets absolute counts directly when the event provides them", () => {
@@ -119,7 +115,7 @@ describe("handleSubscriptionCreated", () => {
     });
 
     const subscription = createSubscription({ unreadCount: 3 });
-    handleSubscriptionCreated(utils, subscription, undefined, {
+    handleSubscriptionCreated(utils, subscription, queryClient, {
       all: { unread: 21 },
       starred: { unread: 1 },
       saved: { unread: 1 },
@@ -145,7 +141,7 @@ describe("handleSubscriptionCreated", () => {
 
   it("invalidates the count caches when no counts are provided (sync catch-up)", () => {
     const subscription = createSubscription();
-    handleSubscriptionCreated(utils, subscription);
+    handleSubscriptionCreated(utils, subscription, queryClient);
 
     const paths = invalidatedProcedures(invalidateSpy);
     expect(paths).toContain("tags.list");
@@ -159,18 +155,11 @@ describe("handleSubscriptionCreated", () => {
         { id: "tag-2", name: "Tech", color: null },
       ],
     });
-    handleSubscriptionCreated(utils, subscription);
+    handleSubscriptionCreated(utils, subscription, queryClient);
 
-    const cached = getSubscriptionLookupMap().get("sub-1");
+    const cached = findCachedSubscription(queryClient, "sub-1");
     expect(cached).toBeDefined();
     expect(cached?.tags).toHaveLength(2);
-  });
-
-  it("adds subscription with non-zero unread count", () => {
-    const subscription = createSubscription({ unreadCount: 42 });
-    handleSubscriptionCreated(utils, subscription);
-
-    expect(getSubscriptionFromMap("sub-1")?.unreadCount).toBe(42);
   });
 
   it("handles email subscription type", () => {
@@ -178,9 +167,9 @@ describe("handleSubscriptionCreated", () => {
       type: "email",
       url: null,
     });
-    handleSubscriptionCreated(utils, subscription);
+    handleSubscriptionCreated(utils, subscription, queryClient);
 
-    expect(getSubscriptionLookupMap().has("sub-1")).toBe(true);
+    expect(findCachedSubscription(queryClient, "sub-1") !== undefined).toBe(true);
   });
 
   it("handles saved subscription type", () => {
@@ -188,9 +177,9 @@ describe("handleSubscriptionCreated", () => {
       type: "saved",
       url: null,
     });
-    handleSubscriptionCreated(utils, subscription);
+    handleSubscriptionCreated(utils, subscription, queryClient);
 
-    expect(getSubscriptionLookupMap().has("sub-1")).toBe(true);
+    expect(findCachedSubscription(queryClient, "sub-1") !== undefined).toBe(true);
   });
 
   it("handles subscription with null optional fields", () => {
@@ -199,20 +188,20 @@ describe("handleSubscriptionCreated", () => {
       description: null,
       siteUrl: null,
     });
-    handleSubscriptionCreated(utils, subscription);
+    handleSubscriptionCreated(utils, subscription, queryClient);
 
     // Should not throw
-    expect(getSubscriptionLookupMap().has("sub-1")).toBe(true);
+    expect(findCachedSubscription(queryClient, "sub-1") !== undefined).toBe(true);
   });
 
   it("does not cause count inflation for duplicate events", () => {
     setUtilsData(utils.entries.count, {}, { unread: 10 });
     const subscription = createSubscription({ unreadCount: 5 });
 
-    handleSubscriptionCreated(utils, subscription);
+    handleSubscriptionCreated(utils, subscription, queryClient);
     const countAfterFirst = getUtilsData<{ unread: number }>(utils.entries.count, {})?.unread;
 
-    handleSubscriptionCreated(utils, subscription);
+    handleSubscriptionCreated(utils, subscription, queryClient);
     const countAfterSecond = getUtilsData<{ unread: number }>(utils.entries.count, {})?.unread;
 
     expect(countAfterSecond).toBe(countAfterFirst);
@@ -234,13 +223,13 @@ describe("handleSubscriptionDeleted", () => {
   it("removes subscription from lookup map", () => {
     seedSubscription({ id: "sub-1", unreadCount: 5, tags: [] });
 
-    handleSubscriptionDeleted(utils, "sub-1");
+    handleSubscriptionDeleted(utils, "sub-1", queryClient);
 
-    expect(getSubscriptionLookupMap().has("sub-1")).toBe(false);
+    expect(findCachedSubscription(queryClient, "sub-1") !== undefined).toBe(false);
   });
 
   it("invalidates entries.list cache", () => {
-    handleSubscriptionDeleted(utils, "sub-1");
+    handleSubscriptionDeleted(utils, "sub-1", queryClient);
 
     expect(invalidatedProcedures(invalidateSpy).filter((p) => p === "entries.list")).toHaveLength(
       1
@@ -248,7 +237,7 @@ describe("handleSubscriptionDeleted", () => {
   });
 
   it("invalidates tags.list cache when subscription not found", () => {
-    handleSubscriptionDeleted(utils, "sub-1");
+    handleSubscriptionDeleted(utils, "sub-1", queryClient);
 
     expect(invalidatedProcedures(invalidateSpy).filter((p) => p === "tags.list")).toHaveLength(1);
   });
@@ -257,26 +246,26 @@ describe("handleSubscriptionDeleted", () => {
     seedSubscription({ id: "sub-1", unreadCount: 5, tags: [] });
     seedSubscription({ id: "sub-2", unreadCount: 10, tags: [] });
 
-    handleSubscriptionDeleted(utils, "sub-1");
+    handleSubscriptionDeleted(utils, "sub-1", queryClient);
 
-    expect(getSubscriptionLookupMap().has("sub-1")).toBe(false);
-    expect(getSubscriptionLookupMap().has("sub-2")).toBe(true);
+    expect(findCachedSubscription(queryClient, "sub-1") !== undefined).toBe(false);
+    expect(findCachedSubscription(queryClient, "sub-2") !== undefined).toBe(true);
   });
 
   it("handles deletion of non-existent subscription gracefully", () => {
     seedSubscription({ id: "sub-2", unreadCount: 10, tags: [] });
 
     // Should not throw
-    handleSubscriptionDeleted(utils, "sub-1");
+    handleSubscriptionDeleted(utils, "sub-1", queryClient);
 
-    expect(getSubscriptionLookupMap().has("sub-2")).toBe(true);
+    expect(findCachedSubscription(queryClient, "sub-2") !== undefined).toBe(true);
   });
 
   it("handles deletion when lookup map is empty", () => {
     // Should not throw
-    handleSubscriptionDeleted(utils, "sub-1");
+    handleSubscriptionDeleted(utils, "sub-1", queryClient);
 
-    expect(getSubscriptionLookupMap().size).toBe(0);
+    expect(findCachedSubscription(queryClient, "sub-1")).toBeUndefined();
   });
 });
 

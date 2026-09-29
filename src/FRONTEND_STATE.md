@@ -53,7 +53,7 @@ restored this way; it reappears on the next navigation refresh.)
 | `operations.ts`             | High-level operations (primary API): `setCounts`/`setBulkCounts`/`setEntryRelatedCounts` (absolute counts), `handleSubscriptionCreated`/`handleSubscriptionDeleted`, `removeSubscriptionFromCaches`     |
 | `entry-cache.ts`            | Entry list/get patching: `updateEntriesReadStatus`, `updateEntryState`, `getCachedEntryState`, `updateEntryMetadataInCache`, `insertEntryIntoListCaches`, `restoreUnreadEntriesToListCaches`            |
 | `entry-mutation-tracker.ts` | `EntryMutationTracker` — per-QueryClient reconciliation of concurrent read/starred mutations (see "Optimistic Updates")                                                                                 |
-| `count-cache.ts`            | Subscription lookup map + tag helpers: `addSubscriptionToCache`, `updateSubscriptionInCache`, `removeSubscriptionFromCache`, `setSubscriptionUnreadCountInMap`, `applySyncTagChanges`, `removeSyncTags` |
+| `count-cache.ts`            | Session-created subscription map + tag helpers: `addSubscriptionToCache`, `updateSubscriptionInCache`, `removeSubscriptionFromCache`, `findCachedSubscription`, `applySyncTagChanges`, `removeSyncTags` |
 | `event-handlers.ts`         | `handleSyncEvent` — dispatches SSE/sync events to the operations above                                                                                                                                  |
 
 ## Core Queries
@@ -184,7 +184,7 @@ in either order — stay duplicate-safe.
 
 ### Auto-mark-read (EntryContent)
 
-Opening an entry fires `entries.get` and (if unread per placeholder data) `markRead` immediately in parallel; the optimistic update shows read state instantly and timestamp reconciliation resolves whichever completes last.
+Opening an entry fires `markRead` once, as soon as `entries.get` data is available (straight from cache when a prefetch warmed it, otherwise when the fetch lands) — even for an already-read entry, so its `readChangedAt` moves it to the top of Recently Read. The optimistic update shows read state instantly, and timestamp reconciliation resolves it against any `entries.get` fetch still in flight.
 
 ## Mutation Response Shapes
 

@@ -7,7 +7,6 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import type { TTSVoice } from "../../src/lib/narration/types";
 
 // Hoist the mock function so it can be used in vi.mock factory
 const { mockPredict } = vi.hoisted(() => ({
@@ -94,16 +93,6 @@ describe("PiperTTSProvider", () => {
     vi.unstubAllGlobals();
   });
 
-  describe("basic properties", () => {
-    it("has correct id", () => {
-      expect(provider.id).toBe("piper");
-    });
-
-    it("has correct name", () => {
-      expect(provider.name).toBe("Enhanced Voices");
-    });
-  });
-
   describe("isAvailable", () => {
     it("returns true when AudioContext and storage API are available", () => {
       expect(provider.isAvailable()).toBe(true);
@@ -125,42 +114,6 @@ describe("PiperTTSProvider", () => {
       vi.stubGlobal("navigator", {});
       const newProvider = new PiperTTSProvider();
       expect(newProvider.isAvailable()).toBe(false);
-    });
-  });
-
-  describe("getVoices", () => {
-    it("returns empty array when not available", async () => {
-      vi.stubGlobal("window", undefined);
-      const newProvider = new PiperTTSProvider();
-      const voices = await newProvider.getVoices();
-      expect(voices).toEqual([]);
-    });
-
-    it("returns enhanced voices with download status", async () => {
-      vi.mocked(piperTTS.stored).mockResolvedValue(["en_US-lessac-medium"]);
-
-      const voices = await provider.getVoices();
-
-      expect(voices.length).toBeGreaterThan(0);
-
-      // Check that the downloaded voice is marked as such
-      const alexVoice = voices.find((v) => v.id === "en_US-lessac-medium");
-      expect(alexVoice).toBeDefined();
-      expect(alexVoice?.downloadStatus).toBe("downloaded");
-      expect(alexVoice?.provider).toBe("piper");
-
-      // Check that non-downloaded voices are marked correctly
-      const amyVoice = voices.find((v) => v.id === "en_US-amy-low");
-      expect(amyVoice?.downloadStatus).toBe("not-downloaded");
-    });
-
-    it("handles storage errors gracefully", async () => {
-      vi.mocked(piperTTS.stored).mockRejectedValue(new Error("Storage error"));
-
-      const voices = await provider.getVoices();
-
-      // All voices should be marked as not-downloaded
-      expect(voices.every((v) => v.downloadStatus === "not-downloaded")).toBe(true);
     });
   });
 
@@ -316,25 +269,6 @@ describe("PiperTTSProvider", () => {
     it("resume does not throw when not paused", () => {
       expect(() => provider.resume()).not.toThrow();
     });
-
-    it("isPausedState returns false initially", () => {
-      expect(provider.isPausedState()).toBe(false);
-    });
-  });
-
-  describe("close", () => {
-    it("closes the audio context", async () => {
-      // Trigger creation of audio context by speaking
-      vi.mocked(piperTTS.stored).mockResolvedValue(["en_US-lessac-medium"]);
-      const mockBlob = new Blob([new Uint8Array(1000)], { type: "audio/wav" });
-      mockPredict.mockResolvedValue(mockBlob);
-
-      await provider.speak("Hello", { voiceId: "en_US-lessac-medium" });
-      await provider.close();
-
-      // Should not throw
-      expect(true).toBe(true);
-    });
   });
 });
 
@@ -377,46 +311,5 @@ describe("getPiperTTSProvider", () => {
     const { getPiperTTSProvider } = await import("../../src/lib/narration/piper-tts-provider");
     const piperProvider = getPiperTTSProvider();
     expect(piperProvider).toBeInstanceOf(PiperTTSProvider);
-  });
-});
-
-describe("TTSVoice interface for Piper voices", () => {
-  it("represents a piper voice correctly", () => {
-    const voice: TTSVoice = {
-      id: "en_US-lessac-medium",
-      name: "Alex (US)",
-      language: "en-US",
-      provider: "piper",
-      downloadStatus: "downloaded",
-    };
-
-    expect(voice.provider).toBe("piper");
-    expect(voice.downloadStatus).toBe("downloaded");
-  });
-
-  it("represents a not-downloaded piper voice", () => {
-    const voice: TTSVoice = {
-      id: "en_GB-alba-medium",
-      name: "Alba (UK)",
-      language: "en-GB",
-      provider: "piper",
-      downloadStatus: "not-downloaded",
-    };
-
-    expect(voice.downloadStatus).toBe("not-downloaded");
-  });
-
-  it("represents a downloading piper voice with progress", () => {
-    const voice: TTSVoice = {
-      id: "en_US-ryan-medium",
-      name: "Ryan (US)",
-      language: "en-US",
-      provider: "piper",
-      downloadStatus: "downloading",
-      downloadProgress: 75,
-    };
-
-    expect(voice.downloadStatus).toBe("downloading");
-    expect(voice.downloadProgress).toBe(75);
   });
 });

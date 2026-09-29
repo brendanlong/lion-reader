@@ -99,10 +99,6 @@ export class EntryMutationTracker {
     return { kind: "rollback", state };
   }
 
-  hasPending(entryId: string): boolean {
-    return this.entries.has(entryId);
-  }
-
   private getTracked(entryId: string): Tracking {
     const tracking = this.entries.get(entryId);
     if (!tracking) {

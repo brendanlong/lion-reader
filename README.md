@@ -87,10 +87,6 @@ pnpm test:integration  # Integration tests (requires Docker services)
 pnpm test:e2e          # Playwright browser tests (requires Docker services)
 ```
 
-### Background Worker
-
-The worker fetches feeds on a schedule. It starts automatically with `pnpm dev` or `pnpm start`, polls for due jobs every 5 seconds, and processes up to 5 jobs concurrently.
-
 ### Profiling
 
 Build for production, then run with the flame profiler:

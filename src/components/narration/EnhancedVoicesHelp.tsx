@@ -37,7 +37,7 @@ const FAQ_ITEMS: FAQItem[] = [
   {
     question: "How much storage do enhanced voices use?",
     answer:
-      "Each voice uses between 17-50 MB of storage depending on quality. Low quality voices are smaller (~17 MB) while medium quality voices are larger (~50 MB). You can download multiple voices, but a warning appears if total storage exceeds 200 MB.",
+      "Each voice uses between 17-50 MB of storage depending on quality. Low quality voices are smaller (~17 MB) while medium quality voices are larger (~50 MB). You can download multiple voices and delete any you no longer use.",
   },
   {
     question: "Can I use enhanced voices offline?",
@@ -52,7 +52,7 @@ const FAQ_ITEMS: FAQItem[] = [
   {
     question: "How do I free up storage space?",
     answer:
-      'Click the trash icon next to any downloaded voice to remove it. If you have multiple voices downloaded, you can also use the "Delete All" link to remove all voices at once. Deleted voices can be re-downloaded at any time.',
+      "Click the trash icon next to any downloaded voice to remove it. Deleted voices can be re-downloaded at any time.",
   },
 ];
 
