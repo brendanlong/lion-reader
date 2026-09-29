@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { ModelPicker } from "@/components/settings/ModelPicker";
 import { trpc } from "@/lib/trpc/client";
 import { normalizeModelRef } from "@/lib/ai/model-ref";
-import { base64ToBlob } from "@/lib/narration/cloud-audio-player";
+import { base64ToBytes } from "@/lib/narration/audio-encoding";
 import { createSilentAudioDataUri } from "@/lib/narration/silent-audio";
 import { PREVIEW_TEXT, SUGGESTED_CLOUD_VOICE_MODELS } from "@/lib/narration/constants";
 import type { NarrationSettings, SetNarrationSettings } from "@/lib/narration/settings";
@@ -75,7 +75,9 @@ export function CloudVoiceSettings({
         onSuccess: (result) => {
           // Superseded by another preview, a stop, or a voice/model change.
           if (previewRef.current !== preview) return;
-          preview.url = URL.createObjectURL(base64ToBlob(result.audio, result.mimeType));
+          preview.url = URL.createObjectURL(
+            new Blob([base64ToBytes(result.audio)], { type: result.mimeType })
+          );
           audio.loop = false;
           audio.src = preview.url;
           audio.playbackRate = settings.rate;

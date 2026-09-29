@@ -435,14 +435,22 @@ describe("narration that finishes generating after the user moved on", () => {
       "lion-reader-narration-settings",
       JSON.stringify({ useLlmNormalization: true, provider: "cloud" })
     );
-    // jsdom has the element but not media playback or object URLs.
+    // jsdom has the element but not media playback, Media Source Extensions
+    // or object URLs. The stub source never opens, so B stays buffering (which
+    // still shows "Pause") — enough to see whether A's release stops it.
     vi.spyOn(window.HTMLMediaElement.prototype, "play").mockImplementation(() => Promise.resolve());
     vi.spyOn(window.HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
     vi.stubGlobal(
       "URL",
       class extends URL {
-        static createObjectURL = () => "blob:chunk";
+        static createObjectURL = () => "blob:stream";
         static revokeObjectURL = () => {};
+      }
+    );
+    vi.stubGlobal(
+      "MediaSource",
+      class extends EventTarget {
+        static isTypeSupported = () => true;
       }
     );
 
@@ -455,7 +463,7 @@ describe("narration that finishes generating after the user moved on", () => {
           generateCalls++ === 0
             ? first.handler()
             : { narration: "Newer narration.", cached: false, source: "llm", paragraphMap: [] },
-        "narration.synthesize": () => ({ audio: btoa("mp3"), mimeType: "audio/mpeg" }),
+        "narration.synthesize": () => new Promise(() => {}),
       },
       wrapper: (children) => <KeyboardShortcutsProvider>{children}</KeyboardShortcutsProvider>,
     });
