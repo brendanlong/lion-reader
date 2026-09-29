@@ -17,3 +17,6 @@ yarn.lock
 *.d.ts
 !next-env.d.ts
 !src/**/*.d.ts
+
+# Generated OpenAPI snapshot (compared byte-for-byte by tests)
+docs/api/openapi.json

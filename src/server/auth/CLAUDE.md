@@ -54,24 +54,24 @@ Authorization is **fail-closed** for tokens. There are four credential types:
 - **Browser sessions**: full access. A normal login session has `scopes = NULL`.
 - **Scoped sessions**: a session with a non-NULL `scopes` array — a restricted bearer credential minted by a session-based compat API (the Google Reader `ClientLogin` mints one with `reader:full-access`). `validateSession` is **fail-closed**: a scoped session is rejected for full-access use (main tRPC/REST, RSC caller, SSE, `/oauth/authorize`) exactly as if invalid, unless the caller passes `allowScoped: true` (only the Google Reader API does, and it then verifies the reader scope). This keeps a leaked Google Reader token from being replayed as a browser session for account management.
 - **API tokens** (`api_tokens`, used by extensions/integrations and the legacy MCP path): restricted to their granted scopes.
-- **OAuth 2.1 access tokens**: audience-bound to the MCP endpoint (see `src/server/oauth/CLAUDE.md`). The Wallabag compat API also validates OAuth access tokens directly, requiring `reader:full-access`.
+- **OAuth 2.1 access tokens**: audience-bound (see `src/server/oauth/CLAUDE.md`). MCP clients' tokens work only at `/api/mcp`; the first-party native app's tokens (`/api/v1` audience, `reader:full-access`) work on the main tRPC/REST surface and SSE as `authType: "app_token"` (`app-token.ts`), under the same scope gate as API tokens. The Wallabag compat API also validates OAuth access tokens directly, requiring `reader:full-access`.
 
 Available scopes (`API_TOKEN_SCOPES` / `OAUTH_SCOPES`):
 
-| Scope                | Grants                                                                                                                                                                                                                           |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mcp`                | The MCP tool surface (`src/server/mcp/tools.ts`)                                                                                                                                                                                 |
-| `saved:write`        | Saving articles (`saved.save`) only                                                                                                                                                                                              |
-| `reader:full-access` | Full reader surface (entries, subscriptions, tags, saved articles — not account settings). Minted for the Wallabag and Google Reader compat APIs and enforced by them; OAuth/session-only (not an `API_TOKEN_SCOPES` value yet). |
+| Scope                | Grants                                                                                                                                                                                                                                                                                                                                |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mcp`                | The MCP tool surface (`src/server/mcp/tools.ts`)                                                                                                                                                                                                                                                                                      |
+| `saved:write`        | Saving articles (`saved.save`) only                                                                                                                                                                                                                                                                                                   |
+| `reader:full-access` | Full reader surface (entries, subscriptions, tags, saved articles, sync — not account settings). Minted for the Wallabag and Google Reader compat APIs and the native app; OAuth/session-only (not an `API_TOKEN_SCOPES` value). tRPC endpoints opt in via `READER_SCOPES` (the MCP surface) or the scope alone (app-only endpoints). |
 
 Enforcement (`src/server/trpc/trpc.ts`):
 
 - `protectedProcedure` / `confirmedProtectedProcedure` (and their `expensive*` variants) are **session-only** — token auth is rejected with `FORBIDDEN`. This protects account-management and other non-MCP endpoints by default.
-- `scopedProtectedProcedure(scope | scope[])` opts an endpoint into token access; a token must hold at least one of the listed scopes (sessions bypass). The `mcp`-scoped endpoints mirror the MCP tools exactly; `saved.save` accepts `saved:write` or `mcp`.
+- `scopedProtectedProcedure(scope | scope[])` opts an endpoint into token access; a token must hold at least one of the listed scopes (sessions bypass). The `READER_SCOPES` endpoints (`mcp` or `reader:full-access`) are the MCP tools' tRPC counterparts, which the native app also uses; endpoints only the app needs take `reader:full-access` alone; `saved.save` accepts `saved:write` or `mcp`.
 
 Because the default is session-only, **new endpoints are token-inaccessible until they explicitly opt in**.
 
-OAuth access tokens are validated only at `POST /api/mcp` (not in the main tRPC/REST context), where the `mcp` scope and the RFC 8707 `resource`/audience binding are both enforced. `/api/mcp` also requires signup confirmation (ToS/Privacy/EU agreement) for both OAuth and API tokens, mirroring `confirmedProtectedProcedure` on the tRPC surface.
+MCP clients' OAuth access tokens are validated only at `POST /api/mcp`, where the `mcp` scope and the RFC 8707 `resource`/audience binding are both enforced; the main tRPC/REST context rejects them (it accepts only the app client's `/api/v1`-audience tokens). `/api/mcp` also requires signup confirmation (ToS/Privacy/EU agreement) for both OAuth and API tokens, mirroring `confirmedProtectedProcedure` on the tRPC surface.
 
 ## Password Brute-Force Protection
 

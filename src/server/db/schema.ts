@@ -818,6 +818,30 @@ export const userEntries = pgTable(
   ]
 );
 
+/**
+ * Hard-deleted entries (saved articles), reported to delta-sync clients so they
+ * drop local copies. No FK to entries: the entry row is gone by definition.
+ * Pruned by the retention job (see services/entry-tombstones.ts).
+ */
+export const entryTombstones = pgTable(
+  "entry_tombstones",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    entryId: uuid("entry_id").notNull(),
+    // Microsecond precision: this is the deletions sync cursor.
+    deletedAt: temporalTimestamp("deleted_at")
+      .notNull()
+      .default(sql`now()`),
+  },
+  (table) => [
+    primaryKey({ columns: [table.userId, table.entryId] }),
+    index("idx_entry_tombstones_user_deleted_at").on(table.userId, table.deletedAt),
+    index("idx_entry_tombstones_deleted_at").on(table.deletedAt),
+  ]
+);
+
 // ============================================================================
 // DATABASE VIEWS
 // These views simplify queries by abstracting common joins and visibility rules

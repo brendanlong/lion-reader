@@ -62,7 +62,7 @@ Unread badge counts are denormalized onto four trigger-maintained columns — `s
 
 ## Read/Star Idempotency
 
-`user_entries` carries per-field change timestamps (`read_changed_at`, `starred_changed_at`), and state mutations accept a `changedAt` and only apply when newer than the stored timestamp. This makes conflicting updates from multiple clients (tabs, MCP, offline sync replaying old actions) resolve to the newest user intent instead of last-write-wins.
+`user_entries` carries per-field change timestamps (`read_changed_at`, `starred_changed_at`), and state mutations accept a `changedAt` and only apply when newer than the stored timestamp. This makes conflicting updates from multiple clients (tabs, MCP, offline sync replaying old actions) resolve to the newest user intent instead of last-write-wins. The tRPC/REST mutations map a client's `changedAt` onto the server clock first (`toServerTime`, `services/client-time.ts`): shifted by the offset the client reports via `clientSentAt`, then capped at now, so a fast device clock can't win every conflict.
 
 ## Row Written vs. Value Flipped
 
@@ -71,6 +71,10 @@ Unread badge counts are denormalized onto four trigger-maintained columns — `s
 The two roles are split across **two columns**, so "row touched" and "meaningfully changed" have distinct timestamps (issue #1118 Part 2). `user_entries.read_changed_at` / `starred_changed_at` are the **last-writer-wins conflict watermarks** and advance on _every_ accepted write (including a same-value re-assert), because that is what makes a late replay lose. `user_entries.updated_at` is the **"meaningful change" timestamp** and moves **only on a real flip**. Everything that drives delta-sync visibility keys off `updated_at` — the `sync.events` cursor and Wallabag `since`, both via `visible_entries.updated_at = GREATEST(entries.updated_at, user_entries.updated_at)` — so a re-assert advances the watermark (LWW stays correct) but does **not** re-deliver the entry to offline/polling clients, which is safe because any client whose cursor predates the last meaningful change already gets the current state. (`markAllEntriesRead` filters to `read = false` rows, so it only ever touches genuine flips and bumps `updated_at` unconditionally.)
 
 The same "don't churn on a non-meaningful write" rule covers **feeds** — a content re-fetch with an unchanged `content_hash` doesn't bump `entries.updated_at` (issue #1084) — and **subscriptions** (issue #1160): `subscriptions.update` bumps `subscriptions.updated_at` (the subscription delta-sync cursor is `MAX(subscriptions.updated_at)`) and publishes `subscription_updated` only when `custom_title` / `fetch_full_content` actually change (pre-update values captured race-free with a `subscriptions AS prev` self-join in the UPDATE itself); `subscriptions.setTags` compares the incoming tag set against the delete's `RETURNING` and skips both when the set is identical; and the Google Reader rename gates its UPDATE on `custom_title IS DISTINCT FROM` the new title. Subscriptions have no per-field conflict watermark (no offline-replay path writes them), so a no-op re-save simply leaves `updated_at` untouched.
+
+## Deletions in Delta Sync
+
+Deltas are keyed off `updated_at`, so a row that disappears can't show up in them. Hard-deleting an entry a client may hold (today only `deleteSavedArticle`) must record an `entry_tombstones` row in the same transaction (`services/entry-tombstones.ts`); `sync.changes` reports tombstones, plus entries a state change took out of view, as `deletions`. Tombstones are pruned after `ENTRY_TOMBSTONE_RETENTION_MS`, and a client whose deletions cursor is older than that is told to resync rather than silently keeping deleted entries.
 
 ## Ordering & Pagination Mechanics
 

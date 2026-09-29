@@ -89,7 +89,12 @@ export async function POST(request: Request): Promise<Response> {
   const removeStarred = removeTags.some((t) => isState(t, "starred"));
 
   if (addStarred || removeStarred) {
-    await entriesService.updateEntriesStarred(db, session.user.id, entryUuids, addStarred);
+    await entriesService.updateEntriesStarred(
+      db,
+      session.user.id,
+      entryUuids.map((id) => ({ id })),
+      addStarred
+    );
   }
 
   return textResponse("OK");

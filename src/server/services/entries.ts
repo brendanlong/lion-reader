@@ -351,14 +351,20 @@ const fullEntrySelectFields = {
  * Queries visibleEntries joined with feeds and subscriptions.
  * Returns null if the entry is not found or not visible to the user.
  */
-export async function selectFullEntry(db: typeof dbType, userId: string, entryId: string) {
-  const result = await db
+function selectFullEntryRows(db: typeof dbType, where: SQL | undefined) {
+  return db
     .select(fullEntrySelectFields)
     .from(visibleEntries)
     .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
     .leftJoin(subscriptions, eq(visibleEntries.subscriptionId, subscriptions.id))
-    .where(and(eq(visibleEntries.id, entryId), eq(visibleEntries.userId, userId)))
-    .limit(1);
+    .where(where);
+}
+
+export async function selectFullEntry(db: typeof dbType, userId: string, entryId: string) {
+  const result = await selectFullEntryRows(
+    db,
+    and(eq(visibleEntries.id, entryId), eq(visibleEntries.userId, userId))
+  ).limit(1);
 
   return result.length > 0 ? result[0] : null;
 }
@@ -489,6 +495,23 @@ export async function toFullEntry(row: NonNullable<Awaited<ReturnType<typeof sel
     fullContentCleaned: content.fullContentCleaned,
     fetchFullContent: row.fetchFullContent ?? false,
   };
+}
+
+/**
+ * {@link toFullEntry} for many ids at once (the native app's offline download).
+ * Ids the user can't see are skipped; order follows the input.
+ */
+export async function getFullEntries(db: typeof dbType, userId: string, entryIds: string[]) {
+  if (entryIds.length === 0) return [];
+  const rows = await selectFullEntryRows(
+    db,
+    and(inArray(visibleEntries.id, entryIds), eq(visibleEntries.userId, userId))
+  );
+  const mapped = await mapWithConcurrency(rows, GET_ENTRIES_SANITIZE_CONCURRENCY, (row) =>
+    toFullEntry(row)
+  );
+  const byId = new Map(mapped.map((entry) => [entry.id, entry]));
+  return entryIds.flatMap((id) => byId.get(id) ?? []);
 }
 
 // ============================================================================
@@ -1220,7 +1243,7 @@ export async function updateEntryStarred(
   starred: boolean,
   changedAt: Date = new Date()
 ): Promise<{ entry: EntryState; counts?: BulkUnreadCounts }> {
-  const result = await updateEntriesStarred(db, userId, [entryId], starred, changedAt);
+  const result = await updateEntriesStarred(db, userId, [{ id: entryId, changedAt }], starred);
   const row = result.entries[0];
   if (!row) {
     throw errors.entryNotFound();
@@ -1276,36 +1299,40 @@ export async function updateEntryStarred(
 export async function updateEntriesStarred(
   db: DbOrTx,
   userId: string,
-  entryIds: string[],
-  starred: boolean,
-  changedAt: Date = new Date()
+  entriesToStar: MarkReadEntry[],
+  starred: boolean
 ): Promise<{
   entries: MarkReadEntryState[];
   changed: MarkReadEntryState[];
   counts?: BulkUnreadCounts;
 }> {
-  if (entryIds.length === 0) {
+  if (entriesToStar.length === 0) {
     return { entries: [], changed: [] };
   }
 
-  if (entryIds.length > 1000) {
+  if (entriesToStar.length > 1000) {
     throw errors.validation("Maximum 1000 entries per request");
   }
 
   const now = new Date();
 
-  const idValues = entryIds.map((id) => sql`${id}::uuid`);
+  // Per-entry timestamps in one UPDATE ... FROM (VALUES ...), with the same
+  // `prev` self-join and watermark semantics as markEntriesRead.
+  const rows = entriesToStar.map(
+    (entry) => sql`(${entry.id}::uuid, ${(entry.changedAt ?? now).toISOString()}::timestamptz)`
+  );
   const updated = await db.execute<{ entry_id: string; old_starred: boolean }>(sql`
     UPDATE user_entries AS ue
     SET starred = ${starred},
-        starred_changed_at = ${changedAt},
+        starred_changed_at = v.ts,
         updated_at = CASE WHEN prev.starred <> ${starred} THEN ${now} ELSE ue.updated_at END
-    FROM user_entries AS prev
+    FROM (VALUES ${sql.join(rows, sql`, `)}) AS v(entry_id, ts)
+    JOIN user_entries AS prev
+      ON prev.user_id = ${userId}::uuid
+      AND prev.entry_id = v.entry_id
     WHERE ue.user_id = ${userId}::uuid
-      AND ue.entry_id IN (${sql.join(idValues, sql`, `)})
-      AND prev.user_id = ue.user_id
-      AND prev.entry_id = ue.entry_id
-      AND ue.starred_changed_at <= ${changedAt}
+      AND ue.entry_id = v.entry_id
+      AND ue.starred_changed_at <= v.ts
     RETURNING ue.entry_id AS entry_id, prev.starred AS old_starred
   `);
   const flippedIds = new Set(
@@ -1315,7 +1342,11 @@ export async function updateEntriesStarred(
   // Resolved from `user_entries`, not `visible_entries`: unstarring an orphan
   // drops it out of the view, and a silently empty read-back here would skip
   // the counts and the SSE publish (see selectStarredEntryStates).
-  const entriesState = await selectStarredEntryStates(db, userId, entryIds);
+  const entriesState = await selectStarredEntryStates(
+    db,
+    userId,
+    entriesToStar.map((entry) => entry.id)
+  );
 
   // Only entries whose starred value actually flipped warrant SSE events and
   // count recomputation (issue #1118); a batch of pure re-asserts still

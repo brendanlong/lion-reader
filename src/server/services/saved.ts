@@ -12,6 +12,7 @@ import { TRPCError } from "@trpc/server";
 import type { db as dbType } from "@/server/db";
 import { entries, userEntries } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
+import { recordEntryTombstone } from "./entry-tombstones";
 import { normalizeUrl } from "@/lib/url";
 import {
   fetchHtmlPage,
@@ -1490,7 +1491,13 @@ export async function deleteSavedArticle(
   // user's own saved feed as well as the id — the ownership SELECT above already
   // guarantees it, but pinning feedId keeps the mutation self-evidently
   // user-scoped in isolation (defense-in-depth against a future refactor).
-  await db.delete(entries).where(and(eq(entries.id, articleId), eq(entries.feedId, savedFeedId)));
+  //
+  // The tombstone lets delta-sync clients drop their copy; it commits with the
+  // delete so a client can never see one without the other.
+  await db.transaction(async (tx) => {
+    await tx.delete(entries).where(and(eq(entries.id, articleId), eq(entries.feedId, savedFeedId)));
+    await recordEntryTombstone(tx, userId, articleId);
+  });
 
   return true;
 }

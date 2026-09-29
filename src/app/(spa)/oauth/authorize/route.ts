@@ -25,11 +25,11 @@ import {
   OAUTH_ERRORS,
   createOAuthError,
 } from "@/server/oauth/utils";
+import { getIssuer } from "@/server/oauth/config";
 import {
-  getIssuer,
-  getResourceIdentifier,
-  getAcceptedResourceIdentifiers,
-} from "@/server/oauth/config";
+  getAcceptedResourcesForClient,
+  getTokenAudienceForClient,
+} from "@/server/oauth/app-client";
 import { checkRouteRateLimit } from "@/server/rate-limit";
 import { logger } from "@/lib/logger";
 
@@ -195,12 +195,13 @@ export async function GET(request: NextRequest) {
   }
 
   // Validate the RFC 8707 resource indicator (server-side audience binding).
-  // A token issued here is only ever valid for this server's MCP endpoint, so a
-  // client requesting a different resource is rejected. When omitted, we bind to
-  // our canonical resource so every token is audience-restricted.
+  // A token issued here is only ever valid for one of this server's resources —
+  // the main API for the first-party app, the MCP endpoint for everyone else —
+  // so a client requesting a different resource is rejected. When omitted, we
+  // bind to the client's resource so every token is audience-restricted.
   if (
     resource !== undefined &&
-    !isResourceForThisServer(resource, getAcceptedResourceIdentifiers())
+    !isResourceForThisServer(resource, getAcceptedResourcesForClient(clientId))
   ) {
     return buildErrorRedirect(
       redirectUri,
@@ -210,9 +211,8 @@ export async function GET(request: NextRequest) {
     );
   }
   // Any client-supplied resource has been validated as an alias of this server
-  // above, so bind the token to the canonical identifier in all cases —
-  // /api/mcp accepts only that audience.
-  const effectiveResource = getResourceIdentifier();
+  // above, so bind the token to the client's canonical audience in all cases.
+  const effectiveResource = getTokenAudienceForClient(clientId);
 
   // Check if user is authenticated
   const sessionToken = getSessionToken(request);
@@ -348,7 +348,7 @@ export async function POST(request: NextRequest) {
   // Validate / bind the RFC 8707 resource indicator (see GET handler).
   if (
     resource !== undefined &&
-    !isResourceForThisServer(resource, getAcceptedResourceIdentifiers())
+    !isResourceForThisServer(resource, getAcceptedResourcesForClient(clientId))
   ) {
     return buildErrorRedirect(
       redirectUri,
@@ -358,9 +358,8 @@ export async function POST(request: NextRequest) {
     );
   }
   // Any client-supplied resource has been validated as an alias of this server
-  // above, so bind the token to the canonical identifier in all cases —
-  // /api/mcp accepts only that audience.
-  const effectiveResource = getResourceIdentifier();
+  // above, so bind the token to the client's canonical audience in all cases.
+  const effectiveResource = getTokenAudienceForClient(clientId);
 
   // Handle user decision
   if (action === "deny") {

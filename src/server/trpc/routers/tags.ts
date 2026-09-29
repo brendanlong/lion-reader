@@ -9,12 +9,12 @@
 import { z } from "zod";
 
 import { createTRPCRouter, scopedProtectedProcedure } from "../trpc";
-import { API_TOKEN_SCOPES } from "@/server/auth/api-token";
+import { READER_SCOPES } from "@/server/auth/api-token";
 import { uuidSchema, tagColorSchema } from "../validation";
 import * as tagsService from "@/server/services/tags";
 
-// All tag operations are part of the MCP tool surface; accessible to tokens with the `mcp` scope.
-const protectedProcedure = scopedProtectedProcedure(API_TOKEN_SCOPES.MCP);
+// All tag operations are part of the MCP tool surface; the native app uses them too.
+const protectedProcedure = scopedProtectedProcedure(READER_SCOPES);
 
 // ============================================================================
 // Validation Schemas
