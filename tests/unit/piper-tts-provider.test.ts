@@ -38,7 +38,7 @@ describe("PiperTTSProvider", () => {
 
   beforeEach(() => {
     // Set up browser environment mocks using vi.stubGlobal
-    vi.stubGlobal("window", {});
+    vi.stubGlobal("window", { location: { origin: "https://lionreader.test" } });
     vi.stubGlobal("MediaSource", class {});
     vi.stubGlobal("navigator", {
       storage: {
@@ -167,7 +167,9 @@ describe("PiperTTSProvider", () => {
       expect(await provider.synthesize("Hello", "en_US-lessac-medium")).toBe(wav);
       expect(piperTTS.TtsSession.create).toHaveBeenCalledWith({
         voiceId: "en_US-lessac-medium",
-        wasmPaths: expect.any(Object),
+        // Absolute: ONNX Runtime import()s it from CDN-hosted chunks, where a
+        // root-relative path can't resolve.
+        wasmPaths: expect.objectContaining({ onnxWasm: "https://lionreader.test/onnx/" }),
       });
       expect(mockPredict).toHaveBeenCalledWith("Hello");
     });
