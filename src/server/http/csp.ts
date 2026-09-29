@@ -56,7 +56,7 @@ import { goatCounterConfig } from "@/lib/analytics/goatcounter";
  * - `connect-src`: same-origin covers tRPC, SSE, and the Sentry `/monitoring`
  *   tunnel. The external hosts are the TTS narration downloads: Piper voice
  *   models from Hugging Face and the Piper phonemizer wasm/data from jsdelivr
- *   (`CUSTOM_WASM_PATHS` in `src/lib/narration/piper-tts-provider.ts`). CSP
+ *   (`customWasmPaths` in `src/lib/narration/piper-tts-provider.ts`). CSP
  *   checks every hop of a redirect chain, and `huggingface.co/…/resolve/…`
  *   302s to its storage CDNs — `cdn-lfs*.huggingface.co` historically, Xet
  *   hosts like `cas-bridge.xethub.hf.co` today. A CSP host wildcard

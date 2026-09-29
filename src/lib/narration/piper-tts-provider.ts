@@ -7,6 +7,7 @@
  * @module narration/piper-tts-provider
  */
 
+import type { TtsSession } from "@mintplex-labs/piper-tts-web";
 import { findEnhancedVoice } from "./enhanced-voices";
 import { getMediaSourceClass } from "./audio-encoding";
 
@@ -52,15 +53,19 @@ async function ensureCorrectVoiceLoaded(
  * We serve ONNX WASM files locally because the default CDN URL is broken.
  * Piper WASM files are served from jsdelivr which works correctly.
  */
-const CUSTOM_WASM_PATHS = {
-  // Serve ONNX WASM from our public folder (the default cdnjs URL returns 404)
-  onnxWasm: "/onnx/",
-  // These work from the default CDN
-  piperData:
-    "https://cdn.jsdelivr.net/npm/@diffusionstudio/piper-wasm@1.0.0/build/piper_phonemize.data",
-  piperWasm:
-    "https://cdn.jsdelivr.net/npm/@diffusionstudio/piper-wasm@1.0.0/build/piper_phonemize.wasm",
-};
+function customWasmPaths(): Parameters<typeof TtsSession.create>[0]["wasmPaths"] {
+  return {
+    // Serve ONNX WASM from our public folder (the default cdnjs URL returns
+    // 404). Absolute, because ONNX Runtime import()s it from CDN-hosted
+    // chunks (see "CDN" in src/server/http/CLAUDE.md).
+    onnxWasm: `${window.location.origin}/onnx/`,
+    // These work from the default CDN
+    piperData:
+      "https://cdn.jsdelivr.net/npm/@diffusionstudio/piper-wasm@1.0.0/build/piper_phonemize.data",
+    piperWasm:
+      "https://cdn.jsdelivr.net/npm/@diffusionstudio/piper-wasm@1.0.0/build/piper_phonemize.wasm",
+  };
+}
 
 /**
  * Error thrown when a voice is not downloaded.
@@ -169,7 +174,7 @@ export class PiperTTSProvider {
     await ensureCorrectVoiceLoaded(piper, voiceId);
     const session = await piper.TtsSession.create({
       voiceId,
-      wasmPaths: CUSTOM_WASM_PATHS,
+      wasmPaths: customWasmPaths(),
     });
     return session.predict(text);
   }
