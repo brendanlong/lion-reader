@@ -815,8 +815,6 @@ CREATE INDEX idx_oauth_auth_codes_user ON public.oauth_authorization_codes USING
 
 CREATE INDEX idx_oauth_consent_grants_client ON public.oauth_consent_grants USING btree (client_id);
 
-CREATE INDEX idx_oauth_consent_grants_user ON public.oauth_consent_grants USING btree (user_id);
-
 CREATE INDEX idx_oauth_refresh_tokens_access ON public.oauth_refresh_tokens USING btree (access_token_id);
 
 CREATE INDEX idx_oauth_refresh_tokens_client ON public.oauth_refresh_tokens USING btree (client_id);
@@ -832,8 +830,6 @@ CREATE INDEX idx_opml_imports_user ON public.opml_imports USING btree (user_id);
 CREATE INDEX idx_sessions_last_active ON public.sessions USING btree (last_active_at);
 
 CREATE INDEX idx_sessions_user ON public.sessions USING btree (user_id);
-
-CREATE INDEX idx_subscription_tags_subscription ON public.subscription_tags USING btree (subscription_id);
 
 CREATE INDEX idx_subscription_tags_tag ON public.subscription_tags USING btree (tag_id);
 
@@ -866,8 +862,6 @@ CREATE INDEX idx_users_getting_started_pending ON public.users USING btree (id) 
 CREATE INDEX idx_users_last_active_at ON public.users USING btree (last_active_at DESC NULLS LAST, id DESC);
 
 CREATE INDEX idx_websub_expiring ON public.websub_subscriptions USING btree (expires_at);
-
-CREATE INDEX idx_websub_feed ON public.websub_subscriptions USING btree (feed_id);
 
 CREATE UNIQUE INDEX jobs_singleton_type_unique ON public.jobs USING btree (type) WHERE (type = ANY (ARRAY['renew_websub'::text, 'monitor_feed_health'::text, 'cleanup'::text, 'reconcile_counters'::text, 'backfill_getting_started'::text]));
 
