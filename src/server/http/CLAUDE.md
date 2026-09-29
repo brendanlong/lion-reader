@@ -13,6 +13,8 @@ The Bunny pull zone (`ASSET_PREFIX`, set via `[build.args]` in `fly.toml`) wraps
 
 When `ASSET_PREFIX` is set, `csp.ts` adds its origin to the script/style/font directives (`img-src` already allows any https, so CDN-served demo images need no CSP change).
 
+Our chunks load from the CDN without CORS, and the browser resolves an `import()` in such a script against `about:blank`. So any URL that client code (or a library it configures, like ONNX Runtime's `wasmPaths`) passes to `import()` at runtime must be absolute — `${location.origin}/…` for files in `public/`. A root-relative path works locally and in CI (no `ASSET_PREFIX`) and fails only in production.
+
 ## SSRF Protection
 
 All server-side fetches that target user-influenced URLs (feed preview/discover, feed fetching, full-content fetching, WebSub hub callbacks) are guarded against Server-Side Request Forgery to private/internal networks. The shared helper `fetchWithSsrfProtection(url, init)` in `src/server/http/ssrf.ts` performs the fetch and:
