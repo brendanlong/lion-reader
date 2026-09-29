@@ -17,17 +17,16 @@ export type CachedSubscription = NonNullable<
 >["items"][number];
 
 /**
- * Canonical subscription lookup map. This is the single source of truth for
- * subscription data used by SSE event handlers and count calculations.
+ * Subscriptions created during this session (mutation response or
+ * subscription_created event), so a new subscription's title and tags are
+ * known before any sidebar `subscriptions.list` containing it is fetched, and
+ * so the duplicate create (response + event) is recognized (#680). An entry's
+ * `unreadCount` is the value at creation and is never kept current or read —
+ * the sidebar lists and `tags.list` carry the live counts.
+ * - addSubscriptionToCache adds, updateSubscriptionInCache patches (title/tags)
+ * - removeSubscriptionFromCache removes (subscription_deleted, unsubscribe)
  *
- * Replaces the previous two-layer approach (unparameterized React Query cache +
- * separate SSE fallback map) with a plain Map. Populated by:
- * - addSubscriptionToCache (subscription_created events, mutation side-effects)
- * - updateSubscriptionInCache (subscription_updated events)
- * - Cleaned by removeSubscriptionFromCache (subscription_deleted, unsubscribe)
- *
- * Read by findCachedSubscription() and the alreadyRemoved check in
- * event-handlers.ts.
+ * Read through findCachedSubscription().
  */
 const subscriptionLookupMap = new Map<string, CachedSubscription>();
 
@@ -51,14 +50,6 @@ function clearSubscriptionLookupMap(): void {
  */
 export function _resetSubscriptionLookupMap(): void {
   clearSubscriptionLookupMap();
-}
-
-/**
- * Returns the subscription lookup map for direct access.
- * Used by event handlers to check subscription existence.
- */
-export function getSubscriptionLookupMap(): ReadonlyMap<string, CachedSubscription> {
-  return subscriptionLookupMap;
 }
 
 /**
@@ -181,20 +172,6 @@ export function updateSubscriptionInCache(
  */
 export function removeSubscriptionFromCache(subscriptionId: string): void {
   subscriptionLookupMap.delete(subscriptionId);
-}
-
-/**
- * Sets the absolute unread count for a subscription in the lookup map.
- * Used by server-provided absolute count updates (markRead, star/unstar mutations).
- *
- * @param subscriptionId - ID of the subscription to update
- * @param unreadCount - New absolute unread count
- */
-export function setSubscriptionUnreadCountInMap(subscriptionId: string, unreadCount: number): void {
-  const sub = subscriptionLookupMap.get(subscriptionId);
-  if (sub) {
-    subscriptionLookupMap.set(subscriptionId, { ...sub, unreadCount: Math.max(0, unreadCount) });
-  }
 }
 
 // ============================================================================

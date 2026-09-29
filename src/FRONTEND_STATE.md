@@ -53,7 +53,7 @@ restored this way; it reappears on the next navigation refresh.)
 | `operations.ts`             | High-level operations (primary API): `setCounts`/`setBulkCounts`/`setEntryRelatedCounts` (absolute counts), `handleSubscriptionCreated`/`handleSubscriptionDeleted`, `removeSubscriptionFromCaches`     |
 | `entry-cache.ts`            | Entry list/get patching: `updateEntriesReadStatus`, `updateEntryState`, `getCachedEntryState`, `updateEntryMetadataInCache`, `insertEntryIntoListCaches`, `restoreUnreadEntriesToListCaches`            |
 | `entry-mutation-tracker.ts` | `EntryMutationTracker` — per-QueryClient reconciliation of concurrent read/starred mutations (see "Optimistic Updates")                                                                                 |
-| `count-cache.ts`            | Subscription lookup map + tag helpers: `addSubscriptionToCache`, `updateSubscriptionInCache`, `removeSubscriptionFromCache`, `setSubscriptionUnreadCountInMap`, `applySyncTagChanges`, `removeSyncTags` |
+| `count-cache.ts`            | Session-created subscription map + tag helpers: `addSubscriptionToCache`, `updateSubscriptionInCache`, `removeSubscriptionFromCache`, `findCachedSubscription`, `applySyncTagChanges`, `removeSyncTags` |
 | `event-handlers.ts`         | `handleSyncEvent` — dispatches SSE/sync events to the operations above                                                                                                                                  |
 
 ## Core Queries

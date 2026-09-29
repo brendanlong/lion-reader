@@ -331,6 +331,8 @@ export function getUtilsData<T>(node: unknown, input?: unknown): T | undefined {
   return (node as { getData: (i?: unknown) => unknown }).getData(input) as T | undefined;
 }
 
+type SetInfiniteData = (input: unknown, data: unknown) => void;
+
 /**
  * Seeds the tRPC utils cache with default subscription, tag, and entry count data.
  */
@@ -358,8 +360,24 @@ export function seedCacheState(
     addSubscriptionToCache(sub);
   }
 
-  // Also seed subscriptions.list for tests that read it via utils
-  setUtilsData(utils.subscriptions.list, undefined, { items: subs });
+  // Seed the sidebar's per-tag / uncategorized subscriptions.list pages (the
+  // infinite queries TagSubscriptionList renders, and where per-subscription
+  // unread counts live)
+  const seedSidebarList = (input: { tagId: string } | { uncategorized: true }, items: unknown[]) =>
+    (utils.subscriptions.list as unknown as { setInfiniteData: SetInfiniteData }).setInfiniteData(
+      { ...input, limit: 50 },
+      { pages: [{ items, nextCursor: undefined }], pageParams: [undefined] }
+    );
+  for (const tag of tagItems) {
+    seedSidebarList(
+      { tagId: tag.id },
+      subs.filter((sub) => sub.tags.some((t) => t.id === tag.id))
+    );
+  }
+  seedSidebarList(
+    { uncategorized: true },
+    subs.filter((sub) => sub.tags.length === 0)
+  );
 
   // Seed tags.list
   setUtilsData(utils.tags.list, undefined, {

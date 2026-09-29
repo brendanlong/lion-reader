@@ -10,7 +10,7 @@
 
 import { describe, it, expect, beforeEach, type MockInstance } from "vitest";
 import { handleSyncEvent } from "@/lib/cache/event-handlers";
-import { _resetSubscriptionLookupMap, getSubscriptionLookupMap } from "@/lib/cache/count-cache";
+import { _resetSubscriptionLookupMap, findCachedSubscription } from "@/lib/cache/count-cache";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
 import {
   createSeededQueryClient,
@@ -58,27 +58,30 @@ beforeEach(() => {
 // Helper Functions
 // ============================================================================
 
+/** A subscription as the client knows it (lookup map, else the sidebar lists). */
+function findSubscription(id: string): Record<string, unknown> | undefined {
+  return findCachedSubscription(queryClient, id);
+}
+
 /**
- * Gets subscriptions from the subscription lookup map (the primary source read
- * by count calculations and event handlers).
+ * The unread count the sidebar shows for a subscription: its row in the cached
+ * per-tag / uncategorized `subscriptions.list` pages. A subscription in
+ * several tags must show the same count in each.
  */
-function getSubscriptionsList(): {
-  items: Array<{
-    id: string;
-    unreadCount: number;
-    tags: Array<{ id: string }>;
-    [key: string]: unknown;
-  }>;
-} {
-  const lookupMap = getSubscriptionLookupMap();
-  return {
-    items: Array.from(lookupMap.values()) as Array<{
-      id: string;
-      unreadCount: number;
-      tags: Array<{ id: string }>;
-      [key: string]: unknown;
-    }>,
-  };
+function getSidebarUnreadCount(id: string): number | undefined {
+  const queries = queryClient.getQueriesData<{
+    pages: Array<{ items: Array<{ id: string; unreadCount: number }> }>;
+  }>({ queryKey: [["subscriptions", "list"]] });
+  const counts = new Set<number>();
+  for (const [, data] of queries) {
+    for (const page of data?.pages ?? []) {
+      for (const sub of page.items) {
+        if (sub.id === id) counts.add(sub.unreadCount);
+      }
+    }
+  }
+  expect(counts.size).toBeLessThanOrEqual(1);
+  return counts.size === 0 ? undefined : [...counts][0];
 }
 
 function getTagsList():
@@ -194,8 +197,7 @@ describe("handleSyncEvent - new_entry", () => {
       })
     );
 
-    const subs = getSubscriptionsList();
-    expect(subs?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(6); // set
+    expect(getSidebarUnreadCount("sub-1")).toBe(6); // set
 
     const tagsList = getTagsList();
     expect(tagsList?.items.find((t) => t.id === "tag-1")?.unreadCount).toBe(16); // set
@@ -216,8 +218,7 @@ describe("handleSyncEvent - new_entry", () => {
 
     // No counts on the event → no cache writes; values self-heal on the next
     // count-bearing event or refetch.
-    const subs = getSubscriptionsList();
-    expect(subs?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(5); // unchanged
+    expect(getSidebarUnreadCount("sub-1")).toBe(5); // unchanged
     expect(getEntriesCount({})?.unread).toBe(18); // unchanged
     const tagsList = getTagsList();
     expect(tagsList?.items.find((t) => t.id === "tag-1")?.unreadCount).toBe(15); // unchanged
@@ -244,8 +245,7 @@ describe("handleSyncEvent - new_entry", () => {
     expect(getEntriesCount({ type: "saved" })?.unread).toBe(2); // set
 
     // No subscription changes
-    const subs = getSubscriptionsList();
-    expect(subs?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(5);
+    expect(getSidebarUnreadCount("sub-1")).toBe(5);
   });
 
   it("preserves the cached saved count when a web entry's counts omit saved", () => {
@@ -287,8 +287,7 @@ describe("handleSyncEvent - new_entry", () => {
     handleSyncEvent(utils, queryClient, event);
     handleSyncEvent(utils, queryClient, event);
 
-    const subs = getSubscriptionsList();
-    expect(subs?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(6); // not 7
+    expect(getSidebarUnreadCount("sub-1")).toBe(6); // not 7
     const tagsList = getTagsList();
     expect(tagsList?.items.find((t) => t.id === "tag-1")?.unreadCount).toBe(16); // not 17
     expect(getEntriesCount({})?.unread).toBe(19); // not 20
@@ -727,8 +726,7 @@ describe("handleSyncEvent - entry_state_changed", () => {
     );
 
     // Subscription unread count should decrease
-    const subs = getSubscriptionsList();
-    expect(subs?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(4); // was 5
+    expect(getSidebarUnreadCount("sub-1")).toBe(4); // was 5
 
     // Tag unread count should decrease
     const tagsList = getTagsList();
@@ -762,8 +760,7 @@ describe("handleSyncEvent - entry_state_changed", () => {
     );
 
     // Subscription unread count should increase
-    const subs = getSubscriptionsList();
-    expect(subs?.items.find((s) => s.id === "sub-2")?.unreadCount).toBe(4); // was 3
+    expect(getSidebarUnreadCount("sub-2")).toBe(4); // was 3
 
     // Uncategorized unread count should increase
     const tagsList = getTagsList();
@@ -814,8 +811,7 @@ describe("handleSyncEvent - entry_state_changed", () => {
       })
     );
 
-    const subs = getSubscriptionsList();
-    expect(subs?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(5); // unchanged
+    expect(getSidebarUnreadCount("sub-1")).toBe(5); // unchanged
     expect(getEntriesCount({})?.unread).toBe(18); // unchanged
     expect(getEntriesCount({ starredOnly: true })?.unread).toBe(2); // unchanged
   });
@@ -839,7 +835,7 @@ describe("handleSyncEvent - entry_state_changed", () => {
 
     // Counts are set from the server-provided values
     expect(getEntriesCount({})?.unread).toBe(17);
-    expect(getSubscriptionsList()?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(4);
+    expect(getSidebarUnreadCount("sub-1")).toBe(4);
   });
 });
 
@@ -907,8 +903,7 @@ describe("handleSyncEvent - subscription_created", () => {
       })
     );
 
-    const subs = getSubscriptionsList();
-    const newSub = subs?.items.find((s) => s.id === "sub-new");
+    const newSub = findSubscription("sub-new");
     expect(newSub).toBeDefined();
     expect(newSub?.unreadCount).toBe(7);
 
@@ -996,8 +991,7 @@ describe("handleSyncEvent - subscription_created", () => {
       })
     );
 
-    const subs = getSubscriptionsList();
-    const newSub = subs?.items.find((s) => s.id === "sub-new");
+    const newSub = findSubscription("sub-new");
     expect((newSub as Record<string, unknown>)?.title).toBe("My Custom Title");
   });
 });
@@ -1018,8 +1012,7 @@ describe("handleSyncEvent - subscription_updated", () => {
       })
     );
 
-    const subs = getSubscriptionsList();
-    const sub1 = subs?.items.find((s) => s.id === "sub-1");
+    const sub1 = findSubscription("sub-1");
     expect(sub1?.tags).toEqual([{ id: "tag-2", name: "Science", color: "#00ff00" }]);
   });
 
@@ -1034,8 +1027,7 @@ describe("handleSyncEvent - subscription_updated", () => {
       })
     );
 
-    const subs = getSubscriptionsList();
-    const sub1 = subs?.items.find((s) => s.id === "sub-1");
+    const sub1 = findSubscription("sub-1");
     expect((sub1 as Record<string, unknown>)?.title).toBe("Custom Name");
   });
 
@@ -1060,8 +1052,7 @@ describe("handleSyncEvent - subscription_updated", () => {
       })
     );
 
-    const subs = getSubscriptionsList();
-    const sub1 = subs?.items.find((s) => s.id === "sub-1");
+    const sub1 = findSubscription("sub-1");
     expect((sub1 as Record<string, unknown>)?.title).toBe("Feed One Original");
   });
 
@@ -1095,8 +1086,7 @@ describe("handleSyncEvent - subscription_deleted", () => {
       })
     );
 
-    const subs = getSubscriptionsList();
-    expect(subs?.items.find((s) => s.id === "sub-1")).toBeUndefined();
+    expect(findSubscription("sub-1")).toBeUndefined();
 
     const tagsList = getTagsList();
     expect(tagsList?.items.find((t) => t.id === "tag-1")?.unreadCount).toBe(10); // set
@@ -1120,8 +1110,7 @@ describe("handleSyncEvent - subscription_deleted", () => {
       })
     );
 
-    const subs = getSubscriptionsList();
-    expect(subs?.items.find((s) => s.id === "sub-2")).toBeUndefined();
+    expect(findSubscription("sub-2")).toBeUndefined();
 
     const tagsList = getTagsList();
     expect(tagsList?.uncategorized.unreadCount).toBe(0); // set
@@ -1138,7 +1127,7 @@ describe("handleSyncEvent - subscription_deleted", () => {
     );
 
     // Subscription removed structurally...
-    expect(getSubscriptionsList()?.items.find((s) => s.id === "sub-1")).toBeUndefined();
+    expect(findSubscription("sub-1")).toBeUndefined();
     // ...and the count caches are invalidated rather than set (no counts to set).
     const paths = invalidatedProcedures(invalidateSpy);
     expect(paths).toContain("tags.list");
@@ -1445,8 +1434,7 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
     );
 
     // Subscription count: sub-1 was 5 unread → 4
-    const subs = getSubscriptionsList();
-    expect(subs?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(4);
+    expect(getSidebarUnreadCount("sub-1")).toBe(4);
 
     // Tag count: tag-1 was 15 unread → 14
     const tagsList = getTagsList();
@@ -1483,8 +1471,7 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
     );
 
     // Sub-2 unread: was 3 → 2
-    const subs = getSubscriptionsList();
-    expect(subs?.items.find((s) => s.id === "sub-2")?.unreadCount).toBe(2);
+    expect(getSidebarUnreadCount("sub-2")).toBe(2);
 
     // Uncategorized: was 3 → 2
     const tagsList = getTagsList();
@@ -1515,8 +1502,7 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
     );
 
     // Sub-2: was 3 → 4
-    const subs = getSubscriptionsList();
-    expect(subs?.items.find((s) => s.id === "sub-2")?.unreadCount).toBe(4);
+    expect(getSidebarUnreadCount("sub-2")).toBe(4);
 
     // Uncategorized: was 3 → 4
     const tagsList = getTagsList();
@@ -1549,7 +1535,7 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
     expect(getEntriesCount({ starredOnly: true })?.unread).toBe(3);
 
     // Subscription/tag/all counts unchanged (read state didn't change)
-    expect(getSubscriptionsList()?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(5);
+    expect(getSidebarUnreadCount("sub-1")).toBe(5);
     expect(getEntriesCount({})?.unread).toBe(18);
   });
 
@@ -1602,7 +1588,7 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
     expect(getEntriesCount({ starredOnly: true })?.unread).toBe(1);
 
     // Subscription/tag/all counts unchanged (read state didn't change)
-    expect(getSubscriptionsList()?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(5);
+    expect(getSidebarUnreadCount("sub-1")).toBe(5);
     expect(getEntriesCount({})?.unread).toBe(18);
   });
 
@@ -1650,7 +1636,7 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
     );
 
     // Counts are set to server-provided values (correcting any optimistic drift)
-    expect(getSubscriptionsList()?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(4);
+    expect(getSidebarUnreadCount("sub-1")).toBe(4);
     expect(getEntriesCount({})?.unread).toBe(17);
     expect(getEntriesCount({ starredOnly: true })?.unread).toBe(1);
   });
@@ -1676,7 +1662,7 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
     );
 
     // Read changed: unread counts decrement
-    expect(getSubscriptionsList()?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(4); // -1
+    expect(getSidebarUnreadCount("sub-1")).toBe(4); // -1
     expect(getEntriesCount({})?.unread).toBe(17); // -1
     expect(getTagsList()?.items.find((t) => t.id === "tag-1")?.unreadCount).toBe(14); // -1
 
@@ -1706,8 +1692,8 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
     );
 
     // Counts should update from server-provided absolute values
-    expect(getSubscriptionsList()?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(4); // -1
-    expect(getSubscriptionsList()?.items.find((s) => s.id === "sub-2")?.unreadCount).toBe(3); // unchanged
+    expect(getSidebarUnreadCount("sub-1")).toBe(4); // -1
+    expect(getSidebarUnreadCount("sub-2")).toBe(3); // unchanged
     expect(getEntriesCount({})?.unread).toBe(17); // -1
     expect(getEntriesCount({ starredOnly: true })?.unread).toBe(2); // unchanged (not starred)
     expect(getEntriesCount({ type: "saved" })?.unread).toBe(1); // unchanged (type=web)
@@ -1743,8 +1729,8 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
     expect(getEntriesCount({})?.unread).toBe(17);
 
     // Subscription counts unchanged (saved articles have no subscription)
-    expect(getSubscriptionsList()?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(5);
-    expect(getSubscriptionsList()?.items.find((s) => s.id === "sub-2")?.unreadCount).toBe(3);
+    expect(getSidebarUnreadCount("sub-1")).toBe(5);
+    expect(getSidebarUnreadCount("sub-2")).toBe(3);
 
     // Tag counts unchanged
     const tagsList = getTagsList();
@@ -1825,7 +1811,7 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
     expect(getEntriesCount({})?.unread).toBe(17);
 
     // Subscription counts unchanged (orphaned entry has no subscription)
-    expect(getSubscriptionsList()?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(5);
+    expect(getSidebarUnreadCount("sub-1")).toBe(5);
   });
 
   it("decrements both starred and All count when orphaned starred entry marked read", () => {
@@ -1946,7 +1932,7 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
     );
 
     // Subscription count should update
-    expect(getSubscriptionsList()?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(4); // was 5
+    expect(getSidebarUnreadCount("sub-1")).toBe(4); // was 5
     expect(getEntriesCount({})?.unread).toBe(17); // was 18
     expect(getEntriesCount({ starredOnly: true })?.unread).toBe(1); // was 2
     expect(getTagsList()?.items.find((t) => t.id === "tag-1")?.unreadCount).toBe(14); // was 15
@@ -1975,7 +1961,7 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
     );
 
     // sub-3 unread: was 10 → 9
-    expect(getSubscriptionsList()?.items.find((s) => s.id === "sub-3")?.unreadCount).toBe(9);
+    expect(getSidebarUnreadCount("sub-3")).toBe(9);
 
     // Both tags should decrement
     const tagsList = getTagsList();
@@ -2010,8 +1996,7 @@ describe("handleSyncEvent - event sequences", () => {
       })
     );
 
-    const subsAfterNew = getSubscriptionsList();
-    expect(subsAfterNew?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(6);
+    expect(getSidebarUnreadCount("sub-1")).toBe(6);
     expect(getEntriesCount({})?.unread).toBe(19);
 
     // Then the entry is marked read via state_changed from another tab.
@@ -2034,7 +2019,7 @@ describe("handleSyncEvent - event sequences", () => {
     );
 
     // Counts decrement back to original
-    expect(getSubscriptionsList()?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(5);
+    expect(getSidebarUnreadCount("sub-1")).toBe(5);
     expect(getEntriesCount({})?.unread).toBe(18);
   });
 
@@ -2057,7 +2042,7 @@ describe("handleSyncEvent - event sequences", () => {
     );
 
     // Counts set to server-provided absolute values
-    expect(getSubscriptionsList()?.items.find((s) => s.id === "sub-1")?.unreadCount).toBe(4);
+    expect(getSidebarUnreadCount("sub-1")).toBe(4);
     expect(getEntriesCount({})?.unread).toBe(17);
     expect(getEntriesCount({ starredOnly: true })?.unread).toBe(1);
   });
@@ -2114,9 +2099,6 @@ describe("handleSyncEvent - event sequences", () => {
 
     expect(getEntriesCount({})?.unread).toBe(21); // 20 + 1
 
-    const subs = getSubscriptionsList();
-    expect(subs?.items.find((s) => s.id === "sub-seq")?.unreadCount).toBe(3); // 2 + 1
-
     const tagsList = getTagsList();
     const tag2 = tagsList?.items.find((t) => t.id === "tag-2");
     expect(tag2?.unreadCount).toBe(13); // 10 + 2 (sub) + 1 (entry)
@@ -2170,8 +2152,7 @@ describe("handleSyncEvent - event sequences", () => {
       })
     );
 
-    const subs = getSubscriptionsList();
-    expect(subs?.items.find((s) => s.id === "sub-temp")).toBeUndefined();
+    expect(findSubscription("sub-temp")).toBeUndefined();
     expect(getEntriesCount({})?.unread).toBe(18); // back to original
   });
 });
