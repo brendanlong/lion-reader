@@ -1,0 +1,272 @@
+package com.lionreader.shared.sync
+
+import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import com.lionreader.shared.api.EventEntry
+import com.lionreader.shared.api.FeedType
+import com.lionreader.shared.api.FullEntry
+import com.lionreader.shared.api.Subscription
+import com.lionreader.shared.api.SyncEvent
+import com.lionreader.shared.api.UnreadCount
+import com.lionreader.shared.api.UnreadCounts
+import com.lionreader.shared.data.ListScope
+import com.lionreader.shared.data.Reader
+import com.lionreader.shared.db.LionReaderDatabase
+import io.ktor.http.HttpStatusCode
+import kotlin.test.AfterTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+import kotlin.time.Instant
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.runTest
+
+private val NOW = Instant.parse("2026-09-29T12:00:00Z").toEpochMilliseconds()
+private const val DAY = 24L * 60 * 60 * 1000
+
+class SyncEngineTest {
+    private val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+    private val db = LionReaderDatabase(driver).also { LionReaderDatabase.Schema.create(driver) }
+    private val server = FakeServer()
+    private var clock = NOW
+    private var policy = RetentionPolicy()
+    private val engine = SyncEngine(server.api(), db, { clock }, { policy })
+    private val reader = Reader(db, { clock }, Dispatchers.Unconfined) {}
+
+    @AfterTest fun close() = driver.close()
+
+    private fun entry(
+        id: String,
+        ageDays: Long = 1,
+        read: Boolean = false,
+        starred: Boolean = false,
+        subscriptionId: String? = "sub-1",
+        type: FeedType = FeedType.WEB,
+    ) =
+        FullEntry(
+            id = id,
+            subscriptionId = subscriptionId,
+            feedId = "feed-1",
+            type = type,
+            title = "Title $id",
+            publishedAt = Instant.fromEpochMilliseconds(NOW - ageDays * DAY).toString(),
+            fetchedAt = Instant.fromEpochMilliseconds(NOW - ageDays * DAY).toString(),
+            read = read,
+            starred = starred,
+            contentCleaned = "<p>Body $id</p>",
+        )
+
+    private fun serve(vararg entries: FullEntry) {
+        entries.forEach { server.entries[it.id] = it }
+    }
+
+    private suspend fun timeline(scope: ListScope = ListScope.All, unreadOnly: Boolean = false) =
+        reader.timeline(scope, unreadOnly, emptySet(), 100).first().map { it.id }
+
+    @Test
+    fun bootstrapDownloadsTheWindowAndBodies() = runTest {
+        server.subscriptions += Subscription("sub-1", FeedType.WEB, title = "Feed", unreadCount = 2)
+        serve(
+            entry("a", ageDays = 1),
+            entry("b", ageDays = 2, read = true),
+            entry("c", ageDays = 3),
+        )
+
+        engine.sync()
+
+        assertEquals(listOf("a", "b", "c"), timeline())
+        assertEquals(listOf("a", "c"), timeline(unreadOnly = true))
+        assertEquals("<p>Body a</p>", reader.entry("a").first()?.content)
+        val nav = reader.navigation().first()
+        assertEquals(listOf("Feed"), nav.subscriptions.map { it.title })
+        assertEquals(2, nav.subscriptions.single().unread)
+    }
+
+    @Test
+    fun localChangesShowImmediatelyAndAreSentWithTheirTime() = runTest {
+        serve(entry("a"), entry("b"))
+        engine.sync()
+        server.subscriptions += Subscription("sub-1", FeedType.WEB, unreadCount = 2)
+
+        clock = NOW + 5_000
+        reader.setRead(listOf("a"), true)
+        reader.setStarred("b", true)
+
+        assertEquals(listOf("b"), timeline(unreadOnly = true))
+        assertEquals(listOf("b"), timeline(ListScope.Starred))
+
+        clock = NOW + 60_000
+        engine.flushOutbox()
+
+        val markRead = server.markReadRequests.single()
+        assertEquals(listOf("a"), markRead.entries.map { it.id })
+        assertEquals("2026-09-29T12:00:05Z", markRead.entries.single().changedAt)
+        assertEquals("2026-09-29T12:01:00Z", markRead.clientSentAt)
+        assertEquals(listOf("b"), server.starRequests.single().entries.map { it.id })
+        assertEquals(0, db.outboxQueries.countStates().executeAsOne())
+        // The server's answer is now the local state.
+        assertEquals(true, reader.entry("a").first()?.read)
+    }
+
+    @Test
+    fun unreadCountsIncludeUnsentChanges() = runTest {
+        server.subscriptions += Subscription("sub-1", FeedType.WEB, unreadCount = 2)
+        serve(entry("a"), entry("b"))
+        engine.sync()
+
+        reader.setRead(listOf("a"), true)
+
+        val nav = reader.navigation().first()
+        assertEquals(1, nav.allUnread)
+        assertEquals(1, nav.subscriptions.single().unread)
+    }
+
+    @Test
+    fun transientFailureKeepsTheChange() = runTest {
+        serve(entry("a"))
+        engine.sync()
+        reader.setRead(listOf("a"), true)
+
+        server.stateWriteFailure = HttpStatusCode.ServiceUnavailable
+        assertFailsWith<Exception> { engine.flushOutbox() }
+        assertEquals(1, db.outboxQueries.countStates().executeAsOne())
+
+        server.stateWriteFailure = null
+        engine.flushOutbox()
+        assertEquals(0, db.outboxQueries.countStates().executeAsOne())
+    }
+
+    @Test
+    fun rejectedChangeIsDroppedInsteadOfBlockingTheQueue() = runTest {
+        serve(entry("a"), entry("b"))
+        engine.sync()
+        reader.setRead(listOf("a"), true)
+
+        server.stateWriteFailure = HttpStatusCode.BadRequest
+        engine.flushOutbox()
+
+        assertEquals(0, db.outboxQueries.countStates().executeAsOne())
+    }
+
+    @Test
+    fun entryMissingFromTheServerAnswerIsRemovedLocally() = runTest {
+        serve(entry("a"))
+        engine.sync()
+        reader.setRead(listOf("a"), true)
+        server.entries.remove("a")
+
+        engine.flushOutbox()
+
+        assertNull(reader.entry("a").first())
+    }
+
+    @Test
+    fun pullAppliesEventsAndDeletions() = runTest {
+        serve(entry("a"), entry("b"))
+        engine.sync()
+        val counts =
+            UnreadCounts(all = UnreadCount(7), starred = UnreadCount(1), saved = UnreadCount(0))
+        server.queueChanges(
+            events =
+                listOf(
+                    SyncEvent.NewEntry(
+                        entryId = "c",
+                        subscriptionId = "sub-1",
+                        feedId = "feed-1",
+                        feedType = FeedType.WEB,
+                        entry = EventEntry(title = "New", fetchedAt = "2026-09-29T11:00:00Z"),
+                    ),
+                    SyncEvent.EntryStateChanged(
+                        entryId = "a",
+                        read = true,
+                        starred = true,
+                        counts = counts,
+                    ),
+                ),
+            deletions = listOf("b"),
+        )
+
+        engine.sync(downloadContent = false)
+
+        assertEquals(listOf("c", "a"), timeline())
+        assertEquals(listOf("a"), timeline(ListScope.Starred))
+        assertEquals(7, reader.navigation().first().allUnread)
+    }
+
+    @Test
+    fun unknownEventTypesAreSkipped() = runTest {
+        engine.sync()
+        server.changes.addLast(
+            com.lionreader.shared.api.SyncChanges(
+                events =
+                    listOf(
+                        kotlinx.serialization.json.buildJsonObject {
+                            put("type", kotlinx.serialization.json.JsonPrimitive("from_the_future"))
+                        }
+                    ),
+                hasMore = false,
+                cursors = server.cursors,
+            )
+        )
+
+        engine.sync(downloadContent = false)
+    }
+
+    @Test
+    fun unsubscribingDropsUnstarredEntriesOfThatFeed() = runTest {
+        serve(entry("a"), entry("b", starred = true))
+        engine.sync()
+        server.queueChanges(events = listOf(SyncEvent.SubscriptionDeleted("sub-1")))
+
+        engine.sync(downloadContent = false)
+
+        assertEquals(listOf("b"), timeline())
+    }
+
+    @Test
+    fun resyncKeepsUnsentChanges() = runTest {
+        serve(entry("a"))
+        engine.sync()
+        reader.setStarred("a", true)
+        server.stateWriteFailure = HttpStatusCode.ServiceUnavailable
+        server.queueChanges(resyncRequired = true)
+
+        assertFailsWith<Exception> { engine.sync() }
+        server.stateWriteFailure = null
+        engine.sync()
+
+        assertEquals(listOf("a"), timeline(ListScope.Starred))
+        assertTrue(server.entries.getValue("a").starred)
+    }
+
+    @Test
+    fun retentionDropsOldEntriesButKeepsStarredAndSaved() = runTest {
+        policy = RetentionPolicy(windowDays = 3)
+        serve(
+            entry("recent", ageDays = 1),
+            entry("old", ageDays = 5),
+            entry("old-starred", ageDays = 5, starred = true),
+            entry("old-saved", ageDays = 5, type = FeedType.SAVED, subscriptionId = null),
+        )
+
+        engine.sync()
+
+        assertEquals(setOf("recent", "old-starred", "old-saved"), timeline().toSet())
+    }
+
+    @Test
+    fun markAllReadMarksLocalEntriesAndSendsTheBoundary() = runTest {
+        serve(entry("a", ageDays = 1), entry("b", ageDays = 2))
+        engine.sync()
+
+        reader.markAllRead(ListScope.Subscription("sub-1"))
+
+        assertEquals(emptyList(), timeline(unreadOnly = true))
+        engine.flushOutbox()
+        val request = server.markAllRequests.single()
+        assertEquals("sub-1", request.subscriptionId)
+        assertEquals("2026-09-28T12:00:00.001Z", request.before)
+    }
+}

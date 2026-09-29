@@ -1,0 +1,68 @@
+-- The user's unsent read/star changes: one row per (entry, field), so a newer
+-- change replaces an older one. `changed_at` is the device clock (the server
+-- rebases it by the clock offset the flush reports).
+CREATE TABLE outbox_state (
+  entry_id TEXT NOT NULL,
+  field TEXT NOT NULL,
+  value INTEGER NOT NULL,
+  changed_at INTEGER NOT NULL,
+  PRIMARY KEY (entry_id, field)
+);
+
+-- Unsent "mark all read" requests. `before` is the newest server fetchedAt the
+-- device had seen (server time), so the request can't catch entries that
+-- arrived after the tap.
+CREATE TABLE outbox_mark_all (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  subscription_id TEXT,
+  tag_id TEXT,
+  starred_only INTEGER NOT NULL,
+  saved_only INTEGER NOT NULL,
+  before INTEGER NOT NULL,
+  changed_at INTEGER NOT NULL
+);
+
+putState:
+INSERT OR REPLACE INTO outbox_state(entry_id, field, value, changed_at) VALUES (?, ?, ?, ?);
+
+selectStates:
+SELECT * FROM outbox_state ORDER BY changed_at;
+
+-- Removes a flushed change only if the user hasn't changed it again since.
+deleteStateIfUnchanged:
+DELETE FROM outbox_state WHERE entry_id = ? AND field = ? AND changed_at = ?;
+
+deleteStatesForEntry:
+DELETE FROM outbox_state WHERE entry_id = ?;
+
+countStates:
+SELECT count(*) FROM outbox_state;
+
+addMarkAll:
+INSERT INTO outbox_mark_all(subscription_id, tag_id, starred_only, saved_only, before, changed_at)
+VALUES (?, ?, ?, ?, ?, ?);
+
+selectMarkAll:
+SELECT * FROM outbox_mark_all ORDER BY id;
+
+deleteMarkAll:
+DELETE FROM outbox_mark_all WHERE id = ?;
+
+countMarkAll:
+SELECT count(*) FROM outbox_mark_all;
+
+-- Unread-count corrections for unsent read changes, relative to the server's
+-- state of each entry.
+readAdjustments:
+SELECT e.subscription_id, e.type, COALESCE(s.value, e.starred) AS starred,
+  CASE WHEN o.value = 1 THEN -1 ELSE 1 END AS delta
+FROM outbox_state o
+JOIN entry e ON e.id = o.entry_id
+LEFT JOIN outbox_state s ON s.entry_id = o.entry_id AND s.field = 'starred'
+WHERE o.field = 'read' AND o.value != e.read;
+
+deleteAllStates:
+DELETE FROM outbox_state;
+
+deleteAllMarkAll:
+DELETE FROM outbox_mark_all;

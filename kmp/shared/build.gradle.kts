@@ -34,11 +34,8 @@ kotlin {
         commonMain.dependencies {
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.serialization.json)
-            implementation(libs.ktor.client.core)
-            implementation(libs.ktor.client.auth)
-            implementation(libs.ktor.client.content.negotiation)
-            implementation(libs.ktor.serialization.kotlinx.json)
-            implementation(libs.sqldelight.coroutines)
+            api(libs.ktor.client.core)
+            api(libs.sqldelight.coroutines)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
@@ -52,9 +49,19 @@ kotlin {
             implementation(libs.ktor.client.okhttp)
             implementation(libs.sqldelight.sqlite.driver)
         }
+        jvmTest.dependencies { implementation(libs.ktor.client.mock) }
     }
 }
 
 sqldelight {
     databases { create("LionReaderDatabase") { packageName.set("com.lionreader.shared.db") } }
+}
+
+// RealServerTest reads its fixture from the environment; make it a task input
+// so a new fixture reruns the test instead of hitting the build cache.
+tasks.named<Test>("jvmTest") {
+    inputs.property(
+        "realServerFixture",
+        providers.environmentVariable("LION_READER_TEST_FIXTURE").orElse(""),
+    )
 }
