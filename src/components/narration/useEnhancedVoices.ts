@@ -12,7 +12,6 @@
 import { useState, useEffect, useCallback, useReducer, useRef, useMemo } from "react";
 import { ENHANCED_VOICES, type EnhancedVoice } from "@/lib/narration/enhanced-voices";
 import { getPiperTTSProvider } from "@/lib/narration/piper-tts-provider";
-import { VoiceCache, STORAGE_LIMIT_BYTES } from "@/lib/narration/voice-cache";
 import { getVoiceErrorInfo, type VoiceErrorInfo } from "@/lib/narration/errors";
 import {
   trackEnhancedVoiceDownloadCompleted,
@@ -175,26 +174,6 @@ export interface UseEnhancedVoicesReturn {
    * Clear the error for a specific voice and retry.
    */
   retryVoiceDownload: (voiceId: string) => Promise<void>;
-
-  /**
-   * Total storage used by cached voices in bytes.
-   */
-  storageUsed: number;
-
-  /**
-   * Number of downloaded voices.
-   */
-  downloadedCount: number;
-
-  /**
-   * Whether the storage limit (200 MB) has been exceeded.
-   */
-  isStorageLimitExceeded: boolean;
-
-  /**
-   * Delete all cached voices.
-   */
-  deleteAllVoices: () => Promise<void>;
 }
 
 /**
@@ -241,8 +220,6 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
   const [voiceStates, setVoiceStates] = useState<Map<string, VoiceStateEntry>>(new Map());
   const [isLoading, setIsLoading] = useState(true);
   const [operationState, dispatch] = useReducer(operationReducer, { status: "idle" });
-  const [storageUsed, setStorageUsed] = useState(0);
-  const [downloadedCount, setDownloadedCount] = useState(0);
 
   // Derive values from operation state
   const isPreviewing =
@@ -256,9 +233,6 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
 
   // Track if component is mounted to avoid state updates after unmount
   const isMountedRef = useRef(true);
-
-  // Voice cache reference for storage operations
-  const voiceCacheRef = useRef<VoiceCache | null>(null);
 
   // Ref for self-referencing in downloadVoice callback (avoids access-before-declaration)
   const downloadVoiceRef = useRef<(voiceId: string, isRetry?: boolean) => Promise<void>>(
@@ -279,30 +253,6 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
     });
   }, []);
 
-  // Get or create the voice cache
-  const getVoiceCache = useCallback(() => {
-    if (!voiceCacheRef.current) {
-      voiceCacheRef.current = new VoiceCache();
-    }
-    return voiceCacheRef.current;
-  }, []);
-
-  // Update storage statistics
-  const updateStorageStats = useCallback(async () => {
-    try {
-      const cache = getVoiceCache();
-      const entries = await cache.list();
-      const size = await cache.getStorageSize();
-
-      if (isMountedRef.current) {
-        setStorageUsed(size);
-        setDownloadedCount(entries.length);
-      }
-    } catch {
-      // Silently fail - keep existing stats
-    }
-  }, [getVoiceCache]);
-
   // Initialize voice states
   useEffect(() => {
     isMountedRef.current = true;
@@ -312,9 +262,6 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
         const storedVoices = await getPiperTTSProvider().getStoredVoiceIds();
         if (!isMountedRef.current) return;
         setVoiceStates(initialVoiceStates(new Set(storedVoices)));
-
-        // Update storage statistics
-        await updateStorageStats();
       } catch {
         // If storage check fails, assume not downloaded
         if (isMountedRef.current) {
@@ -332,7 +279,7 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
     return () => {
       isMountedRef.current = false;
     };
-  }, [updateStorageStats]);
+  }, []);
 
   // Download a voice
   const downloadVoice = useCallback(
@@ -354,9 +301,6 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
 
         // Track successful download
         trackEnhancedVoiceDownloadCompleted(voiceId);
-
-        // Update storage statistics
-        await updateStorageStats();
       } catch (err) {
         if (!isMountedRef.current) return;
 
@@ -364,11 +308,10 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
         const errorInfo = getVoiceErrorInfo(err);
 
         // If it's a corrupted cache error and this isn't already a retry,
-        // try to clear the cache entry and retry once
+        // remove the stored voice files and retry once
         if (errorInfo.type === "corrupted_cache" && !isRetry) {
           try {
-            const cache = getVoiceCache();
-            await cache.delete(voiceId);
+            await getPiperTTSProvider().removeVoice(voiceId);
             // Retry the download via ref to avoid access-before-declaration
             await downloadVoiceRef.current(voiceId, true);
             return;
@@ -392,7 +335,7 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
         trackEnhancedVoiceDownloadFailed(voiceId, telemetryErrorType);
       }
     },
-    [updateStorageStats, getVoiceCache, setVoiceState]
+    [setVoiceState]
   );
   useEffect(() => {
     downloadVoiceRef.current = downloadVoice;
@@ -407,13 +350,12 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
         await getPiperTTSProvider().removeVoice(voiceId);
         if (!isMountedRef.current) return;
         setVoiceState(voiceId, { status: "not-downloaded", progress: 0 });
-        await updateStorageStats();
       } catch (err) {
         if (!isMountedRef.current) return;
         reportError(err, "Failed to remove voice");
       }
     },
-    [updateStorageStats, setVoiceState, reportError]
+    [setVoiceState, reportError]
   );
 
   // Preview a voice
@@ -490,29 +432,6 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
     [failedVoiceId, downloadVoice]
   );
 
-  // Delete all cached voices
-  const deleteAllVoices = useCallback(async () => {
-    dispatch({ type: "CLEAR_ERROR" });
-
-    try {
-      const provider = getPiperTTSProvider();
-      const storedVoices = await provider.getStoredVoiceIds();
-
-      // Delete each voice
-      for (const voiceId of storedVoices) {
-        await provider.removeVoice(voiceId);
-      }
-
-      if (!isMountedRef.current) return;
-
-      setVoiceStates(initialVoiceStates(new Set()));
-      await updateStorageStats();
-    } catch (err) {
-      if (!isMountedRef.current) return;
-      reportError(err, "Failed to delete voices");
-    }
-  }, [updateStorageStats, reportError]);
-
   // Build the voices array with current state (memoized to avoid rebuilding on every render)
   const voices: EnhancedVoiceState[] = useMemo(
     () =>
@@ -537,9 +456,5 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
     clearError,
     retryDownload,
     retryVoiceDownload,
-    storageUsed,
-    downloadedCount,
-    isStorageLimitExceeded: storageUsed > STORAGE_LIMIT_BYTES,
-    deleteAllVoices,
   };
 }

@@ -11,7 +11,6 @@
 
 import { useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { NoteBox } from "@/components/ui/note-box";
 import {
   CheckIcon,
   AlertCircleIcon,
@@ -22,7 +21,6 @@ import {
   RefreshIcon,
   DownloadIcon,
   CloseIcon,
-  AlertIcon,
 } from "@/components/ui/icons";
 import type { NarrationSettings } from "@/lib/narration/settings";
 import { useEnhancedVoices, type EnhancedVoiceState } from "./useEnhancedVoices";
@@ -295,10 +293,6 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
     clearError,
     retryDownload,
     retryVoiceDownload,
-    storageUsed,
-    downloadedCount,
-    isStorageLimitExceeded,
-    deleteAllVoices,
   } = useEnhancedVoices();
 
   // Handle voice selection
@@ -328,22 +322,6 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
     },
     [removeVoice, settings, setSettings]
   );
-
-  // Handle deleting all voices
-  const handleDeleteAllVoices = useCallback(async () => {
-    await deleteAllVoices();
-    // Clear the selection
-    setSettings({
-      ...settings,
-      voiceId: null,
-    });
-  }, [deleteAllVoices, settings, setSettings]);
-
-  // Format storage size in MB
-  const formatStorageSize = (bytes: number): string => {
-    const mb = bytes / (1024 * 1024);
-    return `${mb.toFixed(1)} MB`;
-  };
 
   // Loading state
   if (isLoading) {
@@ -390,16 +368,6 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
         </div>
       )}
 
-      {/* Storage limit warning */}
-      {isStorageLimitExceeded && (
-        <div className="control-outline ui-text-xs bg-warning-subtle text-warning-subtle-foreground flex items-start gap-2 rounded-md p-3">
-          <AlertIcon className="mt-0.5 h-4 w-4 flex-shrink-0" />
-          <span className="flex-1">
-            Voice storage exceeds 200 MB. Consider removing unused voices to free up space.
-          </span>
-        </div>
-      )}
-
       {/* Voice list */}
       <div role="radiogroup" aria-label="Enhanced voices" className="space-y-3">
         {voices.map((voiceState) => (
@@ -418,25 +386,6 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
           />
         ))}
       </div>
-
-      {/* Storage info section */}
-      {downloadedCount > 0 && (
-        <NoteBox padding="sm" className="flex items-center justify-between">
-          <span className="ui-text-xs text-muted tabular-nums">
-            Storage used: {formatStorageSize(storageUsed)} ({downloadedCount}{" "}
-            {downloadedCount === 1 ? "voice" : "voices"})
-          </span>
-          {downloadedCount > 1 && (
-            <button
-              type="button"
-              onClick={handleDeleteAllVoices}
-              className="ui-text-xs text-muted hover:text-body underline"
-            >
-              Delete All
-            </button>
-          )}
-        </NoteBox>
-      )}
 
       {/* Info text */}
       <p className="ui-text-xs text-muted">

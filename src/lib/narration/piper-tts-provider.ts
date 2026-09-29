@@ -1,17 +1,14 @@
 /**
  * Piper TTS Provider
  *
- * Implements the TTSProvider interface using Piper TTS via WebAssembly.
- * This provider offers high-quality neural text-to-speech that runs
+ * Piper TTS via WebAssembly: high-quality neural text-to-speech that runs
  * entirely in the browser.
  *
  * @module narration/piper-tts-provider
  */
 
-import type { TTSProvider, TTSVoice, SpeakOptions } from "./types";
-import { ENHANCED_VOICES, findEnhancedVoice } from "./enhanced-voices";
-import { splitIntoSentences } from "./sentence-splitter";
-import { concatenateAudioBuffers, DEFAULT_SENTENCE_GAP_SECONDS } from "./audio-buffer-utils";
+import type { SpeakOptions } from "./types";
+import { findEnhancedVoice } from "./enhanced-voices";
 import { DEFAULT_RATE, MIN_RATE, MAX_RATE, clamp } from "./constants";
 
 /**
@@ -77,7 +74,7 @@ export class VoiceNotDownloadedError extends Error {
 }
 
 /**
- * PiperTTSProvider implements TTSProvider using Piper TTS via WebAssembly.
+ * PiperTTSProvider wraps Piper TTS via WebAssembly.
  *
  * This provider offers high-quality neural text-to-speech with:
  * - Natural sounding voices
@@ -89,10 +86,7 @@ export class VoiceNotDownloadedError extends Error {
  * - Initial synthesis may be slow (WASM initialization)
  * - No real-time pause/resume (must restart from beginning)
  */
-export class PiperTTSProvider implements TTSProvider {
-  readonly id = "piper" as const;
-  readonly name = "Enhanced Voices";
-
+export class PiperTTSProvider {
   private audioContext: AudioContext | null = null;
   private currentSource: AudioBufferSourceNode | null = null;
   private currentOptions: SpeakOptions | null = null;
@@ -120,31 +114,6 @@ export class PiperTTSProvider implements TTSProvider {
     const hasStorageAPI = "storage" in navigator && "getDirectory" in navigator.storage;
 
     return hasAudioContext && hasStorageAPI;
-  }
-
-  /**
-   * Gets available enhanced voices with their download status.
-   *
-   * @returns Promise resolving to array of available voices.
-   */
-  async getVoices(): Promise<TTSVoice[]> {
-    if (!this.isAvailable()) {
-      return [];
-    }
-
-    // Get list of downloaded voices from OPFS
-    const downloadedVoiceIds = await this.getStoredVoiceIds();
-    const downloadedSet = new Set(downloadedVoiceIds);
-
-    return ENHANCED_VOICES.map((voice) => ({
-      id: voice.id,
-      name: voice.displayName,
-      language: voice.language,
-      provider: "piper" as const,
-      downloadStatus: downloadedSet.has(voice.id)
-        ? ("downloaded" as const)
-        : ("not-downloaded" as const),
-    }));
   }
 
   /**
@@ -241,58 +210,6 @@ export class PiperTTSProvider implements TTSProvider {
     const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
     return audioBuffer;
-  }
-
-  /**
-   * Generates audio for a paragraph by splitting it into sentences,
-   * synthesizing each sentence separately, and concatenating the results
-   * with silence gaps between sentences.
-   *
-   * This approach improves TTS quality by giving the neural model
-   * smaller chunks to process, resulting in better prosody.
-   *
-   * @param text - The paragraph text to synthesize.
-   * @param voiceId - The voice ID to use.
-   * @param gapSeconds - Silence gap between sentences (default: 0.3s).
-   * @returns Promise resolving to the concatenated AudioBuffer.
-   * @throws Error if voice is not available or synthesis fails.
-   */
-  async generateParagraphAudio(
-    text: string,
-    voiceId: string,
-    gapSeconds: number = DEFAULT_SENTENCE_GAP_SECONDS
-  ): Promise<AudioBuffer> {
-    if (!this.isAvailable()) {
-      throw new Error("Piper TTS is not available in this browser");
-    }
-
-    // Split paragraph into sentences
-    const sentences = splitIntoSentences(text);
-
-    if (sentences.length === 0) {
-      // Empty text - return a minimal silent buffer
-      const audioContext = this.getAudioContext();
-      return audioContext.createBuffer(1, 1, audioContext.sampleRate);
-    }
-
-    // If only one sentence, use the simpler path
-    if (sentences.length === 1) {
-      return this.generateAudio(sentences[0], voiceId);
-    }
-
-    // Generate audio for each sentence
-    const sentenceBuffers: AudioBuffer[] = [];
-
-    for (const sentence of sentences) {
-      const buffer = await this.generateAudio(sentence, voiceId);
-      sentenceBuffers.push(buffer);
-    }
-
-    // Concatenate with silence gaps
-    const audioContext = this.getAudioContext();
-    const result = concatenateAudioBuffers(audioContext, sentenceBuffers, gapSeconds);
-
-    return result.buffer;
   }
 
   /**
@@ -455,13 +372,6 @@ export class PiperTTSProvider implements TTSProvider {
   }
 
   /**
-   * Checks if speech is currently paused.
-   */
-  isPausedState(): boolean {
-    return this.isPaused;
-  }
-
-  /**
    * Gets or creates the AudioContext.
    * Public to allow external components to manipulate audio buffers.
    */
@@ -470,19 +380,6 @@ export class PiperTTSProvider implements TTSProvider {
       this.audioContext = new AudioContext();
     }
     return this.audioContext;
-  }
-
-  /**
-   * Closes the AudioContext and releases resources.
-   * Call this when the provider is no longer needed.
-   */
-  async close(): Promise<void> {
-    this.stop();
-
-    if (this.audioContext) {
-      await this.audioContext.close();
-      this.audioContext = null;
-    }
   }
 }
 
