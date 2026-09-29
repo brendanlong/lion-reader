@@ -329,7 +329,7 @@ describe("useEntryMutations star/unstar", () => {
 
     await waitFor(() => expect(callsFor("entries.setStarred")).toHaveLength(1));
     // The mutation settled successfully...
-    await waitFor(() => expect(getEntryMutationTracker(queryClient).hasPending("e1")).toBe(false));
+    await waitFor(() => expect(queryClient.isMutating()).toBe(0));
     // ...without an error toast or any counts written from the old shape.
     expect(toast.error).not.toHaveBeenCalled();
     expect(result.current.utils.entries.count.getData({ starredOnly: true })).toBeUndefined();
