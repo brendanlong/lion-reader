@@ -23,12 +23,14 @@ function countRows(table: PgTable, where?: SQL): Promise<number> {
     .then((rows) => rows[0]?.count ?? 0);
 }
 
-// entries grows without bound, so it uses Postgres's live-row estimate
-// (kept current by the stats collector) instead of a count(*) scan per scrape.
+// entries grows without bound, so it uses the planner's row estimate instead of
+// a count(*) scan per scrape. reltuples lives in the catalog, so unlike the
+// cumulative stats (n_live_tup) it survives a crash or failover; vacuum and
+// analyze keep it current. It's -1 until the table is first analyzed.
 function estimateRows(table: PgTable): Promise<number> {
   return db
-    .execute<{ estimate: number | null }>(
-      sql`SELECT n_live_tup::int AS estimate FROM pg_stat_user_tables WHERE relid = ${getTableName(table)}::regclass`
+    .execute<{ estimate: number }>(
+      sql`SELECT GREATEST(reltuples, 0)::float8 AS estimate FROM pg_class WHERE oid = ${getTableName(table)}::regclass`
     )
     .then((result) => result.rows[0]?.estimate ?? 0);
 }

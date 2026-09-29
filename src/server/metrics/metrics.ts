@@ -525,7 +525,7 @@ export function updateBusinessMetrics(counts: {
   })?.set(counts.subscriptions);
   getOrCreate(Gauge, {
     name: "entries_total",
-    help: "Total number of entries (Postgres live-row estimate)",
+    help: "Total number of entries (Postgres planner estimate)",
   })?.set(counts.entries);
   getOrCreate(Gauge, {
     name: "feeds_total",
@@ -546,6 +546,8 @@ export function updateJobQueueMetrics(
     help: "Current job queue size by type and status",
     labelNames: ["type", "status"] as const,
   });
+  // Drop groups that no longer appear (e.g. running=1 after the queue drains).
+  jobQueueSize?.reset();
   for (const { type, status, count } of counts) {
     jobQueueSize?.set({ type, status }, count);
   }

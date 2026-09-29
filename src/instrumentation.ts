@@ -50,7 +50,7 @@ export async function register() {
     registerResourceCleanup(async () => {
       logger.info("Closing shared resources...");
 
-      // Stop serving metrics scrapes first — a scrape runs DB queries
+      // Stop serving metrics scrapes first — a scrape reads the DB pool
       // (collectAllMetrics), so it must stop before the pool below closes.
       await stopMetricsServer();
 
