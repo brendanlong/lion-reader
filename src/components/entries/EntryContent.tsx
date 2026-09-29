@@ -285,10 +285,11 @@ function EntryContentInner({
     fetchFullContentMutation.mutate({ id: entryId });
   }, [entry, fetchFullContent, entryId, fetchFullContentMutation]);
 
-  // Auto-mark-read: Fire mutation once on mount to mark the entry as read
-  // and update readChangedAt so it appears in Recently Read.
-  // The mutation runs in parallel with the get query. Both use updatedAt timestamps
-  // to determine which state wins, so race conditions are handled correctly.
+  // Auto-mark-read: fire the mutation once, as soon as entries.get data is
+  // available (from cache when prefetched, otherwise when the fetch lands) —
+  // even for an already-read entry, so readChangedAt moves it to the top of
+  // Recently Read. Timestamp reconciliation resolves it against any
+  // entries.get fetch still in flight.
   useEffect(() => {
     // Only fire once per entry - check this first
     if (hasSentMarkReadMutation.current) return;
