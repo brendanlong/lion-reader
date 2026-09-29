@@ -20,7 +20,7 @@ import {
   SINGLETON_PRIORITY_INTERVAL,
   type WorkerClaimDeps,
 } from "@/server/jobs/worker";
-import { SINGLETON_JOB_TYPES, type JobType } from "@/server/jobs/queue";
+import { ONE_TIME_JOB_TYPES, SINGLETON_JOB_TYPES, type JobType } from "@/server/jobs/queue";
 import type { Job } from "@/server/db/schema";
 
 /** Minimal fake Job — the strategy only passes it through. */
@@ -148,9 +148,12 @@ describe("createWorkerClaimJob", () => {
       dueSingletons: [...SINGLETON_JOB_TYPES],
     });
     const { results, perCall } = await harness.run(2);
-    expect(results.every((j) => j?.type === "process_opml_import")).toBe(true);
-    // Neither feed nor singleton consulted when a regular job was claimed.
-    expect(perCall.flat().filter((c) => c !== "regular(process_opml_import)")).toEqual([]);
+    expect(results.every((j) => j?.type === ONE_TIME_JOB_TYPES[0])).toBe(true);
+    // Every one-time type is offered to the regular claim, and neither feed nor
+    // singleton is consulted when a regular job was claimed.
+    expect(perCall.flat()).toEqual(
+      Array.from({ length: 2 }, () => `regular(${ONE_TIME_JOB_TYPES.join(",")})`)
+    );
   });
 
   describe("jobTypes filtering (must match pre-round-robin behavior)", () => {

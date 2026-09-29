@@ -7,9 +7,9 @@
  */
 
 import { createHash } from "crypto";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
-import { entries, narrationContent } from "@/server/db/schema";
+import { entries, narrationContent, subscriptions } from "@/server/db/schema";
 import { fetchHtmlPage, HttpFetchError } from "@/server/http/fetch";
 import { cleanContent, cleanContentAsync, absolutizeUrls } from "@/server/feed/content-cleaner";
 import { sanitizeEntryContentFamily } from "@/server/html/sanitize-entry";
@@ -195,7 +195,7 @@ export async function fetchFullContent(
  * This is the single write site for the full-content invariants — hash
  * derivation for summary caching and error persistence — shared by the
  * user-initiated fetch (fetchAndStoreFullContent) and the background worker
- * (fetchFullContentForNewEntries in jobs/handlers/fetch-feed.ts).
+ * (fetchFullContentForNewEntries below).
  *
  * Stores only the raw full-content columns; the read path sanitizes per read
  * (issue #1282).
@@ -203,7 +203,7 @@ export async function fetchFullContent(
  * @returns the applied update (the raw full-content columns) on success, or null
  *   when the fetch failed and only the error was persisted.
  */
-export async function persistFullContentResult(
+async function persistFullContentResult(
   db: typeof dbType,
   entryId: string,
   result: FetchFullContentResult,
@@ -238,6 +238,116 @@ export async function persistFullContentResult(
 
   await db.update(entries).set(fullContentUpdate).where(eq(entries.id, entryId));
   return fullContentUpdate;
+}
+
+/**
+ * Maximum number of entries to fetch full content for per call to
+ * {@link fetchFullContentForNewEntries} (one poll, or one WebSub push). The
+ * fetches run sequentially inside a single job, so this bounds how long that job
+ * holds a worker slot and how hard one burst of new entries hits the origin.
+ */
+const MAX_FULL_CONTENT_ENTRIES_PER_BATCH = 10;
+
+/**
+ * Whether any active subscriber of the feed has `fetch_full_content` on. Full
+ * content lives on the shared entry row, so one such subscriber is enough.
+ */
+export async function feedWantsFullContent(db: typeof dbType, feedId: string): Promise<boolean> {
+  const rows = await db
+    .select({ id: subscriptions.id })
+    .from(subscriptions)
+    .where(
+      and(
+        eq(subscriptions.feedId, feedId),
+        isNull(subscriptions.unsubscribedAt),
+        eq(subscriptions.fetchFullContent, true)
+      )
+    )
+    .limit(1);
+  return rows.length > 0;
+}
+
+/**
+ * Fetches and stores full content for a feed's newly-arrived entries, if any
+ * active subscriber has `fetch_full_content` enabled.
+ *
+ * The single background path for "fetch full content" subscriptions, however an
+ * entry arrived: a poll calls it inline from the `fetch_feed` job, and a WebSub
+ * push (which is ingested in the hub's callback request, where slow article
+ * fetches must not run) defers it to a `fetch_full_content` job. Callers pass
+ * only genuinely new entries — not archive re-announcements (`isBackfill`),
+ * which must not spend the per-batch budget the real news needs.
+ *
+ * Runs Readability inline (`offloadClean: false`): it only runs on the worker,
+ * off the request path, where the thread-pool hop is pure overhead.
+ */
+export async function fetchFullContentForNewEntries(
+  db: typeof dbType,
+  feedId: string,
+  newEntryIds: string[]
+): Promise<{ fetched: number; failed: number }> {
+  if (newEntryIds.length === 0 || !(await feedWantsFullContent(db, feedId))) {
+    return { fetched: 0, failed: 0 };
+  }
+
+  logger.debug("Full content fetching enabled for feed", {
+    feedId,
+    newEntryCount: newEntryIds.length,
+  });
+
+  const entriesToFetch = await db
+    .select({ id: entries.id, url: entries.url })
+    .from(entries)
+    .where(
+      and(
+        inArray(entries.id, newEntryIds.slice(0, MAX_FULL_CONTENT_ENTRIES_PER_BATCH)),
+        // Scoped to the feed so a caller can't reach another feed's entries.
+        eq(entries.feedId, feedId)
+      )
+    );
+
+  let fetched = 0;
+  let failed = 0;
+  let attempted = 0;
+
+  // Sequential, to avoid overwhelming the origin.
+  for (const entry of entriesToFetch) {
+    if (entry.url === null) {
+      continue;
+    }
+    attempted++;
+    try {
+      const result = await fetchFullContent(entry.url, { offloadClean: false });
+      // Persists the raw full-content columns or the fetch error onto the shared
+      // entry row; sanitization happens per read (issue #1282).
+      const update = await persistFullContentResult(db, entry.id, result, new Date());
+
+      if (update) {
+        fetched++;
+        logger.debug("Fetched full content for entry", { entryId: entry.id, url: entry.url });
+      } else {
+        failed++;
+        logger.debug("Failed to fetch full content for entry", {
+          entryId: entry.id,
+          url: entry.url,
+          error: result.error,
+        });
+      }
+    } catch (error) {
+      failed++;
+      logger.warn("Error fetching full content for entry", {
+        entryId: entry.id,
+        url: entry.url,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  if (attempted > 0) {
+    logger.info("Full content fetching completed", { feedId, fetched, failed, total: attempted });
+  }
+
+  return { fetched, failed };
 }
 
 /**

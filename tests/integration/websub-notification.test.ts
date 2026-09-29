@@ -7,24 +7,34 @@
  * the parts that reach subscribers.
  */
 
-import { describe, it, expect, beforeEach, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
+import { createServer, type Server } from "node:http";
+import { type AddressInfo } from "node:net";
 import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
   entries,
   feeds,
+  jobs,
   subscriptions,
   userEntries,
   users,
   websubHubStats,
 } from "../../src/server/db/schema";
 import { ingestWebsubNotification } from "../../src/server/feed/websub-notification";
+import { claimJob, getJobPayload } from "../../src/server/jobs/queue";
+import { handleFetchFullContent } from "../../src/server/jobs/handlers/fetch-full-content";
 import { createTestFeed, createTestSubscription, createTestUser } from "./helpers";
 
 const HUB_URL = "https://hub.example.com/";
 
 /** A one-item RSS document, the shape a hub pushes for a single post. */
-function pushBody(guid: string, title: string, pubDate: Date): string {
+function pushBody(
+  guid: string,
+  title: string,
+  pubDate: Date,
+  link = `https://example.com/${guid}`
+): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
@@ -32,7 +42,7 @@ function pushBody(guid: string, title: string, pubDate: Date): string {
     <link>https://example.com</link>
     <item>
       <title>${title}</title>
-      <link>https://example.com/${guid}</link>
+      <link>${link}</link>
       <guid isPermaLink="false">${guid}</guid>
       <pubDate>${pubDate.toUTCString()}</pubDate>
       <description>Body of ${title}</description>
@@ -41,7 +51,11 @@ function pushBody(guid: string, title: string, pubDate: Date): string {
 </rss>`;
 }
 
-async function seedPushFeed(emailPrefix: string, lastPoll: Date) {
+async function seedPushFeed(
+  emailPrefix: string,
+  lastPoll: Date,
+  subscriptionOverrides: Partial<typeof subscriptions.$inferInsert> = {}
+) {
   const feedId = await createTestFeed({
     url: `https://example.com/${emailPrefix}.xml`,
     hubUrl: HUB_URL,
@@ -50,7 +64,7 @@ async function seedPushFeed(emailPrefix: string, lastPoll: Date) {
     lastEntriesUpdatedAt: lastPoll,
   });
   const userId = await createTestUser({ emailPrefix });
-  const subscriptionId = await createTestSubscription(userId, feedId);
+  const subscriptionId = await createTestSubscription(userId, feedId, subscriptionOverrides);
   const [feed] = await db.select().from(feeds).where(eq(feeds.id, feedId));
   return { feed, userId, subscriptionId };
 }
@@ -69,8 +83,44 @@ async function getHubStats() {
   return row;
 }
 
+/** The article page a pushed entry links to, served by the loopback origin. */
+const ARTICLE_HTML = `<!DOCTYPE html>
+<html><head><title>The Whole Story</title></head>
+<body>
+  <nav>Home | About</nav>
+  <article>
+    <h1>The Whole Story</h1>
+    ${Array.from(
+      { length: 6 },
+      (_, i) =>
+        `<p>Paragraph ${i + 1} of the complete article, which the feed only summarized. It carries enough prose that extraction treats it as the real content of the page.</p>`
+    ).join("\n    ")}
+  </article>
+  <footer>Copyright</footer>
+</body></html>`;
+
+let articleServer: Server;
+let articleBaseUrl: string;
+/** Paths the loopback origin was asked for, in order. */
+let articleRequests: string[];
+
+beforeAll(async () => {
+  articleServer = createServer((req, res) => {
+    articleRequests.push(req.url ?? "/");
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    res.end(ARTICLE_HTML);
+  });
+  await new Promise<void>((resolve) => articleServer.listen(0, "127.0.0.1", resolve));
+  articleBaseUrl = `http://127.0.0.1:${(articleServer.address() as AddressInfo).port}`;
+});
+
+afterAll(async () => {
+  await new Promise<void>((resolve) => articleServer.close(() => resolve()));
+});
+
 describe("ingestWebsubNotification", () => {
   async function cleanup(): Promise<void> {
+    await db.delete(jobs).where(eq(jobs.type, "fetch_full_content"));
     await db.delete(userEntries);
     await db.delete(entries);
     await db.delete(subscriptions);
@@ -79,7 +129,10 @@ describe("ingestWebsubNotification", () => {
     await db.delete(users);
   }
 
-  beforeEach(cleanup);
+  beforeEach(async () => {
+    await cleanup();
+    articleRequests = [];
+  });
   afterAll(cleanup);
 
   it("delivers a genuinely new pushed article unread and credits the hub", async () => {
@@ -158,6 +211,83 @@ describe("ingestWebsubNotification", () => {
     const [entry] = await db.select().from(entries).where(eq(entries.feedId, feed.id));
     expect(entry.lastSeenAt!.getTime()).toBeGreaterThan(lastPoll.getTime());
     expect(await getUserEntry(userId)).toBeDefined();
+  });
+
+  it("fetches full content for a pushed entry on a full-content subscription, off the request", async () => {
+    // A poll fetches full content only for entries that are new to *it*, and a
+    // pushed entry isn't by the time the backup poll comes round, so the push has
+    // to arrange it — without making the hub's callback wait on the article.
+    const now = Date.now();
+    const { feed, userId } = await seedPushFeed("pushfull", new Date(now - 60 * 60 * 1000), {
+      fetchFullContent: true,
+    });
+
+    const outcome = await ingestWebsubNotification(
+      feed,
+      pushBody("full-1", "Summary only", new Date(now - 60 * 1000), `${articleBaseUrl}/post/full-1`)
+    );
+    expect(outcome).toBe("processed");
+
+    // The push itself never touched the article: it queued a job for it.
+    expect(articleRequests).toEqual([]);
+    const [pushed] = await db.select().from(entries).where(eq(entries.feedId, feed.id));
+    expect(pushed.fullContentFetchedAt).toBeNull();
+
+    // Run the queued job the way the worker does.
+    const job = await claimJob({ types: ["fetch_full_content"] });
+    expect(job).not.toBeNull();
+    const payload = getJobPayload<"fetch_full_content">(job!);
+    expect(payload).toEqual({ feedId: feed.id, entryIds: [pushed.id] });
+    const result = await handleFetchFullContent(payload);
+    expect(result.success).toBe(true);
+    expect(result.metadata).toMatchObject({ fullContentFetched: 1, fullContentFailed: 0 });
+
+    expect(articleRequests).toEqual(["/post/full-1"]);
+    const [entry] = await db.select().from(entries).where(eq(entries.id, pushed.id));
+    expect(entry.fullContentError).toBeNull();
+    expect(entry.fullContentFetchedAt).not.toBeNull();
+    expect(entry.fullContentCleaned).toContain("Paragraph 6 of the complete article");
+    expect(entry.fullContentCleaned).not.toContain("Copyright");
+    // The entry reached the subscriber as usual.
+    expect((await getUserEntry(userId)).guid).toBe("full-1");
+  });
+
+  it("queues no full-content work when no subscriber wants it", async () => {
+    const now = Date.now();
+    const { feed } = await seedPushFeed("pushnofull", new Date(now - 60 * 60 * 1000));
+
+    await ingestWebsubNotification(
+      feed,
+      pushBody(
+        "plain-1",
+        "Summary only",
+        new Date(now - 60 * 1000),
+        `${articleBaseUrl}/post/plain-1`
+      )
+    );
+
+    expect(await db.select().from(jobs).where(eq(jobs.type, "fetch_full_content"))).toEqual([]);
+    expect(articleRequests).toEqual([]);
+  });
+
+  it("queues no full-content work for an archive replay", async () => {
+    // Same rule as the poll path: re-announced history isn't news and mustn't
+    // spend the full-content budget.
+    const { feed } = await seedPushFeed("pushfullarchive", new Date(Date.now() - 60 * 60 * 1000), {
+      fetchFullContent: true,
+    });
+
+    await ingestWebsubNotification(
+      feed,
+      pushBody(
+        "archive-full-1",
+        "Old post",
+        new Date("2022-03-01T00:00:00Z"),
+        `${articleBaseUrl}/post/archive-full-1`
+      )
+    );
+
+    expect(await db.select().from(jobs).where(eq(jobs.type, "fetch_full_content"))).toEqual([]);
   });
 
   it("reports an unparseable push body instead of throwing", async () => {

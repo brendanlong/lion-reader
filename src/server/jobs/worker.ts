@@ -21,12 +21,14 @@ import {
   getJobPayload,
   renewJobLease,
   JOB_LEASE_HEARTBEAT_MS,
+  ONE_TIME_JOB_TYPES,
   SINGLETON_JOB_TYPES,
   type JobType,
 } from "./queue";
 import { handleFetchFeed } from "./handlers/fetch-feed";
 import { handleRenewWebsub } from "./handlers/renew-websub";
 import { handleProcessOpmlImport } from "./handlers/process-opml-import";
+import { handleFetchFullContent } from "./handlers/fetch-full-content";
 import { handleMonitorFeedHealth } from "./handlers/monitor-feed-health";
 import { handleCleanup } from "./handlers/cleanup";
 import { handleReconcileCounters } from "./handlers/reconcile-counters";
@@ -263,7 +265,7 @@ export interface WorkerClaimDeps {
 /**
  * Builds the worker's claim function. Priority order:
  *
- * 1. Regular jobs (process_opml_import) — user-triggered, always first.
+ * 1. Regular jobs (`ONE_TIME_JOB_TYPES`) — user/push-triggered, always first.
  * 2. Feed jobs vs. singleton jobs — round-robined: on most cycles feeds go
  *    first (throughput), but every SINGLETON_PRIORITY_INTERVAL-th cycle
  *    singletons are checked first, so an overdue maintenance job is claimed
@@ -309,7 +311,7 @@ export function createWorkerClaimJob(
     const regularTypes = options?.types?.filter((t) => t !== "fetch_feed");
     if (!options?.types || (regularTypes && regularTypes.length > 0)) {
       const regularJob = await deps.claimRegular({
-        types: regularTypes || ["process_opml_import"],
+        types: regularTypes || [...ONE_TIME_JOB_TYPES],
       });
       if (regularJob) {
         return regularJob;
@@ -367,7 +369,7 @@ function createWorker(config: WorkerConfig = {}): Worker {
   }
 
   // Default claim function - tries different job types in priority order:
-  // 1. Regular jobs (process_opml_import) - user-triggered, highest priority
+  // 1. Regular jobs (ONE_TIME_JOB_TYPES) - user/push-triggered, highest priority
   // 2. Feed jobs (fetch_feed) and singleton jobs (renew_websub, etc.) - the
   //    order between these two is round-robined so a fetch_feed backlog can't
   //    starve singleton maintenance (see SINGLETON_PRIORITY_INTERVAL).
@@ -485,6 +487,11 @@ function createWorker(config: WorkerConfig = {}): Worker {
         case "process_opml_import": {
           const payload = getJobPayload<"process_opml_import">(job);
           result = await handleProcessOpmlImport(payload);
+          break;
+        }
+        case "fetch_full_content": {
+          const payload = getJobPayload<"fetch_full_content">(job);
+          result = await handleFetchFullContent(payload);
           break;
         }
         default: {

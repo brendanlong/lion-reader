@@ -77,6 +77,9 @@ export interface JobPayloads {
   fetch_feed: { feedId: string; forceReprocessRequestedAt?: string };
   renew_websub: Record<string, never>; // Empty payload - renews all expiring subscriptions
   process_opml_import: { importId: string }; // Process an OPML import in the background
+  // Fetch full content for entries a WebSub push just created, off the hub's
+  // callback request. See handlers/fetch-full-content.ts.
+  fetch_full_content: { feedId: string; entryIds: string[] };
   // Periodic feed fetch health check. Empty payload — alert cadence and
   // de-duplication are owned by the external healthchecks.io monitor, so no
   // state is carried across runs.
@@ -94,6 +97,21 @@ export interface JobPayloads {
 }
 
 export type JobType = keyof JobPayloads;
+
+/**
+ * One-time job types: each row is a single task, created by `createJob`, claimed
+ * ahead of feed and singleton jobs (they're user- or push-triggered and
+ * latency-sensitive), and parked `ONE_TIME_JOB_PARK_MS` out when done — whatever
+ * the outcome, they must not run again. The retention cleanup sweeps parked rows
+ * (see src/server/services/retention.ts).
+ */
+export const ONE_TIME_JOB_TYPES = [
+  "process_opml_import",
+  "fetch_full_content",
+] as const satisfies readonly JobType[];
+
+/** How far out a finished one-time job parks itself (see {@link ONE_TIME_JOB_TYPES}). */
+export const ONE_TIME_JOB_PARK_MS = 365 * 24 * 60 * 60 * 1000;
 
 /**
  * Stale job threshold in milliseconds.
@@ -241,7 +259,7 @@ export async function createJob<T extends JobType>(options: CreateJobOptions<T>)
  * - next_run_at <= now
  * - running_since is NULL OR older than stale threshold (5 minutes)
  *
- * Note: This only claims non-feed jobs (process_opml_import, etc.).
+ * Note: This only claims non-feed jobs (the `ONE_TIME_JOB_TYPES`).
  * Feed jobs are claimed via claimFeedJob() which checks for active subscribers.
  *
  * @param options Claim options (optional type filter)

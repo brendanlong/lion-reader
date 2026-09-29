@@ -936,7 +936,7 @@ export const jobs = pgTable(
   "jobs",
   {
     id: uuid("id").primaryKey(),
-    type: text("type").notNull(), // 'fetch_feed', 'renew_websub', 'process_opml_import'
+    type: text("type").notNull(), // a JobType (see JobPayloads in src/server/jobs/queue.ts)
     payload: jsonb("payload").notNull().default({}).$type<Record<string, unknown>>(),
 
     // Scheduling state

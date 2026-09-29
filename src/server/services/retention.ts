@@ -30,6 +30,7 @@ import {
   opmlImports,
   sessions,
 } from "../db/schema";
+import { ONE_TIME_JOB_TYPES } from "../jobs/queue";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -47,9 +48,9 @@ const EXPIRY_GRACE_MS = DAY_MS;
 const REVOKED_RETENTION_MS = 30 * DAY_MS;
 
 /**
- * One-time jobs are "parked" after completion by scheduling them far in the
- * future (365 days; see handleProcessOpmlImport). Anything scheduled further
- * out than this threshold is such a parked job and can be deleted.
+ * One-time jobs are "parked" after completion by scheduling them
+ * `ONE_TIME_JOB_PARK_MS` into the future. Anything scheduled further out than
+ * this threshold is such a parked job and can be deleted.
  */
 const PARKED_JOB_THRESHOLD_MS = 180 * DAY_MS;
 
@@ -157,7 +158,7 @@ export async function runRetentionCleanup(db: Database): Promise<RetentionCleanu
     .delete(jobs)
     .where(
       and(
-        eq(jobs.type, "process_opml_import"),
+        inArray(jobs.type, [...ONE_TIME_JOB_TYPES]),
         isNull(jobs.runningSince),
         gt(jobs.nextRunAt, parkedCutoff)
       )
