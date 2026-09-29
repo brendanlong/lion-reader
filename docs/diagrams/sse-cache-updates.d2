@@ -125,7 +125,7 @@ sse-endpoint: SSE Endpoint {
       Feed Events:
       - Transform feedId → subscriptionId (null for saved)
       - new_entry: compute this user's absolute unread
-        counts (getNewEntryRelatedCounts) and attach them,
+        counts (getBulkEntryRelatedCounts) and attach them,
         so the client sets counts directly (idempotent, #892)
       - Include feedType for cache decisions
 

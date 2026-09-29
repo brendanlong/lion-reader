@@ -27,11 +27,7 @@ import { subscriptions } from "@/server/db/schema";
 import { validateSession } from "@/server/auth/session";
 import { extractBearerToken } from "@/server/auth/bearer";
 import { getSavedFeedId } from "@/server/feed/saved-feed";
-import {
-  getNewEntryRelatedCounts,
-  toBulkUnreadCounts,
-  type NewEntryUnreadCounts,
-} from "@/server/services/counts";
+import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
 import {
   createPubSubSubscription,
   getFeedEventsChannel,
@@ -430,11 +426,11 @@ export async function GET(req: Request): Promise<Response> {
             // order as the per-subscriber user_entries inserts the worker
             // already does for each new entry.
             enqueueSend(async () => {
-              let counts: NewEntryUnreadCounts | undefined;
+              let counts: BulkUnreadCounts | undefined;
               try {
-                counts = toBulkUnreadCounts(
-                  await getNewEntryRelatedCounts(db, userId, event.feedType, subscriptionId)
-                );
+                counts = await getBulkEntryRelatedCounts(db, userId, [
+                  { subscriptionId, type: event.feedType },
+                ]);
               } catch (err) {
                 // Leave counts off; the client skips the count update and it
                 // self-heals on the next count-bearing event or refetch.

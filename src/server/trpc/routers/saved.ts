@@ -30,7 +30,8 @@ import { errors } from "../errors";
 import { uuidSchema } from "../validation";
 import { usageLimitsConfig } from "@/server/config/env";
 import { logger } from "@/lib/logger";
-import * as countsService from "@/server/services/counts";
+import type { DbOrTx } from "@/server/db";
+import { getGlobalUnreadCounts } from "@/server/services/counts";
 import * as savedService from "@/server/services/saved";
 import {
   convertUploadedFile,
@@ -86,6 +87,22 @@ const savedUnreadCountsSchema = z.object({
   starred: z.object({ unread: z.number() }),
   saved: z.object({ unread: z.number() }),
 });
+
+/**
+ * The absolute counts a saved-article mutation affects: saved articles have no
+ * subscription or tags, so only the global counters move.
+ */
+async function getSavedUnreadCounts(
+  db: DbOrTx,
+  userId: string
+): Promise<z.infer<typeof savedUnreadCountsSchema>> {
+  const counts = await getGlobalUnreadCounts(db, userId);
+  return {
+    all: { unread: counts.allUnread },
+    starred: { unread: counts.starredUnread },
+    saved: { unread: counts.savedUnread },
+  };
+}
 
 // ============================================================================
 // Router
@@ -158,19 +175,7 @@ export const savedRouter = createTRPCRouter({
         googleDocsAuth: "interactive",
       });
 
-      const counts =
-        article.outcome === "created"
-          ? await countsService.getNewEntryRelatedCounts(ctx.db, userId, "saved", null)
-          : await countsService.getEntryRelatedCounts(ctx.db, userId, article.id);
-
-      return {
-        article,
-        counts: {
-          all: counts.all,
-          starred: counts.starred,
-          saved: counts.saved!,
-        },
-      };
+      return { article, counts: await getSavedUnreadCounts(ctx.db, userId) };
     }),
 
   /**
@@ -307,16 +312,6 @@ export const savedRouter = createTRPCRouter({
         title: article.title,
       });
 
-      // Get counts after creating new entry
-      const counts = await countsService.getNewEntryRelatedCounts(ctx.db, userId, "saved", null);
-
-      return {
-        article,
-        counts: {
-          all: counts.all,
-          starred: counts.starred,
-          saved: counts.saved!,
-        },
-      };
+      return { article, counts: await getSavedUnreadCounts(ctx.db, userId) };
     }),
 });

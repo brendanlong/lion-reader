@@ -25,18 +25,8 @@ import { sanitizeEntryContentFamily } from "@/server/html/sanitize-entry";
 import { errors } from "@/server/trpc/errors";
 import { publishMarkAllRead } from "@/server/redis/pubsub";
 import { createCursorCodec, cursorUuid } from "./cursor";
-import {
-  getBulkEntryRelatedCounts,
-  getEntryRelatedCounts,
-  getGlobalUnreadCounts,
-  type BulkUnreadCounts,
-  type UnreadCounts,
-} from "./counts";
-import {
-  publishMarkReadStateChanges,
-  publishStarredStateChange,
-  publishStarredStateChanges,
-} from "./entry-events";
+import { getBulkEntryRelatedCounts, getGlobalUnreadCounts, type BulkUnreadCounts } from "./counts";
+import { publishMarkReadStateChanges, publishStarredStateChanges } from "./entry-events";
 import {
   buildEntrySubscriptionFilter,
   buildEntryFilterConditions,
@@ -1218,35 +1208,63 @@ async function selectStarredEntryStates(
 }
 
 /**
- * Stars or unstars an entry.
+ * Stars or unstars a single entry: {@link updateEntriesStarred} for one id,
+ * returning its final state (`counts` absent unless the value flipped).
+ *
+ * @throws entryNotFound when the user has no such entry
+ */
+export async function updateEntryStarred(
+  db: DbOrTx,
+  userId: string,
+  entryId: string,
+  starred: boolean,
+  changedAt: Date = new Date()
+): Promise<{ entry: EntryState; counts?: BulkUnreadCounts }> {
+  const result = await updateEntriesStarred(db, userId, [entryId], starred, changedAt);
+  const row = result.entries[0];
+  if (!row) {
+    throw errors.entryNotFound();
+  }
+
+  // Narrow to EntryState rather than passing the row through: the shared
+  // read-back also carries `subscriptionId`/`type`, which this function's
+  // callers (tRPC, MCP, Wallabag) serialize straight to the client.
+  const entry: EntryState = {
+    id: row.id,
+    read: row.read,
+    starred: row.starred,
+    updatedAt: row.updatedAt,
+  };
+  return { entry, counts: result.counts };
+}
+
+/**
+ * Stars or unstars entries, applying a single starred value to many entries in
+ * one `UPDATE ... FROM` instead of issuing one statement per entry (the Google
+ * Reader `edit-tag` endpoint can carry up to 1000 item ids in a single call,
+ * issue #1266).
  *
  * Uses idempotent updates: only applies if changedAt is newer than the stored
- * starred_changed_at timestamp. This prevents stale updates from overwriting newer state.
- *
- * Returns the entry's final state plus the absolute unread counts for every
- * affected list. Counts are computed once here and both returned and published,
- * so callers don't re-query them.
+ * starred_changed_at timestamp. This prevents stale updates from overwriting
+ * newer state.
  *
  * A row being written is not the same as the starred value changing (issue
  * #1118): re-asserting a state the entry already has still writes the row to
  * advance the `starred_changed_at` last-write-wins watermark — dropping that
  * write would let an older conflicting update win later — but the count
- * aggregation runs and the SSE event publishes only when the value actually
- * flipped. `counts` is undefined otherwise; callers treat "no counts" as
- * "counts didn't change".
+ * aggregation runs and the SSE event publishes only for entries whose value
+ * actually flipped. `counts` is undefined when nothing flipped; callers treat
+ * "no counts" as "counts didn't change". Mirrors {@link markEntriesRead}: a
+ * self-join on `prev` captures each row's pre-update starred value in the same
+ * statement (RETURNING only sees new values before PG 18's `old.*`), avoiding a
+ * pre-SELECT's TOCTOU window; `updated_at` (the delta-sync "meaningful change"
+ * timestamp) advances only on a real flip, so a same-value re-assert never
+ * re-delivers the entry to offline/polling clients.
  *
- * As in markEntriesRead (issue #1118 Part 2), `starred_changed_at` is the
- * last-writer-wins watermark (advances on every accepted write) while `updated_at`
- * is the delta-sync "meaningful change" timestamp and moves ONLY on a real flip,
- * so a same-value re-assert never re-delivers the entry to offline/polling clients.
- *
- * Publishes an `entry_state_changed` SSE event when the star state actually
- * changed, so a user's other tabs/devices stay in sync regardless of which
- * surface (tRPC, MCP, Google Reader, Wallabag) issued the change. Publishing
- * lives here — not at each API boundary — so every current and future caller
- * notifies other tabs for free. An idempotent replay (an older `changedAt`
- * losing the `starred_changed_at <= changedAt` guard) updates no rows, and a
- * same-value re-assert flips nothing; neither publishes. Fire and forget.
+ * Counts are computed once here and both returned and published, so callers
+ * don't re-query them. Publishing `entry_state_changed` lives here — not at
+ * each API boundary — so every surface (tRPC, MCP, Google Reader, Wallabag)
+ * notifies the user's other tabs/devices for free. Fire and forget.
  *
  * This publishes after the (autocommitted) UPDATE completes. Today's callers
  * pass the global `db`, so that's always post-commit. If a future caller runs
@@ -1254,88 +1272,6 @@ async function selectStarredEntryStates(
  * rolled-back change can't emit a phantom event.
  *
  * @param changedAt - When the user initiated the action. Defaults to now.
- */
-export async function updateEntryStarred(
-  db: typeof dbType,
-  userId: string,
-  entryId: string,
-  starred: boolean,
-  changedAt: Date = new Date()
-): Promise<{ entry: EntryState; counts?: UnreadCounts }> {
-  // Conditional update: only apply if incoming timestamp is newer or equal
-  // (starred_changed_at is NOT NULL with a default, so no NULL guard needed).
-  // Date params bind un-cast here because SET/WHERE column context supplies the
-  // timestamptz type — unlike markEntriesRead's bare VALUES tuples, which need
-  // an explicit ::timestamptz cast.
-  // The self-join on `prev` captures the pre-update starred value in the same
-  // statement (RETURNING only sees new values before PG 18's `old.*`), so we
-  // can tell a real flip from a same-value watermark bump without a separate
-  // pre-SELECT and its wider TOCTOU window.
-  // `updated_at` is the "meaningful change" timestamp that drives delta sync
-  // (see markEntriesRead), so it moves ONLY when the starred value actually
-  // flips — a same-value re-assert must not re-deliver the entry (issue #1118
-  // Part 2). The `starred_changed_at` last-writer-wins watermark is a separate
-  // column and still advances on every accepted write.
-  const updated = await db.execute<{ old_starred: boolean }>(sql`
-    UPDATE user_entries AS ue
-    SET starred = ${starred},
-        starred_changed_at = ${changedAt},
-        updated_at = CASE WHEN prev.starred <> ${starred} THEN ${new Date()} ELSE ue.updated_at END
-    FROM user_entries AS prev
-    WHERE ue.user_id = ${userId}::uuid
-      AND ue.entry_id = ${entryId}::uuid
-      AND prev.user_id = ue.user_id
-      AND prev.entry_id = ue.entry_id
-      AND ue.starred_changed_at <= ${changedAt}
-    RETURNING prev.starred AS old_starred
-  `);
-  // The starred value actually flipped only if a row was written AND its old
-  // value differed. A same-value write advanced the watermark above.
-  const flipped = updated.rows.length > 0 && updated.rows[0].old_starred !== starred;
-
-  // Always resolve the final state from `user_entries`, never `visible_entries`
-  // — unstarring an orphan removes it from the view (see
-  // selectStarredEntryStates). A missing `user_entries` row is still not-found.
-  const result = await selectStarredEntryStates(db, userId, [entryId]);
-
-  if (result.length === 0) {
-    throw errors.entryNotFound();
-  }
-
-  // Narrow to EntryState rather than passing the row through: the shared
-  // read-back also carries `subscriptionId`/`type`, which this function's
-  // callers (tRPC, MCP, Wallabag) serialize straight to the client.
-  const row = result[0];
-  const entry: EntryState = {
-    id: row.id,
-    read: row.read,
-    starred: row.starred,
-    updatedAt: row.updatedAt,
-  };
-
-  // Compute absolute counts once, for both the return value and the SSE
-  // publish — but only when the value actually flipped; a re-assert changes no
-  // count, so the aggregation would be wasted work (issue #1118).
-  const counts = flipped ? await getEntryRelatedCounts(db, userId, entryId) : undefined;
-
-  // Notify the user's other tabs/devices when the star state actually flipped.
-  // See the function doc for publish/transaction ordering. Fire and forget.
-  if (flipped && counts) {
-    publishStarredStateChange(userId, entry, counts);
-  }
-
-  return { entry, counts };
-}
-
-/**
- * Bulk star/unstar: applies a single starred value to many entries in one
- * `UPDATE ... FROM` instead of issuing one statement per entry. Used by the
- * Google Reader `edit-tag` endpoint, which can carry up to 1000 item ids in a
- * single call (issue #1266). Mirrors {@link markEntriesRead}: a self-join on
- * `prev` captures each row's pre-update starred value so we can tell a real
- * flip from a same-value watermark bump, `updated_at` (the delta-sync
- * visibility timestamp) advances only on a real flip, and `starred_changed_at`
- * (the last-writer-wins watermark) advances on every accepted write.
  */
 export async function updateEntriesStarred(
   db: DbOrTx,
@@ -1376,10 +1312,9 @@ export async function updateEntriesStarred(
     updated.rows.filter((row) => row.old_starred !== starred).map((row) => row.entry_id)
   );
 
-  // Resolved from `user_entries`, not `visible_entries`, for the same reason as
-  // the single-entry path: unstarring an orphan drops it out of the view, and a
-  // silently empty read-back here would skip the counts and the SSE publish
-  // (see selectStarredEntryStates).
+  // Resolved from `user_entries`, not `visible_entries`: unstarring an orphan
+  // drops it out of the view, and a silently empty read-back here would skip
+  // the counts and the SSE publish (see selectStarredEntryStates).
   const entriesState = await selectStarredEntryStates(db, userId, entryIds);
 
   // Only entries whose starred value actually flipped warrant SSE events and

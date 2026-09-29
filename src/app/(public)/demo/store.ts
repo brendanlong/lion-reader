@@ -26,7 +26,6 @@ type ListItem = Outputs["entries"]["list"]["items"][number];
 type FullEntry = Outputs["entries"]["get"]["entry"];
 type Subscription = Outputs["subscriptions"]["get"];
 type BulkUnreadCounts = NonNullable<Outputs["entries"]["markRead"]["counts"]>;
-type UnreadCounts = NonNullable<Outputs["entries"]["setStarred"]["counts"]>;
 type EntryType = ListItem["type"];
 
 /** A single-tRPC-procedure handler typed from the router. */
@@ -307,23 +306,6 @@ export function createDemoStore(): DemoStore {
     };
   }
 
-  /** Absolute counts for every list one entry (or one subscription) belongs to. */
-  function countsForSubscription(
-    sub: SubscriptionState | undefined,
-    type: EntryType | undefined
-  ): UnreadCounts {
-    const { all, starred, saved } = globalCounts();
-    return {
-      all,
-      starred,
-      saved: type === "saved" || type === undefined ? saved : undefined,
-      subscription: sub ? { id: sub.id, unread: unread({ subscriptionId: sub.id }) } : undefined,
-      tags: sub ? sub.tagIds.map((id) => ({ id, unread: unread({ tagId: id }) })) : undefined,
-      uncategorized:
-        sub && sub.tagIds.length === 0 ? { unread: unread({ uncategorized: true }) } : undefined,
-    };
-  }
-
   function requireEntry(id: string): EntryState {
     const state = entries.get(id);
     if (!state || !isVisible(state)) throw procedureError("NOT_FOUND", "Entry not found");
@@ -463,6 +445,7 @@ export function createDemoStore(): DemoStore {
         state.starred = input.starred;
         state.updatedAt = new Date();
       }
+      const sub = subscriptionOf(state);
       return {
         entry: {
           id: state.entry.id,
@@ -470,9 +453,7 @@ export function createDemoStore(): DemoStore {
           starred: state.starred,
           updatedAt: state.updatedAt,
         },
-        counts: flipped
-          ? countsForSubscription(subscriptionOf(state), state.entry.type)
-          : undefined,
+        counts: flipped ? countsForSubscriptions(sub ? [sub] : []) : undefined,
       };
     },
 

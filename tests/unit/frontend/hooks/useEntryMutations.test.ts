@@ -19,7 +19,7 @@ import { act, cleanup, waitFor } from "@testing-library/react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
-import type { BulkUnreadCounts, UnreadCounts } from "@/lib/cache/operations";
+import type { BulkUnreadCounts } from "@/lib/cache/operations";
 import { getEntryMutationTracker } from "@/lib/cache/entry-mutation-tracker";
 import { updateEntriesInListCache } from "@/lib/cache/entry-cache";
 import {
@@ -43,14 +43,6 @@ function bulkCounts(overrides: Partial<BulkUnreadCounts> = {}): BulkUnreadCounts
     saved: { unread: 0 },
     subscriptions: [],
     tags: [],
-    ...overrides,
-  };
-}
-
-function singleCounts(overrides: Partial<UnreadCounts> = {}): UnreadCounts {
-  return {
-    all: { unread: 0 },
-    starred: { unread: 0 },
     ...overrides,
   };
 }
@@ -278,7 +270,7 @@ describe("useEntryMutations star/unstar", () => {
             const typed = input as { id: string; starred: boolean };
             return {
               entry: { id: typed.id, read: false, starred: typed.starred, updatedAt: fixedDate },
-              counts: singleCounts({ all: { unread: 4 }, starred: { unread: 7 } }),
+              counts: bulkCounts({ all: { unread: 4 }, starred: { unread: 7 } }),
             };
           },
         },
@@ -299,7 +291,7 @@ describe("useEntryMutations star/unstar", () => {
       expect.objectContaining({ id: "e1", starred: true, changedAt: expect.any(Date) })
     );
 
-    // onSuccess ran setCounts against the real cache with the server's numbers.
+    // onSuccess ran setBulkCounts against the real cache with the server's numbers.
     await waitFor(() =>
       expect(result.current.utils.entries.count.getData({ starredOnly: true })).toEqual({
         unread: 7,
@@ -315,7 +307,7 @@ describe("useEntryMutations star/unstar", () => {
           const typed = input as { id: string; starred: boolean };
           return {
             entry: { id: typed.id, read: false, starred: typed.starred, updatedAt: fixedDate },
-            counts: singleCounts(),
+            counts: bulkCounts(),
           };
         },
       },
@@ -532,7 +524,7 @@ describe("useEntryMutations concurrent mutations", () => {
       "entries.markRead": markRead.handler,
       "entries.setStarred": (input: { id: string }) => ({
         entry: { id: input.id, read: false, starred: true, updatedAt: t1 },
-        counts: singleCounts(),
+        counts: bulkCounts(),
       }),
     });
 

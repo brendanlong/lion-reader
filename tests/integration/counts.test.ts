@@ -20,7 +20,7 @@ import {
   userEntries,
 } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
-import { getEntryRelatedCounts, getBulkEntryRelatedCounts } from "../../src/server/services/counts";
+import { getBulkEntryRelatedCounts } from "../../src/server/services/counts";
 import {
   createTestEntry,
   createTestFeed,
@@ -76,59 +76,16 @@ describe("Entry counts service", () => {
   beforeEach(cleanup);
   afterAll(cleanup);
 
-  describe("getEntryRelatedCounts", () => {
-    it("deduplicates tag counts for entries reachable through multiple subscriptions", async () => {
-      const userId = await createTestUser();
-      const { subId1, subId2, entryIdB } = await createOverlappingSubscriptions(userId);
-      const tagId = await createTestTag(userId, {
-        name: "Tech",
-        subscriptionIds: [subId1, subId2],
-      });
-
-      const counts = await getEntryRelatedCounts(db, userId, entryIdB);
-
-      expect(counts.tags).toEqual([{ id: tagId, unread: 2 }]);
-    });
-
-    it("deduplicates the uncategorized count for entries reachable through multiple subscriptions", async () => {
-      const userId = await createTestUser();
-      const { entryIdB } = await createOverlappingSubscriptions(userId);
-
-      const counts = await getEntryRelatedCounts(db, userId, entryIdB);
-
-      expect(counts.tags).toEqual([]);
-      expect(counts.uncategorized).toEqual({ unread: 2 });
-    });
-
-    it("returns tags with unread 0 when the subscription's tags have no unread entries left", async () => {
-      // Regression test: the tag counts query only groups over unread entries,
-      // so when the last unread entry of a tagged subscription is read, the
-      // tag produced no row and the (empty) result was misread as "the
-      // subscription has no tags", returning the uncategorized count instead.
-      // The client sets counts absolutely, so the tag badge went stale.
-      const userId = await createTestUser();
-      const feedId = await createTestFeed({ url: "https://events.com/rss" });
-      const subId = await createTestSubscription(userId, feedId);
-      const tagId = await createTestTag(userId, { name: "Events", subscriptionIds: [subId] });
-      const entryId = await createTestEntry(feedId, { userIds: [userId] });
-      await markEntryRead(userId, entryId);
-
-      const counts = await getEntryRelatedCounts(db, userId, entryId);
-
-      expect(counts.subscription).toEqual({ id: subId, unread: 0 });
-      expect(counts.tags).toEqual([{ id: tagId, unread: 0 }]);
-      expect(counts.uncategorized).toBeUndefined();
-    });
-
-    it("returns the real global counts when the entry is not visible to the user", async () => {
+  describe("global and tag counts", () => {
+    it("returns the real global counts when no subscription is affected", async () => {
       // A caller patching these into the cache must not zero the user's
-      // badges just because the target entry wasn't visible (issue #956).
+      // badges just because no affected entry was resolved (issue #956).
       const userId = await createTestUser();
       const feedId = await createTestFeed({ url: "https://mine.com/rss" });
       await createTestSubscription(userId, feedId);
       await createTestEntry(feedId, { userIds: [userId] }); // one real unread entry
 
-      const counts = await getEntryRelatedCounts(db, userId, generateUuidv7());
+      const counts = await getBulkEntryRelatedCounts(db, userId, []);
 
       expect(counts.all).toEqual({ unread: 1 });
       expect(counts.starred).toEqual({ unread: 0 });
@@ -140,9 +97,11 @@ describe("Entry counts service", () => {
       // 1:1 attribution the view emits one row per (user, entry), so the two
       // distinct unread entries count as exactly 2.
       const userId = await createTestUser();
-      const { entryIdB } = await createOverlappingSubscriptions(userId);
+      const { subId2 } = await createOverlappingSubscriptions(userId);
 
-      const counts = await getEntryRelatedCounts(db, userId, entryIdB);
+      const counts = await getBulkEntryRelatedCounts(db, userId, [
+        { subscriptionId: subId2, type: "web" },
+      ]);
 
       expect(counts.all).toEqual({ unread: 2 });
     });
@@ -153,8 +112,8 @@ describe("Entry counts service", () => {
       // exclude them.
       const userId = await createTestUser();
       const activeFeedId = await createTestFeed({ url: "https://active.com/rss" });
-      await createTestSubscription(userId, activeFeedId);
-      const activeEntryId = await createTestEntry(activeFeedId, { userIds: [userId] });
+      const activeSubId = await createTestSubscription(userId, activeFeedId);
+      await createTestEntry(activeFeedId, { userIds: [userId] });
 
       // A feed the user has unsubscribed from, with an unread (non-starred,
       // non-saved) entry whose user_entries row still exists.
@@ -171,7 +130,9 @@ describe("Entry counts service", () => {
       });
       await createTestEntry(goneFeedId, { userIds: [userId] });
 
-      const counts = await getEntryRelatedCounts(db, userId, activeEntryId);
+      const counts = await getBulkEntryRelatedCounts(db, userId, [
+        { subscriptionId: activeSubId, type: "web" },
+      ]);
 
       expect(counts.all).toEqual({ unread: 1 });
     });
@@ -200,7 +161,9 @@ describe("Entry counts service", () => {
         starred: true,
       });
 
-      const counts = await getEntryRelatedCounts(db, userId, starredEntryId);
+      const counts = await getBulkEntryRelatedCounts(db, userId, [
+        { subscriptionId: goneSubId, type: "web" },
+      ]);
 
       expect(counts.all).toEqual({ unread: 1 });
       expect(counts.starred).toEqual({ unread: 1 });
@@ -215,10 +178,12 @@ describe("Entry counts service", () => {
       await createTestSubscription(otherUserId, feedId);
       const tagId = await createTestTag(userId, { name: "Mine", subscriptionIds: [subId] });
 
-      const entryId = await createTestEntry(feedId, { userIds: [userId, otherUserId] });
+      await createTestEntry(feedId, { userIds: [userId, otherUserId] });
       await createTestEntry(feedId, { userIds: [otherUserId] });
 
-      const counts = await getEntryRelatedCounts(db, userId, entryId);
+      const counts = await getBulkEntryRelatedCounts(db, userId, [
+        { subscriptionId: subId, type: "web" },
+      ]);
 
       expect(counts.tags).toEqual([{ id: tagId, unread: 1 }]);
     });
