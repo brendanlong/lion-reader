@@ -78,9 +78,9 @@ right shape. The app needs it over `/api/v1`, plus:
   just vanish.
 - **Cursor too old → `resync_required`** so the client drops its window and
   re-bootstraps.
-- **Batch content fetch** (`entries.getMany`, ids → sanitized content variants
-  - narration paragraphs, see below). The service `getEntries` already exists
-    for the compat APIs.
+- **Batch content fetch** (`entries.getMany`: ids in; sanitized content
+  variants and narration paragraphs out, see below). The service `getEntries`
+  already exists for the compat APIs.
 
 Client:
 
