@@ -785,7 +785,7 @@ const narrationPlaybackStartedTotal = getOrCreate(Counter, {
 /**
  * Enhanced voice download error types.
  * - network: Network or fetch error
- * - storage: IndexedDB or quota error
+ * - storage: origin private file system or quota error
  * - unknown: Unknown error type
  */
 export type EnhancedVoiceDownloadErrorType = "network" | "storage" | "unknown";

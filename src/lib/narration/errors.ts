@@ -108,7 +108,7 @@ export function classifyVoiceError(error: unknown): VoiceErrorType {
   const message = error.message.toLowerCase();
   const name = error.name.toLowerCase();
 
-  // Check for quota exceeded errors (IndexedDB storage limit)
+  // Check for quota exceeded errors (origin private file system storage limit)
   if (
     name === "quotaexceedederror" ||
     name.includes("quota") ||
