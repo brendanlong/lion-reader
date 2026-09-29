@@ -8,14 +8,16 @@
  * *reference* as its own base64 copy. A few-KB upload can therefore cost
  * gigabytes, while our VMs have 512MB. So the conversion runs in a worker thread
  * with a V8 heap cap (an OOM kills only the worker and surfaces as
- * CONTENT_TOO_LARGE), one at a time per process, under a timeout, behind two
- * cheap pre-checks that reject the obvious cases without spawning anything.
+ * CONTENT_TOO_LARGE), one at a time per process behind a bounded queue, under a
+ * deadline, behind two cheap pre-checks that reject the obvious cases without
+ * spawning anything.
  *
  * The worker is `eval`'d from a string and resolves mammoth from the working
  * directory's node_modules, so it needs no entry file of its own: that keeps it
  * working unchanged under Next's server build, the esbuild CommonJS bundles
  * (`dist/`), and tsx/vitest. The price is that no bundler sees the dependency —
- * `scripts/fixup-standalone.mjs` copies mammoth into the production image.
+ * `scripts/fixup-standalone.mjs` copies mammoth into the production image and
+ * fails the build if it can't convert a document from there.
  */
 
 import { Worker } from "node:worker_threads";
@@ -29,25 +31,37 @@ import { errors } from "@/server/trpc/errors";
  * Inflated-size budgets, as multiples of the saved-article size limit (5MB by
  * default).
  *
- * XML parts get 2x: ordinary prose inflates to roughly 0.75 bytes of HTML per
- * byte of `document.xml`, so a document past this renders to more than the
- * saved-article limit and would be rejected after conversion anyway. Media gets
- * the rest of a 10x budget — a real document's images barely compress, so they
- * inflate close to their stored size.
+ * Everything outside `word/media/` gets 2x. mammoth finds the main document
+ * through the package relationships, not by name or extension, so any part may
+ * be the one it parses; and ordinary prose inflates to roughly 0.75 bytes of
+ * HTML per byte of `document.xml`, so a document past this renders to more than
+ * the saved-article limit and would be rejected after conversion anyway. Media
+ * gets the rest of a 10x budget — a real document's images barely compress, so
+ * they inflate close to their stored size.
  */
-const DOCX_MAX_XML_FACTOR = 2;
+const DOCX_MAX_TEXT_FACTOR = 2;
 const DOCX_MAX_INFLATION_FACTOR = 10;
+const MEDIA_PREFIX = "word/media/";
 
 /**
- * Worker heap cap — the real bound on what converts. Measured: plain prose (a
- * few long runs per paragraph) converts up to the XML budget; Word-style markup
- * (many short runs with rsids per paragraph) converts to ~3MB of `document.xml`,
- * a few hundred pages; dense tiny elements stop near 1MB. A conversion that hits
- * the cap costs ~150MB of RSS before its worker dies.
+ * The worker's heap cap (`usageLimitsConfig.docxWorkerMaxHeapMb`, 128MB by
+ * default) is the real bound on what converts. Measured at 128MB: plain prose
+ * (a few long runs per paragraph) converts up to the text budget; Word-style
+ * markup (many short runs with rsids per paragraph) converts to ~3MB of
+ * `document.xml`, a few hundred pages; dense tiny elements stop near 1MB. A
+ * conversion that hits the cap costs ~150MB of RSS before its worker dies.
  */
-const WORKER_RESOURCE_LIMITS = { maxOldGenerationSizeMb: 128, maxYoungGenerationSizeMb: 16 };
+const MAX_YOUNG_GENERATION_MB = 16;
 
-const CONVERSION_TIMEOUT_MS = 20_000;
+/** Counted from when the conversion is queued, not from when it starts. */
+const CONVERSION_DEADLINE_MS = 20_000;
+
+/**
+ * Conversions allowed to wait behind the running one. Each waiter holds its
+ * upload (up to the saved-article limit) in memory, and one past this would
+ * likely miss its deadline anyway.
+ */
+const MAX_QUEUED_CONVERSIONS = 4;
 
 /**
  * mammoth reads and base64-encodes an image once per reference, not once per
@@ -80,10 +94,7 @@ const convertImage = mammoth.images.imgElement(async (image) => {
 });
 
 mammoth
-  .convertToHtml(
-    { buffer: Buffer.from(workerData.buffer) },
-    { styleMap: workerData.styleMap, convertImage }
-  )
+  .convertToHtml({ buffer: workerData.buffer }, { styleMap: workerData.styleMap, convertImage })
   .then(
     (result) =>
       parentPort.postMessage(
@@ -106,11 +117,6 @@ type WorkerResult =
   | { ok: true; html: string; messages: string[] }
   | { ok: false; imageBudgetExceeded: boolean; message: string };
 
-function isXmlPart(name: string): boolean {
-  const lower = name.toLowerCase();
-  return lower.endsWith(".xml") || lower.endsWith(".rels");
-}
-
 /**
  * Throws `CONTENT_TOO_LARGE` if the archive's entries inflate past the budgets.
  *
@@ -119,21 +125,21 @@ function isXmlPart(name: string): boolean {
  * running total crosses its budget, so rejecting a bomb costs at most the budget.
  */
 async function assertInflatedSizeWithinBudget(buffer: Buffer): Promise<void> {
-  const maxXml = usageLimitsConfig.maxSavedArticleSizeBytes * DOCX_MAX_XML_FACTOR;
+  const maxText = usageLimitsConfig.maxSavedArticleSizeBytes * DOCX_MAX_TEXT_FACTOR;
   const maxTotal = usageLimitsConfig.maxSavedArticleSizeBytes * DOCX_MAX_INFLATION_FACTOR;
   const zip = await JSZip.loadAsync(buffer);
 
-  let xml = 0;
+  let text = 0;
   let total = 0;
   for (const entry of Object.values(zip.files)) {
     if (entry.dir) continue;
-    const isXml = isXmlPart(entry.name);
-    const remaining = isXml ? Math.min(maxXml - xml, maxTotal - total) : maxTotal - total;
+    const isText = !entry.name.startsWith(MEDIA_PREFIX);
+    const remaining = isText ? Math.min(maxText - text, maxTotal - total) : maxTotal - total;
     const bytes = await countInflatedBytes(entry, remaining);
     total += bytes;
-    if (isXml) xml += bytes;
-    if (xml > maxXml) {
-      throw errors.contentTooLarge("Decompressed .docx text", maxXml);
+    if (isText) text += bytes;
+    if (text > maxText) {
+      throw errors.contentTooLarge("Decompressed .docx text", maxText);
     }
     if (total > maxTotal) {
       throw errors.contentTooLarge("Decompressed .docx content", maxTotal);
@@ -161,56 +167,18 @@ function countInflatedBytes(entry: JSZip.JSZipObject, budget: number): Promise<n
   });
 }
 
-/**
- * One conversion at a time per process: each may use the whole worker heap
- * cap, so parallel uploads must queue rather than stack.
- */
-let conversionQueue: Promise<unknown> = Promise.resolve();
-
-function runExclusive<T>(task: () => Promise<T>): Promise<T> {
-  const run = conversionQueue.then(task, task);
-  conversionQueue = run.catch(() => {});
-  return run;
-}
-
-function runWorker(buffer: Buffer): Promise<WorkerResult> {
-  return new Promise((resolve, reject) => {
-    const worker = new Worker(WORKER_SOURCE, {
-      eval: true,
-      workerData: {
-        buffer,
-        styleMap: STYLE_MAP,
-        imageBudget: imageBudgetBytes(),
-        resolveFrom: join(process.cwd(), "package.json"),
-      },
-      resourceLimits: WORKER_RESOURCE_LIMITS,
-    });
-
-    let settled = false;
-    const settle = (fn: () => void): void => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      fn();
-      void worker.terminate();
-    };
-
-    const timer = setTimeout(() => {
-      settle(() => reject(new DocxConversionTimeoutError()));
-    }, CONVERSION_TIMEOUT_MS);
-
-    worker.once("message", (result: WorkerResult) => settle(() => resolve(result)));
-    worker.once("error", (error: Error) => settle(() => reject(error)));
-    worker.once("exit", (code) =>
-      settle(() => reject(new Error(`docx conversion worker exited with code ${code}`)))
-    );
-  });
-}
-
-class DocxConversionTimeoutError extends Error {
+class DeadlineExceededError extends Error {
   constructor() {
-    super(`.docx conversion exceeded ${CONVERSION_TIMEOUT_MS}ms`);
-    this.name = "DocxConversionTimeoutError";
+    super(".docx conversion missed its deadline");
+    this.name = "DeadlineExceededError";
+  }
+}
+
+/** The worker crashed or couldn't start: our bug, not the user's file. */
+class WorkerFailedError extends Error {
+  constructor(message: string, options?: { cause: unknown }) {
+    super(message, options);
+    this.name = "WorkerFailedError";
   }
 }
 
@@ -220,40 +188,176 @@ function isWorkerOutOfMemory(error: unknown): boolean {
   );
 }
 
+interface DocxConverterOptions {
+  maxHeapMb: number;
+  deadlineMs: number;
+  maxQueued: number;
+  /** Path mammoth is resolved from (any file in the directory that holds node_modules). */
+  resolveFrom: string;
+}
+
+interface DocxConverter {
+  convert(buffer: Buffer): Promise<string>;
+  /** Worker threads currently alive — never more than one. */
+  liveWorkers(): number;
+}
+
+/**
+ * A converter with its own queue. The app uses the one behind
+ * {@link convertDocxToHtml}; separate instances exist so tests can shrink the
+ * limits.
+ */
+export function createDocxConverter(options: DocxConverterOptions): DocxConverter {
+  let busy = false;
+  let live = 0;
+  const waiting: Array<() => void> = [];
+
+  /** Waits for the single slot, giving up at the deadline. */
+  function acquire(deadline: number): Promise<void> {
+    if (!busy) {
+      busy = true;
+      return Promise.resolve();
+    }
+    if (waiting.length >= options.maxQueued) {
+      return Promise.reject(errors.serverBusy("document conversions"));
+    }
+    return new Promise((resolve, reject) => {
+      const grant = (): void => {
+        clearTimeout(timer);
+        resolve();
+      };
+      const timer = setTimeout(() => {
+        waiting.splice(waiting.indexOf(grant), 1);
+        reject(new DeadlineExceededError());
+      }, deadline - Date.now());
+      waiting.push(grant);
+    });
+  }
+
+  function release(): void {
+    const next = waiting.shift();
+    if (next) {
+      next();
+    } else {
+      busy = false;
+    }
+  }
+
+  /** Runs one worker to completion; resolves only once its thread has exited. */
+  async function runWorker(buffer: Buffer, deadline: number): Promise<WorkerResult> {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      throw new DeadlineExceededError();
+    }
+
+    const worker = new Worker(WORKER_SOURCE, {
+      eval: true,
+      workerData: {
+        buffer,
+        styleMap: STYLE_MAP,
+        imageBudget: imageBudgetBytes(),
+        resolveFrom: options.resolveFrom,
+      },
+      resourceLimits: {
+        maxOldGenerationSizeMb: options.maxHeapMb,
+        maxYoungGenerationSizeMb: MAX_YOUNG_GENERATION_MB,
+      },
+    });
+    live++;
+    const exited = new Promise<void>((resolve) => worker.once("exit", () => resolve()));
+    void exited.then(() => live--);
+
+    const outcome = new Promise<WorkerResult>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new DeadlineExceededError()), remaining);
+      const done = (fn: () => void): void => {
+        clearTimeout(timer);
+        fn();
+      };
+      worker.once("message", (result: WorkerResult) => done(() => resolve(result)));
+      worker.once("error", (error: Error) =>
+        done(() =>
+          reject(
+            isWorkerOutOfMemory(error)
+              ? error
+              : new WorkerFailedError(`docx worker failed: ${error.message}`, { cause: error })
+          )
+        )
+      );
+      worker.once("exit", (code) =>
+        done(() => reject(new WorkerFailedError(`docx worker exited with code ${code}`)))
+      );
+    });
+
+    try {
+      return await outcome;
+    } finally {
+      await worker.terminate();
+      await exited;
+    }
+  }
+
+  async function convert(buffer: Buffer): Promise<string> {
+    await assertInflatedSizeWithinBudget(buffer);
+
+    const deadline = Date.now() + options.deadlineMs;
+    let result: WorkerResult;
+    try {
+      await acquire(deadline);
+      try {
+        result = await runWorker(buffer, deadline);
+      } finally {
+        release();
+      }
+    } catch (error) {
+      if (isWorkerOutOfMemory(error) || error instanceof DeadlineExceededError) {
+        logger.warn("docx conversion exceeded its resource limits", {
+          bytes: buffer.length,
+          reason: error instanceof DeadlineExceededError ? "deadline" : "out_of_memory",
+        });
+        throw errors.contentTooComplex("Document");
+      }
+      if (error instanceof WorkerFailedError) {
+        logger.error("docx conversion worker failed", { error: error.message });
+        throw errors.internal("Document conversion failed");
+      }
+      throw error;
+    }
+
+    if (!result.ok) {
+      if (result.imageBudgetExceeded) {
+        throw errors.contentTooLarge("Document images", imageBudgetBytes());
+      }
+      // mammoth rejected the document itself: a malformed or non-Word file.
+      throw new Error(result.message);
+    }
+
+    if (result.messages.length > 0) {
+      logger.debug("Mammoth conversion messages", { messages: result.messages });
+    }
+
+    return result.html;
+  }
+
+  return { convert, liveWorkers: () => live };
+}
+
+const defaultConverter = createDocxConverter({
+  maxHeapMb: usageLimitsConfig.docxWorkerMaxHeapMb,
+  deadlineMs: CONVERSION_DEADLINE_MS,
+  maxQueued: MAX_QUEUED_CONVERSIONS,
+  resolveFrom: join(process.cwd(), "package.json"),
+});
+
 /**
  * Converts a `.docx` to HTML, mapping Title/Subtitle paragraphs to h1/h2 and
  * inlining images as data URIs.
  *
  * @throws `CONTENT_TOO_LARGE` if the document is too large to convert, or
- *   exhausts the worker's memory or time limits
+ *   exhausts the worker's memory or the deadline
+ * @throws `SERVER_BUSY` if too many conversions are already waiting
+ * @throws `INTERNAL_ERROR` if the worker itself fails
+ * @throws a plain `Error` if mammoth rejects the file
  */
-export async function convertDocxToHtml(buffer: Buffer): Promise<string> {
-  await assertInflatedSizeWithinBudget(buffer);
-
-  let result: WorkerResult;
-  try {
-    result = await runExclusive(() => runWorker(buffer));
-  } catch (error) {
-    if (isWorkerOutOfMemory(error) || error instanceof DocxConversionTimeoutError) {
-      logger.warn("docx conversion exceeded its resource limits", {
-        bytes: buffer.length,
-        reason: error instanceof DocxConversionTimeoutError ? "timeout" : "out_of_memory",
-      });
-      throw errors.contentTooComplex("Document");
-    }
-    throw error;
-  }
-
-  if (!result.ok) {
-    if (result.imageBudgetExceeded) {
-      throw errors.contentTooLarge("Document images", imageBudgetBytes());
-    }
-    throw new Error(result.message);
-  }
-
-  if (result.messages.length > 0) {
-    logger.debug("Mammoth conversion messages", { messages: result.messages });
-  }
-
-  return result.html;
+export function convertDocxToHtml(buffer: Buffer): Promise<string> {
+  return defaultConverter.convert(buffer);
 }

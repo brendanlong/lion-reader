@@ -52,6 +52,7 @@ const errorCodeToTRPCCode = {
   MAX_SUBSCRIPTIONS_REACHED: "BAD_REQUEST",
   SITE_BLOCKED: "BAD_GATEWAY",
   UPSTREAM_RATE_LIMITED: "TOO_MANY_REQUESTS",
+  SERVER_BUSY: "TOO_MANY_REQUESTS",
 } as const satisfies Record<string, TRPCError["code"]>;
 
 type ErrorCode = keyof typeof errorCodeToTRPCCode;
@@ -160,6 +161,9 @@ export const errors = {
     ),
 
   internal: (message = "An unexpected error occurred") => createError("INTERNAL_ERROR", message),
+
+  serverBusy: (work: string) =>
+    createError("SERVER_BUSY", `Too many ${work} in progress. Please try again shortly.`),
 
   feedFetchError: (url: string, reason: string) =>
     createError("FEED_FETCH_ERROR", `Failed to fetch feed: ${reason}`, {

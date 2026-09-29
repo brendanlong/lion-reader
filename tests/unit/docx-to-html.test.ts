@@ -6,8 +6,10 @@
  */
 
 import { describe, it, expect } from "vitest";
+import { join } from "node:path";
 import { TRPCError } from "@trpc/server";
 import { convertUploadedFile } from "@/server/file/process-upload";
+import { createDocxConverter } from "@/server/file/docx-to-html";
 import { usageLimitsConfig } from "@/server/config/env";
 import { getAppErrorCode } from "@/server/trpc/errors";
 import { buildMinimalDocx, buildZip, buildDocxWithRepeatedImage } from "../utils/docx";
@@ -87,5 +89,98 @@ describe("docx conversion bounds", () => {
     );
     const converted = await Promise.all(docs);
     expect(converted.map((c) => c.html)).toEqual(["<p>one</p>", "<p>two</p>", "<p>three</p>"]);
+  });
+
+  it("holds the main document to the text budget whatever it is named", async () => {
+    // mammoth follows the officeDocument relationship, so `document.bin` is
+    // parsed just like `document.xml`.
+    const text = "a".repeat(usageLimitsConfig.maxSavedArticleSizeBytes * 3);
+    const docx = buildZip({
+      "_rels/.rels":
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.bin"/>' +
+        "</Relationships>",
+      "word/document.bin": text,
+    });
+
+    await expectContentTooLarge(docx, /Decompressed \.docx text/);
+  });
+});
+
+describe("docx converter queue and worker lifecycle", () => {
+  const tiny = (word: string): Buffer => buildMinimalDocx({ paragraphs: [word] });
+  // ~3MB of one-character paragraphs: slow to convert, and far past a small heap.
+  const dense = buildMinimalDocx({ paragraphs: Array(90_000).fill("x") });
+
+  function converter(overrides: Partial<Parameters<typeof createDocxConverter>[0]> = {}) {
+    return createDocxConverter({
+      maxHeapMb: 128,
+      deadlineMs: 20_000,
+      maxQueued: 4,
+      resolveFrom: join(process.cwd(), "package.json"),
+      ...overrides,
+    });
+  }
+
+  it("runs one worker at a time and rejects work past the queue depth", async () => {
+    const docx = converter({ maxQueued: 1 });
+    let maxLive = 0;
+    const sampler = setInterval(() => (maxLive = Math.max(maxLive, docx.liveWorkers())), 1);
+
+    const results = await Promise.allSettled(
+      ["one", "two", "three"].map((word) => docx.convert(tiny(word)))
+    );
+    clearInterval(sampler);
+
+    expect(results[0]).toEqual({ status: "fulfilled", value: "<p>one</p>" });
+    expect(results[1]).toEqual({ status: "fulfilled", value: "<p>two</p>" });
+    expect(results[2].status).toBe("rejected");
+    const rejected = results[2] as PromiseRejectedResult;
+    expect(getAppErrorCode(rejected.reason)).toBe("SERVER_BUSY");
+    expect((rejected.reason as TRPCError).code).toBe("TOO_MANY_REQUESTS");
+    expect(maxLive).toBe(1);
+    expect(docx.liveWorkers()).toBe(0);
+  });
+
+  it("counts the deadline from when a conversion is queued", async () => {
+    // A big heap so the dense document runs until the deadline stops it.
+    const docx = converter({ maxHeapMb: 2048, deadlineMs: 1000 });
+    const started = Date.now();
+    const slow = docx.convert(dense).catch((e: unknown) => e);
+    const queued = docx
+      .convert(tiny("queued"))
+      .then(
+        () => null,
+        (e: unknown) => e
+      )
+      .then((error) => ({ error, elapsed: Date.now() - started }));
+
+    const [slowError, queuedResult] = await Promise.all([slow, queued]);
+    expect(getAppErrorCode(slowError)).toBe("CONTENT_TOO_LARGE");
+    expect((slowError as TRPCError).message).toMatch(/too large or complex/);
+    // The queued one gave up at its own deadline instead of getting a fresh 1s
+    // once the slow one was stopped.
+    expect(getAppErrorCode(queuedResult.error)).toBe("CONTENT_TOO_LARGE");
+    expect(queuedResult.elapsed).toBeLessThan(1800);
+    expect(docx.liveWorkers()).toBe(0);
+  }, 30_000);
+
+  it("keeps converting after a worker runs out of memory", async () => {
+    const docx = converter({ maxHeapMb: 32 });
+    const error = await docx.convert(dense).catch((e: unknown) => e);
+    expect((error as TRPCError).message).toMatch(/too large or complex/);
+
+    await expect(docx.convert(tiny("after"))).resolves.toBe("<p>after</p>");
+  }, 30_000);
+
+  it("reports a worker that can't load mammoth as a server error, not a bad file", async () => {
+    const docx = converter({ resolveFrom: "/nonexistent/package.json" });
+    const error = await docx.convert(tiny("x")).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(TRPCError);
+    expect((error as TRPCError).code).toBe("INTERNAL_SERVER_ERROR");
+
+    // The queue survives it.
+    const working = converter();
+    await expect(working.convert(tiny("ok"))).resolves.toBe("<p>ok</p>");
   });
 });

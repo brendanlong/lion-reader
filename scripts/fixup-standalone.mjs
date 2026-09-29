@@ -21,20 +21,23 @@
  * 2b. mammoth, which nothing imports statically: the .docx converter
  *    (src/server/file/docx-to-html.ts) requires it from inside an eval'd worker
  *    thread. Copy it with its whole dependency closure, pnpm links included.
+ *    Nothing else would notice if that copy were incomplete — the converter
+ *    would just fail at runtime — so step 4 converts a document with it.
  *
  * 3. The @lion-reader workspace symlinks: the trace resolves them to their
  *    real paths under native/, so no node_modules/@lion-reader entries exist.
  *    Recreate the symlinks; the Dockerfile copies the actual native module
  *    files (index.js + the musl .node binaries) into the runner's native/.
  *
+ * 4. Load mammoth from the standalone tree, the way the converter does, and
+ *    convert a small document; fail the build if that breaks.
+ *
  * Run after `pnpm build` (needs the full node_modules to copy from).
  */
 
 import {
   cpSync,
-  existsSync,
   mkdirSync,
-  readFileSync,
   readdirSync,
   readlinkSync,
   realpathSync,
@@ -81,8 +84,9 @@ for (const file of readdirSync(nextDir)) {
 console.log("Copied next's top-level subpath shims");
 
 // 2b. Copy mammoth and its dependency closure. Under pnpm each package's real
-// directory sits at `.pnpm/<id>/node_modules/<name>`, next to symlinks to its
-// dependencies; recreate those links and recurse through their targets.
+// directory sits at `.pnpm/<id>/node_modules/<name>`, next to symlinks to every
+// dependency pnpm resolved for it (regular, optional and peer alike); recreate
+// all of those links and recurse through their targets.
 /** Replace `link` in the standalone tree with the same (relative) symlink. */
 function copySymlink(link) {
   const dest = standalonePath(link);
@@ -99,13 +103,26 @@ function copyPackageClosure(name, realDir, copied = new Set()) {
   cpSync(realDir, dest, { recursive: true });
 
   const nodeModulesDir = realDir.slice(0, -name.length);
-  const { dependencies = {} } = JSON.parse(readFileSync(join(realDir, "package.json"), "utf8"));
-  for (const dep of Object.keys(dependencies)) {
+  for (const dep of linkedDependencies(nodeModulesDir)) {
     const link = join(nodeModulesDir, dep);
-    if (!existsSync(link)) continue;
     copySymlink(link);
     copyPackageClosure(dep, realpathSync(link), copied);
   }
+}
+
+/** Names of the dependency symlinks in a pnpm `.pnpm/<id>/node_modules` dir. */
+function linkedDependencies(nodeModulesDir) {
+  const names = [];
+  for (const entry of readdirSync(nodeModulesDir, { withFileTypes: true })) {
+    if (entry.isSymbolicLink()) {
+      names.push(entry.name);
+    } else if (entry.isDirectory() && entry.name.startsWith("@")) {
+      for (const scoped of readdirSync(join(nodeModulesDir, entry.name), { withFileTypes: true })) {
+        if (scoped.isSymbolicLink()) names.push(`${entry.name}/${scoped.name}`);
+      }
+    }
+  }
+  return names;
 }
 
 copySymlink(join(rootDir, "node_modules", "mammoth"));
@@ -121,3 +138,39 @@ for (const name of ["sanitizer", "readability", "feed-parser", "markdown"]) {
   symlinkSync(join("..", "..", "native", name), link);
 }
 console.log("Created @lion-reader symlinks");
+
+// 4. Convert a document with the standalone mammoth, resolved the way the
+// worker resolves it (from the app root's node_modules). The document is built
+// with the jszip mammoth itself depends on, so this needs nothing else.
+const standaloneRequire = createRequire(join(standaloneDir, "package.json"));
+try {
+  const mammoth = standaloneRequire("mammoth");
+  const JSZip = createRequire(standaloneRequire.resolve("mammoth"))("jszip");
+  const zip = new JSZip();
+  zip.file(
+    "[Content_Types].xml",
+    '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+      '<Default Extension="xml" ContentType="application/xml"/></Types>'
+  );
+  zip.file(
+    "_rels/.rels",
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>' +
+      "</Relationships>"
+  );
+  zip.file(
+    "word/document.xml",
+    '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      "<w:body><w:p><w:r><w:t>standalone smoke test</w:t></w:r></w:p></w:body></w:document>"
+  );
+  const buffer = await zip.generateAsync({ type: "nodebuffer" });
+  const { value } = await mammoth.convertToHtml({ buffer });
+  if (value !== "<p>standalone smoke test</p>") {
+    throw new Error(`unexpected output: ${value}`);
+  }
+} catch (error) {
+  console.error("The standalone tree can't convert a .docx with mammoth:", error);
+  process.exit(1);
+}
+console.log("Converted a .docx with the standalone mammoth");

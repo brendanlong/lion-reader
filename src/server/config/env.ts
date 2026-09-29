@@ -263,6 +263,9 @@ export const feedHealthConfig = {
   heartbeatUrl: process.env.FEED_HEALTH_HEARTBEAT_URL,
 };
 
+/** Default heap cap for the `.docx` conversion worker (see usageLimitsConfig). */
+const DEFAULT_DOCX_WORKER_MAX_HEAP_MB = 128;
+
 /**
  * Usage limits configuration.
  * These limits protect against abuse and prevent OOM from oversized content.
@@ -286,6 +289,16 @@ export const usageLimitsConfig = {
 
   /** Maximum email content size in bytes (default: 2MB). Emails larger than this are rejected. */
   maxEmailSizeBytes: parseInt(process.env.MAX_EMAIL_SIZE_BYTES || String(2 * 1024 * 1024), 10),
+
+  /**
+   * Heap cap, in MB, for the worker thread that converts `.docx` files. A
+   * process on a smaller VM can lower it; `src/server/file/docx-to-html.ts`
+   * says what it bounds.
+   */
+  docxWorkerMaxHeapMb: parseInt(
+    process.env.DOCX_WORKER_MAX_HEAP_MB || String(DEFAULT_DOCX_WORKER_MAX_HEAP_MB),
+    10
+  ),
 };
 
 export const storageConfig = {
