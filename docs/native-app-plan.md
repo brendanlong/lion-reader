@@ -4,7 +4,7 @@ Plan for a cross-platform native Lion Reader client: Android first, iOS next,
 desktop possibly later. Goals: offline reading with delta sync and bounded
 storage, an offline outbox for read/starred state, share targets for URLs and
 files, and narration (system voices, Piper, cloud Kokoro) that keeps playing in
-the background. Delete this file once the app has its own `CLAUDE.md`.
+the background.
 
 ## Decisions
 
@@ -41,8 +41,8 @@ the background. Delete this file once the app has its own `CLAUDE.md`.
   ordinary tRPC procedures with `.meta({ openapi })`, calling the same services
   the web uses, so there is still one implementation.
 - **Compatibility**: installed apps lag the server by months. Commit the
-  generated OpenAPI spec and have CI fail on breaking changes (e.g. `oasdiff
-breaking`); additive changes only, new behaviour behind new fields or paths.
+  generated OpenAPI spec and have CI fail on breaking changes (e.g. with
+  oasdiff); additive changes only, new behaviour behind new fields or paths.
 
 ### Auth: OAuth 2.1 + PKCE via the browser
 
@@ -55,14 +55,23 @@ Server work:
 - Register a first-party client with an `https://lionreader.com/...` redirect
   verified as an Android App Link (and later an iOS Universal Link). Custom
   schemes stay rejected.
-- A new scope (e.g. `reader:app`) covering reading, state, subscriptions, tags,
-  saves, narration and sync, but not account-destructive actions (delete
-  account, change password, manage tokens/OAuth grants). Those open the web
-  settings in a Custom Tab.
-- Accept OAuth access tokens for that scope in `createContext` and the SSE
-  route, and opt the needed procedures in. OAuth tokens are currently
-  audience-bound to `/api/mcp` and Wallabag, so this is a security-reviewed
-  change (`SECURITY.md`, `src/server/oauth/CLAUDE.md`).
+- An app scope covering reading, state, subscriptions, tags, saves, narration
+  and sync, but not account-destructive actions (delete account, change
+  password, manage tokens/OAuth grants); those open the web settings in a
+  Custom Tab. Either reuse `reader:full-access` or add a narrower scope, but
+  **grant it only to the pinned first-party `client_id`**: dynamic client
+  registration lets any client request any supported scope, so an unrestricted
+  scope would hand the full reader API to any registered client after one
+  consent click.
+- Mint those tokens with a new `/api/v1` audience, and accept only that
+  audience in `createContext` and the SSE route (MCP-audience tokens stay
+  rejected there). Opt in the procedures the app needs, including the ones that
+  are session-only today (`sync.*`, `entries.markAllRead`, narration). This is a
+  security-reviewed change (`SECURITY.md`, `src/server/oauth/CLAUDE.md`).
+- Client: refresh is single-flight across processes (UI, WorkManager, share
+  activity) with the new refresh token persisted before use. Rotation has only
+  a short reuse-grace window, so two concurrent refreshes revoke the whole
+  token family and sign the user out.
 
 ### Sync: bootstrap + deltas over a bounded window
 
@@ -79,8 +88,15 @@ right shape. The app needs it over `/api/v1`, plus:
 - **Cursor too old → `resync_required`** so the client drops its window and
   re-bootstraps.
 - **Batch content fetch** (`entries.getMany`: ids in; sanitized content
-  variants and narration paragraphs out, see below). The service `getEntries`
-  already exists for the compat APIs.
+  and narration paragraphs out, see below). The service `getEntries` already
+  exists for the compat APIs. Offline downloads fetch the variant the user
+  would see (full content when the subscription has `fetchFullContent`,
+  otherwise the cleaned feed content); other variants load on demand.
+- **Visibility rules**, which deltas alone don't express: on
+  `subscription_deleted`, drop that subscription's unstarred, unsaved entries;
+  an unstar on an unsubscribed feed's entry drops it locally; on resubscribe,
+  run a scoped bootstrap for that subscription (its old entries are older than
+  the cursor, so deltas won't bring them back).
 
 Client:
 
@@ -91,8 +107,11 @@ Client:
   to a byte budget; read entries evicted LRU after a grace period; image
   caching capped separately (Coil disk cache), with an opt-in "download images
   for offline".
+- Eviction never removes an entry with a pending outbox op or in-flight save.
 - Unread counts: server absolute counts (as on web), adjusted locally by
-  pending outbox ops while offline.
+  pending outbox ops while offline. When a flush returns absolute counts, the
+  op's adjustment is removed in the same local transaction so it isn't counted
+  twice. A pending `markAllRead` shows 0 for its scope.
 - Live updates: SSE while foregrounded; WorkManager periodic sync in the
   background (optionally only on unmetered/charging for body downloads).
 
@@ -100,22 +119,28 @@ Client:
 
 - One row per `(entryId, field)`; a new op replaces the old one (latest intent
   wins locally). `markAllRead` is stored as its own op with `before` and
-  `changedAt`, which the endpoint already accepts, so it can't mark entries
-  that arrived after the user tapped.
+  `changedAt`, which the endpoint already accepts. `before` is the newest
+  server `fetchedAt` the client had seen, so it's in server time and unaffected
+  by clock skew. It filters on `fetchedAt`, so an old entry newly visible (e.g.
+  a fresh subscription) can still be caught; acceptable.
 - Every op carries `changedAt`; `markRead` and `setStarred` already apply
   last-write-wins on it and return the winning state, which the client writes
   back.
-- Clock skew: estimate server offset from response `Date` headers and adjust
-  `changedAt`. Server side, clamp `changedAt` to `now()` so a fast device clock
-  can't win forever.
-- Batch flush (`markRead` takes up to 1000). Add a batch star endpoint (the
-  service `updateEntriesStarred` exists but isn't exposed).
-- Failure handling: network/5xx → backoff and retry; 4xx (entry gone) → drop
-  the op and log. A single poison item must never stall the queue (the
-  Wallabag Android app's failure mode, see
-  `~/wiki/pages/wallabag-android-queue-http-handling.md`).
-- Saves and uploads go through the same outbox, each with a client-generated
-  idempotency key so a retry after a lost response doesn't double-save.
+- Clock skew: each flush sends `clientSentAt`; the server rebases every
+  `changedAt` by `serverNow − clientSentAt`, then clamps to `now()` so a fast
+  device clock can't win forever. (`Date` headers only have one-second
+  resolution.)
+- Batch flush (`markRead` takes up to 1000). Add a batch star endpoint; the
+  `updateEntriesStarred` service takes one `changedAt` for the whole batch, so
+  it needs per-entry timestamps like `markEntriesRead`.
+- Failure handling: drop an op only when the item is explicitly rejected
+  (missing from the per-item results, or a 400/422 validation error). 401 →
+  refresh and pause; 429/5xx/network → back off and retry. Never drop the queue
+  on a blanket 4xx, and never let one poison item stall it (the existing
+  Wallabag Android app halts its whole queue on any non-2xx save).
+- Saves and uploads go through the same outbox. `saved.save` already returns
+  the existing article for a known URL; uploads need an idempotency key so a
+  retry after a lost response doesn't double-save.
 
 ### Share targets
 
@@ -124,8 +149,9 @@ Client:
   same types as `src/app/manifest.ts`. A translucent activity shows a native
   "Saved" confirmation and finishes; offline, it enqueues and says "will save
   when online".
-- Uses `saved.save` / `saved.uploadFile`. Upload should accept multipart/raw
-  bytes as well as base64 JSON, since files can be large.
+- Uses `saved.save` / `saved.uploadFile` (base64 JSON, capped at
+  `maxSavedArticleSizeBytes`; a raw-bytes variant is nice to have, not
+  required).
 - iOS later: a Share Extension writing into the shared outbox via an App Group.
 
 ### Narration
@@ -137,12 +163,17 @@ let drift, so the app never re-derives them:
 
 - Content responses include narration paragraphs as structured data
   (`[{ text, o }]`) instead of a `\n\n`-joined string, and the HTML with
-  `data-para-id` already stamped. The WebView only maps `o` → element for
-  highlighting and tap-to-seek. The web client can adopt the same stamped HTML.
-- Paragraphs for the plain (non-LLM) path are computed by the existing fallback
-  builder and cached by content hash in `narration_content`, so they can be
-  downloaded with bodies and narration works fully offline for system and Piper
-  voices. LLM-normalized text is fetched on demand when online.
+  `data-para-id` already stamped (after sanitizing, per content variant). The
+  WebView only maps `o` → element for highlighting and tap-to-seek. The web
+  client can adopt the same stamped HTML.
+- Plain (non-LLM) paragraphs are built by the existing fallback builder. Today
+  that runs uncached on every call (web builds plain narration in the browser,
+  and `narration_content` caches only LLM output), so `entries.getMany` needs
+  a cache keyed by the `NARRATION_FORMAT_VERSION` content hash to keep the
+  parse5 + linkedom pass off the hot path. Downloaded with bodies, they make
+  system and Piper narration fully offline.
+- LLM-normalized text is fetched on demand, with opt-in prefetch for starred
+  and saved entries; offline it falls back to plain paragraphs.
 
 **One playback path**: Media3 `MediaSessionService` + ExoPlayer for every
 engine. That gives lock screen/notification controls, Bluetooth buttons, audio
@@ -151,7 +182,8 @@ workarounds.
 
 - System voices: Android `TextToSpeech.synthesizeToFile` per chunk, played
   through ExoPlayer like the others (rather than `speak()`, which bypasses the
-  media session).
+  media session). Some OEM engines and network voices handle it badly, so keep
+  a `speak()` fallback and test on the spare phones.
 - Piper: sherpa-onnx (Kotlin on Android, Swift/C on iOS) with its converted
   Piper models, which bundle espeak-ng data. Host the model bundles ourselves;
   keep the web's voice ids so settings mean the same thing everywhere.
@@ -169,9 +201,14 @@ workarounds.
   Sans; bundled, all OFL), text size, justification, theme (light/dark/e-paper/
   system), list density. Per-device settings, like the web's localStorage.
 - Single source: generate a JSON of appearance tokens (per-font size multiplier
-  and line height, palettes) from `src/lib/appearance/config.ts` and a
+  and line height from `src/lib/appearance/config.ts`, themes from
+  `src/lib/theme/config.ts`, palettes from `src/app/globals.css`) and a
   standalone `reader-prose` stylesheet from the web build; the app build copies
   both, so the WebView body looks like the web's.
+- WebView hardening, since an XSS there sits next to the OAuth token: no
+  `addJavascriptInterface` that can reach credentials, a CSP allowing only the
+  app's bundled highlight script, no file access, and all links open
+  externally. Add it to `SECURITY.md`.
 - Native chrome uses Material 3 with the amber accent (optionally dynamic
   color), 44dp+ touch targets, and an e-paper theme following the
   border-over-fill rule in `src/components/CLAUDE.md`.
@@ -191,7 +228,9 @@ kmp/
 ```
 
 CI path filters so Kotlin jobs run only when `kmp/`, the OpenAPI spec or the
-generated tokens/CSS change. Add `kmp/` to `.dockerignore` and knip's ignores. Release tags `android-vX.Y.Z`.
+generated tokens/CSS change. Add `kmp/` to `.dockerignore` and knip's ignores.
+Release tags `android-vX.Y.Z`. When the app lands, move these decisions into
+`kmp/CLAUDE.md` and delete this file.
 
 ## Testing
 
@@ -217,8 +256,9 @@ generated tokens/CSS change. Add `kmp/` to `.dockerignore` and knip's ignores. R
 1. **Server groundwork** (TypeScript, testable with existing suites): app OAuth
    scope + App Link redirect, token access for sync/SSE/narration, sync over
    `/api/v1` with bootstrap/tombstones/next cursor/resync, `entries.getMany`,
-   batch star, `changedAt` clamp, structured narration paragraphs + stamped
-   HTML, binary synthesize, upload idempotency, OpenAPI snapshot + CI check,
+   batch star with per-entry timestamps, `changedAt` rebase + clamp,
+   structured narration paragraphs + stamped HTML + plain-paragraph cache,
+   binary synthesize, upload idempotency, OpenAPI snapshot + CI check,
    appearance token/CSS export.
 2. **KMP skeleton + shared core**: Gradle setup, CI, generated or hand-written
    Ktor client, SQLDelight schema, sync, outbox, retention, JVM + real-server
