@@ -436,7 +436,15 @@ export const narrationRouter = createTRPCRouter({
    * MP3; the client splits articles into chunks of at most
    * MAX_CLOUD_SPEECH_CHARS and plays them in order.
    */
-  synthesize: speechConfirmedProtectedProcedure
+  synthesize: speechConfirmedProtectedProcedure(
+    z.object({
+      /** `provider:model` ref; null means the default model. */
+      model: z.string().max(200).nullable(),
+      /** Null means the model's default voice. */
+      voice: z.string().max(200).nullable(),
+      text: z.string().min(1).max(MAX_CLOUD_SPEECH_CHARS),
+    })
+  )
     .meta({
       openapi: {
         method: "POST",
@@ -445,15 +453,6 @@ export const narrationRouter = createTRPCRouter({
         summary: "Synthesize narration audio with a cloud voice",
       },
     })
-    .input(
-      z.object({
-        /** `provider:model` ref; null means the default model. */
-        model: z.string().max(200).nullable(),
-        /** Null means the model's default voice. */
-        voice: z.string().max(200).nullable(),
-        text: z.string().min(1).max(MAX_CLOUD_SPEECH_CHARS),
-      })
-    )
     .output(z.object({ audio: z.string(), mimeType: z.literal("audio/mpeg") }))
     .mutation(async ({ ctx, input }) => {
       const keys = await getUserApiKeys(ctx.session.user.id);

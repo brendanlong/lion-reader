@@ -245,6 +245,8 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
         chunkParagraphs: splitIntoSentenceChunks,
         // One WASM model on the device's CPU: one sentence at a time.
         maxConcurrentSyntheses: 1,
+        // Free apart from battery, but a locked phone may synthesize slowly.
+        bufferAheadSeconds: 30,
       });
       piperPlayerRef.current.setCallbacks(bufferedPlayerCallbacks);
     }
@@ -264,6 +266,10 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
         },
         chunkParagraphs: (paragraphs) => splitIntoSpeechChunks(paragraphs, MAX_CLOUD_SPEECH_CHARS),
         maxConcurrentSyntheses: 4,
+        // Paid per character, so running ahead only wastes what's left
+        // unheard. With the screen locked, nothing recovers playback that
+        // stalls on an empty buffer.
+        bufferAheadSeconds: 60,
       });
       cloudPlayerRef.current.setCallbacks(bufferedPlayerCallbacks);
     }

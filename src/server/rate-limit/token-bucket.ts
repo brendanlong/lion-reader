@@ -36,7 +36,7 @@ export interface ConsumeResult {
   remaining: number;
   /** Unix timestamp (ms) when bucket will be full again */
   resetMs: number;
-  /** Seconds until next token is available (for Retry-After header) */
+  /** Seconds until the request's cost is available (for Retry-After header) */
   retryAfterSeconds: number | null;
 }
 
@@ -69,13 +69,16 @@ export const RATE_LIMIT_CONFIGS = {
     refillRate: 6, // 6 tokens per second
   },
   /**
-   * Cloud-voice speech synthesis. Playback prefetches several chunks and skips
-   * prefetch again, so the burst is generous; the refill bounds sustained
-   * spend on the server's key (≤1000 chars per call).
+   * Cloud-voice speech synthesis, counted in characters (each request costs
+   * its text length) because that's what speech is billed by — a request
+   * count would run out on articles of short paragraphs long before spend
+   * mattered. Listening takes roughly 15–30 chars/s; the burst covers the
+   * player's lookahead and a few skips, and the refill bounds sustained spend
+   * on the server's key.
    */
   speech: {
-    capacity: 30,
-    refillRate: 0.5, // 1 token every 2 seconds
+    capacity: 30_000,
+    refillRate: 500, // characters per second
   },
 } as const satisfies Record<string, RateLimitConfig>;
 
@@ -124,7 +127,7 @@ export function refillBucket(
 }
 
 /**
- * Attempts to consume a token from the bucket.
+ * Attempts to consume tokens from the bucket.
  *
  * This is a pure function that calculates the result without side effects.
  * The caller is responsible for storing the updated state.
@@ -132,12 +135,14 @@ export function refillBucket(
  * @param bucket - Current bucket state (after refill)
  * @param config - Rate limit configuration
  * @param nowMs - Current timestamp in milliseconds
+ * @param cost - Tokens this request takes
  * @returns Result indicating if allowed, with updated state info
  */
 export function consumeToken(
   bucket: BucketState,
   config: RateLimitConfig,
-  nowMs: number
+  nowMs: number,
+  cost = 1
 ): { result: ConsumeResult; newState: BucketState } {
   // First refill the bucket
   const refilledBucket = refillBucket(bucket, config, nowMs);
@@ -148,10 +153,9 @@ export function consumeToken(
   const resetMs = nowMs + timeToFullMs;
 
   // Check if we have enough tokens
-  if (refilledBucket.tokens >= 1) {
-    // Consume the token
+  if (refilledBucket.tokens >= cost) {
     const newState: BucketState = {
-      tokens: refilledBucket.tokens - 1,
+      tokens: refilledBucket.tokens - cost,
       lastRefillMs: nowMs,
     };
 
@@ -167,7 +171,7 @@ export function consumeToken(
   }
 
   // Not enough tokens - calculate retry after
-  const tokensNeeded = 1 - refilledBucket.tokens;
+  const tokensNeeded = cost - refilledBucket.tokens;
   const retryAfterMs = (tokensNeeded / config.refillRate) * 1000;
   const retryAfterSeconds = Math.ceil(retryAfterMs / 1000);
 
