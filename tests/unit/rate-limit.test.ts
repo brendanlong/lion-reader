@@ -117,6 +117,20 @@ describe("consumeToken", () => {
   const config: RateLimitConfig = { capacity: 100, refillRate: 10 };
   const nowMs = 1000000;
 
+  it("charges a request's cost and rejects it when the bucket can't cover it", () => {
+    const bucket = createBucketState({ tokens: 30, lastRefillMs: nowMs });
+
+    const first = consumeToken(bucket, config, nowMs, 25);
+    expect(first.result.allowed).toBe(true);
+    expect(first.newState.tokens).toBe(5);
+
+    const second = consumeToken(first.newState, config, nowMs, 25);
+    expect(second.result.allowed).toBe(false);
+    expect(second.newState.tokens).toBe(5);
+    // 20 more tokens at 10/sec
+    expect(second.result.retryAfterSeconds).toBe(2);
+  });
+
   it("allows request when tokens available", () => {
     const bucket = createBucketState({ tokens: 100, lastRefillMs: nowMs });
 

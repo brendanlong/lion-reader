@@ -7,7 +7,7 @@
 
 import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
-import { ZodError } from "zod";
+import { ZodError, type ZodType } from "zod";
 import type { Context } from "./context";
 import type { OpenApiMeta } from "trpc-to-openapi";
 import type { ApiTokenScope } from "@/server/auth/api-token";
@@ -303,10 +303,11 @@ export function scopedProtectedProcedure(scopes: ApiTokenScope | ApiTokenScope[]
 async function performRateLimitCheck(
   userId: string | null,
   headers: Headers,
-  type: RateLimitType
+  type: RateLimitType,
+  cost = 1
 ): Promise<Record<string, string>> {
   const identifier = getClientIdentifier(userId, headers);
-  const result = await checkRateLimit(identifier, type);
+  const result = await checkRateLimit(identifier, type, { cost });
 
   if (!result.allowed) {
     const config = RATE_LIMIT_CONFIGS[type];
@@ -402,14 +403,23 @@ export const expensiveConfirmedProtectedProcedure = t.procedure
   .use(createAuthenticatedRateLimitMiddleware("expensive"));
 
 /**
- * Confirmed protected procedure on the speech-synthesis rate limit.
+ * Confirmed protected procedure on the speech-synthesis rate limit, which is
+ * counted in characters: each call is charged its validated `text` length, so
+ * the input schema is part of the builder.
  */
-export const speechConfirmedProtectedProcedure = t.procedure
-  .use(timingMiddleware)
-  .use(authMiddleware)
-  .use(sessionOnlyMiddleware)
-  .use(confirmedMiddleware)
-  .use(createAuthenticatedRateLimitMiddleware("speech"));
+export function speechConfirmedProtectedProcedure<TInput extends { text: string }>(
+  input: ZodType<TInput>
+) {
+  return confirmedProtectedProcedure.input(input).use(async ({ ctx, input, next }) => {
+    const rateLimitHeaders = await performRateLimitCheck(
+      ctx.session.user.id,
+      ctx.headers,
+      "speech",
+      input.text.length
+    );
+    return next({ ctx: { ...ctx, rateLimitHeaders } });
+  });
+}
 
 // ============================================================================
 // Admin Procedures (protected by ALLOWLIST_SECRET)
