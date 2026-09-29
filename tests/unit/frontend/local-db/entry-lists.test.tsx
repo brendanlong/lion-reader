@@ -185,6 +185,108 @@ describe("list ingestion", () => {
     await waitFor(() => expect(rendered.result.current.entries.map((e) => e.id)).toEqual(["c"]));
   });
 
+  describe("a refetch racing a live insert", () => {
+    const input = { limit: 10, unreadOnly: true, sortOrder: "newest" } as const;
+
+    /** A list whose refetches wait until the test releases them. */
+    function renderRefetchableList() {
+      let releaseRefetch: (() => void) | undefined;
+      let calls = 0;
+      const rendered = renderHookWithTrpc(
+        () => ({
+          query: trpc.entries.list.useInfiniteQuery(input, {
+            getNextPageParam: (page) => page.nextCursor,
+          }),
+          entries: useEntryListEntries(input),
+        }),
+        {
+          handlers: {
+            // The server never returns "live": its snapshot predates it.
+            "entries.list": () => {
+              calls++;
+              const page = { items: [makeEntry("a", "2024-06-01")] };
+              if (calls === 1) return page;
+              return new Promise((resolve) => {
+                releaseRefetch = () => resolve(page);
+              });
+            },
+          },
+        }
+      );
+      const insertLive = () =>
+        act(() => {
+          const db = getLocalDb(rendered.queryClient);
+          const live = makeEntry("live", "2024-07-01");
+          db.entries.upsert([live]);
+          insertEntryIntoLists(db, rendered.queryClient, live);
+        });
+      const refetch = () => {
+        let settled: Promise<unknown> | undefined;
+        act(() => {
+          settled = rendered.result.current.query.refetch();
+        });
+        return async () => {
+          await waitFor(() => expect(releaseRefetch).toBeDefined());
+          await act(async () => {
+            releaseRefetch?.();
+            await settled;
+          });
+        };
+      };
+      const ids = () => rendered.result.current.entries.map((e) => e.id);
+      return { ...rendered, insertLive, refetch, ids };
+    }
+
+    it("keeps an entry inserted live after the refetch started", async () => {
+      const { insertLive, refetch, ids } = renderRefetchableList();
+      await waitFor(() => expect(ids()).toEqual(["a"]));
+
+      const release = refetch();
+      insertLive();
+      await release();
+
+      expect(ids()).toEqual(["live", "a"]);
+    });
+
+    it("does not keep a live insert that now sorts past the refetched window", async () => {
+      // The refetch lands with newer entries and more pages, so its window no
+      // longer reaches the live-inserted entry; keeping it would render it
+      // after a gap of unloaded entries.
+      const { queryClient, ids, insert } = renderLists({ all: ALL });
+      act(() =>
+        seedList(queryClient, ALL, [
+          {
+            items: [makeEntry("c", "2024-06-03"), makeEntry("b", "2024-06-02")],
+            nextCursor: "x",
+          },
+        ])
+      );
+      insert(makeEntry("live", "2024-06-02T12:00:00Z"));
+      await waitFor(() => expect(ids("all")).toEqual(["c", "live", "b"]));
+
+      act(() =>
+        seedList(queryClient, ALL, [
+          {
+            items: [makeEntry("e", "2024-06-05"), makeEntry("d", "2024-06-04")],
+            nextCursor: "y",
+          },
+        ])
+      );
+
+      await waitFor(() => expect(ids("all")).toEqual(["e", "d"]));
+    });
+
+    it("drops an entry inserted before the refetch started that the server no longer returns", async () => {
+      const { insertLive, refetch, ids } = renderRefetchableList();
+      await waitFor(() => expect(ids()).toEqual(["a"]));
+
+      insertLive();
+      await refetch()();
+
+      expect(ids()).toEqual(["a"]);
+    });
+  });
+
   it("keeps an entry that was marked read in an unread-only list (membership never follows state)", async () => {
     const { queryClient, result } = renderLists({ all: ALL });
     act(() => seedList(queryClient, ALL, [{ items: [makeEntry("a", "2024-06-01")] }]));
