@@ -7,7 +7,7 @@
 
 "use client";
 
-import { useState, useCallback } from "react";
+import { useSyncExternalStore } from "react";
 import { TTS_PROVIDER_IDS, type TTSProviderId } from "./types";
 
 /**
@@ -217,12 +217,69 @@ export type SetNarrationSettings = (
   settingsOrUpdater: NarrationSettings | ((prev: NarrationSettings) => NarrationSettings)
 ) => void;
 
+// ============================================================================
+// Shared store
+// ============================================================================
+
+// One module-level store so every `useNarrationSettings` caller sees the same
+// value: a change made in the settings page reaches an open narration player
+// (e.g. disabling narration stops it) without a reload.
+
+const subscribers = new Set<() => void>();
+
+/** The raw stored string the cached snapshot was parsed from. */
+let cachedRaw: string | null = null;
+/** Parsed snapshot; the same reference until the stored string changes. */
+let cachedSettings: NarrationSettings | null = null;
+
+function readRaw(): string | null {
+  try {
+    return localStorage.getItem(STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function getSnapshot(): NarrationSettings {
+  // Keyed on the stored string rather than cached forever, so a write that
+  // bypasses the setter (another tab, a test seeding storage) is still picked
+  // up on the next render without the snapshot identity churning.
+  const raw = readRaw();
+  if (cachedSettings === null || raw !== cachedRaw) {
+    cachedRaw = raw;
+    cachedSettings = loadNarrationSettings();
+  }
+  return cachedSettings;
+}
+
+function getServerSnapshot(): NarrationSettings {
+  return DEFAULT_NARRATION_SETTINGS;
+}
+
+function subscribe(callback: () => void): () => void {
+  subscribers.add(callback);
+  return () => subscribers.delete(callback);
+}
+
+const setNarrationSettings: SetNarrationSettings = (settingsOrUpdater) => {
+  const next =
+    typeof settingsOrUpdater === "function" ? settingsOrUpdater(getSnapshot()) : settingsOrUpdater;
+  saveNarrationSettings(next);
+  // Cache the value itself rather than re-parsing storage, so the new settings
+  // hold for this session even if localStorage is full or unavailable.
+  cachedRaw = readRaw();
+  cachedSettings = next;
+  subscribers.forEach((callback) => callback());
+};
+
 /**
  * React hook for managing narration settings.
  *
- * Uses lazy initialization to load settings from localStorage on first render.
- * The returned setter function automatically saves changes to localStorage.
- * Supports both direct value and functional updates (like React's useState).
+ * Reads a module-level store through useSyncExternalStore, so every caller
+ * shares one value and the server/hydration render always sees the defaults
+ * (the stored settings apply right after hydration — see src/CLAUDE.md).
+ * The setter persists to localStorage and supports both direct values and
+ * functional updates (like React's useState).
  *
  * @returns A tuple of [settings, setSettings].
  *
@@ -240,24 +297,6 @@ export type SetNarrationSettings = (
  * ```
  */
 export function useNarrationSettings(): [NarrationSettings, SetNarrationSettings] {
-  // Use lazy initialization to load settings from localStorage.
-  // This runs only once on first render and avoids cascading renders from useEffect.
-  // Note: This may cause a hydration mismatch if server/client localStorage differs,
-  // but for user preferences this is acceptable behavior.
-  const [settings, setSettingsState] = useState<NarrationSettings>(() => loadNarrationSettings());
-
-  // Save and update settings - supports both direct value and functional updates
-  const setSettings: SetNarrationSettings = useCallback(
-    (settingsOrUpdater: NarrationSettings | ((prev: NarrationSettings) => NarrationSettings)) => {
-      setSettingsState((prev) => {
-        const newSettings =
-          typeof settingsOrUpdater === "function" ? settingsOrUpdater(prev) : settingsOrUpdater;
-        saveNarrationSettings(newSettings);
-        return newSettings;
-      });
-    },
-    []
-  );
-
-  return [settings, setSettings];
+  const settings = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  return [settings, setNarrationSettings];
 }

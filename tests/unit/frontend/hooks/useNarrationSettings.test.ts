@@ -11,6 +11,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { stubMemoryLocalStorage } from "../../../utils/component-test-helpers";
 import { renderHook, act, cleanup } from "@testing-library/react";
+import { act as reactAct, createElement } from "react";
+import { renderToString } from "react-dom/server";
+import { hydrateRoot } from "react-dom/client";
 
 const localStorageMock = stubMemoryLocalStorage();
 vi.spyOn(localStorageMock, "setItem");
@@ -285,6 +288,74 @@ describe("useNarrationSettings", () => {
       });
 
       expect(result.current[0].sentenceGapSeconds).toBe(0.5);
+    });
+  });
+
+  describe("shared state", () => {
+    it("propagates a change to every mounted instance", () => {
+      // e.g. the settings page disabling narration must reach the open
+      // entry's player, which stops when `enabled` flips off.
+      const player = renderHook(() => useNarrationSettings());
+      const settingsPage = renderHook(() => useNarrationSettings());
+
+      act(() => {
+        settingsPage.result.current[1]((prev) => ({ ...prev, enabled: false }));
+      });
+
+      expect(player.result.current[0].enabled).toBe(false);
+    });
+
+    it("composes functional updates made back to back", () => {
+      const { result } = renderHook(() => useNarrationSettings());
+
+      act(() => {
+        result.current[1]((prev) => ({ ...prev, rate: 1.5 }));
+        result.current[1]((prev) => ({ ...prev, pitch: 0.75 }));
+      });
+
+      expect(result.current[0].rate).toBe(1.5);
+      expect(result.current[0].pitch).toBe(0.75);
+    });
+  });
+
+  describe("server rendering", () => {
+    it("renders the defaults on the server and the stored settings after hydration", async () => {
+      localStorageMock.setItem(
+        "lion-reader-narration-settings",
+        JSON.stringify({ ...DEFAULT_NARRATION_SETTINGS, enabled: false })
+      );
+
+      function Probe() {
+        const [settings] = useNarrationSettings();
+        return createElement("span", null, settings.enabled ? "on" : "off");
+      }
+
+      // The server has no localStorage, so the server render must produce the
+      // default regardless of what the browser has stored (#1552).
+      const serverHtml = renderToString(createElement(Probe));
+      expect(serverHtml).toBe("<span>on</span>");
+
+      const container = document.createElement("div");
+      container.innerHTML = serverHtml;
+      document.body.appendChild(container);
+
+      const recoverableErrors: unknown[] = [];
+      let root: ReturnType<typeof hydrateRoot> | undefined;
+      await reactAct(async () => {
+        root = hydrateRoot(container, createElement(Probe), {
+          onRecoverableError: (error) => {
+            recoverableErrors.push(error);
+          },
+        });
+      });
+
+      expect(recoverableErrors).toEqual([]);
+      expect(container.textContent).toBe("off");
+
+      await reactAct(async () => {
+        root?.unmount();
+      });
+      container.remove();
     });
   });
 
