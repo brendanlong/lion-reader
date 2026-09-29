@@ -60,10 +60,6 @@ function cancelPendingPlay(playRequest: { current: number }): void {
   playRequest.current++;
 }
 
-function abandonPendingLoad(loadRequest: { current: number }): void {
-  loadRequest.current++;
-}
-
 // Re-export types for consumers
 export type { UseNarrationConfig, UseNarrationReturn };
 
@@ -554,8 +550,6 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
       streamingPlayerRef.current?.stop();
       streamingPlayerRef.current?.clearCache();
       cancelPendingPlay(playRequestRef);
-      // The abandoned load no longer owns the loading state (reset above).
-      abandonPendingLoad(loadRequestRef);
       cloudPlayerRef.current?.stop();
       cloudPlayerRef.current?.clearCache();
     };

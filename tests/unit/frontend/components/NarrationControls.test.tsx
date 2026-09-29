@@ -438,7 +438,13 @@ describe("narration that finishes generating after the user moved on", () => {
     // jsdom has the element but not media playback or object URLs.
     vi.spyOn(window.HTMLMediaElement.prototype, "play").mockImplementation(() => Promise.resolve());
     vi.spyOn(window.HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
-    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: () => "blob:chunk" }));
+    vi.stubGlobal(
+      "URL",
+      class extends URL {
+        static createObjectURL = () => "blob:chunk";
+        static revokeObjectURL = () => {};
+      }
+    );
 
     // The first generate (A) waits for release(); later ones answer at once.
     const first = deferredGenerate();
