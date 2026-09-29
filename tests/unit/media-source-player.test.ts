@@ -1,7 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { MediaSourcePlayer, splitIntoSpeechChunks } from "@/lib/narration/media-source-player";
+import {
+  MediaSourcePlayer,
+  splitIntoSentenceChunks,
+  splitIntoSpeechChunks,
+  type PlaybackStatus,
+} from "@/lib/narration/media-source-player";
 import type { PcmAudio, SegmentEncoder } from "@/lib/narration/audio-encoding";
-import type { PlaybackStatus } from "@/lib/narration/streaming-audio-player";
 
 describe("splitIntoSpeechChunks", () => {
   it("keeps short paragraphs whole and skips empty ones without renumbering", () => {
@@ -27,6 +31,16 @@ describe("splitIntoSpeechChunks", () => {
     expect(chunks.length).toBe(3);
     expect(chunks.every((chunk) => chunk.text.length <= 1000)).toBe(true);
     expect(chunks.map((chunk) => chunk.text).join("")).toBe(url);
+  });
+});
+
+describe("splitIntoSentenceChunks", () => {
+  it("makes each sentence its own chunk and skips empty paragraphs", () => {
+    expect(splitIntoSentenceChunks(["One. Two.", " ", "Three."])).toEqual([
+      { paragraph: 0, text: "One." },
+      { paragraph: 0, text: "Two." },
+      { paragraph: 2, text: "Three." },
+    ]);
   });
 });
 
@@ -203,9 +217,17 @@ function setup(
   paragraphs: string[],
   {
     maxChars = 1000,
+    maxConcurrentSyntheses = 4,
     encoder = fakeEncoder as SegmentEncoder | null,
+    encoderLoaded = Promise.resolve(),
     supportsMse = true,
-  }: { maxChars?: number; encoder?: SegmentEncoder | null; supportsMse?: boolean } = {}
+  }: {
+    maxChars?: number;
+    maxConcurrentSyntheses?: number;
+    encoder?: SegmentEncoder | null;
+    encoderLoaded?: Promise<void>;
+    supportsMse?: boolean;
+  } = {}
 ) {
   const audio = new FakeAudio();
   const sources: FakeMediaSource[] = [];
@@ -218,8 +240,12 @@ function setup(
       requests.set(text, request);
       return request.promise;
     },
-    maxChunkChars: maxChars,
-    loadEncoder: async () => encoder,
+    chunkParagraphs: (paragraphs) => splitIntoSpeechChunks(paragraphs, maxChars),
+    maxConcurrentSyntheses,
+    loadEncoder: async () => {
+      await encoderLoaded;
+      return encoder;
+    },
     createAudio: () => audio as unknown as HTMLAudioElement,
     createMediaSource: () => {
       if (!supportsMse) return null;
@@ -309,6 +335,71 @@ describe("MediaSourcePlayer", () => {
     audio.advanceTo(1.5); // into chunk 2
     await flush();
     expect(calls).toEqual(["1.", "2.", "3.", "4.", "5."]);
+  });
+
+  it("runs one synthesis at a time when limited, nearest chunk first", async () => {
+    const { calls, player, respond } = setup(["1.", "2.", "3.", "4.", "5."], {
+      maxConcurrentSyntheses: 1,
+    });
+    void player.play();
+    await flush();
+    expect(calls).toEqual(["1."]);
+    await respond("1.");
+    expect(calls).toEqual(["1.", "2."]);
+    await respond("2.");
+    expect(calls).toEqual(["1.", "2.", "3."]);
+  });
+
+  it("drops queued synthesis that a skip left behind", async () => {
+    const paragraphs = Array.from({ length: 20 }, (_, i) => `${i}.`);
+    const { calls, player, respond } = setup(paragraphs, { maxConcurrentSyntheses: 1 });
+    void player.play();
+    await respond("0."); // chunks 1–3 now queued behind chunk 1's synthesis
+    await player.skipTo(10);
+    await respond("1.");
+
+    // Chunk 10 goes next; 2 and 3 never start.
+    expect(calls).toEqual(["0.", "1.", "10."]);
+    await respond("10.");
+    expect(player.getStatus()).toBe("playing");
+    expect(calls).toEqual(["0.", "1.", "10.", "11."]);
+  });
+
+  it("doesn't synthesize text from before clearCache that was waiting on the encoder", async () => {
+    const encoderLoad = deferred<void>();
+    const { calls, player, respond } = setup(["Old 1.", "Old 2."], {
+      maxConcurrentSyntheses: 1,
+      encoderLoaded: encoderLoad.promise,
+    });
+    void player.play();
+    player.stop();
+    player.clearCache();
+    player.load(["New 1.", "New 2."]);
+    void player.play();
+    encoderLoad.resolve();
+    await respond("New 1.");
+
+    expect(calls).toEqual(["New 1.", "New 2."]);
+    expect(player.getStatus()).toBe("playing");
+  });
+
+  it("requests a dropped chunk again once playback gets near it", async () => {
+    const paragraphs = Array.from({ length: 10 }, (_, i) => `${i}.`);
+    const { audio, calls, player, respond } = setup(paragraphs, { maxConcurrentSyntheses: 1 });
+    void player.play();
+    for (const text of ["0.", "1.", "2.", "3."]) await respond(text);
+    audio.advanceTo(3.5); // chunk 4 synthesizing, 5 and 6 queued
+    await flush();
+
+    await player.skipBackward(); // back to 2, within the buffered run: 5 and 6 drop
+    await player.skipBackward();
+    await player.skipBackward();
+    await respond("4.");
+    expect(calls).toEqual(["0.", "1.", "2.", "3.", "4."]);
+
+    audio.advanceTo(4.5);
+    await flush();
+    expect(calls).toEqual(["0.", "1.", "2.", "3.", "4.", "5."]);
   });
 
   it("buffers audio that arrives while paused and resumes in place", async () => {
@@ -409,6 +500,9 @@ describe("MediaSourcePlayer", () => {
     void player.play();
     await respond("40.");
     expect(player.getStatus()).toBe("playing");
+    // Syntheses already running from before the skip still hold their slots.
+    expect(calls.slice(4)).toEqual(["40.", "41.", "42."]);
+    await respond("2.");
     expect(calls.slice(4)).toEqual(["40.", "41.", "42.", "43."]);
   });
 
@@ -538,7 +632,8 @@ describe("MediaSourcePlayer", () => {
     const errors: string[] = [];
     const player = new MediaSourcePlayer({
       synthesize: async () => ({ samples: new Float32Array(1000), sampleRate: SAMPLE_RATE }),
-      maxChunkChars: 1000,
+      chunkParagraphs: (paragraphs) => splitIntoSpeechChunks(paragraphs, 1000),
+      maxConcurrentSyntheses: 4,
       loadEncoder: async () => fakeEncoder,
       createAudio: () => audio as unknown as HTMLAudioElement,
       createMediaSource: () => new FakeMediaSource() as unknown as MediaSource,

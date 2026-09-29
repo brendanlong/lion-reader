@@ -12,6 +12,7 @@
 import { useState, useEffect, useCallback, useReducer, useRef, useMemo } from "react";
 import { ENHANCED_VOICES, type EnhancedVoice } from "@/lib/narration/enhanced-voices";
 import { getPiperTTSProvider } from "@/lib/narration/piper-tts-provider";
+import { PreviewAudio } from "@/lib/narration/preview-audio";
 import { getVoiceErrorInfo, type VoiceErrorInfo } from "@/lib/narration/errors";
 import {
   trackEnhancedVoiceDownloadCompleted,
@@ -233,6 +234,7 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
 
   // Track if component is mounted to avoid state updates after unmount
   const isMountedRef = useRef(true);
+  const previewRef = useRef<PreviewAudio | null>(null);
 
   // Ref for self-referencing in downloadVoice callback (avoids access-before-declaration)
   const downloadVoiceRef = useRef<(voiceId: string, isRetry?: boolean) => Promise<void>>(
@@ -278,6 +280,8 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
 
     return () => {
       isMountedRef.current = false;
+      previewRef.current?.stop();
+      previewRef.current = null;
     };
   }, []);
 
@@ -358,39 +362,37 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
     [setVoiceState, reportError]
   );
 
+  // Stop current preview
+  const stopPreview = useCallback(() => {
+    previewRef.current?.stop();
+    previewRef.current = null;
+    if (isMountedRef.current) dispatch({ type: "STOP_PREVIEW" });
+  }, []);
+
   // Preview a voice
   const previewVoice = useCallback(
     async (voiceId: string) => {
+      previewRef.current?.stop();
+      const preview = new PreviewAudio();
+      previewRef.current = preview;
       dispatch({ type: "START_PREVIEW", voiceId });
 
-      const onError = (err: unknown) => {
-        if (!isMountedRef.current) return;
-        dispatch({ type: "STOP_PREVIEW" });
-        reportError(err, "Failed to preview voice");
-      };
       try {
-        await getPiperTTSProvider().speak(PREVIEW_TEXT, {
-          voiceId,
-          rate: 1.0,
-          onEnd: () => {
-            if (!isMountedRef.current) return;
-            dispatch({ type: "STOP_PREVIEW" });
-          },
-          onError,
+        const clip = await getPiperTTSProvider().synthesize(PREVIEW_TEXT, voiceId);
+        // Superseded by another preview, a stop, or unmount.
+        if (previewRef.current !== preview) return;
+        preview.play(clip, 1.0, (error) => {
+          stopPreview();
+          if (error) reportError(error, "Failed to preview voice");
         });
       } catch (err) {
-        onError(err);
+        if (previewRef.current !== preview) return;
+        stopPreview();
+        reportError(err, "Failed to preview voice");
       }
     },
-    [reportError]
+    [reportError, stopPreview]
   );
-
-  // Stop current preview
-  const stopPreview = useCallback(() => {
-    const provider = getPiperTTSProvider();
-    provider.stop();
-    dispatch({ type: "STOP_PREVIEW" });
-  }, []);
 
   // Clear error
   const clearError = useCallback(() => {

@@ -42,7 +42,7 @@ export interface UseMediaSessionParams {
   status: NarrationStatus;
   /** Playback controls invoked by OS media buttons. */
   controls: MediaSessionControls;
-  /** Whether narration plays through its own media element (cloud voices). */
+  /** Whether narration plays through its own media element (Piper and cloud voices). */
   ownsMediaElement: boolean;
 }
 

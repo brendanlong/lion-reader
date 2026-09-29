@@ -5,7 +5,7 @@
  */
 
 import type { NarrationState } from "@/lib/narration/ArticleNarrator";
-import type { PlaybackStatus } from "@/lib/narration/streaming-audio-player";
+import type { PlaybackStatus } from "@/lib/narration/media-source-player";
 import { splitNarrationParagraphs } from "@/lib/narration/paragraph-map";
 
 // ============================================================================
@@ -42,7 +42,7 @@ export interface UseNarrationConfig {
 /**
  * The state `useNarration` exposes, which spans **two index spaces**.
  *
- * The player (`ArticleNarrator` or `StreamingAudioPlayer`) counts *narration
+ * The player (`ArticleNarrator` or `MediaSourcePlayer`) counts *narration
  * paragraphs* — the segments `splitIntoParagraphs` produces — while highlighting
  * needs the *DOM element* the current segment came from. The paragraph map
  * translates one to the other, and it is not the identity: one element can
@@ -151,7 +151,7 @@ export function getNarrationPhase(state: UseNarrationState, isLoading: boolean) 
 }
 
 /**
- * Maps StreamingAudioPlayer status to NarrationState status.
+ * Maps MediaSourcePlayer status to NarrationState status.
  */
 export function mapPlaybackStatus(status: PlaybackStatus): NarrationState["status"] {
   switch (status) {

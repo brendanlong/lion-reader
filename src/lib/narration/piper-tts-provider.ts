@@ -7,9 +7,8 @@
  * @module narration/piper-tts-provider
  */
 
-import type { SpeakOptions } from "./types";
 import { findEnhancedVoice } from "./enhanced-voices";
-import { DEFAULT_RATE, MIN_RATE, MAX_RATE, clamp } from "./constants";
+import { getMediaSourceClass } from "./audio-encoding";
 
 /**
  * Dynamically imports the piper-tts-web module.
@@ -74,46 +73,26 @@ export class VoiceNotDownloadedError extends Error {
 }
 
 /**
- * PiperTTSProvider wraps Piper TTS via WebAssembly.
+ * PiperTTSProvider wraps Piper TTS via WebAssembly: voice model storage and
+ * synthesis. Playback goes through `MediaSourcePlayer` like every other
+ * synthesized voice.
  *
- * This provider offers high-quality neural text-to-speech with:
- * - Natural sounding voices
- * - Offline capability (after voice download)
- * - Consistent quality across browsers
- *
- * Limitations:
- * - Requires voice model download (~17-50 MB per voice)
- * - Initial synthesis may be slow (WASM initialization)
- * - No real-time pause/resume (must restart from beginning)
+ * Voice models are a ~17-50 MB download each, kept in the Origin Private File
+ * System.
  */
 export class PiperTTSProvider {
-  private audioContext: AudioContext | null = null;
-  private currentSource: AudioBufferSourceNode | null = null;
-  private currentOptions: SpeakOptions | null = null;
-  private isPaused = false;
-  private pausedAt = 0;
-  private startedAt = 0;
-  private currentBuffer: AudioBuffer | null = null;
-
   /**
-   * Checks if Piper TTS is available in the current environment.
-   *
-   * Requires:
-   * - AudioContext for audio playback
-   * - Origin Private File System for model storage (via navigator.storage)
+   * Checks if Piper TTS is available in the current environment: it needs the
+   * Origin Private File System (via navigator.storage) for model storage, and
+   * Media Source Extensions for playback.
    */
   isAvailable(): boolean {
-    if (typeof window === "undefined") {
-      return false;
-    }
-
-    // Check for AudioContext support
-    const hasAudioContext = "AudioContext" in window || "webkitAudioContext" in window;
-
-    // Check for storage API (used by piper-tts-web for OPFS)
-    const hasStorageAPI = "storage" in navigator && "getDirectory" in navigator.storage;
-
-    return hasAudioContext && hasStorageAPI;
+    return (
+      typeof window !== "undefined" &&
+      "storage" in navigator &&
+      "getDirectory" in navigator.storage &&
+      getMediaSourceClass() !== null
+    );
   }
 
   /**
@@ -167,219 +146,32 @@ export class PiperTTSProvider {
   }
 
   /**
-   * Generates audio for text without playing it.
-   * Useful for pre-buffering upcoming paragraphs.
+   * Synthesizes text as a WAV clip.
    *
-   * @param text - The text to synthesize.
-   * @param voiceId - The voice ID to use.
-   * @returns Promise resolving to the AudioBuffer.
-   * @throws Error if voice is not available or synthesis fails.
+   * @throws VoiceNotDownloadedError if the voice is not downloaded.
    */
-  async generateAudio(text: string, voiceId: string): Promise<AudioBuffer> {
+  async synthesize(text: string, voiceId: string): Promise<Blob> {
     if (!this.isAvailable()) {
       throw new Error("Piper TTS is not available in this browser");
     }
 
-    // Check if voice is an enhanced voice
     const voice = findEnhancedVoice(voiceId);
     if (!voice) {
       throw new Error(`Unknown enhanced voice: ${voiceId}`);
     }
 
-    // Check if voice is downloaded
     const storedVoices = await this.getStoredVoiceIds();
     if (!storedVoices.includes(voiceId)) {
       throw new VoiceNotDownloadedError(voiceId);
     }
 
-    // Generate audio using Piper with custom WASM paths
     const piper = await getPiperTTS();
-
-    // Ensure the correct voice model is loaded (reset singleton if switching voices)
     await ensureCorrectVoiceLoaded(piper, voiceId);
-
     const session = await piper.TtsSession.create({
       voiceId,
       wasmPaths: CUSTOM_WASM_PATHS,
     });
-    const wavBlob = await session.predict(text);
-
-    // Decode the audio
-    const arrayBuffer = await wavBlob.arrayBuffer();
-    const audioContext = this.getAudioContext();
-    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-
-    return audioBuffer;
-  }
-
-  /**
-   * Plays a pre-generated AudioBuffer.
-   * Useful for playing cached audio without regenerating.
-   *
-   * @param buffer - The AudioBuffer to play.
-   * @param options - Speaking options.
-   */
-  playBuffer(buffer: AudioBuffer, options: SpeakOptions): void {
-    // Stop any current speech
-    this.stop();
-
-    this.currentOptions = options;
-    this.isPaused = false;
-    this.currentBuffer = buffer;
-
-    const audioContext = this.getAudioContext();
-
-    // Apply playback rate
-    const rate = clamp(options.rate ?? DEFAULT_RATE, MIN_RATE, MAX_RATE);
-
-    // Create and configure the source
-    const source = audioContext.createBufferSource();
-    source.buffer = buffer;
-    source.playbackRate.value = rate;
-    source.connect(audioContext.destination);
-
-    // Set up completion handler
-    source.onended = () => {
-      if (!this.isPaused && this.currentSource === source) {
-        this.currentSource = null;
-        this.currentBuffer = null;
-        this.currentOptions = null;
-        options.onEnd?.();
-      }
-    };
-
-    this.currentSource = source;
-    this.startedAt = audioContext.currentTime;
-    this.pausedAt = 0;
-
-    // Start playback
-    source.start(0);
-    options.onStart?.();
-  }
-
-  /**
-   * Speaks the given text using Piper TTS.
-   *
-   * @param text - The text to speak.
-   * @param options - Speaking options.
-   * @throws VoiceNotDownloadedError if the voice is not downloaded.
-   */
-  async speak(text: string, options: SpeakOptions): Promise<void> {
-    if (!this.isAvailable()) {
-      options.onError?.(new Error("Piper TTS is not available in this browser"));
-      return;
-    }
-
-    // Validate voice is provided
-    const voiceId = options.voiceId;
-    if (!voiceId) {
-      options.onError?.(new Error("Voice ID is required for Piper TTS"));
-      return;
-    }
-
-    try {
-      const audioBuffer = await this.generateAudio(text, voiceId);
-      this.playBuffer(audioBuffer, options);
-    } catch (error) {
-      this.currentOptions = null;
-      options.onError?.(error instanceof Error ? error : new Error(String(error)));
-    }
-  }
-
-  /**
-   * Stops any current speech immediately.
-   */
-  stop(): void {
-    this.isPaused = false;
-    this.pausedAt = 0;
-    this.startedAt = 0;
-    this.currentBuffer = null;
-    this.currentOptions = null;
-
-    if (this.currentSource) {
-      try {
-        this.currentSource.stop();
-      } catch {
-        // Ignore errors if source was already stopped
-      }
-      this.currentSource = null;
-    }
-  }
-
-  /**
-   * Pauses current speech.
-   *
-   * Note: Piper TTS uses AudioBufferSourceNode which cannot truly pause.
-   * We stop the source and remember the position to resume from.
-   */
-  pause(): void {
-    if (!this.currentSource || !this.audioContext) {
-      return;
-    }
-
-    this.isPaused = true;
-
-    // Calculate how far we were into the audio
-    const rate = this.currentSource.playbackRate.value;
-    this.pausedAt = (this.audioContext.currentTime - this.startedAt) * rate;
-
-    // Stop the current source
-    try {
-      this.currentSource.stop();
-    } catch {
-      // Ignore errors if source was already stopped
-    }
-    this.currentSource = null;
-  }
-
-  /**
-   * Resumes paused speech.
-   *
-   * Since AudioBufferSourceNode cannot truly resume, we create a new
-   * source and start it from where we paused.
-   */
-  resume(): void {
-    if (!this.isPaused || !this.currentBuffer || !this.audioContext || !this.currentOptions) {
-      return;
-    }
-
-    this.isPaused = false;
-
-    const options = this.currentOptions;
-    const rate = clamp(options.rate ?? DEFAULT_RATE, MIN_RATE, MAX_RATE);
-
-    // Create a new source
-    const source = this.audioContext.createBufferSource();
-    source.buffer = this.currentBuffer;
-    source.playbackRate.value = rate;
-    source.connect(this.audioContext.destination);
-
-    // Set up completion handler
-    source.onended = () => {
-      if (!this.isPaused && this.currentSource === source) {
-        this.currentSource = null;
-        this.currentBuffer = null;
-        this.currentOptions = null;
-        options.onEnd?.();
-      }
-    };
-
-    this.currentSource = source;
-    this.startedAt = this.audioContext.currentTime - this.pausedAt / rate;
-
-    // Start from where we paused
-    source.start(0, this.pausedAt);
-  }
-
-  /**
-   * Gets or creates the AudioContext.
-   * Public to allow external components to manipulate audio buffers.
-   */
-  getAudioContext(): AudioContext {
-    if (!this.audioContext) {
-      this.audioContext = new AudioContext();
-    }
-    return this.audioContext;
+    return session.predict(text);
   }
 }
 

@@ -16,6 +16,7 @@ import { AlertIcon, InfoCircleIcon } from "@/components/ui/icons";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { useNarrationSettings } from "@/lib/narration/settings";
 import { getNarrationSupportInfo, isFirefox } from "@/lib/narration/feature-detection";
+import { getMediaSourceClass } from "@/lib/narration/audio-encoding";
 import { waitForVoices, rankVoices, findVoiceByUri } from "@/lib/narration/voices";
 import type { TTSProviderId } from "@/lib/narration/types";
 import { DEFAULT_CLOUD_VOICE_MODEL, PREVIEW_TEXT } from "@/lib/narration/constants";
@@ -44,6 +45,13 @@ export function NarrationSettings() {
 
   // Check if running in Firefox (has broken pause/resume)
   const isFirefoxBrowser = useSyncExternalStore(noopSubscribe, isFirefox, () => false);
+
+  // Enhanced and cloud voices stream through Media Source Extensions.
+  const canStreamAudio = useSyncExternalStore(
+    noopSubscribe,
+    () => getMediaSourceClass() !== null,
+    () => true
+  );
 
   // Track voice loading state separately (starts true, set false when voices load)
   const [isLoadingVoices, setIsLoadingVoices] = useState(true);
@@ -242,20 +250,23 @@ export function NarrationSettings() {
                 label="Browser Voices"
                 description="Uses your browser's built-in text-to-speech"
               />
-              <ProviderOption
-                value="piper"
-                selected={settings.provider}
-                onSelect={handleProviderChange}
-                label="Enhanced Voices"
-                description="Higher quality voices (requires download)"
-              />
-              {(cloudVoiceModels.length > 0 || settings.provider === "cloud") && (
+              {(canStreamAudio || settings.provider === "piper") && (
+                <ProviderOption
+                  value="piper"
+                  selected={settings.provider}
+                  onSelect={handleProviderChange}
+                  label="Enhanced Voices"
+                  description="Higher quality voices (requires download)"
+                />
+              )}
+              {((canStreamAudio && cloudVoiceModels.length > 0) ||
+                settings.provider === "cloud") && (
                 <ProviderOption
                   value="cloud"
                   selected={settings.provider}
                   onSelect={handleProviderChange}
                   label="Cloud Voices"
-                  description="Natural-sounding voices generated on OpenRouter; keep playing in the background"
+                  description="Natural-sounding voices generated on OpenRouter"
                 />
               )}
             </div>

@@ -2,8 +2,8 @@
  * Unit tests for PiperTTSProvider.
  *
  * These tests verify the PiperTTSProvider implementation.
- * Since Piper TTS requires browser APIs (AudioContext, OPFS), we mock these
- * for unit testing.
+ * Piper TTS requires the Origin Private File System and Media Source
+ * Extensions, which these tests stub.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -33,53 +33,18 @@ import {
 } from "../../src/lib/narration/piper-tts-provider";
 import * as piperTTS from "@mintplex-labs/piper-tts-web";
 
-// Mock AudioContext
-class MockAudioContext {
-  currentTime = 0;
-  destination = {};
-
-  async decodeAudioData(): Promise<AudioBuffer> {
-    return {
-      duration: 1.0,
-      length: 44100,
-      numberOfChannels: 1,
-      sampleRate: 44100,
-      getChannelData: () => new Float32Array(44100),
-      copyFromChannel: vi.fn(),
-      copyToChannel: vi.fn(),
-    } as unknown as AudioBuffer;
-  }
-
-  createBufferSource(): AudioBufferSourceNode {
-    return {
-      buffer: null,
-      playbackRate: { value: 1 },
-      onended: null,
-      connect: vi.fn(),
-      start: vi.fn(),
-      stop: vi.fn(),
-    } as unknown as AudioBufferSourceNode;
-  }
-
-  close(): Promise<void> {
-    return Promise.resolve();
-  }
-}
-
 describe("PiperTTSProvider", () => {
   let provider: PiperTTSProvider;
 
   beforeEach(() => {
     // Set up browser environment mocks using vi.stubGlobal
-    vi.stubGlobal("window", {
-      AudioContext: MockAudioContext,
-    });
+    vi.stubGlobal("window", {});
+    vi.stubGlobal("MediaSource", class {});
     vi.stubGlobal("navigator", {
       storage: {
         getDirectory: vi.fn().mockResolvedValue({}),
       },
     });
-    vi.stubGlobal("AudioContext", MockAudioContext);
 
     // Reset all mocks
     vi.clearAllMocks();
@@ -94,18 +59,17 @@ describe("PiperTTSProvider", () => {
   });
 
   describe("isAvailable", () => {
-    it("returns true when AudioContext and storage API are available", () => {
+    it("returns false without Media Source Extensions", () => {
+      vi.stubGlobal("MediaSource", undefined);
+      expect(new PiperTTSProvider().isAvailable()).toBe(false);
+    });
+
+    it("returns true when the storage API and MSE are available", () => {
       expect(provider.isAvailable()).toBe(true);
     });
 
     it("returns false when window is undefined", () => {
       vi.stubGlobal("window", undefined);
-      const newProvider = new PiperTTSProvider();
-      expect(newProvider.isAvailable()).toBe(false);
-    });
-
-    it("returns false when AudioContext is not available", () => {
-      vi.stubGlobal("window", {});
       const newProvider = new PiperTTSProvider();
       expect(newProvider.isAvailable()).toBe(false);
     });
@@ -174,100 +138,38 @@ describe("PiperTTSProvider", () => {
     });
   });
 
-  describe("speak", () => {
-    it("calls onError when not available", async () => {
+  describe("synthesize", () => {
+    it("rejects when not available", async () => {
       vi.stubGlobal("window", undefined);
-      const newProvider = new PiperTTSProvider();
-      const onError = vi.fn();
-
-      await newProvider.speak("Hello", { onError });
-
-      expect(onError).toHaveBeenCalledWith(expect.any(Error));
-      expect(onError.mock.calls[0][0].message).toContain("not available");
+      await expect(
+        new PiperTTSProvider().synthesize("Hello", "en_US-lessac-medium")
+      ).rejects.toThrow("not available");
     });
 
-    it("calls onError when voiceId is not provided", async () => {
-      const onError = vi.fn();
-
-      await provider.speak("Hello", { onError });
-
-      expect(onError).toHaveBeenCalledWith(expect.any(Error));
-      expect(onError.mock.calls[0][0].message).toContain("Voice ID is required");
+    it("rejects an unknown voice", async () => {
+      await expect(provider.synthesize("Hello", "unknown-voice")).rejects.toThrow(
+        "Unknown enhanced voice"
+      );
     });
 
-    it("calls onError when voice is not downloaded", async () => {
+    it("rejects a voice that isn't downloaded", async () => {
       vi.mocked(piperTTS.stored).mockResolvedValue([]);
-
-      const onError = vi.fn();
-
-      await provider.speak("Hello", {
-        voiceId: "en_US-lessac-medium",
-        onError,
-      });
-
-      expect(onError).toHaveBeenCalledWith(expect.any(VoiceNotDownloadedError));
+      await expect(provider.synthesize("Hello", "en_US-lessac-medium")).rejects.toBeInstanceOf(
+        VoiceNotDownloadedError
+      );
     });
 
-    it("generates audio and plays it", async () => {
-      // Mock the voice as downloaded
+    it("returns Piper's WAV clip for a downloaded voice", async () => {
       vi.mocked(piperTTS.stored).mockResolvedValue(["en_US-lessac-medium"]);
+      const wav = new Blob([new Uint8Array(1000)], { type: "audio/wav" });
+      mockPredict.mockResolvedValue(wav);
 
-      // Mock predict to return a WAV blob
-      const mockBlob = new Blob([new Uint8Array(1000)], { type: "audio/wav" });
-      mockPredict.mockResolvedValue(mockBlob);
-
-      const onStart = vi.fn();
-      const onEnd = vi.fn();
-
-      await provider.speak("Hello", {
-        voiceId: "en_US-lessac-medium",
-        onStart,
-        onEnd,
-      });
-
+      expect(await provider.synthesize("Hello", "en_US-lessac-medium")).toBe(wav);
       expect(piperTTS.TtsSession.create).toHaveBeenCalledWith({
         voiceId: "en_US-lessac-medium",
         wasmPaths: expect.any(Object),
       });
       expect(mockPredict).toHaveBeenCalledWith("Hello");
-      expect(onStart).toHaveBeenCalled();
-    });
-
-    it("calls onError when voice is unknown", async () => {
-      const onError = vi.fn();
-
-      await provider.speak("Hello", { voiceId: "unknown-voice", onError });
-
-      expect(onError).toHaveBeenCalledWith(expect.any(Error));
-      expect(onError.mock.calls[0][0].message).toContain("Unknown enhanced voice");
-    });
-  });
-
-  describe("stop", () => {
-    it("stops current playback", async () => {
-      // Set up mock for playing state
-      vi.mocked(piperTTS.stored).mockResolvedValue(["en_US-lessac-medium"]);
-      const mockBlob = new Blob([new Uint8Array(1000)], { type: "audio/wav" });
-      mockPredict.mockResolvedValue(mockBlob);
-
-      await provider.speak("Hello", { voiceId: "en_US-lessac-medium" });
-
-      // Stop should not throw
-      expect(() => provider.stop()).not.toThrow();
-    });
-
-    it("does not throw when nothing is playing", () => {
-      expect(() => provider.stop()).not.toThrow();
-    });
-  });
-
-  describe("pause and resume", () => {
-    it("pause does not throw when nothing is playing", () => {
-      expect(() => provider.pause()).not.toThrow();
-    });
-
-    it("resume does not throw when not paused", () => {
-      expect(() => provider.resume()).not.toThrow();
     });
   });
 });
@@ -291,15 +193,12 @@ describe("VoiceNotDownloadedError", () => {
 describe("getPiperTTSProvider", () => {
   beforeEach(() => {
     // Set up browser environment mocks
-    vi.stubGlobal("window", {
-      AudioContext: MockAudioContext,
-    });
+    vi.stubGlobal("window", {});
     vi.stubGlobal("navigator", {
       storage: {
         getDirectory: vi.fn().mockResolvedValue({}),
       },
     });
-    vi.stubGlobal("AudioContext", MockAudioContext);
   });
 
   afterEach(() => {
