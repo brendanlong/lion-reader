@@ -20,7 +20,7 @@ public/onnx/
 tests/
 
 # Non-web apps
-android/
+kmp/
 extension/
 
 # Source assets (originals, not public/)
