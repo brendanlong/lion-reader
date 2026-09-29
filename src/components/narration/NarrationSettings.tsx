@@ -23,6 +23,7 @@ import { DEFAULT_CLOUD_VOICE_MODEL, PREVIEW_TEXT } from "@/lib/narration/constan
 import { EnhancedVoicesHelp } from "./EnhancedVoicesHelp";
 import { CloudVoiceSettings } from "./CloudVoiceSettings";
 import { trpc } from "@/lib/trpc/client";
+import { Switch } from "@/components/ui/switch";
 
 // Dynamic import with ssr: false to prevent piper-tts-web from being bundled for SSR.
 // The piper library has conditional Node.js code with require('fs') that breaks the build.
@@ -217,23 +218,11 @@ export function NarrationSettings() {
           </h3>
           <p className="ui-text-sm text-muted mt-1">Listen to articles using text-to-speech.</p>
         </div>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={settings.enabled}
-          aria-labelledby="narration-enabled-label"
-          onClick={() => setSettings((prev) => ({ ...prev, enabled: !prev.enabled }))}
-          className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
-            settings.enabled ? "bg-primary-solid" : "bg-fill-muted"
-          }`}
-        >
-          <span
-            aria-hidden="true"
-            className={`bg-surface pointer-events-none inline-block h-5 w-5 transform rounded-full shadow ring-0 transition duration-200 ease-in-out ${
-              settings.enabled ? "translate-x-5" : "translate-x-0"
-            }`}
-          />
-        </button>
+        <Switch
+          checked={settings.enabled}
+          onChange={() => setSettings((prev) => ({ ...prev, enabled: !prev.enabled }))}
+          labelledBy="narration-enabled-label"
+        />
       </div>
 
       {/* Voice Settings (only shown when enabled) */}
@@ -411,28 +400,16 @@ export function NarrationSettings() {
                     Improves narration quality by expanding abbreviations and formatting content
                   </p>
                 </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={settings.useLlmNormalization}
-                  aria-labelledby="narration-llm-label"
-                  onClick={() =>
+                <Switch
+                  checked={settings.useLlmNormalization}
+                  onChange={() =>
                     setSettings((prev) => ({
                       ...prev,
                       useLlmNormalization: !prev.useLlmNormalization,
                     }))
                   }
-                  className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
-                    settings.useLlmNormalization ? "bg-primary-solid" : "bg-fill-muted"
-                  }`}
-                >
-                  <span
-                    aria-hidden="true"
-                    className={`bg-surface pointer-events-none inline-block h-5 w-5 transform rounded-full shadow ring-0 transition duration-200 ease-in-out ${
-                      settings.useLlmNormalization ? "translate-x-5" : "translate-x-0"
-                    }`}
-                  />
-                </button>
+                  labelledBy="narration-llm-label"
+                />
               </div>
             </div>
           )}
@@ -449,25 +426,13 @@ export function NarrationSettings() {
                 </p>
                 <p className="ui-text-xs text-muted">Visually highlight the paragraph being read</p>
               </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={settings.highlightEnabled}
-                aria-labelledby="narration-highlight-label"
-                onClick={() =>
+              <Switch
+                checked={settings.highlightEnabled}
+                onChange={() =>
                   setSettings((prev) => ({ ...prev, highlightEnabled: !prev.highlightEnabled }))
                 }
-                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
-                  settings.highlightEnabled ? "bg-primary-solid" : "bg-fill-muted"
-                }`}
-              >
-                <span
-                  aria-hidden="true"
-                  className={`bg-surface pointer-events-none inline-block h-5 w-5 transform rounded-full shadow ring-0 transition duration-200 ease-in-out ${
-                    settings.highlightEnabled ? "translate-x-5" : "translate-x-0"
-                  }`}
-                />
-              </button>
+                labelledBy="narration-highlight-label"
+              />
             </div>
 
             {/* Auto-scroll to Current Paragraph Toggle */}
@@ -480,25 +445,13 @@ export function NarrationSettings() {
                   Automatically scroll the page to keep the current paragraph visible
                 </p>
               </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={settings.autoScrollEnabled}
-                aria-labelledby="narration-autoscroll-label"
-                onClick={() =>
+              <Switch
+                checked={settings.autoScrollEnabled}
+                onChange={() =>
                   setSettings((prev) => ({ ...prev, autoScrollEnabled: !prev.autoScrollEnabled }))
                 }
-                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
-                  settings.autoScrollEnabled ? "bg-primary-solid" : "bg-fill-muted"
-                }`}
-              >
-                <span
-                  aria-hidden="true"
-                  className={`bg-surface pointer-events-none inline-block h-5 w-5 transform rounded-full shadow ring-0 transition duration-200 ease-in-out ${
-                    settings.autoScrollEnabled ? "translate-x-5" : "translate-x-0"
-                  }`}
-                />
-              </button>
+                labelledBy="narration-autoscroll-label"
+              />
             </div>
           </div>
 
