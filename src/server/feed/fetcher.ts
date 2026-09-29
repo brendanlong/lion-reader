@@ -47,6 +47,8 @@ interface FetchSuccessResult {
   status: "success";
   /** Response body as raw bytes - allows hashing before expensive text decoding */
   body: Buffer;
+  /** The Content-Type header, needed to decode the body's charset */
+  contentType: string | null;
   /** Parsed cache headers */
   cacheHeaders: ParsedCacheHeaders;
   /** Redirect chain if any permanent redirects occurred */
@@ -392,6 +394,7 @@ export async function fetchFeed(
         return {
           status: "success",
           body,
+          contentType: response.headers.get("content-type"),
           cacheHeaders: parseCacheHeaders(response.headers),
           redirects,
           websubLinks,

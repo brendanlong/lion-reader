@@ -7,6 +7,7 @@
 
 import { USER_AGENT } from "./user-agent";
 import { fetchWithSsrfProtection } from "./ssrf";
+import { decodeBody } from "./charset";
 import { errors } from "../trpc/errors";
 import { usageLimitsConfig } from "../config/env";
 
@@ -173,7 +174,8 @@ export async function readResponseBufferWithSizeLimit(
 
 /**
  * Reads a response body as text with a streaming size limit.
- * Delegates to readResponseBufferWithSizeLimit and decodes the result.
+ * Delegates to readResponseBufferWithSizeLimit and decodes the result in its
+ * declared character encoding (see `decodeBody`).
  *
  * @param response - The fetch Response object
  * @param maxBytes - Maximum allowed response size in bytes
@@ -187,7 +189,7 @@ export async function readResponseWithSizeLimit(
   url: string
 ): Promise<string> {
   const buffer = await readResponseBufferWithSizeLimit(response, maxBytes, url);
-  return buffer.toString();
+  return decodeBody(buffer, response.headers.get("content-type"));
 }
 
 /**

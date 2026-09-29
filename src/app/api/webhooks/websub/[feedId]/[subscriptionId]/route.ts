@@ -22,6 +22,7 @@ import {
   ContentTooLargeError,
   readRequestBufferWithSizeLimit,
 } from "@/server/http/fetch";
+import { decodeBody } from "@/server/http/charset";
 import { usageLimitsConfig } from "@/server/config/env";
 import { logger } from "@/lib/logger";
 import { isValidUuid } from "@/lib/uuidv7";
@@ -153,7 +154,10 @@ export async function POST(
     return new Response("Feed not found", { status: 404 });
   }
 
-  const outcome = await ingestWebsubNotification(feed, bodyBuffer.toString());
+  const outcome = await ingestWebsubNotification(
+    feed,
+    decodeBody(bodyBuffer, request.headers.get("content-type"))
+  );
 
   if (outcome === "failed") {
     // Infrastructure failure, not bad content: acknowledging it would make the
