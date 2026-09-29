@@ -5,7 +5,11 @@
  * the URL: the query carries an authorization code.
  */
 
+import type { Metadata } from "next";
 import { AuthLayoutContent } from "@/components/auth/AuthLayoutContent";
+
+// Keep the code-bearing URL out of the Referer of anything this page loads.
+export const metadata: Metadata = { referrer: "no-referrer" };
 
 export default function AppCallbackPage() {
   return (

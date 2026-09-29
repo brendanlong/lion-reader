@@ -72,6 +72,10 @@ The two roles are split across **two columns**, so "row touched" and "meaningful
 
 The same "don't churn on a non-meaningful write" rule covers **feeds** — a content re-fetch with an unchanged `content_hash` doesn't bump `entries.updated_at` (issue #1084) — and **subscriptions** (issue #1160): `subscriptions.update` bumps `subscriptions.updated_at` (the subscription delta-sync cursor is `MAX(subscriptions.updated_at)`) and publishes `subscription_updated` only when `custom_title` / `fetch_full_content` actually change (pre-update values captured race-free with a `subscriptions AS prev` self-join in the UPDATE itself); `subscriptions.setTags` compares the incoming tag set against the delete's `RETURNING` and skips both when the set is identical; and the Google Reader rename gates its UPDATE on `custom_title IS DISTINCT FROM` the new title. Subscriptions have no per-field conflict watermark (no offline-replay path writes them), so a no-op re-save simply leaves `updated_at` untouched.
 
+## Deletions in Delta Sync
+
+Deltas are keyed off `updated_at`, so a row that disappears can't show up in them. Hard-deleting an entry a client may hold (today only `deleteSavedArticle`) must record an `entry_tombstones` row in the same transaction (`services/entry-tombstones.ts`); `sync.changes` reports tombstones, plus entries a state change took out of view, as `deletions`. Tombstones are pruned after `ENTRY_TOMBSTONE_RETENTION_MS`, and a client whose deletions cursor is older than that is told to resync rather than silently keeping deleted entries.
+
 ## Ordering & Pagination Mechanics
 
 - **UUIDv7 ordering**: since UUIDv7 is time-ordered, `id` doubles as a roughly-chronological tiebreaker: keyset pagination breaks ties on `id DESC` and the insert locality keeps B-tree writes sequential. It is **not** the timeline sort key — the entries timeline sorts by `COALESCE(published_at, fetched_at)` (denormalized onto `user_entries.published_or_fetched_at`, see below), not by `id`, because publish order and insert order diverge.

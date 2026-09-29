@@ -958,14 +958,19 @@ export async function listUserConsentGrants(userId: string): Promise<UserConsent
 
   const lastUsedByClient = new Map(lastUsed.map((row) => [row.clientId, row.lastUsedAt]));
 
-  return grants.map((grant) => ({
-    clientId: grant.clientId,
-    clientName: grant.clientName,
-    clientHost: cimdClientHost(grant.clientId, { fromDatabase: grant.clientName !== null }),
-    scopes: grant.scopes,
-    grantedAt: grant.grantedAt,
-    lastUsedAt: lastUsedByClient.get(grant.clientId) ?? null,
-  }));
+  return grants.map((grant) => {
+    // The built-in app client has no oauth_clients row.
+    const builtIn = grant.clientId === APP_CLIENT_ID ? getAppClient() : null;
+    const clientName = builtIn?.name ?? grant.clientName;
+    return {
+      clientId: grant.clientId,
+      clientName,
+      clientHost: cimdClientHost(grant.clientId, { fromDatabase: clientName !== null }),
+      scopes: grant.scopes,
+      grantedAt: grant.grantedAt,
+      lastUsedAt: lastUsedByClient.get(grant.clientId) ?? null,
+    };
+  });
 }
 
 /**

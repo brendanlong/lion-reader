@@ -199,10 +199,6 @@ const bulkUnreadCountsSchema = z.object({
 });
 
 /**
- * Output schema for setStarred mutation.
- * Returns the updated entry with new starred state and counts.
- */
-/**
  * Result of a bulk read/star write: the final state of every requested entry the
  * user can still see (an id missing here no longer exists for them), for cache
  * updates and offline-outbox reconciliation.
@@ -226,6 +222,10 @@ const bulkStateChangeOutputSchema = z.object({
   counts: bulkUnreadCountsSchema.optional(),
 });
 
+/**
+ * Output schema for setStarred mutation.
+ * Returns the updated entry with new starred state and counts.
+ */
 const setStarredOutputSchema = z.object({
   entry: entryMutationResultSchema,
   // Absent when the starred value didn't actually flip (same-value re-assert)
@@ -441,6 +441,8 @@ export const entriesRouter = createTRPCRouter({
         uncategorized: z.boolean().optional(),
         starredOnly: z.boolean().optional(),
         type: feedTypeSchema.optional(),
+        // Compared with entries' server-side fetchedAt, so it's server time (a
+        // fetchedAt the client saw) and, unlike changedAt, isn't rebased.
         before: z.coerce.date().optional(),
         changedAt: z.coerce.date().optional(),
         clientSentAt: clientSentAtSchema,

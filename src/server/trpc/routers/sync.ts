@@ -252,6 +252,49 @@ async function currentSyncCursors(
   };
 }
 
+/**
+ * How far behind the database clock the deletions cursor stays, so a delete
+ * transaction that started before the cursor but hadn't committed yet is still
+ * reported on the next sync.
+ */
+const DELETIONS_CURSOR_MARGIN_MS = 60 * 1000;
+
+async function databaseNow(db: Database): Promise<Temporal.Instant> {
+  const result = await db.execute<{ now: string }>(sql`SELECT now() AS now`);
+  return parseTimestamptz(result.rows[0].now);
+}
+
+/**
+ * Entries whose state changed after the entries cursor in a way that took them
+ * out of the user's view — today, unstarring an entry of an unsubscribed feed.
+ * `collectSyncEvents` filters on visibility, so it can't report these; an
+ * offline store would otherwise keep them (starred) forever.
+ */
+async function hiddenSinceCursor(
+  db: Database,
+  userId: string,
+  entriesCursor: string
+): Promise<Array<{ entryId: string; deletedAt: string }>> {
+  const rows = await db
+    .select({
+      entryId: userEntries.entryId,
+      updatedAt: sql`${userEntries.updatedAt}`.mapWith(parseTimestamptz),
+    })
+    .from(userEntries)
+    .innerJoin(entries, eq(entries.id, userEntries.entryId))
+    .leftJoin(subscriptions, eq(subscriptions.id, userEntries.subscriptionId))
+    .where(
+      and(
+        eq(userEntries.userId, userId),
+        sql`${userEntries.updatedAt} > ${entriesCursor}::timestamptz`,
+        // The negation of the visible_entries predicate (see collectSyncEvents).
+        sql`NOT ((${subscriptions.id} IS NOT NULL AND ${subscriptions.unsubscribedAt} IS NULL) OR ${userEntries.starred} = true OR ${entries.type} = 'saved')`
+      )
+    )
+    .limit(MAX_ENTRIES);
+  return rows.map((row) => ({ entryId: row.entryId, deletedAt: row.updatedAt.toString() }));
+}
+
 /** Per-entity-type cursors, as a client sends them back. */
 interface SyncCursorsInput {
   entries?: string;
@@ -828,8 +871,10 @@ export const syncRouter = createTRPCRouter({
   /**
    * The native app's delta sync (`sync.events` over REST, plus what an offline
    * store needs that the web client doesn't): server-computed next cursors,
-   * deletions (tombstones of hard-deleted entries), and `resyncRequired` when
-   * the deletions cursor predates the tombstone retention window.
+   * `deletions` (entries the user can no longer see: tombstones of hard-deleted
+   * saved articles, and entries that left their view through a state change),
+   * and `resyncRequired` when the deletions cursor predates the tombstone
+   * retention window.
    *
    * Called with no cursors, it returns no changes and the cursors to start
    * from — take them before downloading the initial window so nothing that
@@ -850,7 +895,12 @@ export const syncRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
       const { deletions: deletionsCursor, ...cursors } = input;
-      const now = Temporal.Now.instant();
+      // Deletions are stamped by the database clock (tombstones' DEFAULT
+      // now(), which is also their transaction's start), so the deletions
+      // cursor is read from it too, backed off by a margin that covers a
+      // delete transaction still in flight. Re-reporting a deletion is harmless.
+      const dbNow = await databaseNow(ctx.db);
+      const safeDeletionsCursor = dbNow.subtract({ milliseconds: DELETIONS_CURSOR_MARGIN_MS });
 
       if (!deletionsCursor && !cursors.entries && !cursors.subscriptions && !cursors.tags) {
         const current = await currentSyncCursors(ctx.db, userId);
@@ -865,14 +915,14 @@ export const syncRouter = createTRPCRouter({
             entriesAfterId: current.entriesAfterId ?? undefined,
             subscriptions: current.subscriptions ?? epoch,
             tags: current.tags ?? epoch,
-            deletions: now.toString(),
+            deletions: safeDeletionsCursor.toString(),
           },
           deletions: [],
           resyncRequired: false,
         };
       }
 
-      const horizon = now.subtract({ milliseconds: ENTRY_TOMBSTONE_RETENTION_MS });
+      const horizon = dbNow.subtract({ milliseconds: ENTRY_TOMBSTONE_RETENTION_MS });
       if (
         deletionsCursor &&
         Temporal.Instant.compare(Temporal.Instant.from(deletionsCursor), horizon) < 0
@@ -909,17 +959,35 @@ export const syncRouter = createTRPCRouter({
         tombstones.pop();
       }
 
+      // With every tombstone up to the safe point delivered, the cursor moves
+      // to that point even when there were none, so a client with no deletions
+      // doesn't drift past the retention horizon. It never moves backwards.
+      let nextDeletions = tombstones.at(-1)?.deletedAt ?? null;
+      if (!moreTombstones) {
+        const floor = deletionsCursor ? Temporal.Instant.from(deletionsCursor) : null;
+        nextDeletions = [nextDeletions, safeDeletionsCursor, floor]
+          .filter((t): t is Temporal.Instant => t !== null)
+          .reduce((a, b) => (Temporal.Instant.compare(a, b) >= 0 ? a : b));
+      }
+
+      const hidden = cursors.entries
+        ? await hiddenSinceCursor(ctx.db, userId, cursors.entries)
+        : [];
+
       return {
         events,
         hasMore: hasMore || moreTombstones,
         cursors: {
           ...next,
-          deletions: tombstones.at(-1)?.deletedAt.toString() ?? deletionsCursor,
+          deletions: nextDeletions?.toString() ?? deletionsCursor,
         },
-        deletions: tombstones.map((row) => ({
-          entryId: row.entryId,
-          deletedAt: row.deletedAt.toString(),
-        })),
+        deletions: [
+          ...tombstones.map((row) => ({
+            entryId: row.entryId,
+            deletedAt: row.deletedAt.toString(),
+          })),
+          ...hidden,
+        ],
         resyncRequired: false,
       };
     }),

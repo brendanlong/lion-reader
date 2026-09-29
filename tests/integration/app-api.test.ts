@@ -12,7 +12,14 @@ import { describe, it, expect, afterAll } from "vitest";
 import { NextRequest } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { oauthAuthorizationCodes, userEntries, users } from "../../src/server/db/schema";
+import {
+  oauthAuthorizationCodes,
+  subscriptions,
+  userEntries,
+  users,
+} from "../../src/server/db/schema";
+import { createApiToken } from "../../src/server/auth/api-token";
+import { GET as eventsGet } from "../../src/app/api/v1/events/route";
 import { createSession } from "../../src/server/auth/session";
 import { createTokens, recordConsent } from "../../src/server/oauth/service";
 import {
@@ -126,6 +133,34 @@ describe("app token authentication", () => {
     });
     const res = await rest(accessToken, "GET", "/entries");
     expect(res.status).toBe(401);
+  });
+
+  it("rejects an mcp API token on app-only endpoints", async () => {
+    const userId = await createUser();
+    const { token } = await createApiToken(userId, ["mcp"]);
+    expect((await rest(token, "GET", "/sync/changes")).status).toBe(403);
+    expect((await rest(token, "POST", "/entries/batch", { ids: [userId] })).status).toBe(403);
+    expect((await rest(token, "POST", "/entries/mark-all-read", {})).status).toBe(403);
+  });
+
+  it("opens the SSE stream for the app's token only", async () => {
+    const userId = await createUser();
+    const events = (token: string) =>
+      eventsGet(new Request(`${API}/events`, { headers: { authorization: `Bearer ${token}` } }));
+
+    const accepted = await events(await appToken(userId));
+    expect(accepted.status).toBe(200);
+    await accepted.body?.cancel();
+
+    const { accessToken: mcpAudience } = await createTokens({
+      clientId: APP_CLIENT_ID,
+      userId,
+      scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
+      resource: getResourceIdentifier(),
+    });
+    expect((await events(mcpAudience)).status).toBe(401);
+    const { token: apiToken } = await createApiToken(userId, ["mcp"]);
+    expect((await events(apiToken)).status).toBe(401);
   });
 
   it("rejects the app's token without reader:full-access", async () => {
@@ -248,6 +283,47 @@ describe("sync.changes", () => {
       await rest(token, "GET", `/sync/changes?${new URLSearchParams(delta.cursors)}`)
     ).json();
     expect(again.deletions).toEqual([]);
+  });
+
+  it("advances the deletions cursor even when nothing was deleted", async () => {
+    const userId = await createUser();
+    const token = await appToken(userId);
+    const bootstrap = await (await rest(token, "GET", "/sync/changes")).json();
+    // Nearly at the retention horizon.
+    const old = new Date(Date.now() - 59 * 24 * 60 * 60 * 1000).toISOString();
+
+    const delta = await (
+      await rest(
+        token,
+        "GET",
+        `/sync/changes?${new URLSearchParams({ ...bootstrap.cursors, deletions: old })}`
+      )
+    ).json();
+
+    expect(delta.resyncRequired).toBe(false);
+    expect(new Date(delta.cursors.deletions).getTime()).toBeGreaterThan(Date.now() - 5 * 60 * 1000);
+  });
+
+  it("reports an entry that left the user's view through a state change", async () => {
+    const userId = await createUser();
+    const token = await appToken(userId);
+    const feedId = await createTestFeed();
+    const subscriptionId = await createTestSubscription(userId, feedId);
+    const entryId = await createTestEntry(feedId, { userIds: [userId] });
+    await rest(token, "POST", "/entries/starred", { entries: [{ id: entryId }], starred: true });
+    await db
+      .update(subscriptions)
+      .set({ unsubscribedAt: new Date() })
+      .where(eq(subscriptions.id, subscriptionId));
+
+    const bootstrap = await (await rest(token, "GET", "/sync/changes")).json();
+    // Unstarring an entry of an unsubscribed feed hides it.
+    await rest(token, "POST", "/entries/starred", { entries: [{ id: entryId }], starred: false });
+
+    const delta = await (
+      await rest(token, "GET", `/sync/changes?${new URLSearchParams(bootstrap.cursors)}`)
+    ).json();
+    expect(delta.deletions.map((d: { entryId: string }) => d.entryId)).toContain(entryId);
   });
 
   it("requires a resync when the deletions cursor predates tombstone retention", async () => {
