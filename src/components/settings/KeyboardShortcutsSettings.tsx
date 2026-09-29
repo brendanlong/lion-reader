@@ -12,6 +12,7 @@ import { SettingsSection } from "@/components/settings/SettingsSection";
 import { CardSection } from "@/components/ui/card";
 import { InfoCircleIcon } from "@/components/ui/icons";
 import { Kbd } from "@/components/ui/kbd";
+import { Switch } from "@/components/ui/switch";
 
 export function KeyboardShortcutsSettings() {
   const { enabled, setEnabled, openShortcutsModal } = useKeyboardShortcutsContext();
@@ -28,23 +29,11 @@ export function KeyboardShortcutsSettings() {
             Use keyboard shortcuts to navigate entries and perform actions quickly.
           </p>
         </div>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={enabled}
-          aria-labelledby="keyboard-shortcuts-label"
-          onClick={() => setEnabled(!enabled)}
-          className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
-            enabled ? "bg-primary-solid" : "bg-fill-muted"
-          }`}
-        >
-          <span
-            aria-hidden="true"
-            className={`bg-surface pointer-events-none inline-block h-5 w-5 transform rounded-full shadow ring-0 transition duration-200 ease-in-out ${
-              enabled ? "translate-x-5" : "translate-x-0"
-            }`}
-          />
-        </button>
+        <Switch
+          checked={enabled}
+          onChange={() => setEnabled(!enabled)}
+          labelledBy="keyboard-shortcuts-label"
+        />
       </div>
 
       {/* View Shortcuts Button */}

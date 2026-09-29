@@ -4,7 +4,7 @@ This file governs the React components in `src/components/`. Data-flow diagram: 
 
 ## UI Components
 
-Reusable UI primitives are in `src/components/ui/`. **Always check for existing components before creating new ones** — list the directory rather than assuming a primitive is missing; it covers buttons, inputs, alerts, dialogs, cards, links (`ClientLink`/`PageLink`/`TextLink`), nav links, icon buttons, status/empty-state cards, and more. Import directly from source files, e.g. `import { Button } from "@/components/ui/button";`
+Reusable UI primitives are in `src/components/ui/`. **Always check for existing components before creating new ones** — list the directory rather than assuming a primitive is missing; it covers buttons, inputs, alerts, dialogs, cards, links (`ClientLink`/`PageLink`/`TextLink`), nav links, icon buttons, settings switches (`Switch`), status/empty-state cards, and more. Import directly from source files, e.g. `import { Button } from "@/components/ui/button";`
 
 ### Icons
 
