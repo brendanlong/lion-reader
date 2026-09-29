@@ -3,13 +3,12 @@
  *
  * The protected-resource `resource` MUST be the canonical MCP endpoint URL
  * (with `/api/mcp` path), not the bare origin — see the MCP authorization spec
- * (2025-06-18). The bare origin is still accepted as a token audience for
- * backward compatibility.
+ * (2025-06-18). The bare origin is still accepted as a requested resource
+ * indicator at authorization time.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
-  getIssuer,
   getResourceIdentifier,
   getAcceptedResourceIdentifiers,
   getProtectedResourceMetadata,
@@ -56,13 +55,11 @@ describe("OAuth resource identifiers", () => {
     expect(metadata.authorization_servers).toEqual(["https://reader.example.com"]);
   });
 
-  it("accepts both the MCP-endpoint resource and the legacy origin as audience", () => {
+  it("accepts both the MCP-endpoint resource and the origin as a requested resource", () => {
     expect(getAcceptedResourceIdentifiers()).toEqual([
       "https://reader.example.com/api/mcp",
       "https://reader.example.com",
     ]);
-    // Origin (legacy) must remain accepted so pre-change tokens keep working.
-    expect(getAcceptedResourceIdentifiers()).toContain(getIssuer());
   });
 
   it("advertises Client ID Metadata Document support alongside 'none' auth", () => {
