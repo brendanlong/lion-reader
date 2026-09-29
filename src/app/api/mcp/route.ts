@@ -12,16 +12,9 @@
  */
 
 import { NextRequest } from "next/server";
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-  McpError,
-  ErrorCode,
-} from "@modelcontextprotocol/sdk/types.js";
-import { db } from "@/server/db";
-import { registerTools, toMcpError } from "@/server/mcp/tools";
+import { createMcpServer } from "@/server/mcp/server";
+import { extractBearerToken } from "@/server/auth/bearer";
 import { isSignupConfirmed } from "@/server/auth/confirmation";
 import { validateApiToken, API_TOKEN_SCOPES } from "@/server/auth/api-token";
 import { validateAccessToken } from "@/server/oauth/service";
@@ -48,11 +41,10 @@ async function authenticateRequest(request: NextRequest): Promise<AuthResult> {
   if (!authHeader) {
     return { success: false, reason: "no_authorization_header" };
   }
-  if (!authHeader.startsWith("Bearer ")) {
+  const token = extractBearerToken(authHeader);
+  if (!token) {
     return { success: false, reason: "invalid_authorization_scheme" };
   }
-
-  const token = authHeader.slice(7); // Remove "Bearer " prefix
 
   // Try OAuth access token first (new system)
   const oauthToken = await validateAccessToken(token);
@@ -124,68 +116,6 @@ async function authenticateRequest(request: NextRequest): Promise<AuthResult> {
 function buildWwwAuthenticateHeader(): string {
   const metadataUrl = getProtectedResourceMetadataUrl();
   return `Bearer realm="OAuth", resource_metadata="${metadataUrl}", error="invalid_token", error_description="Missing or invalid access token"`;
-}
-
-// ============================================================================
-// MCP Server Factory
-// ============================================================================
-
-/**
- * Creates a new MCP Server instance with tools registered.
- * Each request gets its own server instance (stateless pattern).
- *
- * @param userId - The authenticated user's ID, injected into tool handlers
- */
-function createMcpServer(userId: string): Server {
-  const server = new Server(
-    {
-      name: "lion-reader",
-      version: "1.0.0",
-    },
-    {
-      capabilities: {
-        tools: {},
-      },
-    }
-  );
-
-  server.setRequestHandler(ListToolsRequestSchema, async () => {
-    const tools = registerTools();
-    return { tools };
-  });
-
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const { name, arguments: args } = request.params;
-    const tools = registerTools();
-    const tool = tools.find((t) => t.name === name);
-
-    if (!tool) {
-      throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
-    }
-
-    // The authenticated userId is passed separately from client args, so it
-    // can't be spoofed; the handler validates args against its Zod schema.
-    let result: unknown;
-    try {
-      result = await tool.handler(db, userId, args ?? {});
-    } catch (error) {
-      // Log the original error server-side; toMcpError replaces internal error
-      // messages with a generic string so detail isn't echoed to clients (#1266).
-      logger.error("MCP tool execution error", { tool: name, userId, error });
-      throw toMcpError(error);
-    }
-
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(result, null, 2),
-        },
-      ],
-    };
-  });
-
-  return server;
 }
 
 // ============================================================================
