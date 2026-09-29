@@ -78,8 +78,9 @@ export interface JobPayloads {
   renew_websub: Record<string, never>; // Empty payload - renews all expiring subscriptions
   process_opml_import: { importId: string }; // Process an OPML import in the background
   // Fetch full content for entries a WebSub push just created, off the hub's
-  // callback request. See handlers/fetch-full-content.ts.
-  fetch_full_content: { feedId: string; entryIds: string[] };
+  // callback request. `pending` marks the feed's one not-yet-claimed job, which
+  // new entries are appended to — see enqueueFullContentFetch.
+  fetch_full_content: { feedId: string; entryIds: string[]; pending?: true };
   // Periodic feed fetch health check. Empty payload — alert cadence and
   // de-duplication are owned by the external healthchecks.io monitor, so no
   // state is carried across runs.
@@ -99,8 +100,8 @@ export interface JobPayloads {
 export type JobType = keyof JobPayloads;
 
 /**
- * One-time job types: each row is a single task, created by `createJob`, and
- * parked `ONE_TIME_JOB_PARK_MS` out when done — whatever the outcome, they must
+ * One-time job types: each row is a single task, parked `ONE_TIME_JOB_PARK_MS`
+ * out when done — whatever the outcome, they must
  * not run again. The retention cleanup sweeps parked rows (see
  * src/server/services/retention.ts). How each is claimed differs; see
  * `createWorkerClaimJob` in worker.ts.
@@ -541,17 +542,77 @@ export async function scheduleFeedRefreshNow(feedId: string): Promise<Job> {
 /**
  * Most `fetch_full_content` jobs that may run at once, across all workers.
  *
- * Unlike an OPML import, these are created by third-party hub pushes, and each
- * can spend minutes on sequential article fetches against a slow origin. Without
- * a cap, a busy push feed could fill every worker slot and starve feed polls and
- * singleton maintenance. It's a soft cap — two workers claiming at the same
- * instant can both see room — which is fine for its purpose.
+ * These are created by third-party hub pushes, and each can spend minutes on
+ * sequential article fetches against a slow origin, so without a cap a busy
+ * push feed could fill every worker slot and starve feed polls and singleton
+ * maintenance. That's why the worker can claim them first (see
+ * `createWorkerClaimJob`) without them crowding anything out. It's a soft cap —
+ * two workers claiming at the same instant can both see room — which is fine
+ * for its purpose.
  */
 export const MAX_RUNNING_FULL_CONTENT_JOBS = 2;
 
 /**
+ * Most entries a feed's pending `fetch_full_content` job holds. A feed that
+ * pushes more than this between runs is flooding; the overflow keeps its feed
+ * summary rather than growing an unbounded queue of article fetches.
+ */
+export const MAX_PENDING_FULL_CONTENT_ENTRIES = 50;
+
+/**
+ * Queues full-content fetching for a feed's entries, coalesced into the feed's
+ * single **pending** (not yet claimed) `fetch_full_content` job.
+ *
+ * One pending job per feed is what keeps the queue fair: claims go oldest
+ * first, and entries appended to a feed's pending job don't move it forward, so
+ * a feed that pushes constantly gets one job's turn at a time instead of a
+ * backlog that holds the running cap while other feeds' entries wait. The job
+ * processes a batch and re-queues its remainder through this same function,
+ * which puts that remainder behind every other feed's pending job.
+ *
+ * "Pending" is the `pending: true` payload marker the partial unique index
+ * `idx_jobs_full_content_pending_feed_id` keys on; `claimFullContentJob` removes
+ * it, so a running or finished job never absorbs new entries.
+ */
+export async function enqueueFullContentFetch(feedId: string, entryIds: string[]): Promise<void> {
+  if (entryIds.length === 0) {
+    return;
+  }
+  const now = new Date();
+  const payload = {
+    feedId,
+    entryIds: entryIds.slice(0, MAX_PENDING_FULL_CONTENT_ENTRIES),
+    pending: true,
+  } satisfies JobPayloads["fetch_full_content"];
+
+  // On conflict, append to the pending job's entries: deduplicated, first
+  // occurrence order kept, bounded. next_run_at is left alone (see above).
+  await db.execute(sql`
+    INSERT INTO ${jobs} (id, type, payload, next_run_at, created_at, updated_at)
+    VALUES (${generateUuidv7()}, 'fetch_full_content', ${JSON.stringify(payload)}::jsonb, ${now}, ${now}, ${now})
+    ON CONFLICT ((payload->>'feedId'))
+      WHERE type = 'fetch_full_content' AND (payload->>'pending') = 'true'
+    DO UPDATE SET
+      payload = jobs.payload || jsonb_build_object('entryIds', (
+        SELECT COALESCE(jsonb_agg(merged.id ORDER BY merged.first_ord), '[]'::jsonb)
+        FROM (
+          SELECT t.id, min(t.ord) AS first_ord
+          FROM jsonb_array_elements_text(
+            (jobs.payload->'entryIds') || (EXCLUDED.payload->'entryIds')
+          ) WITH ORDINALITY AS t(id, ord)
+          GROUP BY t.id
+          ORDER BY first_ord
+          LIMIT ${MAX_PENDING_FULL_CONTENT_ENTRIES}
+        ) merged
+      )),
+      updated_at = ${now}
+  `);
+}
+
+/**
  * Claims a due `fetch_full_content` job, unless
- * {@link MAX_RUNNING_FULL_CONTENT_JOBS} are already running.
+ * {@link MAX_RUNNING_FULL_CONTENT_JOBS} are already running, and clears its
+ * `pending` marker (see {@link enqueueFullContentFetch}).
  *
  * @returns The claimed job, or null if none is due or the cap is reached
  */
@@ -561,11 +622,12 @@ export async function claimFullContentJob(): Promise<Job | null> {
 
   // A running job is still due (next_run_at is only advanced when it finishes),
   // so bounding the count by next_run_at <= now keeps it on idx_jobs_polling
-  // instead of scanning the parked rows.
+  // instead of scanning the parked rows, and the inner LIMIT stops it at the cap.
   const result = await db.execute<RawJobRow>(sql`
     UPDATE jobs
     SET
       running_since = ${now},
+      payload = payload - 'pending',
       updated_at = ${now}
     WHERE id = (
       SELECT j.id FROM jobs j
@@ -573,10 +635,13 @@ export async function claimFullContentJob(): Promise<Job | null> {
         AND j.next_run_at <= ${now}
         AND (j.running_since IS NULL OR j.running_since < ${staleThreshold})
         AND (
-          SELECT count(*) FROM jobs r
-          WHERE r.type = 'fetch_full_content'
-            AND r.next_run_at <= ${now}
-            AND r.running_since >= ${staleThreshold}
+          SELECT count(*) FROM (
+            SELECT 1 FROM jobs r
+            WHERE r.type = 'fetch_full_content'
+              AND r.next_run_at <= ${now}
+              AND r.running_since >= ${staleThreshold}
+            LIMIT ${MAX_RUNNING_FULL_CONTENT_JOBS}
+          ) running
         ) < ${MAX_RUNNING_FULL_CONTENT_JOBS}
       ORDER BY j.next_run_at ASC
       LIMIT 1

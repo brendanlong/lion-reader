@@ -248,8 +248,8 @@ async function persistFullContentResult(
  *
  * A poll makes one call and drops the rest: a feed's first fetch lists its whole
  * back catalogue as "new", and fetching every article of it isn't wanted. A
- * push's new entries are genuinely new, so the push splits them into jobs of
- * this size instead of dropping any.
+ * push's new entries are genuinely new, so its `fetch_full_content` job takes
+ * them a batch at a time and re-queues the rest.
  */
 export const MAX_FULL_CONTENT_ENTRIES_PER_BATCH = 10;
 

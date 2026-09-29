@@ -17,7 +17,6 @@
 import { describe, it, expect } from "vitest";
 import {
   createWorkerClaimJob,
-  FULL_CONTENT_PRIORITY_CYCLE,
   SINGLETON_PRIORITY_INTERVAL,
   type WorkerClaimDeps,
 } from "@/server/jobs/worker";
@@ -159,50 +158,26 @@ describe("createWorkerClaimJob", () => {
     expect(perCall.flat().filter((c) => c !== "regular(process_opml_import)")).toEqual([]);
   });
 
-  describe("fetch_full_content (push-driven, so no priority over feed polls)", () => {
-    it("is not part of the priority regular claim", async () => {
-      const harness = makeHarness({ fullContentHasJobs: true });
-      const { perCall } = await harness.run(SINGLETON_PRIORITY_INTERVAL);
-      for (const consulted of perCall) {
-        expect(consulted[0]).toBe("regular(process_opml_import)");
-      }
-    });
-
-    it("under a feed backlog, gets feeds' slot on exactly one cycle per interval", async () => {
-      const harness = makeHarness({ feedHasJobs: true, fullContentHasJobs: true });
-      const cycles = SINGLETON_PRIORITY_INTERVAL * 2;
-      const { results } = await harness.run(cycles);
-      for (let i = 0; i < cycles; i++) {
-        expect(results[i]?.type).toBe(
-          i % SINGLETON_PRIORITY_INTERVAL === FULL_CONTENT_PRIORITY_CYCLE
-            ? "fetch_full_content"
-            : "fetch_feed"
-        );
-      }
-    });
-
-    it("doesn't take the singletons' priority cycle", async () => {
-      const due = SINGLETON_JOB_TYPES[0];
-      const harness = makeHarness({ fullContentHasJobs: true, dueSingletons: [due] });
-      const { results } = await harness.run(1);
-      expect(results[0]?.type).toBe(due);
-    });
-
-    it("is claimed on any cycle when feeds and singletons have nothing", async () => {
-      const harness = makeHarness({ fullContentHasJobs: true });
-      const { results } = await harness.run(SINGLETON_PRIORITY_INTERVAL);
+  describe("fetch_full_content", () => {
+    it("is tried after OPML imports and before feeds/singletons on every cycle", async () => {
+      // Safe because claimFullContentJob caps how many run at once.
+      const harness = makeHarness({
+        feedHasJobs: true,
+        fullContentHasJobs: true,
+        dueSingletons: [...SINGLETON_JOB_TYPES],
+      });
+      const { results, perCall } = await harness.run(SINGLETON_PRIORITY_INTERVAL);
       expect(results.every((j) => j?.type === "fetch_full_content")).toBe(true);
+      for (const consulted of perCall) {
+        expect(consulted).toEqual(["regular(process_opml_import)", "fullContent"]);
+      }
     });
 
-    it("falls through to feeds on its own cycle when it has nothing", async () => {
-      const harness = makeHarness({ feedHasJobs: true });
-      const { results, perCall } = await harness.run(FULL_CONTENT_PRIORITY_CYCLE + 1);
-      expect(results[FULL_CONTENT_PRIORITY_CYCLE]?.type).toBe("fetch_feed");
-      expect(perCall[FULL_CONTENT_PRIORITY_CYCLE]).toEqual([
-        "regular(process_opml_import)",
-        "fullContent",
-        "feed",
-      ]);
+    it("leaves the feed/singleton rotation unchanged when it has nothing to claim", async () => {
+      const due = SINGLETON_JOB_TYPES[0];
+      const harness = makeHarness({ feedHasJobs: true, dueSingletons: [due] });
+      const { results } = await harness.run(2);
+      expect(results.map((j) => j?.type)).toEqual([due, "fetch_feed"]);
     });
   });
 

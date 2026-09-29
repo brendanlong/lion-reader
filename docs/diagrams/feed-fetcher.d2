@@ -26,8 +26,7 @@ queue: {
 
     schema: |md
       - id: UUID
-      - type: a JobType (fetch_feed, renew_websub,
-        process_opml_import, fetch_full_content, ...)
+      - type: a JobType (JobPayloads in src/server/jobs/queue.ts)
       - payload: jsonb (e.g. { feedId })
       - next_run_at: timestamp
       - running_since: timestamp

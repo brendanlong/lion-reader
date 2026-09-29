@@ -10,8 +10,8 @@ import { parseFeedAsync } from "./parser";
 import { processEntries } from "./entry-processor";
 import { recordHubAnnouncedEntries } from "./websub-hub-stats";
 import { WEBSUB_BACKUP_POLL_INTERVAL_SECONDS } from "./scheduling";
-import { createJob, updateFeedJobNextRun } from "../jobs/queue";
-import { feedWantsFullContent, MAX_FULL_CONTENT_ENTRIES_PER_BATCH } from "../services/full-content";
+import { enqueueFullContentFetch, updateFeedJobNextRun } from "../jobs/queue";
+import { feedWantsFullContent } from "../services/full-content";
 import { trackWebsubNotificationReceived } from "../metrics/metrics";
 import { logger } from "@/lib/logger";
 
@@ -77,9 +77,9 @@ async function scheduleBackupPoll(feed: Feed): Promise<void> {
  * Queues full-content fetching for the entries a push just created, if any
  * subscriber wants it — the same work a poll does inline for its new entries
  * (`fetchFullContentForNewEntries`). A push is ingested inside the hub's
- * callback request, so the slow article fetches go to a `fetch_full_content`
- * job rather than holding the response open. A push with more new entries than
- * one job fetches is split across several jobs, so none is dropped.
+ * callback request, so the slow article fetches go to the feed's pending
+ * `fetch_full_content` job (see `enqueueFullContentFetch`) rather than holding
+ * the response open.
  *
  * Failure is logged, not propagated: the entries are already committed, so
  * answering 503 wouldn't help — a redelivered push finds them unchanged and
@@ -93,12 +93,7 @@ async function queueFullContentFetch(feedId: string, entryIds: string[]): Promis
     if (!(await feedWantsFullContent(db, feedId))) {
       return;
     }
-    for (let i = 0; i < entryIds.length; i += MAX_FULL_CONTENT_ENTRIES_PER_BATCH) {
-      await createJob({
-        type: "fetch_full_content",
-        payload: { feedId, entryIds: entryIds.slice(i, i + MAX_FULL_CONTENT_ENTRIES_PER_BATCH) },
-      });
-    }
+    await enqueueFullContentFetch(feedId, entryIds);
   } catch (error) {
     logger.warn("Failed to queue full-content fetch for WebSub entries", {
       feedId,
