@@ -300,6 +300,42 @@ describe("useEntryMutations star/unstar", () => {
     expect(result.current.utils.entries.count.getData({})).toEqual({ unread: 4 });
   });
 
+  it("skips a previous-release single-subscription counts shape without failing", async () => {
+    // During a canary/rollback window the server may still return the old
+    // setStarred counts shape (no `subscriptions` array). The hook must skip it
+    // (the entry_state_changed event sets the counts) rather than throw.
+    const { result, queryClient, callsFor } = renderHookWithTrpc(
+      () => ({ mutations: useEntryMutations(), utils: trpc.useUtils() }),
+      {
+        handlers: {
+          "entries.setStarred": (input) => {
+            const typed = input as { id: string; starred: boolean };
+            return {
+              entry: { id: typed.id, read: false, starred: typed.starred, updatedAt: fixedDate },
+              counts: {
+                all: { unread: 4 },
+                starred: { unread: 7 },
+                subscription: { id: "sub-1", unread: 2 },
+              } as never,
+            };
+          },
+        },
+      }
+    );
+
+    act(() => {
+      result.current.mutations.star("e1");
+    });
+
+    await waitFor(() => expect(callsFor("entries.setStarred")).toHaveLength(1));
+    // The mutation settled successfully...
+    await waitFor(() => expect(getEntryMutationTracker(queryClient).hasPending("e1")).toBe(false));
+    // ...without an error toast or any counts written from the old shape.
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(result.current.utils.entries.count.getData({ starredOnly: true })).toBeUndefined();
+    expect(result.current.utils.entries.count.getData({})).toBeUndefined();
+  });
+
   it("toggleStar unstars an entry that is currently starred", async () => {
     const { result, callsFor } = renderHookWithTrpc(() => useEntryMutations(), {
       handlers: {

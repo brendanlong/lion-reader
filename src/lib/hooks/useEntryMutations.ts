@@ -154,11 +154,7 @@ export function useEntryMutations(): UseEntryMutationsResult {
           updatedAt: entry.updatedAt,
         });
       }
-      // Array check: a server from the previous release (canary/rollback
-      // window) returns the single-subscription counts shape, which lacks
-      // `subscriptions`; skip it and let the entry_state_changed event, which
-      // always carries the bulk shape, set the counts.
-      if (data.counts && Array.isArray(data.counts.subscriptions)) {
+      if (data.counts) {
         setBulkCounts(utils, data.counts, queryClient);
       }
     },
