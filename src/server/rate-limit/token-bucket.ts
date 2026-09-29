@@ -36,7 +36,7 @@ export interface ConsumeResult {
   remaining: number;
   /** Unix timestamp (ms) when bucket will be full again */
   resetMs: number;
-  /** Seconds until next token is available (for Retry-After header) */
+  /** Seconds until the request's cost is available (for Retry-After header) */
   retryAfterSeconds: number | null;
 }
 

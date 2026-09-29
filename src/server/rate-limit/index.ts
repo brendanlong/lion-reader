@@ -122,7 +122,7 @@ local tokens_to_full = capacity - tokens
 local time_to_full_ms = (tokens_to_full / refill_rate) * 1000
 local reset_ms = now_ms + time_to_full_ms
 
--- Check if we can consume a token
+-- Check if we can consume the request's cost
 local allowed = 0
 local remaining = 0
 local retry_after_seconds = 0
@@ -162,6 +162,10 @@ export async function checkRateLimit(
   const config = RATE_LIMIT_CONFIGS[type];
   const fallback = options.fallback ?? "open";
   const cost = options.cost ?? 1;
+  // A negative cost would add tokens; one above capacity could never pass.
+  if (!Number.isInteger(cost) || cost < 1 || cost > config.capacity) {
+    throw new Error(`Invalid rate-limit cost ${cost} for "${type}"`);
+  }
 
   const applyFallback = (): ConsumeResult => {
     if (fallback === "memory") {

@@ -403,19 +403,28 @@ export const expensiveConfirmedProtectedProcedure = t.procedure
   .use(createAuthenticatedRateLimitMiddleware("expensive"));
 
 /**
+ * The least a speech request is charged, so the character-counted limit still
+ * bounds request volume (each call is a DB lookup and an outbound request,
+ * often on the server's shared OpenRouter key). A run of one-line paragraphs
+ * at 2× costs about 260 chars/s at this floor, under the limit's refill.
+ */
+const MIN_SPEECH_CHARGE = 200;
+
+/**
  * Confirmed protected procedure on the speech-synthesis rate limit, which is
- * counted in characters: each call is charged its validated `text` length, so
- * the input schema is part of the builder.
+ * counted in characters: each call is charged its validated `text` length
+ * (at least {@link MIN_SPEECH_CHARGE}), so the input schema is part of the
+ * builder.
  */
 export function speechConfirmedProtectedProcedure<TInput extends { text: string }>(
-  input: ZodType<TInput>
+  input: ZodType<TInput, TInput>
 ) {
   return confirmedProtectedProcedure.input(input).use(async ({ ctx, input, next }) => {
     const rateLimitHeaders = await performRateLimitCheck(
       ctx.session.user.id,
       ctx.headers,
       "speech",
-      input.text.length
+      Math.max(input.text.length, MIN_SPEECH_CHARGE)
     );
     return next({ ctx: { ...ctx, rateLimitHeaders } });
   });
