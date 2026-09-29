@@ -4,6 +4,8 @@ This file governs the outbound-HTTP helpers: SSRF-protected fetching (`ssrf.ts`)
 
 Every outgoing request must send our custom User-Agent (`USER_AGENT`/`buildUserAgent` from `@/server/http/user-agent`).
 
+Decode fetched (or pushed/uploaded) bodies to text with `decodeBody` (`charset.ts`, precedence documented there) — never `buffer.toString()`, which reads every legacy windows-1252/Latin-1 page or feed as U+FFFD (#1546). `readResponseWithSizeLimit` already does this; callers holding raw bytes must keep the `Content-Type` alongside them.
+
 ## CDN (static assets + demo images)
 
 The Bunny pull zone (`ASSET_PREFIX`, set via `[build.args]` in `fly.toml`) wraps the **whole site** as its origin and honors origin `Cache-Control`, so what it actually caches is decided by the headers we send, not by which paths it can reach:

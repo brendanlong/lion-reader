@@ -17,6 +17,7 @@ import { fetchFullContentForNewEntries } from "../../services/full-content";
 import { fetchFeed, type FetchFeedResult, type RedirectInfo } from "../../feed/fetcher";
 import type { WebSubLinkHeaders } from "../../feed/link-header";
 import { parseFeed } from "../../feed/parser";
+import { decodeBody } from "../../http/charset";
 import { processEntries } from "../../feed/entry-processor";
 import { calculateNextFetch, type FeedHints } from "../../feed/scheduling";
 import {
@@ -182,6 +183,7 @@ function getMetricsStatus(
  *
  * @param feed - The feed record from the database
  * @param body - The raw feed body bytes (avoids text decoding until needed)
+ * @param contentType - The response Content-Type, for decoding the body's charset
  * @param cacheHeaders - Parsed cache headers from the response
  * @param bodyHash - Pre-computed SHA-256 hash of the body
  * @param redirects - The redirect chain from the fetch
@@ -195,6 +197,7 @@ function getMetricsStatus(
 async function processSuccessfulFetch(
   feed: Feed,
   body: Buffer,
+  contentType: string | null,
   cacheHeaders: ParsedCacheHeaders,
   bodyHash: string,
   redirects: RedirectInfo[],
@@ -204,7 +207,7 @@ async function processSuccessfulFetch(
 ): Promise<JobHandlerResult> {
   // Decode to string for parsing. A forced refresh also reaches here on an
   // unchanged body (it bypasses the body-hash short-circuit).
-  const bodyText = body.toString("utf-8");
+  const bodyText = decodeBody(body, contentType);
 
   // Parse the feed content
   let parsedFeed;
@@ -584,6 +587,7 @@ async function processFetchResult(
       return processSuccessfulFetch(
         feed,
         result.body,
+        result.contentType,
         result.cacheHeaders,
         bodyHash,
         result.redirects,

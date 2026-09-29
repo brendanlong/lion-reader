@@ -15,6 +15,7 @@
  *   Markdown URL save)
  */
 
+import { decodeBody } from "@/server/http/charset";
 import { logger } from "@/lib/logger";
 import { processMarkdown as convertMarkdown } from "@/server/markdown";
 import { extractDocxCoreProperties } from "@/server/file/docx-core-props";
@@ -180,9 +181,10 @@ export async function convertUploadedFile(
       return convertDocx(content, filename);
 
     case "html":
-      // Readability runs downstream.
+      // Readability runs downstream. No Content-Type, so the file's own
+      // <meta charset> (or BOM) decides its encoding.
       return {
-        html: content.toString("utf-8"),
+        html: decodeBody(content, null),
         preCleanedContent: null,
         fileType: "html",
         filename,
