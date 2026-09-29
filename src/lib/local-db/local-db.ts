@@ -104,8 +104,12 @@ function connectQueryCache(db: LocalDb, queryClient: QueryClient): void {
       ingestQuery(db, query, "replace");
     } else if (event.type === "updated" && event.action.type === "success") {
       // A next-page fetch appends; anything else (initial fetch, refetch,
-      // setQueryData) is the list's complete current membership.
-      ingestQuery(db, query, query.state.fetchMeta?.fetchMore ? "append" : "replace");
+      // setQueryData) is the list's complete current membership. `fetchMeta`
+      // outlives its fetch, so a manual write after a next page is still a
+      // replace. (Hydrating over an existing query is a `setState`, which
+      // isn't ingested: the SPA only hydrates on its first load.)
+      const isNextPage = !!query.state.fetchMeta?.fetchMore && !event.action.manual;
+      ingestQuery(db, query, isNextPage ? "append" : "replace");
     }
   });
 }

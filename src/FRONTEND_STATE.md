@@ -21,11 +21,11 @@ module-global, since the server has one QueryClient per request) subscribes to
 the QueryCache and ingests every `entries.list` and `entries.get` result as it
 lands: SSR-hydrated, prefetched, fetched, and `setQueryData`'d data all take the
 same path. `entries.list` pages are written to the entry store and to the list's
-membership; a next-page fetch (`fetchMeta.fetchMore`) appends, anything else
-replaces the list's membership. Removing the query from the cache (gc) drops the
-list's membership rows. Nothing writes entry state to `entries.list` or
-`entries.get` any more — their copies are only as fresh as their fetch and are
-never rendered for state.
+membership; a next-page fetch (`fetchMeta.fetchMore`, not a manual write)
+appends, anything else replaces the list's membership. Removing the query from
+the cache (gc) drops the list's membership rows. Never write entry state into
+`entries.list` or `entries.get`, or render state from them: their copies are
+only as fresh as their fetch.
 
 **Membership never follows state.** A list's rows change only when it is fetched
 or when an entry is inserted live — never when an entry's read/starred state
@@ -36,8 +36,8 @@ or the fetch position for search and Recently Read, whose order entries can't
 reproduce.
 
 Entry lists (`entries.list`, `staleTime: Infinity`) are never refetched on a
-timer or window focus. Mutations and SSE events patch them in place, and the
-single navigation-triggered refresh is `useEntryListRefreshOnNavigate`
+timer or window focus. Mutations and SSE events update the store (state and
+live inserts) instead, and the single navigation-triggered refresh is `useEntryListRefreshOnNavigate`
 (mounted in `AppRouter`): on any pathname change it runs `refreshEntryLists`,
 which cancels in-flight fetches on inactive lists (a completing fetch would
 clear the staleness flag) and then invalidates every `entries.list` query not

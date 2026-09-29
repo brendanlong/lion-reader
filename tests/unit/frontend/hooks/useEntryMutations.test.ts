@@ -23,6 +23,7 @@ import { trpc } from "@/lib/trpc/client";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
 import type { BulkUnreadCounts } from "@/lib/cache/operations";
 import { getLocalDb } from "@/lib/local-db/local-db";
+import { useEntryListEntries } from "@/lib/hooks/useLocalEntries";
 import { setServerEntryState, upsertServerEntries, type EntryRow } from "@/lib/local-db/entries";
 import {
   renderHookWithTrpc,
@@ -620,6 +621,46 @@ describe("useEntryMutations concurrent mutations", () => {
     await waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(1));
 
     await waitFor(() => expect(entry()).toMatchObject({ read: true, starred: true }));
+  });
+
+  it("still sends a mark-read that changes nothing locally (already-read entry)", async () => {
+    const { result, queryClient, callsFor } = renderTwoInstances({
+      "entries.markRead": () => markReadResponse("e1", { read: true, starred: false }, t1),
+    });
+    seedEntry(queryClient, { read: true });
+
+    act(() => {
+      result.current.list.markRead(["e1", "not-held"], true);
+    });
+
+    await waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(1));
+    const input = callsFor("entries.markRead")[0].input as { entries: { id: string }[] };
+    expect(input.entries.map((e) => e.id)).toEqual(["e1", "not-held"]);
+  });
+
+  it("inserts an entry marked unread into the unread-only lists missing it", async () => {
+    const unreadOnly = { unreadOnly: true, sortOrder: "newest", limit: 10 } as const;
+    const { result, queryClient } = renderHookWithTrpc(
+      () => ({ mutations: useEntryMutations(), list: useEntryListEntries(unreadOnly) }),
+      {
+        handlers: {
+          "entries.markRead": () => markReadResponse("e1", { read: false, starred: false }, t1),
+        },
+      }
+    );
+    seedEntry(queryClient, { read: true });
+    act(() => {
+      queryClient.setQueryData([["entries", "list"], { input: unreadOnly, type: "infinite" }], {
+        pages: [{ items: [], nextCursor: undefined }],
+        pageParams: [undefined],
+      });
+    });
+
+    act(() => {
+      result.current.mutations.markRead(["e1"], false);
+    });
+
+    await waitFor(() => expect(result.current.list).toMatchObject([{ id: "e1", read: false }]));
   });
 
   it("still sends the mutation for an entry the store doesn't hold", async () => {

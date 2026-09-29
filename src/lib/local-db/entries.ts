@@ -79,22 +79,18 @@ export function setServerEntryState(
 
 /**
  * Writes metadata from an `entry_updated` event. Metadata changes don't
- * conflict with read/starred state, so they always apply; `updatedAt` only
- * moves forward.
+ * conflict with read/starred state, so they always apply. `updatedAt` is left
+ * alone: the event carries the entry's own timestamp, and moving the stored
+ * one forward to it would make the store reject a read/starred write computed
+ * just before the metadata change (e.g. the response to a mark-read racing a
+ * feed refresh).
  */
 export function patchServerEntryMetadata(
   store: EntryStore,
   id: string,
-  metadata: Pick<EntryRow, "title" | "author" | "summary" | "url" | "publishedAt">,
-  updatedAt: Date
+  metadata: Pick<EntryRow, "title" | "author" | "summary" | "url" | "publishedAt">
 ): void {
   const stored = store.getSynced(id);
   if (!stored) return;
-  store.upsert([
-    {
-      ...stored,
-      ...metadata,
-      updatedAt: updatedAt > stored.updatedAt ? updatedAt : stored.updatedAt,
-    },
-  ]);
+  store.upsert([{ ...stored, ...metadata }]);
 }

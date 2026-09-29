@@ -3,7 +3,8 @@
  */
 
 /**
- * Component integration tests for UnifiedEntriesContent's not-found guards.
+ * Component integration tests for UnifiedEntriesContent's not-found guards
+ * and its entry-list loading fallback.
  *
  * Subscription and tag views must distinguish a *genuinely missing* resource
  * (show a NotFoundCard) from a *transient* fetch failure (surface a retryable
@@ -17,7 +18,9 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen } from "@testing-library/react";
+import { act, screen } from "@testing-library/react";
+import { getLocalDb } from "@/lib/local-db/local-db";
+import { upsertServerEntries } from "@/lib/local-db/entries";
 import { TRPCClientError } from "@trpc/client";
 import { UnifiedEntriesContent } from "@/components/entries/UnifiedEntriesContent";
 import { AppearanceProvider } from "@/lib/appearance/AppearanceProvider";
@@ -156,5 +159,51 @@ describe("UnifiedEntriesContent not-found guards", () => {
 
     expect(await screen.findByText("Failed to load entries")).toBeInTheDocument();
     expect(screen.queryByText("Tag not found")).not.toBeInTheDocument();
+  });
+});
+
+describe("UnifiedEntriesContent loading fallback", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    stubMemoryLocalStorage();
+  });
+
+  /** Renders the route with entries.list never resolving and one entry already stored. */
+  function renderLoading(pathname: string) {
+    mockPathname.mockReturnValue(pathname);
+    const rendered = renderUnified({ "entries.list": () => new Promise(() => {}) });
+    act(() => {
+      upsertServerEntries(getLocalDb(rendered.queryClient).entries, [
+        {
+          id: "stored",
+          feedId: "feed-1",
+          subscriptionId: "sub-1",
+          type: "web",
+          url: null,
+          title: "Stored Entry",
+          author: null,
+          summary: null,
+          publishedAt: new Date("2024-06-01T00:00:00Z"),
+          fetchedAt: new Date("2024-06-01T00:00:00Z"),
+          updatedAt: new Date("2024-06-01T00:00:00Z"),
+          read: false,
+          starred: false,
+          feedTitle: "Feed",
+          siteName: null,
+        },
+      ]);
+    });
+    return rendered;
+  }
+
+  it("shows stored entries matching the view while its first page loads", async () => {
+    renderLoading("/subscription/sub-1");
+    expect(await screen.findByText("Stored Entry")).toBeInTheDocument();
+  });
+
+  it("shows a skeleton for Recently Read, whose order stored entries can't reproduce", async () => {
+    renderLoading("/recently-read");
+    await act(async () => {});
+    expect(screen.queryByText("Stored Entry")).not.toBeInTheDocument();
   });
 });

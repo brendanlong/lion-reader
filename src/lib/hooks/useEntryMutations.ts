@@ -24,22 +24,34 @@ import { getLocalDb, insertEntryIntoLists, type LocalDb } from "@/lib/local-db/l
 /**
  * Sends a mutation with `applyOptimistic` layered over the entries the store
  * holds until `send` (which writes the response to the synced layer)
- * settles. Entries the store doesn't hold have nothing on screen to update,
- * so with none held the mutation is just sent.
+ * settles.
+ *
+ * A transaction that records no changes completes without calling its
+ * mutation function, and TanStack DB records none for entries the store
+ * doesn't hold or for a re-assert of the current state (e.g. marking an
+ * already-read entry read, which still has to reach the server to move its
+ * `readChangedAt`). Then there is nothing to show optimistically, so the
+ * mutation is just sent.
  */
 function mutateEntries(
   db: LocalDb,
   entryIds: string[],
   applyOptimistic: (draft: EntryRow) => void,
-  send: () => Promise<void>
-): Promise<void> {
+  send: () => Promise<unknown>
+): Promise<unknown> {
   const held = entryIds.filter((id) => db.entries.collection.has(id));
-  if (held.length === 0) return send();
-  const transaction = createTransaction({ mutationFn: send });
-  transaction.mutate(() => {
-    db.entries.collection.update(held, (drafts) => drafts.forEach(applyOptimistic));
-  });
-  return transaction.isPersisted.promise.then(() => undefined);
+  const transaction = createTransaction({ autoCommit: false, mutationFn: send });
+  if (held.length > 0) {
+    transaction.mutate(() => {
+      db.entries.collection.update(held, (drafts) => drafts.forEach(applyOptimistic));
+    });
+  }
+  if (transaction.mutations.length === 0) {
+    // Completes at once without calling `send`; this just releases it.
+    void transaction.commit();
+    return send();
+  }
+  return transaction.commit();
 }
 
 /**
@@ -119,6 +131,11 @@ export function useEntryMutations(): UseEntryMutationsResult {
   const utils = trpc.useUtils();
   const queryClient = useQueryClient();
   const db = getLocalDb(queryClient);
+  // The requests go through React Query mutations (not the vanilla client) so
+  // failures reach the MutationCache, where AuthErrorHandler watches for an
+  // expired session.
+  const { mutateAsync: sendMarkRead } = trpc.entries.markRead.useMutation();
+  const { mutateAsync: sendSetStarred } = trpc.entries.setStarred.useMutation();
 
   const markRead = useCallback(
     (ids: string[], read: boolean) => {
@@ -139,7 +156,7 @@ export function useEntryMutations(): UseEntryMutationsResult {
           draft.read = read;
         },
         async () => {
-          const data = await utils.client.entries.markRead.mutate({
+          const data = await sendMarkRead({
             entries: ids.map((id) => ({ id, changedAt })),
             read,
           });
@@ -151,7 +168,7 @@ export function useEntryMutations(): UseEntryMutationsResult {
         toast.error("Failed to update read status");
       });
     },
-    [db, queryClient, utils]
+    [db, queryClient, utils, sendMarkRead]
   );
 
   const setStarred = useCallback(
@@ -164,7 +181,7 @@ export function useEntryMutations(): UseEntryMutationsResult {
           draft.starred = starred;
         },
         async () => {
-          const data = await utils.client.entries.setStarred.mutate({
+          const data = await sendSetStarred({
             id: entryId,
             starred,
             changedAt,
@@ -183,7 +200,7 @@ export function useEntryMutations(): UseEntryMutationsResult {
         toast.error(starred ? "Failed to star entry" : "Failed to unstar entry");
       });
     },
-    [db, queryClient, utils]
+    [db, queryClient, utils, sendSetStarred]
   );
 
   // markAllRead mutation - invalidates caches based on what could be affected

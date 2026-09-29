@@ -83,18 +83,19 @@ describe("setServerEntryState", () => {
 });
 
 describe("patchServerEntryMetadata", () => {
-  it("applies metadata even when older than the stored state, keeping the newer updatedAt", () => {
-    upsertServerEntries(store, [makeEntry({ read: true, updatedAt: t2 })]);
-    patchServerEntryMetadata(
-      store,
-      "e1",
-      { title: "Renamed", author: "A", summary: "S", url: null, publishedAt: null },
-      t1
-    );
-    expect(store.collection.get("e1")).toMatchObject({
+  it("applies metadata without moving updatedAt, so a racing state write still lands", () => {
+    upsertServerEntries(store, [makeEntry({ updatedAt: t1 })]);
+    patchServerEntryMetadata(store, "e1", {
       title: "Renamed",
-      read: true,
-      updatedAt: t2,
+      author: "A",
+      summary: "S",
+      url: null,
+      publishedAt: null,
     });
+    expect(store.collection.get("e1")?.updatedAt).toEqual(t1);
+    // A mark-read computed before the metadata change (its updatedAt predates
+    // the entry_updated event's) must still apply.
+    setServerEntryState(store, "e1", { read: true, starred: false, updatedAt: t2 });
+    expect(store.collection.get("e1")).toMatchObject({ title: "Renamed", read: true });
   });
 });

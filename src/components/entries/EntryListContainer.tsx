@@ -228,12 +228,15 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
   }
 
   // Loading state (post-hydration, client-only): show the smart fallback
-  // (cached entries from parent lists) inline instead of suspending. Resolved/
+  // (stored entries matching the view) inline instead of suspending. Resolved/
   // cached data skips this and renders the real list on first paint. Placeholder
   // rows are clickable since the fallback lives here with the list's handlers.
-  // Search results can't be approximated from cached lists (membership depends
-  // on the query), so a pending search shows a plain skeleton instead.
-  if (isLoading && entries.length === 0 && queryInput.query) {
+  // Search results and Recently Read can't be approximated from stored entries
+  // (membership depends on the query; order on read time), so they show a
+  // plain skeleton instead.
+  const isServerOrdered =
+    !!queryInput.query || (queryInput.sortBy !== undefined && queryInput.sortBy !== "published");
+  if (isLoading && entries.length === 0 && isServerOrdered) {
     return <EntryListSkeleton />;
   }
   if (isLoading && entries.length === 0) {

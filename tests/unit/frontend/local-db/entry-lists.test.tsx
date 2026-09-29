@@ -156,6 +156,35 @@ describe("list ingestion", () => {
     );
   });
 
+  it("treats a manual cache write after a next page as the complete list", async () => {
+    const input = { limit: 1, unreadOnly: true, sortOrder: "newest" } as const;
+    const rendered = renderHookWithTrpc(
+      () => ({
+        query: trpc.entries.list.useInfiniteQuery(input, {
+          getNextPageParam: (page) => page.nextCursor,
+        }),
+        entries: useEntryListEntries(input),
+      }),
+      {
+        handlers: {
+          "entries.list": (request) =>
+            (request as { cursor?: string }).cursor
+              ? { items: [makeEntry("old", "2024-05-01")] }
+              : { items: [makeEntry("first", "2024-06-01")], nextCursor: "c1" },
+        },
+      }
+    );
+    await waitFor(() => expect(rendered.result.current.entries).toHaveLength(1));
+    await act(async () => {
+      await rendered.result.current.query.fetchNextPage();
+    });
+    await waitFor(() => expect(rendered.result.current.entries).toHaveLength(2));
+
+    act(() => seedList(rendered.queryClient, input, [{ items: [makeEntry("c", "2024-07-01")] }]));
+
+    await waitFor(() => expect(rendered.result.current.entries.map((e) => e.id)).toEqual(["c"]));
+  });
+
   it("keeps an entry that was marked read in an unread-only list (membership never follows state)", async () => {
     const { queryClient, result } = renderLists({ all: ALL });
     act(() => seedList(queryClient, ALL, [{ items: [makeEntry("a", "2024-06-01")] }]));

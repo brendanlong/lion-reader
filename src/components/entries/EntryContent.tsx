@@ -297,7 +297,7 @@ function EntryContentInner({
   // Auto-mark-read: fire the mutation once, as soon as entries.get data is
   // available (from cache when prefetched, otherwise when the fetch lands) —
   // even for an already-read entry, so readChangedAt moves it to the top of
-  // Recently Read. Timestamp reconciliation resolves it against any
+  // Recently Read. The store's `updatedAt` guard resolves it against any
   // entries.get fetch still in flight.
   useEffect(() => {
     // Only fire once per entry - check this first
