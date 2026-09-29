@@ -90,6 +90,8 @@ export class CloudAudioPlayer {
   private generation = 0;
   /** Bumped by clearCache, so synthesis finishing afterwards isn't cached. */
   private cacheEpoch = 0;
+  /** Bumped by every prime(); see releasePrime. */
+  private primeLease = 0;
 
   constructor(
     private readonly synthesize: (text: string) => Promise<Blob>,
@@ -139,9 +141,22 @@ export class CloudAudioPlayer {
    * Starts the element (on silence). Call synchronously inside the user
    * gesture that starts narration, before any async work, so autoplay policy
    * lets every later source swap play.
+   *
+   * @returns This prime's lease, to hand to {@link releasePrime} if playback
+   *   never starts.
    */
-  prime(): void {
+  prime(): number {
     this.playSilence();
+    return ++this.primeLease;
+  }
+
+  /**
+   * Stops a primed element whose playback never started (generation failed or
+   * the request was abandoned) — unless a later prime has taken the element
+   * over since, so an abandoned request can't stop newer playback.
+   */
+  releasePrime(lease: number): void {
+    if (lease === this.primeLease) this.stop();
   }
 
   load(paragraphs: string[]): void {

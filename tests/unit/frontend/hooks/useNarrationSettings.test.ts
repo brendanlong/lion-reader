@@ -17,7 +17,6 @@ import { hydrateRoot } from "react-dom/client";
 
 const localStorageMock = stubMemoryLocalStorage();
 vi.spyOn(localStorageMock, "setItem");
-vi.stubGlobal("window", { localStorage: localStorageMock });
 
 // Import after mocking
 import {
@@ -303,6 +302,23 @@ describe("useNarrationSettings", () => {
       });
 
       expect(player.result.current[0].enabled).toBe(false);
+    });
+
+    it("picks up a change another tab made", () => {
+      const { result } = renderHook(() => useNarrationSettings());
+      expect(result.current[0].rate).toBe(1.0);
+
+      // The other tab's write lands in (shared) storage, then the browser
+      // fires `storage` in this tab.
+      const stored = JSON.stringify({ ...DEFAULT_NARRATION_SETTINGS, rate: 1.25 });
+      localStorageMock.setItem("lion-reader-narration-settings", stored);
+      act(() => {
+        window.dispatchEvent(
+          new StorageEvent("storage", { key: "lion-reader-narration-settings", newValue: stored })
+        );
+      });
+
+      expect(result.current[0].rate).toBe(1.25);
     });
 
     it("composes functional updates made back to back", () => {

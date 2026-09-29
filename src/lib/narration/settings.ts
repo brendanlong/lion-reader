@@ -242,8 +242,8 @@ function readRaw(): string | null {
 
 function getSnapshot(): NarrationSettings {
   // Keyed on the stored string rather than cached forever, so a write that
-  // bypasses the setter (another tab, a test seeding storage) is still picked
-  // up on the next render without the snapshot identity churning.
+  // bypasses the setter (another tab — see subscribe) yields a new snapshot,
+  // while an unchanged string keeps the same reference.
   const raw = readRaw();
   if (cachedSettings === null || raw !== cachedRaw) {
     cachedRaw = raw;
@@ -256,9 +256,21 @@ function getServerSnapshot(): NarrationSettings {
   return DEFAULT_NARRATION_SETTINGS;
 }
 
+/** Re-renders subscribers when another tab changes the stored settings. */
+function onStorage(event: StorageEvent): void {
+  // A null key means storage was cleared.
+  if (event.key === STORAGE_KEY || event.key === null) {
+    subscribers.forEach((callback) => callback());
+  }
+}
+
 function subscribe(callback: () => void): () => void {
+  if (subscribers.size === 0) window.addEventListener("storage", onStorage);
   subscribers.add(callback);
-  return () => subscribers.delete(callback);
+  return () => {
+    subscribers.delete(callback);
+    if (subscribers.size === 0) window.removeEventListener("storage", onStorage);
+  };
 }
 
 const setNarrationSettings: SetNarrationSettings = (settingsOrUpdater) => {

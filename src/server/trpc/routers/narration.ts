@@ -129,8 +129,8 @@ export const narrationRouter = createTRPCRouter({
    * @param id - The entry ID
    * @returns Narration text, whether it was cached, and the source (llm or fallback)
    */
-  // Rate-limited (10 burst, 1/sec): a cache miss makes an outbound LLM call,
-  // potentially on the server-wide API key.
+  // Rate-limited: a cache miss makes an outbound LLM call, potentially on the
+  // server-wide API key.
   generate: expensiveConfirmedProtectedProcedure
     .meta({
       openapi: {

@@ -387,6 +387,8 @@ describe("narration.generate rate limit", () => {
         caller.narration.generate({ id: entryId, useLlmNormalization: false })
       )
     );
+    // The burst allowance is served, then the rest are refused.
+    expect(results.slice(0, 10).every((r) => r.status === "fulfilled")).toBe(true);
     const rejections = results.flatMap((r) => (r.status === "rejected" ? [r.reason] : []));
     expect(rejections.length).toBeGreaterThan(0);
     for (const reason of rejections) {

@@ -429,4 +429,47 @@ describe("narration that finishes generating after the user moved on", () => {
     expect(calls).toHaveLength(2);
     expect(calls[1].input).toMatchObject({ showFullContent: true });
   });
+
+  it("doesn't let an abandoned cloud request stop the playback that replaced it", async () => {
+    localStorage.setItem(
+      "lion-reader-narration-settings",
+      JSON.stringify({ useLlmNormalization: true, provider: "cloud" })
+    );
+    // jsdom has the element but not media playback or object URLs.
+    vi.spyOn(window.HTMLMediaElement.prototype, "play").mockImplementation(() => Promise.resolve());
+    vi.spyOn(window.HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+    vi.stubGlobal(
+      "URL",
+      class extends URL {
+        static createObjectURL = () => "blob:chunk";
+        static revokeObjectURL = () => {};
+      }
+    );
+
+    // The first generate (A) waits for release(); later ones answer at once.
+    const first = deferredGenerate();
+    let generateCalls = 0;
+    const { callsFor, rerender } = renderWithTrpc(<NarrationHarness content={SKEWED_HTML} />, {
+      handlers: {
+        "narration.generate": () =>
+          generateCalls++ === 0
+            ? first.handler()
+            : { narration: "Newer narration.", cached: false, source: "llm", paragraphMap: [] },
+        "narration.synthesize": () => ({ audio: btoa("mp3"), mimeType: "audio/mpeg" }),
+      },
+      wrapper: (children) => <KeyboardShortcutsProvider>{children}</KeyboardShortcutsProvider>,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Listen" }));
+    await waitFor(() => expect(callsFor("narration.generate")).toHaveLength(1));
+
+    // Switching the variant abandons A, and B starts playing before A returns.
+    rerender(<NarrationHarness content={SKEWED_HTML} showFullContent={true} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Listen" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument());
+
+    await settle(first.release);
+
+    expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
+  });
 });
