@@ -14,7 +14,7 @@
 
 import {
   calculateExceptionRetryDelayMs,
-  claimJob as defaultClaimJob,
+  claimJob as claimRegularJob,
   claimSingletonJob,
   claimFeedJob,
   claimFullContentJob,
@@ -94,21 +94,8 @@ export interface WorkerConfig {
   concurrency?: number;
   /** Maximum time a single job can run before being timed out (default: 5 minutes) */
   jobTimeoutMs?: number;
-  /** Job types to process (default: all types) */
-  jobTypes?: JobType[];
   /** Logger function for worker events */
   logger?: WorkerLogger;
-  /**
-   * Override for claiming jobs (for testing).
-   * @internal
-   */
-  _claimJob?: (options?: { types?: JobType[] }) => Promise<Job | null>;
-  /**
-   * Override for processing jobs (for testing).
-   * When provided, bypasses the default job handler dispatch.
-   * @internal
-   */
-  _processJob?: (job: Job) => Promise<void>;
   /**
    * Called if the main run loop ever exits unexpectedly (see
    * {@link InternalWorkerConfig.onLoopExit} in worker-core). The standalone
@@ -255,8 +242,8 @@ export function startJobLeaseHeartbeat(
  * (production passes the real queue functions).
  */
 export interface WorkerClaimDeps {
-  /** Generic due-job claim, used for regular (non-feed, non-singleton) jobs. */
-  claimRegular: (options: { types: JobType[] }) => Promise<Job | null>;
+  /** Due-job claim for regular (non-feed, non-singleton, non-full-content) jobs. */
+  claimRegular: () => Promise<Job | null>;
   /** Data-driven fetch_feed claim (only feeds with active subscribers). */
   claimFeed: () => Promise<Job | null>;
   /** Due-gated singleton claim (self-creates the row on first ever run). */
@@ -267,8 +254,6 @@ export interface WorkerClaimDeps {
 
 /** The one-time job types the generic regular claim handles (OPML imports). */
 const REGULAR_JOB_TYPES: JobType[] = ONE_TIME_JOB_TYPES.filter((t) => t !== "fetch_full_content");
-
-type ClaimOptions = { types?: JobType[] };
 
 /**
  * The cycle, within each SINGLETON_PRIORITY_INTERVAL, on which
@@ -303,41 +288,22 @@ export const FULL_CONTENT_PRIORITY_CYCLE = 2;
  * Exported for unit tests (which inject fake claim deps to verify the
  * ordering); production calls it only from `createWorker` below.
  */
-export function createWorkerClaimJob(
-  deps: WorkerClaimDeps
-): (options?: ClaimOptions) => Promise<Job | null> {
-  const wants = (options: ClaimOptions | undefined, type: JobType): boolean =>
-    !options?.types || options.types.includes(type);
-
-  // Try to claim a feed job (data-driven: only if a feed has active subscribers).
-  async function tryClaimFeedJob(options?: ClaimOptions): Promise<Job | null> {
-    return wants(options, "fetch_feed") ? deps.claimFeed() : null;
-  }
-
+export function createWorkerClaimJob(deps: WorkerClaimDeps): () => Promise<Job | null> {
   // Try singleton jobs. claimSingleton only returns a due job, so checking these
   // ahead of feeds costs a few indexed no-op lookups when nothing is due.
-  async function tryClaimSingletonJob(options?: ClaimOptions): Promise<Job | null> {
+  async function tryClaimSingletonJob(): Promise<Job | null> {
     for (const singletonType of SINGLETON_JOB_TYPES) {
-      if (wants(options, singletonType)) {
-        const singletonJob = await deps.claimSingleton(singletonType);
-        if (singletonJob) {
-          return singletonJob;
-        }
+      const singletonJob = await deps.claimSingleton(singletonType);
+      if (singletonJob) {
+        return singletonJob;
       }
     }
     return null;
   }
 
-  async function tryClaimFullContentJob(options?: ClaimOptions): Promise<Job | null> {
-    return wants(options, "fetch_full_content") ? deps.claimFullContent() : null;
-  }
-
-  async function firstClaimed(
-    claims: Array<(options?: ClaimOptions) => Promise<Job | null>>,
-    options?: ClaimOptions
-  ): Promise<Job | null> {
+  async function firstClaimed(claims: Array<() => Promise<Job | null>>): Promise<Job | null> {
     for (const claim of claims) {
-      const job = await claim(options);
+      const job = await claim();
       if (job) {
         return job;
       }
@@ -348,30 +314,23 @@ export function createWorkerClaimJob(
   // Round-robin counter deciding which category is checked first.
   let claimCounter = 0;
 
-  return async function claimJob(options?: ClaimOptions): Promise<Job | null> {
+  return async function claimJob(): Promise<Job | null> {
     // First try to claim a regular job (OPML imports). Feed and full-content
     // jobs have their own claims in the rotation below.
-    const regularTypes = options?.types?.filter(
-      (t) => t !== "fetch_feed" && t !== "fetch_full_content"
-    );
-    if (!options?.types || (regularTypes && regularTypes.length > 0)) {
-      const regularJob = await deps.claimRegular({
-        types: regularTypes || REGULAR_JOB_TYPES,
-      });
-      if (regularJob) {
-        return regularJob;
-      }
+    const regularJob = await deps.claimRegular();
+    if (regularJob) {
+      return regularJob;
     }
 
     const cycle = claimCounter++ % SINGLETON_PRIORITY_INTERVAL;
 
     if (cycle === 0) {
-      return firstClaimed([tryClaimSingletonJob, tryClaimFeedJob, tryClaimFullContentJob], options);
+      return firstClaimed([tryClaimSingletonJob, deps.claimFeed, deps.claimFullContent]);
     }
     if (cycle === FULL_CONTENT_PRIORITY_CYCLE) {
-      return firstClaimed([tryClaimFullContentJob, tryClaimFeedJob, tryClaimSingletonJob], options);
+      return firstClaimed([deps.claimFullContent, deps.claimFeed, tryClaimSingletonJob]);
     }
-    return firstClaimed([tryClaimFeedJob, tryClaimSingletonJob, tryClaimFullContentJob], options);
+    return firstClaimed([deps.claimFeed, tryClaimSingletonJob, deps.claimFullContent]);
   };
 }
 
@@ -395,36 +354,17 @@ function createWorker(config: WorkerConfig = {}): Worker {
     pollIntervalMs = 5000,
     concurrency = 5,
     jobTimeoutMs = DEFAULT_JOB_TIMEOUT_MS,
-    jobTypes,
     logger = defaultLogger,
-    _claimJob: claimJobOverride,
-    _processJob: processJobOverride,
     onLoopExit,
   } = config;
-
-  // Use the core worker if we're in test mode (both overrides provided)
-  if (processJobOverride) {
-    const claimJob = claimJobOverride ?? defaultClaimJob;
-    return createWorkerCore({
-      pollIntervalMs,
-      concurrency,
-      jobTimeoutMs,
-      jobTypes,
-      logger,
-      claimJob,
-      processJob: processJobOverride,
-    });
-  }
 
   // Default claim function - tries different job types in priority order:
   // 1. Regular jobs (process_opml_import) - user-triggered, highest priority
   // 2. Feed jobs (fetch_feed), singleton jobs (renew_websub, etc.) and
   //    fetch_full_content jobs - round-robined so none can starve the others
   //    (see createWorkerClaimJob).
-  const baseClaimJob = claimJobOverride ?? defaultClaimJob;
-
   const claimJob = createWorkerClaimJob({
-    claimRegular: baseClaimJob,
+    claimRegular: () => claimRegularJob({ types: REGULAR_JOB_TYPES }),
     claimFeed: claimFeedJob,
     claimSingleton: claimSingletonJob,
     claimFullContent: claimFullContentJob,
@@ -436,7 +376,7 @@ function createWorker(config: WorkerConfig = {}): Worker {
   // process stays alive and resumes automatically when the flag clears. The
   // maintenance read is cached in-process, so this adds no per-claim Redis load.
   let maintenancePaused = false;
-  const guardedClaimJob = async (options?: { types?: JobType[] }): Promise<Job | null> => {
+  const guardedClaimJob = async (): Promise<Job | null> => {
     const { enabled } = await getMaintenance();
     if (enabled) {
       if (!maintenancePaused) {
@@ -449,7 +389,7 @@ function createWorker(config: WorkerConfig = {}): Worker {
       maintenancePaused = false;
       logger.info("Maintenance mode cleared — worker resumed");
     }
-    return claimJob(options);
+    return claimJob();
   };
 
   /**
@@ -634,7 +574,6 @@ function createWorker(config: WorkerConfig = {}): Worker {
     pollIntervalMs,
     concurrency,
     jobTimeoutMs,
-    jobTypes,
     logger,
     claimJob: guardedClaimJob,
     processJob,
