@@ -11,6 +11,7 @@
 
 import Redis from "ioredis";
 import { z } from "zod";
+import { getRedisClient } from "@/server/redis";
 import {
   entryMetadataSchema,
   newEntryListDataSchema,
@@ -253,56 +254,6 @@ export function getSiteStatusChannel(): string {
 }
 
 /**
- * Dedicated Redis client for publishing events.
- * Using a separate client is recommended by Redis documentation for pub/sub operations.
- * This is a singleton that gets created lazily on first use.
- */
-let publisherClient: Redis | null = null;
-let publisherInitialized = false;
-
-/**
- * Gets or creates the Redis publisher client.
- * Uses lazy initialization to avoid connection issues during module load.
- *
- * @returns Redis client configured for publishing, or null if Redis is not configured
- */
-function getPublisherClient(): Redis | null {
-  if (publisherInitialized) {
-    return publisherClient;
-  }
-
-  publisherInitialized = true;
-  const redisUrl = process.env.REDIS_URL;
-
-  if (!redisUrl) {
-    return null;
-  }
-
-  publisherClient = new Redis(redisUrl, {
-    // Reconnect with exponential backoff
-    retryStrategy(times) {
-      const delay = Math.min(times * 50, 2000);
-      return delay;
-    },
-    // Use lazy connect to avoid blocking on startup
-    lazyConnect: true,
-  });
-
-  // Log connection events in development
-  if (process.env.NODE_ENV === "development") {
-    publisherClient.on("connect", () => {
-      console.log("Redis publisher connected");
-    });
-
-    publisherClient.on("error", (err) => {
-      console.error("Redis publisher error:", err);
-    });
-  }
-
-  return publisherClient;
-}
-
-/**
  * Publishes an event to a Redis channel. Every `publish*` function below funnels
  * through here: they own the typed signature and the event shape, this owns the
  * client lookup, serialization, and the Redis-unavailable no-op.
@@ -315,7 +266,10 @@ async function publishToChannel(
   channel: string,
   event: FeedEvent | UserEvent | SiteStatusEvent
 ): Promise<number> {
-  const client = getPublisherClient();
+  // Published on the shared main client: PUBLISH is an ordinary command, so it
+  // needs no dedicated connection (only SUBSCRIBE mode does — see
+  // getSharedSubscriberClient).
+  const client = getRedisClient();
   if (!client) {
     return 0;
   }
@@ -974,7 +928,7 @@ export const parseSiteStatusEvent = eventParser(siteStatusEventSchema);
  */
 export async function checkRedisHealth(timeoutMs = 2000): Promise<boolean> {
   try {
-    const client = getPublisherClient();
+    const client = getRedisClient();
 
     // If Redis is not configured, return false
     if (!client) {
