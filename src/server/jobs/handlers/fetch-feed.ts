@@ -12,8 +12,8 @@ import { createHash } from "crypto";
 import { eq, and, isNull, inArray, count } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "../../db";
-import { feeds, subscriptions, entries, userEntries, type Feed } from "../../db/schema";
-import { fetchFullContent, persistFullContentResult } from "../../services/full-content";
+import { feeds, subscriptions, userEntries, type Feed } from "../../db/schema";
+import { fetchFullContentForNewEntries } from "../../services/full-content";
 import { fetchFeed, type FetchFeedResult, type RedirectInfo } from "../../feed/fetcher";
 import type { WebSubLinkHeaders } from "../../feed/link-header";
 import { parseFeed } from "../../feed/parser";
@@ -41,112 +41,6 @@ import {
 import type { JobHandlerResult } from "./types";
 
 /**
- * Maximum number of entries to fetch full content for per feed fetch.
- * This prevents timeout issues for feeds with many new entries.
- */
-const MAX_FULL_CONTENT_ENTRIES_PER_FETCH = 10;
-
-/**
- * Fetches full content for new entries if any subscriber has fetchFullContent enabled.
- *
- * This is called after processEntries() to fetch the full article content
- * from the URL for entries that only have a summary in the feed.
- *
- * @param feedId - The feed's UUID
- * @param newEntryIds - Array of new entry IDs to potentially fetch full content for
- * @returns Number of entries with full content fetched
- */
-async function fetchFullContentForNewEntries(
-  feedId: string,
-  newEntryIds: string[]
-): Promise<{ fetched: number; failed: number }> {
-  if (newEntryIds.length === 0) {
-    return { fetched: 0, failed: 0 };
-  }
-
-  // Check if any active subscriber has fetchFullContent enabled
-  const subscribersWithFullContent = await db
-    .select({ userId: subscriptions.userId })
-    .from(subscriptions)
-    .where(
-      and(
-        eq(subscriptions.feedId, feedId),
-        isNull(subscriptions.unsubscribedAt),
-        eq(subscriptions.fetchFullContent, true)
-      )
-    )
-    .limit(1);
-
-  if (subscribersWithFullContent.length === 0) {
-    return { fetched: 0, failed: 0 };
-  }
-
-  logger.debug("Full content fetching enabled for feed", {
-    feedId,
-    newEntryCount: newEntryIds.length,
-  });
-
-  // Get entries with URLs (limit to avoid timeout)
-  const entriesToFetch = await db
-    .select({ id: entries.id, url: entries.url })
-    .from(entries)
-    .where(inArray(entries.id, newEntryIds.slice(0, MAX_FULL_CONTENT_ENTRIES_PER_FETCH)));
-
-  const entriesWithUrls = entriesToFetch.filter((e) => e.url !== null);
-
-  if (entriesWithUrls.length === 0) {
-    return { fetched: 0, failed: 0 };
-  }
-
-  let fetched = 0;
-  let failed = 0;
-
-  // Fetch full content for each entry sequentially to avoid overwhelming servers
-  for (const entry of entriesWithUrls) {
-    try {
-      // This is a background job (off the request path), so run Readability
-      // inline rather than offloading to a worker — the thread hop is pure
-      // overhead here.
-      const result = await fetchFullContent(entry.url!, { offloadClean: false });
-      // Persists the raw full-content columns or the fetch error onto the shared
-      // entry row; sanitization happens per read (issue #1282).
-      const update = await persistFullContentResult(db, entry.id, result, new Date());
-
-      if (update) {
-        fetched++;
-        logger.debug("Fetched full content for entry", {
-          entryId: entry.id,
-          url: entry.url,
-        });
-      } else {
-        failed++;
-        logger.debug("Failed to fetch full content for entry", {
-          entryId: entry.id,
-          url: entry.url,
-          error: result.error,
-        });
-      }
-    } catch (error) {
-      failed++;
-      logger.warn("Error fetching full content for entry", {
-        entryId: entry.id,
-        url: entry.url,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
-  logger.info("Full content fetching completed", {
-    feedId,
-    fetched,
-    failed,
-    total: entriesWithUrls.length,
-  });
-
-  return { fetched, failed };
-}
-
-/**
  * Options for `handleFetchFeed`.
  */
 export interface HandleFetchFeedOptions {
@@ -168,7 +62,7 @@ export interface HandleFetchFeedOptions {
    *   subscriber (`createUserEntriesForFeed` runs even with no changes).
    *
    * It does NOT change how content is fetched/parsed otherwise — full-content
-   * fetching and inline sanitization stay on, same as a normal worker poll.
+   * fetching for new entries stays on, same as a normal worker poll.
    */
   forceReprocess?: boolean;
 }
@@ -414,7 +308,7 @@ async function processSuccessfulFetch(
   // per-fetch full-content budget that the genuinely new articles need.
   const newEntries = processResult.entries.filter((e) => e.isNew && !e.isBackfill);
   const newEntryIds = newEntries.map((e) => e.id);
-  const fullContentResult = await fetchFullContentForNewEntries(feed.id, newEntryIds);
+  const fullContentResult = await fetchFullContentForNewEntries(db, feed.id, newEntryIds);
 
   // Push-reliability telemetry: for scheduled/backup polls only (hub pushes go
   // through ingestWebsubNotification, not here). If push were working, the hub

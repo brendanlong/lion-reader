@@ -89,7 +89,7 @@ export interface ProcessEntriesOptions {
    * largest table on every poll (issue #1084), so `last_seen_at` only advances
    * when entries actually change.
    *
-   * The subscribe-time forced refresh (see `handleFetchFeed`'s `inline` mode)
+   * The subscribe-time forced refresh (`handleFetchFeed`'s `forceReprocess`)
    * sets this so that ALL entries currently in the feed are re-stamped to this
    * fetch's timestamp, re-establishing a single visibility "generation". A new
    * subscriber is then populated via `last_seen_at >= last_entries_updated_at`
@@ -445,8 +445,8 @@ async function processEntryWithCache(
  * The write is **monotonic** — it only advances `last_seen_at` forward
  * (`IS NULL OR < lastSeenAt`), never backward. That both preserves the #1084
  * optimization (an entry already at this timestamp isn't rewritten) and makes
- * the write safe under concurrency: the subscribe-time inline refresh
- * (`handleFetchFeed({ inline: true })`) bypasses the job queue's per-feed
+ * the write safe under concurrency: a WebSub push (`ingestWebsubNotification`)
+ * is processed in the hub's callback request, outside the job queue's per-feed
  * serialization, so it can run alongside a worker poll of the same feed. If an
  * earlier-timestamped writer could regress a stamp another writer already
  * advanced, entries could end up **below** the feed's `last_entries_updated_at`

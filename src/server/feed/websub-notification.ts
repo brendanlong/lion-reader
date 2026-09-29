@@ -10,7 +10,8 @@ import { parseFeedAsync } from "./parser";
 import { processEntries } from "./entry-processor";
 import { recordHubAnnouncedEntries } from "./websub-hub-stats";
 import { WEBSUB_BACKUP_POLL_INTERVAL_SECONDS } from "./scheduling";
-import { updateFeedJobNextRun } from "../jobs/queue";
+import { createJob, updateFeedJobNextRun } from "../jobs/queue";
+import { feedWantsFullContent } from "../services/full-content";
 import { trackWebsubNotificationReceived } from "../metrics/metrics";
 import { logger } from "@/lib/logger";
 
@@ -67,6 +68,35 @@ async function scheduleBackupPoll(feed: Feed): Promise<void> {
     // Don't let scheduling errors affect the response
     logger.warn("Failed to schedule WebSub backup poll", {
       feedId,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+}
+
+/**
+ * Queues full-content fetching for the entries a push just created, if any
+ * subscriber wants it — the same work a poll does inline for its new entries
+ * (`fetchFullContentForNewEntries`). A push is ingested inside the hub's
+ * callback request, so the slow article fetches go to a `fetch_full_content`
+ * job rather than holding the response open.
+ *
+ * Failure is logged, not propagated: the entries are already committed, so
+ * answering 503 wouldn't help — a redelivered push finds them unchanged and
+ * queues nothing.
+ */
+async function queueFullContentFetch(feedId: string, entryIds: string[]): Promise<void> {
+  if (entryIds.length === 0) {
+    return;
+  }
+  try {
+    if (!(await feedWantsFullContent(db, feedId))) {
+      return;
+    }
+    await createJob({ type: "fetch_full_content", payload: { feedId, entryIds } });
+  } catch (error) {
+    logger.warn("Failed to queue full-content fetch for WebSub entries", {
+      feedId,
+      entryCount: entryIds.length,
       error: error instanceof Error ? error.message : "Unknown error",
     });
   }
@@ -164,6 +194,13 @@ export async function ingestWebsubNotification(
     if (announcedCount > 0 && feed.hubUrl) {
       await recordHubAnnouncedEntries(feed.hubUrl, announcedCount);
     }
+
+    // Archive re-announcements are excluded, as on the poll path: they aren't
+    // news, and mustn't spend the full-content budget the real entries need.
+    await queueFullContentFetch(
+      feedId,
+      result.entries.filter((e) => e.isNew && !e.isBackfill).map((e) => e.id)
+    );
   } catch (error) {
     logger.error("WebSub notification processing failed", {
       feedId,

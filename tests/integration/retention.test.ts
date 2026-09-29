@@ -345,8 +345,9 @@ describe("runRetentionCleanup", () => {
     expect(remaining).toEqual([{ id: survivor, replacedById: null }]);
   });
 
-  it("deletes parked one-time OPML import jobs but not scheduled or running ones", async () => {
+  it("deletes parked one-time jobs but not scheduled or running ones", async () => {
     const parkedId = generateUuidv7();
+    const parkedFullContentId = generateUuidv7();
     const dueId = generateUuidv7();
     const runningId = generateUuidv7();
     const feedJobId = generateUuidv7();
@@ -358,6 +359,13 @@ describe("runRetentionCleanup", () => {
         id: parkedId,
         type: "process_opml_import",
         payload: { importId: generateUuidv7() },
+        nextRunAt: new Date(now.getTime() + 365 * DAY_MS),
+      },
+      // Completed WebSub full-content job, parked the same way.
+      {
+        id: parkedFullContentId,
+        type: "fetch_full_content",
+        payload: { feedId: generateUuidv7(), entryIds: [generateUuidv7()] },
         nextRunAt: new Date(now.getTime() + 365 * DAY_MS),
       },
       // Pending import: due now.
@@ -386,10 +394,9 @@ describe("runRetentionCleanup", () => {
 
     const result = await runRetentionCleanup(db);
 
-    expect(result.parkedJobs).toBe(1);
+    expect(result.parkedJobs).toBe(2);
     const remaining = (await db.select({ id: jobs.id }).from(jobs)).map((r) => r.id);
     expect(remaining.sort()).toEqual([dueId, runningId, feedJobId].sort());
-    expect(remaining).not.toContain(parkedId);
   });
 
   it("deletes subscriber-less fetch_feed jobs but keeps subscribed, running, or fresh ones", async () => {

@@ -6,15 +6,8 @@
 
 import { db } from "../../db";
 import { processOpmlImport } from "../../services/imports";
-import type { JobPayloads } from "../queue";
+import { ONE_TIME_JOB_PARK_MS, type JobPayloads } from "../queue";
 import type { JobHandlerResult } from "./types";
-
-/**
- * This is a one-time job: whatever the outcome, it must not run again, so it
- * parks itself a year out. The parked row is swept by the retention cleanup
- * (see src/server/services/retention.ts).
- */
-const NEVER_AGAIN_MS = 365 * 24 * 60 * 60 * 1000;
 
 /**
  * Handler for process_opml_import jobs.
@@ -30,7 +23,8 @@ export async function handleProcessOpmlImport(
   const { importId } = payload;
 
   const result = await processOpmlImport(db, importId);
-  const nextRunAt = new Date(Date.now() + NEVER_AGAIN_MS);
+  // A one-time job: park it whatever the outcome (see ONE_TIME_JOB_TYPES).
+  const nextRunAt = new Date(Date.now() + ONE_TIME_JOB_PARK_MS);
 
   switch (result.status) {
     case "not_found":
