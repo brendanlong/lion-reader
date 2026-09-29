@@ -24,7 +24,7 @@ export const metadata: Metadata = {
 
 export default function PrivacyPolicyPage() {
   return (
-    <LegalPage title="Privacy Policy" lastUpdated="September 27, 2026">
+    <LegalPage title="Privacy Policy" lastUpdated="September 28, 2026">
       <LegalSection title="Overview">
         <LegalParagraph>
           Lion Reader is committed to protecting your privacy. We collect only the data necessary to
@@ -240,6 +240,29 @@ export default function PrivacyPolicyPage() {
             </LegalSubsection>
           </Card>
 
+          <LegalSubsection title="Enhanced Voices (Hugging Face, jsDelivr) — Optional">
+            <LegalParagraph tight>
+              <strong>Only if you use enhanced (Piper) voices.</strong> Downloading an enhanced
+              voice fetches the voice model directly from Hugging Face, and using one fetches the
+              speech engine&apos;s files from the jsDelivr CDN. These requests go straight from your
+              browser to those services, so they see your IP address and browser user agent, as with
+              any download. No article text or account information is sent; speech is then generated
+              entirely on your device.
+            </LegalParagraph>
+            <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+              <TextLink href="https://huggingface.co/privacy" external className="ui-text-sm">
+                Hugging Face&apos;s Privacy Policy &rarr;
+              </TextLink>
+              <TextLink
+                href="https://www.jsdelivr.com/terms/privacy-policy"
+                external
+                className="ui-text-sm"
+              >
+                jsDelivr&apos;s Privacy Policy &rarr;
+              </TextLink>
+            </p>
+          </LegalSubsection>
+
           <LegalSubsection title="Hosting (Fly.io)">
             <LegalParagraph tight>
               Our application and databases are hosted on Fly.io infrastructure in the United
@@ -393,9 +416,9 @@ export default function PrivacyPolicyPage() {
             read items, sort order), and keyboard shortcut preferences
           </li>
           <li>
-            <strong>IndexedDB:</strong> Enhanced narration voices (if you download optional
-            high-quality voices using Piper TTS). These voice files are stored locally on your
-            device and never sent to our servers.
+            <strong>Origin private file system:</strong> Enhanced narration voices (if you download
+            optional high-quality voices using Piper TTS). These voice files are stored locally on
+            your device and never sent to our servers.
           </li>
         </LegalList>
         <LegalParagraph>
