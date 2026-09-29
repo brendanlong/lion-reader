@@ -45,7 +45,7 @@ import {
   symlinkSync,
 } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -168,6 +168,19 @@ try {
   const { value } = await mammoth.convertToHtml({ buffer });
   if (value !== "<p>standalone smoke test</p>") {
     throw new Error(`unexpected output: ${value}`);
+  }
+  // Resolution walks up out of the standalone tree into the repo's own
+  // node_modules (where mammoth is a direct dependency), so a successful
+  // conversion alone doesn't prove the copy is complete: every module it
+  // loaded must have come from inside the standalone tree.
+  const standaloneRoot = realpathSync(standaloneDir) + sep;
+  const outside = Object.keys(standaloneRequire.cache).filter(
+    (path) => !path.startsWith(standaloneRoot)
+  );
+  if (outside.length > 0) {
+    throw new Error(
+      `loaded ${outside.length} module(s) from outside the standalone tree, e.g. ${outside[0]}`
+    );
   }
 } catch (error) {
   console.error("The standalone tree can't convert a .docx with mammoth:", error);

@@ -180,6 +180,20 @@ class DeadlineExceededError extends Error {
   }
 }
 
+/** The deadline passed before the conversion got a worker: load, not the file. */
+class QueueTimeoutError extends Error {
+  constructor() {
+    super(".docx conversion timed out waiting for a worker");
+    this.name = "QueueTimeoutError";
+  }
+}
+
+/**
+ * How long to wait for a terminated worker's thread to exit before giving up
+ * on it and letting the next conversion start anyway.
+ */
+const WORKER_EXIT_TIMEOUT_MS = 5_000;
+
 /** The worker crashed or couldn't start: our bug, not the user's file. */
 class WorkerFailedError extends Error {
   constructor(message: string, options?: { cause: unknown }) {
@@ -234,7 +248,7 @@ export function createDocxConverter(options: DocxConverterOptions): DocxConverte
       };
       const timer = setTimeout(() => {
         waiting.splice(waiting.indexOf(grant), 1);
-        reject(new DeadlineExceededError());
+        reject(new QueueTimeoutError());
       }, deadline - Date.now());
       waiting.push(grant);
     });
@@ -253,7 +267,7 @@ export function createDocxConverter(options: DocxConverterOptions): DocxConverte
   async function runWorker(buffer: Buffer, deadline: number): Promise<WorkerResult> {
     const remaining = deadline - Date.now();
     if (remaining <= 0) {
-      throw new DeadlineExceededError();
+      throw new QueueTimeoutError();
     }
 
     const worker = new Worker(WORKER_SOURCE, {
@@ -299,8 +313,32 @@ export function createDocxConverter(options: DocxConverterOptions): DocxConverte
     try {
       return await outcome;
     } finally {
-      await worker.terminate();
-      await exited;
+      await waitForExit(worker, exited);
+    }
+  }
+
+  /**
+   * Terminates the worker and waits for its thread to go, so the next
+   * conversion's memory peak can't overlap this one's. A thread that never
+   * exits would otherwise hold the only slot forever, so after a timeout the
+   * slot is released anyway and the stuck worker is reported.
+   */
+  async function waitForExit(worker: Worker, exited: Promise<void>): Promise<void> {
+    let timer: NodeJS.Timeout | undefined;
+    const gaveUp = new Promise<boolean>((resolve) => {
+      timer = setTimeout(() => resolve(true), WORKER_EXIT_TIMEOUT_MS);
+    });
+    const stopped = worker
+      .terminate()
+      .then(() => exited)
+      .then(() => false);
+    const stuck = await Promise.race([stopped, gaveUp]);
+    clearTimeout(timer);
+    if (stuck) {
+      logger.error("docx conversion worker did not exit; releasing its slot", {
+        threadId: worker.threadId,
+        liveWorkers: live,
+      });
     }
   }
 
@@ -317,6 +355,10 @@ export function createDocxConverter(options: DocxConverterOptions): DocxConverte
         release();
       }
     } catch (error) {
+      if (error instanceof QueueTimeoutError) {
+        logger.warn("docx conversion timed out in the queue", { bytes: buffer.length });
+        throw errors.serverBusy("document conversions");
+      }
       if (isWorkerOutOfMemory(error) || error instanceof DeadlineExceededError) {
         logger.warn("docx conversion exceeded its resource limits", {
           bytes: buffer.length,
@@ -368,7 +410,8 @@ const defaultConverter = createDocxConverter({
  *
  * @throws `CONTENT_TOO_LARGE` if the document is too large to convert, or
  *   exhausts the worker's memory or the deadline
- * @throws `SERVER_BUSY` if too many conversions are already waiting
+ * @throws `SERVER_BUSY` if too many conversions are already waiting, or the
+ *   deadline passes before this one gets a worker
  * @throws `INTERNAL_ERROR` if the worker itself fails
  * @throws a plain `Error` if mammoth rejects the file
  */

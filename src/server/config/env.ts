@@ -263,8 +263,19 @@ export const feedHealthConfig = {
   heartbeatUrl: process.env.FEED_HEALTH_HEARTBEAT_URL,
 };
 
-/** Default heap cap for the `.docx` conversion worker (see usageLimitsConfig). */
-const DEFAULT_DOCX_WORKER_MAX_HEAP_MB = 64;
+/**
+ * Reads a setting that must be a positive integer, throwing at startup on
+ * anything else rather than running with a limit that silently doesn't hold.
+ */
+function positiveIntegerFromEnv(name: string, defaultValue: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") return defaultValue;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive integer, got ${JSON.stringify(raw)}`);
+  }
+  return value;
+}
 
 /**
  * Usage limits configuration.
@@ -295,10 +306,7 @@ export const usageLimitsConfig = {
    * process on a smaller VM can lower it; `src/server/file/docx-to-html.ts`
    * says what it bounds.
    */
-  docxWorkerMaxHeapMb: parseInt(
-    process.env.DOCX_WORKER_MAX_HEAP_MB || String(DEFAULT_DOCX_WORKER_MAX_HEAP_MB),
-    10
-  ),
+  docxWorkerMaxHeapMb: positiveIntegerFromEnv("DOCX_WORKER_MAX_HEAP_MB", 64),
 };
 
 export const storageConfig = {

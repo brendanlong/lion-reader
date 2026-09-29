@@ -159,8 +159,10 @@ describe("docx converter queue and worker lifecycle", () => {
     expect(getAppErrorCode(slowError)).toBe("CONTENT_TOO_LARGE");
     expect((slowError as TRPCError).message).toMatch(/too large or complex/);
     // The queued one gave up at its own deadline instead of getting a fresh 1s
-    // once the slow one was stopped.
-    expect(getAppErrorCode(queuedResult.error)).toBe("CONTENT_TOO_LARGE");
+    // once the slow one was stopped — and, never having run, it reports load
+    // rather than blaming its (tiny) document.
+    expect(getAppErrorCode(queuedResult.error)).toBe("SERVER_BUSY");
+    expect((queuedResult.error as TRPCError).code).toBe("TOO_MANY_REQUESTS");
     expect(queuedResult.elapsed).toBeLessThan(1800);
     expect(docx.liveWorkers()).toBe(0);
   }, 30_000);
@@ -186,13 +188,14 @@ describe("docx converter queue and worker lifecycle", () => {
   }, 30_000);
 
   it("reports a worker that can't load mammoth as a server error, not a bad file", async () => {
-    const docx = converter({ resolveFrom: "/nonexistent/package.json" });
-    const error = await docx.convert(tiny("x")).catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(TRPCError);
-    expect((error as TRPCError).code).toBe("INTERNAL_SERVER_ERROR");
-
-    // The queue survives it.
-    const working = converter();
-    await expect(working.convert(tiny("ok"))).resolves.toBe("<p>ok</p>");
+    // No room to queue: if the failure leaked the slot, the second call would
+    // be turned away as busy instead of reaching a worker.
+    const docx = converter({ resolveFrom: "/nonexistent/package.json", maxQueued: 0 });
+    for (const attempt of ["first", "second"]) {
+      const error = await docx.convert(tiny(attempt)).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(TRPCError);
+      expect((error as TRPCError).code).toBe("INTERNAL_SERVER_ERROR");
+    }
+    expect(docx.liveWorkers()).toBe(0);
   });
 });
