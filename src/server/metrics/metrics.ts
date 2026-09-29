@@ -835,15 +835,6 @@ export function trackNarrationPlaybackStarted(provider: TTSProviderId): void {
 // ============================================================================
 
 /**
- * Counter for times highlighting was active during narration.
- * Incremented when highlighting first becomes active in a session.
- */
-const narrationHighlightActiveTotal = getOrCreate(Counter, {
-  name: "narration_highlight_active_total",
-  help: "Total times narration highlighting was active",
-});
-
-/**
  * Counter for times fallback mapping was used for highlighting.
  * Incremented when positional mapping is used instead of LLM markers.
  */
@@ -853,31 +844,8 @@ const narrationHighlightFallbackTotal = getOrCreate(Counter, {
 });
 
 /**
- * Counter for times auto-scroll was triggered during highlighting.
- * Incremented when the view scrolls to a highlighted paragraph.
- */
-const narrationHighlightScrollTotal = getOrCreate(Counter, {
-  name: "narration_highlight_scroll_total",
-  help: "Total times auto-scroll was triggered during highlighting",
-});
-
-/**
- * Tracks when narration highlighting becomes active.
- */
-export function trackNarrationHighlightActive(): void {
-  narrationHighlightActiveTotal?.inc();
-}
-
-/**
  * Tracks when fallback positional mapping is used for highlighting.
  */
 export function trackNarrationHighlightFallback(): void {
   narrationHighlightFallbackTotal?.inc();
-}
-
-/**
- * Tracks when auto-scroll is triggered during highlighting.
- */
-export function trackNarrationHighlightScroll(): void {
-  narrationHighlightScrollTotal?.inc();
 }
