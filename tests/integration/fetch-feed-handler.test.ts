@@ -31,13 +31,31 @@ let baseUrl: string;
 let nextResponse: FeedResponse;
 /** Headers of every request the server saw, in order. */
 let receivedHeaders: IncomingHttpHeaders[];
+/** Paths of the article pages (`/post/...`) the server was asked for. */
+let articleRequests: string[];
 
-function rss(items: Array<{ guid: string; title: string; pubDate: Date }>): string {
+/** What the loopback origin serves for any `/post/...` article page. */
+const ARTICLE_HTML = `<!DOCTYPE html>
+<html><head><title>The Whole Story</title></head>
+<body>
+  <nav>Home | About</nav>
+  <article>
+    <h1>The Whole Story</h1>
+    ${Array.from(
+      { length: 6 },
+      (_, i) =>
+        `<p>Paragraph ${i + 1} of the complete article, which the feed only summarized. It carries enough prose that extraction treats it as the real content of the page.</p>`
+    ).join("\n    ")}
+  </article>
+  <footer>Copyright</footer>
+</body></html>`;
+
+function rss(items: Array<{ guid: string; title: string; pubDate: Date; link?: string }>): string {
   const body = items
     .map(
       (item) => `    <item>
       <title>${item.title}</title>
-      <link>https://example.com/${item.guid}</link>
+      <link>${item.link ?? `https://example.com/${item.guid}`}</link>
       <guid isPermaLink="false">${item.guid}</guid>
       <pubDate>${item.pubDate.toUTCString()}</pubDate>
       <description>Body of ${item.title}</description>
@@ -81,6 +99,12 @@ async function readUserEntries(userId: string) {
 
 beforeAll(async () => {
   server = createServer((req, res) => {
+    if (req.url?.startsWith("/post/")) {
+      articleRequests.push(req.url);
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(ARTICLE_HTML);
+      return;
+    }
     receivedHeaders.push(req.headers);
     const { status = 200, body = "", headers = {} } = nextResponse;
     res.writeHead(status, { "Content-Type": "application/rss+xml; charset=utf-8", ...headers });
@@ -97,6 +121,7 @@ beforeEach(async () => {
   await db.delete(feeds);
   await db.delete(users);
   receivedHeaders = [];
+  articleRequests = [];
   nextResponse = { body: rss([]) };
 });
 
@@ -200,6 +225,36 @@ describe("handleFetchFeed", () => {
       const rows = await readUserEntries(userId);
       expect(rows).toHaveLength(1);
       expect(rows[0].read).toBe(false);
+    });
+
+    it("fetches full content for new entries when a subscriber wants it", async () => {
+      const feed = await createLoopbackFeed();
+      const userId = await createTestUser({ emailPrefix: "ff-fullcontent" });
+      await createTestSubscription(userId, feed.id, { fetchFullContent: true });
+
+      nextResponse = {
+        body: rss([
+          {
+            guid: "full",
+            title: "Summary only",
+            pubDate: new Date(Date.now() - 60_000),
+            link: `${baseUrl}/post/full`,
+          },
+        ]),
+      };
+
+      const result = await handleFetchFeed({ feedId: feed.id });
+
+      expect(result.metadata).toMatchObject({ fullContentFetched: 1, fullContentFailed: 0 });
+      expect(articleRequests).toEqual(["/post/full"]);
+      const [entry] = await db.select().from(entries).where(eq(entries.feedId, feed.id));
+      expect(entry.fullContentCleaned).toContain("Paragraph 6 of the complete article");
+      expect(entry.fullContentError).toBeNull();
+
+      // The next poll sees the entry as unchanged, so it isn't fetched again.
+      nextResponse = { ...nextResponse, body: `${nextResponse.body}\n` };
+      await handleFetchFeed({ feedId: feed.id });
+      expect(articleRequests).toEqual(["/post/full"]);
     });
 
     it("sends our User-Agent with the subscriber count", async () => {

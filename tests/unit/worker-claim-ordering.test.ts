@@ -17,10 +17,11 @@
 import { describe, it, expect } from "vitest";
 import {
   createWorkerClaimJob,
+  FULL_CONTENT_PRIORITY_CYCLE,
   SINGLETON_PRIORITY_INTERVAL,
   type WorkerClaimDeps,
 } from "@/server/jobs/worker";
-import { ONE_TIME_JOB_TYPES, SINGLETON_JOB_TYPES, type JobType } from "@/server/jobs/queue";
+import { SINGLETON_JOB_TYPES, type JobType } from "@/server/jobs/queue";
 import type { Job } from "@/server/db/schema";
 
 /** Minimal fake Job — the strategy only passes it through. */
@@ -42,13 +43,14 @@ interface ClaimHarness {
 
 /**
  * Builds the claim strategy over stub primitives that record consultation
- * order. `feedHasJobs` / `dueSingletons` / `regularHasJobs` control what each
- * primitive returns.
+ * order. `feedHasJobs` / `dueSingletons` / `regularHasJobs` /
+ * `fullContentHasJobs` control what each primitive returns.
  */
 function makeHarness(config: {
   regularHasJobs?: boolean;
   feedHasJobs?: boolean;
   dueSingletons?: JobType[];
+  fullContentHasJobs?: boolean;
 }): ClaimHarness {
   let current: string[] = [];
   const deps: WorkerClaimDeps = {
@@ -63,6 +65,10 @@ function makeHarness(config: {
     claimSingleton: async (type) => {
       current.push(`singleton(${type})`);
       return config.dueSingletons?.includes(type) ? fakeJob(type) : null;
+    },
+    claimFullContent: async () => {
+      current.push("fullContent");
+      return config.fullContentHasJobs ? fakeJob("fetch_full_content") : null;
     },
   };
   const claimJob = createWorkerClaimJob(deps);
@@ -148,12 +154,56 @@ describe("createWorkerClaimJob", () => {
       dueSingletons: [...SINGLETON_JOB_TYPES],
     });
     const { results, perCall } = await harness.run(2);
-    expect(results.every((j) => j?.type === ONE_TIME_JOB_TYPES[0])).toBe(true);
-    // Every one-time type is offered to the regular claim, and neither feed nor
-    // singleton is consulted when a regular job was claimed.
-    expect(perCall.flat()).toEqual(
-      Array.from({ length: 2 }, () => `regular(${ONE_TIME_JOB_TYPES.join(",")})`)
-    );
+    expect(results.every((j) => j?.type === "process_opml_import")).toBe(true);
+    // Neither feed nor singleton consulted when a regular job was claimed.
+    expect(perCall.flat().filter((c) => c !== "regular(process_opml_import)")).toEqual([]);
+  });
+
+  describe("fetch_full_content (push-driven, so no priority over feed polls)", () => {
+    it("is not part of the priority regular claim", async () => {
+      const harness = makeHarness({ fullContentHasJobs: true });
+      const { perCall } = await harness.run(SINGLETON_PRIORITY_INTERVAL);
+      for (const consulted of perCall) {
+        expect(consulted[0]).toBe("regular(process_opml_import)");
+      }
+    });
+
+    it("under a feed backlog, gets feeds' slot on exactly one cycle per interval", async () => {
+      const harness = makeHarness({ feedHasJobs: true, fullContentHasJobs: true });
+      const cycles = SINGLETON_PRIORITY_INTERVAL * 2;
+      const { results } = await harness.run(cycles);
+      for (let i = 0; i < cycles; i++) {
+        expect(results[i]?.type).toBe(
+          i % SINGLETON_PRIORITY_INTERVAL === FULL_CONTENT_PRIORITY_CYCLE
+            ? "fetch_full_content"
+            : "fetch_feed"
+        );
+      }
+    });
+
+    it("doesn't take the singletons' priority cycle", async () => {
+      const due = SINGLETON_JOB_TYPES[0];
+      const harness = makeHarness({ fullContentHasJobs: true, dueSingletons: [due] });
+      const { results } = await harness.run(1);
+      expect(results[0]?.type).toBe(due);
+    });
+
+    it("is claimed on any cycle when feeds and singletons have nothing", async () => {
+      const harness = makeHarness({ fullContentHasJobs: true });
+      const { results } = await harness.run(SINGLETON_PRIORITY_INTERVAL);
+      expect(results.every((j) => j?.type === "fetch_full_content")).toBe(true);
+    });
+
+    it("falls through to feeds on its own cycle when it has nothing", async () => {
+      const harness = makeHarness({ feedHasJobs: true });
+      const { results, perCall } = await harness.run(FULL_CONTENT_PRIORITY_CYCLE + 1);
+      expect(results[FULL_CONTENT_PRIORITY_CYCLE]?.type).toBe("fetch_feed");
+      expect(perCall[FULL_CONTENT_PRIORITY_CYCLE]).toEqual([
+        "regular(process_opml_import)",
+        "fullContent",
+        "feed",
+      ]);
+    });
   });
 
   describe("jobTypes filtering (must match pre-round-robin behavior)", () => {
@@ -165,6 +215,17 @@ describe("createWorkerClaimJob", () => {
       expect(results.every((j) => j?.type === "fetch_feed")).toBe(true);
       expect(perCall.flat()).toEqual(
         Array.from({ length: SINGLETON_PRIORITY_INTERVAL }, () => "feed")
+      );
+    });
+
+    it('types: ["fetch_full_content"] consults only the full-content claim', async () => {
+      const harness = makeHarness({ feedHasJobs: true, fullContentHasJobs: true });
+      const { results, perCall } = await harness.run(SINGLETON_PRIORITY_INTERVAL, {
+        types: ["fetch_full_content"],
+      });
+      expect(results.every((j) => j?.type === "fetch_full_content")).toBe(true);
+      expect(perCall.flat()).toEqual(
+        Array.from({ length: SINGLETON_PRIORITY_INTERVAL }, () => "fullContent")
       );
     });
 

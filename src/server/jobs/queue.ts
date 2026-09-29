@@ -99,11 +99,11 @@ export interface JobPayloads {
 export type JobType = keyof JobPayloads;
 
 /**
- * One-time job types: each row is a single task, created by `createJob`, claimed
- * ahead of feed and singleton jobs (they're user- or push-triggered and
- * latency-sensitive), and parked `ONE_TIME_JOB_PARK_MS` out when done — whatever
- * the outcome, they must not run again. The retention cleanup sweeps parked rows
- * (see src/server/services/retention.ts).
+ * One-time job types: each row is a single task, created by `createJob`, and
+ * parked `ONE_TIME_JOB_PARK_MS` out when done — whatever the outcome, they must
+ * not run again. The retention cleanup sweeps parked rows (see
+ * src/server/services/retention.ts). How each is claimed differs; see
+ * `createWorkerClaimJob` in worker.ts.
  */
 export const ONE_TIME_JOB_TYPES = [
   "process_opml_import",
@@ -536,6 +536,56 @@ export async function scheduleFeedRefreshNow(feedId: string): Promise<Job> {
   `);
 
   return rowToJob(result.rows[0]);
+}
+
+/**
+ * Most `fetch_full_content` jobs that may run at once, across all workers.
+ *
+ * Unlike an OPML import, these are created by third-party hub pushes, and each
+ * can spend minutes on sequential article fetches against a slow origin. Without
+ * a cap, a busy push feed could fill every worker slot and starve feed polls and
+ * singleton maintenance. It's a soft cap — two workers claiming at the same
+ * instant can both see room — which is fine for its purpose.
+ */
+export const MAX_RUNNING_FULL_CONTENT_JOBS = 2;
+
+/**
+ * Claims a due `fetch_full_content` job, unless
+ * {@link MAX_RUNNING_FULL_CONTENT_JOBS} are already running.
+ *
+ * @returns The claimed job, or null if none is due or the cap is reached
+ */
+export async function claimFullContentJob(): Promise<Job | null> {
+  const now = new Date();
+  const staleThreshold = new Date(now.getTime() - STALE_JOB_THRESHOLD_MS);
+
+  // A running job is still due (next_run_at is only advanced when it finishes),
+  // so bounding the count by next_run_at <= now keeps it on idx_jobs_polling
+  // instead of scanning the parked rows.
+  const result = await db.execute<RawJobRow>(sql`
+    UPDATE jobs
+    SET
+      running_since = ${now},
+      updated_at = ${now}
+    WHERE id = (
+      SELECT j.id FROM jobs j
+      WHERE j.type = 'fetch_full_content'
+        AND j.next_run_at <= ${now}
+        AND (j.running_since IS NULL OR j.running_since < ${staleThreshold})
+        AND (
+          SELECT count(*) FROM jobs r
+          WHERE r.type = 'fetch_full_content'
+            AND r.next_run_at <= ${now}
+            AND r.running_since >= ${staleThreshold}
+        ) < ${MAX_RUNNING_FULL_CONTENT_JOBS}
+      ORDER BY j.next_run_at ASC
+      LIMIT 1
+      FOR UPDATE OF j SKIP LOCKED
+    )
+    RETURNING *
+  `);
+
+  return firstJob(result);
 }
 
 /**

@@ -11,7 +11,7 @@ import { processEntries } from "./entry-processor";
 import { recordHubAnnouncedEntries } from "./websub-hub-stats";
 import { WEBSUB_BACKUP_POLL_INTERVAL_SECONDS } from "./scheduling";
 import { createJob, updateFeedJobNextRun } from "../jobs/queue";
-import { feedWantsFullContent } from "../services/full-content";
+import { feedWantsFullContent, MAX_FULL_CONTENT_ENTRIES_PER_BATCH } from "../services/full-content";
 import { trackWebsubNotificationReceived } from "../metrics/metrics";
 import { logger } from "@/lib/logger";
 
@@ -78,7 +78,8 @@ async function scheduleBackupPoll(feed: Feed): Promise<void> {
  * subscriber wants it — the same work a poll does inline for its new entries
  * (`fetchFullContentForNewEntries`). A push is ingested inside the hub's
  * callback request, so the slow article fetches go to a `fetch_full_content`
- * job rather than holding the response open.
+ * job rather than holding the response open. A push with more new entries than
+ * one job fetches is split across several jobs, so none is dropped.
  *
  * Failure is logged, not propagated: the entries are already committed, so
  * answering 503 wouldn't help — a redelivered push finds them unchanged and
@@ -92,7 +93,12 @@ async function queueFullContentFetch(feedId: string, entryIds: string[]): Promis
     if (!(await feedWantsFullContent(db, feedId))) {
       return;
     }
-    await createJob({ type: "fetch_full_content", payload: { feedId, entryIds } });
+    for (let i = 0; i < entryIds.length; i += MAX_FULL_CONTENT_ENTRIES_PER_BATCH) {
+      await createJob({
+        type: "fetch_full_content",
+        payload: { feedId, entryIds: entryIds.slice(i, i + MAX_FULL_CONTENT_ENTRIES_PER_BATCH) },
+      });
+    }
   } catch (error) {
     logger.warn("Failed to queue full-content fetch for WebSub entries", {
       feedId,

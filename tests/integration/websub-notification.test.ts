@@ -22,7 +22,11 @@ import {
   websubHubStats,
 } from "../../src/server/db/schema";
 import { ingestWebsubNotification } from "../../src/server/feed/websub-notification";
-import { claimJob, getJobPayload } from "../../src/server/jobs/queue";
+import {
+  claimFullContentJob,
+  getJobPayload,
+  MAX_RUNNING_FULL_CONTENT_JOBS,
+} from "../../src/server/jobs/queue";
 import { handleFetchFullContent } from "../../src/server/jobs/handlers/fetch-full-content";
 import { createTestFeed, createTestSubscription, createTestUser } from "./helpers";
 
@@ -49,6 +53,32 @@ function pushBody(
     </item>
   </channel>
 </rss>`;
+}
+
+/** A push carrying `count` new posts, each linking to the loopback origin. */
+function multiPushBody(prefix: string, count: number, pubDate: Date): string {
+  const items = Array.from(
+    { length: count },
+    (_, i) => `    <item>
+      <title>Post ${i}</title>
+      <link>${articleBaseUrl}/post/${prefix}-${i}</link>
+      <guid isPermaLink="false">${prefix}-${i}</guid>
+      <pubDate>${pubDate.toUTCString()}</pubDate>
+      <description>Summary ${i}</description>
+    </item>`
+  ).join("\n");
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Test Feed</title>
+    <link>https://example.com</link>
+${items}
+  </channel>
+</rss>`;
+}
+
+async function queuedFullContentJobs() {
+  return db.select().from(jobs).where(eq(jobs.type, "fetch_full_content"));
 }
 
 async function seedPushFeed(
@@ -234,11 +264,11 @@ describe("ingestWebsubNotification", () => {
     expect(pushed.fullContentFetchedAt).toBeNull();
 
     // Run the queued job the way the worker does.
-    const job = await claimJob({ types: ["fetch_full_content"] });
+    const job = await claimFullContentJob();
     expect(job).not.toBeNull();
     const payload = getJobPayload<"fetch_full_content">(job!);
     expect(payload).toEqual({ feedId: feed.id, entryIds: [pushed.id] });
-    const result = await handleFetchFullContent(payload);
+    const result = await handleFetchFullContent(payload, job!.consecutiveFailures);
     expect(result.success).toBe(true);
     expect(result.metadata).toMatchObject({ fullContentFetched: 1, fullContentFailed: 0 });
 
@@ -250,6 +280,81 @@ describe("ingestWebsubNotification", () => {
     expect(entry.fullContentCleaned).not.toContain("Copyright");
     // The entry reached the subscriber as usual.
     expect((await getUserEntry(userId)).guid).toBe("full-1");
+  });
+
+  it("splits a large push across jobs rather than dropping entries, and a rerun skips finished ones", async () => {
+    const now = Date.now();
+    const { feed } = await seedPushFeed("pushmany", new Date(now - 60 * 60 * 1000), {
+      fetchFullContent: true,
+    });
+
+    await ingestWebsubNotification(feed, multiPushBody("many", 12, new Date(now - 60 * 1000)));
+
+    const queued = await queuedFullContentJobs();
+    const sizes = queued
+      .map((j) => getJobPayload<"fetch_full_content">(j).entryIds.length)
+      .sort((a, b) => b - a);
+    expect(sizes).toEqual([10, 2]);
+    const allIds = queued.flatMap((j) => getJobPayload<"fetch_full_content">(j).entryIds);
+    expect(new Set(allIds).size).toBe(12);
+
+    const small = queued.find((j) => getJobPayload<"fetch_full_content">(j).entryIds.length === 2)!;
+    const smallPayload = getJobPayload<"fetch_full_content">(small);
+    expect((await handleFetchFullContent(smallPayload, 0)).metadata).toMatchObject({
+      fullContentFetched: 2,
+    });
+    expect(articleRequests).toHaveLength(2);
+
+    // A retry of the same job (say it threw after finishing its fetches) doesn't
+    // fetch those articles again.
+    expect((await handleFetchFullContent(smallPayload, 1)).metadata).toMatchObject({
+      fullContentFetched: 0,
+      fullContentFailed: 0,
+    });
+    expect(articleRequests).toHaveLength(2);
+  });
+
+  it("gives up and parks a job that has already failed too often", async () => {
+    const now = Date.now();
+    const { feed } = await seedPushFeed("pushgiveup", new Date(now - 60 * 60 * 1000), {
+      fetchFullContent: true,
+    });
+    await ingestWebsubNotification(
+      feed,
+      pushBody("giveup-1", "Post", new Date(now - 60 * 1000), `${articleBaseUrl}/post/giveup-1`)
+    );
+    const [queued] = await queuedFullContentJobs();
+
+    const result = await handleFetchFullContent(getJobPayload<"fetch_full_content">(queued), 3);
+    expect(result.success).toBe(false);
+    // Parked: far enough out for the retention sweep to treat it as finished.
+    expect(result.nextRunAt.getTime()).toBeGreaterThan(now + 180 * 24 * 60 * 60 * 1000);
+    expect(articleRequests).toEqual([]);
+  });
+
+  it("caps how many full-content jobs run at once", async () => {
+    const now = Date.now();
+    const { feed } = await seedPushFeed("pushcap", new Date(now - 60 * 60 * 1000), {
+      fetchFullContent: true,
+    });
+    for (let i = 0; i <= MAX_RUNNING_FULL_CONTENT_JOBS; i++) {
+      await ingestWebsubNotification(
+        feed,
+        pushBody(
+          `cap-${i}`,
+          `Post ${i}`,
+          new Date(now - 60 * 1000),
+          `${articleBaseUrl}/post/cap-${i}`
+        )
+      );
+    }
+    expect(await queuedFullContentJobs()).toHaveLength(MAX_RUNNING_FULL_CONTENT_JOBS + 1);
+
+    for (let i = 0; i < MAX_RUNNING_FULL_CONTENT_JOBS; i++) {
+      expect(await claimFullContentJob()).not.toBeNull();
+    }
+    // One is still due, but the running ones hold every allowed slot.
+    expect(await claimFullContentJob()).toBeNull();
   });
 
   it("queues no full-content work when no subscriber wants it", async () => {
@@ -266,7 +371,7 @@ describe("ingestWebsubNotification", () => {
       )
     );
 
-    expect(await db.select().from(jobs).where(eq(jobs.type, "fetch_full_content"))).toEqual([]);
+    expect(await queuedFullContentJobs()).toEqual([]);
     expect(articleRequests).toEqual([]);
   });
 
@@ -287,7 +392,7 @@ describe("ingestWebsubNotification", () => {
       )
     );
 
-    expect(await db.select().from(jobs).where(eq(jobs.type, "fetch_full_content"))).toEqual([]);
+    expect(await queuedFullContentJobs()).toEqual([]);
   });
 
   it("reports an unparseable push body instead of throwing", async () => {

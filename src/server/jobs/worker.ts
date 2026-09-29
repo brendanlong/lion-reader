@@ -17,6 +17,7 @@ import {
   claimJob as defaultClaimJob,
   claimSingletonJob,
   claimFeedJob,
+  claimFullContentJob,
   finishJob,
   getJobPayload,
   renewJobLease,
@@ -260,39 +261,66 @@ export interface WorkerClaimDeps {
   claimFeed: () => Promise<Job | null>;
   /** Due-gated singleton claim (self-creates the row on first ever run). */
   claimSingleton: (type: JobType) => Promise<Job | null>;
+  /** Concurrency-capped fetch_full_content claim (see `claimFullContentJob`). */
+  claimFullContent: () => Promise<Job | null>;
 }
+
+/**
+ * The one-time job types claimed ahead of everything else: rare and
+ * user-triggered. `fetch_full_content` is deliberately not one of them (see
+ * `createWorkerClaimJob`).
+ */
+const PRIORITY_REGULAR_JOB_TYPES: JobType[] = ONE_TIME_JOB_TYPES.filter(
+  (t) => t !== "fetch_full_content"
+);
+
+/**
+ * The cycle, within each SINGLETON_PRIORITY_INTERVAL, on which
+ * `fetch_full_content` jobs are checked first. Cycle 0 is the singletons'.
+ */
+export const FULL_CONTENT_PRIORITY_CYCLE = 2;
+
+type ClaimOptions = { types?: JobType[] };
 
 /**
  * Builds the worker's claim function. Priority order:
  *
- * 1. Regular jobs (`ONE_TIME_JOB_TYPES`) — user/push-triggered, always first.
- * 2. Feed jobs vs. singleton jobs — round-robined: on most cycles feeds go
- *    first (throughput), but every SINGLETON_PRIORITY_INTERVAL-th cycle
- *    singletons are checked first, so an overdue maintenance job is claimed
- *    within a few cycles even under a deep fetch_feed backlog (which would
- *    otherwise starve singletons forever). Whichever category is checked
- *    first, the other is still tried if it has nothing to claim — neither is
- *    ever skipped on a given cycle.
+ * 1. Regular jobs (`process_opml_import`) — rare and user-triggered, always
+ *    first.
+ * 2. Feed, singleton and `fetch_full_content` jobs — round-robined. On most
+ *    cycles feeds go first (throughput); every SINGLETON_PRIORITY_INTERVAL-th
+ *    cycle singletons go first, so an overdue maintenance job is claimed within
+ *    a few cycles even under a deep fetch_feed backlog (which would otherwise
+ *    starve singletons forever); and one other cycle per interval
+ *    (FULL_CONTENT_PRIORITY_CYCLE) puts full-content jobs first for the same
+ *    reason. Whichever category is checked first, the others are still tried
+ *    if it has nothing to claim — none is ever skipped on a given cycle.
+ *
+ * `fetch_full_content` stays out of step 1 on purpose: it's created by
+ * third-party hub pushes, and each job can hold a slot for minutes of article
+ * fetches, so priority over feed polls would let a busy push feed crowd them
+ * out. It gets a turn in the rotation instead, and `claimFullContentJob` caps
+ * how many run at once.
  *
  * Exported for unit tests (which inject fake claim deps to verify the
  * ordering); production calls it only from `createWorker` below.
  */
 export function createWorkerClaimJob(
   deps: WorkerClaimDeps
-): (options?: { types?: JobType[] }) => Promise<Job | null> {
+): (options?: ClaimOptions) => Promise<Job | null> {
+  const wants = (options: ClaimOptions | undefined, type: JobType): boolean =>
+    !options?.types || options.types.includes(type);
+
   // Try to claim a feed job (data-driven: only if a feed has active subscribers).
-  async function tryClaimFeedJob(options?: { types?: JobType[] }): Promise<Job | null> {
-    if (!options?.types || options.types.includes("fetch_feed")) {
-      return deps.claimFeed();
-    }
-    return null;
+  async function tryClaimFeedJob(options?: ClaimOptions): Promise<Job | null> {
+    return wants(options, "fetch_feed") ? deps.claimFeed() : null;
   }
 
   // Try singleton jobs. claimSingleton only returns a due job, so checking these
   // ahead of feeds costs a few indexed no-op lookups when nothing is due.
-  async function tryClaimSingletonJob(options?: { types?: JobType[] }): Promise<Job | null> {
+  async function tryClaimSingletonJob(options?: ClaimOptions): Promise<Job | null> {
     for (const singletonType of SINGLETON_JOB_TYPES) {
-      if (!options?.types || options.types.includes(singletonType)) {
+      if (wants(options, singletonType)) {
         const singletonJob = await deps.claimSingleton(singletonType);
         if (singletonJob) {
           return singletonJob;
@@ -302,28 +330,50 @@ export function createWorkerClaimJob(
     return null;
   }
 
-  // Round-robin counter deciding whether singletons or feeds are checked first.
+  async function tryClaimFullContentJob(options?: ClaimOptions): Promise<Job | null> {
+    return wants(options, "fetch_full_content") ? deps.claimFullContent() : null;
+  }
+
+  async function firstClaimed(
+    claims: Array<(options?: ClaimOptions) => Promise<Job | null>>,
+    options?: ClaimOptions
+  ): Promise<Job | null> {
+    for (const claim of claims) {
+      const job = await claim(options);
+      if (job) {
+        return job;
+      }
+    }
+    return null;
+  }
+
+  // Round-robin counter deciding which category is checked first.
   let claimCounter = 0;
 
-  return async function claimJob(options?: { types?: JobType[] }): Promise<Job | null> {
-    // First try to claim a regular job (e.g., OPML imports)
-    // Exclude feed jobs here since they need special data-driven claiming
-    const regularTypes = options?.types?.filter((t) => t !== "fetch_feed");
+  return async function claimJob(options?: ClaimOptions): Promise<Job | null> {
+    // First try to claim a regular job (OPML imports). Feed and full-content
+    // jobs have their own claims in the rotation below.
+    const regularTypes = options?.types?.filter(
+      (t) => t !== "fetch_feed" && t !== "fetch_full_content"
+    );
     if (!options?.types || (regularTypes && regularTypes.length > 0)) {
       const regularJob = await deps.claimRegular({
-        types: regularTypes || [...ONE_TIME_JOB_TYPES],
+        types: regularTypes || PRIORITY_REGULAR_JOB_TYPES,
       });
       if (regularJob) {
         return regularJob;
       }
     }
 
-    const singletonsFirst = claimCounter++ % SINGLETON_PRIORITY_INTERVAL === 0;
+    const cycle = claimCounter++ % SINGLETON_PRIORITY_INTERVAL;
 
-    if (singletonsFirst) {
-      return (await tryClaimSingletonJob(options)) ?? (await tryClaimFeedJob(options));
+    if (cycle === 0) {
+      return firstClaimed([tryClaimSingletonJob, tryClaimFeedJob, tryClaimFullContentJob], options);
     }
-    return (await tryClaimFeedJob(options)) ?? (await tryClaimSingletonJob(options));
+    if (cycle === FULL_CONTENT_PRIORITY_CYCLE) {
+      return firstClaimed([tryClaimFullContentJob, tryClaimFeedJob, tryClaimSingletonJob], options);
+    }
+    return firstClaimed([tryClaimFeedJob, tryClaimSingletonJob, tryClaimFullContentJob], options);
   };
 }
 
@@ -369,16 +419,17 @@ function createWorker(config: WorkerConfig = {}): Worker {
   }
 
   // Default claim function - tries different job types in priority order:
-  // 1. Regular jobs (ONE_TIME_JOB_TYPES) - user/push-triggered, highest priority
-  // 2. Feed jobs (fetch_feed) and singleton jobs (renew_websub, etc.) - the
-  //    order between these two is round-robined so a fetch_feed backlog can't
-  //    starve singleton maintenance (see SINGLETON_PRIORITY_INTERVAL).
+  // 1. Regular jobs (process_opml_import) - user-triggered, highest priority
+  // 2. Feed jobs (fetch_feed), singleton jobs (renew_websub, etc.) and
+  //    fetch_full_content jobs - round-robined so none can starve the others
+  //    (see createWorkerClaimJob).
   const baseClaimJob = claimJobOverride ?? defaultClaimJob;
 
   const claimJob = createWorkerClaimJob({
     claimRegular: baseClaimJob,
     claimFeed: claimFeedJob,
     claimSingleton: claimSingletonJob,
+    claimFullContent: claimFullContentJob,
   });
 
   // Maintenance-mode guard: while maintenance is on, claim nothing so the worker
@@ -491,7 +542,7 @@ function createWorker(config: WorkerConfig = {}): Worker {
         }
         case "fetch_full_content": {
           const payload = getJobPayload<"fetch_full_content">(job);
-          result = await handleFetchFullContent(payload);
+          result = await handleFetchFullContent(payload, job.consecutiveFailures);
           break;
         }
         default: {
