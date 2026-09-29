@@ -427,6 +427,25 @@ export async function createTokens(
 }
 
 /**
+ * Takes a share lock on a user's row for the rest of `tx`, so that token
+ * issuance and a credential change (which updates the row first, then revokes
+ * the user's tokens) serialize: see {@link rotateRefreshToken}. Always lock the
+ * user row before touching token rows, as credential changes do, so the two
+ * can't deadlock. Returns the row's current password hash.
+ */
+export async function lockUserAgainstCredentialChange(
+  tx: DbOrTx,
+  userId: string
+): Promise<{ passwordHash: string | null } | undefined> {
+  const [row] = await tx
+    .select({ passwordHash: users.passwordHash })
+    .from(users)
+    .where(eq(users.id, userId))
+    .for("share");
+  return row;
+}
+
+/**
  * Validates an access token and returns the token data.
  */
 export async function validateAccessToken(token: string): Promise<OAuthTokenData | null> {
@@ -495,6 +514,12 @@ async function updateAccessTokenLastUsed(tokenId: string): Promise<void> {
  * be live but unreachable from the chain walk, so reuse detection could never
  * revoke it. Wrapping the whole sequence means either the fully-linked successor
  * exists or nothing does, and a failure leaves the presented token valid to retry.
+ *
+ * The transaction first takes a share lock on the owner's `users` row, which is
+ * what a credential change updates before it sweeps the user's tokens. Without
+ * it, a rotation whose successor committed after the sweep's snapshot would
+ * leave a live token behind; with it, one waits for the other, so either the
+ * sweep sees the successor or the rotation sees its token already revoked.
  */
 export async function rotateRefreshToken(
   refreshToken: string,
@@ -504,7 +529,17 @@ export async function rotateRefreshToken(
   const tokenHash = hashToken(refreshToken);
   const now = new Date();
 
+  const [owner] = await db
+    .select({ userId: oauthRefreshTokens.userId })
+    .from(oauthRefreshTokens)
+    .where(eq(oauthRefreshTokens.tokenHash, tokenHash))
+    .limit(1);
+
   const result = await db.transaction(async (tx): Promise<RotationResult> => {
+    if (owner) {
+      await lockUserAgainstCredentialChange(tx, owner.userId);
+    }
+
     // Atomically claim (revoke) the presented refresh token
     const claimed = await tx
       .update(oauthRefreshTokens)
@@ -667,6 +702,13 @@ async function handlePossibleRefreshTokenReuse(
 
   if (!presented || !presented.revokedAt || presented.expiresAt <= now) {
     // Unknown or merely expired token — not reuse, nothing to do
+    return;
+  }
+
+  // Revoked without being rotated (a password change, a Connected Apps revoke,
+  // an earlier reuse sweep): nothing descends from it, and a client still
+  // presenting it is out of date, not evidence of a leak.
+  if (!presented.replacedById) {
     return;
   }
 

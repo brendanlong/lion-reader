@@ -1,5 +1,6 @@
 import type { UrlPlugin, SavedArticleContent } from "./types";
 import { extractDocId, normalizeGoogleDocsUrl, fetchGoogleDocsFromUrl } from "@/server/google/docs";
+import { getAppErrorCode } from "@/server/trpc/errors";
 import { logger } from "@/lib/logger";
 
 /**
@@ -52,6 +53,9 @@ export const googleDocsPlugin: UrlPlugin = {
             canonicalUrl: canonical,
           };
         } catch (error) {
+          if (getAppErrorCode(error) === "CONTENT_TOO_LARGE") {
+            throw error;
+          }
           logger.warn("Failed to fetch Google Docs content", {
             url: url.href,
             error: error instanceof Error ? error.message : String(error),

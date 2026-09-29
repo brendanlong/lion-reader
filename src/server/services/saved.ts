@@ -754,6 +754,9 @@ async function fetchPrivateGoogleDocWithAuth(
         },
       });
     }
+    if (getAppErrorCode(error) === "CONTENT_TOO_LARGE") {
+      throw error;
+    }
     // Other errors - fall back to a plain fetch
     logger.warn("Failed to fetch private Google Doc with OAuth", {
       userId,

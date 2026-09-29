@@ -216,7 +216,9 @@ COPY --from=builder /app/package.json ./package.json
 # the fixup-standalone step in the builder). dist/server.js keeps `next`
 # external and resolves it from here; the worker/discord bundles only need
 # their few runtime externals (argon2, html-rewriter-wasm, @lion-reader/*),
-# which the Next server graph also uses, so the trace covers them.
+# which the Next server graph also uses, so the trace covers them. mammoth,
+# which the .docx converter loads inside a worker thread at runtime, isn't
+# traced; fixup-standalone copies it in.
 COPY --from=builder /standalone/node_modules ./node_modules
 
 # The native modules: node_modules/@lion-reader/{sanitizer,readability,feed-parser,markdown}

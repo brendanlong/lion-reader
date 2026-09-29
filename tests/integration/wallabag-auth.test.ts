@@ -10,14 +10,15 @@
  * See issue #1022.
  */
 
-import { describe, it, expect, afterAll } from "vitest";
+import { describe, it, expect, afterAll, vi } from "vitest";
 import * as argon2 from "argon2";
-import { inArray } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { users } from "../../src/server/db/schema";
+import { oauthRefreshTokens, users } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import {
   createTokens,
+  revokeUserClientTokens,
   rotateRefreshToken,
   validateAccessToken,
 } from "../../src/server/oauth/service";
@@ -304,5 +305,126 @@ describe("oauthGrants.revokeWallabag", () => {
     expect(await rotateRefreshToken(mine.refreshToken, WALLABAG_CLIENT_ID)).toBeNull();
     expect(await validateAccessToken(mcp.accessToken)).not.toBeNull();
     expect(await validateAccessToken(theirs.accessToken)).not.toBeNull();
+  });
+});
+
+/**
+ * Resolves once a token issue is blocked on the user-row share lock
+ * (`lockUserAgainstCredentialChange`), not on some unrelated lock.
+ */
+async function waitForUserLockWaiter(): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const result = await db.execute(sql`
+      SELECT count(*)::int AS waiting FROM pg_stat_activity
+      WHERE datname = current_database()
+        AND wait_event_type = 'Lock'
+        AND query ILIKE '%from "users"%for share%'
+    `);
+    if ((result.rows[0] as { waiting: number }).waiting > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error("nothing ever waited on the lock");
+}
+
+/**
+ * Runs a password change the way `me.changePassword` does — update the user
+ * row, then sweep its Wallabag tokens, in one transaction — but holds the
+ * transaction open between the two until `release` is called, so a concurrent
+ * token issue can be started inside the window.
+ */
+async function heldPasswordChange(
+  userId: string,
+  newHash: string
+): Promise<{ release: () => void; done: Promise<void> }> {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  let updated!: () => void;
+  const rowUpdated = new Promise<void>((resolve) => (updated = resolve));
+  const done = db.transaction(async (tx) => {
+    await tx
+      .update(users)
+      .set({ passwordHash: newHash, updatedAt: new Date() })
+      .where(eq(users.id, userId));
+    updated();
+    await gate;
+    await revokeUserClientTokens(userId, WALLABAG_CLIENT_ID, tx);
+  });
+  await rowUpdated;
+  return { release, done };
+}
+
+/** Access or refresh tokens for the Wallabag client that would still work. */
+async function liveWallabagTokens(userId: string): Promise<number> {
+  const result = await db.execute(sql`
+    SELECT
+      (SELECT count(*) FROM oauth_access_tokens
+        WHERE user_id = ${userId} AND client_id = ${WALLABAG_CLIENT_ID}
+          AND revoked_at IS NULL AND expires_at > now())
+      + (SELECT count(*) FROM oauth_refresh_tokens
+        WHERE user_id = ${userId} AND client_id = ${WALLABAG_CLIENT_ID}
+          AND revoked_at IS NULL AND expires_at > now())
+      AS live
+  `);
+  return Number((result.rows[0] as { live: string | number }).live);
+}
+
+describe("token issue racing a password change", () => {
+  it("a refresh during a password change waits for it, then finds its token revoked", async () => {
+    const user = await createUser();
+    const tokens = await createTokens({
+      clientId: WALLABAG_CLIENT_ID,
+      userId: user.id,
+      scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
+    });
+
+    const change = await heldPasswordChange(user.id, await argon2.hash("new-password"));
+    const rotation = rotateRefreshToken(tokens.refreshToken, WALLABAG_CLIENT_ID);
+    await waitForUserLockWaiter();
+    change.release();
+    await change.done;
+
+    expect(await rotation).toBeNull();
+    expect(await liveWallabagTokens(user.id)).toBe(0);
+  });
+
+  it("a password grant racing a password change mints nothing", async () => {
+    const password = "the-old-password";
+    const user = await createUser(password);
+
+    // The grant verifies the old password (still committed) before the change
+    // commits, then must notice the change under the lock.
+    const change = await heldPasswordChange(user.id, await argon2.hash("new-password"));
+    const grant = passwordGrant(user.email, password);
+    await waitForUserLockWaiter();
+    change.release();
+    await change.done;
+
+    expect(await grant).toBeNull();
+    expect(await liveWallabagTokens(user.id)).toBe(0);
+  });
+});
+
+describe("refresh token revoked without rotation", () => {
+  it("is refused without a reuse-detection alarm", async () => {
+    const user = await createUser();
+    const tokens = await createTokens({
+      clientId: WALLABAG_CLIENT_ID,
+      userId: user.id,
+      scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
+    });
+    // Revoked by a password change a minute ago, well outside the grace window.
+    await db
+      .update(oauthRefreshTokens)
+      .set({ revokedAt: new Date(Date.now() - 60_000) })
+      .where(eq(oauthRefreshTokens.userId, user.id));
+
+    const warn = vi.spyOn(console, "warn");
+    try {
+      expect(await rotateRefreshToken(tokens.refreshToken, WALLABAG_CLIENT_ID)).toBeNull();
+      const logged = warn.mock.calls.map((args) => String(args[0]));
+      expect(logged.some((line) => line.includes("reuse detected"))).toBe(false);
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

@@ -116,12 +116,16 @@ Entry bodies, saved articles, and AI summaries are rendered with
 - Session cookie is `HttpOnly`, `Secure` (prod), `SameSite=Lax`; tokens are 32
   random bytes, SHA-256 hashed at rest, never stored raw. **Keep these flags.**
 - Password change (and any credential change) must revoke other sessions
-  (`revokeOtherUserSessions`). Setting or changing the password also revokes the
-  user's Wallabag tokens, which the password grant mints from it. Linking and unlinking a social provider counts —
+  (`revokeOtherUserSessions`). Linking and unlinking a social provider counts —
   each adds or removes a way to sign in (`src/server/services/oauth-accounts.ts`,
   which also says why a failed revoke doesn't undo the change). The one
   deliberate exception is the email-match link inside `processOAuthCallback`,
   which is an ordinary sign-in; it says why at the branch.
+- Setting or changing the password also revokes the user's Wallabag tokens,
+  which the password grant mints from it, in the same transaction as the
+  password write. Token issuance takes a share lock on the `users` row first
+  (`lockUserAgainstCredentialChange`), so a refresh or password grant racing
+  the change can't leave a live token behind — keep that lock order.
 - Password-accepting endpoints are rate-limited per-IP **and** per-account (the
   account bucket degrades to in-memory, not fully open, during a Redis outage).
 - Password-accepting endpoints (tRPC `auth.login`, Google Reader `ClientLogin`,

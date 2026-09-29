@@ -264,6 +264,20 @@ export const feedHealthConfig = {
 };
 
 /**
+ * Reads a setting that must be a positive integer, throwing at startup on
+ * anything else rather than running with a limit that silently doesn't hold.
+ */
+function positiveIntegerFromEnv(name: string, defaultValue: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") return defaultValue;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive integer, got ${JSON.stringify(raw)}`);
+  }
+  return value;
+}
+
+/**
  * Usage limits configuration.
  * These limits protect against abuse and prevent OOM from oversized content.
  * All limits are configurable via environment variables.
@@ -286,6 +300,13 @@ export const usageLimitsConfig = {
 
   /** Maximum email content size in bytes (default: 2MB). Emails larger than this are rejected. */
   maxEmailSizeBytes: parseInt(process.env.MAX_EMAIL_SIZE_BYTES || String(2 * 1024 * 1024), 10),
+
+  /**
+   * Heap cap, in MB, for the worker thread that converts `.docx` files. A
+   * process on a smaller VM can lower it; `src/server/file/docx-to-html.ts`
+   * says what it bounds.
+   */
+  docxWorkerMaxHeapMb: positiveIntegerFromEnv("DOCX_WORKER_MAX_HEAP_MB", 64),
 };
 
 export const storageConfig = {
