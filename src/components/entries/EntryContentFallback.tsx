@@ -1,18 +1,18 @@
 /**
  * EntryContentFallback Component
  *
- * Smart Suspense fallback for entry content that shows cached metadata from the
- * entry list while the full content loads. Falls back to skeleton if no cached data.
+ * Smart loading fallback for entry content that shows the entry's list-item
+ * fields from the local store while the full content loads. Falls back to a
+ * skeleton when the store doesn't hold the entry.
  *
- * Shows functional Star/Read buttons using cached data with optimistic updates.
+ * Shows functional Star/Read buttons with optimistic updates.
  * Buttons that need full entry data (content toggle, full content, narration,
  * summarize) show as shimmers.
  */
 
 "use client";
 
-import { useQueryClient } from "@tanstack/react-query";
-import { findEntryInListCache } from "@/lib/cache/entry-cache";
+import { useLocalEntry } from "@/lib/hooks/useLocalEntries";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
 import { ScrollContainer } from "@/components/layout/ScrollContainerContext";
 import { StarButton, ReadToggleButton } from "@/components/entries/EntryStateButtons";
@@ -32,8 +32,7 @@ function ButtonShimmer({ width }: { width: string }) {
 }
 
 export function EntryContentFallback({ entryId, onBack }: EntryContentFallbackProps) {
-  const queryClient = useQueryClient();
-  const cachedEntry = findEntryInListCache(queryClient, entryId);
+  const cachedEntry = useLocalEntry(entryId);
   // Star/read work optimistically even while the full entry loads
   const { markRead, star, unstar } = useEntryMutations();
 

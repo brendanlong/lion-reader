@@ -1,65 +1,56 @@
 /**
  * EntryListFallback Component
  *
- * Smart Suspense fallback for entry lists. Tries to show cached entries
- * from parent lists (e.g., "All" list when viewing a subscription) while
- * the actual query loads. Falls back to skeleton if no cached data available.
+ * Smart loading fallback for entry lists: while a view's first page loads,
+ * shows the entries the local store already holds that match the view's
+ * filters (e.g. a subscription's entries seen in "All"). Falls back to a
+ * skeleton when there are none.
  */
 
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { findParentListPlaceholderData } from "@/lib/cache/entry-cache";
+import { findCachedSubscriptionIds } from "@/lib/cache/count-cache";
+import { useLocalEntriesMatching } from "@/lib/hooks/useLocalEntries";
+import type { EntryListFilters } from "@/lib/local-db/entry-lists";
 import { useAppearance } from "@/lib/appearance/AppearanceProvider";
 import { EntryListItem } from "./EntryListItem";
 import { EntryListSkeleton } from "./EntryListSkeleton";
 import { EntryListLoadingMore } from "./EntryListStates";
 
-/**
- * Filter options for finding placeholder data.
- */
-interface EntryListFilters {
-  subscriptionId?: string;
-  tagId?: string;
-  uncategorized?: boolean;
-  unreadOnly?: boolean;
-  starredOnly?: boolean;
-  sortOrder?: "newest" | "oldest";
-  type?: "web" | "email" | "saved";
-}
-
 interface EntryListFallbackProps {
-  /** Filters for finding matching cached data */
+  /** The loading view's filters */
   filters: EntryListFilters;
   /** Callback when entry is clicked (disabled during fallback) */
   onEntryClick?: (entryId: string) => void;
 }
 
 /**
- * Suspense fallback that shows cached entries when available.
- *
- * Uses the view's own cache if present, otherwise the "All" list filtered
- * down to the view.
- *
- * If no cached data matches, renders a skeleton.
+ * Tag and uncategorized views depend on subscription tags: narrow them to the
+ * cached subscriptions that qualify, or `null` (skeleton) when no
+ * subscriptions are cached, rather than showing unfiltered entries.
  */
-export function EntryListFallback({ filters, onEntryClick }: EntryListFallbackProps) {
+function useSubscriptionScope(filters: EntryListFilters): string[] | undefined | null {
   const queryClient = useQueryClient();
+  const { tagId, uncategorized } = filters;
+  if (!tagId && !uncategorized) return undefined;
+  const ids = findCachedSubscriptionIds(queryClient, (subscription) =>
+    tagId ? subscription.tags.some((tag) => tag.id === tagId) : subscription.tags.length === 0
+  );
+  return ids ?? null;
+}
+
+export function EntryListFallback({ filters, onEntryClick }: EntryListFallbackProps) {
   const {
     settings: { listDensity },
   } = useAppearance();
+  const entries = useLocalEntriesMatching(filters, useSubscriptionScope(filters));
 
-  // Try to find placeholder data from cached parent lists
-  // Subscriptions are automatically looked up from cache for tag/uncategorized filtering
-  const placeholderData = findParentListPlaceholderData(queryClient, filters);
-
-  // No cached data - show skeleton
-  if (!placeholderData || placeholderData.pages[0]?.items.length === 0) {
+  if (!entries || entries.length === 0) {
     return <EntryListSkeleton density={listDensity} />;
   }
 
-  // Show cached entries with a subtle loading indicator
-  const entries = placeholderData.pages.flatMap((page) => page.items);
+  // Show stored entries with a subtle loading indicator
   const listClassName = listDensity === "compact" ? "divide-edge divide-y" : "space-y-3";
 
   return (

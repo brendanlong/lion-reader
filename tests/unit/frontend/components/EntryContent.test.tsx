@@ -14,7 +14,9 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { getLocalDb } from "@/lib/local-db/local-db";
+import { patchServerEntryMetadata } from "@/lib/local-db/entries";
 import { EntryContent } from "@/components/entries/EntryContent";
 import { AppearanceProvider } from "@/lib/appearance/AppearanceProvider";
 import { KeyboardShortcutsProvider } from "@/components/keyboard/KeyboardShortcutsProvider";
@@ -54,6 +56,7 @@ function createEntry(overrides: Record<string, unknown> = {}) {
     summary: "A short summary.",
     publishedAt: new Date("2024-06-15T10:00:00Z"),
     fetchedAt: new Date("2024-06-15T11:00:00Z"),
+    updatedAt: new Date("2024-06-15T11:00:00Z"),
     contentOriginal: "<p>Original body content here.</p>",
     contentCleaned: "<p>Cleaned body content here.</p>",
     read: false,
@@ -136,6 +139,37 @@ describe("EntryContent", () => {
         read: true,
       });
     });
+  });
+
+  it("still sends the mark-read for an entry that is already read (moves it up Recently Read)", async () => {
+    const { callsFor } = renderEntryContent(
+      <EntryContent entryId="entry-1" />,
+      baseHandlers({
+        "entries.get": (input) => ({
+          entry: createEntry({ id: (input as { id: string }).id, read: true }),
+        }),
+      })
+    );
+
+    await screen.findByRole("link", { name: "The Great Article" });
+    await vi.waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(1));
+  });
+
+  it("renders metadata from the local entry store, so a live rename shows in the open entry", async () => {
+    const { queryClient } = renderEntryContent(<EntryContent entryId="entry-1" />, baseHandlers());
+    await screen.findByRole("link", { name: "The Great Article" });
+
+    act(() => {
+      patchServerEntryMetadata(getLocalDb(queryClient).entries, "entry-1", {
+        title: "Renamed Article",
+        author: "Jane Doe",
+        summary: null,
+        url: "https://example.com/article",
+        publishedAt: new Date("2024-06-15T10:00:00Z"),
+      });
+    });
+
+    expect(await screen.findByRole("link", { name: "Renamed Article" })).toBeInTheDocument();
   });
 
   it("prefetches the next entry when nextEntryId is provided", async () => {

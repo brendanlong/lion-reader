@@ -1,5 +1,6 @@
-# Frontend Data Flow - React Query with Direct Cache Updates
-# Lion Reader uses React Query as the source of truth with helper functions for cache updates
+# Frontend Data Flow - React Query as the network layer, a local entry store for entries
+# Entries render from a TanStack DB store fed by fetches, mutations and SSE; counts,
+# subscriptions and tags stay in React Query with direct cache updates
 
 direction: down
 
@@ -53,6 +54,18 @@ client: {
     |
   }
 
+  local_db: {
+    label: Local Entry Store (TanStack DB)
+    shape: cylinder
+    style.fill: "#80cbc4"
+
+    description: |md
+      **src/lib/local-db/**
+      - entries (one row per entry, updatedAt-guarded)
+      - list membership (listKey, entryId, order)
+    |
+  }
+
   cache_helpers: {
     label: Cache Helpers
     shape: rectangle
@@ -60,10 +73,9 @@ client: {
 
     description: |md
       **src/lib/cache/**
-      - adjustSubscriptionUnreadCounts
-      - adjustTagUnreadCounts
-      - addSubscriptionToCache
-      - updateEntriesReadStatus
+      - setBulkCounts (absolute counts)
+      - handleSubscriptionCreated/Deleted
+      - applySyncTagChanges
     |
   }
 }
@@ -156,8 +168,13 @@ hooks.useRealtimeUpdates -> client.cache_helpers: "subscription_created\nsubscri
   style.stroke: "#388e3c"
 }
 
-hooks.useRealtimeUpdates -> client.cache_helpers: "insert entry + set counts\n(new_entry)" {
+hooks.useRealtimeUpdates -> client.cache_helpers: "set counts\n(new_entry, entry_state_changed)" {
   style.stroke: "#388e3c"
+}
+
+hooks.useRealtimeUpdates -> client.local_db: "entry state/metadata,\nlive list inserts" {
+  style.stroke: "#388e3c"
+  style.stroke-width: 2
 }
 
 client.cache_helpers -> client.react_query: "Direct cache updates" {
@@ -169,11 +186,16 @@ client.cache_helpers -> client.react_query: "Direct cache updates" {
 # Connections - Query Data Flow
 # ==============================================================================
 
-client.react_query -> ui.unified_entries: "Paginated entries\n(non-suspending)" {
+client.react_query -> client.local_db: "Ingest entries.list /\nentries.get results" {
+  style.stroke: "#00796b"
+  style.stroke-width: 2
+}
+
+client.local_db -> ui.unified_entries: "List entries\n(swipe navigation)" {
   style.stroke: "#7b1fa2"
 }
 
-client.react_query -> ui.suspending_list: "Paginated entries\n(suspending)" {
+client.local_db -> ui.suspending_list: "List entries\n(live query)" {
   style.stroke: "#7b1fa2"
 }
 
@@ -203,14 +225,13 @@ server.api -> hooks.useEntryMutations: "2. Response with\nsubscription context" 
   style.stroke-dash: 3
 }
 
-hooks.useEntryMutations -> client.cache_helpers: "3. Update counts\n(instant)" {
+hooks.useEntryMutations -> client.local_db: "Optimistic transaction;\nresponse state on settle" {
   style.stroke: "#f57c00"
   style.stroke-width: 2
 }
 
-hooks.useEntryMutations -> client.react_query: "4. Invalidate\nentry lists" {
+hooks.useEntryMutations -> client.cache_helpers: "Absolute counts\nfrom the response" {
   style.stroke: "#f57c00"
-  style.stroke-dash: 3
 }
 
 # ==============================================================================

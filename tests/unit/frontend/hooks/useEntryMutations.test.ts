@@ -7,8 +7,9 @@
  *
  * These render the real hook inside the real tRPC + React Query provider (via
  * `renderHookWithTrpc`), backed by a mock network link. That means the actual
- * mutations fire and the real cache is updated — we assert on the tRPC inputs
- * the hook sends and on the resulting cache state, not on compile-time types.
+ * mutations fire and the real local entry store and query cache are updated —
+ * we assert on the tRPC inputs the hook sends and on the resulting state, not
+ * on compile-time types.
  *
  * The lower-level cache operations these mutations call are covered separately
  * in tests/unit/frontend/cache/operations.test.ts.
@@ -16,12 +17,14 @@
 
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { act, cleanup, waitFor } from "@testing-library/react";
+import type { QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
 import type { BulkUnreadCounts } from "@/lib/cache/operations";
-import { getEntryMutationTracker } from "@/lib/cache/entry-mutation-tracker";
-import { updateEntriesInListCache } from "@/lib/cache/entry-cache";
+import { getLocalDb } from "@/lib/local-db/local-db";
+import { useEntryListEntries } from "@/lib/hooks/useLocalEntries";
+import { setServerEntryState, upsertServerEntries, type EntryRow } from "@/lib/local-db/entries";
 import {
   renderHookWithTrpc,
   type RenderWithTrpcOptions,
@@ -45,6 +48,45 @@ function bulkCounts(overrides: Partial<BulkUnreadCounts> = {}): BulkUnreadCounts
     tags: [],
     ...overrides,
   };
+}
+
+const t1 = new Date("2026-07-05T00:00:01.000Z");
+const t2 = new Date("2026-07-05T00:00:02.000Z");
+
+function markReadResponse(id: string, state: { read: boolean; starred: boolean }, updatedAt: Date) {
+  return {
+    entries: [{ id, subscriptionId: "sub-1", type: "web" as const, ...state, updatedAt }],
+    counts: bulkCounts(),
+  };
+}
+
+/** Stores an entry as if a fetch had returned it. */
+function seedEntry(queryClient: QueryClient, overrides: Partial<EntryRow> = {}): void {
+  upsertServerEntries(getLocalDb(queryClient).entries, [
+    {
+      id: "e1",
+      feedId: "feed-1",
+      subscriptionId: "sub-1",
+      type: "web",
+      url: null,
+      title: "Entry",
+      author: null,
+      summary: null,
+      publishedAt: fixedDate,
+      fetchedAt: fixedDate,
+      updatedAt: fixedDate,
+      read: false,
+      starred: false,
+      feedTitle: null,
+      siteName: null,
+      ...overrides,
+    },
+  ]);
+}
+
+/** The entry as rendered: server state with any pending optimistic change on top. */
+function storedEntry(queryClient: QueryClient, id = "e1"): EntryRow | undefined {
+  return getLocalDb(queryClient).entries.collection.get(id);
 }
 
 describe("useEntryMutations markRead", () => {
@@ -122,53 +164,25 @@ describe("useEntryMutations markRead", () => {
     expect(result.current.utils.entries.count.getData({ type: "saved" })).toEqual({ unread: 2 });
   });
 
-  it("updates the entries.list cache with the winning read state on success", async () => {
-    // The list cache is written through the winning-state guard (not
-    // unconditionally from each response), so a successful markRead must still
-    // reach entries.list. Regression guard for that path.
+  it("writes the server's read state to the entry store on success", async () => {
     const { result, queryClient, callsFor } = renderHookWithTrpc(
       () => ({ mutations: useEntryMutations(), utils: trpc.useUtils() }),
       {
         handlers: {
-          "entries.markRead": (input) => {
-            const typed = input as { entries: { id: string }[]; read: boolean };
-            return {
-              entries: typed.entries.map((e) => ({
-                id: e.id,
-                subscriptionId: "sub-1",
-                read: typed.read,
-                starred: false,
-                type: "web" as const,
-                updatedAt: fixedDate,
-              })),
-              counts: bulkCounts(),
-            };
-          },
+          "entries.markRead": () => markReadResponse("e1", { read: true, starred: false }, t1),
         },
       }
     );
-
-    queryClient.setQueryData([["entries", "list"], { input: { limit: 25 }, type: "infinite" }], {
-      pages: [
-        {
-          items: [{ id: "e1", read: false, starred: false, subscriptionId: "sub-1" }],
-          nextCursor: undefined,
-        },
-      ],
-      pageParams: [undefined],
-    });
+    seedEntry(queryClient, { read: false });
 
     act(() => {
       result.current.mutations.markRead(["e1"], true);
     });
 
     await waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(1));
-    await waitFor(() => {
-      const data = queryClient.getQueryData<{
-        pages: Array<{ items: Array<{ id: string; read: boolean }> }>;
-      }>([["entries", "list"], { input: { limit: 25 }, type: "infinite" }]);
-      expect(data?.pages[0].items[0].read).toBe(true);
-    });
+    await waitFor(() =>
+      expect(storedEntry(queryClient)).toMatchObject({ read: true, updatedAt: t1 })
+    );
   });
 
   it("toggleRead sends the negation of the current read status for a single entry", async () => {
@@ -376,7 +390,7 @@ describe("useEntryMutations star/unstar", () => {
 });
 
 // ============================================================================
-// Concurrent mutations: the per-QueryClient EntryMutationTracker
+// Concurrent mutations: TanStack DB transactions over the shared entry store
 // ============================================================================
 
 interface Deferred<T> {
@@ -394,21 +408,7 @@ function deferredHandler<T>(): { handler: () => Promise<T>; calls: Deferred<T>[]
   return { handler, calls };
 }
 
-const listKey = [["entries", "list"], { input: { limit: 25 }, type: "infinite" }];
-
-type ListItem = { id: string; read: boolean; starred: boolean; subscriptionId: string };
-
-function markReadResponse(id: string, state: { read: boolean; starred: boolean }, updatedAt: Date) {
-  return {
-    entries: [{ id, subscriptionId: "sub-1", type: "web" as const, ...state, updatedAt }],
-    counts: bulkCounts(),
-  };
-}
-
 describe("useEntryMutations concurrent mutations", () => {
-  const t1 = new Date("2026-07-05T00:00:01.000Z");
-  const t2 = new Date("2026-07-05T00:00:02.000Z");
-
   function renderTwoInstances(handlers: RenderWithTrpcOptions["handlers"]) {
     // Two hook instances on one QueryClient, like the reader (auto-mark-read)
     // and the list (keyboard toggle) both mounted for the same entry.
@@ -416,24 +416,13 @@ describe("useEntryMutations concurrent mutations", () => {
       () => ({ reader: useEntryMutations(), list: useEntryMutations(), utils: trpc.useUtils() }),
       { handlers }
     );
-    rendered.queryClient.setQueryData(listKey, {
-      pages: [
-        {
-          items: [{ id: "e1", read: false, starred: false, subscriptionId: "sub-1" }],
-          nextCursor: undefined,
-        },
-      ],
-      pageParams: [undefined],
-    });
-    const listItem = () =>
-      rendered.queryClient.getQueryData<{ pages: Array<{ items: ListItem[] }> }>(listKey)?.pages[0]
-        .items[0];
-    return { ...rendered, listItem };
+    seedEntry(rendered.queryClient, { read: false, starred: false });
+    return { ...rendered, entry: () => storedEntry(rendered.queryClient) };
   }
 
   it("keeps the optimistic state while another instance's mutation is still in flight", async () => {
     const markRead = deferredHandler<ReturnType<typeof markReadResponse>>();
-    const { result, listItem, callsFor } = renderTwoInstances({
+    const { result, entry, callsFor } = renderTwoInstances({
       "entries.markRead": markRead.handler,
     });
 
@@ -442,24 +431,24 @@ describe("useEntryMutations concurrent mutations", () => {
       result.current.list.toggleRead("e1", true);
     });
     await waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(2));
-    expect(listItem()?.read).toBe(false);
+    expect(entry()?.read).toBe(false);
 
     // The first (mark-read) response lands while the mark-unread is pending:
-    // with per-instance tracking it would flash the entry to read.
+    // the pending mark-unread must keep showing, not flash the entry to read.
     await act(async () => {
       markRead.calls[0].resolve(markReadResponse("e1", { read: true, starred: false }, t1));
     });
-    expect(listItem()?.read).toBe(false);
+    expect(entry()?.read).toBe(false);
 
     await act(async () => {
       markRead.calls[1].resolve(markReadResponse("e1", { read: false, starred: false }, t2));
     });
-    await waitFor(() => expect(listItem()?.read).toBe(false));
+    await waitFor(() => expect(entry()?.read).toBe(false));
   });
 
   it("applies the newest updatedAt when responses complete out of order", async () => {
     const markRead = deferredHandler<ReturnType<typeof markReadResponse>>();
-    const { result, listItem, callsFor } = renderTwoInstances({
+    const { result, entry, callsFor } = renderTwoInstances({
       "entries.markRead": markRead.handler,
     });
 
@@ -479,84 +468,67 @@ describe("useEntryMutations concurrent mutations", () => {
       markRead.calls[0].resolve(markReadResponse("e1", { read: true, starred: false }, t1));
     });
 
-    await waitFor(() => expect(listItem()).toMatchObject({ read: false, starred: true }));
+    await waitFor(() => expect(entry()).toMatchObject({ read: false, starred: true }));
   });
 
   it("rolls back every written field when concurrent mutations from both instances fail", async () => {
     const markRead = deferredHandler<never>();
     const setStarred = deferredHandler<never>();
-    const { result, queryClient, listItem, callsFor } = renderTwoInstances({
+    const { result, queryClient, entry, callsFor } = renderTwoInstances({
       "entries.markRead": markRead.handler,
       "entries.setStarred": setStarred.handler,
     });
-    queryClient.setQueryData(listKey, {
-      pages: [
-        {
-          items: [{ id: "e1", read: true, starred: true, subscriptionId: "sub-1" }],
-          nextCursor: undefined,
-        },
-      ],
-      pageParams: [undefined],
-    });
+    seedEntry(queryClient, { read: true, starred: true });
 
     act(() => {
       result.current.list.toggleRead("e1", true);
       result.current.reader.unstar("e1");
     });
     await waitFor(() => expect(callsFor("entries.setStarred")).toHaveLength(1));
-    expect(listItem()).toMatchObject({ read: false, starred: false });
+    expect(entry()).toMatchObject({ read: false, starred: false });
 
     await act(async () => {
       markRead.calls[0].reject(new Error("boom"));
     });
-    // The first failure alone must not roll anything back.
-    expect(listItem()).toMatchObject({ read: false, starred: false });
+    // The first failure alone must not roll anything back: the pending unstar
+    // still shows the state as of when it was made.
+    expect(entry()).toMatchObject({ read: false, starred: false });
 
     await act(async () => {
       setStarred.calls[0].reject(new Error("boom"));
     });
-    await waitFor(() => expect(listItem()).toMatchObject({ read: true, starred: true }));
-    // Nothing left tracked: settling again is a programming error.
-    expect(() => getEntryMutationTracker(queryClient).settle("e1")).toThrow();
+    await waitFor(() => expect(entry()).toMatchObject({ read: true, starred: true }));
   });
 
-  it("rolls back only the field the failed mutation wrote, keeping a mid-flight SSE change", async () => {
+  it("rolls back to the newest server state, keeping a mid-flight SSE change", async () => {
     const setStarred = deferredHandler<never>();
-    const { result, queryClient, listItem, callsFor } = renderTwoInstances({
+    const { result, queryClient, entry, callsFor } = renderTwoInstances({
       "entries.setStarred": setStarred.handler,
     });
-    const utils = result.current.utils;
-    utils.entries.get.setData({ id: "e1" }, {
-      entry: { id: "e1", read: false, starred: false, updatedAt: fixedDate },
-    } as never);
 
     act(() => {
       result.current.reader.star("e1");
     });
     await waitFor(() => expect(callsFor("entries.setStarred")).toHaveLength(1));
 
-    // Another device marks the entry read while the star is in flight: the
-    // entry_state_changed handler writes read: true to entries.get and lists.
+    // Another device marks the entry read while the star is in flight.
     act(() => {
-      utils.entries.get.setData({ id: "e1" }, {
-        entry: { id: "e1", read: true, starred: false, updatedAt: fixedDate },
-      } as never);
-      updateEntriesInListCache(queryClient, ["e1"], { read: true, starred: false });
+      setServerEntryState(getLocalDb(queryClient).entries, "e1", {
+        read: true,
+        starred: false,
+        updatedAt: t1,
+      });
     });
+
     await act(async () => {
       setStarred.calls[0].reject(new Error("boom"));
     });
-
-    await waitFor(() => expect(listItem()).toMatchObject({ read: true, starred: false }));
-    expect(utils.entries.get.getData({ id: "e1" })?.entry).toMatchObject({
-      read: true,
-      starred: false,
-    });
+    await waitFor(() => expect(entry()).toMatchObject({ read: true, starred: false }));
   });
 
   it("keeps the successful mutation's state when a concurrent one fails", async () => {
     const markRead = deferredHandler<ReturnType<typeof markReadResponse>>();
-    const { result, queryClient, listItem, callsFor } = renderTwoInstances({
+    const { result, entry, callsFor } = renderTwoInstances({
       "entries.markRead": markRead.handler,
       "entries.setStarred": (input: { id: string }) => ({
         entry: { id: input.id, read: false, starred: true, updatedAt: t1 },
@@ -575,18 +547,14 @@ describe("useEntryMutations concurrent mutations", () => {
       markRead.calls[0].reject(new Error("boom"));
     });
 
-    await waitFor(() => expect(listItem()).toMatchObject({ read: false, starred: true }));
-    // Nothing left tracked: settling again is a programming error.
-    expect(() => getEntryMutationTracker(queryClient).settle("e1")).toThrow();
+    await waitFor(() => expect(entry()).toMatchObject({ read: false, starred: true }));
   });
 
-  it("does not overwrite an entries.get that was refetched newer than the response", async () => {
+  it("does not overwrite state a fetch stored newer than the response", async () => {
     const markRead = deferredHandler<ReturnType<typeof markReadResponse>>();
-    const { result, callsFor } = renderTwoInstances({ "entries.markRead": markRead.handler });
-    const utils = result.current.utils;
-    utils.entries.get.setData({ id: "e1" }, {
-      entry: { id: "e1", read: false, starred: false, updatedAt: fixedDate },
-    } as never);
+    const { result, queryClient, entry, callsFor } = renderTwoInstances({
+      "entries.markRead": markRead.handler,
+    });
 
     act(() => {
       result.current.reader.markRead(["e1"], true);
@@ -596,53 +564,54 @@ describe("useEntryMutations concurrent mutations", () => {
     // A fetch completes mid-flight with state newer than what this mutation
     // will report (e.g. another device already acted on the entry).
     act(() => {
-      utils.entries.get.setData({ id: "e1" }, {
-        entry: { id: "e1", read: false, starred: true, updatedAt: t2 },
-      } as never);
+      seedEntry(queryClient, { read: false, starred: true, updatedAt: t2 });
     });
     await act(async () => {
       markRead.calls[0].resolve(markReadResponse("e1", { read: true, starred: false }, t1));
     });
 
-    expect(utils.entries.get.getData({ id: "e1" })?.entry).toMatchObject({
-      read: false,
-      starred: true,
-    });
+    await waitFor(() => expect(entry()).toMatchObject({ read: false, starred: true }));
   });
 
-  it("settles entries the server omitted from the response by rolling them back", async () => {
+  it("does not let a page fetched before the mutation revert it (#1081)", async () => {
+    const markRead = deferredHandler<ReturnType<typeof markReadResponse>>();
+    const { result, queryClient, entry, callsFor } = renderTwoInstances({
+      "entries.markRead": markRead.handler,
+    });
+
+    act(() => {
+      result.current.reader.markRead(["e1"], true);
+    });
+    await waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(1));
+    await act(async () => {
+      markRead.calls[0].resolve(markReadResponse("e1", { read: true, starred: false }, t1));
+    });
+
+    // A next-page fetch that started before the mark-read lands afterwards,
+    // carrying the entry's pre-mutation state.
+    act(() => {
+      seedEntry(queryClient, { read: false, updatedAt: fixedDate });
+    });
+    expect(entry()).toMatchObject({ read: true });
+  });
+
+  it("rolls back entries the server omitted from the response", async () => {
     const { result, queryClient, callsFor } = renderTwoInstances({
       "entries.markRead": () => markReadResponse("e1", { read: true, starred: false }, t1),
     });
-    queryClient.setQueryData(listKey, {
-      pages: [
-        {
-          items: [
-            { id: "e1", read: false, starred: false, subscriptionId: "sub-1" },
-            { id: "e2", read: false, starred: false, subscriptionId: "sub-1" },
-          ],
-          nextCursor: undefined,
-        },
-      ],
-      pageParams: [undefined],
-    });
+    seedEntry(queryClient, { id: "e2", read: false });
 
     act(() => {
       result.current.list.markRead(["e1", "e2"], true);
     });
     await waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(1));
 
-    const items = () =>
-      queryClient.getQueryData<{ pages: Array<{ items: ListItem[] }> }>(listKey)?.pages[0].items;
-    await waitFor(() => expect(items()?.[1].read).toBe(false));
-    expect(items()?.[0].read).toBe(true);
-    const tracker = getEntryMutationTracker(queryClient);
-    expect(() => tracker.settle("e1")).toThrow();
-    expect(() => tracker.settle("e2")).toThrow();
+    await waitFor(() => expect(storedEntry(queryClient, "e2")?.read).toBe(false));
+    expect(storedEntry(queryClient, "e1")?.read).toBe(true);
   });
 
-  it("writes the response's starred state to the lists together with read", async () => {
-    const { result, listItem, callsFor } = renderTwoInstances({
+  it("writes the response's starred state together with read", async () => {
+    const { result, entry, callsFor } = renderTwoInstances({
       "entries.markRead": () => markReadResponse("e1", { read: true, starred: true }, t1),
     });
 
@@ -651,6 +620,57 @@ describe("useEntryMutations concurrent mutations", () => {
     });
     await waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(1));
 
-    await waitFor(() => expect(listItem()).toMatchObject({ read: true, starred: true }));
+    await waitFor(() => expect(entry()).toMatchObject({ read: true, starred: true }));
+  });
+
+  it("still sends a mark-read that changes nothing locally (already-read entry)", async () => {
+    const { result, queryClient, callsFor } = renderTwoInstances({
+      "entries.markRead": () => markReadResponse("e1", { read: true, starred: false }, t1),
+    });
+    seedEntry(queryClient, { read: true });
+
+    act(() => {
+      result.current.list.markRead(["e1", "not-held"], true);
+    });
+
+    await waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(1));
+    const input = callsFor("entries.markRead")[0].input as { entries: { id: string }[] };
+    expect(input.entries.map((e) => e.id)).toEqual(["e1", "not-held"]);
+  });
+
+  it("inserts an entry marked unread into the unread-only lists missing it", async () => {
+    const unreadOnly = { unreadOnly: true, sortOrder: "newest", limit: 10 } as const;
+    const { result, queryClient } = renderHookWithTrpc(
+      () => ({ mutations: useEntryMutations(), list: useEntryListEntries(unreadOnly) }),
+      {
+        handlers: {
+          "entries.markRead": () => markReadResponse("e1", { read: false, starred: false }, t1),
+        },
+      }
+    );
+    seedEntry(queryClient, { read: true });
+    act(() => {
+      queryClient.setQueryData([["entries", "list"], { input: unreadOnly, type: "infinite" }], {
+        pages: [{ items: [], nextCursor: undefined }],
+        pageParams: [undefined],
+      });
+    });
+
+    act(() => {
+      result.current.mutations.markRead(["e1"], false);
+    });
+
+    await waitFor(() => expect(result.current.list).toMatchObject([{ id: "e1", read: false }]));
+  });
+
+  it("still sends the mutation for an entry the store doesn't hold", async () => {
+    const { result, callsFor } = renderTwoInstances({
+      "entries.markRead": () => markReadResponse("other", { read: true, starred: false }, t1),
+    });
+
+    act(() => {
+      result.current.list.markRead(["other"], true);
+    });
+    await waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(1));
   });
 });

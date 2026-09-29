@@ -1,27 +1,58 @@
 /**
  * useEntryMutations Hook
  *
- * Entry mutations (markRead, star/unstar, markAllRead). Read/starred updates
- * follow the "optimistic write + timestamp reconciliation" pattern in
- * src/FRONTEND_STATE.md ("Optimistic Updates"): onMutate writes the intended
- * state and registers with the shared EntryMutationTracker, onSuccess records
- * the server state, and onSettled writes the reconciled state once nothing is
- * in flight for the entry. Counts always come from the response.
+ * Entry mutations (markRead, star/unstar, markAllRead). Read/starred changes
+ * are TanStack DB transactions on the local entry store: the intended state
+ * shows immediately as an optimistic overlay, the server response is written
+ * to the synced layer (newest `updatedAt` wins), and when the transaction
+ * settles the overlay drops — leaving the newest server state, or on failure
+ * the state the server last reported. See "Optimistic Updates" in
+ * src/FRONTEND_STATE.md. Counts always come from the response.
  */
 
 "use client";
 
 import { useCallback, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { createTransaction } from "@tanstack/db";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { setBulkCounts } from "@/lib/cache/operations";
-import {
-  getCachedEntryState,
-  updateEntriesReadStatus,
-  updateEntryState,
-} from "@/lib/cache/entry-cache";
-import { getEntryMutationTracker, type EntryField } from "@/lib/cache/entry-mutation-tracker";
+import { setServerEntryState, type EntryRow } from "@/lib/local-db/entries";
+import { getLocalDb, insertEntryIntoLists, type LocalDb } from "@/lib/local-db/local-db";
+
+/**
+ * Sends a mutation with `applyOptimistic` layered over the entries the store
+ * holds until `send` (which writes the response to the synced layer)
+ * settles.
+ *
+ * A transaction that records no changes completes without calling its
+ * mutation function, and TanStack DB records none for entries the store
+ * doesn't hold or for a re-assert of the current state (e.g. marking an
+ * already-read entry read, which still has to reach the server to move its
+ * `readChangedAt`). Then there is nothing to show optimistically, so the
+ * mutation is just sent.
+ */
+function mutateEntries(
+  db: LocalDb,
+  entryIds: string[],
+  applyOptimistic: (draft: EntryRow) => void,
+  send: () => Promise<unknown>
+): Promise<unknown> {
+  const held = entryIds.filter((id) => db.entries.collection.has(id));
+  const transaction = createTransaction({ autoCommit: false, mutationFn: send });
+  if (held.length > 0) {
+    transaction.mutate(() => {
+      db.entries.collection.update(held, (drafts) => drafts.forEach(applyOptimistic));
+    });
+  }
+  if (transaction.mutations.length === 0) {
+    // Completes at once without calling `send`; this just releases it.
+    void transaction.commit();
+    return send();
+  }
+  return transaction.commit();
+}
 
 /**
  * Entry type for routing.
@@ -99,77 +130,78 @@ export interface UseEntryMutationsResult {
 export function useEntryMutations(): UseEntryMutationsResult {
   const utils = trpc.useUtils();
   const queryClient = useQueryClient();
-  const tracker = getEntryMutationTracker(queryClient);
+  const db = getLocalDb(queryClient);
+  // The requests go through React Query mutations (not the vanilla client) so
+  // failures reach the MutationCache, where AuthErrorHandler watches for an
+  // expired session.
+  const { mutateAsync: sendMarkRead } = trpc.entries.markRead.useMutation();
+  const { mutateAsync: sendSetStarred } = trpc.entries.setStarred.useMutation();
 
-  const startTracking = (entryId: string, field: EntryField) => {
-    tracker.start(entryId, field, getCachedEntryState(utils, queryClient, entryId));
-  };
-
-  /**
-   * Settles one mutation for the entry and, when it was the last in flight,
-   * writes the reconciled state to entries.get and every entry list together.
-   * The lists go through the same guard as entries.get: writing them
-   * unconditionally from each response lets two rapid conflicting mutations
-   * that complete out of order leave the list at the older state.
-   *
-   * Never throws: a throw inside onSettled makes React Query run onError and
-   * onSettled again for a mutation that succeeded, and would leave the other
-   * entries of a markRead batch unsettled in the shared tracker.
-   */
-  const settleEntry = (entryId: string) => {
-    let settlement;
-    try {
-      settlement = tracker.settle(entryId);
-    } catch (error) {
-      console.error("entry mutation settle error:", error);
-      return;
-    }
-    if (!settlement) return;
-
-    if (settlement.kind === "apply") {
-      const cachedUpdatedAt = utils.entries.get.getData({ id: entryId })?.entry?.updatedAt;
-      if (cachedUpdatedAt && settlement.state.updatedAt.getTime() < cachedUpdatedAt.getTime()) {
-        return;
+  const markRead = useCallback(
+    (ids: string[], read: boolean) => {
+      const changedAt = new Date();
+      if (!read) {
+        // An entry becoming unread belongs in unread-only lists fetched while
+        // it was read (e.g. mark-unread in "Show All", then toggle back to
+        // "Unread only" — the toggle switches lists without a refetch).
+        for (const id of ids) {
+          const entry = db.entries.collection.get(id);
+          if (entry) insertEntryIntoLists(db, queryClient, { ...entry, read: false });
+        }
       }
-      updateEntryState(utils, queryClient, entryId, settlement.state);
-    } else if (settlement.state) {
-      updateEntryState(utils, queryClient, entryId, settlement.state);
-    }
-  };
-
-  const markReadMutation = trpc.entries.markRead.useMutation({
-    onMutate: (variables) => {
-      const entryIds = variables.entries.map((e) => e.id);
-      for (const entryId of entryIds) {
-        startTracking(entryId, "read");
-      }
-      updateEntriesReadStatus(utils, entryIds, variables.read, queryClient);
+      mutateEntries(
+        db,
+        ids,
+        (draft) => {
+          draft.read = read;
+        },
+        async () => {
+          const data = await sendMarkRead({
+            entries: ids.map((id) => ({ id, changedAt })),
+            read,
+          });
+          for (const entry of data.entries) setServerEntryState(db.entries, entry.id, entry);
+          if (data.counts) setBulkCounts(utils, data.counts, queryClient);
+        }
+      ).catch((error: unknown) => {
+        console.error("markRead mutation error:", error);
+        toast.error("Failed to update read status");
+      });
     },
+    [db, queryClient, utils, sendMarkRead]
+  );
 
-    onSuccess: (data) => {
-      for (const entry of data.entries) {
-        tracker.recordSuccess(entry.id, {
-          read: entry.read,
-          starred: entry.starred,
-          updatedAt: entry.updatedAt,
-        });
-      }
-      if (data.counts) {
-        setBulkCounts(utils, data.counts, queryClient);
-      }
+  const setStarred = useCallback(
+    (entryId: string, starred: boolean) => {
+      const changedAt = new Date();
+      mutateEntries(
+        db,
+        [entryId],
+        (draft) => {
+          draft.starred = starred;
+        },
+        async () => {
+          const data = await sendSetStarred({
+            id: entryId,
+            starred,
+            changedAt,
+          });
+          setServerEntryState(db.entries, data.entry.id, data.entry);
+          // Array check: a server from the previous release (canary/rollback
+          // window) returns the single-subscription counts shape, which lacks
+          // `subscriptions`; skip it and let the entry_state_changed event,
+          // which always carries the bulk shape, set the counts.
+          if (data.counts && Array.isArray(data.counts.subscriptions)) {
+            setBulkCounts(utils, data.counts, queryClient);
+          }
+        }
+      ).catch((error: unknown) => {
+        console.error("setStarred mutation error:", error);
+        toast.error(starred ? "Failed to star entry" : "Failed to unstar entry");
+      });
     },
-
-    onError: (error) => {
-      console.error("markRead mutation error:", error);
-      toast.error("Failed to update read status");
-    },
-
-    onSettled: (_data, _error, variables) => {
-      for (const entry of variables.entries) {
-        settleEntry(entry.id);
-      }
-    },
-  });
+    [db, queryClient, utils, sendSetStarred]
+  );
 
   // markAllRead mutation - invalidates caches based on what could be affected
   const markAllReadMutation = trpc.entries.markAllRead.useMutation({
@@ -195,57 +227,9 @@ export function useEntryMutations(): UseEntryMutationsResult {
     },
   });
 
-  const setStarredMutation = trpc.entries.setStarred.useMutation({
-    onMutate: (variables) => {
-      startTracking(variables.id, "starred");
-      updateEntryState(utils, queryClient, variables.id, { starred: variables.starred });
-    },
-
-    onSuccess: (data) => {
-      tracker.recordSuccess(data.entry.id, {
-        read: data.entry.read,
-        starred: data.entry.starred,
-        updatedAt: data.entry.updatedAt,
-      });
-      // Array check: a server from the previous release (canary/rollback
-      // window) returns the single-subscription counts shape, which lacks
-      // `subscriptions`; skip it and let the entry_state_changed event, which
-      // always carries the bulk shape, set the counts.
-      if (data.counts && Array.isArray(data.counts.subscriptions)) {
-        setBulkCounts(utils, data.counts, queryClient);
-      }
-    },
-
-    onError: (error, variables) => {
-      console.error("setStarred mutation error:", error);
-      toast.error(variables.starred ? "Failed to star entry" : "Failed to unstar entry");
-    },
-
-    onSettled: (_data, _error, variables) => {
-      settleEntry(variables.id);
-    },
-  });
-
-  // Generate timestamp at action time for idempotent updates
-  const markRead = useCallback(
-    (ids: string[], read: boolean) => {
-      const changedAt = new Date();
-      markReadMutation.mutate({
-        entries: ids.map((id) => ({ id, changedAt })),
-        read,
-      });
-    },
-    [markReadMutation]
-  );
-
   const toggleRead = useCallback(
-    (entryId: string, currentlyRead: boolean) => {
-      markReadMutation.mutate({
-        entries: [{ id: entryId, changedAt: new Date() }],
-        read: !currentlyRead,
-      });
-    },
-    [markReadMutation]
+    (entryId: string, currentlyRead: boolean) => markRead([entryId], !currentlyRead),
+    [markRead]
   );
 
   const markAllRead = useCallback(
@@ -255,29 +239,11 @@ export function useEntryMutations(): UseEntryMutationsResult {
     [markAllReadMutation]
   );
 
-  const star = useCallback(
-    (entryId: string) => {
-      setStarredMutation.mutate({ id: entryId, starred: true, changedAt: new Date() });
-    },
-    [setStarredMutation]
-  );
-
-  const unstar = useCallback(
-    (entryId: string) => {
-      setStarredMutation.mutate({ id: entryId, starred: false, changedAt: new Date() });
-    },
-    [setStarredMutation]
-  );
-
+  const star = useCallback((entryId: string) => setStarred(entryId, true), [setStarred]);
+  const unstar = useCallback((entryId: string) => setStarred(entryId, false), [setStarred]);
   const toggleStar = useCallback(
-    (entryId: string, currentlyStarred: boolean) => {
-      setStarredMutation.mutate({
-        id: entryId,
-        starred: !currentlyStarred,
-        changedAt: new Date(),
-      });
-    },
-    [setStarredMutation]
+    (entryId: string, currentlyStarred: boolean) => setStarred(entryId, !currentlyStarred),
+    [setStarred]
   );
 
   return useMemo(

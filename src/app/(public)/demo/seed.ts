@@ -48,9 +48,9 @@ export function buildDemoDehydratedState(store: DemoStore, location: AppLocation
 
   // An open entry is seeded the way the reader leaves it after mounting: the
   // list was fetched with the entry unread (so unread-only views include it),
-  // then the auto-mark-read mutation ran — marking it read in the store and
-  // patching the cached list row in place. Seeding that end state means the
-  // read toggle and the counts don't flip after hydration.
+  // then the auto-mark-read mutation ran and marked it read. Seeding that end
+  // state — read, but still in the list — means the read toggle and the
+  // counts don't flip after hydration.
   const entryId = searchParams.get("entry");
   if (entryId) {
     // Stamped with a fixed time (the article's own date) rather than the clock,

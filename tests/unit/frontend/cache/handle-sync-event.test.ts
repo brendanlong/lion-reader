@@ -36,6 +36,9 @@ import {
   DEFAULT_ENTRIES,
 } from "../../../utils/cache-test-helpers";
 import type { QueryClient } from "@tanstack/react-query";
+import { getLocalDb } from "@/lib/local-db/local-db";
+import { entryListKey } from "@/lib/local-db/entry-lists";
+import type { EntryRow } from "@/lib/local-db/entries";
 
 // ============================================================================
 // Test Setup
@@ -104,27 +107,32 @@ function getEntriesCount(filters: Record<string, unknown> = {}): { unread: numbe
   return getUtilsData<ReturnType<typeof getEntriesCount>>(utils.entries.count, filters);
 }
 
-function getEntryGet(id: string): { entry: Record<string, unknown> } | undefined {
-  return getUtilsData<ReturnType<typeof getEntryGet>>(utils.entries.get, { id });
+/** An entry as rendered from the local store (undefined when not held). */
+function storedEntry(id: string): EntryRow | undefined {
+  return getLocalDb(queryClient).entries.collection.get(id);
 }
 
-function getEntriesFromQueryClient(): Array<Record<string, unknown>> {
-  const queries = queryClient.getQueriesData<{
-    pages: Array<{ items: Array<Record<string, unknown>> }>;
-  }>({ queryKey: [["entries", "list"]] });
-
-  const entries: Array<Record<string, unknown>> = [];
-  for (const [, data] of queries) {
-    if (!data?.pages) continue;
-    for (const page of data.pages) {
-      entries.push(...page.items);
-    }
-  }
-  return entries;
+/** Every list row, as the entry it shows (an entry in two lists appears twice). */
+function listedEntries(): EntryRow[] {
+  return getLocalDb(queryClient)
+    .lists.rows.collection.toArray.map((row) => storedEntry(row.entryId))
+    .filter((entry): entry is EntryRow => entry !== undefined);
 }
 
-function findEntryInQueryClient(entryId: string): Record<string, unknown> | undefined {
-  return getEntriesFromQueryClient().find((e) => e.id === entryId);
+/** The ids a loaded list shows, sorted (ordering is covered in entry-lists.test). */
+function listIds(input: Record<string, unknown>): string[] {
+  const listKey = entryListKey(input);
+  return getLocalDb(queryClient)
+    .lists.rows.collection.toArray.filter((row) => row.listKey === listKey)
+    .map((row) => row.entryId)
+    .sort();
+}
+
+function seedList(input: Record<string, unknown>, items: unknown[]): void {
+  queryClient.setQueryData([["entries", "list"], { input, type: "infinite" }], {
+    pages: [{ items, nextCursor: undefined }],
+    pageParams: [undefined],
+  });
 }
 
 // ============================================================================
@@ -293,8 +301,8 @@ describe("handleSyncEvent - new_entry", () => {
     expect(getEntriesCount({})?.unread).toBe(19); // not 20
   });
 
-  it("inserts the entry into cached lists when the event carries list data", () => {
-    const before = getEntriesFromQueryClient().length;
+  it("inserts the entry into loaded lists when the event carries list data", () => {
+    const before = listedEntries().length;
 
     handleSyncEvent(
       utils,
@@ -318,8 +326,8 @@ describe("handleSyncEvent - new_entry", () => {
       })
     );
 
-    const inserted = findEntryInQueryClient("entry-live");
-    expect(getEntriesFromQueryClient()).toHaveLength(before + 1);
+    const inserted = storedEntry("entry-live");
+    expect(listedEntries()).toHaveLength(before + 1);
     expect(inserted).toMatchObject({
       id: "entry-live",
       subscriptionId: "sub-1",
@@ -355,12 +363,12 @@ describe("handleSyncEvent - new_entry", () => {
     handleSyncEvent(utils, queryClient, event);
     handleSyncEvent(utils, queryClient, event);
 
-    const copies = getEntriesFromQueryClient().filter((e) => e.id === "entry-live");
+    const copies = listedEntries().filter((e) => e.id === "entry-live");
     expect(copies).toHaveLength(1);
   });
 
   it("leaves lists unchanged when the event has no list data (older server)", () => {
-    const before = getEntriesFromQueryClient().length;
+    const before = listedEntries().length;
 
     handleSyncEvent(
       utils,
@@ -368,8 +376,8 @@ describe("handleSyncEvent - new_entry", () => {
       createNewEntryEvent({ entryId: "entry-live", subscriptionId: "sub-1" })
     );
 
-    expect(getEntriesFromQueryClient()).toHaveLength(before);
-    expect(findEntryInQueryClient("entry-live")).toBeUndefined();
+    expect(listedEntries()).toHaveLength(before);
+    expect(storedEntry("entry-live")).toBeUndefined();
   });
 });
 
@@ -378,7 +386,7 @@ describe("handleSyncEvent - new_entry", () => {
 // ============================================================================
 
 describe("handleSyncEvent - entry_updated", () => {
-  it("updates metadata in entries.get cache", () => {
+  it("updates the stored entry's metadata", () => {
     handleSyncEvent(
       utils,
       queryClient,
@@ -394,31 +402,7 @@ describe("handleSyncEvent - entry_updated", () => {
       })
     );
 
-    const cached = getEntryGet("entry-1");
-    expect(cached?.entry.title).toBe("New Title");
-    expect(cached?.entry.author).toBe("New Author");
-    expect(cached?.entry.summary).toBe("New Summary");
-    expect(cached?.entry.url).toBe("https://example.com/new-url");
-    expect(cached?.entry.publishedAt).toEqual(new Date("2024-08-01T00:00:00.000Z"));
-  });
-
-  it("updates metadata in entries.list cache (QueryClient)", () => {
-    handleSyncEvent(
-      utils,
-      queryClient,
-      createEntryUpdatedEvent({
-        entryId: "entry-1",
-        metadata: {
-          title: "New Title",
-          author: "New Author",
-          summary: "New Summary",
-          url: "https://example.com/new-url",
-          publishedAt: "2024-08-01T00:00:00.000Z",
-        },
-      })
-    );
-
-    const entry = findEntryInQueryClient("entry-1");
+    const entry = storedEntry("entry-1");
     expect(entry?.title).toBe("New Title");
     expect(entry?.author).toBe("New Author");
     expect(entry?.summary).toBe("New Summary");
@@ -442,8 +426,7 @@ describe("handleSyncEvent - entry_updated", () => {
       })
     );
 
-    const cached = getEntryGet("entry-1");
-    expect(cached?.entry.publishedAt).toBeNull();
+    expect(storedEntry("entry-1")?.publishedAt).toBeNull();
   });
 
   it("does not crash for non-cached entry", () => {
@@ -457,9 +440,7 @@ describe("handleSyncEvent - entry_updated", () => {
       );
     }).not.toThrow();
 
-    // Original cache unchanged
-    const cached = getEntryGet("entry-1");
-    expect(cached?.entry.title).toBe("Old Title");
+    expect(storedEntry("non-existent-entry")).toBeUndefined();
   });
 });
 
@@ -468,22 +449,11 @@ describe("handleSyncEvent - entry_updated", () => {
 // ============================================================================
 
 describe("handleSyncEvent - entry_state_changed", () => {
-  it("restores an entry that became unread into unreadOnly caches missing it", () => {
-    // entry-3 is read in the seeded "All" cache. An unreadOnly cache fetched
+  it("restores an entry that became unread into unreadOnly lists missing it", () => {
+    // entry-3 is read in the seeded "All" list. An unreadOnly list fetched
     // while it was read doesn't contain it; marking it unread (e.g. on
-    // another device) must insert it there, not just patch by ID.
-    queryClient.setQueryData(
-      [["entries", "list"], { input: { unreadOnly: true, limit: 25 }, type: "infinite" }],
-      {
-        pages: [
-          {
-            items: [DEFAULT_ENTRIES.find((e) => e.id === "entry-1")],
-            nextCursor: undefined,
-          },
-        ],
-        pageParams: [undefined],
-      }
-    );
+    // another device) must insert it there, not just update its state.
+    seedList({ unreadOnly: true, limit: 25 }, [DEFAULT_ENTRIES.find((e) => e.id === "entry-1")]);
 
     handleSyncEvent(
       utils,
@@ -495,36 +465,17 @@ describe("handleSyncEvent - entry_state_changed", () => {
       })
     );
 
-    const unreadList = queryClient.getQueryData<{
-      pages: Array<{ items: Array<{ id: string; read: boolean }> }>;
-    }>([["entries", "list"], { input: { unreadOnly: true, limit: 25 }, type: "infinite" }]);
-    const ids = unreadList?.pages.flatMap((p) => p.items.map((i) => i.id));
-    // Inserted in sorted position (entry-3 published 06-03 > entry-1 06-01)
-    expect(ids).toEqual(["entry-3", "entry-1"]);
-    // And the "All" cache still has exactly one copy, now unread
-    const copies = getEntriesFromQueryClient().filter((e) => e.id === "entry-3");
-    expect(copies.every((e) => e.read === false)).toBe(true);
+    expect(listIds({ unreadOnly: true, limit: 25 })).toEqual(["entry-1", "entry-3"]);
+    expect(storedEntry("entry-3")?.read).toBe(false);
   });
 
-  it("inserts an entry cached in NO list from the event's list payload (#1237)", () => {
+  it("inserts an entry the store doesn't hold from the event's list payload (#1237)", () => {
     // The entry was marked unread on another device (or via MCP) and this
-    // client holds it in no list cache at all — every list was fetched while
-    // it was read and filtered out. restoreUnreadEntriesToListCaches has no
-    // copy to work from; the event's list-item payload (mirroring new_entry)
-    // is what makes it appear.
-    queryClient.setQueryData(
-      [["entries", "list"], { input: { unreadOnly: true, limit: 25 }, type: "infinite" }],
-      {
-        pages: [
-          {
-            items: [DEFAULT_ENTRIES.find((e) => e.id === "entry-1")],
-            nextCursor: undefined,
-          },
-        ],
-        pageParams: [undefined],
-      }
-    );
-    expect(findEntryInQueryClient("entry-uncached")).toBeUndefined();
+    // client doesn't hold it at all — every list was fetched while it was
+    // read and filtered out. The event's list-item payload (mirroring
+    // new_entry) is what makes it appear.
+    seedList({ unreadOnly: true, limit: 25 }, [DEFAULT_ENTRIES.find((e) => e.id === "entry-1")]);
+    expect(storedEntry("entry-uncached")).toBeUndefined();
 
     handleSyncEvent(
       utils,
@@ -550,14 +501,9 @@ describe("handleSyncEvent - entry_state_changed", () => {
       })
     );
 
-    // Inserted in sorted position in the unreadOnly cache (06-02 > entry-1's 06-01)
-    const unreadList = queryClient.getQueryData<{
-      pages: Array<{ items: Array<{ id: string }> }>;
-    }>([["entries", "list"], { input: { unreadOnly: true, limit: 25 }, type: "infinite" }]);
-    const ids = unreadList?.pages.flatMap((p) => p.items.map((i) => i.id));
-    expect(ids).toEqual(["entry-uncached", "entry-1"]);
+    expect(listIds({ unreadOnly: true, limit: 25 })).toEqual(["entry-1", "entry-uncached"]);
 
-    const inserted = findEntryInQueryClient("entry-uncached");
+    const inserted = storedEntry("entry-uncached");
     expect(inserted).toMatchObject({
       id: "entry-uncached",
       subscriptionId: "sub-1",
@@ -597,18 +543,12 @@ describe("handleSyncEvent - entry_state_changed", () => {
     handleSyncEvent(utils, queryClient, event);
     handleSyncEvent(utils, queryClient, event);
 
-    const copies = getEntriesFromQueryClient().filter((e) => e.id === "entry-uncached");
+    const copies = listedEntries().filter((e) => e.id === "entry-uncached");
     expect(copies).toHaveLength(1);
   });
 
-  it("inserts an unread starred payload entry into starredOnly caches too", () => {
-    queryClient.setQueryData(
-      [["entries", "list"], { input: { starredOnly: true, limit: 25 }, type: "infinite" }],
-      {
-        pages: [{ items: [], nextCursor: undefined }],
-        pageParams: [undefined],
-      }
-    );
+  it("inserts an unread starred payload entry into starredOnly lists too", () => {
+    seedList({ starredOnly: true, limit: 25 }, []);
 
     handleSyncEvent(
       utils,
@@ -633,15 +573,11 @@ describe("handleSyncEvent - entry_state_changed", () => {
       })
     );
 
-    const starredList = queryClient.getQueryData<{
-      pages: Array<{ items: Array<{ id: string; starred: boolean }> }>;
-    }>([["entries", "list"], { input: { starredOnly: true, limit: 25 }, type: "infinite" }]);
-    const ids = starredList?.pages.flatMap((p) => p.items.map((i) => i.id));
-    expect(ids).toEqual(["entry-uncached"]);
+    expect(listIds({ starredOnly: true, limit: 25 })).toEqual(["entry-uncached"]);
   });
 
-  it("does not insert a payload-less unread event for an entry in no cache (older server)", () => {
-    const before = getEntriesFromQueryClient().length;
+  it("does not insert a payload-less unread event for an entry the store doesn't hold (older server)", () => {
+    const before = listedEntries().length;
 
     handleSyncEvent(
       utils,
@@ -654,11 +590,11 @@ describe("handleSyncEvent - entry_state_changed", () => {
     );
 
     // Nothing to insert from — the entry appears on the next navigation refresh.
-    expect(getEntriesFromQueryClient()).toHaveLength(before);
-    expect(findEntryInQueryClient("entry-uncached")).toBeUndefined();
+    expect(listedEntries()).toHaveLength(before);
+    expect(storedEntry("entry-uncached")).toBeUndefined();
   });
 
-  it("updates read status in entries.list", () => {
+  it("updates the stored read and starred state", () => {
     handleSyncEvent(
       utils,
       queryClient,
@@ -669,12 +605,12 @@ describe("handleSyncEvent - entry_state_changed", () => {
       })
     );
 
-    const entry = findEntryInQueryClient("entry-1");
+    const entry = storedEntry("entry-1");
     expect(entry?.read).toBe(true);
     expect(entry?.starred).toBe(true);
   });
 
-  it("updates starred status in entries.list", () => {
+  it("updates the stored starred state alone", () => {
     handleSyncEvent(
       utils,
       queryClient,
@@ -685,12 +621,12 @@ describe("handleSyncEvent - entry_state_changed", () => {
       })
     );
 
-    const entry = findEntryInQueryClient("entry-2");
+    const entry = storedEntry("entry-2");
     expect(entry?.starred).toBe(true);
     expect(entry?.read).toBe(false);
   });
 
-  it("updates entries.get for cached entry", () => {
+  it("ignores state older than what the store holds", () => {
     handleSyncEvent(
       utils,
       queryClient,
@@ -698,12 +634,11 @@ describe("handleSyncEvent - entry_state_changed", () => {
         entryId: "entry-1",
         read: true,
         starred: false,
+        updatedAt: "2024-01-01T00:00:00.000Z",
       })
     );
 
-    const cached = getEntryGet("entry-1");
-    expect(cached?.entry.read).toBe(true);
-    expect(cached?.entry.starred).toBe(false);
+    expect(storedEntry("entry-1")).toMatchObject({ read: false, starred: true });
   });
 
   it("decrements unread counts when entry marked read (with server counts)", () => {
@@ -860,8 +795,8 @@ describe("handleSyncEvent - mark_all_read", () => {
     // is what will mark them read, so the handler itself changes nothing.
     handleSyncEvent(utils, queryClient, createMarkAllReadEvent());
 
-    expect(findEntryInQueryClient("entry-1")?.read).toBe(false);
-    expect(findEntryInQueryClient("entry-2")?.read).toBe(false);
+    expect(storedEntry("entry-1")?.read).toBe(false);
+    expect(storedEntry("entry-2")?.read).toBe(false);
   });
 });
 

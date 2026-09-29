@@ -25,6 +25,7 @@ import { NotFoundCard } from "@/components/ui/not-found-card";
 import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
 import { useUrlViewPreferences } from "@/lib/hooks/useUrlViewPreferences";
 import { useEntriesListInput } from "@/lib/hooks/useEntriesListInput";
+import { useEntryListEntries } from "@/lib/hooks/useLocalEntries";
 import { getFiltersFromPathname } from "@/lib/queries/entries-list-input";
 import { useCanRenderFromCache } from "@/lib/hooks/useIsHydrated";
 import { useAppPathname } from "@/lib/hooks/useAppLocation";
@@ -213,12 +214,14 @@ function UnifiedEntriesContentInner() {
   // Get query input based on current URL - shared with EntryListContainer
   const queryInput = useEntriesListInput();
 
-  // Non-suspending query for navigation - shares cache with EntryListContainer
-  const entriesQuery = trpc.entries.list.useInfiniteQuery(queryInput, {
+  // Keeps the list's query observed while an entry is open (EntryListContainer
+  // owns fetching); the entries themselves come from the local store.
+  trpc.entries.list.useInfiniteQuery(queryInput, {
     getNextPageParam: (lastPage) => lastPage.nextCursor,
     staleTime: Infinity,
     refetchOnWindowFocus: false,
   });
+  const entries = useEntryListEntries(queryInput);
 
   // Fetch subscription data for validation. A genuinely missing subscription
   // throws NOT_FOUND, which we render as a NotFoundCard below; any other error
@@ -266,13 +269,11 @@ function UnifiedEntriesContentInner() {
     return { subscriptionId, tagId, uncategorized, starredOnly, type };
   }, [pathname]);
 
-  // Get adjacent entry IDs from query data for swipe navigation. Pagination
-  // near the end of the loaded pages is triggered by EntryListContainer, which
-  // owns the same query.
-  const pages = entriesQuery.data?.pages;
+  // Adjacent entry IDs for swipe navigation. Pagination near the end of the
+  // loaded entries is triggered by EntryListContainer, which owns the query.
   const { nextEntryId, previousEntryId } = useMemo(
-    () => findAdjacentEntries(pages?.flatMap((page) => page.items) ?? [], openEntryId),
-    [openEntryId, pages]
+    () => findAdjacentEntries(entries, openEntryId),
+    [openEntryId, entries]
   );
 
   // Navigation callbacks - just update URL, React re-renders

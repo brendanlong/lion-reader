@@ -118,6 +118,26 @@ export function findCachedSubscription(
 }
 
 /**
+ * IDs of the cached subscriptions (sidebar lists and the lookup map) matching
+ * `predicate`, or undefined when no subscriptions are cached at all.
+ */
+export function findCachedSubscriptionIds(
+  queryClient: QueryClient,
+  predicate: (subscription: CachedSubscription) => boolean
+): string[] | undefined {
+  const matching = new Set<string>();
+  let any = subscriptionLookupMap.size > 0;
+  for (const subscription of subscriptionLookupMap.values()) {
+    if (predicate(subscription)) matching.add(subscription.id);
+  }
+  forEachCachedSubscription(queryClient, (subscription) => {
+    any = true;
+    if (predicate(subscription)) matching.add(subscription.id);
+  });
+  return any ? [...matching] : undefined;
+}
+
+/**
  * Adds a new subscription to the subscription lookup map.
  * Used when subscription_created SSE event arrives or from mutation side-effects.
  *
