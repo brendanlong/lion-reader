@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { GET } from "../../src/app/.well-known/assetlinks.json/route";
 
-const RELEASE = "AA:BB";
-const DEBUG = "CC:DD";
+const key = (byte: string) => Array(32).fill(byte).join(":");
+const RELEASE = key("AA");
+const RELEASE_2 = key("BB");
+const DEBUG = key("CC");
 
 afterEach(() => {
   delete process.env.ANDROID_APP_CERT_SHA256;
@@ -26,17 +28,32 @@ describe("/.well-known/assetlinks.json", () => {
     expect(await packages()).toEqual({});
   });
 
+  it("publishes a statement Android can verify", async () => {
+    process.env.ANDROID_APP_CERT_SHA256 = RELEASE;
+    expect(await GET().json()).toEqual([
+      {
+        relation: ["delegate_permission/common.handle_all_urls"],
+        target: {
+          namespace: "android_app",
+          package_name: "com.lionreader.app",
+          sha256_cert_fingerprints: [RELEASE],
+        },
+      },
+    ]);
+  });
+
   it("publishes the release and debug apps with their own keys", async () => {
-    process.env.ANDROID_APP_CERT_SHA256 = `${RELEASE}, EE:FF`;
+    process.env.ANDROID_APP_CERT_SHA256 = `${RELEASE}, ${RELEASE_2}`;
     process.env.ANDROID_DEBUG_APP_CERT_SHA256 = DEBUG;
     expect(await packages()).toEqual({
-      "com.lionreader.app": [RELEASE, "EE:FF"],
+      "com.lionreader.app": [RELEASE, RELEASE_2],
       "com.lionreader.app.debug": [DEBUG],
     });
   });
 
-  it("omits an app whose keys aren't set", async () => {
-    process.env.ANDROID_APP_CERT_SHA256 = RELEASE;
-    expect(Object.keys(await packages())).toEqual(["com.lionreader.app"]);
+  it("uppercases keys and drops malformed ones", async () => {
+    process.env.ANDROID_APP_CERT_SHA256 = `${RELEASE.toLowerCase()},AA:BB,${key("AA").slice(0, 59)}`;
+    process.env.ANDROID_DEBUG_APP_CERT_SHA256 = "not-a-key";
+    expect(await packages()).toEqual({ "com.lionreader.app": [RELEASE] });
   });
 });
