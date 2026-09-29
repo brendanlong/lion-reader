@@ -242,8 +242,7 @@ function entryContentColumns(parsedEntry: ParsedEntry, contentHash: string, feed
 /**
  * Creates a new entry in the database.
  *
- * @param feedId - The feed's UUID
- * @param feedType - The feed type
+ * @param feedId - The (web) feed's UUID
  * @param parsedEntry - The parsed entry from the feed
  * @param contentHash - Pre-computed content hash
  * @param fetchedAt - Timestamp when the entry was fetched
@@ -254,7 +253,6 @@ function entryContentColumns(parsedEntry: ParsedEntry, contentHash: string, feed
  */
 export async function createEntry(
   feedId: string,
-  feedType: "web" | "email" | "saved",
   parsedEntry: ParsedEntry,
   contentHash: string,
   fetchedAt: Date,
@@ -267,13 +265,13 @@ export async function createEntry(
   const newEntry: NewEntry = {
     id: generateUuidv7(),
     feedId,
-    type: feedType,
+    type: "web",
     guid,
     ...entryContentColumns(parsedEntry, contentHash, feedUrl),
     publishedAt,
     fetchedAt,
-    // Only web entries track lastSeenAt (for visibility on subscription)
-    lastSeenAt: feedType === "web" ? fetchedAt : null,
+    // Tracks visibility on subscription (see processEntries)
+    lastSeenAt: fetchedAt,
     isBackfill: isBackfilledEntry(publishedAt, previousLastFetchedAt),
   };
 
@@ -335,7 +333,6 @@ interface CachedEntryInfo {
  * This avoids N+1 queries by using a Map lookup instead of a database query.
  *
  * @param feedId - The feed's UUID
- * @param feedType - The feed type
  * @param parsedEntry - The parsed entry from the feed
  * @param fetchedAt - Timestamp when the entry was fetched
  * @param existingEntriesMap - Map of canonical GUID (`canonicalGuid`) to existing entry info
@@ -344,7 +341,6 @@ interface CachedEntryInfo {
  */
 async function processEntryWithCache(
   feedId: string,
-  feedType: "web" | "email" | "saved",
   parsedEntry: ParsedEntry,
   fetchedAt: Date,
   existingEntriesMap: Map<string, CachedEntryInfo>,
@@ -367,7 +363,6 @@ async function processEntryWithCache(
     // per-user count computation sees the entry in visible_entries.
     const entry = await createEntry(
       feedId,
-      feedType,
       parsedEntry,
       contentHash,
       fetchedAt,
@@ -563,19 +558,20 @@ export async function createUserEntriesForFeed(feedId: string, entryIds: string[
  * New entries that are really an archive re-announcement rather than news are
  * fanned out already-read — see `isBackfilledEntry` and `previousLastFetchedAt`.
  *
+ * Only web feeds are fetched (polled or pushed via WebSub), so every entry
+ * processed here is a web entry.
+ *
  * @param feedId - The feed's UUID
- * @param feedType - The feed type (web, email, saved)
  * @param feed - The parsed feed containing entries
  * @param options - Processing options
  * @returns Processing result with counts and entry details
  *
  * @example
- * const result = await processEntries(feedId, 'web', parsedFeed);
+ * const result = await processEntries(feedId, parsedFeed);
  * console.log(`New: ${result.newCount}, Updated: ${result.updatedCount}`);
  */
 export async function processEntries(
   feedId: string,
-  feedType: "web" | "email" | "saved",
   feed: ParsedFeed,
   options: ProcessEntriesOptions = {}
 ): Promise<ProcessEntriesResult> {
@@ -636,7 +632,6 @@ export async function processEntries(
     try {
       const result = await processEntryWithCache(
         feedId,
-        feedType,
         item,
         fetchedAt,
         existingEntriesMap,
@@ -665,14 +660,13 @@ export async function processEntries(
     }
   }
 
-  // Detect entries that disappeared from the feed (web feeds only): entries that
+  // Detect entries that disappeared from the feed: entries that
   // were visible (last_seen_at >= previousLastEntriesUpdatedAt) but whose guid is
   // no longer in the current feed (compared scheme-insensitively, so a feed that
   // flips http/https between polls doesn't report its whole contents gone).
   let disappearedCount = 0;
-  const isFetchedType = feedType === "web";
 
-  if (isFetchedType && previousLastEntriesUpdatedAt) {
+  if (previousLastEntriesUpdatedAt) {
     // `>=`, not `=`: an entry a WebSub hub pushed since the last poll sits ABOVE
     // previousLastEntriesUpdatedAt (last_seen_at = pushTime). Strict equality
     // missed those, so a poll that confirmed such an entry was gone never counted
@@ -705,9 +699,9 @@ export async function processEntries(
   // timestamp (see the option's doc comment).
   const shouldUpdateVisibility = hasChanges || alwaysUpdateVisibility;
 
-  // Update lastSeenAt for all entries in this fetch (web feeds only)
+  // Update lastSeenAt for all entries in this fetch
   // The timestamp used here should match feeds.lastEntriesUpdatedAt
-  if (isFetchedType && shouldUpdateVisibility) {
+  if (shouldUpdateVisibility) {
     await updateEntriesLastSeenAt(allEntryIds, fetchedAt);
   }
 
@@ -750,7 +744,7 @@ export async function processEntries(
           feedId,
           result.id,
           result.updatedAt,
-          feedType,
+          "web",
           toNewEntryListData(result.newEntryData, feedTitle ?? null)
         ).catch((err) => {
           logger.error("Failed to publish new_entry event", {

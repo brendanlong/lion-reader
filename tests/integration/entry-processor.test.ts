@@ -255,7 +255,7 @@ describe("Entry Processor", () => {
       };
 
       const contentHash = generateContentHash(parsedEntry);
-      const entry = await createEntry(feed.id, "web", parsedEntry, contentHash, fetchedAt);
+      const entry = await createEntry(feed.id, parsedEntry, contentHash, fetchedAt);
 
       expect(entry.id).toBeDefined();
       expect(entry.feedId).toBe(feed.id);
@@ -281,7 +281,6 @@ describe("Entry Processor", () => {
 
       const entry = await createEntry(
         feed.id,
-        "web",
         parsedEntry,
         generateContentHash(parsedEntry),
         new Date()
@@ -305,7 +304,6 @@ describe("Entry Processor", () => {
 
       const createdEntry = await createEntry(
         feed.id,
-        "web",
         initialEntry,
         generateContentHash(initialEntry),
         new Date()
@@ -341,7 +339,7 @@ describe("Entry Processor", () => {
         content: "New content",
       };
 
-      const { entries: results } = await processEntries(feed.id, feed.type, {
+      const { entries: results } = await processEntries(feed.id, {
         title: "Test Feed",
         items: [parsedEntry],
       });
@@ -367,7 +365,7 @@ describe("Entry Processor", () => {
         content: "Original content",
       };
 
-      const createResult = await processEntries(feed.id, feed.type, {
+      const createResult = await processEntries(feed.id, {
         title: "Test Feed",
         items: [initialEntry],
       });
@@ -380,7 +378,7 @@ describe("Entry Processor", () => {
         content: "New content here",
       };
 
-      const updateResult = await processEntries(feed.id, feed.type, {
+      const updateResult = await processEntries(feed.id, {
         title: "Test Feed",
         items: [updatedEntry],
       });
@@ -404,14 +402,14 @@ describe("Entry Processor", () => {
       };
 
       // First process
-      const result1 = await processEntries(feed.id, feed.type, {
+      const result1 = await processEntries(feed.id, {
         title: "Test Feed",
         items: [entry],
       });
       expect(result1.entries[0].isNew).toBe(true);
 
       // Second process with same content
-      const result2 = await processEntries(feed.id, feed.type, {
+      const result2 = await processEntries(feed.id, {
         title: "Test Feed",
         items: [entry],
       });
@@ -435,7 +433,7 @@ describe("Entry Processor", () => {
         ],
       };
 
-      const result = await processEntries(feed.id, feed.type, parsedFeed);
+      const result = await processEntries(feed.id, parsedFeed);
 
       expect(result.newCount).toBe(3);
       expect(result.updatedCount).toBe(0);
@@ -462,7 +460,7 @@ describe("Entry Processor", () => {
         ],
       };
 
-      await processEntries(feed.id, feed.type, firstFeed);
+      await processEntries(feed.id, firstFeed);
 
       // Second fetch: 1 unchanged, 1 updated, 1 new
       const secondFeed: ParsedFeed = {
@@ -474,7 +472,7 @@ describe("Entry Processor", () => {
         ],
       };
 
-      const result = await processEntries(feed.id, feed.type, secondFeed);
+      const result = await processEntries(feed.id, secondFeed);
 
       expect(result.newCount).toBe(1);
       expect(result.updatedCount).toBe(1);
@@ -488,7 +486,6 @@ describe("Entry Processor", () => {
       const firstFetchedAt = new Date("2024-06-15T10:00:00Z");
       await processEntries(
         feed.id,
-        feed.type,
         {
           title: "Test Feed",
           items: [
@@ -510,7 +507,6 @@ describe("Entry Processor", () => {
       const secondFetchedAt = new Date("2024-06-15T11:00:00Z");
       await processEntries(
         feed.id,
-        feed.type,
         {
           title: "Test Feed",
           items: [
@@ -547,12 +543,7 @@ describe("Entry Processor", () => {
         { guid: "aiv-a", title: "Entry A", content: "Content A" },
         { guid: "aiv-b", title: "Entry B", content: "Content B" },
       ];
-      await processEntries(
-        feed.id,
-        feed.type,
-        { title: "T", items },
-        { fetchedAt: firstFetchedAt }
-      );
+      await processEntries(feed.id, { title: "T", items }, { fetchedAt: firstFetchedAt });
 
       // A subscriber that joins AFTER the first fetch has no user_entries yet.
       const userId = await createTestUser({ emailPrefix: "aiv" });
@@ -562,7 +553,6 @@ describe("Entry Processor", () => {
       const secondFetchedAt = new Date("2024-06-15T11:00:00Z");
       const result = await processEntries(
         feed.id,
-        feed.type,
         { title: "T", items },
         { fetchedAt: secondFetchedAt, alwaysUpdateVisibility: true }
       );
@@ -594,7 +584,6 @@ describe("Entry Processor", () => {
       const pollTime = new Date("2024-06-15T10:00:00Z");
       await processEntries(
         feed.id,
-        feed.type,
         {
           title: "T",
           items: [
@@ -609,7 +598,6 @@ describe("Entry Processor", () => {
       const pushTime = new Date("2024-06-15T10:30:00Z");
       await processEntries(
         feed.id,
-        feed.type,
         { title: "T", items: [{ guid: "del-c", title: "C", content: "C" }] },
         { fetchedAt: pushTime }
       );
@@ -620,7 +608,6 @@ describe("Entry Processor", () => {
       const refreshTime = new Date("2024-06-15T11:00:00Z");
       await processEntries(
         feed.id,
-        feed.type,
         {
           title: "T",
           items: [
@@ -653,23 +640,13 @@ describe("Entry Processor", () => {
       });
       const firstFetchedAt = new Date("2024-06-15T10:00:00Z");
       const items = [{ guid: "noaiv-a", title: "Entry A", content: "Content A" }];
-      await processEntries(
-        feed.id,
-        feed.type,
-        { title: "T", items },
-        { fetchedAt: firstFetchedAt }
-      );
+      await processEntries(feed.id, { title: "T", items }, { fetchedAt: firstFetchedAt });
 
       const userId = await createTestUser({ emailPrefix: "noaiv" });
       await createTestSubscription(userId, feed.id);
 
       const secondFetchedAt = new Date("2024-06-15T11:00:00Z");
-      await processEntries(
-        feed.id,
-        feed.type,
-        { title: "T", items },
-        { fetchedAt: secondFetchedAt }
-      );
+      await processEntries(feed.id, { title: "T", items }, { fetchedAt: secondFetchedAt });
 
       const afterA = await findEntryByGuid(feed.id, "noaiv-a");
       expect(afterA?.lastSeenAt?.toISOString()).toBe(firstFetchedAt.toISOString());
@@ -691,7 +668,6 @@ describe("Entry Processor", () => {
       const pollTime = new Date("2024-06-15T10:00:00Z");
       await processEntries(
         feed.id,
-        feed.type,
         { title: "T", items: [{ guid: "gte-a", title: "A", content: "A" }] },
         { fetchedAt: pollTime }
       );
@@ -700,7 +676,6 @@ describe("Entry Processor", () => {
       const pushTime = new Date("2024-06-15T10:30:00Z");
       await processEntries(
         feed.id,
-        feed.type,
         { title: "T", items: [{ guid: "gte-c", title: "C", content: "C" }] },
         { fetchedAt: pushTime }
       );
@@ -710,7 +685,6 @@ describe("Entry Processor", () => {
       const laterPoll = new Date("2024-06-15T11:00:00Z");
       const result = await processEntries(
         feed.id,
-        feed.type,
         { title: "T", items: [{ guid: "gte-a", title: "A", content: "A" }] },
         { fetchedAt: laterPoll, previousLastEntriesUpdatedAt: pollTime }
       );
@@ -732,7 +706,6 @@ describe("Entry Processor", () => {
       const laterTime = new Date("2024-06-15T12:00:00Z");
       await processEntries(
         feed.id,
-        feed.type,
         { title: "T", items: [{ guid: "mono-a", title: "A", content: "A" }] },
         { fetchedAt: laterTime }
       );
@@ -745,7 +718,6 @@ describe("Entry Processor", () => {
       const earlierTime = new Date("2024-06-15T10:00:00Z");
       await processEntries(
         feed.id,
-        feed.type,
         { title: "T", items: [{ guid: "mono-a", title: "A", content: "A" }] },
         { fetchedAt: earlierTime, alwaysUpdateVisibility: true }
       );
@@ -763,7 +735,7 @@ describe("Entry Processor", () => {
         items: [{ guid: "timestamped-entry", title: "Entry", content: "Content" }],
       };
 
-      await processEntries(feed.id, feed.type, parsedFeed, { fetchedAt: customFetchedAt });
+      await processEntries(feed.id, parsedFeed, { fetchedAt: customFetchedAt });
 
       const entry = await findEntryByGuid(feed.id, "timestamped-entry");
       expect(entry?.fetchedAt.toISOString()).toBe(customFetchedAt.toISOString());
@@ -781,7 +753,7 @@ describe("Entry Processor", () => {
         ],
       };
 
-      const result = await processEntries(feed.id, feed.type, parsedFeed);
+      const result = await processEntries(feed.id, parsedFeed);
 
       // Should process the valid entries
       expect(result.newCount).toBe(2);
@@ -796,7 +768,7 @@ describe("Entry Processor", () => {
         items: [],
       };
 
-      const result = await processEntries(feed.id, feed.type, parsedFeed);
+      const result = await processEntries(feed.id, parsedFeed);
 
       expect(result.newCount).toBe(0);
       expect(result.updatedCount).toBe(0);
@@ -817,7 +789,7 @@ describe("Entry Processor", () => {
       };
 
       // First entry creates, second updates (since content differs)
-      const result = await processEntries(feed.id, feed.type, parsedFeed);
+      const result = await processEntries(feed.id, parsedFeed);
 
       expect(result.newCount).toBe(1);
       expect(result.updatedCount).toBe(1);
@@ -833,13 +805,13 @@ describe("Entry Processor", () => {
       it("updates an existing entry in place when only the guid scheme changed", async () => {
         const feed = await createTestFeed();
 
-        const first = await processEntries(feed.id, feed.type, {
+        const first = await processEntries(feed.id, {
           title: "T",
           items: [{ guid: "http://example.com/?p=1", title: "Post", content: "v1" }],
         });
         expect(first.newCount).toBe(1);
 
-        const second = await processEntries(feed.id, feed.type, {
+        const second = await processEntries(feed.id, {
           title: "T",
           items: [{ guid: "https://example.com/?p=1", title: "Post", content: "v2 (edited)" }],
         });
@@ -858,7 +830,7 @@ describe("Entry Processor", () => {
         const feed = await createTestFeed();
 
         const link = "https://example.com/2024/06/post/";
-        const result = await processEntries(feed.id, feed.type, {
+        const result = await processEntries(feed.id, {
           title: "T",
           items: [
             { guid: "http://example.com/?p=1", link, title: "Post", content: "A" },
@@ -879,7 +851,6 @@ describe("Entry Processor", () => {
         const pollTime = new Date("2024-06-15T10:00:00Z");
         await processEntries(
           feed.id,
-          feed.type,
           {
             title: "T",
             items: [{ guid: "http://example.com/?p=1", link, title: "P", content: "A" }],
@@ -889,7 +860,6 @@ describe("Entry Processor", () => {
 
         const result = await processEntries(
           feed.id,
-          feed.type,
           {
             title: "T",
             items: [{ guid: "https://example.com/?p=1", link, title: "P", content: "A" }],
@@ -928,7 +898,7 @@ describe("Entry Processor", () => {
         // <guid> between fetches; that must not register as an update on every
         // poll. Same for an entry whose URL is its guid (no <link>).
         const feed = await createTestFeed();
-        await processEntries(feed.id, feed.type, {
+        await processEntries(feed.id, {
           title: "T",
           items: [
             {
@@ -941,7 +911,7 @@ describe("Entry Processor", () => {
           ],
         });
 
-        const result = await processEntries(feed.id, feed.type, {
+        const result = await processEntries(feed.id, {
           title: "T",
           items: [
             {
@@ -968,7 +938,7 @@ describe("Entry Processor", () => {
       it("keeps guids that differ beyond the scheme distinct", async () => {
         const feed = await createTestFeed();
 
-        const result = await processEntries(feed.id, feed.type, {
+        const result = await processEntries(feed.id, {
           title: "T",
           items: [
             { guid: "http://example.com/?p=1", title: "A", content: "A" },
@@ -998,7 +968,6 @@ describe("Entry Processor", () => {
         };
         const oldEntry = await createEntry(
           oldFeed.id,
-          "web",
           oldParsed,
           generateContentHash(oldParsed),
           new Date()
@@ -1010,7 +979,7 @@ describe("Entry Processor", () => {
           read: true,
         });
 
-        const result = await processEntries(newFeed.id, newFeed.type, {
+        const result = await processEntries(newFeed.id, {
           title: "T",
           items: [
             { guid: "https://example.com/?p=1", title: "P", content: "A" },
@@ -1068,7 +1037,7 @@ describe("Entry Processor", () => {
             { guid: "fanout-2", title: "Entry 2", content: "Content 2" },
           ],
         };
-        await processEntries(feed.id, feed.type, parsedFeed);
+        await processEntries(feed.id, parsedFeed);
 
         // Publishes are fire-and-forget, so wait for delivery.
         const deadline = Date.now() + 5000;
@@ -1104,7 +1073,7 @@ describe("Entry Processor", () => {
         ],
       };
 
-      const result = await processEntries(feed.id, feed.type, parsedFeed, {
+      const result = await processEntries(feed.id, parsedFeed, {
         fetchedAt,
         previousLastFetchedAt,
       });
@@ -1150,7 +1119,6 @@ describe("Entry Processor", () => {
 
       const result = await processEntries(
         feed.id,
-        feed.type,
         {
           title: "Test Feed",
           items: [{ guid: "old-1", title: "Old", pubDate: new Date("2022-03-01T00:00:00Z") }],
@@ -1179,7 +1147,6 @@ describe("Entry Processor", () => {
       const item = { title: "Ukraine Post #5", pubDate: new Date("2022-03-01T00:00:00Z") };
       const result = await processEntries(
         feed.id,
-        feed.type,
         { title: "Test Feed", items: [item, item] },
         {
           fetchedAt: new Date("2026-08-10T01:00:00Z"),
@@ -1213,7 +1180,6 @@ describe("Entry Processor", () => {
       // Simulate the crash: the entry row exists, the user_entries row doesn't.
       await createEntry(
         feed.id,
-        "web",
         archived,
         generateContentHash(archived),
         new Date("2026-08-10T01:00:00Z"),
@@ -1228,7 +1194,6 @@ describe("Entry Processor", () => {
       // every current entry and heals the orphan.
       await processEntries(
         feed.id,
-        feed.type,
         {
           title: "Test Feed",
           items: [
@@ -1266,7 +1231,6 @@ describe("Entry Processor", () => {
       };
       await processEntries(
         feed.id,
-        feed.type,
         { title: "Test Feed", items: [archived] },
         {
           fetchedAt: new Date("2026-08-10T01:00:00Z"),
@@ -1278,7 +1242,6 @@ describe("Entry Processor", () => {
       // every current entry — including the backfilled one.
       const result = await processEntries(
         feed.id,
-        feed.type,
         {
           title: "Test Feed",
           items: [
@@ -1321,7 +1284,6 @@ describe("Entry Processor", () => {
       try {
         await processEntries(
           feed.id,
-          feed.type,
           {
             title: "Test Feed",
             items: [
@@ -1371,7 +1333,6 @@ describe("Entry Processor", () => {
       };
       const orphan = await createEntry(
         feed.id,
-        "web",
         orphanParsed,
         generateContentHash(orphanParsed),
         new Date()
@@ -1386,7 +1347,7 @@ describe("Entry Processor", () => {
         title: "Test Feed",
         items: [orphanParsed, { guid: "new-1", title: "New", content: "New content" }],
       };
-      const result = await processEntries(feed.id, feed.type, parsedFeed);
+      const result = await processEntries(feed.id, parsedFeed);
       expect(result.newCount).toBe(1); // only new-1 counts as new
 
       const after = await db

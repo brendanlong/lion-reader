@@ -282,7 +282,7 @@ async function processSuccessfulFetch(
   // Pass previousLastEntriesUpdatedAt to detect entries that disappeared from the feed
   // Pass feedUrl for feed-specific content cleaning (e.g., LessWrong)
   // After this call, parsedFeed can be GC'd since we only use feedMetadata below
-  const processResult = await processEntries(feed.id, feed.type, parsedFeed, {
+  const processResult = await processEntries(feed.id, parsedFeed, {
     fetchedAt: now,
     previousLastEntriesUpdatedAt: feed.lastEntriesUpdatedAt,
     // Null on the feed's very first fetch, which is what disables the backfill

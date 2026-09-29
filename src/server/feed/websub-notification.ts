@@ -141,7 +141,7 @@ export async function ingestWebsubNotification(
 
   const now = new Date();
   try {
-    const result = await processEntries(feedId, feed.type, parsedFeed, {
+    const result = await processEntries(feedId, parsedFeed, {
       fetchedAt: now,
       // A push never advances last_fetched_at, so this stays the last full poll:
       // anything the hub announces that predates it by a wide margin is the
