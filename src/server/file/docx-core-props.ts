@@ -15,10 +15,9 @@
  * empty properties (we fall back to the filename / mammoth body) rather than
  * throwing.
  *
- * No decompression cap: mammoth already inflates the larger `document.xml` from
- * the same (size-limited) upload with no cap via jszip/pako, so a `core.xml`-only
- * cap would be theater — zip-bomb hardening is a pipeline/upstream concern, not
- * something this reader can meaningfully add.
+ * No decompression cap of its own: the upload path calls this only after
+ * `convertDocxToHtml` (`docx-to-html.ts`) has held the whole archive to its
+ * decompression budget, which covers `core.xml` too.
  */
 
 import JSZip from "jszip";

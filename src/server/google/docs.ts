@@ -23,10 +23,11 @@
 
 import { z } from "zod";
 import { logger } from "@/lib/logger";
-import { googleConfig } from "@/server/config/env";
+import { googleConfig, usageLimitsConfig } from "@/server/config/env";
 import { fetchAndUploadImage, isStorageAvailable } from "@/server/storage/s3";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { fetchWithSsrfProtection } from "@/server/http/ssrf";
+import { readResponseWithSizeLimit } from "@/server/http/fetch";
 import { escapeHtml } from "@/server/http/html";
 import { stripTitleHeader } from "@/server/html/strip-title-header";
 import {
@@ -53,6 +54,14 @@ const GOOGLE_DOCS_API_ENDPOINT = "https://docs.googleapis.com/v1/documents";
  * Timeout for API requests in milliseconds.
  */
 const API_TIMEOUT_MS = 15000;
+
+/**
+ * The Docs API response may be this many times the saved-article size limit.
+ * It is structured JSON — every text run carries its own style object — and
+ * `includeTabsContent` returns every tab, so it runs several times larger than
+ * the HTML we save from it.
+ */
+const DOCS_API_RESPONSE_SIZE_FACTOR = 4;
 
 /**
  * OAuth2 scope required for reading Google Docs.
@@ -1328,7 +1337,13 @@ async function fetchGoogleDocWithToken(
       }
     } else {
       // Docs API succeeded
-      const json = await response.json();
+      const json: unknown = JSON.parse(
+        await readResponseWithSizeLimit(
+          response,
+          usageLimitsConfig.maxSavedArticleSizeBytes * DOCS_API_RESPONSE_SIZE_FACTOR,
+          url
+        )
+      );
       const parsed = googleDocsApiResponseSchema.safeParse(json);
 
       if (!parsed.success) {
