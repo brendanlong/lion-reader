@@ -1,17 +1,39 @@
 # Frontend State Management
 
-This document is the contract for how queries, mutations, and SSE events update the React Query cache. Keep it updated when changing queries/mutations/SSE handling.
+This document is the contract for how queries, mutations, and SSE events update client state (the local entry store and the React Query cache). Keep it updated when changing queries/mutations/SSE handling.
 
 ## Architecture Overview
 
-The frontend uses React Query (via tRPC) with a hybrid cache update strategy:
+React Query (via tRPC) is the network layer for everything. Entries additionally
+live in a **local normalized store** (TanStack DB, `src/lib/local-db/`), which is
+what entry lists, the reader, and the loading fallbacks render from:
 
-| Update Type             | Strategy                   | Rationale                                                           |
-| ----------------------- | -------------------------- | ------------------------------------------------------------------- |
-| Subscription/tag counts | Direct update (absolute)   | Instant sidebar updates without flicker                             |
-| Entry lists             | Direct update (in place)   | Read entries stay visible until navigation; new entries appear live |
-| Single entry            | Direct update              | Keyed by ID, easy to target                                         |
-| Subscription list       | Direct update (add/remove) | Full data available, avoids refetch                                 |
+| Data                    | Lives in                                   | Updated by                                                          |
+| ----------------------- | ------------------------------------------ | ------------------------------------------------------------------- |
+| Entry list-item fields  | Local store: one row per entry             | Ingested fetches, mutation responses, SSE — newest `updatedAt` wins |
+| Entry list membership   | Local store: `{ listKey, entryId, order }` | Ingested fetches; live inserts of new/newly-unread entries          |
+| Entry content           | React Query `entries.get`                  | Fetch; `fetchFullContent` response                                  |
+| Subscription/tag counts | React Query (absolute values)              | Direct update from responses and events                             |
+| Subscription list       | React Query (sidebar `subscriptions.list`) | Direct update (add/remove)                                          |
+
+**Ingestion.** `getLocalDb(queryClient)` (one store per QueryClient — never
+module-global, since the server has one QueryClient per request) subscribes to
+the QueryCache and ingests every `entries.list` and `entries.get` result as it
+lands: SSR-hydrated, prefetched, fetched, and `setQueryData`'d data all take the
+same path. `entries.list` pages are written to the entry store and to the list's
+membership; a next-page fetch (`fetchMeta.fetchMore`) appends, anything else
+replaces the list's membership. Removing the query from the cache (gc) drops the
+list's membership rows. Nothing writes entry state to `entries.list` or
+`entries.get` any more — their copies are only as fresh as their fetch and are
+never rendered for state.
+
+**Membership never follows state.** A list's rows change only when it is fetched
+or when an entry is inserted live — never when an entry's read/starred state
+changes — so read entries stay visible in unread-only views until the list
+refreshes. Lists sort by `order ASC` plus an id tiebreak: `order` is the negated
+(newest-first) or plain (oldest-first) `COALESCE(publishedAt, fetchedAt)` in ms,
+or the fetch position for search and Recently Read, whose order entries can't
+reproduce.
 
 Entry lists (`entries.list`, `staleTime: Infinity`) are never refetched on a
 timer or window focus. Mutations and SSE events patch them in place, and the
@@ -26,35 +48,31 @@ refreshes the list (read entries stay visible under the reader). The sidebar
 calls the same `refreshEntryLists` when a link matching the current pathname
 is clicked, so clicking the current list acts as an explicit refresh.
 
-**`fetchNextPage` clobber guard (#1081):** React Query's `infiniteQueryBehavior`
-snapshots the existing pages when a `fetchNextPage` starts and, on completion,
-replaces the data with `snapshot + newPage` — silently dropping any
-`setQueryData` applied to the old pages mid-fetch. j/k navigation triggers this
-(opening an entry near the end auto-marks it read at the same moment
-`fetchNextPage` fires), so the completing fetch would revert the entry to unread.
-`EntryListContainer` owns every next-page fetch (keyboard- and
-scroll-triggered) for exactly this reason — one place to wrap, and one request
-per trigger. It therefore calls `snapshotEntryGetStates` **before** starting the fetch and
-`reconcileListFromChangedEntryGets` **after** it settles, re-asserting onto the
-list only the entries whose `entries.get` read/starred state **changed during
-the fetch window**. It is a diff, not a blanket re-assert, because `entries.get`
-is not universally in lockstep with the list — `mark_all_read` invalidates
-`entries.list` but never touches `entries.get`, so a blanket re-assert would
-resurrect a stale get (e.g. a prefetched-unread entry that mark-all-read marked
-read) into the freshly-refetched list. A clobber can only affect writes made
-after the fetch started, so restricting to mid-fetch changes captures exactly
-those. (A brand-new SSE-inserted entry has no `entries.get` entry and can't be
-restored this way; it reappears on the next navigation refresh.)
+A next-page fetch can't clobber a mid-fetch read/starred change (#1081):
+state lives in the entry store, and a page fetched before the change carries an
+older `updatedAt`, so it is skipped for that entry.
+
+## Local Store (`src/lib/local-db/`)
+
+| File                   | Role                                                                                                                                                  |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `synced-collection.ts` | A TanStack DB collection whose synced layer we write from server data (`begin({ immediate: true })`, so writes land under pending optimistic changes) |
+| `entries.ts`           | Entry rows and the `updatedAt`-guarded server writes: `upsertServerEntries`, `setServerEntryState`, `patchServerEntryMetadata`                        |
+| `entry-lists.ts`       | List membership: `ingestEntryListPages`, `insertIntoMatchingLists` (filter targeting, pagination window), `entryListKey`                              |
+| `local-db.ts`          | `getLocalDb` (per-QueryClient store + QueryCache ingestion), `insertEntryIntoLists` / `addServerEntryToLists`                                         |
+
+Components read it through `src/lib/hooks/useLocalEntries.ts`:
+`useEntryListEntries(input)` (a list, in order), `useLocalEntry(id)`, and
+`useLocalEntriesMatching(filters)` — the entry-list loading fallback, which shows
+stored entries matching the view's filters while its first page loads.
 
 ## Cache Helpers (`src/lib/cache/`)
 
-| File                        | Role                                                                                                                                                                                                    |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `operations.ts`             | High-level operations (primary API): `setBulkCounts`/`setEntryRelatedCounts` (absolute counts), `handleSubscriptionCreated`/`handleSubscriptionDeleted`, `removeSubscriptionFromCaches`                 |
-| `entry-cache.ts`            | Entry list/get patching: `updateEntriesReadStatus`, `updateEntryState`, `getCachedEntryState`, `updateEntryMetadataInCache`, `insertEntryIntoListCaches`, `restoreUnreadEntriesToListCaches`            |
-| `entry-mutation-tracker.ts` | `EntryMutationTracker` — per-QueryClient reconciliation of concurrent read/starred mutations (see "Optimistic Updates")                                                                                 |
-| `count-cache.ts`            | Session-created subscription map + tag helpers: `addSubscriptionToCache`, `updateSubscriptionInCache`, `removeSubscriptionFromCache`, `findCachedSubscription`, `applySyncTagChanges`, `removeSyncTags` |
-| `event-handlers.ts`         | `handleSyncEvent` — dispatches SSE/sync events to the operations above                                                                                                                                  |
+| File                | Role                                                                                                                                                                                                    |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `operations.ts`     | High-level operations (primary API): `setBulkCounts`/`setEntryRelatedCounts` (absolute counts), `handleSubscriptionCreated`/`handleSubscriptionDeleted`, `removeSubscriptionFromCaches`                 |
+| `count-cache.ts`    | Session-created subscription map + tag helpers: `addSubscriptionToCache`, `updateSubscriptionInCache`, `removeSubscriptionFromCache`, `findCachedSubscription`, `applySyncTagChanges`, `removeSyncTags` |
+| `event-handlers.ts` | `handleSyncEvent` — dispatches SSE/sync events to the local store and the operations above                                                                                                              |
 
 ## Core Queries
 
@@ -67,7 +85,7 @@ restored this way; it reappears on the next navigation refresh.)
 | `subscriptions.list` (infinite) | `TagSubscriptionList` (sidebar)                            | The sidebar per-tag / per-uncategorized subscription list (`{ tagId }` or `{ uncategorized }`). This is the only remaining consumer of `subscriptions.list`.                                                                   |
 | `tags.list`                     | `Sidebar`, `EditSubscriptionDialog`, `TagManagement`       | All tags with unread + uncategorized counts                                                                                                                                                                                    |
 
-`sortBy: "readChanged"` backs the `/recently-read` view (entries sorted by `read_changed_at` rather than publish time; defaults to `unreadOnly=false`). Its cache and the search (`query`) caches are **not** patched by SSE `new_entry` inserts: `insertEntryIntoListCaches` (`src/lib/cache/entry-cache.ts`) skips any list cache whose input has a `query` or a `sortBy` other than `"published"`, because their ordering (relevance rank / read-time) can't be derived from a new entry's fields. Those views instead refresh on navigation like any other list.
+`sortBy: "readChanged"` backs the `/recently-read` view (entries sorted by `read_changed_at` rather than publish time; defaults to `unreadOnly=false`). It and search (`query`) lists get **no** live inserts: `insertIntoMatchingLists` (`src/lib/local-db/entry-lists.ts`) skips any list whose input has a `query` or a `sortBy` other than `"published"`, because their ordering (relevance rank / read-time) can't be derived from an entry's fields. Those views instead refresh on navigation like any other list.
 
 `query` backs the entry search UI (#565): the `?q=` URL param (set by the search bar in `EntryPageLayout`, opened via the header toggle or `/`) flows through `parseViewPreferencesFromParams` → `buildEntriesListInput` → `useEntriesListInput`, so search results reuse the same `entries.list` infinite-query machinery scoped to the current view's filters, and `EntryListPage` prefetches them server-side for `?q=` deep links. While a `q` is present, the `unreadOnly` **default** flips to `false` (a search is usually for something already read; the toggle still works) and `sortOrder`/`direction` are canonicalized to `"newest"`/`"forward"` in the input (the backend ranks search results by relevance and ignores sort order — a lingering `?sort=` param must not fragment the cache key).
 
@@ -77,10 +95,10 @@ restored this way; it reappears on the next navigation refresh.)
 
 | Mutation                   | Cache Updates                                                                                                                                                                                                                                                           |
 | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `entries.markRead`         | Direct: `entries.get`, `entries.list` in place (mark-unread also restores the entry into unreadOnly caches via `restoreUnreadEntriesToListCaches`); absolute counts from the response via `setBulkCounts`                                                               |
-| `entries.setStarred`       | Exposed as `star`/`unstar` in the hook. Direct: `entries.get`, `entries.list` in place; absolute counts from the response via `setBulkCounts`                                                                                                                           |
+| `entries.markRead`         | Optimistic transaction on the entry store; the response's state is written to the store (mark-unread also inserts the entry into unread-only lists missing it); absolute counts from the response via `setBulkCounts`                                                   |
+| `entries.setStarred`       | Exposed as `star`/`unstar` in the hook. Optimistic transaction on the entry store; the response's state is written to the store; absolute counts from the response via `setBulkCounts`                                                                                  |
 | `entries.markAllRead`      | Invalidate: `entries.list`, `subscriptions.list`, `tags.list`, `entries.count` (bulk operation, direct update not practical). The server also publishes one `mark_all_read` SSE event so other tabs/devices invalidate the same caches without waiting for a sync poll. |
-| `entries.fetchFullContent` | Direct: patch `entries.get({ id })` with the returned `result.entry` via `utils.entries.get.setData` (in `EntryContent`). Only when the response has no `entry` does it fall back to `invalidate({ id })`.                                                              |
+| `entries.fetchFullContent` | Direct: patch `entries.get({ id })` with the returned `result.entry` via `utils.entries.get.setData` (in `EntryContent`; ingested into the store like any `entries.get` result). Only when the response has no `entry` does it fall back to `invalidate({ id })`.       |
 
 ### Subscription Mutations
 
@@ -101,28 +119,28 @@ Tag mutations (`tags.create/update/delete`) invalidate/patch via their component
 
 `useRealtimeUpdates` manages the SSE connection (polling fallback via `sync.events`) and feeds every event through `handleSyncEvent`.
 
-**Key principle:** SSE events patch caches directly and must NOT trigger `entries.*` refetches (enforced by e2e tests via `recordTrpcProcedures`). Counts are always set to absolute server-provided values (idempotent — duplicate SSE/sync delivery can't drift them). The **one deliberate exception** is `mark_all_read`: mark-all-read is unbounded, so patching every entry (or shipping every id) isn't worth it, and the event invalidates `entries.list` instead — refetching a list the user just cleared is an acceptable rare cost.
+**Key principle:** SSE events write the local store and caches directly and must NOT trigger `entries.*` refetches (enforced by e2e tests via `recordTrpcProcedures`). Counts are always set to absolute server-provided values (idempotent — duplicate SSE/sync delivery can't drift them). The **one deliberate exception** is `mark_all_read`: mark-all-read is unbounded, so patching every entry (or shipping every id) isn't worth it, and the event invalidates `entries.list` instead — refetching a list the user just cleared is an acceptable rare cost.
 
 **Catch-up sync after (re)connect (#1081):** on SSE `open`, `useRealtimeUpdates` runs a catch-up sync against `sync.events` from the current cursors. Two invariants keep it from losing changes made while disconnected:
 
 - **Retry on failure.** A failed catch-up sync is retried with exponential backoff (2s→30s) even in the `connected` phase (the `polling` phase already retries every 30s). A single failure used to be swallowed as "done", stranding the gap forever on an idle view.
 - **Cursor freeze until caught up.** Live SSE events patch the cache immediately but do **not** advance the persisted sync cursor until the connection's catch-up sync has fully succeeded (`caughtUpRef`). Otherwise a live event would push the cursor past the not-yet-synced gap, making the pending/retrying catch-up query skip the gap's rows. The catch-up sync itself always advances the cursor (it drains the authoritative server sequence). Any stream error (including the browser's silent EventSource auto-reconnect) re-freezes the cursor so the next catch-up re-covers whatever was missed.
 
-| SSE Event              | Cache Updates                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `new_entry`            | Direct: absolute counts via `setEntryRelatedCounts`; inserts the event's `entry` payload into matching `entries.list` caches via `insertEntryIntoListCaches` (sorted position; tag/uncategorized membership from the cached subscription — conservatively skipped when uncached; skips search/unknown-filter caches and entries beyond the loaded pagination window). Spam entries carry no payload. The catch-up sync path sets `read`/`starred` for entries that changed state on another device; the live path omits them. Idempotent (absolute counts, insert deduped by ID). |
-| `entry_updated`        | Direct: `entries.get`, `entries.list` metadata (title, author, summary, url, publishedAt). No invalidation — avoids a race when the entry is open.                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `entry_state_changed`  | Direct: `entries.get`, `entries.list` (read, starred); absolute counts via `setEntryRelatedCounts`. Entries becoming unread are inserted into the list caches missing them: events for unread flips carry a list-item payload (like `new_entry`; omitted for spam) inserted via `insertEntryIntoListCaches` — so the entry appears even when no cached list holds a copy (marked unread on another device/MCP, issue #1237); payload-less events (older servers, star/unstar of an unread entry) fall back to `restoreUnreadEntriesToListCaches` (another cached list's copy).    |
-| `mark_all_read`        | A `markAllRead` happened on another tab/device. Invalidate `entries.list`, `entries.count`, `tags.list`, `subscriptions.list` — the same thing the acting tab does on success. This is the **one** deliberate `entries.list` refetch (see Key principle above). Advances the entries cursor so a reconnect catch-up doesn't re-deliver every marked entry.                                                                                                                                                                                                                        |
-| `subscription_created` | Add to `subscriptions.list`; absolute counts from server `counts` (live path). The sync.events catch-up path omits `counts`, so the client invalidates `tags.list` + `entries.count` instead.                                                                                                                                                                                                                                                                                                                                                                                     |
-| `subscription_updated` | Patch subscription in lookup map/list caches; invalidate `tags.list` + `subscriptions.list` (tag membership may have changed).                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `subscription_deleted` | Remove from `subscriptions.list`; absolute counts (live path) or invalidate `tags.list` + `entries.count` (catch-up). The count update **and** `entries.list` invalidation always run — even when the subscription isn't cached (optimistically removed, or never loaded with tags collapsed); only the structural removal is gated on the subscription being cached (#1081).                                                                                                                                                                                                     |
-| `tag_created`          | `applySyncTagChanges` — add to `tags.list`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `tag_updated`          | `applySyncTagChanges` — patch in `tags.list`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `tag_deleted`          | `removeSyncTags` — remove from `tags.list`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `import_progress`      | Invalidate: `imports.get({ id })`, `imports.list`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `import_completed`     | Invalidate: `imports.get({ id })`, `imports.list`. Entry/subscription changes arrive as individual events during import.                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `announcement_changed` | **Global broadcast** (site-status channel, not per-user): the admin changed the announcement banner. No React Query cache is touched — it calls `setLiveAnnouncement` (`@/lib/site-status/announcement-store`), a module store the SPA-layout (`src/app/(spa)/(app)/layout.tsx`) `AnnouncementBanner` subscribes to via `useSyncExternalStore`. `announcement` is null when disabled/cleared (hides the banner). Not part of the `sync.events` catch-up (SSE-only), so a change during a disconnect is picked up on the next full page load.                                      |
+| SSE Event              | Cache Updates                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `new_entry`            | Direct: absolute counts via `setEntryRelatedCounts`; stores the event's `entry` payload and inserts it into matching loaded lists via `addServerEntryToLists` (tag/uncategorized membership from the cached subscription — conservatively skipped when uncached; skips search/unknown-filter lists and entries beyond the loaded pagination window). Spam entries carry no payload. The catch-up sync path sets `read`/`starred` for entries that changed state on another device; the live path omits them. Idempotent (absolute counts, insert deduped by ID). |
+| `entry_updated`        | Direct: the stored entry's metadata (title, author, summary, url, publishedAt), which the reader renders too. No invalidation — avoids a race when the entry is open.                                                                                                                                                                                                                                                                                                                                                                                            |
+| `entry_state_changed`  | Direct: the stored entry's read/starred (skipped when older than the stored `updatedAt`); absolute counts via `setEntryRelatedCounts`. Entries becoming unread are inserted into the lists missing them: events for unread flips carry a list-item payload (like `new_entry`; omitted for spam) — so the entry appears even when the store doesn't hold it (marked unread on another device/MCP, issue #1237); payload-less events (older servers, star/unstar of an unread entry) fall back to the stored row.                                                  |
+| `mark_all_read`        | A `markAllRead` happened on another tab/device. Invalidate `entries.list`, `entries.count`, `tags.list`, `subscriptions.list` — the same thing the acting tab does on success. This is the **one** deliberate `entries.list` refetch (see Key principle above). Advances the entries cursor so a reconnect catch-up doesn't re-deliver every marked entry.                                                                                                                                                                                                       |
+| `subscription_created` | Add to `subscriptions.list`; absolute counts from server `counts` (live path). The sync.events catch-up path omits `counts`, so the client invalidates `tags.list` + `entries.count` instead.                                                                                                                                                                                                                                                                                                                                                                    |
+| `subscription_updated` | Patch subscription in lookup map/list caches; invalidate `tags.list` + `subscriptions.list` (tag membership may have changed).                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `subscription_deleted` | Remove from `subscriptions.list`; absolute counts (live path) or invalidate `tags.list` + `entries.count` (catch-up). The count update **and** `entries.list` invalidation always run — even when the subscription isn't cached (optimistically removed, or never loaded with tags collapsed); only the structural removal is gated on the subscription being cached (#1081).                                                                                                                                                                                    |
+| `tag_created`          | `applySyncTagChanges` — add to `tags.list`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `tag_updated`          | `applySyncTagChanges` — patch in `tags.list`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `tag_deleted`          | `removeSyncTags` — remove from `tags.list`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `import_progress`      | Invalidate: `imports.get({ id })`, `imports.list`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `import_completed`     | Invalidate: `imports.get({ id })`, `imports.list`. Entry/subscription changes arrive as individual events during import.                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `announcement_changed` | **Global broadcast** (site-status channel, not per-user): the admin changed the announcement banner. No React Query cache is touched — it calls `setLiveAnnouncement` (`@/lib/site-status/announcement-store`), a module store the SPA-layout (`src/app/(spa)/(app)/layout.tsx`) `AnnouncementBanner` subscribes to via `useSyncExternalStore`. `announcement` is null when disabled/cleared (hides the banner). Not part of the `sync.events` catch-up (SSE-only), so a change during a disconnect is picked up on the next full page load.                     |
 
 ## Optimistic Updates
 
@@ -133,37 +151,34 @@ patterns exist; pick by what the mutation changes, and don't add a fourth:
 
 | Mutation changes                                                | Pattern                                                  | Used by                                                        |
 | --------------------------------------------------------------- | -------------------------------------------------------- | -------------------------------------------------------------- |
-| Per-entry state that several mutations can touch at once        | Optimistic write + timestamp reconciliation              | `useEntryMutations` (`entries.markRead`, `entries.setStarred`) |
+| Per-entry state that several mutations can touch at once        | TanStack DB transaction + `updatedAt`-guarded writes     | `useEntryMutations` (`entries.markRead`, `entries.setStarred`) |
 | Removal of a row the client already holds                       | Optimistic remove + invalidate-to-truth on error         | `useUnsubscribeMutation` (`subscriptions.delete`)              |
 | Data only the server can produce (ids, resolved titles, counts) | No optimistic phase; apply the response via the SSE path | `subscriptions.create` → `handleSubscriptionCreated`           |
 
-### Optimistic write + timestamp reconciliation
+### TanStack DB transaction + `updatedAt`-guarded writes
 
 Read/starred mutations for one entry can overlap (auto-mark-read on open, a
 keyboard toggle a moment later, star while the mark-read is in flight) and
-their responses can complete out of order. `useEntryMutations` therefore never
-writes a response straight to the cache:
+their responses can complete out of order. `useEntryMutations` runs each as a
+TanStack DB transaction on the shared entry store:
 
-1. `onMutate` writes the intended state to `entries.get` and the entry lists and
-   registers the mutation with the `EntryMutationTracker`
-   (`src/lib/cache/entry-mutation-tracker.ts`) together with the pre-mutation
-   state from `getCachedEntryState` (`entries.get`, else the list copy — never a
-   guessed default, #1081). The tracker is **per QueryClient**, not per hook
-   instance, so mutations issued from different components for the same entry
-   reconcile against each other instead of flickering through each other's
-   responses.
-2. `onSuccess` records the server's state; the newest `updatedAt`
-   (`GREATEST(entry.updated_at, user_entry.updated_at)`) wins. `onError` only
-   toasts.
-3. `onSettled` settles the entry (it runs after both success and failure).
-   Once nothing is in flight for the entry, the winning state is written to
-   `entries.get` and the lists in one pass (`updateEntryState`) unless the
-   cached `entries.get` is already newer (a fetch completed mid-flight); if
-   every mutation failed, only the fields those mutations wrote are restored
-   to their pre-mutation values, so a change to the other field that arrived
-   mid-flight (an SSE event) survives. Settling an entry that was never
-   registered throws — it is a programming error, not a case to degrade into
-   last-write-wins.
+1. The intended state is applied as an **optimistic overlay** on the entries
+   the store holds (entries it doesn't hold have nothing on screen, so the
+   mutation is just sent).
+2. The mutation function sends the request and writes the response to the
+   store's **synced layer** through `setServerEntryState`, which skips a
+   response older than the stored `updatedAt`
+   (`GREATEST(entry.updated_at, user_entry.updated_at)`). Out-of-order
+   responses therefore resolve to the newest server state, as do fetches and
+   SSE events that land mid-flight.
+3. When the transaction settles the overlay drops, leaving the synced state;
+   on failure that is the last state the server reported (including any SSE
+   change that arrived mid-flight), and the hook toasts.
+
+An overlay is a snapshot of the whole row as of when the mutation was made
+(TanStack DB semantics), so while a mutation is pending, server changes to the
+entry's _other_ fields stay hidden until it settles, and one of two stacked
+mutations failing rolls nothing back until the other settles too.
 
 Counts are applied separately from the response (absolute values, see
 "Mutation Response Shapes") and are not subject to the timestamp guard.
@@ -184,7 +199,7 @@ in either order — stay duplicate-safe.
 
 ### Auto-mark-read (EntryContent)
 
-Opening an entry fires `markRead` once, as soon as `entries.get` data is available (straight from cache when a prefetch warmed it, otherwise when the fetch lands) — even for an already-read entry, so its `readChangedAt` moves it to the top of Recently Read. The optimistic update shows read state instantly, and timestamp reconciliation resolves it against any `entries.get` fetch still in flight.
+Opening an entry fires `markRead` once, as soon as `entries.get` data is available (straight from cache when a prefetch warmed it, otherwise when the fetch lands) — even for an already-read entry, so its `readChangedAt` moves it to the top of Recently Read. The optimistic update shows read state instantly, and the `updatedAt` guard resolves it against any `entries.get` fetch still in flight.
 
 ## Mutation Response Shapes
 
@@ -204,8 +219,9 @@ Re-asserts likewise don't churn delta sync — see "Row Written vs. Value Flippe
 
 | File                                               | Purpose                                                             |
 | -------------------------------------------------- | ------------------------------------------------------------------- |
-| `src/lib/cache/*` (see table above)                | Cache operations, entry/count helpers, SSE event dispatch           |
-| `src/lib/hooks/useEntryMutations.ts`               | Entry mutations: optimistic write + timestamp reconciliation        |
+| `src/lib/local-db/*` (see table above)             | Local entry store, list membership, QueryCache ingestion            |
+| `src/lib/cache/*` (see table above)                | Count/subscription/tag cache operations, SSE event dispatch         |
+| `src/lib/hooks/useEntryMutations.ts`               | Entry mutations: TanStack DB transactions on the entry store        |
 | `src/lib/hooks/useEntryListRefreshOnNavigate.ts`   | Navigation-triggered entry list invalidation (pathname change)      |
 | `src/lib/hooks/useRealtimeUpdates.ts`              | SSE/polling glue feeding the connection machine                     |
 | `src/lib/events/connection-state.ts`               | Pure connection state machine (reconnect/backoff/polling fallback)  |
@@ -218,8 +234,8 @@ Re-asserts likewise don't churn delta sync — see "Row Written vs. Value Flippe
 
 ## Adding New Cache Updates
 
-1. **Can we update directly?** (full data available, simple key) — Yes → cache helpers in `src/lib/cache/`; No → invalidate.
-2. **Entry lists**: patch in place via `entry-cache.ts` helpers; never trigger a refetch from an event — lists refresh on navigation (`useEntryListRefreshOnNavigate`).
+1. **Entries**: write the local store through the `updatedAt`-guarded functions in `src/lib/local-db/entries.ts`, and add entries to lists with `insertEntryIntoLists`/`addServerEntryToLists`; never write entry state to `entries.list`/`entries.get`, and never trigger a list refetch from an event — lists refresh on navigation (`useEntryListRefreshOnNavigate`).
+2. **Everything else: can we update directly?** (full data available, simple key) — Yes → cache helpers in `src/lib/cache/`; No → invalidate.
 3. **Unread counts**: set absolute server-provided counts via `setBulkCounts` / `setEntryRelatedCounts` (idempotent — never deltas).
 4. **Handle races**: check existence before add/remove; SSE may deliver the same update as the mutation response.
-5. **Update this document** and add unit tests in `tests/unit/frontend/cache/`.
+5. **Update this document** and add unit tests in `tests/unit/frontend/local-db/` or `tests/unit/frontend/cache/`.

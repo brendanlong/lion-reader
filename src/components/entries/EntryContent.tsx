@@ -12,10 +12,11 @@
 
 "use client";
 
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useRef, useCallback, useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { toast } from "sonner";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
+import { useLocalEntry } from "@/lib/hooks/useLocalEntries";
 import { useShowOriginalPreference } from "@/lib/hooks/useShowOriginalPreference";
 import { useCanRenderFromCache } from "@/lib/hooks/useIsHydrated";
 import { useTrackEntryView } from "@/lib/analytics/useTrackEntryView";
@@ -95,9 +96,17 @@ function EntryContentInner({
   // See "Suspense vs. inline loading" in src/CLAUDE.md.
   const { data } = trpc.entries.get.useQuery({ id: entryId }, { throwOnError: true });
 
-  // Undefined while the query is loading; the `!entry` branch renders the
-  // fallback. Every hook below already tolerates an absent entry.
-  const entry = data?.entry;
+  // List-item fields (read/starred, title, …) come from the local entry store,
+  // which every mutation and realtime event writes; entries.get supplies the
+  // content and is otherwise only as fresh as its fetch. Undefined while the
+  // query is loading; the `!entry` branch renders the fallback. Every hook
+  // below already tolerates an absent entry.
+  const stored = useLocalEntry(entryId);
+  const fetched = data?.entry;
+  const entry = useMemo(
+    () => (fetched && stored ? { ...fetched, ...stored } : fetched),
+    [fetched, stored]
+  );
 
   // Count that an entry of this *type* was opened — never which one. Keyed on
   // the displayed entry, so the neighbour prefetches below aren't counted.

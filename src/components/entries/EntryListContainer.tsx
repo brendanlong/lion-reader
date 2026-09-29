@@ -6,9 +6,9 @@
  * j/k), pagination triggering near the end, scroll restoration on close, entry
  * open/prefetch, and URL state.
  *
- * Loads entries with a non-suspending useInfiniteQuery and renders a smart
- * inline loading fallback (cached entries from parent lists) while the query
- * loads. It deliberately does NOT suspend: a committed Suspense fallback is
+ * Fetches entries with a non-suspending useInfiniteQuery, renders them from
+ * the local entry store, and shows a smart inline loading fallback (stored
+ * entries matching the view) while the first page loads. It deliberately does NOT suspend: a committed Suspense fallback is
  * pinned on screen for React's FALLBACK_THROTTLE_MS (300ms) even on a
  * warm-cache navigation, which made switching list views feel laggy. See
  * "Suspense vs. inline loading" in src/CLAUDE.md.
@@ -24,12 +24,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc/client";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
 import { refreshEntryLists } from "@/lib/hooks/useEntryListRefreshOnNavigate";
-import { snapshotEntryGetStates, reconcileListFromChangedEntryGets } from "@/lib/cache/entry-cache";
 import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
 import { useKeyboardShortcutsContext } from "@/components/keyboard/KeyboardShortcutsProvider";
 import { useKeyboardShortcuts } from "@/lib/hooks/useKeyboardShortcuts";
 import { useUrlViewPreferences } from "@/lib/hooks/useUrlViewPreferences";
 import { useEntriesListInput } from "@/lib/hooks/useEntriesListInput";
+import { useEntryListEntries } from "@/lib/hooks/useLocalEntries";
 import { useCanRenderFromCache } from "@/lib/hooks/useIsHydrated";
 import { useScrollContainer } from "@/components/layout/ScrollContainerContext";
 import { EntryList, type ExternalQueryState } from "./EntryList";
@@ -79,7 +79,7 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
   // would pin for 300ms on warm-cache navigations. `throwOnError` preserves the
   // surrounding ErrorBoundary behavior. Shares cache with the parent's
   // useInfiniteQuery via the same queryInput.
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } =
+  const { fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } =
     trpc.entries.list.useInfiniteQuery(queryInput, {
       getNextPageParam: (lastPage) => lastPage.nextCursor,
       staleTime: Infinity,
@@ -87,27 +87,11 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
       throwOnError: true,
     });
 
-  // Wrap fetchNextPage so every next-page fetch (keyboard- or scroll-triggered)
-  // re-asserts read/starred state that changed during the fetch — the completing
-  // fetch would otherwise clobber writes applied to the old pages mid-fetch (e.g.
-  // auto-mark-read from j/k). Snapshot entries.get state at fetch start and
-  // diff after settle, so only genuinely-mid-fetch changes are re-applied (not
-  // stale gets, e.g. after mark_all_read). See #1081.
-  const fetchNextPageAndReconcile = useCallback(() => {
-    const before = snapshotEntryGetStates(queryClient);
-    return fetchNextPage().then((result) => {
-      reconcileListFromChangedEntryGets(queryClient, before);
-      return result;
-    });
-  }, [fetchNextPage, queryClient]);
-
-  // Flatten entries from all pages. Pass the cached items straight through
-  // rather than remapping into fresh object literals: React Query's structural
-  // sharing preserves the identity of unchanged items across cache updates, so
-  // forwarding them directly lets EntryListItem's `memo` skip re-rendering every
-  // row when a single entry changes (a remap would allocate new objects for all
-  // N rows and defeat the memo). See #1081.
-  const entries = useMemo(() => data?.pages.flatMap((page) => page.items) ?? [], [data?.pages]);
+  // The query only fetches; the list renders from the local entry store,
+  // which the fetched pages are ingested into (src/lib/local-db/). Entry
+  // state lives there too, so a next-page fetch can't clobber a read/starred
+  // change made while it was in flight.
+  const entries = useEntryListEntries(queryInput);
 
   // Next/previous entry IDs for keyboard navigation, and how close we are to
   // the pagination boundary
@@ -128,10 +112,10 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
       hasNextPage &&
       !isFetchingNextPage
     ) {
-      void fetchNextPageAndReconcile();
+      void fetchNextPage();
     }
     prevDistanceToEnd.current = distanceToEnd;
-  }, [distanceToEnd, hasNextPage, isFetchingNextPage, fetchNextPageAndReconcile]);
+  }, [distanceToEnd, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   // Scroll to last viewed entry when returning from entry view to list
   // We track the previous openEntryId to know which entry to scroll to
@@ -231,9 +215,9 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
     () => ({
       isFetchingNextPage,
       hasNextPage: hasNextPage ?? false,
-      fetchNextPage: fetchNextPageAndReconcile,
+      fetchNextPage: () => void fetchNextPage(),
     }),
-    [isFetchingNextPage, hasNextPage, fetchNextPageAndReconcile]
+    [isFetchingNextPage, hasNextPage, fetchNextPage]
   );
 
   // Deterministic skeleton on the server + first client render so hydration

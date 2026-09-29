@@ -161,7 +161,7 @@ Every server-side fetch of a user-influenced URL goes through `fetchWithSsrfProt
 
 ## Real-time Updates
 
-The end-to-end flow (worker → Redis channel → SSE → React Query cache) is drawn in [sse-cache-updates.d2](diagrams/sse-cache-updates.d2) and specified in `src/FRONTEND_STATE.md`.
+The end-to-end flow (worker → Redis channel → SSE → local store / React Query cache) is drawn in [sse-cache-updates.d2](diagrams/sse-cache-updates.d2) and specified in `src/FRONTEND_STATE.md`.
 
 ### Channel Design
 
@@ -223,7 +223,8 @@ navigation is shallow routing: `ClientLink` calls `window.history.pushState` (vi
 `src/lib/navigation.ts`), and `AppRouter` (`src/components/app/AppRouter.tsx`) re-derives
 what to render from `usePathname()`. The `page.tsx` files exist to prefetch route-specific
 data on initial load; their rendered output is hidden by the app layout. Navigation costs
-zero server requests — data is served from the React Query cache, kept fresh by SSE.
+zero server requests — data is served from the React Query cache and the local entry
+store (TanStack DB; see `src/FRONTEND_STATE.md`), kept fresh by SSE.
 
 Native App Router navigation was evaluated and rejected in issue #872 (per-navigation
 RSC fetches defeat the SSE-fed cache). The navigation rules this implies (which link

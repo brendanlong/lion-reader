@@ -204,12 +204,13 @@ cache-ops: Cache Operations {
       catch-up sync re-delivering the same new_entry
       can't double-count.
 
-      Inserts the event's entry payload into matching
-      entries.list caches (insertEntryIntoListCaches):
-      sorted position, deduped by ID, tag/uncategorized
-      membership from the cached subscription. Skips
-      search/Recently Read caches and entries beyond
-      the loaded pagination window.
+      Stores the event's entry payload in the local
+      entry store and inserts it into matching loaded
+      lists (addServerEntryToLists): sorted position,
+      deduped by ID, tag/uncategorized membership from
+      the cached subscription. Skips search/Recently
+      Read lists and entries beyond the loaded
+      pagination window.
 
       Does NOT invalidate entries.list — lists refresh
       on navigation (useEntryListRefreshOnNavigate)
@@ -220,12 +221,9 @@ cache-ops: Cache Operations {
     style.fill: "#fed7aa"
 
     updates: |
-      Direct updates (metadata from event):
-      - entries.get: title, author, summary, url, publishedAt
-      - entries.list: same metadata fields (in-place)
-
-      Invalidations:
-      - entries.get({ id }): refetch full content
+      Direct update (metadata from event) to the
+      stored entry: title, author, summary, url,
+      publishedAt — lists and the reader render it.
     |
   }
 
@@ -418,7 +416,6 @@ strategy-notes: Cache Strategy {
     description: |
       Force refetch when necessary:
       - Entry lists on navigation (pathname change)
-      - Entry content on update
       - Import progress (complex state)
     |
   }
@@ -428,7 +425,7 @@ strategy-notes: Cache Strategy {
     description: |
       entries.list is NOT invalidated on new_entry:
       - The entry is inserted directly into matching
-        cached lists (appears live, no refetch)
+        loaded lists (appears live, no refetch)
       - Unread counts update from the same event
       - Keeps scrolling smooth without flicker
         (browser scroll anchoring for inserts above

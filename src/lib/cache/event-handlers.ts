@@ -14,13 +14,11 @@ import {
   setEntryRelatedCounts,
 } from "./operations";
 import {
-  insertEntryIntoListCaches,
-  patchEntryGet,
-  restoreUnreadEntriesToListCaches,
-  updateEntriesInListCache,
-  updateEntryMetadataInCache,
-  type EntryListItem,
-} from "./entry-cache";
+  patchServerEntryMetadata,
+  setServerEntryState,
+  type EntryRow,
+} from "@/lib/local-db/entries";
+import { addServerEntryToLists, getLocalDb, insertEntryIntoLists } from "@/lib/local-db/local-db";
 import {
   applySyncTagChanges,
   removeSyncTags,
@@ -33,14 +31,14 @@ import { setLiveAnnouncement } from "@/lib/site-status/announcement-store";
 import type { NewEntryListData, SyncEvent } from "@/lib/events/schemas";
 export type { SyncEvent } from "@/lib/events/schemas";
 
-/** Builds the entries.list item for an event's list-item payload. */
-function toListItem(
+/** Builds the entry row for an event's list-item payload. */
+function toEntryRow(
   event: { entryId: string; subscriptionId?: string | null; updatedAt: string },
   feedId: string,
-  type: EntryListItem["type"],
+  type: EntryRow["type"],
   entry: NewEntryListData,
   state: { read: boolean; starred: boolean }
-): EntryListItem {
+): EntryRow {
   return {
     id: event.entryId,
     subscriptionId: event.subscriptionId ?? null,
@@ -65,7 +63,8 @@ function toListItem(
 // ============================================================================
 
 /**
- * Handles a sync event by updating the appropriate caches.
+ * Handles a sync event by updating the local entry store and the React Query
+ * caches.
  *
  * This is the unified event handler used by both SSE and sync endpoints.
  * It dispatches to the appropriate cache update functions based on event type.
@@ -79,6 +78,7 @@ export function handleSyncEvent(
   queryClient: QueryClient,
   event: SyncEvent
 ): void {
+  const db = getLocalDb(queryClient);
   switch (event.type) {
     case "new_entry":
       // Set absolute unread counts from the server (idempotent — a new_entry
@@ -89,7 +89,7 @@ export function handleSyncEvent(
         setEntryRelatedCounts(utils, event.counts, queryClient);
       }
 
-      // Insert the entry into cached lists so it appears live (deduped, so
+      // Insert the entry into loaded lists so it appears live (deduped, so
       // SSE + catch-up double delivery is safe). Older servers omit the entry
       // payload during a deploy; the entry then appears on the next
       // navigation-triggered list refresh instead. read/starred are set only
@@ -97,9 +97,10 @@ export function handleSyncEvent(
       // another device while this client was offline); the live path omits
       // them because a brand-new entry is always unread/unstarred.
       if (event.entry && event.feedId) {
-        insertEntryIntoListCaches(
+        addServerEntryToLists(
+          db,
           queryClient,
-          toListItem(event, event.feedId, event.feedType, event.entry, {
+          toEntryRow(event, event.feedId, event.feedType, event.entry, {
             read: event.entry.read ?? false,
             starred: event.entry.starred ?? false,
           })
@@ -108,35 +109,41 @@ export function handleSyncEvent(
       break;
 
     case "entry_updated":
-      // Update entry metadata directly in caches
-      updateEntryMetadataInCache(utils, queryClient, event.entryId, {
-        ...event.metadata,
-        publishedAt: event.metadata.publishedAt ? new Date(event.metadata.publishedAt) : null,
-      });
+      patchServerEntryMetadata(
+        db.entries,
+        event.entryId,
+        {
+          ...event.metadata,
+          publishedAt: event.metadata.publishedAt ? new Date(event.metadata.publishedAt) : null,
+        },
+        new Date(event.updatedAt)
+      );
       break;
 
     case "entry_state_changed": {
-      // Update entries.get and entries.list caches with new read/starred state
       const state = { read: event.read, starred: event.starred };
-      patchEntryGet(utils, event.entryId, state);
-      updateEntriesInListCache(queryClient, [event.entryId], state);
+      setServerEntryState(db.entries, event.entryId, {
+        ...state,
+        updatedAt: new Date(event.updatedAt),
+      });
 
       // An entry that became unread (here or on another device) belongs in
-      // unreadOnly caches that don't contain it (fetched while it was read);
-      // the in-place update above can't add rows. Prefer the event's list-item
-      // payload — it lets the entry appear even when no cached list holds a
-      // copy (e.g. marked unread on another device or via MCP), the same way
-      // new_entry payloads make new entries appear live (issue #1237). Events
-      // without a payload (older servers, star/unstar of an unread entry, or
-      // a failed payload lookup) fall back to another cached list's copy.
+      // unread-only lists that don't contain it (fetched while it was read).
+      // Prefer the event's list-item payload — it lets the entry appear even
+      // when the store doesn't hold it (e.g. marked unread on another device
+      // or via MCP), the same way new_entry payloads make new entries appear
+      // live (issue #1237). Events without a payload (older servers,
+      // star/unstar of an unread entry) fall back to the stored row.
       if (!event.read) {
         if (event.entry && event.feedId && event.feedType) {
-          insertEntryIntoListCaches(
+          addServerEntryToLists(
+            db,
             queryClient,
-            toListItem(event, event.feedId, event.feedType, event.entry, state)
+            toEntryRow(event, event.feedId, event.feedType, event.entry, state)
           );
         } else {
-          restoreUnreadEntriesToListCaches(queryClient, [event.entryId]);
+          const stored = db.entries.getSynced(event.entryId);
+          if (stored) insertEntryIntoLists(db, queryClient, stored);
         }
       }
 
