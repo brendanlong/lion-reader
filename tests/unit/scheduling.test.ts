@@ -2,13 +2,13 @@
  * Unit tests for next fetch time scheduling.
  */
 
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
   calculateNextFetch,
   calculateFailureBackoff,
   calculateJitter,
   syndicationToSeconds,
-  getMinFetchIntervalSeconds,
+  MIN_FETCH_INTERVAL_SECONDS,
   shouldRefetchOnSubscribe,
   MIN_FETCH_INTERVAL_WITH_CACHE_HINT_SECONDS,
   MAX_FETCH_INTERVAL_SECONDS,
@@ -34,41 +34,6 @@ function createCacheControl(overrides: Partial<CacheControl> = {}): CacheControl
  * Use this for deterministic tests that check exact interval values.
  */
 const noJitter = () => 0;
-
-describe("getMinFetchIntervalSeconds", () => {
-  const originalEnv = process.env.FEED_MIN_FETCH_INTERVAL_MINUTES;
-
-  afterEach(() => {
-    if (originalEnv === undefined) {
-      delete process.env.FEED_MIN_FETCH_INTERVAL_MINUTES;
-    } else {
-      process.env.FEED_MIN_FETCH_INTERVAL_MINUTES = originalEnv;
-    }
-  });
-
-  it("returns default (60 minutes) when env var not set", () => {
-    delete process.env.FEED_MIN_FETCH_INTERVAL_MINUTES;
-    expect(getMinFetchIntervalSeconds()).toBe(60 * 60);
-  });
-
-  it("reads from FEED_MIN_FETCH_INTERVAL_MINUTES env var", () => {
-    process.env.FEED_MIN_FETCH_INTERVAL_MINUTES = "30";
-    expect(getMinFetchIntervalSeconds()).toBe(30 * 60);
-  });
-
-  it("ignores invalid env var values", () => {
-    process.env.FEED_MIN_FETCH_INTERVAL_MINUTES = "invalid";
-    expect(getMinFetchIntervalSeconds()).toBe(60 * 60);
-  });
-
-  it("ignores zero or negative values", () => {
-    process.env.FEED_MIN_FETCH_INTERVAL_MINUTES = "0";
-    expect(getMinFetchIntervalSeconds()).toBe(60 * 60);
-
-    process.env.FEED_MIN_FETCH_INTERVAL_MINUTES = "-5";
-    expect(getMinFetchIntervalSeconds()).toBe(60 * 60);
-  });
-});
 
 describe("syndicationToSeconds", () => {
   it("returns undefined for undefined hints", () => {
@@ -246,7 +211,7 @@ describe("calculateNextFetch", () => {
         randomSource: noJitter,
       });
 
-      expect(result.intervalSeconds).toBe(getMinFetchIntervalSeconds());
+      expect(result.intervalSeconds).toBe(MIN_FETCH_INTERVAL_SECONDS);
       expect(result.reason).toBe("ttl_clamped_min");
     });
 
@@ -308,7 +273,7 @@ describe("calculateNextFetch", () => {
         randomSource: noJitter,
       });
 
-      expect(result.intervalSeconds).toBe(getMinFetchIntervalSeconds());
+      expect(result.intervalSeconds).toBe(MIN_FETCH_INTERVAL_SECONDS);
       expect(result.reason).toBe("syndication_clamped_min");
     });
 
@@ -802,7 +767,7 @@ describe("real-world scenarios", () => {
       randomSource: noJitter,
     });
 
-    expect(result.intervalSeconds).toBe(getMinFetchIntervalSeconds()); // Clamped to 60 min
+    expect(result.intervalSeconds).toBe(MIN_FETCH_INTERVAL_SECONDS); // Clamped to 60 min
     expect(result.reason).toBe("ttl_clamped_min");
   });
 
@@ -994,7 +959,7 @@ describe("shouldRefetchOnSubscribe", () => {
   describe("WebSub feeds", () => {
     // WebSub feeds ignore nextFetchAt (24h backup) and key off time since the
     // last real poll, bounded by the normal cache window.
-    const cacheWindowMs = getMinFetchIntervalSeconds() * 1000;
+    const cacheWindowMs = MIN_FETCH_INTERVAL_SECONDS * 1000;
     const backupNextFetch = new Date(now.getTime() + 20 * 60 * 60 * 1000); // 20h out
 
     it("is not stale within the cache window of the last real poll", () => {

@@ -7,11 +7,10 @@ import { type CacheControl, getEffectiveMaxAge } from "./cache-headers";
 import type { SyndicationHints, UpdatePeriod } from "./types";
 
 /**
- * Default minimum interval between fetches: 60 minutes.
+ * Minimum interval between fetches: 60 minutes.
  * This is used when no cache headers are provided (TTL, syndication, or no hints).
- * This can be overridden via the FEED_MIN_FETCH_INTERVAL_MINUTES environment variable.
  */
-const DEFAULT_MIN_FETCH_INTERVAL_SECONDS = 60 * 60; // 60 minutes
+export const MIN_FETCH_INTERVAL_SECONDS = 60 * 60; // 60 minutes
 
 /**
  * Minimum interval when server explicitly provides cache headers: 10 minutes.
@@ -19,21 +18,6 @@ const DEFAULT_MIN_FETCH_INTERVAL_SECONDS = 60 * 60; // 60 minutes
  * faster polling when the server explicitly tells us to.
  */
 export const MIN_FETCH_INTERVAL_WITH_CACHE_HINT_SECONDS = 10 * 60; // 10 minutes
-
-/**
- * Gets the configured minimum fetch interval in seconds.
- * Reads from FEED_MIN_FETCH_INTERVAL_MINUTES env var, defaults to 60 minutes.
- */
-export function getMinFetchIntervalSeconds(): number {
-  const envValue = process.env.FEED_MIN_FETCH_INTERVAL_MINUTES;
-  if (envValue) {
-    const minutes = parseInt(envValue, 10);
-    if (!isNaN(minutes) && minutes > 0) {
-      return minutes * 60;
-    }
-  }
-  return DEFAULT_MIN_FETCH_INTERVAL_SECONDS;
-}
 
 /** Maximum interval between fetches: 7 days */
 export const MAX_FETCH_INTERVAL_SECONDS = 7 * 24 * 60 * 60; // 604800
@@ -211,7 +195,7 @@ export type NextFetchReason =
  * Bounds:
  * - WebSub active: min 24 hours (backup polling since we get real-time push)
  * - Cache hint present: min 10 minutes (trust server-provided hints)
- * - Otherwise: min 60 minutes (configurable via FEED_MIN_FETCH_INTERVAL_MINUTES)
+ * - Otherwise: min 60 minutes
  * - Maximum: 7 days (always check eventually)
  * - Failures capped at 10 (then max backoff)
  *
@@ -334,7 +318,7 @@ export function calculateNextFetch(options: CalculateNextFetchOptions = {}): Nex
       ? WEBSUB_BACKUP_POLL_INTERVAL_SECONDS
       : effectiveMaxAge !== undefined
         ? MIN_FETCH_INTERVAL_WITH_CACHE_HINT_SECONDS
-        : getMinFetchIntervalSeconds();
+        : MIN_FETCH_INTERVAL_SECONDS;
     const minInterval = Math.max(contextMinInterval, minIntervalSeconds ?? 0);
 
     if (baseInterval < minInterval) {
@@ -473,7 +457,7 @@ export function shouldRefetchOnSubscribe(
     return true;
   }
   if (feed.websubActive) {
-    const cacheWindowMs = getMinFetchIntervalSeconds() * 1000;
+    const cacheWindowMs = MIN_FETCH_INTERVAL_SECONDS * 1000;
     return now.getTime() - feed.lastFetchedAt.getTime() >= cacheWindowMs;
   }
   return feed.nextFetchAt === null || now.getTime() >= feed.nextFetchAt.getTime();

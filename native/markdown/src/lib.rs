@@ -13,8 +13,8 @@ use lion_reader_markdown_core::{render, RenderError, RenderLimits};
 use napi::bindgen_prelude::AsyncTask;
 use napi::{Env, Result, Task};
 
-/// Byte budgets for one render, both required so the limits stay owned by
-/// `usageLimitsConfig` on the TypeScript side.
+/// Byte budgets for one render, both required so the limits stay owned by the
+/// TypeScript wrapper (`src/server/markdown`).
 #[napi(object)]
 pub struct MarkdownLimits {
     /// Maximum size of the Markdown source, in bytes.
