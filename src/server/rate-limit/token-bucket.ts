@@ -132,14 +132,12 @@ export function refillBucket(
  * @param bucket - Current bucket state (after refill)
  * @param config - Rate limit configuration
  * @param nowMs - Current timestamp in milliseconds
- * @param cost - Number of tokens to consume (default: 1)
  * @returns Result indicating if allowed, with updated state info
  */
 export function consumeToken(
   bucket: BucketState,
   config: RateLimitConfig,
-  nowMs: number,
-  cost: number = 1
+  nowMs: number
 ): { result: ConsumeResult; newState: BucketState } {
   // First refill the bucket
   const refilledBucket = refillBucket(bucket, config, nowMs);
@@ -150,10 +148,10 @@ export function consumeToken(
   const resetMs = nowMs + timeToFullMs;
 
   // Check if we have enough tokens
-  if (refilledBucket.tokens >= cost) {
+  if (refilledBucket.tokens >= 1) {
     // Consume the token
     const newState: BucketState = {
-      tokens: refilledBucket.tokens - cost,
+      tokens: refilledBucket.tokens - 1,
       lastRefillMs: nowMs,
     };
 
@@ -169,7 +167,7 @@ export function consumeToken(
   }
 
   // Not enough tokens - calculate retry after
-  const tokensNeeded = cost - refilledBucket.tokens;
+  const tokensNeeded = 1 - refilledBucket.tokens;
   const retryAfterMs = (tokensNeeded / config.refillRate) * 1000;
   const retryAfterSeconds = Math.ceil(retryAfterMs / 1000);
 

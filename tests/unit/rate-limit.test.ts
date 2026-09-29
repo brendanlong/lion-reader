@@ -149,26 +149,6 @@ describe("consumeToken", () => {
     expect(result.retryAfterSeconds).toBe(1);
   });
 
-  it("consumes multiple tokens when cost > 1", () => {
-    const bucket = createBucketState({ tokens: 10, lastRefillMs: nowMs });
-
-    const { result, newState } = consumeToken(bucket, config, nowMs, 5);
-
-    expect(result.allowed).toBe(true);
-    expect(result.remaining).toBe(5);
-    expect(newState.tokens).toBe(5);
-  });
-
-  it("rejects when cost exceeds available tokens", () => {
-    const bucket = createBucketState({ tokens: 3, lastRefillMs: nowMs });
-
-    const { result } = consumeToken(bucket, config, nowMs, 5);
-
-    expect(result.allowed).toBe(false);
-    // Need 2 more tokens, 10/sec = 0.2s, ceil = 1
-    expect(result.retryAfterSeconds).toBe(1);
-  });
-
   it("refills before consuming", () => {
     const startMs = 1000000;
     const laterMs = startMs + 1000; // 1 second later
