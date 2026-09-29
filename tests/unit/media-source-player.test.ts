@@ -218,12 +218,14 @@ function setup(
   {
     maxChars = 1000,
     maxConcurrentSyntheses = 4,
+    bufferAheadSeconds = 4,
     encoder = fakeEncoder as SegmentEncoder | null,
     encoderLoaded = Promise.resolve(),
     supportsMse = true,
   }: {
     maxChars?: number;
     maxConcurrentSyntheses?: number;
+    bufferAheadSeconds?: number;
     encoder?: SegmentEncoder | null;
     encoderLoaded?: Promise<void>;
     supportsMse?: boolean;
@@ -242,6 +244,9 @@ function setup(
     },
     chunkParagraphs: (paragraphs) => splitIntoSpeechChunks(paragraphs, maxChars),
     maxConcurrentSyntheses,
+    bufferAheadSeconds,
+    // `respond` defaults to one second of audio per chunk.
+    estimateSeconds: () => 1,
     loadEncoder: async () => {
       await encoderLoaded;
       return encoder;
@@ -323,18 +328,56 @@ describe("MediaSourcePlayer", () => {
     expect(sources).toHaveLength(1);
   });
 
-  it("synthesizes a bounded number of chunks ahead of the one playing", async () => {
-    const { audio, calls, player, respond } = setup(["1.", "2.", "3.", "4.", "5.", "6."]);
+  it("keeps the configured seconds of audio synthesized past the playhead", async () => {
+    const paragraphs = Array.from({ length: 10 }, (_, i) => `${i}.`);
+    const { audio, calls, player, respond } = setup(paragraphs); // 4 s ahead
     void player.play();
     await flush();
-    expect(calls).toEqual(["1.", "2.", "3.", "4."]);
+    expect(calls).toEqual(["0.", "1.", "2.", "3."]);
 
-    for (const text of ["1.", "2.", "3.", "4."]) await respond(text);
+    for (const text of ["0.", "1.", "2.", "3."]) await respond(text);
     expect(calls).toHaveLength(4);
 
-    audio.advanceTo(1.5); // into chunk 2
+    audio.advanceTo(1.5); // 2.5 s buffered ahead, plus 1 s estimated each for 4 and 5
     await flush();
-    expect(calls).toEqual(["1.", "2.", "3.", "4.", "5."]);
+    expect(calls).toEqual(["0.", "1.", "2.", "3.", "4.", "5."]);
+  });
+
+  it("reaches further ahead when chunks turn out short", async () => {
+    const paragraphs = Array.from({ length: 20 }, (_, i) => `${i}.`);
+    const { calls, player, respond } = setup(paragraphs, { maxConcurrentSyntheses: 20 });
+    void player.play();
+    for (const text of ["0.", "1.", "2.", "3."]) await respond(text, 0.25);
+
+    // Only 1 s is really buffered, so three more (estimated 1 s) chunks are wanted.
+    expect(calls).toEqual(["0.", "1.", "2.", "3.", "4.", "5.", "6."]);
+  });
+
+  it("tops up as the playhead moves within a long chunk", async () => {
+    const paragraphs = Array.from({ length: 10 }, (_, i) => `${i}.`);
+    const { audio, calls, player, respond } = setup(paragraphs);
+    void player.play();
+    await respond("0.", 10);
+    for (const text of ["1.", "2.", "3."]) await respond(text);
+    expect(calls).toEqual(["0.", "1.", "2.", "3."]);
+
+    audio.advanceTo(8.5); // chunk 0 has 1.5 s left; 1–3 bring it to 4.5 s
+    await flush();
+    expect(calls).toHaveLength(4);
+
+    audio.advanceTo(9.5); // still chunk 0: 3.5 s ahead
+    await flush();
+    expect(calls).toEqual(["0.", "1.", "2.", "3.", "4."]);
+  });
+
+  it("measures the lookahead in listening time at the current rate", async () => {
+    const paragraphs = Array.from({ length: 20 }, (_, i) => `${i}.`);
+    const { calls, player } = setup(paragraphs, { maxConcurrentSyntheses: 20 });
+    player.setRate(2);
+    void player.play();
+    await flush();
+    // 4 s at 2× is 8 s of audio.
+    expect(calls).toHaveLength(8);
   });
 
   it("runs one synthesis at a time when limited, nearest chunk first", async () => {
@@ -634,6 +677,7 @@ describe("MediaSourcePlayer", () => {
       synthesize: async () => ({ samples: new Float32Array(1000), sampleRate: SAMPLE_RATE }),
       chunkParagraphs: (paragraphs) => splitIntoSpeechChunks(paragraphs, 1000),
       maxConcurrentSyntheses: 4,
+      bufferAheadSeconds: 4,
       loadEncoder: async () => fakeEncoder,
       createAudio: () => audio as unknown as HTMLAudioElement,
       createMediaSource: () => new FakeMediaSource() as unknown as MediaSource,

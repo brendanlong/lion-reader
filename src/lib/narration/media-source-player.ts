@@ -29,12 +29,8 @@ import {
   type SegmentEncoder,
 } from "./audio-encoding";
 
-/**
- * Chunks synthesized ahead of the one playing: about 10 s of Piper sentences,
- * and enough to cover cloud latency, which varies from well under a second to
- * 10+ s.
- */
-const PREFETCH_CHUNKS = 3;
+/** Rough speaking speed at 1×, for sizing chunks that aren't synthesized yet. */
+const ESTIMATED_CHARS_PER_SECOND = 15;
 /** Finished chunks kept behind the one playing, for instant skip-back. */
 const KEEP_BEHIND_CHUNKS = 5;
 /** Slack when comparing our segment times to the buffered ranges. */
@@ -109,6 +105,14 @@ export interface MediaSourcePlayerOptions {
   chunkParagraphs: (paragraphs: string[]) => SpeechChunk[];
   /** Syntheses allowed to run at once; the nearest chunk still needed always goes first. */
   maxConcurrentSyntheses: number;
+  /**
+   * Seconds of playback (at the current rate) to keep synthesized past the
+   * playhead. Measured for buffered chunks, estimated from text length for the
+   * rest, so a run of short chunks doesn't leave the buffer thin.
+   */
+  bufferAheadSeconds: number;
+  /** Duration at 1× of a chunk not synthesized yet. */
+  estimateSeconds?: (text: string) => number;
   loadEncoder?: () => Promise<SegmentEncoder | null>;
   createAudio?: () => HTMLAudioElement;
   /** Returns null when the browser has no MSE. */
@@ -221,6 +225,8 @@ export class MediaSourcePlayer {
   private readonly synthesize: (text: string) => Promise<PcmAudio>;
   private readonly chunkParagraphs: (paragraphs: string[]) => SpeechChunk[];
   private readonly maxConcurrentSyntheses: number;
+  private readonly bufferAheadSeconds: number;
+  private readonly estimateSeconds: (text: string) => number;
   private readonly loadEncoder: () => Promise<SegmentEncoder | null>;
   private readonly createMediaSource: () => MediaSource | null;
   private readonly attach: (audio: HTMLAudioElement, source: MediaSource) => () => void;
@@ -266,6 +272,9 @@ export class MediaSourcePlayer {
     this.synthesize = options.synthesize;
     this.chunkParagraphs = options.chunkParagraphs;
     this.maxConcurrentSyntheses = options.maxConcurrentSyntheses;
+    this.bufferAheadSeconds = options.bufferAheadSeconds;
+    this.estimateSeconds =
+      options.estimateSeconds ?? ((text) => text.length / ESTIMATED_CHARS_PER_SECOND);
     this.loadEncoder = options.loadEncoder ?? defaultLoadEncoder;
     this.createMediaSource = options.createMediaSource ?? defaultCreateMediaSource;
     this.attach = options.attach ?? defaultAttach;
@@ -509,7 +518,7 @@ export class MediaSourcePlayer {
 
   /**
    * Synthesizes, encodes and appends the current run's chunks in order, up to
-   * {@link PREFETCH_CHUNKS} ahead of the one playing. One loop per run: a
+   * {@link lastWantedChunk}. One loop per run: a
    * loop still waiting on a slow chunk from an abandoned run must not hold up
    * the new one.
    */
@@ -528,10 +537,11 @@ export class MediaSourcePlayer {
           });
           return;
         }
-        if (chunk > this.index + PREFETCH_CHUNKS) return;
+        const lastWanted = this.lastWantedChunk();
+        if (chunk > lastWanted) return;
         const pending = this.segment(chunk);
-        for (let ahead = chunk + 1; ahead <= this.index + PREFETCH_CHUNKS; ahead++) {
-          if (ahead < this.chunks.length) this.segment(ahead).catch(() => {});
+        for (let ahead = chunk + 1; ahead <= lastWanted; ahead++) {
+          this.segment(ahead).catch(() => {});
         }
 
         let bytes: Uint8Array;
@@ -650,19 +660,42 @@ export class MediaSourcePlayer {
         next.epoch === this.cacheEpoch &&
         this.status !== "idle" &&
         next.chunk >= this.index &&
-        next.chunk <= this.index + PREFETCH_CHUNKS;
+        next.chunk <= this.lastWantedChunk();
       if (wanted) next.start();
       else next.skip();
     }
   }
 
+  /**
+   * The furthest chunk worth having synthesized: enough to cover
+   * {@link MediaSourcePlayerOptions.bufferAheadSeconds} past the playhead,
+   * and always at least the next chunk.
+   */
+  private lastWantedChunk(): number {
+    const time = this.audio.currentTime;
+    const firstPlaced = this.placed[0]?.chunk ?? Infinity;
+    let seconds = 0;
+    let chunk = this.index;
+    for (; chunk < this.chunks.length - 1; chunk++) {
+      // The run's placed chunks are consecutive, so index straight in.
+      const placed = this.placed[chunk - firstPlaced];
+      seconds += placed
+        ? Math.max(0, placed.end - Math.max(placed.start, time))
+        : this.estimateSeconds(this.chunks[chunk].text);
+      if (seconds / this.rate >= this.bufferAheadSeconds) break;
+    }
+    return Math.min(Math.max(chunk, this.index + 1), this.chunks.length - 1);
+  }
+
   private onTimeUpdate(): void {
     const time = this.audio.currentTime;
     const segment = this.placed.find((placed) => time >= placed.start && time < placed.end);
-    if (!segment || segment.chunk === this.index) return;
-    this.index = segment.chunk;
-    this.emitPosition();
-    this.evictBehind();
+    if (segment && segment.chunk !== this.index) {
+      this.index = segment.chunk;
+      this.emitPosition();
+      this.evictBehind();
+    }
+    // The playhead moving shrinks what's buffered ahead of it.
     void this.pump();
   }
 
