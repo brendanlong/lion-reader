@@ -1,0 +1,10 @@
+CREATE TABLE app_metadata (
+  key TEXT NOT NULL PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
+upsert:
+INSERT OR REPLACE INTO app_metadata(key, value) VALUES (?, ?);
+
+selectValue:
+SELECT value FROM app_metadata WHERE key = ?;

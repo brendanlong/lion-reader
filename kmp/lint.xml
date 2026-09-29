@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Shared by every module (lintConfig in each build file). -->
+<lint>
+    <!-- "A newer version is available" checks fail an unchanged tree whenever
+         something upstream ships. Version bumps are deliberate; see the
+         compatibility note in gradle/libs.versions.toml. -->
+    <issue id="AndroidGradlePluginVersion" severity="ignore" />
+    <issue id="GradleDependency" severity="ignore" />
+    <issue id="NewerVersionAvailable" severity="ignore" />
+</lint>
