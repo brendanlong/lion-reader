@@ -178,15 +178,9 @@ This creates a long-lived deploy token. Copy the token value.
 5. Value: Paste the token from step 1
 6. Click **Add secret**
 
-### 3. Verify Workflow Configuration
+### 3. Deploy Workflow
 
-The deployment workflow is already configured in `.github/workflows/deploy.yml`. Read that file for the exact steps; its current behavior is:
-
-- **Trigger**: a `workflow_run` on the `CI` workflow completing for `master` (plus `workflow_dispatch` for manual deploys). There is **no direct `push` trigger** — a push starts CI, and only a **successful** CI run triggers the deploy (`if: … github.event.workflow_run.conclusion == 'success'`). This prevents deploying a commit whose typecheck/lint/tests failed.
-- **Concurrency**: `group: deploy` with `cancel-in-progress: false`, so deploys **queue** instead of cancelling each other — cancelling an in-flight `flyctl deploy` could kill a mid-flight canary rollout and leave a partial deployment.
-- **Checkout**: `ref: ${{ github.event.workflow_run.head_sha || github.sha }}` — deploys the exact commit CI validated, since `workflow_run` runs against the branch tip, which may have moved on.
-- **Deploy**: `flyctl deploy --remote-only` with `FLY_API_TOKEN` from GitHub secrets.
-- **CDN**: the deploy workflow has no CDN steps — a single Bunny pull zone (`https://cdn.lionreader.com`) fronts the whole site but honors origin `Cache-Control`, so our headers decide what it caches; see "Why HTML and RSC are not CDN-cached" below and the CDN section of `src/server/http/CLAUDE.md` for the per-path rules. It is wired up by the `ASSET_PREFIX` build arg in `fly.toml`, which the `Dockerfile` leaves unset so non-Fly/local builds stay origin-served. The pull zone must send CORS headers (Bunny's "CORS headers" option) so cross-origin font loads work.
+`.github/workflows/deploy.yml` deploys every commit that passes CI on `master`; its comments explain the gating, queueing and checkout. The Bunny CDN in front of the site (`terraform/bunny.tf`) needs no deploy step: it honors origin `Cache-Control`, so our headers decide what it caches (CDN section of `src/server/http/CLAUDE.md`).
 
 ### Why HTML and RSC are not CDN-cached
 

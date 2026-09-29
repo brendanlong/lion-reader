@@ -42,38 +42,6 @@ The session itself is loaded once by the auth middleware and is **Redis-cached
 (5-min TTL)**; on a cache miss it's a single unique-index lookup
 (`sessions ⨝ users`), sub-ms.
 
-## Results (warm cache, `EXPLAIN (ANALYZE, BUFFERS)`)
-
-| Prefetch (surface)                     | Query                            | Time          | Buffers        | Plan / index                                                    |
-| -------------------------------------- | -------------------------------- | ------------- | -------------- | --------------------------------------------------------------- |
-| `sync.cursors` (layout, **awaited**)   | entries GREATEST(e,ue) argmax    | **125 ms** ⚠️ | **196,780** ⚠️ | seq of all 48,973 ue → PK nested loop into entries → top-N sort |
-| `sync.cursors`                         | `MAX(subscriptions.updated_at)`  | 0.4 ms        | 55             | seq (300 subs)                                                  |
-| `sync.cursors`                         | `MAX(tags.updated_at)`           | 0.2 ms        | 2              | `idx_tags_updated_at` (index-only)                              |
-| `tags.list`                            | tags + feed_count + unread sum   | 1.3 ms        | 133            | seq(30 tags) + hash join                                        |
-| `tags.list`                            | uncategorized feed count         | 0.3 ms        | 12             | `idx_subscriptions_user_active`                                 |
-| `tags.list`                            | uncategorized unread sum         | 0.3 ms        | 12             | `idx_subscriptions_user_active`                                 |
-| `entries.count` ×3 (all/saved/starred) | global counter arithmetic        | 0.5 ms ea     | 57             | counters on users+subscriptions (no entry scan)                 |
-| `entries.list` `/all` p1               | timeline                         | 1.1 ms        | 51             | `idx_user_entries_published_or_fetched`                         |
-| `entries.list` `/all` deep page        | keyset cursor (~page 20)         | 1.4 ms        | 1,803          | same index, seeks past cursor                                   |
-| `entries.list` `/subscription`         | subscription timeline            | 0.9 ms        | 400            | index + subscription filter                                     |
-| `entries.list` `/tag`                  | tagged-subs semijoin             | 0.4 ms        | ~200           | `idx_user_entries_published_or_fetched` + semijoin              |
-| `entries.list` `/starred`              | unread starred                   | 0.7 ms        | —              | index                                                           |
-| `entries.list` `/saved`                | saved articles                   | 1.1 ms        | —              | index                                                           |
-| `entries.list` `/uncategorized`        | untagged-subs                    | 2.0 ms        | —              | index + anti-join (heaviest list)                               |
-| `entries.list` `/recently-read`        | `sortBy=readChanged`             | 0.7 ms        | 114            | `idx_user_entries_read_changed_at`                              |
-| `entries.get` (entry open)             | full entry via `visible_entries` | 0.6 ms        | 17             | PK lookups                                                      |
-| `subscriptions.get` (sub pages)        | subscription + tags json_agg     | 0.7 ms        | 15             | PK lookups                                                      |
-
-**Everything is correctly indexed and sub-2 ms — except one query.**
-`sync.cursors`' entries arm is **125 ms and touches ~197k buffers (~1.5 GB)**,
-and it is the one query the layout **`await`s**, so it sits directly on SSR TTFB.
-Total DB time for the whole SSR pass is ~130 ms, of which ~125 ms is this single
-query; everything else combined is under 8 ms.
-
-**Fixed:** `sync.cursors` (`src/server/trpc/routers/sync.ts`, whose comment
-explains the index-driven arms) now measures **1.3 ms / 1,117 buffers** vs 125 ms /
-196,780 — a ~100× buffer reduction.
-
 ## Does anything belong in Redis?
 
 Mostly **no** — the fast queries are exactly the kind Postgres should serve, and
@@ -88,8 +56,3 @@ the things that _should_ be in Redis already are:
 - **`entries.list` / `entries.get`** — index-served, sub-2 ms. Caching per-user
   timelines in Redis would add invalidation complexity (every read/star/mark/new
   entry) for no latency benefit.
-
-The **one** legitimate Redis candidate is `sync.cursors`. If it becomes hot
-despite the query fix, a per-user "latest cursor" key maintained by the pubsub
-publishers (which already run on every read/star/mark-all/new-entry/content-update)
-would make it O(1) — at the risk that a cache-consistency bug corrupts delta sync.

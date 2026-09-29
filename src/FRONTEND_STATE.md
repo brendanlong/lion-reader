@@ -184,7 +184,7 @@ in either order — stay duplicate-safe.
 
 ### Auto-mark-read (EntryContent)
 
-Opening an entry fires `entries.get` and (if unread per placeholder data) `markRead` immediately in parallel; the optimistic update shows read state instantly and timestamp reconciliation resolves whichever completes last.
+Opening an entry fires `markRead` once, as soon as `entries.get` data is available (straight from cache when a prefetch warmed it, otherwise when the fetch lands) — even for an already-read entry, so its `readChangedAt` moves it to the top of Recently Read. The optimistic update shows read state instantly, and timestamp reconciliation resolves it against any `entries.get` fetch still in flight.
 
 ## Mutation Response Shapes
 
