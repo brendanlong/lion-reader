@@ -26,15 +26,21 @@ function crc32(buf: Buffer): number {
   return ~crc >>> 0;
 }
 
+interface BuildZipOptions {
+  compression?: "deflate" | "store";
+  /**
+   * Uncompressed size to declare in every header instead of the real one — a
+   * zip bomb that lies about its size.
+   */
+  declaredUncompressedSize?: number;
+}
+
 /**
  * Build a ZIP archive from the given files. Entries are deflate-compressed by
  * default; pass `compression: "store"` to write them uncompressed (method 0),
  * which exercises the reader's stored branch.
  */
-export function buildZip(
-  files: Record<string, string>,
-  options: { compression?: "deflate" | "store" } = {}
-): Buffer {
+export function buildZip(files: Record<string, string>, options: BuildZipOptions = {}): Buffer {
   const store = options.compression === "store";
   const method = store ? 0 : 8;
   const entries: ZipEntry[] = Object.entries(files).map(([name, content]) => ({
@@ -50,6 +56,7 @@ export function buildZip(
     const nameBuf = Buffer.from(entry.name, "utf8");
     const compressed = store ? entry.data : deflateRawSync(entry.data);
     const crc = crc32(entry.data);
+    const declaredSize = options.declaredUncompressedSize ?? entry.data.length;
 
     const localHeader = Buffer.alloc(30);
     localHeader.writeUInt32LE(0x04034b50, 0); // local file header signature
@@ -60,7 +67,7 @@ export function buildZip(
     localHeader.writeUInt16LE(0, 12); // mod date
     localHeader.writeUInt32LE(crc, 14);
     localHeader.writeUInt32LE(compressed.length, 18);
-    localHeader.writeUInt32LE(entry.data.length, 22);
+    localHeader.writeUInt32LE(declaredSize, 22);
     localHeader.writeUInt16LE(nameBuf.length, 26);
     localHeader.writeUInt16LE(0, 28); // extra length
 
@@ -76,7 +83,7 @@ export function buildZip(
     centralHeader.writeUInt16LE(0, 14); // mod date
     centralHeader.writeUInt32LE(crc, 16);
     centralHeader.writeUInt32LE(compressed.length, 20);
-    centralHeader.writeUInt32LE(entry.data.length, 24);
+    centralHeader.writeUInt32LE(declaredSize, 24);
     centralHeader.writeUInt16LE(nameBuf.length, 28);
     centralHeader.writeUInt16LE(0, 30); // extra length
     centralHeader.writeUInt16LE(0, 32); // comment length

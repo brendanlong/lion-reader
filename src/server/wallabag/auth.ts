@@ -7,11 +7,10 @@
  *   grant_type=password, client_id, client_secret, username, password
  *
  * We reuse the existing OAuth 2.1 token infrastructure, but support the
- * password grant type which Wallabag requires. Client registration uses
- * the dynamic registration endpoint.
- *
- * For simplicity, we also support a "wallabag" client_id that doesn't
- * require pre-registration — any valid user credentials work.
+ * password grant type which Wallabag requires. Every Wallabag credential is
+ * minted under the single public client_id "wallabag" (the setup UI and the
+ * scraped developer page both hand out wallabag/wallabag), and the token
+ * endpoint accepts no other — see SECURITY.md §8 for why.
  */
 
 import { db } from "@/server/db";
@@ -22,6 +21,8 @@ import { OAUTH_SCOPES } from "@/server/oauth/utils";
 import { isSignupConfirmed } from "@/server/auth/confirmation";
 import { logger } from "@/lib/logger";
 import { errorResponse } from "./parse";
+
+export const WALLABAG_CLIENT_ID = "wallabag";
 
 /**
  * Wallabag OAuth token response
@@ -41,8 +42,7 @@ export interface WallabagTokenResponse {
  */
 export async function passwordGrant(
   username: string,
-  password: string,
-  clientId: string
+  password: string
 ): Promise<WallabagTokenResponse | null> {
   const login = await verifyEmailPassword(db, username, password);
   if (!login.valid) {
@@ -50,7 +50,6 @@ export async function passwordGrant(
     logger.warn("Wallabag password grant failed", {
       component: "wallabag",
       grantType: "password",
-      clientId,
       userId: user?.id,
       reason: !user ? "user_not_found" : !user.passwordHash ? "no_password" : "invalid_password",
     });
@@ -63,7 +62,7 @@ export async function passwordGrant(
   // is granted reader:full-access rather than the narrow saved:write scope —
   // and requireAuth enforces that scope on every endpoint (see below).
   const tokens = await createTokens({
-    clientId,
+    clientId: WALLABAG_CLIENT_ID,
     userId: foundUser.id,
     scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
   });
@@ -71,7 +70,6 @@ export async function passwordGrant(
   logger.info("Wallabag password grant succeeded", {
     component: "wallabag",
     grantType: "password",
-    clientId,
     userId: foundUser.id,
   });
 
@@ -88,10 +86,9 @@ export async function passwordGrant(
  * Handles the refresh_token grant for Wallabag clients.
  */
 export async function refreshTokenGrant(
-  refreshToken: string,
-  clientId: string
+  refreshToken: string
 ): Promise<WallabagTokenResponse | null> {
-  const tokens = await rotateRefreshToken(refreshToken, clientId);
+  const tokens = await rotateRefreshToken(refreshToken, WALLABAG_CLIENT_ID);
   if (!tokens) {
     // Rotation returned null: the presented refresh token was unknown, expired,
     // or already-rotated (reuse). This is the key "flaky sync" signal — a client
@@ -100,7 +97,6 @@ export async function refreshTokenGrant(
     logger.warn("Wallabag refresh grant failed", {
       component: "wallabag",
       grantType: "refresh_token",
-      clientId,
       reason: "invalid_or_revoked",
     });
     return null;
@@ -109,7 +105,6 @@ export async function refreshTokenGrant(
   logger.info("Wallabag refresh grant succeeded", {
     component: "wallabag",
     grantType: "refresh_token",
-    clientId,
   });
 
   return {

@@ -17,6 +17,12 @@ import { db } from "../../src/server/db";
 import { sessions, users } from "../../src/server/db/schema";
 import { createSession, validateSession } from "../../src/server/auth/session";
 import { linkOAuthAccount } from "../../src/server/services/oauth-accounts";
+import {
+  createTokens,
+  rotateRefreshToken,
+  validateAccessToken,
+} from "../../src/server/oauth/service";
+import { WALLABAG_CLIENT_ID } from "../../src/server/wallabag/auth";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
 import { createAuthContext, createTestOAuthLink, createTestUser } from "./helpers";
@@ -218,5 +224,83 @@ describe("credential changes revoke other sessions", () => {
 
     expect(await validateSession(other.token)).not.toBeNull();
     expect(await validateSession(current.token)).not.toBeNull();
+  });
+});
+
+describe("password changes sign out Wallabag apps", () => {
+  // Wallabag apps sign in with the password grant, so a leaked password buys an
+  // attacker a Wallabag refresh chain that renews itself indefinitely unless the
+  // password change kills it.
+  async function mintWallabagTokens(userId: string) {
+    return createTokens({
+      clientId: WALLABAG_CLIENT_ID,
+      userId,
+      scopes: ["reader:full-access"],
+    });
+  }
+
+  it("me.changePassword revokes Wallabag access and refresh tokens", async () => {
+    const userId = await createUser({ passwordHash: await argon2.hash("old-password") });
+    const current = await createSession(db, { userId });
+    const wallabag = await mintWallabagTokens(userId);
+    const otherClient = await createTokens({
+      clientId: "some-mcp-client",
+      userId,
+      scopes: ["mcp"],
+    });
+
+    const caller = createCaller(await createSessionContext(userId, current.sessionId));
+    await caller.users["me.changePassword"]({
+      currentPassword: "old-password",
+      newPassword: "a-new-password",
+    });
+
+    expect(await validateAccessToken(wallabag.accessToken)).toBeNull();
+    expect(await rotateRefreshToken(wallabag.refreshToken, WALLABAG_CLIENT_ID)).toBeNull();
+    // Consent-based OAuth apps are managed under Connected Apps, not by the password.
+    expect(await validateAccessToken(otherClient.accessToken)).not.toBeNull();
+  });
+
+  it("me.setPassword revokes Wallabag tokens", async () => {
+    const userId = await createUser({ passwordHash: null });
+    const current = await createSession(db, { userId });
+    const wallabag = await mintWallabagTokens(userId);
+
+    const caller = createCaller(await createSessionContext(userId, current.sessionId));
+    await caller.users["me.setPassword"]({ newPassword: "a-new-password" });
+
+    expect(await validateAccessToken(wallabag.accessToken)).toBeNull();
+    expect(await rotateRefreshToken(wallabag.refreshToken, WALLABAG_CLIENT_ID)).toBeNull();
+  });
+
+  it("a rejected me.changePassword leaves Wallabag tokens alone", async () => {
+    const userId = await createUser({ passwordHash: await argon2.hash("old-password") });
+    const current = await createSession(db, { userId });
+    const wallabag = await mintWallabagTokens(userId);
+
+    const caller = createCaller(await createSessionContext(userId, current.sessionId));
+    await expect(
+      caller.users["me.changePassword"]({
+        currentPassword: "wrong-password",
+        newPassword: "a-new-password",
+      })
+    ).rejects.toThrow(/incorrect/i);
+
+    expect(await validateAccessToken(wallabag.accessToken)).not.toBeNull();
+  });
+
+  it("does not touch another user's Wallabag tokens", async () => {
+    const userId = await createUser({ passwordHash: await argon2.hash("old-password") });
+    const bystanderId = await createUser();
+    const current = await createSession(db, { userId });
+    const bystander = await mintWallabagTokens(bystanderId);
+
+    const caller = createCaller(await createSessionContext(userId, current.sessionId));
+    await caller.users["me.changePassword"]({
+      currentPassword: "old-password",
+      newPassword: "a-new-password",
+    });
+
+    expect(await validateAccessToken(bystander.accessToken)).not.toBeNull();
   });
 });

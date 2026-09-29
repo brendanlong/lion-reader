@@ -15,10 +15,10 @@
  *   Markdown URL save)
  */
 
-import * as mammoth from "mammoth";
 import { logger } from "@/lib/logger";
 import { processMarkdown as convertMarkdown } from "@/server/markdown";
 import { extractDocxCoreProperties } from "@/server/file/docx-core-props";
+import { convertDocxToHtml } from "@/server/file/docx-to-html";
 
 // ============================================================================
 // Types
@@ -116,25 +116,16 @@ export function titleFromFilename(filename: string): string {
  * rendered HTML; where it's absent, downstream falls back to the filename.
  */
 async function convertDocx(buffer: Buffer, filename: string): Promise<ConvertedUpload> {
-  const styleMap = ["p[style-name='Title'] => h1:fresh", "p[style-name='Subtitle'] => h2:fresh"];
-
-  const result = await mammoth.convertToHtml({ buffer }, { styleMap });
-
-  if (result.messages.length > 0) {
-    logger.debug("Mammoth conversion messages", {
-      filename,
-      messages: result.messages.map((m) => m.message),
-    });
-  }
+  const html = await convertDocxToHtml(buffer);
 
   // Read the author-set document properties. jszip's lazy read only inflates
   // that one small ZIP entry (not the whole archive).
   const coreProps = await extractDocxCoreProperties(buffer);
 
   return {
-    html: result.value,
+    html,
     preCleanedContent: {
-      html: result.value,
+      html,
       title: coreProps.title,
       summary: coreProps.description,
       author: coreProps.author,

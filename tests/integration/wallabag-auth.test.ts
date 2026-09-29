@@ -16,10 +16,16 @@ import { inArray } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { users } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
-import { createTokens, validateAccessToken } from "../../src/server/oauth/service";
-import { requireAuth, passwordGrant } from "../../src/server/wallabag/auth";
+import {
+  createTokens,
+  rotateRefreshToken,
+  validateAccessToken,
+} from "../../src/server/oauth/service";
+import { requireAuth, passwordGrant, WALLABAG_CLIENT_ID } from "../../src/server/wallabag/auth";
 import { OAUTH_SCOPES } from "../../src/server/oauth/utils";
-import { createTestUser } from "./helpers";
+import { POST as tokenEndpoint } from "../../src/app/api/wallabag/oauth/v2/token/route";
+import { createCaller } from "../../src/server/trpc/root";
+import { createAuthContext, createTestUser } from "./helpers";
 
 const createdUserIds: string[] = [];
 
@@ -134,7 +140,7 @@ describe("Wallabag passwordGrant", () => {
     const password = "correct-horse-battery-staple";
     const user = await createUser(password);
 
-    const grant = await passwordGrant(user.email, password, "wallabag");
+    const grant = await passwordGrant(user.email, password);
     expect(grant).not.toBeNull();
     if (!grant) throw new Error("unreachable");
 
@@ -149,7 +155,154 @@ describe("Wallabag passwordGrant", () => {
 
   it("returns null for a wrong password", async () => {
     const user = await createUser("the-right-password");
-    const grant = await passwordGrant(user.email, "the-wrong-password", "wallabag");
+    const grant = await passwordGrant(user.email, "the-wrong-password");
     expect(grant).toBeNull();
+  });
+});
+
+/**
+ * A form POST to the token endpoint from a fresh client IP, so the strict
+ * per-IP bucket never throttles one test on behalf of another.
+ */
+function tokenRequest(params: Record<string, string>): Request {
+  const ip = `10.${Math.floor(Math.random() * 256)}.${Math.floor(Math.random() * 256)}.${Math.floor(Math.random() * 256)}`;
+  return new Request("https://example.com/api/wallabag/oauth/v2/token", {
+    method: "POST",
+    headers: {
+      "content-type": "application/x-www-form-urlencoded",
+      "fly-client-ip": ip,
+    },
+    body: new URLSearchParams(params).toString(),
+  });
+}
+
+describe("Wallabag token endpoint client_id pinning", () => {
+  const password = "correct-horse-battery-staple";
+
+  it("accepts client_id=wallabag and mints tokens under the wallabag client", async () => {
+    const user = await createUser(password);
+
+    const response = await tokenEndpoint(
+      tokenRequest({
+        grant_type: "password",
+        client_id: "wallabag",
+        client_secret: "wallabag",
+        username: user.email,
+        password,
+      })
+    );
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { access_token: string; refresh_token: string };
+    expect((await validateAccessToken(body.access_token))?.clientId).toBe(WALLABAG_CLIENT_ID);
+  });
+
+  it("accepts a request with no client_id", async () => {
+    const user = await createUser(password);
+
+    const response = await tokenEndpoint(
+      tokenRequest({ grant_type: "password", username: user.email, password })
+    );
+
+    expect(response.status).toBe(200);
+  });
+
+  it("rejects a password grant under another client_id with invalid_client", async () => {
+    const user = await createUser(password);
+
+    const response = await tokenEndpoint(
+      tokenRequest({
+        grant_type: "password",
+        client_id: "some-mcp-client",
+        username: user.email,
+        password,
+      })
+    );
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({ error: "invalid_client" });
+  });
+
+  it("refuses to rotate another client's refresh token", async () => {
+    // The attack: a stolen MCP refresh token presented here with its own
+    // client_id would otherwise be rotated with no client secret and no consent
+    // re-check.
+    const user = await createUser();
+    const victimClientId = "confidential-mcp-client";
+    const victim = await createTokens({
+      clientId: victimClientId,
+      userId: user.id,
+      scopes: [OAUTH_SCOPES.MCP],
+    });
+
+    const response = await tokenEndpoint(
+      tokenRequest({
+        grant_type: "refresh_token",
+        client_id: victimClientId,
+        refresh_token: victim.refreshToken,
+      })
+    );
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({ error: "invalid_client" });
+
+    // Omitting client_id pins to the wallabag client, which doesn't own it.
+    const pinned = await tokenEndpoint(
+      tokenRequest({ grant_type: "refresh_token", refresh_token: victim.refreshToken })
+    );
+    expect(pinned.status).toBe(401);
+
+    // The victim's chain is untouched.
+    expect(await validateAccessToken(victim.accessToken)).not.toBeNull();
+    expect(await rotateRefreshToken(victim.refreshToken, victimClientId)).not.toBeNull();
+  });
+
+  it("rotates a wallabag refresh token", async () => {
+    const user = await createUser();
+    const tokens = await createTokens({
+      clientId: WALLABAG_CLIENT_ID,
+      userId: user.id,
+      scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
+    });
+
+    const response = await tokenEndpoint(
+      tokenRequest({
+        grant_type: "refresh_token",
+        client_id: "wallabag",
+        client_secret: "wallabag",
+        refresh_token: tokens.refreshToken,
+      })
+    );
+
+    expect(response.status).toBe(200);
+  });
+});
+
+describe("oauthGrants.revokeWallabag", () => {
+  it("signs out the caller's Wallabag apps only", async () => {
+    const user = await createUser();
+    const bystander = await createUser();
+    const mine = await createTokens({
+      clientId: WALLABAG_CLIENT_ID,
+      userId: user.id,
+      scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
+    });
+    const mcp = await createTokens({
+      clientId: "some-mcp-client",
+      userId: user.id,
+      scopes: [OAUTH_SCOPES.MCP],
+    });
+    const theirs = await createTokens({
+      clientId: WALLABAG_CLIENT_ID,
+      userId: bystander.id,
+      scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
+    });
+
+    const caller = createCaller(await createAuthContext(user.id));
+    await expect(caller.oauthGrants.revokeWallabag()).resolves.toEqual({ success: true });
+
+    expect(await validateAccessToken(mine.accessToken)).toBeNull();
+    expect(await rotateRefreshToken(mine.refreshToken, WALLABAG_CLIENT_ID)).toBeNull();
+    expect(await validateAccessToken(mcp.accessToken)).not.toBeNull();
+    expect(await validateAccessToken(theirs.accessToken)).not.toBeNull();
   });
 });

@@ -10,12 +10,13 @@
  * - Supports both service account (public) and user OAuth (private) access
  */
 
-import * as mammoth from "mammoth";
 import { GoogleAuth } from "google-auth-library";
 import { logger } from "@/lib/logger";
-import { googleConfig } from "@/server/config/env";
+import { googleConfig, usageLimitsConfig } from "@/server/config/env";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { fetchWithSsrfProtection } from "@/server/http/ssrf";
+import { readResponseBufferWithSizeLimit } from "@/server/http/fetch";
+import { convertDocxToHtml } from "@/server/file/docx-to-html";
 
 // ============================================================================
 // Constants
@@ -197,7 +198,7 @@ async function getFileMetadata(
 /**
  * Downloads a file from Google Drive as raw bytes.
  */
-async function downloadFile(fileId: string, accessToken: string): Promise<ArrayBuffer | null> {
+async function downloadFile(fileId: string, accessToken: string): Promise<Buffer | null> {
   try {
     const url = `${GOOGLE_DRIVE_API_ENDPOINT}/${fileId}?alt=media`;
 
@@ -218,7 +219,11 @@ async function downloadFile(fileId: string, accessToken: string): Promise<ArrayB
       return null;
     }
 
-    return await response.arrayBuffer();
+    return await readResponseBufferWithSizeLimit(
+      response,
+      usageLimitsConfig.maxSavedArticleSizeBytes,
+      url
+    );
   } catch (error) {
     if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
       logger.warn("Download request timed out", { fileId });
@@ -230,30 +235,6 @@ async function downloadFile(fileId: string, accessToken: string): Promise<ArrayB
     }
     return null;
   }
-}
-
-/**
- * Converts a .docx file to HTML using mammoth.
- *
- * Style mappings:
- * - Title paragraphs → h1
- * - Subtitle paragraphs → h2
- */
-async function convertDocxToHtml(arrayBuffer: ArrayBuffer): Promise<string> {
-  const styleMap = ["p[style-name='Title'] => h1:fresh", "p[style-name='Subtitle'] => h2:fresh"];
-
-  // Convert ArrayBuffer to Buffer for mammoth
-  const buffer = Buffer.from(arrayBuffer);
-
-  const result = await mammoth.convertToHtml({ buffer }, { styleMap });
-
-  if (result.messages.length > 0) {
-    logger.debug("Mammoth conversion messages", {
-      messages: result.messages.map((m) => m.message),
-    });
-  }
-
-  return result.value;
 }
 
 // ============================================================================

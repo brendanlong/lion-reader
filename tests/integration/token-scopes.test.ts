@@ -81,6 +81,7 @@ describe("API token scope enforcement", () => {
       // revoke grants, least of all the one it was issued under (#1520).
       await expectForbidden(caller.oauthGrants.list());
       await expectForbidden(caller.oauthGrants.revoke({ clientId: "any" }));
+      await expectForbidden(caller.oauthGrants.revokeWallabag());
     });
   });
 

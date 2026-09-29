@@ -975,7 +975,23 @@ export async function revokeUserConsentGrant(userId: string, clientId: string): 
       )
     );
 
-  await db
+  await revokeUserClientTokens(userId, clientId, db, now);
+
+  logger.info("User revoked OAuth consent grant", { component: "oauth", userId, clientId });
+
+  return true;
+}
+
+/**
+ * Revokes every live access and refresh token a user holds for one client.
+ */
+export async function revokeUserClientTokens(
+  userId: string,
+  clientId: string,
+  executor: DbOrTx = db,
+  now: Date = new Date()
+): Promise<void> {
+  await executor
     .update(oauthRefreshTokens)
     .set({ revokedAt: now })
     .where(
@@ -986,7 +1002,7 @@ export async function revokeUserConsentGrant(userId: string, clientId: string): 
       )
     );
 
-  await db
+  await executor
     .update(oauthAccessTokens)
     .set({ revokedAt: now })
     .where(
@@ -996,10 +1012,6 @@ export async function revokeUserConsentGrant(userId: string, clientId: string): 
         isNull(oauthAccessTokens.revokedAt)
       )
     );
-
-  logger.info("User revoked OAuth consent grant", { component: "oauth", userId, clientId });
-
-  return true;
 }
 
 // ============================================================================
