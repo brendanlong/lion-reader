@@ -18,8 +18,8 @@ const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
  * Deletes rows that expire but were never deleted anywhere (issue #953):
  * expired sessions, expired OAuth authorization codes / access tokens /
  * refresh tokens, long-revoked credentials, orphaned Dynamic Client
- * Registration clients (issue #975), parked one-time process_opml_import
- * jobs, and subscriber-less fetch_feed jobs (issue #1085). See
+ * Registration clients (issue #975), parked one-time jobs, and
+ * subscriber-less fetch_feed jobs (issue #1085). See
  * src/server/services/retention.ts.
  */
 export async function handleCleanup(): Promise<JobHandlerResult> {

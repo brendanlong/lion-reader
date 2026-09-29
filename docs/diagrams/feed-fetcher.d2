@@ -26,9 +26,8 @@ queue: {
 
     schema: |md
       - id: UUID
-      - type: 'fetch_feed' | 'renew_websub'
-      - payload: { feedId }
-      - enabled: boolean
+      - type: a JobType (JobPayloads in src/server/jobs/queue.ts)
+      - payload: jsonb (e.g. { feedId })
       - next_run_at: timestamp
       - running_since: timestamp
       - consecutive_failures: int
@@ -42,8 +41,7 @@ queue: {
 
     sql: |sql
       SELECT * FROM jobs
-      WHERE enabled = true
-        AND next_run_at <= now()
+      WHERE next_run_at <= now()
         AND running_since IS NULL
       FOR UPDATE SKIP LOCKED
       LIMIT 1
@@ -93,6 +91,12 @@ worker: {
       label: process_opml_import
       shape: rectangle
       tooltip: "Import feeds from OPML"
+    }
+
+    fetch_full_content: {
+      label: fetch_full_content
+      shape: rectangle
+      tooltip: "Fetch full content for WebSub-pushed entries"
     }
   }
 }
@@ -255,6 +259,11 @@ worker.main_loop -> worker.handlers.renew_websub {
 }
 
 worker.main_loop -> worker.handlers.process_import {
+  style.stroke: "#f57c00"
+  style.stroke-dash: 3
+}
+
+worker.main_loop -> worker.handlers.fetch_full_content {
   style.stroke: "#f57c00"
   style.stroke-dash: 3
 }

@@ -242,11 +242,16 @@ async function persistFullContentResult(
 
 /**
  * Maximum number of entries to fetch full content for per call to
- * {@link fetchFullContentForNewEntries} (one poll, or one WebSub push). The
- * fetches run sequentially inside a single job, so this bounds how long that job
- * holds a worker slot and how hard one burst of new entries hits the origin.
+ * {@link fetchFullContentForNewEntries}. The fetches run sequentially inside a
+ * single job, so this bounds how long that job holds a worker slot and how hard
+ * one burst of new entries hits the origin.
+ *
+ * A poll makes one call and drops the rest: a feed's first fetch lists its whole
+ * back catalogue as "new", and fetching every article of it isn't wanted. A
+ * push's new entries are genuinely new, so its `fetch_full_content` job takes
+ * them a batch at a time and re-queues the rest.
  */
-const MAX_FULL_CONTENT_ENTRIES_PER_BATCH = 10;
+export const MAX_FULL_CONTENT_ENTRIES_PER_BATCH = 10;
 
 /**
  * Whether any active subscriber of the feed has `fetch_full_content` on. Full
@@ -302,7 +307,11 @@ export async function fetchFullContentForNewEntries(
       and(
         inArray(entries.id, newEntryIds.slice(0, MAX_FULL_CONTENT_ENTRIES_PER_BATCH)),
         // Scoped to the feed so a caller can't reach another feed's entries.
-        eq(entries.feedId, feedId)
+        eq(entries.feedId, feedId),
+        // Skip entries that already have a result (content or a recorded
+        // error), so a retried job doesn't redo the work it finished before
+        // failing. A new entry never has one.
+        isNull(entries.fullContentFetchedAt)
       )
     );
 
