@@ -9,7 +9,7 @@
  */
 
 import { createHash } from "crypto";
-import { eq, and, isNull, inArray, count } from "drizzle-orm";
+import { eq, and, isNull, inArray, count, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "../../db";
 import { feeds, subscriptions, userEntries, type Feed } from "../../db/schema";
@@ -282,7 +282,7 @@ async function processSuccessfulFetch(
   // Pass previousLastEntriesUpdatedAt to detect entries that disappeared from the feed
   // Pass feedUrl for feed-specific content cleaning (e.g., LessWrong)
   // After this call, parsedFeed can be GC'd since we only use feedMetadata below
-  const processResult = await processEntries(feed.id, feed.type, parsedFeed, {
+  const processResult = await processEntries(feed.id, parsedFeed, {
     fetchedAt: now,
     previousLastEntriesUpdatedAt: feed.lastEntriesUpdatedAt,
     // Null on the feed's very first fetch, which is what disables the backfill
@@ -735,18 +735,12 @@ async function updateFeedOnError(
   now: Date,
   nextFetchAt: Date
 ): Promise<void> {
-  const [feed] = await db.select().from(feeds).where(eq(feeds.id, feedId)).limit(1);
-
-  if (!feed) return;
-
-  const newFailureCount = (feed.consecutiveFailures ?? 0) + 1;
-
   await db
     .update(feeds)
     .set({
       lastFetchedAt: now,
       nextFetchAt: nextFetchAt,
-      consecutiveFailures: newFailureCount,
+      consecutiveFailures: sql`${feeds.consecutiveFailures} + 1`,
       lastError: errorMessage,
       updatedAt: now,
     })

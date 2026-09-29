@@ -17,12 +17,8 @@ import { publishEntryStateChanged, type EntryStateListData } from "@/server/redi
 import type { DbOrTx } from "@/server/db";
 import { feeds, visibleEntries } from "@/server/db/schema";
 import { toNewEntryListData } from "@/lib/events/schemas";
-import {
-  toBulkUnreadCounts,
-  type BulkUnreadCounts,
-  type UnreadCounts,
-} from "@/server/services/counts";
-import type { EntryState, MarkReadEntryState } from "@/server/services/entries";
+import type { BulkUnreadCounts } from "@/server/services/counts";
+import type { MarkReadEntryState } from "@/server/services/entries";
 
 /**
  * Fetches the list-item context for entries that flipped to unread, keyed by
@@ -115,33 +111,8 @@ export function publishMarkReadStateChanges(
 }
 
 /**
- * Publishes an entry_state_changed event after a single-entry star/unstar,
- * normalizing the single-entry UnreadCounts into the array-shaped counts the
- * event (and the client's setBulkCounts) expects.
- */
-export function publishStarredStateChange(
-  userId: string,
-  entry: EntryState,
-  counts: UnreadCounts
-): void {
-  void publishEntryStateChanged(
-    userId,
-    entry.id,
-    entry.read,
-    entry.starred,
-    entry.updatedAt,
-    toBulkUnreadCounts(counts)
-  ).catch(() => {
-    // Ignore publish errors - SSE is best-effort
-  });
-}
-
-/**
  * Publishes an entry_state_changed event for each entry affected by a bulk
  * star/unstar, carrying the absolute counts so other tabs set them directly.
- * Mirrors {@link publishStarredStateChange} but for the batched
- * (`updateEntriesStarred`) path — counts are already array-shaped, so no
- * per-entry normalization is needed.
  */
 export function publishStarredStateChanges(
   userId: string,

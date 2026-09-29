@@ -157,12 +157,12 @@ async function convertMarkdownFile(content: string, filename: string): Promise<C
 /**
  * Converts an uploaded file to raw article content for `buildArticleFields`.
  *
- * @param content - The file content (Buffer for binary files, string for text)
+ * @param content - The raw file bytes
  * @param filename - The original filename (used for type detection and title)
  * @returns The converted content, or throws if the type is unsupported
  */
 export async function convertUploadedFile(
-  content: Buffer | string,
+  content: Buffer,
   filename: string
 ): Promise<ConvertedUpload> {
   const fileType = detectFileType(filename);
@@ -176,23 +176,21 @@ export async function convertUploadedFile(
   logger.info("Converting uploaded file", { filename, fileType });
 
   switch (fileType) {
-    case "docx": {
-      // docx requires Buffer
-      const buffer = typeof content === "string" ? Buffer.from(content, "base64") : content;
-      return convertDocx(buffer, filename);
-    }
+    case "docx":
+      return convertDocx(content, filename);
 
-    case "html": {
-      // HTML should be string; Readability runs downstream.
-      const htmlContent = typeof content === "string" ? content : content.toString("utf-8");
-      return { html: htmlContent, preCleanedContent: null, fileType: "html", filename };
-    }
+    case "html":
+      // Readability runs downstream.
+      return {
+        html: content.toString("utf-8"),
+        preCleanedContent: null,
+        fileType: "html",
+        filename,
+      };
 
-    case "markdown": {
-      // Markdown should be string (also handles plain text files)
-      const mdContent = typeof content === "string" ? content : content.toString("utf-8");
-      return convertMarkdownFile(mdContent, filename);
-    }
+    case "markdown":
+      // Also handles plain text files
+      return convertMarkdownFile(content.toString("utf-8"), filename);
   }
 }
 

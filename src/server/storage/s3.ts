@@ -18,6 +18,11 @@ import { readResponseBufferWithSizeLimit, ContentTooLargeError } from "@/server/
  */
 const MAX_FETCHED_IMAGE_SIZE_BYTES = 20 * 1024 * 1024;
 
+/**
+ * Timeout for fetching an external image (30 seconds).
+ */
+const IMAGE_FETCH_TIMEOUT_MS = 30000;
+
 // ============================================================================
 // Configuration
 // ============================================================================
@@ -107,15 +112,9 @@ function getPublicUrl(key: string): string {
 /**
  * Result of uploading an image.
  */
-export interface UploadResult {
-  /** The storage key (path) of the uploaded object */
-  key: string;
+interface UploadResult {
   /** The public URL to access the image */
   url: string;
-  /** Content type of the uploaded file */
-  contentType: string;
-  /** Size in bytes */
-  size: number;
 }
 
 /**
@@ -183,24 +182,17 @@ function getExtension(contentType: string): string {
 }
 
 /**
- * Uploads an image to object storage.
+ * Uploads an image to object storage under `{prefix}/{documentId}/{uuid}.{ext}`.
  *
  * @param data - The image data as a Buffer
- * @param options - Upload options
+ * @param contentType - The image's content type
+ * @param options - Where to file the object
  * @returns Upload result with URL, or null if storage is not available
  */
 async function uploadImage(
   data: Buffer,
-  options: {
-    /** Source document ID (for organizing in storage) */
-    documentId?: string;
-    /** Original source URL (for content type detection) */
-    sourceUrl?: string;
-    /** Override content type */
-    contentType?: string;
-    /** Custom key prefix (default: "images") */
-    prefix?: string;
-  } = {}
+  contentType: string,
+  options: UploadLocation
 ): Promise<UploadResult | null> {
   const client = getS3Client();
   if (!client) {
@@ -208,16 +200,7 @@ async function uploadImage(
     return null;
   }
 
-  const contentType = options.contentType || detectContentType(data, options.sourceUrl);
-  const extension = getExtension(contentType);
-  const uuid = randomUUID();
-
-  // Build the storage key
-  // Format: images/{docId}/{uuid}.{ext} or images/{uuid}.{ext}
-  const prefix = options.prefix || "images";
-  const key = options.documentId
-    ? `${prefix}/${options.documentId}/${uuid}.${extension}`
-    : `${prefix}/${uuid}.${extension}`;
+  const key = `${options.prefix}/${options.documentId}/${randomUUID()}.${getExtension(contentType)}`;
 
   try {
     const response = await client.fetch(getObjectRequestUrl(key), {
@@ -247,12 +230,7 @@ async function uploadImage(
       size: data.length,
     });
 
-    return {
-      key,
-      url,
-      contentType,
-      size: data.length,
-    };
+    return { url };
   } catch (error) {
     logger.error("Failed to upload image to storage", {
       key,
@@ -263,47 +241,42 @@ async function uploadImage(
 }
 
 /**
+ * Where an uploaded image is filed in storage.
+ */
+interface UploadLocation {
+  /** Key prefix (e.g. the source service) */
+  prefix: string;
+  /** Source document ID (for organizing in storage) */
+  documentId: string;
+}
+
+/**
  * Fetches an image from a URL and uploads it to storage.
  *
  * @param imageUrl - The URL of the image to fetch
- * @param options - Upload options
+ * @param options - Where to file the image, plus the Authorization header the
+ *   fetch needs
  * @returns Upload result with new URL, or null if fetch or upload fails
  */
 export async function fetchAndUploadImage(
   imageUrl: string,
-  options: {
-    /** Source document ID (for organizing in storage) */
-    documentId?: string;
-    /** Custom key prefix (default: "images") */
-    prefix?: string;
-    /** Timeout in milliseconds (default: 30000) */
-    timeout?: number;
-    /** Authorization header for the request */
-    authorization?: string;
-  } = {}
+  options: UploadLocation & { authorization: string }
 ): Promise<UploadResult | null> {
   if (!isStorageAvailable()) {
     logger.debug("Storage not available, skipping image fetch");
     return null;
   }
 
-  const timeout = options.timeout || 30000;
-
   try {
-    const headers: Record<string, string> = {
-      "User-Agent": USER_AGENT,
-    };
-
-    if (options.authorization) {
-      headers["Authorization"] = options.authorization;
-    }
-
     // Image URLs come from external documents (e.g. Google Docs contentUri
     // values), so the fetch is SSRF-protected and size-limited.
     const response = await fetchWithSsrfProtection(imageUrl, {
       method: "GET",
-      headers,
-      signal: AbortSignal.timeout(timeout),
+      headers: {
+        "User-Agent": USER_AGENT,
+        Authorization: options.authorization,
+      },
+      signal: AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -324,12 +297,7 @@ export async function fetchAndUploadImage(
     const contentType =
       response.headers.get("content-type")?.split(";")[0] || detectContentType(data, imageUrl);
 
-    return uploadImage(data, {
-      documentId: options.documentId,
-      sourceUrl: imageUrl,
-      contentType,
-      prefix: options.prefix,
-    });
+    return uploadImage(data, contentType, options);
   } catch (error) {
     if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
       logger.warn("Image fetch timed out", { url: imageUrl });

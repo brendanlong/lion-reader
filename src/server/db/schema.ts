@@ -290,7 +290,6 @@ export const oauthClients = pgTable("oauth_clients", {
     .default(sql`'{authorization_code,refresh_token}'`),
   scopes: text("scopes").array(), // Available scopes for this client
   isPublic: boolean("is_public").notNull().default(true), // PKCE required for public clients
-  metadataUrl: text("metadata_url"), // For Client ID Metadata Documents
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -403,7 +402,6 @@ export const oauthConsentGrants = pgTable(
   },
   (table) => [
     unique("uq_oauth_consent_user_client").on(table.userId, table.clientId),
-    index("idx_oauth_consent_grants_user").on(table.userId),
     index("idx_oauth_consent_grants_client").on(table.clientId),
   ]
 );
@@ -1009,8 +1007,6 @@ export const websubSubscriptions = pgTable(
     unique("uq_websub_subscriptions_feed_hub").on(table.feedId, table.hubUrl),
     // Index for finding expiring subscriptions that need renewal
     index("idx_websub_expiring").on(table.expiresAt),
-    // Index for finding subscriptions by feed
-    index("idx_websub_feed").on(table.feedId),
   ]
 );
 

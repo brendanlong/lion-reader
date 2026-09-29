@@ -272,7 +272,7 @@ function deserializeFromCache(data: string): SessionData {
       id: cached.sessionId,
       userId: cached.userId,
       tokenHash: "", // Not needed after validation
-      scopes: cached.scopes ?? null,
+      scopes: cached.scopes,
       expiresAt: new Date(cached.expiresAt),
       revokedAt: cached.revokedAt ? new Date(cached.revokedAt) : null,
       createdAt: new Date(cached.createdAt),
@@ -287,16 +287,16 @@ function deserializeFromCache(data: string): SessionData {
       updatedAt: new Date(cached.userUpdatedAt),
       emailVerifiedAt: cached.userEmailVerifiedAt ? new Date(cached.userEmailVerifiedAt) : null,
       passwordHash: null, // Not cached in Redis for security; query DB when needed
-      inviteId: cached.userInviteId ?? null,
-      showSpam: cached.userShowSpam ?? false,
+      inviteId: cached.userInviteId,
+      showSpam: cached.userShowSpam,
       groqApiKey: null, // Not cached in Redis for security; use getUserApiKeys() when needed
       anthropicApiKey: null, // Not cached in Redis for security; use getUserApiKeys() when needed
       cerebrasApiKey: null, // Not cached in Redis for security; use getUserApiKeys() when needed
       openrouterApiKey: null, // Not cached in Redis for security; use getUserApiKeys() when needed
-      summarizationModel: cached.userSummarizationModel ?? null,
-      summarizationMaxWords: cached.userSummarizationMaxWords ?? null,
-      summarizationPrompt: cached.userSummarizationPrompt ?? null,
-      narrationModel: cached.userNarrationModel ?? null,
+      summarizationModel: cached.userSummarizationModel,
+      summarizationMaxWords: cached.userSummarizationMaxWords,
+      summarizationPrompt: cached.userSummarizationPrompt,
+      narrationModel: cached.userNarrationModel,
       tosAgreedAt: cached.userTosAgreedAt ? new Date(cached.userTosAgreedAt) : null,
       privacyPolicyAgreedAt: cached.userPrivacyPolicyAgreedAt
         ? new Date(cached.userPrivacyPolicyAgreedAt)
@@ -309,9 +309,11 @@ function deserializeFromCache(data: string): SessionData {
       savedUnreadCount: 0,
       starredUnreadCount: 0,
     },
-    hasGroqApiKey: cached.userHasGroqApiKey ?? false,
-    hasAnthropicApiKey: cached.userHasAnthropicApiKey ?? false,
-    hasCerebrasApiKey: cached.userHasCerebrasApiKey ?? false,
+    hasGroqApiKey: cached.userHasGroqApiKey,
+    hasAnthropicApiKey: cached.userHasAnthropicApiKey,
+    hasCerebrasApiKey: cached.userHasCerebrasApiKey,
+    // Fallback for entries written by a release predating the field (#1416,
+    // 2026-09-27) during a rollback/roll-forward window.
     hasOpenrouterApiKey: cached.userHasOpenrouterApiKey ?? false,
   };
 }

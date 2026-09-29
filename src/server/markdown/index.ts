@@ -20,11 +20,6 @@
 import { renderMarkdown, renderMarkdownAsync } from "@lion-reader/markdown";
 import type { MarkdownLimits, RenderedMarkdown } from "@lion-reader/markdown";
 import { parse as parseYaml } from "yaml";
-import {
-  DEFAULT_MAX_MARKDOWN_INPUT_BYTES,
-  DEFAULT_MAX_RENDERED_MARKDOWN_BYTES,
-  usageLimitsConfig,
-} from "@/server/config/env";
 import { extractAndStripTitleHeader } from "@/server/html/strip-title-header";
 import { startMarkdownRenderTimer } from "@/server/metrics/metrics";
 import { errors } from "@/server/trpc/errors";
@@ -39,8 +34,6 @@ export interface Frontmatter {
   description?: string;
   /** Author from frontmatter */
   author?: string;
-  /** Raw frontmatter object for future extensibility */
-  raw: Record<string, unknown>;
 }
 
 /**
@@ -110,7 +103,7 @@ export function extractFrontmatter(markdown: string): FrontmatterResult {
  * Builds a Frontmatter object from a parsed key-value record.
  */
 function buildFrontmatter(raw: Record<string, unknown>): Frontmatter {
-  const frontmatter: Frontmatter = { raw };
+  const frontmatter: Frontmatter = {};
 
   if (typeof raw.title === "string" && raw.title.trim()) {
     frontmatter.title = raw.title.trim();
@@ -170,33 +163,14 @@ function parseFrontmatterLenient(yaml: string): Record<string, string> | null {
 const RENDER_INLINE_MAX_CHARS = 10 * 1024;
 
 /**
- * The budgets cross the N-API boundary as `u32`, which turns a bad env var into
- * a silently wrong limit rather than an error: a malformed
- * `MAX_MARKDOWN_INPUT_BYTES` parses to `NaN` and arrives as `0` (rejecting every
- * document), and anything past 4 GB wraps. Nothing downstream would report
- * either, so clamp here — an out-of-range value falls back to the documented
- * default instead of quietly becoming a different limit.
+ * The Markdown size budgets: 1 MB of source and 5 MB of rendered HTML. The
+ * source budget is deliberately well below the saved-article page limit,
+ * because Markdown grows on the way to HTML (see {@link unwrapRendered}).
  */
-const MAX_BUDGET_BYTES = 0xffff_ffff;
-
-function budget(configured: number, fallback: number): number {
-  return Number.isInteger(configured) && configured > 0 && configured <= MAX_BUDGET_BYTES
-    ? configured
-    : fallback;
-}
-
-function renderLimits(): MarkdownLimits {
-  return {
-    maxInputBytes: budget(
-      usageLimitsConfig.maxMarkdownInputBytes,
-      DEFAULT_MAX_MARKDOWN_INPUT_BYTES
-    ),
-    maxOutputBytes: budget(
-      usageLimitsConfig.maxRenderedMarkdownBytes,
-      DEFAULT_MAX_RENDERED_MARKDOWN_BYTES
-    ),
-  };
-}
+const RENDER_LIMITS: MarkdownLimits = {
+  maxInputBytes: 1024 * 1024,
+  maxOutputBytes: 5 * 1024 * 1024,
+};
 
 /**
  * Turns a budget rejection into the same user-facing "content too large" error
@@ -207,14 +181,14 @@ function renderLimits(): MarkdownLimits {
  * raw-bytes check on the way in can still blow up on the way out. Checking
  * afterwards meant paying for the whole expansion first (#1431).
  */
-function unwrapRendered(result: RenderedMarkdown, limits: MarkdownLimits): string {
+function unwrapRendered(result: RenderedMarkdown): string {
   if (result.limitExceeded === undefined) {
     return result.html;
   }
   if (result.limitExceeded === "input") {
-    throw errors.contentTooLarge("Markdown content", limits.maxInputBytes);
+    throw errors.contentTooLarge("Markdown content", RENDER_LIMITS.maxInputBytes);
   }
-  throw errors.contentTooLarge("Rendered Markdown content", limits.maxOutputBytes);
+  throw errors.contentTooLarge("Rendered Markdown content", RENDER_LIMITS.maxOutputBytes);
 }
 
 /**
@@ -223,10 +197,9 @@ function unwrapRendered(result: RenderedMarkdown, limits: MarkdownLimits): strin
  * which keeps the budget handling and timing in one place.
  */
 function renderInline(markdown: string): string {
-  const limits = renderLimits();
   const stopTimer = startMarkdownRenderTimer();
   try {
-    return unwrapRendered(renderMarkdown(markdown, limits), limits);
+    return unwrapRendered(renderMarkdown(markdown, RENDER_LIMITS));
   } finally {
     stopTimer();
   }
@@ -249,10 +222,9 @@ export async function markdownToHtmlAsync(markdown: string): Promise<string> {
     return renderInline(markdown);
   }
 
-  const limits = renderLimits();
   const stopTimer = startMarkdownRenderTimer();
   try {
-    return unwrapRendered(await renderMarkdownAsync(markdown, limits), limits);
+    return unwrapRendered(await renderMarkdownAsync(markdown, RENDER_LIMITS));
   } finally {
     stopTimer();
   }

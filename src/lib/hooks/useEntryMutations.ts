@@ -15,7 +15,7 @@ import { useCallback, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { setCounts, setBulkCounts } from "@/lib/cache/operations";
+import { setBulkCounts } from "@/lib/cache/operations";
 import {
   getCachedEntryState,
   updateEntriesReadStatus,
@@ -207,8 +207,12 @@ export function useEntryMutations(): UseEntryMutationsResult {
         starred: data.entry.starred,
         updatedAt: data.entry.updatedAt,
       });
-      if (data.counts) {
-        setCounts(utils, data.counts, queryClient);
+      // Array check: a server from the previous release (canary/rollback
+      // window) returns the single-subscription counts shape, which lacks
+      // `subscriptions`; skip it and let the entry_state_changed event, which
+      // always carries the bulk shape, set the counts.
+      if (data.counts && Array.isArray(data.counts.subscriptions)) {
+        setBulkCounts(utils, data.counts, queryClient);
       }
     },
 

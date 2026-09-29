@@ -518,12 +518,6 @@ export interface GoogleDocsContent {
   title: string;
   /** HTML content converted from document structure */
   html: string;
-  /** Author (null for public API, may be available with OAuth) */
-  author: string | null;
-  /** Creation date (null for public API) */
-  createdAt: Date | null;
-  /** Last modified date (null for public API) */
-  modifiedAt: Date | null;
 }
 
 /**
@@ -535,9 +529,6 @@ function driveContentToDocsContent(content: GoogleDriveContent): GoogleDocsConte
     docId: content.fileId,
     title: content.title,
     html: content.html,
-    author: null,
-    createdAt: null,
-    modifiedAt: null,
   };
 }
 
@@ -1361,9 +1352,6 @@ async function fetchGoogleDocWithToken(
           docId: doc.documentId,
           title: doc.title,
           html,
-          author: null,
-          createdAt: null,
-          modifiedAt: null,
         };
       }
     }

@@ -61,15 +61,15 @@ describe("isResourceForThisServer", () => {
   });
 
   describe("with a list of accepted identifiers", () => {
-    // The canonical resource is the MCP endpoint, but the bare origin is kept as
-    // an accepted audience for tokens minted before the identifier change.
+    // The canonical resource is the MCP endpoint, but /oauth/authorize also
+    // accepts the bare origin as a requested resource.
     const ACCEPTED = ["https://reader.example.com/api/mcp", "https://reader.example.com"];
 
     it("matches the canonical MCP-endpoint identifier", () => {
       expect(isResourceForThisServer("https://reader.example.com/api/mcp", ACCEPTED)).toBe(true);
     });
 
-    it("matches the legacy origin identifier (backward compat)", () => {
+    it("matches the origin identifier", () => {
       expect(isResourceForThisServer("https://reader.example.com", ACCEPTED)).toBe(true);
       expect(isResourceForThisServer("https://reader.example.com/", ACCEPTED)).toBe(true);
     });

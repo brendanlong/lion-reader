@@ -49,8 +49,6 @@ export const googleDocsPlugin: UrlPlugin = {
             // would leak the doc title as stray text above the content.
             html: content.html,
             title,
-            author: content.author || null,
-            publishedAt: content.modifiedAt || null,
             canonicalUrl: canonical,
           };
         } catch (error) {

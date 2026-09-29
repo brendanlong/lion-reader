@@ -921,7 +921,6 @@ async function acquireArticleContent(
         pluginContent: {
           html: googleDocsContent.html,
           title: googleDocsContent.title,
-          author: googleDocsContent.author,
           siteName: "Google Docs",
           skipReadability: true,
         },

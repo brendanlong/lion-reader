@@ -66,7 +66,7 @@ describe("createSavedFromUpload (HTML)", () => {
   it("stores a null URL and an uploaded: guid", async () => {
     const userId = await createUser();
     const converted = await convertUploadedFile(
-      `<html><head><title>Doc Title</title></head><body>${ARTICLE_BODY}</body></html>`,
+      Buffer.from(`<html><head><title>Doc Title</title></head><body>${ARTICLE_BODY}</body></html>`),
       "notes.html"
     );
     const article = await createSavedFromUpload(db, userId, { converted });
@@ -80,7 +80,9 @@ describe("createSavedFromUpload (HTML)", () => {
   it("prefers a provided title over the document title", async () => {
     const userId = await createUser();
     const converted = await convertUploadedFile(
-      `<html><head><title>Document Title</title></head><body>${ARTICLE_BODY}</body></html>`,
+      Buffer.from(
+        `<html><head><title>Document Title</title></head><body>${ARTICLE_BODY}</body></html>`
+      ),
       "notes.html"
     );
     const article = await createSavedFromUpload(db, userId, { converted, title: "Caller Title" });
@@ -91,7 +93,7 @@ describe("createSavedFromUpload (HTML)", () => {
     const userId = await createUser();
     // No <title> and no heading Readability would pick up as a title.
     const converted = await convertUploadedFile(
-      `<html><body>${ARTICLE_BODY}</body></html>`,
+      Buffer.from(`<html><body>${ARTICLE_BODY}</body></html>`),
       "My_Great-Notes.html"
     );
     const article = await createSavedFromUpload(db, userId, { converted });
@@ -101,7 +103,7 @@ describe("createSavedFromUpload (HTML)", () => {
   it("rewrites relative URLs against the dummy upload base (not Lion Reader)", async () => {
     const userId = await createUser();
     const converted = await convertUploadedFile(
-      `<html><body>${ARTICLE_BODY}</body></html>`,
+      Buffer.from(`<html><body>${ARTICLE_BODY}</body></html>`),
       "notes.html"
     );
     const article = await createSavedFromUpload(db, userId, { converted });
@@ -121,7 +123,7 @@ describe("createSavedFromUpload (HTML)", () => {
     // save behaves on a page Readability can't parse: store the original, serve
     // `cleaned ?? original` on read.
     const converted = await convertUploadedFile(
-      "<html><body><p>Too short.</p></body></html>",
+      Buffer.from("<html><body><p>Too short.</p></body></html>"),
       "tiny.html"
     );
     const article = await createSavedFromUpload(db, userId, { converted });
@@ -141,7 +143,7 @@ describe("createSavedFromUpload (HTML)", () => {
       '<meta name="author" content="Ada Lovelace">' +
       "<title>OG Doc</title></head>" +
       `<body>${ARTICLE_BODY}</body></html>`;
-    const converted = await convertUploadedFile(html, "og.html");
+    const converted = await convertUploadedFile(Buffer.from(html), "og.html");
     const article = await createSavedFromUpload(db, userId, { converted });
 
     expect(article.author).toBe("Ada Lovelace");

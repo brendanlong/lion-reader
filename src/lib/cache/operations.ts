@@ -281,19 +281,7 @@ export function handleSubscriptionDeleted(
 // ============================================================================
 
 /**
- * Unread counts for a single entry, as returned by star/unstar mutations.
- */
-export interface UnreadCounts {
-  all: { unread: number };
-  starred: { unread: number };
-  saved?: { unread: number };
-  subscription?: { id: string; unread: number };
-  tags?: Array<{ id: string; unread: number }>;
-  uncategorized?: { unread: number };
-}
-
-/**
- * Bulk unread counts, as returned by markRead mutation.
+ * Bulk unread counts, as returned by the markRead and setStarred mutations.
  */
 export interface BulkUnreadCounts {
   all: { unread: number };
@@ -305,48 +293,10 @@ export interface BulkUnreadCounts {
 }
 
 /**
- * Sets absolute counts from server response.
- * Used by single-entry mutations (star, unstar) that return UnreadCounts.
- *
- * @param utils - tRPC utils for cache access
- * @param counts - Absolute counts from server
- * @param queryClient - React Query client for updating infinite query caches
- */
-export function setCounts(
-  utils: TRPCClientUtils,
-  counts: UnreadCounts,
-  queryClient?: QueryClient
-): void {
-  // Set global counts
-  utils.entries.count.setData({}, counts.all);
-  utils.entries.count.setData({ starredOnly: true }, counts.starred);
-
-  if (counts.saved) {
-    utils.entries.count.setData({ type: "saved" }, counts.saved);
-  }
-
-  // Set subscription unread count
-  if (counts.subscription) {
-    setSubscriptionUnreadCount(counts.subscription.id, counts.subscription.unread, queryClient);
-  }
-
-  // Set tag unread counts
-  if (counts.tags) {
-    for (const tag of counts.tags) {
-      setTagUnreadCount(utils, tag.id, tag.unread);
-    }
-  }
-
-  // Set uncategorized count
-  if (counts.uncategorized) {
-    setUncategorizedUnreadCount(utils, counts.uncategorized.unread);
-  }
-}
-
-/**
- * Sets absolute counts from a bulk mutation response (markRead) or a
- * count-bearing realtime event. `saved` is optional: markRead always provides
- * it, but web/email events omit it and the write is skipped in that case.
+ * Sets absolute counts from an entry mutation response (markRead, setStarred)
+ * or a count-bearing realtime event. `saved` is optional: the server always
+ * provides it, but events from a previous release may omit it (web/email
+ * entries), in which case the write is skipped.
  *
  * @param utils - tRPC utils for cache access
  * @param counts - Absolute counts from server (saved optional)
@@ -395,7 +345,7 @@ export function setBulkCounts(
 /**
  * Counts carried by count-bearing realtime events (new_entry,
  * entry_state_changed). Same shape as BulkUnreadCounts but `saved` is optional,
- * since web/email events don't compute the saved count.
+ * since a previous release omitted it from web/email events.
  */
 export type EntryRelatedCounts = Omit<BulkUnreadCounts, "saved"> & {
   saved?: { unread: number };
@@ -404,8 +354,8 @@ export type EntryRelatedCounts = Omit<BulkUnreadCounts, "saved"> & {
 /**
  * Applies absolute unread counts from a count-bearing realtime event.
  *
- * Fills in `saved` from the current cache when the event omits it (web/email
- * events don't compute the saved count) so setBulkCounts doesn't clobber the
+ * Fills in `saved` from the current cache when the event omits it (events
+ * from a previous release didn't compute it for web/email entries) so setBulkCounts doesn't clobber the
  * client's existing saved count with a wrong value. Because every value is set
  * absolutely, applying the same event twice — e.g. once from the live SSE
  * stream and once from a reconnect catch-up sync — leaves counts correct.
@@ -483,26 +433,6 @@ function setBulkSubscriptionUnreadCounts(
         }),
       })),
     });
-  }
-}
-
-/**
- * Sets the unread count for a specific subscription.
- * Used by single-entry mutations (setCounts) where we don't know the affected tags.
- */
-function setSubscriptionUnreadCount(
-  subscriptionId: string,
-  unread: number,
-  queryClient?: QueryClient
-): void {
-  // Update in per-tag infinite query caches
-  // Note: For single-entry mutations, we still need to scan all caches
-  // since we don't have the affected tag IDs. This is acceptable because
-  // single-entry mutations (star/unstar) are less frequent than markRead.
-  if (queryClient) {
-    mapSubscriptionListsContaining(queryClient, subscriptionId, (items) =>
-      items.map((s) => (s.id === subscriptionId ? { ...s, unreadCount: unread } : s))
-    );
   }
 }
 

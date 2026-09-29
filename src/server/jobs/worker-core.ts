@@ -13,8 +13,7 @@ import type { Job } from "../db/schema";
 /**
  * Function type for claiming a job from the queue.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type ClaimJobFn = (options?: { types?: any }) => Promise<Job | null>;
+export type ClaimJobFn = () => Promise<Job | null>;
 
 /**
  * Function type for processing a claimed job.
@@ -112,7 +111,6 @@ interface InternalWorkerConfig {
   pollIntervalMs: number;
   concurrency: number;
   jobTimeoutMs?: number;
-  jobTypes?: string[];
   logger: WorkerLogger;
   claimJob: ClaimJobFn;
   processJob: ProcessJobFn;
@@ -149,7 +147,6 @@ export function createWorkerCore(config: InternalWorkerConfig): Worker {
     pollIntervalMs,
     concurrency,
     jobTimeoutMs,
-    jobTypes,
     logger,
     claimJob,
     processJob,
@@ -218,7 +215,7 @@ export function createWorkerCore(config: InternalWorkerConfig): Worker {
       while (state.currentlyExecuting.size < concurrency && !state.shuttingDown) {
         let job: Job | null;
         try {
-          job = await claimJob({ types: jobTypes });
+          job = await claimJob();
         } catch (error) {
           // A failure while claiming — most importantly a DB connection dropped
           // by a Postgres restart ("Connection terminated unexpectedly") — must
@@ -324,7 +321,6 @@ export function createWorkerCore(config: InternalWorkerConfig): Worker {
     logger.info("Worker starting", {
       pollIntervalMs,
       concurrency,
-      jobTypes: jobTypes ?? "all",
     });
 
     // Start the run loop (don't await - runs in background). Attach a catch so a

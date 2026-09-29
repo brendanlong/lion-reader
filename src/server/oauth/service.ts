@@ -25,12 +25,11 @@ import {
   getRefreshTokenExpiry,
   getAuthCodeExpiry,
   isValidRedirectUriFormat,
-  isResourceForThisServer,
   parseScopes,
   OAUTH_SCOPES,
   SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS,
 } from "./utils";
-import { getIssuer, getRegistrationClientUri, getResourceIdentifier } from "./config";
+import { getRegistrationClientUri } from "./config";
 import { logger } from "@/lib/logger";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { fetchWithSsrfProtection } from "@/server/http/ssrf";
@@ -563,26 +562,16 @@ export async function rotateRefreshToken(
         .where(eq(oauthAccessTokens.id, oldRefreshToken.accessTokenId));
     }
 
-    // Preserve the token's own audience across rotation, migrating only the
-    // legacy bare-origin MCP audience to the canonical /api/mcp identifier. That
-    // migration lets the legacy origin alias age out instead of self-perpetuating
-    // (see getAcceptedResourceIdentifiers), but it must not blanket-stamp every
-    // rotated token with the MCP audience: the Wallabag compat API shares this
+    // Preserve the token's own audience across rotation. Don't stamp the MCP
+    // audience onto every rotated token: the Wallabag compat API shares this
     // rotation path and mints tokens with a null resource, so forcing the MCP
-    // identifier would mislabel a Wallabag credential as MCP-audienced. Anything
-    // that isn't the legacy origin (the canonical MCP identifier, or a null
-    // Wallabag audience) is carried forward unchanged.
-    const existingResource = oldRefreshToken.resource;
-    const reboundResource =
-      existingResource !== null && isResourceForThisServer(existingResource, getIssuer())
-        ? getResourceIdentifier()
-        : existingResource;
+    // identifier would mislabel a Wallabag credential as MCP-audienced.
     const created = await createTokens(
       {
         clientId: oldRefreshToken.clientId,
         userId: oldRefreshToken.userId,
         scopes: oldRefreshToken.scopes,
-        resource: reboundResource,
+        resource: oldRefreshToken.resource,
       },
       tx
     );

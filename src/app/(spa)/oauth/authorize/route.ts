@@ -210,10 +210,8 @@ export async function GET(request: NextRequest) {
     );
   }
   // Any client-supplied resource has been validated as an alias of this server
-  // above, so bind the token to the canonical identifier for THIS host in all
-  // cases (apex → /api/mcp, MCP host → /mcp). Newly minted tokens therefore
-  // never carry the legacy origin audience, which lets that accepted alias age
-  // out of circulation.
+  // above, so bind the token to the canonical identifier in all cases —
+  // /api/mcp accepts only that audience.
   const effectiveResource = getResourceIdentifier();
 
   // Check if user is authenticated
@@ -360,9 +358,8 @@ export async function POST(request: NextRequest) {
     );
   }
   // Any client-supplied resource has been validated as an alias of this server
-  // above, so bind the token to the canonical identifier for THIS host in all
-  // cases. Newly minted tokens therefore never carry the legacy origin audience,
-  // which lets that accepted alias age out of circulation.
+  // above, so bind the token to the canonical identifier in all cases —
+  // /api/mcp accepts only that audience.
   const effectiveResource = getResourceIdentifier();
 
   // Handle user decision

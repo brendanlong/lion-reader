@@ -158,25 +158,7 @@ const entryMutationResultSchema = z.object({
 });
 
 /**
- * Schema for unread counts returned from single-entry mutations.
- * Contains absolute counts for all lists the entry belongs to.
- */
-const unreadCountsSchema = z.object({
-  // Always present
-  all: z.object({ unread: z.number() }),
-  starred: z.object({ unread: z.number() }),
-
-  // Only for saved articles
-  saved: z.object({ unread: z.number() }).optional(),
-
-  // Only for web/email entries (have subscriptions)
-  subscription: z.object({ id: z.string(), unread: z.number() }).optional(),
-  tags: z.array(z.object({ id: z.string(), unread: z.number() })).optional(),
-  uncategorized: z.object({ unread: z.number() }).optional(),
-});
-
-/**
- * Schema for unread counts returned from bulk mutations (markRead).
+ * Schema for unread counts returned from entry mutations (markRead, setStarred).
  * Contains absolute counts for all affected lists.
  */
 const bulkUnreadCountsSchema = z.object({
@@ -203,7 +185,7 @@ const setStarredOutputSchema = z.object({
   entry: entryMutationResultSchema,
   // Absent when the starred value didn't actually flip (same-value re-assert)
   // — the client's cached counts are already correct (issue #1118).
-  counts: unreadCountsSchema.optional(),
+  counts: bulkUnreadCountsSchema.optional(),
 });
 
 // ============================================================================

@@ -510,13 +510,6 @@ function finishCleaned(
     return null;
   }
 
-  // The fast is-probably-readable heuristic is informational only — the old
-  // pipeline also continued on a negative result (feed content might still
-  // be extractable), so extraction always ran; keep the log for parity.
-  if (!article.probablyReadable) {
-    logger.debug("Content is probably not readable", { url });
-  }
-
   // Ensure we have content
   if (!article.content || article.content.trim().length === 0) {
     logger.debug("Readability returned empty content", { url });

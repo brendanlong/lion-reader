@@ -785,6 +785,13 @@
       "when": 1782954500000,
       "tag": "0112_jobs_full_content_pending_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1782954600000,
+      "tag": "0113_drop_prefix_indexes",
+      "breakpoints": true
     }
   ]
 }

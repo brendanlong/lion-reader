@@ -46,9 +46,10 @@ export function getProtectedResourceMetadataUrl(): string {
 }
 
 /**
- * Resource identifiers accepted as audience for this server: the canonical
- * MCP-endpoint resource plus the bare origin (the pre-2026-07 canonical value;
- * tokens minted then carry it, kept until they expire).
+ * Resource indicators a client may request at `/oauth/authorize`: the canonical
+ * MCP-endpoint resource plus the bare origin (both name this server). The
+ * minted token is always bound to the canonical identifier, so `/api/mcp`
+ * accepts only that audience.
  */
 export function getAcceptedResourceIdentifiers(): string[] {
   const issuer = getIssuer();

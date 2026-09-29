@@ -193,7 +193,7 @@ describe("createDemoStore", () => {
       expect(result.entry).toMatchObject({ id: "opml", starred: true, read: false });
       expect(result.counts).toMatchObject({
         starred: { unread: STARRED + 1 },
-        subscription: { id: "organization" },
+        subscriptions: [{ id: "organization", unread: expect.any(Number) }],
         tags: [{ id: "features", unread: expect.any(Number) }],
       });
       // Re-asserting the same value changes nothing and reports no counts.

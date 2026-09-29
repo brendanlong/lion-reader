@@ -51,18 +51,14 @@ type RateLimitFallback = "open" | "memory";
 const inMemoryBuckets = new Map<string, BucketState>();
 const IN_MEMORY_MAX_KEYS = 10_000;
 
-function checkInMemoryRateLimit(
-  identifier: string,
-  type: RateLimitType,
-  cost: number
-): ConsumeResult {
+function checkInMemoryRateLimit(identifier: string, type: RateLimitType): ConsumeResult {
   const config = RATE_LIMIT_CONFIGS[type];
   const nowMs = Date.now();
   const key = getRateLimitKey(identifier, type);
 
   const existing = inMemoryBuckets.get(key);
   const bucket = existing ?? createBucket(config, nowMs);
-  const { result, newState } = consumeToken(bucket, config, nowMs, cost);
+  const { result, newState } = consumeToken(bucket, config, nowMs);
 
   // Evict the oldest entry before inserting a new key past the cap.
   if (!existing && inMemoryBuckets.size >= IN_MEMORY_MAX_KEYS) {
@@ -84,11 +80,11 @@ function checkInMemoryRateLimit(
  * This script:
  * 1. Gets or initializes the bucket state
  * 2. Refills tokens based on elapsed time
- * 3. Attempts to consume the requested tokens
+ * 3. Attempts to consume one token
  * 4. Returns the result (allowed, remaining, reset time, retry after)
  *
  * Keys: [bucket_key]
- * Args: [capacity, refill_rate, now_ms, cost]
+ * Args: [capacity, refill_rate, now_ms]
  * Returns: [allowed (0/1), remaining, reset_ms, retry_after_seconds]
  */
 const TOKEN_BUCKET_SCRIPT = `
@@ -96,7 +92,6 @@ local key = KEYS[1]
 local capacity = tonumber(ARGV[1])
 local refill_rate = tonumber(ARGV[2])
 local now_ms = tonumber(ARGV[3])
-local cost = tonumber(ARGV[4])
 
 -- Get current state or initialize
 local data = redis.call('HMGET', key, 'tokens', 'last_refill_ms')
@@ -122,36 +117,24 @@ local tokens_to_full = capacity - tokens
 local time_to_full_ms = (tokens_to_full / refill_rate) * 1000
 local reset_ms = now_ms + time_to_full_ms
 
--- Check if we can consume tokens
+-- Check if we can consume a token
 local allowed = 0
 local remaining = 0
 local retry_after_seconds = 0
 
-if tokens >= cost then
-  -- Consume tokens
-  tokens = tokens - cost
+if tokens >= 1 then
+  tokens = tokens - 1
   allowed = 1
   remaining = math.floor(tokens)
-  retry_after_seconds = 0
-
-  -- Update bucket state
-  redis.call('HSET', key, 'tokens', tokens, 'last_refill_ms', last_refill_ms)
-
-  -- Set expiry to prevent stale keys (bucket full time + buffer)
-  local ttl_seconds = math.ceil(capacity / refill_rate) + 60
-  redis.call('EXPIRE', key, ttl_seconds)
 else
   -- Rate limited - calculate retry after
-  local tokens_needed = cost - tokens
-  retry_after_seconds = math.ceil((tokens_needed / refill_rate))
-
-  -- Still update the refill timestamp
-  redis.call('HSET', key, 'tokens', tokens, 'last_refill_ms', last_refill_ms)
-
-  -- Set expiry
-  local ttl_seconds = math.ceil(capacity / refill_rate) + 60
-  redis.call('EXPIRE', key, ttl_seconds)
+  retry_after_seconds = math.ceil((1 - tokens) / refill_rate)
 end
+
+-- Store the bucket state (a rejection still advances the refill timestamp),
+-- expiring stale keys after the bucket-full time plus a buffer
+redis.call('HSET', key, 'tokens', tokens, 'last_refill_ms', last_refill_ms)
+redis.call('EXPIRE', key, math.ceil(capacity / refill_rate) + 60)
 
 return {allowed, remaining, reset_ms, retry_after_seconds}
 `;
@@ -161,13 +144,11 @@ return {allowed, remaining, reset_ms, retry_after_seconds}
  *
  * @param identifier - User ID or IP address
  * @param type - Type of rate limit to apply
- * @param cost - Number of tokens to consume (default: 1)
  * @returns ConsumeResult with allowed status and rate limit info
  */
 export async function checkRateLimit(
   identifier: string,
   type: RateLimitType = "default",
-  cost: number = 1,
   options: { fallback?: RateLimitFallback } = {}
 ): Promise<ConsumeResult> {
   const redis = getRedisClient();
@@ -176,7 +157,7 @@ export async function checkRateLimit(
 
   const applyFallback = (): ConsumeResult => {
     if (fallback === "memory") {
-      return checkInMemoryRateLimit(identifier, type, cost);
+      return checkInMemoryRateLimit(identifier, type);
     }
     // Permissive mode: favor availability when the limiter is degraded.
     return {
@@ -202,8 +183,7 @@ export async function checkRateLimit(
       key,
       config.capacity,
       config.refillRate,
-      nowMs,
-      cost
+      nowMs
     )) as [number, number, number, number];
 
     const [allowed, remaining, resetMs, retryAfterSeconds] = result;
@@ -336,7 +316,7 @@ export async function checkAccountRateLimit(email: string): Promise<ConsumeResul
   // Fail to a per-process in-memory bucket rather than fully open: this is the
   // shared-per-account guard against distributed password brute-force, and it
   // must keep bounding guesses even while Redis is degraded.
-  return checkRateLimit(getAccountRateLimitIdentifier(email), "expensive", 1, {
+  return checkRateLimit(getAccountRateLimitIdentifier(email), "expensive", {
     fallback: "memory",
   });
 }

@@ -1,6 +1,6 @@
 # Lion Reader MCP Server
 
-Model Context Protocol (MCP) server exposing Lion Reader to AI assistants. See the [Design Document](../../../docs/DESIGN.md#mcp-server) for architecture; tools are defined in `tools.ts` (shared by both transports) and call the services layer (`src/server/services/`).
+Model Context Protocol (MCP) server exposing Lion Reader to AI assistants. See the [Design Document](../../../docs/DESIGN.md#mcp-server) for architecture; both transports serve the server built by `server.ts`, whose tools are defined in `tools.ts` and call the services layer (`src/server/services/`).
 
 ## Transports
 
@@ -17,7 +17,7 @@ Remote clients (e.g. claude.ai) connect to `https://your-app/api/mcp` and authen
 pnpm mcp:serve
 ```
 
-The stdio transport has no authentication layer — it acts as the single user configured via `LION_READER_USER_ID` (a `users.id` UUID). Claude Desktop config:
+The stdio transport has no authentication layer — it acts as the single user configured via `LION_READER_USER_ID` (a `users.id` UUID), and refuses to start without it. Claude Desktop config:
 
 ```json
 {
