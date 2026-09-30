@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#FFF59E0B</color>
+    <!-- The web's maskable-icon blue; the layers come from kmp/scripts/app-icon.py. -->
+    <color name="ic_launcher_background">#FF448AFF</color>
 </resources>
