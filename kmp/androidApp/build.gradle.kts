@@ -17,8 +17,10 @@ android {
         applicationId = "com.lionreader.app"
         minSdk = libs.versions.androidMinSdk.get().toInt()
         targetSdk = libs.versions.androidTargetSdk.get().toInt()
-        versionCode = 1
-        versionName = "0.1.0"
+        // Release builds get both from their android-v<version> tag (see
+        // .github/workflows/android-release.yml).
+        versionCode = providers.gradleProperty("lionReaderVersionCode").orNull?.toInt() ?: 1
+        versionName = providers.gradleProperty("lionReaderVersionName").orNull ?: "0.1.0"
         // The host whose /oauth/app-callback the app claims as an App Link.
         // Point a debug build at a dev server with -PappLinkHost=<host>.
         manifestPlaceholders["appLinkHost"] =
@@ -39,11 +41,32 @@ android {
         }
     }
 
+    // The release (upload) key, from CI secrets. Without it, release builds are
+    // unsigned.
+    val releaseKeystore = providers.gradleProperty("lionReaderReleaseKeystore").orNull
+    val releaseSigning = releaseKeystore?.let {
+        signingConfigs.create("release") {
+            storeFile = file(it)
+            storePassword = providers.gradleProperty("lionReaderReleaseKeystorePassword").get()
+            keyAlias = providers.gradleProperty("lionReaderReleaseKeyAlias").get()
+            keyPassword = providers.gradleProperty("lionReaderReleaseKeyPassword").get()
+        }
+    }
+
     buildTypes {
         debug {
             // Installs alongside the release app.
             applicationIdSuffix = ".debug"
             devSigning?.let { signingConfig = it }
+        }
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+            releaseSigning?.let { signingConfig = it }
         }
     }
 

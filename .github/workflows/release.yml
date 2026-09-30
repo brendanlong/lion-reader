@@ -27,7 +27,8 @@ jobs:
           # Use the most recent GitHub release as the "since" marker. Its
           # creation date bounds the commit/PR window, and its body is fed back
           # to the model so it doesn't repeat the previous week's notes.
-          LATEST_TAG=$(gh release list --repo "$REPO" --limit 1 --json tagName --jq '.[0].tagName // empty')
+          # The weekly releases only: the app's android-v* releases are separate.
+          LATEST_TAG=$(gh release list --repo "$REPO" --limit 30 --json tagName --jq '[.[] | select(.tagName | startswith("android-") | not)][0].tagName // empty')
           if [ -n "$LATEST_TAG" ]; then
             SINCE_DATE=$(gh release view "$LATEST_TAG" --repo "$REPO" --json createdAt --jq '.createdAt' | cut -dT -f1)
             gh release view "$LATEST_TAG" --repo "$REPO" --json body --jq '.body // ""' > /tmp/previous_changelog.txt

@@ -41,8 +41,10 @@ jobs:
 
       # The runner image's Android SDK has its licenses accepted, so AGP
       # installs the compile SDK / build tools it needs on first use.
+      # The release build (unsigned here) runs R8, so shrinking problems show
+      # up in pull requests rather than at release time.
       - name: Check and assemble
-        run: ./gradlew check assembleDebug
+        run: ./gradlew check assembleDebug assembleRelease
 
       - name: Upload reports
         if: failure()
