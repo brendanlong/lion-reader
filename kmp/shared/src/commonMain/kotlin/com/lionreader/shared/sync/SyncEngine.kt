@@ -214,7 +214,7 @@ class SyncEngine(
         // can arrive as a state change only, and one created and then changed
         // as an update rather than new. Fetching whole every entry the device
         // lacks — and, on those later pages, every one it has — keeps it
-        // exact. (A single page, the usual case, needs only the former.)
+        // exact.
         val refetch = writer.catchUpInProgress
         // A new-entry event with its data is complete for an entry the device
         // lacks. One it already has was listed by a bootstrap that began

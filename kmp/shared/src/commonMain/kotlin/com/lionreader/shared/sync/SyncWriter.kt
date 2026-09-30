@@ -20,8 +20,8 @@ internal class PulledPage(
     val hasMore: Boolean,
     /**
      * Entries fetched whole, as the server has them now: ones the events mention that aren't on the
-     * device, and (while a catch-up is past its first page) ones that are, whose edits the events
-     * may not report. See [SyncEngine] `fetchPage`.
+     * device, and ones that are but whose edits the events may not report (new-entry events, and
+     * every event while a catch-up is past its first page). See [SyncEngine] `fetchPage`.
      */
     val fetchedEntries: List<FullEntry>,
     /** Older entries of feeds the page resubscribes to (they predate the cursor). */

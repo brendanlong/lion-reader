@@ -25,7 +25,7 @@ CREATE TABLE entry (
   body_version INTEGER NOT NULL
 );
 
--- Never reset (not even by a resync or sign-out), so no entry gets back a
+-- Never reset (not even by clearSynced or clearAll), so no entry gets back a
 -- version an in-flight download started at.
 CREATE TABLE body_version_seq (
   value INTEGER NOT NULL
