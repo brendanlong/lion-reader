@@ -176,6 +176,57 @@ describe("app token authentication", () => {
   });
 });
 
+describe("GET /auth/me", () => {
+  it("tells the app which account its token belongs to", async () => {
+    const userId = await createUser();
+    const res = await rest(await appToken(userId), "GET", "/auth/me");
+    expect(res.status).toBe(200);
+    expect((await res.json()).user.id).toBe(userId);
+  });
+
+  it("works before signup confirmation, unlike the reader endpoints", async () => {
+    const userId = await createTestUser({
+      emailPrefix: "app-api-unconfirmed",
+      tosAgreedAt: null,
+      privacyPolicyAgreedAt: null,
+      notEuAgreedAt: null,
+    });
+    createdUserIds.push(userId);
+    const token = await appToken(userId);
+
+    const me = await rest(token, "GET", "/auth/me");
+    expect(me.status).toBe(200);
+    expect((await me.json()).user.tosAgreedAt).toBeNull();
+    const entries = await rest(token, "GET", "/entries");
+    expect(entries.status).toBe(403);
+    expect((await entries.json()).message).toBe(
+      "You must complete signup before accessing this resource"
+    );
+  });
+
+  it("still serves browser sessions, confirmed or not", async () => {
+    for (const confirmed of [true, false]) {
+      const userId = await createTestUser({
+        emailPrefix: "app-api-session",
+        ...(confirmed
+          ? {}
+          : { tosAgreedAt: null, privacyPolicyAgreedAt: null, notEuAgreedAt: null }),
+      });
+      createdUserIds.push(userId);
+      const { token } = await createSession(db, { userId });
+      const res = await rest(token, "GET", "/auth/me");
+      expect(res.status).toBe(200);
+      expect((await res.json()).user.id).toBe(userId);
+    }
+  });
+
+  it("stays closed to MCP API tokens", async () => {
+    const userId = await createUser();
+    const { token } = await createApiToken(userId, ["mcp"]);
+    expect((await rest(token, "GET", "/auth/me")).status).toBe(403);
+  });
+});
+
 describe("/oauth/authorize audience binding", () => {
   async function authorize(userId: string, params: Record<string, string>): Promise<URL> {
     const { token } = await createSession(db, { userId });
