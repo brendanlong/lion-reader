@@ -8,7 +8,7 @@
  * `entries.getMany`, `entries.setStarredMany`, clock-skew rebasing, summaries).
  */
 
-import { describe, it, expect, afterAll } from "vitest";
+import { describe, it, expect, afterAll, afterEach, beforeAll } from "vitest";
 import { NextRequest } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
@@ -22,6 +22,7 @@ import {
 import { createApiToken } from "../../src/server/auth/api-token";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { CURRENT_PROMPT_VERSION } from "../../src/server/services/summarization";
+import { AI_PROVIDER_ENV_KEYS } from "../../src/server/services/ai-providers";
 import { GET as eventsGet } from "../../src/app/api/v1/events/route";
 import { createSession } from "../../src/server/auth/session";
 import { createTokens, recordConsent } from "../../src/server/oauth/service";
@@ -469,7 +470,28 @@ describe("clock-skew rebasing", () => {
 });
 
 describe("summaries", () => {
+  // Summaries are available only with an AI provider key, so the tests control
+  // the server keys rather than inherit whatever the environment has.
+  const savedKeys = new Map<string, string | undefined>();
+  beforeAll(() => {
+    for (const name of Object.values(AI_PROVIDER_ENV_KEYS)) {
+      savedKeys.set(name, process.env[name]);
+      delete process.env[name];
+    }
+  });
+  afterEach(() => {
+    delete process.env.ANTHROPIC_API_KEY;
+  });
+  afterAll(() => {
+    for (const [name, value] of savedKeys) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  });
+
   it("lets the app generate (here: read the cached) summary of an entry", async () => {
+    // Never called: the cached summary is returned first.
+    process.env.ANTHROPIC_API_KEY = "sk-ant-test-server-key";
     const userId = await createUser();
     const [entryId] = await subscribedEntries(userId, 1);
     await db.insert(entrySummaries).values({
@@ -494,10 +516,13 @@ describe("summaries", () => {
   });
 
   it("tells the app whether summaries are available", async () => {
-    const userId = await createUser();
-    const res = await rest(await appToken(userId), "GET", "/summarization/available");
-    expect(res.status).toBe(200);
-    expect(typeof (await res.json()).available).toBe("boolean");
+    const token = await appToken(await createUser());
+    const available = async () =>
+      (await (await rest(token, "GET", "/summarization/available")).json()).available;
+
+    expect(await available()).toBe(false);
+    process.env.ANTHROPIC_API_KEY = "sk-ant-test-server-key";
+    expect(await available()).toBe(true);
   });
 
   it("keeps summary settings session-only", async () => {
