@@ -1,6 +1,7 @@
 package com.lionreader.app.ui
 
 import android.text.format.DateUtils
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -15,6 +16,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DrawerValue
@@ -33,6 +36,8 @@ import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberDrawerState
@@ -44,13 +49,19 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -77,6 +88,8 @@ fun HomeScreen(
     val unreadOnly by model.unreadOnly.collectAsStateWithLifecycle()
     val status by model.status.collectAsStateWithLifecycle()
     val expandedTags by model.expandedTags.collectAsStateWithLifecycle()
+    val search by model.search.collectAsStateWithLifecycle()
+    val searchResults by model.searchResults.collectAsStateWithLifecycle()
     // The entries the confirmation counted; exactly these are marked, so
     // anything a sync adds while the dialog is open isn't marked unseen.
     var markAllIds by remember { mutableStateOf<List<String>?>(null) }
@@ -93,8 +106,12 @@ fun HomeScreen(
         )
     }
 
+    BackHandler(enabled = search != null) { model.setSearch(null) }
+
     ModalNavigationDrawer(
         drawerState = drawer,
+        // Not while searching: the edge swipe would open it from the search box.
+        gesturesEnabled = search == null || drawer.isOpen,
         drawerContent = {
             ModalDrawerSheet {
                 Drawer(
@@ -117,29 +134,47 @@ fun HomeScreen(
         Scaffold(
             bottomBar = bottomBar,
             topBar = {
-                TopAppBar(
-                    title = {
-                        Text(
-                            title(scope, navigation),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = { coroutines.launch { drawer.open() } }) {
-                            Icon(painterResource(R.drawable.ic_menu), contentDescription = "Lists")
-                        }
-                    },
-                    actions = {
-                        ListMenu(
-                            showRead = !unreadOnly,
-                            onShowReadChange = { model.setUnreadOnly(!it) },
-                            onMarkAllRead = {
-                                coroutines.launch { markAllIds = model.unreadInList() }
-                            },
-                        )
-                    },
-                )
+                val text = search
+                if (text != null) {
+                    SearchBar(
+                        text,
+                        onChange = model::setSearch,
+                        onClose = { model.setSearch(null) },
+                    )
+                } else {
+                    TopAppBar(
+                        title = {
+                            Text(
+                                title(scope, navigation),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        },
+                        navigationIcon = {
+                            IconButton(onClick = { coroutines.launch { drawer.open() } }) {
+                                Icon(
+                                    painterResource(R.drawable.ic_menu),
+                                    contentDescription = "Lists",
+                                )
+                            }
+                        },
+                        actions = {
+                            IconButton(onClick = { model.setSearch("") }) {
+                                Icon(
+                                    painterResource(R.drawable.ic_search),
+                                    contentDescription = "Search",
+                                )
+                            }
+                            ListMenu(
+                                showRead = !unreadOnly,
+                                onShowReadChange = { model.setUnreadOnly(!it) },
+                                onMarkAllRead = {
+                                    coroutines.launch { markAllIds = model.unreadInList() }
+                                },
+                            )
+                        },
+                    )
+                }
             },
         ) { padding ->
             PullToRefreshBox(
@@ -158,21 +193,74 @@ fun HomeScreen(
                         )
                         HorizontalDivider()
                     }
+                    val text = search
                     EntryList(
-                        items = items,
-                        unreadOnly = unreadOnly,
+                        items = if (text != null) searchResults else items,
+                        emptyText =
+                            when {
+                                text == null && unreadOnly -> "No unread articles"
+                                text == null -> "No articles"
+                                text.isBlank() -> "Search the articles on this device"
+                                else -> "No matching articles on this device"
+                            },
                         onOpen = {
                             model.opened(it)
                             onOpen(it)
                         },
                         onToggleRead = model::toggleRead,
                         onToggleStar = model::toggleStar,
-                        onLoadMore = model::loadMore,
+                        onLoadMore = { if (text == null) model.loadMore() },
                     )
                 }
             }
         }
     }
+}
+
+/** The top bar while searching: the search box, with back and clear. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SearchBar(text: String, onChange: (String) -> Unit, onClose: () -> Unit) {
+    val focus = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    // Once: not again on coming back from an article.
+    var focused by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (!focused) focus.requestFocus()
+        focused = true
+    }
+    TopAppBar(
+        navigationIcon = {
+            IconButton(onClick = onClose) {
+                Icon(painterResource(R.drawable.ic_arrow_back), contentDescription = "Close search")
+            }
+        },
+        title = {
+            TextField(
+                value = text,
+                onValueChange = onChange,
+                placeholder = { Text("Search articles") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
+                colors =
+                    TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                    ),
+                modifier = Modifier.fillMaxWidth().focusRequester(focus),
+            )
+        },
+        actions = {
+            if (text.isNotEmpty()) {
+                IconButton(onClick = { onChange("") }) {
+                    Icon(painterResource(R.drawable.ic_close), contentDescription = "Clear search")
+                }
+            }
+        },
+    )
 }
 
 @Composable
@@ -397,7 +485,7 @@ private fun DrawerRow(
 @Composable
 private fun EntryList(
     items: List<TimelineItem>?,
-    unreadOnly: Boolean,
+    emptyText: String,
     onOpen: (String) -> Unit,
     onToggleRead: (TimelineItem) -> Unit,
     onToggleStar: (TimelineItem) -> Unit,
@@ -406,7 +494,7 @@ private fun EntryList(
     if (items == null) return
     if (items.isEmpty()) {
         Text(
-            if (unreadOnly) "No unread articles" else "No articles",
+            emptyText,
             style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier.fillMaxWidth().padding(32.dp),
         )

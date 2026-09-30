@@ -1,6 +1,7 @@
 package com.lionreader.shared.db
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import com.lionreader.shared.data.AppSchema
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -8,7 +9,7 @@ class LionReaderDatabaseTest {
     @Test
     fun upsertReplacesExistingValue() {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
-            LionReaderDatabase.Schema.create(driver)
+            AppSchema.create(driver)
             val queries = LionReaderDatabase(driver).appMetadataQueries
             queries.upsert("schema", "1")
             queries.upsert("schema", "2")

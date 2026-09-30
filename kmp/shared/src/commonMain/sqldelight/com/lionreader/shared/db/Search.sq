@@ -1,0 +1,26 @@
+-- Full-text search over what's on the device. FTS4, not FTS5: Android's SQLite
+-- has FTS4 back to our minSdk. Rows are keyed by the entry's rowid, so keeping
+-- them in step is an indexed lookup, not a scan. The triggers that keep it in
+-- step, and the body updates, are in SearchIndex.kt: SQLDelight can't compile
+-- statements that name an FTS4 table's columns. No stemming: search runs as the
+-- user types, and a stemmed index misses half-typed words ("runn" isn't a prefix
+-- of "run").
+CREATE VIRTUAL TABLE entry_search USING fts4(
+  title,
+  author,
+  source,
+  summary,
+  body,
+  tokenize=unicode61
+);
+
+-- Newest first, like the lists. :query is an FTS4 MATCH expression.
+search:
+SELECT v.id, v.url, v.title, v.author, v.summary, v.site_name, v.feed_title, v.sort_at,
+  v.effective_read, v.effective_starred
+FROM entry_search s
+JOIN entry e ON e.rowid = s.rowid
+JOIN entry_view v ON v.id = e.id
+WHERE entry_search MATCH :query
+ORDER BY v.sort_at DESC, v.id DESC
+LIMIT :limit;

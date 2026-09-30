@@ -1,6 +1,7 @@
 package com.lionreader.shared.sync
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import com.lionreader.shared.data.AppSchema
 import com.lionreader.shared.data.ListScope
 import com.lionreader.shared.data.Reader
 import com.lionreader.shared.db.LionReaderDatabase
@@ -57,7 +58,7 @@ class SyncModelTest {
         repeat(2) { server.addEntry(subscriptionId = null) }
 
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-        LionReaderDatabase.Schema.create(driver)
+        AppSchema.create(driver)
         val db = LionReaderDatabase(driver)
         val api =
             server.api(currentCoroutineContext()[ContinuationInterceptor] as CoroutineDispatcher)

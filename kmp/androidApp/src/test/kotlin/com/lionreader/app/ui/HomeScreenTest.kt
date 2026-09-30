@@ -5,10 +5,12 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import com.lionreader.app.AppSettings
+import com.lionreader.shared.data.AppSchema
 import com.lionreader.shared.data.ListScope
 import com.lionreader.shared.data.Reader
 import com.lionreader.shared.db.LionReaderDatabase
@@ -29,7 +31,7 @@ class HomeScreenTest {
     private val db =
         LionReaderDatabase(
             AndroidSqliteDriver(
-                LionReaderDatabase.Schema,
+                AppSchema,
                 ApplicationProvider.getApplicationContext(),
                 null,
             )
@@ -101,6 +103,24 @@ class HomeScreenTest {
         composeRule.waitForIdle()
 
         composeRule.onNodeWithText("Narrated article").assertIsDisplayed()
+    }
+
+    @Test
+    fun searchFindsArticlesReadOrNotAndBackLeavesIt() {
+        seed("a", "Borrow checker tips", read = true)
+        seed("b", "Gardening", read = false)
+        show()
+
+        composeRule.onNodeWithContentDescription("Search").performClick()
+        composeRule.onNodeWithText("Search articles").performTextInput("borr")
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Borrow checker tips").assertIsDisplayed()
+        composeRule.onNodeWithText("Gardening").assertDoesNotExist()
+        assertEquals(listOf("a"), model.shownIds())
+
+        composeRule.onNodeWithContentDescription("Close search").performClick()
+        composeRule.onNodeWithText("Gardening").assertIsDisplayed()
+        composeRule.onNodeWithText("Borrow checker tips").assertDoesNotExist()
     }
 
     @Test

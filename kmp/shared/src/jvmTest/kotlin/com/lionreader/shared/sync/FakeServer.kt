@@ -235,10 +235,12 @@ fun FullEntry.listItem() =
         type = type,
         url = url,
         title = title,
+        author = author,
         summary = summary,
         publishedAt = publishedAt,
         fetchedAt = fetchedAt,
         read = read,
         starred = starred,
         feedTitle = feedTitle,
+        siteName = siteName,
     )

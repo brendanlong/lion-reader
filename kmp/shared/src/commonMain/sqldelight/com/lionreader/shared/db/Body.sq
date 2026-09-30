@@ -6,15 +6,17 @@ CREATE TABLE entry_body (
   entry_id TEXT NOT NULL PRIMARY KEY,
   content TEXT NOT NULL,
   size INTEGER NOT NULL,
-  downloaded_at INTEGER NOT NULL
+  downloaded_at INTEGER NOT NULL,
+  -- The body as plain text, for the search index (Search.sq).
+  search_text TEXT NOT NULL
 );
 
 -- Stores a body fetched at the entry's :bodyVersion, only while the entry is
 -- still on the device at that version: a download racing a deletion or an edit
 -- can't leave a missing or stale body behind (pruneOrphans catches the rest).
 putIfCurrent:
-INSERT OR REPLACE INTO entry_body(entry_id, content, size, downloaded_at)
-SELECT :entryId, :content, :size, :downloadedAt
+INSERT OR REPLACE INTO entry_body(entry_id, content, size, downloaded_at, search_text)
+SELECT :entryId, :content, :size, :downloadedAt, :searchText
 WHERE EXISTS (SELECT 1 FROM entry WHERE id = :entryId AND body_version = :bodyVersion);
 
 deleteForEntry:

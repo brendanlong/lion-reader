@@ -147,8 +147,7 @@ class MainActivity : ComponentActivity() {
                         HomeScreen(
                             model = home,
                             onOpen = { id ->
-                                val listIds = home.items.value.orEmpty().map { it.id }
-                                backStack.add(EntryKey.openedFrom(id, listIds))
+                                backStack.add(EntryKey.openedFrom(id, home.shownIds()))
                             },
                             onSettings = { backStack.add(SettingsKey) },
                             bottomBar = {

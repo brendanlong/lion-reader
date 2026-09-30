@@ -16,6 +16,7 @@ import com.lionreader.shared.auth.AppAuth
 import com.lionreader.shared.auth.AuthorizationRequest
 import com.lionreader.shared.auth.StoredTokens
 import com.lionreader.shared.auth.TokenStore
+import com.lionreader.shared.data.AppSchema
 import com.lionreader.shared.data.Reader
 import com.lionreader.shared.db.LionReaderDatabase
 import com.lionreader.shared.sync.RetentionPolicy
@@ -279,7 +280,7 @@ class AppGraph(private val context: Context) {
 }
 
 /** Database file schema generation; bump it on a pre-release schema change (kmp/CLAUDE.md). */
-private const val DB_PREFIX = "account-v4-"
+private const val DB_PREFIX = "account-v5-"
 
 /** One database file per (server, account); the name doesn't reveal either. */
 private fun accountDbName(serverUrl: String, userId: String): String {
@@ -300,7 +301,7 @@ class AccountSession(
     retention: () -> RetentionPolicy,
     onLocalChange: () -> Unit,
 ) {
-    private val driver = AndroidSqliteDriver(LionReaderDatabase.Schema, context, dbName)
+    private val driver = AndroidSqliteDriver(AppSchema, context, dbName)
     private val database = LionReaderDatabase(driver)
     val reader = Reader(database, System::currentTimeMillis, Dispatchers.IO, onLocalChange)
     val sync = SyncEngine(connection.api, database, System::currentTimeMillis, retention)

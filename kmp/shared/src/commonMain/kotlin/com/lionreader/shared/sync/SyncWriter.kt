@@ -9,6 +9,7 @@ import com.lionreader.shared.api.SyncEvent
 import com.lionreader.shared.api.TagList
 import com.lionreader.shared.data.LocalStore
 import com.lionreader.shared.data.parseMillis
+import com.lionreader.shared.data.searchText
 import com.lionreader.shared.db.LionReaderDatabase
 import com.lionreader.shared.db.Outbox_state
 
@@ -268,11 +269,18 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
         for (entry in fetched) {
             val version = versions[entry.id] ?: continue
             val content = entry.displayContent ?: ""
-            db.bodyQueries.putIfCurrent(entry.id, content, content.length.toLong(), now, version)
+            db.bodyQueries.putIfCurrent(
+                entry.id,
+                content,
+                content.length.toLong(),
+                now,
+                searchText(content),
+                version,
+            )
             stored += content.length
         }
         missing.forEach { id ->
-            versions[id]?.let { db.bodyQueries.putIfCurrent(id, "", 0, now, it) }
+            versions[id]?.let { db.bodyQueries.putIfCurrent(id, "", 0, now, "", it) }
         }
         return stored
     }
