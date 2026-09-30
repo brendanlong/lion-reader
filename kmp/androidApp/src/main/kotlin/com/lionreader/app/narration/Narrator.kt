@@ -3,13 +3,16 @@ package com.lionreader.app.narration
 import android.content.ComponentName
 import android.content.Context
 import android.net.Uri
+import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.SilenceMediaSource
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
@@ -67,6 +70,12 @@ data class NarrationState(
  * the article. A chunk the engine can't say is skipped, so the playlist can have gaps: items are
  * found by their chunk index (the media id).
  *
+ * Whenever there's no audio yet (the engine is getting ready, the first chunk is being synthesized,
+ * the next article is being found) the player plays silence instead. It never goes empty or ends
+ * midway: an empty playlist takes down media3's notification and foreground service, which it can't
+ * restart from the background (continuing to the next article with the screen off), and an ended
+ * one turns the notification's and headset's pause into a replay.
+ *
  * Main thread only (ExoPlayer's rule).
  */
 class Narrator(
@@ -113,19 +122,20 @@ class Narrator(
     private var speed = 1f
     private val playingChunk = MutableStateFlow(0)
     private var preparing: Job? = null
+    /** Finding the next article, once this one's ended. */
+    private var continuation: Job? = null
     private var feeding: Job? = null
     /** Whether the feed has synthesized everything it's going to, and the last chunk it added. */
     private var fed = false
     private var lastAdded: Int? = null
     private var session: ListenableFuture<MediaController>? = null
 
-    fun narrate(article: NarratedArticle, fromParagraph: Int = 0) {
+    fun narrate(article: NarratedArticle, fromParagraph: Int = 0, play: Boolean = true) {
         reset()
         this.article = article
         speed = settings().narrationSpeed
         // Binding a controller starts the service, which puts the player in a
-        // media session and keeps playback going in the background. Kept from
-        // one article to the next, so the notification doesn't flicker.
+        // media session and keeps playback going in the background.
         if (session == null) {
             session =
                 MediaController.Builder(
@@ -134,12 +144,15 @@ class Narrator(
                     )
                     .buildAsync()
         }
+        playSilence(article)
+        player.playWhenReady = play
+        dir.deleteRecursively()
         _state.value =
             NarrationState(
                 article.entryId,
                 article.title,
                 fromParagraph,
-                playing = true,
+                playing = play,
                 waiting = true,
                 queue = article.queue,
             )
@@ -155,17 +168,13 @@ class Narrator(
             if (chunks.isEmpty()) return@launch stop()
             offsets =
                 chunks.runningFold(0) { total, chunk -> total + chunk.text.length }.toIntArray()
-            // A tap or pause while the engine was getting ready still counts.
+            // A tap while the engine was getting ready still counts.
             val wanted = _state.value ?: return@launch
-            startAt(firstChunkOf(wanted.paragraph), play = wanted.playing)
+            startAt(firstChunkOf(wanted.paragraph), play = player.playWhenReady)
         }
     }
 
     fun togglePlaying() {
-        if (engine == null) {
-            _state.value = _state.value?.let { it.copy(playing = !it.playing) }
-            return
-        }
         if (player.playWhenReady) player.pause() else player.play()
     }
 
@@ -176,6 +185,9 @@ class Narrator(
     }
 
     fun seekToParagraph(paragraph: Int) {
+        // Back into the article that ended: stay with it.
+        continuation?.cancel()
+        continuation = null
         if (chunks.isEmpty()) {
             // Still getting the engine ready: start there instead.
             _state.value = _state.value?.copy(paragraph = paragraph)
@@ -193,20 +205,22 @@ class Narrator(
 
     fun stop() {
         reset()
+        player.stop()
+        player.clearMediaItems()
+        dir.deleteRecursively()
         _state.value = null
         session?.let(MediaController::releaseFuture)
         session = null
     }
 
-    /** Stops what's playing and forgets the article, keeping the media session. */
+    /** Forgets the article; what's in the player is the caller's to replace. */
     private fun reset() {
         preparing?.cancel()
         preparing = null
+        continuation?.cancel()
+        continuation = null
         feeding?.cancel()
         feeding = null
-        player.stop()
-        player.clearMediaItems()
-        dir.deleteRecursively()
         article = null
         engine = null
         chunks = emptyList()
@@ -228,9 +242,9 @@ class Narrator(
 
     private fun startAt(chunk: Int, play: Boolean) {
         val engine = engine ?: return
+        val article = article ?: return
         feeding?.cancel()
-        player.stop()
-        player.clearMediaItems()
+        playSilence(article)
         dir.deleteRecursively()
         dir.mkdirs()
         playingChunk.value = chunk
@@ -278,7 +292,8 @@ class Narrator(
             }
             val (index, result) = inFlight.removeFirst()
             val file = result.await() ?: continue
-            player.addMediaItem(item(article, index, file))
+            val item = item(article, index, file)
+            if (onSilence()) player.setMediaItems(listOf(item)) else player.addMediaItem(item)
             lastAdded = index
             when (player.playbackState) {
                 Player.STATE_IDLE -> player.prepare()
@@ -316,8 +331,10 @@ class Narrator(
     private fun finished() {
         val done = article ?: return
         feeding = null
+        continuation?.cancel()
+        playSilence(done)
         _state.value = _state.value?.copy(waiting = true)
-        preparing = scope.launch {
+        continuation = scope.launch {
             val following =
                 try {
                     next(done)
@@ -328,21 +345,42 @@ class Narrator(
                 }
             // Unless the user started or stopped something meanwhile.
             if (article !== done) return@launch
-            if (following == null) stop() else narrate(following)
+            // Paused meanwhile: the next article starts paused.
+            if (following == null) stop() else narrate(following, play = player.playWhenReady)
         }
     }
+
+    /** Replaces the playlist with silence, for while there's no audio yet (see the class docs). */
+    // Media sources are "unstable" API, but SilenceMediaSource has been there since ExoPlayer 2.
+    @OptIn(UnstableApi::class)
+    private fun playSilence(article: NarratedArticle) {
+        player.setMediaSource(
+            SilenceMediaSource(SILENCE_US).apply {
+                updateMediaItem(
+                    MediaItem.Builder()
+                        .setMediaId(SILENCE_ID)
+                        .setMediaMetadata(metadata(article))
+                        .build()
+                )
+            }
+        )
+        player.prepare()
+    }
+
+    private fun onSilence(): Boolean = player.currentMediaItem?.mediaId == SILENCE_ID
 
     private fun item(article: NarratedArticle, chunk: Int, file: File) =
         MediaItem.Builder()
             .setMediaId("$chunk")
             .setUri(Uri.fromFile(file))
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setTitle(article.title)
-                    .setArtist(article.source)
-                    .setAlbumTitle("Lion Reader")
-                    .build()
-            )
+            .setMediaMetadata(metadata(article))
+            .build()
+
+    private fun metadata(article: NarratedArticle) =
+        MediaMetadata.Builder()
+            .setTitle(article.title)
+            .setArtist(article.source)
+            .setAlbumTitle("Lion Reader")
             .build()
 
     private fun publish(chunk: Int) {
@@ -364,6 +402,7 @@ class Narrator(
      */
     private fun waiting(): Boolean =
         engine == null ||
+            onSilence() ||
             player.mediaItemCount == 0 ||
             player.playbackState == Player.STATE_BUFFERING ||
             player.playbackState == Player.STATE_IDLE ||
@@ -411,5 +450,8 @@ class Narrator(
 
     private companion object {
         const val KEEP_BEHIND = 5
+        const val SILENCE_ID = "silence"
+        /** Longer than any wait for audio; if it runs out, the player just sits ended. */
+        const val SILENCE_US = 30L * 60 * 1_000_000
     }
 }

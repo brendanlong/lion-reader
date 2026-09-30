@@ -27,7 +27,9 @@ class NarrationExtractor(private val context: Context) {
                 // Never shown.
                 colors = ReaderColors("#000", "#000", "#000", "#fff", "#000", "#fff"),
             )
-        val view = WebView(context)
+        // Only the script matters: nothing from the network (images, embeds,
+        // trackers) for a page no one sees.
+        val view = WebView(context).apply { settings.blockNetworkLoads = true }
         return try {
             withTimeoutOrNull(TIMEOUT_MILLIS) {
                 suspendCancellableCoroutine { continuation ->

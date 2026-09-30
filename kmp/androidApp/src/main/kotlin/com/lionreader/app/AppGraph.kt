@@ -84,8 +84,9 @@ class AppGraph(private val context: Context) {
 
     /**
      * Continuous playback: the next article in the list [done] was started from that has anything
-     * to say, downloading its body if need be. Starting it counts as opening it (marked read), as
-     * swiping to it would.
+     * to say, downloading its body if need be (giving up at the first failed download, rather than
+     * trying each article offline). Starting it counts as opening it (marked read), as swiping to
+     * it would.
      */
     private suspend fun nextToNarrate(done: NarratedArticle): NarratedArticle? {
         if (!currentSettings.value.narrationContinue) return null
@@ -101,7 +102,7 @@ class AppGraph(private val context: Context) {
                     } catch (e: CancellationException) {
                         throw e
                     } catch (_: Exception) {
-                        false
+                        return null
                     }
                 if (!fetched) continue
                 entry = account.reader.entry(id).first() ?: continue

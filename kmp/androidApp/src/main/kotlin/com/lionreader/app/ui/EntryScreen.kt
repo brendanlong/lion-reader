@@ -97,11 +97,13 @@ fun EntryScreen(
     var narratedBefore by remember { mutableStateOf(narration?.entryId) }
     LaunchedEffect(narration?.entryId) {
         val now = narration?.entryId
+        val before = narratedBefore
+        // First: the animation throws if a drag interrupts it.
+        narratedBefore = now
         val shown = pages[pager.settledPage]
-        if (now != null && narratedBefore == shown && now != shown) {
+        if (now != null && before == shown && now != shown) {
             pages.indexOf(now).takeIf { it >= 0 }?.let { pager.animateScrollToPage(it) }
         }
-        narratedBefore = now
     }
     val settings by graph.currentSettings.collectAsStateWithLifecycle()
     val entry = entries[pages[pager.targetPage]]
@@ -250,14 +252,21 @@ fun EntryScreen(
         },
         bottomBar = {
             // Another article's narration opens it; this one's is already here.
-            CurrentNarrationBar(graph) { state ->
-                pages
-                    .indexOf(state.entryId)
-                    .takeIf { it >= 0 }
-                    ?.let { page ->
-                        coroutines.launch { pager.animateScrollToPage(page) }
-                    } ?: onOpenElsewhere(state)
-            }
+            CurrentNarrationBar(
+                graph,
+                // Nothing to open when it's the article on screen.
+                onOpen =
+                    if (narration?.entryId == entryId) null
+                    else
+                        { state ->
+                            pages
+                                .indexOf(state.entryId)
+                                .takeIf { it >= 0 }
+                                ?.let { page ->
+                                    coroutines.launch { pager.animateScrollToPage(page) }
+                                } ?: onOpenElsewhere(state)
+                        },
+            )
         },
     ) { padding ->
         HorizontalPager(
