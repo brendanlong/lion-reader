@@ -17,6 +17,7 @@ import { db } from "../../src/server/db";
 import {
   entrySummaries,
   oauthAuthorizationCodes,
+  sessions,
   subscriptions,
   userEntries,
   users,
@@ -192,16 +193,15 @@ describe("SSE credential re-check", () => {
     vi.useRealTimers();
   });
 
-  // Resolves once the stream ends; rejects if it's still open after a few
-  // heartbeats' worth of fake time.
+  // Whether the stream ends within a few heartbeats of `revoke` running.
   async function streamEndsAfterHeartbeats(
     body: ReadableStream<Uint8Array>,
-    stillOpen: () => Promise<void>
+    revoke: () => Promise<void>
   ): Promise<boolean> {
     const reader = body.getReader();
     // The initial heartbeat.
     expect((await reader.read()).done).toBe(false);
-    await stillOpen();
+    await revoke();
     for (let i = 0; i < 3; i++) {
       await vi.advanceTimersByTimeAsync(30_000);
     }
@@ -228,6 +228,23 @@ describe("SSE credential re-check", () => {
     expect(res.status).toBe(200);
     const ended = await streamEndsAfterHeartbeats(res.body!, async () => {
       await revokeSession(sessionId);
+    });
+    expect(ended).toBe(true);
+  });
+
+  it("closes a session's stream once the session expires", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    const userId = await createUser();
+    const { sessionId, token } = await createSession(db, { userId });
+    const res = await eventsGet(
+      new Request(`${API}/events`, { headers: { cookie: `session=${token}` } })
+    );
+    expect(res.status).toBe(200);
+    const ended = await streamEndsAfterHeartbeats(res.body!, async () => {
+      await db
+        .update(sessions)
+        .set({ expiresAt: new Date(Date.now() - 1000) })
+        .where(eq(sessions.id, sessionId));
     });
     expect(ended).toBe(true);
   });

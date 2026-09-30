@@ -145,6 +145,10 @@ Entry bodies, saved articles, and AI summaries are rendered with
   password write. Token issuance takes a share lock on the `users` row first
   (`lockUserAgainstCredentialChange`), so a refresh or password grant racing
   the change can't leave a live token behind — keep that lock order.
+- A long-lived connection authenticates more than once: the SSE stream
+  (`src/app/api/v1/events/route.ts`) re-checks its session or app token on every
+  heartbeat and closes once it's revoked or expired. **A new long-lived
+  authenticated connection must do the same.**
 - Password-accepting endpoints are rate-limited per-IP **and** per-account (the
   account bucket degrades to in-memory, not fully open, during a Redis outage).
 - Password-accepting endpoints (tRPC `auth.login`, Google Reader `ClientLogin`,
