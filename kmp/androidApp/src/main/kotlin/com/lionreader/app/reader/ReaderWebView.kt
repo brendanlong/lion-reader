@@ -92,9 +92,9 @@ private class ReaderView(context: Context) : WebView(context) {
                 downX = event.x
                 downY = event.y
                 val density = resources.displayMetrics.density
-                touched = sideScrollers.find {
-                    it.bounds.contains(event.x / density, event.y / density)
-                }
+                val pageX = (event.x + scrollX) / density
+                val pageY = (event.y + scrollY) / density
+                touched = sideScrollers.find { it.bounds.contains(pageX, pageY) }
             }
             MotionEvent.ACTION_MOVE ->
                 touched?.let { block ->
