@@ -126,8 +126,6 @@ function collectRuns(root: Element, ctx: WalkContext, depth: number): NarrationR
   let images = 0;
   let firstImage: Element | null = null;
   let spokeWords = false;
-  /** How much of this run's subtree an ancestor's narration already claimed. */
-  let claimed = 0;
 
   const push = (highlight: Element, value: string) => {
     // Two `<br>`s end a paragraph — with any amount of whitespace between them,
@@ -242,45 +240,31 @@ function collectRuns(root: Element, ctx: WalkContext, depth: number): NarrationR
   };
 
   /**
-   * A link speaks the words it wraps. Only when it wraps nothing speakable — an
-   * empty anchor, or the URL as its own text — does it announce where it goes
-   * instead, because "[link to example.com]" beats silence but loses to words.
-   *
-   * Decided from what the walk produced rather than by looking for content
-   * first: an image inside a link is content, and asking the DOM about it once
-   * per link was the most expensive thing this walk did. "Produced" has to
-   * include content an ancestor already claimed — the `<a>` around a figure's
-   * image is the commonest markup there is, and the image is spoken, just not
-   * here. It also means an image with no alt text leaves a link with nothing to
-   * say, so the target is announced in the voice that skips such images and the
-   * alt text is spoken in the voice that reads them.
+   * A link speaks the words it wraps, and nothing else — an anchor with no
+   * visible words (`<a href="…"> </a>`, which Substack scatters between linked
+   * words) is invisible on the page, so it is silent here too. The one rewrite
+   * is a URL as its own link text, which reads as noise: it says where it goes
+   * instead, because "[link to example.com]" beats spelling out a URL.
    */
   const visitLink = (el: Element, depth: number) => {
     const href = el.getAttribute("href");
     const runsBefore = runs.length;
-    const imagesBefore = images;
-    const claimedBefore = claimed;
     const textBefore = text.length;
 
     if (depth >= MAX_DEPTH) appendWords(flatText(el, voice, consumed));
     else visitChildren(el, depth);
 
-    // What it said, when all of that landed in the run being built. A block
-    // inside the link (legal, and always says something) flushed instead.
-    const flushed = runs.length !== runsBefore;
-    const said = flushed ? null : text.slice(textBefore);
-    if (flushed || images > imagesBefore || claimed > claimedBefore || (said ?? "").trim() !== "") {
-      if (!href) return;
-      // A URL as its own link text reads as noise; say where it goes instead.
-      if (said !== null && said.trim() === href) {
+    if (!href) return;
+    // Either all of it landed in the run being built, or a block inside the
+    // link (legal) flushed it as a paragraph of its own.
+    if (runs.length === runsBefore) {
+      if (text.slice(textBefore).trim() === href) {
         text = text.slice(0, textBefore);
         appendWords(linkTarget(href));
-      } else if (flushed && runs.length === runsBefore + 1 && runs[runsBefore].text === href) {
-        runs[runsBefore].text = linkTarget(href);
       }
-      return;
+    } else if (runs.length === runsBefore + 1 && runs[runsBefore].text === href) {
+      runs[runsBefore].text = linkTarget(href);
     }
-    if (href) appendWords(linkTarget(href));
   };
 
   const visitInline = (el: Element, tagName: string, depth: number) => {
@@ -321,10 +305,7 @@ function collectRuns(root: Element, ctx: WalkContext, depth: number): NarrationR
   };
 
   const visit = (node: Node, depth: number) => {
-    if (consumed.has(node)) {
-      claimed += 1;
-      return;
-    }
+    if (consumed.has(node)) return;
     if (node.nodeType === TEXT_NODE) {
       appendWords(node.textContent ?? "");
       return;
@@ -403,7 +384,9 @@ function flatText(el: Element, voice: NarrationVoice, consumed: Set<Node>): stri
 
 /**
  * A table reads as one paragraph: its caption, then its rows with the cells
- * joined by commas.
+ * joined by commas. A table with at most one thing to say is layout, not data —
+ * email newsletters wrap every image in one (Substack's `image-wrapper`) — so it
+ * reads without the "Table:" markers.
  *
  * Read by walking the table rather than by querying for rows and cells, so that
  * everything in it is covered: whatever an author (or a Markdown renderer) put
@@ -413,6 +396,8 @@ function flatText(el: Element, voice: NarrationVoice, consumed: Set<Node>): stri
  */
 function tableText(el: Element, ctx: WalkContext, depth: number): string {
   const parts: string[] = [];
+  /** Cells, and content outside the rows, that said something. */
+  let pieces = 0;
 
   const readRow = (tr: Element): string => {
     const cells: string[] = [];
@@ -425,13 +410,20 @@ function tableText(el: Element, ctx: WalkContext, depth: number): string {
       // A `th`/`td`, or whatever else ended up in the row.
       cells.push(nodeText(node as Element, ctx, depth));
     });
-    return cells.filter((cell) => cell.trim()).join(", ");
+    const spoken = cells.filter((cell) => cell.trim());
+    pieces += spoken.length;
+    return spoken.join(", ");
+  };
+
+  const addPart = (part: string) => {
+    if (part.trim()) pieces += 1;
+    parts.push(part);
   };
 
   const read = (parent: Element) => {
     parent.childNodes.forEach((node) => {
       if (node.nodeType === TEXT_NODE) {
-        parts.push((node.textContent ?? "").trim());
+        addPart((node.textContent ?? "").trim());
         return;
       }
       if (node.nodeType !== ELEMENT_NODE) return;
@@ -448,14 +440,14 @@ function tableText(el: Element, ctx: WalkContext, depth: number): string {
         read(child);
         return;
       }
-      parts.push(nodeText(child, ctx, depth));
+      addPart(nodeText(child, ctx, depth));
     });
   };
   read(el);
 
   const rows = parts.filter((part) => part.trim()).join(". ");
   if (!rows) return "";
-  return ctx.voice.structuralMarkers ? `Table: ${rows} End table.` : rows;
+  return ctx.voice.structuralMarkers && pieces > 1 ? `Table: ${rows} End table.` : rows;
 }
 
 /** What an element inside a table's structure contributes. */
@@ -522,23 +514,28 @@ function figureText(
   ctx: WalkContext,
   depth: number
 ): string {
-  const alt = image.getAttribute("alt")?.trim();
+  const alt = image.getAttribute("alt");
   const captionText = caption ? subtreeText(caption, ctx, depth).trim() : "";
-  if (alt) {
-    return captionText ? `Image: ${alt}. ${captionText}` : `Image: ${alt}`;
+  if (alt?.trim()) {
+    return captionText ? `Image: ${alt.trim()}. ${captionText}` : `Image: ${alt.trim()}`;
   }
   if (captionText) {
     // The caption is the only description there is.
     return `Image: ${captionText}`;
   }
-  return ctx.voice.speakUndescribedImages ? "Image: no description" : "";
+  // Decorative (`alt=""`) or undescribed — see `imageText`.
+  return alt === null && ctx.voice.speakUndescribedImages ? "Image: no description" : "";
 }
 
-/** What an image contributes to the run it sits in. */
+/**
+ * What an image contributes to the run it sits in. An empty `alt` is the
+ * author marking the image decorative — screen readers skip it, and so does
+ * narration. Only a missing `alt` is an image nobody described.
+ */
 function imageText(img: Element, voice: NarrationVoice): string {
-  const alt = img.getAttribute("alt")?.trim();
-  if (alt) return `Image: ${alt}`;
-  return voice.speakUndescribedImages ? "Image: image" : "";
+  const alt = img.getAttribute("alt");
+  if (alt === null) return voice.speakUndescribedImages ? "Image: image" : "";
+  return alt.trim() ? `Image: ${alt.trim()}` : "";
 }
 
 /** How a link with no words of its own announces where it goes. */

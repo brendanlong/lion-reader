@@ -58,6 +58,11 @@ function highlightedTags(html: string): string[] {
   );
 }
 
+const SUBSTACK_IMAGE =
+  '<table class="image-wrapper"><tbody><tr><td></td><td class="content">' +
+  '<a class="image-link" href="https://substack.com/r/1"><img alt="" src="/a.png"></a>' +
+  "</td><td></td></tr></tbody></table>";
+
 const SHAPES = [
   '<p>1</p><img alt="2"><p>3</p>',
   '<h2>Title</h2><p>First</p><img alt="pic"><p>Second</p>',
@@ -76,6 +81,8 @@ const SHAPES = [
   "<p>Unclosed<div>next</div>",
   "<dt>Orphan term</dt><dd>Orphan definition</dd>",
   "<div>a<p>b</p>c</div>",
+  `<p>Before</p>${SUBSTACK_IMAGE}<p>After</p>`,
+  '<p><a href="https://x.com/a">Newt</a><a href="https://x.com/b"> </a>Scamander</p><p>Next</p>',
 ];
 
 /**
@@ -149,6 +156,16 @@ describe("paragraph ID consistency between server and client", () => {
     ]);
   });
 
+  it("keeps highlighting in step past content that says nothing", () => {
+    // The silent image table still takes its numbers, so the paragraphs after
+    // it point at their own elements rather than shifting up onto it.
+    const html = `<p>Before</p>${SUBSTACK_IMAGE}<p>After</p>${SUBSTACK_IMAGE}<p>End</p>`;
+
+    expect(serverParagraphs(html)).toEqual(["0: Before", "3: After", "6: End"]);
+    expect(serverTargets(html)).toEqual(["p", "table", "img", "p", "table", "img", "p"]);
+    expect(highlightedTags(html)).toEqual(["p", "p", "p"]);
+  });
+
   it("marks every element a paragraph can point at", () => {
     for (const html of ALL_SHAPES) {
       const marked = clientTargets(html).length;
@@ -171,9 +188,6 @@ describe("paragraph ID consistency between server and client", () => {
 
   // Same, for the text a table can't hold — read before the table, not after.
   it("reads text foster-parented out of a table before the table", () => {
-    expect(serverParagraphs(JSDOM_FOSTER_PARENTS_TEXT_WRONG)).toEqual([
-      "-1: Loose text",
-      "0: Table: c End table.",
-    ]);
+    expect(serverParagraphs(JSDOM_FOSTER_PARENTS_TEXT_WRONG)).toEqual(["-1: Loose text", "0: c"]);
   });
 });
