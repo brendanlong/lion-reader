@@ -47,8 +47,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -69,17 +69,19 @@ fun HomeScreen(model: HomeViewModel, onOpen: (String) -> Unit, onSettings: () ->
     val items by model.items.collectAsStateWithLifecycle()
     val unreadOnly by model.unreadOnly.collectAsStateWithLifecycle()
     val status by model.status.collectAsStateWithLifecycle()
-    var confirmMarkAll by remember { mutableStateOf(false) }
+    // The entries the confirmation counted; exactly these are marked, so
+    // anything a sync adds while the dialog is open isn't marked unseen.
+    var markAllIds by remember { mutableStateOf<List<String>?>(null) }
 
-    if (confirmMarkAll) {
+    markAllIds?.let { ids ->
         MarkAllReadDialog(
             listName = title(scope, navigation),
-            unread = unreadIn(scope, navigation),
+            unread = ids.size,
             onConfirm = {
-                confirmMarkAll = false
-                model.markAllRead()
+                markAllIds = null
+                model.markRead(ids)
             },
-            onDismiss = { confirmMarkAll = false },
+            onDismiss = { markAllIds = null },
         )
     }
 
@@ -121,7 +123,9 @@ fun HomeScreen(model: HomeViewModel, onOpen: (String) -> Unit, onSettings: () ->
                         ListMenu(
                             showRead = !unreadOnly,
                             onShowReadChange = { model.setUnreadOnly(!it) },
-                            onMarkAllRead = { confirmMarkAll = true },
+                            onMarkAllRead = {
+                                coroutines.launch { markAllIds = model.unreadInList() }
+                            },
                         )
                     },
                 )
@@ -159,17 +163,6 @@ fun HomeScreen(model: HomeViewModel, onOpen: (String) -> Unit, onSettings: () ->
         }
     }
 }
-
-/** Unread entries of [scope] on the device: what mark-all-read would mark. */
-private fun unreadIn(scope: ListScope, navigation: Navigation?): Int =
-    when (scope) {
-        ListScope.All -> navigation?.allUnread
-        ListScope.Starred -> navigation?.starredUnread
-        ListScope.Saved -> navigation?.savedUnread
-        is ListScope.Tag -> navigation?.tags?.firstOrNull { it.id == scope.id }?.unread
-        is ListScope.Subscription ->
-            navigation?.subscriptions?.firstOrNull { it.id == scope.id }?.unread
-    } ?: 0
 
 @Composable
 private fun ListMenu(
@@ -384,7 +377,7 @@ private fun EntryRow(
                 .clickable(onClick = onOpen)
                 .background(MaterialTheme.colorScheme.surface)
                 .padding(start = 16.dp, top = 12.dp, bottom = 12.dp)
-                .semantics { contentDescription = if (item.read) "Read" else "Unread" },
+                .semantics { stateDescription = if (item.read) "Read" else "Unread" },
         verticalAlignment = Alignment.Top,
     ) {
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -418,7 +411,9 @@ private fun EntryRow(
                 }
         }
         Column {
-            IconButton(onClick = onToggleStar) {
+            // 44dp (the design system's touch target) keeps a two-button column
+            // from stretching short rows.
+            IconButton(onClick = onToggleStar, modifier = Modifier.size(44.dp)) {
                 Icon(
                     painterResource(
                         if (item.starred) R.drawable.ic_star else R.drawable.ic_star_border
@@ -429,7 +424,7 @@ private fun EntryRow(
                         else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            IconButton(onClick = onToggleRead) {
+            IconButton(onClick = onToggleRead, modifier = Modifier.size(44.dp)) {
                 Icon(
                     painterResource(
                         if (item.read) R.drawable.ic_circle_outline else R.drawable.ic_circle

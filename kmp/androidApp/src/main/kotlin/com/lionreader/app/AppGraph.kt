@@ -79,10 +79,8 @@ class AppGraph(private val context: Context) {
     private val accountMutex = Mutex()
 
     private fun restoreAccount(): AccountSession? {
-        // Files from older schema generations (and the shared file from before
-        // accounts had their own) can't be opened by this build; see
-        // accountDbName. A signed-in user's account is set up again (and
-        // resynced) after the next /auth/me.
+        // Delete files from older schema generations (see DB_PREFIX); a
+        // signed-in account is set up again after the next /auth/me.
         context
             .databaseList()
             .filter {
@@ -172,10 +170,7 @@ class AppGraph(private val context: Context) {
     }
 }
 
-/**
- * The schema generation is part of the file name: until a build is released, a schema change bumps
- * it instead of shipping a migration, and older files are deleted (and resynced) on startup.
- */
+/** Database file schema generation; bump it on a pre-release schema change (kmp/CLAUDE.md). */
 private const val DB_PREFIX = "account-v2-"
 
 /** One database file per (server, account); the name doesn't reveal either. */

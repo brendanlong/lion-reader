@@ -137,12 +137,7 @@ class Reader(
             }
         }
 
-    /** Unread counts are the server's, corrected for changes not yet sent. */
-    /**
-     * Lists and their unread counts. Counted over the entries on the device, unsent changes
-     * included: the app shows what it has synced, and unread entries outside the offline window
-     * (which the server would count) are never shown, so counting them would be confusing.
-     */
+    /** Lists and their unread counts, counted on the device (see kmp/CLAUDE.md). */
     fun navigation(): Flow<Navigation> {
         val subs = db.subscriptionQueries
         val entries = db.entryQueries
@@ -196,21 +191,14 @@ class Reader(
     suspend fun markOpened(id: String) =
         withContext(context) { db.entryQueries.markOpened(now(), id) }
 
-    /** How many unread entries [scope] has on the device (what mark-all-read would mark). */
-    suspend fun unreadCount(scope: ListScope): Int = withContext(context) { unreadIds(scope).size }
-
     /**
-     * Marks every unread entry in [scope] that's on the device read, and returns how many.
-     * Deliberately not a server-side "mark all": that would also mark unread entries outside the
-     * offline window, which the app never showed.
+     * The unread entries of [scope] on the device: what mark-all-read marks (with [setRead]). Taken
+     * when the user is asked to confirm, so entries a sync adds meanwhile aren't marked unseen.
      */
-    suspend fun markAllRead(scope: ListScope): Int {
-        val ids = withContext(context) { unreadIds(scope) }
-        if (ids.isNotEmpty()) setRead(ids, true)
-        return ids.size
-    }
+    suspend fun unreadIds(scope: ListScope): List<String> =
+        withContext(context) { queryUnreadIds(scope) }
 
-    private fun unreadIds(scope: ListScope): List<String> =
+    private fun queryUnreadIds(scope: ListScope): List<String> =
         db.entryQueries
             .unreadIdsInScope(
                 subscriptionId = (scope as? ListScope.Subscription)?.id,

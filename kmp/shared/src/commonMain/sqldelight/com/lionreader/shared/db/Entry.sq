@@ -122,14 +122,13 @@ WHERE effective_read = 0
   AND (:starredOnly = 0 OR effective_starred = 1)
   AND (:savedOnly = 0 OR type = 'saved');
 
--- Unread counts are counted here, over what's on the device (unsent changes
--- included): the app shows what it has synced, so the server's counts —
--- which include unread entries outside the offline window — don't apply.
+-- Unread counts come from the device's entries, not the server (kmp/CLAUDE.md).
 unreadTotals:
 SELECT
-  (SELECT count(*) FROM entry_view WHERE effective_read = 0) AS all_unread,
-  (SELECT count(*) FROM entry_view WHERE effective_read = 0 AND effective_starred = 1) AS starred_unread,
-  (SELECT count(*) FROM entry_view WHERE effective_read = 0 AND type = 'saved') AS saved_unread;
+  COALESCE(SUM(effective_read = 0), 0) AS all_unread,
+  COALESCE(SUM(effective_read = 0 AND effective_starred = 1), 0) AS starred_unread,
+  COALESCE(SUM(effective_read = 0 AND type = 'saved'), 0) AS saved_unread
+FROM entry_view;
 
 unreadBySubscription:
 SELECT subscription_id, count(*) AS unread

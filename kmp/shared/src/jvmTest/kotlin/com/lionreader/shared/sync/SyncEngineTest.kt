@@ -364,7 +364,9 @@ class SyncEngineTest {
         engine.sync()
 
         assertEquals(2, reader.navigation().first().subscriptions.first { it.id == "sub-1" }.unread)
-        assertEquals(2, reader.markAllRead(ListScope.Subscription("sub-1")))
+        val ids = reader.unreadIds(ListScope.Subscription("sub-1"))
+        assertEquals(setOf("a", "b"), ids.toSet())
+        reader.setRead(ids, true)
 
         assertEquals(listOf("c"), timeline(unreadOnly = true))
         engine.flushOutbox()

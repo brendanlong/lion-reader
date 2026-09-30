@@ -101,7 +101,7 @@ class SyncModelTest {
                         val scope =
                             if (random.nextBoolean()) ListScope.All
                             else ListScope.Subscription("sub-1")
-                        reader.markAllRead(scope)
+                        reader.setRead(reader.unreadIds(scope), true)
                         // Mark-all records a read change per unread local entry.
                         db.outboxQueries
                             .selectStates()

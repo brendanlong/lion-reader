@@ -65,6 +65,7 @@ fun EntryScreen(
     val entry by
         remember(entryId) { account.reader.entry(entryId) }.collectAsStateWithLifecycle(null)
     val coroutines = rememberCoroutineScope()
+    val tokens = remember { AppearanceTokens.load(context) }
 
     LaunchedEffect(entryId) {
         onShown(entryId)
@@ -153,18 +154,22 @@ fun EntryScreen(
             key = { pages[it] },
             modifier = Modifier.padding(padding).fillMaxSize(),
         ) { page ->
-            EntryPage(graph, account, pages[page])
+            EntryPage(graph, account, pages[page], tokens)
         }
     }
 }
 
 @Composable
-private fun EntryPage(graph: AppGraph, account: AccountSession, entryId: String) {
+private fun EntryPage(
+    graph: AppGraph,
+    account: AccountSession,
+    entryId: String,
+    tokens: AppearanceTokens,
+) {
     val context = LocalContext.current
     val entry by
         remember(entryId) { account.reader.entry(entryId) }.collectAsStateWithLifecycle(null)
     val settings by graph.currentSettings.collectAsStateWithLifecycle()
-    val tokens = remember { AppearanceTokens.load(context) }
     var loadFailed by remember(entryId) { mutableStateOf(false) }
 
     LaunchedEffect(entryId, entry?.content == null) {

@@ -159,7 +159,9 @@ class MainActivity : ComponentActivity() {
                             onSettings = { backStack.add(SettingsKey) },
                         )
                     }
-                    entry<EntryKey> { key ->
+                    // Keyed by id alone: the default key is the whole key's
+                    // string, list included, and ends up in saved state.
+                    entry<EntryKey>({ key: EntryKey -> key.id }) { key ->
                         EntryScreen(
                             graph,
                             account,
