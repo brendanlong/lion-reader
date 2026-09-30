@@ -43,9 +43,9 @@ overrides:
   fast-xml-parser: ^5.8.0
   js-yaml: ^4.3.1
   fast-uri: ^3.1.8
-  browserslist: ^4.28.7
-  "@babel/core": ^7.29.6
-  "@humanfs/node": ^0.16.8
+  browserslist@4: ^4.28.7
+  "@babel/core@7": ^7.29.6
+  "@humanfs/node@0": ^0.16.8
   # brace-expansion is pulled in at three majors at once, and the advisory
   # patches each separately, so it needs one floor per major rather than a
   # single range that would drag 1.x/2.x consumers onto 5.x.
