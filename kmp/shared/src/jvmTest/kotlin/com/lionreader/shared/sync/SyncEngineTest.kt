@@ -558,7 +558,9 @@ class SyncEngineTest {
         // Oldest read goes first, unless it was just opened (it may be on screen).
         reader.markOpened("old")
 
-        policy = RetentionPolicy(contentBudgetBytes = "<p>Body old</p>".length.toLong())
+        // Room for one body: its HTML and its text in the search index.
+        policy =
+            RetentionPolicy(contentBudgetBytes = ("<p>Body old</p>" + "Body old").length.toLong())
         engine.sync()
 
         assertEquals("<p>Body old</p>", reader.entry("old").first()?.content)

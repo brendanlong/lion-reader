@@ -1,12 +1,18 @@
 package com.lionreader.app.ui
 
+import android.os.Looper
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ApplicationProvider
+import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import com.lionreader.app.AppSettings
@@ -14,12 +20,14 @@ import com.lionreader.shared.data.AppSchema
 import com.lionreader.shared.data.ListScope
 import com.lionreader.shared.data.Reader
 import com.lionreader.shared.db.LionReaderDatabase
+import java.time.Duration
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @RunWith(AndroidJUnit4::class)
@@ -40,8 +48,8 @@ class HomeScreenTest {
     private val settings = MutableStateFlow(AppSettings())
     private val narrated = MutableStateFlow<String?>(null)
 
-    private fun seed(id: String, title: String, read: Boolean) {
-        db.entryQueries.insertIgnore(id, "feed", "web", 0, 0, if (read) 1 else 0, 0)
+    private fun seed(id: String, title: String, read: Boolean, sortAt: Long = 0) {
+        db.entryQueries.insertIgnore(id, "feed", "web", 0, sortAt, if (read) 1 else 0, 0)
         db.entryQueries.updateAll(
             null,
             "feed",
@@ -54,7 +62,7 @@ class HomeScreenTest {
             "Example Feed",
             null,
             0,
-            0,
+            sortAt,
             if (read) 1 else 0,
             0,
             id,
@@ -113,14 +121,39 @@ class HomeScreenTest {
 
         composeRule.onNodeWithContentDescription("Search").performClick()
         composeRule.onNodeWithText("Search articles").performTextInput("borr")
+        // Past the typing debounce.
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(500))
         composeRule.waitForIdle()
         composeRule.onNodeWithText("Borrow checker tips").assertIsDisplayed()
         composeRule.onNodeWithText("Gardening").assertDoesNotExist()
         assertEquals(listOf("a"), model.shownIds())
 
-        composeRule.onNodeWithContentDescription("Close search").performClick()
+        Espresso.closeSoftKeyboard()
+        Espresso.pressBack()
         composeRule.onNodeWithText("Gardening").assertIsDisplayed()
         composeRule.onNodeWithText("Borrow checker tips").assertDoesNotExist()
+    }
+
+    @Test
+    fun searchingKeepsTheTimelinesPlace() {
+        // Seeded oldest first, so "Article 0" tops the newest-first list.
+        (59 downTo 0).forEach { seed("e$it", "Article $it", read = false, sortAt = 60L - it) }
+        show()
+        // The (closed) drawer's list scrolls too.
+        val timeline =
+            SemanticsMatcher("the timeline") {
+                it.config
+                    .getOrElseNullable(SemanticsProperties.CollectionInfo) { null }
+                    ?.rowCount == 60
+            }
+        composeRule.onNode(hasScrollToIndexAction() and timeline).performScrollToIndex(40)
+        composeRule.onNodeWithText("Article 40").assertIsDisplayed()
+
+        composeRule.onNodeWithContentDescription("Search").performClick()
+        composeRule.onNodeWithContentDescription("Close search").performClick()
+
+        composeRule.onNodeWithText("Article 40").assertIsDisplayed()
+        composeRule.onNodeWithText("Article 0").assertDoesNotExist()
     }
 
     @Test

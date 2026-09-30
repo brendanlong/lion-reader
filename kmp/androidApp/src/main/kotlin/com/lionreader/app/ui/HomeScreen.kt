@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardActions
@@ -107,6 +108,9 @@ fun HomeScreen(
     }
 
     BackHandler(enabled = search != null) { model.setSearch(null) }
+    // Apart, so searching doesn't lose the timeline's place; each search starts at the top.
+    val timelineList = rememberLazyListState()
+    val searchList = remember(search == null) { LazyListState() }
 
     ModalNavigationDrawer(
         drawerState = drawer,
@@ -196,6 +200,7 @@ fun HomeScreen(
                     val text = search
                     EntryList(
                         items = if (text != null) searchResults else items,
+                        listState = if (text != null) searchList else timelineList,
                         emptyText =
                             when {
                                 text == null && unreadOnly -> "No unread articles"
@@ -485,6 +490,7 @@ private fun DrawerRow(
 @Composable
 private fun EntryList(
     items: List<TimelineItem>?,
+    listState: LazyListState,
     emptyText: String,
     onOpen: (String) -> Unit,
     onToggleRead: (TimelineItem) -> Unit,
@@ -500,15 +506,15 @@ private fun EntryList(
         )
         return
     }
-    val list = rememberLazyListState()
-    val nearEnd by remember {
-        derivedStateOf {
-            list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ==
-                list.layoutInfo.totalItemsCount - 1
+    val nearEnd by
+        remember(listState) {
+            derivedStateOf {
+                listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ==
+                    listState.layoutInfo.totalItemsCount - 1
+            }
         }
-    }
     LaunchedEffect(nearEnd) { if (nearEnd) onLoadMore() }
-    LazyColumn(state = list, modifier = Modifier.fillMaxSize()) {
+    LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
         items(items, key = { it.id }) { item ->
             val swipe =
                 rememberSwipeToDismissBoxState(

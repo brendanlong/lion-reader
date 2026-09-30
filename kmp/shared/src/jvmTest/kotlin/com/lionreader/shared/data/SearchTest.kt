@@ -15,6 +15,7 @@ import kotlin.test.assertEquals
 import kotlin.time.Instant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 
 private val NOW = Instant.parse("2026-09-29T12:00:00Z").toEpochMilliseconds()
@@ -81,11 +82,45 @@ class SearchTest {
     }
 
     @Test
-    fun matchesWordsWhileTheyAreBeingTyped() = runTest {
-        serve("a", hoursAgo = 1, title = "Running the numbers")
+    fun wordsSurviveInlineTagsEntitiesAndQuotedAngleBrackets() = runTest {
+        serve(
+            "a",
+            hoursAgo = 1,
+            title = "A",
+            body = "<p><img alt=\"a > b\">Fl<em>oo</em>ring caf&#233; na&#xEF;ve&mdash;done</p>",
+        )
         engine.sync()
 
-        assertEquals(listOf("a"), search("r"))
+        assertEquals(listOf("a"), search("flooring"))
+        assertEquals(listOf("a"), search("café naïve done"))
+        assertEquals(emptyList(), search("mdash"))
+        assertEquals(emptyList(), search("233"))
+    }
+
+    @Test
+    fun resultsFollowBodiesArrivingAndGoing() = runTest {
+        serve("a", hoursAgo = 1, title = "A", body = "<p>Hidden treasure</p>")
+        engine.sync(downloadContent = false)
+        val results = mutableListOf<List<String>>()
+        backgroundScope.launch(Dispatchers.Unconfined) {
+            reader.search("treasure", 100).collect { results += it.map { item -> item.id } }
+        }
+        assertEquals(emptyList(), results.last())
+
+        engine.sync()
+        assertEquals(listOf("a"), results.last())
+
+        db.bodyQueries.deleteForEntry("a")
+        assertEquals(emptyList(), results.last())
+    }
+
+    @Test
+    fun matchesWordsWhileTheyAreBeingTyped() = runTest {
+        serve("a", hoursAgo = 1, title = "Running the numbers")
+        serve("b", hoursAgo = 2, title = "Walking")
+        engine.sync()
+
+        assertEquals(listOf("a"), search("nu"))
         assertEquals(listOf("a"), search("runn"))
         assertEquals(listOf("a"), search("running num"))
     }

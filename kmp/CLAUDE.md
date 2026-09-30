@@ -245,8 +245,8 @@ adb shell am start -n com.lionreader.app.debug/com.lionreader.app.MainActivity -
   `INSERT OR REPLACE`, which deletes the row (and its downloaded body, and
   gives it a new rowid, which the search index is keyed on).
 - Open databases with `AppSchema` (`SearchIndex.kt`), never the generated
-  `LionReaderDatabase.Schema`: it adds the triggers that keep the search index
-  (`Search.sq`, FTS4) in step, which SQLDelight can't compile. Search covers
+  `LionReaderDatabase.Schema`: it adds the search index's triggers. Its docs
+  say what a migration touching `entry` owes the index. Search covers
   everything on the device, read or not, and nothing else.
 - Shared logic goes in `commonMain` with tests in `commonTest`; `jvmTest` is for
   what needs a JVM-only driver (e.g. SQLDelight's in-memory `JdbcSqliteDriver`).

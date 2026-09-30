@@ -9,7 +9,9 @@ import com.lionreader.shared.db.LionReaderDatabase
  * The database schema: [LionReaderDatabase.Schema] plus the triggers that keep the search index
  * (`entry_search`, Search.sq) in step with entries and their bodies. They're plain SQL here because
  * SQLDelight can't compile statements that name an FTS4 table's columns. Open databases with this,
- * not the generated schema.
+ * not the generated schema. The index is keyed by `entry`'s implicit rowid: a migration that
+ * rebuilds `entry`, or a VACUUM, renumbers it, so either has to rebuild the index (and recreate the
+ * triggers) too.
  */
 object AppSchema : SqlSchema<QueryResult.Value<Unit>> by LionReaderDatabase.Schema {
     override fun create(driver: SqlDriver): QueryResult.Value<Unit> {
@@ -52,6 +54,7 @@ private val SEARCH_TRIGGERS =
         CREATE TRIGGER entry_search_body AFTER INSERT ON entry_body BEGIN
           UPDATE entry_search SET body = NEW.search_text
           WHERE rowid = (SELECT rowid FROM entry WHERE id = NEW.entry_id);
+          UPDATE entry_body SET search_text = '' WHERE entry_id = NEW.entry_id;
         END
         """,
         """
@@ -62,24 +65,49 @@ private val SEARCH_TRIGGERS =
         """,
     )
 
-private val TAG = Regex("<[^>]*>")
-private val SPACE = Regex("\\s+")
-private val ENTITIES =
-    mapOf(
-        "&amp;" to "&",
-        "&lt;" to "<",
-        "&gt;" to ">",
-        "&quot;" to "\"",
-        "&#39;" to "'",
-        "&nbsp;" to " ",
+/** Tags inside a word (`<b>qu</b>ick`); any other tag separates words. */
+private val INLINE_TAG =
+    Regex(
+        "</?(a|abbr|b|code|em|i|mark|s|small|span|strong|sub|sup|u)\\b[^>]*>",
+        RegexOption.IGNORE_CASE,
     )
+// Quoted attribute values can hold a `>`.
+private val TAG = Regex("<(?:[^>\"']|\"[^\"]*\"|'[^']*')*>")
+private val ENTITY = Regex("&(#[0-9]+|#[xX][0-9a-fA-F]+|[a-zA-Z]+);")
+private val SPACE = Regex("\\s+")
+private val NAMED_ENTITIES =
+    mapOf("amp" to "&", "lt" to "<", "gt" to ">", "quot" to "\"", "apos" to "'")
 
-/** An article body's words, for the search index: tags dropped, common entities decoded. */
-fun searchText(html: String): String {
-    var text = html.replace(TAG, " ")
-    for ((entity, char) in ENTITIES) text = text.replace(entity, char)
-    return text.replace(SPACE, " ").trim()
-}
+/** An article body's words, for the search index: tags dropped, entities decoded. */
+fun searchText(html: String): String =
+    html
+        .replace(INLINE_TAG, "")
+        .replace(TAG, " ")
+        .replace(ENTITY) { match ->
+            val name = match.groupValues[1]
+            val code =
+                when {
+                    name.startsWith("#x", ignoreCase = true) -> name.drop(2).toIntOrNull(16)
+                    name.startsWith("#") -> name.drop(1).toIntOrNull()
+                    else -> null
+                }
+            if (code != null && code in 1..0x10FFFF && code !in 0xD800..0xDFFF) {
+                codePointString(code)
+            } else {
+                // Other named ones (&nbsp;, &mdash;…) are punctuation or space.
+                NAMED_ENTITIES[name] ?: " "
+            }
+        }
+        .replace(SPACE, " ")
+        .trim()
+
+private fun codePointString(code: Int): String =
+    if (code < 0x10000) code.toChar().toString()
+    else {
+        val offset = code - 0x10000
+        charArrayOf((0xD800 + (offset shr 10)).toChar(), (0xDC00 + (offset and 0x3FF)).toChar())
+            .concatToString()
+    }
 
 private val WORD = Regex("[\\p{L}\\p{N}]+")
 

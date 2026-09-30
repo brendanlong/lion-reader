@@ -13,12 +13,14 @@ import com.lionreader.shared.data.TimelineItem
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.filterNotNull
@@ -41,7 +43,7 @@ sealed interface SyncStatus {
     data class Failed(val message: String) : SyncStatus
 }
 
-@OptIn(ExperimentalCoroutinesApi::class)
+@OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 class HomeViewModel(
     private val reader: Reader,
     settings: Flow<AppSettings>,
@@ -100,6 +102,8 @@ class HomeViewModel(
     /** Articles on the device matching [search], newest first; null when not searching. */
     val searchResults: StateFlow<List<TimelineItem>?> =
         _search
+            // Not a query per keystroke while typing fast.
+            .debounce { if (it.isNullOrEmpty()) 0L else 150L }
             .flatMapLatest { text ->
                 if (text == null) flowOf(null) else reader.search(text, SEARCH_LIMIT)
             }

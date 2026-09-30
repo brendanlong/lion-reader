@@ -7,7 +7,8 @@ CREATE TABLE entry_body (
   content TEXT NOT NULL,
   size INTEGER NOT NULL,
   downloaded_at INTEGER NOT NULL,
-  -- The body as plain text, for the search index (Search.sq).
+  -- The body as plain text, only until a trigger moves it into the search
+  -- index (SearchIndex.kt), which empties it.
   search_text TEXT NOT NULL
 );
 
