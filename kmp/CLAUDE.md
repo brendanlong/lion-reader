@@ -68,9 +68,10 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   saved and entries with unsent changes are always kept.
 - **Database work never runs on the main thread**: `Reader`'s writes are
   `suspend` and run on its context (IO in the app).
-- **Reader view.** JavaScript off, no file/content access, no JS bridge, every
-  link opens outside the app, bundled fonts served by `WebViewAssetLoader`.
-  The body is the server's sanitized HTML, inserted verbatim.
+- **Reader view.** Hardened per SECURITY.md §1; the body is the server's
+  sanitized HTML, inserted verbatim. Its one script reports where wide tables
+  and code blocks are, so a sideways drag on one scrolls it instead of paging
+  (`ReaderView`).
 - **Appearance tokens** (`androidApp/src/main/assets/reader/appearance.json`)
   are generated from the web's `src/lib/appearance/config.ts` by
   `pnpm app:appearance` (a unit test fails when stale). Fonts are OFL Google

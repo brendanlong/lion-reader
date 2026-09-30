@@ -69,6 +69,14 @@ Entry bodies, saved articles, and AI summaries are rendered with
 
   Directive rationale lives in `csp.ts`.
 
+- **The native app's reader view** (`kmp/androidApp/.../reader/`) renders the
+  same sanitized HTML in a WebView next to the app's tokens. **Invariant: no
+  script but our bundled `scroll-detect.js` runs** (the document's CSP allows
+  only that file and no requests of the page's own), the page gets no file or
+  content access and no bridge beyond one message channel limited to the asset
+  origin, and every navigation leaves for the browser. Loosening any of that
+  needs a security review.
+
 - **Analytics reports a closed vocabulary, never a URL**
   (`src/lib/analytics/`): we load **no third-party analytics script**, and every
   reported path is a constant looked up in `paths.ts`, so `AnalyticsPath` is
