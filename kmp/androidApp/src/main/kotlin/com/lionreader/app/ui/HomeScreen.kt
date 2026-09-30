@@ -4,23 +4,25 @@ import android.text.format.DateUtils
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
@@ -29,6 +31,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberDrawerState
@@ -37,8 +40,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -64,6 +69,19 @@ fun HomeScreen(model: HomeViewModel, onOpen: (String) -> Unit, onSettings: () ->
     val items by model.items.collectAsStateWithLifecycle()
     val unreadOnly by model.unreadOnly.collectAsStateWithLifecycle()
     val status by model.status.collectAsStateWithLifecycle()
+    var confirmMarkAll by remember { mutableStateOf(false) }
+
+    if (confirmMarkAll) {
+        MarkAllReadDialog(
+            listName = title(scope, navigation),
+            unread = unreadIn(scope, navigation),
+            onConfirm = {
+                confirmMarkAll = false
+                model.markAllRead()
+            },
+            onDismiss = { confirmMarkAll = false },
+        )
+    }
 
     ModalNavigationDrawer(
         drawerState = drawer,
@@ -100,25 +118,11 @@ fun HomeScreen(model: HomeViewModel, onOpen: (String) -> Unit, onSettings: () ->
                         }
                     },
                     actions = {
-                        IconToggleButton(
-                            checked = unreadOnly,
-                            onCheckedChange = model::setUnreadOnly,
-                        ) {
-                            Icon(
-                                painterResource(R.drawable.ic_filter_list),
-                                contentDescription =
-                                    if (unreadOnly) "Showing unread" else "Showing all",
-                                tint =
-                                    if (unreadOnly) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        IconButton(onClick = model::markAllRead) {
-                            Icon(
-                                painterResource(R.drawable.ic_done_all),
-                                contentDescription = "Mark all read",
-                            )
-                        }
+                        ListMenu(
+                            showRead = !unreadOnly,
+                            onShowReadChange = { model.setUnreadOnly(!it) },
+                            onMarkAllRead = { confirmMarkAll = true },
+                        )
                     },
                 )
             }
@@ -154,6 +158,72 @@ fun HomeScreen(model: HomeViewModel, onOpen: (String) -> Unit, onSettings: () ->
             }
         }
     }
+}
+
+/** Unread entries of [scope] on the device: what mark-all-read would mark. */
+private fun unreadIn(scope: ListScope, navigation: Navigation?): Int =
+    when (scope) {
+        ListScope.All -> navigation?.allUnread
+        ListScope.Starred -> navigation?.starredUnread
+        ListScope.Saved -> navigation?.savedUnread
+        is ListScope.Tag -> navigation?.tags?.firstOrNull { it.id == scope.id }?.unread
+        is ListScope.Subscription ->
+            navigation?.subscriptions?.firstOrNull { it.id == scope.id }?.unread
+    } ?: 0
+
+@Composable
+private fun ListMenu(
+    showRead: Boolean,
+    onShowReadChange: (Boolean) -> Unit,
+    onMarkAllRead: () -> Unit,
+) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { open = true }) {
+            Icon(painterResource(R.drawable.ic_more_vert), contentDescription = "List options")
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(
+                text = { Text("Show read articles") },
+                trailingIcon = { Checkbox(checked = showRead, onCheckedChange = null) },
+                onClick = {
+                    open = false
+                    onShowReadChange(!showRead)
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("Mark all as read…") },
+                onClick = {
+                    open = false
+                    onMarkAllRead()
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun MarkAllReadDialog(
+    listName: String,
+    unread: Int,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Mark all as read?") },
+        text = {
+            Text(
+                if (unread == 0) "There are no unread articles in $listName."
+                else
+                    "Mark ${if (unread == 1) "1 article" else "$unread articles"} in $listName as read?"
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm, enabled = unread > 0) { Text("Mark read") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 private fun title(scope: ListScope, navigation: Navigation?): String =
@@ -289,7 +359,12 @@ private fun EntryList(
                     }
                 )
             SwipeToDismissBox(state = swipe, backgroundContent = {}) {
-                EntryRow(item, onOpen = { onOpen(item.id) }, onToggleStar = { onToggleStar(item) })
+                EntryRow(
+                    item,
+                    onOpen = { onOpen(item.id) },
+                    onToggleRead = { onToggleRead(item) },
+                    onToggleStar = { onToggleStar(item) },
+                )
             }
             HorizontalDivider()
         }
@@ -297,7 +372,12 @@ private fun EntryList(
 }
 
 @Composable
-private fun EntryRow(item: TimelineItem, onOpen: () -> Unit, onToggleStar: () -> Unit) {
+private fun EntryRow(
+    item: TimelineItem,
+    onOpen: () -> Unit,
+    onToggleRead: () -> Unit,
+    onToggleStar: () -> Unit,
+) {
     Row(
         modifier =
             Modifier.fillMaxWidth()
@@ -308,24 +388,13 @@ private fun EntryRow(item: TimelineItem, onOpen: () -> Unit, onToggleStar: () ->
         verticalAlignment = Alignment.Top,
     ) {
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (!item.read) {
-                    Icon(
-                        painterResource(R.drawable.ic_circle),
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(8.dp),
-                    )
-                    Spacer(Modifier.width(6.dp))
-                }
-                Text(
-                    listOfNotNull(item.source, relativeTime(item.sortAtMillis)).joinToString(" · "),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+            Text(
+                listOfNotNull(item.source, relativeTime(item.sortAtMillis)).joinToString(" · "),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
             Text(
                 item.title ?: "Untitled",
                 style = MaterialTheme.typography.titleMedium,
@@ -348,16 +417,30 @@ private fun EntryRow(item: TimelineItem, onOpen: () -> Unit, onToggleStar: () ->
                     )
                 }
         }
-        IconButton(onClick = onToggleStar) {
-            Icon(
-                painterResource(
-                    if (item.starred) R.drawable.ic_star else R.drawable.ic_star_border
-                ),
-                contentDescription = if (item.starred) "Unstar" else "Star",
-                tint =
-                    if (item.starred) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        Column {
+            IconButton(onClick = onToggleStar) {
+                Icon(
+                    painterResource(
+                        if (item.starred) R.drawable.ic_star else R.drawable.ic_star_border
+                    ),
+                    contentDescription = if (item.starred) "Unstar" else "Star",
+                    tint =
+                        if (item.starred) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            IconButton(onClick = onToggleRead) {
+                Icon(
+                    painterResource(
+                        if (item.read) R.drawable.ic_circle_outline else R.drawable.ic_circle
+                    ),
+                    contentDescription = if (item.read) "Mark unread" else "Mark read",
+                    tint =
+                        if (item.read) MaterialTheme.colorScheme.onSurfaceVariant
+                        else MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
         }
     }
 }

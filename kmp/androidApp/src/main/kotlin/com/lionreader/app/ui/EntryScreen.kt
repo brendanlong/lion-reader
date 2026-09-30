@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
@@ -38,28 +40,37 @@ import com.lionreader.app.reader.AppearanceTokens
 import com.lionreader.app.reader.ReaderColors
 import com.lionreader.app.reader.ReaderWebView
 import com.lionreader.app.reader.readerDocument
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
+/**
+ * Articles of the list they were opened from, one per page: swiping left or right moves to the next
+ * or previous one, and each is marked read when it settles on screen. [ids] is the list's order
+ * when the screen opened, kept fixed so entries arriving meanwhile don't shift the pages.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EntryScreen(graph: AppGraph, account: AccountSession, entryId: String, onBack: () -> Unit) {
+fun EntryScreen(
+    graph: AppGraph,
+    account: AccountSession,
+    ids: List<String>,
+    startId: String,
+    onShown: (String) -> Unit,
+    onBack: () -> Unit,
+) {
     val context = LocalContext.current
+    val pages = remember(startId) { if (startId in ids) ids else listOf(startId) }
+    val pager = rememberPagerState(initialPage = pages.indexOf(startId)) { pages.size }
+    val entryId = pages[pager.settledPage]
     val entry by
         remember(entryId) { account.reader.entry(entryId) }.collectAsStateWithLifecycle(null)
-    val settings by graph.currentSettings.collectAsStateWithLifecycle()
-    val tokens = remember { AppearanceTokens.load(context) }
-    var loadFailed by remember(entryId) { mutableStateOf(false) }
     val coroutines = rememberCoroutineScope()
 
     LaunchedEffect(entryId) {
+        onShown(entryId)
         account.reader.markOpened(entryId)
-    }
-    LaunchedEffect(entry?.id) {
-        val current = entry ?: return@LaunchedEffect
-        if (!current.read) account.reader.setRead(listOf(current.id), true)
-        if (current.content == null) {
-            loadFailed = runCatching { account.sync.ensureContent(current.id) }.isFailure
-        }
+        val shown = account.reader.entry(entryId).first() ?: return@LaunchedEffect
+        if (!shown.read) account.reader.setRead(listOf(entryId), true)
     }
 
     Scaffold(
@@ -137,10 +148,34 @@ fun EntryScreen(graph: AppGraph, account: AccountSession, entryId: String, onBac
             )
         }
     ) { padding ->
+        HorizontalPager(
+            state = pager,
+            key = { pages[it] },
+            modifier = Modifier.padding(padding).fillMaxSize(),
+        ) { page ->
+            EntryPage(graph, account, pages[page])
+        }
+    }
+}
+
+@Composable
+private fun EntryPage(graph: AppGraph, account: AccountSession, entryId: String) {
+    val context = LocalContext.current
+    val entry by
+        remember(entryId) { account.reader.entry(entryId) }.collectAsStateWithLifecycle(null)
+    val settings by graph.currentSettings.collectAsStateWithLifecycle()
+    val tokens = remember { AppearanceTokens.load(context) }
+    var loadFailed by remember(entryId) { mutableStateOf(false) }
+
+    LaunchedEffect(entryId, entry?.content == null) {
+        if (entry != null && entry?.content == null) {
+            loadFailed = runCatching { account.sync.ensureContent(entryId) }.isFailure
+        }
+    }
+
+    run {
         val current = entry
-        Column(
-            modifier = Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState())
-        ) {
+        Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             if (current == null) return@Column
             Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                 Text(current.title ?: "Untitled", style = MaterialTheme.typography.headlineSmall)

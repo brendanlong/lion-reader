@@ -12,6 +12,7 @@ import com.lionreader.shared.data.Reader
 import com.lionreader.shared.db.LionReaderDatabase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -69,7 +70,8 @@ class HomeScreenTest {
         composeRule.onNodeWithText("Unread article").assertIsDisplayed()
         composeRule.onNodeWithText("Read article").assertDoesNotExist()
 
-        composeRule.onNodeWithContentDescription("Showing unread").performClick()
+        composeRule.onNodeWithContentDescription("List options").performClick()
+        composeRule.onNodeWithText("Show read articles").performClick()
         composeRule.waitUntil { unreadOnly.value.not() }
         composeRule.onNodeWithText("Read article").assertIsDisplayed()
     }
@@ -83,5 +85,35 @@ class HomeScreenTest {
 
         composeRule.waitUntil { db.outboxQueries.countStates().executeAsOne() == 1L }
         composeRule.onNodeWithContentDescription("Unstar").assertIsDisplayed()
+    }
+
+    @Test
+    fun markAllReadAsksFirstAndMarksOnlyOnConfirmation() {
+        seed("a", "One", read = false)
+        seed("b", "Two", read = false)
+        show()
+
+        composeRule.onNodeWithContentDescription("List options").performClick()
+        composeRule.onNodeWithText("Mark all as read…").performClick()
+        composeRule.onNodeWithText("Mark 2 articles in All as read?").assertIsDisplayed()
+        composeRule.onNodeWithText("Cancel").performClick()
+        assertEquals(0L, db.outboxQueries.countStates().executeAsOne())
+
+        composeRule.onNodeWithContentDescription("List options").performClick()
+        composeRule.onNodeWithText("Mark all as read…").performClick()
+        composeRule.onNodeWithText("Mark read").performClick()
+        composeRule.waitUntil { db.outboxQueries.countStates().executeAsOne() == 2L }
+    }
+
+    @Test
+    fun theReadToggleOnARowRecordsAnUnsentChange() {
+        seed("a", "An article", read = false)
+        show()
+
+        composeRule.onNodeWithContentDescription("Mark read").performClick()
+
+        composeRule.waitUntil { db.outboxQueries.countStates().executeAsOne() == 1L }
+        // Still listed: entries touched in this list stay until it's reloaded.
+        composeRule.onNodeWithText("An article").assertIsDisplayed()
     }
 }

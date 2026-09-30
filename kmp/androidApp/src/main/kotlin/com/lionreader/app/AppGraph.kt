@@ -78,13 +78,21 @@ class AppGraph(private val context: Context) {
     /** Serializes account switches. */
     private val accountMutex = Mutex()
 
-    init {
-        // Before accounts had their own files, everything lived here.
-        context.deleteDatabase("lionreader.db")
-    }
-
     private fun restoreAccount(): AccountSession? {
-        val dbName = prefs.getString(ACCOUNT_DB, null) ?: return null
+        // Files from older schema generations (and the shared file from before
+        // accounts had their own) can't be opened by this build; see
+        // accountDbName. A signed-in user's account is set up again (and
+        // resynced) after the next /auth/me.
+        context
+            .databaseList()
+            .filter {
+                it.endsWith(".db") &&
+                    ((it.startsWith("account-") && !it.startsWith(DB_PREFIX)) ||
+                        it == "lionreader.db")
+            }
+            .forEach { context.deleteDatabase(it) }
+        val dbName =
+            prefs.getString(ACCOUNT_DB, null)?.takeIf { it.startsWith(DB_PREFIX) } ?: return null
         return openAccount(dbName)
     }
 
@@ -164,10 +172,16 @@ class AppGraph(private val context: Context) {
     }
 }
 
+/**
+ * The schema generation is part of the file name: until a build is released, a schema change bumps
+ * it instead of shipping a migration, and older files are deleted (and resynced) on startup.
+ */
+private const val DB_PREFIX = "account-v2-"
+
 /** One database file per (server, account); the name doesn't reveal either. */
 private fun accountDbName(serverUrl: String, userId: String): String {
     val digest = MessageDigest.getInstance("SHA-256").digest("$serverUrl\n$userId".toByteArray())
-    return "account-" + digest.take(12).joinToString("") { "%02x".format(it) } + ".db"
+    return DB_PREFIX + digest.take(12).joinToString("") { "%02x".format(it) } + ".db"
 }
 
 class ServerConnection(serverUrl: String, http: HttpClient, tokens: TokenStore) {
