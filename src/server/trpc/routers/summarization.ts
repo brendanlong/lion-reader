@@ -11,7 +11,8 @@ import { eq, and } from "drizzle-orm";
 import {
   createTRPCRouter,
   confirmedProtectedProcedure as protectedProcedure,
-  expensiveConfirmedProtectedProcedure,
+  expensiveScopedProtectedProcedure,
+  scopedProtectedProcedure,
 } from "../trpc";
 import { errors } from "../errors";
 import { aiModelListSchema, uuidSchema } from "../validation";
@@ -27,6 +28,7 @@ import {
   getMaxWords,
   hashPrompt,
   DEFAULT_SUMMARIZATION_PROMPT,
+  sanitizeSummaryHtml,
 } from "@/server/services/summarization";
 import {
   getAvailableProviders,
@@ -37,7 +39,7 @@ import { SUGGESTED_SUMMARIZATION_MODELS } from "@/lib/summarization/constants";
 import { normalizeModelRef } from "@/lib/ai/model-ref";
 import { getUserApiKeys } from "@/server/auth/session";
 import { logger } from "@/lib/logger";
-import { sanitizeEntryHtml } from "@/server/html/sanitize";
+import { OAUTH_SCOPES } from "@/server/oauth/utils";
 
 // ============================================================================
 // Constants
@@ -103,8 +105,9 @@ export const summarizationRouter = createTRPCRouter({
    */
   // Rate-limited (10 burst, 1/sec): makes an outbound LLM call, potentially on
   // the server-wide API key, and explicit regenerate bypasses the error
-  // backoff below.
-  generate: expensiveConfirmedProtectedProcedure
+  // backoff below. The native app may call it (and `isAvailable`); model and
+  // prompt settings stay session-only.
+  generate: expensiveScopedProtectedProcedure(OAUTH_SCOPES.READER_FULL_ACCESS)
     .meta({
       openapi: {
         method: "POST",
@@ -171,7 +174,7 @@ export const summarizationRouter = createTRPCRouter({
         // stored summary on the next read, with no version column or
         // migration — unlike large entry bodies, summaries are small enough
         // that re-sanitizing on each read is cheaper than tracking staleness.
-        summary: sanitizeEntryHtml(record.summaryText) ?? "",
+        summary: record.summaryText ? sanitizeSummaryHtml(record.summaryText) : "",
         cached: true,
         modelId: record.modelId || "unknown",
         generatedAt: record.generatedAt,
@@ -370,7 +373,7 @@ export const summarizationRouter = createTRPCRouter({
    * Returns true if any provider (Anthropic, Groq, Cerebras, OpenRouter) has a
    * user-configured or server-configured API key.
    */
-  isAvailable: protectedProcedure
+  isAvailable: scopedProtectedProcedure(OAUTH_SCOPES.READER_FULL_ACCESS)
     .meta({
       openapi: {
         method: "GET",

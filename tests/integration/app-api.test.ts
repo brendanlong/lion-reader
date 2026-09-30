@@ -5,20 +5,24 @@
  * Covers the token gate (only the first-party client's `/api/v1`-audience token
  * is accepted, and only on endpoints that opted in), the authorize endpoint's
  * audience binding, and the app-only endpoints (`sync.changes`,
- * `entries.getMany`, `entries.setStarredMany`, clock-skew rebasing).
+ * `entries.getMany`, `entries.setStarredMany`, clock-skew rebasing, summaries).
  */
 
-import { describe, it, expect, afterAll } from "vitest";
+import { describe, it, expect, afterAll, afterEach, beforeAll } from "vitest";
 import { NextRequest } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
+  entrySummaries,
   oauthAuthorizationCodes,
   subscriptions,
   userEntries,
   users,
 } from "../../src/server/db/schema";
 import { createApiToken } from "../../src/server/auth/api-token";
+import { generateUuidv7 } from "../../src/lib/uuidv7";
+import { CURRENT_PROMPT_VERSION } from "../../src/server/services/summarization";
+import { AI_PROVIDER_ENV_KEYS } from "../../src/server/services/ai-providers";
 import { GET as eventsGet } from "../../src/app/api/v1/events/route";
 import { createSession } from "../../src/server/auth/session";
 import { createTokens, recordConsent } from "../../src/server/oauth/service";
@@ -462,5 +466,76 @@ describe("clock-skew rebasing", () => {
       .from(userEntries)
       .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, entryId)));
     expect(Math.abs(row.readChangedAt!.getTime() - Date.now())).toBeLessThan(60 * 1000);
+  });
+});
+
+describe("summaries", () => {
+  // Summaries are available only with an AI provider key, so the tests control
+  // the server keys rather than inherit whatever the environment has.
+  const savedKeys = new Map<string, string | undefined>();
+  beforeAll(() => {
+    for (const name of Object.values(AI_PROVIDER_ENV_KEYS)) {
+      savedKeys.set(name, process.env[name]);
+      delete process.env[name];
+    }
+  });
+  afterEach(() => {
+    delete process.env.ANTHROPIC_API_KEY;
+  });
+  afterAll(() => {
+    for (const [name, value] of savedKeys) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  });
+
+  it("lets the app generate (here: read the cached) summary of an entry", async () => {
+    // Never called: the cached summary is returned first.
+    process.env.ANTHROPIC_API_KEY = "sk-ant-test-server-key";
+    const userId = await createUser();
+    const [entryId] = await subscribedEntries(userId, 1);
+    await db.insert(entrySummaries).values({
+      id: generateUuidv7(),
+      userId,
+      // createTestEntry's content hash; the summary cache is keyed off it.
+      contentHash: `hash-${entryId}`,
+      summaryText: "<p>A short summary.</p>",
+      modelId: "claude-test",
+      promptVersion: CURRENT_PROMPT_VERSION,
+      generatedAt: new Date(),
+      createdAt: new Date(),
+    });
+
+    const res = await rest(await appToken(userId), "POST", "/summarization/generate", {
+      entryId,
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.summary).toContain("A short summary.");
+    expect(body.cached).toBe(true);
+  });
+
+  it("tells the app whether summaries are available", async () => {
+    const token = await appToken(await createUser());
+    const available = async () =>
+      (await (await rest(token, "GET", "/summarization/available")).json()).available;
+
+    expect(await available()).toBe(false);
+    process.env.ANTHROPIC_API_KEY = "sk-ant-test-server-key";
+    expect(await available()).toBe(true);
+  });
+
+  it("keeps summary settings session-only", async () => {
+    const userId = await createUser();
+    const res = await rest(await appToken(userId), "GET", "/summarization/models");
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects an mcp API token", async () => {
+    const userId = await createUser();
+    const [entryId] = await subscribedEntries(userId, 1);
+    const { token } = await createApiToken(userId, ["mcp"]);
+    expect((await rest(token, "GET", "/summarization/available")).status).toBe(403);
+    expect((await rest(token, "POST", "/summarization/generate", { entryId })).status).toBe(403);
   });
 });

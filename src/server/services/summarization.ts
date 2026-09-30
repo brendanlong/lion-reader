@@ -10,6 +10,7 @@ import { createHash } from "crypto";
 import { logger } from "@/lib/logger";
 import { sanitizeEntryHtml } from "@/server/html/sanitize";
 import { markdownToHtmlAsync } from "@/server/markdown";
+import { parseFragment, serialize } from "parse5";
 import { htmlToPlainText } from "@/lib/narration/html-to-narration-input";
 import { parseModelRef } from "@/lib/ai/model-ref";
 import {
@@ -227,7 +228,7 @@ export async function generateSummary(
     // renderer passes raw HTML through, and the summary is rendered via
     // dangerouslySetInnerHTML, so sanitize before storing/returning it.
     const markdownSummary = extractSummaryFromResponse(responseText);
-    const summary = sanitizeEntryHtml(await markdownToHtmlAsync(markdownSummary)) ?? "";
+    const summary = sanitizeSummaryHtml(await markdownToHtmlAsync(markdownSummary));
 
     return {
       summary,
@@ -274,4 +275,17 @@ export function getSummarizationModelId(userModel?: string | null, keys?: AiProv
     SUMMARIZATION_PROVIDER_PRIORITY.find((p) => available.includes(p)) ??
     SUMMARIZATION_PROVIDER_PRIORITY[0];
   return DEFAULT_SUMMARIZATION_MODELS[provider];
+}
+
+/**
+ * A summary as the HTML it is served as: sanitized, like entry bodies, and
+ * first made a balanced fragment. The model can write raw HTML, which Markdown
+ * passes through, and the sanitizer streams (it never closes what the input
+ * left open). The web gives a summary its own container, but the native app
+ * puts it in one document ahead of the article body, where an unclosed `<b>`
+ * or `<table>` would take the body over. Balancing happens before sanitizing,
+ * so the sanitizer's output is still what's served.
+ */
+export function sanitizeSummaryHtml(html: string): string {
+  return sanitizeEntryHtml(serialize(parseFragment(html))) ?? "";
 }
