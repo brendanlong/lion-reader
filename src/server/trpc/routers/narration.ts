@@ -13,7 +13,8 @@ import {
   createTRPCRouter,
   confirmedProtectedProcedure as protectedProcedure,
   expensiveConfirmedProtectedProcedure,
-  speechConfirmedProtectedProcedure,
+  scopedProtectedProcedure,
+  speechScopedProtectedProcedure,
 } from "../trpc";
 import { errors } from "../errors";
 import { aiModelListSchema, uuidSchema } from "../validation";
@@ -46,6 +47,7 @@ import { selectDisplayedContent } from "@/lib/narration/select-content";
 import { getUserApiKeys } from "@/server/auth/session";
 import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
 import { logger } from "@/lib/logger";
+import { OAUTH_SCOPES } from "@/server/oauth/utils";
 import {
   trackNarrationGenerated,
   trackNarrationGenerationError,
@@ -397,7 +399,7 @@ export const narrationRouter = createTRPCRouter({
    * server) is configured, which is also how the client tells whether cloud
    * voices are available.
    */
-  listVoiceModels: protectedProcedure
+  listVoiceModels: scopedProtectedProcedure(OAUTH_SCOPES.READER_FULL_ACCESS)
     .meta({
       openapi: {
         method: "GET",
@@ -436,7 +438,8 @@ export const narrationRouter = createTRPCRouter({
    * MP3; the client splits articles into chunks of at most
    * MAX_CLOUD_SPEECH_CHARS and plays them in order.
    */
-  synthesize: speechConfirmedProtectedProcedure(
+  synthesize: speechScopedProtectedProcedure(
+    OAUTH_SCOPES.READER_FULL_ACCESS,
     z.object({
       /** `provider:model` ref; null means the default model. */
       model: z.string().max(200).nullable(),

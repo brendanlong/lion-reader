@@ -6,10 +6,11 @@
  * is accepted, and only on endpoints that opted in), the authorize endpoint's
  * audience binding, and the app-only endpoints (`sync.changes`,
  * `entries.getMany`, `entries.setStarredMany`, clock-skew rebasing, summaries,
- * saving shared links).
+ * saving shared links, cloud voices).
  */
 
 import { describe, it, expect, afterAll, afterEach, beforeAll } from "vitest";
+import Redis from "ioredis";
 import { NextRequest } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
@@ -21,6 +22,7 @@ import {
   users,
 } from "../../src/server/db/schema";
 import { createApiToken } from "../../src/server/auth/api-token";
+import { RATE_LIMIT_CONFIGS } from "../../src/server/rate-limit";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { CURRENT_PROMPT_VERSION } from "../../src/server/services/summarization";
 import { AI_PROVIDER_ENV_KEYS } from "../../src/server/services/ai-providers";
@@ -567,5 +569,59 @@ describe("POST /saved", () => {
     // How the app tells this 401 from an expired token (it refreshes only for
     // one without a code).
     expect(body.data.appErrorCode).toBe("NEEDS_GOOGLE_SIGNIN");
+  });
+});
+
+describe("cloud voices", () => {
+  // With no AI provider key there are no cloud voices; that's enough to show
+  // the app gets past the token gate (no network either way).
+  const savedKeys = new Map<string, string | undefined>();
+  beforeAll(() => {
+    for (const name of Object.values(AI_PROVIDER_ENV_KEYS)) {
+      savedKeys.set(name, process.env[name]);
+      delete process.env[name];
+    }
+  });
+  afterAll(() => {
+    for (const [name, value] of savedKeys) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  });
+
+  it("lets the app list voice models and ask for speech", async () => {
+    const userId = await createUser();
+    const token = await appToken(userId);
+
+    const models = await rest(token, "GET", "/narration/voice-models");
+    expect(models.status).toBe(200);
+    expect((await models.json()).models).toEqual([]);
+
+    const speech = await rest(token, "POST", "/narration/synthesize", {
+      model: null,
+      voice: null,
+      text: "Hello.",
+    });
+    // Past the gate: rejected for the missing key, not the token.
+    expect(speech.status).toBe(400);
+    expect((await speech.json()).message).toContain("OpenRouter API key");
+    // And charged to the user's speech bucket, the one the web draws on too
+    // (short texts pay the 200-character floor).
+    const redis = new Redis(process.env.REDIS_URL!);
+    try {
+      const left = Number(await redis.hget(`rate_limit:speech:user:${userId}`, "tokens"));
+      expect(left).toBeCloseTo(RATE_LIMIT_CONFIGS.speech.capacity - 200, -2);
+    } finally {
+      await redis.quit();
+    }
+  });
+
+  it("rejects an mcp API token", async () => {
+    const { token } = await createApiToken(await createUser(), ["mcp"]);
+    expect((await rest(token, "GET", "/narration/voice-models")).status).toBe(403);
+    expect(
+      (await rest(token, "POST", "/narration/synthesize", { model: null, voice: null, text: "Hi" }))
+        .status
+    ).toBe(403);
   });
 });
