@@ -34,8 +34,9 @@ internal class PulledPage(
  * committed ahead of data a later request was supposed to bring.
  *
  * Table ownership: `entry` state and metadata, subscriptions, tags and cursors are written here
- * under the sync lock; bodies only by [storeBodies]; the outbox by `Reader` (and cleared here once
- * sent).
+ * * under the sync lock; bodies only by [storeBodies] and summaries only by [storeSummary] (both
+ *   outside the lock, version-guarded, and deleted here with their entry); the outbox by `Reader`
+ *   (and cleared here once sent).
  */
 internal class SyncWriter(private val db: LionReaderDatabase) {
     private val store = LocalStore(db)
@@ -96,7 +97,12 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
                 entry.starred,
             )
             // The fetched body is current: it replaces the old one and wins
-            // over any download already in flight.
+            // over any download already in flight. A summary goes unless the
+            // body is the one it summarized.
+            val old = db.bodyQueries.content(entry.id).executeAsOneOrNull()
+            if (old != (entry.displayContent ?: "")) {
+                db.summaryQueries.deleteForEntry(entry.id)
+            }
             db.entryQueries.bumpBodyVersion(entry.id)
         }
         val versions = page.fetchedEntries.associate { it.id to (bodyVersion(it.id) ?: 0L) }
@@ -144,8 +150,10 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
                         event.entryId,
                     )
                     // The body may have changed too; download it again, and
-                    // reject any download that started before now.
+                    // reject any download that started before now. A summary
+                    // of the old text goes with it.
                     db.bodyQueries.deleteForEntry(event.entryId)
+                    db.summaryQueries.deleteForEntry(event.entryId)
                     db.entryQueries.bumpBodyVersion(event.entryId)
                 }
             is SyncEvent.EntryStateChanged -> {
@@ -288,6 +296,7 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
         db.entryQueries.evictOutsideWindow(now - policy.windowMillis)
         db.entryQueries.evictBeyondCount(policy.maxReadEntries.toLong())
         db.bodyQueries.pruneOrphans()
+        db.summaryQueries.pruneOrphans()
         var size = db.bodyQueries.totalSize().executeAsOne()
         if (size > policy.contentBudgetBytes) {
             for (candidate in db.bodyQueries.evictionCandidates().executeAsList()) {
@@ -299,4 +308,8 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
     }
 
     fun clearAll() = db.transaction { store.clearAll() }
+
+    /** Keeps a summary the user asked for, if its entry is still at [bodyVersion]. */
+    fun storeSummary(entryId: String, html: String, bodyVersion: Long) =
+        db.summaryQueries.putIfCurrent(entryId, html, bodyVersion)
 }

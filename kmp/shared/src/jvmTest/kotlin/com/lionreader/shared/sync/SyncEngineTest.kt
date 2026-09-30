@@ -1,6 +1,8 @@
 package com.lionreader.shared.sync
 
+import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import com.lionreader.shared.api.ApiException
 import com.lionreader.shared.api.EntryMetadata
 import com.lionreader.shared.api.EventEntry
 import com.lionreader.shared.api.FeedType
@@ -421,5 +423,81 @@ class SyncEngineTest {
 
         release.complete(Unit)
         background.join()
+    }
+
+    @Test
+    fun summariesAreKeptUntilTheArticleChanges() = runTest {
+        server.subscriptions += Subscription("sub-1", FeedType.WEB)
+        serve(entry("a"))
+        server.summaries["a"] = "<p>Short version</p>"
+        engine.sync()
+
+        assertTrue(engine.summariesAvailable())
+        engine.summarize("a")
+        assertEquals("<p>Short version</p>", reader.entry("a").first()?.summary)
+        engine.sync()
+        assertEquals("<p>Short version</p>", reader.entry("a").first()?.summary)
+
+        // An edit makes the summary stale.
+        server.queueChanges(
+            events = listOf(SyncEvent.EntryUpdated("a", EntryMetadata(title = "New title")))
+        )
+        engine.sync()
+        assertNull(reader.entry("a").first()?.summary)
+    }
+
+    @Test
+    fun aSummaryRequestedBeforeAnEditIsNotKept() = runTest {
+        server.subscriptions += Subscription("sub-1", FeedType.WEB)
+        serve(entry("a"))
+        server.summaries["a"] = "<p>Of the old text</p>"
+        engine.sync()
+
+        server.duringSummary = {
+            server.queueChanges(
+                events = listOf(SyncEvent.EntryUpdated("a", EntryMetadata(title = "Edited")))
+            )
+            engine.sync(downloadContent = false)
+        }
+        engine.summarize("a")
+
+        assertNull(reader.entry("a").first()?.summary)
+    }
+
+    @Test
+    fun unsubscribingTakesTheSummariesWithIt() = runTest {
+        server.subscriptions += Subscription("sub-1", FeedType.WEB)
+        serve(entry("a"))
+        server.summaries["a"] = "<p>Summary</p>"
+        engine.sync()
+        engine.summarize("a")
+
+        server.queueChanges(events = listOf(SyncEvent.SubscriptionDeleted("sub-1")))
+        engine.sync(downloadContent = false)
+
+        assertEquals(0L, summaryRows())
+    }
+
+    private fun summaryRows(): Long =
+        driver
+            .executeQuery(
+                null,
+                "SELECT count(*) FROM entry_summary",
+                { cursor ->
+                    cursor.next()
+                    QueryResult.Value(cursor.getLong(0) ?: 0L)
+                },
+                0,
+            )
+            .value
+
+    @Test
+    fun aFailedSummaryStoresNothing() = runTest {
+        server.subscriptions += Subscription("sub-1", FeedType.WEB)
+        serve(entry("a"))
+        engine.sync()
+
+        assertFailsWith<ApiException> { engine.summarize("a") }
+        assertNull(reader.entry("a").first()?.summary)
     }
 }

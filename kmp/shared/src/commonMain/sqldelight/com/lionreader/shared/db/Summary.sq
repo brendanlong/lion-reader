@@ -1,0 +1,23 @@
+-- AI summaries (sanitized HTML from the server), fetched when the user asks and
+-- kept for offline reading while their entry is on the device.
+CREATE TABLE entry_summary (
+  entry_id TEXT NOT NULL PRIMARY KEY,
+  html TEXT NOT NULL
+);
+
+-- Only while the entry is still on the device at the :bodyVersion it had when
+-- the request started, like bodies: a summary requested before an edit is of
+-- the old text.
+putIfCurrent:
+INSERT OR REPLACE INTO entry_summary(entry_id, html)
+SELECT :entryId, :html
+WHERE EXISTS (SELECT 1 FROM entry WHERE id = :entryId AND body_version = :bodyVersion);
+
+deleteForEntry:
+DELETE FROM entry_summary WHERE entry_id = ?;
+
+pruneOrphans:
+DELETE FROM entry_summary WHERE entry_id NOT IN (SELECT id FROM entry);
+
+deleteAll:
+DELETE FROM entry_summary;

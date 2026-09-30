@@ -124,6 +124,7 @@ internal class LocalStore(val db: LionReaderDatabase) {
     fun deleteEntry(id: String) {
         entries.deleteById(id)
         db.bodyQueries.deleteForEntry(id)
+        db.summaryQueries.deleteForEntry(id)
         db.outboxQueries.deleteStatesForEntry(id)
     }
 
@@ -174,6 +175,7 @@ internal class LocalStore(val db: LionReaderDatabase) {
         subs.clearSubscriptionTags(id)
         entries.deleteUnstarredForSubscription(id)
         db.bodyQueries.pruneOrphans()
+        db.summaryQueries.pruneOrphans()
     }
 
     fun upsertTag(tag: TagRef) {
@@ -192,6 +194,7 @@ internal class LocalStore(val db: LionReaderDatabase) {
     fun clearSynced() {
         entries.deleteAll()
         db.bodyQueries.deleteAll()
+        db.summaryQueries.deleteAll()
         subs.deleteAllSubscriptions()
         subs.deleteAllTags()
         subs.deleteAllSubscriptionTags()

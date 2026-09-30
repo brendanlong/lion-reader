@@ -17,6 +17,7 @@ import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.UserAgent
 import java.security.MessageDigest
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -28,6 +29,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 const val DEFAULT_SERVER_URL = "https://lionreader.com"
 
@@ -171,7 +173,7 @@ class AppGraph(private val context: Context) {
 }
 
 /** Database file schema generation; bump it on a pre-release schema change (kmp/CLAUDE.md). */
-private const val DB_PREFIX = "account-v2-"
+private const val DB_PREFIX = "account-v3-"
 
 /** One database file per (server, account); the name doesn't reveal either. */
 private fun accountDbName(serverUrl: String, userId: String): String {
@@ -196,6 +198,24 @@ class AccountSession(
     private val database = LionReaderDatabase(driver)
     val reader = Reader(database, System::currentTimeMillis, Dispatchers.IO, onLocalChange)
     val sync = SyncEngine(connection.api, database, System::currentTimeMillis, retention)
+
+    private var summariesAvailable = false
+
+    /**
+     * Whether the server can summarize for this account, or null when it can't be asked (offline).
+     * A yes is remembered; a no is asked again, since the user can add an AI key on the web.
+     */
+    suspend fun summariesAvailable(): Boolean? {
+        if (summariesAvailable) return true
+        return try {
+            withContext(Dispatchers.IO) { sync.summariesAvailable() }
+                .also { summariesAvailable = it }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+    }
 
     fun close() = driver.close()
 }

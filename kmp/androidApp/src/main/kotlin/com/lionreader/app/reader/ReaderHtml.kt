@@ -71,13 +71,14 @@ private val fontFaces: String =
 data class ReaderHeader(val title: String, val byline: String)
 
 /**
- * A complete document for the article: the [header], escaped, and the body. The body is the
- * server's sanitized HTML (sanitized on every read); it is inserted verbatim and never re-sanitized
- * here. Our script goes in the head, ahead of it, so no unclosed element in the body can swallow
- * it.
+ * A complete document for the article: the [header], escaped, the AI [summary] if shown, and the
+ * body. The summary and body are the server's sanitized HTML (sanitized on every read); they are
+ * inserted verbatim and never re-sanitized here. Our script goes in the head, ahead of it, so no
+ * unclosed element in the body can swallow it.
  */
 fun readerDocument(
     header: ReaderHeader,
+    summary: String?,
     body: String,
     settings: AppSettings,
     tokens: AppearanceTokens,
@@ -125,6 +126,11 @@ fun readerDocument(
         .lr-header h1 { font-size: 1.5em; margin: 0 0 0.3em; }
         .lr-byline { margin: 0; color: ${colors.muted}; font-family: sans-serif;
           font-size: 0.875rem; line-height: 1.4; }
+        .lr-summary { margin: 0 0 1.5em; padding: 0.75em 1em; border-radius: 8px;
+          border: 1px solid ${colors.border}; background: ${colors.codeBackground}; }
+        .lr-summary > :last-child { margin-bottom: 0; }
+        .lr-summary-label { margin: 0 0 0.5em; color: ${colors.muted}; font-family: sans-serif;
+          font-size: 0.875rem; font-weight: 600; }
         .katex-mathml + .katex-html { display: none; }
         </style></head>
         <body>
@@ -133,6 +139,9 @@ fun readerDocument(
         // After trimIndent, so feed text can't change the template's indentation.
         "<header class=\"lr-header\"><h1>${escapeHtml(header.title)}</h1>" +
         "<p class=\"lr-byline\">${escapeHtml(header.byline)}</p></header>" +
+        (summary?.let {
+            "<aside class=\"lr-summary\"><p class=\"lr-summary-label\">AI Summary</p>$it</aside>"
+        } ?: "") +
         body +
         "</body></html>"
 }

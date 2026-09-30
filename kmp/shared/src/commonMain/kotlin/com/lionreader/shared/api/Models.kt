@@ -239,6 +239,12 @@ sealed interface SyncEvent {
 
 @Serializable data class Me(val user: AccountUser)
 
+@Serializable data class SummarizationAvailability(val available: Boolean)
+
+@Serializable data class GenerateSummaryRequest(val entryId: String)
+
+@Serializable data class GeneratedSummary(val summary: String)
+
 @Serializable
 data class TokenResponse(
     @SerialName("access_token") val accessToken: String,
