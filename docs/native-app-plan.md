@@ -7,7 +7,8 @@ Each phase below adds the server pieces it needs alongside its client code.
 
 ## Remaining phases
 
-1. **Share target**: saving URLs and files from other apps, offline included.
+1. **Share target, files**: saving shared files from other apps (links are
+   done).
 2. **Narration**: system, Piper and cloud voices with background playback.
 3. **Release**: Play Console closed testing (new personal developer accounts
    need a closed test with testers for 14 days before production) and signed
@@ -21,19 +22,13 @@ Each phase below adds the server pieces it needs alongside its client code.
 
 ### Share targets
 
-- Android: intent filters for `ACTION_SEND` with `text/plain` (extract the
-  URL), `text/markdown`, `text/html`, `text/plain` files and `.docx`, i.e. the
-  same types as `src/app/manifest.ts`. A translucent activity shows a native
-  "Saved" confirmation and finishes; offline, it enqueues and says "will save
-  when online".
-- Uses `saved.save` / `saved.uploadFile` (base64 JSON, capped at
-  `maxSavedArticleSizeBytes`; a raw-bytes variant is nice to have, not
-  required).
+- Android files: add `ACTION_SEND` filters for `text/markdown`, `text/html`,
+  `text/plain` files and `.docx` (the same types as `src/app/manifest.ts`) to
+  the link share target, uploading through `saved.uploadFile` (base64 JSON,
+  capped at `maxSavedArticleSizeBytes`).
 - iOS later: a Share Extension writing into the shared outbox via an App Group.
-
-- Server: app-token access to `saved.*`, and an idempotency key for uploads
-  so a retried upload doesn't save twice (`saved.save` already returns the
-  existing article for a known URL).
+- Server: app-token access to `saved.uploadFile`, and an idempotency key for
+  uploads so a retried upload doesn't save twice.
 
 ### Narration
 

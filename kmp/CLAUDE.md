@@ -66,6 +66,10 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   the download started (an edit bumps it), so a download racing a deletion or
   an edit can't leave a missing or stale body. Pull-to-refresh syncs the lists
   and leaves bodies to a background job.
+- **Share target** (`share/`): a shared link is saved by a WorkManager job
+  (`SaveWorker`), not the dialog, so it survives the dialog closing and waits
+  for a network however long the device is offline; it gives up only when the
+  server rejects the link. The dialog only follows the job.
 - **AI summaries** are fetched only when the user asks (the server generates
   and caches them with the user's web settings) and then kept in
   `entry_summary` for offline reading while their entry is on the device.
