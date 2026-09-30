@@ -1,5 +1,6 @@
 package com.lionreader.shared.data
 
+import com.lionreader.shared.api.ApiJson
 import com.lionreader.shared.api.EntryListItem
 import com.lionreader.shared.api.FeedType
 import com.lionreader.shared.api.FullEntry
@@ -11,6 +12,7 @@ import com.lionreader.shared.api.UnreadCounts
 import com.lionreader.shared.db.LionReaderDatabase
 
 private const val CURSORS_KEY = "sync_cursors"
+private const val BOOTSTRAP_CURSORS_KEY = "bootstrap_cursors"
 
 internal fun FeedType.wire(): String =
     when (this) {
@@ -26,23 +28,26 @@ internal class LocalStore(val db: LionReaderDatabase) {
     private val meta = db.appMetadataQueries
 
     var cursors: SyncCursors?
-        get() =
-            meta.selectValue(CURSORS_KEY).executeAsOneOrNull()?.let {
-                com.lionreader.shared.api.ApiJson.decodeFromString(SyncCursors.serializer(), it)
-            }
-        set(value) {
-            if (value == null) {
-                meta.delete(CURSORS_KEY)
-            } else {
-                meta.upsert(
-                    CURSORS_KEY,
-                    com.lionreader.shared.api.ApiJson.encodeToString(
-                        SyncCursors.serializer(),
-                        value,
-                    ),
-                )
-            }
+        get() = readCursors(CURSORS_KEY)
+        set(value) = writeCursors(CURSORS_KEY, value)
+
+    /** Start cursors of a bootstrap still in progress. */
+    var bootstrapCursors: SyncCursors?
+        get() = readCursors(BOOTSTRAP_CURSORS_KEY)
+        set(value) = writeCursors(BOOTSTRAP_CURSORS_KEY, value)
+
+    private fun readCursors(key: String): SyncCursors? =
+        meta.selectValue(key).executeAsOneOrNull()?.let {
+            ApiJson.decodeFromString(SyncCursors.serializer(), it)
         }
+
+    private fun writeCursors(key: String, value: SyncCursors?) {
+        if (value == null) {
+            meta.delete(key)
+        } else {
+            meta.upsert(key, ApiJson.encodeToString(SyncCursors.serializer(), value))
+        }
+    }
 
     fun upsertEntry(
         id: String,

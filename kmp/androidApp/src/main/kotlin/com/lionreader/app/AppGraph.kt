@@ -88,6 +88,9 @@ class AppGraph(private val context: Context) {
         }
     }
 
+    /** A full sync (article bodies included) in a background job. */
+    fun syncInBackground() = SyncScheduler.syncNow(context)
+
     /** Only while signed out: the server is part of the sign-in identity. */
     fun setServerUrl(url: String) {
         prefs.edit(commit = true) { putString(SERVER_URL, url.trimEnd('/')) }

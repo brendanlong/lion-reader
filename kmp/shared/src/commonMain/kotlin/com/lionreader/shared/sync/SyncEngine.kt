@@ -38,15 +38,32 @@ class SyncEngine(
 ) {
     private val store = LocalStore(db)
     private val db = store.db
+    /** Serializes everything that reads or writes cursors, state, or the outbox. */
     private val mutex = Mutex()
+    /**
+     * Serializes body downloads, which run outside [mutex] so a long download never holds up a
+     * refresh or a flush. They only fill in bodies of entries already on the device, never state,
+     * so they can't race the sync.
+     */
+    private val contentMutex = Mutex()
 
-    /** A full sync. Throws on network/server failure; retry later. */
-    suspend fun sync(downloadContent: Boolean = true) = mutex.withLock {
-        flush()
-        if (store.cursors == null) bootstrap()
-        pull()
-        if (downloadContent) downloadContent()
-        evict()
+    /**
+     * A full sync: send, pull, then (if [downloadContent]) article bodies. Throws on network/server
+     * failure; retry later.
+     */
+    suspend fun sync(downloadContent: Boolean = true) {
+        mutex.withLock {
+            flush()
+            if (store.cursors == null) bootstrap()
+            pull()
+            evict()
+        }
+        if (downloadContent) {
+            contentMutex.withLock {
+                downloadContent()
+                mutex.withLock { evict() }
+            }
+        }
     }
 
     /**
@@ -61,8 +78,7 @@ class SyncEngine(
     /** Downloads one entry's body now (opening an entry the sync hasn't reached). */
     suspend fun ensureContent(entryId: String) {
         if (db.entryQueries.selectById(entryId).executeAsOneOrNull()?.content != null) return
-        val fetched = api.getEntries(listOf(entryId))
-        db.transaction { fetched.forEach { store.storeBody(it, now()) } }
+        contentMutex.withLock { fetchBodies(listOf(entryId)) }
     }
 
     /** Forgets all synced data, e.g. on sign-out. */
@@ -160,51 +176,59 @@ class SyncEngine(
 
     // ---- Pull ------------------------------------------------------------
 
+    /**
+     * The first download, newest first, saved page by page so the lists fill in while older entries
+     * are still arriving. Its start cursors are kept until it finishes, so an interrupted bootstrap
+     * resumes (re-listing the pages, which is idempotent) instead of starting over.
+     */
     private suspend fun bootstrap() {
         // Cursors first: anything that changes during the download is replayed
         // by the next pull, which is harmless.
-        val start = api.syncChanges(null).cursors
+        val start =
+            store.bootstrapCursors
+                ?: api.syncChanges(null).cursors.also { cursors ->
+                    db.transaction {
+                        store.clearSynced()
+                        store.bootstrapCursors = cursors
+                    }
+                }
         val policy = policy()
         val windowStart = now() - policy.windowMillis
 
-        val subscriptions = buildList {
-            var cursor: String? = null
-            do {
-                val page = api.listSubscriptions(cursor)
-                addAll(page.items)
-                cursor = page.nextCursor
-            } while (cursor != null)
-        }
+        var subscriptionCursor: String? = null
+        do {
+            val page = api.listSubscriptions(subscriptionCursor)
+            db.transaction { page.items.forEach(store::upsertSubscription) }
+            subscriptionCursor = page.nextCursor
+        } while (subscriptionCursor != null)
         val tags = api.listTags()
         val counts = ListFilter.entries.associateWith { api.unreadCount(it) }
-
-        val entries = buildList {
-            for (filter in ListFilter.entries) {
-                var cursor: String? = null
-                var fetched = 0
-                do {
-                    val page = api.listEntries(filter, cursor)
-                    addAll(page.items)
-                    fetched += page.items.size
-                    cursor = page.nextCursor
-                    val pastWindow =
-                        filter == ListFilter.ALL &&
-                            page.items.lastOrNull()?.let {
-                                parseMillis(it.publishedAt ?: it.fetchedAt) < windowStart
-                            } == true
-                } while (cursor != null && fetched < policy.bootstrapMaxEntries && !pastWindow)
-            }
-        }
-
         db.transaction {
-            store.clearSynced()
-            subscriptions.forEach(store::upsertSubscription)
             tags.items.forEach(store::upsertTag)
             store.setListCount("all", counts.getValue(ListFilter.ALL))
             store.setListCount("starred", counts.getValue(ListFilter.STARRED))
             store.setListCount("saved", counts.getValue(ListFilter.SAVED))
-            entries.forEach(store::upsertEntry)
+        }
+
+        for (filter in ListFilter.entries) {
+            var cursor: String? = null
+            var fetched = 0
+            do {
+                val page = api.listEntries(filter, cursor)
+                db.transaction { page.items.forEach(store::upsertEntry) }
+                fetched += page.items.size
+                cursor = page.nextCursor
+                val pastWindow =
+                    filter == ListFilter.ALL &&
+                        page.items.lastOrNull()?.let {
+                            parseMillis(it.publishedAt ?: it.fetchedAt) < windowStart
+                        } == true
+            } while (cursor != null && fetched < policy.bootstrapMaxEntries && !pastWindow)
+        }
+
+        db.transaction {
             store.cursors = start
+            store.bootstrapCursors = null
         }
     }
 
@@ -357,15 +381,22 @@ class SyncEngine(
         }
     }
 
-    /** Returns the characters of body stored. */
+    /**
+     * Fills in bodies of entries already on the device and returns the characters stored. Runs
+     * outside [mutex] (see [contentMutex]), so it never inserts or deletes entries: one removed
+     * meanwhile stays removed.
+     */
     private suspend fun fetchBodies(ids: List<String>): Long {
         val fetched = api.getEntries(ids)
         val time = now()
         db.transaction {
-            fetched.forEach { store.storeBody(it, time) }
-            // Asked for but not returned: the user can no longer see it.
+            fetched.forEach {
+                db.entryQueries.setContent(it.displayContent ?: "", time, it.id)
+            }
+            // Not returned: the user can no longer see it. Mark it so it isn't
+            // asked for again; the next pull or retention pass removes it.
             val returned = fetched.map { it.id }.toSet()
-            ids.filterNot { it in returned }.forEach(store::deleteEntry)
+            ids.filterNot { it in returned }.forEach { db.entryQueries.setContent("", time, it) }
         }
         return fetched.sumOf { (it.displayContent ?: "").length.toLong() }
     }

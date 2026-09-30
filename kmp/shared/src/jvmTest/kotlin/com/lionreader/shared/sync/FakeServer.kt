@@ -53,6 +53,10 @@ class FakeServer {
     /** Status to answer state writes with instead of applying them. */
     var stateWriteFailure: HttpStatusCode? = null
 
+    /** 1-based numbers of `GET /entries` requests to fail (503). */
+    val entryPageFailures = mutableSetOf<Int>()
+    private var entryPageRequests = 0
+
     /** Status to answer the next batch fetch with, once. */
     var batchFailure: HttpStatusCode? = null
 
@@ -106,9 +110,11 @@ class FakeServer {
                     SyncChanges.serializer(),
                     changes.removeFirstOrNull() ?: SyncChanges(emptyList(), false, cursors),
                 )
+            path == "/entries" && entryPageFailures.remove(++entryPageRequests) ->
+                respond("{}", HttpStatusCode.ServiceUnavailable, jsonHeaders)
             path == "/entries" -> {
                 val params = request.url.parameters
-                val items =
+                val matching =
                     entries.values
                         .filter { params["starredOnly"] != "true" || it.starred }
                         .filter {
@@ -118,8 +124,13 @@ class FakeServer {
                             params["subscriptionId"] == null ||
                                 it.subscriptionId == params["subscriptionId"]
                         }
-                        .map { it.listItem() }
-                json(EntryListPage.serializer(), EntryListPage(items))
+                        .sortedByDescending { it.publishedAt ?: it.fetchedAt }
+                // Newest first, paged like the server (the cursor is an offset here).
+                val offset = params["cursor"]?.toInt() ?: 0
+                val limit = params["limit"]?.toInt() ?: 100
+                val page = matching.drop(offset).take(limit)
+                val next = (offset + limit).takeIf { it < matching.size }?.toString()
+                json(EntryListPage.serializer(), EntryListPage(page.map { it.listItem() }, next))
             }
             path == "/entries/count" ->
                 json(UnreadCount.serializer(), UnreadCount(entries.values.count { !it.read }))

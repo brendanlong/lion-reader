@@ -64,7 +64,10 @@ class SyncEngineTest {
     }
 
     private suspend fun timeline(scope: ListScope = ListScope.All, unreadOnly: Boolean = false) =
-        reader.timeline(scope, unreadOnly, emptySet(), 100).first().map { it.id }
+        reader.timeline(scope, unreadOnly, emptySet(), 1000).first().map { it.id }
+
+    private fun minutesAgo(minutes: Int) =
+        Instant.fromEpochMilliseconds(NOW - minutes * 60_000L).toString()
 
     @Test
     fun bootstrapDownloadsTheWindowAndBodies() = runTest {
@@ -83,6 +86,32 @@ class SyncEngineTest {
         val nav = reader.navigation().first()
         assertEquals(listOf("Feed"), nav.subscriptions.map { it.title })
         assertEquals(2, nav.subscriptions.single().unread)
+    }
+
+    @Test
+    fun bootstrapSavesEachPageAndResumesAfterAFailure() = runTest {
+        // 250 entries, newest first: pages of 100, the second page fails once.
+        repeat(250) {
+            serve(entry("e%03d".format(it), ageDays = 0).copy(publishedAt = minutesAgo(it)))
+        }
+        server.entryPageFailures += 2
+
+        assertFailsWith<Exception> { engine.sync(downloadContent = false) }
+        // The first page — the newest entries — is already on the device.
+        assertEquals((0 until 100).map { "e%03d".format(it) }, timeline())
+        assertTrue(
+            db.appMetadataQueries.selectValue("bootstrap_cursors").executeAsOneOrNull() != null
+        )
+
+        engine.sync(downloadContent = false)
+        assertEquals(250, timeline().size)
+        // Resumed with the first attempt's start cursors rather than new ones.
+        assertEquals(
+            1,
+            server.requests.count {
+                it.url.encodedPath.endsWith("/sync/changes") && it.url.parameters.isEmpty()
+            },
+        )
     }
 
     @Test

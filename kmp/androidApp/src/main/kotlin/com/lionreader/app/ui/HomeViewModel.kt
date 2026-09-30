@@ -45,7 +45,12 @@ class HomeViewModel(
         graph.reader,
         graph.settings.settings.map { it.unreadOnly },
         { value -> graph.settings.update { it.copy(unreadOnly = value) } },
-        { graph.session.sync.sync() },
+        {
+            // The lists are what the spinner waits for; bodies follow in the
+            // background.
+            graph.session.sync.sync(downloadContent = false)
+            graph.syncInBackground()
+        },
     )
 
     private val _scope = MutableStateFlow<ListScope>(ListScope.All)

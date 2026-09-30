@@ -99,11 +99,11 @@ WHERE (:subscriptionId IS NULL OR subscription_id = :subscriptionId)
 ORDER BY sort_at DESC, id DESC
 LIMIT :limit;
 
--- Entries without a body, most useful first: saved, starred, then newest unread.
+-- Entries without a body worth keeping offline, newest first.
 selectMissingContent:
 SELECT id FROM entry_view
 WHERE content IS NULL AND (effective_read = 0 OR effective_starred = 1 OR type = 'saved')
-ORDER BY (type = 'saved') DESC, effective_starred DESC, sort_at DESC
+ORDER BY sort_at DESC, id DESC
 LIMIT ?;
 
 unreadIdsInScope:

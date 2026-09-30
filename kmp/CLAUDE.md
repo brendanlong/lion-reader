@@ -39,16 +39,22 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   overwrite counts without double-counting. A flush deletes an outbox row only if it
   hasn't changed since it was sent. Mark-all-read is its own outbox row whose
   `before` is a server `fetchedAt` the device had seen.
-- **Sync.** Cursors first, then the initial window (entries, starred, saved,
-  subscriptions, tags, counts), then `sync.changes` deltas; each page's data
-  and next cursors commit in one transaction, and anything a page needs
+- **Sync.** The first download takes cursors, then saves subscriptions,
+  counts and the entry lists (newest first) page by page, so the UI fills in
+  while older entries arrive; its start cursors are kept until it finishes, so
+  an interrupted one resumes. After that, `sync.changes` deltas: each page's
+  data and next cursors commit in one transaction, and anything a page needs
   fetched (starred entries not on the device, a resubscribed feed's older
   entries) is fetched before that commit so a failure retries the page.
   `deletions` drop entries; `resyncRequired` re-bootstraps, keeping the
-  outbox. Read/starred state comes only from deltas and flush responses, never
-  from body downloads (which could race a flush). A flush is followed by a
-  pull, since mark-all-read's response carries no counts. Outbox requests the server rejects (400/404/422) are dropped so one
-  bad item can't stall the queue; anything else is retried.
+  outbox. Read/starred state comes only from deltas and flush responses. A
+  flush is followed by a pull, since mark-all-read's response carries no
+  counts.
+- **Article bodies** download after the lists, newest first, outside the sync
+  lock (a separate lock serializes them), so pull-to-refresh and flushes
+  never wait for them; they only fill in bodies of entries already on the
+  device. Pull-to-refresh syncs the lists and leaves bodies to a background
+  job.
 - **Retention** (`RetentionPolicy`): entries outside the window go, at most N
   read entries stay, bodies are capped by size (oldest read first); starred,
   saved and entries with unsent changes are always kept.
