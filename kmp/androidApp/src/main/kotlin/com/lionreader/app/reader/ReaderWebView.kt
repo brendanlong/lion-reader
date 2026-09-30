@@ -22,11 +22,9 @@ import kotlin.math.abs
 import org.json.JSONArray
 
 /**
- * The article body. Hardened because it renders untrusted (server-sanitized) HTML next to the app's
- * credentials: only our bundled script runs (readerDocument's CSP), no file or content access, no
- * JS bridge beyond one message channel open only to the asset origin, and every navigation leaves
- * the WebView for the browser. Bundled fonts and the script come through [WebViewAssetLoader]
- * rather than file:// access.
+ * The article body: untrusted (server-sanitized) HTML next to the app's credentials, so hardened as
+ * SECURITY.md §1 requires. Bundled fonts and the script come through [WebViewAssetLoader] rather
+ * than file:// access.
  */
 @Composable
 fun ReaderWebView(document: String, modifier: Modifier = Modifier) {
@@ -74,19 +72,18 @@ fun ReaderWebView(document: String, modifier: Modifier = Modifier) {
 
 /**
  * Keeps a sideways drag that starts on a wide table or code block (reported by scroll-detect.js)
- * for the WebView, so the block scrolls instead of the article pager turning the page. It has to be
- * decided here, synchronously, before the pager's touch slop is crossed; Compose honors
- * [requestDisallowInterceptTouchEvent] for the rest of the gesture.
+ * for the WebView while the block can still scroll that way, so it scrolls instead of the article
+ * pager turning the page. It has to be decided here, synchronously, before the pager's touch slop
+ * is crossed; Compose honors [requestDisallowInterceptTouchEvent] for the rest of the gesture.
  */
 @SuppressLint("ViewConstructor")
 private class ReaderView(context: Context) : WebView(context) {
-    /** In CSS pixels, page coordinates. */
-    var sideScrollers: List<RectF> = emptyList()
+    var sideScrollers: List<SideScroller> = emptyList()
 
     private val decideAfter = ViewConfiguration.get(context).scaledTouchSlop / 2f
     private var downX = 0f
     private var downY = 0f
-    private var undecided = false
+    private var touched: SideScroller? = null
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -95,17 +92,21 @@ private class ReaderView(context: Context) : WebView(context) {
                 downX = event.x
                 downY = event.y
                 val density = resources.displayMetrics.density
-                undecided = sideScrollers.any { it.contains(event.x / density, event.y / density) }
+                touched = sideScrollers.find {
+                    it.bounds.contains(event.x / density, event.y / density)
+                }
             }
             MotionEvent.ACTION_MOVE ->
-                if (undecided) {
-                    val dx = abs(event.x - downX)
+                touched?.let { block ->
+                    val dx = event.x - downX
                     val dy = abs(event.y - downY)
-                    if (dx > decideAfter && dx > dy) {
-                        parent?.requestDisallowInterceptTouchEvent(true)
-                        undecided = false
+                    if (abs(dx) > decideAfter && abs(dx) > dy) {
+                        // A finger moving left scrolls the block's content right.
+                        val canScroll = if (dx < 0) block.canScrollRight else block.canScrollLeft
+                        if (canScroll) parent?.requestDisallowInterceptTouchEvent(true)
+                        touched = null
                     } else if (dy > decideAfter) {
-                        undecided = false
+                        touched = null
                     }
                 }
         }
@@ -113,15 +114,26 @@ private class ReaderView(context: Context) : WebView(context) {
     }
 }
 
-private fun parseRects(json: String?): List<RectF> = runCatching {
+/** [bounds] in CSS pixels, page coordinates. */
+private class SideScroller(
+    val bounds: RectF,
+    val canScrollLeft: Boolean,
+    val canScrollRight: Boolean,
+)
+
+private fun parseRects(json: String?): List<SideScroller> = runCatching {
     val rects = JSONArray(json)
     List(rects.length()) { i ->
         val r = rects.getJSONArray(i)
-        RectF(
-            r.getDouble(0).toFloat(),
-            r.getDouble(1).toFloat(),
-            r.getDouble(2).toFloat(),
-            r.getDouble(3).toFloat(),
+        SideScroller(
+            RectF(
+                r.getDouble(0).toFloat(),
+                r.getDouble(1).toFloat(),
+                r.getDouble(2).toFloat(),
+                r.getDouble(3).toFloat(),
+            ),
+            canScrollLeft = r.getInt(4) == 1,
+            canScrollRight = r.getInt(5) == 1,
         )
     }
 }

@@ -40,14 +40,11 @@ data class ReaderColors(
 /** Where the bundled fonts and script are served from (see ReaderWebView's asset loader). */
 const val ASSET_ORIGIN = "https://appassets.androidplatform.net"
 
-/**
- * JavaScript runs for our one bundled script (scroll-detect.js) and nothing else — no inline
- * script, no other source — and the page can't make requests of its own. Images, media and the
- * sanitizer's allow-listed embeds load as they do on the web.
- */
+/** The reader view's invariant is in SECURITY.md §1. */
 private const val CONTENT_SECURITY_POLICY =
     "default-src 'none'; " +
         "script-src $ASSET_ORIGIN/assets/reader/scroll-detect.js; " +
+        "base-uri 'none'; form-action 'none'; " +
         "style-src 'unsafe-inline'; font-src $ASSET_ORIGIN; " +
         "img-src * data:; media-src *; frame-src https:"
 
@@ -72,8 +69,8 @@ private val fontFaces: String =
 
 /**
  * A complete document for the article body. The body is the server's sanitized HTML (sanitized on
- * every read); it is inserted verbatim and never re-sanitized here. The only script that can run in
- * it is our own (see [CONTENT_SECURITY_POLICY]).
+ * every read); it is inserted verbatim and never re-sanitized here. Everything of ours goes in the
+ * head, ahead of it, so no unclosed element in the body can swallow it.
  */
 fun readerDocument(
     body: String,
@@ -90,6 +87,7 @@ fun readerDocument(
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="referrer" content="no-referrer">
         <meta http-equiv="Content-Security-Policy" content="$CONTENT_SECURITY_POLICY">
+        <script defer src="$ASSET_ORIGIN/assets/reader/scroll-detect.js"></script>
         <style>
         $fontFaces
         html { background: ${colors.background}; }
@@ -121,7 +119,5 @@ fun readerDocument(
         </style></head>
         <body>
         """
-        .trimIndent() +
-        body +
-        """<script src="$ASSET_ORIGIN/assets/reader/scroll-detect.js"></script></body></html>"""
+        .trimIndent() + body + "</body></html>"
 }
