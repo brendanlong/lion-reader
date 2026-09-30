@@ -22,8 +22,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.core.net.toUri
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
@@ -131,6 +134,10 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun AccountApp(account: AccountSession) {
+        val lifecycle = LocalLifecycleOwner.current.lifecycle
+        LaunchedEffect(account) {
+            lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { account.followServer() }
+        }
         val backStack = rememberNavBackStack(HomeKey)
         val home = viewModel(key = account.dbName) { HomeViewModel(graph, account) }
         val settings by graph.currentSettings.collectAsStateWithLifecycle()

@@ -2,19 +2,24 @@ package com.lionreader.shared.api
 
 import com.lionreader.shared.auth.AppAuth
 import io.ktor.client.HttpClient
+import io.ktor.client.plugins.HttpTimeoutConfig
+import io.ktor.client.plugins.timeout
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.parameter
+import io.ktor.client.request.prepareRequest
 import io.ktor.client.request.request
 import io.ktor.client.request.setBody
 import io.ktor.client.request.url
 import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
+import io.ktor.utils.io.readLine
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlinx.serialization.KSerializer
@@ -189,6 +194,46 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
                 setBody(ApiJson.encodeToString(bodySerializer, body))
             },
         )
+
+    /**
+     * Listens to the server's live updates (`/api/v1/events`, server-sent events) until the server
+     * closes the stream: [onOpen] once connected, then [onEvent] with each event's type. Throws on
+     * network/server failure; reconnecting is the caller's.
+     */
+    suspend fun events(onOpen: suspend () -> Unit, onEvent: suspend (String) -> Unit) {
+        var token = auth.accessToken() ?: throw ApiException(0, "Signed out")
+        repeat(2) { attempt ->
+            val retry =
+                http
+                    .prepareRequest {
+                        url("$base/events")
+                        bearerAuth(token)
+                        timeout {
+                            requestTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
+                            // The server sends a heartbeat every 30s.
+                            socketTimeoutMillis = 75_000
+                        }
+                    }
+                    .execute { response ->
+                        if (response.status == HttpStatusCode.Unauthorized && attempt == 0) {
+                            return@execute true
+                        }
+                        if (!response.status.isSuccess()) decode(JsonObject.serializer(), response)
+                        onOpen()
+                        val body = response.bodyAsChannel()
+                        while (true) {
+                            val line = body.readLine() ?: break
+                            if (line.startsWith("event:"))
+                                onEvent(line.removePrefix("event:").trim())
+                        }
+                        false
+                    }
+            if (!retry) return
+            token =
+                auth.accessToken(forceRefresh = true, rejected = token)
+                    ?: throw ApiException(0, "Signed out")
+        }
+    }
 
     /** Sends with a Bearer token, refreshing and retrying once on a 401. */
     private suspend fun send(block: HttpRequestBuilder.() -> Unit): HttpResponse {

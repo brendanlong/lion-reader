@@ -114,6 +114,11 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   except with themed icons on, which use only the monochrome layer.
 - **Background sync** runs through WorkManager (`SyncScheduler`): a periodic
   full sync and a flush after each user change, both waiting for a network.
+- **Live updates:** while the app is on screen it listens to the server's
+  events stream (`/api/v1/events`, `followLiveUpdates`) and pulls when it says
+  the account's data changed. The events only trigger the pull: everything
+  still comes through the one sync. In the background it's the periodic sync
+  alone.
 
 ## Setup
 

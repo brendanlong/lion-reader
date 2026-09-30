@@ -21,6 +21,7 @@ import com.lionreader.shared.data.Reader
 import com.lionreader.shared.db.LionReaderDatabase
 import com.lionreader.shared.sync.RetentionPolicy
 import com.lionreader.shared.sync.SyncEngine
+import com.lionreader.shared.sync.followLiveUpdates
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
@@ -323,6 +324,10 @@ class AccountSession(
             null
         }
     }
+
+    /** Pulls whenever the server says something changed, until cancelled (see kmp/CLAUDE.md). */
+    suspend fun followServer() =
+        withContext(Dispatchers.IO) { followLiveUpdates(connection.api, pull = { sync.sync() }) }
 
     fun close() = driver.close()
 }
