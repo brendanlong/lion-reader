@@ -239,6 +239,12 @@ sealed interface SyncEvent {
 
 @Serializable data class Me(val user: AccountUser)
 
+@Serializable data class SaveArticleRequest(val url: String)
+
+@Serializable data class SavedArticle(val id: String, val title: String? = null)
+
+@Serializable data class SaveArticleResponse(val article: SavedArticle)
+
 @Serializable data class SummarizationAvailability(val available: Boolean)
 
 @Serializable data class GenerateSummaryRequest(val entryId: String)

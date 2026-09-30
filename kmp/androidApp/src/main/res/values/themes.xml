@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The share dialog draws over the app something was shared from. -->
+    <style name="Theme.LionReader.Share" parent="android:Theme.Translucent.NoTitleBar" />
+</resources>

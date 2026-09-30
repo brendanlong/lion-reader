@@ -16,12 +16,25 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
 
-/** A non-2xx response. `status` 0 means the request never got one (signed out). */
-class ApiException(val status: Int, message: String) : Exception(message) {
+/**
+ * A non-2xx response. `status` 0 means the request never got one (signed out). [serverMessage] is
+ * the server's own explanation, when it sent one, fit to show the user; [appErrorCode] its
+ * machine-readable reason, for the errors that have one (e.g. `NEEDS_GOOGLE_SIGNIN`).
+ */
+class ApiException(
+    val status: Int,
+    message: String,
+    val serverMessage: String? = null,
+    val appErrorCode: String? = null,
+) : Exception(message) {
     /** The server rejected the request itself; retrying it unchanged won't help. */
     val isPermanent: Boolean
-        get() = status == 400 || status == 404 || status == 422
+        get() = status == 400 || status == 404 || status == 422 || appErrorCode != null
 }
 
 enum class ListFilter {
@@ -87,6 +100,16 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
     /** The account this token belongs to. */
     suspend fun me(): AccountUser = get(Me.serializer(), "/auth/me") {}.user
 
+    /** Saves a link as a saved article (the server fetches it). */
+    suspend fun saveArticle(url: String): SavedArticle =
+        post(
+                SaveArticleResponse.serializer(),
+                "/saved",
+                SaveArticleRequest(url),
+                SaveArticleRequest.serializer(),
+            )
+            .article
+
     suspend fun summarizationAvailable(): Boolean =
         get(SummarizationAvailability.serializer(), "/summarization/available") {}.available
 
@@ -148,7 +171,12 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
             block()
             bearerAuth(token)
         }
-        if (response.status == HttpStatusCode.Unauthorized) {
+        // A 401 with an app error code is about something else (e.g. the user's
+        // Google account for a private Doc), not this token.
+        if (
+            response.status == HttpStatusCode.Unauthorized &&
+                errorBody(response).appErrorCode == null
+        ) {
             token =
                 auth.accessToken(forceRefresh = true, rejected = token)
                     ?: throw ApiException(0, "Signed out")
@@ -160,12 +188,29 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
         return response
     }
 
+    private class ErrorBody(val message: String?, val appErrorCode: String?)
+
+    /** What an error response says about itself (its tRPC error shape), if it's JSON. */
+    private suspend fun errorBody(response: HttpResponse): ErrorBody {
+        val json =
+            runCatching { ApiJson.parseToJsonElement(response.bodyAsText()).jsonObject }.getOrNull()
+                ?: return ErrorBody(null, null)
+        fun JsonObject.string(key: String) = (this[key] as? JsonPrimitive)?.contentOrNull
+        return ErrorBody(
+            json.string("message"),
+            (json["data"] as? JsonObject)?.string("appErrorCode"),
+        )
+    }
+
     private suspend fun <T> decode(serializer: KSerializer<T>, response: HttpResponse): T {
         val text = response.bodyAsText()
         if (!response.status.isSuccess()) {
+            val error = errorBody(response)
             throw ApiException(
                 response.status.value,
                 "HTTP ${response.status.value}: ${text.take(200)}",
+                error.message,
+                error.appErrorCode,
             )
         }
         return ApiJson.decodeFromString(serializer, text)

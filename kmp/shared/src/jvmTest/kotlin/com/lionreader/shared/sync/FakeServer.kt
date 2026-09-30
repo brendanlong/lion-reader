@@ -13,6 +13,9 @@ import com.lionreader.shared.api.GetManyRequest
 import com.lionreader.shared.api.GetManyResponse
 import com.lionreader.shared.api.LionReaderApi
 import com.lionreader.shared.api.MarkReadRequest
+import com.lionreader.shared.api.SaveArticleRequest
+import com.lionreader.shared.api.SaveArticleResponse
+import com.lionreader.shared.api.SavedArticle
 import com.lionreader.shared.api.SetStarredRequest
 import com.lionreader.shared.api.Subscription
 import com.lionreader.shared.api.SubscriptionPage
@@ -49,6 +52,12 @@ class FakeServer {
 
     /** Runs while a summary request is in flight (before the server answers). */
     var duringSummary: (suspend () -> Unit)? = null
+
+    /**
+     * Links saved with `POST /saved`; [saveError] answers them instead, with its status and body.
+     */
+    val savedUrls = mutableListOf<String>()
+    var saveError: Pair<HttpStatusCode, String>? = null
 
     /** Queued `sync.changes` responses; empty means "no changes". */
     val changes = ArrayDeque<SyncChanges>()
@@ -162,6 +171,18 @@ class FakeServer {
                 val summary = summaries[entryId]
                 if (summary == null) respond("{}", HttpStatusCode.InternalServerError, jsonHeaders)
                 else json(GeneratedSummary.serializer(), GeneratedSummary(summary))
+            }
+            path == "/saved" -> {
+                val url = body(request, SaveArticleRequest.serializer()).url
+                val error = saveError
+                if (error != null) respond(error.second, error.first, jsonHeaders)
+                else {
+                    savedUrls += url
+                    json(
+                        SaveArticleResponse.serializer(),
+                        SaveArticleResponse(SavedArticle("s-1", "Saved")),
+                    )
+                }
             }
             path == "/entries/mark-read" -> {
                 val body = body(request, MarkReadRequest.serializer())
