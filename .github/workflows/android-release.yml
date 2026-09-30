@@ -1,7 +1,7 @@
 name: Android Release
 
 # Tag a commit android-vX.Y.Z to release the app, or run this workflow by hand
-# with the version (it builds the branch it's run on and tags it): this builds
+# on master with the version (it tags master's head): this builds
 # the signed app bundle (for Play, kept as an artifact) and APK (attached to a
 # GitHub release). Setup, secrets and the Play steps: "Android app releases" in
 # docs/DEPLOYMENT.md.
@@ -18,9 +18,15 @@ on:
 permissions:
   contents: write
 
+# One run per version: two can't both make, or overwrite, the same release.
+concurrency:
+  group: android-release-${{ inputs.version || github.ref_name }}
+
 jobs:
   release:
     name: Build and release
+    # Manual releases are of master's head.
+    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -60,12 +66,19 @@ jobs:
             echo "::error::The version must be X.Y.Z (no leading zeros; X below 2100, Y and Z below 1000), not $VERSION"
             exit 1
           fi
+          CODE=$(( BASH_REMATCH[1] * 1000000 + BASH_REMATCH[2] * 1000 + BASH_REMATCH[3] ))
           TAG="android-v$VERSION"
           if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && git rev-parse -q --verify "refs/tags/$TAG" > /dev/null; then
             echo "::error::$TAG already exists; pick a higher version"
             exit 1
           fi
-          CODE=$(( BASH_REMATCH[1] * 1000000 + BASH_REMATCH[2] * 1000 + BASH_REMATCH[3] ))
+          # Play only takes a higher versionCode than any before it. (Not for a
+          # pushed tag: re-running an older release's run must still work.)
+          HIGHEST=$(git tag -l 'android-v*' | sed 's/^android-v//' | sort -V | tail -1)
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ -n "$HIGHEST" ] && [ "$(printf '%s\n%s\n' "$HIGHEST" "$VERSION" | sort -V | tail -1)" != "$VERSION" ]; then
+            echo "::error::$VERSION isn't higher than the last release, $HIGHEST"
+            exit 1
+          fi
           echo "name=$VERSION" >> "$GITHUB_OUTPUT"
           echo "code=$CODE" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
@@ -123,8 +136,9 @@ jobs:
           name: android-release-${{ steps.version.outputs.name }}
           path: ${{ steps.outputs.outputs.dir }}
 
-      # Not "latest": that stays the weekly server release. A re-run replaces the
-      # APK on the release it already made.
+      # Not "latest": that stays the weekly server release. Re-running a tag
+      # push replaces the APK on the release it already made; a manual run only
+      # ever makes a new one.
       - name: GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -141,7 +155,7 @@ jobs:
               git log --no-merges --pretty='- %s' "$PREVIOUS..HEAD" -- .
             fi
           } > "$RUNNER_TEMP/notes.md"
-          if gh release view "$TAG" > /dev/null 2>&1; then
+          if [ "$GITHUB_EVENT_NAME" != workflow_dispatch ] && gh release view "$TAG" > /dev/null 2>&1; then
             gh release upload "$TAG" "${{ steps.outputs.outputs.apk }}" --clobber
           else
             # Creates the tag too, on a manual run.

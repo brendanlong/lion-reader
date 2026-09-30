@@ -59,6 +59,8 @@ jobs:
           DEV_KEY_ALIAS: ${{ secrets.ANDROID_DEV_KEY_ALIAS }}
           DEV_KEY_PASSWORD: ${{ secrets.ANDROID_DEV_KEY_PASSWORD }}
         run: |
+          # Nothing the checks left running is around to read the key.
+          ./gradlew --stop
           if [ -n "$DEV_KEYSTORE_BASE64" ]; then
             echo "$DEV_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/dev.jks"
             export ORG_GRADLE_PROJECT_lionReaderDevKeystore="$RUNNER_TEMP/dev.jks"
