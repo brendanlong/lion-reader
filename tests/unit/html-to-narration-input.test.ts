@@ -599,7 +599,7 @@ describe("htmlToNarrationInput", () => {
       expect(narrated(result)).toEqual(["Table: Table 1. Revenue by quarter. Q. 1 End table."]);
     });
 
-    it("reads a table that wraps another as the inner table, once", () => {
+    it("reads a nested table as a cell of the outer one, once", () => {
       // More than one inner cell, so cells run together rather than being
       // separated would fail this too.
       const html =
@@ -630,6 +630,28 @@ describe("htmlToNarrationInput", () => {
         "Image: A chart",
         "Sidebar",
       ]);
+    });
+
+    it("reads a table as data when each cell holds at most one paragraph", () => {
+      // How Google Docs and Word export a table.
+      const html =
+        "<table><tr><td><p>Name</p></td><td><p>Age</p></td></tr>" +
+        "<tr><td><p>Bob</p></td><td><table><tr><td>3</td></tr></table></td></tr></table>";
+      const result = htmlToNarrationInput(html);
+
+      expect(narrated(result)).toEqual(["Table: Name, Age. Bob, 3 End table."]);
+    });
+
+    it("spends one level of the depth budget per layout table", () => {
+      const nest = (levels: number) => {
+        let html = "<h1>T</h1><p>one</p><p>two</p>";
+        for (let i = 0; i < levels; i++) html = `<table><tr><td>${html}</td></tr></table>`;
+        return narrated(htmlToNarrationInput(html));
+      };
+
+      expect(nest(30)).toEqual(["T", "one", "two"]);
+      // Past the budget it is one paragraph, but the blocks' words stay apart.
+      expect(nest(70)).toEqual(["T one two"]);
     });
 
     it("reads a table as data when it has header cells, whatever they hold", () => {

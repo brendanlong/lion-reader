@@ -963,7 +963,7 @@ describe("htmlToClientNarration", () => {
       expect(result.paragraphMap).toEqual([{ n: 0, o: 0 }]);
     });
 
-    it("reads a table that wraps another as the inner table, once", () => {
+    it("reads a nested table as a cell of the outer one, once", () => {
       // More than one inner cell, so cells run together rather than being
       // separated would fail this too.
       const html =
@@ -972,8 +972,7 @@ describe("htmlToClientNarration", () => {
       const result = htmlToClientNarration(html);
 
       expect(result.narrationText).toBe("A, B. C");
-      // The outer table is layout, so the inner one speaks and highlights.
-      expect(result.paragraphMap).toEqual([{ n: 0, o: 1 }]);
+      expect(result.paragraphMap).toEqual([{ n: 0, o: 0 }]);
     });
 
     it("does not let a code block's children narrate it back", () => {
