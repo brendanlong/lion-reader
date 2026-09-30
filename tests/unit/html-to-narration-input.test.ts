@@ -599,7 +599,7 @@ describe("htmlToNarrationInput", () => {
       expect(narrated(result)).toEqual(["Table: Table 1. Revenue by quarter. Q. 1 End table."]);
     });
 
-    it("reads a nested table as a cell of the outer one, once", () => {
+    it("reads a table that wraps another as the inner table, once", () => {
       // More than one inner cell, so cells run together rather than being
       // separated would fail this too.
       const html =
@@ -608,6 +608,37 @@ describe("htmlToNarrationInput", () => {
       const result = htmlToNarrationInput(html);
 
       expect(narrated(result)).toEqual(["Table: A, B. C End table."]);
+    });
+
+    it("walks an email's layout tables like divs (issue #1666)", () => {
+      // How newsletter emails lay out a post: nested tables whose cells hold
+      // the article's headings and paragraphs.
+      const html =
+        "<table><tr><td><table><tr><td>" +
+        '<img src="/avatar.png"> Author Name' +
+        "</td></tr></table>" +
+        "<h1>Title</h1><p>First paragraph.</p><p>Second paragraph.</p>" +
+        '<table><tr><td><img alt="A chart"></td></tr></table>' +
+        "</td><td>Sidebar</td></tr></table>";
+      const result = htmlToNarrationInput(html);
+
+      expect(narrated(result)).toEqual([
+        "Image: image Author Name",
+        "Title",
+        "First paragraph.",
+        "Second paragraph.",
+        "Image: A chart",
+        "Sidebar",
+      ]);
+    });
+
+    it("reads a table as data when it has header cells, whatever they hold", () => {
+      const html =
+        "<table><tr><th>Name</th><th>Notes</th></tr>" +
+        "<tr><td>A</td><td><p>One.</p><p>Two.</p></td></tr></table>";
+      const result = htmlToNarrationInput(html);
+
+      expect(narrated(result)).toEqual(["Table: Name, Notes. A, One. Two. End table."]);
     });
 
     it("keeps the space inside a cell's inline markup", () => {

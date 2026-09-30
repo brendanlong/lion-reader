@@ -207,7 +207,7 @@ function collectRuns(root: Element, ctx: WalkContext, depth: number): NarrationR
       if (voice.speakCodeBlocks && code) push(el, `Code block: ${code} End code block.`);
       return;
     }
-    if (tagName === "table") {
+    if (tagName === "table" && !isLayoutTable(el)) {
       push(el, tableText(el, ctx, depth));
       return;
     }
@@ -319,6 +319,15 @@ function collectRuns(root: Element, ctx: WalkContext, depth: number): NarrationR
       visitBlock(el, tagName, depth);
       return;
     }
+    // Only reached inside a layout table (a data table reads its own cells):
+    // each cell is a column of the page, so it ends the run before it. It owns
+    // nothing, since cells aren't numbered — its text stays with the table.
+    if (tagName === "td" || tagName === "th") {
+      flush();
+      visitChildren(el, depth);
+      flush();
+      return;
+    }
     visitInline(el, tagName, depth);
   };
 
@@ -334,6 +343,38 @@ function inNestedList(el: Element, li: Element): boolean {
     if (tagName === "ul" || tagName === "ol") return true;
   }
   return false;
+}
+
+/**
+ * Whether a table is page layout rather than data, and so is walked like a
+ * `<div>` instead of read as one paragraph of rows.
+ *
+ * Email newsletters (Substack's among them) lay the whole message out in nested
+ * tables; read as data, an article became a single paragraph wrapped in
+ * "Table: Table: …" (issue #1666). A data cell holds a value — at most one
+ * paragraph of it, as Markdown and word processors wrap cells — while a layout
+ * cell holds a document: headings, several paragraphs, more tables. A header
+ * cell or a caption is something only data has, so either one keeps a table
+ * read as data whatever its cells hold.
+ */
+function isLayoutTable(table: Element): boolean {
+  let holdsDocument = false;
+  let paragraphs = 0;
+  const stack: Element[] = Array.from(table.children);
+  while (stack.length > 0) {
+    const el = stack.pop() as Element;
+    const tagName = el.tagName.toLowerCase();
+    if (isNonProseTag(tagName)) continue;
+    if (tagName === "th" || tagName === "caption") return false;
+    // Not descended into: a nested table's header cells are its own.
+    if (tagName === "table" || /^h[1-6]$/.test(tagName)) {
+      holdsDocument = true;
+      continue;
+    }
+    if (tagName === "p" && ++paragraphs > 1) holdsDocument = true;
+    stack.push(...Array.from(el.children));
+  }
+  return holdsDocument;
 }
 
 /** The text of a subtree, as one string — the walk's output, joined. */
@@ -383,8 +424,8 @@ function flatText(el: Element, voice: NarrationVoice, consumed: Set<Node>): stri
 }
 
 /**
- * A table reads as one paragraph: its caption, then its rows with the cells
- * joined by commas. A table with at most one thing to say is layout, not data —
+ * A data table reads as one paragraph: its caption, then its rows with the cells
+ * joined by commas. A table with at most one thing to say is a wrapper, not data —
  * email newsletters wrap every image in one (Substack's `image-wrapper`) — so it
  * reads without the "Table:" markers.
  *
