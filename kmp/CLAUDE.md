@@ -190,8 +190,23 @@ releases" in `docs/DEPLOYMENT.md`). Libraries bring their own keep rules;
 the `NavKey`s the saved back stack restores. Anything new that's looked up by
 name (reflection, serializers found at runtime) needs a rule there. CI builds
 the release variant on every pull request, so R8 errors show up early, but
-missing keep rules only fail at run time: after adding something like that,
-run a release build with the dev signing config on a device.
+missing keep rules only fail at run time. To try R8 on a device against a dev
+server, add a throwaway build type (not committed) with release's R8 and the
+debug app's identity, so it installs over the debug app and can reach http:
+
+```kotlin
+create("r8test") {
+    initWith(getByName("release"))
+    applicationIdSuffix = ".debug"
+    signingConfig = devSigning
+    matchingFallbacks += listOf("release")
+}
+// after buildTypes:
+sourceSets.getByName("r8test").manifest.srcFile("src/debug/AndroidManifest.xml")
+```
+
+then `./gradlew :androidApp:assembleR8test`. (Debug builds with R8 turned on
+don't test it: debuggable builds skip R8's renaming.)
 
 ## Running against a dev server
 

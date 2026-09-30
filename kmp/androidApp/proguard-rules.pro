@@ -5,6 +5,3 @@
 # Navigation 3 saves the back stack by serializing each NavKey and restores it
 # by looking the class (and its generated serializer) up by name.
 -keep class * implements androidx.navigation3.runtime.NavKey { *; }
--keepclassmembers class * implements androidx.navigation3.runtime.NavKey {
-    public static ** Companion;
-}

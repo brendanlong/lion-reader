@@ -276,10 +276,11 @@ must be higher than the last.
 2. Add GitHub secrets: `ANDROID_RELEASE_KEYSTORE_BASE64`
    (`base64 -w0 lionreader-upload.jks`), `ANDROID_RELEASE_KEYSTORE_PASSWORD`,
    `ANDROID_RELEASE_KEY_ALIAS` (`upload`), `ANDROID_RELEASE_KEY_PASSWORD`.
-3. Set `ANDROID_APP_CERT_SHA256` on the server to the key's SHA-256
-   fingerprint, so sign-in works for the GitHub APK. With Play App Signing,
-   Play re-signs its installs with Google's key: add that fingerprint too
-   (Play Console → Test and release → App integrity), comma-separated.
+3. Set `ANDROID_APP_CERT_SHA256` on the server (see the table above) to the
+   upload key's fingerprint, and, once Play App Signing is on, Play's key's
+   (Play Console → Test and release → App integrity). The two builds are
+   signed differently, so a GitHub install and a Play install can't update
+   each other.
 
 ### Each release
 
