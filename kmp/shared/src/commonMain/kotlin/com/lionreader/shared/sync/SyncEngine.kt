@@ -1,7 +1,6 @@
 package com.lionreader.shared.sync
 
 import com.lionreader.shared.api.ApiException
-import com.lionreader.shared.api.BulkStateResponse
 import com.lionreader.shared.api.FeedType
 import com.lionreader.shared.api.LionReaderApi
 import com.lionreader.shared.api.ListFilter
@@ -9,13 +8,12 @@ import com.lionreader.shared.api.MarkAllReadRequest
 import com.lionreader.shared.api.MarkReadRequest
 import com.lionreader.shared.api.SetStarredRequest
 import com.lionreader.shared.api.StateChange
+import com.lionreader.shared.api.SyncChanges
 import com.lionreader.shared.api.SyncEvent
 import com.lionreader.shared.api.parseSyncEvent
-import com.lionreader.shared.data.LocalStore
 import com.lionreader.shared.data.formatMillis
 import com.lionreader.shared.data.parseMillis
 import com.lionreader.shared.db.LionReaderDatabase
-import com.lionreader.shared.db.Outbox_state
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -26,9 +24,10 @@ private const val CONTENT_BATCH = 50
  * Keeps the local store in step with the server: sends the outbox, pulls changes (or the initial
  * window), downloads bodies, and applies retention.
  *
- * Every step is safe to interrupt and repeat: cursors advance only with the data they cover (in one
- * transaction), outbox rows are removed only once the server has accepted them, and replaying a
- * change is harmless because the server resolves read/star conflicts by change time.
+ * Every step fetches first and then commits through [SyncWriter], which can't reach the network. So
+ * every step is safe to interrupt and repeat: cursors advance only with the data they cover, outbox
+ * rows are removed only once the server has accepted them, and replaying a change is harmless
+ * because the server resolves read/star conflicts by change time.
  */
 class SyncEngine(
     private val api: LionReaderApi,
@@ -36,14 +35,16 @@ class SyncEngine(
     private val now: () -> Long,
     private val policy: () -> RetentionPolicy,
 ) {
-    private val store = LocalStore(db)
-    private val db = store.db
+    private val writer = SyncWriter(db)
+    private val outboxQueries = db.outboxQueries
+
     /** Serializes everything that reads or writes cursors, state, or the outbox. */
     private val mutex = Mutex()
+
     /**
      * Serializes body downloads, which run outside [mutex] so a long download never holds up a
-     * refresh or a flush. They only fill in bodies of entries already on the device, never state,
-     * so they can't race the sync.
+     * refresh or a flush. They only write `entry_body` (see [SyncWriter.storeBodies]), so they
+     * can't race the sync.
      */
     private val contentMutex = Mutex()
 
@@ -54,14 +55,14 @@ class SyncEngine(
     suspend fun sync(downloadContent: Boolean = true) {
         mutex.withLock {
             flush()
-            if (store.cursors == null) bootstrap()
+            if (writer.cursors == null) bootstrap()
             pull()
-            evict()
+            writer.evict(policy(), now())
         }
         if (downloadContent) {
             contentMutex.withLock {
                 downloadContent()
-                mutex.withLock { evict() }
+                mutex.withLock { writer.evict(policy(), now()) }
             }
         }
     }
@@ -77,101 +78,61 @@ class SyncEngine(
 
     /** Downloads one entry's body now (opening an entry the sync hasn't reached). */
     suspend fun ensureContent(entryId: String) {
-        if (db.entryQueries.selectById(entryId).executeAsOneOrNull()?.content != null) return
-        contentMutex.withLock { fetchBodies(listOf(entryId)) }
+        if (writer.hasBody(entryId)) return
+        val version = writer.bodyVersion(entryId) ?: return
+        contentMutex.withLock { fetchBodies(mapOf(entryId to version)) }
     }
 
-    /** Forgets all synced data, e.g. on sign-out. */
-    suspend fun reset() = mutex.withLock { db.transaction { store.clearAll() } }
+    /** Forgets all synced data and unsent changes. */
+    suspend fun reset() = mutex.withLock { writer.clearAll() }
 
     // ---- Outbox ----------------------------------------------------------
 
     private suspend fun flush() {
-        for (op in db.outboxQueries.selectMarkAll().executeAsList()) {
-            val sent = send {
-                api.markAllRead(
-                    MarkAllReadRequest(
-                        subscriptionId = op.subscription_id,
-                        tagId = op.tag_id,
-                        starredOnly = op.starred_only == 1L,
-                        type = if (op.saved_only == 1L) FeedType.SAVED else null,
-                        // `before` is inclusive at microsecond precision;
-                        // round up so the newest seen entry is included.
-                        before = formatMillis(op.before + 1),
-                        changedAt = formatMillis(op.changed_at),
-                        clientSentAt = formatMillis(now()),
-                    )
+        for (op in outboxQueries.selectMarkAll().executeAsList()) {
+            val request =
+                MarkAllReadRequest(
+                    subscriptionId = op.subscription_id,
+                    tagId = op.tag_id,
+                    starredOnly = op.starred_only == 1L,
+                    type = if (op.saved_only == 1L) FeedType.SAVED else null,
+                    // `before` is inclusive at microsecond precision; round up
+                    // so the newest seen entry is included.
+                    before = formatMillis(op.before + 1),
+                    changedAt = formatMillis(op.changed_at),
+                    clientSentAt = formatMillis(now()),
                 )
-            }
-            if (sent != Sent.RETRY) db.outboxQueries.deleteMarkAll(op.id)
+            sendOrReject { api.markAllRead(request) }
+            writer.removeMarkAll(op.id)
         }
 
-        val ops = db.outboxQueries.selectStates().executeAsList()
-        val groups = ops.groupBy { it.field_ to (it.value_ == 1L) }
-        for ((key, group) in groups) {
+        val ops = outboxQueries.selectStates().executeAsList()
+        for ((key, group) in ops.groupBy { it.field_ to (it.value_ == 1L) }) {
             val (field, value) = key
             for (batch in group.chunked(FLUSH_BATCH)) {
                 val changes = batch.map { StateChange(it.entry_id, formatMillis(it.changed_at)) }
-                var response: BulkStateResponse? = null
-                val sent = send {
-                    response =
-                        if (field == "read") {
-                            api.markRead(MarkReadRequest(changes, value, formatMillis(now())))
-                        } else {
-                            api.setStarred(SetStarredRequest(changes, value, formatMillis(now())))
-                        }
-                }
-                if (sent == Sent.RETRY) continue
-                db.transaction {
-                    response?.let { applyStateResponse(it, batch) }
-                    batch.forEach {
-                        db.outboxQueries.deleteStateIfUnchanged(
-                            it.entry_id,
-                            it.field_,
-                            it.changed_at,
-                        )
+                val response = sendOrReject {
+                    if (field == "read") {
+                        api.markRead(MarkReadRequest(changes, value, formatMillis(now())))
+                    } else {
+                        api.setStarred(SetStarredRequest(changes, value, formatMillis(now())))
                     }
                 }
+                writer.commitSent(batch, response)
             }
         }
-    }
-
-    private fun applyStateResponse(response: BulkStateResponse, batch: List<Outbox_state>) {
-        val returned = response.entries.associateBy { it.id }
-        for (op in batch) {
-            val state = returned[op.entry_id]
-            if (state == null) {
-                // No longer visible to the user (deleted, or unsubscribed and
-                // unstarred): drop the local copy along with the change.
-                store.deleteEntry(op.entry_id)
-            } else {
-                db.entryQueries.updateServerState(
-                    if (state.read) 1 else 0,
-                    if (state.starred) 1 else 0,
-                    state.id,
-                )
-            }
-        }
-        response.counts?.let(store::applyCounts)
-    }
-
-    private enum class Sent {
-        OK,
-        /** The server rejected the request itself; drop it rather than retry forever. */
-        DROPPED,
-        RETRY,
     }
 
     /**
-     * Runs one outbox request. A request the server rejects outright is dropped so one bad item
-     * can't stall the queue; anything else (network, 401, 429, 5xx) keeps it for the next flush.
+     * Runs one outbox request: its result, or null when the server rejected the request itself (it
+     * would never succeed, so it's dropped). Anything else (network, 401, 429, 5xx) throws, keeping
+     * the change for the next flush.
      */
-    private suspend fun send(block: suspend () -> Unit): Sent =
+    private suspend fun <T> sendOrReject(request: suspend () -> T): T? =
         try {
-            block()
-            Sent.OK
+            request()
         } catch (e: ApiException) {
-            if (e.isPermanent) Sent.DROPPED else throw e
+            if (e.isPermanent) null else throw e
         }
 
     // ---- Pull ------------------------------------------------------------
@@ -185,37 +146,29 @@ class SyncEngine(
         // Cursors first: anything that changes during the download is replayed
         // by the next pull, which is harmless.
         val start =
-            store.bootstrapCursors
-                ?: api.syncChanges(null).cursors.also { cursors ->
-                    db.transaction {
-                        store.clearSynced()
-                        store.bootstrapCursors = cursors
-                    }
-                }
+            writer.bootstrapCursors ?: api.syncChanges(null).cursors.also(writer::startBootstrap)
         val policy = policy()
         val windowStart = now() - policy.windowMillis
 
         var subscriptionCursor: String? = null
         do {
             val page = api.listSubscriptions(subscriptionCursor)
-            db.transaction { page.items.forEach(store::upsertSubscription) }
+            writer.saveSubscriptions(page.items)
             subscriptionCursor = page.nextCursor
         } while (subscriptionCursor != null)
-        val tags = api.listTags()
-        val counts = ListFilter.entries.associateWith { api.unreadCount(it) }
-        db.transaction {
-            tags.items.forEach(store::upsertTag)
-            store.setListCount("all", counts.getValue(ListFilter.ALL))
-            store.setListCount("starred", counts.getValue(ListFilter.STARRED))
-            store.setListCount("saved", counts.getValue(ListFilter.SAVED))
-        }
+        writer.saveTagsAndCounts(
+            api.listTags(),
+            all = api.unreadCount(ListFilter.ALL),
+            starred = api.unreadCount(ListFilter.STARRED),
+            saved = api.unreadCount(ListFilter.SAVED),
+        )
 
         for (filter in ListFilter.entries) {
             var cursor: String? = null
             var fetched = 0
             do {
                 val page = api.listEntries(filter, cursor)
-                db.transaction { page.items.forEach(store::upsertEntry) }
+                writer.saveEntries(page.items)
                 fetched += page.items.size
                 cursor = page.nextCursor
                 val pastWindow =
@@ -226,194 +179,86 @@ class SyncEngine(
             } while (cursor != null && fetched < policy.bootstrapMaxEntries && !pastWindow)
         }
 
-        db.transaction {
-            store.cursors = start
-            store.bootstrapCursors = null
-        }
+        writer.finishBootstrap(start)
     }
 
     private suspend fun pull() {
         while (true) {
-            val cursors = store.cursors ?: return
+            val cursors = writer.cursors ?: return
             val changes = api.syncChanges(cursors)
             if (changes.resyncRequired) {
-                db.transaction { store.cursors = null }
+                writer.forgetCursors()
                 bootstrap()
                 continue
             }
-            val events = changes.events.mapNotNull(::parseSyncEvent)
-            // Everything a page needs is fetched before its cursor commits, so
-            // a failure here retries the whole page rather than losing it.
-            val missingStarred =
-                events.filterIsInstance<SyncEvent.EntryStateChanged>().filter {
-                    it.starred && it.entry == null && !store.entryExists(it.entryId)
-                }
-            val starredBodies =
-                if (missingStarred.isEmpty()) emptyList()
-                else api.getEntries(missingStarred.map { it.entryId })
-            // A resubscribed feed's old entries predate the cursor, so no
-            // delta will bring them back.
-            val resubscribed =
-                events.filterIsInstance<SyncEvent.SubscriptionCreated>().flatMap {
-                    api.listEntries(ListFilter.ALL, null, it.subscription.id).items
-                }
-            val time = now()
-            db.transaction {
-                for (event in events) apply(event)
-                starredBodies.forEach { store.storeBody(it, time) }
-                resubscribed.forEach(store::upsertEntry)
-                changes.deletions.forEach { store.deleteEntry(it.entryId) }
-                store.cursors = changes.cursors
-            }
+            writer.commitPage(
+                fetchPage(changes.events.mapNotNull(::parseSyncEvent), changes),
+                now(),
+            )
             if (!changes.hasMore) return
         }
     }
 
-    private fun apply(event: SyncEvent) {
-        when (event) {
-            is SyncEvent.NewEntry -> {
-                event.entry?.let {
-                    store.upsertEntry(
-                        event.entryId,
-                        event.subscriptionId,
-                        event.feedId,
-                        event.feedType,
-                        it.url,
-                        it.title,
-                        it.author,
-                        it.summary,
-                        it.siteName,
-                        it.feedTitle,
-                        it.publishedAt,
-                        it.fetchedAt,
-                        it.read ?: false,
-                        it.starred ?: false,
-                    )
-                }
-                event.counts?.let(store::applyCounts)
+    /** Everything a page needs beyond its events, fetched before it commits. */
+    private suspend fun fetchPage(events: List<SyncEvent>, changes: SyncChanges): PulledPage {
+        val mentioned = events.mapNotNull {
+            when (it) {
+                is SyncEvent.NewEntry -> it.entryId
+                is SyncEvent.EntryUpdated -> it.entryId
+                is SyncEvent.EntryStateChanged -> it.entryId
+                else -> null
             }
-            is SyncEvent.EntryUpdated ->
-                with(event.metadata) {
-                    val published = publishedAt?.let(::parseMillis)
-                    db.entryQueries.updateMetadata(
-                        title,
-                        author,
-                        summary,
-                        url,
-                        published,
-                        published,
-                        event.entryId,
-                    )
-                    // The body may have changed too; download it again.
-                    db.entryQueries.dropContent(event.entryId)
-                }
-            is SyncEvent.EntryStateChanged -> {
-                val entry = event.entry
-                when {
-                    store.entryExists(event.entryId) ->
-                        db.entryQueries.updateServerState(
-                            if (event.read) 1 else 0,
-                            if (event.starred) 1 else 0,
-                            event.entryId,
-                        )
-                    entry != null && event.feedType != null ->
-                        store.upsertEntry(
-                            event.entryId,
-                            event.subscriptionId,
-                            event.feedId,
-                            event.feedType,
-                            entry.url,
-                            entry.title,
-                            entry.author,
-                            entry.summary,
-                            entry.siteName,
-                            entry.feedTitle,
-                            entry.publishedAt,
-                            entry.fetchedAt,
-                            event.read,
-                            event.starred,
-                        )
-                }
-                store.applyCounts(event.counts)
-            }
-            is SyncEvent.SubscriptionCreated -> {
-                with(event) {
-                    store.upsertSubscription(
-                        subscription.id,
-                        feed.id,
-                        feed.type,
-                        subscription.customTitle ?: feed.title,
-                        feed.url,
-                        feed.siteUrl,
-                        subscription.unreadCount,
-                        false,
-                        subscription.tags,
-                    )
-                    counts?.let(store::applyCounts)
-                }
-            }
-            is SyncEvent.SubscriptionUpdated -> {
-                db.subscriptionQueries.updateSubscriptionTitle(
-                    event.customTitle,
-                    event.subscriptionId,
-                )
-                store.setSubscriptionTags(event.subscriptionId, event.tags)
-            }
-            is SyncEvent.SubscriptionDeleted -> {
-                store.deleteSubscription(event.subscriptionId)
-                event.counts?.let(store::applyCounts)
-            }
-            is SyncEvent.TagCreated -> store.upsertTag(event.tag)
-            is SyncEvent.TagUpdated -> store.upsertTag(event.tag)
-            is SyncEvent.TagDeleted -> store.deleteTag(event.tagId)
         }
+        // The server classifies an entry's changes against each page's own
+        // cursor, but pages are ordered by an entry's latest change. So past
+        // the first page of a catch-up, an entry edited and then changed again
+        // can arrive as a state change only, and one created and then changed
+        // as an update rather than new. Fetching whole every entry the device
+        // lacks — and, on those later pages, every one it has — keeps it
+        // exact. (A single page, the usual case, needs only the former.)
+        val refetch = writer.catchUpInProgress
+        // A new-entry event with its data is already complete.
+        val complete =
+            events
+                .filterIsInstance<SyncEvent.NewEntry>()
+                .filter { it.entry != null }
+                .map { it.entryId }
+        val ids =
+            mentioned.distinct().filter { it !in complete && (refetch || !writer.entryExists(it)) }
+        return PulledPage(
+            events = events,
+            deletedIds = changes.deletions.map { it.entryId },
+            cursors = changes.cursors,
+            hasMore = changes.hasMore,
+            fetchedEntries = if (ids.isEmpty()) emptyList() else api.getEntries(ids),
+            resubscribedEntries =
+                events.filterIsInstance<SyncEvent.SubscriptionCreated>().flatMap {
+                    api.listEntries(ListFilter.ALL, null, it.subscription.id).items
+                },
+        )
     }
 
-    // ---- Bodies and retention -------------------------------------------
+    // ---- Bodies ----------------------------------------------------------
 
     private suspend fun downloadContent() {
         val budget = policy().contentBudgetBytes
-        var size = db.entryQueries.contentSize().executeAsOne()
+        var size = writer.bodySize()
         while (size < budget) {
-            val ids = db.entryQueries.selectMissingContent(CONTENT_BATCH.toLong()).executeAsList()
-            if (ids.isEmpty()) return
-            size += fetchBodies(ids)
+            val versions = writer.missingBodies(CONTENT_BATCH.toLong())
+            if (versions.isEmpty()) return
+            size += fetchBodies(versions)
         }
     }
 
-    /**
-     * Fills in bodies of entries already on the device and returns the characters stored. Runs
-     * outside [mutex] (see [contentMutex]), so it never inserts or deletes entries: one removed
-     * meanwhile stays removed.
-     */
-    private suspend fun fetchBodies(ids: List<String>): Long {
-        val fetched = api.getEntries(ids)
-        val time = now()
-        db.transaction {
-            fetched.forEach {
-                db.entryQueries.setContent(it.displayContent ?: "", time, it.id)
-            }
-            // Not returned: the user can no longer see it. Mark it so it isn't
-            // asked for again; the next pull or retention pass removes it.
-            val returned = fetched.map { it.id }.toSet()
-            ids.filterNot { it in returned }.forEach { db.entryQueries.setContent("", time, it) }
-        }
-        return fetched.sumOf { (it.displayContent ?: "").length.toLong() }
-    }
-
-    private fun evict() {
-        val policy = policy()
-        db.transaction {
-            db.entryQueries.evictOutsideWindow(now() - policy.windowMillis)
-            db.entryQueries.evictBeyondCount(policy.maxReadEntries.toLong())
-            var size = db.entryQueries.contentSize().executeAsOne()
-            if (size > policy.contentBudgetBytes) {
-                for (candidate in db.entryQueries.contentEvictionCandidates().executeAsList()) {
-                    if (size <= policy.contentBudgetBytes) break
-                    db.entryQueries.dropContent(candidate.id)
-                    size -= candidate.size ?: 0
-                }
-            }
-        }
+    /** Downloads bodies for entries at the given body versions. */
+    private suspend fun fetchBodies(versions: Map<String, Long>): Long {
+        val fetched = api.getEntries(versions.keys.toList())
+        val returned = fetched.map { it.id }.toSet()
+        return writer.storeBodies(
+            fetched,
+            versions.keys.filterNot { it in returned },
+            versions,
+            now(),
+        )
     }
 }

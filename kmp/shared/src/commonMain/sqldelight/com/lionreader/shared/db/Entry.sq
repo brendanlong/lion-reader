@@ -1,6 +1,6 @@
--- Entries in the offline window. `read`/`starred` are the last state the server
--- reported; the user's unsent changes live in outbox_state and win on display
--- (see entry_view).
+-- Entries in the offline window: metadata and the last read/starred state the
+-- server reported. The user's unsent changes live in outbox_state and win on
+-- display (see entry_view); article bodies live in entry_body.
 CREATE TABLE entry (
   id TEXT NOT NULL PRIMARY KEY,
   subscription_id TEXT,
@@ -18,9 +18,10 @@ CREATE TABLE entry (
   sort_at INTEGER NOT NULL,
   read INTEGER NOT NULL,
   starred INTEGER NOT NULL,
-  content TEXT,
-  content_downloaded_at INTEGER,
-  last_opened_at INTEGER
+  last_opened_at INTEGER,
+  -- Bumped when the server reports the entry edited, so a body downloaded
+  -- before the edit can't be stored after it (see Body.sq).
+  body_version INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX entry_timeline ON entry(sort_at DESC, id DESC);
@@ -62,9 +63,6 @@ UPDATE entry SET read = ? WHERE id = ?;
 updateServerStarred:
 UPDATE entry SET starred = ? WHERE id = ?;
 
-setContent:
-UPDATE entry SET content = ?, content_downloaded_at = ? WHERE id = ?;
-
 markOpened:
 UPDATE entry SET last_opened_at = ? WHERE id = ?;
 
@@ -84,7 +82,10 @@ WHERE subscription_id = ?
   AND id NOT IN (SELECT id FROM entry_view WHERE effective_starred = 1);
 
 selectById:
-SELECT * FROM entry_view WHERE id = ?;
+SELECT v.*, b.content
+FROM entry_view v
+LEFT JOIN entry_body b ON b.entry_id = v.id
+WHERE v.id = ?;
 
 -- Timeline for one list. Each filter argument is ignored when null.
 selectTimeline:
@@ -99,10 +100,17 @@ WHERE (:subscriptionId IS NULL OR subscription_id = :subscriptionId)
 ORDER BY sort_at DESC, id DESC
 LIMIT :limit;
 
+bumpBodyVersion:
+UPDATE entry SET body_version = body_version + 1 WHERE id = ?;
+
+bodyVersion:
+SELECT body_version FROM entry WHERE id = ?;
+
 -- Entries without a body worth keeping offline, newest first.
 selectMissingContent:
-SELECT id FROM entry_view
-WHERE content IS NULL AND (effective_read = 0 OR effective_starred = 1 OR type = 'saved')
+SELECT id, body_version FROM entry_view
+WHERE id NOT IN (SELECT entry_id FROM entry_body)
+  AND (effective_read = 0 OR effective_starred = 1 OR type = 'saved')
 ORDER BY sort_at DESC, id DESC
 LIMIT ?;
 
@@ -137,15 +145,3 @@ WHERE id IN (
   ORDER BY sort_at DESC
   LIMIT -1 OFFSET ?
 );
-
--- Bodies: total size, and the largest-first eviction order (oldest read first).
-contentSize:
-SELECT COALESCE(SUM(LENGTH(content)), 0) FROM entry;
-
-contentEvictionCandidates:
-SELECT id, LENGTH(content) AS size FROM entry_view
-WHERE content IS NOT NULL AND type != 'saved' AND effective_starred = 0
-ORDER BY effective_read DESC, sort_at ASC;
-
-dropContent:
-UPDATE entry SET content = NULL, content_downloaded_at = NULL WHERE id = ?;

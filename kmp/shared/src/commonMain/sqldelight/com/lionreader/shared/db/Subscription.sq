@@ -95,3 +95,15 @@ SELECT * FROM list_count;
 
 deleteAllListCounts:
 DELETE FROM list_count;
+
+-- Relative adjustments for an entry removed without new counts from the
+-- server (deletions carry none); never below zero.
+addListCount:
+UPDATE list_count SET unread = MAX(0, unread + :delta) WHERE list = :list;
+
+addSubscriptionUnread:
+UPDATE subscription SET unread_count = MAX(0, unread_count + :delta) WHERE id = :id;
+
+addTagUnreadForSubscription:
+UPDATE tag SET unread_count = MAX(0, unread_count + :delta)
+WHERE id IN (SELECT tag_id FROM subscription_tag WHERE subscription_id = :subscriptionId);

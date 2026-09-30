@@ -1,0 +1,318 @@
+package com.lionreader.shared.sync
+
+import com.lionreader.shared.api.BulkStateResponse
+import com.lionreader.shared.api.EntryListItem
+import com.lionreader.shared.api.FullEntry
+import com.lionreader.shared.api.Subscription
+import com.lionreader.shared.api.SyncCursors
+import com.lionreader.shared.api.SyncEvent
+import com.lionreader.shared.api.TagList
+import com.lionreader.shared.data.LocalStore
+import com.lionreader.shared.data.parseMillis
+import com.lionreader.shared.db.LionReaderDatabase
+import com.lionreader.shared.db.Outbox_state
+
+/** One `sync.changes` page with everything it needs already fetched. */
+internal class PulledPage(
+    val events: List<SyncEvent>,
+    val deletedIds: List<String>,
+    val cursors: SyncCursors,
+    val hasMore: Boolean,
+    /**
+     * Entries fetched whole, as the server has them now: ones the events mention that aren't on the
+     * device, and (while a catch-up is past its first page) ones that are, whose edits the events
+     * may not report. See [SyncEngine] `fetchPage`.
+     */
+    val fetchedEntries: List<FullEntry>,
+    /** Older entries of feeds the page resubscribes to (they predate the cursor). */
+    val resubscribedEntries: List<EntryListItem>,
+)
+
+/**
+ * Every write the sync makes, each one transaction. Deliberately has no API and nothing here
+ * suspends: whatever a commit needs is fetched before it by [SyncEngine], so a cursor can never be
+ * committed ahead of data a later request was supposed to bring.
+ *
+ * Table ownership: `entry` state and metadata, subscriptions, tags, counts and cursors are written
+ * here under the sync lock; bodies only by [storeBodies]; the outbox by `Reader` (and cleared here
+ * once sent).
+ */
+internal class SyncWriter(private val db: LionReaderDatabase) {
+    private val store = LocalStore(db)
+
+    val cursors: SyncCursors?
+        get() = store.cursors
+
+    val bootstrapCursors: SyncCursors?
+        get() = store.bootstrapCursors
+
+    fun entryExists(id: String): Boolean = store.entryExists(id)
+
+    // ---- Bootstrap -------------------------------------------------------
+
+    fun startBootstrap(start: SyncCursors) = db.transaction {
+        store.clearSynced()
+        store.bootstrapCursors = start
+    }
+
+    fun saveSubscriptions(items: List<Subscription>) = db.transaction {
+        items.forEach(store::upsertSubscription)
+    }
+
+    fun saveTagsAndCounts(tags: TagList, all: Int, starred: Int, saved: Int) = db.transaction {
+        tags.items.forEach(store::upsertTag)
+        store.setListCount("all", all)
+        store.setListCount("starred", starred)
+        store.setListCount("saved", saved)
+    }
+
+    fun saveEntries(items: List<EntryListItem>) = db.transaction {
+        items.forEach(store::upsertEntry)
+    }
+
+    fun finishBootstrap(start: SyncCursors) = db.transaction {
+        store.cursors = start
+        store.bootstrapCursors = null
+    }
+
+    /** A resync starts over from a fresh bootstrap (the outbox is kept). */
+    fun forgetCursors() = db.transaction { store.cursors = null }
+
+    // ---- Pull ------------------------------------------------------------
+
+    fun commitPage(page: PulledPage, now: Long) = db.transaction {
+        // Deletions first: their count adjustments are then overwritten by the
+        // events' absolute counts (which already reflect them) wherever those
+        // cover a list, and kept where they don't.
+        page.deletedIds.forEach(store::removeEntry)
+        page.events.forEach(::apply)
+        for (entry in page.fetchedEntries) {
+            store.upsertEntry(
+                entry.id,
+                entry.subscriptionId,
+                entry.feedId,
+                entry.type,
+                entry.url,
+                entry.title,
+                entry.author,
+                entry.summary,
+                entry.siteName,
+                entry.feedTitle,
+                entry.publishedAt,
+                entry.fetchedAt,
+                entry.read,
+                entry.starred,
+            )
+            // The fetched body is current: it replaces the old one and wins
+            // over any download already in flight.
+            db.entryQueries.bumpBodyVersion(entry.id)
+        }
+        val versions = page.fetchedEntries.associate { it.id to (bodyVersion(it.id) ?: 0L) }
+        storeBodiesInTransaction(page.fetchedEntries, emptyList(), versions, now)
+        page.resubscribedEntries.forEach(store::upsertEntry)
+        store.cursors = page.cursors
+        store.catchUpInProgress = page.hasMore
+    }
+
+    val catchUpInProgress: Boolean
+        get() = store.catchUpInProgress
+
+    private fun apply(event: SyncEvent) {
+        when (event) {
+            is SyncEvent.NewEntry -> {
+                event.entry?.let {
+                    store.upsertEntry(
+                        event.entryId,
+                        event.subscriptionId,
+                        event.feedId,
+                        event.feedType,
+                        it.url,
+                        it.title,
+                        it.author,
+                        it.summary,
+                        it.siteName,
+                        it.feedTitle,
+                        it.publishedAt,
+                        it.fetchedAt,
+                        it.read ?: false,
+                        it.starred ?: false,
+                    )
+                }
+                event.counts?.let(store::applyCounts)
+            }
+            is SyncEvent.EntryUpdated ->
+                with(event.metadata) {
+                    val published = publishedAt?.let(::parseMillis)
+                    db.entryQueries.updateMetadata(
+                        title,
+                        author,
+                        summary,
+                        url,
+                        published,
+                        published,
+                        event.entryId,
+                    )
+                    // The body may have changed too; download it again, and
+                    // reject any download that started before now.
+                    db.bodyQueries.deleteForEntry(event.entryId)
+                    db.entryQueries.bumpBodyVersion(event.entryId)
+                }
+            is SyncEvent.EntryStateChanged -> {
+                val entry = event.entry
+                when {
+                    store.entryExists(event.entryId) ->
+                        db.entryQueries.updateServerState(
+                            if (event.read) 1 else 0,
+                            if (event.starred) 1 else 0,
+                            event.entryId,
+                        )
+                    entry != null && event.feedType != null ->
+                        store.upsertEntry(
+                            event.entryId,
+                            event.subscriptionId,
+                            event.feedId,
+                            event.feedType,
+                            entry.url,
+                            entry.title,
+                            entry.author,
+                            entry.summary,
+                            entry.siteName,
+                            entry.feedTitle,
+                            entry.publishedAt,
+                            entry.fetchedAt,
+                            event.read,
+                            event.starred,
+                        )
+                }
+                store.applyCounts(event.counts)
+            }
+            is SyncEvent.SubscriptionCreated ->
+                with(event) {
+                    store.upsertSubscription(
+                        subscription.id,
+                        feed.id,
+                        feed.type,
+                        subscription.customTitle ?: feed.title,
+                        feed.url,
+                        feed.siteUrl,
+                        subscription.unreadCount,
+                        false,
+                        subscription.tags,
+                    )
+                    counts?.let(store::applyCounts)
+                }
+            is SyncEvent.SubscriptionUpdated -> {
+                db.subscriptionQueries.updateSubscriptionTitle(
+                    event.customTitle,
+                    event.subscriptionId,
+                )
+                store.setSubscriptionTags(event.subscriptionId, event.tags)
+            }
+            is SyncEvent.SubscriptionDeleted -> {
+                store.deleteSubscription(event.subscriptionId)
+                event.counts?.let(store::applyCounts)
+            }
+            is SyncEvent.TagCreated -> store.upsertTag(event.tag)
+            is SyncEvent.TagUpdated -> store.upsertTag(event.tag)
+            is SyncEvent.TagDeleted -> store.deleteTag(event.tagId)
+        }
+    }
+
+    // ---- Outbox ----------------------------------------------------------
+
+    fun removeMarkAll(id: Long) = db.outboxQueries.deleteMarkAll(id)
+
+    /**
+     * Records a sent batch: the server's answer becomes the local server state, and each change is
+     * removed unless the user changed it again meanwhile. A null [response] means the server
+     * rejected the batch; the changes are dropped so one bad item can't stall the queue.
+     */
+    fun commitSent(batch: List<Outbox_state>, response: BulkStateResponse?) = db.transaction {
+        if (response != null) {
+            val returned = response.entries.associateBy { it.id }
+            for (op in batch) {
+                val state = returned[op.entry_id]
+                if (state == null) {
+                    // No longer visible to the user (deleted, or unsubscribed
+                    // and unstarred): drop the local copy with the change.
+                    store.removeEntry(op.entry_id)
+                } else {
+                    db.entryQueries.updateServerState(
+                        if (state.read) 1 else 0,
+                        if (state.starred) 1 else 0,
+                        state.id,
+                    )
+                }
+            }
+            response.counts?.let(store::applyCounts)
+        }
+        batch.forEach {
+            db.outboxQueries.deleteStateIfUnchanged(it.entry_id, it.field_, it.changed_at)
+        }
+    }
+
+    // ---- Bodies and retention -------------------------------------------
+
+    /**
+     * Stores downloaded bodies, and an empty one for each [missing] id (asked for but not returned:
+     * no longer visible) so it isn't requested again — each only if its entry is still at the
+     * [versions] it had when the download started. Never touches `entry`, which is why it's safe
+     * outside the sync lock. Returns the characters stored.
+     */
+    fun storeBodies(
+        fetched: List<FullEntry>,
+        missing: List<String>,
+        versions: Map<String, Long>,
+        now: Long,
+    ): Long = db.transactionWithResult { storeBodiesInTransaction(fetched, missing, versions, now) }
+
+    private fun storeBodiesInTransaction(
+        fetched: List<FullEntry>,
+        missing: List<String>,
+        versions: Map<String, Long>,
+        now: Long,
+    ): Long {
+        var stored = 0L
+        for (entry in fetched) {
+            val version = versions[entry.id] ?: continue
+            val content = entry.displayContent ?: ""
+            db.bodyQueries.putIfCurrent(entry.id, content, content.length.toLong(), now, version)
+            stored += content.length
+        }
+        missing.forEach { id ->
+            versions[id]?.let { db.bodyQueries.putIfCurrent(id, "", 0, now, it) }
+        }
+        return stored
+    }
+
+    /** The entry's body version, or null when it isn't on the device. */
+    fun bodyVersion(entryId: String): Long? =
+        db.entryQueries.bodyVersion(entryId).executeAsOneOrNull()
+
+    fun bodySize(): Long = db.bodyQueries.totalSize().executeAsOne()
+
+    /** Entries needing a body, with the body version to download them at. */
+    fun missingBodies(limit: Long): Map<String, Long> =
+        db.entryQueries.selectMissingContent(limit).executeAsList().associate {
+            it.id to it.body_version
+        }
+
+    fun hasBody(entryId: String): Boolean =
+        db.entryQueries.selectById(entryId).executeAsOneOrNull()?.content != null
+
+    fun evict(policy: RetentionPolicy, now: Long) = db.transaction {
+        db.entryQueries.evictOutsideWindow(now - policy.windowMillis)
+        db.entryQueries.evictBeyondCount(policy.maxReadEntries.toLong())
+        db.bodyQueries.pruneOrphans()
+        var size = db.bodyQueries.totalSize().executeAsOne()
+        if (size > policy.contentBudgetBytes) {
+            for (candidate in db.bodyQueries.evictionCandidates().executeAsList()) {
+                if (size <= policy.contentBudgetBytes) break
+                db.bodyQueries.deleteForEntry(candidate.entry_id)
+                size -= candidate.size
+            }
+        }
+    }
+
+    fun clearAll() = db.transaction { store.clearAll() }
+}

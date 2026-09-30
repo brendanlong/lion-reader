@@ -3,7 +3,6 @@ package com.lionreader.shared.data
 import com.lionreader.shared.api.ApiJson
 import com.lionreader.shared.api.EntryListItem
 import com.lionreader.shared.api.FeedType
-import com.lionreader.shared.api.FullEntry
 import com.lionreader.shared.api.Subscription
 import com.lionreader.shared.api.SyncCursors
 import com.lionreader.shared.api.Tag
@@ -13,6 +12,7 @@ import com.lionreader.shared.db.LionReaderDatabase
 
 private const val CURSORS_KEY = "sync_cursors"
 private const val BOOTSTRAP_CURSORS_KEY = "bootstrap_cursors"
+private const val CATCH_UP_KEY = "catch_up_in_progress"
 
 internal fun FeedType.wire(): String =
     when (this) {
@@ -21,7 +21,7 @@ internal fun FeedType.wire(): String =
         FeedType.SAVED -> "saved"
     }
 
-/** Server data → local tables. Callers group calls in a transaction. */
+/** Row-level writes shared by [com.lionreader.shared.sync.SyncWriter]; no transactions here. */
 internal class LocalStore(val db: LionReaderDatabase) {
     private val entries = db.entryQueries
     private val subs = db.subscriptionQueries
@@ -35,6 +35,13 @@ internal class LocalStore(val db: LionReaderDatabase) {
     var bootstrapCursors: SyncCursors?
         get() = readCursors(BOOTSTRAP_CURSORS_KEY)
         set(value) = writeCursors(BOOTSTRAP_CURSORS_KEY, value)
+
+    /** Whether the last pulled page said more pages follow (see SyncEngine.fetchPage). */
+    var catchUpInProgress: Boolean
+        get() = meta.selectValue(CATCH_UP_KEY).executeAsOneOrNull() == "1"
+        set(value) {
+            if (value) meta.upsert(CATCH_UP_KEY, "1") else meta.delete(CATCH_UP_KEY)
+        }
 
     private fun readCursors(key: String): SyncCursors? =
         meta.selectValue(key).executeAsOneOrNull()?.let {
@@ -113,37 +120,30 @@ internal class LocalStore(val db: LionReaderDatabase) {
             item.starred,
         )
 
-    /**
-     * Stores a downloaded body. An entry already on the device keeps its read/starred state: that
-     * comes only from sync deltas and flush responses, which are ordered, and a body fetch racing a
-     * flush could otherwise write back a stale state.
-     */
-    fun storeBody(entry: FullEntry, now: Long) {
-        if (!entryExists(entry.id)) {
-            upsertEntry(
-                entry.id,
-                entry.subscriptionId,
-                entry.feedId,
-                entry.type,
-                entry.url,
-                entry.title,
-                entry.author,
-                entry.summary,
-                entry.siteName,
-                entry.feedTitle,
-                entry.publishedAt,
-                entry.fetchedAt,
-                entry.read,
-                entry.starred,
-            )
-        }
-        entries.setContent(entry.displayContent ?: "", now, entry.id)
-    }
-
     fun entryExists(id: String): Boolean = entries.exists(id).executeAsOne() > 0
+
+    /**
+     * Removes an entry the server says is gone and takes it out of the unread counts, which the
+     * removal doesn't otherwise update (deletions carry no counts). Uses the entry's server state:
+     * the counts are the server's.
+     */
+    fun removeEntry(id: String) {
+        val row = entries.selectById(id).executeAsOneOrNull()
+        if (row != null && row.read == 0L) {
+            subs.addListCount(-1, "all")
+            if (row.starred == 1L) subs.addListCount(-1, "starred")
+            if (row.type == "saved") subs.addListCount(-1, "saved")
+            row.subscription_id?.let {
+                subs.addSubscriptionUnread(-1, it)
+                subs.addTagUnreadForSubscription(-1, it)
+            }
+        }
+        deleteEntry(id)
+    }
 
     fun deleteEntry(id: String) {
         entries.deleteById(id)
+        db.bodyQueries.deleteForEntry(id)
         db.outboxQueries.deleteStatesForEntry(id)
     }
 
@@ -196,6 +196,7 @@ internal class LocalStore(val db: LionReaderDatabase) {
         subs.deleteSubscription(id)
         subs.clearSubscriptionTags(id)
         entries.deleteUnstarredForSubscription(id)
+        db.bodyQueries.pruneOrphans()
     }
 
     fun upsertTag(tag: TagRef) {
@@ -227,6 +228,7 @@ internal class LocalStore(val db: LionReaderDatabase) {
     /** Forgets everything synced, keeping unsent changes (a resync). */
     fun clearSynced() {
         entries.deleteAll()
+        db.bodyQueries.deleteAll()
         subs.deleteAllSubscriptions()
         subs.deleteAllTags()
         subs.deleteAllSubscriptionTags()
