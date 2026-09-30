@@ -58,7 +58,6 @@ class HomeScreenTest {
         )
     private val reader = Reader(db, { 1_000L }, Dispatchers.Unconfined) {}
     private val settings = MutableStateFlow(AppSettings())
-    private val narrated = MutableStateFlow<String?>(null)
 
     private fun seed(id: String, title: String, read: Boolean, sortAt: Long = 0) {
         db.entryQueries.insertIgnore(id, "feed", "web", 0, sortAt, if (read) 1 else 0, 0)
@@ -90,7 +89,6 @@ class HomeScreenTest {
                 settings,
                 { settings.value = it(settings.value) },
                 sync = {},
-                narrated = narrated,
             )
         composeRule.setContent {
             HomeScreen(model, onOpen = {}, onSettings = {}, showSelection = showSelection)
@@ -110,21 +108,6 @@ class HomeScreenTest {
         composeRule.onNodeWithText("Show read articles").performClick()
         composeRule.waitUntil { !settings.value.unreadOnly }
         composeRule.onNodeWithText("Read article").assertIsDisplayed()
-    }
-
-    @Test
-    fun theNarratedArticleStaysOnceRead() {
-        seed("a", "Narrated article", read = false)
-        show()
-        composeRule.onNodeWithText("Narrated article").assertIsDisplayed()
-
-        // Continuous playback moves on to it, which marks it read.
-        narrated.value = "a"
-        composeRule.waitForIdle()
-        db.entryQueries.updateServerState(1, 0, "a")
-        composeRule.waitForIdle()
-
-        composeRule.onNodeWithText("Narrated article").assertIsDisplayed()
     }
 
     @Test

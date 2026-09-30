@@ -36,6 +36,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
@@ -53,7 +54,6 @@ import com.lionreader.app.AccountSession
 import com.lionreader.app.AppGraph
 import com.lionreader.app.R
 import com.lionreader.app.narration.NarratedArticle
-import com.lionreader.app.narration.NarrationState
 import com.lionreader.app.reader.AppearanceTokens
 import com.lionreader.app.reader.ReaderColors
 import com.lionreader.app.reader.ReaderHeader
@@ -64,6 +64,7 @@ import com.lionreader.shared.data.EntryDetail
 import com.lionreader.shared.data.Reader
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -84,7 +85,6 @@ fun EntryScreen(
     onBack: () -> Unit,
     /** Beside the list, where going back closes the article rather than leaving it. */
     besideList: Boolean,
-    onOpenElsewhere: (NarrationState) -> Unit,
 ) {
     val context = LocalContext.current
     val pages = remember(startId) { if (startId in ids) ids else listOf(startId) }
@@ -100,18 +100,18 @@ fun EntryScreen(
     LaunchedEffect(Unit) {
         graph.narrator.errors.collect { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
     }
-    // When narration moves on to the next article, turn the page with it, if
-    // the reader was on the article it just finished.
-    var narratedBefore by remember { mutableStateOf(narration?.entryId) }
-    LaunchedEffect(narration?.entryId) {
-        val now = narration?.entryId
-        val before = narratedBefore
-        // First: the animation throws if a drag interrupts it.
-        narratedBefore = now
-        val shown = pages[pager.settledPage]
-        if (now != null && before == shown && now != shown) {
-            pages.indexOf(now).takeIf { it >= 0 }?.let { pager.animateScrollToPage(it) }
-        }
+    // Narration follows the article on screen: swiping to another switches to
+    // it once it's loaded (or ends a paused narration, rather than start one).
+    LaunchedEffect(entryId) {
+        val current = graph.narrator.state.value ?: return@LaunchedEffect
+        if (current.entryId == entryId) return@LaunchedEffect
+        if (!current.playing) return@LaunchedEffect graph.narrator.stop()
+        val paragraphs = snapshotFlow { spoken[entryId] }.filterNotNull().first()
+        val shown = snapshotFlow { entries[entryId] }.filterNotNull().first()
+        if (paragraphs.isEmpty()) return@LaunchedEffect graph.narrator.stop()
+        graph.narrator.narrate(
+            NarratedArticle(entryId, shown.title ?: "Untitled", shown.source, paragraphs)
+        )
     }
     val settings by graph.currentSettings.collectAsStateWithLifecycle()
     val entry = entries[pages[pager.targetPage]]
@@ -168,7 +168,6 @@ fun EntryScreen(
                                         current.title ?: "Untitled",
                                         current.source,
                                         paragraphs,
-                                        queue = pages,
                                     )
                                 )
                             }
@@ -282,22 +281,17 @@ fun EntryScreen(
             )
         },
         bottomBar = {
-            // Another article's narration opens it; this one's is already here.
-            CurrentNarrationBar(
-                graph,
-                // Nothing to open when it's the article on screen.
-                onOpen =
-                    if (narration?.entryId == entryId) null
-                    else
-                        { state ->
-                            pages
-                                .indexOf(state.entryId)
-                                .takeIf { it >= 0 }
-                                ?.let { page ->
-                                    coroutines.launch { pager.animateScrollToPage(page) }
-                                } ?: onOpenElsewhere(state)
-                        },
-            )
+            narration?.let {
+                NarrationBar(
+                    state = it,
+                    speed = settings.narrationSpeed,
+                    onPrevious = { graph.narrator.skipParagraphs(-1) },
+                    onToggle = graph.narrator::togglePlaying,
+                    onNext = { graph.narrator.skipParagraphs(1) },
+                    onSpeed = graph::setNarrationSpeed,
+                    onStop = graph.narrator::stop,
+                )
+            }
         },
     ) { padding ->
         HorizontalPager(

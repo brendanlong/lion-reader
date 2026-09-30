@@ -21,9 +21,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.emptyFlow
-import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -49,8 +46,6 @@ class HomeViewModel(
     settings: Flow<AppSettings>,
     private val updateSettings: suspend ((AppSettings) -> AppSettings) -> Unit,
     private val sync: suspend () -> Unit,
-    /** The article being narrated, which (like one opened) stays in an unread-only list. */
-    narrated: Flow<String?> = emptyFlow(),
 ) : ViewModel() {
     constructor(
         graph: AppGraph,
@@ -65,7 +60,6 @@ class HomeViewModel(
             withContext(Dispatchers.IO) { account.sync.sync(downloadContent = false) }
             graph.syncInBackground()
         },
-        graph.narrator.state.map { it?.entryId },
     )
 
     private val _scope = MutableStateFlow<ListScope>(ListScope.All)
@@ -126,7 +120,6 @@ class HomeViewModel(
 
     init {
         refresh()
-        viewModelScope.launch { narrated.distinctUntilChanged().filterNotNull().collect(::keep) }
     }
 
     fun select(scope: ListScope) {
