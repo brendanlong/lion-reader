@@ -219,6 +219,10 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
                             return@execute true
                         }
                         if (!response.status.isSuccess()) decode(JsonObject.serializer(), response)
+                        // A captive portal's page, say.
+                        if (response.contentType()?.match(ContentType.Text.EventStream) != true) {
+                            throw ApiException(response.status.value, "Not an event stream")
+                        }
                         onOpen()
                         val body = response.bodyAsChannel()
                         while (true) {

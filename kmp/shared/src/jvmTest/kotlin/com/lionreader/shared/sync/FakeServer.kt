@@ -37,6 +37,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.TextContent
 import io.ktor.http.headersOf
+import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.serialization.KSerializer
@@ -82,10 +83,10 @@ class FakeServer {
     var duringBatch: (suspend (List<String>) -> Unit)? = null
 
     /**
-     * What each connection to `/events` gets, in order: the stream's text, which then ends, or null
-     * for a 503. Once they run out, connections stay open with nothing to say.
+     * What each connection to `/events` gets, in order: a stream (which ends when its channel
+     * does), or null for a 503. Once they run out, connections stay open with nothing to say.
      */
-    val eventStreams = ArrayDeque<String?>()
+    val eventStreams = ArrayDeque<ByteReadChannel?>()
 
     /** Runs while a state write is in flight (before the server answers). */
     var duringStateWrite: (suspend () -> Unit)? = null
