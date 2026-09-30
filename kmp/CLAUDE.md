@@ -102,7 +102,8 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
 - **Wide screens** show the list and the article side by side (Navigation 3's
   `ListDetailSceneStrategy`: home is the list pane, an entry the detail). So
   opening from the list replaces the entry on the back stack rather than
-  stacking another, and the list highlights the article shown.
+  stacking another, back closes the article beside the list (`PopLatest`),
+  and the list highlights the article shown.
 - **Reader view.** Hardened per SECURITY.md §1; the body is the server's
   sanitized HTML, inserted verbatim. Its one script reports where wide tables
   and code blocks are, so a sideways drag on one scrolls it instead of paging

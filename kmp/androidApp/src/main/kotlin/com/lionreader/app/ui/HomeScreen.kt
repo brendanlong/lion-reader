@@ -79,6 +79,8 @@ import kotlinx.coroutines.launch
 fun HomeScreen(
     model: HomeViewModel,
     onOpen: (String) -> Unit,
+    /** Whether to highlight the open article: only beside it, where both are on screen. */
+    showSelection: Boolean = false,
     onSettings: () -> Unit,
     bottomBar: @Composable () -> Unit = {},
 ) {
@@ -203,7 +205,7 @@ fun HomeScreen(
                     EntryList(
                         items = if (text != null) searchResults else items,
                         listState = if (text != null) searchList else timelineList,
-                        selectedId = shown,
+                        selectedId = shown.takeIf { showSelection },
                         emptyText =
                             when {
                                 text == null && unreadOnly -> "No unread articles"

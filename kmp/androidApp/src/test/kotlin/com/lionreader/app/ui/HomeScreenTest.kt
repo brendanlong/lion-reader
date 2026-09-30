@@ -5,6 +5,8 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isSelected
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -71,7 +73,7 @@ class HomeScreenTest {
 
     private lateinit var model: HomeViewModel
 
-    private fun show() {
+    private fun show(showSelection: Boolean = false) {
         model =
             HomeViewModel(
                 reader,
@@ -80,7 +82,9 @@ class HomeScreenTest {
                 sync = {},
                 narrated = narrated,
             )
-        composeRule.setContent { HomeScreen(model, onOpen = {}, onSettings = {}) }
+        composeRule.setContent {
+            HomeScreen(model, onOpen = {}, onSettings = {}, showSelection = showSelection)
+        }
     }
 
     @Test
@@ -154,6 +158,22 @@ class HomeScreenTest {
 
         composeRule.onNodeWithText("Article 40").assertIsDisplayed()
         composeRule.onNodeWithText("Article 0").assertDoesNotExist()
+    }
+
+    @Test
+    fun theArticleBesideTheListIsSelectedUntilClosed() {
+        seed("a", "First", read = false)
+        seed("b", "Second", read = false)
+        show(showSelection = true)
+
+        model.opened("b")
+        composeRule.onNode(hasText("Second", substring = true) and isSelected()).assertExists()
+        composeRule.onNode(hasText("First", substring = true) and isSelected()).assertDoesNotExist()
+
+        model.shownClosed()
+        composeRule
+            .onNode(hasText("Second", substring = true) and isSelected())
+            .assertDoesNotExist()
     }
 
     @Test

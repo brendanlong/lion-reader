@@ -76,6 +76,8 @@ fun EntryScreen(
     startId: String,
     onShown: (String) -> Unit,
     onBack: () -> Unit,
+    /** Beside the list, where going back closes the article rather than leaving it. */
+    besideList: Boolean,
     onOpenElsewhere: (NarrationState) -> Unit,
 ) {
     val context = LocalContext.current
@@ -122,7 +124,17 @@ fun EntryScreen(
                 title = {},
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(painterResource(R.drawable.ic_arrow_back), contentDescription = "Back")
+                        if (besideList) {
+                            Icon(
+                                painterResource(R.drawable.ic_close),
+                                contentDescription = "Close article",
+                            )
+                        } else {
+                            Icon(
+                                painterResource(R.drawable.ic_arrow_back),
+                                contentDescription = "Back",
+                            )
+                        }
                     }
                 },
                 actions = {
