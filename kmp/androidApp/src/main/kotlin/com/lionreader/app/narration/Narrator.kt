@@ -17,10 +17,13 @@ import com.lionreader.app.AppSettings
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -47,17 +50,21 @@ data class NarrationState(
 )
 
 /**
- * Narrates one article at a time: synthesizes it chunk by chunk a little ahead of the player and
- * plays the chunks through one ExoPlayer, which [NarrationService] exposes as a media session
- * (notification, lock screen, headset buttons, background playback). Played chunks are dropped, so
- * the files on disk stay a handful however long the article. A chunk the engine can't say is
- * skipped, so the playlist can have gaps: items are found by their chunk index (the media id).
+ * Narrates one article at a time with the [SpeechEngine] the settings pick: synthesizes it chunk by
+ * chunk a little ahead of the player and plays the chunks through one ExoPlayer, which
+ * [NarrationService] exposes as a media session (notification, lock screen, headset buttons,
+ * background playback). Played chunks are dropped, so the files on disk stay a handful however long
+ * the article. A chunk the engine can't say is skipped, so the playlist can have gaps: items are
+ * found by their chunk index (the media id).
  *
  * Main thread only (ExoPlayer's rule).
  */
-class Narrator(private val context: Context, private val settings: () -> AppSettings) {
+class Narrator(
+    private val context: Context,
+    private val settings: () -> AppSettings,
+    private val engineFor: suspend (AppSettings) -> SpeechEngine,
+) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private val tts by lazy { SystemTts(context) }
     private val dir = File(context.cacheDir, "narration")
 
     private val _state = MutableStateFlow<NarrationState?>(null)
@@ -87,9 +94,13 @@ class Narrator(private val context: Context, private val settings: () -> AppSett
     }
 
     private var article: NarratedArticle? = null
+    private var engine: SpeechEngine? = null
     private var chunks: List<SpeechChunk> = emptyList()
+    /** Characters before each chunk, for measuring how far ahead synthesis is. */
+    private var offsets: IntArray = IntArray(0)
     private var speed = 1f
     private val playingChunk = MutableStateFlow(0)
+    private var preparing: Job? = null
     private var feeding: Job? = null
     /** Whether the feed has synthesized everything it's going to, and the last chunk it added. */
     private var fed = false
@@ -97,21 +108,32 @@ class Narrator(private val context: Context, private val settings: () -> AppSett
     private var session: ListenableFuture<MediaController>? = null
 
     fun narrate(article: NarratedArticle, fromParagraph: Int = 0) {
+        stop()
         this.article = article
-        chunks = speechChunks(article.paragraphs)
-        if (chunks.isEmpty()) return stop()
         speed = settings().narrationSpeed
         // Binding a controller starts the service, which puts the player in a
         // media session and keeps playback going in the background.
-        if (session == null) {
-            session =
-                MediaController.Builder(
-                        context,
-                        SessionToken(context, ComponentName(context, NarrationService::class.java)),
-                    )
-                    .buildAsync()
+        session =
+            MediaController.Builder(
+                    context,
+                    SessionToken(context, ComponentName(context, NarrationService::class.java)),
+                )
+                .buildAsync()
+        _state.value = NarrationState(article.entryId, article.title, fromParagraph, playing = true)
+        preparing = scope.launch {
+            val engine =
+                try {
+                    engineFor(settings())
+                } catch (e: SpeechUnavailable) {
+                    return@launch fail(e.message)
+                }
+            this@Narrator.engine = engine
+            chunks = speechChunks(article.paragraphs, engine.maxChunkChars)
+            if (chunks.isEmpty()) return@launch stop()
+            offsets =
+                chunks.runningFold(0) { total, chunk -> total + chunk.text.length }.toIntArray()
+            startAt(firstChunkOf(fromParagraph), play = true)
         }
-        startAt(firstChunkOf(fromParagraph), play = true)
     }
 
     fun togglePlaying() {
@@ -120,6 +142,7 @@ class Narrator(private val context: Context, private val settings: () -> AppSett
 
     fun skipParagraphs(delta: Int) {
         val current = _state.value ?: return
+        if (chunks.isEmpty()) return
         seekToParagraph((current.paragraph + delta).coerceIn(0, chunks.last().paragraph))
     }
 
@@ -135,19 +158,25 @@ class Narrator(private val context: Context, private val settings: () -> AppSett
         player.setPlaybackSpeed(speed)
     }
 
-    suspend fun voices(): List<VoiceOption> = tts.voices()
-
     fun stop() {
+        preparing?.cancel()
+        preparing = null
         feeding?.cancel()
         feeding = null
         player.stop()
         player.clearMediaItems()
         dir.deleteRecursively()
         article = null
+        engine = null
         chunks = emptyList()
         _state.value = null
         session?.let(MediaController::releaseFuture)
         session = null
+    }
+
+    private fun fail(message: String?) {
+        stop()
+        _errors.tryEmit(message ?: "Couldn't read this article aloud.")
     }
 
     private fun firstChunkOf(paragraph: Int): Int =
@@ -160,6 +189,7 @@ class Narrator(private val context: Context, private val settings: () -> AppSett
         }
 
     private fun startAt(chunk: Int, play: Boolean) {
+        val engine = engine ?: return
         feeding?.cancel()
         player.stop()
         player.clearMediaItems()
@@ -171,23 +201,38 @@ class Narrator(private val context: Context, private val settings: () -> AppSett
         player.setPlaybackSpeed(speed)
         player.playWhenReady = play
         publish(chunk)
-        feeding = scope.launch { feed(chunk) }
+        feeding = scope.launch {
+            try {
+                feed(chunk, engine)
+            } catch (e: SpeechUnavailable) {
+                fail(e.message)
+            }
+        }
     }
 
-    private suspend fun feed(from: Int) {
-        val article = article ?: return
-        for (index in from until chunks.size) {
-            // Stay a few chunks ahead of what's playing, no further.
-            playingChunk.first { index <= it + LOOKAHEAD }
-            val file = File(dir, "$index.wav")
-            try {
-                tts.synthesize(chunks[index].text, settings().narrationVoice, file)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                // Skip what the engine can't say rather than stop the article.
+    /** Whether [chunk] is close enough to what's playing to synthesize now. */
+    private fun wanted(chunk: Int, engine: SpeechEngine): Boolean {
+        val next = playingChunk.value + 1
+        return chunk <= next || offsets[chunk] - offsets[next] <= engine.lookaheadChars
+    }
+
+    private suspend fun feed(from: Int, engine: SpeechEngine) = coroutineScope {
+        val article = article ?: return@coroutineScope
+        val inFlight = ArrayDeque<Pair<Int, Deferred<File?>>>()
+        var next = from
+        while (next < chunks.size || inFlight.isNotEmpty()) {
+            while (
+                next < chunks.size && inFlight.size < engine.parallelism && wanted(next, engine)
+            ) {
+                val index = next++
+                inFlight.addLast(index to async { synthesizeOrSkip(engine, index) })
+            }
+            if (inFlight.isEmpty()) {
+                playingChunk.first { wanted(next, engine) }
                 continue
             }
+            val (index, result) = inFlight.removeFirst()
+            val file = result.await() ?: continue
             player.addMediaItem(item(article, index, file))
             lastAdded = index
             when (player.playbackState) {
@@ -198,13 +243,22 @@ class Narrator(private val context: Context, private val settings: () -> AppSett
             }
         }
         fed = true
-        if (lastAdded == null) {
-            stop()
-            _errors.tryEmit("Couldn't read this article aloud. Check the voice in Settings.")
-        } else {
-            stopIfFinished()
-        }
+        if (lastAdded == null)
+            fail("Couldn't read this article aloud. Check the voice in Settings.")
+        else stopIfFinished()
     }
+
+    /** The chunk's audio, or null to skip it; [SpeechUnavailable] ends the narration. */
+    private suspend fun synthesizeOrSkip(engine: SpeechEngine, index: Int): File? =
+        try {
+            engine.synthesize(chunks[index].text, dir, "$index")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: SpeechUnavailable) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
 
     /** Stops once the last chunk there'll ever be has played. */
     private fun stopIfFinished() {
@@ -243,10 +297,10 @@ class Narrator(private val context: Context, private val settings: () -> AppSett
                 playingChunk.value = chunk
                 publish(chunk)
                 // Drop what's well behind, so skipping back a little stays instant.
+                // Only our own files: an engine's cache stays.
                 while (player.currentMediaItemIndex > KEEP_BEHIND) {
-                    player.getMediaItemAt(0).localConfiguration?.uri?.path?.let {
-                        File(it).delete()
-                    }
+                    val file = player.getMediaItemAt(0).localConfiguration?.uri?.path?.let(::File)
+                    if (file?.parentFile == dir) file.delete()
                     player.removeMediaItem(0)
                 }
             }
@@ -264,14 +318,12 @@ class Narrator(private val context: Context, private val settings: () -> AppSett
                     player.seekToNextMediaItem()
                     player.prepare()
                 } else if (fed) {
-                    stop()
-                    _errors.tryEmit("Couldn't play this article's narration.")
+                    fail("Couldn't play this article's narration.")
                 }
             }
         }
 
     private companion object {
-        const val LOOKAHEAD = 3
         const val KEEP_BEHIND = 5
     }
 }

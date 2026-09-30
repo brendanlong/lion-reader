@@ -239,6 +239,24 @@ sealed interface SyncEvent {
 
 @Serializable data class Me(val user: AccountUser)
 
+/** The server's limit on one speech request. */
+const val MAX_CLOUD_SPEECH_CHARS = 1000
+
+@Serializable
+data class VoiceModel(
+    val id: String,
+    val displayName: String,
+    val voices: List<String>,
+    val defaultVoice: String,
+)
+
+@Serializable data class VoiceModels(val models: List<VoiceModel>, val defaultModelId: String)
+
+// Both always sent: the server requires the keys, and ApiJson drops nulls.
+@Serializable data class SpeechRequest(val model: String, val voice: String, val text: String)
+
+@Serializable data class SynthesizedSpeech(val audio: String)
+
 @Serializable data class SaveArticleRequest(val url: String)
 
 @Serializable data class SavedArticle(val id: String, val title: String? = null)

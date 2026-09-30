@@ -36,6 +36,12 @@ enum class TextSize(val key: String, val label: String) {
     X_LARGE("x-large", "Extra large"),
 }
 
+/** Where narration audio comes from. */
+enum class NarrationEngine {
+    DEVICE,
+    CLOUD,
+}
+
 /** Per-device settings, like the web's localStorage ones. */
 data class AppSettings(
     val theme: ThemeChoice = ThemeChoice.SYSTEM,
@@ -51,6 +57,10 @@ data class AppSettings(
     val narrationSpeed: Float = 1f,
     /** Keep the paragraph being read on screen. */
     val narrationAutoScroll: Boolean = true,
+    val narrationEngine: NarrationEngine = NarrationEngine.DEVICE,
+    /** The cloud voice model (`provider:model`) and voice; null for the server's defaults. */
+    val cloudVoiceModel: String? = null,
+    val cloudVoice: String? = null,
 ) {
     val retention: RetentionPolicy
         get() = RetentionPolicy(windowDays = retentionDays)
@@ -70,6 +80,9 @@ class SettingsRepository(private val context: Context) {
         val narrationVoice = stringPreferencesKey("narration_voice")
         val narrationSpeed = floatPreferencesKey("narration_speed")
         val narrationAutoScroll = booleanPreferencesKey("narration_auto_scroll")
+        val narrationEngine = stringPreferencesKey("narration_engine")
+        val cloudVoiceModel = stringPreferencesKey("cloud_voice_model")
+        val cloudVoice = stringPreferencesKey("cloud_voice")
     }
 
     val settings: Flow<AppSettings> = context.settingsStore.data.map { it.toSettings() }
@@ -88,6 +101,10 @@ class SettingsRepository(private val context: Context) {
                 ?: prefs.remove(Keys.narrationVoice)
             prefs[Keys.narrationSpeed] = next.narrationSpeed
             prefs[Keys.narrationAutoScroll] = next.narrationAutoScroll
+            prefs[Keys.narrationEngine] = next.narrationEngine.name
+            next.cloudVoiceModel?.let { prefs[Keys.cloudVoiceModel] = it }
+                ?: prefs.remove(Keys.cloudVoiceModel)
+            next.cloudVoice?.let { prefs[Keys.cloudVoice] = it } ?: prefs.remove(Keys.cloudVoice)
         }
     }
 
@@ -104,6 +121,9 @@ class SettingsRepository(private val context: Context) {
             narrationVoice = this[Keys.narrationVoice],
             narrationSpeed = this[Keys.narrationSpeed] ?: defaults.narrationSpeed,
             narrationAutoScroll = this[Keys.narrationAutoScroll] ?: defaults.narrationAutoScroll,
+            narrationEngine = enumOr(this[Keys.narrationEngine], defaults.narrationEngine),
+            cloudVoiceModel = this[Keys.cloudVoiceModel],
+            cloudVoice = this[Keys.cloudVoice],
         )
     }
 }

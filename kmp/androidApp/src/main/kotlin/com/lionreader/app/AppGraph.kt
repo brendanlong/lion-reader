@@ -3,7 +3,12 @@ package com.lionreader.app
 import android.content.Context
 import androidx.core.content.edit
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
+import com.lionreader.app.narration.CloudVoices
+import com.lionreader.app.narration.DeviceVoices
 import com.lionreader.app.narration.Narrator
+import com.lionreader.app.narration.SpeechEngine
+import com.lionreader.app.narration.SpeechUnavailable
+import com.lionreader.app.narration.SystemTts
 import com.lionreader.shared.api.LionReaderApi
 import com.lionreader.shared.auth.AppAuth
 import com.lionreader.shared.auth.AuthorizationRequest
@@ -17,6 +22,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.UserAgent
+import java.io.File
 import java.security.MessageDigest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -64,10 +70,54 @@ class AppGraph(private val context: Context) {
     val currentSettings: StateFlow<AppSettings> =
         settings.settings.stateIn(scope, SharingStarted.Eagerly, AppSettings())
 
-    private val narratorInstance = lazy { Narrator(context) { currentSettings.value } }
+    /** The device's text-to-speech engine (voices for Settings, and narration). */
+    val systemTts: SystemTts by lazy { SystemTts(context) }
+
+    private val narratorInstance = lazy {
+        Narrator(context, { currentSettings.value }, ::speechEngine)
+    }
 
     /** Text-to-speech narration; one article at a time, app-wide. */
     val narrator: Narrator by narratorInstance
+
+    private suspend fun speechEngine(settings: AppSettings): SpeechEngine =
+        when (settings.narrationEngine) {
+            NarrationEngine.DEVICE -> DeviceVoices(systemTts, settings.narrationVoice)
+            NarrationEngine.CLOUD -> {
+                val api =
+                    account.value?.connection?.api
+                        ?: throw SpeechUnavailable("Sign in to use cloud voices.")
+                val choice = cloudVoice(api, settings)
+                CloudVoices(
+                    api,
+                    choice.first,
+                    choice.second,
+                    File(context.cacheDir, "cloud-voices"),
+                )
+            }
+        }
+
+    /** The cloud model and voice to use: the chosen ones if the server still offers them. */
+    private suspend fun cloudVoice(
+        api: LionReaderApi,
+        settings: AppSettings,
+    ): Pair<String, String> {
+        val available =
+            try {
+                api.voiceModels()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                throw SpeechUnavailable("Couldn't reach Lion Reader for cloud voices.")
+            }
+        val model =
+            available.models.firstOrNull { it.id == settings.cloudVoiceModel }
+                ?: available.models.firstOrNull { it.id == available.defaultModelId }
+                ?: available.models.firstOrNull()
+                ?: throw SpeechUnavailable("Cloud voices aren't set up for your account.")
+        val voice = settings.cloudVoice?.takeIf { it in model.voices } ?: model.defaultVoice
+        return model.id to voice
+    }
 
     fun setNarrationSpeed(speed: Float) {
         scope.launch { settings.update { it.copy(narrationSpeed = speed) } }

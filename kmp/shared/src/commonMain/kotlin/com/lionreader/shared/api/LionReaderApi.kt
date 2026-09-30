@@ -15,6 +15,8 @@ import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -106,6 +108,23 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
 
     /** The account this token belongs to. */
     suspend fun me(): AccountUser = get(Me.serializer(), "/auth/me") {}.user
+
+    /** The cloud voices this user can use (none without an OpenRouter key on either side). */
+    suspend fun voiceModels(): VoiceModels =
+        get(VoiceModels.serializer(), "/narration/voice-models") {}
+
+    /** Speaks [text] (at most [MAX_CLOUD_SPEECH_CHARS]) with a cloud voice. MP3 bytes. */
+    @OptIn(ExperimentalEncodingApi::class)
+    suspend fun synthesizeSpeech(model: String, voice: String, text: String): ByteArray =
+        Base64.decode(
+            post(
+                    SynthesizedSpeech.serializer(),
+                    "/narration/synthesize",
+                    SpeechRequest(model, voice, text),
+                    SpeechRequest.serializer(),
+                )
+                .audio
+        )
 
     /** Saves a link as a saved article (the server fetches it). */
     suspend fun saveArticle(url: String): SavedArticle =

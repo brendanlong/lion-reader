@@ -223,9 +223,10 @@ export default function PrivacyPolicyPage() {
                 generated audio is streamed back to your device and not stored on our servers.
               </LegalParagraph>
               <LegalParagraph>
-                In the Android app, narration sends the article text to your device&apos;s
-                text-to-speech engine. If that engine uses online voices, its provider processes the
-                text under its own terms.
+                In the Android app, device voices send the article text to your device&apos;s
+                text-to-speech engine; if that engine uses online voices, its provider processes the
+                text under its own terms. Cloud Voices in the app work as described above, and the
+                audio is cached only on your device.
               </LegalParagraph>
               <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
                 <TextLink

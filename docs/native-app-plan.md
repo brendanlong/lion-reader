@@ -9,8 +9,8 @@ Each phase below adds the server pieces it needs alongside its client code.
 
 1. **Share target, files**: saving shared files from other apps (links are
    done).
-2. **Narration**: cloud and Piper voices, AI-normalized text, and playing on
-   into the next article (system voices are done).
+2. **Narration**: Piper voices, AI-normalized text, and playing on into the
+   next article (device and cloud voices are done).
 3. **Release**: Play Console closed testing (new personal developer accounts
    need a closed test with testers for 14 days before production) and signed
    APKs on GitHub Releases. Set `ANDROID_APP_CERT_SHA256` on the server to the
@@ -35,11 +35,6 @@ Each phase below adds the server pieces it needs alongside its client code.
 
 How narration works in the app is in `kmp/CLAUDE.md`; what's left:
 
-- **Cloud voices** (Kokoro via `narration.synthesize`, which the app's token
-  can call; its response stays base64 JSON, a third bigger than raw bytes but
-  without a second authenticated route to keep in step). The app prefetches by
-  listening time as the web does and caches MP3 chunks on disk keyed by
-  `(model, voice, textHash)` with a small LRU cap (no offline guarantee).
 - **Piper voices**: sherpa-onnx with its converted Piper models, which bundle
   espeak-ng data; about 60 MB per voice, downloaded on demand. Keep the web's
   voice ids so settings mean the same thing everywhere, though sherpa-onnx's
