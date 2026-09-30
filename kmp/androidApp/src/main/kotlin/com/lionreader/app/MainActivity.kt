@@ -2,11 +2,13 @@ package com.lionreader.app
 
 import android.content.Intent
 import android.graphics.Color
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.browser.auth.AuthTabIntent
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -56,6 +58,25 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     private var signInError by mutableStateOf<String?>(null)
 
+    /**
+     * Sign-in in an Auth Tab: the browser hands the redirect straight back here, so no other app
+     * (the debug build, say) can be picked to open it. A browser without Auth Tabs opens a Custom
+     * Tab instead, whose redirect arrives as the App Link ([onNewIntent]); its closing then comes
+     * back here as a cancel, which leaves the sign-in to that link.
+     */
+    private val authTab =
+        AuthTabIntent.registerActivityResultLauncher(this) { result ->
+            when (result.resultCode) {
+                AuthTabIntent.RESULT_OK -> result.resultUri?.let(::completeSignIn)
+                AuthTabIntent.RESULT_VERIFICATION_FAILED,
+                AuthTabIntent.RESULT_VERIFICATION_TIMED_OUT ->
+                    signInError = "Couldn't confirm the sign-in link belongs to this app"
+                // Closed by the user, or by a Custom Tab's App Link (see above).
+                AuthTabIntent.RESULT_CANCELED,
+                AuthTabIntent.RESULT_UNKNOWN_CODE -> {}
+            }
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -82,7 +103,11 @@ class MainActivity : ComponentActivity() {
     /** The App Link redirect from the server's authorization endpoint. */
     private fun handleSignInCallback(intent: Intent?) {
         val data = intent?.data ?: return
-        if (data.path != "/oauth/app-callback") return
+        if (data.path != BuildConfig.SIGN_IN_CALLBACK_PATH) return
+        completeSignIn(data)
+    }
+
+    private fun completeSignIn(data: Uri) {
         val pending = graph.pendingAuthorization ?: return
         graph.pendingAuthorization = null
         lifecycleScope.launch {
@@ -110,7 +135,15 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             val request = graph.connection.value.auth.authorizationRequest()
             graph.pendingAuthorization = request
-            CustomTabsIntent.Builder().build().launchUrl(this@MainActivity, request.url.toUri())
+            val url = request.url.toUri()
+            if (url.scheme == "https") {
+                AuthTabIntent.Builder()
+                    .build()
+                    .launch(authTab, url, url.host!!, BuildConfig.SIGN_IN_CALLBACK_PATH)
+            } else {
+                // A dev server over http: Auth Tabs only return https redirects.
+                CustomTabsIntent.Builder().build().launchUrl(this@MainActivity, url)
+            }
         }
     }
 

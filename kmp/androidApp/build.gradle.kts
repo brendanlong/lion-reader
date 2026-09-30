@@ -21,10 +21,11 @@ android {
         // .github/workflows/android-release.yml).
         versionCode = providers.gradleProperty("lionReaderVersionCode").orNull?.toInt() ?: 1
         versionName = providers.gradleProperty("lionReaderVersionName").orNull ?: "0.1.0"
-        // The host whose /oauth/app-callback the app claims as an App Link.
+        // The host whose sign-in callback the app claims as an App Link.
         // Point a debug build at a dev server with -PappLinkHost=<host>.
         manifestPlaceholders["appLinkHost"] =
             (project.findProperty("appLinkHost") as String?) ?: "lionreader.com"
+        signInCallbackPath("/oauth/app-callback")
     }
 
     // A private dev keystore, so debug builds from every machine share a key
@@ -57,6 +58,9 @@ android {
         debug {
             // Installs alongside the release app.
             applicationIdSuffix = ".debug"
+            // Its own, so the release app installed alongside doesn't also
+            // claim its sign-in redirects.
+            signInCallbackPath("/oauth/app-callback/debug")
             devSigning?.let { signingConfig = it }
         }
         release {
@@ -153,4 +157,10 @@ dependencies {
     testImplementation(libs.robolectric)
     // Hosts the ComponentActivity that createComposeRule() launches.
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+}
+
+/** The path of the sign-in redirect: claimed in the manifest, and sent to the server. */
+fun com.android.build.api.dsl.VariantDimension.signInCallbackPath(path: String) {
+    manifestPlaceholders["appLinkPath"] = path
+    buildConfigField("String", "SIGN_IN_CALLBACK_PATH", "\"$path\"")
 }

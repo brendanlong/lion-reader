@@ -13,7 +13,7 @@
                 <data
                     android:scheme="http"
                     android:host="localhost"
-                    android:path="/oauth/app-callback" />
+                    android:path="${appLinkPath}" />
             </intent-filter>
         </activity>
     </application>

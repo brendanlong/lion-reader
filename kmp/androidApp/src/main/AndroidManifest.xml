@@ -38,7 +38,7 @@
                 <data
                     android:scheme="https"
                     android:host="${appLinkHost}"
-                    android:path="/oauth/app-callback" />
+                    android:path="${appLinkPath}" />
             </intent-filter>
         </activity>
         <!-- Apart from the app's task, so sharing doesn't pull the app up. -->
